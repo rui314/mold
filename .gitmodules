@@ -1,0 +1,6 @@
+[submodule "oneTBB"]
+	path = oneTBB
+	url = git@github.com:oneapi-src/oneTBB.git
+[submodule "llvm-project"]
+	path = llvm-project
+	url = git@github.com:llvm/llvm-project.git

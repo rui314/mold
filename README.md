@@ -1,2 +1,2 @@
 # catld
-An experimental ELF linker aiming to be as fast as "cat" command.
+An experimental ELF linker aiming to be as fast as the "cat" command.
