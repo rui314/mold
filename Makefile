@@ -1,7 +1,18 @@
-CPPFLAGS=-g
+LLVM_CONFIG=llvm-project/build/bin/llvm-config
+LLVM_TBLGEN=llvm-project/build/bin/llvm-tblgen
 
-catld: main.o
-	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags)
+LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags)
+LIBS=-pthread -lLLVMSupport -lcurses
+OBJS=main.o writer.o
+
+catld: $(OBJS)
+	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+
+main.cc: options.inc
+
+options.inc: options.td
+	$(LLVM_TBLGEN) -I=llvm-project/llvm/include --gen-opt-parser-defs -o $@ $^
 
 submodules: llvm intel_tbb
 
@@ -17,6 +28,6 @@ test: catld
 	./llvm-project/build/bin/llvm-lit test
 
 clean:
-	rm -f *.o *~ catld
+	rm -f *.o *~ catld options.inc
 
 .PHONY: llvm intel_tbb test clean
