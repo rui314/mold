@@ -1,9 +1,9 @@
 LLVM_CONFIG=llvm-project/build/bin/llvm-config
 LLVM_TBLGEN=llvm-project/build/bin/llvm-tblgen
 
-CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags)
+CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags) -pthread
 LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags)
-LIBS=-pthread -lLLVMSupport -lcurses
+LIBS=-pthread -lLLVMSupport -lLLVMObject -lLLVMOption -lcurses
 OBJS=main.o writer.o
 
 catld: $(OBJS)
