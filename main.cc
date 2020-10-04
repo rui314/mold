@@ -7,6 +7,10 @@ using llvm::opt::InputArgList;
 
 Config config;
 
+//
+// Command-line option processing
+//
+
 // Create enum with OPT_xxx values for each option in Options.td
 enum {
   OPT_INVALID = 0,
@@ -49,9 +53,19 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
   return args;
 }
 
+//
+// Main
+//
+
 int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc, argv);
 
+  if (auto *arg = args.getLastArg(OPT_o))
+    config.output = arg->getValue();
+  else
+    error("-o option is missing");
+
+  write();
   return 0;
 }

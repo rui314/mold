@@ -1,3 +1,5 @@
+CC=clang
+CXX=clang++
 LLVM_CONFIG=llvm-project/build/bin/llvm-config
 LLVM_TBLGEN=llvm-project/build/bin/llvm-tblgen
 
