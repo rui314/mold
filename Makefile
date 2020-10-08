@@ -8,10 +8,10 @@ LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags)
 LIBS=-pthread -lLLVMSupport -lLLVMObject -lLLVMOption -lcurses
 OBJS=main.o writer.o
 
-catld: $(OBJS)
+chibild: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
-$(OBJS): catld.h Makefile
+$(OBJS): chibild.h Makefile
 
 main.cc: options.inc
 
@@ -28,10 +28,10 @@ llvm:
 intel_tbb:
 	$(MAKE) -C oneTBB
 
-test: catld
+test: chibild
 	./llvm-project/build/bin/llvm-lit test
 
 clean:
-	rm -f *.o *~ catld options.inc
+	rm -f *.o *~ chibild options.inc
 
 .PHONY: llvm intel_tbb test clean

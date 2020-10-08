@@ -1,4 +1,4 @@
 *.o
 *~
-/catld
+/chibild
 test/Output
