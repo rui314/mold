@@ -19,6 +19,11 @@ using llvm::StringRef;
 using llvm::Twine;
 using llvm::object::ELF64LE;
 
+class Symbol;
+class InputFile;
+class ObjectFile;
+class InputSection;
+
 struct Config {
   StringRef output;
 };
@@ -34,8 +39,26 @@ class Symbol {
 public:
 };
 
+class InputSection {
+public:
+  InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);
+
+  void writeTo(uint8_t *buf);
+
+  uint64_t getOffset() const;
+  uint64_t getVA() const;
+
+  InputFile *file;
+};
+
 class InputFile {
 public:
+  InputFile(MemoryBufferRef mb);
+
+private:
+  MemoryBufferRef mb;
+  std::vector<InputSection> sections;
+  std::vector<Symbol *> symbols;
 };
 
 class ObjectFile {
@@ -47,18 +70,6 @@ public:
  
   std::vector<Symbol *> symbols;
   bool is_alive = false;
-};
-
-class InputSection {
-public:
-  InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);
-
-  void writeTo(uint8_t *buf);
-
-  uint64_t getOffset() const;
-  uint64_t getVA() const;
-
-  InputFile *file;
 };
 
 void write();

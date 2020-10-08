@@ -11,6 +11,8 @@ OBJS=main.o writer.o
 catld: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
+$(OBJS): catld.h Makefile
+
 main.cc: options.inc
 
 options.inc: options.td
