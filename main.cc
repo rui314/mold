@@ -6,7 +6,7 @@
 using llvm::opt::InputArgList;
 
 Config config;
-SymbolTable symtab;
+SymbolTable symbol_table;
 
 //
 // Command-line option processing

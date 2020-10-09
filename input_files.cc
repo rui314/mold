@@ -40,8 +40,11 @@ void ObjectFile::parse() {
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  for (const ELF64LE::Sym &sym : syms.slice(firstGlobal))
-    llvm::errs() << CHECK(sym.getName(string_table), this) << "\n";
+  for (const ELF64LE::Sym &sym : syms.slice(firstGlobal)) {
+    StringRef name = CHECK(sym.getName(string_table), this);
+    symbol_table.add(name, name);
+    llvm::errs() << symbol_table.get(name) << "\n";
+  }
 }
 
 void ObjectFile::register_defined_symbols() {}

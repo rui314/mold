@@ -96,7 +96,13 @@ struct tbb_hash_compare<StringRef> {
 
 class SymbolTable {
 public:
-  tbb::concurrent_hash_map<StringRef, Symbol *> map;
+  void add(StringRef key, StringRef val);
+  StringRef get(StringRef key);
+
+private:
+  typedef tbb::concurrent_hash_map<StringRef, StringRef> MapType;
+
+  MapType map;
 };
 
 class InputSection {
@@ -131,6 +137,6 @@ MemoryBufferRef readFile(StringRef path);
 
 std::string toString(ObjectFile *);
 
-extern SymbolTable symtab;
+extern SymbolTable symbol_table;
 
 void write();

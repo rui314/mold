@@ -9,7 +9,7 @@ TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
 CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags) -IoneTBB/include -pthread
 LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags) -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR)
 LIBS=-pthread -lLLVMSupport -lLLVMObject -lLLVMOption -lLLVMBinaryFormat -lcurses -ltbb
-OBJS=main.o writer.o input_files.o
+OBJS=main.o writer.o input_files.o symtab.o
 
 chibild: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
