@@ -40,7 +40,7 @@ void ObjectFile::parse() {
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  for (const ELF64LE::Sym &sym : syms)
+  for (const ELF64LE::Sym &sym : syms.slice(firstGlobal))
     llvm::errs() << CHECK(sym.getName(string_table), this) << "\n";
 }
 
