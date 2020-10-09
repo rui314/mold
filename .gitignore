@@ -1,4 +1,4 @@
 *.o
 *~
 /chibild
-test/Output
+/test/Output

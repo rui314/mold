@@ -1,3 +1,3 @@
 RUN: echo '.globl _start; _start: jmp start' | cc -o %t.o -c -x assembler -
-RUN: catld -o %t
+RUN: chibild -o %t
 RUN: file %t | grep ELF

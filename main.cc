@@ -6,6 +6,7 @@
 using llvm::opt::InputArgList;
 
 Config config;
+SymbolTable symtab;
 
 //
 // Command-line option processing
@@ -65,6 +66,18 @@ int main(int argc, char **argv) {
     config.output = arg->getValue();
   else
     error("-o option is missing");
+
+  std::vector<ObjectFile *> files;
+
+  for (auto *arg : args) {
+    switch (arg->getOption().getID()) {
+    case OPT_INPUT: {
+      MemoryBufferRef mb = readFile(arg->getValue());
+      files.push_back(new ObjectFile(mb));
+      break;
+    }
+    }
+  }
 
   write();
   return 0;
