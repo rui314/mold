@@ -126,10 +126,13 @@ public:
   void register_undefined_symbols();
   StringRef getFilename();
  
+  int priority;
+
 private:
   MemoryBufferRef mb;
   std::vector<InputSection> sections;
   std::vector<Symbol *> symbols;
+  std::vector<Symbol> symbol_instances;
   bool is_alive = false;
 };
 

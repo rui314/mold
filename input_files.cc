@@ -36,11 +36,19 @@ void ObjectFile::parse() {
 
   int firstGlobal = symtab_sec->sh_info;
 
-  ArrayRef<ELF64LE::Sym> syms = CHECK(obj.symbols(symtab_sec), this);
+  ArrayRef<ELF64LE::Sym> elf_syms = CHECK(obj.symbols(symtab_sec), this);
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  for (const ELF64LE::Sym &sym : syms.slice(firstGlobal)) {
+  symbol_instances.reserve(elf_syms.size());
+  for (int i = 0; i < elf_syms.size(); i++) {
+    StringRef name;
+    if (firstGlobal <= i)
+      name = CHECK(elf_syms[i].getName(string_table), this);
+    symbol_instances.push_back({name, this});
+  }
+
+  for (const ELF64LE::Sym &sym : elf_syms.slice(firstGlobal)) {
     StringRef name = CHECK(sym.getName(string_table), this);
     symbol_table.add(name, name);
     llvm::errs() << symbol_table.get(name) << "\n";
