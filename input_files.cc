@@ -39,7 +39,6 @@ void ObjectFile::parse() {
   ArrayRef<ELF64LE::Sym> syms = CHECK(obj.symbols(symtab_sec), this);
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
-  llvm::outs() << string_table << "\n";
 }
 
 void ObjectFile::register_defined_symbols() {}

@@ -60,7 +60,7 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 
 int main(int argc, char **argv) {
   MyOptTable opt_table;
-  InputArgList args = opt_table.parse(argc, argv);
+  InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
@@ -78,6 +78,9 @@ int main(int argc, char **argv) {
     }
     }
   }
+
+  for (ObjectFile *file : files)
+    file->parse();
 
   write();
   return 0;
