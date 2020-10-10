@@ -9,7 +9,9 @@
 #include "llvm/Object/ELFTypes.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Timer.h"
 #include "tbb/concurrent_hash_map.h"
+#include "tbb/parallel_for_each.h"
 
 #include <cstdlib>
 #include <cstdint>
@@ -135,7 +137,7 @@ private:
   std::vector<InputSection> sections;
   std::vector<Symbol *> symbols;
   std::vector<Symbol> symbol_instances;
-  int firstGlobal;
+  int firstGlobal = 0;
   bool is_alive = false;
 };
 

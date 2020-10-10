@@ -103,6 +103,11 @@ int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
+  llvm::TimerGroup Timers("all", "all");
+  llvm::Timer AddFilesTimer("add_files", "add_files", Timers);
+  llvm::Timer ParseTimer("parse", "parse", Timers);
+  llvm::Timer RegisterDefined("register_defined_symbols", "register_defined_symbols", Timers);
+
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
   else
@@ -110,16 +115,26 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
+  AddFilesTimer.startTimer();
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       add_file(files, arg->getValue());
+  AddFilesTimer.stopTimer();
 
+  ParseTimer.startTimer();
   for (ObjectFile *file : files)
     file->parse();
+  ParseTimer.stopTimer();
 
+  RegisterDefined.startTimer();
+  //  tbb::parallel_for_each(
+  //    files.begin(), files.end(),
+  //    [](ObjectFile *file) { file->register_defined_symbols(); });
   for (ObjectFile *file : files)
     file->register_defined_symbols();
+  RegisterDefined.stopTimer();
 
   write();
+  Timers.printAll(llvm::outs());
   return 0;
 }

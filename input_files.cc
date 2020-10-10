@@ -34,6 +34,9 @@ void ObjectFile::parse() {
   const ELF64LE::Shdr *symtab_sec
     = findSection(sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
 
+  if (!symtab_sec)
+    return;
+
   firstGlobal = symtab_sec->sh_info;
 
   ArrayRef<ELF64LE::Sym> elf_syms = CHECK(obj.symbols(symtab_sec), this);
@@ -61,7 +64,6 @@ void ObjectFile::register_defined_symbols() {
     }
 
     symbol_table.add(sym.name, sym);
-    llvm::errs() << "x=" << symbol_table.get(sym.name)->name << "\n";
     symbols.push_back(&sym);
   }
 }
