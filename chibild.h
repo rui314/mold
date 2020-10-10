@@ -4,6 +4,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/Magic.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"
 #include "llvm/Support/Error.h"
@@ -16,6 +17,7 @@
 
 using llvm::ArrayRef;
 using llvm::ErrorOr;
+using llvm::Error;
 using llvm::Expected;
 using llvm::MemoryBufferRef;
 using llvm::SmallVector;

@@ -2,13 +2,14 @@ CC=clang
 CXX=clang++
 LLVM_CONFIG=llvm-project/build/bin/llvm-config
 LLVM_TBLGEN=llvm-project/build/bin/llvm-tblgen
+LLVM_LIBS=$(wildcard llvm-project/build/lib/libLLVM*.a)
 
 CURRENT_DIR=$(shell pwd)
 TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
 
 CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags) -IoneTBB/include -pthread
 LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags) -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR)
-LIBS=-pthread -lLLVMSupport -lLLVMObject -lLLVMOption -lLLVMBinaryFormat -lcurses -ltbb
+LIBS=-pthread -ltbb -lcurses -Wl,--start-group $(LLVM_LIBS) -Wl,--end-group
 OBJS=main.o writer.o input_files.o symtab.o
 
 chibild: $(OBJS)

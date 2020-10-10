@@ -61,7 +61,7 @@ void ObjectFile::register_defined_symbols() {
     }
 
     symbol_table.add(sym.name, sym);
-    llvm::errs() << symbol_table.get(sym.name).name << "\n";
+    llvm::errs() << "x=" << symbol_table.get(sym.name)->name << "\n";
     symbols.push_back(&sym);
   }
 }

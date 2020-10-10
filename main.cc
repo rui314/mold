@@ -3,6 +3,8 @@
 
 #include <iostream>
 
+using llvm::file_magic;
+using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
 Config config;
@@ -58,6 +60,45 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 // Main
 //
 
+static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef mb) {
+  std::unique_ptr<Archive> file =
+    CHECK(Archive::create(mb), mb.getBufferIdentifier() + ": failed to parse archive");
+
+  std::vector<MemoryBufferRef> vec;
+
+  Error err = Error::success();
+
+  for (const Archive::Child &c : file->children(err)) {
+    MemoryBufferRef mbref =
+        CHECK(c.getMemoryBufferRef(),
+              mb.getBufferIdentifier() +
+                  ": could not get the buffer for a child of the archive");
+    vec.push_back(mbref);
+  }
+
+  if (err)
+    error(mb.getBufferIdentifier() + ": Archive::children failed: " +
+          toString(std::move(err)));
+
+  return vec;
+}
+
+static void add_file(std::vector<ObjectFile *> &files, StringRef path) {
+  MemoryBufferRef mb = readFile(path);
+
+  switch (identify_magic(mb.getBuffer())) {
+  case file_magic::archive:
+    for (MemoryBufferRef member : getArchiveMembers(mb))
+      files.push_back(new ObjectFile(member));
+    break;
+  case file_magic::elf_relocatable:
+    files.push_back(new ObjectFile(mb));
+    break;
+  default:
+    error(path + ": unknown file type");
+  }
+}
+
 int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
@@ -69,18 +110,15 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  for (auto *arg : args) {
-    switch (arg->getOption().getID()) {
-    case OPT_INPUT: {
-      MemoryBufferRef mb = readFile(arg->getValue());
-      files.push_back(new ObjectFile(mb));
-      break;
-    }
-    }
-  }
+  for (auto *arg : args)
+    if (arg->getOption().getID() == OPT_INPUT)
+      add_file(files, arg->getValue());
 
   for (ObjectFile *file : files)
     file->parse();
+
+  for (ObjectFile *file : files)
+    file->register_defined_symbols();
 
   write();
   return 0;
