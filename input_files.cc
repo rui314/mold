@@ -24,7 +24,14 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
+llvm::Timer parse1_timer("parse1", "parse1", Timers);
+llvm::Timer parse2_timer("parse2", "parse2", Timers);
+
 void ObjectFile::parse() {
+  parse1_timer.startTimer();
+  parse1_timer.stopTimer();
+  parse2_timer.startTimer();
+
   ELFFile<ELF64LE> obj = check(ELFFile<ELF64LE>::create(mb.getBuffer()));
   ArrayRef<ELF64LE::Shdr> sections = CHECK(obj.sections(), this);
 
@@ -52,6 +59,7 @@ void ObjectFile::parse() {
       name = CHECK(elf_syms[i].getName(string_table), this);
     symbol_instances.push_back({name, this});
   }
+  parse2_timer.stopTimer();
 }
 
 void ObjectFile::register_defined_symbols() {

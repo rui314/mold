@@ -100,11 +100,12 @@ static void add_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
+llvm::TimerGroup Timers("all", "all");
+
 int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
-  llvm::TimerGroup Timers("all", "all");
   llvm::Timer AddFilesTimer("add_files", "add_files", Timers);
   llvm::Timer ParseTimer("parse", "parse", Timers);
   llvm::Timer RegisterDefined("register_defined_symbols", "register_defined_symbols", Timers);
