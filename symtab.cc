@@ -1,15 +1,15 @@
 #include "chibild.h"
 
-void SymbolTable::add(StringRef key, StringRef val) {
+void SymbolTable::add(StringRef name, Symbol sym) {
   MapType::accessor acc;
-  map.insert(acc, key);
-  acc->second = val;
+  map.insert(acc, name);
+  acc->second = sym;
   acc.release();
 }
 
-StringRef SymbolTable::get(StringRef key) {
+Symbol *SymbolTable::get(StringRef name) {
   MapType::accessor acc;
-  if (map.find(acc, key))
-    return acc->second;
-  return "";
+  if (map.find(acc, name))
+    return &acc->second;
+  return nullptr;
 }

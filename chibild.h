@@ -96,11 +96,11 @@ struct tbb_hash_compare<StringRef> {
 
 class SymbolTable {
 public:
-  void add(StringRef key, StringRef val);
-  StringRef get(StringRef key);
+  void add(StringRef key, Symbol sym);
+  Symbol *get(StringRef key);
 
 private:
-  typedef tbb::concurrent_hash_map<StringRef, StringRef> MapType;
+  typedef tbb::concurrent_hash_map<StringRef, Symbol> MapType;
 
   MapType map;
 };
@@ -133,6 +133,7 @@ private:
   std::vector<InputSection> sections;
   std::vector<Symbol *> symbols;
   std::vector<Symbol> symbol_instances;
+  int firstGlobal;
   bool is_alive = false;
 };
 
