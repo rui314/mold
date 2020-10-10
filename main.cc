@@ -109,6 +109,7 @@ int main(int argc, char **argv) {
   llvm::Timer AddFilesTimer("add_files", "add_files", Timers);
   llvm::Timer ParseTimer("parse", "parse", Timers);
   llvm::Timer RegisterDefined("register_defined_symbols", "register_defined_symbols", Timers);
+  llvm::Timer CreateSymtab("create_symtab", "create_symtab", Timers);
 
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
@@ -138,6 +139,11 @@ int main(int argc, char **argv) {
   //  for (ObjectFile *file : files)
   //    file->register_defined_symbols();
   RegisterDefined.stopTimer();
+
+  CreateSymtab.startTimer();
+  std::vector<StringRef> symbols = symbol_table.get_keys();
+  std::sort(symbols.begin(), symbols.end());
+  CreateSymtab.stopTimer();
 
   write();
   llvm::outs() << "num_files=" << num_files

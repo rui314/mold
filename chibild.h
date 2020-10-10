@@ -13,6 +13,7 @@
 #include "llvm/Support/Timer.h"
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/parallel_for_each.h"
+#include "tbb/parallel_sort.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -104,6 +105,7 @@ class SymbolTable {
 public:
   void add(StringRef key, Symbol sym);
   Symbol *get(StringRef key);
+  std::vector<StringRef> get_keys();
 
 private:
   typedef tbb::concurrent_hash_map<StringRef, Symbol> MapType;
