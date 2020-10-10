@@ -14,6 +14,7 @@
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/parallel_for_each.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <cstdint>
 #include <string>
@@ -148,5 +149,7 @@ std::string toString(ObjectFile *);
 
 extern SymbolTable symbol_table;
 extern llvm::TimerGroup Timers;
+extern std::atomic_int num_symbols;
+extern std::atomic_int num_files;
 
 void write();

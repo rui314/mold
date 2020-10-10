@@ -3,6 +3,9 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
+std::atomic_int num_symbols;
+std::atomic_int num_files;
+
 ObjectFile::ObjectFile(MemoryBufferRef mb) : mb(mb) {}
 
 MemoryBufferRef readFile(StringRef path) {
@@ -28,9 +31,9 @@ llvm::Timer parse1_timer("parse1", "parse1", Timers);
 llvm::Timer parse2_timer("parse2", "parse2", Timers);
 
 void ObjectFile::parse() {
+  num_files++;
+
   parse1_timer.startTimer();
-  parse1_timer.stopTimer();
-  parse2_timer.startTimer();
 
   ELFFile<ELF64LE> obj = check(ELFFile<ELF64LE>::create(mb.getBuffer()));
   ArrayRef<ELF64LE::Shdr> sections = CHECK(obj.sections(), this);
@@ -53,6 +56,9 @@ void ObjectFile::parse() {
   symbol_instances.reserve(elf_syms.size());
   symbols.reserve(elf_syms.size());
 
+  parse1_timer.stopTimer();
+  parse2_timer.startTimer();
+
   for (int i = 0; i < elf_syms.size(); i++) {
     StringRef name;
     if (firstGlobal <= i)
@@ -73,6 +79,7 @@ void ObjectFile::register_defined_symbols() {
 
     symbol_table.add(sym.name, sym);
     symbols.push_back(&sym);
+    num_symbols++;
   }
 }
 

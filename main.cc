@@ -124,20 +124,24 @@ int main(int argc, char **argv) {
   AddFilesTimer.stopTimer();
 
   ParseTimer.startTimer();
+  //  for (ObjectFile *file : files)
+  //    file->parse();
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->parse(); });
   ParseTimer.stopTimer();
 
   RegisterDefined.startTimer();
-  //  tbb::parallel_for_each(
-  //    files.begin(), files.end(),
-  //    [](ObjectFile *file) { file->register_defined_symbols(); });
-  for (ObjectFile *file : files)
-    file->register_defined_symbols();
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [](ObjectFile *file) { file->register_defined_symbols(); });
+  //  for (ObjectFile *file : files)
+  //    file->register_defined_symbols();
   RegisterDefined.stopTimer();
 
   write();
-  Timers.printAll(llvm::outs());
+  llvm::outs() << "num_files=" << num_files
+               << " num_symbols=" << num_symbols
+               << "\n";
   return 0;
 }
