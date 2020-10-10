@@ -80,6 +80,7 @@ static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef mb) {
     error(mb.getBufferIdentifier() + ": Archive::children failed: " +
           toString(std::move(err)));
 
+  file.release(); // leak
   return vec;
 }
 
@@ -122,8 +123,9 @@ int main(int argc, char **argv) {
   AddFilesTimer.stopTimer();
 
   ParseTimer.startTimer();
-  for (ObjectFile *file : files)
-    file->parse();
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [](ObjectFile *file) { file->parse(); });
   ParseTimer.stopTimer();
 
   RegisterDefined.startTimer();

@@ -8,6 +8,7 @@
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
 #include "tbb/concurrent_hash_map.h"
