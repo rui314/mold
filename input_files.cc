@@ -27,8 +27,8 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
-llvm::Timer parse1_timer("parse1", "parse1", Timers);
-llvm::Timer parse2_timer("parse2", "parse2", Timers);
+llvm::Timer parse1_timer("parse1", "parse1", timers);
+llvm::Timer parse2_timer("parse2", "parse2", timers);
 
 void ObjectFile::parse() {
   num_files++;

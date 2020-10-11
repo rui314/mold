@@ -150,7 +150,7 @@ MemoryBufferRef readFile(StringRef path);
 std::string toString(ObjectFile *);
 
 extern SymbolTable symbol_table;
-extern llvm::TimerGroup Timers;
+extern llvm::TimerGroup timers;
 extern std::atomic_int num_symbols;
 extern std::atomic_int num_files;
 

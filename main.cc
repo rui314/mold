@@ -100,15 +100,15 @@ static void add_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
-llvm::TimerGroup Timers("all", "all");
+llvm::TimerGroup timers("all", "all");
 
 int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
-  llvm::Timer AddFilesTimer("add_files", "add_files", Timers);
-  llvm::Timer ParseTimer("parse", "parse", Timers);
-  llvm::Timer RegisterDefined("register_defined_symbols", "register_defined_symbols", Timers);
+  llvm::Timer add_files_timer("add_files", "add_files", timers);
+  llvm::Timer parse_timer("parse", "parse", timers);
+  llvm::Timer register_timer("register_defined_symbols", "register_defined_symbols", timers);
 
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
@@ -117,31 +117,28 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  AddFilesTimer.startTimer();
+  add_files_timer.startTimer();
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       add_file(files, arg->getValue());
-  AddFilesTimer.stopTimer();
+  add_files_timer.stopTimer();
 
-  ParseTimer.startTimer();
+  parse_timer.startTimer();
   //  for (ObjectFile *file : files)
   //    file->parse();
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->parse(); });
-  ParseTimer.stopTimer();
+  parse_timer.stopTimer();
 
-  RegisterDefined.startTimer();
+  register_timer.startTimer();
   //  for (ObjectFile *file : files)
   //    file->register_defined_symbols();
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
-  RegisterDefined.stopTimer();
+  register_timer.stopTimer();
 
   write();
-  llvm::outs() << "num_files=" << num_files
-               << " num_symbols=" << num_symbols
-               << "\n";
   return 0;
 }
