@@ -11,9 +11,11 @@
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
+#include "tbb/blocked_range.h"
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_sort.h"
+#include "tbb/partitioner.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -125,7 +127,7 @@ public:
   InputFile *file;
 };
 
-class ObjectFile {
+class ObjectFile{ 
 public:
   ObjectFile(MemoryBufferRef mb);
 

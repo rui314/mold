@@ -84,20 +84,22 @@ static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef mb) {
   return vec;
 }
 
-static void add_file(std::vector<ObjectFile *> &files, StringRef path) {
+static std::vector<ObjectFile *> read_file(StringRef path) {
   MemoryBufferRef mb = readFile(path);
+  std::vector<ObjectFile *> vec;
 
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : getArchiveMembers(mb))
-      files.push_back(new ObjectFile(member));
+      vec.push_back(new ObjectFile(member));
     break;
   case file_magic::elf_relocatable:
-    files.push_back(new ObjectFile(mb));
+    vec.push_back(new ObjectFile(mb));
     break;
   default:
     error(path + ": unknown file type");
   }
+  return vec;
 }
 
 llvm::TimerGroup timers("all", "all");
@@ -117,26 +119,60 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  add_files_timer.startTimer();
+#if 1
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
-      add_file(files, arg->getValue());
-  add_files_timer.stopTimer();
+      for (ObjectFile *file : read_file(arg->getValue()))
+        files.push_back(file);
+#else
+  {
+    add_files_timer.startTimer();
+    std::vector<StringRef> paths;
+    for (auto *arg : args)
+      if (arg->getOption().getID() == OPT_INPUT)
+        paths.push_back(arg->getValue());
 
+    std::vector<std::vector<ObjectFile *>> tmp;
+    tmp.resize(paths.size());
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, paths.size()),
+                      [&](const tbb::blocked_range<int> &range) {
+                        assert(range.size() == 1);
+                        int i = range.begin();
+                        tmp[i] = read_file(paths[i]);
+                      },
+                      tbb::simple_partitioner());
+
+    for (std::vector<ObjectFile *> t : tmp)
+      files.insert(files.end(), t.begin(), t.end());
+    add_files_timer.stopTimer();
+  }
+#endif
+
+  llvm::errs() << "files=" << files.size() << "\n";
   parse_timer.startTimer();
-  //  for (ObjectFile *file : files)
-  //    file->parse();
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [](ObjectFile *file) { file->parse(); });
+
+#if 0
+  for (ObjectFile *file : files)
+    file->parse();
+#else
+  tbb::parallel_for_each(files.begin(), files.end(),
+                         [&](ObjectFile *file) { file->parse(); });
+#endif
+
   parse_timer.stopTimer();
 
   register_timer.startTimer();
-  //  for (ObjectFile *file : files)
-  //    file->register_defined_symbols();
+
+#if 0
+  for (ObjectFile *file : files)
+    file->register_defined_symbols();
+#else
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
+#endif
+
   register_timer.stopTimer();
 
   write();
