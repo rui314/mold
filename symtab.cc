@@ -1,10 +1,12 @@
 #include "chibild.h"
 
-void SymbolTable::add(StringRef name, Symbol sym) {
+Symbol *SymbolTable::add(StringRef name, Symbol sym) {
   MapType::accessor acc;
   map.insert(acc, name);
-  acc->second = sym;
+  if (acc->second.file == nullptr)
+    acc->second = sym;
   acc.release();
+  return nullptr;
 }
 
 Symbol *SymbolTable::get(StringRef name) {

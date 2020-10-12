@@ -110,7 +110,7 @@ struct tbb_hash_compare<StringRef> {
 
 class SymbolTable {
 public:
-  void add(StringRef key, Symbol sym);
+  Symbol *add(StringRef key, Symbol sym);
   Symbol *get(StringRef key);
   std::vector<StringRef> get_keys();
 
