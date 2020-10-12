@@ -9,7 +9,7 @@ void SymbolTable::add(StringRef name, Symbol sym) {
 
 Symbol *SymbolTable::get(StringRef name) {
   MapType::accessor acc;
-  if (map.find(acc, name))
+  if (map.find(acc, StringRef(name)))
     return &acc->second;
   return nullptr;
 }
