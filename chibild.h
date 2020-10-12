@@ -7,6 +7,7 @@
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -84,6 +85,45 @@ class SymbolTable;
 class InputSection;
 class ObjectFile;
 
+//
+// symtab.cc
+//
+
+class Symbol {
+public:
+  StringRef name;
+  ObjectFile *file;
+};
+
+namespace tbb {
+template<>
+struct tbb_hash_compare<StringRef> {
+  static size_t hash(const StringRef &k) {
+    return llvm::hash_value(k);
+  }
+
+  static bool equal(const StringRef &k1, const StringRef &k2) {
+    return k1 == k2;
+  }
+};
+}
+
+class SymbolTable {
+public:
+  void add(StringRef key, Symbol sym);
+  Symbol *get(StringRef key);
+  std::vector<StringRef> get_keys();
+
+private:
+  typedef tbb::concurrent_hash_map<StringRef, Symbol> MapType;
+
+  MapType map;
+};
+
+//
+// input_sections.cc
+//
+
 class InputSection {
 public:
   InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);
@@ -95,6 +135,10 @@ public:
 
   InputFile *file;
 };
+
+//
+// input_files.cc
+//
 
 class ObjectFile{ 
 public:
@@ -116,6 +160,16 @@ private:
   bool is_alive = false;
 };
 
+//
+// writer.cc
+//
+
+void write();
+
+//
+// main.cc
+//
+
 MemoryBufferRef readFile(StringRef path);
 
 std::string toString(ObjectFile *);
@@ -124,5 +178,3 @@ extern SymbolTable symbol_table;
 extern llvm::TimerGroup timers;
 extern std::atomic_int num_symbols;
 extern std::atomic_int num_files;
-
-void write();

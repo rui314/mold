@@ -1,7 +1,4 @@
 #include "chibild.h"
-#include "symtab.h"
-
-SymbolTable symbol_table;
 
 void SymbolTable::add(StringRef name, Symbol sym) {
   MapType::accessor acc;

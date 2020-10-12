@@ -1,5 +1,4 @@
 #include "chibild.h"
-#include "llvm/Option/ArgList.h"
 
 #include <iostream>
 
@@ -8,6 +7,7 @@ using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
 Config config;
+SymbolTable symbol_table;
 
 //
 // Command-line option processing
