@@ -47,38 +47,35 @@ void ObjectFile::parse() {
   if (!symtab_sec)
     return;
 
-  firstGlobal = symtab_sec->sh_info;
+  first_global = symtab_sec->sh_info;
 
   ArrayRef<ELF64LE::Sym> elf_syms = CHECK(obj.symbols(symtab_sec), this);
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  symbol_instances.reserve(elf_syms.size());
-  symbols.reserve(elf_syms.size());
+  symbol_instances.resize(elf_syms.size());
+  symbols.resize(elf_syms.size());
 
   parse1_timer.stopTimer();
   parse2_timer.startTimer();
 
   for (int i = 0; i < elf_syms.size(); i++) {
     StringRef name;
-    if (firstGlobal <= i)
+    if (first_global <= i)
       name = CHECK(elf_syms[i].getName(string_table), this);
-    symbol_instances.push_back({name, this});
+    symbol_instances[i] = {name, this};
   }
+
+  for (int i = 0; i < first_global; i++)
+    symbols[i] = &symbol_instances[i];
+
   parse2_timer.stopTimer();
 }
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = 0; i < symbol_instances.size(); i++) {
+  for (int i = first_global; i < symbol_instances.size(); i++) {
     Symbol &sym = symbol_instances[i];
-
-    if (i < firstGlobal) {
-      symbols.push_back(&sym);
-      continue;
-    }
-
-    symbol_table.add(sym.name, sym);
-    symbols.push_back(&sym);
+    symbols[i] = symbol_table.add(sym.name, sym);
     num_symbols++;
   }
 }

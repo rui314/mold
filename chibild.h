@@ -167,7 +167,7 @@ private:
   std::vector<InputSection> sections;
   std::vector<Symbol *> symbols;
   std::vector<Symbol> symbol_instances;
-  int firstGlobal = 0;
+  int first_global = 0;
   bool is_alive = false;
 };
 
