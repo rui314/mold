@@ -84,12 +84,6 @@ class SymbolTable;
 class InputSection;
 class ObjectFile;
 
-class Symbol {
-public:
-  StringRef name;
-  ObjectFile *file;
-};
-
 class InputSection {
 public:
   InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chibild.h"
+#include "symbols.h"
 
 namespace tbb {
 template<>
