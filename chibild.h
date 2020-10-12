@@ -137,10 +137,21 @@ public:
 };
 
 //
+// output_sections.cc
+//
+
+class OutputSection {
+public:
+  OutputSection(StringRef name);
+  void writeTo(uint8_t *buf);
+  std::vector<InputSection *> sections;
+};
+
+//
 // input_files.cc
 //
 
-class ObjectFile{ 
+class ObjectFile { 
 public:
   ObjectFile(MemoryBufferRef mb);
 
