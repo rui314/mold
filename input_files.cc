@@ -1,4 +1,5 @@
 #include "chibild.h"
+#include "symtab.h"
 
 using namespace llvm;
 using namespace llvm::ELF;

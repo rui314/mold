@@ -103,18 +103,6 @@ struct tbb_hash_compare<StringRef> {
 };
 }
 
-class SymbolTable {
-public:
-  void add(StringRef key, Symbol sym);
-  Symbol *get(StringRef key);
-  std::vector<StringRef> get_keys();
-
-private:
-  typedef tbb::concurrent_hash_map<StringRef, Symbol> MapType;
-
-  MapType map;
-};
-
 class InputSection {
 public:
   InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);
