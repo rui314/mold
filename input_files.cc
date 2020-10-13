@@ -3,7 +3,8 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-std::atomic_int num_symbols;
+std::atomic_int num_defined;
+std::atomic_int num_undefined;
 std::atomic_int num_files;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb) : mb(mb) {}
@@ -35,8 +36,16 @@ void ObjectFile::parse() {
 
   parse1_timer.startTimer();
 
+  // Initialize sections.
   ELFFile<ELF64LE> obj = check(ELFFile<ELF64LE>::create(mb.getBuffer()));
   ArrayRef<ELF64LE::Shdr> sections = CHECK(obj.sections(), this);
+  StringRef section_strtab = CHECK(obj.getSectionStringTable(sections), this);
+
+  this->sections.reserve(sections.size());
+  for (const ELF64LE::Shdr &shdr : sections) {
+    StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
+    this->sections.push_back(new InputSection(this, &shdr, name));
+  }
 
   // Find a symbol table.
   bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
@@ -47,14 +56,15 @@ void ObjectFile::parse() {
   if (!symtab_sec)
     return;
 
-  first_global = symtab_sec->sh_info;
+  this->first_global = symtab_sec->sh_info;
 
-  ArrayRef<ELF64LE::Sym> elf_syms = CHECK(obj.symbols(symtab_sec), this);
+  // Parse symbols
+  this->elf_syms = CHECK(obj.symbols(symtab_sec), this);
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  symbol_instances.resize(elf_syms.size());
-  symbols.resize(elf_syms.size());
+  this->symbol_instances.resize(elf_syms.size());
+  this->symbols.resize(elf_syms.size());
 
   parse1_timer.stopTimer();
   parse2_timer.startTimer();
@@ -62,21 +72,35 @@ void ObjectFile::parse() {
   for (int i = 0; i < elf_syms.size(); i++) {
     StringRef name;
     if (first_global <= i)
-      name = CHECK(elf_syms[i].getName(string_table), this);
-    symbol_instances[i] = {name, this};
+      name = CHECK(this->elf_syms[i].getName(string_table), this);
+    this->symbol_instances[i] = {name, this};
   }
 
   for (int i = 0; i < first_global; i++)
-    symbols[i] = &symbol_instances[i];
+    this->symbols[i] = &this->symbol_instances[i];
 
   parse2_timer.stopTimer();
 }
 
 void ObjectFile::register_defined_symbols() {
   for (int i = first_global; i < symbol_instances.size(); i++) {
+    if (!elf_syms[i].isDefined())
+      continue;
+
     Symbol &sym = symbol_instances[i];
     symbols[i] = symbol_table.add(sym.name, sym);
-    num_symbols++;
+    num_defined++;
+  }
+}
+
+void ObjectFile::register_undefined_symbols() {
+  for (int i = first_global; i < symbol_instances.size(); i++) {
+    if (elf_syms[i].isDefined())
+      continue;
+
+    Symbol &sym = symbol_instances[i];
+    symbols[i] = symbol_table.get(sym.name);
+    num_undefined++;
   }
 }
 

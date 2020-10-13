@@ -35,7 +35,6 @@ using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
 
 class Symbol;
-class InputFile;
 class ObjectFile;
 class InputSection;
 
@@ -126,14 +125,17 @@ private:
 
 class InputSection {
 public:
-  InputSection(ObjectFile *file, ELF64LE::Shdr *hdr, StringRef name);
+  InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
 
   void writeTo(uint8_t *buf);
-
   uint64_t getOffset() const;
   uint64_t getVA() const;
 
-  InputFile *file;
+  StringRef name;
+
+private:
+  const ELF64LE::Shdr *hdr;
+  ObjectFile *file;
 };
 
 //
@@ -145,6 +147,8 @@ public:
   OutputSection(StringRef name);
   void writeTo(uint8_t *buf);
   std::vector<InputSection *> sections;
+
+  StringRef name;
 };
 
 //
@@ -159,14 +163,15 @@ public:
   void register_defined_symbols();
   void register_undefined_symbols();
   StringRef getFilename();
- 
+
+  std::vector<InputSection *> sections;
   int priority;
 
 private:
   MemoryBufferRef mb;
-  std::vector<InputSection> sections;
   std::vector<Symbol *> symbols;
   std::vector<Symbol> symbol_instances;
+  ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
   bool is_alive = false;
 };
@@ -187,5 +192,6 @@ std::string toString(ObjectFile *);
 
 extern SymbolTable symbol_table;
 extern llvm::TimerGroup timers;
-extern std::atomic_int num_symbols;
+extern std::atomic_int num_defined;
+extern std::atomic_int num_undefined;
 extern std::atomic_int num_files;

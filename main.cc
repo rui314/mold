@@ -118,6 +118,7 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
+  // Open input files
 #if 1
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
@@ -148,9 +149,9 @@ int main(int argc, char **argv) {
   }
 #endif
 
-  llvm::errs() << "files=" << files.size() << "\n";
   parse_timer.startTimer();
 
+  // Resolve symbols
 #if 0
   for (ObjectFile *file : files)
     file->parse();
@@ -166,13 +167,34 @@ int main(int argc, char **argv) {
 #if 0
   for (ObjectFile *file : files)
     file->register_defined_symbols();
+
+  for (ObjectFile *file : files)
+    file->register_undefined_symbols();
 #else
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
+
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [](ObjectFile *file) { file->register_undefined_symbols(); });
 #endif
 
   register_timer.stopTimer();
+
+  // Create output sections
+  std::vector<OutputSection *> output_sections;
+  for (ObjectFile *file : files) {
+    for (InputSection *isec : file->sections) {
+      auto *osec = new OutputSection(isec->name);
+      osec->sections.push_back(isec);
+      output_sections.push_back(osec);
+    }
+  }
+
+  llvm::errs() << "    files=" << files.size() << "\n"
+               << "  defined=" << num_defined << "\n"
+               << "undefined=" << num_undefined << "\n";
 
   write();
   return 0;
