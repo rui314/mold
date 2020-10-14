@@ -127,13 +127,15 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
   void writeTo(uint8_t *buf);
-  uint64_t size() const;
+  uint64_t getOnFileSize() const;
 
   StringRef name;
+  uint64_t output_file_offset;
 
 private:
   const ELF64LE::Shdr *hdr;
   ObjectFile *file;
+
 };
 
 //
@@ -144,11 +146,14 @@ class OutputSection {
 public:
   OutputSection(StringRef name);
   void writeTo(uint8_t *buf);
-  uint64_t size() const;
+  uint64_t getOnFileSize() const;
   void setFileOffset(uint64_t off);
 
   std::vector<InputSection *> sections;
   StringRef name;
+
+private:
+  int64_t on_file_size = -1;
 };
 
 //
