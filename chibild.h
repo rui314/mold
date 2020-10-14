@@ -126,7 +126,6 @@ private:
 class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
-
   void writeTo(uint8_t *buf);
   uint64_t size() const;
 
