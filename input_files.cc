@@ -29,13 +29,8 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
-llvm::Timer parse1_timer("parse1", "parse1", timers);
-llvm::Timer parse2_timer("parse2", "parse2", timers);
-
 void ObjectFile::parse() {
   num_files++;
-
-  parse1_timer.startTimer();
 
   // Initialize sections.
   ELFFile<ELF64LE> obj = check(ELFFile<ELF64LE>::create(mb.getBuffer()));
@@ -67,9 +62,6 @@ void ObjectFile::parse() {
   this->symbol_instances.resize(elf_syms.size());
   this->symbols.resize(elf_syms.size());
 
-  parse1_timer.stopTimer();
-  parse2_timer.startTimer();
-
   for (int i = 0; i < elf_syms.size(); i++) {
     StringRef name;
     if (first_global <= i)
@@ -79,8 +71,6 @@ void ObjectFile::parse() {
 
   for (int i = 0; i < first_global; i++)
     this->symbols[i] = &this->symbol_instances[i];
-
-  parse2_timer.stopTimer();
 }
 
 void ObjectFile::register_defined_symbols() {

@@ -130,8 +130,9 @@ int main(int argc, char **argv) {
         files.push_back(file);
 
   // Resolve symbols
-  tbb::parallel_for_each(files.begin(), files.end(),
-                         [&](ObjectFile *file) { file->parse(); });
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [&](ObjectFile *file) { file->parse(); });
 
   tbb::parallel_for_each(
     files.begin(), files.end(),
