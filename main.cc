@@ -100,8 +100,6 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
-llvm::TimerGroup timers("all", "all");
-
 static void mark_live(ObjectFile *file) {
   if (file->is_alive)
     return;
