@@ -112,5 +112,8 @@ StringRef ObjectFile::get_filename() {
 }
 
 std::string toString(ObjectFile *obj) {
-  return obj->get_filename().str();
+  StringRef s = obj->get_filename();
+  if (obj->archive_name == "")
+    return s.str();
+  return (obj->archive_name + ":" + s).str();
 }
