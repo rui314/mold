@@ -13,7 +13,6 @@ SymbolTable symbol_table;
 // Command-line option processing
 //
 
-// Create enum with OPT_xxx values for each option in Options.td
 enum {
   OPT_INVALID = 0,
 #define OPTION(_1, _2, ID, _4, _5, _6, _7, _8, _9, _10, _11, _12) OPT_##ID,
