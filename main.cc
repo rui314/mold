@@ -58,7 +58,7 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 // Main
 //
 
-static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef mb) {
+static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   std::unique_ptr<Archive> file =
     CHECK(Archive::create(mb), mb.getBufferIdentifier() + ": failed to parse archive");
 
@@ -88,7 +88,7 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
 
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
-    for (MemoryBufferRef member : getArchiveMembers(mb))
+    for (MemoryBufferRef member : get_archive_members(mb))
       vec.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
