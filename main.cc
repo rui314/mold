@@ -116,10 +116,6 @@ int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
-  llvm::Timer add_files_timer("add_files", "add_files", timers);
-  llvm::Timer parse_timer("parse", "parse", timers);
-  llvm::Timer register_timer("register_defined_symbols", "register_defined_symbols", timers);
-
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
   else
@@ -128,58 +124,15 @@ int main(int argc, char **argv) {
   std::vector<ObjectFile *> files;
 
   // Open input files
-#if 0
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       for (ObjectFile *file : read_file(arg->getValue()))
         files.push_back(file);
-#else
-  {
-    add_files_timer.startTimer();
-    std::vector<StringRef> paths;
-    for (auto *arg : args)
-      if (arg->getOption().getID() == OPT_INPUT)
-        paths.push_back(arg->getValue());
-
-    std::vector<std::vector<ObjectFile *>> tmp;
-    tmp.resize(paths.size());
-
-    tbb::parallel_for(tbb::blocked_range<int>(0, paths.size()),
-                      [&](const tbb::blocked_range<int> &range) {
-                        assert(range.size() == 1);
-                        int i = range.begin();
-                        tmp[i] = read_file(paths[i]);
-                      },
-                      tbb::simple_partitioner());
-
-    for (std::vector<ObjectFile *> t : tmp)
-      files.insert(files.end(), t.begin(), t.end());
-    add_files_timer.stopTimer();
-  }
-#endif
-
-  parse_timer.startTimer();
 
   // Resolve symbols
-#if 0
-  for (ObjectFile *file : files)
-    file->parse();
-#else
   tbb::parallel_for_each(files.begin(), files.end(),
                          [&](ObjectFile *file) { file->parse(); });
-#endif
 
-  parse_timer.stopTimer();
-
-  register_timer.startTimer();
-
-#if 0
-  for (ObjectFile *file : files)
-    file->register_defined_symbols();
-
-  for (ObjectFile *file : files)
-    file->register_undefined_symbols();
-#else
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
@@ -187,9 +140,6 @@ int main(int argc, char **argv) {
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_undefined_symbols(); });
-#endif
-
-  register_timer.stopTimer();
 
   // Liveness propagation
   for (ObjectFile *file : files)
