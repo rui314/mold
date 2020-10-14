@@ -104,10 +104,10 @@ void ObjectFile::register_undefined_symbols() {
   }
 }
 
-StringRef ObjectFile::getFilename() {
+StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }
 
 std::string toString(ObjectFile *obj) {
-  return obj->getFilename().str();
+  return obj->get_filename().str();
 }
