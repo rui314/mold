@@ -175,7 +175,6 @@ int main(int argc, char **argv) {
   llvm::errs() << "    files=" << files.size() << "\n"
                << "  defined=" << num_defined << "\n"
                << "undefined=" << num_undefined << "\n";
-  return 0;
 
   write();
   return 0;
