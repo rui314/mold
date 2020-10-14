@@ -173,6 +173,7 @@ int main(int argc, char **argv) {
                << "  defined=" << num_defined << "\n"
                << "undefined=" << num_undefined << "\n";
 
-  write();
+  OutputFile output(filesize);
+  output.commit();
   return 0;
 }
