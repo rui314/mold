@@ -128,8 +128,7 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
 
   void writeTo(uint8_t *buf);
-  uint64_t getOffset() const;
-  uint64_t getVA() const;
+  uint64_t size() const;
 
   StringRef name;
 
@@ -146,8 +145,10 @@ class OutputSection {
 public:
   OutputSection(StringRef name);
   void writeTo(uint8_t *buf);
-  std::vector<InputSection *> sections;
+  uint64_t size() const;
+  void setFileOffset(uint64_t off);
 
+  std::vector<InputSection *> sections;
   StringRef name;
 };
 
