@@ -171,6 +171,7 @@ public:
 
   std::vector<InputSection *> sections;
   int priority;
+  bool is_alive = false;
 
 private:
   MemoryBufferRef mb;
@@ -178,7 +179,6 @@ private:
   std::vector<Symbol> symbol_instances;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
-  bool is_alive = false;
 };
 
 //

@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
   std::vector<ObjectFile *> files;
 
   // Open input files
-#if 1
+#if 0
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       for (ObjectFile *file : read_file(arg->getValue()))
@@ -182,6 +182,11 @@ int main(int argc, char **argv) {
 
   register_timer.stopTimer();
 
+  // Remove archive members that weren't used by any other
+  // object files.
+  std::remove_if(files.begin(), files.end(),
+                 [](ObjectFile *file) { return !file->is_alive; });
+  
   // Create output sections
   std::vector<OutputSection *> output_sections;
   for (ObjectFile *file : files) {
@@ -192,9 +197,19 @@ int main(int argc, char **argv) {
     }
   }
 
+  int64_t filesize = 0;
+  for (OutputSection *sec : output_sections) {
+    sec->set_file_offset(filesize);
+    filesize += sec->get_on_file_size();
+  }
+
+  llvm::errs() << "output_sections=" << output_sections.size() << "\n"
+               << "       filesize=" << filesize << "\n";
+
   llvm::errs() << "    files=" << files.size() << "\n"
                << "  defined=" << num_defined << "\n"
                << "undefined=" << num_undefined << "\n";
+  return 0;
 
   write();
   return 0;
