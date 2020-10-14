@@ -191,6 +191,20 @@ private:
 void write();
 
 //
+// output_file.cc
+//
+
+class OutputFile {
+public:
+  OutputFile(uint64_t size);
+  void commit();
+
+private:
+  std::unique_ptr<llvm::FileOutputBuffer> output_buffer;
+  uint8_t *buf;
+};
+
+//
 // main.cc
 //
 
