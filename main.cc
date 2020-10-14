@@ -110,6 +110,7 @@ static void mark_live(ObjectFile *file) {
 }
 
 int main(int argc, char **argv) {
+  // Parse command line options
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
 
