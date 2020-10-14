@@ -90,10 +90,10 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : getArchiveMembers(mb))
-      vec.push_back(new ObjectFile(member));
+      vec.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
-    vec.push_back(new ObjectFile(mb));
+    vec.push_back(new ObjectFile(mb, ""));
     break;
   default:
     error(path + ": unknown file type");

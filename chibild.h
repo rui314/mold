@@ -162,7 +162,7 @@ private:
 
 class ObjectFile { 
 public:
-  ObjectFile(MemoryBufferRef mb);
+  ObjectFile(MemoryBufferRef mb, StringRef archive_name);
 
   void parse();
   void register_defined_symbols();
@@ -170,6 +170,7 @@ public:
   StringRef get_filename();
 
   std::vector<InputSection *> sections;
+  StringRef archive_name;
   int priority;
   bool is_alive = false;
 

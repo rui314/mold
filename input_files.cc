@@ -7,7 +7,8 @@ std::atomic_int num_defined;
 std::atomic_int num_undefined;
 std::atomic_int num_files;
 
-ObjectFile::ObjectFile(MemoryBufferRef mb) : mb(mb) {}
+ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
+  : mb(mb), archive_name(archive_name) {}
 
 MemoryBufferRef readFile(StringRef path) {
   auto mbOrErr = MemoryBuffer::getFile(path, -1, false);
