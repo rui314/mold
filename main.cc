@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     if (file->archive_name == "")
       mark_live(file);
 
-  // Remove archive members that weren't used by any other
+  // Remove archive members that weren't used by any live
   // object files.
   files.erase(std::remove_if(files.begin(), files.end(),
                              [](ObjectFile *file) { return !file->is_alive; }),
