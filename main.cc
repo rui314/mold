@@ -196,10 +196,6 @@ int main(int argc, char **argv) {
     if (file->archive_name == "")
       mark_live(file);
 
-  for (ObjectFile *file : files)
-    if (!file->is_alive)
-      llvm::errs() << toString(file) << "\n";
-
   // Remove archive members that weren't used by any other
   // object files.
   files.erase(std::remove_if(files.begin(), files.end(),
