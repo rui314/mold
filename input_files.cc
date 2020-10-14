@@ -101,6 +101,8 @@ void ObjectFile::register_undefined_symbols() {
 
     Symbol &sym = symbol_instances[i];
     symbols[i] = symbol_table.get(sym.name);
+    if (symbols[i])
+      liveness_edges.insert(symbols[i]->file);
     num_undefined++;
   }
 }

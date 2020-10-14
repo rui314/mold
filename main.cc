@@ -103,6 +103,15 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
 
 llvm::TimerGroup timers("all", "all");
 
+static void mark_live(ObjectFile *file) {
+  if (file->is_alive)
+    return;
+
+  file->is_alive = true;
+  for (ObjectFile *other : file->liveness_edges)
+    mark_live(other);
+}
+
 int main(int argc, char **argv) {
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
@@ -182,10 +191,16 @@ int main(int argc, char **argv) {
 
   register_timer.stopTimer();
 
+  // Liveness propagation
+  for (ObjectFile *file : files)
+    if (file->archive_name == "")
+      mark_live(file);
+
   // Remove archive members that weren't used by any other
   // object files.
-  std::remove_if(files.begin(), files.end(),
-                 [](ObjectFile *file) { return !file->is_alive; });
+  files.erase(std::remove_if(files.begin(), files.end(),
+                             [](ObjectFile *file) { return !file->is_alive; }),
+              files.end());
   
   // Create output sections
   std::vector<OutputSection *> output_sections;

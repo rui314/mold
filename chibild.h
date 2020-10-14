@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 
 using llvm::ArrayRef;
 using llvm::ErrorOr;
@@ -173,6 +174,7 @@ public:
   StringRef archive_name;
   int priority;
   bool is_alive = false;
+  std::unordered_set<ObjectFile *> liveness_edges;
 
 private:
   MemoryBufferRef mb;
