@@ -143,38 +143,48 @@ private:
 // output_sections.cc
 //
 
-class OutputBlock {
+class OutputChunk {
 public:
-  virtual ~OutputBlock() {}
+  virtual ~OutputChunk() {}
+
+  virtual void writeTo(uint8_t *buf) = 0;
+
+  virtual uint64_t get_on_file_size() const = 0;
+
+  virtual void set_file_offset(uint64_t off) = 0;
+  virtual uint64_t get_file_offset() const = 0;
 };
 
-class OutputSection : public OutputBlock {
+class OutputEhdr : public OutputChunk {
+public:
+  ELF64LE::Ehdr hdr;
+};
+
+class OutputShdr : public OutputChunk {
+public:
+  std::vector<ELF64LE::Shdr> hdr;
+};
+
+class OutputPhdr : public OutputChunk {
+public:
+  std::vector<ELF64LE::Phdr> hdr;
+};
+
+class OutputSection : public OutputChunk {
 public:
   OutputSection(StringRef name);
-  void writeTo(uint8_t *buf);
-  uint64_t get_on_file_size() const;
-  void set_file_offset(uint64_t off);
+
+  void writeTo(uint8_t *buf) override;
+  uint64_t get_on_file_size() const override;
+  void set_file_offset(uint64_t off) override;
+  uint64_t get_file_offset() const override;
 
   std::vector<InputSection *> sections;
   StringRef name;
 
 private:
-  int64_t on_file_size = -1;
-};
-
-class OutputEhdr : public OutputBlock {
-public:
-  ELF64LE::Ehdr hdr;
-};
-
-class OutputShdr : public OutputBlock {
-public:
-  std::vector<ELF64LE::Shdr> hdr;
-};
-
-class OutputPhdr : public OutputBlock {
-public:
-  std::vector<ELF64LE::Phdr> hdr;
+  uint64_t file_offset = 0;
+  uint64_t on_file_size = -1;
 };
 
 //

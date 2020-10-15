@@ -8,10 +8,16 @@ uint64_t OutputSection::get_on_file_size() const {
 }
 
 void OutputSection::set_file_offset(uint64_t off) {
-  uint64_t orig = off;
+  file_offset = off;
   for (InputSection *sec : sections) {
     sec->output_file_offset = off;
     off += sec->get_on_file_size();
   }
-  on_file_size = off - orig;
+  on_file_size = off - file_offset;
 }
+
+uint64_t OutputSection::get_file_offset() const {
+  return file_offset;
+}
+
+void OutputSection::writeTo(uint8_t *buf) {}
