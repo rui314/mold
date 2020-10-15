@@ -159,16 +159,28 @@ protected:
 
 class OutputEhdr : public OutputChunk {
 public:
+  uint64_t get_size() const override {
+    return sizeof(hdr);
+  }
+
   ELF64LE::Ehdr hdr;
 };
 
 class OutputShdr : public OutputChunk {
 public:
+  uint64_t get_size() const override {
+    return hdr.size() * sizeof(hdr[0]);
+  }
+
   std::vector<ELF64LE::Shdr> hdr;
 };
 
 class OutputPhdr : public OutputChunk {
 public:
+  uint64_t get_size() const override {
+    return hdr.size() * sizeof(hdr[0]);
+  }
+
   std::vector<ELF64LE::Phdr> hdr;
 };
 
