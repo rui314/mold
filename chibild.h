@@ -19,8 +19,9 @@
 #include "tbb/partitioner.h"
 
 #include <atomic>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <unordered_set>
 
@@ -159,27 +160,24 @@ protected:
 
 class OutputEhdr : public OutputChunk {
 public:
-  uint64_t get_size() const override {
-    return sizeof(hdr);
-  }
+  void writeTo(uint8_t *buf) override;
+  uint64_t get_size() const override;
 
   ELF64LE::Ehdr hdr;
 };
 
 class OutputShdr : public OutputChunk {
 public:
-  uint64_t get_size() const override {
-    return hdr.size() * sizeof(hdr[0]);
-  }
+  void writeTo(uint8_t *buf) override;
+  uint64_t get_size() const override;
 
   std::vector<ELF64LE::Shdr> hdr;
 };
 
 class OutputPhdr : public OutputChunk {
 public:
-  uint64_t get_size() const override {
-    return hdr.size() * sizeof(hdr[0]);
-  }
+  void writeTo(uint8_t *buf) override;
+  uint64_t get_size() const override;
 
   std::vector<ELF64LE::Phdr> hdr;
 };
