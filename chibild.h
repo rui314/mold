@@ -143,7 +143,12 @@ private:
 // output_sections.cc
 //
 
-class OutputSection {
+class OutputBlock {
+public:
+  virtual ~OutputBlock() {}
+};
+
+class OutputSection : public OutputBlock {
 public:
   OutputSection(StringRef name);
   void writeTo(uint8_t *buf);
@@ -155,6 +160,21 @@ public:
 
 private:
   int64_t on_file_size = -1;
+};
+
+class OutputEhdr : public OutputBlock {
+public:
+  ELF64LE::Ehdr hdr;
+};
+
+class OutputShdr : public OutputBlock {
+public:
+  std::vector<ELF64LE::Shdr> hdr;
+};
+
+class OutputPhdr : public OutputBlock {
+public:
+  std::vector<ELF64LE::Phdr> hdr;
 };
 
 //
