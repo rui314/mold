@@ -163,8 +163,8 @@ int main(int argc, char **argv) {
 
   int64_t filesize = 0;
   for (OutputSection *sec : output_sections) {
-    sec->set_file_offset(filesize);
-    filesize += sec->get_on_file_size();
+    sec->set_offset(filesize);
+    filesize += sec->get_size();
   }
 
   llvm::errs() << "output_sections=" << output_sections.size() << "\n"

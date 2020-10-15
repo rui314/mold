@@ -128,15 +128,15 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
   void writeTo(uint8_t *buf);
-  uint64_t get_on_file_size() const;
+  uint64_t get_size() const;
 
   StringRef name;
   uint64_t output_file_offset;
+  int64_t offset = -1;
 
 private:
   const ELF64LE::Shdr *hdr;
   ObjectFile *file;
-
 };
 
 //
@@ -148,11 +148,13 @@ public:
   virtual ~OutputChunk() {}
 
   virtual void writeTo(uint8_t *buf) = 0;
+  virtual void set_offset(uint64_t off) { offset = off; }
+  uint64_t get_offset() const { return offset; }
+  virtual uint64_t get_size() const = 0;
 
-  virtual uint64_t get_on_file_size() const = 0;
-
-  virtual void set_file_offset(uint64_t off) = 0;
-  virtual uint64_t get_file_offset() const = 0;
+protected:
+  int64_t offset = -1;
+  int64_t size = -1;
 };
 
 class OutputEhdr : public OutputChunk {
@@ -175,9 +177,8 @@ public:
   OutputSection(StringRef name);
 
   void writeTo(uint8_t *buf) override;
-  uint64_t get_on_file_size() const override;
-  void set_file_offset(uint64_t off) override;
-  uint64_t get_file_offset() const override;
+  uint64_t get_size() const override;
+  void set_offset(uint64_t off) override;
 
   std::vector<InputSection *> sections;
   StringRef name;
