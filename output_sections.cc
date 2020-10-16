@@ -1,34 +1,23 @@
 #include "chibild.h"
 
-void OutputEhdr::writeTo(uint8_t *buf) {
-  memcpy(buf + offset, &hdr, sizeof(hdr));
-}
+using namespace llvm::ELF;
 
-uint64_t OutputEhdr::get_size() const {
-  return sizeof(hdr);
-}
+OutputEhdr::OutputEhdr() {
+  memcpy(&hdr.e_ident, "\177ELF", 4);
 
-void OutputShdr::writeTo(uint8_t *buf) {
-  memcpy(buf + offset, &hdr[0], get_size());
-}
-
-uint64_t OutputShdr::get_size() const {
-  return hdr.size() * sizeof(hdr[0]);
-}
-
-void OutputPhdr::writeTo(uint8_t *buf) {
-  memcpy(buf + offset, &hdr[0], get_size());
-}
-
-uint64_t OutputPhdr::get_size() const {
-  return hdr.size() * sizeof(hdr[0]);
-}
-
-OutputSection::OutputSection(StringRef name) : name(name) {}
-
-uint64_t OutputSection::get_size() const {
-  assert(size >= 0);
-  return size;
+  hdr.e_ident[EI_CLASS] = ELFCLASS64;
+  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_VERSION] = EV_CURRENT;
+  hdr.e_ident[EI_OSABI] = 0;
+  hdr.e_ident[EI_ABIVERSION] = 0;
+  hdr.e_machine = EM_X86_64;
+  hdr.e_version = EV_CURRENT;
+  hdr.e_flags = 0;
+  hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
+  hdr.e_phnum = 0;
+  hdr.e_shentsize = sizeof(ELF64LE::Shdr);
+  hdr.e_phoff = sizeof(ELF64LE::Ehdr);
+  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
 }
 
 void OutputSection::set_offset(uint64_t off) {
@@ -38,9 +27,4 @@ void OutputSection::set_offset(uint64_t off) {
     off += sec->get_size();
   }
   size = off - offset;
-}
-
-void OutputSection::writeTo(uint8_t *buf) {
-  for (InputSection *sec : sections)
-    sec->writeTo(buf);
 }

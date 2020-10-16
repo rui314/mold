@@ -128,7 +128,7 @@ private:
 class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
-  void writeTo(uint8_t *buf);
+  void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
   StringRef name;
@@ -148,7 +148,7 @@ class OutputChunk {
 public:
   virtual ~OutputChunk() {}
 
-  virtual void writeTo(uint8_t *buf) = 0;
+  virtual void copy_to(uint8_t *buf) = 0;
   virtual void set_offset(uint64_t off) { offset = off; }
   uint64_t get_offset() const { return offset; }
   virtual uint64_t get_size() const = 0;
@@ -158,36 +158,65 @@ protected:
   int64_t size = -1;
 };
 
+// ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  void writeTo(uint8_t *buf) override;
-  uint64_t get_size() const override;
+  OutputEhdr();
 
-  ELF64LE::Ehdr hdr;
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, &hdr, sizeof(hdr));
+  }
+
+  uint64_t get_size() const override {
+    return sizeof(hdr);
+  }
+
+  ELF64LE::Ehdr hdr = {};
 };
 
+// Section header
 class OutputShdr : public OutputChunk {
 public:
-  void writeTo(uint8_t *buf) override;
-  uint64_t get_size() const override;
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, &hdr[0], get_size());
+  }
+
+  uint64_t get_size() const override {
+    return hdr.size() * sizeof(hdr[0]);
+  }
 
   std::vector<ELF64LE::Shdr> hdr;
 };
 
+// Program header
 class OutputPhdr : public OutputChunk {
 public:
-  void writeTo(uint8_t *buf) override;
-  uint64_t get_size() const override;
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, &hdr[0], get_size());
+  }
+
+  uint64_t get_size() const override {
+    return hdr.size() * sizeof(hdr[0]);
+  }
 
   std::vector<ELF64LE::Phdr> hdr;
 };
 
+// Sections
 class OutputSection : public OutputChunk {
 public:
-  OutputSection(StringRef name);
+  OutputSection(StringRef name) : name(name) {}
 
-  void writeTo(uint8_t *buf) override;
-  uint64_t get_size() const override;
+  void copy_to(uint8_t *buf) override {
+    for (InputSection *sec : sections)
+      sec->copy_to(buf);
+  }
+
+  uint64_t get_size() const override {
+    assert(size >= 0);
+    return size;
+  }
+
   void set_offset(uint64_t off) override;
 
   std::vector<InputSection *> sections;
@@ -216,6 +245,7 @@ public:
   int priority;
   bool is_alive = false;
   std::unordered_set<ObjectFile *> liveness_edges;
+  ELFFile<ELF64LE> obj;
 
 private:
   MemoryBufferRef mb;

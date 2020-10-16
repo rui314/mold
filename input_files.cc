@@ -8,7 +8,8 @@ std::atomic_int num_undefined;
 std::atomic_int num_files;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
-  : mb(mb), archive_name(archive_name) {}
+  : mb(mb), archive_name(archive_name),
+    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
 
 MemoryBufferRef readFile(StringRef path) {
   auto mbOrErr = MemoryBuffer::getFile(path, -1, false);
@@ -33,7 +34,6 @@ void ObjectFile::parse() {
   num_files++;
 
   // Initialize sections.
-  ELFFile<ELF64LE> obj = check(ELFFile<ELF64LE>::create(mb.getBuffer()));
   ArrayRef<ELF64LE::Shdr> sections = CHECK(obj.sections(), this);
   StringRef section_strtab = CHECK(obj.getSectionStringTable(sections), this);
 

@@ -7,5 +7,7 @@ uint64_t InputSection::get_size() const {
   return hdr->sh_size;
 }
 
-void InputSection::writeTo(uint8_t *buf) {
+void InputSection::copy_to(uint8_t *buf) {
+  ArrayRef<uint8_t> data = check(file->obj.getSectionContents(*hdr));
+  memcpy(buf + offset, &data[0], data.size());
 }
