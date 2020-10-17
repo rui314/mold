@@ -174,6 +174,10 @@ int main(int argc, char **argv) {
                << "  defined=" << num_defined << "\n"
                << "undefined=" << num_undefined << "\n";
 
+  out::ehdr = new OutputEhdr;
+  out::shdr = new OutputShdr;
+  out::phdr = new OutputPhdr;
+
   OutputFile output(filesize);
   output.commit();
   return 0;
