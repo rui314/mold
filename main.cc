@@ -121,26 +121,35 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
+  llvm::TimerGroup timers("all", "all");
+  llvm::Timer open_timer("opne", "open", timers);
+  llvm::Timer parse_timer("parse", "parse", timers);
+  llvm::Timer add_symbols_timer("add_symbols", "add_symbols", timers);
+
   // Open input files
+  open_timer.startTimer();
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       for (ObjectFile *file : read_file(arg->getValue()))
         files.push_back(file);
+  open_timer.stopTimer();
 
   // Resolve symbols
+  parse_timer.startTimer();
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [&](ObjectFile *file) { file->parse(); });
+  parse_timer.stopTimer();
 
+  add_symbols_timer.startTimer();
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
 
-  return 0;
-
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_undefined_symbols(); });
+  add_symbols_timer.stopTimer();
 
   // Liveness propagation
   for (ObjectFile *file : files)
