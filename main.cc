@@ -136,6 +136,8 @@ int main(int argc, char **argv) {
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_defined_symbols(); });
 
+  return 0;
+
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [](ObjectFile *file) { file->register_undefined_symbols(); });
@@ -145,6 +147,7 @@ int main(int argc, char **argv) {
     if (file->archive_name == "")
       mark_live(file);
 
+#if 0
   // Remove archive members that weren't used by any live
   // object files.
   files.erase(std::remove_if(files.begin(), files.end(),
@@ -167,9 +170,11 @@ int main(int argc, char **argv) {
     filesize += sec->get_size();
   }
 
+
   llvm::errs() << "output_sections=" << output_sections.size() << "\n"
                << "       filesize=" << filesize << "\n";
 
+#endif
   llvm::errs() << "    files=" << files.size() << "\n"
                << "  defined=" << num_defined << "\n"
                << "undefined=" << num_undefined << "\n";
@@ -178,7 +183,5 @@ int main(int argc, char **argv) {
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
 
-  OutputFile output(filesize);
-  output.commit();
   return 0;
 }

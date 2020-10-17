@@ -90,7 +90,28 @@ class ObjectFile;
 // intern.cc
 //
 
-const char *intern(StringRef s);
+class InternedString {
+public:
+  InternedString() {}
+
+  InternedString(const char *data_, size_t size_)
+    : data_(data_), size_(size_) {}
+
+  InternedString(const InternedString &other)
+    : data_(other.data_), size_(other.size_) {}
+
+  explicit InternedString(StringRef s);
+  explicit operator StringRef() const { return {data_, size_}; }
+  
+  const char *data() { return data_; }
+  uint32_t size() { return size_; }
+
+private:
+  const char *data_ = nullptr;
+  uint32_t size_ = 0;
+};
+
+inline InternedString intern(StringRef s) { return InternedString(s); }
 
 //
 // symtab.cc
@@ -98,31 +119,17 @@ const char *intern(StringRef s);
 
 class Symbol {
 public:
-  StringRef name;
+  InternedString name;
   ObjectFile *file;
 };
 
-namespace tbb {
-template<>
-struct tbb_hash_compare<StringRef> {
-  static size_t hash(const StringRef &k) {
-    return llvm::hash_value(k);
-  }
-
-  static bool equal(const StringRef &k1, const StringRef &k2) {
-    return k1 == k2;
-  }
-};
-}
-
 class SymbolTable {
 public:
-  Symbol *add(StringRef key, Symbol sym);
-  Symbol *get(StringRef key);
-  std::vector<StringRef> get_keys();
+  Symbol *add(InternedString key, Symbol sym);
+  Symbol *get(InternedString key);
 
 private:
-  typedef tbb::concurrent_hash_map<StringRef, Symbol> MapType;
+  typedef tbb::concurrent_hash_map<uintptr_t, Symbol> MapType;
 
   MapType map;
 };

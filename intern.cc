@@ -1,13 +1,30 @@
 #include "chibild.h"
 
-typedef tbb::concurrent_hash_map<StringRef, const char *> MapType;
+namespace tbb {
+template<>
+struct tbb_hash_compare<StringRef> {
+  static size_t hash(const StringRef &k) {
+    return llvm::hash_value(k);
+  }
+
+  static bool equal(const StringRef &k1, const StringRef &k2) {
+    return k1 == k2;
+  }
+};
+}
+
+typedef tbb::concurrent_hash_map<StringRef, InternedString> MapType;
 
 static MapType map;
 
-const char *intern(StringRef s) {
+InternedString::InternedString(StringRef s) {
+  if (s.size() == 0)
+    return;
+
   MapType::accessor acc;
   map.insert(acc, s);
-  if (acc->second == nullptr)
-    acc->second = s.data();
-  return acc->second;
+  if (acc->second.data() == nullptr)
+    acc->second = {s.data(), s.size()};
+  data_ = acc->second.data();
+  size_ = acc->second.size();
 }

@@ -66,7 +66,7 @@ void ObjectFile::parse() {
     StringRef name;
     if (first_global <= i)
       name = CHECK(this->elf_syms[i].getName(string_table), this);
-    this->symbol_instances[i] = {name, this};
+    this->symbol_instances[i] = {intern(name), this};
   }
 
   for (int i = 0; i < first_global; i++)
