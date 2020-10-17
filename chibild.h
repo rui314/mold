@@ -93,12 +93,10 @@ class ObjectFile;
 class InternedString {
 public:
   InternedString() {}
+  InternedString(const InternedString &other) = default;
 
   InternedString(const char *data_, size_t size_)
     : data_(data_), size_(size_) {}
-
-  InternedString(const InternedString &other)
-    : data_(other.data_), size_(other.size_) {}
 
   explicit InternedString(StringRef s);
   explicit operator StringRef() const { return {data_, size_}; }
