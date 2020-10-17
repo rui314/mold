@@ -11,12 +11,16 @@ OutputEhdr::OutputEhdr() {
   hdr.e_ident[EI_ABIVERSION] = 0;
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
+  hdr.e_entry = 0;
+  hdr.e_phoff = 0;
+  hdr.e_shoff = 0;
   hdr.e_flags = 0;
   hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
+  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
   hdr.e_phnum = 0;
   hdr.e_shentsize = sizeof(ELF64LE::Shdr);
-  hdr.e_phoff = sizeof(ELF64LE::Ehdr);
-  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
+  hdr.e_shnum = 0;
+  hdr.e_shstrndx = 0;
 }
 
 void OutputSection::set_offset(uint64_t off) {
