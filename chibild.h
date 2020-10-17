@@ -125,19 +125,36 @@ private:
 // input_sections.cc
 //
 
-class InputSection {
+class InputChunk {
+public:
+  virtual void copy_to(uint8_t *buf) = 0;
+  virtual void relocate(uint8_t *buf) {}
+
+  StringRef name;
+};
+
+class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
   void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
-  StringRef name;
   uint64_t output_file_offset;
   int64_t offset = -1;
 
 private:
   const ELF64LE::Shdr *hdr;
   ObjectFile *file;
+};
+
+class StringTableSection : public InputChunk {
+public:
+  StringTableSection(StringRef name) {
+    this->name = name;
+  }
+
+  uint64_t addString(StringRef s);
+  void copy_to(uint8_t *buf) override;
 };
 
 //
