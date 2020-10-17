@@ -168,8 +168,6 @@ public:
   uint64_t get_size() const override {
     return sizeof(ELF64LE::Ehdr);
   }
-
-  static OutputEhdr instance;
 };
 
 // Section header
@@ -185,7 +183,6 @@ public:
     return hdr.size() * sizeof(hdr[0]);
   }
 
-  static OutputShdr instance;
   std::vector<ELF64LE::Shdr> hdr;
 };
 
@@ -202,7 +199,6 @@ public:
     return hdr.size() * sizeof(hdr[0]);
   }
 
-  static OutputPhdr instance;
   std::vector<ELF64LE::Phdr> hdr;
 };
 
@@ -232,6 +228,12 @@ private:
   uint64_t file_offset = 0;
   uint64_t on_file_size = -1;
 };
+
+namespace out {
+extern OutputEhdr *ehdr;
+extern OutputShdr *shdr;
+extern OutputPhdr *phdr;
+}
 
 //
 // input_files.cc
