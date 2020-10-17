@@ -4,7 +4,6 @@ using namespace llvm::ELF;
 
 OutputEhdr::OutputEhdr() {
   memcpy(&hdr.e_ident, "\177ELF", 4);
-
   hdr.e_ident[EI_CLASS] = ELFCLASS64;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
