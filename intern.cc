@@ -1,12 +1,13 @@
 #include "chibild.h"
 
-IString::MapType IString::map;
+typedef tbb::concurrent_hash_map<StringRef, const char *> MapType;
 
-IString::IString(StringRef s) {
+static MapType map;
+
+const char *intern(StringRef s) {
   MapType::accessor acc;
   map.insert(acc, s);
-  if (acc->second.data() == nullptr)
-    acc->second = s;
-  data = acc->second.data();
-  size = acc->second.size();
+  if (acc->second == nullptr)
+    acc->second = s.data();
+  return acc->second;
 }
