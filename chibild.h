@@ -87,6 +87,25 @@ class InputSection;
 class ObjectFile;
 
 //
+// intern.cc
+//
+
+class IString {
+  IString() : IString("") {}
+  IString(const IString &other) : data(other.data), size(other.size) {}
+  IString(StringRef s);
+
+  bool operator==(const IString &other) { return data == other.data; }
+
+public:
+  typedef tbb::concurrent_hash_map<StringRef, StringRef> MapType;
+  static MapType map;
+
+  const char *data;
+  uint32_t size;
+};
+
+//
 // symtab.cc
 //
 
