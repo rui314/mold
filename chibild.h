@@ -149,6 +149,7 @@ public:
   virtual ~OutputChunk() {}
 
   virtual void copy_to(uint8_t *buf) = 0;
+  virtual void relocate(uint8_t *buf) = 0;
   virtual void set_offset(uint64_t off) { offset = off; }
   uint64_t get_offset() const { return offset; }
   virtual uint64_t get_size() const = 0;
@@ -161,17 +162,14 @@ protected:
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  OutputEhdr();
-
-  void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, &hdr, sizeof(hdr));
-  }
+  void copy_to(uint8_t *buf) override {}
+  void relocate(uint8_t *buf) override;
 
   uint64_t get_size() const override {
-    return sizeof(hdr);
+    return sizeof(ELF64LE::Ehdr);
   }
 
-  ELF64LE::Ehdr hdr = {};
+  static OutputEhdr instance;
 };
 
 // Section header
@@ -181,10 +179,13 @@ public:
     memcpy(buf + offset, &hdr[0], get_size());
   }
 
+  void relocate(uint8_t *buf) override {}
+
   uint64_t get_size() const override {
     return hdr.size() * sizeof(hdr[0]);
   }
 
+  static OutputShdr instance;
   std::vector<ELF64LE::Shdr> hdr;
 };
 
@@ -195,10 +196,13 @@ public:
     memcpy(buf + offset, &hdr[0], get_size());
   }
 
+  void relocate(uint8_t *buf) override {}
+
   uint64_t get_size() const override {
     return hdr.size() * sizeof(hdr[0]);
   }
 
+  static OutputPhdr instance;
   std::vector<ELF64LE::Phdr> hdr;
 };
 
@@ -211,6 +215,8 @@ public:
     for (InputSection *sec : sections)
       sec->copy_to(buf);
   }
+
+  void relocate(uint8_t *buf) override {}
 
   uint64_t get_size() const override {
     assert(size >= 0);
