@@ -14,6 +14,7 @@
 #include "llvm/Support/Timer.h"
 #include "tbb/blocked_range.h"
 #include "tbb/concurrent_hash_map.h"
+#include "tbb/concurrent_unordered_set.h"
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
