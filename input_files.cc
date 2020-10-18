@@ -99,9 +99,8 @@ void ObjectFile::register_defined_symbols() {
 }
 
 void ObjectFile::register_undefined_symbols() {
-  if (is_alive)
+  if (is_alive.exchange(true))
     return;
-  is_alive = true;
 
   for (int i = first_global; i < symbols.size(); i++) {
     if (elf_syms[i].isDefined())
@@ -109,10 +108,7 @@ void ObjectFile::register_undefined_symbols() {
     num_undefined++;
 
     Symbol *sym = symbols[i];
-
-    if (sym->file == nullptr)
-      error("undefined symbol: " + toString(this));
-    if (sym->file->is_in_archive() && !sym->file->is_alive)
+    if (sym->file && sym->file->is_in_archive() && !sym->file->is_alive)
       sym->file->register_undefined_symbols();
   }
 }

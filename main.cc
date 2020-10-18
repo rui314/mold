@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
         files.push_back(file);
   open_timer.stopTimer();
 
-  // Resolve symbols
+  // Parse input files
   parse_timer.startTimer();
   tbb::parallel_for_each(
     files.begin(), files.end(),
@@ -134,11 +134,16 @@ int main(int argc, char **argv) {
   for (int i = 0; i < files.size(); i++)
     files[i]->priority = files[i]->is_in_archive() ? i + (1 << 31) : i;
 
+  // Resolve symbols
   add_symbols_timer.startTimer();
 
   tbb::parallel_for_each(
     files.begin(), files.end(),
     [&](ObjectFile *file) { file->register_defined_symbols(); });
+
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [&](ObjectFile *file) { file->register_undefined_symbols(); });
 
   add_symbols_timer.stopTimer();
 
@@ -162,7 +167,8 @@ int main(int argc, char **argv) {
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
 
-  llvm::outs() << "num_defined=" << num_defined << "\n";
+  llvm::outs() << "  num_defined=" << num_defined << "\n"
+               << "num_undefined=" << num_undefined << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();

@@ -253,7 +253,7 @@ public:
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
   uint32_t priority;
-  bool is_alive;
+  std::atomic_bool is_alive;
 
 private:
   MemoryBufferRef mb;
