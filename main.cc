@@ -132,13 +132,11 @@ int main(int argc, char **argv) {
   parse_timer.stopTimer();
 
   add_symbols_timer.startTimer();
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [](ObjectFile *file) { file->register_defined_symbols(); });
 
   tbb::parallel_for_each(
     files.begin(), files.end(),
-    [](ObjectFile *file) { file->register_undefined_symbols(); });
+    [&](ObjectFile *file) { file->register_defined_symbols(); });
+
   add_symbols_timer.stopTimer();
 
   // Create output sections
@@ -160,6 +158,8 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
+
+  llvm::outs() << "num_defined=" << num_defined << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();

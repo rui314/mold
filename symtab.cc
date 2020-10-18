@@ -1,5 +1,9 @@
 #include "chibild.h"
 
+std::string toString(Symbol sym) {
+  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
+}
+
 Symbol *SymbolTable::add(Symbol sym) {
   MapType::accessor acc;
   map.insert(acc, (uintptr_t)sym.name.data());

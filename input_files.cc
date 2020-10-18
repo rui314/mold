@@ -62,11 +62,14 @@ void ObjectFile::parse() {
   this->symbol_instances.resize(elf_syms.size());
   this->symbols.resize(elf_syms.size());
 
+  bool is_lazy = (archive_name != "");
+
   for (int i = 0; i < elf_syms.size(); i++) {
     StringRef name;
     if (i >= first_global)
       name = CHECK(this->elf_syms[i].getName(string_table), this);
     this->symbol_instances[i] = {intern(name), this};
+    this->symbol_instances[i].is_lazy = is_lazy;
   }
 
   for (int i = 0; i < first_global; i++)
@@ -77,7 +80,11 @@ void ObjectFile::register_defined_symbols() {
   for (int i = first_global; i < symbol_instances.size(); i++) {
     if (!elf_syms[i].isDefined())
       continue;
-    symbols[i] = symbol_table.add(symbol_instances[i]);
+
+    Symbol &sym = symbol_instances[i];
+    //    if (sym.name.sym)
+    //      error("duplicate symbol: " + toString(sym));
+    sym.name.sym = &sym;
     num_defined++;
   }
 }
@@ -91,10 +98,6 @@ void ObjectFile::register_undefined_symbols() {
     symbols[i] = symbol_table.get(sym.name);
     num_undefined++;
   }
-}
-
-StringRef ObjectFile::get_filename() {
-  return mb.getBufferIdentifier();
 }
 
 std::string toString(ObjectFile *obj) {

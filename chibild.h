@@ -122,6 +122,7 @@ class Symbol {
 public:
   InternedString name;
   ObjectFile *file;
+  bool is_lazy;
 };
 
 class SymbolTable {
@@ -134,6 +135,8 @@ private:
 
   MapType map;
 };
+
+std::string toString(Symbol);
 
 //
 // input_sections.cc
@@ -277,7 +280,14 @@ public:
   void parse();
   void register_defined_symbols();
   void register_undefined_symbols();
-  StringRef get_filename();
+
+  StringRef get_filename() {
+    return mb.getBufferIdentifier();
+  }
+
+  bool is_in_archive() {
+    return !archive_name.empty();
+  }
 
   std::vector<InputSection *> sections;
   StringRef archive_name;
