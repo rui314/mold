@@ -1,20 +1,27 @@
 #include "chibild.h"
 
-std::string toString(Symbol sym) {
-  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
+namespace tbb {
+template<>
+struct tbb_hash_compare<StringRef> {
+  static size_t hash(const StringRef& k) {
+    return llvm::hash_value(k);
+  }
+
+  static bool equal(const StringRef& k1, const StringRef& k2) {
+    return k1 == k2;
+  }
+};
 }
 
-Symbol *SymbolTable::add(Symbol sym) {
-  MapType::accessor acc;
-  map.insert(acc, (uintptr_t)sym.name.data());
-  if (acc->second.file == nullptr)
-    acc->second = sym;
+Symbol *Symbol::intern(StringRef name) {
+  typedef tbb::concurrent_hash_map<StringRef, Symbol> MapTy;
+  static MapTy map;
+
+  MapTy::accessor acc;
+  map.insert(acc, std::pair<StringRef, Symbol>(name, Symbol(name)));
   return &acc->second;
 }
 
-Symbol *SymbolTable::get(InternedString name) {
-  MapType::accessor acc;
-  if (map.find(acc, (uintptr_t)name.data()))
-    return &acc->second;
-  return nullptr;
+std::string toString(Symbol sym) {
+  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
 }

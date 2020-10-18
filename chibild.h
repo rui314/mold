@@ -88,60 +88,18 @@ class InputSection;
 class ObjectFile;
 
 //
-// intern.cc
-//
-
-class InternedString {
-public:
-  friend InternedString intern(StringRef);
-
-  InternedString() {}
-  InternedString(const InternedString &other)
-    : data_(other.data_), size_(other.size_), sym(other.sym.load()) {}
-
-  InternedString &operator=(const InternedString &other) {
-    data_ = other.data_;
-    size_ = other.size_;
-    sym = other.sym.load();
-    return *this;
-  }
-
-  explicit operator StringRef() const { return {data_, size_}; }
-  
-  const char *data() { return data_; }
-  uint32_t size() { return size_; }
-  std::atomic<Symbol *> sym;
-
-private:
-  InternedString(const char *data_, size_t size_)
-    : data_(data_), size_(size_) {}
-
-  const char *data_ = nullptr;
-  uint32_t size_ = 0;
-};
-
-InternedString intern(StringRef s);
-
-//
 // symtab.cc
 //
 
 class Symbol {
 public:
-  InternedString name;
-  ObjectFile *file;
-  bool is_lazy;
-};
+  static Symbol *intern(StringRef name);
+  Symbol(StringRef name) : name(name) {}
+  Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
-class SymbolTable {
-public:
-  Symbol *add(Symbol sym);
-  Symbol *get(InternedString key);
-
-private:
-  typedef tbb::concurrent_hash_map<uintptr_t, Symbol> MapType;
-
-  MapType map;
+  StringRef name;
+  ObjectFile *file = nullptr;
+  std::atomic_flag lock = ATOMIC_FLAG_INIT;
 };
 
 std::string toString(Symbol);
@@ -295,11 +253,11 @@ public:
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
   uint32_t priority;
+  bool is_alive;
 
 private:
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
-  std::vector<Symbol> symbol_instances;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
 };

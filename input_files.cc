@@ -59,50 +59,61 @@ void ObjectFile::parse() {
   StringRef string_table =
     CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
 
-  this->symbol_instances.resize(elf_syms.size());
   this->symbols.resize(elf_syms.size());
 
-  bool is_lazy = (archive_name != "");
-
   for (int i = 0; i < elf_syms.size(); i++) {
-    StringRef name;
-    if (i >= first_global)
-      name = CHECK(this->elf_syms[i].getName(string_table), this);
-    this->symbol_instances[i] = {intern(name), this};
-    this->symbol_instances[i].is_lazy = is_lazy;
+    if (i < first_global)
+      continue;
+    StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
+    symbols[i] = Symbol::intern(name);
   }
-
-  for (int i = 0; i < first_global; i++)
-    this->symbols[i] = &this->symbol_instances[i];
 }
 
+class Spinlock {
+public:
+  Spinlock(std::atomic_flag &lock) : lock(lock) {
+    while (lock.test_and_set(std::memory_order_acquire));
+  }
+
+  ~Spinlock() {
+    lock.clear(std::memory_order_release);
+  }
+
+private:
+  std::atomic_flag &lock;  
+};
+
 void ObjectFile::register_defined_symbols() {
-  for (int i = first_global; i < symbol_instances.size(); i++) {
+  for (int i = first_global; i < symbols.size(); i++) {
     if (!elf_syms[i].isDefined())
       continue;
-
-    Symbol &sym = symbol_instances[i];
-    for (;;) {
-      Symbol *existing = sym.name.sym.load();
-      if (existing && existing->file->priority < this->priority)
-        break;
-
-      if (sym.name.sym.compare_exchange_strong(existing, &symbol_instances[i]))
-        break;
-    }
-
     num_defined++;
+
+    Symbol *sym = symbols[i];
+    Spinlock lock(sym->lock);
+
+    if (sym->file && sym->file->priority < this->priority)
+      continue;
+    sym->file = this;
   }
 }
 
 void ObjectFile::register_undefined_symbols() {
-  for (int i = first_global; i < symbol_instances.size(); i++) {
+  if (is_alive)
+    return;
+  is_alive = true;
+
+  for (int i = first_global; i < symbols.size(); i++) {
     if (elf_syms[i].isDefined())
       continue;
-
-    Symbol &sym = symbol_instances[i];
-    symbols[i] = symbol_table.get(sym.name);
     num_undefined++;
+
+    Symbol *sym = symbols[i];
+
+    if (sym->file == nullptr)
+      error("undefined symbol: " + toString(this));
+    if (sym->file->is_in_archive() && !sym->file->is_alive)
+      sym->file->register_undefined_symbols();
   }
 }
 
