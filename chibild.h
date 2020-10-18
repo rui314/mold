@@ -280,18 +280,13 @@ public:
   void parse();
   void register_defined_symbols();
   void register_undefined_symbols();
-
-  StringRef get_filename() {
-    return mb.getBufferIdentifier();
-  }
-
-  bool is_in_archive() {
-    return !archive_name.empty();
-  }
+  StringRef get_filename();
+  bool is_in_archive();
 
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
+  int priority;
 
 private:
   MemoryBufferRef mb;

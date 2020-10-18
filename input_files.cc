@@ -100,6 +100,14 @@ void ObjectFile::register_undefined_symbols() {
   }
 }
 
+StringRef ObjectFile::get_filename() {
+  return mb.getBufferIdentifier();
+}
+
+bool ObjectFile::is_in_archive() {
+  return !archive_name.empty();
+}
+
 std::string toString(ObjectFile *obj) {
   StringRef s = obj->get_filename();
   if (obj->archive_name == "")
