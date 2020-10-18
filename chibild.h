@@ -96,13 +96,21 @@ public:
   friend InternedString intern(StringRef);
 
   InternedString() {}
-  InternedString(const InternedString &other) = default;
+  InternedString(const InternedString &other)
+    : data_(other.data_), size_(other.size_), sym(other.sym.load()) {}
+
+  InternedString &operator=(const InternedString &other) {
+    data_ = other.data_;
+    size_ = other.size_;
+    sym = other.sym.load();
+    return *this;
+  }
 
   explicit operator StringRef() const { return {data_, size_}; }
   
   const char *data() { return data_; }
   uint32_t size() { return size_; }
-  Symbol *sym;
+  std::atomic<Symbol *> sym;
 
 private:
   InternedString(const char *data_, size_t size_)

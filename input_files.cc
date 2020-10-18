@@ -82,9 +82,20 @@ void ObjectFile::register_defined_symbols() {
       continue;
 
     Symbol &sym = symbol_instances[i];
-    //    if (sym.name.sym)
-    //      error("duplicate symbol: " + toString(sym));
-    sym.name.sym = &sym;
+    for (;;) {
+      Symbol *existing = sym.name.sym.load();
+      if (existing && existing->file->priority < this->priority)
+        break;
+
+      
+
+      if (sym.name.sym)
+        error("duplicate symbol: " + toString(sym));
+      sym.name.sym = &sym;
+
+      break;
+    }
+
     num_defined++;
   }
 }

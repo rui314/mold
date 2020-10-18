@@ -124,6 +124,13 @@ int main(int argc, char **argv) {
         files.push_back(file);
   open_timer.stopTimer();
 
+  // Resolve symbols
+  parse_timer.startTimer();
+  tbb::parallel_for_each(
+    files.begin(), files.end(),
+    [&](ObjectFile *file) { file->parse(); });
+  parse_timer.stopTimer();
+
   // Set priorities to files
   int priority = 1;
 
@@ -134,13 +141,6 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : files)
     if (file->is_in_archive())
       file->priority = priority++;
-
-  // Resolve symbols
-  parse_timer.startTimer();
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [&](ObjectFile *file) { file->parse(); });
-  parse_timer.stopTimer();
 
   add_symbols_timer.startTimer();
 
