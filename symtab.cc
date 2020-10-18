@@ -18,7 +18,7 @@ Symbol *Symbol::intern(StringRef name) {
   static MapTy map;
 
   MapTy::accessor acc;
-  map.insert(acc, std::pair<StringRef, Symbol>(name, {name}));
+  map.insert(acc, std::make_pair(name, Symbol(name)));
   return &acc->second;
 }
 
