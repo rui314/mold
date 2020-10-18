@@ -132,15 +132,8 @@ int main(int argc, char **argv) {
   parse_timer.stopTimer();
 
   // Set priorities to files
-  int priority = 1;
-
-  for (ObjectFile *file : files)
-    if (!file->is_in_archive())
-      file->priority = priority++;
-
-  for (ObjectFile *file : files)
-    if (file->is_in_archive())
-      file->priority = priority++;
+  for (int i = 0; i < files.size(); i++)
+    files[i]->priority = files[i]->is_in_archive() ? i + (1 << 31) : i;
 
   add_symbols_timer.startTimer();
 

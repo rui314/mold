@@ -294,7 +294,7 @@ public:
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
-  int priority;
+  uint32_t priority;
 
 private:
   MemoryBufferRef mb;
