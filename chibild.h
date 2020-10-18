@@ -125,7 +125,7 @@ public:
 
 class SymbolTable {
 public:
-  Symbol *add(InternedString key, Symbol sym);
+  Symbol *add(Symbol sym);
   Symbol *get(InternedString key);
 
 private:
@@ -280,9 +280,6 @@ public:
 
   std::vector<InputSection *> sections;
   StringRef archive_name;
-  int priority;
-  bool is_alive = false;
-  std::unordered_set<ObjectFile *> liveness_edges;
   ELFFile<ELF64LE> obj;
 
 private:

@@ -77,9 +77,7 @@ void ObjectFile::register_defined_symbols() {
   for (int i = first_global; i < symbol_instances.size(); i++) {
     if (!elf_syms[i].isDefined())
       continue;
-
-    Symbol &sym = symbol_instances[i];
-    symbols[i] = symbol_table.add(sym.name, sym);
+    symbols[i] = symbol_table.add(symbol_instances[i]);
     num_defined++;
   }
 }
@@ -91,8 +89,6 @@ void ObjectFile::register_undefined_symbols() {
 
     Symbol &sym = symbol_instances[i];
     symbols[i] = symbol_table.get(sym.name);
-    if (symbols[i])
-      liveness_edges.insert(symbols[i]->file);
     num_undefined++;
   }
 }
