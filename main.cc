@@ -112,10 +112,9 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  llvm::TimerGroup timers("all", "all");
-  llvm::Timer open_timer("opne", "open", timers);
-  llvm::Timer parse_timer("parse", "parse", timers);
-  llvm::Timer add_symbols_timer("add_symbols", "add_symbols", timers);
+  llvm::Timer open_timer("opne", "open");
+  llvm::Timer parse_timer("parse", "parse");
+  llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
 
   // Open input files
   open_timer.startTimer();
@@ -162,5 +161,7 @@ int main(int argc, char **argv) {
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
 
-  return 0;
+  llvm::TimerGroup::printAll(llvm::outs());
+  llvm::outs().flush();
+  _exit(0);
 }

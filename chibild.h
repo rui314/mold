@@ -102,6 +102,7 @@ public:
   
   const char *data() { return data_; }
   uint32_t size() { return size_; }
+  Symbol *sym;
 
 private:
   InternedString(const char *data_, size_t size_)
