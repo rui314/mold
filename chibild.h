@@ -109,7 +109,9 @@ private:
   uint32_t size_ = 0;
 };
 
-inline InternedString intern(StringRef s) { return InternedString(s); }
+inline InternedString intern(StringRef s) {
+  return InternedString(s);
+}
 
 //
 // symtab.cc

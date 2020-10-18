@@ -18,7 +18,7 @@ typedef tbb::concurrent_hash_map<StringRef, InternedString> MapType;
 static MapType map;
 
 InternedString::InternedString(StringRef s) {
-  if (s.size() == 0)
+  if (s.empty())
     return;
 
   MapType::accessor acc;
