@@ -1,3 +1,4 @@
-RUN: echo '.globl _start; _start: jmp start' | cc -o %t.o -c -x assembler -
-RUN: chibild -o %t %t.o
+RUN: echo '.globl _start; _start: jmp loop' | cc -o %t1.o -c -x assembler -
+RUN: echo '.globl loop; loop: jmp loop' | cc -o %t2.o -c -x assembler -
+RUN: chibild -o %t %t1.o %t2.o
 RUN: file %t | grep ELF
