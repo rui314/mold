@@ -9,13 +9,12 @@ struct tbb_hash<StringRef> {
 };
 }
 
-InternedString::InternedString(StringRef s) {
+InternedString intern(StringRef s) {
   if (s.empty())
-    return;
+    return {nullptr, 0};
 
   static tbb::concurrent_unordered_set<StringRef> set;
 
   auto it = set.insert(s);
-  data_ = it.first->data();
-  size_ = it.first->size();
+  return {it.first->data(), it.first->size()};
 }

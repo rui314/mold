@@ -93,26 +93,25 @@ class ObjectFile;
 
 class InternedString {
 public:
+  friend InternedString intern(StringRef);
+
   InternedString() {}
   InternedString(const InternedString &other) = default;
 
-  InternedString(const char *data_, size_t size_)
-    : data_(data_), size_(size_) {}
-
-  explicit InternedString(StringRef s);
   explicit operator StringRef() const { return {data_, size_}; }
   
   const char *data() { return data_; }
   uint32_t size() { return size_; }
 
 private:
+  InternedString(const char *data_, size_t size_)
+    : data_(data_), size_(size_) {}
+
   const char *data_ = nullptr;
   uint32_t size_ = 0;
 };
 
-inline InternedString intern(StringRef s) {
-  return InternedString(s);
-}
+InternedString intern(StringRef s);
 
 //
 // symtab.cc
