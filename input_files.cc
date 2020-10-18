@@ -87,13 +87,8 @@ void ObjectFile::register_defined_symbols() {
       if (existing && existing->file->priority < this->priority)
         break;
 
-      
-
-      if (sym.name.sym)
-        error("duplicate symbol: " + toString(sym));
-      sym.name.sym = &sym;
-
-      break;
+      if (sym.name.sym.compare_exchange_strong(existing, &symbol_instances[i]))
+        break;
     }
 
     num_defined++;
