@@ -88,11 +88,20 @@ class InputSection;
 class OutputSection;
 class ObjectFile;
 
+std::string toString(ObjectFile *);
+
 //
-// symtab.cc
+// Interned string
 //
 
 namespace tbb {
+template<>
+struct tbb_hash<StringRef> {
+  size_t operator()(const StringRef& k) const {
+    return llvm::hash_value(k);
+  }
+};
+
 template<>
 struct tbb_hash_compare<StringRef> {
   static size_t hash(const StringRef& k) {
@@ -105,9 +114,35 @@ struct tbb_hash_compare<StringRef> {
 };
 }
 
+template<typename ValueT>
+class ConcurrentMap {
+public:
+  typedef tbb::concurrent_hash_map<StringRef, ValueT> MapT;
+
+  ValueT *insert(StringRef key, const ValueT &val) {
+    typename MapT::accessor acc;
+    map.insert(acc, std::make_pair(key, val));
+    return &acc->second;
+  }
+
+private:
+  MapT map;
+};
+
+//
+// Symbol
+//
+
 class Symbol {
 public:
-  static Symbol *intern(StringRef name);
+  static Symbol *intern(StringRef name) {
+    typedef tbb::concurrent_hash_map<StringRef, Symbol> T;
+    static T map;
+    T::accessor acc;
+    map.insert(acc, std::make_pair(name, Symbol(name)));
+    return &acc->second;
+  }
+
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
@@ -116,7 +151,9 @@ public:
   std::atomic_flag lock = ATOMIC_FLAG_INIT;
 };
 
-std::string toString(Symbol);
+inline std::string toString(Symbol sym) {
+  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
+}
 
 //
 // input_sections.cc
@@ -308,8 +345,6 @@ private:
 //
 
 MemoryBufferRef readFile(StringRef path);
-
-std::string toString(ObjectFile *);
 
 extern SymbolTable symbol_table;
 extern std::atomic_int num_defined;

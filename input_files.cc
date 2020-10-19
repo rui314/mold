@@ -44,9 +44,18 @@ void ObjectFile::initialize_sections() {
         error(toString(this) + ": invalid symbol index");
       const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
       StringRef signature = CHECK(sym.getName(string_table), this);
-      break;
       
+      // Get comdat group members.
+      ArrayRef<ELF64LE::Word> entries =
+          CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
+      if (entries.empty())
+        error(toString(this) + ": empty SHT_GROUP");
+      if (entries[0] == 0)
+        continue;
+      if (entries[0] != GRP_COMDAT)
+        error(toString(this) + ": unsupported SHT_GROUP format");
 
+      break;
     }
     default: {
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
