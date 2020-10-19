@@ -174,8 +174,10 @@ int main(int argc, char **argv) {
                     if (!file->is_alive)
                       return;
                     for (InputSection *isec : file->sections) {
-                      isec->output_section = create_output_section(isec);
-                      cnt++;
+                      if (isec) {
+                        isec->output_section = create_output_section(isec);
+                        cnt++;
+                      }
                     }
                   });
   output_section_timer.stopTimer();

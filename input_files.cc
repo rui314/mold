@@ -67,6 +67,8 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
+  static ConcurrentMap<Symbol> map;
+
   if (!symtab_sec)
     return;
 
@@ -76,7 +78,7 @@ void ObjectFile::initialize_symbols() {
     if (i < first_global)
       continue;
     StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
-    symbols[i] = Symbol::intern(name);
+    symbols[i] = map.insert(name, Symbol(name));
   }
 }
 

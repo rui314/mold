@@ -135,14 +135,6 @@ private:
 
 class Symbol {
 public:
-  static Symbol *intern(StringRef name) {
-    typedef tbb::concurrent_hash_map<StringRef, Symbol> T;
-    static T map;
-    T::accessor acc;
-    map.insert(acc, std::make_pair(name, Symbol(name)));
-    return &acc->second;
-  }
-
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
