@@ -104,16 +104,26 @@ static void for_each(T &arr, Callable callback) {
   tbb::parallel_for_each(arr.begin(), arr.end(), callback);
 }
 
-static StringRef get_output_section(StringRef name) {
+static OutputSection *create_output_section(InputSection *isec) {
   StringRef sections[] = {
     ".text.", ".data.", ".data.rel.ro.", ".rodata.", ".bss.", ".bss.rel.ro.",
     ".ctors.", ".dtors.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
   };
 
-  for (StringRef s : sections)
-    if (name.startswith(s) || name == s.drop_back())
-      return s.drop_back();
-  return name;
+  StringRef name = isec->name;
+
+  for (StringRef s : sections) {
+    if (name.startswith(s) || name == s.drop_back()) {
+      name = s.drop_back();
+      break;
+    }
+  }
+
+  typedef tbb::concurrent_hash_map<StringRef, OutputSection> T;
+  T map;
+  T::accessor acc;
+  map.insert(acc, std::make_pair(name, OutputSection(name)));
+  return &acc->second;
 }
 
 int main(int argc, char **argv) {
@@ -131,6 +141,7 @@ int main(int argc, char **argv) {
   llvm::Timer open_timer("opne", "open");
   llvm::Timer parse_timer("parse", "parse");
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
+  llvm::Timer output_section_timer("output_section", "output_section");
 
   // Open input files
   open_timer.startTimer();
@@ -156,25 +167,32 @@ int main(int argc, char **argv) {
   add_symbols_timer.stopTimer();
 
   // Create output sections
-  std::vector<OutputSection *> output_sections;
-  for (ObjectFile *file : files) {
-    for (InputSection *isec : file->sections) {
-      auto *osec = new OutputSection(isec->name);
-      osec->sections.push_back(isec);
-      output_sections.push_back(osec);
-    }
-  }
+  std::atomic_int cnt;
+  cnt = 0;
+  output_section_timer.startTimer();
+  for_each(files, [&](ObjectFile *file) {
+                    if (!file->is_alive)
+                      return;
+                    for (InputSection *isec : file->sections) {
+                      isec->output_section = create_output_section(isec);
+                      cnt++;
+                    }
+                  });
+  output_section_timer.stopTimer();
 
+#if 0
   int64_t filesize = 0;
   for (OutputSection *sec : output_sections) {
     sec->set_offset(filesize);
     filesize += sec->get_size();
   }
+#endif
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
 
+  llvm::outs() << "          cnt=" << cnt << "\n";
   llvm::outs() << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n";
 

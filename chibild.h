@@ -85,11 +85,25 @@ inline std::string toString(const Twine &s) { return s.str(); }
 class Symbol;
 class SymbolTable;
 class InputSection;
+class OutputSection;
 class ObjectFile;
 
 //
 // symtab.cc
 //
+
+namespace tbb {
+template<>
+struct tbb_hash_compare<StringRef> {
+  static size_t hash(const StringRef& k) {
+    return llvm::hash_value(k);
+  }
+
+  static bool equal(const StringRef& k1, const StringRef& k2) {
+    return k1 == k2;
+  }
+};
+}
 
 class Symbol {
 public:
@@ -122,6 +136,8 @@ public:
   void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
+  OutputSection *output_section = nullptr;
+  StringRef output_section_name;
   uint64_t output_file_offset;
   int64_t offset = -1;
 
@@ -146,8 +162,6 @@ public:
 
 class OutputChunk {
 public:
-  virtual ~OutputChunk() {}
-
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) = 0;
   virtual void set_offset(uint64_t off) { offset = off; }
