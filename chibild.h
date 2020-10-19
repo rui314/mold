@@ -19,6 +19,7 @@
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
@@ -172,6 +173,11 @@ public:
   void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
+  uint64_t get_alignment() const {
+    return (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
+  }
+
+  ObjectFile *file;
   OutputSection *output_section;
   StringRef output_section_name;
   uint64_t output_file_offset;
@@ -179,7 +185,6 @@ public:
 
 private:
   const ELF64LE::Shdr *hdr;
-  ObjectFile *file;
 };
 
 class StringTableSection : public InputChunk {
@@ -191,6 +196,13 @@ public:
   uint64_t addString(StringRef s);
   void copy_to(uint8_t *buf) override;
 };
+
+std::string toString(InputSection *isec);
+
+inline uint64_t align_to(uint64_t val, uint64_t align) {
+  assert(__builtin_popcount(align) == 1);
+  return (val + align - 1) & ~(align - 1);
+}
 
 //
 // output_sections.cc

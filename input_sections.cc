@@ -23,6 +23,9 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef
   : file(file), hdr(hdr) {
   this->name = name;
   this->output_section = get_output_section(name);
+
+  if (hdr->sh_addralign > UINT32_MAX)
+    error(toString(file) + ": section sh_addralign is too large");
 }
 
 uint64_t InputSection::get_size() const {
@@ -32,4 +35,8 @@ uint64_t InputSection::get_size() const {
 void InputSection::copy_to(uint8_t *buf) {
   ArrayRef<uint8_t> data = check(file->obj.getSectionContents(*hdr));
   memcpy(buf + offset, &data[0], data.size());
+}
+
+std::string toString(InputSection *isec) {
+  return (toString(isec->file) + ":(" + isec->name + ")").str();
 }

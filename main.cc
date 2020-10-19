@@ -121,6 +121,7 @@ int main(int argc, char **argv) {
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
   llvm::Timer comdat_timer("comdat", "comdat");
   llvm::Timer output_section_timer("output_section", "output_section");
+  llvm::Timer file_offset_timer("file_offset", "file_offset");
 
   // Open input files
   open_timer.startTimer();
@@ -156,11 +157,45 @@ int main(int argc, char **argv) {
     file->eliminate_duplicate_comdat_groups();
   comdat_timer.stopTimer();
 
-  // Create output sections
-  std::atomic_int cnt;
-  cnt = 0;
+  // Bin input sections into output sections
+  std::vector<OutputSection *> output_sections;
+
   output_section_timer.startTimer();
+  for (ObjectFile *file : files) {
+    for (InputSection *isec : file->sections) {
+      if (!isec)
+        continue;
+
+      OutputSection *osec = isec->output_section;
+      if (osec->sections.empty())
+        output_sections.push_back(osec);
+      osec->sections.push_back(isec);
+    }
+  }
   output_section_timer.stopTimer();
+
+  file_offset_timer.startTimer();
+  for_each(output_sections, [](OutputSection *osec) {
+                              uint64_t off = 0;
+                              for (InputSection *isec : osec->sections) {
+                                off = align_to(off, isec->get_alignment());
+                                isec->output_file_offset = off;
+                                off += isec->get_size();
+                              }
+                            });
+  file_offset_timer.stopTimer();
+
+#if 0
+  int max_align = 0;
+  for (OutputSection *osec : output_sections) {
+    for (InputSection *isec : osec->sections) {
+      if (isec->get_alignment() > max_align) {
+        llvm::outs() << toString(isec) << " " << isec->get_alignment() << "\n";
+        max_align = isec->get_alignment();
+      }       
+    }
+  }
+#endif
 
 #if 0
   int64_t filesize = 0;
@@ -174,7 +209,7 @@ int main(int argc, char **argv) {
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
 
-  llvm::outs() << "          cnt=" << cnt << "\n";
+  llvm::outs() << "         osec=" << output_sections.size() << "\n";
   llvm::outs() << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n";
 
