@@ -106,9 +106,8 @@ static void for_each(T &arr, Callable callback) {
 
 static StringRef get_output_section(StringRef name) {
   StringRef sections[] = {
-    ".bss.", ".bss.rel.ro.", ".ctors.", ".data.", ".data.rel.ro.",
-    ".dtors.", ".fini_array.", ".init_array.", ".rodata.", ".tbss.",
-    ".tdata." ".text.",
+    ".text.", ".data.", ".data.rel.ro.", ".rodata.", ".bss.", ".bss.rel.ro.",
+    ".ctors.", ".dtors.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
   };
 
   for (StringRef s : sections)
