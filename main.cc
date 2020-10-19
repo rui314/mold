@@ -99,6 +99,11 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
+template<typename T, typename Callable>
+static void for_each(T &arr, Callable callback) {
+  tbb::parallel_for_each(arr.begin(), arr.end(), callback);
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -125,9 +130,7 @@ int main(int argc, char **argv) {
 
   // Parse input files
   parse_timer.startTimer();
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [&](ObjectFile *file) { file->parse(); });
+  for_each(files, [](ObjectFile *file) { file->parse(); });
   parse_timer.stopTimer();
 
   // Set priorities to files
@@ -136,15 +139,8 @@ int main(int argc, char **argv) {
 
   // Resolve symbols
   add_symbols_timer.startTimer();
-
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [&](ObjectFile *file) { file->register_defined_symbols(); });
-
-  tbb::parallel_for_each(
-    files.begin(), files.end(),
-    [&](ObjectFile *file) { file->register_undefined_symbols(); });
-
+  for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
+  for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
   add_symbols_timer.stopTimer();
 
   // Create output sections
