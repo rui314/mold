@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
   llvm::Timer open_timer("opne", "open");
   llvm::Timer parse_timer("parse", "parse");
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
+  llvm::Timer comdat_timer("comdat", "comdat");
   llvm::Timer output_section_timer("output_section", "output_section");
 
   // Open input files
@@ -165,6 +166,12 @@ int main(int argc, char **argv) {
   for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
   for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
   add_symbols_timer.stopTimer();
+
+  // Eliminate duplicate comdat groups.
+  comdat_timer.startTimer();
+  for (ObjectFile *file : files)
+    file->eliminate_duplicate_comdat_groups();
+  comdat_timer.stopTimer();
 
   // Create output sections
   std::atomic_int cnt;

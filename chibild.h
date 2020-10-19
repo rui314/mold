@@ -289,6 +289,7 @@ public:
   void parse();
   void register_defined_symbols();
   void register_undefined_symbols();
+  void eliminate_duplicate_comdat_groups();
   StringRef get_filename();
   bool is_in_archive();
 
@@ -304,6 +305,7 @@ private:
 
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
+  std::vector<std::pair<bool *, ArrayRef<ELF64LE::Word>>> comdat_groups;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;

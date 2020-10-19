@@ -55,6 +55,9 @@ void ObjectFile::initialize_sections() {
       if (entries[0] != GRP_COMDAT)
         error(toString(this) + ": unsupported SHT_GROUP format");
 
+      static ConcurrentMap<bool> map;
+      bool *handle = map.insert(signature, false);
+      comdat_groups.push_back({handle, entries});
       break;
     }
     default: {
@@ -67,8 +70,6 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
-  static ConcurrentMap<Symbol> map;
-
   if (!symtab_sec)
     return;
 
@@ -78,6 +79,8 @@ void ObjectFile::initialize_symbols() {
     if (i < first_global)
       continue;
     StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
+
+    static ConcurrentMap<Symbol> map;
     symbols[i] = map.insert(name, Symbol(name));
   }
 }
@@ -138,6 +141,21 @@ void ObjectFile::register_undefined_symbols() {
     Symbol *sym = symbols[i];
     if (sym->file && sym->file->is_in_archive() && !sym->file->is_alive)
       sym->file->register_undefined_symbols();
+  }
+}
+
+void ObjectFile::eliminate_duplicate_comdat_groups() {
+  for (std::pair<bool *, ArrayRef<ELF64LE::Word>> pair : comdat_groups) {
+    bool *handle = pair.first;
+    ArrayRef<ELF64LE::Word> entries = pair.second;
+
+    if (!*handle) {
+      *handle = true;
+      continue;
+    }
+    
+    for (uint32_t i : entries)
+      sections[i] = nullptr;
   }
 }
 
