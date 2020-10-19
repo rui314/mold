@@ -175,14 +175,14 @@ int main(int argc, char **argv) {
   output_section_timer.stopTimer();
 
   file_offset_timer.startTimer();
-  for_each(output_sections, [](OutputSection *osec) {
-                              uint64_t off = 0;
-                              for (InputSection *isec : osec->sections) {
-                                off = align_to(off, isec->get_alignment());
-                                isec->output_file_offset = off;
-                                off += isec->get_size();
-                              }
-                            });
+  uint64_t off = 0;
+  for (OutputSection *osec : output_sections) {
+    for (InputSection *isec : osec->sections) {
+      off = align_to(off, isec->get_alignment());
+      isec->output_file_offset = off;
+      off += isec->get_size();
+    }
+  }
   file_offset_timer.stopTimer();
 
 #if 0
