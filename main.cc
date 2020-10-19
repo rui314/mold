@@ -119,11 +119,8 @@ static OutputSection *create_output_section(InputSection *isec) {
     }
   }
 
-  typedef tbb::concurrent_hash_map<StringRef, OutputSection> T;
-  T map;
-  T::accessor acc;
-  map.insert(acc, std::make_pair(name, OutputSection(name)));
-  return &acc->second;
+  ConcurrentMap<OutputSection> map;
+  return map.insert(name, OutputSection(name));
 }
 
 int main(int argc, char **argv) {
