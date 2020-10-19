@@ -60,6 +60,15 @@ void ObjectFile::initialize_sections() {
       comdat_groups.push_back({handle, entries});
       break;
     }
+    case SHT_SYMTAB_SHNDX:
+      error(toString(this) + ": SHT_SYMTAB_SHNDX section is not supported");
+      break;
+    case SHT_SYMTAB:
+    case SHT_STRTAB:
+    case SHT_REL:
+    case SHT_RELA:
+    case SHT_NULL:
+      break;
     default: {
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
       this->sections[i] = new InputSection(this, &shdr, name);

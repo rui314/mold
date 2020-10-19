@@ -104,25 +104,6 @@ static void for_each(T &arr, Callable callback) {
   tbb::parallel_for_each(arr.begin(), arr.end(), callback);
 }
 
-static OutputSection *create_output_section(InputSection *isec) {
-  StringRef sections[] = {
-    ".text.", ".data.", ".data.rel.ro.", ".rodata.", ".bss.", ".bss.rel.ro.",
-    ".ctors.", ".dtors.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
-  };
-
-  StringRef name = isec->name;
-
-  for (StringRef s : sections) {
-    if (name.startswith(s) || name == s.drop_back()) {
-      name = s.drop_back();
-      break;
-    }
-  }
-
-  ConcurrentMap<OutputSection> map;
-  return map.insert(name, OutputSection(name));
-}
-
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -179,14 +160,6 @@ int main(int argc, char **argv) {
   std::atomic_int cnt;
   cnt = 0;
   output_section_timer.startTimer();
-  for_each(files, [&](ObjectFile *file) {
-                    for (InputSection *isec : file->sections) {
-                      if (isec) {
-                        isec->output_section = create_output_section(isec);
-                        cnt++;
-                      }
-                    }
-                  });
   output_section_timer.stopTimer();
 
 #if 0

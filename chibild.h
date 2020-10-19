@@ -119,6 +119,13 @@ class ConcurrentMap {
 public:
   typedef tbb::concurrent_hash_map<StringRef, ValueT> MapT;
 
+  ValueT *lookup(StringRef key) {
+    typename MapT::accessor acc;
+    if (map.find(acc, key))
+      return &acc->second;
+    return nullptr;
+  }
+
   ValueT *insert(StringRef key, const ValueT &val) {
     typename MapT::accessor acc;
     map.insert(acc, std::make_pair(key, val));
@@ -165,7 +172,7 @@ public:
   void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
-  OutputSection *output_section = nullptr;
+  OutputSection *output_section;
   StringRef output_section_name;
   uint64_t output_file_offset;
   int64_t offset = -1;
