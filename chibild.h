@@ -173,15 +173,12 @@ public:
   void copy_to(uint8_t *buf);
   uint64_t get_size() const;
 
-  uint64_t get_alignment() const {
-    return (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
-  }
-
   ObjectFile *file;
   OutputSection *output_section;
   StringRef output_section_name;
   uint64_t output_file_offset;
   int64_t offset = -1;
+  uint32_t alignment;
 
 private:
   const ELF64LE::Shdr *hdr;

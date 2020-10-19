@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
   uint64_t off = 0;
   for (OutputSection *osec : output_sections) {
     for (InputSection *isec : osec->sections) {
-      off = align_to(off, isec->get_alignment());
+      off = align_to(off, isec->alignment);
       isec->output_file_offset = off;
       off += isec->get_size();
     }
@@ -189,9 +189,9 @@ int main(int argc, char **argv) {
   int max_align = 0;
   for (OutputSection *osec : output_sections) {
     for (InputSection *isec : osec->sections) {
-      if (isec->get_alignment() > max_align) {
-        llvm::outs() << toString(isec) << " " << isec->get_alignment() << "\n";
-        max_align = isec->get_alignment();
+      if (isec->alignment > max_align) {
+        llvm::outs() << toString(isec) << " " << isec->alignment << "\n";
+        max_align = isec->alignment;
       }       
     }
   }

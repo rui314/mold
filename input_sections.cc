@@ -24,8 +24,12 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef
   this->name = name;
   this->output_section = get_output_section(name);
 
-  if (hdr->sh_addralign > UINT32_MAX)
+  uint64_t align = (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
+  if (align > UINT32_MAX)
     error(toString(file) + ": section sh_addralign is too large");
+  if (__builtin_popcount(align) != 1)
+    error(toString(file) + ": section sh_addralign is not a power of two");
+  this->alignment = align;
 }
 
 uint64_t InputSection::get_size() const {
