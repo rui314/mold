@@ -167,6 +167,11 @@ int main(int argc, char **argv) {
   for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
   add_symbols_timer.stopTimer();
 
+  // Eliminate unused archive members.
+  files.erase(std::remove_if(files.begin(), files.end(),
+                             [](ObjectFile *file){ return !file->is_alive; }),
+              files.end());
+
   // Eliminate duplicate comdat groups.
   comdat_timer.startTimer();
   for (ObjectFile *file : files)
@@ -178,8 +183,6 @@ int main(int argc, char **argv) {
   cnt = 0;
   output_section_timer.startTimer();
   for_each(files, [&](ObjectFile *file) {
-                    if (!file->is_alive)
-                      return;
                     for (InputSection *isec : file->sections) {
                       if (isec) {
                         isec->output_section = create_output_section(isec);
