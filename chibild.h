@@ -278,6 +278,8 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
+  StringRef string_table;
+  const ELF64LE::Shdr *symtab_sec;
   int first_global = 0;
 };
 

@@ -31,32 +31,35 @@ static const ELF64LE::Shdr
 }
 
 void ObjectFile::initialize_sections() {
-  elf_sections = CHECK(obj.sections(), this);
   StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
+  sections.resize(elf_sections.size());
 
-  this->sections.reserve(sections.size());
+  for (int i = 0; i < elf_sections.size(); i++) {
+    const ELF64LE::Shdr &shdr = elf_sections[i];
 
-  for (const ELF64LE::Shdr &shdr : elf_sections) {
-    StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
-    this->sections.push_back(new InputSection(this, &shdr, name));
+    switch (shdr.sh_type) {
+    case SHT_GROUP: {
+      // Get the signature of this section group.
+      if (shdr.sh_info >= elf_syms.size())
+        error(toString(this) + ": invalid symbol index");
+      const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
+      StringRef signature = CHECK(sym.getName(string_table), this);
+      break;
+      
+
+    }
+    default: {
+      StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
+      this->sections[i] = new InputSection(this, &shdr, name);
+      break;
+    }
+    }
   }
 }
 
 void ObjectFile::initialize_symbols() {
-  bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
-
-  const ELF64LE::Shdr *symtab_sec
-    = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
-
   if (!symtab_sec)
     return;
-
-  this->first_global = symtab_sec->sh_info;
-
-  // Parse symbols
-  this->elf_syms = CHECK(obj.symbols(symtab_sec), this);
-  StringRef string_table =
-    CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
 
   this->symbols.resize(elf_syms.size());
 
@@ -70,6 +73,15 @@ void ObjectFile::initialize_symbols() {
 
 void ObjectFile::parse() {
   num_files++;
+
+  bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
+
+  elf_sections = CHECK(obj.sections(), this);
+  symtab_sec = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
+  first_global = symtab_sec->sh_info;
+  elf_syms = CHECK(obj.symbols(symtab_sec), this);
+  string_table = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+
   initialize_sections();
   initialize_symbols();
 }
