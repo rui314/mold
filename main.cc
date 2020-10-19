@@ -104,6 +104,19 @@ static void for_each(T &arr, Callable callback) {
   tbb::parallel_for_each(arr.begin(), arr.end(), callback);
 }
 
+static StringRef get_output_section(StringRef name) {
+  StringRef sections[] = {
+    ".bss.", ".bss.rel.ro.", ".ctors.", ".data.", ".data.rel.ro.",
+    ".dtors.", ".fini_array.", ".init_array.", ".rodata.", ".tbss.",
+    ".tdata." ".text.",
+  };
+
+  for (StringRef s : sections)
+    if (name.startswith(s) || name == s.drop_back())
+      return s.drop_back();
+  return name;
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
