@@ -1,12 +1,12 @@
 #include "chibild.h"
 
 static OutputSection *get_output_section(StringRef name) {
-  static OutputSection sections[] = {
+  static OutputSection common_sections[] = {
     {".text"}, {".data"}, {".data.rel.ro"}, {".rodata"}, {".bss"}, {".bss.rel.ro"},
     {".ctors"}, {".dtors"}, {".init_array"}, {".fini_array"}, {".tbss"}, {".tdata"},
   };
 
-  for (OutputSection &osec : sections) {
+  for (OutputSection &osec : common_sections) {
     if (!name.startswith(osec.name))
       continue;
     if (name.size() == osec.name.size())
