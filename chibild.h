@@ -270,8 +270,13 @@ public:
   std::atomic_bool is_alive;
 
 private:
+  void initialize_sections();
+  void initialize_symbols();
+
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
+
+  ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
 };

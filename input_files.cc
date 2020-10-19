@@ -30,24 +30,23 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
-void ObjectFile::parse() {
-  num_files++;
-
-  // Initialize sections.
-  ArrayRef<ELF64LE::Shdr> sections = CHECK(obj.sections(), this);
-  StringRef section_strtab = CHECK(obj.getSectionStringTable(sections), this);
+void ObjectFile::initialize_sections() {
+  elf_sections = CHECK(obj.sections(), this);
+  StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
 
   this->sections.reserve(sections.size());
-  for (const ELF64LE::Shdr &shdr : sections) {
+
+  for (const ELF64LE::Shdr &shdr : elf_sections) {
     StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
     this->sections.push_back(new InputSection(this, &shdr, name));
   }
+}
 
-  // Find a symbol table.
+void ObjectFile::initialize_symbols() {
   bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 
   const ELF64LE::Shdr *symtab_sec
-    = findSection(sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
+    = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
 
   if (!symtab_sec)
     return;
@@ -57,7 +56,7 @@ void ObjectFile::parse() {
   // Parse symbols
   this->elf_syms = CHECK(obj.symbols(symtab_sec), this);
   StringRef string_table =
-    CHECK(obj.getStringTableForSymtab(*symtab_sec, sections), this);
+    CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
 
   this->symbols.resize(elf_syms.size());
 
@@ -67,6 +66,12 @@ void ObjectFile::parse() {
     StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
     symbols[i] = Symbol::intern(name);
   }
+}
+
+void ObjectFile::parse() {
+  num_files++;
+  initialize_sections();
+  initialize_symbols();
 }
 
 class Spinlock {
