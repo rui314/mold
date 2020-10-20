@@ -243,6 +243,7 @@ public:
   uint64_t get_offset() const { return offset; }
   virtual uint64_t get_size() const = 0;
   virtual StringRef get_name() const { return ""; }
+  virtual ELF64LE::Shdr *get_shdr() const { return nullptr; }
 
 protected:
   int64_t offset = -1;
@@ -312,8 +313,8 @@ public:
   }
 
   void set_offset(uint64_t off) override;
-
   StringRef get_name() const override { return name; }
+  ELF64LE::Shdr *get_shdr() const override { return nullptr; }
 
   std::vector<InputChunk *> chunks;
   StringRef name;

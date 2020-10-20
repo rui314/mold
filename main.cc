@@ -109,6 +109,19 @@ static InputChunk *create_interp_section() {
                             osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
 }
 
+static std::vector<ELF64LE::Phdr> create_phdrs() {
+  return {};  
+}
+
+static std::vector<ELF64LE::Shdr>
+create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
+  std::vector<ELF64LE::Shdr> vec;
+  for (OutputChunk *chunk : output_chunks)
+    if (ELF64LE::Shdr *hdr = chunk->get_shdr())
+      vec.push_back(*hdr);
+  return vec;
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -168,10 +181,8 @@ int main(int argc, char **argv) {
   // Create an ELF header, a section header and a program header.
   std::vector<OutputChunk *> output_chunks;
   out::ehdr = new OutputEhdr;
-  out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
   output_chunks.push_back(out::ehdr);
-  output_chunks.push_back(out::shdr);
   output_chunks.push_back(out::phdr);
 
   auto add_section = [&](InputChunk *chunk) {
@@ -194,6 +205,14 @@ int main(int argc, char **argv) {
       add_section(isec);
 #endif
   output_section_timer.stopTimer();
+
+  // Create program header contents.
+  out::phdr->hdr = create_phdrs();
+
+  // A section header is added to the end of the file by convention.
+  out::shdr = new OutputShdr;
+  out::shdr->hdr = create_shdrs(output_chunks);
+  output_chunks.push_back(out::shdr);
 
   // Assign offsets to input sections
   file_offset_timer.startTimer();
