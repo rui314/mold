@@ -175,7 +175,8 @@ public:
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
-  void copy_to(uint8_t *buf);
+  void copy_to(uint8_t *buf) override;
+  void relocate(uint8_t *buf) override {}
   uint64_t get_size() const;
 
   ObjectFile *file;
@@ -274,7 +275,9 @@ public:
     for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
-  void relocate(uint8_t *buf) override {}
+  void relocate(uint8_t *buf) override {
+    for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
+  }
 
   uint64_t get_size() const override {
     assert(size >= 0);

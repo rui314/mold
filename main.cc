@@ -206,6 +206,7 @@ int main(int argc, char **argv) {
   copy_timer.stopTimer();
 
   reloc_timer.startTimer();
+  for_each(output_sections, [&](OutputSection *osec) { osec->relocate(buf); });
   reloc_timer.stopTimer();
 
   commit_timer.startTimer();
