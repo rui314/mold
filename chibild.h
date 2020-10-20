@@ -176,10 +176,11 @@ class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
   void copy_to(uint8_t *buf) override;
-  void relocate(uint8_t *buf) override {}
+  void relocate(uint8_t *buf) override;
   uint64_t get_size() const;
 
   ObjectFile *file;
+  ArrayRef<ELF64LE::Rela> rels;
   OutputSection *output_section;
   StringRef output_section_name;
   int64_t offset = -1;

@@ -45,6 +45,11 @@ void InputSection::copy_to(uint8_t *buf) {
   memcpy(buf + offset, &data[0], data.size());
 }
 
+void InputSection::relocate(uint8_t *buf) {
+  if (hdr->sh_type == SHT_NOBITS || hdr->sh_size == 0)
+    return;
+}
+
 std::string toString(InputSection *isec) {
   return (toString(isec->file) + ":(" + isec->name + ")").str();
 }

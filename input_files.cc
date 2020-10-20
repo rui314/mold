@@ -76,6 +76,20 @@ void ObjectFile::initialize_sections() {
     }
     }
   }
+
+  for (int i = 0; i < elf_sections.size(); i++) {
+    const ELF64LE::Shdr &shdr = elf_sections[i];
+    if (shdr.sh_type != SHT_RELA)
+      continue;
+
+    if (shdr.sh_info >= sections.size())
+      error(toString(this) + ": invalid relocated section index: " +
+            Twine(shdr.sh_info));
+
+    InputSection *target = sections[shdr.sh_info];
+    if (target)
+      target->rels = CHECK(obj.relas(shdr), this);
+  }
 }
 
 void ObjectFile::initialize_symbols() {
