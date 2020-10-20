@@ -158,7 +158,6 @@ int main(int argc, char **argv) {
 
   // Create an ELF header, a section header and a program header.
   std::vector<OutputChunk *> output_chunks;
-
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
