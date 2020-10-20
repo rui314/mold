@@ -271,6 +271,7 @@ public:
 class OutputSection : public OutputChunk {
 public:
   OutputSection(StringRef name) : name(name) {}
+  OutputSection(const OutputSection &other) : name(other.name) {}
 
   void copy_to(uint8_t *buf) override {
     for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
