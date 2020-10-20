@@ -206,12 +206,11 @@ public:
 class GenericSection : public InputChunk {
 public:
   GenericSection(StringRef name, ArrayRef<uint8_t> data,
-                 uint64_t flags, uint32_t type, uint32_t alignment)
+                 uint64_t flags, uint32_t type)
     : data(data) {
     this->name = name;
     this->flags = flags;
     this->type = type;
-    this->alignment = alignment;
   }
 
   void copy_to(uint8_t *buf) override {

@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+using llvm::makeArrayRef;
 using llvm::FileOutputBuffer;
 using llvm::file_magic;
 using llvm::object::Archive;
@@ -100,6 +101,18 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
+static OutputChunk *create_interp_section() {
+  const char *loader = "/lib64/ld-linux-x86-64.so.2";
+  auto *isec = new GenericSection(".interp",
+                                  makeArrayRef((uint8_t *)loader, sizeof(*loader)),
+                                  llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
+
+  auto *osec = new OutputSection(".interp");
+  isec->output_section = osec;
+  osec->chunks.push_back(isec);
+  return osec;
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -164,6 +177,9 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::ehdr);
   output_chunks.push_back(out::shdr);
   output_chunks.push_back(out::phdr);
+
+  // Add .interp section
+  output_chunks.push_back(create_interp_section());
 
   // Bin input sections into output sections
   output_section_timer.startTimer();
