@@ -169,13 +169,12 @@ int main(int argc, char **argv) {
   output_section_timer.startTimer();
   for (ObjectFile *file : files) {
     for (InputSection *isec : file->sections) {
-      if (!isec)
-        continue;
-
-      OutputSection *osec = isec->output_section;
-      if (osec->sections.empty())
-        output_chunks.push_back(osec);
-      osec->sections.push_back(isec);
+      if (isec) {
+        OutputSection *osec = isec->output_section;
+        if (osec->sections.empty())
+          output_chunks.push_back(osec);
+        osec->sections.push_back(isec);
+      }
     }
   }
   output_section_timer.stopTimer();
