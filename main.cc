@@ -200,11 +200,15 @@ int main(int argc, char **argv) {
 
   // Copy input sections to the output file
   copy_timer.startTimer();
+#if 1
   for_each(output_sections, [&](OutputSection *osec) { osec->copy_to(buf); });
-  copy_timer.stopTimer();
-
+#else
+  for (OutputSection *osec : output_sections)
+    osec->copy_to(buf);
+#endif
   if (auto e = output_buffer->commit())
     error("failed to write to the output file: " + toString(std::move(e)));
+  copy_timer.stopTimer();
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;

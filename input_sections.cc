@@ -1,5 +1,7 @@
 #include "chibild.h"
 
+using llvm::ELF::SHT_NOBITS;
+
 static OutputSection *get_output_section(StringRef name) {
   static OutputSection common_sections[] = {
     {".text"}, {".data"}, {".data.rel.ro"}, {".rodata"}, {".bss"}, {".bss.rel.ro"},
@@ -37,6 +39,8 @@ uint64_t InputSection::get_size() const {
 }
 
 void InputSection::copy_to(uint8_t *buf) {
+  if (hdr->sh_type == SHT_NOBITS || hdr->sh_size == 0)
+    return;
   ArrayRef<uint8_t> data = check(file->obj.getSectionContents(*hdr));
   memcpy(buf + offset, &data[0], data.size());
 }
