@@ -102,8 +102,8 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
 }
 
 static InputChunk *create_interp_section() {
-  auto *osec = new OutputSection(".interp");
   static char loader[] = "/lib64/ld-linux-x86-64.so.2";
+  auto *osec = new OutputSection(".interp");
   return new GenericSection(".interp",
                             makeArrayRef((uint8_t *)loader, sizeof(loader)),
                             osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
