@@ -101,16 +101,12 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
-static OutputChunk *create_interp_section() {
-  const char *loader = "/lib64/ld-linux-x86-64.so.2";
-  auto *isec = new GenericSection(".interp",
-                                  makeArrayRef((uint8_t *)loader, sizeof(*loader)),
-                                  llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
-
+static InputChunk *create_interp_section() {
   auto *osec = new OutputSection(".interp");
-  isec->output_section = osec;
-  osec->chunks.push_back(isec);
-  return osec;
+  const char *loader = "/lib64/ld-linux-x86-64.so.2";
+  return new GenericSection(".interp",
+                            makeArrayRef((uint8_t *)loader, sizeof(*loader)),
+                            osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
 }
 
 int main(int argc, char **argv) {
@@ -178,21 +174,25 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::shdr);
   output_chunks.push_back(out::phdr);
 
+  auto add_section = [&](InputChunk *chunk) {
+                       if (!chunk)
+                         return;
+                       OutputSection *osec = chunk->output_section;
+                       if (osec->chunks.empty())
+                         output_chunks.push_back(osec);
+                       osec->chunks.push_back(chunk);
+                     };
+
   // Add .interp section
-  output_chunks.push_back(create_interp_section());
+  add_section(create_interp_section());
 
   // Bin input sections into output sections
   output_section_timer.startTimer();
-  for (ObjectFile *file : files) {
-    for (InputSection *isec : file->sections) {
-      if (isec) {
-        OutputSection *osec = isec->output_section;
-        if (osec->chunks.empty())
-          output_chunks.push_back(osec);
-        osec->chunks.push_back(isec);
-      }
-    }
-  }
+#if 0
+  for (ObjectFile *file : files)
+    for (InputSection *isec : file->sections)
+      add_section(isec);
+#endif
   output_section_timer.stopTimer();
 
   // Assign offsets to input sections
@@ -200,6 +200,7 @@ int main(int argc, char **argv) {
   uint64_t filesize = 0;
   for (OutputChunk *chunk : output_chunks) {
     chunk->set_offset(filesize);
+    llvm::outs() << ": " << chunk->get_offset() << "\n";
     filesize += chunk->get_size();
   }
   file_offset_timer.stopTimer();

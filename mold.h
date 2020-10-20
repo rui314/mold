@@ -206,9 +206,10 @@ public:
 class GenericSection : public InputChunk {
 public:
   GenericSection(StringRef name, ArrayRef<uint8_t> data,
-                 uint64_t flags, uint32_t type)
+                 OutputSection *osec, uint64_t flags, uint32_t type)
     : data(data) {
     this->name = name;
+    this->output_section = osec;
     this->flags = flags;
     this->type = type;
   }
