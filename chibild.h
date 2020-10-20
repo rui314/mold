@@ -181,7 +181,6 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   StringRef output_section_name;
-  uint64_t output_file_offset;
   int64_t offset = -1;
   uint32_t alignment;
 

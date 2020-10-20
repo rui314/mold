@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
   for (OutputSection *osec : output_sections) {
     for (InputSection *isec : osec->sections) {
       filesize = align_to(filesize, isec->alignment);
-      isec->output_file_offset = filesize;
+      isec->offset = filesize;
       filesize += isec->get_size();
     }
   }
