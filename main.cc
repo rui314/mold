@@ -119,6 +119,8 @@ int main(int argc, char **argv) {
   llvm::Timer output_section_timer("output_section", "output_section");
   llvm::Timer file_offset_timer("file_offset", "file_offset");
   llvm::Timer copy_timer("copy", "copy");
+  llvm::Timer reloc_timer("reloc", "reloc");
+  llvm::Timer commit_timer("commit", "commit");
 
   // Open input files
   open_timer.startTimer();
@@ -200,15 +202,16 @@ int main(int argc, char **argv) {
 
   // Copy input sections to the output file
   copy_timer.startTimer();
-#if 1
   for_each(output_sections, [&](OutputSection *osec) { osec->copy_to(buf); });
-#else
-  for (OutputSection *osec : output_sections)
-    osec->copy_to(buf);
-#endif
+  copy_timer.stopTimer();
+
+  reloc_timer.startTimer();
+  reloc_timer.stopTimer();
+
+  commit_timer.startTimer();
   if (auto e = output_buffer->commit())
     error("failed to write to the output file: " + toString(std::move(e)));
-  copy_timer.stopTimer();
+  commit_timer.stopTimer();
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;

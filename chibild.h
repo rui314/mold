@@ -271,12 +271,7 @@ public:
   OutputSection(StringRef name) : name(name) {}
 
   void copy_to(uint8_t *buf) override {
-#if 0
     for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
-#else
-    for (InputSection *isec : sections)
-      isec->copy_to(buf);
-#endif
   }
 
   void relocate(uint8_t *buf) override {}
