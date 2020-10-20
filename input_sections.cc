@@ -1,6 +1,8 @@
 #include "chibild.h"
 
-using llvm::ELF::SHT_NOBITS;
+using namespace llvm::ELF;
+
+std::atomic_int num_relocs;
 
 static OutputSection *get_output_section(StringRef name) {
   static OutputSection common_sections[] = {
@@ -46,8 +48,61 @@ void InputSection::copy_to(uint8_t *buf) {
 }
 
 void InputSection::relocate(uint8_t *buf) {
-  if (hdr->sh_type == SHT_NOBITS || hdr->sh_size == 0)
+  if (rels.empty())
     return;
+
+  int i = 0;
+  for (const ELF64LE::Rela &rel : rels) {
+    uint8_t *loc = buf + offset + rel.r_offset;
+    uint64_t val = 5;
+
+    switch (rel.getType(false)) {
+    case R_X86_64_8:
+      *loc = val;
+      break;
+    case R_X86_64_PC8:
+      *loc = val;
+      break;
+    case R_X86_64_16:
+      *(uint16_t *)loc = val;
+      break;
+    case R_X86_64_PC16:
+      *(uint16_t *)loc = val;
+      break;
+    case R_X86_64_32:
+      *(uint32_t *)loc = val;
+      break;
+    case R_X86_64_32S:
+    case R_X86_64_TPOFF32:
+    case R_X86_64_GOT32:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC32_TLSDESC:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_PC32:
+    case R_X86_64_GOTTPOFF:
+    case R_X86_64_PLT32:
+    case R_X86_64_TLSGD:
+    case R_X86_64_TLSLD:
+    case R_X86_64_DTPOFF32:
+    case R_X86_64_SIZE32:
+      *(uint32_t *)loc = val;
+      break;
+    case R_X86_64_64:
+    case R_X86_64_DTPOFF64:
+    case R_X86_64_PC64:
+    case R_X86_64_SIZE64:
+    case R_X86_64_GOT64:
+    case R_X86_64_GOTOFF64:
+    case R_X86_64_GOTPC64:
+      *(uint64_t *)loc = val;
+      break;
+    default:
+      error(toString(this) + ": unknown relocation");
+    }
+    // num_relocs++;
+  }
 }
 
 std::string toString(InputSection *isec) {

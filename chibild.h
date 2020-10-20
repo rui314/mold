@@ -367,3 +367,4 @@ extern SymbolTable symbol_table;
 extern std::atomic_int num_defined;
 extern std::atomic_int num_undefined;
 extern std::atomic_int num_files;
+extern std::atomic_int num_relocs;

@@ -184,11 +184,6 @@ int main(int argc, char **argv) {
   }
   file_offset_timer.stopTimer();
 
-  llvm::outs() << "         osec=" << output_sections.size() << "\n"
-               << "     filesize=" << filesize << "\n"
-               << "  num_defined=" << num_defined << "\n"
-               << "num_undefined=" << num_undefined << "\n";
-
   // Create an output file
   Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
     FileOutputBuffer::create(config.output, filesize, 0);
@@ -217,6 +212,12 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
+
+  llvm::outs() << "         osec=" << output_sections.size() << "\n"
+               << "     filesize=" << filesize << "\n"
+               << "  num_defined=" << num_defined << "\n"
+               << "num_undefined=" << num_undefined << "\n"
+               << "   num_relocs=" << num_relocs << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();
