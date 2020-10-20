@@ -156,8 +156,17 @@ int main(int argc, char **argv) {
     file->eliminate_duplicate_comdat_groups();
   comdat_timer.stopTimer();
 
+  // Create an ELF header, a section header and a program header.
+  std::vector<OutputChunk *> output_chunks;
+
+  out::ehdr = new OutputEhdr;
+  out::shdr = new OutputShdr;
+  out::phdr = new OutputPhdr;
+  output_chunks.push_back(out::ehdr);
+  output_chunks.push_back(out::shdr);
+  output_chunks.push_back(out::phdr);
+
   // Bin input sections into output sections
-  std::vector<OutputSection *> output_sections;
   output_section_timer.startTimer();
   for (ObjectFile *file : files) {
     for (InputSection *isec : file->sections) {
@@ -166,7 +175,7 @@ int main(int argc, char **argv) {
 
       OutputSection *osec = isec->output_section;
       if (osec->sections.empty())
-        output_sections.push_back(osec);
+        output_chunks.push_back(osec);
       osec->sections.push_back(isec);
     }
   }
@@ -175,12 +184,9 @@ int main(int argc, char **argv) {
   // Assign offsets to input sections
   file_offset_timer.startTimer();
   uint64_t filesize = 0;
-  for (OutputSection *osec : output_sections) {
-    for (InputSection *isec : osec->sections) {
-      filesize = align_to(filesize, isec->alignment);
-      isec->offset = filesize;
-      filesize += isec->get_size();
-    }
+  for (OutputChunk *chunk : output_chunks) {
+    chunk->set_offset(filesize);
+    filesize += chunk->get_size();
   }
   file_offset_timer.stopTimer();
 
@@ -197,11 +203,11 @@ int main(int argc, char **argv) {
 
   // Copy input sections to the output file
   copy_timer.startTimer();
-  for_each(output_sections, [&](OutputSection *osec) { osec->copy_to(buf); });
+  for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
   copy_timer.stopTimer();
 
   reloc_timer.startTimer();
-  for_each(output_sections, [&](OutputSection *osec) { osec->relocate(buf); });
+  for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
   reloc_timer.stopTimer();
 
   commit_timer.startTimer();
@@ -209,11 +215,7 @@ int main(int argc, char **argv) {
     error("failed to write to the output file: " + toString(std::move(e)));
   commit_timer.stopTimer();
 
-  out::ehdr = new OutputEhdr;
-  out::shdr = new OutputShdr;
-  out::phdr = new OutputPhdr;
-
-  llvm::outs() << "         osec=" << output_sections.size() << "\n"
+  llvm::outs() << "       chunks=" << output_chunks.size() << "\n"
                << "     filesize=" << filesize << "\n"
                << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n"
