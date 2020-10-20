@@ -91,6 +91,11 @@ class ObjectFile;
 
 std::string toString(ObjectFile *);
 
+template<typename T, typename Callable>
+static void for_each(T &arr, Callable callback) {
+  tbb::parallel_for_each(arr.begin(), arr.end(), callback);
+}
+
 //
 // Interned string
 //
@@ -267,8 +272,7 @@ public:
   OutputSection(StringRef name) : name(name) {}
 
   void copy_to(uint8_t *buf) override {
-    for (InputSection *sec : sections)
-      sec->copy_to(buf);
+    for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   void relocate(uint8_t *buf) override {}

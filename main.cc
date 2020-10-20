@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+using llvm::FileOutputBuffer;
 using llvm::file_magic;
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
@@ -99,11 +100,6 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
-template<typename T, typename Callable>
-static void for_each(T &arr, Callable callback) {
-  tbb::parallel_for_each(arr.begin(), arr.end(), callback);
-}
-
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -122,6 +118,7 @@ int main(int argc, char **argv) {
   llvm::Timer comdat_timer("comdat", "comdat");
   llvm::Timer output_section_timer("output_section", "output_section");
   llvm::Timer file_offset_timer("file_offset", "file_offset");
+  llvm::Timer copy_timer("copy", "copy");
 
   // Open input files
   open_timer.startTimer();
@@ -159,7 +156,6 @@ int main(int argc, char **argv) {
 
   // Bin input sections into output sections
   std::vector<OutputSection *> output_sections;
-
   output_section_timer.startTimer();
   for (ObjectFile *file : files) {
     for (InputSection *isec : file->sections) {
@@ -174,44 +170,45 @@ int main(int argc, char **argv) {
   }
   output_section_timer.stopTimer();
 
+  // Assign offsets to input sections
   file_offset_timer.startTimer();
-  uint64_t off = 0;
+  uint64_t filesize = 0;
   for (OutputSection *osec : output_sections) {
     for (InputSection *isec : osec->sections) {
-      off = align_to(off, isec->alignment);
-      isec->output_file_offset = off;
-      off += isec->get_size();
+      filesize = align_to(filesize, isec->alignment);
+      isec->output_file_offset = filesize;
+      filesize += isec->get_size();
     }
   }
   file_offset_timer.stopTimer();
 
-#if 0
-  int max_align = 0;
-  for (OutputSection *osec : output_sections) {
-    for (InputSection *isec : osec->sections) {
-      if (isec->alignment > max_align) {
-        llvm::outs() << toString(isec) << " " << isec->alignment << "\n";
-        max_align = isec->alignment;
-      }       
-    }
-  }
-#endif
+  llvm::outs() << "         osec=" << output_sections.size() << "\n"
+               << "     filesize=" << filesize << "\n"
+               << "  num_defined=" << num_defined << "\n"
+               << "num_undefined=" << num_undefined << "\n";
 
-#if 0
-  int64_t filesize = 0;
-  for (OutputSection *sec : output_sections) {
-    sec->set_offset(filesize);
-    filesize += sec->get_size();
-  }
-#endif
+  // Create an output file
+  Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
+    FileOutputBuffer::create(config.output, filesize, 0);
+
+  if (!buf_or_err)
+    error("failed to open " + config.output + ": " +
+          llvm::toString(buf_or_err.takeError()));
+
+  std::unique_ptr<FileOutputBuffer> output_buffer = std::move(*buf_or_err);
+  uint8_t *buf = output_buffer->getBufferStart();
+
+  // Copy input sections to the output file
+  copy_timer.startTimer();
+  for_each(output_sections, [&](OutputSection *osec) { osec->copy_to(buf); });
+  copy_timer.stopTimer();
+
+  if (auto e = output_buffer->commit())
+    error("failed to write to the output file: " + toString(std::move(e)));
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
-
-  llvm::outs() << "         osec=" << output_sections.size() << "\n";
-  llvm::outs() << "  num_defined=" << num_defined << "\n"
-               << "num_undefined=" << num_undefined << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();
