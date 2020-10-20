@@ -12,10 +12,10 @@ LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags) -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDI
 LIBS=-pthread -ltbb -lcurses -Wl,--start-group $(LLVM_LIBS) -Wl,--end-group
 OBJS=main.o writer.o input_files.o input_sections.o output_sections.o output_file.o
 
-chibild: $(OBJS)
+mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
-$(OBJS): chibild.h Makefile
+$(OBJS): mold.h Makefile
 
 main.cc: options.inc
 
@@ -32,10 +32,10 @@ llvm:
 intel_tbb:
 	$(MAKE) -C oneTBB
 
-test: chibild
+test: mold
 	./llvm-project/build/bin/llvm-lit test
 
 clean:
-	rm -f *.o *~ chibild options.inc
+	rm -f *.o *~ mold options.inc
 
 .PHONY: llvm intel_tbb test clean

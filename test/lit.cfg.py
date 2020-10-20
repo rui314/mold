@@ -10,7 +10,7 @@ from lit.llvm import llvm_config
 import lit.llvm
 import lit.util
 
-config.name = 'chibild'
+config.name = 'mold'
 config.suffixes = ['.s', '.test']
 config.test_format = lit.formats.ShTest(False)
 config.test_source_root = os.path.dirname(__file__)
