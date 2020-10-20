@@ -161,7 +161,7 @@ inline std::string toString(Symbol sym) {
 }
 
 //
-// input_sections.cc
+// input_chunks.cc
 //
 
 class InputChunk {
@@ -209,7 +209,7 @@ inline uint64_t align_to(uint64_t val, uint64_t align) {
 }
 
 //
-// output_sections.cc
+// output_chunks.cc
 //
 
 class OutputChunk {
