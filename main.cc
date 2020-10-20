@@ -171,9 +171,9 @@ int main(int argc, char **argv) {
     for (InputSection *isec : file->sections) {
       if (isec) {
         OutputSection *osec = isec->output_section;
-        if (osec->sections.empty())
+        if (osec->chunks.empty())
           output_chunks.push_back(osec);
-        osec->sections.push_back(isec);
+        osec->chunks.push_back(isec);
       }
     }
   }
