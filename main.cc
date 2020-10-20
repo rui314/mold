@@ -103,9 +103,9 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
 
 static InputChunk *create_interp_section() {
   auto *osec = new OutputSection(".interp");
-  const char *loader = "/lib64/ld-linux-x86-64.so.2";
+  static char loader[] = "/lib64/ld-linux-x86-64.so.2";
   return new GenericSection(".interp",
-                            makeArrayRef((uint8_t *)loader, sizeof(*loader)),
+                            makeArrayRef((uint8_t *)loader, sizeof(loader)),
                             osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
 }
 
@@ -200,8 +200,9 @@ int main(int argc, char **argv) {
   uint64_t filesize = 0;
   for (OutputChunk *chunk : output_chunks) {
     chunk->set_offset(filesize);
-    llvm::outs() << ": " << chunk->get_offset() << "\n";
     filesize += chunk->get_size();
+    llvm::outs() << chunk->get_name() << ": " << chunk->get_offset()
+                 << ": " << filesize << "\n";
   }
   file_offset_timer.stopTimer();
 
