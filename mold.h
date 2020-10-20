@@ -173,6 +173,8 @@ public:
   StringRef name;
   OutputSection *output_section;
   int64_t offset = -1;
+  uint64_t flags;
+  uint32_t type;
   uint32_t alignment = 1;
 };
 
@@ -199,6 +201,27 @@ public:
   uint64_t addString(StringRef s);
   void copy_to(uint8_t *buf) override;
   uint64_t get_size() const override { return 0; }
+};
+
+class GenericSection : public InputChunk {
+public:
+  GenericSection(StringRef name, ArrayRef<uint8_t> data,
+                 uint64_t flags, uint32_t type, uint32_t alignment)
+    : data(data) {
+    this->name = name;
+    this->flags = flags;
+    this->type = type;
+    this->alignment = alignment;
+  }
+
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, &data[0], data.size());
+  }
+
+  uint64_t get_size() const override { return data.size(); }
+
+private:
+  ArrayRef<uint8_t> data;
 };
 
 std::string toString(InputSection *isec);
