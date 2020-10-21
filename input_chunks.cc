@@ -27,37 +27,43 @@ struct tbb_hash_compare<LookupKey> {
 
 static OutputSection *get_output_section(InputSection *isec) {
   static OutputSection common_sections[] = {
-    {".text", 0, 0},
-    {".data", 0, 0},
-    {".data.rel.ro", 0, 0},
-    {".rodata", 0, 0},
-    {".bss", 0, 0},
-    {".bss.rel.ro", 0, 0},
-    {".ctors", 0, 0},
-    {".dtors", 0, 0},
-    {".init_array", 0, 0},
-    {".fini_array", 0, 0},
-    {".tbss", 0, 0},
-    {".tdata", 0, 0},
+    {".text", SHF_ALLOC | SHF_EXECINSTR, SHT_PROGBITS},
+    {".data.rel.ro", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
+    {".data", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
+    {".rodata", SHF_ALLOC, SHT_PROGBITS},
+    {".bss.rel.ro", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
+    {".bss", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
+    {".init_array", SHF_ALLOC | SHF_WRITE, SHT_INIT_ARRAY},
+    {".fini_array", SHF_ALLOC | SHF_WRITE, SHT_FINI_ARRAY},
+    {".tbss", SHF_TLS, SHT_NOBITS},
+    {".tdata", SHF_ALLOC | SHF_WRITE | SHF_TLS, SHT_PROGBITS},
   };
 
+  StringRef iname = isec->name;
+  uint64_t iflags = isec->hdr->sh_flags & ~SHF_GROUP;
+
   for (OutputSection &osec : common_sections) {
-    if (isec->name.startswith(osec.name) &&
-        isec->hdr->sh_flags == osec.hdr.sh_flags &&
-        isec->hdr->sh_type == osec.hdr.sh_type) {
-      bool dot_follows =
-        osec.name.size() < isec->name.size() && isec->name[osec.name.size()] == '.';
-      if (isec->name.size() == osec.name.size() || dot_follows)
-        return &osec;
+    bool dot_follows = (iname.startswith(osec.name) &&
+                        iname.size() > osec.name.size() &&
+                        iname[osec.name.size()] == '.');
+
+    if (iname == osec.name || dot_follows) {
+      iname = osec.name;
+      break;
     }
   }
+
+  for (OutputSection &osec : common_sections)
+    if (iname == osec.name && iflags == (osec.hdr.sh_flags & ~SHF_GROUP) &&
+        isec->hdr->sh_type == osec.hdr.sh_type)
+      return &osec;
 
   typedef tbb::concurrent_hash_map<LookupKey, OutputSection> T;
   static T map;
   T::accessor acc;
 
-  LookupKey key = {isec->name, isec->hdr->sh_flags, isec->hdr->sh_type};
-  OutputSection val(isec->name, isec->hdr->sh_flags, isec->hdr->sh_type);
+  LookupKey key = {iname, iflags, isec->hdr->sh_type};
+  OutputSection val(iname, iflags, isec->hdr->sh_type);
   map.insert(acc, std::make_pair(key, val));
   return &acc->second;
 }
