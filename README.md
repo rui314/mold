@@ -20,7 +20,7 @@ they are still just random unproved thoughts which need to be
 implemented and tested with benchmarks. Here is a brain dump:
 
 - In order to achieve a `cat`-like performance, the most important
-  thing is to fix the layout of an output file as soon as possible, so
+  thing is to fix the layout of an output file as quickly as possible, so
   that we can start copying actual data from input object files to an
   output executable/shared library file.
 
@@ -50,7 +50,7 @@ implemented and tested with benchmarks. Here is a brain dump:
 - Daemonizing alone wouldn't make the linker magically faster. We need
   to split the linker into two in such a way that the latter half of
   the process finishes as quickly as possible by speculatively parsing
-  and preprocessing input file in the first half of the process. The
+  and preprocessing input files in the first half of the process. The
   key factor of success would be to design nice data structures to
   pass data between the first half and the second half that allows us
   to offload as much processing as possible from the second to the
@@ -76,8 +76,8 @@ implemented and tested with benchmarks. Here is a brain dump:
   object files and lacks other types of symbols. That makes static
   archives unsuitable for speculative parsing. The daemon should
   ignore the string table of static archive and directly read all
-  member object files to get the whole picture of all possible input
-  files.
+  member object files of all archives to get the whole picture of
+  all possible input files.
 
 - If there's a relocation that uses a GOT of a symbol, then we have to
   create a GOT entry for that symbol. Otherwise, we shouldn't. That
