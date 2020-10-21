@@ -187,8 +187,6 @@ public:
 
   ObjectFile *file;
   ArrayRef<ELF64LE::Rela> rels;
-
-private:
   const ELF64LE::Shdr *hdr;
 };
 
@@ -296,7 +294,12 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  OutputSection(StringRef name) : name(name) {}
+  OutputSection(StringRef name, uint64_t flags, uint32_t type)
+    : name(name) {
+    hdr.sh_flags = flags;
+    hdr.sh_type = type;
+  }
+
   OutputSection(const OutputSection &other) : name(other.name) {}
 
   void copy_to(uint8_t *buf) override {
@@ -318,9 +321,9 @@ public:
 
   std::vector<InputChunk *> chunks;
   StringRef name;
+  ELF64LE::Shdr hdr = {};
 
 private:
-  ELF64LE::Shdr hdr = {};
   uint64_t file_offset = 0;
   uint64_t on_file_size = -1;
 };

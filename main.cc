@@ -2,9 +2,11 @@
 
 #include <iostream>
 
-using llvm::makeArrayRef;
+using namespace llvm::ELF;
+
 using llvm::FileOutputBuffer;
 using llvm::file_magic;
+using llvm::makeArrayRef;
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
@@ -103,7 +105,7 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
 
 static InputChunk *create_interp_section() {
   static char loader[] = "/lib64/ld-linux-x86-64.so.2";
-  auto *osec = new OutputSection(".interp");
+  auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
   return new GenericSection(".interp",
                             makeArrayRef((uint8_t *)loader, sizeof(loader)),
                             osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);

@@ -4,29 +4,68 @@ using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
 
-static OutputSection *get_output_section(StringRef name) {
+typedef struct {
+  StringRef name;
+  uint64_t flags;
+  uint64_t type;
+} LookupKey;
+
+namespace tbb {
+template<>
+struct tbb_hash_compare<LookupKey> {
+  static size_t hash(const LookupKey& k) {
+  return llvm::hash_combine(llvm::hash_value(k.name),
+                            llvm::hash_value(k.flags),
+                            llvm::hash_value(k.type));
+  }
+
+  static bool equal(const LookupKey& k1, const LookupKey& k2) {
+    return k1.name == k2.name && k1.flags == k2.flags && k1.type == k2.type;
+  }
+};
+}
+
+static OutputSection *get_output_section(InputSection *isec) {
   static OutputSection common_sections[] = {
-    {".text"}, {".data"}, {".data.rel.ro"}, {".rodata"}, {".bss"}, {".bss.rel.ro"},
-    {".ctors"}, {".dtors"}, {".init_array"}, {".fini_array"}, {".tbss"}, {".tdata"},
+    {".text", 0, 0},
+    {".data", 0, 0},
+    {".data.rel.ro", 0, 0},
+    {".rodata", 0, 0},
+    {".bss", 0, 0},
+    {".bss.rel.ro", 0, 0},
+    {".ctors", 0, 0},
+    {".dtors", 0, 0},
+    {".init_array", 0, 0},
+    {".fini_array", 0, 0},
+    {".tbss", 0, 0},
+    {".tdata", 0, 0},
   };
 
   for (OutputSection &osec : common_sections) {
-    if (!name.startswith(osec.name))
-      continue;
-    if (name.size() == osec.name.size())
-      return &osec;
-    if (name.size() > osec.name.size() && name[osec.name.size()] == '.')
-      return &osec;
-  };
+    if (isec->name.startswith(osec.name) &&
+        isec->hdr->sh_flags == osec.hdr.sh_flags &&
+        isec->hdr->sh_type == osec.hdr.sh_type) {
+      bool dot_follows =
+        osec.name.size() < isec->name.size() && isec->name[osec.name.size()] == '.';
+      if (isec->name.size() == osec.name.size() || dot_follows)
+        return &osec;
+    }
+  }
 
-  static ConcurrentMap<OutputSection> map;
-  return map.insert(name, OutputSection(name));
+  typedef tbb::concurrent_hash_map<LookupKey, OutputSection> T;
+  static T map;
+  T::accessor acc;
+
+  LookupKey key = {isec->name, isec->hdr->sh_flags, isec->hdr->sh_type};
+  OutputSection val(isec->name, isec->hdr->sh_flags, isec->hdr->sh_type);
+  map.insert(acc, std::make_pair(key, val));
+  return &acc->second;
 }
 
 InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name)
   : file(file), hdr(hdr) {
   this->name = name;
-  this->output_section = get_output_section(name);
+  this->output_section = get_output_section(this);
 
   uint64_t align = (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
   if (align > UINT32_MAX)
