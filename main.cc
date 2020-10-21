@@ -116,8 +116,9 @@ static std::vector<ELF64LE::Phdr> create_phdrs() {
 static std::vector<ELF64LE::Shdr>
 create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<ELF64LE::Shdr> vec;
+  vec.push_back({});
   for (OutputChunk *chunk : output_chunks)
-    if (ELF64LE::Shdr *hdr = chunk->get_shdr())
+    if (const ELF64LE::Shdr *hdr = chunk->get_shdr())
       vec.push_back(*hdr);
   return vec;
 }
