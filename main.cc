@@ -202,11 +202,9 @@ int main(int argc, char **argv) {
 
   // Bin input sections into output sections
   output_section_timer.startTimer();
-#if 0
   for (ObjectFile *file : files)
     for (InputSection *isec : file->sections)
       add_section(isec);
-#endif
   output_section_timer.stopTimer();
 
   // Create program header contents.
@@ -223,8 +221,6 @@ int main(int argc, char **argv) {
   for (OutputChunk *chunk : output_chunks) {
     chunk->set_offset(filesize);
     filesize += chunk->get_size();
-    llvm::outs() << chunk->get_name() << ": " << chunk->get_offset()
-                 << ": " << filesize << "\n";
   }
   file_offset_timer.stopTimer();
 
