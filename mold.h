@@ -207,26 +207,6 @@ private:
   std::string contents;
 };
 
-class GenericSection : public InputChunk {
-public:
-  GenericSection(StringRef name, ArrayRef<uint8_t> data,
-                 uint64_t flags, uint32_t type)
-    : data(data) {
-    this->name = name;
-    this->flags = flags;
-    this->type = type;
-  }
-
-  void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, &data[0], data.size());
-  }
-
-  uint64_t get_size() const override { return data.size(); }
-
-private:
-  ArrayRef<uint8_t> data;
-};
-
 std::string toString(InputSection *isec);
 
 inline uint64_t align_to(uint64_t val, uint64_t align) {
@@ -241,12 +221,14 @@ inline uint64_t align_to(uint64_t val, uint64_t align) {
 class OutputChunk {
 public:
   virtual void copy_to(uint8_t *buf) = 0;
-  virtual void relocate(uint8_t *buf) = 0;
+  virtual void relocate(uint8_t *buf) {}
   virtual void set_offset(uint64_t off) { offset = off; }
   uint64_t get_offset() const { return offset; }
   virtual uint64_t get_size() const = 0;
-  virtual StringRef get_name() const { return ""; }
   virtual const ELF64LE::Shdr *get_shdr() const { return nullptr; }
+
+  StringRef name;
+  ELF64LE::Shdr hdr = {};
 
 protected:
   int64_t offset = -1;
@@ -271,8 +253,6 @@ public:
     memcpy(buf + offset, &hdr[0], get_size());
   }
 
-  void relocate(uint8_t *buf) override {}
-
   uint64_t get_size() const override {
     return hdr.size() * sizeof(hdr[0]);
   }
@@ -287,8 +267,6 @@ public:
     memcpy(buf + offset, &hdr[0], get_size());
   }
 
-  void relocate(uint8_t *buf) override {}
-
   uint64_t get_size() const override {
     return hdr.size() * sizeof(hdr[0]);
   }
@@ -301,8 +279,8 @@ class OutputSection : public OutputChunk {
 public:
   static OutputSection *get_instance(InputSection *isec);
 
-  OutputSection(StringRef name, uint64_t flags, uint32_t type)
-    : name(name) {
+  OutputSection(StringRef name, uint64_t flags, uint32_t type) {
+    this->name = name;
     hdr.sh_flags = flags;
     hdr.sh_type = type;
     all_instances.push_back(this);
@@ -322,19 +300,34 @@ public:
   }
 
   void set_offset(uint64_t off) override;
-  StringRef get_name() const override { return name; }
   const ELF64LE::Shdr *get_shdr() const override { return &hdr; }
 
   std::vector<InputChunk *> chunks;
-  StringRef name;
-  ELF64LE::Shdr hdr = {};
-
   static std::vector<OutputSection *> all_instances;
 
 private:
   uint64_t file_offset = 0;
   uint64_t on_file_size = -1;
 };
+
+class InterpSection : public OutputChunk {
+public:
+  InterpSection() {
+    name = ".interp";
+    hdr.sh_flags = llvm::ELF::PF_R;
+    hdr.sh_type = llvm::ELF::PT_INTERP;
+  }
+
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, path, sizeof(path));
+  }
+
+  uint64_t get_size() const override { return sizeof(path); }
+
+private:
+  static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
+};
+
 
 namespace out {
 extern OutputEhdr *ehdr;

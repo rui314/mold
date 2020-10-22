@@ -101,15 +101,6 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
-static OutputSection *create_interp_section() {
-  static char path[] = "/lib64/ld-linux-x86-64.so.2";
-  ArrayRef<uint8_t> arr((uint8_t *)path, sizeof(path));
-
-  auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
-  osec->chunks.push_back(new GenericSection(".interp", arr, SHF_ALLOC, SHT_PROGBITS));
-  return osec;
-}
-
 // We want to sort output sections in the following order.
 //
 //  alloc !writable !exec !tls !nobits
@@ -240,7 +231,7 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::phdr);
 
   // Add .interp section
-  output_chunks.push_back(create_interp_section());
+  output_chunks.push_back(new InterpSection);
 
   // Add other output sections
   for (OutputSection *osec : get_output_sections())
