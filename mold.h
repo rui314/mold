@@ -201,7 +201,10 @@ public:
 
   uint64_t addString(StringRef s);
   void copy_to(uint8_t *buf) override;
-  uint64_t get_size() const override { return 0; }
+  uint64_t get_size() const override { return contents.size(); }
+
+private:
+  std::string contents;
 };
 
 class GenericSection : public InputChunk {
@@ -337,6 +340,7 @@ namespace out {
 extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
+extern StringTableSection *shstrtab;
 }
 
 //

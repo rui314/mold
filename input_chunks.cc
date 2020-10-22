@@ -86,6 +86,17 @@ void InputSection::relocate(uint8_t *buf) {
   }
 }
 
+uint64_t StringTableSection::addString(StringRef s) {
+  uint64_t ret = contents.size();
+  contents += s.str();
+  contents += "\0";
+  return ret;
+}
+
+void StringTableSection::copy_to(uint8_t *buf) {
+  memcpy(buf + offset, &contents[0], contents.size());
+}
+
 std::string toString(InputSection *isec) {
   return (toString(isec->file) + ":(" + isec->name + ")").str();
 }
