@@ -242,7 +242,7 @@ public:
   }
 
   uint64_t get_size() const override {
-    return hdr.size() * sizeof(hdr[0]);
+    return hdr.size() * sizeof(ELF64LE::Shdr);
   }
 
   std::vector<ELF64LE::Shdr *> hdr;
