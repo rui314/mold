@@ -74,8 +74,5 @@ OutputSection *OutputSection::get_instance(InputSection *isec) {
   std::unique_lock unique_lock(mu);
   if (OutputSection *osec = find())
     return osec;
-
-  OutputSection *osec = new OutputSection(iname, iflags, isec->hdr->sh_type);
-  OutputSection::all_instances.push_back(osec);
-  return osec;
+  return new OutputSection(iname, iflags, isec->hdr->sh_type);
 }

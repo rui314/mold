@@ -303,6 +303,7 @@ public:
     : name(name) {
     hdr.sh_flags = flags;
     hdr.sh_type = type;
+    all_instances.push_back(this);
   }
 
   void copy_to(uint8_t *buf) override {
