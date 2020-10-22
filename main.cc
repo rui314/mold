@@ -223,19 +223,25 @@ int main(int argc, char **argv) {
         isec->output_section->chunks.push_back(isec);
   bin_sections_timer.stopTimer();
 
-  // Create an ELF header, a section header and a program header.
-  std::vector<OutputChunk *> output_chunks;
+  // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
+  out::shstrtab = new StringTableSection(".shstrtab");
+
+  // Add ELF and program header to the output.
+  std::vector<OutputChunk *> output_chunks;
   output_chunks.push_back(out::ehdr);
   output_chunks.push_back(out::phdr);
 
-  // Add .interp section
+  // Add .interp section.
   output_chunks.push_back(new InterpSection);
 
-  // Add other output sections
+  // Add other output sections.
   for (OutputSection *osec : get_output_sections())
     output_chunks.push_back(osec);
+
+  // Add a string table for section names.
+  output_chunks.push_back(out::shstrtab);
 
   // Create program header contents.
   out::phdr->hdr = create_phdrs();

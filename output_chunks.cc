@@ -5,6 +5,8 @@ using namespace llvm::ELF;
 OutputEhdr *out::ehdr;
 OutputShdr *out::shdr;
 OutputPhdr *out::phdr;
+StringTableSection *out::shstrtab;
+
 std::vector<OutputSection *> OutputSection::all_instances;
 
 void OutputEhdr::relocate(uint8_t *buf) {
