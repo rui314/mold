@@ -249,7 +249,13 @@ int main(int argc, char **argv) {
     error("failed to write to the output file: " + toString(std::move(e)));
   commit_timer.stopTimer();
 
-  llvm::outs() << "       chunks=" << output_chunks.size() << "\n"
+  int num_input_chunks = 0;
+  for (ObjectFile *file : files)
+    num_input_chunks += file->sections.size();
+  
+  llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
+               << "output_chunks=" << output_chunks.size() << "\n"
+               << "        files=" << files.size() << "\n"
                << "     filesize=" << filesize << "\n"
                << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n"
