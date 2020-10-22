@@ -238,6 +238,7 @@ int main(int argc, char **argv) {
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
+  out::shdr = new OutputShdr;
   out::shstrtab = new StringTableSection(".shstrtab");
 
   // Add ELF and program header to the output.
@@ -258,8 +259,7 @@ int main(int argc, char **argv) {
       chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
   output_chunks.push_back(out::shstrtab);
 
-  // A section header is added to the end of the file by convention.
-  out::shdr = new OutputShdr;
+  // Add a section header.
   out::shdr->hdr = create_shdrs(output_chunks);
   output_chunks.push_back(out::shdr);
 
