@@ -150,14 +150,31 @@ static std::vector<ELF64LE::Phdr> create_phdrs() {
   return {};
 }
 
-static std::vector<ELF64LE::Shdr>
+static std::vector<ELF64LE::Shdr *>
 create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
-  std::vector<ELF64LE::Shdr> vec;
-  vec.push_back({});
+  static ELF64LE::Shdr null_entry;
+
+  std::vector<ELF64LE::Shdr *> vec;
+  vec.push_back(&null_entry);
+
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
-      vec.push_back(chunk->hdr);
+      vec.push_back(&chunk->hdr);
   return vec;
+}
+
+static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
+  int i = 1;
+
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->name.empty())
+      continue;
+
+    chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
+    chunk->hdr.sh_offset = chunk->get_offset();
+    chunk->hdr.sh_size = chunk->get_size();
+    chunk->index = i++;
+  }
 }
 
 int main(int argc, char **argv) {
@@ -259,6 +276,9 @@ int main(int argc, char **argv) {
     filesize += chunk->get_size();
   }
   file_offset_timer.stopTimer();
+
+  // Fill section header.
+  fill_shdrs(output_chunks);
 
   // Create an output file
   Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =

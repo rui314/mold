@@ -29,7 +29,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_phnum = out::phdr->hdr.size();
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->hdr.size();
-  hdr->e_shstrndx = 0;
+  hdr->e_shstrndx = out::shstrtab->index;
 }
 
 void OutputSection::set_offset(uint64_t off) {
@@ -79,7 +79,7 @@ OutputSection *OutputSection::get_instance(InputSection *isec) {
   return new OutputSection(iname, iflags, isec->hdr->sh_type);
 }
 
-uint64_t StringTableSection::addString(StringRef s) {
+uint64_t StringTableSection::add_string(StringRef s) {
   uint64_t ret = contents.size();
   contents += s.str();
   contents += "\0";

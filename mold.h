@@ -213,6 +213,7 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
+  uint32_t index = -1;
   ELF64LE::Shdr hdr = {};
 
 protected:
@@ -235,14 +236,16 @@ public:
 class OutputShdr : public OutputChunk {
 public:
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, &hdr[0], get_size());
+    auto *p = (ELF64LE::Shdr *)(buf + offset);
+    for (ELF64LE::Shdr *x : hdr)
+      *p++ = *x;
   }
 
   uint64_t get_size() const override {
     return hdr.size() * sizeof(hdr[0]);
   }
 
-  std::vector<ELF64LE::Shdr> hdr;
+  std::vector<ELF64LE::Shdr *> hdr;
 };
 
 // Program header
@@ -280,8 +283,8 @@ public:
   }
 
   uint64_t get_size() const override {
-    assert(size >= 0);
-    return size;
+    return chunks.back()->offset + chunks.back()->get_size() -
+      chunks.front()->offset;
   }
 
   void set_offset(uint64_t off) override;
@@ -291,7 +294,6 @@ public:
 
 private:
   uint64_t file_offset = 0;
-  uint64_t on_file_size = -1;
 };
 
 class InterpSection : public OutputChunk {
@@ -321,12 +323,12 @@ public:
     hdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
-  uint64_t addString(StringRef s);
+  uint64_t add_string(StringRef s);
   void copy_to(uint8_t *buf) override;
   uint64_t get_size() const override { return contents.size(); }
 
 private:
-  std::string contents;
+  std::string contents = "\0";
 };
 
 namespace out {
@@ -340,7 +342,7 @@ extern StringTableSection *shstrtab;
 // input_files.cc
 //
 
-class ObjectFile { 
+class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
 
