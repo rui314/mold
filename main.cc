@@ -186,11 +186,13 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
+  llvm::TimerGroup before_copy("before_copy", "before_copy");
+
   llvm::Timer parse_timer("parse", "parse");
-  llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
-  llvm::Timer comdat_timer("comdat", "comdat");
-  llvm::Timer bin_sections_timer("bin_sections", "bin_sections");
-  llvm::Timer file_offset_timer("file_offset", "file_offset");
+  llvm::Timer add_symbols_timer("add_symbols", "add_symbols", before_copy);
+  llvm::Timer comdat_timer("comdat", "comdat", before_copy);
+  llvm::Timer bin_sections_timer("bin_sections", "bin_sections", before_copy);
+  llvm::Timer file_offset_timer("file_offset", "file_offset", before_copy);
   llvm::Timer copy_timer("copy", "copy");
   llvm::Timer reloc_timer("reloc", "reloc");
   llvm::Timer commit_timer("commit", "commit");
