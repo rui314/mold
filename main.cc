@@ -110,6 +110,65 @@ static OutputSection *create_interp_section() {
   return osec;
 }
 
+// We want to sort output sections in the following order.
+//
+//  alloc !write !exec !tls !nobits
+//  alloc !write !exec !tls  nobits
+//  alloc !write !exec  tls !nobits
+//  alloc !write !exec  tls  nobits
+//  alloc !write  exec
+//  alloc  write !exec !tls !nobits
+//  alloc  write !exec !tls  nobits
+//  alloc  write !exec  tls !nobits
+//  alloc  write !exec  tls nobits
+//  alloc  write  exec
+// !alloc
+struct SortKey {
+  bool is_alloc;
+  bool is_writable;
+  bool is_exec;
+  bool is_tls;
+  bool is_nobits;
+  StringRef name;
+  uint64_t flags;
+  uint32_t type;
+
+  bool less_than(SortKey other) {
+    if (is_alloc != other.is_alloc)
+      return is_alloc;
+    if (is_writable != other.is_writable)
+      return !is_writable;
+    if (is_exec != other.is_exec)
+      return !is_exec;
+    if (is_tls != other.is_tls)
+      return is_tls;
+    if (is_nobits != other.is_nobits)
+      return is_nobits;
+    if (name != other.name)
+      return name < other.name;
+    if (hdr.sh_flags != other.hdr.sh_flags)
+      return hdr.sh_flags < other.hdr.sh_flags
+    return hdr.sh_type < other.hdr.sh_type;
+  }
+};
+
+
+static bool compare_sections(OutputSection *a, OutputSection *b) {
+  if ((a->hdr.flags & SHF_ALLOC) && 
+}
+
+static std::vector<OutputSection *> get_output_sections() {
+  std::vector<OutputSection *> vec;
+  for (OutputSection *osec : OutputSection::all_instances)
+    if (!osec->chunks.empty())
+      vec.push_back(osec);
+
+  std::sort(vec.begin(), vec.end(), [](OutputSeciton *a, OutputSection *b) {
+                                    });
+
+  return vec;
+}
+
 static std::vector<ELF64LE::Phdr> create_phdrs() {
   return {};
 }
@@ -198,9 +257,8 @@ int main(int argc, char **argv) {
   output_chunks.push_back(create_interp_section());
 
   // Add other output sections
-  for (OutputSection *osec : OutputSection::all_instances)
-    if (!osec->chunks.empty())
-      output_chunks.push_back(osec);
+  for (OutputSection *osec : get_output_sections())
+    output_chunks.push_back(osec);
 
   // Create program header contents.
   out::phdr->hdr = create_phdrs();
