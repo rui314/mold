@@ -101,26 +101,25 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
+thread_local int foo;
+thread_local int bar = 5;
+
 // We want to sort output sections in the following order.
 //
-//  alloc !writable !exec !tls !nobits
-//  alloc !writable !exec !tls  nobits
-//  alloc !writable !exec  tls !nobits
-//  alloc !writable !exec  tls  nobits
-//  alloc !writable  exec
-//  alloc  writable !exec !tls !nobits
-//  alloc  writable !exec !tls  nobits
-//  alloc  writable !exec  tls !nobits
-//  alloc  writable !exec  tls  nobits
-//  alloc  writable  exec
-// !alloc
+// alloc readonly data
+// alloc readonly code
+// alloc writable tdata
+// alloc writable tbss
+// alloc writable data
+// alloc writable bss
+// nonalloc
 static int get_rank(OutputSection *x) {
   bool alloc = x->hdr.sh_flags & SHF_ALLOC;
   bool writable = x->hdr.sh_flags & SHF_WRITE;
   bool exec = x->hdr.sh_flags & SHF_EXECINSTR;
   bool tls = x->hdr.sh_flags & SHF_TLS;
   bool nobits = x->hdr.sh_type & SHT_NOBITS;
-  return (alloc << 5) | (!writable << 4) | (!exec << 3) | (!tls << 2) | !nobits;
+  return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
 static std::vector<OutputSection *> get_output_sections() {
@@ -128,6 +127,9 @@ static std::vector<OutputSection *> get_output_sections() {
   for (OutputSection *osec : OutputSection::all_instances)
     if (!osec->chunks.empty())
       vec.push_back(osec);
+
+  for (OutputSection *osec : vec)
+    llvm::outs() << osec->name << ": " << get_rank(osec) << "\n";
 
   std::sort(vec.begin(), vec.end(), [](OutputSection *a, OutputSection *b) {
     int x = get_rank(a);

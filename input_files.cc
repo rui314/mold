@@ -75,6 +75,8 @@ void ObjectFile::initialize_sections() {
     default: {
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
       this->sections[i] = new InputSection(this, &shdr, name);
+      if (name == ".init_array" && (shdr.sh_type & SHT_NOBITS))
+        llvm::outs() << toString(this) << "\n";
       break;
     }
     }
