@@ -174,7 +174,6 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
-  OutputSection *output_section;
   int64_t offset = -1;
   uint64_t flags;
   uint32_t type;
@@ -189,6 +188,7 @@ public:
   uint64_t get_size() const override;
 
   ObjectFile *file;
+  OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
   const ELF64LE::Shdr *hdr;
 };
@@ -207,10 +207,9 @@ public:
 class GenericSection : public InputChunk {
 public:
   GenericSection(StringRef name, ArrayRef<uint8_t> data,
-                 OutputSection *osec, uint64_t flags, uint32_t type)
+                 uint64_t flags, uint32_t type)
     : data(data) {
     this->name = name;
-    this->output_section = osec;
     this->flags = flags;
     this->type = type;
   }

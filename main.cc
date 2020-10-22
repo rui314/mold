@@ -102,11 +102,11 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
 }
 
 static OutputSection *create_interp_section() {
-  static char loader[] = "/lib64/ld-linux-x86-64.so.2";
-  auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
+  static char path[] = "/lib64/ld-linux-x86-64.so.2";
   auto *isec = new GenericSection(".interp",
-                                  makeArrayRef((uint8_t *)loader, sizeof(loader)),
-                                  osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
+                                  makeArrayRef((uint8_t *)path, sizeof(path)),
+                                  SHF_ALLOC, SHT_PROGBITS);
+  auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
   osec->chunks.push_back(isec);
   return osec;
 }
