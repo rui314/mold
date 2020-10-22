@@ -171,6 +171,7 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
       continue;
 
     chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
+    llvm::outs() << "sh_name=" << chunk->hdr.sh_name << "\n";
     chunk->hdr.sh_offset = chunk->get_offset();
     chunk->hdr.sh_size = chunk->get_size();
     chunk->index = i++;

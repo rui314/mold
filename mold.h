@@ -319,16 +319,26 @@ class StringTableSection : public OutputChunk {
 public:
   StringTableSection(StringRef name) {
     this->name = name;
+    contents = '\0';
     hdr.sh_flags = 0;
     hdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
-  uint64_t add_string(StringRef s);
-  void copy_to(uint8_t *buf) override;
+  uint64_t add_string(StringRef s) {
+    uint64_t ret = contents.size();
+    contents += s.str();
+    contents += '\0';
+    return ret;
+  }
+
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + offset, &contents[0], contents.size());
+  }
+
   uint64_t get_size() const override { return contents.size(); }
 
 private:
-  std::string contents = "\0";
+  std::string contents;
 };
 
 namespace out {

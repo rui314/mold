@@ -78,14 +78,3 @@ OutputSection *OutputSection::get_instance(InputSection *isec) {
     return osec;
   return new OutputSection(iname, iflags, isec->hdr->sh_type);
 }
-
-uint64_t StringTableSection::add_string(StringRef s) {
-  uint64_t ret = contents.size();
-  contents += s.str();
-  contents += "\0";
-  return ret;
-}
-
-void StringTableSection::copy_to(uint8_t *buf) {
-  memcpy(buf + offset, &contents[0], contents.size());
-}
