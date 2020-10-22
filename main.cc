@@ -111,7 +111,7 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
 //  alloc  writable !exec !tls !nobits
 //  alloc  writable !exec !tls  nobits
 //  alloc  writable !exec  tls !nobits
-//  alloc  writable !exec  tls nobits
+//  alloc  writable !exec  tls  nobits
 //  alloc  writable  exec
 // !alloc
 static int get_rank(OutputSection *x) {
