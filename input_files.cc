@@ -37,6 +37,9 @@ void ObjectFile::initialize_sections() {
   for (int i = 0; i < elf_sections.size(); i++) {
     const ELF64LE::Shdr &shdr = elf_sections[i];
 
+    if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC))
+      continue;
+
     switch (shdr.sh_type) {
     case SHT_GROUP: {
       // Get the signature of this section group.
