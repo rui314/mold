@@ -187,7 +187,6 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  llvm::Timer open_timer("opne", "open");
   llvm::Timer parse_timer("parse", "parse");
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
   llvm::Timer comdat_timer("comdat", "comdat");
@@ -198,14 +197,12 @@ int main(int argc, char **argv) {
   llvm::Timer commit_timer("commit", "commit");
 
   // Open input files
-  open_timer.startTimer();
+  parse_timer.startTimer();
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
       read_file(files, arg->getValue());
-  open_timer.stopTimer();
 
   // Parse input files
-  parse_timer.startTimer();
   for_each(files, [](ObjectFile *file) { file->parse(); });
   parse_timer.stopTimer();
 
@@ -256,11 +253,10 @@ int main(int argc, char **argv) {
     output_chunks.push_back(osec);
 
   // Add a string table for section names.
-  output_chunks.push_back(out::shstrtab);
-
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
       chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
+  output_chunks.push_back(out::shstrtab);
 
   // A section header is added to the end of the file by convention.
   out::shdr = new OutputShdr;
