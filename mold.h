@@ -15,6 +15,7 @@
 #include "tbb/blocked_range.h"
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/concurrent_unordered_set.h"
+#include "tbb/concurrent_vector.h"
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
@@ -323,6 +324,8 @@ public:
   std::vector<InputChunk *> chunks;
   StringRef name;
   ELF64LE::Shdr hdr = {};
+
+  static tbb::concurrent_vector<OutputSection *> all_instances;
 
 private:
   uint64_t file_offset = 0;

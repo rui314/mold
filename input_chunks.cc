@@ -3,6 +3,7 @@
 using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
+tbb::concurrent_vector<OutputSection *> OutputSection::all_instances;
 
 typedef struct {
   StringRef name;
@@ -39,6 +40,12 @@ static OutputSection *get_output_section(InputSection *isec) {
     {".tdata", SHF_ALLOC | SHF_WRITE | SHF_TLS, SHT_PROGBITS},
   };
 
+  static std::once_flag once;
+  std::call_once(once, [&]() {
+                         for (OutputSection &osec : common_sections)
+                           OutputSection::all_instances.push_back(&osec);
+                       });
+
   StringRef iname = isec->name;
   uint64_t iflags = isec->hdr->sh_flags & ~SHF_GROUP;
 
@@ -64,7 +71,8 @@ static OutputSection *get_output_section(InputSection *isec) {
 
   LookupKey key = {iname, iflags, isec->hdr->sh_type};
   OutputSection val(iname, iflags, isec->hdr->sh_type);
-  map.insert(acc, std::make_pair(key, val));
+  if (map.insert(acc, std::make_pair(key, val)))
+    OutputSection::all_instances.push_back(&acc->second);
   return &acc->second;
 }
 
