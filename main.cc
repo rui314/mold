@@ -128,9 +128,6 @@ static std::vector<OutputSection *> get_output_sections() {
     if (!osec->chunks.empty())
       vec.push_back(osec);
 
-  for (OutputSection *osec : vec)
-    llvm::outs() << osec->name << ": " << get_rank(osec) << "\n";
-
   std::sort(vec.begin(), vec.end(), [](OutputSection *a, OutputSection *b) {
     int x = get_rank(a);
     int y = get_rank(b);
