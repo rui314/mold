@@ -5,33 +5,32 @@ using namespace llvm::ELF;
 std::atomic_int num_relocs;
 std::vector<OutputSection *> OutputSection::all_instances;
 
+static StringRef get_output_name(StringRef name) {
+  static StringRef common_names[] = {
+    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
+    ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
+  };
+
+  for (StringRef s : common_names)
+    if (name.startswith(s) || name == s.drop_back())
+      return s.drop_back();
+  return name;
+}
+
 static OutputSection *get_output_section(InputSection *isec) {
-  StringRef iname = isec->name;
+  StringRef iname = get_output_name(isec->name);
   uint64_t iflags = isec->hdr->sh_flags & ~SHF_GROUP;
 
   auto find = [&]() -> OutputSection * {
-    for (OutputSection *osec : OutputSection::all_instances) {
-      bool dot_follows = (iname.startswith(osec->name) &&
-                          iname.size() > osec->name.size() &&
-                          iname[osec->name.size()] == '.');
-
-      if (iname == osec->name || dot_follows) {
-        iname = osec->name;
-        break;
-      }
-    }
-
     for (OutputSection *osec : OutputSection::all_instances)
       if (iname == osec->name && iflags == (osec->hdr.sh_flags & ~SHF_GROUP) &&
           isec->hdr->sh_type == osec->hdr.sh_type)
         return osec;
-
     return nullptr;
   };
 
-  static std::shared_mutex mu;
-
   // Search for an exiting output section.
+  static std::shared_mutex mu;
   std::shared_lock shared_lock(mu);
   if (OutputSection *osec = find())
     return osec;
