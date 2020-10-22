@@ -254,10 +254,10 @@ int main(int argc, char **argv) {
     output_chunks.push_back(osec);
 
   // Add a string table for section names.
+  output_chunks.push_back(out::shstrtab);
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
       chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
-  output_chunks.push_back(out::shstrtab);
 
   // Add a section header.
   out::shdr->hdr = create_shdrs(output_chunks);
