@@ -11,6 +11,7 @@ std::vector<OutputSection *> OutputSection::all_instances;
 
 void OutputEhdr::relocate(uint8_t *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
+  memset(hdr, 0, sizeof(*hdr));
 
   memcpy(&hdr->e_ident, "\177ELF", 4);
   hdr->e_ident[EI_CLASS] = ELFCLASS64;
