@@ -85,22 +85,20 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   return vec;
 }
 
-static std::vector<ObjectFile *> read_file(StringRef path) {
+static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   MemoryBufferRef mb = readFile(path);
-  std::vector<ObjectFile *> vec;
 
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : get_archive_members(mb))
-      vec.push_back(new ObjectFile(member, path));
+      files.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
-    vec.push_back(new ObjectFile(mb, ""));
+    files.push_back(new ObjectFile(mb, ""));
     break;
   default:
     error(path + ": unknown file type");
   }
-  return vec;
 }
 
 static OutputSection *create_interp_section() {
@@ -153,8 +151,7 @@ int main(int argc, char **argv) {
   open_timer.startTimer();
   for (auto *arg : args)
     if (arg->getOption().getID() == OPT_INPUT)
-      for (ObjectFile *file : read_file(arg->getValue()))
-        files.push_back(file);
+      read_file(files, arg->getValue());
   open_timer.stopTimer();
 
   // Parse input files
