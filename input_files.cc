@@ -73,6 +73,12 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
+      if ((shdr.sh_flags & SHF_STRINGS) && (shdr.sh_flags & SHF_ALLOC) &&
+          !(shdr.sh_flags & SHF_WRITE) && shdr.sh_entsize == 1) {
+        read_string_pieces(shdr);
+        break;
+      }
+
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
       this->sections[i] = new InputSection(this, &shdr, name);
       break;
@@ -108,6 +114,24 @@ void ObjectFile::initialize_symbols() {
 
     static ConcurrentMap<Symbol> map;
     symbols[i] = map.insert(name, Symbol(name));
+  }
+}
+
+void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
+  static ConcurrentMap<StringPiece> map;
+
+  ArrayRef<uint8_t> arr = CHECK(obj.getSectionContents(shdr), this);
+  StringRef data((const char *)&arr[0], arr.size());
+
+  while (!data.empty()) {
+    size_t end = data.find('\0');
+    if (end == StringRef::npos)
+      error(toString(this) + ": string is not null terminated");
+
+    StringRef substr = data.substr(0, end + 1);
+    StringPiece *piece = map.insert(substr, StringPiece(substr));
+    merged_strings.push_back(piece);
+    data = data.substr(end + 1);
   }
 }
 

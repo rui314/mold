@@ -349,6 +349,14 @@ extern StringTableSection *shstrtab;
 // input_files.cc
 //
 
+class StringPiece {
+public:
+  StringPiece(StringRef data) : data(data) {}
+  StringPiece(const StringPiece &other) : data(other.data) {}
+  StringRef data;
+  std::atomic_flag flag = ATOMIC_FLAG_INIT;
+};
+
 class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
@@ -369,10 +377,12 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
+  void read_string_pieces(const ELF64LE::Shdr &shdr);
 
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
   std::vector<std::pair<bool *, ArrayRef<ELF64LE::Word>>> comdat_groups;
+  std::vector<StringPiece *> merged_strings;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
