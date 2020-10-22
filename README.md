@@ -117,6 +117,10 @@ implemented and tested with benchmarks. Here is a brain dump:
   programs rarely use linker scripts, so it shouldn't be a roadblock
   for most projects.
 
+- mold emits Linux executables and runs only on Linux. I won't avoid
+  Unix-ism when writing code (e.g. I'll probably use fork(2)).
+  I don't want to think about portability until mold becomes a thing
+  that's worth to be ported.
 
 ## Details
 
