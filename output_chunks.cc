@@ -26,8 +26,8 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_shoff = out::shdr->get_offset();
   hdr->e_flags = 0;
   hdr->e_ehsize = sizeof(ELF64LE::Ehdr);
-  hdr->e_phentsize = sizeof(ELF64LE::Phdr);
-  hdr->e_phnum = out::phdr->hdr.size();
+  //  hdr->e_phentsize = sizeof(ELF64LE::Phdr);
+  //  hdr->e_phnum = out::phdr->hdr.size();
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->hdr.size();
   hdr->e_shstrndx = out::shstrtab->index;
