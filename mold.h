@@ -303,7 +303,6 @@ public:
     : name(name) {
     hdr.sh_flags = flags;
     hdr.sh_type = type;
-    idx = all_instances.size();
   }
 
   void copy_to(uint8_t *buf) override {
@@ -326,7 +325,6 @@ public:
   std::vector<InputChunk *> chunks;
   StringRef name;
   ELF64LE::Shdr hdr = {};
-  uint32_t idx;
 
   static std::vector<OutputSection *> all_instances;
 

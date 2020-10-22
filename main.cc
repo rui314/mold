@@ -127,25 +127,6 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   return vec;
 }
 
-static void bin_input_sections(std::vector<ObjectFile *> &files) {
-  std::vector<std::vector<std::vector<InputSection *>>> vec;
-  vec.resize(OutputSection::all_instances.size());
-  for (int i = 0; i < OutputSection::all_instances.size(); i++)
-    vec[i].resize(files.size());
-
-  tbb::parallel_for(0, (int)files.size(), [&](int i) {
-    for (InputSection *isec : files[i]->sections)
-      if (isec)
-        vec[isec->output_section->idx][i].push_back(isec);
-  });
-
-  tbb::parallel_for(0, (int)vec.size(), [&](int i) {
-    OutputSection *osec = OutputSection::all_instances[i];
-    for (std::vector<InputSection *> &x : vec[i])
-      osec->chunks.insert(osec->chunks.end(), x.begin(), x.end());
-  });
-}
-
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -204,7 +185,10 @@ int main(int argc, char **argv) {
 
   // Bin input sections into output sections
   bin_sections_timer.startTimer();
-  bin_input_sections(files);
+  for (ObjectFile *file : files)
+    for (InputSection *isec : file->sections)
+      if (isec)
+        isec->output_section->chunks.push_back(isec);
   bin_sections_timer.stopTimer();
 
   // Create an ELF header, a section header and a program header.
