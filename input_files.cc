@@ -60,9 +60,9 @@ void ObjectFile::initialize_sections() {
       if (entries[0] != GRP_COMDAT)
         error(toString(this) + ": unsupported SHT_GROUP format");
 
-      static ConcurrentMap<bool> map;
-      bool *handle = map.insert(signature, false);
-      comdat_groups.push_back({handle, entries});
+      static ConcurrentMap<ComdatGroup> map;
+      ComdatGroup *group = map.insert(signature, ComdatGroup(this, i));
+      comdat_groups.push_back({group, i});
       num_comdats++;
       break;
     }
@@ -118,6 +118,14 @@ void ObjectFile::initialize_symbols() {
     static ConcurrentMap<Symbol> map;
     symbols[i] = map.insert(name, Symbol(name));
   }
+}
+
+void ObjectFile::remove_comdat_members(uint32_t section_idx) {
+  const ELF64LE::Shdr &shdr = elf_sections[section_idx];
+  ArrayRef<ELF64LE::Word> entries =
+    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
+  for (uint32_t i : entries)
+    sections[i] = nullptr;
 }
 
 void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
@@ -208,17 +216,28 @@ void ObjectFile::register_undefined_symbols() {
 }
 
 void ObjectFile::eliminate_duplicate_comdat_groups() {
-  for (std::pair<bool *, ArrayRef<ELF64LE::Word>> pair : comdat_groups) {
-    bool *handle = pair.first;
-    ArrayRef<ELF64LE::Word> entries = pair.second;
+  for (auto &pair : comdat_groups) {
+    ComdatGroup *g = pair.first;
+    uint32_t section_idx = pair.second;
 
-    if (!*handle) {
-      *handle = true;
-      continue;
+    ObjectFile *file = nullptr;
+    uint32_t idx = 0;
+
+    while (g->lock.test_and_set(std::memory_order_acquire));
+    if (g->file == nullptr) {
+      g->file = this;
+      g->section_idx = section_idx;
+    } else if (g->file->priority < this->priority) {
+      file = this;
+      idx = section_idx;
+    } else {
+      file = g->file;
+      idx = g->section_idx;
     }
-    
-    for (uint32_t i : entries)
-      sections[i] = nullptr;
+    g->lock.clear(std::memory_order_release);
+
+    if (file)
+      file->remove_comdat_members(idx);
   }
 }
 

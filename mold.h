@@ -349,10 +349,21 @@ extern StringTableSection *shstrtab;
 // input_files.cc
 //
 
-class StringPiece {
-public:
+struct ComdatGroup {
+  ComdatGroup(ObjectFile *file, uint32_t i)
+    : file(file), section_idx(i) {}
+  ComdatGroup(const ComdatGroup &other)
+    : file(other.file), section_idx(other.section_idx) {}
+
+  std::atomic_flag lock = ATOMIC_FLAG_INIT;
+  ObjectFile *file = nullptr;
+  uint32_t section_idx;
+};
+
+struct StringPiece {
   StringPiece(StringRef data) : data(data) {}
   StringPiece(const StringPiece &other) : data(other.data) {}
+
   StringRef data;
   std::atomic_flag flag = ATOMIC_FLAG_INIT;
 };
@@ -377,11 +388,12 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
+  void remove_comdat_members(uint32_t section_idx);
   void read_string_pieces(const ELF64LE::Shdr &shdr);
 
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
-  std::vector<std::pair<bool *, ArrayRef<ELF64LE::Word>>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, uint32_t>> comdat_groups;
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;
 

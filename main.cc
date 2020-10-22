@@ -224,8 +224,7 @@ int main(int argc, char **argv) {
 
   // Eliminate duplicate comdat groups.
   comdat_timer.startTimer();
-  for (ObjectFile *file : files)
-    file->eliminate_duplicate_comdat_groups();
+  for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   comdat_timer.stopTimer();
 
   // Bin input sections into output sections
