@@ -128,10 +128,22 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
 }
 
 static void bin_input_sections(std::vector<ObjectFile *> &files) {
-  for (ObjectFile *file : files)
-    for (InputSection *isec : file->sections)
+  std::vector<std::vector<std::vector<InputSection *>>> vec;
+  vec.resize(OutputSection::all_instances.size());
+  for (int i = 0; i < OutputSection::all_instances.size(); i++)
+    vec[i].resize(files.size());
+
+  tbb::parallel_for(0, (int)files.size(), [&](int i) {
+    for (InputSection *isec : files[i]->sections)
       if (isec)
-        isec->output_section->chunks.push_back(isec);
+        vec[isec->output_section->idx][i].push_back(isec);
+  });
+
+  tbb::parallel_for(0, (int)vec.size(), [&](int i) {
+    OutputSection *osec = OutputSection::all_instances[i];
+    for (std::vector<InputSection *> &x : vec[i])
+      osec->chunks.insert(osec->chunks.end(), x.begin(), x.end());
+  });
 }
 
 int main(int argc, char **argv) {
@@ -150,7 +162,7 @@ int main(int argc, char **argv) {
   llvm::Timer parse_timer("parse", "parse");
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols");
   llvm::Timer comdat_timer("comdat", "comdat");
-  llvm::Timer output_section_timer("output_section", "output_section");
+  llvm::Timer bin_sections_timer("bin_sections", "bin_sections");
   llvm::Timer file_offset_timer("file_offset", "file_offset");
   llvm::Timer copy_timer("copy", "copy");
   llvm::Timer reloc_timer("reloc", "reloc");
@@ -191,9 +203,9 @@ int main(int argc, char **argv) {
   comdat_timer.stopTimer();
 
   // Bin input sections into output sections
-  output_section_timer.startTimer();
+  bin_sections_timer.startTimer();
   bin_input_sections(files);
-  output_section_timer.stopTimer();
+  bin_sections_timer.stopTimer();
 
   // Create an ELF header, a section header and a program header.
   std::vector<OutputChunk *> output_chunks;
