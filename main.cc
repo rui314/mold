@@ -112,7 +112,7 @@ static InputChunk *create_interp_section() {
 }
 
 static std::vector<ELF64LE::Phdr> create_phdrs() {
-  return {};  
+  return {};
 }
 
 static std::vector<ELF64LE::Shdr>
@@ -192,6 +192,7 @@ int main(int argc, char **argv) {
                        if (!chunk)
                          return;
                        OutputSection *osec = chunk->output_section;
+                       assert(osec);
                        if (osec->chunks.empty())
                          output_chunks.push_back(osec);
                        osec->chunks.push_back(chunk);
@@ -202,6 +203,7 @@ int main(int argc, char **argv) {
 
   // Bin input sections into output sections
   output_section_timer.startTimer();
+
   for (ObjectFile *file : files)
     for (InputSection *isec : file->sections)
       add_section(isec);
@@ -252,7 +254,7 @@ int main(int argc, char **argv) {
   int num_input_chunks = 0;
   for (ObjectFile *file : files)
     num_input_chunks += file->sections.size();
-  
+
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
                << "output_chunks=" << output_chunks.size() << "\n"
                << "        files=" << files.size() << "\n"

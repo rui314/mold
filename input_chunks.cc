@@ -3,77 +3,48 @@
 using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
-tbb::concurrent_vector<OutputSection *> OutputSection::all_instances;
-
-typedef struct {
-  StringRef name;
-  uint64_t flags;
-  uint64_t type;
-} LookupKey;
-
-namespace tbb {
-template<>
-struct tbb_hash_compare<LookupKey> {
-  static size_t hash(const LookupKey& k) {
-  return llvm::hash_combine(llvm::hash_value(k.name),
-                            llvm::hash_value(k.flags),
-                            llvm::hash_value(k.type));
-  }
-
-  static bool equal(const LookupKey& k1, const LookupKey& k2) {
-    return k1.name == k2.name && k1.flags == k2.flags && k1.type == k2.type;
-  }
-};
-}
+std::vector<OutputSection *> OutputSection::all_instances;
 
 static OutputSection *get_output_section(InputSection *isec) {
-  static OutputSection common_sections[] = {
-    {".text", SHF_ALLOC | SHF_EXECINSTR, SHT_PROGBITS},
-    {".data.rel.ro", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
-    {".data", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
-    {".rodata", SHF_ALLOC, SHT_PROGBITS},
-    {".bss.rel.ro", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
-    {".bss", SHF_ALLOC | SHF_WRITE, SHT_NOBITS},
-    {".init_array", SHF_ALLOC | SHF_WRITE, SHT_INIT_ARRAY},
-    {".fini_array", SHF_ALLOC | SHF_WRITE, SHT_FINI_ARRAY},
-    {".tbss", SHF_TLS, SHT_NOBITS},
-    {".tdata", SHF_ALLOC | SHF_WRITE | SHF_TLS, SHT_PROGBITS},
-  };
-
-  static std::once_flag once;
-  std::call_once(once, [&]() {
-                         for (OutputSection &osec : common_sections)
-                           OutputSection::all_instances.push_back(&osec);
-                       });
-
   StringRef iname = isec->name;
   uint64_t iflags = isec->hdr->sh_flags & ~SHF_GROUP;
 
-  for (OutputSection &osec : common_sections) {
-    bool dot_follows = (iname.startswith(osec.name) &&
-                        iname.size() > osec.name.size() &&
-                        iname[osec.name.size()] == '.');
+  auto find = [&]() -> OutputSection * {
+    for (OutputSection *osec : OutputSection::all_instances) {
+      bool dot_follows = (iname.startswith(osec->name) &&
+                          iname.size() > osec->name.size() &&
+                          iname[osec->name.size()] == '.');
 
-    if (iname == osec.name || dot_follows) {
-      iname = osec.name;
-      break;
+      if (iname == osec->name || dot_follows) {
+        iname = osec->name;
+        break;
+      }
     }
-  }
 
-  for (OutputSection &osec : common_sections)
-    if (iname == osec.name && iflags == (osec.hdr.sh_flags & ~SHF_GROUP) &&
-        isec->hdr->sh_type == osec.hdr.sh_type)
-      return &osec;
+    for (OutputSection *osec : OutputSection::all_instances)
+      if (iname == osec->name && iflags == (osec->hdr.sh_flags & ~SHF_GROUP) &&
+          isec->hdr->sh_type == osec->hdr.sh_type)
+        return osec;
 
-  typedef tbb::concurrent_hash_map<LookupKey, OutputSection> T;
-  static T map;
-  T::accessor acc;
+    return nullptr;
+  };
 
-  LookupKey key = {iname, iflags, isec->hdr->sh_type};
-  OutputSection val(iname, iflags, isec->hdr->sh_type);
-  if (map.insert(acc, std::make_pair(key, val)))
-    OutputSection::all_instances.push_back(&acc->second);
-  return &acc->second;
+  static std::shared_mutex mu;
+
+  // Search for an exiting output section.
+  std::shared_lock shared_lock(mu);
+  if (OutputSection *osec = find())
+    return osec;
+  shared_lock.unlock();
+
+  // Create a new output section.
+  std::unique_lock unique_lock(mu);
+  if (OutputSection *osec = find())
+    return osec;
+
+  OutputSection *osec = new OutputSection(iname, iflags, isec->hdr->sh_type);
+  OutputSection::all_instances.push_back(osec);
+  return osec;
 }
 
 InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name)

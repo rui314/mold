@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <unordered_set>
 
@@ -302,8 +303,6 @@ public:
     hdr.sh_type = type;
   }
 
-  OutputSection(const OutputSection &other) : name(other.name) {}
-
   void copy_to(uint8_t *buf) override {
     for_each(chunks, [&](InputChunk *isec) { isec->copy_to(buf); });
   }
@@ -325,7 +324,7 @@ public:
   StringRef name;
   ELF64LE::Shdr hdr = {};
 
-  static tbb::concurrent_vector<OutputSection *> all_instances;
+  static std::vector<OutputSection *> all_instances;
 
 private:
   uint64_t file_offset = 0;
