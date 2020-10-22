@@ -193,20 +193,6 @@ public:
   const ELF64LE::Shdr *hdr;
 };
 
-class StringTableSection : public InputChunk {
-public:
-  StringTableSection(StringRef name) {
-    this->name = name;
-  }
-
-  uint64_t addString(StringRef s);
-  void copy_to(uint8_t *buf) override;
-  uint64_t get_size() const override { return contents.size(); }
-
-private:
-  std::string contents;
-};
-
 std::string toString(InputSection *isec);
 
 inline uint64_t align_to(uint64_t val, uint64_t align) {
@@ -314,8 +300,8 @@ class InterpSection : public OutputChunk {
 public:
   InterpSection() {
     name = ".interp";
-    hdr.sh_flags = llvm::ELF::PF_R;
-    hdr.sh_type = llvm::ELF::PT_INTERP;
+    hdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    hdr.sh_type = llvm::ELF::SHT_PROGBITS;
   }
 
   void copy_to(uint8_t *buf) override {
@@ -328,6 +314,20 @@ private:
   static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
 };
 
+
+class StringTableSection : public InputChunk {
+public:
+  StringTableSection(StringRef name) {
+    this->name = name;
+  }
+
+  uint64_t addString(StringRef s);
+  void copy_to(uint8_t *buf) override;
+  uint64_t get_size() const override { return contents.size(); }
+
+private:
+  std::string contents;
+};
 
 namespace out {
 extern OutputEhdr *ehdr;
