@@ -169,8 +169,6 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->name.empty())
       continue;
-
-    chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
     chunk->hdr.sh_offset = chunk->get_offset();
     chunk->hdr.sh_size = chunk->get_size();
     chunk->index = i++;
@@ -260,13 +258,17 @@ int main(int argc, char **argv) {
   // Add a string table for section names.
   output_chunks.push_back(out::shstrtab);
 
-  // Create program header contents.
-  out::phdr->hdr = create_phdrs();
+  for (OutputChunk *chunk : output_chunks)
+    if (!chunk->name.empty())
+      chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
 
   // A section header is added to the end of the file by convention.
   out::shdr = new OutputShdr;
   out::shdr->hdr = create_shdrs(output_chunks);
   output_chunks.push_back(out::shdr);
+
+  // Create program header contents.
+  out::phdr->hdr = create_phdrs();
 
   // Assign offsets to input sections
   file_offset_timer.startTimer();
