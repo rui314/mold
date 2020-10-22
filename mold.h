@@ -297,6 +297,8 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
+  static OutputSection *get_instance(InputSection *isec);
+
   OutputSection(StringRef name, uint64_t flags, uint32_t type)
     : name(name) {
     hdr.sh_flags = flags;

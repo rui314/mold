@@ -3,53 +3,11 @@
 using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
-std::vector<OutputSection *> OutputSection::all_instances;
-
-static StringRef get_output_name(StringRef name) {
-  static StringRef common_names[] = {
-    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
-    ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
-  };
-
-  for (StringRef s : common_names)
-    if (name.startswith(s) || name == s.drop_back())
-      return s.drop_back();
-  return name;
-}
-
-static OutputSection *get_output_section(InputSection *isec) {
-  StringRef iname = get_output_name(isec->name);
-  uint64_t iflags = isec->hdr->sh_flags & ~SHF_GROUP;
-
-  auto find = [&]() -> OutputSection * {
-    for (OutputSection *osec : OutputSection::all_instances)
-      if (iname == osec->name && iflags == (osec->hdr.sh_flags & ~SHF_GROUP) &&
-          isec->hdr->sh_type == osec->hdr.sh_type)
-        return osec;
-    return nullptr;
-  };
-
-  // Search for an exiting output section.
-  static std::shared_mutex mu;
-  std::shared_lock shared_lock(mu);
-  if (OutputSection *osec = find())
-    return osec;
-  shared_lock.unlock();
-
-  // Create a new output section.
-  std::unique_lock unique_lock(mu);
-  if (OutputSection *osec = find())
-    return osec;
-
-  OutputSection *osec = new OutputSection(iname, iflags, isec->hdr->sh_type);
-  OutputSection::all_instances.push_back(osec);
-  return osec;
-}
 
 InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name)
   : file(file), hdr(hdr) {
   this->name = name;
-  this->output_section = get_output_section(this);
+  this->output_section = OutputSection::get_instance(this);
 
   uint64_t align = (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
   if (align > UINT32_MAX)

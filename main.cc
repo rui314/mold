@@ -103,12 +103,14 @@ static std::vector<ObjectFile *> read_file(StringRef path) {
   return vec;
 }
 
-static InputChunk *create_interp_section() {
+static OutputSection *create_interp_section() {
   static char loader[] = "/lib64/ld-linux-x86-64.so.2";
   auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
-  return new GenericSection(".interp",
-                            makeArrayRef((uint8_t *)loader, sizeof(loader)),
-                            osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
+  auto *isec = new GenericSection(".interp",
+                                  makeArrayRef((uint8_t *)loader, sizeof(loader)),
+                                  osec, llvm::ELF::SHF_ALLOC, llvm::ELF::SHT_PROGBITS);
+  osec->chunks.push_back(isec);
+  return osec;
 }
 
 static std::vector<ELF64LE::Phdr> create_phdrs() {
@@ -123,6 +125,13 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
     if (const ELF64LE::Shdr *hdr = chunk->get_shdr())
       vec.push_back(*hdr);
   return vec;
+}
+
+static void bin_input_sections(std::vector<ObjectFile *> &files) {
+  for (ObjectFile *file : files)
+    for (InputSection *isec : file->sections)
+      if (isec)
+        isec->output_section->chunks.push_back(isec);
 }
 
 int main(int argc, char **argv) {
@@ -181,6 +190,11 @@ int main(int argc, char **argv) {
     file->eliminate_duplicate_comdat_groups();
   comdat_timer.stopTimer();
 
+  // Bin input sections into output sections
+  output_section_timer.startTimer();
+  bin_input_sections(files);
+  output_section_timer.stopTimer();
+
   // Create an ELF header, a section header and a program header.
   std::vector<OutputChunk *> output_chunks;
   out::ehdr = new OutputEhdr;
@@ -188,26 +202,13 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::ehdr);
   output_chunks.push_back(out::phdr);
 
-  auto add_section = [&](InputChunk *chunk) {
-                       if (!chunk)
-                         return;
-                       OutputSection *osec = chunk->output_section;
-                       assert(osec);
-                       if (osec->chunks.empty())
-                         output_chunks.push_back(osec);
-                       osec->chunks.push_back(chunk);
-                     };
-
   // Add .interp section
-  add_section(create_interp_section());
+  output_chunks.push_back(create_interp_section());
 
-  // Bin input sections into output sections
-  output_section_timer.startTimer();
-
-  for (ObjectFile *file : files)
-    for (InputSection *isec : file->sections)
-      add_section(isec);
-  output_section_timer.stopTimer();
+  // Add other output sections
+  for (OutputSection *osec : OutputSection::all_instances)
+    if (!osec->chunks.empty())
+      output_chunks.push_back(osec);
 
   // Create program header contents.
   out::phdr->hdr = create_phdrs();
