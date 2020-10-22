@@ -315,10 +315,12 @@ private:
 };
 
 
-class StringTableSection : public InputChunk {
+class StringTableSection : public OutputChunk {
 public:
   StringTableSection(StringRef name) {
     this->name = name;
+    hdr.sh_flags = 0;
+    hdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
   uint64_t addString(StringRef s);
