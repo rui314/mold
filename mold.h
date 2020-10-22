@@ -382,7 +382,8 @@ private:
   MemoryBufferRef mb;
   std::vector<Symbol *> symbols;
   std::vector<std::pair<bool *, ArrayRef<ELF64LE::Word>>> comdat_groups;
-  std::vector<StringPiece *> merged_strings;
+  std::vector<StringPiece *> merged_strings_alloc;
+  std::vector<StringPiece *> merged_strings_noalloc;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
@@ -422,3 +423,4 @@ extern std::atomic_int num_defined;
 extern std::atomic_int num_undefined;
 extern std::atomic_int num_files;
 extern std::atomic_int num_relocs;
+extern std::atomic_int num_string_pieces;

@@ -6,6 +6,7 @@ using namespace llvm::ELF;
 std::atomic_int num_defined;
 std::atomic_int num_undefined;
 std::atomic_int num_files;
+std::atomic_int num_string_pieces;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), archive_name(archive_name),
@@ -73,8 +74,8 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
-      if ((shdr.sh_flags & SHF_STRINGS) && (shdr.sh_flags & SHF_ALLOC) &&
-          !(shdr.sh_flags & SHF_WRITE) && shdr.sh_entsize == 1) {
+      if ((shdr.sh_flags & SHF_STRINGS) && !(shdr.sh_flags & SHF_WRITE) &&
+          shdr.sh_entsize == 1) {
         read_string_pieces(shdr);
         break;
       }
@@ -118,7 +119,11 @@ void ObjectFile::initialize_symbols() {
 }
 
 void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
-  static ConcurrentMap<StringPiece> map;
+  static ConcurrentMap<StringPiece> map1;
+  static ConcurrentMap<StringPiece> map2;
+
+  bool is_alloc = shdr.sh_type & SHF_ALLOC;
+  ConcurrentMap<StringPiece> &map = is_alloc ? map1 : map2;
 
   ArrayRef<uint8_t> arr = CHECK(obj.getSectionContents(shdr), this);
   StringRef data((const char *)&arr[0], arr.size());
@@ -130,8 +135,14 @@ void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
 
     StringRef substr = data.substr(0, end + 1);
     StringPiece *piece = map.insert(substr, StringPiece(substr));
-    merged_strings.push_back(piece);
+
+    if (is_alloc)
+      merged_strings_alloc.push_back(piece);
+    else
+      merged_strings_noalloc.push_back(piece);
+
     data = data.substr(end + 1);
+    num_string_pieces++;
   }
 }
 

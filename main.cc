@@ -314,7 +314,8 @@ int main(int argc, char **argv) {
                << "     filesize=" << filesize << "\n"
                << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n"
-               << "   num_relocs=" << num_relocs << "\n";
+               << "   num_relocs=" << num_relocs << "\n"
+               << "      num_str=" << num_string_pieces << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();
