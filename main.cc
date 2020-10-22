@@ -103,11 +103,10 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
 
 static OutputSection *create_interp_section() {
   static char path[] = "/lib64/ld-linux-x86-64.so.2";
-  auto *isec = new GenericSection(".interp",
-                                  makeArrayRef((uint8_t *)path, sizeof(path)),
-                                  SHF_ALLOC, SHT_PROGBITS);
+  ArrayRef<uint8_t> arr((uint8_t *)path, sizeof(path));
+
   auto *osec = new OutputSection(".interp", PF_R, PT_INTERP);
-  osec->chunks.push_back(isec);
+  osec->chunks.push_back(new GenericSection(".interp", arr, SHF_ALLOC, SHT_PROGBITS));
   return osec;
 }
 
