@@ -155,8 +155,8 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<ELF64LE::Shdr> vec;
   vec.push_back({});
   for (OutputChunk *chunk : output_chunks)
-    if (const ELF64LE::Shdr *hdr = chunk->get_shdr())
-      vec.push_back(*hdr);
+    if (!chunk->name.empty())
+      vec.push_back(chunk->hdr);
   return vec;
 }
 

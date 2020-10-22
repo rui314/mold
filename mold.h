@@ -211,7 +211,6 @@ public:
   virtual void set_offset(uint64_t off) { offset = off; }
   uint64_t get_offset() const { return offset; }
   virtual uint64_t get_size() const = 0;
-  virtual const ELF64LE::Shdr *get_shdr() const { return nullptr; }
 
   StringRef name;
   ELF64LE::Shdr hdr = {};
@@ -286,7 +285,6 @@ public:
   }
 
   void set_offset(uint64_t off) override;
-  const ELF64LE::Shdr *get_shdr() const override { return &hdr; }
 
   std::vector<InputChunk *> chunks;
   static std::vector<OutputSection *> all_instances;
