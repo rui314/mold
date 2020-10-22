@@ -421,6 +421,7 @@ MemoryBufferRef readFile(StringRef path);
 extern SymbolTable symbol_table;
 extern std::atomic_int num_defined;
 extern std::atomic_int num_undefined;
+extern std::atomic_int num_comdats;
 extern std::atomic_int num_files;
 extern std::atomic_int num_relocs;
 extern std::atomic_int num_string_pieces;

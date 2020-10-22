@@ -5,6 +5,7 @@ using namespace llvm::ELF;
 
 std::atomic_int num_defined;
 std::atomic_int num_undefined;
+std::atomic_int num_comdats;
 std::atomic_int num_files;
 std::atomic_int num_string_pieces;
 
@@ -62,6 +63,7 @@ void ObjectFile::initialize_sections() {
       static ConcurrentMap<bool> map;
       bool *handle = map.insert(signature, false);
       comdat_groups.push_back({handle, entries});
+      num_comdats++;
       break;
     }
     case SHT_SYMTAB_SHNDX:

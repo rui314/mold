@@ -82,7 +82,7 @@ void InputSection::relocate(uint8_t *buf) {
     default:
       error(toString(this) + ": unknown relocation");
     }
-    // num_relocs++;
+    num_relocs++;
   }
 }
 
