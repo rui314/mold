@@ -9,7 +9,7 @@ My goal is to make a linker that is almost as fast as concatenating
 object files with `cat` command. Concretely speaking, I want to use the
 linker to link a Chromium executable (about 1.8 GiB in size) just in 2
 seconds. LLVM's lld, the fastest open-source linker which I originally
-created a few years ago takes about 12 seconds to link Chromium on my
+created a few years ago, takes about 12 seconds to link Chromium on my
 machine. So the goal is 6x performance bump over lld. I don't know if
 I can ever achieve that, but it's worth a try. I need to create
 something anyway to earn units to graduate, and I want to (at least
@@ -19,26 +19,38 @@ I have quite a few new ideas as to how to achieve that speedup, though
 they are still just random unproved thoughts which need to be
 implemented and tested with benchmarks. Here is a brain dump:
 
+## Background
+
+- Even though lld has significantly improved the situation, linking is
+  still one of the slowest steps in a build. It is in particular
+  annoying when I changed one line of code and had to wait for a few
+  seconds or even more for a linker to complete. It should be
+  instantaneous. There's a need for a faster linker.
+
+- The number of cores on a PC has increased a lot lately, and this
+  trend is expected to continue. However, the existing linkers can't
+  take an advantage of that because they don't scale well for more
+  cores. I have a 64-core/128-thread machine, so my goal is to create
+  a linker that uses the CPU nicely. mold should be much faster than
+  other linkers on 4 or 8-core machines too, though.
+
+- It looks to me that the designs of the existing linkers are somewhat
+  similar, and I believe there are a lot of drastically different
+  designs that haven't been explored yet. Develoeprs generally don't
+  care about linkers as long as they work correctly, and they don't
+  even think about creating a new one. So there may be lots of low
+  hanging fruits there in this area.
+
+## Basic design
+
 - In order to achieve a `cat`-like performance, the most important
   thing is to fix the layout of an output file as quickly as possible, so
   that we can start copying actual data from input object files to an
   output executable/shared library file.
 
-- The number of cores on a PC has increased a lot lately, and this
-  trend is expected to continue. We'll see many more cores on our
-  development machines. We should design the linker in such a way that
-  it scales well with many more cores. I have a 64-core/128-thread
-  machine, so my goal is to use that CPU nicely.
-
 - Copying data from input files to an output file is I/O-bounded, so
   there should be room for doing computationally-intensive tasks while
   copying data from one file to another.
-
-- We should focus on shortening the link time for the usual
-  modify-build-debug development cycle because the linker speed
-  matters most in that situation. It is OK to take a little bit more
-  time for cold build because for cold build, the time taken by the
-  compiler is a dominant factor anyway.
 
 - After the first invocation of the linker, the linker should not exit
   but instead become a daemon to keep parsed input files in memory.
@@ -51,10 +63,9 @@ implemented and tested with benchmarks. Here is a brain dump:
   to split the linker into two in such a way that the latter half of
   the process finishes as quickly as possible by speculatively parsing
   and preprocessing input files in the first half of the process. The
-  key factor of success would be to design nice data structures to
-  pass data between the first half and the second half that allows us
-  to offload as much processing as possible from the second to the
-  first half.
+  key factor of success would be to design nice data structures that
+  allows us to offload as much processing as possible from the second
+  to the first half.
 
 - One of the most time-consuming stage among linker stages is symbol
   resolution. To resolve symbols, we basically have to throw all
@@ -87,6 +98,28 @@ implemented and tested with benchmarks. Here is a brain dump:
   file. After the data copy is done, we can attach a .got section at
   the end of the output file.
 
+- Many linkers support incremental linking, but I think that's a hack
+  to work around the slowness of regular linking. I want to focus on
+  making the regular linking extremely fast.
+
+## Compatibility
+
+- GNU ld, GNU gold and LLVM lld support essentially the same set of
+  command line options and features. mold doesn't have to be
+  completely compatible with them. As long as it can be used for
+  linking large user-land programs, I'm fine with that. It is OK to
+  leave some command line options unimplemented; if mold is blazingly
+  fast, other projects would still be happy to adopt it by modifying
+  their projects' build files.
+
+- I don't want to support the linker script language in mold because
+  it's so complicated and inevitably slows down the linker. User-land
+  programs rarely use linker scripts, so it shouldn't be a roadblock
+  for most projects.
+
+
+## Details
+
 - If we aim to the 2 seconds goal for Chromium, every millisecond
   counts. We can't ignore the latency of process exit. If we mmap a
   lot of files, \_exit(2) is not instantaneous but takes a few hundred
@@ -97,19 +130,6 @@ implemented and tested with benchmarks. Here is a brain dump:
   writes a result file to a filesystem, it notifies the first process,
   and the first process exits. The second process can take time to
   exit, because it is not an interactive process.
-
-- GNU ld, GNU gold and LLVM lld support essentially the same set of
-  command line options and features. mold doesn't have to be
-  completely compatible with them. As long as it can be used for
-  linking large user-land programs, I'm fine with that. It is OK to
-  leave some command line options unimplemented; if mold is blazingly
-  fast, other project would still be happy to adopt it by modifying
-  their projects' build files.
-
-- I don't want to support the linker script language in mold because
-  it's so complicated and inevitably slows down the linker. User-land
-  programs rarely use linker scripts, so it shouldn't be a roadblock
-  for most projects.
 
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
