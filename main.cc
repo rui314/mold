@@ -152,7 +152,7 @@ static std::vector<ELF64LE::Phdr> create_phdrs() {
 
 static std::vector<ELF64LE::Shdr *>
 create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
-  static ELF64LE::Shdr null_entry;
+  static ELF64LE::Shdr null_entry = {};
 
   std::vector<ELF64LE::Shdr *> vec;
   vec.push_back(&null_entry);

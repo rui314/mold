@@ -256,7 +256,7 @@ public:
   }
 
   uint64_t get_size() const override {
-    return hdr.size() * sizeof(hdr[0]);
+    return hdr.size() * sizeof(ELF64LE::Phdr[0]);
   }
 
   std::vector<ELF64LE::Phdr> hdr;
@@ -291,9 +291,6 @@ public:
 
   std::vector<InputChunk *> chunks;
   static std::vector<OutputSection *> all_instances;
-
-private:
-  uint64_t file_offset = 0;
 };
 
 class InterpSection : public OutputChunk {
