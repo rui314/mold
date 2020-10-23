@@ -328,9 +328,11 @@ int main(int argc, char **argv) {
                << "output_chunks=" << output_chunks.size() << "\n"
                << "        files=" << files.size() << "\n"
                << "     filesize=" << filesize << "\n"
+               << " num_all_syms=" << num_all_syms << "\n"
                << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n"
                << "  num_comdats=" << num_comdats << "\n"
+               << "num_regular_sections=" << num_regular_sections << "\n"
                << "   num_relocs=" << num_relocs << "\n"
                << "      num_str=" << num_string_pieces << "\n";
 

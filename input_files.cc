@@ -5,7 +5,9 @@ using namespace llvm::ELF;
 
 std::atomic_int num_defined;
 std::atomic_int num_undefined;
+std::atomic_int num_all_syms;
 std::atomic_int num_comdats;
+std::atomic_int num_regular_sections;
 std::atomic_int num_files;
 std::atomic_int num_string_pieces;
 
@@ -76,6 +78,7 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
+      num_regular_sections++;
       if ((shdr.sh_flags & SHF_STRINGS) && !(shdr.sh_flags & SHF_WRITE) &&
           shdr.sh_entsize == 1) {
         read_string_pieces(shdr);
@@ -166,6 +169,8 @@ void ObjectFile::parse() {
   first_global = symtab_sec->sh_info;
   elf_syms = CHECK(obj.symbols(symtab_sec), this);
   string_table = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+
+  num_all_syms += elf_syms.size();
 
   initialize_sections();
   initialize_symbols();

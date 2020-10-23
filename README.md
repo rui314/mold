@@ -151,12 +151,14 @@ implemented and tested with benchmarks. Here is a brain dump:
 When linking Chrome, a linker reads 3,430,966,844 bytes of data in
 total. The data contains the following items:
 
-| Data item         | Number
-| ----------------- | ------
-| Relocations       | 62,024,719
-| Sections          | 27,543,225
-| Defined symbols   | 10,512,135
-| Comdat groups     | 9,914,510
-| Mergeable strings | 1,579,996
-| Undefined symbols | 1,428,149
-| Object files      | 30,723
+| Data item                | Number
+| ------------------------ | ------
+| Relocations              | 62,024,719
+| Sections                 | 27,543,225
+| Symbols                  | 23,953,607
+| Public defined symbols   | 10,512,135
+| Regular sections         | 10,345,314
+| Comdat groups            | 9,914,510
+| Mergeable strings        | 1,579,996
+| Public undefined symbols | 1,428,149
+| Object files             | 30,723
