@@ -224,18 +224,19 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     ObjectFile *file = nullptr;
     uint32_t idx = 0;
 
-    while (g->lock.test_and_set(std::memory_order_acquire));
-    if (g->file == nullptr) {
-      g->file = this;
-      g->section_idx = section_idx;
-    } else if (g->file->priority < this->priority) {
-      file = this;
-      idx = section_idx;
-    } else {
-      file = g->file;
-      idx = g->section_idx;
+    {
+      Spinlock lock(g->lock);
+      if (g->file == nullptr) {
+        g->file = this;
+        g->section_idx = section_idx;
+      } else if (g->file->priority < this->priority) {
+        file = this;
+        idx = section_idx;
+      } else {
+        file = g->file;
+        idx = g->section_idx;
+      }
     }
-    g->lock.clear(std::memory_order_release);
 
     if (file)
       file->remove_comdat_members(idx);
