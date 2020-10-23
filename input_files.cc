@@ -9,6 +9,7 @@ std::atomic_int num_all_syms;
 std::atomic_int num_comdats;
 std::atomic_int num_regular_sections;
 std::atomic_int num_files;
+std::atomic_int num_relocs_alloc;
 std::atomic_int num_string_pieces;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
@@ -102,8 +103,11 @@ void ObjectFile::initialize_sections() {
             Twine(shdr.sh_info));
 
     InputSection *target = sections[shdr.sh_info];
-    if (target)
+    if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
+      if (target->hdr->sh_flags & SHF_ALLOC)
+        num_relocs_alloc += target->rels.size();
+    }
   }
 }
 

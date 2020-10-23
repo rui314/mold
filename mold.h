@@ -451,4 +451,5 @@ extern std::atomic_int num_comdats;
 extern std::atomic_int num_regular_sections;
 extern std::atomic_int num_files;
 extern std::atomic_int num_relocs;
+extern std::atomic_int num_relocs_alloc;
 extern std::atomic_int num_string_pieces;

@@ -334,6 +334,7 @@ int main(int argc, char **argv) {
                << "  num_comdats=" << num_comdats << "\n"
                << "num_regular_sections=" << num_regular_sections << "\n"
                << "   num_relocs=" << num_relocs << "\n"
+               << "num_relocs_alloc=" << num_relocs_alloc << "\n"
                << "      num_str=" << num_string_pieces << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
