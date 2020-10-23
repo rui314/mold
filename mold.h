@@ -159,7 +159,8 @@ public:
   StringRef name;
   ObjectFile *file = nullptr;
 
-  uint64_t addr;
+  uint64_t addr = 0;
+  uint8_t visibility = 0;
 
   std::atomic_bool needs_got;
   std::atomic_bool needs_plt;

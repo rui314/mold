@@ -197,6 +197,7 @@ void ObjectFile::register_defined_symbols() {
     if (sym->file && sym->file->priority < this->priority)
       continue;
     sym->file = this;
+    sym->visibility = elf_syms[i].getVisibility();
   }
 }
 
