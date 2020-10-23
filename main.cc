@@ -228,18 +228,26 @@ int main(int argc, char **argv) {
   for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   comdat_timer.stopTimer();
 
+  auto bin_sections = [&]() {
+    for (ObjectFile *file : files)
+      for (InputSection *isec : file->sections)
+        if (isec)
+          isec->output_section->chunks.push_back(isec);
+  };
+
+  auto scan_rels = [&]() {
+    for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
+  };
+
   // Bin input sections into output sections
   bin_sections_timer.startTimer();
-  for (ObjectFile *file : files)
-    for (InputSection *isec : file->sections)
-      if (isec)
-        isec->output_section->chunks.push_back(isec);
+  bin_sections();
   bin_sections_timer.stopTimer();
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   scan_rel_timer.startTimer();
-  for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
+  scan_rels();
   scan_rel_timer.stopTimer();
 
   // Create linker-synthesized sections.
