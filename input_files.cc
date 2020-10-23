@@ -221,10 +221,14 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     ComdatGroup *g = pair.first;
     uint32_t section_idx = pair.second;
 
-    ObjectFile *file = nullptr;
+    ObjectFile *other = g->file;
+    if (other && other->priority < this->priority) {
+      this->remove_comdat_members(section_idx);
+      continue;      
+    }
+
+    ObjectFile *file;
     uint32_t idx;
-
-
 
     {
       Spinlock lock(g->lock);
@@ -234,7 +238,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
         continue;
       }
 
-      if (g->file->priority < this->priority) {
+      if (g->file.load()->priority < this->priority) {
         file = this;
         idx = section_idx;
       } else {

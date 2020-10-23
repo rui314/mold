@@ -364,10 +364,10 @@ struct ComdatGroup {
   ComdatGroup(ObjectFile *file, uint32_t i)
     : file(file), section_idx(i) {}
   ComdatGroup(const ComdatGroup &other)
-    : file(other.file), section_idx(other.section_idx) {}
+    : file(other.file.load()), section_idx(other.section_idx) {}
 
   std::atomic_flag lock = ATOMIC_FLAG_INIT;
-  ObjectFile *file = nullptr;
+  std::atomic<ObjectFile *> file;
   uint32_t section_idx;
 };
 
