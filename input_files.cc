@@ -224,6 +224,8 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     ObjectFile *file = nullptr;
     uint32_t idx;
 
+
+
     {
       Spinlock lock(g->lock);
       if (g->file == nullptr) {
@@ -238,6 +240,8 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
       } else {
         file = g->file;
         idx = g->section_idx;
+        g->file = this;
+        g->section_idx = section_idx;
       }
     }
 
