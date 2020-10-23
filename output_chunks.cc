@@ -35,9 +35,9 @@ void OutputEhdr::relocate(uint8_t *buf) {
 
 void OutputSection::set_offset(uint64_t off) {
   offset = off;
-  for (InputChunk *chunk : chunks) {
-    chunk->offset = off;
-    off += chunk->get_size();
+  for (int i = 0; i < chunks.size(); i++) {
+    chunks[i]->offset = off;
+    off += chunks[i]->get_size();
   }
   size = off - offset;
 }

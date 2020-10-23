@@ -19,6 +19,7 @@
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
+// #include "tbb/task_scheduler_init.h"
 
 #include <algorithm>
 #include <atomic>
@@ -157,6 +158,9 @@ public:
   std::atomic_flag lock = ATOMIC_FLAG_INIT;
   StringRef name;
   ObjectFile *file = nullptr;
+
+  uint64_t addr;
+
   std::atomic_bool needs_got;
   std::atomic_bool needs_plt;
 };
@@ -176,6 +180,7 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
+  uint64_t addr;
   int64_t offset = -1;
   uint64_t flags;
   uint32_t type;

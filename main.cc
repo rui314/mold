@@ -175,6 +175,8 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
 }
 
 int main(int argc, char **argv) {
+  // tbb::task_scheduler_init init(1);
+
   // Parse command line options
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);

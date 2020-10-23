@@ -13,7 +13,7 @@ LIBS=-pthread -ltbb -lcurses -Wl,--start-group $(LLVM_LIBS) -Wl,--end-group
 OBJS=main.o writer.o input_files.o input_chunks.o output_chunks.o output_file.o
 
 mold: $(OBJS)
-	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	@$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 $(OBJS): mold.h Makefile
 
