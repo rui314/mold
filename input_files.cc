@@ -222,14 +222,17 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     uint32_t section_idx = pair.second;
 
     ObjectFile *file = nullptr;
-    uint32_t idx = 0;
+    uint32_t idx;
 
     {
       Spinlock lock(g->lock);
       if (g->file == nullptr) {
         g->file = this;
         g->section_idx = section_idx;
-      } else if (g->file->priority < this->priority) {
+        continue;
+      }
+
+      if (g->file->priority < this->priority) {
         file = this;
         idx = section_idx;
       } else {
@@ -238,8 +241,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
       }
     }
 
-    if (file)
-      file->remove_comdat_members(idx);
+    file->remove_comdat_members(idx);
   }
 }
 
