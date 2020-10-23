@@ -192,6 +192,7 @@ int main(int argc, char **argv) {
   llvm::Timer add_symbols_timer("add_symbols", "add_symbols", before_copy);
   llvm::Timer comdat_timer("comdat", "comdat", before_copy);
   llvm::Timer bin_sections_timer("bin_sections", "bin_sections", before_copy);
+  llvm::Timer scan_rel_timer("scan_rel", "scan_rel", before_copy);
   llvm::Timer file_offset_timer("file_offset", "file_offset", before_copy);
   llvm::Timer copy_timer("copy", "copy");
   llvm::Timer reloc_timer("reloc", "reloc");
@@ -234,6 +235,12 @@ int main(int argc, char **argv) {
       if (isec)
         isec->output_section->chunks.push_back(isec);
   bin_sections_timer.stopTimer();
+
+  // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
+  // .rela.dyn, .rela.plt.
+  scan_rel_timer.startTimer();
+  for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
+  scan_rel_timer.stopTimer();
 
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;

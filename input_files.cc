@@ -241,6 +241,12 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
   }
 }
 
+void ObjectFile::scan_relocations() {
+  for (InputSection *isec : sections)
+    if (isec)
+      isec->scan_relocations();
+}
+
 StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }

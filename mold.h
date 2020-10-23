@@ -154,9 +154,11 @@ public:
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
+  std::atomic_flag lock = ATOMIC_FLAG_INIT;
   StringRef name;
   ObjectFile *file = nullptr;
-  std::atomic_flag lock = ATOMIC_FLAG_INIT;
+  std::atomic_bool needs_got;
+  std::atomic_bool needs_plt;
 };
 
 inline std::string toString(Symbol sym) {
@@ -183,8 +185,11 @@ public:
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
+
   void copy_to(uint8_t *buf) override;
   void relocate(uint8_t *buf) override;
+  void scan_relocations();
+
   uint64_t get_size() const override;
 
   ObjectFile *file;
@@ -376,9 +381,12 @@ public:
   void register_defined_symbols();
   void register_undefined_symbols();
   void eliminate_duplicate_comdat_groups();
+  void scan_relocations();
+
   StringRef get_filename();
   bool is_in_archive();
 
+  std::vector<Symbol *> symbols;
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
@@ -392,7 +400,6 @@ private:
   void read_string_pieces(const ELF64LE::Shdr &shdr);
 
   MemoryBufferRef mb;
-  std::vector<Symbol *> symbols;
   std::vector<std::pair<ComdatGroup *, uint32_t>> comdat_groups;
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;

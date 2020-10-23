@@ -28,6 +28,31 @@ void InputSection::copy_to(uint8_t *buf) {
   memcpy(buf + offset, &data[0], data.size());
 }
 
+thread_local int count;
+
+void InputSection::scan_relocations() {
+  if (rels.empty())
+    return;
+
+  for (const ELF64LE::Rela &rel : rels) {
+    Symbol *sym = file->symbols[rel.getSymbol(false)];
+    if (!sym)
+      continue;
+
+    switch (rel.getType(false)) {
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_TLSGD:
+    case R_X86_64_GOTTPOFF:
+    case R_X86_64_PLT32:
+      if (!sym->needs_got)
+        sym->needs_got = true;
+      break;
+    default:
+      count++;
+    }
+  }
+}
+
 void InputSection::relocate(uint8_t *buf) {
   if (rels.empty())
     return;
