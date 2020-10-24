@@ -19,6 +19,7 @@
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
+#include "tbb/task_group.h"
 // #include "tbb/task_scheduler_init.h"
 
 #include <algorithm>
@@ -29,6 +30,10 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <unistd.h>
 #include <unordered_set>
 
 using llvm::ArrayRef;

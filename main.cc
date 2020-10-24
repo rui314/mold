@@ -2,11 +2,9 @@
 
 #include <iostream>
 
+using namespace llvm;
 using namespace llvm::ELF;
 
-using llvm::FileOutputBuffer;
-using llvm::file_magic;
-using llvm::makeArrayRef;
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
@@ -174,8 +172,20 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   }
 }
 
+static void unlink_async(tbb::task_group &tg, StringRef path) {
+  if (!sys::fs::exists(path) || !sys::fs::is_regular_file(path))
+    return;
+
+  int fd;
+  if (std::error_code ec = sys::fs::openFileForRead(path, fd))
+    return;
+  sys::fs::remove(path);
+  tg.run([=]() { close(fd); });
+}
+
 int main(int argc, char **argv) {
   // tbb::task_scheduler_init init(1);
+  tbb::task_group tg;
 
   // Parse command line options
   MyOptTable opt_table;
@@ -198,6 +208,8 @@ int main(int argc, char **argv) {
   llvm::Timer file_offset_timer("file_offset", "file_offset", before_copy);
   llvm::Timer copy_timer("copy", "copy");
   llvm::Timer reloc_timer("reloc", "reloc");
+  llvm::Timer unlink_timer("unlink", "unlink");
+  llvm::Timer  wait_timer(" wait", " wait");
   llvm::Timer commit_timer("commit", "commit");
 
   // Open input files
@@ -295,6 +307,10 @@ int main(int argc, char **argv) {
   // Fill section header.
   fill_shdrs(output_chunks);
 
+  unlink_timer.startTimer();
+  unlink_async(tg, config.output);
+  unlink_timer.stopTimer();
+
   // Create an output file
   Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
     FileOutputBuffer::create(config.output, filesize, 0);
@@ -323,6 +339,10 @@ int main(int argc, char **argv) {
   int num_input_chunks = 0;
   for (ObjectFile *file : files)
     num_input_chunks += file->sections.size();
+
+  wait_timer.startTimer();
+  tg.wait();
+  wait_timer.stopTimer();
 
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
                << "output_chunks=" << output_chunks.size() << "\n"
