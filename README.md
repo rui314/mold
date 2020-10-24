@@ -188,6 +188,13 @@ Step 8
   and the first process exits. The second process can take time to
   exit, because it is not an interactive process.
 
+- A .build-id, a unique ID embedded to an output file, is usually
+  computed by applying a cryptographic hash function (e.g. SHA-1) to
+  an output file. But it adds an extra time for linking because a
+  linker has to compute a SHA-1 checksum after the actual linking is
+  done. We should instead compute a SHA-1 for a tuple of (all input
+  files, command line options, linker version) as a build-id.
+
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
   library for parallel execution and has several concurrent
