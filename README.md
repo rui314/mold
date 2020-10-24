@@ -195,9 +195,9 @@ Step 8
   `parallel_for_each` and `concurrent_hash_map`.
 
 - The output from the linker should be deterministic for the sake of
-  [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds).
-  This might add a little bit of overhead to the linker, but that
-  shouldn't be too much.
+  [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
+  and ease of debugging. This might add a little bit of overhead to
+  the linker, but that shouldn't be too much.
 
 ## Size of the problem
 

@@ -26,7 +26,7 @@ submodules: llvm intel_tbb
 
 llvm:
 	mkdir -p llvm-project/build
-	(cd llvm-project/build; cmake -GNinja -DCMAKE_BUILD_TYPE=Release ../llvm)
+	(cd llvm-project/build; cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS='lld;clang' -DLLVM_ENABLE_LLD=1 ../llvm)
 	ninja -C llvm-project/build
 
 intel_tbb:
