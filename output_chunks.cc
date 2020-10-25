@@ -110,7 +110,7 @@ void OutputPhdr::copy_to(uint8_t *buf) {
 void OutputSection::set_fileoff(uint64_t off) {
   shdr.sh_offset = off;
   for (int i = 0; i < chunks.size(); i++) {
-    chunks[i]->offset = off;
+    chunks[i]->fileoff = off;
     off += chunks[i]->get_size();
   }
 }

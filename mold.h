@@ -203,7 +203,7 @@ public:
 
   StringRef name;
   uint64_t addr;
-  uint64_t offset;
+  uint64_t fileoff;
 };
 
 std::string toString(InputSection *isec);
@@ -313,8 +313,8 @@ public:
   }
 
   uint64_t get_filesz() const override {
-    return chunks.back()->offset + chunks.back()->get_size() -
-      chunks.front()->offset;
+    return chunks.back()->fileoff + chunks.back()->get_size() -
+      chunks.front()->fileoff;
   }
 
   void set_fileoff(uint64_t off) override;
