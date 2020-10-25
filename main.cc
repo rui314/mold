@@ -332,7 +332,7 @@ int main(int argc, char **argv) {
       }
 
       chunk->set_vaddr(vaddr);
-      vaddr += chunk->get_memsz();
+      vaddr += chunk->shdr.sh_size;
     }
   }
 

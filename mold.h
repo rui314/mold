@@ -230,7 +230,6 @@ public:
   uint64_t get_vaddr() const { return shdr.sh_addr; }
 
   virtual uint64_t get_filesz() const = 0;
-  uint64_t get_memsz() { return shdr.sh_size; }
 
   StringRef name;
   uint64_t vaddr;
