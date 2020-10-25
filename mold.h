@@ -201,7 +201,7 @@ public:
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
-  uint64_t addr;
+  uint64_t vaddr;
   uint64_t fileoff;
 };
 
@@ -318,6 +318,7 @@ public:
   }
 
   void set_fileoff(uint64_t off) override;
+  void set_vaddr(uint64_t va) override;
 
   void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
 

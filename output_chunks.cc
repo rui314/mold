@@ -108,10 +108,25 @@ void OutputPhdr::copy_to(uint8_t *buf) {
 }
 
 void OutputSection::set_fileoff(uint64_t off) {
+  if (shdr.sh_type & SHT_NOBITS) {
+    shdr.sh_offset = off;
+    for (InputSection *isec : chunks)
+      isec->fileoff = off;
+    return;
+  }
+
   shdr.sh_offset = off;
-  for (int i = 0; i < chunks.size(); i++) {
-    chunks[i]->fileoff = off;
-    off += chunks[i]->shdr.sh_size;
+  for (InputSection *isec : chunks) {
+    isec->fileoff = off;
+    off += isec->shdr.sh_size;
+  }
+}
+
+void OutputSection::set_vaddr(uint64_t va) {
+  shdr.sh_addr = va;
+  for (InputSection *isec : chunks) {
+    isec->vaddr = va;
+    va += isec->shdr.sh_size;
   }
 }
 
