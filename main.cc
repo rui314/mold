@@ -162,7 +162,7 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->name.empty())
       continue;
-    chunk->shdr.sh_offset = chunk->get_offset();
+    chunk->shdr.sh_offset = chunk->fileoff;
     chunk->shdr.sh_size = chunk->get_size();
   }
 }
@@ -307,10 +307,10 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
     for (OutputChunk *chunk : output_chunks) {
-      chunk->set_offset(filesize);
+      chunk->set_fileoff(filesize);
       filesize += chunk->get_size();
     }
-  }
+ }
 
   // Fill section header.
   fill_shdrs(output_chunks);

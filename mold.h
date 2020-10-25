@@ -216,15 +216,14 @@ class OutputChunk {
 public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
-  virtual void set_offset(uint64_t off) { offset = off; }
-  uint64_t get_offset() const { return offset; }
+  virtual void set_fileoff(uint64_t off) { fileoff = off; }
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
+  int64_t fileoff = -1;
   ELF64LE::Shdr shdr = {};
 
 protected:
-  int64_t offset = -1;
   int64_t size = -1;
 };
 
@@ -247,7 +246,7 @@ public:
   OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override {
-    auto *p = (ELF64LE::Shdr *)(buf + offset);
+    auto *p = (ELF64LE::Shdr *)(buf + fileoff);
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
   }
@@ -306,7 +305,7 @@ public:
       chunks.front()->offset;
   }
 
-  void set_offset(uint64_t off) override;
+  void set_fileoff(uint64_t off) override;
 
   std::vector<InputSection *> chunks;
   static std::vector<OutputSection *> all_instances;
@@ -321,7 +320,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, path, sizeof(path));
+    memcpy(buf + fileoff, path, sizeof(path));
   }
 
   uint64_t get_size() const override { return sizeof(path); }
@@ -348,7 +347,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, &contents[0], contents.size());
+    memcpy(buf + fileoff, &contents[0], contents.size());
   }
 
   uint64_t get_size() const override { return contents.size(); }

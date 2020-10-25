@@ -30,8 +30,8 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_machine = EM_X86_64;
   hdr->e_version = EV_CURRENT;
   hdr->e_entry = 0;
-  hdr->e_phoff = out::phdr->get_offset();
-  hdr->e_shoff = out::shdr->get_offset();
+  hdr->e_phoff = out::phdr->fileoff;
+  hdr->e_shoff = out::shdr->fileoff;
   hdr->e_flags = 0;
   hdr->e_ehsize = sizeof(ELF64LE::Ehdr);
   hdr->e_phentsize = sizeof(ELF64LE::Phdr);
@@ -94,22 +94,22 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     OutputChunk *front = ent.members.front();
     OutputChunk *back = ent.members.back();
 
-    ent.phdr.p_offset = front->get_offset();
-    ent.phdr.p_filesz = back->get_offset() + back->get_size() - front->get_offset();
+    ent.phdr.p_offset = front->fileoff;
+    ent.phdr.p_filesz = back->fileoff + back->get_size() - front->fileoff;
   }
 
-  auto *p = (ELF64LE::Phdr *)(buf + offset);
+  auto *p = (ELF64LE::Phdr *)(buf + fileoff);
   for (Phdr &ent : entries)
     *p++ = ent.phdr;
 }
 
-void OutputSection::set_offset(uint64_t off) {
-  offset = off;
+void OutputSection::set_fileoff(uint64_t off) {
+  fileoff = off;
   for (int i = 0; i < chunks.size(); i++) {
     chunks[i]->offset = off;
     off += chunks[i]->get_size();
   }
-  size = off - offset;
+  size = off - fileoff;
 }
 
 static StringRef get_output_name(StringRef name) {
