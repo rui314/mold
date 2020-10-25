@@ -109,7 +109,6 @@ void OutputSection::set_fileoff(uint64_t off) {
     chunks[i]->offset = off;
     off += chunks[i]->get_size();
   }
-  size = off - fileoff;
 }
 
 static StringRef get_output_name(StringRef name) {

@@ -220,11 +220,9 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
-  int64_t fileoff = -1;
+  uint64_t fileoff;
+  uint32_t alignment = 1;
   ELF64LE::Shdr shdr = {};
-
-protected:
-  int64_t size = -1;
 };
 
 // ELF header

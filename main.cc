@@ -10,6 +10,8 @@ using llvm::opt::InputArgList;
 
 Config config;
 
+constexpr int PAGE_SIZE = 4096;
+
 //
 // Command-line option processing
 //
