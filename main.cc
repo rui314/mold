@@ -307,6 +307,9 @@ int main(int argc, char **argv) {
   // Create program header contents.
   out::phdr->construct(output_chunks);
 
+  // Fill section header.
+  fill_shdrs(output_chunks);
+
   // Assign offsets to input sections
   uint64_t filesize = 0;
   {
@@ -319,7 +322,7 @@ int main(int argc, char **argv) {
       while (j < output_chunks.size() && !output_chunks[j]->starts_segment)
         j++;
 
-      slices.push_back(ArrayRef(output_chunks).slice(i, j));
+      slices.push_back(ArrayRef(output_chunks).slice(i, j - i));
       i = j;
     }
 
@@ -336,11 +339,17 @@ int main(int argc, char **argv) {
 
         chunk->set_offset(vaddr, fileoff);
 
-        vaddr += chunk->shdr.sh_size;
+        vaddr += chunk->get_filesz();
         if (!is_bss)
-          fileoff += chunk->shdr.sh_size;
+          fileoff += chunk->get_filesz();
       }
     }
+
+    for (OutputChunk *chunk : output_chunks) {
+      llvm::outs() << chunk->name
+                   << " vaddr=" << chunk->shdr.sh_addr
+                   << " offset=" << chunk->shdr.sh_offset
+                   << "\n";
 
     uint64_t vaddr = 0x200000;
     uint64_t fileoff = 0;
@@ -362,17 +371,8 @@ int main(int argc, char **argv) {
       else
         fileoff = last->shdr.sh_offset + last->shdr.sh_size;
     }
-
-    for (OutputChunk *chunk : output_chunks) {
-      llvm::outs() << chunk->name
-                   << " vaddr=" << chunk->shdr.sh_addr
-                   << " offset=" << chunk->shdr.sh_offset
-                   << "\n";
     }
   }
-
-  // Fill section header.
-  fill_shdrs(output_chunks);
 
   {
     MyTimer t("unlink", before_copy);

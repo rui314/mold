@@ -67,15 +67,22 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
 
   // Create PT_LOAD segments.
   add(PT_LOAD, PF_R, {});
+
+  bool last_was_bss = false;
+
   for (OutputChunk *chunk : chunks) {
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       break;
 
     uint32_t flags = to_phdr_flags(chunk->shdr.sh_flags);
-    if (entries.back().phdr.p_flags == flags)
-      entries.back().members.push_back(chunk);
-    else
+    bool this_is_bss = chunk->shdr.sh_type & SHT_NOBITS;
+
+    if (entries.back().phdr.p_flags != flags || (last_was_bss && !this_is_bss))
       add(PT_LOAD, flags, {chunk});
+    else
+      entries.back().members.push_back(chunk);
+
+    last_was_bss = this_is_bss;
   }
 
   // Create a PT_TLS.
@@ -118,6 +125,8 @@ void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
   shdr.sh_addr = vaddr;
   shdr.sh_offset = fileoff;
 
+  llvm::outs() << name << " " << vaddr << " " << fileoff << "\n";
+
   if (!(shdr.sh_type & SHT_NOBITS))
     assert(vaddr == fileoff);
 
@@ -126,6 +135,9 @@ void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
     isec->offset = vaddr;
     vaddr += isec->shdr.sh_size;
   }
+
+  shdr.sh_size = vaddr - shdr.sh_size;
+  llvm::outs() << name << " " << vaddr << " " << fileoff << "\n";
 }
 
 static StringRef get_output_name(StringRef name) {
