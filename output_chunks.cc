@@ -89,7 +89,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   }
 
   for (Phdr &ent : entries)
-    ent.members.front()->shdr.sh_addralign = PAGE_SIZE;
+    ent.members.front()->page_align = true;
 }
 
 void OutputPhdr::copy_to(uint8_t *buf) {

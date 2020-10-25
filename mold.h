@@ -225,6 +225,7 @@ public:
 
   StringRef name;
   uint64_t fileoff;
+  bool page_align = false;
   ELF64LE::Shdr shdr = {};
 };
 
