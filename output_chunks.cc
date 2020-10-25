@@ -89,6 +89,10 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   }
 
   for (Phdr &ent : entries)
+    for (OutputChunk *chunk : ent.members)
+      ent.phdr.p_align = std::max(ent.phdr.p_align, chunk->shdr.sh_addralign);
+
+  for (Phdr &ent : entries)
     ent.members.front()->starts_segment = true;
 }
 
@@ -128,6 +132,7 @@ void OutputSection::set_fileoff(uint64_t off) {
 void OutputSection::set_vaddr(uint64_t va) {
   shdr.sh_addr = va;
   for (InputSection *isec : chunks) {
+    va = align_to(va, isec->shdr.sh_addralign);
     isec->vaddr = va;
     va += isec->shdr.sh_size;
   }
