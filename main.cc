@@ -312,6 +312,9 @@ int main(int argc, char **argv) {
     }
   }
 
+  // Fill section header.
+  fill_shdrs(output_chunks);
+
   {
     MyTimer t("unlink", before_copy);
     unlink_async(tg, config.output);
