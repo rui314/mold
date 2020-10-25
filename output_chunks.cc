@@ -100,6 +100,7 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     ent.phdr.p_offset = front->get_fileoff();
     ent.phdr.p_filesz =
       back->get_fileoff() + back->get_filesz() - front->shdr.sh_offset;
+    ent.phdr.p_vaddr = front->get_vaddr();
   }
 
   auto *p = (ELF64LE::Phdr *)(buf + get_fileoff());
