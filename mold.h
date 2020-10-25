@@ -232,6 +232,8 @@ protected:
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
+  OutputEhdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+
   void copy_to(uint8_t *buf) override {}
   void relocate(uint8_t *buf) override;
 
@@ -243,22 +245,26 @@ public:
 // Section header
 class OutputShdr : public OutputChunk {
 public:
+  OutputShdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+
   void copy_to(uint8_t *buf) override {
     auto *p = (ELF64LE::Shdr *)(buf + offset);
-    for (ELF64LE::Shdr *x : hdr)
-      *p++ = *x;
+    for (ELF64LE::Shdr *ent : entries)
+      *p++ = *ent;
   }
 
   uint64_t get_size() const override {
-    return hdr.size() * sizeof(ELF64LE::Shdr);
+    return entries.size() * sizeof(ELF64LE::Shdr);
   }
 
-  std::vector<ELF64LE::Shdr *> hdr;
+  std::vector<ELF64LE::Shdr *> entries;
 };
 
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
+  OutputPhdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+
   void copy_to(uint8_t *buf) override {
     auto *p = (ELF64LE::Phdr *)(buf + offset);
     for (Phdr &ent : entries)

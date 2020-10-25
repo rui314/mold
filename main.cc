@@ -297,7 +297,7 @@ int main(int argc, char **argv) {
       chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
 
   // Add a section header.
-  out::shdr->hdr = create_shdrs(output_chunks);
+  out::shdr->entries = create_shdrs(output_chunks);
   output_chunks.push_back(out::shdr);
 
   // Create program header contents.

@@ -30,7 +30,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_phentsize = sizeof(ELF64LE::Phdr);
   hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
-  hdr->e_shnum = out::shdr->hdr.size();
+  hdr->e_shnum = out::shdr->entries.size();
   hdr->e_shstrndx = out::shstrtab->index;
 }
 
@@ -54,6 +54,18 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   add(PT_PHDR, PF_R, {out::phdr});
   if (out::interp)
     add(PT_INTERP, PF_R, {out::interp});
+  add(PT_LOAD, PF_R, {});
+
+  for (OutputChunk *chunk : chunks) {
+    if (!(chunk->hdr.sh_flags & SHF_ALLOC))
+      break;
+
+    uint32_t flags = to_phdr_flags(chunk->hdr.sh_flags);
+    if (entries.back().phdr.p_flags == flags)
+      entries.back().members.push_back(chunk);
+    else
+      add(PT_LOAD, flags, {chunk});
+  }
 }
 
 void OutputSection::set_offset(uint64_t off) {
