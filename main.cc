@@ -162,7 +162,6 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->name.empty())
       continue;
-    chunk->shdr.sh_offset = chunk->fileoff;
     chunk->shdr.sh_size = chunk->get_filesz();
   }
 }
@@ -314,13 +313,30 @@ int main(int argc, char **argv) {
     MyTimer t("file_offset", before_copy);
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->starts_segment)
-        filesize = align_to(filesize, SECTOR_SIZE);
+        filesize = align_to(filesize, PAGE_SIZE);
       else
         filesize = align_to(filesize, chunk->shdr.sh_addralign);
       chunk->set_fileoff(filesize);
       filesize += chunk->get_filesz();
     }
- }
+  }
+
+#if 0
+  {
+    MyTimer t("vaddr", before_copy);
+    uint64_t vaddr = 0x200000;
+
+    for (OutputChunk *chunk : output_chunks) {
+      if (chunk->starts_segment) {
+        vaddr = align_to(vaddr, PAGE_SIZE);
+        vaddr += chunk->get_fileoff() % PAGE_SIZE;
+      }
+
+      chunk->vaddr = vaddr;
+      vaddr += chunk->shdr.sh_size;
+    }
+  }
+#endif
 
   // Fill section header.
   fill_shdrs(output_chunks);

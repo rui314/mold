@@ -30,8 +30,8 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_machine = EM_X86_64;
   hdr->e_version = EV_CURRENT;
   hdr->e_entry = Symbol::intern("_entry")->addr;
-  hdr->e_phoff = out::phdr->fileoff;
-  hdr->e_shoff = out::shdr->fileoff;
+  hdr->e_phoff = out::phdr->get_fileoff();
+  hdr->e_shoff = out::shdr->get_fileoff();
   hdr->e_flags = 0;
   hdr->e_ehsize = sizeof(ELF64LE::Ehdr);
   hdr->e_phentsize = sizeof(ELF64LE::Phdr);
@@ -97,17 +97,18 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     OutputChunk *front = ent.members.front();
     OutputChunk *back = ent.members.back();
 
-    ent.phdr.p_offset = front->fileoff;
-    ent.phdr.p_filesz = back->fileoff + back->get_filesz() - front->fileoff;
+    ent.phdr.p_offset = front->get_fileoff();
+    ent.phdr.p_filesz =
+      back->get_fileoff() + back->get_filesz() - front->shdr.sh_offset;
   }
 
-  auto *p = (ELF64LE::Phdr *)(buf + fileoff);
+  auto *p = (ELF64LE::Phdr *)(buf + get_fileoff());
   for (Phdr &ent : entries)
     *p++ = ent.phdr;
 }
 
 void OutputSection::set_fileoff(uint64_t off) {
-  fileoff = off;
+  shdr.sh_offset = off;
   for (int i = 0; i < chunks.size(); i++) {
     chunks[i]->offset = off;
     off += chunks[i]->get_size();

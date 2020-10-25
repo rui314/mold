@@ -226,11 +226,16 @@ public:
 
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
-  virtual void set_fileoff(uint64_t off) { fileoff = off; }
+
+  virtual void set_fileoff(uint64_t off) { shdr.sh_offset = off; }
+  uint64_t get_fileoff() const { return shdr.sh_offset; }
+
+  virtual void set_vaddr(uint64_t va) { vaddr = va; }
   virtual uint64_t get_filesz() const = 0;
 
+
   StringRef name;
-  uint64_t fileoff;
+  uint64_t vaddr;
   bool starts_segment = false;
   ELF64LE::Shdr shdr = {};
 };
@@ -254,7 +259,7 @@ public:
   OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override {
-    auto *p = (ELF64LE::Shdr *)(buf + fileoff);
+    auto *p = (ELF64LE::Shdr *)(buf + get_fileoff());
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
   }
@@ -330,7 +335,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + fileoff, path, sizeof(path));
+    memcpy(buf + get_fileoff(), path, sizeof(path));
   }
 
   uint64_t get_filesz() const override { return sizeof(path); }
@@ -357,7 +362,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + fileoff, &contents[0], contents.size());
+    memcpy(buf + get_fileoff(), &contents[0], contents.size());
   }
 
   uint64_t get_filesz() const override { return contents.size(); }
