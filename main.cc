@@ -183,6 +183,22 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
+class Timer {
+public:
+  Timer(StringRef name) : timer(name, name) {
+    timer.startTimer();
+  }
+
+  Timer(StringRef name, llvm::TimerGroup &tg) : timer(name, name, tg) {
+    timer.startTimer();
+  }
+
+  ~Timer() { timer.stopTimer(); }
+
+private:
+  llvm::Timer timer;
+};
+
 int main(int argc, char **argv) {
   // tbb::task_scheduler_init init(1);
   tbb::task_group tg;
