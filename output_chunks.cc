@@ -127,7 +127,7 @@ void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
 
   llvm::outs() << name << " " << vaddr << " " << fileoff << "\n";
 
-  if (!(shdr.sh_type & SHT_NOBITS))
+  if ((shdr.sh_flags & SHF_ALLOC) && !(shdr.sh_type & SHT_NOBITS))
     assert(vaddr == fileoff);
 
   for (InputSection *isec : chunks) {

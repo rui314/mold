@@ -331,6 +331,12 @@ int main(int argc, char **argv) {
       uint64_t fileoff = 0;
 
       for (OutputChunk *chunk : slice) {
+        if (chunk->shdr.sh_flags & SHT_NOBITS) {
+          chunk->set_offset(0, fileoff);          
+          fileoff += chunk->get_filesz();
+          continue;
+        }
+
         bool is_bss = chunk->shdr.sh_type & SHT_NOBITS;
 
         vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
