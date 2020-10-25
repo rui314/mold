@@ -51,11 +51,15 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     entries.push_back({phdr, members});    
   };
 
+  // Create a PT_PHDR for the program header itself.
   add(PT_PHDR, PF_R, {out::phdr});
+
+  // Create an PT_INTERP.
   if (out::interp)
     add(PT_INTERP, PF_R, {out::interp});
-  add(PT_LOAD, PF_R, {});
 
+  // Create PT_LOAD segments.
+  add(PT_LOAD, PF_R, {});
   for (OutputChunk *chunk : chunks) {
     if (!(chunk->hdr.sh_flags & SHF_ALLOC))
       break;
@@ -65,6 +69,16 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       entries.back().members.push_back(chunk);
     else
       add(PT_LOAD, flags, {chunk});
+  }
+
+  // Create a PT_TLS.
+  for (int i = 0; i < chunks.size(); i++) {
+    if (chunks[i]->hdr.sh_flags & SHF_TLS) {
+      std::vector<OutputChunk *> vec = {chunks[i++]};
+      while (i < chunks.size() && (chunks[i]->hdr.sh_flags & SHF_TLS))
+        vec.push_back(chunks[i++]);
+      add(PT_TLS, to_phdr_flags(chunks[i]->hdr.sh_flags), vec);
+    }
   }
 }
 
