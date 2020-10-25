@@ -179,11 +179,19 @@ inline std::string toString(Symbol sym) {
 // input_chunks.cc
 //
 
-class InputChunk {
+class InputSection {
 public:
-  virtual void copy_to(uint8_t *buf) = 0;
-  virtual void relocate(uint8_t *buf) {}
-  virtual uint64_t get_size() const = 0;
+  InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
+
+  void copy_to(uint8_t *buf);
+  void relocate(uint8_t *buf);
+  uint64_t get_size() const;
+  void scan_relocations();
+
+  ObjectFile *file;
+  OutputSection *output_section;
+  ArrayRef<ELF64LE::Rela> rels;
+  const ELF64LE::Shdr *hdr;
 
   StringRef name;
   uint64_t addr;
@@ -191,22 +199,6 @@ public:
   uint64_t flags;
   uint32_t type;
   uint32_t alignment = 1;
-};
-
-class InputSection : public InputChunk {
-public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
-
-  void copy_to(uint8_t *buf) override;
-  void relocate(uint8_t *buf) override;
-  void scan_relocations();
-
-  uint64_t get_size() const override;
-
-  ObjectFile *file;
-  OutputSection *output_section;
-  ArrayRef<ELF64LE::Rela> rels;
-  const ELF64LE::Shdr *hdr;
 };
 
 std::string toString(InputSection *isec);
@@ -291,11 +283,11 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    for_each(chunks, [&](InputChunk *isec) { isec->copy_to(buf); });
+    for_each(chunks, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   void relocate(uint8_t *buf) override {
-    for_each(chunks, [&](InputChunk *isec) { isec->relocate(buf); });
+    for_each(chunks, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
   uint64_t get_size() const override {
@@ -305,7 +297,7 @@ public:
 
   void set_offset(uint64_t off) override;
 
-  std::vector<InputChunk *> chunks;
+  std::vector<InputSection *> chunks;
   static std::vector<OutputSection *> all_instances;
 };
 
