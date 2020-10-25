@@ -164,7 +164,6 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
       continue;
     chunk->shdr.sh_offset = chunk->get_offset();
     chunk->shdr.sh_size = chunk->get_size();
-    chunk->index = i++;
   }
 }
 

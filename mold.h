@@ -221,7 +221,6 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
-  uint32_t index = -1;
   ELF64LE::Shdr shdr = {};
 
 protected:

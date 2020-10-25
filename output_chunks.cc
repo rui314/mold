@@ -10,6 +10,13 @@ StringTableSection *out::shstrtab;
 
 std::vector<OutputSection *> OutputSection::all_instances;
 
+static int get_section_idx(OutputChunk *chunk) {
+  for (int i = 0; i < out::shdr->entries.size(); i++)
+    if (&chunk->shdr == out::shdr->entries[i])
+      return i;
+  error("unreachable");
+}
+
 void OutputEhdr::relocate(uint8_t *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
   memset(hdr, 0, sizeof(*hdr));
@@ -31,7 +38,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->entries.size();
-  hdr->e_shstrndx = out::shstrtab->index;
+  hdr->e_shstrndx = get_section_idx(out::shstrtab);
 }
 
 static uint32_t to_phdr_flags(uint64_t sh_flags) {
