@@ -312,6 +312,8 @@ public:
   }
 
   uint64_t get_filesz() const override {
+    if (shdr.sh_type & llvm::ELF::SHT_NOBITS)
+      return 0;
     return chunks.back()->fileoff + chunks.back()->shdr.sh_size -
       chunks.front()->fileoff;
   }
