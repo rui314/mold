@@ -230,9 +230,10 @@ public:
   virtual void set_fileoff(uint64_t off) { shdr.sh_offset = off; }
   uint64_t get_fileoff() const { return shdr.sh_offset; }
 
-  virtual void set_vaddr(uint64_t va) { vaddr = va; }
-  virtual uint64_t get_filesz() const = 0;
+  virtual void set_vaddr(uint64_t va) { shdr.sh_addr = va; }
+  uint64_t get_vaddr() const { return shdr.sh_addr; }
 
+  virtual uint64_t get_filesz() const = 0;
 
   StringRef name;
   uint64_t vaddr;
