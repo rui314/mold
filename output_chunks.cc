@@ -118,6 +118,7 @@ void OutputSection::set_fileoff(uint64_t off) {
       isec->fileoff = off;
   } else {
     for (InputSection *isec : chunks) {
+      off = align_to(off, isec->shdr.sh_addralign);
       isec->fileoff = off;
       off += isec->shdr.sh_size;
     }
