@@ -112,11 +112,11 @@ thread_local int bar = 5;
 // alloc writable bss
 // nonalloc
 static int get_rank(OutputSection *x) {
-  bool alloc = x->hdr.sh_flags & SHF_ALLOC;
-  bool writable = x->hdr.sh_flags & SHF_WRITE;
-  bool exec = x->hdr.sh_flags & SHF_EXECINSTR;
-  bool tls = x->hdr.sh_flags & SHF_TLS;
-  bool nobits = x->hdr.sh_type & SHT_NOBITS;
+  bool alloc = x->shdr.sh_flags & SHF_ALLOC;
+  bool writable = x->shdr.sh_flags & SHF_WRITE;
+  bool exec = x->shdr.sh_flags & SHF_EXECINSTR;
+  bool tls = x->shdr.sh_flags & SHF_TLS;
+  bool nobits = x->shdr.sh_type & SHT_NOBITS;
   return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
@@ -133,10 +133,10 @@ static std::vector<OutputSection *> get_output_sections() {
       return x > y;
 
     // Tie-break to make output deterministic.
-    if (a->hdr.sh_flags != b->hdr.sh_flags)
-      return a->hdr.sh_flags < b->hdr.sh_flags;
-    if (a->hdr.sh_type != b->hdr.sh_type)
-      return a->hdr.sh_type < b->hdr.sh_type;
+    if (a->shdr.sh_flags != b->shdr.sh_flags)
+      return a->shdr.sh_flags < b->shdr.sh_flags;
+    if (a->shdr.sh_type != b->shdr.sh_type)
+      return a->shdr.sh_type < b->shdr.sh_type;
     return a->name < b->name;
   });
 
@@ -152,7 +152,7 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
 
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
-      vec.push_back(&chunk->hdr);
+      vec.push_back(&chunk->shdr);
   return vec;
 }
 
@@ -162,8 +162,8 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->name.empty())
       continue;
-    chunk->hdr.sh_offset = chunk->get_offset();
-    chunk->hdr.sh_size = chunk->get_size();
+    chunk->shdr.sh_offset = chunk->get_offset();
+    chunk->shdr.sh_size = chunk->get_size();
     chunk->index = i++;
   }
 }
@@ -294,7 +294,7 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::shstrtab);
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
-      chunk->hdr.sh_name = out::shstrtab->add_string(chunk->name);
+      chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
 
   // Add a section header.
   out::shdr->entries = create_shdrs(output_chunks);

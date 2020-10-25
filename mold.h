@@ -181,7 +181,7 @@ inline std::string toString(Symbol sym) {
 
 class InputSection {
 public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr &hdr, StringRef name);
+  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
   void copy_to(uint8_t *buf);
   void relocate(uint8_t *buf);
@@ -191,7 +191,7 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  const ELF64LE::Shdr &hdr;
+  const ELF64LE::Shdr &shdr;
 
   StringRef name;
   uint64_t addr;
@@ -222,7 +222,7 @@ public:
 
   StringRef name;
   uint32_t index = -1;
-  ELF64LE::Shdr hdr = {};
+  ELF64LE::Shdr shdr = {};
 
 protected:
   int64_t offset = -1;
@@ -232,7 +232,7 @@ protected:
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  OutputEhdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputEhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override {}
   void relocate(uint8_t *buf) override;
@@ -245,7 +245,7 @@ public:
 // Section header
 class OutputShdr : public OutputChunk {
 public:
-  OutputShdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override {
     auto *p = (ELF64LE::Shdr *)(buf + offset);
@@ -263,7 +263,7 @@ public:
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
-  OutputPhdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override;
 
@@ -289,8 +289,8 @@ public:
 
   OutputSection(StringRef name, uint64_t flags, uint32_t type) {
     this->name = name;
-    hdr.sh_flags = flags;
-    hdr.sh_type = type;
+    shdr.sh_flags = flags;
+    shdr.sh_type = type;
     all_instances.push_back(this);
   }
 
@@ -317,8 +317,8 @@ class InterpSection : public OutputChunk {
 public:
   InterpSection() {
     name = ".interp";
-    hdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    hdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
   }
 
   void copy_to(uint8_t *buf) override {
@@ -337,8 +337,8 @@ public:
   StringTableSection(StringRef name) {
     this->name = name;
     contents = '\0';
-    hdr.sh_flags = 0;
-    hdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_flags = 0;
+    shdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
   uint64_t add_string(StringRef s) {

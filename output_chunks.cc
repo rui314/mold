@@ -61,10 +61,10 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   // Create PT_LOAD segments.
   add(PT_LOAD, PF_R, {});
   for (OutputChunk *chunk : chunks) {
-    if (!(chunk->hdr.sh_flags & SHF_ALLOC))
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       break;
 
-    uint32_t flags = to_phdr_flags(chunk->hdr.sh_flags);
+    uint32_t flags = to_phdr_flags(chunk->shdr.sh_flags);
     if (entries.back().phdr.p_flags == flags)
       entries.back().members.push_back(chunk);
     else
@@ -73,11 +73,11 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
 
   // Create a PT_TLS.
   for (int i = 0; i < chunks.size(); i++) {
-    if (chunks[i]->hdr.sh_flags & SHF_TLS) {
+    if (chunks[i]->shdr.sh_flags & SHF_TLS) {
       std::vector<OutputChunk *> vec = {chunks[i++]};
-      while (i < chunks.size() && (chunks[i]->hdr.sh_flags & SHF_TLS))
+      while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS))
         vec.push_back(chunks[i++]);
-      add(PT_TLS, to_phdr_flags(chunks[i]->hdr.sh_flags), vec);
+      add(PT_TLS, to_phdr_flags(chunks[i]->shdr.sh_flags), vec);
     }
   }
 }
@@ -119,12 +119,12 @@ static StringRef get_output_name(StringRef name) {
 
 OutputSection *OutputSection::get_instance(InputSection *isec) {
   StringRef iname = get_output_name(isec->name);
-  uint64_t iflags = isec->hdr.sh_flags & ~SHF_GROUP;
+  uint64_t iflags = isec->shdr.sh_flags & ~SHF_GROUP;
 
   auto find = [&]() -> OutputSection * {
     for (OutputSection *osec : OutputSection::all_instances)
-      if (iname == osec->name && iflags == (osec->hdr.sh_flags & ~SHF_GROUP) &&
-          isec->hdr.sh_type == osec->hdr.sh_type)
+      if (iname == osec->name && iflags == (osec->shdr.sh_flags & ~SHF_GROUP) &&
+          isec->shdr.sh_type == osec->shdr.sh_type)
         return osec;
     return nullptr;
   };
@@ -140,5 +140,5 @@ OutputSection *OutputSection::get_instance(InputSection *isec) {
   std::unique_lock unique_lock(mu);
   if (OutputSection *osec = find())
     return osec;
-  return new OutputSection(iname, iflags, isec->hdr.sh_type);
+  return new OutputSection(iname, iflags, isec->shdr.sh_type);
 }

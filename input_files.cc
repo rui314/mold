@@ -105,7 +105,7 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
-      if (target->hdr.sh_flags & SHF_ALLOC)
+      if (target->shdr.sh_flags & SHF_ALLOC)
         num_relocs_alloc += target->rels.size();
     }
   }
