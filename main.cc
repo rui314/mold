@@ -313,8 +313,10 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
     for (OutputChunk *chunk : output_chunks) {
-      uint32_t align = chunk->page_align ? PAGE_SIZE : chunk->shdr.sh_addralign;
-      filesize = align_to(filesize, align);
+      if (chunk->starts_segment)
+        filesize = align_to(filesize, SECTOR_SIZE);
+      else
+        filesize = align_to(filesize, chunk->shdr.sh_addralign);
       chunk->set_fileoff(filesize);
       filesize += chunk->get_size();
     }

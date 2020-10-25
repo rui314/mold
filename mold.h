@@ -36,6 +36,7 @@
 #include <unistd.h>
 #include <unordered_set>
 
+#define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 
 using llvm::ArrayRef;
@@ -225,7 +226,7 @@ public:
 
   StringRef name;
   uint64_t fileoff;
-  bool page_align = false;
+  bool starts_segment = false;
   ELF64LE::Shdr shdr = {};
 };
 
