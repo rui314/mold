@@ -274,7 +274,7 @@ public:
 private:
   struct Phdr {
     ELF64LE::Phdr phdr;
-    std::vector<InputSection *> members;
+    std::vector<OutputChunk *> members;
   };
 
   std::vector<Phdr> entries;
@@ -360,6 +360,7 @@ namespace out {
 extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
+extern InterpSection *interp;
 extern StringTableSection *shstrtab;
 }
 

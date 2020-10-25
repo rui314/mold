@@ -5,6 +5,7 @@ using namespace llvm::ELF;
 OutputEhdr *out::ehdr;
 OutputShdr *out::shdr;
 OutputPhdr *out::phdr;
+InterpSection *out::interp;
 StringTableSection *out::shstrtab;
 
 std::vector<OutputSection *> OutputSection::all_instances;
@@ -43,10 +44,16 @@ static uint32_t to_phdr_flags(uint64_t sh_flags) {
 }
 
 void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
-  entries.resize(1);
+  auto add = [&](uint32_t type, uint32_t flags, std::vector<OutputChunk *> members) {
+    ELF64LE::Phdr phdr = {};
+    phdr.p_type = type;
+    phdr.p_flags = flags;
+    entries.push_back({phdr, members});    
+  };
 
-  Phdr &first = entries.back();
-  first.phdr.p_flags = PF_R;
+  add(PT_PHDR, PF_R, {out::phdr});
+  if (out::interp)
+    add(PT_INTERP, PF_R, {out::interp});
 }
 
 void OutputSection::set_offset(uint64_t off) {

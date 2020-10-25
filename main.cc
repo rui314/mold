@@ -275,6 +275,7 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
+  out::interp = new InterpSection;
   out::shstrtab = new StringTableSection(".shstrtab");
 
   // Add ELF and program header to the output.
@@ -283,7 +284,7 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::phdr);
 
   // Add .interp section.
-  output_chunks.push_back(new InterpSection);
+  output_chunks.push_back(out::interp);
 
   // Add other output sections.
   for (OutputSection *osec : get_output_sections())
