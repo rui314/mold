@@ -183,20 +183,22 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
-class Timer {
+class MyTimer {
 public:
-  Timer(StringRef name) : timer(name, name) {
-    timer.startTimer();
+  MyTimer(StringRef name) {
+    timer = new Timer(name, name);
+    timer->startTimer();
   }
 
-  Timer(StringRef name, llvm::TimerGroup &tg) : timer(name, name, tg) {
-    timer.startTimer();
+  MyTimer(StringRef name, llvm::TimerGroup &tg) {
+    timer = new Timer(name, name, tg);
+    timer->startTimer();
   }
 
-  ~Timer() { timer.stopTimer(); }
+  ~MyTimer() { timer->stopTimer(); }
 
 private:
-  llvm::Timer timer;
+  llvm::Timer *timer;
 };
 
 int main(int argc, char **argv) {
@@ -216,37 +218,27 @@ int main(int argc, char **argv) {
 
   llvm::TimerGroup before_copy("before_copy", "before_copy");
 
-  llvm::Timer parse_timer("parse", "parse");
-  llvm::Timer add_symbols_timer("add_symbols", "add_symbols", before_copy);
-  llvm::Timer comdat_timer("comdat", "comdat", before_copy);
-  llvm::Timer bin_sections_timer("bin_sections", "bin_sections", before_copy);
-  llvm::Timer scan_rel_timer("scan_rel", "scan_rel", before_copy);
-  llvm::Timer file_offset_timer("file_offset", "file_offset", before_copy);
-  llvm::Timer copy_timer("copy", "copy");
-  llvm::Timer reloc_timer("reloc", "reloc");
-  llvm::Timer unlink_timer("unlink", "unlink");
-  llvm::Timer  wait_timer(" wait", " wait");
-  llvm::Timer commit_timer("commit", "commit");
-
   // Open input files
-  parse_timer.startTimer();
-  for (auto *arg : args)
-    if (arg->getOption().getID() == OPT_INPUT)
-      read_file(files, arg->getValue());
+  {
+    MyTimer t("parse", before_copy);
+    for (auto *arg : args)
+      if (arg->getOption().getID() == OPT_INPUT)
+        read_file(files, arg->getValue());
 
-  // Parse input files
-  for_each(files, [](ObjectFile *file) { file->parse(); });
-  parse_timer.stopTimer();
+    // Parse input files
+    for_each(files, [](ObjectFile *file) { file->parse(); });
+  }
 
   // Set priorities to files
   for (int i = 0; i < files.size(); i++)
     files[i]->priority = files[i]->is_in_archive() ? i + (1 << 31) : i;
 
   // Resolve symbols
-  add_symbols_timer.startTimer();
-  for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
-  for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
-  add_symbols_timer.stopTimer();
+  {
+    MyTimer t("add_symbols", before_copy);
+    for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
+    for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
+  }
 
   // Eliminate unused archive members.
   files.erase(std::remove_if(files.begin(), files.end(),
@@ -254,9 +246,10 @@ int main(int argc, char **argv) {
               files.end());
 
   // Eliminate duplicate comdat groups.
-  comdat_timer.startTimer();
-  for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
-  comdat_timer.stopTimer();
+  {
+    MyTimer t("comdat", before_copy);
+    for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
+  }
 
   auto bin_sections = [&]() {
     for (ObjectFile *file : files)
@@ -270,15 +263,17 @@ int main(int argc, char **argv) {
   };
 
   // Bin input sections into output sections
-  bin_sections_timer.startTimer();
-  bin_sections();
-  bin_sections_timer.stopTimer();
+  {
+    MyTimer t("bin_sections", before_copy);
+    bin_sections();
+  }
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  scan_rel_timer.startTimer();
-  scan_rels();
-  scan_rel_timer.stopTimer();
+  {
+    MyTimer t("scan_rel", before_copy);
+    scan_rels();
+  }
 
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
@@ -312,20 +307,22 @@ int main(int argc, char **argv) {
   out::phdr->hdr = create_phdrs();
 
   // Assign offsets to input sections
-  file_offset_timer.startTimer();
   uint64_t filesize = 0;
-  for (OutputChunk *chunk : output_chunks) {
-    chunk->set_offset(filesize);
-    filesize += chunk->get_size();
+  {
+    MyTimer t("file_offset", before_copy);
+    for (OutputChunk *chunk : output_chunks) {
+      chunk->set_offset(filesize);
+      filesize += chunk->get_size();
+    }
   }
-  file_offset_timer.stopTimer();
 
   // Fill section header.
   fill_shdrs(output_chunks);
 
-  unlink_timer.startTimer();
-  unlink_async(tg, config.output);
-  unlink_timer.stopTimer();
+  {
+    MyTimer t("unlink", before_copy);
+    unlink_async(tg, config.output);
+  }
 
   // Create an output file
   Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
@@ -339,26 +336,30 @@ int main(int argc, char **argv) {
   uint8_t *buf = output_buffer->getBufferStart();
 
   // Copy input sections to the output file
-  copy_timer.startTimer();
-  for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
-  copy_timer.stopTimer();
+  {
+    MyTimer t("copy");
+    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
+  }
 
-  reloc_timer.startTimer();
-  for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
-  reloc_timer.stopTimer();
+  {
+    MyTimer t("reloc");
+    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
+  }
 
-  commit_timer.startTimer();
-  if (auto e = output_buffer->commit())
-    error("failed to write to the output file: " + toString(std::move(e)));
-  commit_timer.stopTimer();
+  {
+    MyTimer t("commit");
+    if (auto e = output_buffer->commit())
+      error("failed to write to the output file: " + toString(std::move(e)));
+  }
 
   int num_input_chunks = 0;
   for (ObjectFile *file : files)
     num_input_chunks += file->sections.size();
 
-  wait_timer.startTimer();
-  tg.wait();
-  wait_timer.stopTimer();
+  {
+    MyTimer t("wait");
+    tg.wait();
+  }
 
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
                << "output_chunks=" << output_chunks.size() << "\n"
