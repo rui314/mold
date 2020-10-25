@@ -33,12 +33,6 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_shstrndx = out::shstrtab->index;
 }
 
-void OutputPhdr::copy_to(uint8_t *buf) {
-  auto *p = (ELF64LE::Phdr *)buf;
-  for (Phdr &ent : entries)
-    *p++ = ent.phdr;
-}
-
 static uint32_t to_phdr_flags(uint64_t sh_flags) {
   uint32_t ret = PF_R;
   if (sh_flags & SHF_WRITE)

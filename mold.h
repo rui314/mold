@@ -259,7 +259,11 @@ public:
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
-  void copy_to(uint8_t *buf) override;
+  void copy_to(uint8_t *buf) override {
+    auto *p = (ELF64LE::Phdr *)(buf + offset);
+    for (Phdr &ent : entries)
+      *p++ = ent.phdr;
+  }
 
   uint64_t get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);
