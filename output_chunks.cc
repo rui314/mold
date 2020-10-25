@@ -111,17 +111,16 @@ void OutputPhdr::copy_to(uint8_t *buf) {
 }
 
 void OutputSection::set_fileoff(uint64_t off) {
+  shdr.sh_offset = off;
+
   if (shdr.sh_type & SHT_NOBITS) {
-    shdr.sh_offset = off;
     for (InputSection *isec : chunks)
       isec->fileoff = off;
-    return;
-  }
-
-  shdr.sh_offset = off;
-  for (InputSection *isec : chunks) {
-    isec->fileoff = off;
-    off += isec->shdr.sh_size;
+  } else {
+    for (InputSection *isec : chunks) {
+      isec->fileoff = off;
+      off += isec->shdr.sh_size;
+    }
   }
 }
 
