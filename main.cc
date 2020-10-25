@@ -346,13 +346,28 @@ int main(int argc, char **argv) {
     uint64_t fileoff = 0;
 
     for (ArrayRef<OutputChunk *> slice : slices) {
+      vaddr = align_to(vaddr, PAGE_SIZE);
+      fileoff = align_to(fileoff, PAGE_SIZE);
+
       for (OutputChunk *chunk : slice) {
         chunk->shdr.sh_addr += vaddr;
         chunk->shdr.sh_offset += fileoff;
       }
 
-      vaddr = align_to(slice.back()->shdr.sh_addr, PAGE_SIZE);
-      fileoff = align_to(slice.back()->shdr.sh_offset, PAGE_SIZE);
+      OutputChunk *last = slice.back();
+      vaddr = last->shdr.sh_addr + last->shdr.sh_size;
+
+      if (last->shdr.sh_type & SHT_NOBITS)
+        fileoff = last->shdr.sh_offset;
+      else
+        fileoff = last->shdr.sh_offset + last->shdr.sh_size;
+    }
+
+    for (OutputChunk *chunk : output_chunks) {
+      llvm::outs() << chunk->name
+                   << " vaddr=" << chunk->shdr.sh_addr
+                   << " offset=" << chunk->shdr.sh_offset
+                   << "\n";
     }
   }
 
