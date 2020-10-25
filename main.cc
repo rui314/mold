@@ -314,7 +314,7 @@ int main(int argc, char **argv) {
 
     std::vector<ArrayRef<OutputChunk *>> slices;
 
-    while (i < output_chunks.size()) {
+    for (int i = 0; i < output_chunks.size();) {
       int j = i + 1;
       while (j < output_chunks.size() && !output_chunks[j]->starts_segment)
         j++;
@@ -324,6 +324,9 @@ int main(int argc, char **argv) {
     }
 
     for (ArrayRef<OutputChunk *> slice : slices) {
+      uint64_t vaddr = 0;
+      uint64_t fileoff = 0;
+
       for (OutputChunk *chunk : slice) {
         bool is_bss = chunk->shdr.sh_type & SHT_NOBITS;
 
@@ -337,6 +340,19 @@ int main(int argc, char **argv) {
         if (!is_bss)
           fileoff += chunk->shdr.sh_size;
       }
+    }
+
+    uint64_t vaddr = 0x200000;
+    uint64_t fileoff = 0;
+
+    for (ArrayRef<OutputChunk *> slice : slices) {
+      for (OutputChunk *chunk : slice) {
+        chunk->shdr.sh_addr += vaddr;
+        chunk->shdr.sh_offset += fileoff;
+      }
+
+      vaddr = align_to(slice.back()->shdr.sh_addr, PAGE_SIZE);
+      fileoff = align_to(slice.back()->shdr.sh_offset, PAGE_SIZE);
     }
   }
 
