@@ -20,7 +20,7 @@ void InputSection::copy_to(uint8_t *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
   ArrayRef<uint8_t> data = check(file->obj.getSectionContents(shdr));
-  memcpy(buf + fileoff, &data[0], data.size());
+  memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 }
 
 thread_local int count;
@@ -54,7 +54,7 @@ void InputSection::relocate(uint8_t *buf) {
 
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
-    uint8_t *loc = buf + fileoff + rel.r_offset;
+    uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
     uint64_t val = 5;
 
     switch (rel.getType(false)) {

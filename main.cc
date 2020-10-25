@@ -311,28 +311,32 @@ int main(int argc, char **argv) {
   uint64_t filesize = 0;
   {
     MyTimer t("file_offset", before_copy);
-    for (OutputChunk *chunk : output_chunks) {
-      if (chunk->starts_segment)
-        filesize = align_to(filesize, PAGE_SIZE);
-      else
-        filesize = align_to(filesize, chunk->shdr.sh_addralign);
-      chunk->set_fileoff(filesize);
-      filesize += chunk->get_filesz();
+
+    std::vector<ArrayRef<OutputChunk *>> slices;
+
+    while (i < output_chunks.size()) {
+      int j = i + 1;
+      while (j < output_chunks.size() && !output_chunks[j]->starts_segment)
+        j++;
+
+      slices.push_back(ArrayRef(output_chunks).slice(i, j));
+      i = j;
     }
-  }
 
-  {
-    MyTimer t("vaddr", before_copy);
-    uint64_t vaddr = 0x200000;
+    for (ArrayRef<OutputChunk *> slice : slices) {
+      for (OutputChunk *chunk : slice) {
+        bool is_bss = chunk->shdr.sh_type & SHT_NOBITS;
 
-    for (OutputChunk *chunk : output_chunks) {
-      if (chunk->starts_segment) {
-        vaddr = align_to(vaddr, PAGE_SIZE);
-        vaddr += chunk->get_fileoff() % PAGE_SIZE;
+        vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
+        if (!is_bss)
+          fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
+
+        chunk->set_offset(vaddr, fileoff);
+
+        vaddr += chunk->shdr.sh_size;
+        if (!is_bss)
+          fileoff += chunk->shdr.sh_size;
       }
-
-      chunk->set_vaddr(vaddr);
-      vaddr += chunk->shdr.sh_size;
     }
   }
 

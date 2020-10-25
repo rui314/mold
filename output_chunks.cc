@@ -55,7 +55,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     ELF64LE::Phdr phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
-    entries.push_back({phdr, members});    
+    entries.push_back({phdr, members});
   };
 
   // Create a PT_PHDR for the program header itself.
@@ -105,7 +105,7 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     ent.phdr.p_filesz =
       back->get_fileoff() + back->get_filesz() - front->get_fileoff();
     ent.phdr.p_vaddr = front->get_vaddr();
-    ent.phdr.p_memsz = 
+    ent.phdr.p_memsz =
       back->get_vaddr() + back->shdr.sh_size - front->get_vaddr();
   }
 
@@ -114,29 +114,18 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     *p++ = ent.phdr;
 }
 
-void OutputSection::set_fileoff(uint64_t off) {
-  shdr.sh_offset = off;
+void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
+  shdr.sh_addr = vaddr;
+  shdr.sh_offset = fileoff;
 
-  if (shdr.sh_type & SHT_NOBITS) {
-    for (InputSection *isec : chunks)
-      isec->fileoff = off;
-  } else {
-    for (InputSection *isec : chunks) {
-      off = align_to(off, isec->shdr.sh_addralign);
-      isec->fileoff = off;
-      off += isec->shdr.sh_size;
-    }
-  }
-}
+  if (!(shdr.sh_type & SHT_NOBITS))
+    assert(vaddr == fileoff);
 
-void OutputSection::set_vaddr(uint64_t va) {
-  shdr.sh_addr = va;
   for (InputSection *isec : chunks) {
-    va = align_to(va, isec->shdr.sh_addralign);
-    isec->vaddr = va;
-    va += isec->shdr.sh_size;
+    vaddr = align_to(vaddr, isec->shdr.sh_addralign);
+    isec->offset = vaddr;
+    vaddr += isec->shdr.sh_size;
   }
-  shdr.sh_size = va - shdr.sh_addr;
 }
 
 static StringRef get_output_name(StringRef name) {

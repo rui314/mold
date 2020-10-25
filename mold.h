@@ -201,8 +201,7 @@ public:
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
-  uint64_t vaddr;
-  uint64_t fileoff;
+  uint64_t offset;
 };
 
 std::string toString(InputSection *isec);
@@ -223,10 +222,12 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  virtual void set_fileoff(uint64_t off) { shdr.sh_offset = off; }
-  uint64_t get_fileoff() const { return shdr.sh_offset; }
+  virtual void set_offset(uint64_t vaddr, uint64_t fileoff) {
+    shdr.sh_addr = vaddr;
+    shdr.sh_offset = fileoff;
+  }
 
-  virtual void set_vaddr(uint64_t va) { shdr.sh_addr = va; }
+  uint64_t get_fileoff() const { return shdr.sh_offset; }
   uint64_t get_vaddr() const { return shdr.sh_addr; }
 
   virtual uint64_t get_filesz() const = 0;
@@ -312,13 +313,10 @@ public:
   uint64_t get_filesz() const override {
     if (shdr.sh_type & llvm::ELF::SHT_NOBITS)
       return 0;
-    return chunks.back()->fileoff + chunks.back()->shdr.sh_size -
-      chunks.front()->fileoff;
+    return shdr.sh_size;
   }
 
-  void set_fileoff(uint64_t off) override;
-  void set_vaddr(uint64_t va) override;
-
+  void set_offset(uint64_t vaddr, uint64_t fileoff) override;
   void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
 
   std::vector<InputSection *> chunks;
