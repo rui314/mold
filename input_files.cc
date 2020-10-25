@@ -121,9 +121,7 @@ void ObjectFile::initialize_symbols() {
     if (i < first_global)
       continue;
     StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
-
-    static ConcurrentMap<Symbol> map;
-    symbols[i] = map.insert(name, Symbol(name));
+    symbols[i] = Symbol::intern(name);
   }
 }
 

@@ -29,7 +29,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_ident[EI_ABIVERSION] = 0;
   hdr->e_machine = EM_X86_64;
   hdr->e_version = EV_CURRENT;
-  hdr->e_entry = 0;
+  hdr->e_entry = Symbol::intern("_entry")->addr;
   hdr->e_phoff = out::phdr->fileoff;
   hdr->e_shoff = out::shdr->fileoff;
   hdr->e_flags = 0;

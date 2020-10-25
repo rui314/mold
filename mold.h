@@ -163,6 +163,11 @@ public:
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
+  static Symbol *intern(StringRef name) {
+    static ConcurrentMap<Symbol> map;
+    return map.insert(name, Symbol(name));    
+  }
+
   std::atomic_flag lock = ATOMIC_FLAG_INIT;
   StringRef name;
   ObjectFile *file = nullptr;
