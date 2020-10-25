@@ -247,10 +247,16 @@ int main(int argc, char **argv) {
   }
 
   auto bin_sections = [&]() {
-    for (ObjectFile *file : files)
-      for (InputSection *isec : file->sections)
-        if (isec)
-          isec->output_section->chunks.push_back(isec);
+    for (ObjectFile *file : files) {
+      for (InputSection *isec : file->sections) {
+        if (!isec)
+          continue;
+        OutputSection *osec = isec->output_section;
+        osec->shdr.sh_addralign =
+          std::max<uint32_t>(osec->shdr.sh_addralign, isec->alignment);
+        osec->chunks.push_back(isec);
+      }
+    }
   };
 
   auto scan_rels = [&]() {
@@ -307,7 +313,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
     for (OutputChunk *chunk : output_chunks) {
-      filesize = align_to(filesize, chunk->alignment);
+      filesize = align_to(filesize, chunk->shdr.sh_addralign);
       chunk->set_fileoff(filesize);
       filesize += chunk->get_size();
     }

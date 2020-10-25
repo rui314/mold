@@ -216,6 +216,8 @@ inline uint64_t align_to(uint64_t val, uint64_t align) {
 
 class OutputChunk {
 public:
+  OutputChunk() { shdr.sh_addralign = 1; }
+
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
   virtual void set_fileoff(uint64_t off) { fileoff = off; }
@@ -223,7 +225,6 @@ public:
 
   StringRef name;
   uint64_t fileoff;
-  uint32_t alignment = 1;
   ELF64LE::Shdr shdr = {};
 };
 
@@ -306,6 +307,8 @@ public:
   }
 
   void set_fileoff(uint64_t off) override;
+
+  void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
 
   std::vector<InputSection *> chunks;
   static std::vector<OutputSection *> all_instances;
