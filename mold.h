@@ -259,15 +259,21 @@ public:
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
-  void copy_to(uint8_t *buf) override {
-    memcpy(buf + offset, &hdr[0], get_size());
-  }
+  void copy_to(uint8_t *buf) override;
 
   uint64_t get_size() const override {
-    return hdr.size() * sizeof(ELF64LE::Phdr[0]);
+    return entries.size() * sizeof(ELF64LE::Phdr);
   }
 
-  std::vector<ELF64LE::Phdr> hdr;
+  void construct(std::vector<OutputChunk *> &sections);
+
+private:
+  struct Phdr {
+    ELF64LE::Phdr phdr;
+    std::vector<InputSection *> members;
+  };
+
+  std::vector<Phdr> entries;
 };
 
 // Sections

@@ -33,6 +33,15 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_shstrndx = out::shstrtab->index;
 }
 
+void OutputPhdr::copy_to(uint8_t *buf) {
+  auto *p = (ELF64LE::Phdr *)buf;
+  for (Phdr &ent : entries)
+    *p++ = ent.phdr;
+}
+
+void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
+}
+
 void OutputSection::set_offset(uint64_t off) {
   offset = off;
   for (int i = 0; i < chunks.size(); i++) {

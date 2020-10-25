@@ -143,10 +143,6 @@ static std::vector<OutputSection *> get_output_sections() {
   return vec;
 }
 
-static std::vector<ELF64LE::Phdr> create_phdrs() {
-  return {};
-}
-
 static std::vector<ELF64LE::Shdr *>
 create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   static ELF64LE::Shdr null_entry = {};
@@ -304,7 +300,7 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::shdr);
 
   // Create program header contents.
-  out::phdr->hdr = create_phdrs();
+  out::phdr->construct(output_chunks);
 
   // Assign offsets to input sections
   uint64_t filesize = 0;
@@ -315,9 +311,6 @@ int main(int argc, char **argv) {
       filesize += chunk->get_size();
     }
   }
-
-  // Fill section header.
-  fill_shdrs(output_chunks);
 
   {
     MyTimer t("unlink", before_copy);
