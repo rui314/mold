@@ -14,7 +14,6 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRe
     error(toString(file) + ": section sh_addralign is too large");
   if (__builtin_popcount(align) != 1)
     error(toString(file) + ": section sh_addralign is not a power of two");
-  this->alignment = align;
 }
 
 uint64_t InputSection::get_size() const {

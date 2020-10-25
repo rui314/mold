@@ -252,7 +252,7 @@ int main(int argc, char **argv) {
           continue;
         OutputSection *osec = isec->output_section;
         osec->shdr.sh_addralign =
-          std::max<uint32_t>(osec->shdr.sh_addralign, isec->alignment);
+          std::max<uint32_t>(osec->shdr.sh_addralign, isec->shdr.sh_addralign);
         osec->chunks.push_back(isec);
       }
     }
@@ -321,7 +321,6 @@ int main(int argc, char **argv) {
     }
   }
 
-#if 0
   {
     MyTimer t("vaddr", before_copy);
     uint64_t vaddr = 0x200000;
@@ -332,11 +331,10 @@ int main(int argc, char **argv) {
         vaddr += chunk->get_fileoff() % PAGE_SIZE;
       }
 
-      chunk->vaddr = vaddr;
-      vaddr += chunk->shdr.sh_size;
+      chunk->set_vaddr(vaddr);
+      vaddr += chunk->get_memsz();
     }
   }
-#endif
 
   // Fill section header.
   fill_shdrs(output_chunks);
