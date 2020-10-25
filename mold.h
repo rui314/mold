@@ -265,11 +265,7 @@ class OutputPhdr : public OutputChunk {
 public:
   OutputPhdr() { hdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
-  void copy_to(uint8_t *buf) override {
-    auto *p = (ELF64LE::Phdr *)(buf + offset);
-    for (Phdr &ent : entries)
-      *p++ = ent.phdr;
-  }
+  void copy_to(uint8_t *buf) override;
 
   uint64_t get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);

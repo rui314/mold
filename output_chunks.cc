@@ -82,6 +82,20 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   }
 }
 
+void OutputPhdr::copy_to(uint8_t *buf) {
+  for (Phdr &ent : entries) {
+    OutputChunk *front = ent.members.front();
+    OutputChunk *back = ent.members.back();
+
+    ent.phdr.p_offset = front->get_offset();
+    ent.phdr.p_filesz = back->get_offset() + back->get_size() - front->get_offset();
+  }
+
+  auto *p = (ELF64LE::Phdr *)(buf + offset);
+  for (Phdr &ent : entries)
+    *p++ = ent.phdr;
+}
+
 void OutputSection::set_offset(uint64_t off) {
   offset = off;
   for (int i = 0; i < chunks.size(); i++) {
