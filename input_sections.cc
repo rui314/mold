@@ -4,12 +4,12 @@ using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
 
-InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name)
+InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &hdr, StringRef name)
   : file(file), hdr(hdr) {
   this->name = name;
   this->output_section = OutputSection::get_instance(this);
 
-  uint64_t align = (hdr->sh_addralign == 0) ? 1 : hdr->sh_addralign;
+  uint64_t align = (hdr.sh_addralign == 0) ? 1 : hdr.sh_addralign;
   if (align > UINT32_MAX)
     error(toString(file) + ": section sh_addralign is too large");
   if (__builtin_popcount(align) != 1)
@@ -18,13 +18,13 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef
 }
 
 uint64_t InputSection::get_size() const {
-  return hdr->sh_size;
+  return hdr.sh_size;
 }
 
 void InputSection::copy_to(uint8_t *buf) {
-  if (hdr->sh_type == SHT_NOBITS || hdr->sh_size == 0)
+  if (hdr.sh_type == SHT_NOBITS || hdr.sh_size == 0)
     return;
-  ArrayRef<uint8_t> data = check(file->obj.getSectionContents(*hdr));
+  ArrayRef<uint8_t> data = check(file->obj.getSectionContents(hdr));
   memcpy(buf + offset, &data[0], data.size());
 }
 

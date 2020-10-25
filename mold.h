@@ -181,7 +181,7 @@ inline std::string toString(Symbol sym) {
 
 class InputSection {
 public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr *hdr, StringRef name);
+  InputSection(ObjectFile *file, const ELF64LE::Shdr &hdr, StringRef name);
 
   void copy_to(uint8_t *buf);
   void relocate(uint8_t *buf);
@@ -191,7 +191,7 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  const ELF64LE::Shdr *hdr;
+  const ELF64LE::Shdr &hdr;
 
   StringRef name;
   uint64_t addr;

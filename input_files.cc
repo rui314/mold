@@ -87,7 +87,7 @@ void ObjectFile::initialize_sections() {
       }
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
-      this->sections[i] = new InputSection(this, &shdr, name);
+      this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
     }
@@ -105,7 +105,7 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
-      if (target->hdr->sh_flags & SHF_ALLOC)
+      if (target->hdr.sh_flags & SHF_ALLOC)
         num_relocs_alloc += target->rels.size();
     }
   }
