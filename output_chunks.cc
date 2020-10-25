@@ -111,7 +111,7 @@ void OutputSection::set_fileoff(uint64_t off) {
   shdr.sh_offset = off;
   for (int i = 0; i < chunks.size(); i++) {
     chunks[i]->fileoff = off;
-    off += chunks[i]->get_size();
+    off += chunks[i]->shdr.sh_size;
   }
 }
 

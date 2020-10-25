@@ -193,7 +193,6 @@ public:
 
   void copy_to(uint8_t *buf);
   void relocate(uint8_t *buf);
-  uint64_t get_size() const;
   void scan_relocations();
 
   ObjectFile *file;
@@ -313,7 +312,7 @@ public:
   }
 
   uint64_t get_filesz() const override {
-    return chunks.back()->fileoff + chunks.back()->get_size() -
+    return chunks.back()->fileoff + chunks.back()->shdr.sh_size -
       chunks.front()->fileoff;
   }
 
