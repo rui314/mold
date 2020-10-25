@@ -131,6 +131,7 @@ void OutputSection::set_vaddr(uint64_t va) {
     isec->vaddr = va;
     va += isec->shdr.sh_size;
   }
+  shdr.sh_size = va - shdr.sh_addr;
 }
 
 static StringRef get_output_name(StringRef name) {
