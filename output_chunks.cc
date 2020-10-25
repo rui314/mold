@@ -87,6 +87,9 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       add(PT_TLS, to_phdr_flags(chunks[i]->shdr.sh_flags), vec);
     }
   }
+
+  for (Phdr &ent : entries)
+    ent.members.front()->alignment = PAGE_SIZE;
 }
 
 void OutputPhdr::copy_to(uint8_t *buf) {

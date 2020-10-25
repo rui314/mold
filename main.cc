@@ -10,8 +10,6 @@ using llvm::opt::InputArgList;
 
 Config config;
 
-constexpr int PAGE_SIZE = 4096;
-
 //
 // Command-line option processing
 //
@@ -309,6 +307,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
     for (OutputChunk *chunk : output_chunks) {
+      filesize = align_to(filesize, chunk->alignment);
       chunk->set_fileoff(filesize);
       filesize += chunk->get_size();
     }

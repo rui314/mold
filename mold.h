@@ -36,6 +36,8 @@
 #include <unistd.h>
 #include <unordered_set>
 
+#define PAGE_SIZE 4096
+
 using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
