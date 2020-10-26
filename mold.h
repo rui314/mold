@@ -440,6 +440,7 @@ private:
 
   std::vector<Symbol *> symbols;
   int first_global = 0;
+  bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;

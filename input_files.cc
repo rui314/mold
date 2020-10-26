@@ -112,11 +112,14 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
-  this->symbols.resize(elf_syms.size() - first_global);
+  symbols.resize(elf_syms.size() - first_global);
 
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     StringRef name = CHECK(elf_syms[j].getName(symbol_strtab), this);
     symbols[i] = Symbol::intern(name);
+
+    if (elf_syms[j].st_shndx == SHN_COMMON)
+      has_common_symbol = true;
   }
 }
 
