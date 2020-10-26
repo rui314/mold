@@ -26,9 +26,6 @@ void InputSection::copy_to(uint8_t *buf) {
 thread_local int count;
 
 void InputSection::scan_relocations() {
-  if (rels.empty())
-    return;
-
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
     if (!sym)
@@ -49,15 +46,13 @@ void InputSection::scan_relocations() {
 }
 
 void InputSection::relocate(uint8_t *buf) {
-  if (rels.empty())
-    return;
-
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
     uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     uint64_t cur = output_section->shdr.sh_addr + offset + rel.r_offset;
-    uint64_t dst = file->get_symbol_value(rel.getSymbol(false));
+    //    uint64_t dst = file->get_symbol_value(rel.getSymbol(false));
+    uint64_t dst = 4;
 
     switch (rel.getType(false)) {
     case R_X86_64_8:
