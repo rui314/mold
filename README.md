@@ -29,7 +29,7 @@ implemented and tested with benchmarks. Here is a brain dump:
 
 - The number of cores on a PC has increased a lot lately, and this
   trend is expected to continue. However, the existing linkers can't
-  take an advantage of that because they don't scale well for more
+  take the advantage of that because they don't scale well for more
   cores. I have a 64-core/128-thread machine, so my goal is to create
   a linker that uses the CPU nicely. mold should be much faster than
   other linkers on 4 or 8-core machines too, though.
@@ -191,7 +191,7 @@ Step 8
   computed by applying a cryptographic hash function (e.g. SHA-1) to
   an output file. But it adds an extra time for linking because a
   linker has to compute a SHA-1 checksum after the actual linking is
-  done. We should instead compute a SHA-1 for a tuple of (all input
+  done. We should instead compute a SHA-1 for the tuple of (all input
   files, command line options, linker version) as a build-id.
 
 - [Intel Threading Building
@@ -212,16 +212,16 @@ total. The data contains the following items:
 
 | Data item                | Number
 | ------------------------ | ------
-| Relocations              | 62,024,719
-| Relocations against SHF_ALLOC sections | 39,496,375
-| Sections                 | 27,543,225
-| Symbols                  | 23,953,607
-| Public defined symbols   | 10,512,135
-| Regular sections (*1)    | 10,345,314
-| Comdat groups            | 9,914,510
-| Mergeable strings        | 1,579,996
-| Public undefined symbols | 1,428,149
 | Object files             | 30,723
+| Public undefined symbols | 1,428,149
+| Mergeable strings        | 1,579,996
+| Comdat groups            | 9,914,510
+| Regular sections (*1)    | 10,345,314
+| Public defined symbols   | 10,512,135
+| Symbols                  | 23,953,607
+| Sections                 | 27,543,225
+| Relocations against SHF_ALLOC sections | 39,496,375
+| Relocations              | 62,024,719
 
 (*1) Sections that have to be copied from input object files to an
 output file. Sections that contain relocations or symbols are for
