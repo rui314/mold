@@ -123,7 +123,7 @@ void OutputPhdr::copy_to(uint8_t *buf) {
       back->shdr.sh_offset + back->get_size() - front->shdr.sh_offset;
     ent.phdr.p_vaddr = front->shdr.sh_addr;
     ent.phdr.p_memsz =
-      back->shdr.sh_addr + back->shdr.sh_size - front->shdr.sh_addr;
+      back->shdr.sh_addr + back->get_size() - front->shdr.sh_addr;
   }
 
   auto *p = (ELF64LE::Phdr *)(buf + shdr.sh_offset);
