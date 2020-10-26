@@ -226,7 +226,7 @@ public:
   uint64_t get_vaddr() const { return shdr.sh_addr; }
   bool is_bss() const { return shdr.sh_type & llvm::ELF::SHT_NOBITS; }
 
-  virtual uint64_t get_filesz() const = 0;
+  virtual uint64_t get_size() const = 0;
 
   StringRef name;
   bool starts_new_ptload = false;
@@ -241,7 +241,7 @@ public:
   void copy_to(uint8_t *buf) override {}
   void relocate(uint8_t *buf) override;
 
-  uint64_t get_filesz() const override {
+  uint64_t get_size() const override {
     return sizeof(ELF64LE::Ehdr);
   }
 };
@@ -257,7 +257,7 @@ public:
       *p++ = *ent;
   }
 
-  uint64_t get_filesz() const override {
+  uint64_t get_size() const override {
     return entries.size() * sizeof(ELF64LE::Shdr);
   }
 
@@ -271,7 +271,7 @@ public:
 
   void copy_to(uint8_t *buf) override;
 
-  uint64_t get_filesz() const override {
+  uint64_t get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);
   }
 
@@ -308,7 +308,7 @@ public:
       for_each(chunks, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
-  uint64_t get_filesz() const override {
+  uint64_t get_size() const override {
     if (shdr.sh_type & llvm::ELF::SHT_NOBITS)
       return 0;
     return shdr.sh_size;
@@ -332,7 +332,7 @@ public:
     memcpy(buf + get_fileoff(), path, sizeof(path));
   }
 
-  uint64_t get_filesz() const override { return sizeof(path); }
+  uint64_t get_size() const override { return sizeof(path); }
 
 private:
   static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
@@ -359,7 +359,7 @@ public:
     memcpy(buf + get_fileoff(), &contents[0], contents.size());
   }
 
-  uint64_t get_filesz() const override { return contents.size(); }
+  uint64_t get_size() const override { return contents.size(); }
 
 private:
   std::string contents;

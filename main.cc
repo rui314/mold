@@ -162,7 +162,7 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->name.empty())
       continue;
-    chunk->shdr.sh_size = chunk->get_filesz();
+    chunk->shdr.sh_size = chunk->get_size();
   }
 }
 
@@ -333,7 +333,7 @@ int main(int argc, char **argv) {
         filesize = align_to(filesize, chunk->shdr.sh_addralign);
       chunk->shdr.sh_offset = filesize;
       if (!chunk->is_bss())
-        filesize += chunk->get_filesz();
+        filesize += chunk->get_size();
     }
   }
 

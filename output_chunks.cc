@@ -35,7 +35,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_flags = 0;
   hdr->e_ehsize = sizeof(ELF64LE::Ehdr);
   hdr->e_phentsize = sizeof(ELF64LE::Phdr);
-  hdr->e_phnum = out::phdr->get_filesz() / sizeof(ELF64LE::Phdr);
+  hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->entries.size();
   hdr->e_shstrndx = get_section_idx(out::shstrtab);
@@ -111,7 +111,7 @@ void OutputPhdr::copy_to(uint8_t *buf) {
 
     ent.phdr.p_offset = front->get_fileoff();
     ent.phdr.p_filesz =
-      back->get_fileoff() + back->get_filesz() - front->get_fileoff();
+      back->get_fileoff() + back->get_size() - front->get_fileoff();
     ent.phdr.p_vaddr = front->get_vaddr();
     ent.phdr.p_memsz =
       back->get_vaddr() + back->shdr.sh_size - front->get_vaddr();
