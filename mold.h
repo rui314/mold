@@ -310,8 +310,6 @@ public:
     return shdr.sh_size;
   }
 
-  void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
-
   std::vector<InputSection *> chunks;
   static std::vector<OutputSection *> all_instances;
 };
