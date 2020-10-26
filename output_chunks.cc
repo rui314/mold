@@ -59,17 +59,17 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     entries.push_back({phdr, members});
   };
 
-  // Create a PT_PHDR for the program header itself.
-  add(PT_PHDR, PF_R, {out::phdr});
+  if (out::interp) {
+    // Create a PT_PHDR for the program header itself.
+    add(PT_PHDR, PF_R, {out::phdr});
 
-  // Create an PT_INTERP.
-  if (out::interp)
+    // Create an PT_INTERP.
     add(PT_INTERP, PF_R, {out::interp});
+  }
 
   // Create PT_LOAD segments.
-  add(PT_LOAD, PF_R, {});
-
-  bool last_was_bss = false;
+  bool first = true;
+  bool last_was_bss;
 
   for (OutputChunk *chunk : chunks) {
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
@@ -77,6 +77,13 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
 
     uint32_t flags = to_phdr_flags(chunk->shdr.sh_flags);
     bool this_is_bss = chunk->shdr.sh_type & SHT_NOBITS;
+
+    if (first) {
+      add(PT_LOAD, flags, {chunk});
+      last_was_bss = this_is_bss;
+      first = false;
+      continue;
+    }
 
     if (entries.back().phdr.p_flags != flags || (last_was_bss && !this_is_bss))
       add(PT_LOAD, flags, {chunk});

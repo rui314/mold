@@ -229,10 +229,19 @@ static int get_rank(OutputSection *x) {
   return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
+static bool is_osec_empty(OutputSection *osec) {
+  if (osec->sections.empty())
+    return true;
+  for (InputSection *isec : osec->sections)
+    if (isec->shdr.sh_size)
+      return false;
+  return true;
+}
+
 static std::vector<OutputSection *> get_output_sections() {
   std::vector<OutputSection *> vec;
   for (OutputSection *osec : OutputSection::all_instances)
-    if (!osec->sections.empty())
+    if (!is_osec_empty(osec))
       vec.push_back(osec);
 
   std::sort(vec.begin(), vec.end(), [](OutputSection *a, OutputSection *b) {
