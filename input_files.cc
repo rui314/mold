@@ -64,7 +64,7 @@ void ObjectFile::initialize_sections() {
         error(toString(this) + ": unsupported SHT_GROUP format");
 
       static ConcurrentMap<ComdatGroup> map;
-      ComdatGroup *group = map.insert(signature, ComdatGroup(this, i));
+      ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
       comdat_groups.push_back({group, i});
       // num_comdats++;
       break;
@@ -279,6 +279,7 @@ void ObjectFile::fix_sym_addrs() {
                    << " " << toString(symbols[i]->file)
                    << "\n";
     }
+
     OutputSection *osec = isec->output_section;
     symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
   }
