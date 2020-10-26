@@ -17,6 +17,7 @@
 #include "tbb/concurrent_unordered_set.h"
 #include "tbb/concurrent_vector.h"
 #include "tbb/parallel_for_each.h"
+#include "tbb/parallel_reduce.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
 #include "tbb/task_group.h"
@@ -113,13 +114,6 @@ static void for_each(T &arr, Callable callback) {
 //
 
 namespace tbb {
-template<>
-struct tbb_hash<StringRef> {
-  size_t operator()(const StringRef& k) const {
-    return llvm::hash_value(k);
-  }
-};
-
 template<>
 struct tbb_hash_compare<StringRef> {
   static size_t hash(const StringRef& k) {
@@ -293,6 +287,7 @@ public:
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
+    idx = all_instances.size();
     all_instances.push_back(this);
   }
 
@@ -311,6 +306,8 @@ public:
   }
 
   std::vector<InputSection *> chunks;
+  uint32_t idx;
+
   static std::vector<OutputSection *> all_instances;
 };
 

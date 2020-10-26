@@ -249,6 +249,41 @@ int main(int argc, char **argv) {
   {
     MyTimer t("bin_sections", before_copy);
 
+#if 1
+    typedef std::vector<std::vector<InputSection *>> T;
+
+    auto fn = [&](const tbb::blocked_range<int> &range, const T &init) {
+      T vec = init;
+      for (int i = range.begin(); i < range.end(); i++) {
+        ObjectFile *file = files[i];
+        for (InputSection *isec : file->sections) {
+          if (!isec)
+            continue;
+          OutputSection *osec = isec->output_section;
+          vec[osec->idx].push_back(isec);
+        }
+      }
+      return vec;
+    };
+
+    auto reduce = [](const T &x, const T &y) {
+      T ret(x.size());
+      for (int i = 0; i < x.size(); i++)
+        ret[i] = x[i];
+      for (int i = 0; i < x.size(); i++)
+        ret[i].insert(ret[i].end(), y[i].begin(), y[i].end());
+      return ret;
+    };
+
+    std::vector<std::vector<InputSection *>> vec =
+      tbb::parallel_reduce(tbb::blocked_range<int>(0, files.size()),
+                           T(OutputSection::all_instances.size()),
+                           fn, reduce);
+
+    for (int i = 0; i < vec.size(); i++)
+      OutputSection::all_instances[i]->chunks = std::move(vec[i]);
+
+#else
     for (ObjectFile *file : files) {
       for (InputSection *isec : file->sections) {
         if (!isec)
@@ -257,6 +292,7 @@ int main(int argc, char **argv) {
         osec->chunks.push_back(isec);
       }
     }
+#endif
   }
 
   {
