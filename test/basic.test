@@ -1,4 +1,5 @@
 RUN: echo '.globl _start; _start: jmp loop' | cc -o %t1.o -c -x assembler -
 RUN: echo '.globl loop; loop: jmp loop' | cc -o %t2.o -c -x assembler -
-RUN: mold -o %t %t1.o %t2.o
+RUN: mold -o %t %t2.o %t1.o
+RUN: objdump -d %t
 RUN: file %t | grep ELF
