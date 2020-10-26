@@ -392,7 +392,7 @@ int main(int argc, char **argv) {
   }
 
   {
-    MyTimer t("unlink", before_copy);
+    MyTimer t("unlink");
     unlink_async(tg, config.output);
   }
 
