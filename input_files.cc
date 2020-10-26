@@ -275,12 +275,6 @@ void ObjectFile::fix_sym_addrs() {
       continue;
     
     InputSection *isec = sections[elf_syms[j].st_shndx];
-    if (!isec) {
-      llvm::outs() << "sym=" << symbols[i]->name
-                   << " " << toString(symbols[i]->file)
-                   << "\n";
-    }
-
     OutputSection *osec = isec->output_section;
     symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
   }
