@@ -70,8 +70,7 @@ implemented and tested with benchmarks. Here is a brain dump:
 - One of the most time-consuming stage among linker stages is symbol
   resolution. To resolve symbols, we basically have to throw all
   symbol strings into a hash table to match undefined symbols with
-  defined symbols. But this can be done in the daemon rather than
-  after the actual command line is specified using [string
+  defined symbols. But this can be done in the daemon using [string
   interning](https://en.wikipedia.org/wiki/String_interning).
 
 - Object files may contain a special section called a mergeable string
