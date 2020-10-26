@@ -22,7 +22,7 @@ implemented and tested with benchmarks. Here is a brain dump:
 ## Background
 
 - Even though lld has significantly improved the situation, linking is
-  still one of the slowest steps in a build. It is in particular
+  still one of the slowest steps in a build. It is especially
   annoying when I changed one line of code and had to wait for a few
   seconds or even more for a linker to complete. It should be
   instantaneous. There's a need for a faster linker.
