@@ -396,6 +396,7 @@ public:
   void register_undefined_symbols();
   void eliminate_duplicate_comdat_groups();
   void scan_relocations();
+  void fix_sym_addrs();
 
   StringRef get_filename();
   bool is_in_archive();

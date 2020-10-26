@@ -393,9 +393,7 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("sym_addr");
-    for_each(files, [](ObjectFile *file) {
-
-                    });
+    for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
   }
 
   {

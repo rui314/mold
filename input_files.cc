@@ -264,6 +264,17 @@ void ObjectFile::scan_relocations() {
       isec->scan_relocations();
 }
 
+void ObjectFile::fix_sym_addrs() {
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    if (symbols[i]->file != this)
+      continue;
+    
+    InputSection *isec = sections[elf_syms[j].st_shndx];
+    OutputSection *osec = isec->output_section;
+    symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
+  }
+}
+
 StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }
