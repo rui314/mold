@@ -66,7 +66,7 @@ void ObjectFile::initialize_sections() {
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(this, i));
       comdat_groups.push_back({group, i});
-      num_comdats++;
+      // num_comdats++;
       break;
     }
     case SHT_SYMTAB_SHNDX:
@@ -79,7 +79,7 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
-      num_regular_sections++;
+      // num_regular_sections++;
       if ((shdr.sh_flags & SHF_STRINGS) && !(shdr.sh_flags & SHF_WRITE) &&
           shdr.sh_entsize == 1) {
         read_string_pieces(shdr);
@@ -105,8 +105,8 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
-      if (target->shdr.sh_flags & SHF_ALLOC)
-        num_relocs_alloc += target->rels.size();
+      //      if (target->shdr.sh_flags & SHF_ALLOC)
+      //        num_relocs_alloc += target->rels.size();
     }
   }
 }
@@ -155,7 +155,7 @@ void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
       merged_strings_noalloc.push_back(piece);
 
     data = data.substr(end + 1);
-    num_string_pieces++;
+    // num_string_pieces++;
   }
 }
 
@@ -170,7 +170,7 @@ void ObjectFile::parse() {
   elf_syms = CHECK(obj.symbols(symtab_sec), this);
   string_table = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
 
-  num_all_syms += elf_syms.size();
+  // num_all_syms += elf_syms.size();
 
   initialize_sections();
   initialize_symbols();
@@ -194,7 +194,7 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     if (!elf_syms[j].isDefined())
       continue;
-    num_defined++;
+    // num_defined++;
 
     Symbol *sym = symbols[i];
     Spinlock lock(sym->lock);
@@ -213,7 +213,7 @@ void ObjectFile::register_undefined_symbols() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     if (elf_syms[j].isDefined())
       continue;
-    num_undefined++;
+    // num_undefined++;
 
     Symbol *sym = symbols[i];
     if (sym->file && sym->file->is_in_archive() && !sym->file->is_alive)
