@@ -360,16 +360,24 @@ int main(int argc, char **argv) {
   uint64_t filesize = 0;
   {
     MyTimer t("file_offset", before_copy);
+    uint64_t vaddr = 0x200000;
 
     for (OutputChunk *chunk : output_chunks) {
-      if (chunk->starts_new_ptload)
-        filesize = align_to(filesize, PAGE_SIZE);
+      if (chunk->starts_new_ptload) {
+        filesize = align_to(filesize, SECTOR_SIZE);
+        vaddr = align_to(vaddr, PAGE_SIZE);
+      }
 
       if (!chunk->is_bss())
         filesize = align_to(filesize, chunk->shdr.sh_addralign);
+      vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
+
       chunk->shdr.sh_offset = filesize;
+      chunk->shdr.sh_addr = vaddr;
+
       if (!chunk->is_bss())
         filesize += chunk->get_size();
+      vaddr += chunk->get_size();
     }
   }
 
