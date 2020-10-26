@@ -245,34 +245,47 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   }
 
-  auto bin_sections = [&]() {
+  // Bin input sections into output sections
+  {
+    MyTimer t("bin_sections", before_copy);
+
     for (ObjectFile *file : files) {
       for (InputSection *isec : file->sections) {
         if (!isec)
           continue;
         OutputSection *osec = isec->output_section;
-        osec->shdr.sh_addralign =
-          std::max<uint32_t>(osec->shdr.sh_addralign, isec->shdr.sh_addralign);
         osec->chunks.push_back(isec);
       }
     }
-  };
+  }
 
-  auto scan_rels = [&]() {
-    for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
-  };
-
-  // Bin input sections into output sections
   {
-    MyTimer t("bin_sections", before_copy);
-    bin_sections();
+    MyTimer t("isec_offsets", before_copy);
+
+    for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+      if (osec->chunks.empty())
+        return;
+
+      uint64_t off = 0;
+
+      for (InputSection *isec : osec->chunks) {
+        off = align_to(off, isec->shdr.sh_addralign);
+        isec->offset = off;
+        off += isec->shdr.sh_size;
+        
+        osec->shdr.sh_addralign =
+          std::max<uint32_t>(osec->shdr.sh_addralign, isec->shdr.sh_addralign);
+      }
+
+      osec->shdr.sh_size = off;
+    });
   }
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   {
     MyTimer t("scan_rel", before_copy);
-    scan_rels();
+    for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
   }
 
   // Create linker-synthesized sections.

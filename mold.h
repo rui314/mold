@@ -222,7 +222,7 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  virtual void set_offset(uint64_t fileoff) {
+  void set_offset(uint64_t fileoff) {
     shdr.sh_offset = fileoff;
   }
 
@@ -318,7 +318,6 @@ public:
     return shdr.sh_size;
   }
 
-  void set_offset(uint64_t fileoff) override;
   void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
 
   std::vector<InputSection *> chunks;

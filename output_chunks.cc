@@ -122,20 +122,6 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     *p++ = ent.phdr;
 }
 
-void OutputSection::set_offset(uint64_t fileoff) {
-  shdr.sh_offset = fileoff;
-
-  uint64_t off = 0;
-
-  for (InputSection *isec : chunks) {
-    off = align_to(off, isec->shdr.sh_addralign);
-    isec->offset = off;
-    off += isec->shdr.sh_size;
-  }
-
-  shdr.sh_size = off;
-}
-
 static StringRef get_output_name(StringRef name) {
   static StringRef common_names[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
