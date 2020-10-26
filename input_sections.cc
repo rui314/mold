@@ -31,15 +31,15 @@ void InputSection::scan_relocations() {
 
     switch (rel.getType(false)) {
     case R_X86_64_GOT32:
-    case R_X86_64_GOTPC32:
-    case R_X86_64_GOTPC32_TLSDESC:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_GOTTPOFF:
     case R_X86_64_GOT64:
     case R_X86_64_GOTOFF64:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC32_TLSDESC:
     case R_X86_64_GOTPC64:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_GOTTPOFF:
+    case R_X86_64_REX_GOTPCRELX:
       sym->needs_got = true;
       break;
     case R_X86_64_PLT32:
@@ -75,29 +75,29 @@ void InputSection::relocate(uint8_t *buf) {
       *(uint32_t *)loc = dst;
       break;
     case R_X86_64_32S:
-    case R_X86_64_TPOFF32:
+    case R_X86_64_DTPOFF32:
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:
     case R_X86_64_GOTPC32_TLSDESC:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_PC32:
     case R_X86_64_GOTTPOFF:
+    case R_X86_64_PC32:
     case R_X86_64_PLT32:
+    case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_SIZE32:
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
-    case R_X86_64_DTPOFF32:
-    case R_X86_64_SIZE32:
+    case R_X86_64_TPOFF32:
       *(uint32_t *)loc = dst - cur - 4;
       break;
     case R_X86_64_64:
     case R_X86_64_DTPOFF64:
-    case R_X86_64_PC64:
-    case R_X86_64_SIZE64:
     case R_X86_64_GOT64:
     case R_X86_64_GOTOFF64:
     case R_X86_64_GOTPC64:
+    case R_X86_64_PC64:
+    case R_X86_64_SIZE64:
       *(uint64_t *)loc = dst;
       break;
     default:
