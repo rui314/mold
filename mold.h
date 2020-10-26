@@ -166,6 +166,7 @@ public:
   std::atomic_flag lock = ATOMIC_FLAG_INIT;
   StringRef name;
   ObjectFile *file = nullptr;
+  InputSection *isec = nullptr;
 
   uint64_t addr = 0;
   uint8_t visibility = 0;
