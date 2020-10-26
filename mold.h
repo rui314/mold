@@ -222,10 +222,6 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  void set_offset(uint64_t fileoff) {
-    shdr.sh_offset = fileoff;
-  }
-
   uint64_t get_fileoff() const { return shdr.sh_offset; }
   uint64_t get_vaddr() const { return shdr.sh_addr; }
   bool is_bss() const { return shdr.sh_type & llvm::ELF::SHT_NOBITS; }

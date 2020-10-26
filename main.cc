@@ -331,7 +331,7 @@ int main(int argc, char **argv) {
     for (OutputChunk *chunk : output_chunks) {
       if (!chunk->is_bss())
         filesize = align_to(filesize, chunk->shdr.sh_addralign);
-      chunk->set_offset(filesize);
+      chunk->shdr.sh_offset = filesize;
       if (!chunk->is_bss())
         filesize += chunk->get_filesz();
     }
