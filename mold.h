@@ -234,7 +234,7 @@ public:
   virtual uint64_t get_filesz() const = 0;
 
   StringRef name;
-  bool starts_segment = false;
+  bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
 };
 

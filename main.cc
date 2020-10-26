@@ -320,7 +320,7 @@ int main(int argc, char **argv) {
     int i = 0;
     while (i < output_chunks.size() && !output_chunks[i]->is_bss()) {
       int j = i + 1;
-      while (j < output_chunks.size() && !output_chunks[j]->starts_segment &&
+      while (j < output_chunks.size() && !output_chunks[j]->starts_new_ptload &&
              !output_chunks[j]->is_bss())
         j++;
 
@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
       if (last->is_bss())
         fileoff = last->shdr.sh_offset;
       else
-        fileoff = last->shdr.sh_offset + last->shdr.sh_size;
+        fileoff = last->shdr.sh_offset + last->get_filesz();
     }
 
     for (OutputChunk *chunk : output_chunks) {

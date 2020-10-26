@@ -100,7 +100,8 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       ent.phdr.p_align = std::max(ent.phdr.p_align, chunk->shdr.sh_addralign);
 
   for (Phdr &ent : entries)
-    ent.members.front()->starts_segment = true;
+    if (ent.phdr.p_type == PT_LOAD)
+      ent.members.front()->starts_new_ptload = true;
 }
 
 void OutputPhdr::copy_to(uint8_t *buf) {
