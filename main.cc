@@ -451,7 +451,7 @@ int main(int argc, char **argv) {
 
   // Create an output file
   Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
-    FileOutputBuffer::create(config.output, filesize, 0);
+    FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
 
   if (!buf_or_err)
     error("failed to open " + config.output + ": " +
