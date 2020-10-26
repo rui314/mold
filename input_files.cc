@@ -195,6 +195,10 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     if (!elf_syms[j].isDefined())
       continue;
+    llvm::outs() << toString(this)
+                 << " j=" << j << " size=" << elf_syms.size()
+                 << " shndx=" << elf_syms[j].st_shndx
+                 << "\n";
     if (sections[elf_syms[j].st_shndx] == nullptr)
       continue;
     // num_defined++;

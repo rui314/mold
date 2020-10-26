@@ -194,7 +194,7 @@ static void set_isec_offsets() {
     osec->shdr.sh_addralign = align;
   });
 #else
-   for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+  for_each(OutputSection::all_instances, [&](OutputSection *osec) {
     uint64_t off = 0;
     uint32_t align = 0;
 
@@ -206,8 +206,8 @@ static void set_isec_offsets() {
     }
 
     osec->shdr.sh_size = off;
-     osec->shdr.sh_addralign = align;
-   });
+    osec->shdr.sh_addralign = align;
+  });
 #endif
 }
 
@@ -339,7 +339,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 1);
   tbb::task_group tg;
 
   // Parse command line options
