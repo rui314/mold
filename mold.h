@@ -413,7 +413,9 @@ public:
     if (idx < first_global) {
       const ELF64LE::Sym &sym = elf_syms[idx];
       InputSection *isec = sections[sym.st_shndx];
-      return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
+      if (isec)
+        return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
+      return 0;
     }
     return symbols[idx - first_global]->addr;
   }
