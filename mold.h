@@ -404,7 +404,7 @@ public:
   Symbol *get_symbol(uint32_t idx) {
     if (idx < first_global)
       return nullptr;
-    return symbols[first_global - idx];
+    return symbols[idx - first_global];
   }
 
   std::vector<InputSection *> sections;
