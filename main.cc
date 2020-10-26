@@ -148,17 +148,45 @@ static void bin_sections(std::vector<ObjectFile *> files) {
 
 static void set_isec_offsets() {
   for_each(OutputSection::all_instances, [&](OutputSection *osec) {
-    uint64_t off = 0;
-    uint32_t align = 0;
+    int unit = 100000;
+    int num_slices = (osec->sections.size() + unit - 1) / unit;
 
-    for (InputSection *isec : osec->sections) {
-      off = align_to(off, isec->shdr.sh_addralign);
-      isec->offset = off;
-      off += isec->shdr.sh_size;
-      align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+    std::vector<uint64_t> start(num_slices);
+    std::vector<uint64_t> size(num_slices);
+    std::vector<uint32_t> alignments(num_slices);
+
+    std::vector<ArrayRef<InputSection *>> slices;
+    ArrayRef<InputSection *> sections = makeArrayRef(osec->sections);
+
+    while (!sections.empty()) {
+      int end = std::min<int>(sections.size(), unit);
+      slices.push_back(sections.slice(0, end));
+      sections = sections.slice(end);
     }
 
-    osec->shdr.sh_size = off;
+    tbb::parallel_for(0, num_slices, [&](int i) {
+      uint64_t off = 0;
+      uint32_t align = 1;
+
+      for (InputSection *isec : slices[i]) {
+        off = align_to(off, isec->shdr.sh_addralign);
+        isec->offset = off;
+        off += isec->shdr.sh_size;
+        align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+      }
+
+      size[i] = off;
+      alignments[i] = align;
+    });
+
+    uint32_t align = *std::max_element(alignments.begin(), alignments.end());
+
+    tbb::parallel_for(1, num_slices, [&](int i) {
+      for (InputSection *isec : slices[i])
+        isec->offset += start[i];
+    });
+
+    osec->shdr.sh_size = start.back() + size.back();
     osec->shdr.sh_addralign = align;
   });
 }
