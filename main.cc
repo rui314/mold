@@ -290,7 +290,7 @@ static uint64_t set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
 
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->starts_new_ptload) {
-      fileoff = align_to(fileoff, SECTOR_SIZE);
+      fileoff = align_to(fileoff, PAGE_SIZE);
       vaddr = align_to(vaddr, PAGE_SIZE);
     }
 
