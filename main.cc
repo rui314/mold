@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
 
   // Resolve symbols
   {
-    MyTimer t("add_symbols", before_copy);
+    MyTimer t("resolve_symbols", before_copy);
     for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
     for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
   }

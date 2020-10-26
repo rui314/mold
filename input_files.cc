@@ -194,12 +194,13 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     if (!elf_syms[j].isDefined())
       continue;
+    if (sections[elf_syms[j].st_shndx] == nullptr)
+      continue;
     // num_defined++;
 
     Symbol *sym = symbols[i];
-    Spinlock lock(sym->lock);
-
     bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
+    Spinlock lock(sym->lock);
 
     if (!sym->file || this->priority < sym->file->priority ||
         (sym->is_weak && !is_weak)) {
