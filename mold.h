@@ -222,8 +222,6 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  uint64_t get_fileoff() const { return shdr.sh_offset; }
-  uint64_t get_vaddr() const { return shdr.sh_addr; }
   bool is_bss() const { return shdr.sh_type & llvm::ELF::SHT_NOBITS; }
 
   virtual uint64_t get_size() const = 0;
@@ -252,7 +250,7 @@ public:
   OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
   void copy_to(uint8_t *buf) override {
-    auto *p = (ELF64LE::Shdr *)(buf + get_fileoff());
+    auto *p = (ELF64LE::Shdr *)(buf + shdr.sh_offset);
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
   }
@@ -329,7 +327,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + get_fileoff(), path, sizeof(path));
+    memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
   uint64_t get_size() const override { return sizeof(path); }
@@ -356,7 +354,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    memcpy(buf + get_fileoff(), &contents[0], contents.size());
+    memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
   uint64_t get_size() const override { return contents.size(); }
