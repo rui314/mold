@@ -46,7 +46,7 @@ implemented and tested with benchmarks. Here is a brain dump:
 - In order to achieve a `cat`-like performance, the most important
   thing is to fix the layout of an output file as quickly as possible, so
   that we can start copying actual data from input object files to an
-  output executable/shared library file.
+  output file as soon as possible.
 
 - Copying data from input files to an output file is I/O-bounded, so
   there should be room for doing computationally-intensive tasks while
