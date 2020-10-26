@@ -392,6 +392,12 @@ int main(int argc, char **argv) {
   }
 
   {
+    MyTimer t("sym_addr");
+    for_each(files, [](ObjectFile *file) {
+                    });
+  }
+
+  {
     MyTimer t("unlink");
     unlink_async(tg, config.output);
   }
