@@ -299,9 +299,6 @@ int main(int argc, char **argv) {
     MyTimer t("isec_offsets", before_copy);
 
     for_each(OutputSection::all_instances, [&](OutputSection *osec) {
-      if (osec->chunks.empty())
-        return;
-
       uint64_t off = 0;
       uint32_t align = 0;
 
