@@ -199,10 +199,14 @@ void ObjectFile::register_defined_symbols() {
     Symbol *sym = symbols[i];
     Spinlock lock(sym->lock);
 
-    if (sym->file && sym->file->priority < this->priority)
-      continue;
-    sym->file = this;
-    sym->visibility = elf_syms[i].getVisibility();
+    bool is_weak = (elf_syms[i].getBinding() == STB_WEAK);
+
+    if (!sym->file || this->priority < sym->file->priority ||
+        (sym->is_weak && !is_weak)) {
+      sym->file = this;
+      sym->visibility = elf_syms[i].getVisibility();
+      sym->is_weak = is_weak;
+    }
   }
 }
 
@@ -270,6 +274,11 @@ void ObjectFile::fix_sym_addrs() {
       continue;
     
     InputSection *isec = sections[elf_syms[j].st_shndx];
+    if (!isec) {
+      llvm::outs() << "sym=" << symbols[i]->name
+                   << " " << toString(symbols[i]->file)
+                   << "\n";
+    }
     OutputSection *osec = isec->output_section;
     symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
   }

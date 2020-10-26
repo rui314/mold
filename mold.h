@@ -168,6 +168,7 @@ public:
 
   uint64_t addr = 0;
   uint8_t visibility = 0;
+  bool is_weak = false;
 
   std::atomic_bool needs_got;
   std::atomic_bool needs_plt;
