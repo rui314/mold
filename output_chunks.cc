@@ -56,6 +56,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     ELF64LE::Phdr phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
+    phdr.p_align = PAGE_SIZE;
     entries.push_back({phdr, members});
   };
 
