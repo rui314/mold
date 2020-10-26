@@ -303,17 +303,17 @@ int main(int argc, char **argv) {
         return;
 
       uint64_t off = 0;
+      uint32_t align = 0;
 
       for (InputSection *isec : osec->chunks) {
         off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
         off += isec->shdr.sh_size;
-        
-        osec->shdr.sh_addralign =
-          std::max<uint32_t>(osec->shdr.sh_addralign, isec->shdr.sh_addralign);
+        align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
       }
 
       osec->shdr.sh_size = off;
+      osec->shdr.sh_addralign = align;
     });
   }
 
