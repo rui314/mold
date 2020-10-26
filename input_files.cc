@@ -195,9 +195,12 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
     if (!elf_syms[j].isDefined())
       continue;
-    if (sections[elf_syms[j].st_shndx] == nullptr)
-      continue;
+
     // num_defined++;
+
+    InputSection *isec = sections[elf_syms[j].st_shndx];
+    if (isec == nullptr)
+      continue;
 
     Symbol *sym = symbols[i];
     bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
@@ -206,6 +209,7 @@ void ObjectFile::register_defined_symbols() {
     if (!sym->file || this->priority < sym->file->priority ||
         (sym->is_weak && !is_weak)) {
       sym->file = this;
+      sym->input_section = isec;
       sym->visibility = elf_syms[j].getVisibility();
       sym->is_weak = is_weak;
     }
@@ -275,7 +279,7 @@ void ObjectFile::fix_sym_addrs() {
     if (symbols[i]->file != this)
       continue;
     
-    InputSection *isec = sections[elf_syms[j].st_shndx];
+    InputSection *isec = symbols[i]->input_section;
     OutputSection *osec = isec->output_section;
     symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
   }
