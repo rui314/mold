@@ -33,9 +33,11 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_TLSGD:
     case R_X86_64_GOTTPOFF:
+      sym->needs_got = true;
+      break;
     case R_X86_64_PLT32:
-      if (!sym->needs_got)
-        sym->needs_got = true;
+      sym->needs_got = true;
+      sym->needs_plt = true;
       break;
     }
   }
