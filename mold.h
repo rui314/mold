@@ -400,8 +400,11 @@ public:
   StringRef get_filename();
   bool is_in_archive();
 
-  std::vector<Symbol *> symbols;
-  int first_global = 0;
+  Symbol *get_symbol(uint32_t idx) {
+    if (idx < first_global)
+      return nullptr;
+    return symbols[first_global - idx];
+  }
 
   std::vector<InputSection *> sections;
   StringRef archive_name;
@@ -419,6 +422,9 @@ private:
   std::vector<std::pair<ComdatGroup *, uint32_t>> comdat_groups;
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;
+
+  std::vector<Symbol *> symbols;
+  int first_global = 0;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
