@@ -125,15 +125,15 @@ void OutputPhdr::copy_to(uint8_t *buf) {
 void OutputSection::set_offset(uint64_t fileoff) {
   shdr.sh_offset = fileoff;
 
-  if (!is_bss()) {
-    uint64_t off = 0;
+  uint64_t off = 0;
 
-    for (InputSection *isec : chunks) {
-      off = align_to(off, isec->shdr.sh_addralign);
-      isec->offset = off;
-      off += isec->shdr.sh_size;
-    }
+  for (InputSection *isec : chunks) {
+    off = align_to(off, isec->shdr.sh_addralign);
+    isec->offset = off;
+    off += isec->shdr.sh_size;
   }
+
+  shdr.sh_size = off;
 }
 
 static StringRef get_output_name(StringRef name) {

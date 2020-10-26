@@ -315,15 +315,16 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
 
-    uint64_t fileoff = 0;
     for (OutputChunk *chunk : output_chunks) {
       if (!chunk->is_bss())
-        fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
-      chunk->set_offset(fileoff);
+        filesize = align_to(filesize, chunk->shdr.sh_addralign);
+      chunk->set_offset(filesize);
       if (!chunk->is_bss())
-        fileoff = chunk->get_filesz();
+        filesize += chunk->get_filesz();
     }
   }
+
+  llvm::outs() << "filesize=" << filesize << "\n";
 
   {
     MyTimer t("unlink", before_copy);
