@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
 
   // Open input files
   {
-    MyTimer t("parse", before_copy);
+    MyTimer t("parse");
     for (auto *arg : args)
       if (arg->getOption().getID() == OPT_INPUT)
         read_file(files, arg->getValue());
@@ -336,8 +336,6 @@ int main(int argc, char **argv) {
         filesize += chunk->get_size();
     }
   }
-
-  llvm::outs() << "filesize=" << filesize << "\n";
 
   {
     MyTimer t("unlink", before_copy);
