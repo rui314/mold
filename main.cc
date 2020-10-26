@@ -147,6 +147,7 @@ static void bin_sections(std::vector<ObjectFile *> files) {
 }
 
 static void set_isec_offsets() {
+#if 1
   for_each(OutputSection::all_instances, [&](OutputSection *osec) {
     int unit = 100000;
     int num_slices = (osec->sections.size() + unit - 1) / unit;
@@ -189,6 +190,8 @@ static void set_isec_offsets() {
     osec->shdr.sh_size = start.back() + size.back();
     osec->shdr.sh_addralign = align;
   });
+#else
+#endif
 }
 
 // We want to sort output sections in the following order.
