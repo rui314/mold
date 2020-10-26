@@ -362,6 +362,9 @@ int main(int argc, char **argv) {
     MyTimer t("file_offset", before_copy);
 
     for (OutputChunk *chunk : output_chunks) {
+      if (chunk->starts_new_ptload)
+        filesize = align_to(filesize, PAGE_SIZE);
+
       if (!chunk->is_bss())
         filesize = align_to(filesize, chunk->shdr.sh_addralign);
       chunk->shdr.sh_offset = filesize;
