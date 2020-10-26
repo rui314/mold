@@ -51,7 +51,7 @@ void ObjectFile::initialize_sections() {
       if (shdr.sh_info >= elf_syms.size())
         error(toString(this) + ": invalid symbol index");
       const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
-      StringRef signature = CHECK(sym.getName(string_table), this);
+      StringRef signature = CHECK(sym.getName(symbol_strtab), this);
       
       // Get comdat group members.
       ArrayRef<ELF64LE::Word> entries =
@@ -112,13 +112,10 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
-  if (!symtab_sec)
-    return;
-
   this->symbols.resize(elf_syms.size() - first_global);
 
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    StringRef name = CHECK(elf_syms[j].getName(string_table), this);
+    StringRef name = CHECK(elf_syms[j].getName(symbol_strtab), this);
     symbols[i] = Symbol::intern(name);
   }
 }
@@ -166,14 +163,18 @@ void ObjectFile::parse() {
 
   elf_sections = CHECK(obj.sections(), this);
   symtab_sec = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
-  first_global = symtab_sec->sh_info;
-  elf_syms = CHECK(obj.symbols(symtab_sec), this);
-  string_table = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+
+  if (symtab_sec) {
+    first_global = symtab_sec->sh_info;
+    elf_syms = CHECK(obj.symbols(symtab_sec), this);
+    symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+  }
 
   // num_all_syms += elf_syms.size();
 
   initialize_sections();
-  initialize_symbols();
+  if (symtab_sec)
+    initialize_symbols();
 }
 
 class Spinlock {
