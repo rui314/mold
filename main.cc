@@ -373,7 +373,8 @@ int main(int argc, char **argv) {
       vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
 
       chunk->shdr.sh_offset = filesize;
-      chunk->shdr.sh_addr = vaddr;
+      if (chunk->shdr.sh_flags & SHF_ALLOC)
+        chunk->shdr.sh_addr = vaddr;
 
       if (!chunk->is_bss())
         filesize += chunk->get_size();
