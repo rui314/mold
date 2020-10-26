@@ -30,9 +30,16 @@ void InputSection::scan_relocations() {
       continue;
 
     switch (rel.getType(false)) {
+    case R_X86_64_GOT32:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC32_TLSDESC:
     case R_X86_64_GOTPCREL:
-    case R_X86_64_TLSGD:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
     case R_X86_64_GOTTPOFF:
+    case R_X86_64_GOT64:
+    case R_X86_64_GOTOFF64:
+    case R_X86_64_GOTPC64:
       sym->needs_got = true;
       break;
     case R_X86_64_PLT32:
