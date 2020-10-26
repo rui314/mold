@@ -315,65 +315,13 @@ int main(int argc, char **argv) {
   {
     MyTimer t("file_offset", before_copy);
 
-    std::vector<ArrayRef<OutputChunk *>> slices;
-
-    int i = 0;
-    while (i < output_chunks.size() && !output_chunks[i]->is_bss()) {
-      int j = i + 1;
-      while (j < output_chunks.size() && !output_chunks[j]->starts_new_ptload &&
-             !output_chunks[j]->is_bss())
-        j++;
-
-      slices.push_back(ArrayRef(output_chunks).slice(i, j - i));
-      i = j;
-    }
-
-    if (i != output_chunks.size())
-      slices.push_back(ArrayRef(output_chunks).slice(i));
-
-    for (ArrayRef<OutputChunk *> slice : slices) {
-      uint64_t vaddr = 0;
-      uint64_t fileoff = 0;
-
-      for (OutputChunk *chunk : slice) {
-        vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
-        if (!chunk->is_bss())
-          fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
-
-        chunk->set_offset(vaddr, fileoff);
-
-        vaddr += chunk->get_filesz();
-        if (!chunk->is_bss())
-          fileoff += chunk->get_filesz();
-      }
-    }
-
-    uint64_t vaddr = 0x200000;
     uint64_t fileoff = 0;
-
-    for (ArrayRef<OutputChunk *> slice : slices) {
-      vaddr = align_to(vaddr, PAGE_SIZE);
-      fileoff = align_to(fileoff, PAGE_SIZE);
-
-      for (OutputChunk *chunk : slice) {
-        chunk->shdr.sh_addr += vaddr;
-        chunk->shdr.sh_offset += fileoff;
-      }
-
-      OutputChunk *last = slice.back();
-      vaddr = last->shdr.sh_addr + last->shdr.sh_size;
-
-      if (last->is_bss())
-        fileoff = last->shdr.sh_offset;
-      else
-        fileoff = last->shdr.sh_offset + last->get_filesz();
-    }
-
     for (OutputChunk *chunk : output_chunks) {
-      llvm::outs() << chunk->name
-                   << " vaddr=" << chunk->shdr.sh_addr
-                   << " offset=" << chunk->shdr.sh_offset
-                   << "\n";
+      if (!chunk->is_bss())
+        fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
+      chunk->set_offset(fileoff);
+      if (!chunk->is_bss())
+        fileoff = chunk->get_filesz();
     }
   }
 

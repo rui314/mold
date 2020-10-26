@@ -222,8 +222,7 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  virtual void set_offset(uint64_t vaddr, uint64_t fileoff) {
-    shdr.sh_addr = vaddr;
+  virtual void set_offset(uint64_t fileoff) {
     shdr.sh_offset = fileoff;
   }
 
@@ -304,11 +303,13 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {
-    for_each(chunks, [&](InputSection *isec) { isec->copy_to(buf); });
+    if (!is_bss())
+      for_each(chunks, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   void relocate(uint8_t *buf) override {
-    for_each(chunks, [&](InputSection *isec) { isec->relocate(buf); });
+    if (!is_bss())
+      for_each(chunks, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
   uint64_t get_filesz() const override {
@@ -317,7 +318,7 @@ public:
     return shdr.sh_size;
   }
 
-  void set_offset(uint64_t vaddr, uint64_t fileoff) override;
+  void set_offset(uint64_t fileoff) override;
   void set_alignment(uint32_t align) { shdr.sh_addralign = align; }
 
   std::vector<InputSection *> chunks;

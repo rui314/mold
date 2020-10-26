@@ -122,20 +122,18 @@ void OutputPhdr::copy_to(uint8_t *buf) {
     *p++ = ent.phdr;
 }
 
-void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
-  shdr.sh_addr = vaddr;
+void OutputSection::set_offset(uint64_t fileoff) {
   shdr.sh_offset = fileoff;
 
-  if ((shdr.sh_flags & SHF_ALLOC) && !(shdr.sh_type & SHT_NOBITS))
-    assert(vaddr == fileoff);
+  if (!is_bss()) {
+    uint64_t off = 0;
 
-  for (InputSection *isec : chunks) {
-    vaddr = align_to(vaddr, isec->shdr.sh_addralign);
-    isec->offset = vaddr;
-    vaddr += isec->shdr.sh_size;
+    for (InputSection *isec : chunks) {
+      off = align_to(off, isec->shdr.sh_addralign);
+      isec->offset = off;
+      off += isec->shdr.sh_size;
+    }
   }
-
-  shdr.sh_size = vaddr - shdr.sh_addr;
 }
 
 static StringRef get_output_name(StringRef name) {
