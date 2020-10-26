@@ -229,6 +229,7 @@ public:
 
   uint64_t get_fileoff() const { return shdr.sh_offset; }
   uint64_t get_vaddr() const { return shdr.sh_addr; }
+  bool is_bss() const { return shdr.sh_type & llvm::ELF::SHT_NOBITS; }
 
   virtual uint64_t get_filesz() const = 0;
 
