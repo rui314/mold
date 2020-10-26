@@ -23,8 +23,6 @@ void InputSection::copy_to(uint8_t *buf) {
   memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 }
 
-thread_local int count;
-
 void InputSection::scan_relocations() {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
@@ -39,8 +37,6 @@ void InputSection::scan_relocations() {
       if (!sym->needs_got)
         sym->needs_got = true;
       break;
-    default:
-      count++;
     }
   }
 }
