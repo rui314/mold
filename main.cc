@@ -146,6 +146,23 @@ static void bin_sections(std::vector<ObjectFile *> files) {
 #endif
 }
 
+static void set_isec_offsets() {
+  for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+    uint64_t off = 0;
+    uint32_t align = 0;
+
+    for (InputSection *isec : osec->chunks) {
+      off = align_to(off, isec->shdr.sh_addralign);
+      isec->offset = off;
+      off += isec->shdr.sh_size;
+      align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+    }
+
+    osec->shdr.sh_size = off;
+    osec->shdr.sh_addralign = align;
+  });
+}
+
 // We want to sort output sections in the following order.
 //
 // alloc readonly data
@@ -210,7 +227,7 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   }
 }
 
-static uint64_t set_offsets(ArrayRef<OutputChunk *> output_chunks) {
+static uint64_t set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   uint64_t fileoff = 0;
   uint64_t vaddr = 0x200000;
 
@@ -322,21 +339,7 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("isec_offsets", before_copy);
-
-    for_each(OutputSection::all_instances, [&](OutputSection *osec) {
-      uint64_t off = 0;
-      uint32_t align = 0;
-
-      for (InputSection *isec : osec->chunks) {
-        off = align_to(off, isec->shdr.sh_addralign);
-        isec->offset = off;
-        off += isec->shdr.sh_size;
-        align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
-      }
-
-      osec->shdr.sh_size = off;
-      osec->shdr.sh_addralign = align;
-    });
+    set_isec_offsets();
   }
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
@@ -385,7 +388,7 @@ int main(int argc, char **argv) {
   uint64_t filesize = 0;
   {
     MyTimer t("file_offset", before_copy);
-    filesize = set_offsets(output_chunks);
+    filesize = set_osec_offsets(output_chunks);
   }
 
   {
