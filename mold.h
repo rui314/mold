@@ -307,8 +307,6 @@ public:
   }
 
   uint64_t get_size() const override {
-    if (shdr.sh_type & llvm::ELF::SHT_NOBITS)
-      return 0;
     return shdr.sh_size;
   }
 
