@@ -182,6 +182,9 @@ static void set_isec_offsets() {
 
     uint32_t align = *std::max_element(alignments.begin(), alignments.end());
 
+    for (int i = 1; i < num_slices; i++)
+      start[i] = align_to(start[i - 1] + size[i], align);
+
     tbb::parallel_for(1, num_slices, [&](int i) {
       for (InputSection *isec : slices[i])
         isec->offset += start[i];
@@ -438,8 +441,7 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("sym_addr");
-    // for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
-    for (ObjectFile *file : files) { file->fix_sym_addrs(); }
+    for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
   }
 
   {
