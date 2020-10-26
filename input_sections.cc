@@ -55,23 +55,25 @@ void InputSection::relocate(uint8_t *buf) {
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
     uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
-    uint64_t val = 5;
+
+    uint64_t cur = output_section->shdr.sh_addr + offset + rel.r_offset;
+    uint64_t dst = file->get_symbol_value(rel.getSymbol(false));
 
     switch (rel.getType(false)) {
     case R_X86_64_8:
-      *loc = val;
+      *loc = dst;
       break;
     case R_X86_64_PC8:
-      *loc = val;
+      *loc = dst - cur;
       break;
     case R_X86_64_16:
-      *(uint16_t *)loc = val;
+      *(uint16_t *)loc = dst;
       break;
     case R_X86_64_PC16:
-      *(uint16_t *)loc = val;
+      *(uint16_t *)loc = dst - cur - 4;
       break;
     case R_X86_64_32:
-      *(uint32_t *)loc = val;
+      *(uint32_t *)loc = dst;
       break;
     case R_X86_64_32S:
     case R_X86_64_TPOFF32:
@@ -88,7 +90,7 @@ void InputSection::relocate(uint8_t *buf) {
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
     case R_X86_64_SIZE32:
-      *(uint32_t *)loc = val;
+      *(uint32_t *)loc = dst - cur - 4;
       break;
     case R_X86_64_64:
     case R_X86_64_DTPOFF64:
@@ -97,7 +99,7 @@ void InputSection::relocate(uint8_t *buf) {
     case R_X86_64_GOT64:
     case R_X86_64_GOTOFF64:
     case R_X86_64_GOTPC64:
-      *(uint64_t *)loc = val;
+      *(uint64_t *)loc = dst;
       break;
     default:
       error(toString(this) + ": unknown relocation");

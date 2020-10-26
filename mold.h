@@ -403,10 +403,19 @@ public:
   StringRef get_filename();
   bool is_in_archive();
 
-  Symbol *get_symbol(uint32_t idx) {
+  Symbol *get_symbol(uint32_t idx) const {
     if (idx < first_global)
       return nullptr;
     return symbols[idx - first_global];
+  }
+
+  uint64_t get_symbol_value(uint32_t idx) const {
+    if (idx < first_global) {
+      const ELF64LE::Sym &sym = elf_syms[idx];
+      InputSection *isec = sections[sym.st_shndx];
+      return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
+    }
+    return symbols[idx - first_global]->addr;
   }
 
   std::vector<InputSection *> sections;
