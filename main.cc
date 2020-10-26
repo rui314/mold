@@ -339,7 +339,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 1);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
   tbb::task_group tg;
 
   // Parse command line options
