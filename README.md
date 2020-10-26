@@ -54,10 +54,9 @@ implemented and tested with benchmarks. Here is a brain dump:
 
 - After the first invocation of the linker, the linker should not exit
   but instead become a daemon to keep parsed input files in memory.
-  The daemonized linker keeps an eye on the build directories using
-  [inotify(2)](https://en.wikipedia.org/wiki/Inotify), and as soon as
-  a new file is created or an exiting file is updated, it reloads a
-  file to memory.
+  Subsequent linker invocations for the same output file make the
+  linker daemon to reload updated input files, and then the daemon
+  calls fork(2) to create a subprocess and let it do the actual linking.
 
 - Daemonizing alone wouldn't make the linker magically faster. We need
   to split the linker into two in such a way that the latter half of
