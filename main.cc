@@ -191,6 +191,20 @@ static void set_isec_offsets() {
     osec->shdr.sh_addralign = align;
   });
 #else
+   for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+    uint64_t off = 0;
+    uint32_t align = 0;
+
+    for (InputSection *isec : osec->sections) {
+      off = align_to(off, isec->shdr.sh_addralign);
+      isec->offset = off;
+      off += isec->shdr.sh_size;
+      align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+    }
+
+    osec->shdr.sh_size = off;
+     osec->shdr.sh_addralign = align;
+   });
 #endif
 }
 
