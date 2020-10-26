@@ -125,8 +125,6 @@ void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
   shdr.sh_addr = vaddr;
   shdr.sh_offset = fileoff;
 
-  llvm::outs() << name << " " << vaddr << " " << fileoff << "\n";
-
   if ((shdr.sh_flags & SHF_ALLOC) && !(shdr.sh_type & SHT_NOBITS))
     assert(vaddr == fileoff);
 
@@ -136,8 +134,7 @@ void OutputSection::set_offset(uint64_t vaddr, uint64_t fileoff) {
     vaddr += isec->shdr.sh_size;
   }
 
-  shdr.sh_size = vaddr - shdr.sh_size;
-  llvm::outs() << name << " " << vaddr << " " << fileoff << "\n";
+  shdr.sh_size = vaddr - shdr.sh_addr;
 }
 
 static StringRef get_output_name(StringRef name) {

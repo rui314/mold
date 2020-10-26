@@ -317,7 +317,8 @@ int main(int argc, char **argv) {
 
     std::vector<ArrayRef<OutputChunk *>> slices;
 
-    for (int i = 0; i < output_chunks.size();) {
+    int i = 0;
+    while (i < output_chunks.size() && !(output_chunks[i]->shdr.sh_type & SHT_NOBITS)) {
       int j = i + 1;
       while (j < output_chunks.size() && !output_chunks[j]->starts_segment)
         j++;
@@ -326,17 +327,14 @@ int main(int argc, char **argv) {
       i = j;
     }
 
+    if (i != slices.size())
+      slices.push_back(ArrayRef(output_chunks).slice(i));
+
     for (ArrayRef<OutputChunk *> slice : slices) {
       uint64_t vaddr = 0;
       uint64_t fileoff = 0;
 
       for (OutputChunk *chunk : slice) {
-        if (chunk->shdr.sh_flags & SHT_NOBITS) {
-          chunk->set_offset(0, fileoff);          
-          fileoff += chunk->get_filesz();
-          continue;
-        }
-
         bool is_bss = chunk->shdr.sh_type & SHT_NOBITS;
 
         vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
@@ -350,12 +348,6 @@ int main(int argc, char **argv) {
           fileoff += chunk->get_filesz();
       }
     }
-
-    for (OutputChunk *chunk : output_chunks) {
-      llvm::outs() << chunk->name
-                   << " vaddr=" << chunk->shdr.sh_addr
-                   << " offset=" << chunk->shdr.sh_offset
-                   << "\n";
 
     uint64_t vaddr = 0x200000;
     uint64_t fileoff = 0;
@@ -377,6 +369,12 @@ int main(int argc, char **argv) {
       else
         fileoff = last->shdr.sh_offset + last->shdr.sh_size;
     }
+
+    for (OutputChunk *chunk : output_chunks) {
+      llvm::outs() << chunk->name
+                   << " vaddr=" << chunk->shdr.sh_addr
+                   << " offset=" << chunk->shdr.sh_offset
+                   << "\n";
     }
   }
 
