@@ -387,7 +387,7 @@ int main(int argc, char **argv) {
   // Assign offsets to input sections
   uint64_t filesize = 0;
   {
-    MyTimer t("file_offset", before_copy);
+    MyTimer t("osec_offset", before_copy);
     filesize = set_osec_offsets(output_chunks);
   }
 
