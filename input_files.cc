@@ -199,12 +199,12 @@ void ObjectFile::register_defined_symbols() {
     Symbol *sym = symbols[i];
     Spinlock lock(sym->lock);
 
-    bool is_weak = (elf_syms[i].getBinding() == STB_WEAK);
+    bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
 
     if (!sym->file || this->priority < sym->file->priority ||
         (sym->is_weak && !is_weak)) {
       sym->file = this;
-      sym->visibility = elf_syms[i].getVisibility();
+      sym->visibility = elf_syms[j].getVisibility();
       sym->is_weak = is_weak;
     }
   }
