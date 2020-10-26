@@ -293,19 +293,19 @@ public:
 
   void copy_to(uint8_t *buf) override {
     if (!is_bss())
-      for_each(chunks, [&](InputSection *isec) { isec->copy_to(buf); });
+      for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   void relocate(uint8_t *buf) override {
     if (!is_bss())
-      for_each(chunks, [&](InputSection *isec) { isec->relocate(buf); });
+      for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
   uint64_t get_size() const override {
     return shdr.sh_size;
   }
 
-  std::vector<InputSection *> chunks;
+  std::vector<InputSection *> sections;
   uint32_t idx;
 
   static std::vector<OutputSection *> all_instances;

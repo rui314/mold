@@ -132,7 +132,7 @@ static void bin_sections(std::vector<ObjectFile *> files) {
                          fn, reduce);
 
   for (int i = 0; i < vec.size(); i++)
-    OutputSection::all_instances[i]->chunks = std::move(vec[i]);
+    OutputSection::all_instances[i]->sections = std::move(vec[i]);
 
 #else
   for (ObjectFile *file : files) {
@@ -140,7 +140,7 @@ static void bin_sections(std::vector<ObjectFile *> files) {
       if (!isec)
         continue;
       OutputSection *osec = isec->output_section;
-      osec->chunks.push_back(isec);
+      osec->sections.push_back(isec);
     }
   }
 #endif
@@ -151,7 +151,7 @@ static void set_isec_offsets() {
     uint64_t off = 0;
     uint32_t align = 0;
 
-    for (InputSection *isec : osec->chunks) {
+    for (InputSection *isec : osec->sections) {
       off = align_to(off, isec->shdr.sh_addralign);
       isec->offset = off;
       off += isec->shdr.sh_size;
@@ -184,7 +184,7 @@ static int get_rank(OutputSection *x) {
 static std::vector<OutputSection *> get_output_sections() {
   std::vector<OutputSection *> vec;
   for (OutputSection *osec : OutputSection::all_instances)
-    if (!osec->chunks.empty())
+    if (!osec->sections.empty())
       vec.push_back(osec);
 
   std::sort(vec.begin(), vec.end(), [](OutputSection *a, OutputSection *b) {
