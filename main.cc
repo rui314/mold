@@ -147,7 +147,7 @@ static void bin_sections(std::vector<ObjectFile *> files) {
 }
 
 static void set_isec_offsets() {
-  std::for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+  for_each(OutputSection::all_instances, [&](OutputSection *osec) {
     uint64_t off = 0;
     uint32_t align = 0;
 
