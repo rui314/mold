@@ -30,9 +30,11 @@ void InputSection::scan_relocations() {
     return;
 
   for (const ELF64LE::Rela &rel : rels) {
-    Symbol *sym = file->symbols[rel.getSymbol(false)];
-    if (!sym)
+    int idx = rel.getSymbol(false);
+    if (idx < file->first_global)
       continue;
+
+    Symbol *sym = file->symbols[idx - file->first_global];
 
     switch (rel.getType(false)) {
     case R_X86_64_GOTPCREL:

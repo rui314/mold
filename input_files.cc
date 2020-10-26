@@ -115,12 +115,10 @@ void ObjectFile::initialize_symbols() {
   if (!symtab_sec)
     return;
 
-  this->symbols.resize(elf_syms.size());
+  this->symbols.resize(elf_syms.size() - first_global);
 
-  for (int i = 0; i < elf_syms.size(); i++) {
-    if (i < first_global)
-      continue;
-    StringRef name = CHECK(this->elf_syms[i].getName(string_table), this);
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    StringRef name = CHECK(elf_syms[j].getName(string_table), this);
     symbols[i] = Symbol::intern(name);
   }
 }
@@ -193,8 +191,8 @@ private:
 };
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = first_global; i < symbols.size(); i++) {
-    if (!elf_syms[i].isDefined())
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    if (!elf_syms[j].isDefined())
       continue;
     num_defined++;
 
@@ -212,8 +210,8 @@ void ObjectFile::register_undefined_symbols() {
   if (is_alive.exchange(true))
     return;
 
-  for (int i = first_global; i < symbols.size(); i++) {
-    if (elf_syms[i].isDefined())
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    if (elf_syms[j].isDefined())
       continue;
     num_undefined++;
 

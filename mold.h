@@ -401,6 +401,8 @@ public:
   bool is_in_archive();
 
   std::vector<Symbol *> symbols;
+  int first_global = 0;
+
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
@@ -422,7 +424,6 @@ private:
   ArrayRef<ELF64LE::Sym> elf_syms;
   StringRef string_table;
   const ELF64LE::Shdr *symtab_sec;
-  int first_global = 0;
 };
 
 //
