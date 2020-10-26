@@ -27,6 +27,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_ident[EI_VERSION] = EV_CURRENT;
   hdr->e_ident[EI_OSABI] = 0;
   hdr->e_ident[EI_ABIVERSION] = 0;
+  hdr->e_type = ET_EXEC;
   hdr->e_machine = EM_X86_64;
   hdr->e_version = EV_CURRENT;
   hdr->e_entry = Symbol::intern("_start")->addr;
