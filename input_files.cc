@@ -352,7 +352,8 @@ void ObjectFile::compute_symtab() {
   }
 }
 
-void ObjectFile::write_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+void ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off,
+                                    uint64_t strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -370,6 +371,12 @@ void ObjectFile::write_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab
     memcpy(strtab + strtab_off, name.data(), name.size());
     strtab_off += name.size() + 1;
   }
+}
+
+void ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off,
+                                     uint64_t strtab_off) {
+  uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
+  uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];

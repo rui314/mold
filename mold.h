@@ -442,7 +442,9 @@ public:
   void scan_relocations();
   void fix_sym_addrs();
   void compute_symtab();
-  void write_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
+
+  void write_symtab_local(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
+  void write_symtab_global(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
 
   StringRef get_filename();
   bool is_in_archive();

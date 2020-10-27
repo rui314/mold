@@ -513,7 +513,13 @@ int main(int argc, char **argv) {
     uint64_t strtab_off = 1;
 
     for (ObjectFile *file : files) {
-      file->write_symtab(buf, symtab_off, strtab_off);
+      file->write_symtab_local(buf, symtab_off, strtab_off);
+      symtab_off += file->symtab_size;
+      strtab_off += file->strtab_size;
+    }
+
+    for (ObjectFile *file : files) {
+      file->write_symtab_local(buf, symtab_off, strtab_off);
       symtab_off += file->symtab_size;
       strtab_off += file->strtab_size;
     }
