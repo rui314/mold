@@ -480,7 +480,7 @@ int main(int argc, char **argv) {
   }
 
   tbb::task_group tg_symtab;
-#if 0
+#if 1
   tg_symtab.run([&]() {
     MyTimer t("construct_symtab");
     for_each(files, [](ObjectFile *file) { file->construct_symtab(); });
