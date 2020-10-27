@@ -481,6 +481,8 @@ public:
   StringRef get_filename();
   bool is_in_archive();
 
+  uint64_t get_strtab_size();
+
   Symbol *get_symbol(uint32_t idx) const {
     if (idx < first_global)
       return nullptr;
@@ -525,7 +527,7 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
-  std::vector<LocalSymbolName> local_symbols;
+  std::vector<LocalSymbolName *> local_symbols;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };

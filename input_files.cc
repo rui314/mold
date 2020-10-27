@@ -52,7 +52,7 @@ void ObjectFile::initialize_sections() {
         error(toString(this) + ": invalid symbol index");
       const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
       StringRef signature = CHECK(sym.getName(symbol_strtab), this);
-      
+
       // Get comdat group members.
       ArrayRef<ELF64LE::Word> entries =
           CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
@@ -114,11 +114,20 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
+  local_symbols.reserve(first_global);
+
+  for (int i = 0; i < first_global; i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+
+    static ConcurrentMap<LocalSymbolName> map;
+    local_symbols.push_back(map.insert(name, LocalSymbolName(name)));
+  }
+
   symbols.reserve(elf_syms.size() - first_global);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
 
@@ -195,7 +204,7 @@ public:
   }
 
 private:
-  std::atomic_flag &lock;  
+  std::atomic_flag &lock;
 };
 
 void ObjectFile::register_defined_symbols() {
@@ -252,7 +261,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     ObjectFile *other = g->file;
     if (other && other->priority < this->priority) {
       this->remove_comdat_members(section_idx);
-      continue;      
+      continue;
     }
 
     ObjectFile *file;
@@ -320,7 +329,7 @@ void ObjectFile::fix_sym_addrs() {
   for (Symbol *sym : symbols) {
     if (sym->file != this)
       continue;
-    
+
     InputSection *isec = sym->input_section;
 
     if (isec) {
@@ -331,6 +340,9 @@ void ObjectFile::fix_sym_addrs() {
       sym->addr = sym->value;
     }
   }
+}
+
+uint64_t ObjectFile::get_strtab_size() {
 }
 
 StringRef ObjectFile::get_filename() {
