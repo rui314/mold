@@ -405,6 +405,7 @@ public:
   void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
+  void read_local_symbols();
 
   StringRef get_filename();
   bool is_in_archive();
@@ -449,6 +450,7 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
+  std::vector<StringRef> local_symnames;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
