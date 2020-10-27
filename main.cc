@@ -437,8 +437,8 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
     for (ObjectFile *file : files) {
-      out::symtab->size += file->symtab_size;
-      out::strtab->size += file->strtab_size;
+      out::symtab->size += file->local_symtab_size + file->global_symtab_size;
+      out::strtab->size += file->local_strtab_size + file->global_strtab_size;
     }
   }
 
@@ -509,21 +509,38 @@ int main(int argc, char **argv) {
   // Fill .symtab and .strtab
   {
     MyTimer t("write_symtab");
-    uint64_t symtab_off = 0;
-    uint64_t strtab_off = 1;
 
-    for (ObjectFile *file : files)
-      std::tie(symtab_off, strtab_off) =
-        file->write_symtab_local(buf, symtab_off, strtab_off);
+    std::vector<uint64_t> symtab_off(files.size());
+    std::vector<uint64_t> strtab_off(files.size());
+    strtab_off[0] = 1;
 
-    out::symtab->shdr.sh_info = symtab_off / sizeof(ELF64LE::Sym);
+    for (int i = 1; i < files.size(); i++) {
+      symtab_off[i] = symtab_off[i - 1] + files[i - 1]->local_symtab_size;
+      strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
+    }
 
-    for (ObjectFile *file : files)
-      std::tie(symtab_off, strtab_off) =
-        file->write_symtab_global(buf, symtab_off, strtab_off);
+    out::symtab->shdr.sh_info = strtab_off.back() / sizeof(ELF64LE::Sym);
 
-    assert(symtab_off == out::symtab->size);
-    assert(strtab_off == out::strtab->size);
+    tbb::parallel_for((size_t)0, files.size(),
+                      [&](size_t i) {
+                        files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
+                      });
+
+    symtab_off[0] = symtab_off.back() + files.back()->global_symtab_size;
+    strtab_off[0] = strtab_off.back() + files.back()->global_strtab_size;
+
+    for (int i = 1; i < files.size(); i++) {
+      symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
+      strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
+    }
+
+    assert(symtab_off.back() == out::symtab->size);
+    assert(strtab_off.back() == out::strtab->size);
+
+    tbb::parallel_for((size_t)0, files.size(),
+                      [&](size_t i) {
+                        files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
+                      });
   }
 
   // Copy input sections to the output file

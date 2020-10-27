@@ -443,11 +443,8 @@ public:
   void fix_sym_addrs();
   void compute_symtab();
 
-  std::pair<uint64_t, uint64_t>
-  write_symtab_local(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
-
-  std::pair<uint64_t, uint64_t>
-  write_symtab_global(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
+  void write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
+  void write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
 
   StringRef get_filename();
   bool is_in_archive();
@@ -479,8 +476,10 @@ public:
   uint32_t priority;
   std::atomic_bool is_alive;
 
-  uint64_t symtab_size = 0;
-  uint64_t strtab_size = 0;
+  uint64_t local_symtab_size = 0;
+  uint64_t local_strtab_size = 0;
+  uint64_t global_symtab_size = 0;
+  uint64_t global_strtab_size = 0;
 
 private:
   void initialize_sections();

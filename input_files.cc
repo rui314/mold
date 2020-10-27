@@ -120,7 +120,7 @@ void ObjectFile::initialize_symbols() {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     local_symbols.push_back(name);
-    strtab_size += name.size() + 1;
+    local_strtab_size += name.size() + 1;
   }
 
   symbols.reserve(elf_syms.size() - first_global);
@@ -342,18 +342,18 @@ void ObjectFile::fix_sym_addrs() {
 }
 
 void ObjectFile::compute_symtab() {
-  symtab_size = sizeof(ELF64LE::Sym) * first_global;
+  local_symtab_size = sizeof(ELF64LE::Sym) * first_global;
 
   for (Symbol *sym : symbols) {
     if (sym->file == this) {
-      strtab_size += sym->name.size() + 1;
-      symtab_size += sizeof(ELF64LE::Sym);
+      global_strtab_size += sym->name.size() + 1;
+      global_symtab_size += sizeof(ELF64LE::Sym);
     }
   }
 }
 
-std::pair<uint64_t, uint64_t>
-ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+void
+ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -371,12 +371,10 @@ ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off, uint64_t strta
     memcpy(strtab + strtab_off, name.data(), name.size());
     strtab_off += name.size() + 1;
   }
-
-  return {symtab_off, strtab_off};
 }
 
-std::pair<uint64_t, uint64_t>
-ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+void
+ObjectFile::write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -397,8 +395,6 @@ ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off, uint64_t strt
     memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
     strtab_off += sym.name.size() + 1;
   }
-
-  return {symtab_off, strtab_off};
 }
 
 StringRef ObjectFile::get_filename() {
