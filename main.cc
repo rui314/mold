@@ -274,9 +274,13 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<ELF64LE::Shdr *> vec;
   vec.push_back(&null_entry);
 
-  for (OutputChunk *chunk : output_chunks)
-    if (!chunk->name.empty())
+  int idx = 1;
+  for (OutputChunk *chunk : output_chunks) {
+    if (!chunk->name.empty()) {
       vec.push_back(&chunk->shdr);
+      chunk->idx = idx++;
+    }
+  }
   return vec;
 }
 
@@ -457,6 +461,7 @@ int main(int argc, char **argv) {
   // Create section header and program header contents.
   out::shdr->entries = create_shdrs(output_chunks);
   out::phdr->construct(output_chunks);
+  out::symtab->shdr.sh_link = out::strtab->idx;
 
   // Fill section header.
   fill_shdrs(output_chunks);

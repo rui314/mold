@@ -228,6 +228,7 @@ public:
   virtual uint64_t get_size() const = 0;
 
   StringRef name;
+  int idx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
 };
@@ -343,6 +344,7 @@ public:
     this->name = ".symtab";
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
+    shdr.sh_entsize = sizeof(ELF64LE::Sym);
   }
 
   void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);

@@ -12,13 +12,6 @@ StringTableSection *out::shstrtab;
 
 std::vector<OutputSection *> OutputSection::all_instances;
 
-static int get_section_idx(OutputChunk *chunk) {
-  for (int i = 0; i < out::shdr->entries.size(); i++)
-    if (&chunk->shdr == out::shdr->entries[i])
-      return i;
-  error("unreachable");
-}
-
 void OutputEhdr::relocate(uint8_t *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
   memset(hdr, 0, sizeof(*hdr));
@@ -41,7 +34,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->entries.size();
-  hdr->e_shstrndx = get_section_idx(out::shstrtab);
+  hdr->e_shstrndx = out::shstrtab->idx;
 }
 
 static uint32_t to_phdr_flags(uint64_t sh_flags) {
@@ -173,7 +166,7 @@ OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
 
 void SymtabSection::add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value) {
   contents.push_back(sym);
-  contents.back().st_shndx = get_section_idx(out::shstrtab);
+  contents.back().st_shndx = out::shstrtab->idx;
   contents.back().st_name = name;
   contents.back().st_value = value;
 }
