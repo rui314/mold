@@ -121,8 +121,10 @@ void ObjectFile::initialize_symbols() {
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     local_symbols.push_back(name);
 
-    if (esym.getType() != STT_SECTION)
+    if (esym.getType() != STT_SECTION) {
       local_strtab_size += name.size() + 1;
+      local_symtab_size += sizeof(ELF64LE::Sym);
+    }
   }
 
   symbols.reserve(elf_syms.size() - first_global);
@@ -344,12 +346,6 @@ void ObjectFile::fix_sym_addrs() {
 }
 
 void ObjectFile::compute_symtab() {
-  for (int i = 0; i < first_global; i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-    if (esym.getType() != STT_SECTION)
-      local_symtab_size += sizeof(ELF64LE::Sym);
-  }
-
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i - first_global];
