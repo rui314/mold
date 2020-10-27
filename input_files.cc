@@ -80,11 +80,13 @@ void ObjectFile::initialize_sections() {
       break;
     default: {
       // num_regular_sections++;
+#if 0
       if ((shdr.sh_flags & SHF_STRINGS) && !(shdr.sh_flags & SHF_WRITE) &&
           shdr.sh_entsize == 1) {
         read_string_pieces(shdr);
         break;
       }
+#endif
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
       this->sections[i] = new InputSection(this, shdr, name);
@@ -201,9 +203,10 @@ void ObjectFile::register_defined_symbols() {
 
     // num_defined++;
 
-    InputSection *isec = sections[elf_syms[j].st_shndx];
-    if (isec == nullptr)
-      continue;
+    InputSection *isec = nullptr;
+    uint32_t shndx = elf_syms[j].st_shndx;
+    if (shndx != SHN_ABS && shndx != SHN_COMMON)
+      isec = sections[shndx];
 
     Symbol *sym = symbols[i];
     bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
@@ -277,6 +280,28 @@ static OutputSection bss(".bss", SHF_ALLOC, SHT_NOBITS);
 void ObjectFile::convert_common_symbols() {
   if (!has_common_symbol)
     return;
+
+  for (int i = first_global; i < elf_syms.size(); i++) {
+    if (elf_syms[i].st_shndx != SHN_COMMON)
+      continue;
+
+    Symbol *sym = symbols[i - first_global];
+    if (sym->file != this)
+      continue;
+
+    auto *shdr = new ELF64LE::Shdr;
+    memset(shdr, 0, sizeof(*shdr));
+    shdr->sh_flags = SHF_ALLOC;
+    shdr->sh_type = SHT_NOBITS;
+    shdr->sh_addralign = 1;
+
+    auto *isec = new InputSection(this, *shdr, ".bss");
+    isec->output_section = &bss;
+    sections.push_back(isec);
+
+    sym->input_section = isec;
+    sym->value = 0;
+  }
 }
 
 void ObjectFile::scan_relocations() {
@@ -291,6 +316,12 @@ void ObjectFile::fix_sym_addrs() {
       continue;
     
     InputSection *isec = symbols[i]->input_section;
+    {
+      static std::mutex mu;
+      std::lock_guard<std::mutex> lock(mu);
+      if (!isec)
+        llvm::outs() << toString(this) << " " << symbols[i]->name << "\n";
+    }
     OutputSection *osec = isec->output_section;
     symbols[i]->addr = osec->shdr.sh_addr + isec->offset + symbols[i]->value;
   }
