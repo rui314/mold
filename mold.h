@@ -524,7 +524,7 @@ private:
 
   // For .strtab construction
   std::vector<StringRef> local_symbols;
-  uint64_t strtab_size;
+  uint64_t strtab_size = 0;
 };
 
 //

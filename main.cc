@@ -424,7 +424,15 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("strtab_size", before_copy);
-    for_each(files, [](ObjectFile *file) { file->get_strtab_size(); });
+
+    std::vector<uint64_t> sz(files.size());
+    tbb::parallel_for((size_t)0, files.size(),
+                      [&](size_t i) { sz[i] = files[i]->get_strtab_size(); });
+
+    uint64_t sum = 0;
+    for (uint64_t x : sz)
+      sum += x;
+    llvm::outs() << "sum=" << sum << "\n";
   }
 
   // Create linker-synthesized sections.
