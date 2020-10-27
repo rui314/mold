@@ -342,6 +342,8 @@ void ObjectFile::fix_sym_addrs() {
 }
 
 void ObjectFile::compute_symtab() {
+  symtab_size = sizeof(ELF64LE::Sym) * first_global;
+
   for (Symbol *sym : symbols) {
     if (sym->file == this) {
       strtab_size += sym->name.size() + 1;

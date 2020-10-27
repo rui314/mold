@@ -508,6 +508,7 @@ int main(int argc, char **argv) {
 
   // Fill .symtab and .strtab
   {
+    MyTimer t("write_symtab");
     uint64_t symtab_off = 0;
     uint64_t strtab_off = 1;
 

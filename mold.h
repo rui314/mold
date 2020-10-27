@@ -375,7 +375,7 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {}
-  uint64_t get_size() const override { return 0; }
+  uint64_t get_size() const override { return size; }
 
   uint64_t size = 0;
 
@@ -527,7 +527,6 @@ private:
 
 MemoryBufferRef readFile(StringRef path);
 
-extern SymbolTable symbol_table;
 extern std::atomic_int num_defined;
 extern std::atomic_int num_undefined;
 extern std::atomic_int num_all_syms;
