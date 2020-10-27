@@ -423,16 +423,18 @@ int main(int argc, char **argv) {
   }
 
   {
-    MyTimer t("strtab_size", before_copy);
+    MyTimer t("symtab_size", before_copy);
 
-    std::vector<uint64_t> sz(files.size());
-    tbb::parallel_for((size_t)0, files.size(),
-                      [&](size_t i) { sz[i] = files[i]->get_strtab_size(); });
+    for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
-    uint64_t sum = 0;
-    for (uint64_t x : sz)
-      sum += x;
-    llvm::outs() << "sum=" << sum << "\n";
+    uint64_t symtab_size = 0;
+    uint64_t strtab_size = 1;
+    for (ObjectFile *file : files) {
+      symtab_size += file->symtab_size;
+      strtab_size += file->strtab_size;
+    }
+    llvm::outs() << "symtab_size=" << symtab_size * sizeof(ELF64LE::Sym) << "\n"
+                 << "strtab_size=" << strtab_size << "\n";
   }
 
   // Create linker-synthesized sections.

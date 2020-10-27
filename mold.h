@@ -469,11 +469,10 @@ public:
   void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
+  void compute_symtab();
 
   StringRef get_filename();
   bool is_in_archive();
-
-  uint64_t get_strtab_size();
 
   Symbol *get_symbol(uint32_t idx) const {
     if (idx < first_global)
@@ -502,6 +501,9 @@ public:
   uint32_t priority;
   std::atomic_bool is_alive;
 
+  uint64_t symtab_size = 0;
+  uint64_t strtab_size = 0;
+
 private:
   void initialize_sections();
   void initialize_symbols();
@@ -524,7 +526,6 @@ private:
 
   // For .strtab construction
   std::vector<StringRef> local_symbols;
-  uint64_t strtab_size = 0;
 };
 
 //

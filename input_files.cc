@@ -341,12 +341,13 @@ void ObjectFile::fix_sym_addrs() {
   }
 }
 
-uint64_t ObjectFile::get_strtab_size() {
-  uint64_t sz = strtab_size;
-  for (Symbol *sym : symbols)
-    if (sym->file == this)
-      sz += sym->name.size() + 1;
-  return sz;
+void ObjectFile::compute_symtab() {
+  for (Symbol *sym : symbols) {
+    if (sym->file == this) {
+      strtab_size += sym->name.size() + 1;
+      symtab_size++;
+    }
+  }
 }
 
 StringRef ObjectFile::get_filename() {
