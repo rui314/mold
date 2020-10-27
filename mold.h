@@ -285,7 +285,7 @@ private:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(InputSection *isec);
+  static OutputSection *get_instance(StringRef name, uint64_t flags, uint32_t type);
 
   OutputSection(StringRef name, uint64_t flags, uint32_t type) {
     this->name = name;

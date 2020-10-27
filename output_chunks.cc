@@ -143,14 +143,15 @@ static StringRef get_output_name(StringRef name) {
   return name;
 }
 
-OutputSection *OutputSection::get_instance(InputSection *isec) {
-  StringRef iname = get_output_name(isec->name);
-  uint64_t iflags = isec->shdr.sh_flags & ~SHF_GROUP;
+OutputSection *
+OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
+  name = get_output_name(name);
+  flags = flags & ~SHF_GROUP;
 
   auto find = [&]() -> OutputSection * {
     for (OutputSection *osec : OutputSection::all_instances)
-      if (iname == osec->name && iflags == (osec->shdr.sh_flags & ~SHF_GROUP) &&
-          isec->shdr.sh_type == osec->shdr.sh_type)
+      if (name == osec->name && flags == (osec->shdr.sh_flags & ~SHF_GROUP) &&
+          type == osec->shdr.sh_type)
         return osec;
     return nullptr;
   };
@@ -166,5 +167,5 @@ OutputSection *OutputSection::get_instance(InputSection *isec) {
   std::unique_lock unique_lock(mu);
   if (OutputSection *osec = find())
     return osec;
-  return new OutputSection(iname, iflags, isec->shdr.sh_type);
+  return new OutputSection(name, flags, type);
 }

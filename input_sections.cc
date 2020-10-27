@@ -7,7 +7,7 @@ std::atomic_int num_relocs;
 InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
   : file(file), shdr(shdr) {
   this->name = name;
-  this->output_section = OutputSection::get_instance(this);
+  this->output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
 
   uint64_t align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
   if (align > UINT32_MAX)
