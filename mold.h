@@ -349,21 +349,23 @@ public:
   }
 
   void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
+  void copy_to(uint8_t *buf) override {}
+  uint64_t get_size() const override { return 0; }
 
-  void copy_to(uint8_t *buf) override {
+  void copy_to_lazy(uint8_t *buf) {
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
-  uint64_t get_size() const override { return contents.size(); }
+  uint64_t get_size_lazy() const { return contents.size(); }
 
 private:
   std::vector<ELF64LE::Sym> contents;
 };
 
-class StringTableSection : public OutputChunk {
+class ShstrtabSection : public OutputChunk {
 public:
-  StringTableSection(StringRef name) {
-    this->name = name;
+  ShstrtabSection() {
+    this->name = ".shstrtab";
     contents = '\0';
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
@@ -386,14 +388,43 @@ private:
   std::string contents;
 };
 
+class StrtabSection : public OutputChunk {
+public:
+  StrtabSection() {
+    this->name = ".strtab";
+    contents = '\0';
+    shdr.sh_flags = 0;
+    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+  }
+
+  uint64_t add_string(StringRef s) {
+    uint64_t ret = contents.size();
+    contents += s.str();
+    contents += '\0';
+    return ret;
+  }
+
+  void copy_to(uint8_t *buf) override {}
+  uint64_t get_size() const override { return 0; }
+
+  void copy_to_lazy(uint8_t *buf) {
+    memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
+  }
+
+  uint64_t get_size_lazy() const { return contents.size(); }
+
+private:
+  std::string contents;
+};
+
 namespace out {
 extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
 extern InterpSection *interp;
+extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
-extern StringTableSection *strtab;
-extern StringTableSection *shstrtab;
+extern StrtabSection *strtab;
 }
 
 //

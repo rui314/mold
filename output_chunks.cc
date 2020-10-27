@@ -6,9 +6,9 @@ OutputEhdr *out::ehdr;
 OutputShdr *out::shdr;
 OutputPhdr *out::phdr;
 InterpSection *out::interp;
+ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
-StringTableSection *out::strtab;
-StringTableSection *out::shstrtab;
+StrtabSection *out::strtab;
 
 std::vector<OutputSection *> OutputSection::all_instances;
 

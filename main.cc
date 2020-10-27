@@ -427,7 +427,7 @@ int main(int argc, char **argv) {
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
   //  out::interp = new InterpSection;
-  out::shstrtab = new StringTableSection(".shstrtab");
+  out::shstrtab = new ShstrtabSection;
 
   // Add ELF and program header to the output.
   std::vector<OutputChunk *> output_chunks;
@@ -449,7 +449,7 @@ int main(int argc, char **argv) {
 
   // Add .symtab and .strtab.
   out::symtab = new SymtabSection;
-  out::strtab = new StringTableSection(".strtab");
+  out::strtab = new StrtabSection;
   output_chunks.push_back(out::symtab);
   output_chunks.push_back(out::strtab);
 
