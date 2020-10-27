@@ -438,7 +438,8 @@ int main(int argc, char **argv) {
   //  output_chunks.push_back(out::interp);
 
   // Add other output sections.
-  for (OutputSection *osec : get_output_sections())
+  std::vector<OutputSection *> output_sections = get_output_sections();
+  for (OutputSection *osec : output_sections)
     output_chunks.push_back(osec);
 
   // Add a string table for section names.
@@ -465,6 +466,13 @@ int main(int argc, char **argv) {
 
   // Fill section header.
   fill_shdrs(output_chunks);
+
+  tbb::task_group tg_symtab;
+  tg_symtab.run([&]() {
+    MyTimer t("symtab", before_copy);
+    for (OutputSection *osec : output_sections) {
+    }
+  });
 
   // Assign offsets to input sections
   uint64_t filesize = 0;
