@@ -60,13 +60,12 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     entries.push_back({phdr, members});
   };
 
-  if (out::interp) {
-    // Create a PT_PHDR for the program header itself.
-    add(PT_PHDR, PF_R, {out::phdr});
+  // Create a PT_PHDR for the program header itself.
+  add(PT_PHDR, PF_R, {out::phdr});
 
-    // Create an PT_INTERP.
+  // Create an PT_INTERP.
+  if (out::interp)
     add(PT_INTERP, PF_R, {out::interp});
-  }
 
   // Create PT_LOAD segments.
   bool first = true;

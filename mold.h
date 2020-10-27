@@ -63,6 +63,9 @@ struct Config {
 extern Config config;
 
 [[noreturn]] inline void error(const Twine &msg) {
+  static std::mutex mu;
+  std::lock_guard<std::mutex> lock(mu);
+
   llvm::errs() << msg << "\n";
   exit(1);
 }
