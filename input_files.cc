@@ -332,7 +332,11 @@ void ObjectFile::fix_sym_addrs() {
     {
       static std::mutex mu;
       std::lock_guard<std::mutex> lock(mu);
+
       if (!sym->input_section) {
+        for (InputSection *isec : sections)
+          llvm::outs() << "isec=" << (isec ? isec->name : "(null)") << "\n";
+
         llvm::outs() << toString(this) << " " << symbols[i]->name << "\n";
         llvm::outs().flush();
         _exit(1);
