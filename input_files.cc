@@ -172,6 +172,7 @@ void ObjectFile::parse() {
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
     elf_syms = CHECK(obj.symbols(symtab_sec), this);
+    elf_gsyms = elf_syms.slice(first_global);
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
@@ -197,28 +198,30 @@ private:
 };
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    if (!elf_syms[j].isDefined())
+  for (int i = 0; i < elf_gsyms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_gsyms[i];
+    Symbol &sym = *symbols[i];
+
+    if (!esym.isDefined())
       continue;
 
     // num_defined++;
 
     InputSection *isec = nullptr;
-    uint32_t shndx = elf_syms[j].st_shndx;
+    uint32_t shndx = esym.st_shndx;
     if (shndx != SHN_ABS && shndx != SHN_COMMON)
       isec = sections[shndx];
 
-    Symbol *sym = symbols[i];
-    bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
-    Spinlock lock(sym->lock);
+    bool is_weak = (esym.getBinding() == STB_WEAK);
+    Spinlock lock(sym.lock);
 
-    if (!sym->file || this->priority < sym->file->priority ||
-        (sym->is_weak && !is_weak)) {
-      sym->file = this;
-      sym->input_section = isec;
-      sym->value = elf_syms[j].st_value;
-      sym->visibility = elf_syms[j].getVisibility();
-      sym->is_weak = is_weak;
+    if (!sym.file || this->priority < sym.file->priority ||
+        (sym.is_weak && !is_weak)) {
+      sym.file = this;
+      sym.input_section = isec;
+      sym.value = esym.st_value;
+      sym.visibility = esym.getVisibility();
+      sym.is_weak = is_weak;
     }
   }
 }
