@@ -24,7 +24,7 @@ void InputSection::copy_to(uint8_t *buf) {
   ArrayRef<uint8_t> data = check(file->obj.getSectionContents(shdr));
   buf = buf + output_section->shdr.sh_offset + offset;
 
-#if 1
+#if 0
   for (int i = 0; i < data.size(); i++) {
     uint8_t val = __builtin_nontemporal_load(&data[0] + i);
     __builtin_nontemporal_store(val, buf + i);

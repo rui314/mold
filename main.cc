@@ -507,7 +507,8 @@ int main(int argc, char **argv) {
   uint8_t *buf = output_buffer->getBufferStart();
 
   // Fill .symtab and .strtab
-  {
+  tbb::task_group tg_symtab;
+  tg_symtab.run([&]() {
     MyTimer t("write_symtab");
 
     std::vector<uint64_t> symtab_off(files.size());
@@ -541,7 +542,7 @@ int main(int argc, char **argv) {
                       [&](size_t i) {
                         files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
                       });
-  }
+  });
 
   // Copy input sections to the output file
   {
@@ -552,6 +553,11 @@ int main(int argc, char **argv) {
   {
     MyTimer t("reloc");
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
+  }
+
+  {
+    MyTimer t("symtab_wait");
+    tg_symtab.wait();
   }
 
   {
