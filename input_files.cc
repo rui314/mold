@@ -352,8 +352,8 @@ void ObjectFile::compute_symtab() {
   }
 }
 
-void ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off,
-                                    uint64_t strtab_off) {
+std::pair<uint64_t, uint64_t>
+ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -371,10 +371,12 @@ void ObjectFile::write_symtab_local(uint8_t *buf, uint64_t symtab_off,
     memcpy(strtab + strtab_off, name.data(), name.size());
     strtab_off += name.size() + 1;
   }
+
+  return {symtab_off, strtab_off};
 }
 
-void ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off,
-                                     uint64_t strtab_off) {
+std::pair<uint64_t, uint64_t>
+ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -395,6 +397,8 @@ void ObjectFile::write_symtab_global(uint8_t *buf, uint64_t symtab_off,
     memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
     strtab_off += sym.name.size() + 1;
   }
+
+  return {symtab_off, strtab_off};
 }
 
 StringRef ObjectFile::get_filename() {

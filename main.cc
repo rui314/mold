@@ -512,17 +512,13 @@ int main(int argc, char **argv) {
     uint64_t symtab_off = 0;
     uint64_t strtab_off = 1;
 
-    for (ObjectFile *file : files) {
-      file->write_symtab_local(buf, symtab_off, strtab_off);
-      symtab_off += file->symtab_size;
-      strtab_off += file->strtab_size;
-    }
+    for (ObjectFile *file : files)
+      std::tie(symtab_off, strtab_off) =
+        file->write_symtab_local(buf, symtab_off, strtab_off);
 
-    for (ObjectFile *file : files) {
-      file->write_symtab_local(buf, symtab_off, strtab_off);
-      symtab_off += file->symtab_size;
-      strtab_off += file->strtab_size;
-    }
+    for (ObjectFile *file : files)
+      std::tie(symtab_off, strtab_off) =
+        file->write_symtab_global(buf, symtab_off, strtab_off);
 
     assert(symtab_off == out::symtab->size);
     assert(strtab_off == out::strtab->size);
