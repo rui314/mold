@@ -90,6 +90,12 @@ void ObjectFile::initialize_sections() {
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
       this->sections[i] = new InputSection(this, shdr, name);
+
+      if (shdr.sh_flags & SHF_TLS) {
+        static std::mutex mu;
+        std::lock_guard<std::mutex> lock(mu);
+        llvm::outs() << "tls: " << toString(this) << " " << name << "\n";
+      }
       break;
     }
     }
@@ -129,8 +135,14 @@ void ObjectFile::remove_comdat_members(uint32_t section_idx) {
   const ELF64LE::Shdr &shdr = elf_sections[section_idx];
   ArrayRef<ELF64LE::Word> entries =
     CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
-  for (uint32_t i : entries)
+
+  for (uint32_t i : entries) {
+    static std::mutex mu;
+    std::lock_guard<std::mutex> lock(mu);
+    llvm::outs() << "comdat: " << toString(this) << " " << i << "\n";
+
     sections[i] = nullptr;
+  }
 }
 
 void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
@@ -312,18 +324,24 @@ void ObjectFile::scan_relocations() {
 
 void ObjectFile::fix_sym_addrs() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    if (symbols[i]->file != this)
+    Symbol *sym = symbols[i];
+
+    if (sym->file != this)
       continue;
     
-    InputSection *isec = symbols[i]->input_section;
     {
       static std::mutex mu;
       std::lock_guard<std::mutex> lock(mu);
-      if (!isec)
+      if (!sym->input_section) {
         llvm::outs() << toString(this) << " " << symbols[i]->name << "\n";
+        llvm::outs().flush();
+        _exit(1);
+      }
     }
+
+    InputSection *isec = sym->input_section;
     OutputSection *osec = isec->output_section;
-    symbols[i]->addr = osec->shdr.sh_addr + isec->offset + symbols[i]->value;
+    sym->addr = osec->shdr.sh_addr + isec->offset + sym->value;
   }
 }
 
