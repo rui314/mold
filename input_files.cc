@@ -315,9 +315,7 @@ void ObjectFile::scan_relocations() {
 }
 
 void ObjectFile::fix_sym_addrs() {
-  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    Symbol *sym = symbols[i];
-
+  for (Symbol *sym : symbols) {
     if (sym->file != this)
       continue;
     
