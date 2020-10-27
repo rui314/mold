@@ -469,6 +469,8 @@ public:
   void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
+
+  void read_local_symbols();
   void copy_symbols();
 
   StringRef get_filename();
@@ -518,7 +520,7 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
-  std::vector<StringRef> local_symnames;
+  std::vector<StringRef> local_symbols;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };

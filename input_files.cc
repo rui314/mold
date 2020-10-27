@@ -333,12 +333,32 @@ void ObjectFile::fix_sym_addrs() {
   }
 }
 
-void ObjectFile::copy_symbols() {
-  for (int i = 0; i < elf_syms.size(); i++) {
+void ObjectFile::read_local_symbols() {
+  local_symbols.reserve(first_global);
+
+  for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
-    uint64_t off = out::strtab->add_string(name);
+    local_symbols.push_back(CHECK(esym.getName(symbol_strtab), this));
+  }
+}
+
+void ObjectFile::copy_symbols() {
+  for (int i = 0; i < first_global; i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    uint64_t off = out::strtab->add_string(local_symbols[i]);
     out::symtab->add_symbol(esym, off, get_symbol_value(i));
+  }
+
+
+  for (int i = first_global; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    Symbol &sym = *symbols[i - first_global];
+
+    if (sym.file != this)
+      continue;
+
+    uint64_t off = out::strtab->add_string(sym.name);
+    out::symtab->add_symbol(esym, off, sym.value);
   }
 }
 
