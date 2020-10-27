@@ -374,15 +374,10 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void add_symbol(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
   void copy_to(uint8_t *buf) override {}
   uint64_t get_size() const override { return 0; }
 
-  void copy_to_lazy(uint8_t *buf) {
-    memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
-  }
-
-  uint64_t get_size_lazy() const { return contents.size(); }
+  uint64_t size = 0;
 
 private:
   std::vector<ELF64LE::Sym> contents;
@@ -394,35 +389,12 @@ public:
     this->name = ".strtab";
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
-    
-    strings.push_back("");
-    offsets.push_back(0);
-  }
-
-  uint64_t add_string(StringRef s) {
-    strings.push_back(s);
-    offsets.push_back(size);
-    size = size + s.size() + 1;
-    return offsets.back();
   }
 
   void copy_to(uint8_t *buf) override {}
-  uint64_t get_size() const override { return 0; }
+  uint64_t get_size() const override { return size; }
 
-  void copy_to_lazy(uint8_t *buf) {
-    buf += shdr.sh_offset;
-
-    tbb::parallel_for((size_t)0, strings.size(), [&](size_t i) {
-      memcpy(buf + offsets[i], strings[i].data(), strings[i].size());
-    });
-  }
-
-  uint64_t get_size_lazy() const { return size; }
-
-private:
-  std::vector<StringRef> strings;
-  std::vector<uint64_t> offsets;
-  uint64_t size = 0;
+  uint64_t size = 1;
 };
 
 namespace out {

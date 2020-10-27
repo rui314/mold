@@ -422,27 +422,25 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
   }
 
-  {
-    MyTimer t("symtab_size", before_copy);
-
-    for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
-
-    uint64_t symtab_size = 0;
-    uint64_t strtab_size = 1;
-    for (ObjectFile *file : files) {
-      symtab_size += file->symtab_size;
-      strtab_size += file->strtab_size;
-    }
-    llvm::outs() << "symtab_size=" << symtab_size * sizeof(ELF64LE::Sym) << "\n"
-                 << "strtab_size=" << strtab_size << "\n";
-  }
-
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
   //  out::interp = new InterpSection;
   out::shstrtab = new ShstrtabSection;
+  out::symtab = new SymtabSection;
+  out::strtab = new StrtabSection;
+
+  // Compute .symtab and .strtab sizes
+  {
+    MyTimer t("symtab_size", before_copy);
+    for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
+
+    for (ObjectFile *file : files) {
+      out::symtab->size += file->symtab_size;
+      out::strtab->size += file->strtab_size;
+    }
+  }
 
   // Add ELF and program header to the output.
   std::vector<OutputChunk *> output_chunks;
@@ -464,8 +462,6 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::shdr);
 
   // Add .symtab and .strtab.
-  out::symtab = new SymtabSection;
-  out::strtab = new StrtabSection;
   output_chunks.push_back(out::symtab);
   output_chunks.push_back(out::strtab);
 
