@@ -73,6 +73,7 @@ void InputSection::relocate(uint8_t *buf) {
       *(uint16_t *)loc = dst - cur - 4;
       break;
     case R_X86_64_32:
+    case R_X86_64_32S:
       *(uint32_t *)loc = dst;
       break;
     case R_X86_64_PC32:
@@ -80,6 +81,15 @@ void InputSection::relocate(uint8_t *buf) {
       break;
     case R_X86_64_64:
       *(uint64_t *)loc = dst;
+      break;
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_GOTTPOFF:
+    case R_X86_64_PLT32:
+    case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_TLSGD:
+    case R_X86_64_TPOFF32:
       break;
     default:
       error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
