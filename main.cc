@@ -534,8 +534,8 @@ int main(int argc, char **argv) {
       strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
     }
 
-    assert(symtab_off.back() == out::symtab->size);
-    assert(strtab_off.back() == out::strtab->size);
+    assert(symtab_off.back() + files.back()->global_symtab_size == out::symtab->size);
+    assert(strtab_off.back() + files.back()->global_strtab_size == out::strtab->size);
 
     tbb::parallel_for((size_t)0, files.size(),
                       [&](size_t i) {
