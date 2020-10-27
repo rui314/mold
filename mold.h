@@ -449,7 +449,6 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
-  ArrayRef<ELF64LE::Sym> elf_gsyms;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };

@@ -172,7 +172,6 @@ void ObjectFile::parse() {
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
     elf_syms = CHECK(obj.symbols(symtab_sec), this);
-    elf_gsyms = elf_syms.slice(first_global);
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
@@ -198,8 +197,8 @@ private:
 };
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = 0; i < elf_gsyms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_gsyms[i];
+  for (int i = 0; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
 
     if (!esym.isDefined())
@@ -230,14 +229,16 @@ void ObjectFile::register_undefined_symbols() {
   if (is_alive.exchange(true))
     return;
 
-  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    if (elf_syms[j].isDefined())
+  for (int i = 0; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[first_global + i];
+    Symbol &sym = *symbols[i];
+
+    if (esym.isDefined())
       continue;
     // num_undefined++;
 
-    Symbol *sym = symbols[i];
-    if (sym->file && sym->file->is_in_archive() && !sym->file->is_alive)
-      sym->file->register_undefined_symbols();
+    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive)
+      sym.file->register_undefined_symbols();
   }
 }
 
