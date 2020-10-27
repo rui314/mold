@@ -114,27 +114,13 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
-  local_symbols.resize(first_global);
-  symbols.resize(elf_syms.size());
+  symbols.resize(elf_syms.size() - first_global);
 
-  for (int i = 0; i < first_global; i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-    Symbol &sym = local_symbols[i];
-
-    sym.file = this;
-    if (esym.st_shndx != SHN_ABS)
-      sym.input_section = sections[esym.st_shndx];
-    sym.value = esym.st_value;
-    sym.visibility = esym.getVisibility();
-    symbols[i] = &sym;
-  }
-
-  for (int i = first_global; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    StringRef name = CHECK(elf_syms[j].getName(symbol_strtab), this);
     symbols[i] = Symbol::intern(name);
 
-    if (esym.st_shndx == SHN_COMMON)
+    if (elf_syms[j].st_shndx == SHN_COMMON)
       has_common_symbol = true;
   }
 }
@@ -211,31 +197,28 @@ private:
 };
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = first_global; i < elf_syms.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ELF64LE::Sym &esym = elf_syms[i];
-
-    if (esym.isDefined())
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    if (!elf_syms[j].isDefined())
       continue;
 
     // num_defined++;
 
     InputSection *isec = nullptr;
-    uint32_t shndx = esym.st_shndx;
+    uint32_t shndx = elf_syms[j].st_shndx;
     if (shndx != SHN_ABS && shndx != SHN_COMMON)
       isec = sections[shndx];
 
+    Symbol *sym = symbols[i];
+    bool is_weak = (elf_syms[j].getBinding() == STB_WEAK);
+    Spinlock lock(sym->lock);
 
-    bool is_weak = (esym.getBinding() == STB_WEAK);
-    Spinlock lock(sym.lock);
-
-    if (!sym.file || this->priority < sym.file->priority ||
-        (sym.is_weak && !is_weak)) {
-      sym.file = this;
-      sym.input_section = isec;
-      sym.value = esym.st_value;
-      sym.visibility = esym.getVisibility();
-      sym.is_weak = is_weak;
+    if (!sym->file || this->priority < sym->file->priority ||
+        (sym->is_weak && !is_weak)) {
+      sym->file = this;
+      sym->input_section = isec;
+      sym->value = elf_syms[j].st_value;
+      sym->visibility = elf_syms[j].getVisibility();
+      sym->is_weak = is_weak;
     }
   }
 }
@@ -244,16 +227,14 @@ void ObjectFile::register_undefined_symbols() {
   if (is_alive.exchange(true))
     return;
 
-  for (int i = first_global; i < elf_syms.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ELF64LE::Sym &esym = elf_syms[i];
-
-    if (esym.isDefined())
+  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
+    if (elf_syms[j].isDefined())
       continue;
     // num_undefined++;
 
-    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive)
-      sym.file->register_undefined_symbols();
+    Symbol *sym = symbols[i];
+    if (sym->file && sym->file->is_in_archive() && !sym->file->is_alive)
+      sym->file->register_undefined_symbols();
   }
 }
 
@@ -301,13 +282,11 @@ void ObjectFile::convert_common_symbols() {
     return;
 
   for (int i = first_global; i < elf_syms.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ELF64LE::Sym &esym = elf_syms[i];
-
-    if (esym.st_shndx != SHN_COMMON)
+    if (elf_syms[i].st_shndx != SHN_COMMON)
       continue;
 
-    if (sym.file != this)
+    Symbol *sym = symbols[i - first_global];
+    if (sym->file != this)
       continue;
 
     auto *shdr = new ELF64LE::Shdr;
@@ -320,8 +299,8 @@ void ObjectFile::convert_common_symbols() {
     isec->output_section = &bss;
     sections.push_back(isec);
 
-    sym.input_section = isec;
-    sym.value = 0;
+    sym->input_section = isec;
+    sym->value = 0;
   }
 }
 
@@ -333,20 +312,19 @@ void ObjectFile::scan_relocations() {
 
 void ObjectFile::fix_sym_addrs() {
   for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    Symbol &sym = *symbols[i];
-    const ELF64LE::Sym &esym = elf_syms[i];
+    Symbol *sym = symbols[i];
 
-    if (sym.file != this)
+    if (sym->file != this)
       continue;
     
-    InputSection *isec = sym.input_section;
+    InputSection *isec = sym->input_section;
 
     if (isec) {
       OutputSection *osec = isec->output_section;
-      sym.addr = osec->shdr.sh_addr + isec->offset + sym.value;
+      sym->addr = osec->shdr.sh_addr + isec->offset + sym->value;
     } else {
       // Absolute symbol
-      sym.addr = sym.value;
+      sym->addr = sym->value;
     }
   }
 }
