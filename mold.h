@@ -399,6 +399,7 @@ public:
   void register_defined_symbols();
   void register_undefined_symbols();
   void eliminate_duplicate_comdat_groups();
+  void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
 

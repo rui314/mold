@@ -388,6 +388,12 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   }
 
+  // Create .bss sections for common symbols.
+  {
+    MyTimer t("common", before_copy);
+    for_each(files, [](ObjectFile *file) { file->convert_common_symbols(); });
+  }
+
   // Bin input sections into output sections
   {
     MyTimer t("bin_sections", before_copy);
