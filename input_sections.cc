@@ -1,5 +1,6 @@
 #include "mold.h"
 
+using namespace llvm;
 using namespace llvm::ELF;
 
 std::atomic_int num_relocs;
@@ -81,7 +82,7 @@ void InputSection::relocate(uint8_t *buf) {
       *(uint64_t *)loc = dst;
       break;
     default:
-      error(toString(this) + ": unknown relocation");
+      error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
     }
     // num_relocs++;
   }
