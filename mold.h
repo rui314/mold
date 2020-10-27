@@ -21,6 +21,7 @@
 #include "tbb/parallel_reduce.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
+#include "tbb/scalable_allocator.h"
 #include "tbb/task_arena.h"
 #include "tbb/task_group.h"
 
@@ -158,6 +159,7 @@ private:
 
 class Symbol {
 public:
+  Symbol() {}
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
@@ -410,20 +412,11 @@ public:
   bool is_in_archive();
 
   Symbol *get_symbol(uint32_t idx) const {
-    if (idx < first_global)
-      return nullptr;
-    return symbols[idx - first_global];
+    return symbols[idx];
   }
 
   uint64_t get_symbol_value(uint32_t idx) const {
-    if (idx < first_global) {
-      const ELF64LE::Sym &sym = elf_syms[idx];
-      InputSection *isec = sections[sym.st_shndx];
-      if (isec)
-        return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
-      return 0;
-    }
-    return symbols[idx - first_global]->addr;
+    return symbols[idx]->addr;
   }
 
   std::vector<InputSection *> sections;
@@ -444,6 +437,7 @@ private:
   std::vector<StringPiece *> merged_strings_noalloc;
 
   std::vector<Symbol *> symbols;
+  std::vector<Symbol> local_symbols;
   int first_global = 0;
   bool has_common_symbol;
 
