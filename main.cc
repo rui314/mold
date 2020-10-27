@@ -516,6 +516,8 @@ int main(int argc, char **argv) {
       std::tie(symtab_off, strtab_off) =
         file->write_symtab_local(buf, symtab_off, strtab_off);
 
+    out::symtab->shdr.sh_info = symtab_off / sizeof(ELF64LE::Sym);
+
     for (ObjectFile *file : files)
       std::tie(symtab_off, strtab_off) =
         file->write_symtab_global(buf, symtab_off, strtab_off);
