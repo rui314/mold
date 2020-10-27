@@ -506,6 +506,21 @@ int main(int argc, char **argv) {
   std::unique_ptr<FileOutputBuffer> output_buffer = std::move(*buf_or_err);
   uint8_t *buf = output_buffer->getBufferStart();
 
+  // Fill .symtab and .strtab
+  {
+    uint64_t symtab_off = 0;
+    uint64_t strtab_off = 1;
+
+    for (ObjectFile *file : files) {
+      file->write_symtab(buf, symtab_off, strtab_off);
+      symtab_off += file->symtab_size;
+      strtab_off += file->strtab_size;
+    }
+
+    assert(symtab_off == out::symtab->size);
+    assert(strtab_off == out::strtab->size);
+  }
+
   // Copy input sections to the output file
   {
     MyTimer t("copy");

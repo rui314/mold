@@ -350,6 +350,44 @@ void ObjectFile::compute_symtab() {
   }
 }
 
+void ObjectFile::write_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+  uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
+  uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
+
+  for (int i = 0; i < first_global; i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    StringRef name = local_symbols[i];
+
+    auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
+    *ent = esym;
+    ent->st_shndx = out::strtab->idx;
+    ent->st_name = strtab_off;
+    ent->st_value = get_symbol_value(i);
+    symtab_off += sizeof(ELF64LE::Sym);
+
+    memcpy(strtab + strtab_off, name.data(), name.size());
+    strtab_off += name.size() + 1;
+  }
+
+  for (int i = first_global; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    Symbol &sym = *symbols[i - first_global];
+
+    if (sym.file != this)
+      continue;
+
+    auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
+    *ent = esym;
+    ent->st_shndx = out::strtab->idx;
+    ent->st_name = strtab_off;
+    ent->st_value = sym.value;   
+    symtab_off += sizeof(ELF64LE::Sym);
+
+    memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
+    strtab_off += sym.name.size() + 1;
+  }
+}
+
 StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }
