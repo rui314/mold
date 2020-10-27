@@ -444,7 +444,7 @@ int main(int argc, char **argv) {
   output_chunks.push_back(out::shdr);
 
   // Add .symtab and .strtab.
-  out::symtab = new SymtabSection();
+  out::symtab = new SymtabSection;
   out::strtab = new StringTableSection(".strtab");
   output_chunks.push_back(out::symtab);
   output_chunks.push_back(out::strtab);
