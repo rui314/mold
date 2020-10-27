@@ -480,14 +480,17 @@ int main(int argc, char **argv) {
   }
 
   tbb::task_group tg_symtab;
+#if 0
   tg_symtab.run([&]() {
-    MyTimer t("symtab");
-
-    for_each(files, [](ObjectFile *file) { file->read_local_symbols(); });
-
-    for (ObjectFile *file : files)
-      file->copy_symbols();
+    MyTimer t("construct_symtab");
+    for_each(files, [](ObjectFile *file) { file->construct_symtab(); });
   });
+#else
+  {
+    MyTimer t("construct_symtab");
+    for_each(files, [](ObjectFile *file) { file->construct_symtab(); });
+  }
+#endif
 
   {
     MyTimer t("unlink");

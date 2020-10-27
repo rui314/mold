@@ -333,22 +333,23 @@ void ObjectFile::fix_sym_addrs() {
   }
 }
 
-void ObjectFile::read_local_symbols() {
-  local_symbols.reserve(first_global);
+void ObjectFile::construct_symtab() {
+  uint32_t off = 0;
+  symtab_strings.reserve(first_global);
 
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    local_symbols.push_back(CHECK(esym.getName(symbol_strtab), this));
-  }
-}
 
-void ObjectFile::copy_symbols() {
-  for (int i = 0; i < first_global; i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-    uint64_t off = out::strtab->add_string(local_symbols[i]);
-    out::symtab->add_symbol(esym, off, get_symbol_value(i));
-  }
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    symtab_strings.push_back(name);
 
+    symtab.push_back(esym);
+    symtab.back().st_shndx = out::shstrtab->idx;
+    symtab.back().st_name = off;
+    symtab.back().st_value = get_symbol_value(i);
+
+    off = off + name.size() + 1;
+  }
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
@@ -357,8 +358,14 @@ void ObjectFile::copy_symbols() {
     if (sym.file != this)
       continue;
 
-    uint64_t off = out::strtab->add_string(sym.name);
-    out::symtab->add_symbol(esym, off, sym.value);
+    symtab_strings.push_back(sym.name);
+
+    symtab.push_back(esym);
+    symtab.back().st_shndx = out::shstrtab->idx;
+    symtab.back().st_name = off;
+    symtab.back().st_value = sym.value;
+
+    off = off + sym.name.size() + 1;
   }
 }
 

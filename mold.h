@@ -470,8 +470,8 @@ public:
   void scan_relocations();
   void fix_sym_addrs();
 
-  void read_local_symbols();
-  void copy_symbols();
+  void construct_symtab();
+  void copy_symtab();
 
   StringRef get_filename();
   bool is_in_archive();
@@ -520,9 +520,12 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
-  std::vector<StringRef> local_symbols;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
+
+  // For constructing .symtab and .strtab
+  std::vector<StringRef> symtab_strings;
+  std::vector<ELF64LE::Sym> symtab;
 };
 
 //
