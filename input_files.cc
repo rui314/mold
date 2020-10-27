@@ -333,42 +333,6 @@ void ObjectFile::fix_sym_addrs() {
   }
 }
 
-void ObjectFile::construct_symtab() {
-  uint32_t off = 0;
-  symtab_strings.reserve(first_global);
-
-  for (int i = 0; i < first_global; i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
-    symtab_strings.push_back(name);
-
-    symtab.push_back(esym);
-    symtab.back().st_shndx = out::shstrtab->idx;
-    symtab.back().st_name = off;
-    symtab.back().st_value = get_symbol_value(i);
-
-    off = off + name.size() + 1;
-  }
-
-  for (int i = first_global; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i - first_global];
-
-    if (sym.file != this)
-      continue;
-
-    symtab_strings.push_back(sym.name);
-
-    symtab.push_back(esym);
-    symtab.back().st_shndx = out::shstrtab->idx;
-    symtab.back().st_name = off;
-    symtab.back().st_value = sym.value;
-
-    off = off + sym.name.size() + 1;
-  }
-}
-
 StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }

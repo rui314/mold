@@ -479,19 +479,6 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
   }
 
-  tbb::task_group tg_symtab;
-#if 1
-  tg_symtab.run([&]() {
-    MyTimer t("construct_symtab");
-    for_each(files, [](ObjectFile *file) { file->construct_symtab(); });
-  });
-#else
-  {
-    MyTimer t("construct_symtab");
-    for_each(files, [](ObjectFile *file) { file->construct_symtab(); });
-  }
-#endif
-
   {
     MyTimer t("unlink");
     unlink_async(tg, config.output);
@@ -523,11 +510,6 @@ int main(int argc, char **argv) {
     MyTimer t("commit");
     if (auto e = output_buffer->commit())
       error("failed to write to the output file: " + toString(std::move(e)));
-  }
-
-  {
-    MyTimer t("wait_symtab");
-    tg_symtab.wait();
   }
 
   int num_input_chunks = 0;
