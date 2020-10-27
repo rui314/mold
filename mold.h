@@ -337,6 +337,20 @@ private:
 };
 
 
+class SymtabSection : public OutputChunk {
+public:
+  void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
+
+  void copy_to(uint8_t *buf) override {
+    memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
+  }
+
+  uint64_t get_size() const override { return contents.size(); }
+
+private:
+  std::vector<ELF64LE::Sym> contents;
+};
+
 class StringTableSection : public OutputChunk {
 public:
   StringTableSection(StringRef name) {
@@ -368,6 +382,8 @@ extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
 extern InterpSection *interp;
+extern SymtabSection *symtab;
+extern StringTableSection *strtab;
 extern StringTableSection *shstrtab;
 }
 

@@ -6,6 +6,8 @@ OutputEhdr *out::ehdr;
 OutputShdr *out::shdr;
 OutputPhdr *out::phdr;
 InterpSection *out::interp;
+SymtabSection *out::symtab;
+StringTableSection *out::strtab;
 StringTableSection *out::shstrtab;
 
 std::vector<OutputSection *> OutputSection::all_instances;
@@ -167,4 +169,11 @@ OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
   if (OutputSection *osec = find())
     return osec;
   return new OutputSection(name, flags, type);
+}
+
+void SymtabSection::add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value) {
+  contents.push_back(sym);
+  contents.back().st_shndx = get_section_idx(out::shstrtab);
+  contents.back().st_name = name;
+  contents.back().st_value = value;
 }
