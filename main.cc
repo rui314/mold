@@ -467,13 +467,6 @@ int main(int argc, char **argv) {
   // Fill section header.
   fill_shdrs(output_chunks);
 
-  tbb::task_group tg_symtab;
-  tg_symtab.run([&]() {
-    MyTimer t("symtab", before_copy);
-    for (ObjectFile *file : files)
-      file->copy_symbols();
-  });
-
   // Assign offsets to input sections
   uint64_t filesize = 0;
   {
@@ -485,6 +478,13 @@ int main(int argc, char **argv) {
     MyTimer t("sym_addr");
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
   }
+
+  tbb::task_group tg_symtab;
+  tg_symtab.run([&]() {
+    MyTimer t("symtab");
+    for (ObjectFile *file : files)
+      file->copy_symbols();
+  });
 
   {
     MyTimer t("unlink");
@@ -517,6 +517,11 @@ int main(int argc, char **argv) {
     MyTimer t("commit");
     if (auto e = output_buffer->commit())
       error("failed to write to the output file: " + toString(std::move(e)));
+  }
+
+  {
+    MyTimer t("wait_symtab");
+    tg_symtab.wait();
   }
 
   int num_input_chunks = 0;
