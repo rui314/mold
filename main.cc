@@ -118,9 +118,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
             };
 
   auto reduce = [](const T &x, const T &y) {
-                  T ret(x.size());
-                  for (int i = 0; i < x.size(); i++)
-                    ret[i] = x[i];
+                  T ret = x;
                   for (int i = 0; i < x.size(); i++)
                     ret[i].insert(ret[i].end(), y[i].begin(), y[i].end());
                   return ret;
