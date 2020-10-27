@@ -114,13 +114,15 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
-  symbols.resize(elf_syms.size() - first_global);
+  symbols.reserve(elf_syms.size() - first_global);
 
-  for (int i = 0, j = first_global; j < elf_syms.size(); i++, j++) {
-    StringRef name = CHECK(elf_syms[j].getName(symbol_strtab), this);
-    symbols[i] = Symbol::intern(name);
+  for (int i = first_global; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
 
-    if (elf_syms[j].st_shndx == SHN_COMMON)
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    symbols.push_back(Symbol::intern(name));
+
+    if (esym.st_shndx == SHN_COMMON)
       has_common_symbol = true;
   }
 }
