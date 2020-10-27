@@ -169,6 +169,7 @@ public:
   InputSection *input_section = nullptr;
 
   uint64_t addr = 0;
+  uint64_t value;
   uint8_t visibility = 0;
   bool is_weak = false;
 

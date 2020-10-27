@@ -213,6 +213,7 @@ void ObjectFile::register_defined_symbols() {
         (sym->is_weak && !is_weak)) {
       sym->file = this;
       sym->input_section = isec;
+      sym->value = elf_syms[j].st_value;
       sym->visibility = elf_syms[j].getVisibility();
       sym->is_weak = is_weak;
     }
@@ -284,7 +285,7 @@ void ObjectFile::fix_sym_addrs() {
     
     InputSection *isec = symbols[i]->input_section;
     OutputSection *osec = isec->output_section;
-    symbols[i]->addr = osec->shdr.sh_addr + isec->offset + elf_syms[j].st_value;
+    symbols[i]->addr = osec->shdr.sh_addr + isec->offset + symbols[i]->value;
   }
 }
 
