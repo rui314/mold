@@ -339,6 +339,12 @@ private:
 
 class SymtabSection : public OutputChunk {
 public:
+  SymtabSection() {
+    this->name = ".symtab";
+    shdr.sh_flags = 0;
+    shdr.sh_type = llvm::ELF::SHT_SYMTAB;
+  }
+
   void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
 
   void copy_to(uint8_t *buf) override {

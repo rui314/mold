@@ -439,15 +439,23 @@ int main(int argc, char **argv) {
 
   // Add a string table for section names.
   output_chunks.push_back(out::shstrtab);
+
+  // Add a section header.
+  output_chunks.push_back(out::shdr);
+
+  // Add .symtab and .strtab.
+  out::symtab = new SymtabSection();
+  out::strtab = new StringTableSection(".strtab");
+  output_chunks.push_back(out::symtab);
+  output_chunks.push_back(out::strtab);
+
+  // Fix .shstrtab contents.
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
       chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
 
-  // Add a section header.
+  // Create section header and program header contents.
   out::shdr->entries = create_shdrs(output_chunks);
-  output_chunks.push_back(out::shdr);
-
-  // Create program header contents.
   out::phdr->construct(output_chunks);
 
   // Fill section header.
