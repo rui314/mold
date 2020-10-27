@@ -526,8 +526,8 @@ int main(int argc, char **argv) {
                         files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
                       });
 
-    symtab_off[0] = symtab_off.back() + files.back()->global_symtab_size;
-    strtab_off[0] = strtab_off.back() + files.back()->global_strtab_size;
+    symtab_off[0] = symtab_off.back() + files.back()->local_symtab_size;
+    strtab_off[0] = strtab_off.back() + files.back()->local_strtab_size;
 
     for (int i = 1; i < files.size(); i++) {
       symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
