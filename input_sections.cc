@@ -82,6 +82,10 @@ void InputSection::relocate(uint8_t *buf) {
     case R_X86_64_64:
       *(uint64_t *)loc = dst;
       break;
+    case R_X86_64_PC64:
+      *(uint64_t *)loc = dst - cur - 4;
+      break;
+    case R_X86_64_DTPOFF32:
     case R_X86_64_GOTPC32:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
@@ -89,6 +93,7 @@ void InputSection::relocate(uint8_t *buf) {
     case R_X86_64_PLT32:
     case R_X86_64_REX_GOTPCRELX:
     case R_X86_64_TLSGD:
+    case R_X86_64_TLSLD:
     case R_X86_64_TPOFF32:
       break;
     default:
