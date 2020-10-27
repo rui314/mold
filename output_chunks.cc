@@ -164,7 +164,7 @@ OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
   return new OutputSection(name, flags, type);
 }
 
-void SymtabSection::add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value) {
+void SymtabSection::add_symbol(const ELF64LE::Sym &sym, uint64_t name, uint64_t value) {
   contents.push_back(sym);
   contents.back().st_shndx = out::shstrtab->idx;
   contents.back().st_name = name;

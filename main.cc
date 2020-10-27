@@ -470,8 +470,8 @@ int main(int argc, char **argv) {
   tbb::task_group tg_symtab;
   tg_symtab.run([&]() {
     MyTimer t("symtab", before_copy);
-    for (OutputSection *osec : output_sections) {
-    }
+    for (ObjectFile *file : files)
+      file->copy_symbols();
   });
 
   // Assign offsets to input sections

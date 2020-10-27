@@ -348,7 +348,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
+  void add_symbol(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
   void copy_to(uint8_t *buf) override {}
   uint64_t get_size() const override { return 0; }
 
@@ -461,6 +461,7 @@ public:
   void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
+  void copy_symbols();
 
   StringRef get_filename();
   bool is_in_archive();
@@ -474,6 +475,10 @@ public:
   uint64_t get_symbol_value(uint32_t idx) const {
     if (idx < first_global) {
       const ELF64LE::Sym &sym = elf_syms[idx];
+
+      if (sym.st_shndx == llvm::ELF::SHN_ABS)
+        return sym.st_value;
+
       InputSection *isec = sections[sym.st_shndx];
       if (isec)
         return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;

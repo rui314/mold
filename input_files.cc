@@ -333,6 +333,15 @@ void ObjectFile::fix_sym_addrs() {
   }
 }
 
+void ObjectFile::copy_symbols() {
+  for (int i = 0; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    uint64_t off = out::strtab->add_string(name);
+    out::symtab->add_symbol(esym, off, get_symbol_value(i));
+  }
+}
+
 StringRef ObjectFile::get_filename() {
   return mb.getBufferIdentifier();
 }
