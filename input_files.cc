@@ -119,9 +119,8 @@ void ObjectFile::initialize_symbols() {
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
-
-    static ConcurrentMap<LocalSymbolName> map;
-    local_symbols.push_back(map.insert(name, LocalSymbolName(name)));
+    local_symbols.push_back(name);
+    strtab_size += name.size() + 1;
   }
 
   symbols.reserve(elf_syms.size() - first_global);
@@ -343,6 +342,11 @@ void ObjectFile::fix_sym_addrs() {
 }
 
 uint64_t ObjectFile::get_strtab_size() {
+  uint64_t sz = strtab_size;
+  for (Symbol *sym : symbols)
+    if (sym->file == this)
+      sz += sym->name.size() + 1;
+  return sz;
 }
 
 StringRef ObjectFile::get_filename() {

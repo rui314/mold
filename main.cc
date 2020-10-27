@@ -422,6 +422,11 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
   }
 
+  {
+    MyTimer t("strtab_size", before_copy);
+    for_each(files, [](ObjectFile *file) { file->get_strtab_size(); });
+  }
+
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;

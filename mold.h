@@ -458,14 +458,6 @@ struct StringPiece {
   std::atomic_flag flag = ATOMIC_FLAG_INIT;
 };
 
-struct LocalSymbolName {
-  LocalSymbolName(StringRef name) : name(name) {}
-  LocalSymbolName(const LocalSymbolName &other) : name(other.name) {}
-
-  StringRef name;
-  std::atomic_flag claimed = ATOMIC_FLAG_INIT;
-};
-
 class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
@@ -527,9 +519,12 @@ private:
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
-  std::vector<LocalSymbolName *> local_symbols;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
+
+  // For .strtab construction
+  std::vector<StringRef> local_symbols;
+  uint64_t strtab_size;
 };
 
 //
