@@ -350,7 +350,6 @@ private:
 
 int main(int argc, char **argv) {
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
-  tbb::task_group tg;
 
   // Parse command line options
   MyOptTable opt_table;
@@ -490,9 +489,10 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
   }
 
+  tbb::task_group unlink_tg;
   {
     MyTimer t("unlink");
-    unlink_async(tg, config.output);
+    unlink_async(unlink_tg, config.output);
   }
 
   // Create an output file
@@ -571,8 +571,8 @@ int main(int argc, char **argv) {
     num_input_chunks += file->sections.size();
 
   {
-    MyTimer t("wait");
-    tg.wait();
+    MyTimer t("unlink_wait");
+    unlink_tg.wait();
   }
 
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
