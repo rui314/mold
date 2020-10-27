@@ -345,6 +345,7 @@ public:
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
+    shdr.sh_addralign = 8;
   }
 
   void add(const ELF64LE::Sym &sym, uint64_t name, uint64_t value);
