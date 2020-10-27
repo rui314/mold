@@ -394,19 +394,6 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   }
 
-  tbb::task_group tg_syms;
-#if 0
-  tg_syms.run([&]() {
-    MyTimer t("local_syms");
-    for (ObjectFile *file : files) { file->read_local_symbols(); }
-  });
-#endif
-  
-  {
-    MyTimer t("local_syms");
-    for_each(files, [](ObjectFile *file) { file->read_local_symbols(); });
-  }
-
   // Create .bss sections for common symbols.
   {
     MyTimer t("common", before_copy);
@@ -430,8 +417,6 @@ int main(int argc, char **argv) {
     MyTimer t("scan_rel", before_copy);
     for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
   }
-
-  tg_syms.wait();
 
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;

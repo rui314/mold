@@ -405,7 +405,6 @@ public:
   void convert_common_symbols();
   void scan_relocations();
   void fix_sym_addrs();
-  void read_local_symbols();
 
   StringRef get_filename();
   bool is_in_archive();

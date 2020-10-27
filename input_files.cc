@@ -135,13 +135,6 @@ void ObjectFile::remove_comdat_members(uint32_t section_idx) {
     sections[i] = nullptr;
 }
 
-void ObjectFile::read_local_symbols() {
-  local_symnames.reserve(first_global);
-
-  for (int i = 0; i < first_global; i++)
-    local_symnames.push_back(CHECK(elf_syms[i].getName(symbol_strtab), this));
-}
-
 void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
   static ConcurrentMap<StringPiece> map1;
   static ConcurrentMap<StringPiece> map2;
