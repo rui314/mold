@@ -99,7 +99,7 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
-static void bin_sections(std::vector<ObjectFile *> files) {
+static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
   typedef std::vector<std::vector<InputSection *>> T;
 
@@ -330,6 +330,40 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
+static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
+  std::vector<uint64_t> symtab_off(files.size());
+  std::vector<uint64_t> strtab_off(files.size());
+  strtab_off[0] = 1;
+
+  for (int i = 1; i < files.size(); i++) {
+    symtab_off[i] = symtab_off[i - 1] + files[i - 1]->local_symtab_size;
+    strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
+  }
+
+  out::symtab->shdr.sh_info = strtab_off.back() / sizeof(ELF64LE::Sym);
+
+  tbb::parallel_for((size_t)0, files.size(),
+                    [&](size_t i) {
+                      files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
+                    });
+
+  symtab_off[0] = symtab_off.back() + files.back()->local_symtab_size;
+  strtab_off[0] = strtab_off.back() + files.back()->local_strtab_size;
+
+  for (int i = 1; i < files.size(); i++) {
+    symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
+    strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
+  }
+
+  assert(symtab_off.back() + files.back()->global_symtab_size == out::symtab->size);
+  assert(strtab_off.back() + files.back()->global_strtab_size == out::strtab->size);
+
+  tbb::parallel_for((size_t)0, files.size(),
+                    [&](size_t i) {
+                      files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
+                    });
+}
+
 class MyTimer {
 public:
   MyTimer(StringRef name) {
@@ -349,7 +383,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 16);
 
   // Parse command line options
   MyOptTable opt_table;
@@ -510,38 +544,7 @@ int main(int argc, char **argv) {
   tbb::task_group tg_symtab;
   tg_symtab.run([&]() {
     MyTimer t("write_symtab");
-
-    std::vector<uint64_t> symtab_off(files.size());
-    std::vector<uint64_t> strtab_off(files.size());
-    strtab_off[0] = 1;
-
-    for (int i = 1; i < files.size(); i++) {
-      symtab_off[i] = symtab_off[i - 1] + files[i - 1]->local_symtab_size;
-      strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
-    }
-
-    out::symtab->shdr.sh_info = strtab_off.back() / sizeof(ELF64LE::Sym);
-
-    tbb::parallel_for((size_t)0, files.size(),
-                      [&](size_t i) {
-                        files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
-                      });
-
-    symtab_off[0] = symtab_off.back() + files.back()->local_symtab_size;
-    strtab_off[0] = strtab_off.back() + files.back()->local_strtab_size;
-
-    for (int i = 1; i < files.size(); i++) {
-      symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
-      strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
-    }
-
-    assert(symtab_off.back() + files.back()->global_symtab_size == out::symtab->size);
-    assert(strtab_off.back() + files.back()->global_strtab_size == out::strtab->size);
-
-    tbb::parallel_for((size_t)0, files.size(),
-                      [&](size_t i) {
-                        files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
-                      });
+    write_symtab(buf, files);
   });
 
   // Copy input sections to the output file
