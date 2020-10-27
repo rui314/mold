@@ -380,7 +380,7 @@ ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strta
     ent->st_value = get_symbol_value(i);
     symtab_off += sizeof(ELF64LE::Sym);
 
-    memcpy(strtab + strtab_off, name.data(), name.size());
+    memcpy_nontemporal(strtab + strtab_off, name.data(), name.size());
     strtab_off += name.size() + 1;
   }
 }
@@ -404,7 +404,7 @@ ObjectFile::write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strt
     ent->st_value = sym.value;   
     symtab_off += sizeof(ELF64LE::Sym);
 
-    memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
+    memcpy_nontemporal(strtab + strtab_off, sym.name.data(), sym.name.size());
     strtab_off += sym.name.size() + 1;
   }
 }

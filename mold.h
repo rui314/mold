@@ -540,3 +540,14 @@ extern std::atomic_int num_files;
 extern std::atomic_int num_relocs;
 extern std::atomic_int num_relocs_alloc;
 extern std::atomic_int num_string_pieces;
+
+//
+// Other
+//
+
+inline void memcpy_nontemporal(void *dest, const void *src, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    uint8_t val = __builtin_nontemporal_load((char *)src + i);
+    __builtin_nontemporal_store(val, (char *)dest + i);
+  }
+}

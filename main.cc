@@ -383,7 +383,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 16);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
 
   // Parse command line options
   MyOptTable opt_table;
