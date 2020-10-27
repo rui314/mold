@@ -119,7 +119,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
   auto reduce = [](const T &x, const T &y) {
                   T ret = x;
-                  for (int i = 0; i < x.size(); i++)
+                  for (int i = 0; i < y.size(); i++)
                     ret[i].insert(ret[i].end(), y[i].begin(), y[i].end());
                   return ret;
                 };
@@ -127,7 +127,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
   std::vector<std::vector<InputSection *>> vec =
     tbb::parallel_reduce(tbb::blocked_range<int>(0, files.size()),
                          T(OutputSection::all_instances.size()),
-                         fn, reduce);
+                         fn, reduce, tbb::static_partitioner());
 
   for (int i = 0; i < vec.size(); i++)
     OutputSection::all_instances[i]->sections = std::move(vec[i]);
