@@ -288,8 +288,8 @@ public:
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
-    idx = all_instances.size();
-    all_instances.push_back(this);
+    idx = instances.size();
+    instances.push_back(this);
   }
 
   void copy_to(uint8_t *buf) override {
@@ -309,7 +309,7 @@ public:
   std::vector<InputSection *> sections;
   uint32_t idx;
 
-  static std::vector<OutputSection *> all_instances;
+  static std::vector<OutputSection *> instances;
 };
 
 class InterpSection : public OutputChunk {

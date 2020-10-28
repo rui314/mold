@@ -10,7 +10,7 @@ ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
 StrtabSection *out::strtab;
 
-std::vector<OutputSection *> OutputSection::all_instances;
+std::vector<OutputSection *> OutputSection::instances;
 
 void OutputEhdr::relocate(uint8_t *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
@@ -143,7 +143,7 @@ OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
   flags = flags & ~SHF_GROUP;
 
   auto find = [&]() -> OutputSection * {
-    for (OutputSection *osec : OutputSection::all_instances)
+    for (OutputSection *osec : OutputSection::instances)
       if (name == osec->name && flags == (osec->shdr.sh_flags & ~SHF_GROUP) &&
           type == osec->shdr.sh_type)
         return osec;

@@ -115,37 +115,39 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
 
 static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
-  typedef std::vector<std::vector<InputSection *>> T;
+  int unit = (files.size() + 127) / 128;
+  std::vector<ArrayRef<ObjectFile *>> slices = split(files, unit);
 
-  auto fn = [&](const tbb::blocked_range<int> &range, const T &init) {
-              T vec = init;
-              for (int i = range.begin(); i < range.end(); i++) {
-                ObjectFile *file = files[i];
-                for (InputSection *isec : file->sections) {
-                  if (!isec)
-                    continue;
-                  OutputSection *osec = isec->output_section;
-                  vec[osec->idx].push_back(isec);
-                }
-              }
-              return vec;
-            };
-
-  auto reduce = [](const T &x, const T &y) {
-                  T ret = x;
-                  for (int i = 0; i < y.size(); i++)
-                    ret[i].insert(ret[i].end(), y[i].begin(), y[i].end());
-                  return ret;
-                };
-
-  std::vector<std::vector<InputSection *>> vec =
-    tbb::parallel_reduce(tbb::blocked_range<int>(0, files.size()),
-                         T(OutputSection::all_instances.size()),
-                         fn, reduce, tbb::static_partitioner());
-
+  std::vector<std::vector<std::vector<InputSection *>>> vec(slices.size());
   for (int i = 0; i < vec.size(); i++)
-    OutputSection::all_instances[i]->sections = std::move(vec[i]);
+    vec[i].resize(OutputSection::instances.size());
 
+  tbb::parallel_for(0, (int)slices.size(), [&](int i) {
+    for (ObjectFile *file : slices[i]) {
+      for (InputSection *isec : file->sections) {
+        if (!isec)
+          continue;
+        OutputSection *osec = isec->output_section;
+        vec[i][osec->idx].push_back(isec);
+      }
+    }
+  });
+
+  std::vector<int> sizes(OutputSection::instances.size());
+
+  for (ArrayRef<std::vector<InputSection *>> slice : vec)
+    for (int i = 0; i < slice.size(); i++)
+      sizes[i] += slice[i].size();
+
+  for (int i = 0; i < sizes.size(); i++)
+    OutputSection::instances[i]->sections.reserve(sizes[i]);
+
+  for (ArrayRef<std::vector<InputSection *>> slice : vec) {
+    for (int i = 0; i < slice.size(); i++) {
+      std::vector<InputSection *> &sections = OutputSection::instances[i]->sections;
+      sections.insert(sections.end(), slice[i].begin(), slice[i].end());
+    }
+  }
 #else
   for (ObjectFile *file : files) {
     for (InputSection *isec : file->sections) {
@@ -160,7 +162,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
 static void set_isec_offsets() {
 #if 1
-  for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+  for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->sections.empty())
       return;
 
@@ -198,7 +200,7 @@ static void set_isec_offsets() {
     osec->shdr.sh_addralign = align;
   });
 #else
-  for_each(OutputSection::all_instances, [&](OutputSection *osec) {
+  for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->sections.empty())
       return;
 
@@ -247,7 +249,7 @@ static bool is_osec_empty(OutputSection *osec) {
 
 static std::vector<OutputSection *> get_output_sections() {
   std::vector<OutputSection *> vec;
-  for (OutputSection *osec : OutputSection::all_instances)
+  for (OutputSection *osec : OutputSection::instances)
     if (!is_osec_empty(osec))
       vec.push_back(osec);
 
