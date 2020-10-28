@@ -212,6 +212,7 @@ private:
   std::atomic_flag &lock;
 };
 
+std::atomic_int do_not_skip;
 std::atomic_int skip;
 
 void ObjectFile::register_defined_symbols() {
@@ -234,6 +235,7 @@ void ObjectFile::register_defined_symbols() {
 
     if (!sym.file || this->priority < sym.file->priority ||
         (sym.is_weak && !is_weak)) {
+      do_not_skip++;
       sym.file = this;
       sym.input_section = isec;
       sym.value = esym.st_value;

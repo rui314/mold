@@ -436,8 +436,10 @@ int main(int argc, char **argv) {
   }
 
   {
+    extern std::atomic_int do_not_skip;
     extern std::atomic_int skip;
-    llvm::outs() << "skip=" << skip << "\n";
+    llvm::outs() << "do_not_skip=" << do_not_skip
+                 << " skip=" << skip << "\n";
   }
 
   // Eliminate unused archive members.
