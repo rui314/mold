@@ -135,17 +135,10 @@ class ConcurrentMap {
 public:
   typedef tbb::concurrent_hash_map<StringRef, ValueT> MapT;
 
-  ValueT *lookup(StringRef key) {
-    typename MapT::accessor acc;
-    if (map.find(acc, key))
-      return &acc->second;
-    return nullptr;
-  }
-
   ValueT *insert(StringRef key, const ValueT &val) {
-    typename MapT::accessor acc;
+    typename MapT::const_accessor acc;
     map.insert(acc, std::make_pair(key, val));
-    return &acc->second;
+    return const_cast<ValueT *>(&acc->second);
   }
 
 private:
