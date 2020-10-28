@@ -60,6 +60,7 @@ class InputSection;
 
 struct Config {
   StringRef output;
+  bool print_map = false;
 };
 
 extern Config config;
