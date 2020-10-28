@@ -435,6 +435,11 @@ int main(int argc, char **argv) {
       });
   }
 
+  {
+    extern std::atomic_int skip;
+    llvm::outs() << "skip=" << skip << "\n";
+  }
+
   // Eliminate unused archive members.
   files.erase(std::remove_if(files.begin(), files.end(),
                              [](ObjectFile *file){ return !file->is_alive; }),

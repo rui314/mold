@@ -212,6 +212,8 @@ private:
   std::atomic_flag &lock;
 };
 
+std::atomic_int skip;
+
 void ObjectFile::register_defined_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
@@ -237,6 +239,8 @@ void ObjectFile::register_defined_symbols() {
       sym.value = esym.st_value;
       sym.visibility = esym.getVisibility();
       sym.is_weak = is_weak;
+    } else {
+      skip++;
     }
   }
 }
