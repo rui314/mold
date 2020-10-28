@@ -431,7 +431,7 @@ int main(int argc, char **argv) {
       files.begin(), files.end(),
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
         if (!file->is_in_archive())
-          file->register_undefined_symbols();
+          file->register_undefined_symbols(feeder);
       });
   }
 
