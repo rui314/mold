@@ -408,8 +408,13 @@ int main(int argc, char **argv) {
   }
 
   // Set priorities to files
-  for (int i = 0; i < files.size(); i++)
-    files[i]->priority = files[i]->is_in_archive() ? i + (1 << 31) : i;
+  int priority = 1;
+  for (ObjectFile *file : files)
+    if (!file->is_in_archive())
+      file->priority = priority++;
+  for (ObjectFile *file : files)
+    if (file->is_in_archive())
+      file->priority = priority++;
 
   // Resolve symbols
   {

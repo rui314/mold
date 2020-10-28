@@ -116,6 +116,13 @@ void ObjectFile::initialize_sections() {
 void ObjectFile::initialize_symbols() {
   local_symbols.reserve(first_global);
 
+  for (int i = 0; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    static ConcurrentMap<int> map;
+    //    map.insert(name, 3);
+  }
+
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
@@ -125,6 +132,9 @@ void ObjectFile::initialize_symbols() {
       local_strtab_size += name.size() + 1;
       local_symtab_size += sizeof(ELF64LE::Sym);
     }
+
+    static ConcurrentMap<int> map;
+    map.insert(name, 3);
   }
 
   symbols.reserve(elf_syms.size() - first_global);
