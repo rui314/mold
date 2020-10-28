@@ -538,9 +538,13 @@ extern std::atomic_int num_string_pieces;
 // Other
 //
 
-inline void memcpy_nontemporal(void *dest, const void *src, size_t n) {
+inline void memcpy_nontemporal(void *dst, const void *src, size_t n) {
+#if 1
   for (size_t i = 0; i < n; i++) {
     uint8_t val = __builtin_nontemporal_load((char *)src + i);
-    __builtin_nontemporal_store(val, (char *)dest + i);
+    __builtin_nontemporal_store(val, (char *)dst + i);
   }
+#else
+  memcpy(dst, src, n);
+#endif
 }
