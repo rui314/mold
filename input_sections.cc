@@ -59,7 +59,7 @@ void InputSection::relocate(uint8_t *buf) {
     uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     uint64_t cur = output_section->shdr.sh_addr + offset + rel.r_offset;
-    uint64_t dst = file->get_symbol_value(rel.getSymbol(false));
+    uint64_t dst = file->get_symbol_addr(rel.getSymbol(false));
 
     switch (rel.getType(false)) {
     case R_X86_64_8:

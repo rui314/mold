@@ -454,7 +454,7 @@ public:
     return symbols[idx - first_global];
   }
 
-  uint64_t get_symbol_value(uint32_t idx) const {
+  uint64_t get_symbol_addr(uint32_t idx) const {
     if (idx < first_global) {
       const ELF64LE::Sym &sym = elf_syms[idx];
 
