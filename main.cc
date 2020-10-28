@@ -427,11 +427,15 @@ int main(int argc, char **argv) {
 
     for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
 
+    std::vector<ObjectFile *> objs;
+    for (ObjectFile *file : files)
+      if (!file->is_in_archive())
+        objs.push_back(file);
+
     tbb::parallel_do(
-      files.begin(), files.end(),
+      objs.begin(), objs.end(),
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
-        if (!file->is_in_archive())
-          file->register_undefined_symbols(feeder);
+        file->register_undefined_symbols(feeder);
       });
   }
 
