@@ -586,6 +586,12 @@ int main(int argc, char **argv) {
     unlink_tg.wait();
   }
 
+  for (ObjectFile *file : files)
+    for (InputSection *isec : file->sections)
+      if (isec)
+        llvm::outs() << toString(isec) << "\n";
+
+#if 0
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
                << "output_chunks=" << output_chunks.size() << "\n"
                << "        files=" << files.size() << "\n"
@@ -601,5 +607,6 @@ int main(int argc, char **argv) {
 
   llvm::TimerGroup::printAll(llvm::outs());
   llvm::outs().flush();
+#endif
   _exit(0);
 }
