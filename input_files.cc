@@ -391,7 +391,7 @@ ObjectFile::write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strt
     *ent = esym;
     ent->st_shndx = out::strtab->idx;
     ent->st_name = strtab_off;
-    ent->st_value = sym.value;   
+    ent->st_value = sym.addr;   
     symtab_off += sizeof(ELF64LE::Sym);
 
     memcpy_nontemporal(strtab + strtab_off, sym.name.data(), sym.name.size());
