@@ -343,7 +343,7 @@ static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
     strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
   }
 
-  out::symtab->shdr.sh_info = strtab_off.back() / sizeof(ELF64LE::Sym);
+  out::symtab->shdr.sh_info = symtab_off.back() / sizeof(ELF64LE::Sym);
 
   tbb::parallel_for((size_t)0, files.size(),
                     [&](size_t i) {
