@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <unordered_set>
+#include <xmmintrin.h>
 
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
@@ -538,13 +539,23 @@ extern std::atomic_int num_string_pieces;
 // Other
 //
 
-inline void memcpy_nontemporal(void *dst, const void *src, size_t n) {
-#if 1
-  for (size_t i = 0; i < n; i++) {
-    uint8_t val = __builtin_nontemporal_load((char *)src + i);
-    __builtin_nontemporal_store(val, (char *)dst + i);
+inline void memcpy_nontemporal(void *dst_, const void *src_, size_t n) {
+#if 0
+  char *src = (char *)src_;
+  char *dst = (char *)dst_;
+
+  if ((uintptr_t)src % 16 || (uintptr_t)dst % 16) {
+    memcpy(dst, src, n);
+    return;
   }
+
+  size_t i = 0;
+  for (; i + 16 < n; i += 16) {
+    __m128 val = __builtin_nontemporal_load((__m128 *)(src + i));
+    __builtin_nontemporal_store(val, (__m128 *)(dst + i));
+  }
+  memcpy(dst + i, src + i, n - i);
 #else
-  memcpy(dst, src, n);
+  memcpy(dst_, src_, n);
 #endif
 }
