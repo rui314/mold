@@ -66,7 +66,7 @@ extern Config config;
 
 [[noreturn]] inline void error(const Twine &msg) {
   static std::mutex mu;
-  std::lock_guard<std::mutex> lock(mu);
+  std::lock_guard lock(mu);
 
   llvm::errs() << msg << "\n";
   exit(1);
@@ -416,7 +416,7 @@ struct ComdatGroup {
   ComdatGroup(const ComdatGroup &other)
     : file(other.file.load()), section_idx(other.section_idx) {}
 
-  std::atomic_flag lock = ATOMIC_FLAG_INIT;
+  tbb::spin_mutex mu;
   std::atomic<ObjectFile *> file;
   uint32_t section_idx;
 };

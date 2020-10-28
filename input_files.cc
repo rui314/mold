@@ -198,20 +198,6 @@ void ObjectFile::parse() {
     initialize_symbols();
 }
 
-class Spinlock {
-public:
-  Spinlock(std::atomic_flag &lock) : lock(lock) {
-    while (lock.test_and_set(std::memory_order_acquire));
-  }
-
-  ~Spinlock() {
-    lock.clear(std::memory_order_release);
-  }
-
-private:
-  std::atomic_flag &lock;
-};
-
 void ObjectFile::register_defined_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
@@ -279,7 +265,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     uint32_t idx;
 
     {
-      Spinlock lock(g->lock);
+      std::lock_guard lock(g->mu);
       if (g->file == nullptr) {
         g->file = this;
         g->section_idx = section_idx;
