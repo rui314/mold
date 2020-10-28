@@ -334,11 +334,11 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
 }
 
 static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
-  std::vector<uint64_t> symtab_off(files.size());
-  std::vector<uint64_t> strtab_off(files.size());
+  std::vector<uint64_t> symtab_off(files.size() + 1);
+  std::vector<uint64_t> strtab_off(files.size() + 1);
   strtab_off[0] = 1;
 
-  for (int i = 1; i < files.size(); i++) {
+  for (int i = 1; i < files.size() + 1; i++) {
     symtab_off[i] = symtab_off[i - 1] + files[i - 1]->local_symtab_size;
     strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
   }
@@ -350,16 +350,16 @@ static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
                       files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
                     });
 
-  symtab_off[0] = symtab_off.back() + files.back()->local_symtab_size;
-  strtab_off[0] = strtab_off.back() + files.back()->local_strtab_size;
+  symtab_off[0] = symtab_off.back();
+  strtab_off[0] = strtab_off.back();
 
-  for (int i = 1; i < files.size(); i++) {
+  for (int i = 1; i < files.size() + 1; i++) {
     symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
     strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
   }
 
-  assert(symtab_off.back() + files.back()->global_symtab_size == out::symtab->size);
-  assert(strtab_off.back() + files.back()->global_strtab_size == out::strtab->size);
+  assert(symtab_off.back() == out::symtab->size);
+  assert(strtab_off.back() == out::strtab->size);
 
   tbb::parallel_for((size_t)0, files.size(),
                     [&](size_t i) {
