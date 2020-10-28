@@ -423,20 +423,6 @@ struct StringPiece {
   std::atomic_flag flag = ATOMIC_FLAG_INIT;
 };
 
-class SymtabSymbol {
-public:
-  SymtabSymbol(StringRef name) : name(name) {
-    priority = 0;
-  }
-
-  SymtabSymbol(const SymtabSymbol &other) : name(other.name) {
-    priority = other.priority.load();
-  }
-
-  StringRef name;
-  std::atomic_int priority;
-};
-
 class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
