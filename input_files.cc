@@ -241,7 +241,8 @@ void ObjectFile::register_defined_symbols() {
   }
 }
 
-void ObjectFile::register_undefined_symbols() {
+void
+ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
   if (is_alive.exchange(true))
     return;
 
@@ -258,7 +259,7 @@ void ObjectFile::register_undefined_symbols() {
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif
-      sym.file->register_undefined_symbols();
+      feeder.add(sym.file);
     }
   }
 }

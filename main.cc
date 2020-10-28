@@ -427,10 +427,12 @@ int main(int argc, char **argv) {
 
     for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
 
-    for_each(files, [](ObjectFile *file) {
-      if (!file->is_in_archive())
-        file->register_undefined_symbols();
-    });
+    tbb::parallel_do(
+      files.begin(), files.end(),
+      [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
+        if (!file->is_in_archive())
+          file->register_undefined_symbols();
+      });
   }
 
   // Eliminate unused archive members.
@@ -591,12 +593,14 @@ int main(int argc, char **argv) {
     unlink_tg.wait();
   }
 
+#if 0
   for (ObjectFile *file : files)
     for (InputSection *isec : file->sections)
       if (isec)
         llvm::outs() << toString(isec) << "\n";
+#endif
 
-#if 0
+#if 1
   llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
                << "output_chunks=" << output_chunks.size() << "\n"
                << "        files=" << files.size() << "\n"
