@@ -540,7 +540,7 @@ extern std::atomic_int num_string_pieces;
 //
 
 inline void memcpy_nontemporal(void *dst_, const void *src_, size_t n) {
-#if 0
+#if 1
   char *src = (char *)src_;
   char *dst = (char *)dst_;
 
