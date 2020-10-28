@@ -99,6 +99,20 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   }
 }
 
+template <typename T>
+static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
+  ArrayRef<T> arr(input);
+  std::vector<ArrayRef<T>> vec;
+
+  while (arr.size() >= unit) {
+    vec.push_back(arr.slice(0, unit));
+    arr = arr.slice(unit);
+  }
+  if (!arr.empty())
+    vec.push_back(arr);
+  return vec;
+}
+
 static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
   typedef std::vector<std::vector<InputSection *>> T;
@@ -150,23 +164,11 @@ static void set_isec_offsets() {
     if (osec->sections.empty())
       return;
 
-    int unit = 100000;
-    int num_slices = (osec->sections.size() + unit - 1) / unit;
+    std::vector<ArrayRef<InputSection *>> slices = split(osec->sections, 100000);
+    std::vector<uint64_t> size(slices.size());
+    std::vector<uint32_t> alignments(slices.size());
 
-    std::vector<uint64_t> start(num_slices);
-    std::vector<uint64_t> size(num_slices);
-    std::vector<uint32_t> alignments(num_slices);
-
-    std::vector<ArrayRef<InputSection *>> slices;
-    ArrayRef<InputSection *> sections = makeArrayRef(osec->sections);
-
-    while (!sections.empty()) {
-      int end = std::min<int>(sections.size(), unit);
-      slices.push_back(sections.slice(0, end));
-      sections = sections.slice(end);
-    }
-
-    tbb::parallel_for(0, num_slices, [&](int i) {
+    tbb::parallel_for(0, (int)slices.size(), [&](int i) {
       uint64_t off = 0;
       uint32_t align = 1;
 
@@ -183,10 +185,11 @@ static void set_isec_offsets() {
 
     uint32_t align = *std::max_element(alignments.begin(), alignments.end());
 
-    for (int i = 1; i < num_slices; i++)
+    std::vector<uint64_t> start(slices.size());
+    for (int i = 1; i < slices.size(); i++)
       start[i] = align_to(start[i - 1] + size[i], align);
 
-    tbb::parallel_for(1, num_slices, [&](int i) {
+    tbb::parallel_for(1, (int)slices.size(), [&](int i) {
       for (InputSection *isec : slices[i])
         isec->offset += start[i];
     });
