@@ -424,8 +424,13 @@ int main(int argc, char **argv) {
   // Resolve symbols
   {
     MyTimer t("resolve_symbols", before_copy);
+
     for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
-    for_each(files, [](ObjectFile *file) { file->register_undefined_symbols(); });
+
+    for_each(files, [](ObjectFile *file) {
+      if (!file->is_in_archive())
+        file->register_undefined_symbols();
+    });
   }
 
   // Eliminate unused archive members.
@@ -606,7 +611,8 @@ int main(int argc, char **argv) {
                << "      num_str=" << num_string_pieces << "\n";
 
   llvm::TimerGroup::printAll(llvm::outs());
-  llvm::outs().flush();
 #endif
+
+  llvm::outs().flush();
   _exit(0);
 }

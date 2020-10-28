@@ -111,7 +111,11 @@ std::string toString(ObjectFile *);
 
 template<typename T, typename Callable>
 static void for_each(T &arr, Callable callback) {
+#if 1
   tbb::parallel_for_each(arr.begin(), arr.end(), callback);
+#else
+  std::for_each(arr.begin(), arr.end(), callback);
+#endif
 }
 
 //
