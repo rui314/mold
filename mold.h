@@ -217,7 +217,7 @@ public:
   virtual void copy_to(uint8_t *buf) = 0;
   virtual void relocate(uint8_t *buf) {}
 
-  bool is_bss() const { return shdr.sh_type & llvm::ELF::SHT_NOBITS; }
+  bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
 
   virtual uint64_t get_size() const = 0;
 
