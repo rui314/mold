@@ -21,6 +21,7 @@
 #include "tbb/parallel_reduce.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/partitioner.h"
+#include "tbb/spin_mutex.h"
 #include "tbb/task_arena.h"
 #include "tbb/task_group.h"
 
@@ -164,7 +165,7 @@ public:
     return map.insert(name, Symbol(name));    
   }
 
-  std::atomic_flag lock = ATOMIC_FLAG_INIT;
+  tbb::spin_mutex mu;
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;

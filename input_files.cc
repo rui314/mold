@@ -212,9 +212,6 @@ private:
   std::atomic_flag &lock;
 };
 
-std::atomic_int do_not_skip;
-std::atomic_int skip;
-
 void ObjectFile::register_defined_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
@@ -231,18 +228,15 @@ void ObjectFile::register_defined_symbols() {
       isec = sections[shndx];
 
     bool is_weak = (esym.getBinding() == STB_WEAK);
-    Spinlock lock(sym.lock);
+    std::lock_guard lock(sym.mu);
 
     if (!sym.file || this->priority < sym.file->priority ||
         (sym.is_weak && !is_weak)) {
-      do_not_skip++;
       sym.file = this;
       sym.input_section = isec;
       sym.value = esym.st_value;
       sym.visibility = esym.getVisibility();
       sym.is_weak = is_weak;
-    } else {
-      skip++;
     }
   }
 }
