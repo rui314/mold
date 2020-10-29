@@ -45,6 +45,7 @@
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 
+typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
