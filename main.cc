@@ -478,7 +478,15 @@ int main(int argc, char **argv) {
   // .rela.dyn, .rela.plt.
   {
     MyTimer t("scan_rel", before_copy);
-    for_each(files, [](ObjectFile *file) { file->scan_relocations(); });
+
+    std::atomic_uint64_t num_got = 0;
+    std::atomic_uint64_t num_plt = 0;
+
+    for_each(files, [&](ObjectFile *file) {
+                      auto [got, plt] = file->scan_relocations();
+                      num_got += got;
+                      num_plt += plt;
+                    });
   }
 
   // Create linker-synthesized sections.

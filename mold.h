@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <unordered_set>
+#include <valarray>
 #include <xmmintrin.h>
 
 #define SECTOR_SIZE 512
@@ -162,8 +163,8 @@ private:
 
 class Symbol {
 public:
-  Symbol(StringRef name) : name(name) {}
-  Symbol(const Symbol &other) : name(other.name), file(other.file) {}
+  Symbol(StringRef name) : Symbol(name, nullptr) {}
+  Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
@@ -185,6 +186,9 @@ public:
 
   std::atomic_bool needs_got;
   std::atomic_bool needs_plt;
+
+private:
+  Symbol(StringRef name, ObjectFile *file) : name(name), file(file) {}
 };
 
 inline std::string toString(Symbol sym) {
@@ -201,7 +205,7 @@ public:
 
   void copy_to(uint8_t *buf);
   void relocate(uint8_t *buf);
-  void scan_relocations();
+  std::tuple<u64, u64> scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
@@ -446,7 +450,7 @@ public:
   void register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
-  void scan_relocations();
+  std::tuple<u64, u64> scan_relocations();
   void fix_sym_addrs();
   void compute_symtab();
 

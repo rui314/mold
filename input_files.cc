@@ -318,10 +318,18 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-void ObjectFile::scan_relocations() {
-  for (InputSection *isec : sections)
-    if (isec)
-      isec->scan_relocations();
+std::tuple<u64, u64> ObjectFile::scan_relocations() {
+  u64 num_got = 0;
+  u64 num_plt = 0;
+
+  for (InputSection *isec : sections) {
+    if (isec) {
+      auto [got, plt] = isec->scan_relocations();
+      num_got += got;
+      num_got += plt;
+    }
+  }
+  return {num_got, num_plt};
 }
 
 void ObjectFile::fix_sym_addrs() {
