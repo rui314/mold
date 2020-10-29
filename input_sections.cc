@@ -67,11 +67,11 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-#define P (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define S (sym ? sym->addr : file->get_symbol_addr(sym_idx))
-#define A (rel.r_addend)
-#define G (sym ? sym->got_addr : 0)
-#define GOT (out::got->shdr.sh_addr)
+    u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
+    u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
+    u64 A = rel.r_addend;
+    u64 G = sym ? sym->got_addr : 0;
+    u64 GOT = out::got->shdr.sh_addr;
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -129,12 +129,6 @@ void InputSection::relocate(u8 *buf) {
     }
     // num_relocs++;
   }
-
-#undef P
-#undef S
-#undef A
-#undef G
-#undef GOT
 }
 
 std::string toString(InputSection *isec) {
