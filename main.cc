@@ -497,7 +497,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Add other output sections.
+  // Add output sections.
   std::vector<OutputChunk *> output_chunks;
   for (OutputSection *osec : OutputSection::instances)
     if (!osec->empty())

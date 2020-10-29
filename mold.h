@@ -357,6 +357,7 @@ private:
 class GotSection : public OutputChunk {
 public:
   GotSection() {
+    name = ".got";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
   }
