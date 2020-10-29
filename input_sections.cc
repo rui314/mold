@@ -61,7 +61,6 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
 }
 
 void InputSection::relocate(u8 *buf) {
-  int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
     u32 sym_idx = rel.getSymbol(false);
     Symbol *sym = file->get_symbol(sym_idx);
