@@ -282,11 +282,11 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<ELF64LE::Shdr *> vec;
   vec.push_back(&null_entry);
 
-  int idx = 1;
+  int shndx = 1;
   for (OutputChunk *chunk : output_chunks) {
     if (!chunk->name.empty()) {
       vec.push_back(&chunk->shdr);
-      chunk->idx = idx++;
+      chunk->shndx = shndx++;
     }
   }
   return vec;
@@ -391,7 +391,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  // tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 1);
 
   // Parse command line options
   MyOptTable opt_table;
@@ -532,7 +532,7 @@ int main(int argc, char **argv) {
   // Create section header and program header contents.
   out::shdr->entries = create_shdrs(output_chunks);
   out::phdr->construct(output_chunks);
-  out::symtab->shdr.sh_link = out::strtab->idx;
+  out::symtab->shdr.sh_link = out::strtab->shndx;
 
   // Fill section header.
   fill_shdrs(output_chunks);
@@ -588,6 +588,8 @@ int main(int argc, char **argv) {
     MyTimer t("symtab_wait");
     tg_symtab.wait();
   }
+
+  out::shdr->copy_to(buf);
 
   {
     MyTimer t("commit");

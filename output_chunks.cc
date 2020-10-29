@@ -34,7 +34,7 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->entries.size();
-  hdr->e_shstrndx = out::shstrtab->idx;
+  hdr->e_shstrndx = out::shstrtab->shndx;
 }
 
 static uint32_t to_phdr_flags(uint64_t sh_flags) {
