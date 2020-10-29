@@ -163,8 +163,8 @@ private:
 
 class Symbol {
 public:
-  Symbol(StringRef name) : Symbol(name, nullptr) {}
-  Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
+  Symbol(StringRef name) : name(name) {}
+  Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
@@ -184,14 +184,8 @@ public:
   uint8_t visibility = 0;
   bool is_weak = false;
 
-  std::atomic_bool needs_got;
-  std::atomic_bool needs_plt;
-
-private:
-  Symbol(StringRef name, ObjectFile *file) : name(name), file(file) {
-    needs_got = false;
-    needs_plt = false;
-  }
+  std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
+  std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);
 };
 
 inline std::string toString(Symbol sym) {
@@ -489,7 +483,7 @@ public:
   ELFFile<ELF64LE> obj;
   std::vector<Symbol *> symbols;
   u32 priority;
-  std::atomic_bool is_alive;
+  std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 
   u64 local_symtab_size = 0;
   u64 local_strtab_size = 0;

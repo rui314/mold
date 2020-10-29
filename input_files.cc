@@ -14,9 +14,7 @@ std::atomic_int num_string_pieces;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), archive_name(archive_name),
-    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {
-  is_alive = false;
-}
+    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
 
 MemoryBufferRef readFile(StringRef path) {
   auto mbOrErr = MemoryBuffer::getFile(path, -1, false);
