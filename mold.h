@@ -45,6 +45,7 @@
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 
+typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
@@ -182,7 +183,7 @@ public:
   u64 plt_addr = 0;
 
   u64 value;
-  uint8_t visibility = 0;
+  u8 visibility = 0;
   bool is_weak = false;
 
   std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
@@ -201,8 +202,8 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
-  void copy_to(uint8_t *buf);
-  void relocate(uint8_t *buf);
+  void copy_to(u8 *buf);
+  void relocate(u8 *buf);
   std::tuple<u64, u64> scan_relocations();
 
   ObjectFile *file;
@@ -229,8 +230,8 @@ class OutputChunk {
 public:
   OutputChunk() { shdr.sh_addralign = 1; }
 
-  virtual void copy_to(uint8_t *buf) = 0;
-  virtual void relocate(uint8_t *buf) {}
+  virtual void copy_to(u8 *buf) = 0;
+  virtual void relocate(u8 *buf) {}
 
   bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
 
@@ -248,8 +249,8 @@ class OutputEhdr : public OutputChunk {
 public:
   OutputEhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
-  void copy_to(uint8_t *buf) override {}
-  void relocate(uint8_t *buf) override;
+  void copy_to(u8 *buf) override {}
+  void relocate(u8 *buf) override;
 
   u64 get_size() const override {
     return sizeof(ELF64LE::Ehdr);
@@ -261,7 +262,7 @@ class OutputShdr : public OutputChunk {
 public:
   OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
-  void copy_to(uint8_t *buf) override {
+  void copy_to(u8 *buf) override {
     auto *p = (ELF64LE::Shdr *)(buf + shdr.sh_offset);
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
@@ -279,7 +280,7 @@ class OutputPhdr : public OutputChunk {
 public:
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
-  void copy_to(uint8_t *buf) override;
+  void copy_to(u8 *buf) override;
 
   u64 get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);
@@ -309,12 +310,12 @@ public:
     instances.push_back(this);
   }
 
-  void copy_to(uint8_t *buf) override {
+  void copy_to(u8 *buf) override {
     if (!is_bss())
       for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
-  void relocate(uint8_t *buf) override {
+  void relocate(u8 *buf) override {
     if (!is_bss())
       for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
@@ -344,7 +345,7 @@ public:
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
   }
 
-  void copy_to(uint8_t *buf) override {
+  void copy_to(u8 *buf) override {
     memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
@@ -364,9 +365,9 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(uint8_t *buf) override {}
+  void copy_to(u8 *buf) override {}
 
-  void relocate(uint8_t *buf) override {
+  void relocate(u8 *buf) override {
     buf += shdr.sh_offset;
     for (Symbol *sym : symbols) {
       *(u64 *)buf = sym->addr;
@@ -396,7 +397,7 @@ public:
     return ret;
   }
 
-  void copy_to(uint8_t *buf) override {
+  void copy_to(u8 *buf) override {
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
@@ -416,7 +417,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(uint8_t *buf) override {}
+  void copy_to(u8 *buf) override {}
   u64 get_size() const override { return size; }
 
   u64 size = 0;
@@ -433,7 +434,7 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
-  void copy_to(uint8_t *buf) override {}
+  void copy_to(u8 *buf) override {}
   u64 get_size() const override { return size; }
 
   u64 size = 1;
@@ -486,8 +487,8 @@ public:
   void fix_sym_addrs();
   void compute_symtab();
 
-  void write_local_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off);
-  void write_global_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off);
+  void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
+  void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
   StringRef get_filename();
   bool is_in_archive();
@@ -565,7 +566,7 @@ public:
 
 private:
   std::unique_ptr<llvm::FileOutputBuffer> output_buffer;
-  uint8_t *buf;
+  u8 *buf;
 };
 
 //

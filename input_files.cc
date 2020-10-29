@@ -154,7 +154,7 @@ void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
   bool is_alloc = shdr.sh_type & SHF_ALLOC;
   ConcurrentMap<StringPiece> &map = is_alloc ? map1 : map2;
 
-  ArrayRef<uint8_t> arr = CHECK(obj.getSectionContents(shdr), this);
+  ArrayRef<u8> arr = CHECK(obj.getSectionContents(shdr), this);
   StringRef data((const char *)&arr[0], arr.size());
 
   while (!data.empty()) {
@@ -360,9 +360,9 @@ void ObjectFile::compute_symtab() {
 }
 
 void
-ObjectFile::write_local_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off) {
-  uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
-  uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
+ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
+  u8 *symtab = buf + out::symtab->shdr.sh_offset;
+  u8 *strtab = buf + out::strtab->shdr.sh_offset;
 
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
@@ -387,9 +387,9 @@ ObjectFile::write_local_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off) {
 }
 
 void
-ObjectFile::write_global_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off) {
-  uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
-  uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
+ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
+  u8 *symtab = buf + out::symtab->shdr.sh_offset;
+  u8 *strtab = buf + out::strtab->shdr.sh_offset;
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];

@@ -13,7 +13,7 @@ StrtabSection *out::strtab;
 
 std::vector<OutputSection *> OutputSection::instances;
 
-void OutputEhdr::relocate(uint8_t *buf) {
+void OutputEhdr::relocate(u8 *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
   memset(hdr, 0, sizeof(*hdr));
 
@@ -108,7 +108,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       ent.members.front()->starts_new_ptload = true;
 }
 
-void OutputPhdr::copy_to(uint8_t *buf) {
+void OutputPhdr::copy_to(u8 *buf) {
   for (Phdr &ent : entries) {
     OutputChunk *front = ent.members.front();
     OutputChunk *back = ent.members.back();

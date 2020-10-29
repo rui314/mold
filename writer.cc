@@ -17,7 +17,7 @@ static std::unique_ptr<FileOutputBuffer> open_output_file() {
 
 void write() {
   std::unique_ptr<FileOutputBuffer> buffer = open_output_file();
-  uint8_t *buf = buffer->getBufferStart();
+  u8 *buf = buffer->getBufferStart();
 
   memset(buf, 0, sizeof(ELF64LE::Ehdr));
   memcpy(buf, "\177ELF", 4);

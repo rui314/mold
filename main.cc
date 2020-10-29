@@ -322,7 +322,7 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
-static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
+static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   std::vector<u64> symtab_off(files.size() + 1);
   std::vector<u64> strtab_off(files.size() + 1);
   strtab_off[0] = 1;
@@ -583,7 +583,7 @@ int main(int argc, char **argv) {
           llvm::toString(buf_or_err.takeError()));
 
   std::unique_ptr<FileOutputBuffer> output_buffer = std::move(*buf_or_err);
-  uint8_t *buf = output_buffer->getBufferStart();
+  u8 *buf = output_buffer->getBufferStart();
 
   // Fill .symtab and .strtab
   tbb::task_group tg_symtab;

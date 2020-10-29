@@ -17,11 +17,11 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRe
     error(toString(file) + ": section sh_addralign is not a power of two");
 }
 
-void InputSection::copy_to(uint8_t *buf) {
+void InputSection::copy_to(u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
-  ArrayRef<uint8_t> data = check(file->obj.getSectionContents(shdr));
+  ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
   buf = buf + output_section->shdr.sh_offset + offset;
   memcpy_nontemporal(buf, &data[0], data.size());
 }
@@ -60,11 +60,11 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
   return {num_got, num_plt};
 }
 
-void InputSection::relocate(uint8_t *buf) {
+void InputSection::relocate(u8 *buf) {
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
     u32 sym_idx = rel.getSymbol(false);
-    uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
+    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     u64 cur = output_section->shdr.sh_addr + offset + rel.r_offset;
     Symbol *sym = file->get_symbol(sym_idx);
