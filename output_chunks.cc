@@ -37,8 +37,8 @@ void OutputEhdr::relocate(uint8_t *buf) {
   hdr->e_shstrndx = out::shstrtab->shndx;
 }
 
-static uint32_t to_phdr_flags(uint64_t sh_flags) {
-  uint32_t ret = PF_R;
+static u32 to_phdr_flags(u64 sh_flags) {
+  u32 ret = PF_R;
   if (sh_flags & SHF_WRITE)
     ret |= PF_W;
   if (sh_flags & SHF_EXECINSTR)
@@ -47,7 +47,7 @@ static uint32_t to_phdr_flags(uint64_t sh_flags) {
 }
 
 void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
-  auto add = [&](uint32_t type, uint32_t flags, std::vector<OutputChunk *> members) {
+  auto add = [&](u32 type, u32 flags, std::vector<OutputChunk *> members) {
     ELF64LE::Phdr phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
@@ -70,7 +70,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       break;
 
-    uint32_t flags = to_phdr_flags(chunk->shdr.sh_flags);
+    u32 flags = to_phdr_flags(chunk->shdr.sh_flags);
     bool this_is_bss = (chunk->shdr.sh_type == SHT_NOBITS);
 
     if (first) {
@@ -138,7 +138,7 @@ static StringRef get_output_name(StringRef name) {
 }
 
 OutputSection *
-OutputSection::get_instance(StringRef name, uint64_t flags, uint32_t type) {
+OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);
   flags = flags & ~SHF_GROUP;
 

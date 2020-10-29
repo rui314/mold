@@ -4,7 +4,7 @@ using namespace llvm;
 using namespace llvm::ELF;
 using llvm::object::ELF64LE;
 
-OutputFile::OutputFile(uint64_t size) {
+OutputFile::OutputFile(u64 size) {
   Expected<std::unique_ptr<FileOutputBuffer>> bufOrErr =
     FileOutputBuffer::create(config.output, size, 0);
 

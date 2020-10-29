@@ -172,27 +172,27 @@ static void set_isec_offsets() {
       return;
 
     std::vector<ArrayRef<InputSection *>> slices = split(osec->sections, 100000);
-    std::vector<uint64_t> size(slices.size());
-    std::vector<uint32_t> alignments(slices.size());
+    std::vector<u64> size(slices.size());
+    std::vector<u32> alignments(slices.size());
 
     tbb::parallel_for(0, (int)slices.size(), [&](int i) {
-      uint64_t off = 0;
-      uint32_t align = 1;
+      u64 off = 0;
+      u32 align = 1;
 
       for (InputSection *isec : slices[i]) {
         off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
         off += isec->shdr.sh_size;
-        align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+        align = std::max<u32>(align, isec->shdr.sh_addralign);
       }
 
       size[i] = off;
       alignments[i] = align;
     });
 
-    uint32_t align = *std::max_element(alignments.begin(), alignments.end());
+    u32 align = *std::max_element(alignments.begin(), alignments.end());
 
-    std::vector<uint64_t> start(slices.size());
+    std::vector<u64> start(slices.size());
     for (int i = 1; i < slices.size(); i++)
       start[i] = align_to(start[i - 1] + size[i], align);
 
@@ -209,14 +209,14 @@ static void set_isec_offsets() {
     if (osec->sections.empty())
       return;
 
-    uint64_t off = 0;
-    uint32_t align = 0;
+    u64 off = 0;
+    u32 align = 0;
 
     for (InputSection *isec : osec->sections) {
       off = align_to(off, isec->shdr.sh_addralign);
       isec->offset = off;
       off += isec->shdr.sh_size;
-      align = std::max<uint32_t>(align, isec->shdr.sh_addralign);
+      align = std::max<u32>(align, isec->shdr.sh_addralign);
     }
 
     osec->shdr.sh_size = off;
@@ -302,9 +302,9 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   }
 }
 
-static uint64_t set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
-  uint64_t fileoff = 0;
-  uint64_t vaddr = 0x200000;
+static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
+  u64 fileoff = 0;
+  u64 vaddr = 0x200000;
 
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->starts_new_ptload) {
@@ -339,8 +339,8 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
 }
 
 static void write_symtab(uint8_t *buf, std::vector<ObjectFile *> files) {
-  std::vector<uint64_t> symtab_off(files.size() + 1);
-  std::vector<uint64_t> strtab_off(files.size() + 1);
+  std::vector<u64> symtab_off(files.size() + 1);
+  std::vector<u64> strtab_off(files.size() + 1);
   strtab_off[0] = 1;
 
   for (int i = 1; i < files.size() + 1; i++) {
@@ -538,7 +538,7 @@ int main(int argc, char **argv) {
   fill_shdrs(output_chunks);
 
   // Assign offsets to input sections
-  uint64_t filesize = 0;
+  u64 filesize = 0;
   {
     MyTimer t("osec_offset", before_copy);
     filesize = set_osec_offsets(output_chunks);

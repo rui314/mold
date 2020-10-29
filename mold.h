@@ -44,6 +44,9 @@
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 
+typedef uint32_t u32;
+typedef uint64_t u64;
+
 using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
@@ -172,11 +175,11 @@ public:
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
 
-  uint64_t addr = 0;
-  uint64_t got_addr = 0;
-  uint64_t plt_addr = 0;
+  u64 addr = 0;
+  u64 got_addr = 0;
+  u64 plt_addr = 0;
 
-  uint64_t value;
+  u64 value;
   uint8_t visibility = 0;
   bool is_weak = false;
 
@@ -206,12 +209,12 @@ public:
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
-  uint64_t offset;
+  u64 offset;
 };
 
 std::string toString(InputSection *isec);
 
-inline uint64_t align_to(uint64_t val, uint64_t align) {
+inline u64 align_to(u64 val, u64 align) {
   assert(__builtin_popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
 }
@@ -229,7 +232,7 @@ public:
 
   bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
 
-  virtual uint64_t get_size() const = 0;
+  virtual u64 get_size() const = 0;
 
   StringRef name;
   int shndx = 0;
@@ -245,7 +248,7 @@ public:
   void copy_to(uint8_t *buf) override {}
   void relocate(uint8_t *buf) override;
 
-  uint64_t get_size() const override {
+  u64 get_size() const override {
     return sizeof(ELF64LE::Ehdr);
   }
 };
@@ -261,7 +264,7 @@ public:
       *p++ = *ent;
   }
 
-  uint64_t get_size() const override {
+  u64 get_size() const override {
     return entries.size() * sizeof(ELF64LE::Shdr);
   }
 
@@ -275,7 +278,7 @@ public:
 
   void copy_to(uint8_t *buf) override;
 
-  uint64_t get_size() const override {
+  u64 get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);
   }
 
@@ -293,9 +296,9 @@ private:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(StringRef name, uint64_t flags, uint32_t type);
+  static OutputSection *get_instance(StringRef name, u64 flags, u32 type);
 
-  OutputSection(StringRef name, uint64_t flags, uint32_t type) {
+  OutputSection(StringRef name, u64 flags, u32 type) {
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
@@ -313,12 +316,12 @@ public:
       for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
-  uint64_t get_size() const override {
+  u64 get_size() const override {
     return shdr.sh_size;
   }
 
   std::vector<InputSection *> sections;
-  uint32_t idx;
+  u32 idx;
 
   static std::vector<OutputSection *> instances;
 };
@@ -335,7 +338,7 @@ public:
     memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
-  uint64_t get_size() const override { return sizeof(path); }
+  u64 get_size() const override { return sizeof(path); }
 
 private:
   static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
@@ -351,8 +354,8 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
-  uint64_t add_string(StringRef s) {
-    uint64_t ret = contents.size();
+  u64 add_string(StringRef s) {
+    u64 ret = contents.size();
     contents += s.str();
     contents += '\0';
     return ret;
@@ -362,7 +365,7 @@ public:
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
-  uint64_t get_size() const override { return contents.size(); }
+  u64 get_size() const override { return contents.size(); }
 
 private:
   std::string contents;
@@ -379,9 +382,9 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {}
-  uint64_t get_size() const override { return size; }
+  u64 get_size() const override { return size; }
 
-  uint64_t size = 0;
+  u64 size = 0;
 
 private:
   std::vector<ELF64LE::Sym> contents;
@@ -396,9 +399,9 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {}
-  uint64_t get_size() const override { return size; }
+  u64 get_size() const override { return size; }
 
-  uint64_t size = 1;
+  u64 size = 1;
 };
 
 namespace out {
@@ -416,14 +419,14 @@ extern StrtabSection *strtab;
 //
 
 struct ComdatGroup {
-  ComdatGroup(ObjectFile *file, uint32_t i)
+  ComdatGroup(ObjectFile *file, u32 i)
     : file(file), section_idx(i) {}
   ComdatGroup(const ComdatGroup &other)
     : file(other.file.load()), section_idx(other.section_idx) {}
 
   tbb::spin_mutex mu;
   std::atomic<ObjectFile *> file;
-  uint32_t section_idx;
+  u32 section_idx;
 };
 
 struct StringPiece {
@@ -447,19 +450,19 @@ public:
   void fix_sym_addrs();
   void compute_symtab();
 
-  void write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
-  void write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off);
+  void write_local_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off);
+  void write_global_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off);
 
   StringRef get_filename();
   bool is_in_archive();
 
-  Symbol *get_symbol(uint32_t idx) const {
+  Symbol *get_symbol(u32 idx) const {
     if (idx < first_global)
       return nullptr;
     return symbols[idx - first_global];
   }
 
-  uint64_t get_symbol_addr(uint32_t idx) const {
+  u64 get_symbol_addr(u32 idx) const {
     if (idx < first_global) {
       const ELF64LE::Sym &sym = elf_syms[idx];
 
@@ -478,22 +481,22 @@ public:
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
   std::vector<Symbol *> symbols;
-  uint32_t priority;
+  u32 priority;
   std::atomic_bool is_alive;
 
-  uint64_t local_symtab_size = 0;
-  uint64_t local_strtab_size = 0;
-  uint64_t global_symtab_size = 0;
-  uint64_t global_strtab_size = 0;
+  u64 local_symtab_size = 0;
+  u64 local_strtab_size = 0;
+  u64 global_symtab_size = 0;
+  u64 global_strtab_size = 0;
 
 private:
   void initialize_sections();
   void initialize_symbols();
-  void remove_comdat_members(uint32_t section_idx);
+  void remove_comdat_members(u32 section_idx);
   void read_string_pieces(const ELF64LE::Shdr &shdr);
 
   MemoryBufferRef mb;
-  std::vector<std::pair<ComdatGroup *, uint32_t>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;
 
@@ -521,7 +524,7 @@ void write();
 
 class OutputFile {
 public:
-  OutputFile(uint64_t size);
+  OutputFile(u64 size);
   void commit();
 
 private:

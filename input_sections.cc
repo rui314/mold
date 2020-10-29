@@ -10,7 +10,7 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRe
   this->name = name;
   this->output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
 
-  uint64_t align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
+  u64 align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
   if (align > UINT32_MAX)
     error(toString(file) + ": section sh_addralign is too large");
   if (__builtin_popcount(align) != 1)
@@ -58,8 +58,8 @@ void InputSection::relocate(uint8_t *buf) {
   for (const ELF64LE::Rela &rel : rels) {
     uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    uint64_t cur = output_section->shdr.sh_addr + offset + rel.r_offset;
-    uint64_t dst = file->get_symbol_addr(rel.getSymbol(false));
+    u64 cur = output_section->shdr.sh_addr + offset + rel.r_offset;
+    u64 dst = file->get_symbol_addr(rel.getSymbol(false));
 
     switch (rel.getType(false)) {
     case R_X86_64_8:
@@ -76,18 +76,18 @@ void InputSection::relocate(uint8_t *buf) {
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
-      *(uint32_t *)loc = dst;
+      *(u32 *)loc = dst;
       break;
     case R_X86_64_PC32:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      *(uint32_t *)loc = dst - cur - 4;
+      *(u32 *)loc = dst - cur - 4;
       break;
     case R_X86_64_64:
-      *(uint64_t *)loc = dst;
+      *(u64 *)loc = dst;
       break;
     case R_X86_64_PC64:
-      *(uint64_t *)loc = dst - cur - 4;
+      *(u64 *)loc = dst - cur - 4;
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_GOTPC32:

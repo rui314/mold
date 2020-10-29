@@ -30,7 +30,7 @@ MemoryBufferRef readFile(StringRef path) {
 }
 
 static const ELF64LE::Shdr
-*findSection(ArrayRef<ELF64LE::Shdr> sections, uint32_t type) {
+*findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
   for (const ELF64LE::Shdr &sec : sections)
     if (sec.sh_type == type)
       return &sec;
@@ -141,11 +141,11 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-void ObjectFile::remove_comdat_members(uint32_t section_idx) {
+void ObjectFile::remove_comdat_members(u32 section_idx) {
   const ELF64LE::Shdr &shdr = elf_sections[section_idx];
   ArrayRef<ELF64LE::Word> entries =
     CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
-  for (uint32_t i : entries)
+  for (u32 i : entries)
     sections[i] = nullptr;
 }
 
@@ -209,7 +209,7 @@ void ObjectFile::register_defined_symbols() {
     // num_defined++;
 
     InputSection *isec = nullptr;
-    uint32_t shndx = esym.st_shndx;
+    u32 shndx = esym.st_shndx;
     if (shndx != SHN_ABS && shndx != SHN_COMMON)
       isec = sections[shndx];
 
@@ -253,7 +253,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
 void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *g = pair.first;
-    uint32_t section_idx = pair.second;
+    u32 section_idx = pair.second;
 
     ObjectFile *other = g->file;
     if (other && other->priority < this->priority) {
@@ -262,7 +262,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     }
 
     ObjectFile *file;
-    uint32_t idx;
+    u32 idx;
 
     {
       std::lock_guard lock(g->mu);
@@ -354,7 +354,7 @@ void ObjectFile::compute_symtab() {
 }
 
 void
-ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+ObjectFile::write_local_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
@@ -381,7 +381,7 @@ ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strta
 }
 
 void
-ObjectFile::write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strtab_off) {
+ObjectFile::write_global_symtab(uint8_t *buf, u64 symtab_off, u64 strtab_off) {
   uint8_t *symtab = buf + out::symtab->shdr.sh_offset;
   uint8_t *strtab = buf + out::strtab->shdr.sh_offset;
 
