@@ -360,6 +360,7 @@ public:
     name = ".got";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_addralign = 8;
   }
 
   void copy_to(uint8_t *buf) override {}
