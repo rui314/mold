@@ -497,6 +497,22 @@ int main(int argc, char **argv) {
     }
   }
 
+  // Assign symbols to GOT offsets
+  {
+    MyTimer t("got");
+    u64 offset = 0;
+
+    for (ObjectFile *file : files) {
+      for (Symbol *sym : file->symbols) {
+        if (sym->file == file && sym->needs_got) {          
+          out::got->symbols.push_back(sym);
+          sym->got_addr = offset * 8;
+          offset += 8;
+        }
+      }
+    }
+  }
+
   // Add output sections.
   std::vector<OutputChunk *> output_chunks;
   for (OutputSection *osec : OutputSection::instances)

@@ -363,6 +363,15 @@ public:
   }
 
   void copy_to(uint8_t *buf) override {}
+
+  void relocate(uint8_t *buf) override {
+    buf += shdr.sh_offset;
+    for (Symbol *sym : symbols) {
+      *(u64 *)buf = sym->addr;
+      buf += 8;
+    }
+  }
+
   u64 get_size() const override { return size; }
 
   u64 size = 0;
