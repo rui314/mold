@@ -241,7 +241,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
     // num_undefined++;
 
     if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-#if 1
+#if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif
@@ -315,9 +315,6 @@ void ObjectFile::convert_common_symbols() {
 
     sym->input_section = isec;
     sym->value = 0;
-
-    if (sym->name == "__new_exitfn_called")
-      llvm::outs() << "name=" << toString(this) << " " << sym->name << "\n";
   }
 }
 
