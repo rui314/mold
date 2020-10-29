@@ -65,14 +65,13 @@ void InputSection::relocate(u8 *buf) {
   for (const ELF64LE::Rela &rel : rels) {
     u32 sym_idx = rel.getSymbol(false);
     Symbol *sym = file->get_symbol(sym_idx);
+    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     u64 A = rel.r_addend;
-    u64 G = sym->got_addr;
+    u64 G = sym ? sym->got_addr : 0;
     u64 GOT = out::got->shdr.sh_addr;
-
-    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
