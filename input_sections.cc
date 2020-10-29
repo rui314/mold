@@ -64,44 +64,49 @@ void InputSection::relocate(u8 *buf) {
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
     u32 sym_idx = rel.getSymbol(false);
-    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
-
-    u64 cur = output_section->shdr.sh_addr + offset + rel.r_offset;
     Symbol *sym = file->get_symbol(sym_idx);
-    u64 dst = sym ? sym->addr : file->get_symbol_addr(sym_idx);
+
+    u64 p = output_section->shdr.sh_addr + offset + rel.r_offset;
+    u64 s = sym ? sym->addr : file->get_symbol_addr(sym_idx);
+    u64 a = rel.r_addend;
+    u64 g = sym->got_addr;
+
+    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     switch (rel.getType(false)) {
     case R_X86_64_8:
-      *loc = dst;
+      *loc = s + a;
       break;
     case R_X86_64_PC8:
-      *loc = dst - cur;
+      *loc = s + a - p;
       break;
     case R_X86_64_16:
-      *(u16 *)loc = dst;
+      *(u16 *)loc = s + a;
       break;
     case R_X86_64_PC16:
-      *(u16 *)loc = dst - cur - 4;
+      *(u16 *)loc = s + a - p;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
-      *(u32 *)loc = dst;
+      *(u32 *)loc = s + a;
       break;
     case R_X86_64_PC32:
     case R_X86_64_PLT32:
-      *(u32 *)loc = dst - cur - 4;
+      *(u32 *)loc = s + a - p;
       break;
+    case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_GOTPCREL:
+      *(u32 *)loc = g + out::got->shdr.sh_addr + a - p;
+      break;
     case R_X86_64_GOTPC32:
-      *(u32 *)loc = out::got->shdr.sh_addr + sym->got_addr - cur - 4;
+      *(u32 *)loc = out::got->shdr.sh_addr + a - p;
       break;
     case R_X86_64_64:
-      *(u64 *)loc = dst;
+      *(u64 *)loc = s + a;
       break;
     case R_X86_64_PC64:
-      *(u64 *)loc = dst - cur - 4;
+      *(u64 *)loc = s + a - p;
       break;
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
