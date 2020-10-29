@@ -469,10 +469,21 @@ int main(int argc, char **argv) {
     bin_sections(files);
   }
 
+  // Assign offsets within an output section to input sections.
   {
     MyTimer t("isec_offsets", before_copy);
     set_isec_offsets();
   }
+
+  // Create linker-synthesized sections.
+  out::ehdr = new OutputEhdr;
+  out::phdr = new OutputPhdr;
+  out::shdr = new OutputShdr;
+  //  out::interp = new InterpSection;
+  out::got = new GotSection;
+  out::shstrtab = new ShstrtabSection;
+  out::symtab = new SymtabSection;
+  out::strtab = new StrtabSection;
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
@@ -487,17 +498,9 @@ int main(int argc, char **argv) {
                       num_got += got;
                       num_plt += plt;
                     });
-  }
 
-  // Create linker-synthesized sections.
-  out::ehdr = new OutputEhdr;
-  out::phdr = new OutputPhdr;
-  out::shdr = new OutputShdr;
-  //  out::interp = new InterpSection;
-  out::got = new GotSection;
-  out::shstrtab = new ShstrtabSection;
-  out::symtab = new SymtabSection;
-  out::strtab = new StrtabSection;
+    out::got->size = num_got * 8;
+  }
 
   // Compute .symtab and .strtab sizes
   {
