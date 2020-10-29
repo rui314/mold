@@ -2,8 +2,7 @@
 
 using namespace llvm;
 
-void print_map(ArrayRef<ObjectFile *> files,
-               ArrayRef<OutputSection *> output_sections) {
+void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections) {
   // Construct a section-to-symbol map.
   std::unordered_multimap<InputSection *, Symbol *> map;
   for (ObjectFile *file : files)
@@ -12,16 +11,16 @@ void print_map(ArrayRef<ObjectFile *> files,
         map.insert({sym->input_section, sym});
 
   llvm::outs() << "             VMA     Size Align Out     In      Symbol\n";
-  for (OutputSection *osec : output_sections) {
+  for (OutputChunk *chunk : output_sections) {
     llvm::outs() << format("%16llx %8llx %5lld ",
-                           (u64)osec->shdr.sh_addr,
-                           (u64)osec->shdr.sh_size,
-                           (u64)osec->shdr.sh_addralign)
-                 << osec->name << "\n";
+                           (u64)chunk->shdr.sh_addr,
+                           (u64)chunk->shdr.sh_size,
+                           (u64)chunk->shdr.sh_addralign)
+                 << chunk->name << "\n";
 
-    for (InputSection *isec : osec->sections) {
+    for (InputSection *isec : chunk->sections) {
       llvm::outs() << format("%16llx %8llx %5lld         ",
-                             osec->shdr.sh_addr + isec->offset,
+                             chunk->shdr.sh_addr + isec->offset,
                              (u64)isec->shdr.sh_size,
                              (u64)isec->shdr.sh_addralign)
                    << toString(isec) << "\n";

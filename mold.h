@@ -239,6 +239,7 @@ public:
   int shndx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
+  std::vector<InputSection *> sections;
 };
 
 // ELF header
@@ -321,10 +322,17 @@ public:
     return shdr.sh_size;
   }
 
-  std::vector<InputSection *> sections;
-  u32 idx;
+  bool empty() const {
+    if (!sections.empty())
+      for (InputSection *isec : sections)
+        if (isec->shdr.sh_size)
+          return false;
+    return true;
+  }
 
   static std::vector<OutputSection *> instances;
+
+  u32 idx;
 };
 
 class InterpSection : public OutputChunk {
@@ -552,7 +560,7 @@ private:
 // mapfile.cc
 //
 
-void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputSection *> output_sections);
+void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections);
 
 //
 // main.cc

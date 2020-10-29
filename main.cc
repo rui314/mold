@@ -234,33 +234,19 @@ static void set_isec_offsets() {
 // alloc writable data
 // alloc writable bss
 // nonalloc
-static int get_rank(OutputSection *x) {
-  bool alloc = x->shdr.sh_flags & SHF_ALLOC;
-  bool writable = x->shdr.sh_flags & SHF_WRITE;
-  bool exec = x->shdr.sh_flags & SHF_EXECINSTR;
-  bool tls = x->shdr.sh_flags & SHF_TLS;
-  bool nobits = x->shdr.sh_type & SHT_NOBITS;
+static int get_rank(const ELF64LE::Shdr shdr) {
+  bool alloc = shdr.sh_flags & SHF_ALLOC;
+  bool writable = shdr.sh_flags & SHF_WRITE;
+  bool exec = shdr.sh_flags & SHF_EXECINSTR;
+  bool tls = shdr.sh_flags & SHF_TLS;
+  bool nobits = shdr.sh_type & SHT_NOBITS;
   return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
-static bool is_osec_empty(OutputSection *osec) {
-  if (osec->sections.empty())
-    return true;
-  for (InputSection *isec : osec->sections)
-    if (isec->shdr.sh_size)
-      return false;
-  return true;
-}
-
-static std::vector<OutputSection *> get_output_sections() {
-  std::vector<OutputSection *> vec;
-  for (OutputSection *osec : OutputSection::instances)
-    if (!is_osec_empty(osec))
-      vec.push_back(osec);
-
-  std::sort(vec.begin(), vec.end(), [](OutputSection *a, OutputSection *b) {
-    int x = get_rank(a);
-    int y = get_rank(b);
+static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
+  std::sort(chunks.begin(), chunks.end(), [](OutputChunk *a, OutputChunk *b) {
+    int x = get_rank(a->shdr);
+    int y = get_rank(b->shdr);
     if (x != y)
       return x > y;
 
@@ -271,8 +257,6 @@ static std::vector<OutputSection *> get_output_sections() {
       return a->shdr.sh_type < b->shdr.sh_type;
     return a->name < b->name;
   });
-
-  return vec;
 }
 
 static std::vector<ELF64LE::Shdr *>
@@ -513,18 +497,21 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Add ELF and program header to the output.
-  std::vector<OutputChunk *> output_chunks;
-  output_chunks.push_back(out::ehdr);
-  output_chunks.push_back(out::phdr);
-
-  // Add .interp section.
-  //  output_chunks.push_back(out::interp);
-
   // Add other output sections.
-  std::vector<OutputSection *> output_sections = get_output_sections();
-  for (OutputSection *osec : output_sections)
-    output_chunks.push_back(osec);
+  std::vector<OutputChunk *> output_chunks;
+  for (OutputSection *osec : OutputSection::instances)
+    if (!osec->empty())
+      output_chunks.push_back(osec);
+
+  if (out::got->size)
+    output_chunks.push_back(out::got);
+
+  sort_output_chunks(output_chunks);
+
+  // Add ELF header, program header and .interp to the output.
+  output_chunks.insert(output_chunks.begin(), out::ehdr);
+  output_chunks.insert(output_chunks.begin() + 1, out::phdr);
+  // output_chunks.insert(output_chunks.begin() + 2, out::interp);
 
   // Add a string table for section names.
   output_chunks.push_back(out::shstrtab);
@@ -620,7 +607,7 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(files, output_sections);
+    print_map(files, output_chunks);
   }
 
 #if 0
