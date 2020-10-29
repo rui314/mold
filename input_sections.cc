@@ -86,8 +86,6 @@ void InputSection::relocate(u8 *buf) {
       break;
     case R_X86_64_PLT32:
       break; // todo
-    case R_X86_64_COPY:
-      break;
     case R_X86_64_GOTPCREL:
       *(u32 *)loc = G + GOT + A - P;
       break;
