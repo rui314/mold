@@ -188,7 +188,10 @@ public:
   std::atomic_bool needs_plt;
 
 private:
-  Symbol(StringRef name, ObjectFile *file) : name(name), file(file) {}
+  Symbol(StringRef name, ObjectFile *file) : name(name), file(file) {
+    needs_got = false;
+    needs_plt = false;
+  }
 };
 
 inline std::string toString(Symbol sym) {

@@ -487,6 +487,9 @@ int main(int argc, char **argv) {
                       num_got += got;
                       num_plt += plt;
                     });
+
+    llvm::outs() << "num_got=" << num_got << "\n"
+                 << "num_plt=" << num_plt << "\n";
   }
 
   // Create linker-synthesized sections.
