@@ -359,7 +359,7 @@ class GotSection : public OutputChunk {
 public:
   GotSection() {
     name = ".got";
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_addralign = 8;
   }
