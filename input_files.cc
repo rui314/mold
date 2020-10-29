@@ -370,7 +370,9 @@ ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strta
 
     auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
     *ent = esym;
-    ent->st_shndx = out::strtab->idx;
+    if (InputSection *isec = sections[esym.st_shndx])
+      if (OutputSection *osec = isec->output_section)
+        ent->st_shndx = osec->idx;
     ent->st_name = strtab_off;
     ent->st_value = get_symbol_addr(i);
     symtab_off += sizeof(ELF64LE::Sym);
@@ -394,7 +396,8 @@ ObjectFile::write_global_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strt
 
     auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
     *ent = esym;
-    ent->st_shndx = out::strtab->idx;
+    if (InputSection *isec = sym.input_section)
+      ent->st_shndx = isec->output_section->idx;
     ent->st_name = strtab_off;
     ent->st_value = sym.addr;   
     symtab_off += sizeof(ELF64LE::Sym);
