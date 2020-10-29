@@ -46,14 +46,11 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     case R_X86_64_GOTPCRELX:
     case R_X86_64_GOTTPOFF:
     case R_X86_64_REX_GOTPCRELX:
-      if (!sym->needs_got.exchange(true))
-        num_got++;
+      num_got += !sym->needs_got.exchange(true);
       break;
     case R_X86_64_PLT32:
-      if (!sym->needs_got.exchange(true))
-        num_got++;
-      if (!sym->needs_plt.exchange(true))
-        num_plt++;
+      num_got += !sym->needs_got.exchange(true);
+      num_plt += !sym->needs_plt.exchange(true);
       break;
     }
   }
