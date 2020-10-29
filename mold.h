@@ -10,6 +10,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
 #include "tbb/blocked_range.h"
@@ -473,6 +474,7 @@ public:
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
+  std::vector<Symbol *> symbols;
   uint32_t priority;
   std::atomic_bool is_alive;
 
@@ -492,7 +494,6 @@ private:
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;
 
-  std::vector<Symbol *> symbols;
   int first_global = 0;
   bool has_common_symbol;
 
@@ -524,6 +525,12 @@ private:
   std::unique_ptr<llvm::FileOutputBuffer> output_buffer;
   uint8_t *buf;
 };
+
+//
+// mapfile.cc
+//
+
+void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputSection *> output_sections);
 
 //
 // main.cc

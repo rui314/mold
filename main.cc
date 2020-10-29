@@ -397,6 +397,8 @@ int main(int argc, char **argv) {
   else
     error("-o option is missing");
 
+  config.print_map = args.hasArg(OPT_print_map);
+
   std::vector<ObjectFile *> files;
 
   llvm::TimerGroup before_copy("before_copy", "before_copy");
@@ -595,6 +597,11 @@ int main(int argc, char **argv) {
   {
     MyTimer t("unlink_wait");
     unlink_tg.wait();
+  }
+
+  if (config.print_map) {
+    MyTimer t("print_map");
+    print_map(files, output_sections);
   }
 
 #if 0
