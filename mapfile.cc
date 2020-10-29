@@ -24,7 +24,7 @@ void print_map(ArrayRef<ObjectFile *> files,
                              osec->shdr.sh_addr + isec->offset,
                              (uint64_t)isec->shdr.sh_size,
                              (uint64_t)isec->shdr.sh_addralign)
-                   << isec->name << "\n";
+                   << toString(isec) << "\n";
 
       auto range = map.equal_range(isec);
       for (auto it = range.first; it != range.second; ++it) {
