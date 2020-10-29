@@ -367,9 +367,10 @@ ObjectFile::write_local_symtab(uint8_t *buf, uint64_t symtab_off, uint64_t strta
 
     auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
     *ent = esym;
-    if (InputSection *isec = sections[esym.st_shndx])
-      if (OutputSection *osec = isec->output_section)
-        ent->st_shndx = osec->idx;
+    if (esym.st_shndx != SHN_ABS && esym.st_shndx != SHN_COMMON)
+      if (InputSection *isec = sections[esym.st_shndx])
+        if (OutputSection *osec = isec->output_section)
+          ent->st_shndx = osec->idx;
     ent->st_name = strtab_off;
     ent->st_value = get_symbol_addr(i);
     symtab_off += sizeof(ELF64LE::Sym);
