@@ -346,6 +346,20 @@ private:
 };
 
 
+class GotSection : public OutputChunk {
+public:
+  GotSection() {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+  }
+
+  void copy_to(uint8_t *buf) override {}
+  u64 get_size() const override { return size; }
+
+  u64 size = 0;
+  std::vector<Symbol *> symbols;
+};
+
 class ShstrtabSection : public OutputChunk {
 public:
   ShstrtabSection() {
@@ -410,6 +424,7 @@ extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
 extern InterpSection *interp;
+extern GotSection *got;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
 extern StrtabSection *strtab;
