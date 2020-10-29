@@ -304,7 +304,7 @@ static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
 
 static uint64_t set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   uint64_t fileoff = 0;
-  uint64_t vaddr = 0x400000;
+  uint64_t vaddr = 0x200000;
 
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->starts_new_ptload) {
