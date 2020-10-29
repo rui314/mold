@@ -70,15 +70,32 @@ void InputSection::relocate(u8 *buf) {
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     u64 A = rel.r_addend;
     u64 G = sym->got_addr;
+    u64 GOT = out::got->shdr.sh_addr;
 
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     switch (rel.getType(false)) {
-    case R_X86_64_8:
-      *loc = S + A;
+    case R_X86_64_NONE:
       break;
-    case R_X86_64_PC8:
-      *loc = S + A - P;
+    case R_X86_64_64:
+      *(u64 *)loc = S + A;
+      break;
+    case R_X86_64_PC32:
+      *(u32 *)loc = S + A - P;
+      break;
+    case R_X86_64_GOT32:
+      *(u64 *)loc = G + A;
+      break;
+    case R_X86_64_PLT32:
+      break; // todo
+    case R_X86_64_COPY:
+      break;
+    case R_X86_64_GOTPCREL:
+      *(u32 *)loc = G + GOT + A - P;
+      break;
+    case R_X86_64_32:
+    case R_X86_64_32S:
+      *(u32 *)loc = S + A;
       break;
     case R_X86_64_16:
       *(u16 *)loc = S + A;
@@ -86,33 +103,27 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_PC16:
       *(u16 *)loc = S + A - P;
       break;
-    case R_X86_64_32:
-    case R_X86_64_32S:
-      *(u32 *)loc = S + A;
+    case R_X86_64_8:
+      *loc = S + A;
       break;
-    case R_X86_64_PC32:
-    case R_X86_64_PLT32:
-      *(u32 *)loc = S + A - P;
-      break;
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = G + out::got->shdr.sh_addr + A - P;
-      break;
-    case R_X86_64_GOTPC32:
-      *(u32 *)loc = out::got->shdr.sh_addr + A - P;
-      break;
-    case R_X86_64_64:
-      *(u64 *)loc = S + A;
-      break;
-    case R_X86_64_PC64:
-      *(u64 *)loc = S + A - P;
+    case R_X86_64_PC8:
+      *loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
     case R_X86_64_GOTTPOFF:
     case R_X86_64_TPOFF32:
+      break;
+    case R_X86_64_PC64:
+      *(u64 *)loc = S + A - P;
+      break;
+    case R_X86_64_GOTPC32:
+      *(u32 *)loc = GOT + A - P;
+      break;
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
+      *(u32 *)loc = G + GOT + A - P;
       break;
     default:
       error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
