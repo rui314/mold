@@ -375,7 +375,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 1);
 
   // Parse command line options
   MyOptTable opt_table;
@@ -506,11 +506,13 @@ int main(int argc, char **argv) {
       for (Symbol *sym : file->symbols) {
         if (sym->file == file && sym->needs_got) {          
           out::got->symbols.push_back(sym);
-          sym->got_addr = offset * 8;
+          sym->got_addr = offset;
           offset += 8;
         }
       }
     }
+
+    assert(offset == out::got->size);
   }
 
   // Add output sections.

@@ -32,7 +32,7 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
 
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
-    if (!sym)
+    if (!sym || !sym->file)
       continue;
 
     switch (rel.getType(false)) {
@@ -48,10 +48,12 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     case R_X86_64_REX_GOTPCRELX:
       num_got += !sym->needs_got.exchange(true);
       break;
+#if 0
     case R_X86_64_PLT32:
       num_got += !sym->needs_got.exchange(true);
       num_plt += !sym->needs_plt.exchange(true);
       break;
+#endif
     }
   }
 
