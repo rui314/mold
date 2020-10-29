@@ -502,6 +502,8 @@ int main(int argc, char **argv) {
     MyTimer t("got");
     u64 offset = 0;
 
+    out::got->symbols.reserve(out::got->size / 8);
+
     for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
         if (sym->file == file && sym->needs_got) {          
