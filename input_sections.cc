@@ -61,10 +61,12 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
 void InputSection::relocate(uint8_t *buf) {
   int i = 0;
   for (const ELF64LE::Rela &rel : rels) {
+    u32 sym_idx = rel.getSymbol(false);
     uint8_t *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
     u64 cur = output_section->shdr.sh_addr + offset + rel.r_offset;
-    u64 dst = file->get_symbol_addr(rel.getSymbol(false));
+    Symbol *sym = file->get_symbol(sym_idx);
+    u64 dst = sym ? sym->addr : file->get_symbol_addr(sym_idx);
 
     switch (rel.getType(false)) {
     case R_X86_64_8:
@@ -84,9 +86,11 @@ void InputSection::relocate(uint8_t *buf) {
       *(u32 *)loc = dst;
       break;
     case R_X86_64_PC32:
+      *(u32 *)loc = dst - cur - 4;
+      break;
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = dst - cur - 4;
+      *(u32 *)loc = out::got->shdr.sh_addr + sym->got_addr - cur - 4;
       break;
     case R_X86_64_64:
       *(u64 *)loc = dst;
