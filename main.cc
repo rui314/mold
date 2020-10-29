@@ -153,6 +153,11 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
     for (InputSection *isec : file->sections) {
       if (!isec)
         continue;
+
+      if (toString(file) == "/usr/lib/x86_64-linux-gnu/libc.a:cxa_atexit.o")
+        llvm::outs() << "isec=" << toString(isec)
+                     << " " << toString(isec)
+                     << " " << (void *)isec->output_section << "\n";
       OutputSection *osec = isec->output_section;
       osec->sections.push_back(isec);
     }

@@ -287,11 +287,12 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
   }
 }
 
-static OutputSection bss(".bss", SHF_ALLOC, SHT_NOBITS);
-
 void ObjectFile::convert_common_symbols() {
   if (!has_common_symbol)
     return;
+
+  static OutputSection *bss =
+    OutputSection::get_instance(".bss", SHF_WRITE | SHF_ALLOC, SHT_NOBITS);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     if (elf_syms[i].st_shndx != SHN_COMMON)
@@ -305,14 +306,18 @@ void ObjectFile::convert_common_symbols() {
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
+    shdr->sh_size = elf_syms[i].st_size;
     shdr->sh_addralign = 1;
 
     auto *isec = new InputSection(this, *shdr, ".bss");
-    isec->output_section = &bss;
+    isec->output_section = bss;
     sections.push_back(isec);
 
     sym->input_section = isec;
     sym->value = 0;
+
+    if (sym->name == "__new_exitfn_called")
+      llvm::outs() << "name=" << toString(this) << " " << sym->name << "\n";
   }
 }
 
