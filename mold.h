@@ -184,7 +184,7 @@ public:
   InputSection *input_section = nullptr;
 
   u64 addr = 0;
-  u32 got_offset = 0;
+  std::atomic_uint32_t got_offset = ATOMIC_VAR_INIT(0);
   u32 gottp_offset = 0;
   u32 plt_offset = 0;
 
@@ -193,7 +193,6 @@ public:
   bool is_weak = false;
   bool is_undef_weak = false;
 
-  std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_gottp = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);
 };

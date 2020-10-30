@@ -45,14 +45,16 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      num_got += !sym->needs_got.exchange(true);
+      if (sym->got_offset.exchange(-1) == 0)
+        num_got++;
       break;
     case R_X86_64_GOTTPOFF:
       num_got += !sym->needs_gottp.exchange(true);
       break;
 #if 0
     case R_X86_64_PLT32:
-      num_got += !sym->needs_got.exchange(true);
+      if (sym->got_offset.exchange(-1) == 0)
+        num_got++;
       num_plt += !sym->needs_plt.exchange(true);
       break;
 #endif
@@ -68,7 +70,7 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 G = sym ? sym->got_offset : 0;
+    u64 G = sym ? sym->got_offset.load() : 0;
     u64 GOT = out::got->shdr.sh_addr;
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     i64 A = rel.r_addend;

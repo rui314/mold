@@ -530,7 +530,7 @@ int main(int argc, char **argv) {
         if (sym->file != file)
           continue;
 
-        if (sym->needs_got) {
+        if (sym->got_offset == -1) {
           out::got->symbols.push_back({GotSection::REGULAR, sym});
           sym->got_offset = offset;
           offset += 8;
