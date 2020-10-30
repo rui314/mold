@@ -239,7 +239,7 @@ static int get_rank(const ELF64LE::Shdr shdr) {
   bool writable = shdr.sh_flags & SHF_WRITE;
   bool exec = shdr.sh_flags & SHF_EXECINSTR;
   bool tls = shdr.sh_flags & SHF_TLS;
-  bool nobits = shdr.sh_type & SHT_NOBITS;
+  bool nobits = shdr.sh_type == SHT_NOBITS;
   return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
@@ -382,7 +382,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 64);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 62);
 
   // Parse command line options
   MyOptTable opt_table;

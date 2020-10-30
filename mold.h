@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bitset>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
