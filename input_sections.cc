@@ -68,7 +68,7 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 G = sym ? sym->got_addr : 0;
+    u64 G = sym ? sym->got_offset : 0;
     u64 GOT = out::got->shdr.sh_addr;
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     i64 A = rel.r_addend;
@@ -113,7 +113,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = (sym ? sym->gottp_addr : 0) + GOT + A - P;
+      *(u32 *)loc = (sym ? sym->gottp_offset : 0) + GOT + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;

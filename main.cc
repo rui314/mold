@@ -532,11 +532,11 @@ int main(int argc, char **argv) {
 
         if (sym->needs_got) {
           out::got->symbols.push_back({GotSection::REGULAR, sym});
-          sym->got_addr = offset;
+          sym->got_offset = offset;
           offset += 8;
         } else if (sym->needs_gottp) {
           out::got->symbols.push_back({GotSection::TP, sym});
-          sym->gottp_addr = offset;
+          sym->gottp_offset = offset;
           offset += 8;
         }
       }
