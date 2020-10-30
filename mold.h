@@ -179,7 +179,6 @@ public:
     return map.insert(name, Symbol(name));    
   }
 
-  tbb::spin_mutex mu;
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
@@ -189,6 +188,7 @@ public:
   u32 gottp_offset = 0;
   u32 plt_offset = 0;
 
+  tbb::spin_mutex mu;
   u8 visibility = 0;
   bool is_weak = false;
   bool is_undef_weak = false;
