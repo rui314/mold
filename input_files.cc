@@ -201,29 +201,28 @@ void ObjectFile::register_defined_symbols() {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
 
-    if (esym.isUndefined())
-      continue;
+    if (esym.isDefined()) {
+      // num_defined++;
 
-    // num_defined++;
+      InputSection *isec = nullptr;
+      if (!esym.isAbsolute() && !esym.isCommon())
+        isec = sections[esym.st_shndx];
 
-    InputSection *isec = nullptr;
-    if (!esym.isAbsolute() && !esym.isCommon())
-      isec = sections[esym.st_shndx];
+      bool is_weak = (esym.getBinding() == STB_WEAK);
 
-    bool is_weak = (esym.getBinding() == STB_WEAK);
+      std::lock_guard lock(sym.mu);
 
-    std::lock_guard lock(sym.mu);
+      bool is_new = !sym.file;
+      bool win = sym.is_weak && !is_weak;
+      bool tie_but_higher_priority = this->priority < sym.file->priority;
 
-    bool is_new = !sym.file;
-    bool win = sym.is_weak && !is_weak;
-    bool tie_but_higher_priority = this->priority < sym.file->priority;
-
-    if (is_new || win || tie_but_higher_priority) {
-      sym.file = this;
-      sym.input_section = isec;
-      sym.value = esym.st_value;
-      sym.visibility = esym.getVisibility();
-      sym.is_weak = is_weak;
+      if (is_new || win || tie_but_higher_priority) {
+        sym.file = this;
+        sym.input_section = isec;
+        sym.value = esym.st_value;
+        sym.visibility = esym.getVisibility();
+        sym.is_weak = is_weak;
+      }
     }
   }
 }
@@ -237,16 +236,40 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
 
-    if (esym.isDefined() || esym.getBinding() == STB_WEAK)
-      continue;
-    // num_undefined++;
-
-    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
+    if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
+        sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
+      // num_undefined++;
 #if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif
       feeder.add(sym.file);
+    }
+  }
+}
+
+void ObjectFile::hanlde_undefined_weak_symbols() {
+  if (!is_alive)
+    return;
+
+  for (int i = 0; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[first_global + i];
+    Symbol &sym = *symbols[i];
+
+    if (esym.isUndefined() && esym.getBinding() == STB_WEAK) {
+      std::lock_guard lock(sym.mu);
+
+      bool is_new = !sym.file;
+      bool tie_but_higher_priority =
+        sym.is_undef_weak && this->priority < sym.file->priority;
+
+      if (is_new || tie_but_higher_priority) {
+        sym.file = this;
+        sym.input_section = nullptr;
+        sym.value = 0;
+        sym.visibility = esym.getVisibility();
+        sym.is_undef_weak = true;
+      }
     }
   }
 }

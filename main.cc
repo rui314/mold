@@ -447,6 +447,8 @@ int main(int argc, char **argv) {
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
         file->register_undefined_symbols(feeder);
       });
+
+    for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
   }
 
   // Eliminate unused archive members.

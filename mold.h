@@ -191,6 +191,7 @@ public:
   u64 value;
   u8 visibility = 0;
   bool is_weak = false;
+  bool is_undef_weak = false;
 
   std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);
