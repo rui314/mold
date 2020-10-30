@@ -291,13 +291,15 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   u64 vaddr = 0x200000;
 
   for (OutputChunk *chunk : output_chunks) {
-    if (chunk->starts_new_ptload) {
-      fileoff = align_to(fileoff, PAGE_SIZE);
+    if (chunk->starts_new_ptload)
       vaddr = align_to(vaddr, PAGE_SIZE);
-    }
 
-    if (!chunk->is_bss())
-      fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
+    if (vaddr % PAGE_SIZE < fileoff % PAGE_SIZE)
+      fileoff += vaddr % PAGE_SIZE - fileoff % PAGE_SIZE;
+    else if (vaddr % PAGE_SIZE > fileoff % PAGE_SIZE)
+      fileoff = align_to(fileoff, PAGE_SIZE) + vaddr % PAGE_SIZE;
+
+    fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
     vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
 
     chunk->shdr.sh_offset = fileoff;
@@ -306,7 +308,10 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
 
     if (!chunk->is_bss())
       fileoff += chunk->get_size();
-    vaddr += chunk->get_size();
+
+    bool is_tbss = chunk->is_bss() && (chunk->shdr.sh_flags & SHF_TLS);
+    if (!is_tbss)
+      vaddr += chunk->get_size();
   }
   return fileoff;
 }
@@ -506,7 +511,7 @@ int main(int argc, char **argv) {
 
     for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
-        if (sym->file == file && sym->needs_got) {          
+        if (sym->file == file && sym->needs_got) {
           out::got->symbols.push_back(sym);
           sym->got_addr = offset;
           offset += 8;
@@ -575,14 +580,20 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
-    FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
+  std::unique_ptr<FileOutputBuffer> output_buffer;
 
-  if (!buf_or_err)
-    error("failed to open " + config.output + ": " +
-          llvm::toString(buf_or_err.takeError()));
+  {
+    MyTimer t("open");
+    Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
+      FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
 
-  std::unique_ptr<FileOutputBuffer> output_buffer = std::move(*buf_or_err);
+    if (!buf_or_err)
+      error("failed to open " + config.output + ": " +
+            llvm::toString(buf_or_err.takeError()));
+
+    output_buffer = std::move(*buf_or_err);
+  }
+
   u8 *buf = output_buffer->getBufferStart();
 
   // Fill .symtab and .strtab

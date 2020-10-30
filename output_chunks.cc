@@ -72,7 +72,8 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       break;
 
     u32 flags = to_phdr_flags(chunk->shdr.sh_flags);
-    bool this_is_bss = (chunk->shdr.sh_type == SHT_NOBITS);
+    bool this_is_bss =
+      (chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS));
 
     if (first) {
       add(PT_LOAD, flags, {chunk});
