@@ -44,9 +44,11 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_GOTTPOFF:
     case R_X86_64_REX_GOTPCRELX:
       num_got += !sym->needs_got.exchange(true);
+      break;
+    case R_X86_64_GOTTPOFF:
+      num_got += !sym->needs_gottp.exchange(true);
       break;
 #if 0
     case R_X86_64_PLT32:
@@ -109,7 +111,9 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
+      break;
     case R_X86_64_GOTTPOFF:
+      *(u32 *)loc = GOT + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;

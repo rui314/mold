@@ -186,6 +186,7 @@ public:
 
   u64 addr = 0;
   u64 got_addr = 0;
+  u64 gottp_addr = 0;
   u64 plt_addr = 0;
 
   u64 value;
@@ -194,6 +195,7 @@ public:
   bool is_undef_weak = false;
 
   std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
+  std::atomic_bool needs_gottp = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);
 };
 
@@ -365,6 +367,8 @@ private:
 
 class GotSection : public OutputChunk {
 public:
+  typedef enum : u8 { REGULAR, TP } GotType;
+
   GotSection() {
     name = ".got";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
@@ -373,19 +377,12 @@ public:
   }
 
   void copy_to(u8 *buf) override {}
-
-  void relocate(u8 *buf) override {
-    buf += shdr.sh_offset;
-    for (Symbol *sym : symbols) {
-      *(u64 *)buf = sym->addr;
-      buf += 8;
-    }
-  }
+  void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
 
   u64 size = 0;
-  std::vector<Symbol *> symbols;
+  std::vector<std::pair<GotType, Symbol *>> symbols;
 };
 
 class ShstrtabSection : public OutputChunk {

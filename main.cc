@@ -527,9 +527,16 @@ int main(int argc, char **argv) {
 
     for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
-        if (sym->file == file && sym->needs_got) {
-          out::got->symbols.push_back(sym);
+        if (sym->file != file)
+          continue;
+
+        if (sym->needs_got) {
+          out::got->symbols.push_back({GotSection::REGULAR, sym});
           sym->got_addr = offset;
+          offset += 8;
+        } else if (sym->needs_gottp) {
+          out::got->symbols.push_back({GotSection::TP, sym});
+          sym->gottp_addr = offset;
           offset += 8;
         }
       }

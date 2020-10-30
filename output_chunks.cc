@@ -166,3 +166,18 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
     return osec;
   return new OutputSection(name, flags, type);
 }
+
+void GotSection::relocate(u8 *buf) {
+  buf += shdr.sh_offset;
+
+  for (auto pair : symbols) {
+    GotType type = pair.first;
+    Symbol *sym = pair.second;
+
+    if (type == REGULAR)
+      *(u64 *)buf = sym->addr;
+    else
+      *(u64 *)buf = sym->addr - out::tls_end;
+    buf += 8;
+  }
+}
