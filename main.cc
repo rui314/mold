@@ -381,12 +381,24 @@ private:
   llvm::Timer *timer;
 };
 
-int main(int argc, char **argv) {
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, 62);
+static int get_thread_count(InputArgList &args) {
+  if (auto *arg = args.getLastArg(OPT_thread_count)) {
+    int n;
+    if (!llvm::to_integer(arg->getValue(), n) || n <= 0)
+      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+            arg->getValue() + "'");
+    return n;
+  }
+  return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+}
 
+int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
   InputArgList args = opt_table.parse(argc - 1, argv + 1);
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               get_thread_count(args));
 
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
