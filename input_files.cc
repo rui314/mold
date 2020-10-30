@@ -213,8 +213,7 @@ void ObjectFile::register_defined_symbols() {
     bool is_weak = (esym.getBinding() == STB_WEAK);
     std::lock_guard lock(sym.mu);
 
-    if (!sym.file || this->priority < sym.file->priority ||
-        (sym.is_weak && !is_weak)) {
+    if (!sym.file || (!is_weak && sym.is_weak) || this->priority < sym.file->priority) {
       sym.file = this;
       sym.input_section = isec;
       sym.value = esym.st_value;
