@@ -171,10 +171,10 @@ void GotSection::relocate(u8 *buf) {
   buf += shdr.sh_offset;
 
   for (auto pair : symbols) {
-    GotType type = pair.first;
+    Kind kind = pair.first;
     Symbol *sym = pair.second;
 
-    if (type == REGULAR)
+    if (kind == REGULAR)
       *(u64 *)buf = sym->addr;
     else
       *(u64 *)buf = sym->addr - out::tls_end;

@@ -367,7 +367,7 @@ private:
 
 class GotSection : public OutputChunk {
 public:
-  typedef enum : u8 { REGULAR, TP } GotType;
+  typedef enum : u8 { REGULAR, TP } Kind;
 
   GotSection() {
     name = ".got";
@@ -382,7 +382,7 @@ public:
   u64 get_size() const override { return size; }
 
   u64 size = 0;
-  std::vector<std::pair<GotType, Symbol *>> symbols;
+  std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
 class ShstrtabSection : public OutputChunk {
