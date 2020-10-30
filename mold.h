@@ -171,8 +171,6 @@ private:
 
 class Symbol {
 public:
-  typedef enum : u8 { NOT_WEAK, DEFINED_WEAK, UNDEF_WEAK} Weakness;
-
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
@@ -192,7 +190,7 @@ public:
 
   u64 value;
   u8 visibility = 0;
-  Weakness weakness = NOT_WEAK;
+  bool is_weak = false;
 
   std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);

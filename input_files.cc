@@ -200,27 +200,9 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
-    bool is_weak = (esym.getBinding() == STB_WEAK);
 
-    // Register an undefined weak symbol as a weak defined symbol with value 0.
-    if (esym.isUndefined()) {
-      if (!is_weak)
-        continue;
-
-      std::lock_guard lock(sym.mu);
-
-      bool is_new = !sym.file;
-      bool tie_but_higher_priority =
-        sym.weakness == Symbol::UNDEF_WEAK && this->priority < sym.file->priority;
-
-      if (is_new || tie_but_higher_priority) {
-        sym.file = this;
-        sym.value = 0;
-        sym.visibility = esym.getVisibility();
-        sym.weakness = Symbol::UNDEF_WEAK;
-      }
+    if (esym.isUndefined())
       continue;
-    }
 
     // num_defined++;
 
@@ -228,10 +210,12 @@ void ObjectFile::register_defined_symbols() {
     if (!esym.isAbsolute() && !esym.isCommon())
       isec = sections[esym.st_shndx];
 
+    bool is_weak = (esym.getBinding() == STB_WEAK);
+
     std::lock_guard lock(sym.mu);
 
     bool is_new = !sym.file;
-    bool win = (is_weak < sym.weakness);
+    bool win = sym.is_weak && !is_weak;
     bool tie_but_higher_priority = this->priority < sym.file->priority;
 
     if (is_new || win || tie_but_higher_priority) {
@@ -239,7 +223,7 @@ void ObjectFile::register_defined_symbols() {
       sym.input_section = isec;
       sym.value = esym.st_value;
       sym.visibility = esym.getVisibility();
-      sym.weakness = (Symbol::Weakness)is_weak;
+      sym.is_weak = is_weak;
     }
   }
 }
