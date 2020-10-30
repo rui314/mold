@@ -577,7 +577,7 @@ int main(int argc, char **argv) {
   // Fill section header.
   fill_shdrs(output_chunks);
 
-  // Assign offsets to input sections
+  // Assign offsets to output sections
   u64 filesize = 0;
   {
     MyTimer t("osec_offset", before_copy);

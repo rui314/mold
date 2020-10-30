@@ -110,6 +110,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
     case R_X86_64_GOTTPOFF:
+      break;
     case R_X86_64_TPOFF32:
       break;
     case R_X86_64_PC64:
