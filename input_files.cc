@@ -232,13 +232,11 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
 
-    if (esym.isDefined())
+    if (esym.isDefined() || esym.getBinding() == STB_WEAK)
       continue;
     // num_undefined++;
 
-    bool is_weak = (esym.getBinding() == STB_WEAK);
-
-    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive && !is_weak) {
+    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
 #if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
