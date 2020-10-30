@@ -239,7 +239,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
     // num_undefined++;
 
     if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-#if 0
+#if 1
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif
