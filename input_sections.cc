@@ -112,6 +112,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_GOTTPOFF:
       break;
     case R_X86_64_TPOFF32:
+      *(u32 *)loc = S - out::tls_end;
       break;
     case R_X86_64_PC64:
       *(u64 *)loc = S + A - P;

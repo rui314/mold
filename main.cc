@@ -587,6 +587,10 @@ int main(int argc, char **argv) {
   {
     MyTimer t("sym_addr");
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
+
+    for (OutputChunk *chunk : output_chunks)
+      if (chunk->shdr.sh_flags & SHF_TLS)
+        out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
   }
 
   tbb::task_group unlink_tg;

@@ -239,7 +239,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
     if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
         sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
       // num_undefined++;
-#if 1
+#if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif

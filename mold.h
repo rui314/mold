@@ -456,6 +456,7 @@ extern GotSection *got;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
 extern StrtabSection *strtab;
+extern u64 tls_end;
 }
 
 //

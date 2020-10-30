@@ -10,6 +10,7 @@ GotSection *out::got;
 ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
 StrtabSection *out::strtab;
+u64 out::tls_end;
 
 std::vector<OutputSection *> OutputSection::instances;
 
