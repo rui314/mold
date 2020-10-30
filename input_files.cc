@@ -200,9 +200,27 @@ void ObjectFile::register_defined_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[first_global + i];
     Symbol &sym = *symbols[i];
+    bool is_weak = (esym.getBinding() == STB_WEAK);
 
-    if (!esym.isDefined())
+    // Register an undefined weak symbol as a weak defined symbol with value 0.
+    if (esym.isUndefined()) {
+      if (!is_weak)
+        continue;
+
+      std::lock_guard lock(sym.mu);
+
+      bool is_new = !sym.file;
+      bool tie_but_higher_priority =
+        sym.weakness == Symbol::UNDEF_WEAK && this->priority < sym.file->priority;
+
+      if (is_new || tie_but_higher_priority) {
+        sym.file = this;
+        sym.value = 0;
+        sym.visibility = esym.getVisibility();
+        sym.weakness = Symbol::UNDEF_WEAK;
+      }
       continue;
+    }
 
     // num_defined++;
 
@@ -210,15 +228,18 @@ void ObjectFile::register_defined_symbols() {
     if (!esym.isAbsolute() && !esym.isCommon())
       isec = sections[esym.st_shndx];
 
-    bool is_weak = (esym.getBinding() == STB_WEAK);
     std::lock_guard lock(sym.mu);
 
-    if (!sym.file || (!is_weak && sym.is_weak) || this->priority < sym.file->priority) {
+    bool is_new = !sym.file;
+    bool win = (is_weak < sym.weakness);
+    bool tie_but_higher_priority = this->priority < sym.file->priority;
+
+    if (is_new || win || tie_but_higher_priority) {
       sym.file = this;
       sym.input_section = isec;
       sym.value = esym.st_value;
       sym.visibility = esym.getVisibility();
-      sym.is_weak = is_weak;
+      sym.weakness = (Symbol::Weakness)is_weak;
     }
   }
 }
@@ -401,7 +422,7 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     if (InputSection *isec = sym.input_section)
       ent->st_shndx = isec->output_section->shndx;
     ent->st_name = strtab_off;
-    ent->st_value = sym.addr;   
+    ent->st_value = sym.addr;
     symtab_off += sizeof(ELF64LE::Sym);
 
     memcpy_nontemporal(strtab + strtab_off, sym.name.data(), sym.name.size());

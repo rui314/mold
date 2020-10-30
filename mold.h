@@ -171,6 +171,8 @@ private:
 
 class Symbol {
 public:
+  typedef enum : u8 { NOT_WEAK, DEFINED_WEAK, UNDEF_WEAK} Weakness;
+
   Symbol(StringRef name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name), file(other.file) {}
 
@@ -190,7 +192,7 @@ public:
 
   u64 value;
   u8 visibility = 0;
-  bool is_weak = false;
+  Weakness weakness = NOT_WEAK;
 
   std::atomic_bool needs_got = ATOMIC_VAR_INIT(false);
   std::atomic_bool needs_plt =  ATOMIC_VAR_INIT(false);
@@ -487,6 +489,7 @@ public:
   void parse();
   void register_defined_symbols();
   void register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &feeder);
+  void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
   std::tuple<u64, u64> scan_relocations();
