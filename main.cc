@@ -534,7 +534,7 @@ int main(int argc, char **argv) {
           out::got->symbols.push_back({GotSection::REGULAR, sym});
           sym->got_offset = offset;
           offset += 8;
-        } else if (sym->needs_gottp) {
+        } else if (sym->gottp_offset == -1) {
           out::got->symbols.push_back({GotSection::TP, sym});
           sym->gottp_offset = offset;
           offset += 8;
