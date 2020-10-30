@@ -207,9 +207,8 @@ void ObjectFile::register_defined_symbols() {
     // num_defined++;
 
     InputSection *isec = nullptr;
-    u32 shndx = esym.st_shndx;
-    if (shndx != SHN_ABS && shndx != SHN_COMMON)
-      isec = sections[shndx];
+    if (!esym.isAbsolute() && !esym.isCommon())
+      isec = sections[esym.st_shndx];
 
     bool is_weak = (esym.getBinding() == STB_WEAK);
     std::lock_guard lock(sym.mu);
@@ -238,8 +237,10 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
       continue;
     // num_undefined++;
 
-    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-#if 1
+    bool is_weak = (esym.getBinding() == STB_WEAK);
+
+    if (sym.file && sym.file->is_in_archive() && !sym.file->is_alive && !is_weak) {
+#if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
 #endif
