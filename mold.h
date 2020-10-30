@@ -185,8 +185,6 @@ public:
   InputSection *input_section = nullptr;
 
   u64 addr = 0;
-  u64 value;
-
   u32 got_offset = 0;
   u32 gottp_offset = 0;
   u32 plt_offset = 0;

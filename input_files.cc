@@ -219,7 +219,7 @@ void ObjectFile::register_defined_symbols() {
       if (is_new || win || tie_but_higher_priority) {
         sym.file = this;
         sym.input_section = isec;
-        sym.value = esym.st_value;
+        sym.addr = esym.st_value;
         sym.visibility = esym.getVisibility();
         sym.is_weak = is_weak;
       }
@@ -266,7 +266,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
         sym.input_section = nullptr;
-        sym.value = 0;
+        sym.addr = 0;
         sym.visibility = esym.getVisibility();
         sym.is_undef_weak = true;
       }
@@ -338,7 +338,7 @@ void ObjectFile::convert_common_symbols() {
     sections.push_back(isec);
 
     sym->input_section = isec;
-    sym->value = 0;
+    sym->addr = 0;
   }
 }
 
@@ -361,14 +361,9 @@ void ObjectFile::fix_sym_addrs() {
     if (sym->file != this)
       continue;
 
-    InputSection *isec = sym->input_section;
-
-    if (isec) {
+    if (InputSection *isec = sym->input_section) {
       OutputSection *osec = isec->output_section;
-      sym->addr = osec->shdr.sh_addr + isec->offset + sym->value;
-    } else {
-      // Absolute symbol
-      sym->addr = sym->value;
+      sym->addr += osec->shdr.sh_addr + isec->offset;
     }
   }
 }
