@@ -113,7 +113,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = GOT + A - P;
+      *(u32 *)loc = (sym ? sym->gottp_addr : 0) + GOT + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
