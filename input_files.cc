@@ -259,7 +259,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
     if (esym.isUndefined() && esym.getBinding() == STB_WEAK) {
       std::lock_guard lock(sym.mu);
 
-      bool is_new = !sym.file;
+      bool is_new = !sym.file || sym.file->is_in_archive();
       bool tie_but_higher_priority =
         sym.is_undef_weak && this->priority < sym.file->priority;
 
