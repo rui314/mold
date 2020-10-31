@@ -183,6 +183,13 @@ public:
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
 
+  enum {
+    NEEDS_GOT    = 1 << 0,
+    NEEDS_GOTTP  = 1 << 1,
+    NEEDS_GOTPLT = 1 << 2,
+    NEEDS_PLT    = 1 << 3,
+  };
+
   u64 addr = 0;
   std::atomic_uint32_t got_offset = ATOMIC_VAR_INIT(0);
   std::atomic_uint32_t gottp_offset = ATOMIC_VAR_INIT(0);
