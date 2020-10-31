@@ -183,17 +183,11 @@ public:
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
 
-  enum {
-    NEEDS_GOT    = 1 << 0,
-    NEEDS_GOTTP  = 1 << 1,
-    NEEDS_GOTPLT = 1 << 2,
-    NEEDS_PLT    = 1 << 3,
-  };
-
   u64 addr = 0;
-  std::atomic_uint32_t got_offset = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t gottp_offset = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t plt_offset = ATOMIC_VAR_INIT(0);
+  uint32_t got_offset = ATOMIC_VAR_INIT(0);
+  uint32_t gotplt_offset = ATOMIC_VAR_INIT(0);
+  uint32_t gottp_offset = ATOMIC_VAR_INIT(0);
+  uint32_t plt_offset = ATOMIC_VAR_INIT(0);
 
   tbb::spin_mutex mu;
   u8 visibility = 0;
@@ -215,7 +209,7 @@ public:
 
   void copy_to(u8 *buf);
   void relocate(u8 *buf);
-  std::tuple<u64, u64> scan_relocations();
+  std::tuple<i32, i32, i32> scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
@@ -491,7 +485,7 @@ public:
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
-  std::tuple<u64, u64> scan_relocations();
+  std::tuple<i32, i32, i32> scan_relocations();
   void fix_sym_addrs();
   void compute_symtab();
 

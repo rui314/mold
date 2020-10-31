@@ -26,9 +26,10 @@ void InputSection::copy_to(u8 *buf) {
   memcpy_nontemporal(buf, &data[0], data.size());
 }
 
-std::tuple<u64, u64> InputSection::scan_relocations() {
-  uint64_t num_got = 0;
-  uint64_t num_plt = 0;
+std::tuple<i32, i32, i32> InputSection::scan_relocations() {
+  i32 num_got = 0;
+  i32 num_gotplt = 0;
+  i32 num_plt = 0;
 
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
@@ -44,14 +45,30 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-      if (sym->got_offset.exchange(-1) == 0)
+    case R_X86_64_GOTTPOFF:// fix
+    case R_X86_64_REX_GOTPCRELX: {
+      std::lock_guard lock(sym->mu);
+      if (sym->got_offset != -1) {
+        sym->got_offset = -1;
         num_got++;
+
+        if (sym->gotplt_offset == -1) {
+          sym->gotplt_offset = 0;
+          num_gotplt--;
+        }
+      }
       break;
-    case R_X86_64_GOTTPOFF:
-      if (sym->gottp_offset.exchange(-1) == 0)
-        num_got++;
+    }
+#if 0
+    case R_X86_64_GOTTPOFF: {
+      std::lock_guard lock(sym->mu);
+      if (sym->got_offset != -1) {
+        sym->gotplt_offset = -1;
+        num_gotplt++;
+      }
       break;
+    }
+#endif
 #if 0
     case R_X86_64_PLT32:
       if (sym->got_offset.exchange(-1) == 0)
@@ -63,7 +80,7 @@ std::tuple<u64, u64> InputSection::scan_relocations() {
     }
   }
 
-  return {num_got, num_plt};
+  return {num_got, num_gotplt, num_plt};
 }
 
 void InputSection::relocate(u8 *buf) {
@@ -72,7 +89,7 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 G = sym ? sym->got_offset.load() : 0;
+    u64 G = sym ? sym->got_offset : 0;
     u64 GOT = out::got->shdr.sh_addr;
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     i64 A = rel.r_addend;
@@ -117,7 +134,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = (sym ? sym->gottp_offset.load() : 0) + GOT + A - P;
+      *(u32 *)loc = (sym ? sym->gottp_offset : 0) + GOT + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;

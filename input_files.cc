@@ -342,18 +342,20 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-std::tuple<u64, u64> ObjectFile::scan_relocations() {
-  u64 num_got = 0;
-  u64 num_plt = 0;
+std::tuple<i32, i32, i32> ObjectFile::scan_relocations() {
+  i32 num_got = 0;
+  i32 num_gotplt = 0;
+  i32 num_plt = 0;
 
   for (InputSection *isec : sections) {
     if (isec) {
-      auto [got, plt] = isec->scan_relocations();
+      auto [got, gotplt, plt] = isec->scan_relocations();
       num_got += got;
+      num_gotplt += gotplt;
       num_got += plt;
     }
   }
-  return {num_got, num_plt};
+  return {num_got, num_gotplt, num_plt};
 }
 
 void ObjectFile::fix_sym_addrs() {
