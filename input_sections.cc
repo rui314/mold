@@ -45,10 +45,9 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_GOTTPOFF:// fix
     case R_X86_64_REX_GOTPCRELX: {
       std::lock_guard lock(sym->mu);
-      if (sym->got_offset != -1) {
+      if (sym->got_offset == 0) {
         sym->got_offset = -1;
         num_got++;
 
@@ -59,23 +58,28 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
       }
       break;
     }
-#if 0
     case R_X86_64_GOTTPOFF: {
       std::lock_guard lock(sym->mu);
-      if (sym->got_offset != -1) {
+      if (sym->gottp_offset == 0) {
+        sym->gottp_offset = -1;
+        num_got++;
+      }
+      break;
+    }
+#if 0
+    case R_X86_64_PLT32: {
+      std::lock_guard lock(sym->mu);
+      if (sym->plt_offset == 0) {
+        sym->plt_offset = -1;
+        num_plt++;
+      }
+
+      if (sym->gotplt_offset == 0 && sym->got_offset == 0) {
         sym->gotplt_offset = -1;
         num_gotplt++;
       }
       break;
     }
-#endif
-#if 0
-    case R_X86_64_PLT32:
-      if (sym->got_offset.exchange(-1) == 0)
-        num_got++;
-      if (sym->plt_offset.exchange(-1) == 0)
-        num_plt++;
-      break;
 #endif
     }
   }
