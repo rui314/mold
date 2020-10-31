@@ -42,13 +42,13 @@ public:
 };
 
 InputArgList MyOptTable::parse(int argc, char **argv) {
-  unsigned missingIndex;
-  unsigned missingCount;
+  unsigned missing_index = 0;
+  unsigned missing_count = 0;
   SmallVector<const char *, 256> vec(argv, argv + argc);
 
-  InputArgList args = this->ParseArgs(vec, missingIndex, missingCount);
-  if (missingCount)
-    error(Twine(args.getArgString(missingIndex)) + ": missing argument");
+  InputArgList args = this->ParseArgs(vec, missing_index, missing_count);
+  if (missing_count)
+    error(Twine(args.getArgString(missing_index)) + ": missing argument");
 
   for (auto *arg : args.filtered(OPT_UNKNOWN))
     error("unknown argument '" + arg->getAsString(args) + "'");

@@ -381,6 +381,23 @@ public:
   std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
+class RelSection : public OutputChunk {
+public:
+  RelSection() {
+    name = ".rela.dyn";
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = llvm::ELF::SHT_RELA;
+    shdr.sh_addralign = 8;
+  }
+
+  void copy_to(u8 *buf) override {}
+  void relocate(u8 *buf) override;
+
+  u64 get_size() const override { return size; }
+
+  u64 size = 0;
+};
+
 class ShstrtabSection : public OutputChunk {
 public:
   ShstrtabSection() {
