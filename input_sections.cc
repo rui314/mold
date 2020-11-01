@@ -131,6 +131,12 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOTTPOFF:
+      llvm::outs() << "rel sym=" << (sym ? sym->name : "")
+                   << " gottp=" << Twine::utohexstr(sym ? sym->gottp_offset : 0)
+                   << " GOT=" << Twine::utohexstr(GOT)
+                   << " A=" << Twine::utohexstr(A)
+                   << " P=" << Twine::utohexstr(P)
+                   << "\n";
       *(u32 *)loc = (sym ? sym->gottp_offset : 0) + GOT + A - P;
       break;
     case R_X86_64_TPOFF32:

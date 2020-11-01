@@ -195,6 +195,11 @@ void GotSection::relocate(u8 *buf) {
       break;
     case TPOFF:
       *(u64 *)buf = sym->addr - out::tls_end;
+      llvm::outs() << "tls_end=" << Twine::utohexstr(out::tls_end)
+                   << " sym=" << sym->name
+                   << " sym->gottp_offset=" << Twine::utohexstr(out::got->shdr.sh_addr + sym->gottp_offset)
+                   << " sym->addr=" << Twine::utohexstr(sym->addr)
+                   << "\n";
       break;
     case IREL:
       break;
