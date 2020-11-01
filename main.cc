@@ -139,6 +139,8 @@ static ObjectFile *create_internal_file() {
 
   out::__bss_start = create("__bss_start");
   out::__ehdr_start = create("__ehdr_start");
+  out::__rela_iplt_start = create("__rela_iplt_start");
+  out::__rela_iplt_end = create("__rela_iplt_end");
   obj->elf_syms = *elf_syms;
   return obj;
 }
@@ -683,6 +685,10 @@ int main(int argc, char **argv) {
         break;
       }
     }
+
+    // __rela_iplt_start and __rela_iplt_end
+    out::__rela_iplt_start->addr = out::plt->shdr.sh_addr;
+    out::__rela_iplt_end->addr = out::plt->shdr.sh_addr + out::plt->shdr.sh_size;
   }
 
   // Fix symbol addresses.

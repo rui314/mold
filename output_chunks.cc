@@ -18,6 +18,8 @@ u64 out::tls_end;
 
 Symbol *out::__bss_start;
 Symbol *out::__ehdr_start;
+Symbol *out::__rela_iplt_start;
+Symbol *out::__rela_iplt_end;
 Symbol *out::end;
 Symbol *out::_end;
 Symbol *out::etext;

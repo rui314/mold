@@ -493,6 +493,8 @@ extern u64 tls_end;
 
 extern Symbol *__bss_start;
 extern Symbol *__ehdr_start;
+extern Symbol *__rela_iplt_start;
+extern Symbol *__rela_iplt_end;
 extern Symbol *end;
 extern Symbol *_end;
 extern Symbol *etext;
