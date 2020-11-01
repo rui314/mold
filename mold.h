@@ -548,6 +548,7 @@ public:
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
   std::vector<Symbol *> symbols;
+  ArrayRef<ELF64LE::Sym> elf_syms;
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 
@@ -555,6 +556,9 @@ public:
   u64 local_strtab_size = 0;
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
+
+  // For .strtab construction
+  std::vector<StringRef> local_symbols;
 
 private:
   void initialize_sections();
@@ -571,12 +575,8 @@ private:
   bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
-  ArrayRef<ELF64LE::Sym> elf_syms;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
-
-  // For .strtab construction
-  std::vector<StringRef> local_symbols;
 };
 
 //

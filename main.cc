@@ -121,15 +121,23 @@ static ObjectFile *create_internal_file() {
   auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
   mb.release();
 
+  auto *elf_syms = new std::vector<ELF64LE::Sym>;
+
   // Create linker-synthesized symbols.
-  out::__bss_start = Symbol::intern("__bss_start");
-  out::__bss_start->file = obj;
-  obj->symbols.push_back(out::__bss_start);
+  auto create = [&](StringRef name) {
+    Symbol *sym = Symbol::intern(name);
+    sym->file = obj;
 
-  out::__ehdr_start = Symbol::intern("__ehdr_start");
-  out::__ehdr_start->file = obj;
-  obj->symbols.push_back(out::__ehdr_start);
+    ELF64LE::Sym esym;
+    esym.setType(STT_NOTYPE);
+    esym.setBinding(STB_GLOBAL);
+    elf_syms->push_back(esym);
+    return sym;
+  };
 
+  out::__bss_start = create("__bss_start");
+  out::__ehdr_start = create("__ehdr_start");
+  obj->elf_syms = *elf_syms;
   return obj;
 }
 
