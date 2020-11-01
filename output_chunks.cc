@@ -204,16 +204,17 @@ void GotSection::relocate(u8 *buf) {
 }
 
 void RelPltSection::relocate(u8 *buf) {
-  assert(size == contents.size());
-
   auto *rel = (ELF64LE::Rela *)(buf + shdr.sh_offset);
 
-  for (auto pair : contents) {
-    u32 offset = pair.first;
-    Symbol *sym = pair.second;
+  for (int i = 0; i < out::got->symbols.size(); i++) {
+    GotSection::Kind kind = out::got->symbols[i].first;
+    Symbol *sym = out::got->symbols[i].second;
 
-    rel->r_offset = output_chunk->shdr.sh_addr + offset;
-    rel->setType(R_X86_64_IRELATIVE, false);
-    rel->r_addend = sym->addr;
+    if (kind == GotSection::IREL) {
+      rel->r_offset = out::got->shdr.sh_addr + i * 8;
+      rel->setType(R_X86_64_IRELATIVE, false);
+      rel->r_addend = sym->addr;
+      rel++;
+    }
   }
 }

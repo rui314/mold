@@ -413,11 +413,7 @@ public:
   void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
-
   u64 size = 0;
-  OutputChunk *output_chunk = nullptr;
-
-  std::vector<std::pair<u32, Symbol *>> contents;
 };
 
 class ShstrtabSection : public OutputChunk {
