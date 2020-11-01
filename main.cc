@@ -611,6 +611,8 @@ int main(int argc, char **argv) {
      }
     }
 
+    llvm::outs() << got_offset << " " << out::got->size << "\n";
+
     assert(got_offset == out::got->size);
     assert(gotplt_offset == out::gotplt->size);
     assert(plt_offset == out::plt->size);
