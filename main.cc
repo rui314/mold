@@ -533,7 +533,12 @@ int main(int argc, char **argv) {
     std::atomic_int32_t num_plt = 0;
 
     for_each(files, [&](ObjectFile *file) {
-                      auto [got, gotplt, plt] = file->scan_relocations();
+                      i32 got = 0, gotplt = 0, plt = 0;
+
+                      for (InputSection *isec : file->sections)
+                        if (isec)
+                          isec->scan_relocations(got, gotplt, plt);
+
                       num_got += got;
                       num_gotplt += gotplt;
                       num_plt += plt;

@@ -26,11 +26,7 @@ void InputSection::copy_to(u8 *buf) {
   memcpy_nontemporal(buf, &data[0], data.size());
 }
 
-std::tuple<i32, i32, i32> InputSection::scan_relocations() {
-  i32 num_got = 0;
-  i32 num_gotplt = 0;
-  i32 num_plt = 0;
-
+void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt) {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
     if (!sym || !sym->file)
@@ -84,8 +80,6 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
     }
     }
   }
-
-  return {num_got, num_gotplt, num_plt};
 }
 
 void InputSection::relocate(u8 *buf) {
