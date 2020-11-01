@@ -565,9 +565,12 @@ int main(int argc, char **argv) {
   // Assign symbols to GOT offsets
   {
     MyTimer t("got");
-    u64 offset = 0;
+
+    u64 got_offset = 0;
+    u64 gotplt_offset = 0;
 
     out::got->symbols.reserve(out::got->size / 8);
+    out::got->symbols.reserve(out::gotplt->size / 8);
 
     for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
@@ -576,23 +579,27 @@ int main(int argc, char **argv) {
 
         if (sym->got_offset == -1) {
           out::got->symbols.push_back({GotSection::REGULAR, sym});
-          sym->got_offset = offset;
-          offset += 8;
+          sym->got_offset = got_offset;
+          got_offset += 8;
         }
 
         if (sym->gottp_offset == -1) {
           out::got->symbols.push_back({GotSection::TP, sym});
-          sym->gottp_offset = offset;
-          offset += 8;
+          sym->gottp_offset = got_offset;
+          got_offset += 8;
+        }
+
+        if (sym->gotplt_offset == -1) {
+          assert(sym->type == STT_GNU_IFUNC);
+          out::got->symbols.push_back({GotSection::IREL, sym});
+          sym->gotplt_offset = gotplt_offset;
+          gotplt_offset += 8;
         }
       }
     }
 
-    llvm::outs() << "offset=" << offset
-                 << " got->size=" << out::got->size
-                 << "\n";
-    llvm::outs().flush();
-    assert(offset == out::got->size);
+    assert(got_offset == out::got->size);
+    assert(gotplt_offset == out::gotplt->size);
   }
 
   // Add output sections.
