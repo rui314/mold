@@ -621,6 +621,8 @@ int main(int argc, char **argv) {
 
   if (out::got->size)
     output_chunks.push_back(out::got);
+  if (out::plt->size)
+    output_chunks.push_back(out::plt);
   if (out::gotplt->size)
     output_chunks.push_back(out::gotplt);
 
