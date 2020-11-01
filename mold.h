@@ -382,6 +382,24 @@ public:
   std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
+class PltSection : public OutputChunk {
+public:
+  PltSection() {
+    this->name = ".plt";
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_addralign = 8;
+  }
+
+  void copy_to(u8 *buf) override {}
+  void relocate(u8 *buf) override {}
+
+  u64 get_size() const override { return size; }
+  u64 size = 0;
+
+  std::vector<Symbol *> symbols;
+};
+
 class RelPltSection : public OutputChunk {
 public:
   RelPltSection() {
@@ -468,6 +486,7 @@ extern OutputPhdr *phdr;
 extern InterpSection *interp;
 extern GotSection *got;
 extern GotSection *gotplt;
+extern PltSection *plt;
 extern RelPltSection *relplt;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;

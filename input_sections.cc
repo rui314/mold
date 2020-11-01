@@ -102,7 +102,10 @@ void InputSection::relocate(u8 *buf) {
       *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
-      *(u32 *)loc = S + A - P; // todo
+      if (sym->type == STT_GNU_IFUNC)
+        *(u32 *)loc = out::plt->shdr.sh_addr + sym->plt_offset + A - P;
+      else
+        *(u32 *)loc = S + A - P; // todo
       break;
     case R_X86_64_GOTPCREL:
       *(u32 *)loc = G + GOT + A - P;

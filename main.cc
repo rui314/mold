@@ -519,6 +519,7 @@ int main(int argc, char **argv) {
   //  out::interp = new InterpSection;
   out::got = new GotSection(".got");
   out::gotplt = new GotSection(".got.plt");
+  out::plt = new PltSection;
   out::relplt = new RelPltSection;
   out::shstrtab = new ShstrtabSection;
   out::symtab = new SymtabSection;
@@ -549,6 +550,8 @@ int main(int argc, char **argv) {
 
     out::got->size = num_got * 8;
     out::gotplt->size = num_gotplt * 8;
+    out::plt->size = num_plt * 16;
+    out::relplt->size = num_relplt * sizeof(ELF64LE::Rela);
   }
 
   // Compute .symtab and .strtab sizes
@@ -566,8 +569,9 @@ int main(int argc, char **argv) {
   {
     MyTimer t("got");
 
-    u64 got_offset = 0;
-    u64 gotplt_offset = 0;
+    u32 got_offset = 0;
+    u32 gotplt_offset = 0;
+    u32 plt_offset = 0;
 
     out::got->symbols.reserve(out::got->size / 8);
     out::got->symbols.reserve(out::gotplt->size / 8);
@@ -595,11 +599,18 @@ int main(int argc, char **argv) {
           sym->gotplt_offset = gotplt_offset;
           gotplt_offset += 8;
         }
-      }
+
+        if (sym->plt_offset == -1) {
+          out::plt->symbols.push_back(sym);
+          sym->plt_offset = plt_offset;
+          plt_offset += 16;
+        }
+     }
     }
 
     assert(got_offset == out::got->size);
     assert(gotplt_offset == out::gotplt->size);
+    assert(plt_offset == out::plt->size);
   }
 
   // Add output sections.

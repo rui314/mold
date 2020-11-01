@@ -8,6 +8,7 @@ OutputPhdr *out::phdr;
 InterpSection *out::interp;
 GotSection *out::got;
 GotSection *out::gotplt;
+PltSection *out::plt;
 RelPltSection *out::relplt;
 ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
