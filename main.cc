@@ -490,6 +490,16 @@ int main(int argc, char **argv) {
   out::symtab = new SymtabSection;
   out::strtab = new StrtabSection;
 
+  // Create linker-synthesized symbols.
+  out::__bss_start = new Symbol("__bss_start");
+  out::__ehdr_start = new Symbol("__ehdr_start");
+  out::end = new Symbol("end");
+  out::_end = new Symbol("_end");
+  out::etext = new Symbol("etext");
+  out::_etext = new Symbol("_etext");
+  out::edata = new Symbol("edata");
+  out::_edata = new Symbol("_edata");
+
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   {

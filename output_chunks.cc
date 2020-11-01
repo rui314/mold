@@ -10,7 +10,17 @@ GotSection *out::got;
 ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
 StrtabSection *out::strtab;
+
 u64 out::tls_end;
+
+Symbol *out::__bss_start;
+Symbol *out::__ehdr_start;
+Symbol *out::end;
+Symbol *out::_end;
+Symbol *out::etext;
+Symbol *out::_etext;
+Symbol *out::edata;
+Symbol *out::_edata;
 
 std::vector<OutputSection *> OutputSection::instances;
 

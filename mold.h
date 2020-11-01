@@ -466,7 +466,17 @@ extern GotSection *got;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
 extern StrtabSection *strtab;
+
 extern u64 tls_end;
+
+extern Symbol *__bss_start;
+extern Symbol *__ehdr_start;
+extern Symbol *end;
+extern Symbol *_end;
+extern Symbol *etext;
+extern Symbol *_etext;
+extern Symbol *edata;
+extern Symbol *_edata;
 }
 
 //
