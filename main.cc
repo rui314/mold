@@ -536,7 +536,7 @@ int main(int argc, char **argv) {
                       auto [got, gotplt, plt] = file->scan_relocations();
                       num_got += got;
                       num_gotplt += gotplt;
-                      num_plt += plt;
+                      // num_plt += plt;
                     });
 
     out::got->size = num_got * 8;
@@ -578,6 +578,10 @@ int main(int argc, char **argv) {
       }
     }
 
+    llvm::outs() << "offset=" << offset
+                 << " got->size=" << out::got->size
+                 << "\n";
+    llvm::outs().flush();
     assert(offset == out::got->size);
   }
 

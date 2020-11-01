@@ -184,10 +184,10 @@ public:
   InputSection *input_section = nullptr;
 
   u64 addr = 0;
-  uint32_t got_offset = ATOMIC_VAR_INIT(0);
-  uint32_t gotplt_offset = ATOMIC_VAR_INIT(0);
-  uint32_t gottp_offset = ATOMIC_VAR_INIT(0);
-  uint32_t plt_offset = ATOMIC_VAR_INIT(0);
+  uint32_t got_offset = 0;
+  uint32_t gotplt_offset = 0;
+  uint32_t gottp_offset = 0;
+  uint32_t plt_offset = 0;
 
   tbb::spin_mutex mu;
   u8 visibility = 0;

@@ -73,14 +73,9 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
         num_plt++;
       }
 
-      if (sym->gotplt_offset == 0) {
+      if (sym->gotplt_offset == 0 && sym->got_offset == 0) {
         sym->gotplt_offset = -1;
         num_gotplt++;
-
-        if (sym->got_offset == -1) {
-          sym->got_offset = 0;
-          num_got--;
-        }
       }
       break;
     }
