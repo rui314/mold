@@ -216,7 +216,6 @@ void PltSection::relocate(u8 *buf) {
     u64 S = out::gotplt->shdr.sh_addr + i * 8;
 
     *(u32 *)(buf + i * 16 + 2) = S - P;
-    buf += 16;
   }
 }
 

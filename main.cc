@@ -576,7 +576,8 @@ int main(int argc, char **argv) {
     u32 plt_offset = 0;
 
     out::got->symbols.reserve(out::got->size / 8);
-    out::got->symbols.reserve(out::gotplt->size / 8);
+    out::gotplt->symbols.reserve(out::gotplt->size / 8);
+    out::plt->symbols.reserve(out::plt->size / 16);
 
     for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
