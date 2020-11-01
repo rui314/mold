@@ -206,12 +206,12 @@ void GotSection::relocate(u8 *buf) {
 void RelPltSection::relocate(u8 *buf) {
   auto *rel = (ELF64LE::Rela *)(buf + shdr.sh_offset);
 
-  for (int i = 0; i < out::got->symbols.size(); i++) {
-    GotSection::Kind kind = out::got->symbols[i].first;
-    Symbol *sym = out::got->symbols[i].second;
+  for (int i = 0; i < out::gotplt->symbols.size(); i++) {
+    GotSection::Kind kind = out::gotplt->symbols[i].first;
+    Symbol *sym = out::gotplt->symbols[i].second;
 
     if (kind == GotSection::IREL) {
-      rel->r_offset = out::got->shdr.sh_addr + i * 8;
+      rel->r_offset = out::gotplt->shdr.sh_addr + i * 8;
       rel->setType(R_X86_64_IRELATIVE, false);
       rel->r_addend = sym->addr;
       rel++;
