@@ -221,6 +221,7 @@ void ObjectFile::register_defined_symbols() {
         sym.file = this;
         sym.input_section = isec;
         sym.addr = esym.st_value;
+        sym.type = esym.getType();
         sym.visibility = esym.getVisibility();
         sym.is_weak = is_weak;
       }
