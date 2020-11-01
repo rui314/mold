@@ -469,6 +469,7 @@ extern StrtabSection *strtab;
 
 extern u64 tls_end;
 
+extern ObjectFile *internal_file;
 extern Symbol *__bss_start;
 extern Symbol *__ehdr_start;
 extern Symbol *end;

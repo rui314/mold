@@ -113,6 +113,26 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
+static ObjectFile *create_internal_file() {
+  // Create a dummy object file.
+  static char buf[256];
+  std::unique_ptr<MemoryBuffer> mb =
+    MemoryBuffer::getMemBuffer(StringRef(buf, sizeof(buf)));
+  auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
+  mb.release();
+
+  // Create linker-synthesized symbols.
+  out::__bss_start = Symbol::intern("__bss_start");
+  out::__bss_start->file = obj;
+  obj->symbols.push_back(out::__bss_start);
+
+  out::__ehdr_start = Symbol::intern("__ehdr_start");
+  out::__ehdr_start->file = obj;
+  obj->symbols.push_back(out::__ehdr_start);
+
+  return obj;
+}
+
 static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
   int unit = (files.size() + 127) / 128;
@@ -456,6 +476,9 @@ int main(int argc, char **argv) {
                              [](ObjectFile *file){ return !file->is_alive; }),
               files.end());
 
+  out::internal_file = create_internal_file();
+  files.push_back(out::internal_file);
+
   // Eliminate duplicate comdat groups.
   {
     MyTimer t("comdat", before_copy);
@@ -489,16 +512,6 @@ int main(int argc, char **argv) {
   out::shstrtab = new ShstrtabSection;
   out::symtab = new SymtabSection;
   out::strtab = new StrtabSection;
-
-  // Create linker-synthesized symbols.
-  out::__bss_start = new Symbol("__bss_start");
-  out::__ehdr_start = new Symbol("__ehdr_start");
-  out::end = new Symbol("end");
-  out::_end = new Symbol("_end");
-  out::etext = new Symbol("etext");
-  out::_etext = new Symbol("_etext");
-  out::edata = new Symbol("edata");
-  out::_edata = new Symbol("_edata");
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.

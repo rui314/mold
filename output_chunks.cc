@@ -13,6 +13,7 @@ StrtabSection *out::strtab;
 
 u64 out::tls_end;
 
+ObjectFile *out::internal_file;
 Symbol *out::__bss_start;
 Symbol *out::__ehdr_start;
 Symbol *out::end;
