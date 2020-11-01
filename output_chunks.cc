@@ -186,10 +186,18 @@ void GotSection::relocate(u8 *buf) {
     Kind kind = pair.first;
     Symbol *sym = pair.second;
 
-    if (kind == REGULAR)
+    switch (kind) {
+    case REGULAR:
       *(u64 *)buf = sym->addr;
-    else
+      break;
+    case TLS:
       *(u64 *)buf = sym->addr - out::tls_end;
+      break;
+    case IREL:
+      break;
+    default:
+      error("unreachable");
+    }
     buf += 8;
   }
 }

@@ -584,7 +584,7 @@ int main(int argc, char **argv) {
         }
 
         if (sym->gottp_offset == -1) {
-          out::got->symbols.push_back({GotSection::TP, sym});
+          out::got->symbols.push_back({GotSection::TLS, sym});
           sym->gottp_offset = got_offset;
           got_offset += 8;
         }
