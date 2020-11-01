@@ -580,9 +580,15 @@ int main(int argc, char **argv) {
     out::plt->symbols.reserve(out::plt->size / 16);
 
     for (ObjectFile *file : files) {
-      for (Symbol *sym : file->symbols) {
+      llvm::outs() << "file=" << file->name << "\n";
+      if (file->name == "lc-address.o")
+        for (Symbol *sym : file->symbols)
+          llvm::outs() << "sym=" << sym->name << "\n";
+    }
 
-        //_nl_current_LC_ADDRESS
+    for (ObjectFile *file : files) {
+      for (Symbol *sym : file->symbols) {
+        // _nl_current_LC_ADDRESS
 
         if (sym->file != file)
           continue;
