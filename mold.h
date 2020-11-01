@@ -406,6 +406,7 @@ public:
     this->name = ".rela.plt";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_RELA;
+    shdr.sh_entsize = sizeof(ELF64LE::Rela);
     shdr.sh_addralign = 8;
   }
 
