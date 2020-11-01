@@ -205,6 +205,21 @@ void GotSection::relocate(u8 *buf) {
   }
 }
 
+void PltSection::relocate(u8 *buf) {
+  buf += shdr.sh_offset;
+
+  for (int i = 0; i < symbols.size(); i++) {
+    buf[i * 16] = 0xff;
+    buf[i * 16 + 1] = 0x25;
+
+    u64 P = shdr.sh_addr + i * 16 + 6;
+    u64 S = out::gotplt->shdr.sh_addr + i * 8;
+
+    *(u32 *)(buf + i * 16 + 2) = S - P;
+    buf += 16;
+  }
+}
+
 void RelPltSection::relocate(u8 *buf) {
   auto *rel = (ELF64LE::Rela *)(buf + shdr.sh_offset);
 

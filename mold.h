@@ -391,7 +391,7 @@ public:
   }
 
   void copy_to(u8 *buf) override {}
-  void relocate(u8 *buf) override {}
+  void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
   u64 size = 0;
