@@ -469,24 +469,27 @@ int main(int argc, char **argv) {
 
     for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
 
+    // Add defined symbols
     std::vector<ObjectFile *> objs;
     for (ObjectFile *file : files)
       if (!file->is_in_archive())
         objs.push_back(file);
 
+    // Add undefined symbols
     tbb::parallel_do(
       objs.begin(), objs.end(),
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
         file->register_undefined_symbols(feeder);
       });
 
+    // Eliminate unused archive members.
+    files.erase(std::remove_if(files.begin(), files.end(),
+                               [](ObjectFile *file){ return !file->is_alive; }),
+                files.end());
+
+    // Convert weak symbols to absolute symbols with value 0.
     for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
   }
-
-  // Eliminate unused archive members.
-  files.erase(std::remove_if(files.begin(), files.end(),
-                             [](ObjectFile *file){ return !file->is_alive; }),
-              files.end());
 
   files.push_back(create_internal_file());
 
@@ -613,6 +616,7 @@ int main(int argc, char **argv) {
      }
     }
 
+    llvm::outs().flush();
     assert(got_offset == out::got->size);
     assert(gotplt_offset == out::gotplt->size);
     assert(plt_offset == out::plt->size);
