@@ -595,7 +595,7 @@ int main(int argc, char **argv) {
 
         if (sym->gotplt_offset == -1) {
           assert(sym->type == STT_GNU_IFUNC);
-          out::got->symbols.push_back({GotSection::IREL, sym});
+          out::gotplt->symbols.push_back({GotSection::IREL, sym});
           sym->gotplt_offset = gotplt_offset;
           gotplt_offset += 8;
         }
