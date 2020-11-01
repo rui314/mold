@@ -214,7 +214,8 @@ void ObjectFile::register_defined_symbols() {
 
       bool is_new = !sym.file;
       bool win = sym.is_weak && !is_weak;
-      bool tie_but_higher_priority = this->priority < sym.file->priority;
+      bool tie_but_higher_priority =
+        !is_new && !win && this->priority < sym.file->priority;
 
       if (is_new || win || tie_but_higher_priority) {
         sym.file = this;
@@ -261,7 +262,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
 
       bool is_new = !sym.file || sym.file->is_in_archive();
       bool tie_but_higher_priority =
-        sym.is_undef_weak && this->priority < sym.file->priority;
+        !is_new && sym.is_undef_weak && this->priority < sym.file->priority;
 
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
