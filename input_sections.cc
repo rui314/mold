@@ -26,7 +26,8 @@ void InputSection::copy_to(u8 *buf) {
   memcpy_nontemporal(buf, &data[0], data.size());
 }
 
-void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt) {
+void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt,
+                                    i32 &num_plt, i32 &num_dynrel) {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
     if (!sym || !sym->file)
@@ -46,11 +47,6 @@ void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt)
       if (sym->got_offset == 0) {
         sym->got_offset = -1;
         num_got++;
-
-        if (sym->gotplt_offset == -1) {
-          sym->gotplt_offset = 0;
-          num_gotplt--;
-        }
       }
       break;
     }
@@ -68,13 +64,12 @@ void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt)
 
       std::lock_guard lock(sym->mu);
       if (sym->plt_offset == 0) {
+        assert(sym->gotplt_offset == 0);
         sym->plt_offset = -1;
-        num_plt++;
-      }
-
-      if (sym->gotplt_offset == 0 && sym->got_offset == 0) {
         sym->gotplt_offset = -1;
+        num_plt++;
         num_gotplt++;
+        num_dynrel++;
       }
       break;
     }
