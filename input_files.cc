@@ -353,7 +353,7 @@ std::tuple<i32, i32, i32> ObjectFile::scan_relocations() {
       auto [got, gotplt, plt] = isec->scan_relocations();
       num_got += got;
       num_gotplt += gotplt;
-      num_got += plt;
+      num_plt += plt;
     }
   }
   return {num_got, num_gotplt, num_plt};
