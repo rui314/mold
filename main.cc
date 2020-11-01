@@ -119,6 +119,7 @@ static ObjectFile *create_internal_file() {
   std::unique_ptr<MemoryBuffer> mb =
     MemoryBuffer::getMemBuffer(StringRef(buf, sizeof(buf)));
   auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
+  obj->name = "<internal>";
   mb.release();
 
   // Create linker-synthesized symbols.
