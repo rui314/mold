@@ -8,6 +8,7 @@ OutputPhdr *out::phdr;
 InterpSection *out::interp;
 GotSection *out::got;
 GotSection *out::gotplt;
+RelPltSection *out::relplt;
 ShstrtabSection *out::shstrtab;
 SymtabSection *out::symtab;
 StrtabSection *out::strtab;
@@ -190,5 +191,20 @@ void GotSection::relocate(u8 *buf) {
     else
       *(u64 *)buf = sym->addr - out::tls_end;
     buf += 8;
+  }
+}
+
+void RelPltSection::relocate(u8 *buf) {
+  assert(size == contents.size());
+
+  auto *rel = (ELF64LE::Rela *)(buf + shdr.sh_offset);
+
+  for (auto pair : contents) {
+    u32 offset = pair.first;
+    Symbol *sym = pair.second;
+
+    rel->r_offset = output_chunk->shdr.sh_addr + offset;
+    rel->setType(R_X86_64_IRELATIVE, false);
+    rel->r_addend = sym->addr;
   }
 }

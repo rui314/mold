@@ -519,6 +519,7 @@ int main(int argc, char **argv) {
   //  out::interp = new InterpSection;
   out::got = new GotSection(".got");
   out::gotplt = new GotSection(".got.plt");
+  out::relplt = new RelPltSection;
   out::shstrtab = new ShstrtabSection;
   out::symtab = new SymtabSection;
   out::strtab = new StrtabSection;

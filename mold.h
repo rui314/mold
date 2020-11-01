@@ -382,10 +382,10 @@ public:
   std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
-class RelSection : public OutputChunk {
+class RelPltSection : public OutputChunk {
 public:
-  RelSection() {
-    name = ".rela.dyn";
+  RelPltSection() {
+    this->name = ".rela.plt";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_RELA;
     shdr.sh_addralign = 8;
@@ -397,6 +397,9 @@ public:
   u64 get_size() const override { return size; }
 
   u64 size = 0;
+  OutputChunk *output_chunk = nullptr;
+
+  std::vector<std::pair<u32, Symbol *>> contents;
 };
 
 class ShstrtabSection : public OutputChunk {
@@ -465,6 +468,7 @@ extern OutputPhdr *phdr;
 extern InterpSection *interp;
 extern GotSection *got;
 extern GotSection *gotplt;
+extern RelPltSection *relplt;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
 extern StrtabSection *strtab;
