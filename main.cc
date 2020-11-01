@@ -485,8 +485,7 @@ int main(int argc, char **argv) {
                              [](ObjectFile *file){ return !file->is_alive; }),
               files.end());
 
-  out::internal_file = create_internal_file();
-  files.push_back(out::internal_file);
+  files.push_back(create_internal_file());
 
   // Eliminate duplicate comdat groups.
   {
