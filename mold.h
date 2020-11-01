@@ -520,7 +520,6 @@ public:
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
   void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
-  StringRef get_filename();
   bool is_in_archive();
 
   Symbol *get_symbol(u32 idx) const {
@@ -551,6 +550,7 @@ public:
   ArrayRef<ELF64LE::Sym> elf_syms;
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
+  std::string name;
 
   u64 local_symtab_size = 0;
   u64 local_strtab_size = 0;

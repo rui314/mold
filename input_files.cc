@@ -13,7 +13,7 @@ std::atomic_int num_relocs_alloc;
 std::atomic_int num_string_pieces;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
-  : mb(mb), archive_name(archive_name),
+  : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
     obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
 
 MemoryBufferRef readFile(StringRef path) {
@@ -435,16 +435,12 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
   }
 }
 
-StringRef ObjectFile::get_filename() {
-  return mb.getBufferIdentifier();
-}
-
 bool ObjectFile::is_in_archive() {
   return !archive_name.empty();
 }
 
 std::string toString(ObjectFile *obj) {
-  StringRef s = obj->get_filename();
+  StringRef s = obj->name;
   if (obj->archive_name == "")
     return s.str();
   return (obj->archive_name + ":" + s).str();
