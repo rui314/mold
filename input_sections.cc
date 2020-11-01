@@ -47,7 +47,6 @@ void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt,
       if (sym->got_offset == 0) {
         sym->got_offset = -1;
         num_got++;
-        llvm::outs() << "got " << sym->name << " " << sym->file->name << "\n";
       }
       break;
     }
@@ -56,7 +55,6 @@ void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt,
       if (sym->gottp_offset == 0) {
         sym->gottp_offset = -1;
         num_got++;
-        llvm::outs() << "gottp " << sym->name << " " << sym->file->name << "\n";
       }
       break;
     }

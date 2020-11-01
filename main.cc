@@ -580,13 +580,6 @@ int main(int argc, char **argv) {
     out::plt->symbols.reserve(out::plt->size / 16);
 
     for (ObjectFile *file : files) {
-      llvm::outs() << "file=" << file->name << "\n";
-      if (file->name == "lc-address.o")
-        for (Symbol *sym : file->symbols)
-          llvm::outs() << "sym=" << sym->name << "\n";
-    }
-
-    for (ObjectFile *file : files) {
       for (Symbol *sym : file->symbols) {
         // _nl_current_LC_ADDRESS
 
@@ -597,14 +590,12 @@ int main(int argc, char **argv) {
           out::got->symbols.push_back({GotSection::REGULAR, sym});
           sym->got_offset = got_offset;
           got_offset += 8;
-          llvm::outs() << "GOT " << sym->name << " " << sym->file->name << "\n";
         }
 
         if (sym->gottp_offset == -1) {
           out::got->symbols.push_back({GotSection::TPOFF, sym});
           sym->gottp_offset = got_offset;
           got_offset += 8;
-          llvm::outs() << "GOTTP " << sym->name << " " << sym->file->name << "\n";
         }
 
         if (sym->gotplt_offset == -1) {
