@@ -66,7 +66,6 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
       }
       break;
     }
-#if 0
     case R_X86_64_PLT32: {
       std::lock_guard lock(sym->mu);
       if (sym->plt_offset == 0) {
@@ -74,13 +73,17 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
         num_plt++;
       }
 
-      if (sym->gotplt_offset == 0 && sym->got_offset == 0) {
+      if (sym->gotplt_offset == 0) {
         sym->gotplt_offset = -1;
         num_gotplt++;
+
+        if (sym->got_offset == -1) {
+          sym->got_offset = 0;
+          num_got--;
+        }
       }
       break;
     }
-#endif
     }
   }
 

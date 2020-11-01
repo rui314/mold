@@ -365,8 +365,8 @@ class GotSection : public OutputChunk {
 public:
   typedef enum : u8 { REGULAR, TP } Kind;
 
-  GotSection() {
-    name = ".got";
+  GotSection(StringRef name) {
+    name = name;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_addralign = 8;
@@ -463,6 +463,7 @@ extern OutputShdr *shdr;
 extern OutputPhdr *phdr;
 extern InterpSection *interp;
 extern GotSection *got;
+extern GotSection *gotplt;
 extern ShstrtabSection *shstrtab;
 extern SymtabSection *symtab;
 extern StrtabSection *strtab;

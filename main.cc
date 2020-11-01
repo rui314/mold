@@ -517,7 +517,8 @@ int main(int argc, char **argv) {
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
   //  out::interp = new InterpSection;
-  out::got = new GotSection;
+  out::got = new GotSection(".got");
+  out::gotplt = new GotSection(".got.plt");
   out::shstrtab = new ShstrtabSection;
   out::symtab = new SymtabSection;
   out::strtab = new StrtabSection;
@@ -539,6 +540,7 @@ int main(int argc, char **argv) {
                     });
 
     out::got->size = num_got * 8;
+    out::gotplt->size = num_gotplt * 8;
   }
 
   // Compute .symtab and .strtab sizes
