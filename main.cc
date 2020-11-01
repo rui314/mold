@@ -593,6 +593,8 @@ int main(int argc, char **argv) {
 
   if (out::got->size)
     output_chunks.push_back(out::got);
+  if (out::gotplt->size)
+    output_chunks.push_back(out::gotplt);
 
   sort_output_chunks(output_chunks);
 

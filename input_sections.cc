@@ -67,6 +67,9 @@ std::tuple<i32, i32, i32> InputSection::scan_relocations() {
       break;
     }
     case R_X86_64_PLT32: {
+      if (sym->type != STT_GNU_IFUNC)
+        break;
+
       std::lock_guard lock(sym->mu);
       if (sym->plt_offset == 0) {
         sym->plt_offset = -1;

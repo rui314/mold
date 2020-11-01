@@ -191,6 +191,7 @@ public:
 
   tbb::spin_mutex mu;
   u8 visibility = 0;
+  u8 type = llvm::ELF::STT_NOTYPE;
   bool is_weak = false;
   bool is_undef_weak = false;
 };
