@@ -27,7 +27,7 @@ void InputSection::copy_to(u8 *buf) {
 }
 
 void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt,
-                                    i32 &num_plt, i32 &num_dynrel) {
+                                    i32 &num_plt, i32 &num_relplt) {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->get_symbol(rel.getSymbol(false));
     if (!sym || !sym->file)
@@ -69,7 +69,7 @@ void InputSection::scan_relocations(i32 &num_got, i32 &num_gotplt,
         sym->gotplt_offset = -1;
         num_plt++;
         num_gotplt++;
-        num_dynrel++;
+        num_relplt++;
       }
       break;
     }

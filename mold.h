@@ -210,7 +210,7 @@ public:
 
   void copy_to(u8 *buf);
   void relocate(u8 *buf);
-  void scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt, i32 &num_dynrel);
+  void scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt, i32 &num_relplt);
 
   ObjectFile *file;
   OutputSection *output_section;
