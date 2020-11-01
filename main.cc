@@ -687,8 +687,8 @@ int main(int argc, char **argv) {
     }
 
     // __rela_iplt_start and __rela_iplt_end
-    out::__rela_iplt_start->addr = out::plt->shdr.sh_addr;
-    out::__rela_iplt_end->addr = out::plt->shdr.sh_addr + out::plt->shdr.sh_size;
+    out::__rela_iplt_start->addr = out::relplt->shdr.sh_addr;
+    out::__rela_iplt_end->addr = out::relplt->shdr.sh_addr + out::relplt->shdr.sh_size;
   }
 
   // Fix symbol addresses.

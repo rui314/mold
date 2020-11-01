@@ -117,7 +117,6 @@ inline std::string toString(const Twine &s) { return s.str(); }
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
 
 class Symbol;
-class SymbolTable;
 class InputSection;
 class OutputSection;
 class ObjectFile;

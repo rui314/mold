@@ -411,6 +411,8 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     *ent = esym;
     if (InputSection *isec = sym.input_section)
       ent->st_shndx = isec->output_section->shndx;
+    else
+      ent->st_shndx = SHN_ABS;
     ent->st_name = strtab_off;
     ent->st_value = sym.addr;
     symtab_off += sizeof(ELF64LE::Sym);
