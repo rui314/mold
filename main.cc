@@ -121,6 +121,17 @@ static ObjectFile *create_internal_file() {
   auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
   mb.release();
 
+  // Create linker-synthesized symbols.
+  out::__bss_start = Symbol::intern("__bss_start");
+  out::__bss_start->file = obj;
+  obj->symbols.push_back(out::__bss_start);
+
+  out::__ehdr_start = Symbol::intern("__ehdr_start");
+  out::__ehdr_start->file = obj;
+  obj->symbols.push_back(out::__ehdr_start);
+  return obj;
+
+#if 0
   auto *elf_syms = new std::vector<ELF64LE::Sym>;
 
   // Create linker-synthesized symbols.
@@ -139,6 +150,7 @@ static ObjectFile *create_internal_file() {
   out::__ehdr_start = create("__ehdr_start");
   obj->elf_syms = *elf_syms;
   return obj;
+#endif
 }
 
 static void bin_sections(std::vector<ObjectFile *> &files) {
