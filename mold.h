@@ -363,7 +363,7 @@ private:
 
 class GotSection : public OutputChunk {
 public:
-  typedef enum : u8 { REGULAR, TLS, IREL } Kind;
+  typedef enum : u8 { REGULAR, TPOFF, IREL } Kind;
 
   GotSection(StringRef name) {
     this->name = name;

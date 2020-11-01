@@ -193,7 +193,7 @@ void GotSection::relocate(u8 *buf) {
     case REGULAR:
       *(u64 *)buf = sym->addr;
       break;
-    case TLS:
+    case TPOFF:
       *(u64 *)buf = sym->addr - out::tls_end;
       break;
     case IREL:
