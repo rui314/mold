@@ -625,6 +625,27 @@ int main(int argc, char **argv) {
     filesize = set_osec_offsets(output_chunks);
   }
 
+  // Attach linker-synthesized symbols to sections.
+  {
+    // __bss_start
+    for (OutputChunk *chunk : output_chunks) {
+      if (chunk->name == ".bss" && !chunk->sections.empty()) {
+        out::__bss_start->input_section = chunk->sections[0];
+        break;
+      }
+    }
+
+    // __ehdr_start
+    for (OutputChunk *chunk : output_chunks) {
+      if (chunk->shndx == 1) {
+        out::__ehdr_start->input_section = chunk->sections[0];
+        out::__ehdr_start->addr = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+        break;
+      }
+    }
+  }
+
+  // Fix symbol addresses.
   {
     MyTimer t("sym_addr");
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
