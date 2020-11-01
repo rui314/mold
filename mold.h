@@ -367,7 +367,7 @@ public:
   typedef enum : u8 { REGULAR, TLS, IREL } Kind;
 
   GotSection(StringRef name) {
-    name = name;
+    this->name = name;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_addralign = 8;
