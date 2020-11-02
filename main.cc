@@ -338,7 +338,7 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
     if (!chunk->is_bss())
       fileoff += chunk->get_size();
 
-#if 0
+#if 1
     bool is_tbss = chunk->is_bss() && (chunk->shdr.sh_flags & SHF_TLS);
     if (!is_tbss)
       vaddr += chunk->get_size();

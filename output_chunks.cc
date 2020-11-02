@@ -131,8 +131,9 @@ void OutputPhdr::copy_to(u8 *buf) {
     OutputChunk *back = ent.members.back();
 
     ent.phdr.p_offset = front->shdr.sh_offset;
-    ent.phdr.p_filesz =
-      back->shdr.sh_offset + back->get_size() - front->shdr.sh_offset;
+    ent.phdr.p_filesz = back->is_bss()
+      ? back->shdr.sh_offset - front->shdr.sh_offset
+      : back->shdr.sh_offset - front->shdr.sh_offset + back->get_size();
     ent.phdr.p_vaddr = front->shdr.sh_addr;
     ent.phdr.p_memsz =
       back->shdr.sh_addr + back->get_size() - front->shdr.sh_addr;
