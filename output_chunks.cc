@@ -64,20 +64,20 @@ static u32 to_phdr_flags(u64 sh_flags) {
 }
 
 void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
-  auto add = [&](u32 type, u32 flags, std::vector<OutputChunk *> members) {
+  auto add = [&](u32 type, u32 flags, u32 align, std::vector<OutputChunk *> members) {
     ELF64LE::Phdr phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
-    phdr.p_align = PAGE_SIZE;
+    phdr.p_align = align;
     entries.push_back({phdr, members});
   };
 
   // Create a PT_PHDR for the program header itself.
-  add(PT_PHDR, PF_R, {out::phdr});
+  add(PT_PHDR, PF_R, 8, {out::phdr});
 
   // Create an PT_INTERP.
   if (out::interp)
-    add(PT_INTERP, PF_R, {out::interp});
+    add(PT_INTERP, PF_R, 1, {out::interp});
 
   // Create PT_LOAD segments.
   bool first = true;
@@ -92,14 +92,14 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       (chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS));
 
     if (first) {
-      add(PT_LOAD, flags, {chunk});
+      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
       last_was_bss = this_is_bss;
       first = false;
       continue;
     }
 
     if (entries.back().phdr.p_flags != flags || (last_was_bss && !this_is_bss))
-      add(PT_LOAD, flags, {chunk});
+      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
     else
       entries.back().members.push_back(chunk);
 
@@ -112,7 +112,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       std::vector<OutputChunk *> vec = {chunks[i++]};
       while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS))
         vec.push_back(chunks[i++]);
-      add(PT_TLS, to_phdr_flags(chunks[i]->shdr.sh_flags), vec);
+      add(PT_TLS, to_phdr_flags(chunks[i]->shdr.sh_flags), 1, vec);
     }
   }
 
