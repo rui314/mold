@@ -266,8 +266,6 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
         !is_new && sym.is_undef_weak && this->priority < sym.file->priority;
 
       if (is_new || tie_but_higher_priority) {
-        llvm::outs() << "file=" << this->name << " sym=" << sym.name << "\n";
-
         sym.file = this;
         sym.input_section = nullptr;
         sym.addr = 0;
