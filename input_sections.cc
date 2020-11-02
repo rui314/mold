@@ -131,7 +131,12 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       // TODO
       break;
-    case R_X86_64_GOTTPOFF:
+    case R_X86_64_GOTTPOFF: {
+      if (sym) {
+        *(u32 *)loc = sym->gottp_offset + GOT + A - P;
+        break;
+      }
+
       if (loc[-3] == 0x48 && loc[-2] == 0x8b) {
         loc[-3] = 0x48;
         loc[-2] = 0xc7;
@@ -152,6 +157,7 @@ void InputSection::relocate(u8 *buf) {
                              loc[-3], loc[-2], loc[-1]);
       error(toString(this));
       break;
+    }
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
       break;
