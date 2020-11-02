@@ -200,23 +200,24 @@ Step 8
   and the first process exits. The second process can take time to
   exit, because it is not an interactive process.
 
+- The output from the linker should be deterministic for the sake of
+  [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
+  and ease of debugging. This might add a little bit of overhead to
+  the linker, but that shouldn't be too much.
+
 - A .build-id, a unique ID embedded to an output file, is usually
   computed by applying a cryptographic hash function (e.g. SHA-1) to
   an output file. But it adds an extra time for linking because a
   linker has to compute a SHA-1 checksum after the actual linking is
   done. We should instead compute a SHA-1 for the tuple of (all input
-  files, command line options, linker version) as a build-id.
+  files, command line options, linker version) as a build-id, as it
+  should uniquely identify the output.
 
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
   library for parallel execution and has several concurrent
   containers. We are particularly interested in using
   `parallel_for_each` and `concurrent_hash_map`.
-
-- The output from the linker should be deterministic for the sake of
-  [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
-  and ease of debugging. This might add a little bit of overhead to
-  the linker, but that shouldn't be too much.
 
 ## Size of the problem
 
