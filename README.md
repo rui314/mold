@@ -189,7 +189,7 @@ Step 8
 
 ## Details
 
-- If we aim to the 2 seconds goal for Chromium, every millisecond
+- If we aim to the 1 second goal for Chromium, every millisecond
   counts. We can't ignore the latency of process exit. If we mmap a
   lot of files, \_exit(2) is not instantaneous but takes a few hundred
   milliseconds because the kernel has to clean up a lot of
