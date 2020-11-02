@@ -114,59 +114,6 @@ implemented and tested with benchmarks. Here is a brain dump:
   to work around the slowness of regular linking. I want to focus on
   making the regular linking extremely fast.
 
-## Flow of Control
-
-Step 1
-
-- Read all object files into memory and intern all symbol strings,
-  comdat signature strings, mergeable strings and exception frame
-  signature strings.
-
-Step 2
-
-- Resolve all symbols to match undefined symbols with defined symbols.
-
-Step 3
-
-- Eliminate unused archive member object files.
-
-Step 4
-
-- Eliminate duplicate comdat groups.
-
-Step 5 (do them in parallell)
-
-- Create output sections and add input sections to them.
-
-- Scan all relocations to fix the sizes of .plt, .got, .got.plt,
-  .dynstr, .rela.dyn and .rela.plt sections.
-
-- Scan all mergeable strings to fix the sizes of mergeable sections.
-  Also assign offsets within a section to mergeable strings.
-
-- Scan all .eh_frame's to fix the size of .eh_frame section. Also
-  compute the size of .eh_frame_hdrs section.
-
-Step 6
-
-- Assign file offsets in an output file and addresses in the virtual
-  address space to all input and output sections.
-
-Step 7 (do them in parallel)
-
-- Copy input sections to output sections.
-
-- Copy mergeable strings to merged output sections.
-
-- Scan all symbols to assign them regular, PLT and GOT addresses, and
-  then fill .plt, .got, .plt, dynstr, rela.dyn and rela.plt sections.
-
-- Fill .eh_frame and .eh_frame_hdr sections.
-
-Step 8
-
-- Apply relocations to copied input sections in an output file.
-
 ## Compatibility
 
 - GNU ld, GNU gold and LLVM lld support essentially the same set of
