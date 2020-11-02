@@ -5,15 +5,29 @@
 This is a repository of a linker I'm currently developing as an
 independent project for my Masters degree.
 
-My goal is to make a linker that is almost as fast as concatenating
-object files with `cat` command. Concretely speaking, I want to use the
-linker to link a Chromium executable (about 1.8 GiB in size) just in 2
-seconds. LLVM's lld, the fastest open-source linker which I originally
-created a few years ago, takes about 12 seconds to link Chromium on my
-machine. So the goal is 6x performance bump over lld. I don't know if
-I can ever achieve that, but it's worth a try. I need to create
-something anyway to earn units to graduate, and I want to (at least
-try to) create something useful.
+My goal is to make a linker that is as fast as concatenating input
+object files with `cat` command. It may sound like an impossible goal,
+but I believe it's not entirely impossible because of the following
+two reasons:
+
+1. `cat` is a simple single-threaded program which isn't the fastest
+   one as a file copy command. My linker can use multiple threads to
+   copy file contents more efficiently to save time to do extra work.
+
+2. Copying file contents is I/O-bounded, and many CPU cores should be
+   available during file copy. We can use them to do extra work while
+   copying file contents.
+
+Concretely speaking, I want to use the linker to link a Chromium
+executable (~1.8 GiB in size) just in 1 second. LLVM's lld, the
+fastest open-source linker which I originally created a few years ago,
+takes about 12 seconds to link Chromium on my machine. So the goal is
+12x performance bump over lld. Compared to GNU gold, it's more than
+50x.
+
+I don't know if I can ever achieve that, but it's worth a try. I need
+to create something anyway to earn units to graduate, and I want to
+(at least try to) create something useful.
 
 I have quite a few new ideas as to how to achieve that speedup, though
 they are still just random unproved thoughts which need to be
