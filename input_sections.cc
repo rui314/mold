@@ -138,6 +138,7 @@ void InputSection::relocate(u8 *buf) {
       }
 
       if (loc[-3] == 0x48 && loc[-2] == 0x8b) {
+        // Rewrite `movq foo@gottpoff(%rip), %r[8-15]` to `movq $foo, %r[8-15]`
         loc[-3] = 0x48;
         loc[-2] = 0xc7;
         loc[-1] = 0xc0 | (loc[-1] >> 3);
@@ -146,6 +147,7 @@ void InputSection::relocate(u8 *buf) {
       }
 
       if (loc[-3] == 0x4c && loc[-2] == 0x8b) {
+        // Rewrite `movq foo@gottpoff(%rip), %reg` to `movq $foo, %reg`
         loc[-3] = 0x49;
         loc[-2] = 0xc7;
         loc[-1] = 0xc0 | (loc[-1] >> 3);
