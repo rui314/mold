@@ -129,7 +129,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
-      break;
+      error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
     case R_X86_64_GOTTPOFF:
 #if 0
       llvm::outs() << "rel sym=" << (sym ? sym->name : "")
