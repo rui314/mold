@@ -139,7 +139,25 @@ void InputSection::relocate(u8 *buf) {
                    << " P=" << Twine::utohexstr(P)
                    << "\n";
 #endif
-      *(u32 *)loc = (sym ? sym->gottp_offset : 0) + GOT + A - P;
+      if (loc[-3] == 0x48 && loc[-2] == 0x8b) {
+        loc[-3] = 0x48;
+        loc[-2] = 0xc7;
+        loc[-1] = 0xc0 | (loc[-1] >> 3);
+        *(u32 *)loc = S - out::tls_end;
+        break;
+      }
+
+      if (loc[-3] == 0x4c && loc[-2] == 0x8b) {
+        loc[-3] = 0x49;
+        loc[-2] = 0xc7;
+        loc[-1] = 0xc0 | (loc[-1] >> 3);
+        *(u32 *)loc = S - out::tls_end;
+        break;
+      }
+
+      llvm::errs() << format("unsupported GOTTPOFF: 0x%02x 0x%02x 0x%02x\n",
+                             loc[-3], loc[-2], loc[-1]);
+      error(toString(this));
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
