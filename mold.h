@@ -209,7 +209,7 @@ public:
 
   void copy_to(u8 *buf);
   void relocate(u8 *buf);
-  void scan_relocations(i32 &num_got, i32 &num_gotplt, i32 &num_plt, i32 &num_relplt);
+  void scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
@@ -577,6 +577,13 @@ public:
   u64 local_strtab_size = 0;
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
+
+  // Number of .got, .got.plt, .plt and .rel.plt entries
+  // needed for this file.
+  i32 num_got = 0;
+  i32 num_gotplt = 0;
+  i32 num_plt = 0;
+  i32 num_relplt = 0;
 
   // For .strtab construction
   std::vector<StringRef> local_symbols;

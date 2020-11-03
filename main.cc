@@ -540,16 +540,14 @@ int main(int argc, char **argv) {
     std::atomic_int32_t num_relplt = 0;
 
     for_each(files, [&](ObjectFile *file) {
-                      i32 got = 0, gotplt = 0, plt = 0, relplt = 0;
-
                       for (InputSection *isec : file->sections)
                         if (isec)
-                          isec->scan_relocations(got, gotplt, plt, relplt);
+                          isec->scan_relocations();
 
-                      num_got += got;
-                      num_gotplt += gotplt;
-                      num_plt += plt;
-                      num_relplt += relplt;
+                      num_got += file->num_got;
+                      num_gotplt += file->num_gotplt;
+                      num_plt += file->num_plt;
+                      num_relplt += file->num_relplt;
                     });
 
     out::got->size = num_got * 8;
