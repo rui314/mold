@@ -126,6 +126,7 @@ void ObjectFile::initialize_symbols() {
 
     sym.file = this;
     sym.type = esym.getType();
+    sym.addr = esym.st_value;
 
     if (esym.st_shndx != llvm::ELF::SHN_ABS) {
       if (esym.st_shndx == llvm::ELF::SHN_COMMON)
