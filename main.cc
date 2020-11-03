@@ -322,7 +322,7 @@ static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
 }
 
 static std::vector<ELF64LE::Shdr *>
-create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
+create_shdr(ArrayRef<OutputChunk *> output_chunks) {
   static ELF64LE::Shdr null_entry = {};
 
   std::vector<ELF64LE::Shdr *> vec;
@@ -348,7 +348,7 @@ static u32 to_phdr_flags(u64 sh_flags) {
 }
 
 static std::vector<OutputPhdr::Entry>
-create_phdrs(ArrayRef<OutputChunk *> output_chunks) {
+create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<OutputPhdr::Entry> entries;
 
   auto add = [&](u32 type, u32 flags, u32 align, std::vector<OutputChunk *> members) {
@@ -703,8 +703,8 @@ int main(int argc, char **argv) {
       chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
 
   // Create section header and program header contents.
-  out::shdr->set_entries(create_shdrs(output_chunks));
-  out::phdr->set_entries(create_phdrs(output_chunks));
+  out::shdr->set_entries(create_shdr(output_chunks));
+  out::phdr->set_entries(create_phdr(output_chunks));
   out::symtab->shdr.sh_link = out::strtab->shndx;
 
   // Assign offsets to output sections
