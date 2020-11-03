@@ -760,10 +760,6 @@ int main(int argc, char **argv) {
       error("failed to write to the output file: " + toString(std::move(e)));
   }
 
-  int num_input_chunks = 0;
-  for (ObjectFile *file : files)
-    num_input_chunks += file->sections.size();
-
   {
     MyTimer t("unlink_wait");
     tg_unlink.wait();
@@ -781,9 +777,7 @@ int main(int argc, char **argv) {
         llvm::outs() << toString(isec) << "\n";
 #endif
 
-#if 1
-  llvm::outs() << " input_chunks=" << num_input_chunks << "\n"
-               << "output_chunks=" << output_chunks.size() << "\n"
+  llvm::outs() << "output_chunks=" << output_chunks.size() << "\n"
                << "        files=" << files.size() << "\n"
                << "     filesize=" << filesize << "\n"
                << " num_all_syms=" << num_all_syms << "\n"
@@ -795,8 +789,8 @@ int main(int argc, char **argv) {
                << "num_relocs_alloc=" << num_relocs_alloc << "\n"
                << "      num_str=" << num_string_pieces << "\n";
 
+  Counter::print();
   llvm::TimerGroup::printAll(llvm::outs());
-#endif
 
   llvm::outs().flush();
   _exit(0);

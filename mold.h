@@ -582,6 +582,7 @@ private:
 //
 
 class Counter {
+public:
   Counter(StringRef name) : name(name) {
     static std::mutex mu;
     std::lock_guard lock(mu);
@@ -593,8 +594,9 @@ class Counter {
       value++;
   }
 
-  void print();
+  static void print();
 
+private:
   StringRef name;
   std::atomic_uint32_t value;
   
