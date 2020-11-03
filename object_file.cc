@@ -80,8 +80,7 @@ void ObjectFile::initialize_sections() {
     }
   }
 
-  for (int i = 0; i < elf_sections.size(); i++) {
-    const ELF64LE::Shdr &shdr = elf_sections[i];
+  for (const ELF64LE::Shdr &shdr : elf_sections) {
     if (shdr.sh_type != SHT_RELA)
       continue;
 
@@ -93,8 +92,8 @@ void ObjectFile::initialize_sections() {
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
 
-      static Counter counter("relocs_alloc");
       if (target->shdr.sh_flags & SHF_ALLOC) {
+        static Counter counter("relocs_alloc");
         counter.inc(target->rels.size());
       }
     }
