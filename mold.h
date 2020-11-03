@@ -601,26 +601,6 @@ private:
 };
 
 //
-// writer.cc
-//
-
-void write();
-
-//
-// output_file.cc
-//
-
-class OutputFile {
-public:
-  OutputFile(u64 size);
-  void commit();
-
-private:
-  std::unique_ptr<llvm::FileOutputBuffer> output_buffer;
-  u8 *buf;
-};
-
-//
 // mapfile.cc
 //
 
