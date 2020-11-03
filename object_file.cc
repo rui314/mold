@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include "llvm/BinaryFormat/Magic.h"
+
 using namespace llvm;
 using namespace llvm::ELF;
 

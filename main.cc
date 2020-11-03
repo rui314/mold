@@ -1,5 +1,9 @@
 #include "mold.h"
 
+#include "llvm/BinaryFormat/Magic.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Support/FileOutputBuffer.h"
+
 #include <iostream>
 
 using namespace llvm;

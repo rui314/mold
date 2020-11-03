@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include "llvm/Support/Format.h"
+
 using namespace llvm;
 
 void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections) {
