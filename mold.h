@@ -417,12 +417,14 @@ public:
     contents = '\0';
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_size = 1;
   }
 
   u64 add_string(StringRef s) {
     u64 ret = contents.size();
     contents += s.str();
     contents += '\0';
+    shdr.sh_size = contents.size();
     return ret;
   }
 
@@ -430,7 +432,7 @@ public:
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
-  u64 get_size() const override { return contents.size(); }
+  u64 get_size() const override { return shdr.sh_size; }
 
 private:
   std::string contents;
