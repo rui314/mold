@@ -338,12 +338,6 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   return vec;
 }
 
-static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
-  for (OutputChunk *chunk : output_chunks)
-    if (!chunk->name.empty())
-      chunk->shdr.sh_size = chunk->get_size();
-}
-
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   u64 fileoff = 0;
   u64 vaddr = 0x200000;
@@ -367,11 +361,11 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
       chunk->shdr.sh_addr = vaddr;
 
     if (!chunk->is_bss())
-      fileoff += chunk->get_size();
+      fileoff += chunk->shdr.sh_size;
 
     bool is_tbss = chunk->is_bss() && (chunk->shdr.sh_flags & SHF_TLS);
     if (!is_tbss)
-      vaddr += chunk->get_size();
+      vaddr += chunk->shdr.sh_size;
   }
   return fileoff;
 }
@@ -625,9 +619,6 @@ int main(int argc, char **argv) {
   out::shdr->set_entries(create_shdrs(output_chunks));
   out::phdr->construct(output_chunks);
   out::symtab->shdr.sh_link = out::strtab->shndx;
-
-  // Fill section header.
-  fill_shdrs(output_chunks);
 
   // Assign offsets to output sections
   u64 filesize = 0;

@@ -48,7 +48,7 @@ void OutputEhdr::relocate(u8 *buf) {
   hdr->e_flags = 0;
   hdr->e_ehsize = sizeof(ELF64LE::Ehdr);
   hdr->e_phentsize = sizeof(ELF64LE::Phdr);
-  hdr->e_phnum = out::phdr->get_size() / sizeof(ELF64LE::Phdr);
+  hdr->e_phnum = out::phdr->shdr.sh_size / sizeof(ELF64LE::Phdr);
   hdr->e_shentsize = sizeof(ELF64LE::Shdr);
   hdr->e_shnum = out::shdr->entries.size();
   hdr->e_shstrndx = out::shstrtab->shndx;
@@ -135,10 +135,10 @@ void OutputPhdr::relocate(u8 *buf) {
     ent.phdr.p_offset = front->shdr.sh_offset;
     ent.phdr.p_filesz = back->is_bss()
       ? back->shdr.sh_offset - front->shdr.sh_offset
-      : back->shdr.sh_offset - front->shdr.sh_offset + back->get_size();
+      : back->shdr.sh_offset - front->shdr.sh_offset + back->shdr.sh_size;
     ent.phdr.p_vaddr = front->shdr.sh_addr;
     ent.phdr.p_memsz =
-      back->shdr.sh_addr + back->get_size() - front->shdr.sh_addr;
+      back->shdr.sh_addr + back->shdr.sh_size - front->shdr.sh_addr;
   }
 
   auto *p = (ELF64LE::Phdr *)(buf + shdr.sh_offset);
