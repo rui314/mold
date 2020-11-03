@@ -240,8 +240,6 @@ public:
 
   bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
 
-  virtual u64 get_size() const = 0;
-
   StringRef name;
   int shndx = 0;
   bool starts_new_ptload = false;
@@ -258,8 +256,6 @@ public:
   }
 
   void relocate(u8 *buf) override;
-
-  u64 get_size() const override { return shdr.sh_size; }
 };
 
 // Section header
@@ -272,8 +268,6 @@ public:
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
   }
-
-  u64 get_size() const override { return shdr.sh_size; }
 
   void set_entries(std::vector<ELF64LE::Shdr *> vec) {
     shdr.sh_size = vec.size() * sizeof(ELF64LE::Shdr);
@@ -288,8 +282,6 @@ class OutputPhdr : public OutputChunk {
 public:
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
   void relocate(u8 *buf) override;
-
-  u64 get_size() const override { return shdr.sh_size; }
 
   void construct(std::vector<OutputChunk *> &sections);
 
@@ -325,8 +317,6 @@ public:
       for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
-  u64 get_size() const override { return shdr.sh_size; }
-
   bool empty() const {
     if (!sections.empty())
       for (InputSection *isec : sections)
@@ -353,8 +343,6 @@ public:
     memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
-  u64 get_size() const override { return shdr.sh_size; }
-
 private:
   static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
 };
@@ -373,8 +361,6 @@ public:
 
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override { return shdr.sh_size; }
-
   std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
@@ -388,8 +374,6 @@ public:
   }
 
   void relocate(u8 *buf) override;
-
-  u64 get_size() const override { return shdr.sh_size; }
 
   std::vector<Symbol *> symbols;
 };
@@ -405,8 +389,6 @@ public:
   }
 
   void relocate(u8 *buf) override;
-
-  u64 get_size() const override { return shdr.sh_size; }
 };
 
 class ShstrtabSection : public OutputChunk {
@@ -431,8 +413,6 @@ public:
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
-  u64 get_size() const override { return shdr.sh_size; }
-
 private:
   std::string contents;
 };
@@ -447,8 +427,6 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  u64 get_size() const override { return shdr.sh_size; }
-
 private:
   std::vector<ELF64LE::Sym> contents;
 };
@@ -461,7 +439,6 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
     shdr.sh_size = 1;
   }
-  u64 get_size() const override { return shdr.sh_size; }
 };
 
 namespace out {
