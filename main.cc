@@ -748,6 +748,22 @@ int main(int argc, char **argv) {
     // __rela_iplt_start and __rela_iplt_end
     out::__rela_iplt_start->addr = out::relplt->shdr.sh_addr;
     out::__rela_iplt_end->addr = out::relplt->shdr.sh_addr + out::relplt->shdr.sh_size;
+
+    // __{init,fini}_array_{start,end}
+    for (OutputChunk *chunk : output_chunks) {
+      switch (chunk->shdr.sh_type) {
+      case SHT_INIT_ARRAY:
+        out::__init_array_start->input_section = chunk->sections[0];
+        out::__init_array_end->input_section = chunk->sections[0];
+        out::__init_array_end->addr = chunk->shdr.sh_size;
+        break;
+      case SHT_FINI_ARRAY:
+        out::__fini_array_start->input_section = chunk->sections[0];
+        out::__fini_array_end->input_section = chunk->sections[0];
+        out::__fini_array_end->addr = chunk->shdr.sh_size;
+        break;
+      }
+    }
   }
 
   // Fix regular symbol addresses.

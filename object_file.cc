@@ -379,6 +379,9 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
   u8 *symtab = buf + out::symtab->shdr.sh_offset;
   u8 *strtab = buf + out::strtab->shdr.sh_offset;
 
+  if (this->name == "<internal>")
+    llvm::outs() << start << " " << end << "\n";
+
   for (int i = start; i < end; i++) {
     Symbol &sym = *symbols[i];
     if (sym.type == STT_SECTION || sym.file != this)
@@ -423,8 +426,9 @@ ObjectFile *ObjectFile::create_internal_file() {
   mb.release();
 
   // Create linker-synthesized symbols.
-  auto *elf_syms = new std::vector<ELF64LE::Sym>;
+  auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
   obj->elf_syms = *elf_syms;
+  obj->first_global = 1;
 
   auto add = [&](StringRef name) {
     Symbol *sym = Symbol::intern(name);
@@ -442,6 +446,10 @@ ObjectFile *ObjectFile::create_internal_file() {
   out::__ehdr_start = add("__ehdr_start");
   out::__rela_iplt_start = add("__rela_iplt_start");
   out::__rela_iplt_end = add("__rela_iplt_end");
+  out::__init_array_start = add("__init_array_start");
+  out::__init_array_end = add("__init_array_end");
+  out::__fini_array_start = add("__fini_array_start");
+  out::__fini_array_end = add("__fini_array_end");
   return obj;
 }
 
