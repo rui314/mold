@@ -374,9 +374,8 @@ public:
 
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override { return size; }
+  u64 get_size() const override { return shdr.sh_size; }
 
-  u64 size = 0;
   std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
@@ -391,8 +390,7 @@ public:
 
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override { return size; }
-  u64 size = 0;
+  u64 get_size() const override { return shdr.sh_size; }
 
   std::vector<Symbol *> symbols;
 };
@@ -409,8 +407,7 @@ public:
 
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override { return size; }
-  u64 size = 0;
+  u64 get_size() const override { return shdr.sh_size; }
 };
 
 class ShstrtabSection : public OutputChunk {

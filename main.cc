@@ -237,20 +237,16 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
                     num_relplt += file->num_relplt;
                   });
 
-  out::got->size = num_got * 8;
-  out::gotplt->size = num_gotplt * 8;
-  out::plt->size = num_plt * 16;
-  out::relplt->size = num_relplt * sizeof(ELF64LE::Rela);
+  out::got->shdr.sh_size = num_got * 8;
+  out::gotplt->shdr.sh_size = num_gotplt * 8;
+  out::plt->shdr.sh_size = num_plt * 16;
+  out::relplt->shdr.sh_size = num_relplt * sizeof(ELF64LE::Rela);
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
-
-  out::got->symbols.reserve(out::got->size / 8);
-  out::gotplt->symbols.reserve(out::gotplt->size / 8);
-  out::plt->symbols.reserve(out::plt->size / 16);
 
   for (ObjectFile *file : files) {
     for (Symbol *sym : file->symbols) {
@@ -286,9 +282,9 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
     }
   }
 
-  assert(got_offset == out::got->size);
-  assert(gotplt_offset == out::gotplt->size);
-  assert(plt_offset == out::plt->size);
+  assert(got_offset == out::got->shdr.sh_size);
+  assert(gotplt_offset == out::gotplt->shdr.sh_size);
+  assert(plt_offset == out::plt->shdr.sh_size);
 }
 
 // We want to sort output sections in the following order.
@@ -594,13 +590,13 @@ int main(int argc, char **argv) {
     if (!osec->empty())
       output_chunks.push_back(osec);
 
-  if (out::got->size)
+  if (out::got->shdr.sh_size)
     output_chunks.push_back(out::got);
-  if (out::plt->size)
+  if (out::plt->shdr.sh_size)
     output_chunks.push_back(out::plt);
-  if (out::gotplt->size)
+  if (out::gotplt->shdr.sh_size)
     output_chunks.push_back(out::gotplt);
-  if (out::relplt->size)
+  if (out::relplt->shdr.sh_size)
     output_chunks.push_back(out::relplt);
 
   sort_output_chunks(output_chunks);
