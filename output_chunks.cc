@@ -44,7 +44,7 @@ void OutputEhdr::relocate(u8 *buf) {
   hdr->e_type = ET_EXEC;
   hdr->e_machine = EM_X86_64;
   hdr->e_version = EV_CURRENT;
-  hdr->e_entry = Symbol::intern("_start")->addr;
+  hdr->e_entry = Symbol::intern("_start")->get_addr();
   hdr->e_phoff = out::phdr->shdr.sh_offset;
   hdr->e_shoff = out::shdr->shdr.sh_offset;
   hdr->e_flags = 0;
@@ -123,10 +123,10 @@ void GotSection::relocate(u8 *buf) {
 
     switch (kind) {
     case REGULAR:
-      *(u64 *)buf = sym->addr;
+      *(u64 *)buf = sym->get_addr();
       break;
     case TPOFF:
-      *(u64 *)buf = sym->addr - out::tls_end;
+      *(u64 *)buf = sym->get_addr() - out::tls_end;
       break;
     case IREL:
       break;
@@ -161,7 +161,7 @@ void RelPltSection::relocate(u8 *buf) {
     if (kind == GotSection::IREL) {
       rel->r_offset = out::gotplt->shdr.sh_addr + i * 8;
       rel->setType(R_X86_64_IRELATIVE, false);
-      rel->r_addend = sym->addr;
+      rel->r_addend = sym->get_addr();
       rel++;
     }
   }

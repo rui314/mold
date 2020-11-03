@@ -750,15 +750,9 @@ int main(int argc, char **argv) {
     out::__rela_iplt_end->addr = out::relplt->shdr.sh_addr + out::relplt->shdr.sh_size;
   }
 
-  // Fix regular symbol addresses.
-  {
-    MyTimer t("sym_addr");
-    for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
-
-    for (OutputChunk *chunk : output_chunks)
-      if (chunk->shdr.sh_flags & SHF_TLS)
-        out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
-  }
+  for (OutputChunk *chunk : output_chunks)
+    if (chunk->shdr.sh_flags & SHF_TLS)
+      out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
 
   tbb::task_group tg_unlink;
   {
