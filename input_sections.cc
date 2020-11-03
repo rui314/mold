@@ -83,7 +83,6 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 G = sym ? sym->got_offset : 0;
     u64 GOT = out::got->shdr.sh_addr;
     u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
     i64 A = rel.r_addend;
@@ -99,7 +98,9 @@ void InputSection::relocate(u8 *buf) {
       *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      *(u64 *)loc = G + A;
+      if (!sym)
+        error("R_X86_64_GOT32 against a local symbol");
+      *(u64 *)loc = sym->got_offset + A;
       break;
     case R_X86_64_PLT32:
       if (sym && sym->type == STT_GNU_IFUNC)
@@ -108,7 +109,9 @@ void InputSection::relocate(u8 *buf) {
         *(u32 *)loc = S + A - P; // todo
       break;
     case R_X86_64_GOTPCREL:
-      *(u32 *)loc = G + GOT + A - P;
+      if (!sym)
+        error("R_X86_64_GOTPCREL against a local symbol");
+      *(u32 *)loc = sym->got_offset + GOT + A - P;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
@@ -170,8 +173,14 @@ void InputSection::relocate(u8 *buf) {
       *(u32 *)loc = GOT + A - P;
       break;
     case R_X86_64_GOTPCRELX:
+      if (!sym)
+        error("R_X86_64_GOTPCRELX against a local symbol");
+      *(u32 *)loc = sym->got_offset + GOT + A - P;
+      break;
     case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = G + GOT + A - P;
+      if (!sym)
+        error("R_X86_64_REX_GOTPCRELX against a local symbol");
+      *(u32 *)loc = sym->got_offset + GOT + A - P;
       break;
     default:
       error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
