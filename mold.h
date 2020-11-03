@@ -503,7 +503,7 @@ extern Symbol *_edata;
 }
 
 //
-// input_files.cc
+// object_file.cc
 //
 
 struct ComdatGroup {
