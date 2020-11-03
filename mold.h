@@ -492,6 +492,7 @@ public:
   ArrayRef<ELF64LE::Sym> elf_syms;
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
+  bool is_dso;
   std::string name;
 
   u64 local_symtab_size = 0;

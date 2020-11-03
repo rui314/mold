@@ -183,7 +183,7 @@ void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
 }
 
 void ObjectFile::parse() {
-  bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
+  is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 
   elf_sections = CHECK(obj.sections(), this);
   symtab_sec = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
