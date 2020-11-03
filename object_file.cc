@@ -400,11 +400,8 @@ ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     esym.st_value = sym.addr;
     esym.st_size = elf_syms[i].st_size;
     esym.st_info = elf_syms[i].st_info;
-
-    if (InputSection *isec = sym.input_section)
-      esym.st_shndx = isec->output_section->idx;
-    else
-      esym.st_shndx = SHN_ABS;
+    esym.st_shndx = sym.input_section
+      ? sym.input_section->output_section->idx : SHN_ABS;
 
     symtab_off += sizeof(ELF64LE::Sym);
 
@@ -420,20 +417,18 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
   u8 *strtab = buf + out::strtab->shdr.sh_offset;
 
   for (int i = first_global; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
-
-    if (esym.getType() == STT_SECTION || sym.file != this)
+    if (sym.type == STT_SECTION || sym.file != this)
       continue;
 
-    auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
-    *ent = esym;
-    if (InputSection *isec = sym.input_section)
-      ent->st_shndx = isec->output_section->shndx;
-    else
-      ent->st_shndx = SHN_ABS;
-    ent->st_name = strtab_off;
-    ent->st_value = sym.addr;
+    auto &esym = *(ELF64LE::Sym *)(symtab + symtab_off);
+    esym.st_name = strtab_off;
+    esym.st_value = sym.addr;
+    esym.st_size = elf_syms[i].st_size;
+    esym.st_info = elf_syms[i].st_info;
+    esym.st_shndx = sym.input_section
+      ? sym.input_section->output_section->idx : SHN_ABS;
+
     symtab_off += sizeof(ELF64LE::Sym);
 
     memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
