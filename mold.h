@@ -538,6 +538,7 @@ public:
   void fix_sym_addrs();
   void compute_symtab();
 
+  void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
   void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
