@@ -343,13 +343,9 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
 }
 
 static void fill_shdrs(ArrayRef<OutputChunk *> output_chunks) {
-  int i = 1;
-
-  for (OutputChunk *chunk : output_chunks) {
-    if (chunk->name.empty())
-      continue;
-    chunk->shdr.sh_size = chunk->get_size();
-  }
+  for (OutputChunk *chunk : output_chunks)
+    if (!chunk->name.empty())
+      chunk->shdr.sh_size = chunk->get_size();
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
