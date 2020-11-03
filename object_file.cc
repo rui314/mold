@@ -430,26 +430,26 @@ ObjectFile *ObjectFile::create_internal_file() {
   obj->symbols.push_back(new Symbol(""));
   obj->first_global = 1;
 
-  auto add = [&](StringRef name) {
+  auto add = [&](StringRef name, u8 binding) {
     Symbol *sym = Symbol::intern(name);
     sym->file = obj;
     obj->symbols.push_back(sym);
 
     ELF64LE::Sym esym = {};
     esym.setType(STT_NOTYPE);
-    esym.setBinding(STB_GLOBAL);
+    esym.setBinding(binding);
     elf_syms->push_back(esym);
     return sym;
   };
 
-  out::__bss_start = add("__bss_start");
-  out::__ehdr_start = add("__ehdr_start");
-  out::__rela_iplt_start = add("__rela_iplt_start");
-  out::__rela_iplt_end = add("__rela_iplt_end");
-  out::__init_array_start = add("__init_array_start");
-  out::__init_array_end = add("__init_array_end");
-  out::__fini_array_start = add("__fini_array_start");
-  out::__fini_array_end = add("__fini_array_end");
+  out::__bss_start = add("__bss_start", STB_GLOBAL);
+  out::__ehdr_start = add("__ehdr_start", STB_LOCAL);
+  out::__rela_iplt_start = add("__rela_iplt_start", STB_LOCAL);
+  out::__rela_iplt_end = add("__rela_iplt_end", STB_LOCAL);
+  out::__init_array_start = add("__init_array_start", STB_LOCAL);
+  out::__init_array_end = add("__init_array_end", STB_LOCAL);
+  out::__fini_array_start = add("__fini_array_start", STB_LOCAL);
+  out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
 
   obj->elf_syms = *elf_syms;
   return obj;
