@@ -34,7 +34,6 @@
 #include <unistd.h>
 #include <unordered_set>
 #include <valarray>
-#include <xmmintrin.h>
 
 #include "common.h"
 
@@ -557,28 +556,3 @@ private:
 //
 
 void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections);
-
-//
-// Other
-//
-
-inline void memcpy_nontemporal(void *dst_, const void *src_, size_t n) {
-#if 1
-  char *src = (char *)src_;
-  char *dst = (char *)dst_;
-
-  if ((uintptr_t)src % 16 || (uintptr_t)dst % 16) {
-    memcpy(dst, src, n);
-    return;
-  }
-
-  size_t i = 0;
-  for (; i + 16 < n; i += 16) {
-    __m128 val = __builtin_nontemporal_load((__m128 *)(src + i));
-    __builtin_nontemporal_store(val, (__m128 *)(dst + i));
-  }
-  memcpy(dst + i, src + i, n - i);
-#else
-  memcpy(dst_, src_, n);
-#endif
-}
