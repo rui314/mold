@@ -17,3 +17,5 @@ def print_map: F<"print-map">,
 defm thread_count: Eq<"thread-count", "Number of threads to use">;
 
 def stat: F<"stat">;
+
+def static: F<"static">, HelpText<"Do not link against shared libraries">;

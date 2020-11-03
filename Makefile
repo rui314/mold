@@ -17,7 +17,7 @@ mold: $(OBJS)
 
 $(OBJS): mold.h Makefile
 
-main.cc: options.inc
+main.o: options.inc
 
 options.inc: options.td
 	$(LLVM_TBLGEN) -I=llvm-project/llvm/include --gen-opt-parser-defs -o $@ $^
