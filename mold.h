@@ -448,9 +448,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  u64 get_size() const override { return size; }
-
-  u64 size = 0;
+  u64 get_size() const override { return shdr.sh_size; }
 
 private:
   std::vector<ELF64LE::Sym> contents;
