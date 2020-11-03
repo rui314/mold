@@ -290,9 +290,7 @@ public:
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override {
-    return entries.size() * sizeof(ELF64LE::Phdr);
-  }
+  u64 get_size() const override { return shdr.sh_size; }
 
   void construct(std::vector<OutputChunk *> &sections);
 

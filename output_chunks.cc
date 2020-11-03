@@ -123,6 +123,8 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
   for (Phdr &ent : entries)
     if (ent.phdr.p_type == PT_LOAD)
       ent.members.front()->starts_new_ptload = true;
+
+  this->shdr.sh_size = entries.size() * sizeof(ELF64LE::Phdr);
 }
 
 void OutputPhdr::relocate(u8 *buf) {
