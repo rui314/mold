@@ -409,6 +409,8 @@ public:
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
     shdr.sh_addralign = 8;
+    shdr.sh_size = sizeof(ELF64LE::Sym);
+    contents.push_back({});
   }
 
 private:

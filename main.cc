@@ -483,6 +483,7 @@ static FileOutputBuffer *open_output_file(u64 filesize) {
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   std::vector<u64> symtab_off(files.size() + 1);
   std::vector<u64> strtab_off(files.size() + 1);
+  symtab_off[0] = sizeof(ELF64LE::Sym);
   strtab_off[0] = 1;
 
   for (int i = 1; i < files.size() + 1; i++) {
