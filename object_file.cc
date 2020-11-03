@@ -390,7 +390,7 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
     esym.st_size = elf_syms[i].st_size;
     esym.st_info = elf_syms[i].st_info;
     esym.st_shndx = sym.input_section
-      ? sym.input_section->output_section->idx : SHN_ABS;
+      ? sym.input_section->output_section->shndx : SHN_ABS;
 
     symtab_off += sizeof(ELF64LE::Sym);
 
