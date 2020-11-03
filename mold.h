@@ -326,9 +326,7 @@ public:
       for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
-  u64 get_size() const override {
-    return shdr.sh_size;
-  }
+  u64 get_size() const override { return shdr.sh_size; }
 
   bool empty() const {
     if (!sections.empty())
@@ -349,13 +347,14 @@ public:
     name = ".interp";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_size = sizeof(path);
   }
 
   void copy_to(u8 *buf) override {
     memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
-  u64 get_size() const override { return sizeof(path); }
+  u64 get_size() const override { return shdr.sh_size; }
 
 private:
   static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
