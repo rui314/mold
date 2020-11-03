@@ -280,18 +280,20 @@ public:
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
-  OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
-  void relocate(u8 *buf) override;
-
-  void construct(std::vector<OutputChunk *> &sections);
-
-private:
-  struct Phdr {
+  struct Entry {
     ELF64LE::Phdr phdr;
     std::vector<OutputChunk *> members;
   };
 
-  std::vector<Phdr> entries;
+  OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  void relocate(u8 *buf) override;
+
+  void set_entries(std::vector<Entry> vec) {
+    shdr.sh_size = vec.size() * sizeof(ELF64LE::Phdr);
+    entries = std::move(vec);
+  }
+
+  std::vector<Entry> entries;
 };
 
 // Sections

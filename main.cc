@@ -338,6 +338,82 @@ create_shdrs(ArrayRef<OutputChunk *> output_chunks) {
   return vec;
 }
 
+static u32 to_phdr_flags(u64 sh_flags) {
+  u32 ret = PF_R;
+  if (sh_flags & SHF_WRITE)
+    ret |= PF_W;
+  if (sh_flags & SHF_EXECINSTR)
+    ret |= PF_X;
+  return ret;
+}
+
+static std::vector<OutputPhdr::Entry>
+create_phdrs(ArrayRef<OutputChunk *> output_chunks) {
+  std::vector<OutputPhdr::Entry> entries;
+
+  auto add = [&](u32 type, u32 flags, u32 align, std::vector<OutputChunk *> members) {
+    ELF64LE::Phdr phdr = {};
+    phdr.p_type = type;
+    phdr.p_flags = flags;
+    phdr.p_align = align;
+    entries.push_back({phdr, members});
+  };
+
+  // Create a PT_PHDR for the program header itself.
+  add(PT_PHDR, PF_R, 8, {out::phdr});
+
+  // Create an PT_INTERP.
+  if (out::interp)
+    add(PT_INTERP, PF_R, 1, {out::interp});
+
+  // Create PT_LOAD segments.
+  bool first = true;
+  bool last_was_bss;
+
+  for (OutputChunk *chunk : output_chunks) {
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+      break;
+
+    u32 flags = to_phdr_flags(chunk->shdr.sh_flags);
+    bool this_is_bss =
+      (chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS));
+
+    if (first) {
+      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
+      last_was_bss = this_is_bss;
+      first = false;
+      continue;
+    }
+
+    if (entries.back().phdr.p_flags != flags || (last_was_bss && !this_is_bss))
+      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
+    else
+      entries.back().members.push_back(chunk);
+
+    last_was_bss = this_is_bss;
+  }
+
+  // Create a PT_TLS.
+  for (int i = 0; i < output_chunks.size(); i++) {
+    if (output_chunks[i]->shdr.sh_flags & SHF_TLS) {
+      std::vector<OutputChunk *> vec = {output_chunks[i++]};
+      while (i < output_chunks.size() && (output_chunks[i]->shdr.sh_flags & SHF_TLS))
+        vec.push_back(output_chunks[i++]);
+      add(PT_TLS, to_phdr_flags(output_chunks[i]->shdr.sh_flags), 1, vec);
+    }
+  }
+
+  for (OutputPhdr::Entry &ent : entries)
+    for (OutputChunk *chunk : ent.members)
+      ent.phdr.p_align = std::max(ent.phdr.p_align, chunk->shdr.sh_addralign);
+
+  for (OutputPhdr::Entry &ent : entries)
+    if (ent.phdr.p_type == PT_LOAD)
+      ent.members.front()->starts_new_ptload = true;
+
+  return entries;
+}
+
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   u64 fileoff = 0;
   u64 vaddr = 0x200000;
@@ -617,7 +693,7 @@ int main(int argc, char **argv) {
 
   // Create section header and program header contents.
   out::shdr->set_entries(create_shdrs(output_chunks));
-  out::phdr->construct(output_chunks);
+  out::phdr->set_entries(create_phdrs(output_chunks));
   out::symtab->shdr.sh_link = out::strtab->shndx;
 
   // Assign offsets to output sections
