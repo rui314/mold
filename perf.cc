@@ -11,7 +11,7 @@ void Counter::print() {
 
   std::vector<Counter *> vec = instances;
   std::sort(vec.begin(), vec.end(),
-            [](Counter *a, Counter *b) { return a->name < b->name; });
+            [](Counter *a, Counter *b) { return a->value > b->value; });
 
   for (Counter *c : vec)
     llvm::outs() << right_justify(c->name, 20) << "=" << c->value << "\n";

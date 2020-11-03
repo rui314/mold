@@ -605,12 +605,13 @@ public:
 
   static void print();
 
+  static bool enabled;
+
 private:
   StringRef name;
   std::atomic_uint32_t value;
   
   static std::vector<Counter *> instances;
-  static bool enabled;
 };
 
 //
