@@ -28,7 +28,7 @@ void InputSection::copy_to(u8 *buf) {
 
 void InputSection::scan_relocations() {
   for (const ELF64LE::Rela &rel : rels) {
-    Symbol *sym = file->get_symbol(rel.getSymbol(false));
+    Symbol *sym = file->symbols[rel.getSymbol(false)];
     if (!sym || !sym->file)
       continue;
 
@@ -79,7 +79,7 @@ void InputSection::scan_relocations() {
 void InputSection::relocate(u8 *buf) {
   for (const ELF64LE::Rela &rel : rels) {
     u32 sym_idx = rel.getSymbol(false);
-    Symbol *sym = file->get_symbol(sym_idx);
+    Symbol *sym = file->symbols[sym_idx];
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
 #define G   sym->got_offset

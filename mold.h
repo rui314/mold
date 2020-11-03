@@ -543,12 +543,6 @@ public:
 
   bool is_in_archive();
 
-  Symbol *get_symbol(u32 idx) const {
-    if (idx < first_global)
-      return nullptr;
-    return symbols[idx];
-  }
-
   u64 get_symbol_addr(u32 idx) const {
     if (idx < first_global) {
       const ELF64LE::Sym &sym = elf_syms[idx];

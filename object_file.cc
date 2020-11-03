@@ -119,8 +119,20 @@ void ObjectFile::initialize_symbols() {
 
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
+
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     local_symbols.emplace_back(name);
+    Symbol &sym = local_symbols.back();
+
+    sym.file = this;
+    sym.type = esym.getType();
+
+    if (esym.st_shndx != llvm::ELF::SHN_ABS) {
+      if (esym.st_shndx == llvm::ELF::SHN_COMMON)
+        error("common local symbol?");
+      sym.input_section = sections[esym.st_shndx];
+    }
+
     symbols.push_back(&local_symbols.back());
 
     if (esym.getType() != STT_SECTION) {
