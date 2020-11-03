@@ -29,7 +29,7 @@ void InputSection::copy_to(u8 *buf) {
 void InputSection::scan_relocations() {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
-    if (!sym || !sym->file)
+    if (!sym->file)
       continue;
 
     switch (rel.getType(false)) {
