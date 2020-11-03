@@ -68,8 +68,9 @@ using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
 
 class Symbol;
-class ObjectFile;
 class InputSection;
+class ObjectFile;
+class OutputSection;
 
 struct Config {
   StringRef output;
@@ -115,11 +116,6 @@ T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
 inline std::string toString(const Twine &s) { return s.str(); }
 
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
-
-class Symbol;
-class InputSection;
-class OutputSection;
-class ObjectFile;
 
 std::string toString(ObjectFile *);
 
