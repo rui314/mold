@@ -405,9 +405,8 @@ ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
 
     symtab_off += sizeof(ELF64LE::Sym);
 
-    StringRef name = symbols[i]->name;
-    memcpy(strtab + strtab_off, name.data(), name.size());
-    strtab_off += name.size() + 1;
+    memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
+    strtab_off += sym.name.size() + 1;
   }
 }
 
