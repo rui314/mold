@@ -578,6 +578,31 @@ private:
 };
 
 //
+// perf.cc
+//
+
+class Counter {
+  Counter(StringRef name) : name(name) {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    instances.push_back(this);
+  }
+
+  void inc() {
+    if (enabled)
+      value++;
+  }
+
+  void print();
+
+  StringRef name;
+  std::atomic_uint32_t value;
+  
+  static std::vector<Counter *> instances;
+  static bool enabled;
+};
+
+//
 // mapfile.cc
 //
 
