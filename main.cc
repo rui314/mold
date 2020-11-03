@@ -620,7 +620,6 @@ int main(int argc, char **argv) {
   }
 
   // Assign symbols to GOT offsets
-  tbb::task_group tg_fix_addr;
   {
     MyTimer t("got");
     assign_got_offsets(files);
@@ -746,11 +745,6 @@ int main(int argc, char **argv) {
   {
     MyTimer t("copy");
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
-  }
-
-  {
-    MyTimer t("fix_addr_wait");
-    tg_fix_addr.wait();
   }
 
   {
