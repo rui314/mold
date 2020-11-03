@@ -82,12 +82,12 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->symbols[sym_idx];
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-#define G   sym->got_offset
-#define GOT out::got->shdr.sh_addr
-#define S   sym->addr
-#define A   rel.r_addend
-#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define L   (out::plt->shdr.sh_addr + sym->plt_offset)
+    u64 G = sym->got_offset;
+    u64 GOT = out::got->shdr.sh_addr;
+    u64 S = sym->addr;
+    u64 A = rel.r_addend;
+    u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
+    u64 L = out::plt->shdr.sh_addr + sym->plt_offset;
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -187,14 +187,6 @@ void InputSection::relocate(u8 *buf) {
       error(toString(this) + ": unknown relocation: " +
             std::to_string(rel.getType(false)));
     }
-
-#undef G
-#undef GOT
-#undef S
-#undef A
-#undef P
-#undef L
-
     // num_relocs++;
   }
 }
