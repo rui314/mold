@@ -350,6 +350,18 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
+void ObjectFile::fix_sym_addrs() {
+  for (Symbol *sym : symbols) {
+    if (sym->file != this)
+      continue;
+
+    if (InputSection *isec = sym->input_section) {
+      OutputSection *osec = isec->output_section;
+      sym->addr += osec->shdr.sh_addr + isec->offset;
+    }
+  }
+}
+
 void ObjectFile::compute_symtab() {
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
@@ -374,7 +386,7 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
 
     auto &esym = *(ELF64LE::Sym *)(symtab + symtab_off);
     esym.st_name = strtab_off;
-    esym.st_value = sym.get_addr();
+    esym.st_value = sym.addr;
     esym.st_size = elf_syms[i].st_size;
     esym.st_info = elf_syms[i].st_info;
     esym.st_shndx = sym.input_section

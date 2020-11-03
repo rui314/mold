@@ -157,8 +157,6 @@ public:
     return map.insert(name, Symbol(name));    
   }
 
-  u64 get_addr() const;
-
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
@@ -427,12 +425,6 @@ public:
   }
 };
 
-inline u64 Symbol::get_addr() const {
-  if (input_section)
-    return input_section->output_section->shdr.sh_addr + input_section->offset + addr;
-  return addr;
-}
-
 namespace out {
 extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
@@ -493,6 +485,7 @@ public:
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
+  void fix_sym_addrs();
   void compute_symtab();
 
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
