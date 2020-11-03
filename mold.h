@@ -23,7 +23,6 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <shared_mutex>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
