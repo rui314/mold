@@ -778,9 +778,9 @@ int main(int argc, char **argv) {
 #endif
 
   // Show stat numbers
-  Counter num_input_chunks("input_chunks");
+  Counter num_input_sections("input_sections");
   for (ObjectFile *file : files)
-    num_input_chunks.inc(file->sections.size());
+    num_input_sections.inc(file->sections.size());
 
   Counter num_output_chunks("output_chunks", output_chunks.size());
   Counter num_files("files", files.size());
