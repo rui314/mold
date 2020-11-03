@@ -119,8 +119,8 @@ void ObjectFile::initialize_symbols() {
 
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
+
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
 
@@ -141,8 +141,6 @@ void ObjectFile::initialize_symbols() {
       local_symtab_size += sizeof(ELF64LE::Sym);
     }
   }
-
-  symbols.reserve(elf_syms.size() - first_global);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
