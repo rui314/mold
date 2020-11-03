@@ -417,7 +417,7 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   }
 
   assert(symtab_off.back() == out::symtab->shdr.sh_size);
-  assert(strtab_off.back() == out::strtab->size);
+  assert(strtab_off.back() == out::strtab->shdr.sh_size);
 
   tbb::parallel_for((size_t)0, files.size(),
                     [&](size_t i) {
@@ -578,7 +578,7 @@ int main(int argc, char **argv) {
 
     for (ObjectFile *file : files) {
       out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
-      out::strtab->size += file->local_strtab_size + file->global_strtab_size;
+      out::strtab->shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
     }
   }
 

@@ -460,11 +460,10 @@ public:
     this->name = ".strtab";
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_size = 1;
   }
 
-  u64 get_size() const override { return size; }
-
-  u64 size = 1;
+  u64 get_size() const override { return shdr.sh_size; }
 };
 
 namespace out {
