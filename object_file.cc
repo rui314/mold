@@ -379,9 +379,6 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
   u8 *symtab = buf + out::symtab->shdr.sh_offset;
   u8 *strtab = buf + out::strtab->shdr.sh_offset;
 
-  if (this->name == "<internal>")
-    llvm::outs() << start << " " << end << "\n";
-
   for (int i = start; i < end; i++) {
     Symbol &sym = *symbols[i];
     if (sym.type == STT_SECTION || sym.file != this)

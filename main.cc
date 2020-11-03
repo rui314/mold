@@ -629,6 +629,17 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->convert_common_symbols(); });
   }
 
+  for (ObjectFile *file : files) {
+    for (InputSection *isec : file->sections) {
+      if (isec && isec->name == ".init_array") {
+        llvm::outs() << "file=" << file->name
+                     << " .init_array size=" << isec->shdr.sh_size
+                     << "\n";
+        break;
+      }
+    }
+  }
+
   // Bin input sections into output sections
   {
     MyTimer t("bin_sections", before_copy);
