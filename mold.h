@@ -13,17 +13,10 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
-#include "tbb/blocked_range.h"
 #include "tbb/concurrent_hash_map.h"
-#include "tbb/concurrent_unordered_set.h"
-#include "tbb/concurrent_vector.h"
 #include "tbb/global_control.h"
 #include "tbb/parallel_for_each.h"
-#include "tbb/parallel_reduce.h"
-#include "tbb/parallel_sort.h"
-#include "tbb/partitioner.h"
 #include "tbb/spin_mutex.h"
-#include "tbb/task_arena.h"
 #include "tbb/task_group.h"
 
 #include <algorithm>
