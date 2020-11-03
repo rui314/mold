@@ -252,6 +252,55 @@ static void set_isec_offsets() {
 #endif
 }
 
+static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
+  u32 got_offset = 0;
+  u32 gotplt_offset = 0;
+  u32 plt_offset = 0;
+
+  out::got->symbols.reserve(out::got->size / 8);
+  out::gotplt->symbols.reserve(out::gotplt->size / 8);
+  out::plt->symbols.reserve(out::plt->size / 16);
+
+  for (ObjectFile *file : files) {
+    for (Symbol *sym : file->symbols) {
+      // _nl_current_LC_ADDRESS
+
+      if (sym->file != file)
+        continue;
+
+      if (sym->got_offset == -1) {
+        out::got->symbols.push_back({GotSection::REGULAR, sym});
+        sym->got_offset = got_offset;
+        got_offset += 8;
+      }
+
+      if (sym->gottp_offset == -1) {
+        out::got->symbols.push_back({GotSection::TPOFF, sym});
+        sym->gottp_offset = got_offset;
+        got_offset += 8;
+      }
+
+      if (sym->gotplt_offset == -1) {
+        assert(sym->type == STT_GNU_IFUNC);
+        out::gotplt->symbols.push_back({GotSection::IREL, sym});
+        sym->gotplt_offset = gotplt_offset;
+        gotplt_offset += 8;
+      }
+
+      if (sym->plt_offset == -1) {
+        out::plt->symbols.push_back(sym);
+        sym->plt_offset = plt_offset;
+        plt_offset += 16;
+      }
+    }
+  }
+
+  llvm::outs().flush();
+  assert(got_offset == out::got->size);
+  assert(gotplt_offset == out::gotplt->size);
+  assert(plt_offset == out::plt->size);
+}
+
 // We want to sort output sections in the following order.
 //
 // alloc readonly data
@@ -568,55 +617,10 @@ int main(int argc, char **argv) {
   }
 
   // Assign symbols to GOT offsets
+  tbb::task_group tg_fix_addr;
   {
     MyTimer t("got");
-
-    u32 got_offset = 0;
-    u32 gotplt_offset = 0;
-    u32 plt_offset = 0;
-
-    out::got->symbols.reserve(out::got->size / 8);
-    out::gotplt->symbols.reserve(out::gotplt->size / 8);
-    out::plt->symbols.reserve(out::plt->size / 16);
-
-    for (ObjectFile *file : files) {
-      for (Symbol *sym : file->symbols) {
-        // _nl_current_LC_ADDRESS
-
-        if (sym->file != file)
-          continue;
-
-        if (sym->got_offset == -1) {
-          out::got->symbols.push_back({GotSection::REGULAR, sym});
-          sym->got_offset = got_offset;
-          got_offset += 8;
-        }
-
-        if (sym->gottp_offset == -1) {
-          out::got->symbols.push_back({GotSection::TPOFF, sym});
-          sym->gottp_offset = got_offset;
-          got_offset += 8;
-        }
-
-        if (sym->gotplt_offset == -1) {
-          assert(sym->type == STT_GNU_IFUNC);
-          out::gotplt->symbols.push_back({GotSection::IREL, sym});
-          sym->gotplt_offset = gotplt_offset;
-          gotplt_offset += 8;
-        }
-
-        if (sym->plt_offset == -1) {
-          out::plt->symbols.push_back(sym);
-          sym->plt_offset = plt_offset;
-          plt_offset += 16;
-        }
-     }
-    }
-
-    llvm::outs().flush();
-    assert(got_offset == out::got->size);
-    assert(gotplt_offset == out::gotplt->size);
-    assert(plt_offset == out::plt->size);
+    assign_got_offsets(files);
   }
 
   // Add output sections.
@@ -705,10 +709,10 @@ int main(int argc, char **argv) {
         out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
   }
 
-  tbb::task_group unlink_tg;
+  tbb::task_group tg_unlink;
   {
     MyTimer t("unlink");
-    unlink_async(unlink_tg, config.output);
+    unlink_async(tg_unlink, config.output);
   }
 
   // Create an output file
@@ -742,6 +746,11 @@ int main(int argc, char **argv) {
   }
 
   {
+    MyTimer t("fix_addr_wait");
+    tg_fix_addr.wait();
+  }
+
+  {
     MyTimer t("reloc");
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
   }
@@ -765,7 +774,7 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("unlink_wait");
-    unlink_tg.wait();
+    tg_unlink.wait();
   }
 
   if (config.print_map) {
