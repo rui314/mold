@@ -252,6 +252,29 @@ static void set_isec_offsets() {
 #endif
 }
 
+static void scan_rels(ArrayRef<ObjectFile *> files) {
+  std::atomic_int32_t num_got = 0;
+  std::atomic_int32_t num_gotplt = 0;
+  std::atomic_int32_t num_plt = 0;
+  std::atomic_int32_t num_relplt = 0;
+
+  for_each(files, [&](ObjectFile *file) {
+                    for (InputSection *isec : file->sections)
+                      if (isec)
+                        isec->scan_relocations();
+
+                    num_got += file->num_got;
+                    num_gotplt += file->num_gotplt;
+                    num_plt += file->num_plt;
+                    num_relplt += file->num_relplt;
+                  });
+
+  out::got->size = num_got * 8;
+  out::gotplt->size = num_gotplt * 8;
+  out::plt->size = num_plt * 16;
+  out::relplt->size = num_relplt * sizeof(ELF64LE::Rela);
+}
+
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
@@ -581,28 +604,8 @@ int main(int argc, char **argv) {
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   {
-    MyTimer t("scan_rel", before_copy);
-
-    std::atomic_int32_t num_got = 0;
-    std::atomic_int32_t num_gotplt = 0;
-    std::atomic_int32_t num_plt = 0;
-    std::atomic_int32_t num_relplt = 0;
-
-    for_each(files, [&](ObjectFile *file) {
-                      for (InputSection *isec : file->sections)
-                        if (isec)
-                          isec->scan_relocations();
-
-                      num_got += file->num_got;
-                      num_gotplt += file->num_gotplt;
-                      num_plt += file->num_plt;
-                      num_relplt += file->num_relplt;
-                    });
-
-    out::got->size = num_got * 8;
-    out::gotplt->size = num_gotplt * 8;
-    out::plt->size = num_plt * 16;
-    out::relplt->size = num_relplt * sizeof(ELF64LE::Rela);
+    MyTimer t("scan_rels", before_copy);
+    scan_rels(files);
   }
 
   // Compute .symtab and .strtab sizes
