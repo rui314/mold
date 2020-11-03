@@ -450,6 +450,8 @@ extern Symbol *__init_array_start;
 extern Symbol *__init_array_end;
 extern Symbol *__fini_array_start;
 extern Symbol *__fini_array_end;
+extern Symbol *__preinit_array_start;
+extern Symbol *__preinit_array_end;
 extern Symbol *end;
 extern Symbol *_end;
 extern Symbol *etext;

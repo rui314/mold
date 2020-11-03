@@ -26,6 +26,8 @@ Symbol *out::__init_array_start;
 Symbol *out::__init_array_end;
 Symbol *out::__fini_array_start;
 Symbol *out::__fini_array_end;
+Symbol *out::__preinit_array_start;
+Symbol *out::__preinit_array_end;
 Symbol *out::end;
 Symbol *out::_end;
 Symbol *out::etext;

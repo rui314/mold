@@ -450,6 +450,8 @@ ObjectFile *ObjectFile::create_internal_file() {
   out::__init_array_end = add("__init_array_end", STB_LOCAL);
   out::__fini_array_start = add("__fini_array_start", STB_LOCAL);
   out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
+  out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
+  out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
 
   obj->elf_syms = *elf_syms;
   return obj;
