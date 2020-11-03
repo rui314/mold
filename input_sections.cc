@@ -99,19 +99,15 @@ void InputSection::relocate(u8 *buf) {
       *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      if (!sym)
-        error("R_X86_64_GOT32 against a local symbol");
       *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
-      if (sym && sym->type == STT_GNU_IFUNC)
+      if (sym->type == STT_GNU_IFUNC)
         *(u32 *)loc = out::plt->shdr.sh_addr + sym->plt_offset + A - P;
       else
         *(u32 *)loc = S + A - P; // todo
       break;
     case R_X86_64_GOTPCREL:
-      if (!sym)
-        error("R_X86_64_GOTPCREL against a local symbol");
       *(u32 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_32:
@@ -174,13 +170,7 @@ void InputSection::relocate(u8 *buf) {
       *(u32 *)loc = GOT + A - P;
       break;
     case R_X86_64_GOTPCRELX:
-      if (!sym)
-        error("R_X86_64_GOTPCRELX against a local symbol");
-      *(u32 *)loc = G + GOT + A - P;
-      break;
     case R_X86_64_REX_GOTPCRELX:
-      if (!sym)
-        error("R_X86_64_REX_GOTPCRELX against a local symbol");
       *(u32 *)loc = G + GOT + A - P;
       break;
     default:
