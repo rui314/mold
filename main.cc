@@ -457,6 +457,17 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
+static FileOutputBuffer *open_output_file(u64 filesize) {
+  Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
+    FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
+
+  if (!buf_or_err)
+    error("failed to open " + config.output + ": " +
+          llvm::toString(buf_or_err.takeError()));
+
+  return std::move(*buf_or_err).release();
+}
+
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   std::vector<u64> symtab_off(files.size() + 1);
   std::vector<u64> strtab_off(files.size() + 1);
@@ -744,18 +755,11 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  std::unique_ptr<FileOutputBuffer> output_buffer;
+  FileOutputBuffer *output_buffer;
 
   {
     MyTimer t("open");
-    Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
-      FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
-
-    if (!buf_or_err)
-      error("failed to open " + config.output + ": " +
-            llvm::toString(buf_or_err.takeError()));
-
-    output_buffer = std::move(*buf_or_err);
+    output_buffer = open_output_file(filesize);
   }
 
   u8 *buf = output_buffer->getBufferStart();
