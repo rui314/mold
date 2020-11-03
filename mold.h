@@ -625,16 +625,6 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
 
 MemoryBufferRef readFile(StringRef path);
 
-extern std::atomic_int num_defined;
-extern std::atomic_int num_undefined;
-extern std::atomic_int num_all_syms;
-extern std::atomic_int num_comdats;
-extern std::atomic_int num_regular_sections;
-extern std::atomic_int num_files;
-extern std::atomic_int num_relocs;
-extern std::atomic_int num_relocs_alloc;
-extern std::atomic_int num_string_pieces;
-
 //
 // Other
 //

@@ -151,7 +151,9 @@ void InputSection::relocate(u8 *buf) {
       error(toString(this) + ": unknown relocation: " +
             std::to_string(rel.getType(false)));
     }
-    // num_relocs++;
+    
+    static Counter counter("relocs");
+    counter.inc();
   }
 }
 

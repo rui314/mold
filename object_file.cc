@@ -3,15 +3,6 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-std::atomic_int num_defined;
-std::atomic_int num_undefined;
-std::atomic_int num_all_syms;
-std::atomic_int num_comdats;
-std::atomic_int num_regular_sections;
-std::atomic_int num_files;
-std::atomic_int num_relocs_alloc;
-std::atomic_int num_string_pieces;
-
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
     obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
@@ -67,7 +58,7 @@ void ObjectFile::initialize_sections() {
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
       comdat_groups.push_back({group, i});
 
-      static Counter counter("num_comdats");
+      static Counter counter("comdats");
       counter.inc();
       break;
     }
@@ -81,7 +72,8 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
-      // num_regular_sections++;
+      static Counter counter("regular_sections");
+      counter.inc();
 #if 0
       if ((shdr.sh_flags & SHF_STRINGS) && !(shdr.sh_flags & SHF_WRITE) &&
           shdr.sh_entsize == 1) {
@@ -109,13 +101,19 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
-      //      if (target->shdr.sh_flags & SHF_ALLOC)
-      //        num_relocs_alloc += target->rels.size();
+
+      static Counter counter("relocs_alloc");
+      if (target->shdr.sh_flags & SHF_ALLOC) {
+        counter.inc(target->rels.size());
+      }
     }
   }
 }
 
 void ObjectFile::initialize_symbols() {
+  static Counter counter("all_syms");
+  counter.inc(elf_syms.size());
+
   symbols.reserve(elf_syms.size());
   local_symbols.reserve(first_global);
 
@@ -195,8 +193,6 @@ void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
 }
 
 void ObjectFile::parse() {
-  num_files++;
-
   bool is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 
   elf_sections = CHECK(obj.sections(), this);
@@ -208,12 +204,13 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
-  static Counter counter("num_all_syms");
-  counter.inc();
  
   initialize_sections();
   if (symtab_sec)
     initialize_symbols();
+
+  static Counter counter("files");
+  counter.inc();
 }
 
 void ObjectFile::register_defined_symbols() {
@@ -222,7 +219,7 @@ void ObjectFile::register_defined_symbols() {
     Symbol &sym = *symbols[i];
 
     if (esym.isDefined()) {
-      static Counter counter("num_defined");
+      static Counter counter("defined");
       counter.inc();
 
       InputSection *isec = nullptr;
@@ -261,7 +258,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
 
     if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
         sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-      static Counter counter("num_undefined");
+      static Counter counter("undefined");
       counter.inc();
 #if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
