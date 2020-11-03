@@ -219,7 +219,7 @@ void ObjectFile::register_defined_symbols() {
     Symbol &sym = *symbols[i];
 
     if (esym.isDefined()) {
-      static Counter counter("defined");
+      static Counter counter("defined_syms");
       counter.inc();
 
       InputSection *isec = nullptr;
@@ -258,7 +258,7 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
 
     if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
         sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-      static Counter counter("undefined");
+      static Counter counter("undefined_syms");
       counter.inc();
 #if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
