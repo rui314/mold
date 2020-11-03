@@ -626,7 +626,7 @@ int main(int argc, char **argv) {
       chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
 
   // Create section header and program header contents.
-  out::shdr->entries = create_shdrs(output_chunks);
+  out::shdr->set_entries(create_shdrs(output_chunks));
   out::phdr->construct(output_chunks);
   out::symtab->shdr.sh_link = out::strtab->shndx;
 

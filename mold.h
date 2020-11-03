@@ -252,12 +252,14 @@ public:
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  OutputEhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputEhdr() {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_size = sizeof(ELF64LE::Ehdr);
+  }
+
   void relocate(u8 *buf) override;
 
-  u64 get_size() const override {
-    return sizeof(ELF64LE::Ehdr);
-  }
+  u64 get_size() const override { return shdr.sh_size; }
 };
 
 // Section header
@@ -273,6 +275,10 @@ public:
 
   u64 get_size() const override {
     return entries.size() * sizeof(ELF64LE::Shdr);
+  }
+
+  void set_entries(std::vector<ELF64LE::Shdr *> entries) {
+    this->entries = std::move(entries);
   }
 
   std::vector<ELF64LE::Shdr *> entries;
@@ -462,7 +468,6 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
     shdr.sh_size = 1;
   }
-
   u64 get_size() const override { return shdr.sh_size; }
 };
 
