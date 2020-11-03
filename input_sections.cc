@@ -23,7 +23,7 @@ void InputSection::copy_to(u8 *buf) {
 
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
   buf = buf + output_section->shdr.sh_offset + offset;
-  memcpy_nontemporal(buf, &data[0], data.size());
+  memcpy(buf, &data[0], data.size());
 }
 
 void InputSection::scan_relocations() {
