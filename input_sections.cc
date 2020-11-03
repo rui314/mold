@@ -41,16 +41,16 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX: {
       std::lock_guard lock(sym->mu);
-      if (sym->got_offset == 0) {
-        sym->got_offset = -1;
+      if (!sym->needs_got) {
+        sym->needs_got = true;
         file->num_got++;
       }
       break;
     }
     case R_X86_64_GOTTPOFF: {
       std::lock_guard lock(sym->mu);
-      if (sym->gottp_offset == 0) {
-        sym->gottp_offset = -1;
+      if (!sym->needs_gottp) {
+        sym->needs_gottp = true;
         file->num_got++;
       }
       break;
@@ -60,10 +60,10 @@ void InputSection::scan_relocations() {
         break;
 
       std::lock_guard lock(sym->mu);
-      if (sym->plt_offset == 0) {
-        assert(sym->gotplt_offset == 0);
-        sym->plt_offset = -1;
-        sym->gotplt_offset = -1;
+      if (!sym->needs_plt) {
+        assert(!sym->needs_gotplt);
+        sym->needs_plt = true;
+        sym->needs_gotplt = true;
         file->num_plt++;
         file->num_gotplt++;
         file->num_relplt++;

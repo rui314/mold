@@ -144,8 +144,13 @@ private:
 
 class Symbol {
 public:
-  Symbol(StringRef name) : name(name) {}
-  Symbol(const Symbol &other) : name(other.name), file(other.file) {}
+  Symbol(StringRef name)
+    : name(name), needs_got(false), needs_gotplt(false),
+      needs_gottp(false), needs_plt(false) {}
+
+  Symbol(const Symbol &other)
+    : name(other.name), file(other.file), needs_got(false),
+      needs_gotplt(false), needs_gottp(false), needs_plt(false) {}
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
@@ -155,6 +160,7 @@ public:
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
+  tbb::spin_mutex mu;
 
   u64 addr = 0;
   uint32_t got_offset = 0;
@@ -162,7 +168,11 @@ public:
   uint32_t gottp_offset = 0;
   uint32_t plt_offset = 0;
 
-  tbb::spin_mutex mu;
+  u8 needs_got : 1;
+  u8 needs_gotplt : 1;
+  u8 needs_gottp : 1;
+  u8 needs_plt : 1;
+
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
   bool is_weak = false;

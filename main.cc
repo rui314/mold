@@ -265,26 +265,26 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
       if (sym->file != file)
         continue;
 
-      if (sym->got_offset == -1) {
+      if (sym->needs_got) {
         out::got->symbols.push_back({GotSection::REGULAR, sym});
         sym->got_offset = got_offset;
         got_offset += 8;
       }
 
-      if (sym->gottp_offset == -1) {
+      if (sym->needs_gottp) {
         out::got->symbols.push_back({GotSection::TPOFF, sym});
         sym->gottp_offset = got_offset;
         got_offset += 8;
       }
 
-      if (sym->gotplt_offset == -1) {
+      if (sym->needs_gotplt) {
         assert(sym->type == STT_GNU_IFUNC);
         out::gotplt->symbols.push_back({GotSection::IREL, sym});
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += 8;
       }
 
-      if (sym->plt_offset == -1) {
+      if (sym->needs_plt) {
         out::plt->symbols.push_back(sym);
         sym->plt_offset = plt_offset;
         plt_offset += 16;
