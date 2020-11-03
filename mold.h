@@ -144,13 +144,12 @@ private:
 
 class Symbol {
 public:
-  Symbol(StringRef name)
-    : name(name), needs_got(false), needs_gotplt(false),
-      needs_gottp(false), needs_plt(false) {}
+  Symbol(StringRef name, ObjectFile *file = nullptr)
+    : name(name), file(file), needs_got(false), needs_gotplt(false),
+      needs_gottp(false), needs_plt(false), is_weak(false),
+      is_undef_weak(false) {}
 
-  Symbol(const Symbol &other)
-    : name(other.name), file(other.file), needs_got(false),
-      needs_gotplt(false), needs_gottp(false), needs_plt(false) {}
+  Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
@@ -172,11 +171,11 @@ public:
   u8 needs_gotplt : 1;
   u8 needs_gottp : 1;
   u8 needs_plt : 1;
+  u8 is_weak : 1;
+  u8 is_undef_weak : 1;
 
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
-  bool is_weak = false;
-  bool is_undef_weak = false;
 };
 
 inline std::string toString(Symbol sym) {
