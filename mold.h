@@ -583,7 +583,7 @@ private:
 
 class Counter {
 public:
-  Counter(StringRef name) : name(name) {
+  Counter(StringRef name, u32 value = 0) : name(name), value(value) {
     static std::mutex mu;
     std::lock_guard lock(mu);
     instances.push_back(this);

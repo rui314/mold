@@ -782,9 +782,9 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : files)
     num_input_chunks.inc(file->sections.size());
 
-  Counter("output_chunks").set(output_chunks.size());
-  Counter("files").set(files.size());
-  Counter("filesize").set(filesize);
+  static Counter num_output_chunks("output_chunks", output_chunks.size());
+  static Counter num_files("files", files.size());
+  static Counter filesize_counter("filesize", filesize);
 
   llvm::outs() << " num_all_syms=" << num_all_syms << "\n"
                << "  num_defined=" << num_defined << "\n"
