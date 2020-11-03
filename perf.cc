@@ -14,5 +14,5 @@ void Counter::print() {
             [](Counter *a, Counter *b) { return a->name < b->name; });
 
   for (Counter *c : vec)
-    llvm::outs() << left_justify(c->name, 20) << "=" << c->value << "\n";
+    llvm::outs() << right_justify(c->name, 20) << "=" << c->value << "\n";
 }

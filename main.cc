@@ -777,10 +777,16 @@ int main(int argc, char **argv) {
         llvm::outs() << toString(isec) << "\n";
 #endif
 
-  llvm::outs() << "output_chunks=" << output_chunks.size() << "\n"
-               << "        files=" << files.size() << "\n"
-               << "     filesize=" << filesize << "\n"
-               << " num_all_syms=" << num_all_syms << "\n"
+  // Show stat numbers
+  Counter num_input_chunks("input_chunks");
+  for (ObjectFile *file : files)
+    num_input_chunks.inc(file->sections.size());
+
+  Counter("output_chunks").set(output_chunks.size());
+  Counter("files").set(files.size());
+  Counter("filesize").set(filesize);
+
+  llvm::outs() << " num_all_syms=" << num_all_syms << "\n"
                << "  num_defined=" << num_defined << "\n"
                << "num_undefined=" << num_undefined << "\n"
                << "  num_comdats=" << num_comdats << "\n"

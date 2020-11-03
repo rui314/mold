@@ -594,6 +594,15 @@ public:
       value++;
   }
 
+  void inc(u32 delta) {
+    if (enabled)
+      value += delta;
+  }
+
+  void set(u32 value) {
+    this->value = value;
+  }
+
   static void print();
 
 private:
