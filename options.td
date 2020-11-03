@@ -15,3 +15,5 @@ def print_map: F<"print-map">,
   HelpText<"Print a link map to the standard output">;
 
 defm thread_count: Eq<"thread-count", "Number of threads to use">;
+
+def stat: F<"stat">;

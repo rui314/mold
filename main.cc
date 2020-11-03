@@ -498,6 +498,8 @@ int main(int argc, char **argv) {
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                get_thread_count(args));
 
+  Counter::enabled = args.hasArg(OPT_stat);
+
   if (auto *arg = args.getLastArg(OPT_o))
     config.output = arg->getValue();
   else
