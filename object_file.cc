@@ -66,7 +66,9 @@ void ObjectFile::initialize_sections() {
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
       comdat_groups.push_back({group, i});
-      // num_comdats++;
+
+      static Counter counter("num_comdats");
+      counter.inc();
       break;
     }
     case SHT_SYMTAB_SHNDX:
@@ -206,8 +208,9 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
-  // num_all_syms += elf_syms.size();
-
+  static Counter counter("num_all_syms");
+  counter.inc();
+ 
   initialize_sections();
   if (symtab_sec)
     initialize_symbols();
@@ -219,7 +222,8 @@ void ObjectFile::register_defined_symbols() {
     Symbol &sym = *symbols[i];
 
     if (esym.isDefined()) {
-      // num_defined++;
+      static Counter counter("num_defined");
+      counter.inc();
 
       InputSection *isec = nullptr;
       if (!esym.isAbsolute() && !esym.isCommon())
@@ -257,7 +261,8 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
 
     if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
         sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
-      // num_undefined++;
+      static Counter counter("num_undefined");
+      counter.inc();
 #if 0
       llvm::outs() << toString(this) << " loads " << toString(sym.file)
                    << " for " << sym.name << "\n";
