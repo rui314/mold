@@ -208,9 +208,6 @@ void ObjectFile::parse() {
   initialize_sections();
   if (symtab_sec)
     initialize_symbols();
-
-  static Counter counter("files");
-  counter.inc();
 }
 
 void ObjectFile::register_defined_symbols() {
