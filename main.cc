@@ -84,15 +84,21 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
 }
 
 static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
-  MemoryBufferRef mb = readFile(path);
+  auto mb_or_err = MemoryBuffer::getFile(path, -1, false);
+  if (auto ec = mb_or_err.getError())
+    error("cannot open " + path + ": " + ec.message());
 
-  switch (identify_magic(mb.getBuffer())) {
+  std::unique_ptr<MemoryBuffer> &mb = *mb_or_err;
+  MemoryBufferRef mbref = mb->getMemBufferRef();
+  mb.release();
+
+  switch (identify_magic(mbref.getBuffer())) {
   case file_magic::archive:
-    for (MemoryBufferRef member : get_archive_members(mb))
+    for (MemoryBufferRef member : get_archive_members(mbref))
       files.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
-    files.push_back(new ObjectFile(mb, ""));
+    files.push_back(new ObjectFile(mbref, ""));
     break;
   default:
     error(path + ": unknown file type");

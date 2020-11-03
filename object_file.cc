@@ -7,17 +7,6 @@ ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
     obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
 
-MemoryBufferRef readFile(StringRef path) {
-  auto mbOrErr = MemoryBuffer::getFile(path, -1, false);
-  if (auto ec = mbOrErr.getError())
-    error("cannot open " + path + ": " + ec.message());
-
-  std::unique_ptr<MemoryBuffer> &mb = *mbOrErr;
-  MemoryBufferRef mbref = mb->getMemBufferRef();
-  mb.release();
-  return mbref;
-}
-
 static const ELF64LE::Shdr
 *findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
   for (const ELF64LE::Shdr &sec : sections)
