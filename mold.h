@@ -538,7 +538,6 @@ public:
   void fix_sym_addrs();
   void compute_symtab();
 
-  void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
   void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
@@ -570,6 +569,7 @@ private:
   void initialize_symbols();
   void remove_comdat_members(u32 section_idx);
   void read_string_pieces(const ELF64LE::Shdr &shdr);
+  void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
   MemoryBufferRef mb;
   std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
