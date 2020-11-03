@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include <shared_mutex>
+
 using namespace llvm::ELF;
 
 OutputEhdr *out::ehdr;

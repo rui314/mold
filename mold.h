@@ -24,11 +24,6 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <unistd.h>
-#include <unordered_set>
 
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
