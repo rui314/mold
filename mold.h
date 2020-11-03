@@ -33,7 +33,6 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <unordered_set>
-#include <valarray>
 
 #include "common.h"
 
