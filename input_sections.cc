@@ -131,35 +131,9 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_DTPOFF32:
       // TODO
       break;
-    case R_X86_64_GOTTPOFF: {
-      if (sym) {
-        *(u32 *)loc = sym->gottp_offset + GOT + A - P;
-        break;
-      }
-
-      if (loc[-3] == 0x48 && loc[-2] == 0x8b) {
-        // Rewrite `movq foo@gottpoff(%rip), %r[8-15]` to `movq $foo, %r[8-15]`
-        loc[-3] = 0x48;
-        loc[-2] = 0xc7;
-        loc[-1] = 0xc0 | (loc[-1] >> 3);
-        *(u32 *)loc = S - out::tls_end;
-        break;
-      }
-
-      if (loc[-3] == 0x4c && loc[-2] == 0x8b) {
-        // Rewrite `movq foo@gottpoff(%rip), %reg` to `movq $foo, %reg`
-        loc[-3] = 0x49;
-        loc[-2] = 0xc7;
-        loc[-1] = 0xc0 | (loc[-1] >> 3);
-        *(u32 *)loc = S - out::tls_end;
-        break;
-      }
-
-      llvm::errs() << format("unsupported GOTTPOFF: 0x%02x 0x%02x 0x%02x\n",
-                             loc[-3], loc[-2], loc[-1]);
-      error(toString(this));
+    case R_X86_64_GOTTPOFF:
+      *(u32 *)loc = sym->gottp_offset + GOT + A - P;
       break;
-    }
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
       break;
