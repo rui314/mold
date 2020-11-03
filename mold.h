@@ -273,12 +273,11 @@ public:
       *p++ = *ent;
   }
 
-  u64 get_size() const override {
-    return entries.size() * sizeof(ELF64LE::Shdr);
-  }
+  u64 get_size() const override { return shdr.sh_size; }
 
-  void set_entries(std::vector<ELF64LE::Shdr *> entries) {
-    this->entries = std::move(entries);
+  void set_entries(std::vector<ELF64LE::Shdr *> vec) {
+    shdr.sh_size = vec.size() * sizeof(ELF64LE::Shdr);
+    entries = std::move(vec);
   }
 
   std::vector<ELF64LE::Shdr *> entries;
