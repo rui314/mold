@@ -83,10 +83,12 @@ void InputSection::relocate(u8 *buf) {
     Symbol *sym = file->get_symbol(sym_idx);
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 GOT = out::got->shdr.sh_addr;
-    u64 S = sym ? sym->addr : file->get_symbol_addr(sym_idx);
-    i64 A = rel.r_addend;
-    u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
+#define G   sym->got_offset
+#define GOT out::got->shdr.sh_addr
+#define S   (sym ? sym->addr : file->get_symbol_addr(sym_idx))
+#define A   rel.r_addend
+#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define L   (out::plt->shdr.sh_addr + sym->plt_offset)
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -100,7 +102,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_GOT32:
       if (!sym)
         error("R_X86_64_GOT32 against a local symbol");
-      *(u64 *)loc = sym->got_offset + A;
+      *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
       if (sym && sym->type == STT_GNU_IFUNC)
@@ -111,7 +113,7 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_GOTPCREL:
       if (!sym)
         error("R_X86_64_GOTPCREL against a local symbol");
-      *(u32 *)loc = sym->got_offset + GOT + A - P;
+      *(u32 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
@@ -175,16 +177,25 @@ void InputSection::relocate(u8 *buf) {
     case R_X86_64_GOTPCRELX:
       if (!sym)
         error("R_X86_64_GOTPCRELX against a local symbol");
-      *(u32 *)loc = sym->got_offset + GOT + A - P;
+      *(u32 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_REX_GOTPCRELX:
       if (!sym)
         error("R_X86_64_REX_GOTPCRELX against a local symbol");
-      *(u32 *)loc = sym->got_offset + GOT + A - P;
+      *(u32 *)loc = G + GOT + A - P;
       break;
     default:
-      error(toString(this) + ": unknown relocation: " + std::to_string(rel.getType(false)));
+      error(toString(this) + ": unknown relocation: " +
+            std::to_string(rel.getType(false)));
     }
+
+#undef G
+#undef GOT
+#undef S
+#undef A
+#undef P
+#undef L
+
     // num_relocs++;
   }
 }
