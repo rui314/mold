@@ -422,7 +422,9 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
     if (chunk->starts_new_ptload)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
-    if (!chunk->is_bss()) {
+    bool is_bss = chunk->shdr.sh_type == SHT_NOBITS;
+
+    if (!is_bss) {
       if (vaddr % PAGE_SIZE > fileoff % PAGE_SIZE)
         fileoff += vaddr % PAGE_SIZE - fileoff % PAGE_SIZE;
       else if (vaddr % PAGE_SIZE < fileoff % PAGE_SIZE)
@@ -436,10 +438,10 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
     if (chunk->shdr.sh_flags & SHF_ALLOC)
       chunk->shdr.sh_addr = vaddr;
 
-    if (!chunk->is_bss())
+    if (!is_bss)
       fileoff += chunk->shdr.sh_size;
 
-    bool is_tbss = chunk->is_bss() && (chunk->shdr.sh_flags & SHF_TLS);
+    bool is_tbss = is_bss && (chunk->shdr.sh_flags & SHF_TLS);
     if (!is_tbss)
       vaddr += chunk->shdr.sh_size;
   }

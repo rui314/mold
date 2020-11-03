@@ -238,8 +238,6 @@ public:
   virtual void copy_to(u8 *buf) {}
   virtual void relocate(u8 *buf) {}
 
-  bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
-
   StringRef name;
   int shndx = 0;
   bool starts_new_ptload = false;
@@ -310,12 +308,12 @@ public:
   }
 
   void copy_to(u8 *buf) override {
-    if (!is_bss())
+    if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
       for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   void relocate(u8 *buf) override {
-    if (!is_bss())
+    if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
       for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 

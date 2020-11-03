@@ -60,7 +60,7 @@ void OutputPhdr::relocate(u8 *buf) {
     OutputChunk *back = ent.members.back();
 
     ent.phdr.p_offset = front->shdr.sh_offset;
-    ent.phdr.p_filesz = back->is_bss()
+    ent.phdr.p_filesz = (back->shdr.sh_type == SHT_NOBITS)
       ? back->shdr.sh_offset - front->shdr.sh_offset
       : back->shdr.sh_offset - front->shdr.sh_offset + back->shdr.sh_size;
     ent.phdr.p_vaddr = front->shdr.sh_addr;
