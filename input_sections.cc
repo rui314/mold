@@ -3,8 +3,6 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-std::atomic_int num_relocs;
-
 InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
   : file(file), shdr(shdr) {
   this->name = name;
