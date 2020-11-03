@@ -672,7 +672,7 @@ int main(int argc, char **argv) {
     filesize = set_osec_offsets(output_chunks);
   }
 
-  // Attach linker-synthesized symbols to sections.
+  // Fix linker-synthesized symbol addresses.
   {
     // __bss_start
     for (OutputChunk *chunk : output_chunks) {
@@ -696,7 +696,7 @@ int main(int argc, char **argv) {
     out::__rela_iplt_end->addr = out::relplt->shdr.sh_addr + out::relplt->shdr.sh_size;
   }
 
-  // Fix symbol addresses.
+  // Fix regular symbol addresses.
   {
     MyTimer t("sym_addr");
     for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
