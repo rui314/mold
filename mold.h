@@ -546,7 +546,7 @@ public:
   Symbol *get_symbol(u32 idx) const {
     if (idx < first_global)
       return nullptr;
-    return symbols[idx - first_global];
+    return symbols[idx];
   }
 
   u64 get_symbol_addr(u32 idx) const {
@@ -561,7 +561,7 @@ public:
         return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
       return 0;
     }
-    return symbols[idx - first_global]->addr;
+    return symbols[idx]->addr;
   }
 
   std::vector<InputSection *> sections;
@@ -585,9 +585,6 @@ public:
   i32 num_plt = 0;
   i32 num_relplt = 0;
 
-  // For .strtab construction
-  std::vector<StringRef> local_symbols;
-
 private:
   void initialize_sections();
   void initialize_symbols();
@@ -599,6 +596,7 @@ private:
   std::vector<StringPiece *> merged_strings_alloc;
   std::vector<StringPiece *> merged_strings_noalloc;
 
+  std::vector<Symbol> local_symbols;
   int first_global = 0;
   bool has_common_symbol;
 

@@ -114,12 +114,14 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
+  symbols.reserve(elf_syms.size());
   local_symbols.reserve(first_global);
 
   for (int i = 0; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
-    local_symbols.push_back(name);
+    local_symbols.emplace_back(name);
+    symbols.push_back(&local_symbols.back());
 
     if (esym.getType() != STT_SECTION) {
       local_strtab_size += name.size() + 1;
@@ -197,8 +199,8 @@ void ObjectFile::parse() {
 }
 
 void ObjectFile::register_defined_symbols() {
-  for (int i = 0; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[first_global + i];
+  for (int i = first_global; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.isDefined()) {
@@ -234,8 +236,8 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
   if (is_alive.exchange(true))
     return;
 
-  for (int i = 0; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[first_global + i];
+  for (int i = first_global; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
@@ -254,8 +256,8 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
   if (!is_alive)
     return;
 
-  for (int i = 0; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[first_global + i];
+  for (int i = first_global; i < symbols.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.isUndefined() && esym.getBinding() == STB_WEAK) {
@@ -324,7 +326,7 @@ void ObjectFile::convert_common_symbols() {
     if (elf_syms[i].st_shndx != SHN_COMMON)
       continue;
 
-    Symbol *sym = symbols[i - first_global];
+    Symbol *sym = symbols[i];
     if (sym->file != this)
       continue;
 
@@ -359,7 +361,7 @@ void ObjectFile::fix_sym_addrs() {
 void ObjectFile::compute_symtab() {
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i - first_global];
+    Symbol &sym = *symbols[i];
 
     if (esym.getType() != STT_SECTION && sym.file == this) {
       global_strtab_size += sym.name.size() + 1;
@@ -378,8 +380,6 @@ ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     if (esym.getType() == STT_SECTION)
       continue;
 
-    StringRef name = local_symbols[i];
-
     auto *ent = (ELF64LE::Sym *)(symtab + symtab_off);
     *ent = esym;
     if (esym.st_shndx != SHN_ABS && esym.st_shndx != SHN_COMMON)
@@ -390,7 +390,8 @@ ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     ent->st_value = get_symbol_addr(i);
     symtab_off += sizeof(ELF64LE::Sym);
 
-    memcpy_nontemporal(strtab + strtab_off, name.data(), name.size());
+    StringRef name = symbols[i]->name;
+    memcpy(strtab + strtab_off, name.data(), name.size());
     strtab_off += name.size() + 1;
   }
 }
@@ -402,7 +403,7 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i - first_global];
+    Symbol &sym = *symbols[i];
 
     if (esym.getType() == STT_SECTION || sym.file != this)
       continue;
@@ -417,7 +418,7 @@ ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
     ent->st_value = sym.addr;
     symtab_off += sizeof(ELF64LE::Sym);
 
-    memcpy_nontemporal(strtab + strtab_off, sym.name.data(), sym.name.size());
+    memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
     strtab_off += sym.name.size() + 1;
   }
 }
