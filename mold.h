@@ -235,7 +235,7 @@ class OutputChunk {
 public:
   OutputChunk() { shdr.sh_addralign = 1; }
 
-  virtual void copy_to(u8 *buf) = 0;
+  virtual void copy_to(u8 *buf) {}
   virtual void relocate(u8 *buf) {}
 
   bool is_bss() const { return shdr.sh_type == llvm::ELF::SHT_NOBITS; }
@@ -253,8 +253,6 @@ public:
 class OutputEhdr : public OutputChunk {
 public:
   OutputEhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
-
-  void copy_to(u8 *buf) override {}
   void relocate(u8 *buf) override;
 
   u64 get_size() const override {
@@ -284,8 +282,7 @@ public:
 class OutputPhdr : public OutputChunk {
 public:
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
-
-  void copy_to(u8 *buf) override;
+  void relocate(u8 *buf) override;
 
   u64 get_size() const override {
     return entries.size() * sizeof(ELF64LE::Phdr);
@@ -372,7 +369,6 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(u8 *buf) override {}
   void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
@@ -390,7 +386,6 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(u8 *buf) override {}
   void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
@@ -409,7 +404,6 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(u8 *buf) override {}
   void relocate(u8 *buf) override;
 
   u64 get_size() const override { return size; }
@@ -452,7 +446,6 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void copy_to(u8 *buf) override {}
   u64 get_size() const override { return size; }
 
   u64 size = 0;
@@ -469,7 +462,6 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
   }
 
-  void copy_to(u8 *buf) override {}
   u64 get_size() const override { return size; }
 
   u64 size = 1;

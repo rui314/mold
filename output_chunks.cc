@@ -125,7 +125,7 @@ void OutputPhdr::construct(std::vector<OutputChunk *> &chunks) {
       ent.members.front()->starts_new_ptload = true;
 }
 
-void OutputPhdr::copy_to(u8 *buf) {
+void OutputPhdr::relocate(u8 *buf) {
   for (Phdr &ent : entries) {
     OutputChunk *front = ent.members.front();
     OutputChunk *back = ent.members.back();
