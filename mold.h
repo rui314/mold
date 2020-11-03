@@ -535,6 +535,8 @@ public:
 
   bool is_in_archive();
 
+  static ObjectFile *create_internal_file();
+
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;

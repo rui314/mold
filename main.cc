@@ -113,38 +113,6 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
-static ObjectFile *create_internal_file() {
-  // Create a dummy object file.
-  static char buf[256];
-  std::unique_ptr<MemoryBuffer> mb =
-    MemoryBuffer::getMemBuffer(StringRef(buf, sizeof(buf)));
-  auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
-  obj->name = "<internal>";
-  mb.release();
-
-  // Create linker-synthesized symbols.
-  auto *elf_syms = new std::vector<ELF64LE::Sym>;
-
-  auto create = [&](StringRef name) {
-    Symbol *sym = Symbol::intern(name);
-    sym->file = obj;
-    obj->symbols.push_back(sym);
-
-    ELF64LE::Sym esym = {};
-    esym.setType(STT_NOTYPE);
-    esym.setBinding(STB_GLOBAL);
-    elf_syms->push_back(esym);
-    return sym;
-  };
-
-  out::__bss_start = create("__bss_start");
-  out::__ehdr_start = create("__ehdr_start");
-  out::__rela_iplt_start = create("__rela_iplt_start");
-  out::__rela_iplt_end = create("__rela_iplt_end");
-  obj->elf_syms = *elf_syms;
-  return obj;
-}
-
 static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
   int unit = (files.size() + 127) / 128;
@@ -559,7 +527,9 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
   }
 
-  files.push_back(create_internal_file());
+  // Create a dummy file containing linker-synthesized symbols
+  // (e.g. `__bss_start`).
+  files.push_back(ObjectFile::create_internal_file());
 
   // Eliminate duplicate comdat groups.
   {

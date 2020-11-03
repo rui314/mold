@@ -421,6 +421,40 @@ bool ObjectFile::is_in_archive() {
   return !archive_name.empty();
 }
 
+ObjectFile *ObjectFile::create_internal_file() {
+  // Create a dummy object file.
+  constexpr int bufsz = 256;
+  char *buf = new char[bufsz];
+  std::unique_ptr<MemoryBuffer> mb =
+    MemoryBuffer::getMemBuffer(StringRef(buf, bufsz));
+
+  auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
+  obj->name = "<internal>";
+  mb.release();
+
+  // Create linker-synthesized symbols.
+  auto *elf_syms = new std::vector<ELF64LE::Sym>;
+  obj->elf_syms = *elf_syms;
+
+  auto add = [&](StringRef name) {
+    Symbol *sym = Symbol::intern(name);
+    sym->file = obj;
+    obj->symbols.push_back(sym);
+
+    ELF64LE::Sym esym = {};
+    esym.setType(STT_NOTYPE);
+    esym.setBinding(STB_GLOBAL);
+    elf_syms->push_back(esym);
+    return sym;
+  };
+
+  out::__bss_start = add("__bss_start");
+  out::__ehdr_start = add("__ehdr_start");
+  out::__rela_iplt_start = add("__rela_iplt_start");
+  out::__rela_iplt_end = add("__rela_iplt_end");
+  return obj;
+}
+
 std::string toString(ObjectFile *obj) {
   StringRef s = obj->name;
   if (obj->archive_name == "")
