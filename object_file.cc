@@ -122,8 +122,8 @@ void ObjectFile::initialize_symbols() {
     sym.type = esym.getType();
     sym.addr = esym.st_value;
 
-    if (esym.st_shndx != llvm::ELF::SHN_ABS) {
-      if (esym.st_shndx == llvm::ELF::SHN_COMMON)
+    if (!esym.isAbsolute()) {
+      if (esym.isCommon())
         error("common local symbol?");
       sym.input_section = sections[esym.st_shndx];
     }
@@ -141,7 +141,7 @@ void ObjectFile::initialize_symbols() {
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
 
-    if (esym.st_shndx == SHN_COMMON)
+    if (esym.isCommon())
       has_common_symbol = true;
   }
 }
@@ -327,7 +327,7 @@ void ObjectFile::convert_common_symbols() {
     OutputSection::get_instance(".bss", SHF_WRITE | SHF_ALLOC, SHT_NOBITS);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
-    if (elf_syms[i].st_shndx != SHN_COMMON)
+    if (!elf_syms[i].isCommon())
       continue;
 
     Symbol *sym = symbols[i];
