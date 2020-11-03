@@ -543,21 +543,6 @@ public:
 
   bool is_in_archive();
 
-  u64 get_symbol_addr(u32 idx) const {
-    if (idx < first_global) {
-      const ELF64LE::Sym &sym = elf_syms[idx];
-
-      if (sym.st_shndx == llvm::ELF::SHN_ABS)
-        return sym.st_value;
-
-      InputSection *isec = sections[sym.st_shndx];
-      if (isec)
-        return isec->output_section->shdr.sh_addr + isec->offset + sym.st_value;
-      return 0;
-    }
-    return symbols[idx]->addr;
-  }
-
   std::vector<InputSection *> sections;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;

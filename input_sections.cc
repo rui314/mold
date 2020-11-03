@@ -84,7 +84,7 @@ void InputSection::relocate(u8 *buf) {
 
 #define G   sym->got_offset
 #define GOT out::got->shdr.sh_addr
-#define S   (sym ? sym->addr : file->get_symbol_addr(sym_idx))
+#define S   sym->addr
 #define A   rel.r_addend
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define L   (out::plt->shdr.sh_addr + sym->plt_offset)

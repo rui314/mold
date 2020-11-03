@@ -400,7 +400,7 @@ ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
         if (OutputSection *osec = isec->output_section)
           ent->st_shndx = osec->idx;
     ent->st_name = strtab_off;
-    ent->st_value = get_symbol_addr(i);
+    ent->st_value = symbols[i]->addr;
     symtab_off += sizeof(ELF64LE::Sym);
 
     StringRef name = symbols[i]->name;
