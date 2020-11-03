@@ -427,7 +427,7 @@ ObjectFile *ObjectFile::create_internal_file() {
 
   // Create linker-synthesized symbols.
   auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
-  obj->elf_syms = *elf_syms;
+  obj->symbols.push_back(new Symbol(""));
   obj->first_global = 1;
 
   auto add = [&](StringRef name) {
@@ -450,6 +450,8 @@ ObjectFile *ObjectFile::create_internal_file() {
   out::__init_array_end = add("__init_array_end");
   out::__fini_array_start = add("__fini_array_start");
   out::__fini_array_end = add("__fini_array_end");
+
+  obj->elf_syms = *elf_syms;
   return obj;
 }
 
