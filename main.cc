@@ -654,6 +654,9 @@ int main(int argc, char **argv) {
   config.print_map = args.hasArg(OPT_print_map);
   config.is_static = args.hasArg(OPT_static);
 
+  for (auto *arg : args.filtered(OPT_trace_symbol))
+    Symbol::intern(arg->getValue())->traced = true;
+
   std::vector<ObjectFile *> files;
 
   llvm::TimerGroup before_copy("before_copy", "before_copy");

@@ -148,7 +148,8 @@ class Symbol {
 public:
   Symbol(StringRef name, ObjectFile *file = nullptr)
     : name(name), file(file), needs_got(false), needs_gottp(false),
-      needs_plt(false), is_dso(false), is_weak(false), is_undef_weak(false) {}
+      needs_plt(false), is_dso(false), is_weak(false), is_undef_weak(false),
+      traced(false) {}
 
   Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
 
@@ -177,6 +178,7 @@ public:
   u8 is_dso : 1;
   u8 is_weak : 1;
   u8 is_undef_weak : 1;
+  u8 traced : 1;
 
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
