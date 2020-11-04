@@ -737,6 +737,13 @@ int main(int argc, char **argv) {
       }
     };
 
+    auto assign_end = [&](Symbol *sym, OutputChunk *chunk) {
+      if (sym) {
+        sym->input_section = chunk->sections[0];
+        sym->addr = chunk->shdr.sh_size;
+      }
+    };
+
     // __bss_start
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->name == ".bss" && !chunk->sections.empty()) {
@@ -773,8 +780,18 @@ int main(int argc, char **argv) {
     // _end, end, _etext, etext, _edata and edata
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->shdr.sh_flags & SHF_ALLOC) {
-        if (out::end) {
-        }
+        assign_end(out::end, chunk);
+        assign_end(out::_end, chunk);
+      }
+
+      if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
+        assign_end(out::etext, chunk);
+        assign_end(out::_etext, chunk);
+      }
+
+      if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC) {
+        assign_end(out::edata, chunk);
+        assign_end(out::_edata, chunk);
       }
     }
 
