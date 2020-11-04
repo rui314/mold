@@ -725,7 +725,9 @@ int main(int argc, char **argv) {
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  files.push_back(ObjectFile::create_internal_file(output_chunks));
+  ObjectFile *internal_file = ObjectFile::create_internal_file(output_chunks);
+  internal_file->priority = priority++;
+  files.push_back(internal_file);
 
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;

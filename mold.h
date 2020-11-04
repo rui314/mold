@@ -404,6 +404,12 @@ private:
   std::string contents;
 };
 
+class SymtabSymbol {
+  StringRef name;
+  u32 priority = 0;
+  u32 offset = 0;
+};
+
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection() {
