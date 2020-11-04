@@ -209,35 +209,41 @@ void ObjectFile::parse() {
 void ObjectFile::register_defined_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
+    if (!esym.isDefined())
+      continue;
+
     Symbol &sym = *symbols[i];
 
-    if (esym.isDefined()) {
-      static Counter counter("defined_syms");
-      counter.inc();
+    static Counter counter("defined_syms");
+    counter.inc();
 
-      InputSection *isec = nullptr;
-      if (!esym.isAbsolute() && !esym.isCommon())
-        isec = sections[esym.st_shndx];
+    InputSection *isec = nullptr;
+    if (!esym.isAbsolute() && !esym.isCommon())
+      isec = sections[esym.st_shndx];
 
-      bool is_weak = (esym.getBinding() == STB_WEAK);
+    bool is_weak = (esym.getBinding() == STB_WEAK);
 
-      std::lock_guard lock(sym.mu);
+    std::lock_guard lock(sym.mu);
 
-      bool is_new = !sym.file;
-      bool win = sym.is_weak && !is_weak;
-      bool tie_but_higher_priority =
-        !is_new && !win && this->priority < sym.file->priority;
+    bool is_new = !sym.file;
+    bool win = sym.is_weak && !is_weak;
+    bool tie_but_higher_priority =
+      !is_new && !win && this->priority < sym.file->priority;
 
-      if (is_new || win || tie_but_higher_priority) {
-        sym.file = this;
-        sym.input_section = isec;
-        sym.addr = esym.st_value;
-        sym.type = esym.getType();
-        sym.visibility = esym.getVisibility();
-        sym.is_weak = is_weak;
-        sym.is_dso = is_dso;
-      }
+    if (is_new || win || tie_but_higher_priority) {
+      sym.file = this;
+      sym.input_section = isec;
+      sym.addr = esym.st_value;
+      sym.type = esym.getType();
+      sym.visibility = esym.getVisibility();
+      sym.is_weak = is_weak;
+      sym.is_dso = is_dso;
     }
+
+    if (UNLIKELY(sym.traced && sym.file == this))
+      llvm::outs() << "trace: " << toString(sym.file)
+                   << (is_in_archive() ? ": lazy definition of " : ": definition of ")
+                   << sym.name << "\n";
   }
 }
 
@@ -248,17 +254,25 @@ ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &fe
 
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
+    if (!esym.isUndefined())
+      continue;
+
     Symbol &sym = *symbols[i];
 
-    if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
-        sym.file && sym.file->is_in_archive() && !sym.file->is_alive) {
+    if (UNLIKELY(sym.traced))
+      llvm::outs() << "trace: " << toString(this)
+                   << ": reference to " << sym.name << "\n";
+
+    if (esym.getBinding() != STB_WEAK && sym.file &&
+        sym.file->is_in_archive() && !sym.file->is_alive) {
+      feeder.add(sym.file);
+
       static Counter counter("undefined_syms");
       counter.inc();
-#if 0
-      llvm::outs() << toString(this) << " loads " << toString(sym.file)
-                   << " for " << sym.name << "\n";
-#endif
-      feeder.add(sym.file);
+
+      if (UNLIKELY(sym.traced))
+        llvm::outs() << "trace: " << toString(this) << " keeps "
+                     << toString(sym.file) << " for " << sym.name << "\n";
     }
   }
 }
@@ -284,6 +298,10 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
         sym.addr = 0;
         sym.visibility = esym.getVisibility();
         sym.is_undef_weak = true;
+
+        if (UNLIKELY(sym.traced))
+          llvm::outs() << "trace: " << toString(this)
+                       << ": unresolved weak symbol " << sym.name << "\n";
       }
     }
   }
