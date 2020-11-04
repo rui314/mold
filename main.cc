@@ -765,6 +765,19 @@ int main(int argc, char **argv) {
         break;
       }
     }
+
+    // __start_ and __stop_ symbols
+    for (OutputChunk *chunk : output_chunks) {
+      if (!is_c_identifier(chunk->name))
+        continue;
+
+      Symbol *start = Symbol::intern(("__start_" + chunk->name).str());
+      start->input_section = chunk->sections[0];
+
+      Symbol *stop = Symbol::intern(("__stop_" + chunk->name).str());
+      stop->input_section = chunk->sections[0];
+      stop->addr = chunk->shdr.sh_size;
+    }
   }
 
   // Fix regular symbol addresses.

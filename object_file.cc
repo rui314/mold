@@ -419,7 +419,7 @@ bool ObjectFile::is_in_archive() {
   return !archive_name.empty();
 }
 
-static bool is_c_identifier(StringRef name) {
+bool is_c_identifier(StringRef name) {
   if (name == "")
     return false;
   if (!isalpha(name[0]) && name[0] != '_')
@@ -470,12 +470,13 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
 
   for (OutputChunk *chunk : output_chunks) {
-    if (is_c_identifier(chunk->name)) {
-      auto *start = new std::string(("__start_" + chunk->name).str());
-      auto *stop = new std::string(("__stop_" + chunk->name).str());
-      add(*start, STB_GLOBAL);
-      add(*stop, STB_GLOBAL);
-    }
+    if (!is_c_identifier(chunk->name))
+      continue;
+
+    auto *start = new std::string(("__start_" + chunk->name).str());
+    auto *stop = new std::string(("__stop_" + chunk->name).str());
+    add(*start, STB_GLOBAL);
+    add(*stop, STB_GLOBAL);
   }
 
   obj->elf_syms = *elf_syms;

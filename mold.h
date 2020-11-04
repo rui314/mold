@@ -427,6 +427,8 @@ public:
   }
 };
 
+bool is_c_identifier(StringRef name);
+
 namespace out {
 extern OutputEhdr *ehdr;
 extern OutputShdr *shdr;
