@@ -762,12 +762,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Assign symbols to GOT offsets
-  {
-    MyTimer t("got");
-    assign_got_offsets(files);
-  }
-
   // Add output sections.
   if (out::got->shdr.sh_size)
     output_chunks.push_back(out::got);
@@ -823,6 +817,12 @@ int main(int argc, char **argv) {
     for (OutputChunk *chunk : output_chunks)
       if (chunk->shdr.sh_flags & SHF_TLS)
         out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+  }
+
+  // Assign symbols to GOT offsets
+  {
+    MyTimer t("got");
+    assign_got_offsets(files);
   }
 
   tbb::task_group tg_unlink;
