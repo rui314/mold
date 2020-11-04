@@ -197,7 +197,11 @@ void ObjectFile::parse() {
   }
 
  
-  initialize_sections();
+  if (is_dso)
+    sections.resize(elf_sections.size());
+  else
+    initialize_sections();
+
   if (symtab_sec)
     initialize_symbols();
 }
@@ -231,6 +235,7 @@ void ObjectFile::register_defined_symbols() {
         sym.type = esym.getType();
         sym.visibility = esym.getVisibility();
         sym.is_weak = is_weak;
+        sym.is_dso = is_dso;
       }
     }
   }
