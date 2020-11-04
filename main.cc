@@ -729,25 +729,24 @@ int main(int argc, char **argv) {
 
   // Fix linker-synthesized symbol addresses.
   {
-    auto assign = [&](OutputChunk *chunk, Symbol *start, Symbol *end = nullptr) {
-      start->input_section = chunk->sections[0];
-      if (end) {
-        end->input_section = chunk->sections[0];
-        end->addr = chunk->shdr.sh_size;
+    auto start = [&](OutputChunk *chunk, Symbol *sym) {
+      if (sym) {
+        sym->output_chunk = chunk;
+        sym->addr = chunk->shdr.sh_addr;
       }
     };
 
-    auto assign_end = [&](Symbol *sym, OutputChunk *chunk) {
+    auto stop = [&](OutputChunk *chunk, Symbol *sym) {
       if (sym) {
-        sym->input_section = chunk->sections[0];
-        sym->addr = chunk->shdr.sh_size;
+        sym->output_chunk = chunk;
+        sym->addr = chunk->shdr.sh_addr + chunk->shdr.sh_size;
       }
     };
 
     // __bss_start
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->name == ".bss" && !chunk->sections.empty()) {
-        assign(chunk, out::__bss_start);
+        start(chunk, out::__bss_start);
         break;
       }
     }
@@ -755,24 +754,26 @@ int main(int argc, char **argv) {
     // __ehdr_start
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->shndx == 1) {
-        out::__ehdr_start->input_section = chunk->sections[0];
+        out::__ehdr_start->output_chunk = chunk;
         out::__ehdr_start->addr = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
         break;
       }
     }
 
     // __rela_iplt_start and __rela_iplt_end
-    out::__rela_iplt_start->addr = out::relplt->shdr.sh_addr;
-    out::__rela_iplt_end->addr = out::relplt->shdr.sh_addr + out::relplt->shdr.sh_size;
+    start(out::relplt, out::__rela_iplt_start);
+    stop(out::relplt, out::__rela_iplt_end);
 
     // __{init,fini}_array_{start,end}
     for (OutputChunk *chunk : output_chunks) {
       switch (chunk->shdr.sh_type) {
       case SHT_INIT_ARRAY:
-        assign(chunk, out::__init_array_start, out::__init_array_end);
+        start(chunk, out::__init_array_start);
+        stop(chunk, out::__init_array_end);
         break;
       case SHT_FINI_ARRAY:
-        assign(chunk, out::__fini_array_start, out::__fini_array_end);
+        start(chunk, out::__fini_array_start);
+        stop(chunk, out::__fini_array_end);
         break;
       }
     }
@@ -783,18 +784,18 @@ int main(int argc, char **argv) {
         continue;
 
       if (chunk->shdr.sh_flags & SHF_ALLOC) {
-        assign_end(out::end, chunk);
-        assign_end(out::_end, chunk);
+        stop(chunk, out::end);
+        stop(chunk, out::_end);
       }
 
       if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
-        assign_end(out::etext, chunk);
-        assign_end(out::_etext, chunk);
+        stop(chunk, out::etext);
+        stop(chunk, out::_etext);
       }
 
       if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC) {
-        assign_end(out::edata, chunk);
-        assign_end(out::_edata, chunk);
+        stop(chunk, out::edata);
+        stop(chunk, out::_edata);
       }
     }
 
@@ -803,9 +804,8 @@ int main(int argc, char **argv) {
       if (!is_c_identifier(chunk->name))
         continue;
 
-      Symbol *start = Symbol::intern(("__start_" + chunk->name).str());
-      Symbol *stop = Symbol::intern(("__stop_" + chunk->name).str());
-      assign(chunk, start, stop);
+      start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
+      stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
     }
   }
 

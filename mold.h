@@ -48,6 +48,7 @@ using llvm::object::ELFFile;
 class Symbol;
 class InputSection;
 class ObjectFile;
+class OutputChunk;
 class OutputSection;
 
 struct Config {
@@ -159,6 +160,7 @@ public:
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
+  OutputChunk *output_chunk = nullptr;
 
   u64 addr = 0;
   uint32_t got_offset = 0;

@@ -397,8 +397,13 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
     esym.st_value = sym.addr;
     esym.st_size = elf_syms[i].st_size;
     esym.st_info = elf_syms[i].st_info;
-    esym.st_shndx = sym.input_section
-      ? sym.input_section->output_section->shndx : SHN_ABS;
+
+    if (sym.input_section)
+      esym.st_shndx = sym.input_section->output_section->shndx;
+    else if (sym.output_chunk)
+      esym.st_shndx = sym.output_chunk->shndx;
+    else
+      esym.st_shndx = SHN_ABS;
 
     symtab_off += sizeof(ELF64LE::Sym);
 
