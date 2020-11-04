@@ -54,6 +54,7 @@ class OutputSection;
 struct Config {
   StringRef output;
   bool print_map = false;
+  bool is_static = false;
 };
 
 extern Config config;

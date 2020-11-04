@@ -642,6 +642,7 @@ int main(int argc, char **argv) {
     error("-o option is missing");
 
   config.print_map = args.hasArg(OPT_print_map);
+  config.is_static = args.hasArg(OPT_static);
 
   std::vector<ObjectFile *> files;
 
@@ -734,7 +735,8 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
-  //  out::interp = new InterpSection;
+  if (!config.is_static)
+    out::interp = new InterpSection;
   out::got = new GotSection(".got");
   out::gotplt = new GotSection(".got.plt");
   out::plt = new PltSection;
