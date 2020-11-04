@@ -61,9 +61,7 @@ void InputSection::scan_relocations() {
 
       std::lock_guard lock(sym->mu);
       if (!sym->needs_plt) {
-        assert(!sym->needs_gotplt);
         sym->needs_plt = true;
-        sym->needs_gotplt = true;
         file->num_plt++;
         file->num_gotplt++;
         file->num_relplt++;

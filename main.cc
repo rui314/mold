@@ -278,14 +278,13 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
         got_offset += 8;
       }
 
-      if (sym->needs_gotplt) {
-        assert(sym->type == STT_GNU_IFUNC);
+      if (sym->needs_plt) {
+        // Reserve a .got.plt entry
         out::gotplt->symbols.push_back({GotSection::IREL, sym});
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += 8;
-      }
 
-      if (sym->needs_plt) {
+        // Reserve a .plt entry
         out::plt->symbols.push_back(sym);
         sym->plt_offset = plt_offset;
         plt_offset += 16;
