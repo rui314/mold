@@ -337,18 +337,12 @@ private:
 
 class GotSection : public OutputChunk {
 public:
-  typedef enum : u8 { REL, IREL, TPOFF } Kind;
-
   GotSection(StringRef name) {
     this->name = name;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_addralign = 8;
   }
-
-  void relocate(u8 *buf) override;
-
-  std::vector<std::pair<Kind, Symbol *>> symbols;
 };
 
 class PltSection : public OutputChunk {
@@ -360,9 +354,11 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void relocate(u8 *buf) override;
-
-  std::vector<Symbol *> symbols;
+  void write_entry(u8 *buf, u32 value) {
+    buf[0] = 0xff;
+    buf[1] = 0x25;
+    *(u32 *)(buf + 2) = value;
+  }
 };
 
 class RelPltSection : public OutputChunk {
@@ -374,8 +370,6 @@ public:
     shdr.sh_entsize = sizeof(ELF64LE::Rela);
     shdr.sh_addralign = 8;
   }
-
-  void relocate(u8 *buf) override;
 };
 
 class ShstrtabSection : public OutputChunk {

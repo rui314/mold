@@ -254,40 +254,51 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
   out::relplt->shdr.sh_size = num_relplt * sizeof(ELF64LE::Rela);
 }
 
-static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
+static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
+  u32 relplt_offset = 0;
+
+  u8 *got = buf + out::got->shdr.sh_offset;
+  u8 *plt = buf + out::plt->shdr.sh_offset;
+  u8 *relplt = buf + out::relplt->shdr.sh_offset;
 
   for (ObjectFile *file : files) {
     for (Symbol *sym : file->symbols) {
-      // _nl_current_LC_ADDRESS
-
       if (sym->file != file)
         continue;
 
       if (sym->needs_got) {
-        out::got->symbols.push_back({GotSection::REL, sym});
         sym->got_offset = got_offset;
+        *(u64 *)(got + got_offset) = sym->addr;
         got_offset += 8;
       }
 
       if (sym->needs_gottp) {
-        out::got->symbols.push_back({GotSection::TPOFF, sym});
         sym->gottp_offset = got_offset;
+        *(u64 *)(got + got_offset) = sym->addr - out::tls_end;
         got_offset += 8;
       }
 
       if (sym->needs_plt) {
-        // Reserve a .got.plt entry
-        out::gotplt->symbols.push_back({GotSection::IREL, sym});
+        // Write a .got.plt entry
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += 8;
 
-        // Reserve a .plt entry
-        out::plt->symbols.push_back(sym);
+        // Write a .plt entry
         sym->plt_offset = plt_offset;
+        u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
+        u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
+        out::plt->write_entry(plt + plt_offset, S - P - 6);
         plt_offset += 16;
+
+        // Write a .rela.dyn entry
+        auto *rel = (ELF64LE::Rela *)(relplt + relplt_offset);
+        rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
+        rel->setType(R_X86_64_IRELATIVE, false);
+        rel->r_addend = sym->addr;
+        relplt_offset += sizeof(ELF64LE::Rela);
       }
     }
   }
@@ -819,12 +830,6 @@ int main(int argc, char **argv) {
         out::tls_end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
   }
 
-  // Assign symbols to GOT offsets
-  {
-    MyTimer t("got");
-    assign_got_offsets(files);
-  }
-
   tbb::task_group tg_unlink;
   {
     MyTimer t("unlink");
@@ -840,6 +845,12 @@ int main(int argc, char **argv) {
   }
 
   u8 *buf = output_buffer->getBufferStart();
+
+  // Assign symbols to GOT offsets
+  {
+    MyTimer t("got");
+    assign_got_offsets(buf, files);
+  }
 
   // Fill .symtab and .strtab
   tbb::task_group tg_symtab;
