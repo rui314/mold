@@ -102,6 +102,7 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
       files.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
+  case file_magic::elf_shared_object:
     files.push_back(new ObjectFile(mbref, ""));
     break;
   default:
