@@ -8,7 +8,7 @@
 // RUN:   /usr/lib/x86_64-linux-gnu/libc.a \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crtn.o
-// RUN: %t.exe
+// RUN: %t.exe | grep 'Hello world'
 
         .text
         .globl main
