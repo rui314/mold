@@ -468,6 +468,16 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
+  out::_end = add("_end", STB_GLOBAL);
+  out::_etext = add("_etext", STB_GLOBAL);
+  out::_edata = add("_edata", STB_GLOBAL);
+
+  if (!Symbol::intern("end")->file)
+    out::end = add("end", STB_GLOBAL);
+  if (!Symbol::intern("etext")->file)
+    out::etext = add("etext", STB_GLOBAL);
+  if (!Symbol::intern("edata")->file)
+    out::edata = add("edata", STB_GLOBAL);
 
   for (OutputChunk *chunk : output_chunks) {
     if (!is_c_identifier(chunk->name))
