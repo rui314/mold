@@ -458,6 +458,87 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   return fileoff;
 }
 
+static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
+  auto start = [&](OutputChunk *chunk, Symbol *sym) {
+                 if (sym) {
+                   sym->output_chunk = chunk;
+                   sym->addr = chunk->shdr.sh_addr;
+                 }
+               };
+
+  auto stop = [&](OutputChunk *chunk, Symbol *sym) {
+                if (sym) {
+                  sym->output_chunk = chunk;
+                  sym->addr = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+                }
+              };
+
+  // __bss_start
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->name == ".bss" && !chunk->sections.empty()) {
+      start(chunk, out::__bss_start);
+      break;
+    }
+  }
+
+  // __ehdr_start
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->shndx == 1) {
+      out::__ehdr_start->output_chunk = chunk;
+      out::__ehdr_start->addr = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+      break;
+    }
+  }
+
+  // __rela_iplt_start and __rela_iplt_end
+  start(out::relplt, out::__rela_iplt_start);
+  stop(out::relplt, out::__rela_iplt_end);
+
+  // __{init,fini}_array_{start,end}
+  for (OutputChunk *chunk : output_chunks) {
+    switch (chunk->shdr.sh_type) {
+    case SHT_INIT_ARRAY:
+      start(chunk, out::__init_array_start);
+      stop(chunk, out::__init_array_end);
+      break;
+    case SHT_FINI_ARRAY:
+      start(chunk, out::__fini_array_start);
+      stop(chunk, out::__fini_array_end);
+      break;
+    }
+  }
+
+  // _end, end, _etext, etext, _edata and edata
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->sections.empty())
+      continue;
+
+    if (chunk->shdr.sh_flags & SHF_ALLOC) {
+      stop(chunk, out::end);
+      stop(chunk, out::_end);
+    }
+
+    if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
+      stop(chunk, out::etext);
+      stop(chunk, out::_etext);
+    }
+
+    if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC) {
+      stop(chunk, out::edata);
+      stop(chunk, out::_edata);
+    }
+  }
+
+  // __start_ and __stop_ symbols
+  for (OutputChunk *chunk : output_chunks) {
+    if (!is_c_identifier(chunk->name))
+      continue;
+
+    start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
+    stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
+  }
+}
+
 static void unlink_async(tbb::task_group &tg, StringRef path) {
   if (!sys::fs::exists(path) || !sys::fs::is_regular_file(path))
     return;
@@ -728,86 +809,7 @@ int main(int argc, char **argv) {
   }
 
   // Fix linker-synthesized symbol addresses.
-  {
-    auto start = [&](OutputChunk *chunk, Symbol *sym) {
-      if (sym) {
-        sym->output_chunk = chunk;
-        sym->addr = chunk->shdr.sh_addr;
-      }
-    };
-
-    auto stop = [&](OutputChunk *chunk, Symbol *sym) {
-      if (sym) {
-        sym->output_chunk = chunk;
-        sym->addr = chunk->shdr.sh_addr + chunk->shdr.sh_size;
-      }
-    };
-
-    // __bss_start
-    for (OutputChunk *chunk : output_chunks) {
-      if (chunk->name == ".bss" && !chunk->sections.empty()) {
-        start(chunk, out::__bss_start);
-        break;
-      }
-    }
-
-    // __ehdr_start
-    for (OutputChunk *chunk : output_chunks) {
-      if (chunk->shndx == 1) {
-        out::__ehdr_start->output_chunk = chunk;
-        out::__ehdr_start->addr = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
-        break;
-      }
-    }
-
-    // __rela_iplt_start and __rela_iplt_end
-    start(out::relplt, out::__rela_iplt_start);
-    stop(out::relplt, out::__rela_iplt_end);
-
-    // __{init,fini}_array_{start,end}
-    for (OutputChunk *chunk : output_chunks) {
-      switch (chunk->shdr.sh_type) {
-      case SHT_INIT_ARRAY:
-        start(chunk, out::__init_array_start);
-        stop(chunk, out::__init_array_end);
-        break;
-      case SHT_FINI_ARRAY:
-        start(chunk, out::__fini_array_start);
-        stop(chunk, out::__fini_array_end);
-        break;
-      }
-    }
-
-    // _end, end, _etext, etext, _edata and edata
-    for (OutputChunk *chunk : output_chunks) {
-      if (chunk->sections.empty())
-        continue;
-
-      if (chunk->shdr.sh_flags & SHF_ALLOC) {
-        stop(chunk, out::end);
-        stop(chunk, out::_end);
-      }
-
-      if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
-        stop(chunk, out::etext);
-        stop(chunk, out::_etext);
-      }
-
-      if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC) {
-        stop(chunk, out::edata);
-        stop(chunk, out::_edata);
-      }
-    }
-
-    // __start_ and __stop_ symbols
-    for (OutputChunk *chunk : output_chunks) {
-      if (!is_c_identifier(chunk->name))
-        continue;
-
-      start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
-      stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
-    }
-  }
+  fix_synthetic_symbols(output_chunks);
 
   // Fix regular symbol addresses.
   {
