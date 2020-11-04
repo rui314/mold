@@ -56,7 +56,7 @@ void InputSection::scan_relocations() {
       break;
     }
     case R_X86_64_PLT32: {
-      if (sym->type != STT_GNU_IFUNC)
+      if (config.is_static && sym->type != STT_GNU_IFUNC)
         break;
 
       std::lock_guard lock(sym->mu);
@@ -97,7 +97,7 @@ void InputSection::relocate(u8 *buf) {
       *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
-      if (sym->type == STT_GNU_IFUNC)
+      if (!config.is_static || sym->type == STT_GNU_IFUNC)
         *(u32 *)loc = L + A - P;
       else
         *(u32 *)loc = S + A - P; // todo
