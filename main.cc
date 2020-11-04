@@ -779,6 +779,9 @@ int main(int argc, char **argv) {
 
     // _end, end, _etext, etext, _edata and edata
     for (OutputChunk *chunk : output_chunks) {
+      if (chunk->sections.empty())
+        continue;
+
       if (chunk->shdr.sh_flags & SHF_ALLOC) {
         assign_end(out::end, chunk);
         assign_end(out::_end, chunk);
