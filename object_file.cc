@@ -117,9 +117,6 @@ void ObjectFile::initialize_symbols() {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
 
-    if (name == "__start___libc_atexit")
-      llvm::outs() << toString(this) << "\n";
-
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
 
@@ -145,9 +142,6 @@ void ObjectFile::initialize_symbols() {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
-
-    if (name == "__start___libc_atexit")
-      llvm::outs() << toString(this) << "\n";
 
     if (esym.isCommon())
       has_common_symbol = true;

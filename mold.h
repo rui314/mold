@@ -404,12 +404,6 @@ private:
   std::string contents;
 };
 
-class SymtabSymbol {
-  StringRef name;
-  u32 priority = 0;
-  u32 offset = 0;
-};
-
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection() {
@@ -494,6 +488,12 @@ struct StringPiece {
   std::atomic_flag flag = ATOMIC_FLAG_INIT;
 };
 
+struct SymtabSymbol {
+  StringRef name;
+  u32 priority = 0;
+  u32 offset = 0;
+};
+
 class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
@@ -551,6 +551,7 @@ private:
   std::vector<Symbol> local_symbols;
   int first_global = 0;
   bool has_common_symbol;
+  std::vector<SymtabSymbol> symtab_symbols;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
   StringRef symbol_strtab;
