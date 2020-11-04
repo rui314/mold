@@ -160,13 +160,14 @@ public:
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
-  OutputChunk *output_chunk = nullptr;
 
   u64 addr = 0;
-  uint32_t got_offset = 0;
-  uint32_t gotplt_offset = 0;
-  uint32_t gottp_offset = 0;
-  uint32_t plt_offset = 0;
+  u32 got_offset = 0;
+  u32 gotplt_offset = 0;
+  u32 gottp_offset = 0;
+  u32 plt_offset = 0;
+
+  u32 shndx = 0;
 
   tbb::spin_mutex mu;
 
