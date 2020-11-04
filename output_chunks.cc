@@ -128,13 +128,13 @@ void GotSection::relocate(u8 *buf) {
     Symbol *sym = pair.second;
 
     switch (kind) {
-    case REGULAR:
+    case REL:
       *(u64 *)buf = sym->addr;
+      break;
+    case IREL:
       break;
     case TPOFF:
       *(u64 *)buf = sym->addr - out::tls_end;
-      break;
-    case IREL:
       break;
     default:
       error("unreachable");

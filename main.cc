@@ -267,7 +267,7 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
         continue;
 
       if (sym->needs_got) {
-        out::got->symbols.push_back({GotSection::REGULAR, sym});
+        out::got->symbols.push_back({GotSection::REL, sym});
         sym->got_offset = got_offset;
         got_offset += 8;
       }
