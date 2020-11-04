@@ -729,10 +729,18 @@ int main(int argc, char **argv) {
 
   // Fix linker-synthesized symbol addresses.
   {
+    auto assign = [&](OutputChunk *chunk, Symbol *start, Symbol *end = nullptr) {
+      start->input_section = chunk->sections[0];
+      if (end) {
+        end->input_section = chunk->sections[0];
+        end->addr = chunk->shdr.sh_size;
+      }
+    };
+
     // __bss_start
     for (OutputChunk *chunk : output_chunks) {
       if (chunk->name == ".bss" && !chunk->sections.empty()) {
-        out::__bss_start->input_section = chunk->sections[0];
+        assign(chunk, out::__bss_start);
         break;
       }
     }
@@ -754,15 +762,19 @@ int main(int argc, char **argv) {
     for (OutputChunk *chunk : output_chunks) {
       switch (chunk->shdr.sh_type) {
       case SHT_INIT_ARRAY:
-        out::__init_array_start->input_section = chunk->sections[0];
-        out::__init_array_end->input_section = chunk->sections[0];
-        out::__init_array_end->addr = chunk->shdr.sh_size;
+        assign(chunk, out::__init_array_start, out::__init_array_end);
         break;
       case SHT_FINI_ARRAY:
-        out::__fini_array_start->input_section = chunk->sections[0];
-        out::__fini_array_end->input_section = chunk->sections[0];
-        out::__fini_array_end->addr = chunk->shdr.sh_size;
+        assign(chunk, out::__fini_array_start, out::__fini_array_end);
         break;
+      }
+    }
+
+    // _end, end, _etext, etext, _edata and edata
+    for (OutputChunk *chunk : output_chunks) {
+      if (chunk->shdr.sh_flags & SHF_ALLOC) {
+        if (out::end) {
+        }
       }
     }
 
@@ -772,11 +784,8 @@ int main(int argc, char **argv) {
         continue;
 
       Symbol *start = Symbol::intern(("__start_" + chunk->name).str());
-      start->input_section = chunk->sections[0];
-
       Symbol *stop = Symbol::intern(("__stop_" + chunk->name).str());
-      stop->input_section = chunk->sections[0];
-      stop->addr = chunk->shdr.sh_size;
+      assign(chunk, start, stop);
     }
   }
 
