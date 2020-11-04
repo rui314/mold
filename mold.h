@@ -24,6 +24,9 @@
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 
+#define LIKELY(x)   __builtin_expect((x), 1)
+#define UNLIKELY(x) __builtin_expect((x), 0)
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
