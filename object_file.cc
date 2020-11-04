@@ -2,6 +2,8 @@
 
 #include "llvm/BinaryFormat/Magic.h"
 
+#include <cstring>
+
 using namespace llvm;
 using namespace llvm::ELF;
 
@@ -115,6 +117,9 @@ void ObjectFile::initialize_symbols() {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
 
+    if (name == "__start___libc_atexit")
+      llvm::outs() << toString(this) << "\n";
+
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
 
@@ -140,6 +145,9 @@ void ObjectFile::initialize_symbols() {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
+
+    if (name == "__start___libc_atexit")
+      llvm::outs() << toString(this) << "\n";
 
     if (esym.isCommon())
       has_common_symbol = true;
@@ -411,7 +419,18 @@ bool ObjectFile::is_in_archive() {
   return !archive_name.empty();
 }
 
-ObjectFile *ObjectFile::create_internal_file() {
+static bool is_c_identifier(StringRef name) {
+  if (name == "")
+    return false;
+  if (!isalpha(name[0]) && name[0] != '_')
+    return false;
+  for (int i = 1; i < name.size(); i++)
+    if (!isalnum(name[i]) && name[i] != '_')
+      return false;
+  return true;
+}
+
+ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chunks) {
   // Create a dummy object file.
   constexpr int bufsz = 256;
   char *buf = new char[bufsz];
@@ -449,6 +468,15 @@ ObjectFile *ObjectFile::create_internal_file() {
   out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
+
+  for (OutputChunk *chunk : output_chunks) {
+    if (is_c_identifier(chunk->name)) {
+      auto *start = new std::string(("__start_" + chunk->name).str());
+      auto *stop = new std::string(("__stop_" + chunk->name).str());
+      add(*start, STB_GLOBAL);
+      add(*stop, STB_GLOBAL);
+    }
+  }
 
   obj->elf_syms = *elf_syms;
   return obj;

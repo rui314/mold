@@ -613,10 +613,6 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
   }
 
-  // Create a dummy file containing linker-synthesized symbols
-  // (e.g. `__bss_start`).
-  files.push_back(ObjectFile::create_internal_file());
-
   // Eliminate duplicate comdat groups.
   {
     MyTimer t("comdat", before_copy);
@@ -627,17 +623,6 @@ int main(int argc, char **argv) {
   {
     MyTimer t("common", before_copy);
     for_each(files, [](ObjectFile *file) { file->convert_common_symbols(); });
-  }
-
-  for (ObjectFile *file : files) {
-    for (InputSection *isec : file->sections) {
-      if (isec && isec->name == ".init_array") {
-        llvm::outs() << "file=" << file->name
-                     << " .init_array size=" << isec->shdr.sh_size
-                     << "\n";
-        break;
-      }
-    }
   }
 
   // Bin input sections into output sections
@@ -651,6 +636,15 @@ int main(int argc, char **argv) {
     MyTimer t("isec_offsets", before_copy);
     set_isec_offsets();
   }
+
+  std::vector<OutputChunk *> output_chunks;
+  for (OutputSection *osec : OutputSection::instances)
+    if (!osec->empty())
+      output_chunks.push_back(osec);
+
+  // Create a dummy file containing linker-synthesized symbols
+  // (e.g. `__bss_start`).
+  files.push_back(ObjectFile::create_internal_file(output_chunks));
 
   // Create linker-synthesized sections.
   out::ehdr = new OutputEhdr;
@@ -690,11 +684,6 @@ int main(int argc, char **argv) {
   }
 
   // Add output sections.
-  std::vector<OutputChunk *> output_chunks;
-  for (OutputSection *osec : OutputSection::instances)
-    if (!osec->empty())
-      output_chunks.push_back(osec);
-
   if (out::got->shdr.sh_size)
     output_chunks.push_back(out::got);
   if (out::plt->shdr.sh_size)

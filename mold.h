@@ -501,7 +501,7 @@ public:
 
   bool is_in_archive();
 
-  static ObjectFile *create_internal_file();
+  static ObjectFile *create_internal_file(ArrayRef<OutputChunk *> output_chunks);
 
   std::vector<InputSection *> sections;
   StringRef archive_name;
