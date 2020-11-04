@@ -448,6 +448,7 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   // Create linker-synthesized symbols.
   auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
   obj->symbols.push_back(new Symbol(""));
+  obj->is_alive = true;
   obj->first_global = 1;
 
   auto add = [&](StringRef name, u8 binding) {
