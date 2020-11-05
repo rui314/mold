@@ -8,9 +8,9 @@ crashed in `__libc_start_main` function which is called just after
 `_start`.
 
 Investigation: I opened up gdb and found that the program reads a
-bogus value from a TLS block. It looks like `memcpy` failed to copy
+bogus value from some array. It looks like `memcpy` failed to copy
 proper data there.  After some investigation, I noticed that `memcpy`
-doesn't copy data at all but instead returns the address of
+did't copy data at all but instead returned the address of
 `__memcpy_avx_unaligned` function, which is a real `memcpy` function
 optimized for machines with the AVX registers.
 
@@ -23,7 +23,7 @@ is a real `memcpy` function.
 
 IFUNC function addresses are stored to `.got` section in an ELF
 executable.  The dynamic loader executes all IFUNC functions at
-startup and replace their GOT entries with their return values. This
+startup to replace their GOT entries with their return values. This
 mechanism allows programs to choose the best implementation among
 variants of the same function at runtime based on the machine info.
 
@@ -40,7 +40,7 @@ the symbols, so that the startup routine can find the relocations.
 The bug was my linker didn't define `__rela_iplt_start` and
 `__rela_iplt_stop` symbols. Since these symbols are weak, they are
 initialized to zero. From the point of the initializer function,
-there's no dynamic entries between `__rela_iplt_start` and
+there's no dynamic relocations between `__rela_iplt_start` and
 `__rela_iplt_start` symbols. That left GOT entries for IFUNC symbols
 untouched.
 
@@ -50,9 +50,9 @@ fixed.
 
 ## stdio buffering
 
-Problem: A statically-linked "Hello, world" prints out the message if
-executed as `./hello`, but it doesn't output anything if executed as
-`./hello | cat`.
+Problem: A statically-linked "Hello world" program prints out the
+message if executed as `./hello`, but it doesn't output anything if
+executed as `./hello | cat`.
 
 Investigation: I knew that the default buffering mode for stdout is
 line buffering (buffer is flushed on every '\n'), but if it is not
@@ -69,15 +69,16 @@ spending an hour or two, I found that `__start___libc_atexit` and
 mark a section containing the address of `__libc_atexit` in GNU ld's
 output.
 
-So, libc doesn't directly call `__libc_atexit` but instead put its
-address in `_libc_atexit` section, expecting that the linker
-automatically creates the start and the end marker symbols for the
-section.
+So, libc doesn't directly call `__libc_atexit` but instead call all
+function pointers between `__start___libc_atexit` and
+`__stop___libc_atexit` symbols. libc puts `__libc_atexit` address in
+`_libc_atexit` section, expecting that the linker automatically
+creates the start and the end marker symbols for the section.
 
 There's an obscure linker feature: if a section name is valid as a C
 identifier (e.g. `foo` or `_foo_bar` but not `.foo`), the linker
-automatically create two symbols by prepending `__start_` and
-`__stop_` to the section name. My linker didn't implement that.
+automatically creates marker symbols by prepending `__start_` and
+`__stop_` to the section name. My linker lacked the feature.
 
 I implemented the feature, and the bug was fixed.
 
@@ -88,7 +89,7 @@ reading a thread-local variable.
 
 Investigation: Thread-local variables are very different from other
 types of varaibles because there may be more than one instance of the
-same variable. Each thread has its copy of thread-local
+same variable in memory. Each thread has its copy of thread-local
 varaibles. `%fs` segment register points the end of the variable area
 for the current thread, and the variables are accessed as an offset
 from `%fs`.
@@ -96,21 +97,23 @@ from `%fs`.
 Thread-local variables may be initialized (e.g. `thread_local int x =
 5;`). The linker gathers all thread-local variables and put them into
 `PT_TLS` segment. At runtime, the contents of the segment is used as
-an "initialization image". When a new thread is created, the image is
-memcpy'ed to the new thread's thread-local variable area. The
-initialization image itself is read-only at runtime.
+an "initialization image" for new threads. When a new thread is
+created, the image is memcpy'ed to the new thread's thread-local
+variable area. The initialization image itself is read-only at
+runtime.
 
 It took more than a day to find out the location where the memcpy call
-copies the initialization image to and the thread-local variables
-reside are different. As a result, thread-local variables have garbage
-as initial values, and the program crashes when using the varaibles.
+copies the initialization image to is different from the location
+where the thread-local variables reside. As a result, thread-local
+variables have garbage as initial values, and the program crashes when
+using them.
 
 The problem is that I set a very large value (4096) to the alignment
 of `PT_TLS` segment. All `PT_LOAD` segments are naturally aligned to
 the page boundary, so I use the same value for `PT_TLS`, but that was
 a mistake. When a thread initialization routine sets a value to `%fs`,
 it first aligns the end of the thread-local variable area address to
-`PT_TLS` alignment. So, if you set a large value to `PT_TLS`
+`PT_TLS` alignment value. So, if you set a large value to `PT_TLS`
 alignment, `%fs` is set to a wrong place.
 
 I fixed `PT_TLS` alignment, and the bug was gone.
