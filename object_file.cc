@@ -206,7 +206,7 @@ void ObjectFile::parse() {
     initialize_symbols();
 }
 
-void ObjectFile::register_defined_symbols() {
+void ObjectFile::resolve_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     if (!esym.isDefined())
@@ -248,7 +248,7 @@ void ObjectFile::register_defined_symbols() {
 }
 
 void
-ObjectFile::register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
   if (is_alive.exchange(true))
     return;
 

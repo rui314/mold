@@ -492,8 +492,8 @@ public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
 
   void parse();
-  void register_defined_symbols();
-  void register_undefined_symbols(tbb::parallel_do_feeder<ObjectFile *> &feeder);
+  void resolve_symbols();
+  void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();

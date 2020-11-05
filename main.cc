@@ -685,19 +685,19 @@ int main(int argc, char **argv) {
   {
     MyTimer t("resolve_symbols", before_copy);
 
-    for_each(files, [](ObjectFile *file) { file->register_defined_symbols(); });
+    for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
 
-    // Add defined symbols
+    // Resolve symbols
     std::vector<ObjectFile *> objs;
     for (ObjectFile *file : files)
       if (!file->is_in_archive())
         objs.push_back(file);
 
-    // Add undefined symbols
+    // Mark archive members we include into the final output.
     tbb::parallel_do(
       objs.begin(), objs.end(),
-      [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *>& feeder) {
-        file->register_undefined_symbols(feeder);
+      [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+        file->mark_live_archive_members(feeder);
       });
 
     // Eliminate unused archive members.
