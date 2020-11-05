@@ -205,6 +205,18 @@ void ObjectFile::parse() {
 
   if (symtab_sec)
     initialize_symbols();
+
+  if (Counter::enabled) {
+    static Counter defined("defined_syms");
+    static Counter undefined("undefined_syms");
+
+    for (const ELF64LE::Sym &esym : elf_syms) {
+      if (esym.isDefined())
+        defined.inc();
+      else
+        undefined.inc();
+    }
+  }
 }
 
 void ObjectFile::resolve_symbols() {
@@ -214,9 +226,6 @@ void ObjectFile::resolve_symbols() {
       continue;
 
     Symbol &sym = *symbols[i];
-
-    static Counter counter("defined_syms");
-    counter.inc();
 
     InputSection *isec = nullptr;
     if (!esym.isAbsolute() && !esym.isCommon())
@@ -267,9 +276,6 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
     if (esym.getBinding() != STB_WEAK && sym.file &&
         sym.file->is_in_archive && !sym.file->is_alive) {
       feeder.add(sym.file);
-
-      static Counter counter("undefined_syms");
-      counter.inc();
 
       if (UNLIKELY(sym.traced))
         llvm::outs() << "trace: " << toString(this) << " keeps "

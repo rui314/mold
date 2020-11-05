@@ -151,8 +151,8 @@ class Symbol {
 public:
   Symbol(StringRef name, ObjectFile *file = nullptr)
     : name(name), file(file), needs_got(false), needs_gottp(false),
-      needs_plt(false), is_dso(false), is_weak(false), is_undef_weak(false),
-      traced(false) {}
+      needs_plt(false), is_placeholder(false), is_dso(false), is_weak(false),
+      is_undef_weak(false), traced(false) {}
 
   Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
 
@@ -178,6 +178,7 @@ public:
   u8 needs_got : 1;
   u8 needs_gottp : 1;
   u8 needs_plt : 1;
+  u8 is_placeholder : 1;
   u8 is_dso : 1;
   u8 is_weak : 1;
   u8 is_undef_weak : 1;
