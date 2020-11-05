@@ -675,10 +675,10 @@ int main(int argc, char **argv) {
   // Set priorities to files
   int priority = 1;
   for (ObjectFile *file : files)
-    if (!file->is_in_archive())
+    if (!file->is_in_archive)
       file->priority = priority++;
   for (ObjectFile *file : files)
-    if (file->is_in_archive())
+    if (file->is_in_archive)
       file->priority = priority++;
 
   // Resolve symbols
@@ -690,7 +690,7 @@ int main(int argc, char **argv) {
     // Resolve symbols
     std::vector<ObjectFile *> objs;
     for (ObjectFile *file : files)
-      if (!file->is_in_archive())
+      if (!file->is_in_archive)
         objs.push_back(file);
 
     // Mark archive members we include into the final output.

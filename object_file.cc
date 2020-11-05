@@ -9,7 +9,8 @@ using namespace llvm::ELF;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
-    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
+    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))),
+    is_in_archive(archive_name != "") {}
 
 static const ELF64LE::Shdr
 *findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
@@ -242,7 +243,7 @@ void ObjectFile::resolve_symbols() {
 
     if (UNLIKELY(sym.traced && sym.file == this))
       llvm::outs() << "trace: " << toString(sym.file)
-                   << (is_in_archive() ? ": lazy definition of " : ": definition of ")
+                   << (is_in_archive ? ": lazy definition of " : ": definition of ")
                    << sym.name << "\n";
   }
 }
@@ -264,7 +265,7 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
                    << ": reference to " << sym.name << "\n";
 
     if (esym.getBinding() != STB_WEAK && sym.file &&
-        sym.file->is_in_archive() && !sym.file->is_alive) {
+        sym.file->is_in_archive && !sym.file->is_alive) {
       feeder.add(sym.file);
 
       static Counter counter("undefined_syms");
@@ -435,10 +436,6 @@ void ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
 
 void ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
   write_symtab(buf, symtab_off, strtab_off, first_global, elf_syms.size());
-}
-
-bool ObjectFile::is_in_archive() {
-  return !archive_name.empty();
 }
 
 bool is_c_identifier(StringRef name) {

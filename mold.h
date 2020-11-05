@@ -503,8 +503,6 @@ public:
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
   void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
-  bool is_in_archive();
-
   static ObjectFile *create_internal_file(ArrayRef<OutputChunk *> output_chunks);
 
   std::vector<InputSection *> sections;
@@ -515,6 +513,7 @@ public:
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
   bool is_dso;
+  const bool is_in_archive;
   std::string name;
 
   u64 local_symtab_size = 0;
