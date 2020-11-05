@@ -299,6 +299,10 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
         rel->setType(R_X86_64_IRELATIVE, false);
         rel->r_addend = sym->addr;
         relplt_offset += sizeof(ELF64LE::Rela);
+
+        llvm::outs() << "sym=" << sym->name
+                     << " gotplt=" << sym->gotplt_offset
+                     << "\n";
       }
     }
   }
@@ -502,8 +506,8 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 
   // __rela_iplt_start and __rela_iplt_end
-  start(out::relplt, out::__rela_iplt_start);
-  stop(out::relplt, out::__rela_iplt_end);
+  //  start(out::relplt, out::__rela_iplt_start);
+  //  stop(out::relplt, out::__rela_iplt_end);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk *chunk : output_chunks) {
