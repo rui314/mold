@@ -197,7 +197,7 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
- 
+
   if (is_dso)
     sections.resize(elf_sections.size());
   else
@@ -219,6 +219,36 @@ void ObjectFile::parse() {
   }
 }
 
+void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym) {
+  InputSection *isec = nullptr;
+  if (!esym.isAbsolute() && !esym.isCommon())
+    isec = sections[esym.st_shndx];
+
+  bool is_weak = (esym.getBinding() == STB_WEAK);
+
+  std::lock_guard lock(sym.mu);
+
+  bool is_new = !sym.file;
+  bool win = sym.is_placeholder || (sym.is_weak && !is_weak);
+  bool tie_but_higher_priority =
+    !is_new && !win && this->priority < sym.file->priority;
+
+  if (is_new || win || tie_but_higher_priority) {
+    sym.file = this;
+    sym.input_section = isec;
+    sym.addr = esym.st_value;
+    sym.type = esym.getType();
+    sym.visibility = esym.getVisibility();
+    sym.is_placeholder = false;
+    sym.is_weak = is_weak;
+    sym.is_dso = is_dso;
+  }
+
+  if (UNLIKELY(sym.traced && sym.file == this))
+    llvm::outs() << "trace: " << toString(sym.file) << ": definition of "
+                 << sym.name << "\n";
+}
+
 void ObjectFile::resolve_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
@@ -227,33 +257,20 @@ void ObjectFile::resolve_symbols() {
 
     Symbol &sym = *symbols[i];
 
-    InputSection *isec = nullptr;
-    if (!esym.isAbsolute() && !esym.isCommon())
-      isec = sections[esym.st_shndx];
+    if (is_in_archive) {
+      std::lock_guard lock(sym.mu);
+      bool is_new = !sym.file;
+      bool tie_but_higher_priority =
+        sym.is_placeholder && this->priority < sym.file->priority;
 
-    bool is_weak = (esym.getBinding() == STB_WEAK);
-
-    std::lock_guard lock(sym.mu);
-
-    bool is_new = !sym.file;
-    bool win = sym.is_weak && !is_weak;
-    bool tie_but_higher_priority =
-      !is_new && !win && this->priority < sym.file->priority;
-
-    if (is_new || win || tie_but_higher_priority) {
-      sym.file = this;
-      sym.input_section = isec;
-      sym.addr = esym.st_value;
-      sym.type = esym.getType();
-      sym.visibility = esym.getVisibility();
-      sym.is_weak = is_weak;
-      sym.is_dso = is_dso;
+      if (is_new || tie_but_higher_priority) {
+        sym.file = this;
+        sym.is_placeholder = true;
+      }
+    } else {
+      maybe_override_symbol(esym, sym);
+      Symbol &sym = *symbols[i];
     }
-
-    if (UNLIKELY(sym.traced && sym.file == this))
-      llvm::outs() << "trace: " << toString(sym.file)
-                   << (is_in_archive ? ": lazy definition of " : ": definition of ")
-                   << sym.name << "\n";
   }
 }
 
@@ -264,10 +281,13 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
 
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    if (!esym.isUndefined())
-      continue;
-
     Symbol &sym = *symbols[i];
+
+    if (esym.isDefined()) {
+      if (is_in_archive)
+        maybe_override_symbol(esym, sym);
+      continue;
+    }
 
     if (UNLIKELY(sym.traced))
       llvm::outs() << "trace: " << toString(this)
