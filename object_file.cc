@@ -401,18 +401,6 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-ScanRelResult ObjectFile::scan_relocations() {
-  return tbb::parallel_reduce(tbb::blocked_range(0, (int)sections.size()),
-                              ScanRelResult(),
-                              [&](const tbb::blocked_range<int> &r, ScanRelResult res) {
-                                for (int i = r.begin(); i != r.end(); i++)
-                                  if (sections[i])
-                                    res = res.add(sections[i]->scan_relocations());
-                                return res;
-                              },
-                              ScanRelResult::plus);
-}
-
 void ObjectFile::fix_sym_addrs() {
   for (Symbol *sym : symbols) {
     if (sym->file != this)

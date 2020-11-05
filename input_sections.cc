@@ -24,9 +24,7 @@ void InputSection::copy_to(u8 *buf) {
   memcpy(buf, &data[0], data.size());
 }
 
-ScanRelResult InputSection::scan_relocations() {
-  ScanRelResult res;
-
+void InputSection::scan_relocations() {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
     if (!sym->file || !sym->file->is_alive)
@@ -45,7 +43,7 @@ ScanRelResult InputSection::scan_relocations() {
       std::lock_guard lock(sym->mu);
       if (!sym->needs_got) {
         sym->needs_got = true;
-        res.num_got++;
+        file->num_got++;
       }
       break;
     }
@@ -53,7 +51,7 @@ ScanRelResult InputSection::scan_relocations() {
       std::lock_guard lock(sym->mu);
       if (!sym->needs_gottp) {
         sym->needs_gottp = true;
-        res.num_got++;
+        file->num_got++;
       }
       break;
     }
@@ -64,15 +62,14 @@ ScanRelResult InputSection::scan_relocations() {
       std::lock_guard lock(sym->mu);
       if (!sym->needs_plt) {
         sym->needs_plt = true;
-        res.num_plt++;
-        res.num_gotplt++;
-        res.num_relplt++;
+        file->num_plt++;
+        file->num_gotplt++;
+        file->num_relplt++;
       }
       break;
     }
     }
   }
-  return res;
 }
 
 void InputSection::relocate(u8 *buf) {

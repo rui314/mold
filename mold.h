@@ -12,7 +12,6 @@
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/global_control.h"
 #include "tbb/parallel_for_each.h"
-#include "tbb/parallel_reduce.h"
 #include "tbb/spin_mutex.h"
 #include "tbb/task_group.h"
 
@@ -197,31 +196,13 @@ inline std::string toString(Symbol sym) {
 // input_chunks.cc
 //
 
-struct ScanRelResult {
-  ScanRelResult add(const ScanRelResult &other) const {
-    return {num_got + other.num_got,
-            num_gotplt + other.num_gotplt,
-            num_plt + other.num_plt,
-            num_relplt + other.num_relplt};
-  }
-
-  static ScanRelResult plus(const ScanRelResult &x, const ScanRelResult &y) {
-    return x.add(y);
-  }
-
-  u32 num_got = 0;
-  u32 num_gotplt = 0;
-  u32 num_plt = 0;
-  u32 num_relplt = 0;
-};
-
 class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
   void copy_to(u8 *buf);
   void relocate(u8 *buf);
-  ScanRelResult scan_relocations();
+  void scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
@@ -517,7 +498,6 @@ public:
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
-  ScanRelResult scan_relocations();
   void fix_sym_addrs();
   void compute_symtab();
 
@@ -541,6 +521,13 @@ public:
   u64 local_strtab_size = 0;
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
+
+  // Number of .got, .got.plt, .plt and .rel.plt entries
+  // needed for this file.
+  i32 num_got = 0;
+  i32 num_gotplt = 0;
+  i32 num_plt = 0;
+  i32 num_relplt = 0;
 
 private:
   void initialize_sections();

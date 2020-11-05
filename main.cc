@@ -232,20 +232,26 @@ static void set_isec_offsets() {
 }
 
 static void scan_rels(ArrayRef<ObjectFile *> files) {
-  ScanRelResult res =
-    tbb::parallel_reduce(tbb::blocked_range(0, (int)files.size()),
-                         ScanRelResult(),
-                         [&](const tbb::blocked_range<int> &r, ScanRelResult res) {
-                           for (int i = r.begin(); i != r.end(); i++)
-                             res = res.add(files[i]->scan_relocations());
-                           return res;
-                         },
-                         ScanRelResult::plus);
-    
-  out::got->shdr.sh_size = res.num_got * 8;
-  out::gotplt->shdr.sh_size = res.num_gotplt * 8;
-  out::plt->shdr.sh_size = res.num_plt * 16;
-  out::relplt->shdr.sh_size = res.num_relplt * sizeof(ELF64LE::Rela);
+  std::atomic_int32_t num_got = 0;
+  std::atomic_int32_t num_gotplt = 0;
+  std::atomic_int32_t num_plt = 0;
+  std::atomic_int32_t num_relplt = 0;
+
+  for_each(files, [&](ObjectFile *file) {
+                    for (InputSection *isec : file->sections)
+                      if (isec)
+                        isec->scan_relocations();
+
+                    num_got += file->num_got;
+                    num_gotplt += file->num_gotplt;
+                    num_plt += file->num_plt;
+                    num_relplt += file->num_relplt;
+                  });
+
+  out::got->shdr.sh_size = num_got * 8;
+  out::gotplt->shdr.sh_size = num_gotplt * 8;
+  out::plt->shdr.sh_size = num_plt * 16;
+  out::relplt->shdr.sh_size = num_relplt * sizeof(ELF64LE::Rela);
 }
 
 static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
