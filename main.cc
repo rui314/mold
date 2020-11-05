@@ -709,6 +709,10 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
   }
 
+  if (args.hasArg(OPT_trace))
+    for (ObjectFile *file : files)
+      llvm::outs() << toString(file) << "\n";
+
   // Eliminate duplicate comdat groups.
   {
     MyTimer t("comdat", before_copy);
