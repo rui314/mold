@@ -244,7 +244,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym) {
     sym.is_dso = is_dso;
   }
 
-  if (UNLIKELY(sym.traced && sym.file == this))
+  if (UNLIKELY(sym.traced) && sym.file == this)
     llvm::outs() << "trace: " << toString(sym.file) << ": definition of "
                  << sym.name << "\n";
 }
@@ -269,7 +269,6 @@ void ObjectFile::resolve_symbols() {
       }
     } else {
       maybe_override_symbol(esym, sym);
-      Symbol &sym = *symbols[i];
     }
   }
 }
