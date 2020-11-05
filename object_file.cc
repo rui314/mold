@@ -401,6 +401,14 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
+ScanRelResult ObjectFile::scan_relocations() {
+  ScanRelResult res;
+  for (InputSection *isec : sections)
+    if (isec)
+      res = res.add(isec->scan_relocations());
+  return res;
+}
+
 void ObjectFile::fix_sym_addrs() {
   for (Symbol *sym : symbols) {
     if (sym->file != this)
