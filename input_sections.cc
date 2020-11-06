@@ -104,7 +104,7 @@ void InputSection::copy_to(u8 *buf) {
 static bool set_flag(Symbol *sym, u8 bit) {
   for (;;) {
     u8 flags = sym->flags;
-    if (sym->flags & bit)
+    if (flags & bit)
       return false;
     if (sym->flags.compare_exchange_strong(flags, flags | bit))
       return true;
