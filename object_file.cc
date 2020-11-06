@@ -508,10 +508,15 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
     esym.setType(STT_NOTYPE);
     esym.setBinding(binding);
     elf_syms->push_back(esym);
+
+    if (binding == STB_LOCAL) {
+      obj->local_strtab_size += name.size() + 1;
+      obj->local_symtab_size += sizeof(ELF64LE::Sym);
+      obj->first_global++;
+    }
     return sym;
   };
 
-  out::__bss_start = add("__bss_start", STB_GLOBAL);
   out::__ehdr_start = add("__ehdr_start", STB_LOCAL);
   out::__rela_iplt_start = add("__rela_iplt_start", STB_LOCAL);
   out::__rela_iplt_end = add("__rela_iplt_end", STB_LOCAL);
@@ -521,6 +526,8 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
+
+  out::__bss_start = add("__bss_start", STB_GLOBAL);
   out::_end = add("_end", STB_GLOBAL);
   out::_etext = add("_etext", STB_GLOBAL);
   out::_edata = add("_edata", STB_GLOBAL);
