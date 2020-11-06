@@ -234,12 +234,22 @@ static void set_isec_offsets() {
 static void scan_rels(ArrayRef<ObjectFile *> files) {
   for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
-  for (ObjectFile *file : files) {
-    out::got->shdr.sh_size += file->num_got * 8;
-    out::gotplt->shdr.sh_size += file->num_gotplt * 8;
-    out::plt->shdr.sh_size += file->num_plt * 16;
-    out::relplt->shdr.sh_size += file->num_relplt * sizeof(ELF64LE::Rela);
+  std::vector<u32> got_offset(files.size() + 1);
+  std::vector<u32> gotplt_offset(files.size() + 1);
+  std::vector<u32> plt_offset(files.size() + 1);
+  std::vector<u32> relplt_offset(files.size() + 1);
+
+  for (int i = 0, j = 1; i < files.size(); i++, j++) {
+    got_offset[j] = got_offset[i] + files[i]->num_got * 8;
+    gotplt_offset[j] = gotplt_offset[i] + files[i]->num_gotplt * 8;
+    plt_offset[j] = plt_offset[i] + files[i]->num_plt * 16;
+    relplt_offset[j] = relplt_offset[i] + files[i]->num_relplt * sizeof(ELF64LE::Rela);
   }
+
+  out::got->shdr.sh_size = got_offset.back();
+  out::gotplt->shdr.sh_size = gotplt_offset.back();
+  out::plt->shdr.sh_size = plt_offset.back();
+  out::relplt->shdr.sh_size = relplt_offset.back();
 }
 
 static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
