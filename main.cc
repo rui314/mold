@@ -241,13 +241,15 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 
   for (ObjectFile *file : files) {
     file->got_offset = got_offset;
-    file->gotplt_offset = gotplt_offset;
-    file->plt_offset = plt_offset;
-    file->relplt_offset = relplt_offset;
-
     got_offset += file->num_got * 8;
+
+    file->gotplt_offset = gotplt_offset;
     gotplt_offset += file->num_gotplt * 8;
+
+    file->plt_offset = plt_offset;
     plt_offset += file->num_plt * 16;
+
+    file->relplt_offset = relplt_offset;
     relplt_offset += file->num_relplt * sizeof(ELF64LE::Rela);
   }
 
