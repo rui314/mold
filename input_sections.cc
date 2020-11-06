@@ -95,10 +95,10 @@ void InputSection::copy_to(u8 *buf) {
       error(toString(this) + ": unknown relocation: " +
             std::to_string(rel.getType(false)));
     }
-
-    static Counter counter("relocs");
-    counter.inc();
   }
+
+  static Counter counter("relocs");
+  counter.inc(rels.size());
 }
 
 static bool set_flag(Symbol *sym, u8 bit) {
