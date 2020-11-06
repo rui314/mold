@@ -216,7 +216,6 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
   void copy_to(u8 *buf);
-  void relocate(u8 *buf);
   ScanRelResult scan_relocations();
 
   ObjectFile *file;
@@ -244,7 +243,6 @@ public:
   OutputChunk() { shdr.sh_addralign = 1; }
 
   virtual void copy_to(u8 *buf) {}
-  virtual void relocate(u8 *buf) {}
 
   StringRef name;
   int shndx = 0;
@@ -261,7 +259,7 @@ public:
     shdr.sh_size = sizeof(ELF64LE::Ehdr);
   }
 
-  void relocate(u8 *buf) override;
+  void copy_to(u8 *buf) override;
 };
 
 // Section header
@@ -292,7 +290,7 @@ public:
   };
 
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
-  void relocate(u8 *buf) override;
+  void copy_to(u8 *buf) override;
 
   void set_entries(std::vector<Entry> vec) {
     shdr.sh_size = vec.size() * sizeof(ELF64LE::Phdr);
@@ -318,11 +316,6 @@ public:
   void copy_to(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
       for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
-  }
-
-  void relocate(u8 *buf) override {
-    if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
   bool empty() const {

@@ -20,62 +20,8 @@ void InputSection::copy_to(u8 *buf) {
     return;
 
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
-  buf = buf + output_section->shdr.sh_offset + offset;
-  memcpy(buf, &data[0], data.size());
-}
+  memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
-ScanRelResult InputSection::scan_relocations() {
-  ScanRelResult res;
-
-  for (const ELF64LE::Rela &rel : rels) {
-    Symbol *sym = file->symbols[rel.getSymbol(false)];
-    if (!sym->file || !sym->file->is_alive)
-      continue;
-
-    switch (rel.getType(false)) {
-    case R_X86_64_GOT32:
-    case R_X86_64_GOT64:
-    case R_X86_64_GOTOFF64:
-    case R_X86_64_GOTPC32:
-    case R_X86_64_GOTPC32_TLSDESC:
-    case R_X86_64_GOTPC64:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX: {
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_got) {
-        sym->needs_got = true;
-        res.num_got++;
-      }
-      break;
-    }
-    case R_X86_64_GOTTPOFF: {
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_gottp) {
-        sym->needs_gottp = true;
-        res.num_got++;
-      }
-      break;
-    }
-    case R_X86_64_PLT32: {
-      if (config.is_static && sym->type != STT_GNU_IFUNC)
-        break;
-
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_plt) {
-        sym->needs_plt = true;
-        res.num_plt++;
-        res.num_gotplt++;
-        res.num_relplt++;
-      }
-      break;
-    }
-    }
-  }
-  return res;
-}
-
-void InputSection::relocate(u8 *buf) {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
@@ -153,6 +99,57 @@ void InputSection::relocate(u8 *buf) {
     static Counter counter("relocs");
     counter.inc();
   }
+}
+
+ScanRelResult InputSection::scan_relocations() {
+  ScanRelResult res;
+
+  for (const ELF64LE::Rela &rel : rels) {
+    Symbol *sym = file->symbols[rel.getSymbol(false)];
+    if (!sym->file || !sym->file->is_alive)
+      continue;
+
+    switch (rel.getType(false)) {
+    case R_X86_64_GOT32:
+    case R_X86_64_GOT64:
+    case R_X86_64_GOTOFF64:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC32_TLSDESC:
+    case R_X86_64_GOTPC64:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX: {
+      std::lock_guard lock(sym->mu);
+      if (!sym->needs_got) {
+        sym->needs_got = true;
+        res.num_got++;
+      }
+      break;
+    }
+    case R_X86_64_GOTTPOFF: {
+      std::lock_guard lock(sym->mu);
+      if (!sym->needs_gottp) {
+        sym->needs_gottp = true;
+        res.num_got++;
+      }
+      break;
+    }
+    case R_X86_64_PLT32: {
+      if (config.is_static && sym->type != STT_GNU_IFUNC)
+        break;
+
+      std::lock_guard lock(sym->mu);
+      if (!sym->needs_plt) {
+        sym->needs_plt = true;
+        res.num_plt++;
+        res.num_gotplt++;
+        res.num_relplt++;
+      }
+      break;
+    }
+    }
+  }
+  return res;
 }
 
 std::string toString(InputSection *isec) {

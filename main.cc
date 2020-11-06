@@ -869,11 +869,6 @@ int main(int argc, char **argv) {
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
   }
 
-  {
-    MyTimer t("reloc");
-    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
-  }
-
   out::shdr->copy_to(buf);
 
   {
