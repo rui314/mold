@@ -430,6 +430,8 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
       continue;
 
     auto &esym = *(ELF64LE::Sym *)(symtab + symtab_off);
+    symtab_off += sizeof(ELF64LE::Sym);
+
     esym.st_name = strtab_off;
     esym.st_value = sym.get_addr();
     esym.st_size = elf_syms[i].st_size;
@@ -441,8 +443,6 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
       esym.st_shndx = sym.shndx;
     else
       esym.st_shndx = SHN_ABS;
-
-    symtab_off += sizeof(ELF64LE::Sym);
 
     memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
     strtab_off += sym.name.size() + 1;
