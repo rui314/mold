@@ -697,6 +697,9 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->parse(); });
   }
 
+  Timer total_timer("total", "total");
+  total_timer.startTimer();
+
   // Set priorities to files
   int priority = 1;
   for (ObjectFile *file : files)
@@ -903,6 +906,8 @@ int main(int argc, char **argv) {
     if (auto e = output_buffer->commit())
       error("failed to write to the output file: " + toString(std::move(e)));
   }
+
+  total_timer.stopTimer();
 
   {
     MyTimer t("unlink_wait");
