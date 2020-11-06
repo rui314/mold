@@ -497,7 +497,6 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
   obj->symbols.push_back(new Symbol(""));
   obj->is_alive = true;
-  obj->first_global = 1;
 
   auto add = [&](StringRef name, u8 binding) {
     Symbol *sym = Symbol::intern(name);
@@ -508,15 +507,10 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
     esym.setType(STT_NOTYPE);
     esym.setBinding(binding);
     elf_syms->push_back(esym);
-
-    if (binding == STB_LOCAL) {
-      obj->local_strtab_size += name.size() + 1;
-      obj->local_symtab_size += sizeof(ELF64LE::Sym);
-      obj->first_global++;
-    }
     return sym;
   };
 
+  // Add local symbols
   out::__ehdr_start = add("__ehdr_start", STB_LOCAL);
   out::__rela_iplt_start = add("__rela_iplt_start", STB_LOCAL);
   out::__rela_iplt_end = add("__rela_iplt_end", STB_LOCAL);
@@ -527,6 +521,13 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
 
+  // Update metadata
+  for (Symbol *sym : obj->symbols)
+    obj->local_strtab_size += sym->name.size() + 1;
+  obj->local_symtab_size = sizeof(ELF64LE::Sym) * obj->symbols.size();
+  obj->first_global = obj->symbols.size();
+
+  // Add global symbols
   out::__bss_start = add("__bss_start", STB_GLOBAL);
   out::_end = add("_end", STB_GLOBAL);
   out::_etext = add("_etext", STB_GLOBAL);
