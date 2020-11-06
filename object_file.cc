@@ -123,7 +123,7 @@ void ObjectFile::initialize_symbols() {
 
     sym.file = this;
     sym.type = esym.getType();
-    sym.offset = esym.st_value;
+    sym.value = esym.st_value;
 
     if (!esym.isAbsolute()) {
       if (esym.isCommon())
@@ -236,7 +236,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym) {
   if (is_new || win || tie_but_higher_priority) {
     sym.file = this;
     sym.input_section = isec;
-    sym.offset = esym.st_value;
+    sym.value = esym.st_value;
     sym.type = esym.getType();
     sym.visibility = esym.getVisibility();
     sym.is_placeholder = false;
@@ -321,7 +321,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
         sym.input_section = nullptr;
-        sym.offset = 0;
+        sym.value = 0;
         sym.visibility = esym.getVisibility();
         sym.is_undef_weak = true;
 
@@ -397,7 +397,7 @@ void ObjectFile::convert_common_symbols() {
     sections.push_back(isec);
 
     sym->input_section = isec;
-    sym->offset = 0;
+    sym->value = 0;
   }
 }
 

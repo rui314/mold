@@ -492,14 +492,14 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   auto start = [&](OutputChunk *chunk, Symbol *sym) {
                  if (sym) {
                    sym->shndx = chunk->shndx;
-                   sym->offset = chunk->shdr.sh_addr;
+                   sym->value = chunk->shdr.sh_addr;
                  }
                };
 
   auto stop = [&](OutputChunk *chunk, Symbol *sym) {
                 if (sym) {
                   sym->shndx = chunk->shndx;
-                  sym->offset = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+                  sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
                 }
               };
 
@@ -515,7 +515,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
-      out::__ehdr_start->offset = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+      out::__ehdr_start->value = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
       break;
     }
   }

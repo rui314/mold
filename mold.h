@@ -168,7 +168,7 @@ public:
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
 
-  u64 offset = 0;
+  u64 value = 0;
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 gottp_offset = 0;
@@ -465,8 +465,8 @@ extern Symbol *_edata;
 u64 Symbol::get_addr() const {
   if (input_section)
     return input_section->output_section->shdr.sh_addr +
-      input_section->offset + offset;
-  return offset;
+      input_section->offset + value;
+  return value;
 }
 
 //
