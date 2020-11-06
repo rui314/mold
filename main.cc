@@ -257,11 +257,7 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
   out::relplt->shdr.sh_size = relplt_offset;
 }
 
-static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
-  u8 *got = buf + out::got->shdr.sh_offset;
-  u8 *plt = buf + out::plt->shdr.sh_offset;
-  u8 *relplt = buf + out::relplt->shdr.sh_offset;
-
+static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
   for_each(files, [&](ObjectFile *file) {
     u32 got_offset = file->got_offset;
     u32 gotplt_offset = file->gotplt_offset;
@@ -274,13 +270,11 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
 
       if (sym->flags & Symbol::NEEDS_GOT) {
         sym->got_offset = got_offset;
-        *(u64 *)(got + got_offset) = sym->addr;
         got_offset += 8;
       }
 
       if (sym->flags & Symbol::NEEDS_GOTTP) {
         sym->gottp_offset = got_offset;
-        *(u64 *)(got + got_offset) = sym->addr - out::tls_end;
         got_offset += 8;
       }
 
@@ -291,17 +285,43 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
 
         // Write a .plt entry
         sym->plt_offset = plt_offset;
-        u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
-        u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
-        out::plt->write_entry(plt + plt_offset, S - P - 6);
         plt_offset += 16;
 
         // Write a .rela.dyn entry
-        auto *rel = (ELF64LE::Rela *)(relplt + relplt_offset);
+        sym->relplt_offset = relplt_offset;
+        relplt_offset += sizeof(ELF64LE::Rela);
+      }
+    }
+  });
+}
+
+static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
+  u8 *got = buf + out::got->shdr.sh_offset;
+  u8 *plt = buf + out::plt->shdr.sh_offset;
+  u8 *relplt = buf + out::relplt->shdr.sh_offset;
+
+  for_each(files, [&](ObjectFile *file) {
+    for (Symbol *sym : file->symbols) {
+      if (sym->file != file)
+        continue;
+
+      if (sym->flags & Symbol::NEEDS_GOT)
+        *(u64 *)(got + sym->got_offset) = sym->addr;
+
+      if (sym->flags & Symbol::NEEDS_GOTTP)
+        *(u64 *)(got + sym->gottp_offset) = sym->addr - out::tls_end;
+
+      if (sym->flags & Symbol::NEEDS_PLT) {
+        // Write a .plt entry
+        u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
+        u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
+        out::plt->write_entry(plt + sym->plt_offset, S - P - 6);
+
+        // Write a .rela.dyn entry
+        auto *rel = (ELF64LE::Rela *)(relplt + sym->relplt_offset);
         rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
         rel->r_addend = sym->addr;
-        relplt_offset += sizeof(ELF64LE::Rela);
       }
     }
   });
@@ -823,6 +843,12 @@ int main(int argc, char **argv) {
     filesize = set_osec_offsets(output_chunks);
   }
 
+  // Assign symbols to GOT offsets
+  {
+    MyTimer t("got", before_copy);
+    assign_got_offsets(files);
+  }
+
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(output_chunks);
 
@@ -854,12 +880,6 @@ int main(int argc, char **argv) {
 
   u8 *buf = output_buffer->getBufferStart();
 
-  // Assign symbols to GOT offsets
-  {
-    MyTimer t("got");
-    assign_got_offsets(buf, files);
-  }
-
   // Fill .symtab and .strtab
   {
     MyTimer t("write_symtab");
@@ -870,6 +890,12 @@ int main(int argc, char **argv) {
   {
     MyTimer t("copy");
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
+  }
+
+  // Fill .plt, .got, got.plt and .rela.plt sections
+  {
+    MyTimer t("write_got");
+    write_got(buf, files);
   }
 
   out::shdr->copy_to(buf);
