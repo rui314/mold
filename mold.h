@@ -462,7 +462,7 @@ extern Symbol *edata;
 extern Symbol *_edata;
 }
 
-u64 Symbol::get_addr() const {
+inline u64 Symbol::get_addr() const {
   if (input_section)
     return input_section->output_section->shdr.sh_addr +
       input_section->offset + value;
