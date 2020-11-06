@@ -15,7 +15,7 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRe
     error(toString(file) + ": section sh_addralign is not a power of two");
 }
 
-void InputSection::copy(u8 *buf) {
+void InputSection::copy_to(u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
