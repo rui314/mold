@@ -522,6 +522,11 @@ public:
   std::atomic_uint32_t num_gotplt = ATOMIC_VAR_INIT(0);
   std::atomic_uint32_t num_relplt = ATOMIC_VAR_INIT(0);
 
+  u32 got_offset = 0;
+  u32 gotplt_offset = 0;
+  u32 plt_offset = 0;
+  u32 relplt_offset = 0;
+
 private:
   void initialize_sections();
   void initialize_symbols();

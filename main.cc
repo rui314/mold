@@ -234,35 +234,41 @@ static void set_isec_offsets() {
 static void scan_rels(ArrayRef<ObjectFile *> files) {
   for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
-  std::vector<u32> got_offset(files.size() + 1);
-  std::vector<u32> gotplt_offset(files.size() + 1);
-  std::vector<u32> plt_offset(files.size() + 1);
-  std::vector<u32> relplt_offset(files.size() + 1);
-
-  for (int i = 0, j = 1; i < files.size(); i++, j++) {
-    got_offset[j] = got_offset[i] + files[i]->num_got * 8;
-    gotplt_offset[j] = gotplt_offset[i] + files[i]->num_gotplt * 8;
-    plt_offset[j] = plt_offset[i] + files[i]->num_plt * 16;
-    relplt_offset[j] = relplt_offset[i] + files[i]->num_relplt * sizeof(ELF64LE::Rela);
-  }
-
-  out::got->shdr.sh_size = got_offset.back();
-  out::gotplt->shdr.sh_size = gotplt_offset.back();
-  out::plt->shdr.sh_size = plt_offset.back();
-  out::relplt->shdr.sh_size = relplt_offset.back();
-}
-
-static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
 
+  for (ObjectFile *file : files) {
+    file->got_offset = got_offset;
+    file->gotplt_offset = gotplt_offset;
+    file->plt_offset = plt_offset;
+    file->relplt_offset = relplt_offset;
+
+    got_offset += file->num_got * 8;
+    gotplt_offset += file->num_gotplt * 8;
+    plt_offset += file->num_plt * 16;
+    relplt_offset += file->num_relplt * sizeof(ELF64LE::Rela);
+  }
+
+  out::got->shdr.sh_size = got_offset;
+  out::gotplt->shdr.sh_size = gotplt_offset;
+  out::plt->shdr.sh_size = plt_offset;
+  out::relplt->shdr.sh_size = relplt_offset;
+}
+
+static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *got = buf + out::got->shdr.sh_offset;
   u8 *plt = buf + out::plt->shdr.sh_offset;
   u8 *relplt = buf + out::relplt->shdr.sh_offset;
 
-  for (ObjectFile *file : files) {
+  tbb::parallel_for((size_t)0, files.size(), [&](size_t i) {
+    ObjectFile *file = files[i];
+    u32 got_offset = file->got_offset;
+    u32 gotplt_offset = file->gotplt_offset;
+    u32 plt_offset = file->plt_offset;
+    u32 relplt_offset = file->relplt_offset;
+
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
@@ -299,11 +305,7 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
         relplt_offset += sizeof(ELF64LE::Rela);
       }
     }
-  }
-
-  assert(got_offset == out::got->shdr.sh_size);
-  assert(gotplt_offset == out::gotplt->shdr.sh_size);
-  assert(plt_offset == out::plt->shdr.sh_size);
+  });
 }
 
 // We want to sort output sections in the following order.
