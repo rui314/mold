@@ -858,11 +858,10 @@ int main(int argc, char **argv) {
   }
 
   // Fill .symtab and .strtab
-  tbb::task_group tg_symtab;
-  tg_symtab.run([&]() {
+  {
     MyTimer t("write_symtab");
     write_symtab(buf, files);
-  });
+  }
 
   // Copy input sections to the output file
   {
@@ -873,11 +872,6 @@ int main(int argc, char **argv) {
   {
     MyTimer t("reloc");
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
-  }
-
-  {
-    MyTimer t("symtab_wait");
-    tg_symtab.wait();
   }
 
   out::shdr->copy_to(buf);
