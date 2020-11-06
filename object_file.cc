@@ -157,34 +157,6 @@ void ObjectFile::remove_comdat_members(u32 section_idx) {
     sections[i] = nullptr;
 }
 
-void ObjectFile::read_string_pieces(const ELF64LE::Shdr &shdr) {
-  static ConcurrentMap<StringPiece> map1;
-  static ConcurrentMap<StringPiece> map2;
-
-  bool is_alloc = shdr.sh_type & SHF_ALLOC;
-  ConcurrentMap<StringPiece> &map = is_alloc ? map1 : map2;
-
-  ArrayRef<u8> arr = CHECK(obj.getSectionContents(shdr), this);
-  StringRef data((const char *)&arr[0], arr.size());
-
-  while (!data.empty()) {
-    size_t end = data.find('\0');
-    if (end == StringRef::npos)
-      error(toString(this) + ": string is not null terminated");
-
-    StringRef substr = data.substr(0, end + 1);
-    StringPiece *piece = map.insert(substr, StringPiece(substr));
-
-    if (is_alloc)
-      merged_strings_alloc.push_back(piece);
-    else
-      merged_strings_noalloc.push_back(piece);
-
-    data = data.substr(end + 1);
-    // num_string_pieces++;
-  }
-}
-
 void ObjectFile::parse() {
   is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 

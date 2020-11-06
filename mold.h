@@ -484,14 +484,6 @@ struct ComdatGroup {
   u32 section_idx;
 };
 
-struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
-  StringPiece(const StringPiece &other) : data(other.data) {}
-
-  StringRef data;
-  std::atomic_flag flag = ATOMIC_FLAG_INIT;
-};
-
 class ObjectFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
@@ -541,13 +533,10 @@ private:
   void initialize_symbols();
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym);
   void remove_comdat_members(u32 section_idx);
-  void read_string_pieces(const ELF64LE::Shdr &shdr);
   void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
   MemoryBufferRef mb;
   std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
-  std::vector<StringPiece *> merged_strings_alloc;
-  std::vector<StringPiece *> merged_strings_noalloc;
 
   std::vector<Symbol> local_symbols;
   int first_global = 0;
