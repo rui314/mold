@@ -4,39 +4,6 @@
 
 using namespace llvm::ELF;
 
-OutputEhdr *out::ehdr;
-OutputShdr *out::shdr;
-OutputPhdr *out::phdr;
-InterpSection *out::interp;
-GotSection *out::got;
-GotSection *out::gotplt;
-PltSection *out::plt;
-RelPltSection *out::relplt;
-ShstrtabSection *out::shstrtab;
-SymtabSection *out::symtab;
-StrtabSection *out::strtab;
-
-u64 out::tls_end;
-
-Symbol *out::__bss_start;
-Symbol *out::__ehdr_start;
-Symbol *out::__rela_iplt_start;
-Symbol *out::__rela_iplt_end;
-Symbol *out::__init_array_start;
-Symbol *out::__init_array_end;
-Symbol *out::__fini_array_start;
-Symbol *out::__fini_array_end;
-Symbol *out::__preinit_array_start;
-Symbol *out::__preinit_array_end;
-Symbol *out::end;
-Symbol *out::_end;
-Symbol *out::etext;
-Symbol *out::_etext;
-Symbol *out::edata;
-Symbol *out::_edata;
-
-std::vector<OutputSection *> OutputSection::instances;
-
 void OutputEhdr::copy_to(u8 *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
   memset(hdr, 0, sizeof(*hdr));

@@ -62,7 +62,7 @@ struct Config {
   bool is_static = false;
 };
 
-extern Config config;
+inline Config config;
 
 [[noreturn]] inline void error(const Twine &msg) {
   static std::mutex mu;
@@ -315,7 +315,7 @@ public:
     return true;
   }
 
-  static std::vector<OutputSection *> instances;
+  static inline std::vector<OutputSection *> instances;
 
   u32 idx;
 };
@@ -430,36 +430,36 @@ public:
 bool is_c_identifier(StringRef name);
 
 namespace out {
-extern OutputEhdr *ehdr;
-extern OutputShdr *shdr;
-extern OutputPhdr *phdr;
-extern InterpSection *interp;
-extern GotSection *got;
-extern GotSection *gotplt;
-extern PltSection *plt;
-extern RelPltSection *relplt;
-extern ShstrtabSection *shstrtab;
-extern SymtabSection *symtab;
-extern StrtabSection *strtab;
+inline OutputEhdr *ehdr;
+inline OutputShdr *shdr;
+inline OutputPhdr *phdr;
+inline InterpSection *interp;
+inline GotSection *got;
+inline GotSection *gotplt;
+inline PltSection *plt;
+inline RelPltSection *relplt;
+inline ShstrtabSection *shstrtab;
+inline SymtabSection *symtab;
+inline StrtabSection *strtab;
 
-extern u64 tls_end;
+inline u64 tls_end;
 
-extern Symbol *__bss_start;
-extern Symbol *__ehdr_start;
-extern Symbol *__rela_iplt_start;
-extern Symbol *__rela_iplt_end;
-extern Symbol *__init_array_start;
-extern Symbol *__init_array_end;
-extern Symbol *__fini_array_start;
-extern Symbol *__fini_array_end;
-extern Symbol *__preinit_array_start;
-extern Symbol *__preinit_array_end;
-extern Symbol *end;
-extern Symbol *_end;
-extern Symbol *etext;
-extern Symbol *_etext;
-extern Symbol *edata;
-extern Symbol *_edata;
+inline Symbol *__bss_start;
+inline Symbol *__ehdr_start;
+inline Symbol *__rela_iplt_start;
+inline Symbol *__rela_iplt_end;
+inline Symbol *__init_array_start;
+inline Symbol *__init_array_end;
+inline Symbol *__fini_array_start;
+inline Symbol *__fini_array_end;
+inline Symbol *__preinit_array_start;
+inline Symbol *__preinit_array_end;
+inline Symbol *end;
+inline Symbol *_end;
+inline Symbol *etext;
+inline Symbol *_etext;
+inline Symbol *edata;
+inline Symbol *_edata;
 }
 
 inline u64 Symbol::get_addr() const {

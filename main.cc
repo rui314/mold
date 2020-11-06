@@ -12,8 +12,6 @@ using namespace llvm::ELF;
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
-Config config;
-
 //
 // Command-line option processing
 //
