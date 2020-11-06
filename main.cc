@@ -857,19 +857,16 @@ int main(int argc, char **argv) {
     assign_got_offsets(buf, files);
   }
 
+  // Fill .symtab and .strtab
   {
-    MyTimer t("symtab_and_copy");
-    tbb::parallel_invoke(
-      [&]() {
-        // Fill .symtab and .strtab
-        MyTimer t("write_symtab");
-        write_symtab(buf, files);
-      },
-      [&]() {
-        // Copy input sections to the output file
-        MyTimer t("copy");
-        for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
-      });
+    MyTimer t("write_symtab");
+    write_symtab(buf, files);
+  }
+
+  // Copy input sections to the output file
+  {
+    MyTimer t("copy");
+    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
   }
 
   out::shdr->copy_to(buf);
