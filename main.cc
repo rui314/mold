@@ -845,7 +845,7 @@ int main(int argc, char **argv) {
 
   // Assign symbols to GOT offsets
   {
-    MyTimer t("got", before_copy);
+    MyTimer t("assign_got_offsets", before_copy);
     assign_got_offsets(files);
   }
 
