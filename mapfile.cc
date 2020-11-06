@@ -30,8 +30,9 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
       auto range = map.equal_range(isec);
       for (auto it = range.first; it != range.second; ++it) {
         Symbol *sym = it->second;
-        llvm::outs() << format("%16llx %8llx %5lld                 ", sym->addr, 0, 0)
-                     << sym->name << "\n";
+        llvm::outs()
+          << format("%16llx %8llx %5lld                 ", sym->get_addr(), 0, 0)
+          << sym->name << "\n";
       }
     }
   }

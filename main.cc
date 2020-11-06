@@ -306,10 +306,10 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         continue;
 
       if (sym->flags & Symbol::NEEDS_GOT)
-        *(u64 *)(got + sym->got_offset) = sym->addr;
+        *(u64 *)(got + sym->got_offset) = sym->get_addr();
 
       if (sym->flags & Symbol::NEEDS_GOTTP)
-        *(u64 *)(got + sym->gottp_offset) = sym->addr - out::tls_end;
+        *(u64 *)(got + sym->gottp_offset) = sym->get_addr() - out::tls_end;
 
       if (sym->flags & Symbol::NEEDS_PLT) {
         // Write a .plt entry
@@ -321,7 +321,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         auto *rel = (ELF64LE::Rela *)(relplt + sym->relplt_offset);
         rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
-        rel->r_addend = sym->addr;
+        rel->r_addend = sym->get_addr();
       }
     }
   });
@@ -492,14 +492,14 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   auto start = [&](OutputChunk *chunk, Symbol *sym) {
                  if (sym) {
                    sym->shndx = chunk->shndx;
-                   sym->addr = chunk->shdr.sh_addr;
+                   sym->offset = chunk->shdr.sh_addr;
                  }
                };
 
   auto stop = [&](OutputChunk *chunk, Symbol *sym) {
                 if (sym) {
                   sym->shndx = chunk->shndx;
-                  sym->addr = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+                  sym->offset = chunk->shdr.sh_addr + chunk->shdr.sh_size;
                 }
               };
 
@@ -515,7 +515,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
-      out::__ehdr_start->addr = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+      out::__ehdr_start->offset = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
       break;
     }
   }
@@ -852,16 +852,10 @@ int main(int argc, char **argv) {
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(output_chunks);
 
-  // Fix regular symbol addresses.
-  {
-    MyTimer t("sym_addr");
-    for_each(files, [](ObjectFile *file) { file->fix_sym_addrs(); });
-
-    for (OutputChunk *chunk : output_chunks) {
-      ELF64LE::Shdr &shdr = chunk->shdr;
-      if (shdr.sh_flags & SHF_TLS)
-        out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
-    }
+  for (OutputChunk *chunk : output_chunks) {
+    ELF64LE::Shdr &shdr = chunk->shdr;
+    if (shdr.sh_flags & SHF_TLS)
+      out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
   }
 
   tbb::task_group tg_unlink;

@@ -162,11 +162,13 @@ public:
     return map.insert(name, Symbol(name));    
   }
 
+  inline u64 get_addr() const;
+
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
 
-  u64 addr = 0;
+  u64 offset = 0;
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 gottp_offset = 0;
@@ -460,6 +462,13 @@ extern Symbol *edata;
 extern Symbol *_edata;
 }
 
+u64 Symbol::get_addr() const {
+  if (input_section)
+    return input_section->output_section->shdr.sh_addr +
+      input_section->offset + offset;
+  return offset;
+}
+
 //
 // object_file.cc
 //
@@ -494,7 +503,6 @@ public:
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
   void scan_relocations();
-  void fix_sym_addrs();
   void compute_symtab();
 
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
