@@ -197,20 +197,6 @@ inline std::string toString(Symbol sym) {
 // input_sections.cc
 //
 
-struct ScanRelResult {
-  ScanRelResult add(const ScanRelResult &other) const {
-    return {num_got + other.num_got,
-            num_gotplt + other.num_gotplt,
-            num_plt + other.num_plt,
-            num_relplt + other.num_relplt};
-  }
-
-  u32 num_got = 0;
-  u32 num_gotplt = 0;
-  u32 num_plt = 0;
-  u32 num_relplt = 0;
-};
-
 class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
@@ -530,6 +516,11 @@ public:
   u64 local_strtab_size = 0;
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
+
+  std::atomic_uint32_t num_plt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_got = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_gotplt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_relplt = ATOMIC_VAR_INIT(0);
 
 private:
   void initialize_sections();

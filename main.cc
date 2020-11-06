@@ -234,41 +234,12 @@ static void set_isec_offsets() {
 static void scan_rels(ArrayRef<ObjectFile *> files) {
   for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
-  ScanRelResult res =
-    tbb::parallel_reduce(tbb::blocked_range<int>(0, files.size()),
-                         ScanRelResult(),
-                         [&](const tbb::blocked_range<int> &r, ScanRelResult res) {
-                           for (int i = r.begin(); i != r.end(); i++) {
-                             ObjectFile *file = files[i];
-                             for (Symbol *sym : file->symbols) {
-                               if (sym->file != file)
-                                 continue;
-
-                               if (sym->flags & Symbol::NEEDS_GOT) {
-                                 res.num_got++;
-                               }
-
-                               if (sym->flags & Symbol::NEEDS_GOTTP) {
-                                 res.num_got++;
-                               }
-
-                               if (sym->flags & Symbol::NEEDS_PLT) {
-                                 res.num_plt++;
-                                 res.num_gotplt++;
-                                 res.num_relplt++;
-                               }
-                             }
-                           }
-                           return res;
-                         },
-                         [](const ScanRelResult &x, const ScanRelResult &y) {
-                           return x.add(y);
-                         });
-
-  out::got->shdr.sh_size = res.num_got * 8;
-  out::gotplt->shdr.sh_size = res.num_gotplt * 8;
-  out::plt->shdr.sh_size = res.num_plt * 16;
-  out::relplt->shdr.sh_size = res.num_relplt * sizeof(ELF64LE::Rela);
+  for (ObjectFile *file : files) {
+    out::got->shdr.sh_size += file->num_got * 8;
+    out::gotplt->shdr.sh_size += file->num_gotplt * 8;
+    out::plt->shdr.sh_size += file->num_plt * 16;
+    out::relplt->shdr.sh_size += file->num_relplt * sizeof(ELF64LE::Rela);
+  }
 }
 
 static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {

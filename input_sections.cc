@@ -101,13 +101,13 @@ void InputSection::copy_to(u8 *buf) {
   }
 }
 
-static void set_flag(Symbol *sym, u8 bit) {
+static bool set_flag(Symbol *sym, u8 bit) {
   for (;;) {
     u8 flags = sym->flags;
     if (sym->flags & bit)
-      return;
+      return false;
     if (sym->flags.compare_exchange_strong(flags, flags | bit))
-      return;
+      return true;
   }
 }
 
@@ -127,15 +127,21 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      set_flag(sym, Symbol::NEEDS_GOT);
+      if (set_flag(sym, Symbol::NEEDS_GOT))
+        sym->file->num_got++;
       break;
     case R_X86_64_GOTTPOFF:
-      set_flag(sym, Symbol::NEEDS_GOTTP);
+      if (set_flag(sym, Symbol::NEEDS_GOTTP))
+        sym->file->num_got++;
       break;
     case R_X86_64_PLT32:
       if (config.is_static && sym->type != STT_GNU_IFUNC)
         break;
-      set_flag(sym, Symbol::NEEDS_PLT);
+      if (set_flag(sym, Symbol::NEEDS_PLT)) {
+        sym->file->num_plt++;
+        sym->file->num_gotplt++;
+        sym->file->num_relplt++;
+      }
       break;
     }
   }
