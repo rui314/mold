@@ -118,35 +118,44 @@ ScanRelResult InputSection::scan_relocations() {
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX: {
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_got) {
-        sym->needs_got = true;
-        res.num_got++;
+    case R_X86_64_REX_GOTPCRELX:
+      for (;;) {
+        u8 flags = sym->flags;
+        if (sym->flags & Symbol::NEEDS_GOT)
+          break;
+        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_GOT)) {
+          res.num_got++;
+          break;
+        }
       }
       break;
-    }
-    case R_X86_64_GOTTPOFF: {
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_gottp) {
-        sym->needs_gottp = true;
-        res.num_got++;
+    case R_X86_64_GOTTPOFF:
+      for (;;) {
+        u8 flags = sym->flags;
+        if (sym->flags & Symbol::NEEDS_GOTTP)
+          break;
+        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_GOTTP)) {
+          res.num_got++;
+          break;
+        }
       }
       break;
-    }
-    case R_X86_64_PLT32: {
+    case R_X86_64_PLT32:
       if (config.is_static && sym->type != STT_GNU_IFUNC)
         break;
 
-      std::lock_guard lock(sym->mu);
-      if (!sym->needs_plt) {
-        sym->needs_plt = true;
-        res.num_plt++;
-        res.num_gotplt++;
-        res.num_relplt++;
+      for (;;) {
+        u8 flags = sym->flags;
+        if (sym->flags & Symbol::NEEDS_PLT)
+          break;
+        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_PLT)) {
+          res.num_plt++;
+          res.num_gotplt++;
+          res.num_relplt++;
+          break;
+        }
       }
       break;
-    }
     }
   }
   return res;

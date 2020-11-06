@@ -265,19 +265,19 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
       if (sym->file != file)
         continue;
 
-      if (sym->needs_got) {
+      if (sym->flags & Symbol::NEEDS_GOT) {
         sym->got_offset = got_offset;
         *(u64 *)(got + got_offset) = sym->addr;
         got_offset += 8;
       }
 
-      if (sym->needs_gottp) {
+      if (sym->flags & Symbol::NEEDS_GOTTP) {
         sym->gottp_offset = got_offset;
         *(u64 *)(got + got_offset) = sym->addr - out::tls_end;
         got_offset += 8;
       }
 
-      if (sym->needs_plt) {
+      if (sym->flags & Symbol::NEEDS_PLT) {
         // Write a .got.plt entry
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += 8;
