@@ -401,12 +401,10 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-ScanRelResult ObjectFile::scan_relocations() {
-  ScanRelResult res;
+void ObjectFile::scan_relocations() {
   for (InputSection *isec : sections)
     if (isec)
-      res = res.add(isec->scan_relocations());
-  return res;
+      isec->scan_relocations();
 }
 
 void ObjectFile::fix_sym_addrs() {

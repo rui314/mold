@@ -101,9 +101,17 @@ void InputSection::copy_to(u8 *buf) {
   }
 }
 
-ScanRelResult InputSection::scan_relocations() {
-  ScanRelResult res;
+static void set_flag(Symbol *sym, u8 bit) {
+  for (;;) {
+    u8 flags = sym->flags;
+    if (sym->flags & bit)
+      return;
+    if (sym->flags.compare_exchange_strong(flags, flags | bit))
+      return;
+  }
+}
 
+void InputSection::scan_relocations() {
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
     if (!sym->file || !sym->file->is_alive)
@@ -119,46 +127,18 @@ ScanRelResult InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      for (;;) {
-        u8 flags = sym->flags;
-        if (sym->flags & Symbol::NEEDS_GOT)
-          break;
-        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_GOT)) {
-          res.num_got++;
-          break;
-        }
-      }
+      set_flag(sym, Symbol::NEEDS_GOT);
       break;
     case R_X86_64_GOTTPOFF:
-      for (;;) {
-        u8 flags = sym->flags;
-        if (sym->flags & Symbol::NEEDS_GOTTP)
-          break;
-        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_GOTTP)) {
-          res.num_got++;
-          break;
-        }
-      }
+      set_flag(sym, Symbol::NEEDS_GOTTP);
       break;
     case R_X86_64_PLT32:
       if (config.is_static && sym->type != STT_GNU_IFUNC)
         break;
-
-      for (;;) {
-        u8 flags = sym->flags;
-        if (sym->flags & Symbol::NEEDS_PLT)
-          break;
-        if (sym->flags.compare_exchange_strong(flags, flags | Symbol::NEEDS_PLT)) {
-          res.num_plt++;
-          res.num_gotplt++;
-          res.num_relplt++;
-          break;
-        }
-      }
+      set_flag(sym, Symbol::NEEDS_PLT);
       break;
     }
   }
-  return res;
 }
 
 std::string toString(InputSection *isec) {

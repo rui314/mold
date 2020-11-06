@@ -216,7 +216,7 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
   void copy_to(u8 *buf);
-  ScanRelResult scan_relocations();
+  void scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
@@ -506,7 +506,7 @@ public:
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
   void convert_common_symbols();
-  ScanRelResult scan_relocations();
+  void scan_relocations();
   void fix_sym_addrs();
   void compute_symtab();
 
