@@ -270,17 +270,19 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
       if (sym->file != file)
         continue;
 
-      if (sym->flags & Symbol::NEEDS_GOT) {
+      u8 flags = sym->flags.load(std::memory_order_relaxed);
+
+      if (flags & Symbol::NEEDS_GOT) {
         sym->got_offset = got_offset;
         got_offset += 8;
       }
 
-      if (sym->flags & Symbol::NEEDS_GOTTP) {
+      if (flags & Symbol::NEEDS_GOTTP) {
         sym->gottp_offset = got_offset;
         got_offset += 8;
       }
 
-      if (sym->flags & Symbol::NEEDS_PLT) {
+      if (flags & Symbol::NEEDS_PLT) {
         // Write a .got.plt entry
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += 8;
@@ -307,13 +309,15 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       if (sym->file != file)
         continue;
 
-      if (sym->flags & Symbol::NEEDS_GOT)
+      u8 flags = sym->flags.load(std::memory_order_relaxed);
+
+      if (flags & Symbol::NEEDS_GOT)
         *(u64 *)(got + sym->got_offset) = sym->get_addr();
 
-      if (sym->flags & Symbol::NEEDS_GOTTP)
+      if (flags & Symbol::NEEDS_GOTTP)
         *(u64 *)(got + sym->gottp_offset) = sym->get_addr() - out::tls_end;
 
-      if (sym->flags & Symbol::NEEDS_PLT) {
+      if (flags & Symbol::NEEDS_PLT) {
         // Write a .plt entry
         u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
