@@ -894,8 +894,6 @@ int main(int argc, char **argv) {
     write_got(buf, files);
   }
 
-  out::shdr->copy_to(buf);
-
   {
     MyTimer t("commit");
     if (auto e = output_buffer->commit())
