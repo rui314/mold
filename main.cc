@@ -262,8 +262,7 @@ static void assign_got_offsets(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *plt = buf + out::plt->shdr.sh_offset;
   u8 *relplt = buf + out::relplt->shdr.sh_offset;
 
-  tbb::parallel_for((size_t)0, files.size(), [&](size_t i) {
-    ObjectFile *file = files[i];
+  for_each(files, [&](ObjectFile *file) {
     u32 got_offset = file->got_offset;
     u32 gotplt_offset = file->gotplt_offset;
     u32 plt_offset = file->plt_offset;
