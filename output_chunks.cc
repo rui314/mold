@@ -37,7 +37,7 @@ Symbol *out::_edata;
 
 std::vector<OutputSection *> OutputSection::instances;
 
-void OutputEhdr::copy_to(u8 *buf) {
+void OutputEhdr::copy(u8 *buf) {
   auto *hdr = (ELF64LE::Ehdr *)buf;
   memset(hdr, 0, sizeof(*hdr));
 
@@ -62,7 +62,7 @@ void OutputEhdr::copy_to(u8 *buf) {
   hdr->e_shstrndx = out::shstrtab->shndx;
 }
 
-void OutputPhdr::copy_to(u8 *buf) {
+void OutputPhdr::copy(u8 *buf) {
   for (Entry &ent : entries) {
     OutputChunk *front = ent.members.front();
     OutputChunk *back = ent.members.back();

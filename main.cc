@@ -892,7 +892,7 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy");
-    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
+    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy(buf); });
   }
 
   // Fill .plt, .got, got.plt and .rela.plt sections

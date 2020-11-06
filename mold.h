@@ -204,7 +204,7 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
-  void copy_to(u8 *buf);
+  void copy(u8 *buf);
   void scan_relocations();
 
   ObjectFile *file;
@@ -231,7 +231,7 @@ class OutputChunk {
 public:
   OutputChunk() { shdr.sh_addralign = 1; }
 
-  virtual void copy_to(u8 *buf) {}
+  virtual void copy(u8 *buf) {}
 
   StringRef name;
   int shndx = 0;
@@ -248,7 +248,7 @@ public:
     shdr.sh_size = sizeof(ELF64LE::Ehdr);
   }
 
-  void copy_to(u8 *buf) override;
+  void copy(u8 *buf) override;
 };
 
 // Section header
@@ -256,7 +256,7 @@ class OutputShdr : public OutputChunk {
 public:
   OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
 
-  void copy_to(u8 *buf) override {
+  void copy(u8 *buf) override {
     auto *p = (ELF64LE::Shdr *)(buf + shdr.sh_offset);
     for (ELF64LE::Shdr *ent : entries)
       *p++ = *ent;
@@ -279,7 +279,7 @@ public:
   };
 
   OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
-  void copy_to(u8 *buf) override;
+  void copy(u8 *buf) override;
 
   void set_entries(std::vector<Entry> vec) {
     shdr.sh_size = vec.size() * sizeof(ELF64LE::Phdr);
@@ -302,9 +302,9 @@ public:
     instances.push_back(this);
   }
 
-  void copy_to(u8 *buf) override {
+  void copy(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
+      for_each(sections, [&](InputSection *isec) { isec->copy(buf); });
   }
 
   bool empty() const {
@@ -329,7 +329,7 @@ public:
     shdr.sh_size = sizeof(path);
   }
 
-  void copy_to(u8 *buf) override {
+  void copy(u8 *buf) override {
     memcpy(buf + shdr.sh_offset, path, sizeof(path));
   }
 
@@ -393,7 +393,7 @@ public:
     return ret;
   }
 
-  void copy_to(u8 *buf) override {
+  void copy(u8 *buf) override {
     memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
   }
 
