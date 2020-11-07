@@ -10,7 +10,7 @@ using namespace llvm::ELF;
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
   : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
     obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))),
-    is_in_archive(archive_name != "") {}
+    is_alive(archive_name == ""), is_in_archive(archive_name != "") {}
 
 static const ELF64LE::Shdr
 *findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
@@ -367,9 +367,6 @@ void ObjectFile::resolve_symbols() {
 
 void
 ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-  if (is_alive.exchange(true))
-    return;
-
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
@@ -384,8 +381,10 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
       llvm::outs() << "trace: " << toString(this)
                    << ": reference to " << sym.name << "\n";
 
+    bool expected = false;
+
     if (esym.getBinding() != STB_WEAK && sym.file &&
-        sym.file->is_in_archive && !sym.file->is_alive) {
+        sym.file->is_alive.compare_exchange_strong(expected, true)) {
       feeder.add(sym.file);
 
       if (UNLIKELY(sym.traced))

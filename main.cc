@@ -131,8 +131,8 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   tbb::parallel_for_each(files, [](ObjectFile *file) {
     for (InputSection *isec : file->mergeable_sections) {
       for (StringPieceRef &ref : isec->pieces) {
+        InputSection *cur = ref.piece->isec;
         for (;;) {
-          InputSection *cur = ref.piece->isec;
           if (file && cur->file->priority <= isec->file->priority)
             break;
           if (ref.piece->isec.compare_exchange_strong(cur, isec))
@@ -770,14 +770,14 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
 
     // Resolve symbols
-    std::vector<ObjectFile *> objs;
+    std::vector<ObjectFile *> root;
     for (ObjectFile *file : files)
-      if (!file->is_in_archive)
-        objs.push_back(file);
+      if (file->is_alive)
+        root.push_back(file);
 
     // Mark archive members we include into the final output.
     tbb::parallel_do(
-      objs,
+      root,
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
         file->mark_live_archive_members(feeder);
       });
