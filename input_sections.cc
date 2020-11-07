@@ -19,21 +19,26 @@ void InputSection::copy_to(u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
+  // Copy data
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
   memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
+
+  // Apply relocations
+  u8 *base = buf + output_section->shdr.sh_offset + offset;
+  u64 sh_addr = output_section->shdr.sh_addr + offset;
+  u64 GOT = out::got->shdr.sh_addr;
 
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
     StringPieceRef &ref = rel_pieces[i];
 
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
-    u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
+    u8 *loc = base + rel.r_offset;
 
     u64 G = sym.got_offset;
-    u64 GOT = out::got->shdr.sh_addr;
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
     u64 A = ref.piece ? ref.addend : rel.r_addend;
-    u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
+    u64 P = sh_addr + rel.r_offset;
     u64 L = out::plt->shdr.sh_addr + sym.plt_offset;
 
     switch (rel.getType(false)) {
