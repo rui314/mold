@@ -440,7 +440,7 @@ class MergeStringSection : public OutputChunk {
 public:
   MergeStringSection(StringRef name, u64 flags, u32 type) {
     this->name = name;
-    shdr.sh_flags = flags;
+    shdr.sh_flags = flags & ~(u64)llvm::ELF::SHF_MERGE & ~(u64)llvm::ELF::SHF_STRINGS;
     shdr.sh_type = type;
     shdr.sh_addralign = 1;
   }
