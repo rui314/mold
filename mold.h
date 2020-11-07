@@ -55,7 +55,7 @@ class InputSection;
 class ObjectFile;
 class OutputChunk;
 class OutputSection;
-class MergeableSection;
+class MergedSection;
 
 struct Config {
   StringRef output;
@@ -151,19 +151,19 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data, MergeableSection *osec)
-    : data(data), output_section(osec) {}
+  StringPiece(StringRef data, InputSection *isec)
+    : data(data), isec(isec) {}
 
   StringPiece(const StringPiece &other)
-    : data(other.data), file(other.file.load()),
+    : data(other.data), isec(other.isec.load()),
       output_section(other.output_section),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
   StringRef data;
-  std::atomic<ObjectFile *> file;
-  MergeableSection *output_section = nullptr;
+  std::atomic<InputSection *> isec;
+  MergedSection *output_section = nullptr;
   u32 output_offset = 0;
 };
 
@@ -235,12 +235,16 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  std::vector<StringPieceRef> pieces;
-  std::vector<StringPieceRef> rel_pieces;
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
-  u64 offset;
+  u32 offset;
+
+  MergedSection *merged_section = nullptr;
+  std::vector<StringPieceRef> pieces;
+  std::vector<StringPieceRef> rel_pieces;
+  u32 merged_offset = 0;
+  u32 merged_size = 0;
 };
 
 std::string toString(InputSection *isec);
@@ -454,17 +458,16 @@ public:
   }
 };
 
-class MergeableSection : public OutputChunk {
+class MergedSection : public OutputChunk {
 public:
-  static MergeableSection *get_instance(StringRef name, u64 flags, u32 type);
+  static MergedSection *get_instance(StringRef name, u64 flags, u32 type);
 
-  static inline std::vector<MergeableSection *> instances;
+  static inline std::vector<MergedSection *> instances;
 
   ConcurrentMap<StringPiece> map;
-  std::atomic_uint32_t size;
 
 private:
-  MergeableSection(StringRef name, u64 flags, u32 type);
+  MergedSection(StringRef name, u64 flags, u32 type);
 };
 
 bool is_c_identifier(StringRef name);
@@ -538,7 +541,7 @@ public:
   void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
-  void resolve_mergeable_strings();
+  void assign_mergeable_string_offsets();
   void convert_common_symbols();
   void scan_relocations();
   void compute_symtab();
@@ -574,6 +577,8 @@ public:
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
+
+  std::vector<InputSection *> mergeable_sections;
 
 private:
   void initialize_sections();

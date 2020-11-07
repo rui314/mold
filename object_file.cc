@@ -239,17 +239,20 @@ void ObjectFile::initialize_mergeable_sections() {
     sym_pieces[i].input_offset = ref->input_offset - esym.st_value;
   }
 
-  for (int i = 0; i < sections.size(); i++)
-    if (sections[i] && !sections[i]->pieces.empty())
+  for (int i = 0; i < sections.size(); i++) {
+    if (sections[i] && !sections[i]->pieces.empty()) {
+      mergeable_sections.push_back(sections[i]);
       sections[i] = nullptr;
+    }
+  }
 }
 
 void ObjectFile::read_string_pieces(InputSection *isec) {
   static Counter counter("string_pieces");
 
-  MergeableSection *osec =
-    MergeableSection::get_instance(isec->name, isec->shdr.sh_flags,
-                                   isec->shdr.sh_type);
+  isec->merged_section =
+    MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
+                               isec->shdr.sh_type);
 
   u32 offset = 0;
 
@@ -264,7 +267,8 @@ void ObjectFile::read_string_pieces(InputSection *isec) {
     StringRef substr = data.substr(0, end);
     data = data.substr(end + 1);
 
-    StringPiece *piece = osec->map.insert(substr, StringPiece(substr, osec));
+    StringPiece *piece =
+      isec->merged_section->map.insert(substr, StringPiece(substr, isec));
     isec->pieces.push_back({piece, offset});
     offset += substr.size() + 1;
 
@@ -462,30 +466,6 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     }
 
     file->remove_comdat_members(idx);
-  }
-}
-
-void ObjectFile::resolve_mergeable_strings() {
-  for (InputSection *isec : sections) {
-    if (!isec || isec->pieces.empty())
-      continue;
-
-    u32 size = 0;
-
-    for (StringPieceRef &ref : isec->pieces) {
-      for (;;) {
-        ObjectFile *file = ref.piece->file;
-        if (file && file->priority <= this->priority)
-          break;
-        if (ref.piece->file.compare_exchange_strong(file, this)) {
-          if (!file)
-            size += ref.piece->data.size() + 1;
-          break;
-        }
-      }
-    }
-
-    isec->pieces[0].piece->output_section->size += size;
   }
 }
 

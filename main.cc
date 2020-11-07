@@ -122,6 +122,46 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
+static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
+  // Resolve mergeable string pieces
+  for_each(files, [](ObjectFile *file) {
+    for (InputSection *isec : file->mergeable_sections) {
+      for (StringPieceRef &ref : isec->pieces) {
+        for (;;) {
+          InputSection *cur = ref.piece->isec;
+          if (file && cur->file->priority <= isec->file->priority)
+            break;
+          if (ref.piece->isec.compare_exchange_strong(cur, isec))
+            break;
+        }
+      }
+    }
+  });
+
+  // Calculate the total bytes of mergeable strings for each input section.
+  for_each(files, [](ObjectFile *file) {
+    for (InputSection *isec : file->mergeable_sections) {
+      u32 offset = 0;
+      for (StringPieceRef &ref : isec->pieces) {
+        if (ref.piece->isec == isec) {
+          ref.piece->output_offset = offset;
+          offset += ref.piece->data.size();
+        }
+      }
+      isec->merged_size = offset;
+    }
+  });
+
+  // Assign each mergeable input section a unique index.
+  for (ObjectFile *file : files) {
+    for (InputSection *isec : file->mergeable_sections) {
+      MergedSection *osec = isec->merged_section;
+      isec->merged_offset = osec->shdr.sh_size;
+      osec->shdr.sh_size += isec->merged_size;
+    }
+  }
+}
+
 static void bin_sections(std::vector<ObjectFile *> &files) {
 #if 1
   int unit = (files.size() + 127) / 128;
@@ -753,10 +793,7 @@ int main(int argc, char **argv) {
   // Resolve mergeable strings
   {
     MyTimer t("resolve_strings", before_copy);
-    for_each(files, [](ObjectFile *file) { file->resolve_mergeable_strings(); });
-
-    for (MergeableSection *osec : MergeableSection::instances)
-      osec->shdr.sh_size = osec->size;
+    handle_mergeable_strings(files);
   }
 
   // Create .bss sections for common symbols.
@@ -783,7 +820,7 @@ int main(int argc, char **argv) {
     if (!osec->empty())
       output_chunks.push_back(osec);
 
-  for (MergeableSection *osec : MergeableSection::instances)
+  for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
       output_chunks.push_back(osec);
 
