@@ -726,21 +726,25 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
+  llvm::TimerGroup parse("parse", "parse");
   llvm::TimerGroup before_copy("before_copy", "before_copy");
 
   // Open input files
   {
-    MyTimer t("parse");
+    MyTimer t("open", parse);
     for (auto *arg : args)
       if (arg->getOption().getID() == OPT_INPUT)
         read_file(files, arg->getValue());
+  }
 
-    // Parse input files
+  // Parse input files
+  {
+    MyTimer t("parse", parse);
     for_each(files, [](ObjectFile *file) { file->parse(); });
   }
 
   {
-    MyTimer t("merge");
+    MyTimer t("merge", parse);
     for_each(files, [](ObjectFile *file) { file->initialize_mergeable_sections(); });
   }
 
