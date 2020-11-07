@@ -944,7 +944,7 @@ int main(int argc, char **argv) {
   FileOutputBuffer *output_buffer;
 
   {
-    MyTimer t("open");
+    MyTimer t("open_output_file");
     output_buffer = open_output_file(filesize);
   }
 
