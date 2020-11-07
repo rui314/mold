@@ -24,6 +24,7 @@ void ObjectFile::initialize_sections() {
   StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
   sections.resize(elf_sections.size());
 
+  // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
     const ELF64LE::Shdr &shdr = elf_sections[i];
 
@@ -76,6 +77,7 @@ void ObjectFile::initialize_sections() {
     }
   }
 
+  // Attach relocation sections to their target sections.
   for (const ELF64LE::Shdr &shdr : elf_sections) {
     if (shdr.sh_type != SHT_RELA)
       continue;
@@ -143,17 +145,22 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-InputSection *
-ObjectFile::read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr) {
+void ObjectFile::initialize_mergeable_sections() {
+  for (InputSection *isec : sections)
+    if (isec && (isec->shdr.sh_flags & SHF_STRINGS) && isec->shdr.sh_entsize == 1)
+      read_string_pieces(isec);
+}
+
+void ObjectFile::read_string_pieces(InputSection *isec) {
   static Counter counter("string_pieces");
 
   MergeStringSection *osec =
-    MergeStringSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
+    MergeStringSection::get_instance(isec->name, isec->shdr.sh_flags,
+                                     isec->shdr.sh_type);
 
-  auto *isec = new InputSection(this, shdr, name);
   u32 offset = 0;
 
-  ArrayRef<u8> arr = CHECK(obj.getSectionContents(shdr), this);
+  ArrayRef<u8> arr = CHECK(obj.getSectionContents(isec->shdr), this);
   StringRef data((const char *)&arr[0], arr.size());
 
   while (!data.empty()) {
@@ -170,8 +177,6 @@ ObjectFile::read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr) {
 
     counter.inc();
   }
-
-  return isec;
 }
 
 void ObjectFile::remove_comdat_members(u32 section_idx) {
@@ -202,6 +207,8 @@ void ObjectFile::parse() {
 
   if (symtab_sec)
     initialize_symbols();
+
+  initialize_mergeable_sections();
 
   if (Counter::enabled) {
     static Counter defined("defined_syms");

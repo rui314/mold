@@ -566,7 +566,8 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
-  InputSection *read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr);
+  void initialize_mergeable_sections();
+  void read_string_pieces(InputSection *isec);
 
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym);
   void remove_comdat_members(u32 section_idx);
