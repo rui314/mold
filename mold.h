@@ -230,7 +230,6 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
   void copy_to(u8 *buf);
-  void relocate(u8 *buf);
   void scan_relocations();
 
   ObjectFile *file;
@@ -264,7 +263,6 @@ public:
   OutputChunk() { shdr.sh_addralign = 1; }
 
   virtual void copy_to(u8 *buf) {}
-  virtual void relocate(u8 *buf) {}
 
   StringRef name;
   int shndx = 0;
@@ -338,11 +336,6 @@ public:
   void copy_to(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
       for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
-  }
-
-  void relocate(u8 *buf) override {
-    if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      for_each(sections, [&](InputSection *isec) { isec->relocate(buf); });
   }
 
   bool empty() const {
