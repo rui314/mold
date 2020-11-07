@@ -442,14 +442,12 @@ struct StringPiece {
 
 class MergeStringSection : public OutputChunk {
 public:
-  MergeStringSection(StringRef name, u64 flags, u32 type) {
-    this->name = name;
-    shdr.sh_flags = flags & ~(u64)llvm::ELF::SHF_MERGE & ~(u64)llvm::ELF::SHF_STRINGS;
-    shdr.sh_type = type;
-    shdr.sh_addralign = 1;
-  }
+  static MergeStringSection *get_instance(StringRef name, u64 flags, u32 type);
 
   ConcurrentMap<StringPiece *> map;
+
+private:
+  MergeStringSection(StringRef name, u64 flags, u32 type);
 };
 
 bool is_c_identifier(StringRef name);

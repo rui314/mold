@@ -63,7 +63,7 @@ static StringRef get_output_name(StringRef name) {
 OutputSection *
 OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);
-  flags = flags & ~SHF_GROUP;
+  flags = flags & ~(u64)SHF_GROUP;
 
   auto find = [&]() -> OutputSection * {
     for (OutputSection *osec : OutputSection::instances)
@@ -75,14 +75,55 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
 
   // Search for an exiting output section.
   static std::shared_mutex mu;
-  std::shared_lock shared_lock(mu);
-  if (OutputSection *osec = find())
-    return osec;
-  shared_lock.unlock();
+  {
+    std::shared_lock lock(mu);
+    if (OutputSection *osec = find())
+      return osec;
+  }
 
   // Create a new output section.
-  std::unique_lock unique_lock(mu);
+  std::unique_lock lock(mu);
   if (OutputSection *osec = find())
     return osec;
   return new OutputSection(name, flags, type);
+}
+
+MergeStringSection::MergeStringSection(StringRef name, u64 flags, u32 type) {
+  this->name = name;
+  shdr.sh_flags = flags;
+  shdr.sh_type = type;
+  shdr.sh_addralign = 1;
+}
+
+MergeStringSection *
+MergeStringSection::get_instance(StringRef name, u64 flags, u32 type) {
+  std::vector<MergeStringSection *> instances;
+
+  name = get_output_name(name);
+  flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
+
+  auto find = [&]() -> MergeStringSection * {
+    for (MergeStringSection *osec : instances)
+      if (name == osec->name && flags == osec->shdr.sh_flags &&
+          type == osec->shdr.sh_type)
+        return osec;
+    return nullptr;
+  };
+
+  // Search for an exiting output section.
+  static std::shared_mutex mu;
+  {
+    std::shared_lock lock(mu);
+    if (MergeStringSection *osec = find())
+      return osec;
+  }
+
+  // Create a new output section.
+  std::unique_lock lock(mu);
+  if (MergeStringSection *osec = find())
+    return osec;
+
+  auto *osec = new MergeStringSection(name, flags, type);
+  instances.push_back(osec);
+  return osec;
 }
