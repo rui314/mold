@@ -957,6 +957,11 @@ int main(int argc, char **argv) {
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
   }
 
+  {
+    MyTimer t("relocate");
+    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->relocate(buf); });
+  }
+
   // Fill .plt, .got, got.plt and .rela.plt sections
   {
     MyTimer t("write_got");

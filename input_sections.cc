@@ -21,7 +21,9 @@ void InputSection::copy_to(u8 *buf) {
 
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
   memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
+}
 
+void InputSection::relocate(u8 *buf) {
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
     StringPieceRef &ref = rel_pieces[i];
