@@ -215,6 +215,12 @@ void ObjectFile::initialize_mergeable_sections() {
     sym_pieces[i].piece = piece;
     sym_pieces[i].input_offset = piece->input_offset - esym.st_value;
   }
+
+#if 1
+  for (int i = 0; i < sections.size(); i++)
+    if (sections[i] && !sections[i]->pieces.empty())
+      sections[i] = nullptr;
+#endif
 }
 
 void ObjectFile::read_string_pieces(InputSection *isec) {
@@ -273,8 +279,6 @@ void ObjectFile::parse() {
 
   if (symtab_sec)
     initialize_symbols();
-
-  initialize_mergeable_sections();
 
   if (Counter::enabled) {
     static Counter defined("defined_syms");

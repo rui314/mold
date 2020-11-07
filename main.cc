@@ -695,6 +695,11 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->parse(); });
   }
 
+  {
+    MyTimer t("merge");
+    for_each(files, [](ObjectFile *file) { file->initialize_mergeable_sections(); });
+  }
+
   Timer total_timer("total", "total");
   total_timer.startTimer();
 

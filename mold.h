@@ -523,6 +523,7 @@ public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
 
   void parse();
+  void initialize_mergeable_sections();
   void resolve_symbols();
   void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void hanlde_undefined_weak_symbols();
@@ -566,7 +567,6 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
-  void initialize_mergeable_sections();
   void read_string_pieces(InputSection *isec);
 
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym);
