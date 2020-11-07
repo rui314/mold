@@ -145,10 +145,74 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
+static StringPiece *binary_search(ArrayRef<StringPiece *> pieces, u32 offset) {
+  if (offset < pieces[0]->input_offset)
+    return nullptr;
+
+  while (pieces.size() > 1) {
+    u32 mid = pieces.size() / 2;
+    StringPiece *piece = pieces[mid];
+
+    if (offset < piece->input_offset)
+      pieces = pieces.slice(0, mid);
+    else
+      pieces = pieces.slice(mid);
+  }
+  return pieces[0];
+}
+
 void ObjectFile::initialize_mergeable_sections() {
   for (InputSection *isec : sections)
     if (isec && (isec->shdr.sh_flags & SHF_STRINGS) && isec->shdr.sh_entsize == 1)
       read_string_pieces(isec);
+
+  // Initialize rel_pieces
+  for (InputSection *isec : sections) {
+    if (!isec || isec->rels.empty())
+      continue;
+
+    isec->rel_pieces.resize(isec->rels.size());
+
+    for (int i = 0; i < isec->rels.size(); i++) {
+      const ELF64LE::Rela &rel = isec->rels[i];
+      u32 sym_idx = rel.getSymbol(false);
+      if (sym_idx >= this->first_global)
+        continue;
+
+      Symbol *sym = symbols[sym_idx];
+      ArrayRef<StringPiece *> pieces = sym->input_section->pieces;
+      if (pieces.empty())
+        continue;
+
+      u32 offset = sym->value + rel.r_addend;
+      StringPiece *piece = binary_search(pieces, offset);
+      if (!piece)
+        error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
+
+      isec->rel_pieces[i].piece = piece;
+      isec->rel_pieces[i].input_offset = piece->input_offset - offset;
+    }
+  }
+
+  // Initialize sym_pieces
+  sym_pieces.resize(elf_syms.size());
+
+  for (int i = 0; i < elf_syms.size(); i++) {
+    const ELF64LE::Sym &esym = elf_syms[i];
+    if (esym.isAbsolute() || esym.isCommon())
+      continue;
+
+    InputSection *isec = sections[esym.st_shndx];
+    if (!isec || isec->pieces.empty())
+      continue;
+
+    StringPiece *piece = binary_search(isec->pieces, esym.st_value);
+    if (!piece)
+      error(toString(this) + ": bad symbol value");
+
+    sym_pieces[i].piece = piece;
+    sym_pieces[i].input_offset = piece->input_offset - esym.st_value;
+  }
 }
 
 void ObjectFile::read_string_pieces(InputSection *isec) {

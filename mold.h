@@ -225,16 +225,16 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
-  void set_relocations(ArrayRef<ELF64LE::Rela> rels);
   void copy_to(u8 *buf);
   void scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  std::vector<StringPieceRef> rel_pieces;
   std::vector<StringPiece *> pieces;
   const ELF64LE::Shdr &shdr;
+
+  std::vector<StringPieceRef> rel_pieces;
 
   StringRef name;
   u64 offset;
@@ -577,6 +577,7 @@ private:
   std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
 
   std::vector<Symbol> local_symbols;
+  std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
