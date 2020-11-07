@@ -427,6 +427,27 @@ public:
   }
 };
 
+struct StringPiece {
+  StringPiece(StringRef data) : data(data) {}
+
+  StringRef data;
+  ObjectFile *file;
+  OutputChunk *chunk;
+  u32 offset;
+};
+
+class MergeStringSection : public OutputChunk {
+public:
+  MergeStringSection(StringRef name, u64 flags, u32 type) {
+    this->name = name;
+    shdr.sh_flags = flags;
+    shdr.sh_type = type;
+    shdr.sh_addralign = 1;
+  }
+
+  ConcurrentMap<StringPiece *> map;
+};
+
 bool is_c_identifier(StringRef name);
 
 namespace out {
