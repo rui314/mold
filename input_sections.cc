@@ -31,10 +31,8 @@ void InputSection::copy_to(u8 *buf) {
 
     u64 G = sym.got_offset;
     u64 GOT = out::got->shdr.sh_addr;
-    //    u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
-    //    u64 A = ref.piece ? ref.addend : rel.r_addend;
-    u64 S = sym.get_addr();
-    u64 A = rel.r_addend;
+    u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
+    u64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
     u64 L = out::plt->shdr.sh_addr + sym.plt_offset;
 
