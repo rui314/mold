@@ -118,6 +118,9 @@ static bool set_flag(Symbol *sym, u8 bit) {
 }
 
 void InputSection::scan_relocations() {
+  if (!(shdr.sh_flags & SHF_ALLOC))
+    return;
+
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
     if (!sym->file || !sym->file->is_alive)
