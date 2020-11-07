@@ -147,20 +147,21 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-static StringPiece *binary_search(ArrayRef<StringPiece *> pieces, u32 offset) {
-  if (offset < pieces[0]->input_offset)
+static const StringPieceRef *
+binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
+  if (offset < pieces[0].input_offset)
     return nullptr;
 
   while (pieces.size() > 1) {
     u32 mid = pieces.size() / 2;
-    StringPiece *piece = pieces[mid];
+    const StringPieceRef &ref = pieces[mid];
 
-    if (offset < piece->input_offset)
+    if (offset < ref.input_offset)
       pieces = pieces.slice(0, mid);
     else
       pieces = pieces.slice(mid);
   }
-  return pieces[0];
+  return &pieces[0];
 }
 
 void ObjectFile::initialize_mergeable_sections() {
@@ -177,22 +178,39 @@ void ObjectFile::initialize_mergeable_sections() {
 
     for (int i = 0; i < isec->rels.size(); i++) {
       const ELF64LE::Rela &rel = isec->rels[i];
-      u32 sym_idx = rel.getSymbol(false);
-      if (sym_idx >= this->first_global)
-        continue;
 
-      Symbol *sym = symbols[sym_idx];
-      ArrayRef<StringPiece *> pieces = sym->input_section->pieces;
-      if (pieces.empty())
-        continue;
+      switch (rel.getType(false)) {
+      case R_X86_64_64:
+      case R_X86_64_PC32:
+      case R_X86_64_32:
+      case R_X86_64_32S:
+      case R_X86_64_16:
+      case R_X86_64_PC16:
+      case R_X86_64_8:
+      case R_X86_64_PC8:
+        u32 sym_idx = rel.getSymbol(false);
+        if (sym_idx >= this->first_global)
+          continue;
 
-      u32 offset = sym->value + rel.r_addend;
-      StringPiece *piece = binary_search(pieces, offset);
-      if (!piece)
-        error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
+        Symbol *sym = symbols[sym_idx];
+        ArrayRef<StringPieceRef> pieces = sym->input_section->pieces;
+        if (pieces.empty())
+          continue;
 
-      isec->rel_pieces[i].piece = piece;
-      isec->rel_pieces[i].input_offset = piece->input_offset - offset;
+        u32 offset = sym->value + rel.r_addend;
+        const StringPieceRef *ref = binary_search(pieces, offset);
+        if (!ref)
+          error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
+
+        isec->rel_pieces[i].piece = ref->piece;
+        isec->rel_pieces[i].input_offset = offset - ref->input_offset;
+
+        llvm::outs() << "rel_pieces: data=" << ref->piece->data
+                     << "@" << ref->input_offset
+                     << " value=" << sym->value
+                     << " addend=" << rel.r_addend
+                     << "\n";
+      }
     }
   }
 
@@ -208,19 +226,17 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!isec || isec->pieces.empty())
       continue;
 
-    StringPiece *piece = binary_search(isec->pieces, esym.st_value);
-    if (!piece)
+    const StringPieceRef *ref = binary_search(isec->pieces, esym.st_value);
+    if (!ref)
       error(toString(this) + ": bad symbol value");
 
-    sym_pieces[i].piece = piece;
-    sym_pieces[i].input_offset = piece->input_offset - esym.st_value;
+    sym_pieces[i].piece = ref->piece;
+    sym_pieces[i].input_offset = ref->input_offset - esym.st_value;
   }
 
-#if 1
   for (int i = 0; i < sections.size(); i++)
     if (sections[i] && !sections[i]->pieces.empty())
       sections[i] = nullptr;
-#endif
 }
 
 void ObjectFile::read_string_pieces(InputSection *isec) {
@@ -240,12 +256,12 @@ void ObjectFile::read_string_pieces(InputSection *isec) {
     if (end == StringRef::npos)
       error(toString(this) + ": string is not null terminated");
 
-    StringRef substr = data.substr(0, end + 1);
+    StringRef substr = data.substr(0, end);
     data = data.substr(end + 1);
 
-    StringPiece *piece = osec->map.insert(substr, StringPiece(substr, offset));
-    isec->pieces.push_back(piece);
-    offset += substr.size();
+    StringPiece *piece = osec->map.insert(substr, StringPiece(substr));
+    isec->pieces.push_back({piece, offset});
+    offset += substr.size() + 1;
 
     counter.inc();
   }

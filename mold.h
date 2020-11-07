@@ -150,17 +150,15 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data, u32 offset)
-    : data(data), input_offset(offset) {}
+  StringPiece(StringRef data) : data(data) {}
 
   StringPiece(const StringPiece &other)
     : data(other.data), file(other.file.load()), chunk(other.chunk),
-      input_offset(other.input_offset), output_offset(other.output_offset) {}
+      output_offset(other.output_offset) {}
 
   StringRef data;
   std::atomic<ObjectFile *> file;
   OutputChunk *chunk;
-  u32 input_offset;
   u32 output_offset;
 };
 
@@ -231,10 +229,9 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  std::vector<StringPiece *> pieces;
-  const ELF64LE::Shdr &shdr;
-
+  std::vector<StringPieceRef> pieces;
   std::vector<StringPieceRef> rel_pieces;
+  const ELF64LE::Shdr &shdr;
 
   StringRef name;
   u64 offset;
