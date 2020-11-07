@@ -88,22 +88,20 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   return new OutputSection(name, flags, type);
 }
 
-MergeStringSection::MergeStringSection(StringRef name, u64 flags, u32 type) {
+MergeableSection::MergeableSection(StringRef name, u64 flags, u32 type) {
   this->name = name;
   shdr.sh_flags = flags;
   shdr.sh_type = type;
   shdr.sh_addralign = 1;
 }
 
-MergeStringSection *
-MergeStringSection::get_instance(StringRef name, u64 flags, u32 type) {
-  std::vector<MergeStringSection *> instances;
-
+MergeableSection *
+MergeableSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 
-  auto find = [&]() -> MergeStringSection * {
-    for (MergeStringSection *osec : instances)
+  auto find = [&]() -> MergeableSection * {
+    for (MergeableSection *osec : MergeableSection::instances)
       if (name == osec->name && flags == osec->shdr.sh_flags &&
           type == osec->shdr.sh_type)
         return osec;
@@ -114,16 +112,16 @@ MergeStringSection::get_instance(StringRef name, u64 flags, u32 type) {
   static std::shared_mutex mu;
   {
     std::shared_lock lock(mu);
-    if (MergeStringSection *osec = find())
+    if (MergeableSection *osec = find())
       return osec;
   }
 
   // Create a new output section.
   std::unique_lock lock(mu);
-  if (MergeStringSection *osec = find())
+  if (MergeableSection *osec = find())
     return osec;
 
-  auto *osec = new MergeStringSection(name, flags, type);
-  instances.push_back(osec);
+  auto *osec = new MergeableSection(name, flags, type);
+  MergeableSection::instances.push_back(osec);
   return osec;
 }

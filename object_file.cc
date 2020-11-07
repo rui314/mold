@@ -247,9 +247,9 @@ void ObjectFile::initialize_mergeable_sections() {
 void ObjectFile::read_string_pieces(InputSection *isec) {
   static Counter counter("string_pieces");
 
-  MergeStringSection *osec =
-    MergeStringSection::get_instance(isec->name, isec->shdr.sh_flags,
-                                     isec->shdr.sh_type);
+  MergeableSection *osec =
+    MergeableSection::get_instance(isec->name, isec->shdr.sh_flags,
+                                         isec->shdr.sh_type);
 
   u32 offset = 0;
 
@@ -462,6 +462,30 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     }
 
     file->remove_comdat_members(idx);
+  }
+}
+
+void ObjectFile::resolve_mergeable_strings() {
+  for (InputSection *isec : sections) {
+    if (!isec || isec->pieces.empty())
+      continue;
+
+    u32 size = 0;
+
+    for (StringPieceRef &ref : isec->pieces) {
+      for (;;) {
+        ObjectFile *file = ref.piece->file;
+        if (file && file->priority <= this->priority)
+          break;
+        if (ref.piece->file.compare_exchange_strong(file, this)) {
+          if (!file)
+            size += ref.piece->data.size() + 1;
+          break;
+        }
+      }
+    }
+
+    isec->pieces[0].piece->output_section->size += size;
   }
 }
 

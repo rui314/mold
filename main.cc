@@ -750,6 +750,12 @@ int main(int argc, char **argv) {
     for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
   }
 
+  // Resolve mergeable strings
+  {
+    MyTimer t("resolve_strings", before_copy);
+    for_each(files, [](ObjectFile *file) { file->resolve_mergeable_strings(); });
+  }
+
   // Create .bss sections for common symbols.
   {
     MyTimer t("common", before_copy);
@@ -769,6 +775,7 @@ int main(int argc, char **argv) {
   }
 
   std::vector<OutputChunk *> output_chunks;
+
   for (OutputSection *osec : OutputSection::instances)
     if (!osec->empty())
       output_chunks.push_back(osec);

@@ -55,6 +55,7 @@ class InputSection;
 class ObjectFile;
 class OutputChunk;
 class OutputSection;
+class MergeableSection;
 
 struct Config {
   StringRef output;
@@ -153,15 +154,16 @@ struct StringPiece {
   StringPiece(StringRef data) : data(data) {}
 
   StringPiece(const StringPiece &other)
-    : data(other.data), file(other.file.load()), chunk(other.chunk),
+    : data(other.data), file(other.file.load()),
+      output_section(other.output_section),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
   StringRef data;
   std::atomic<ObjectFile *> file;
-  OutputChunk *chunk;
-  u32 output_offset;
+  MergeableSection *output_section = nullptr;
+  u32 output_offset = 0;
 };
 
 struct StringPieceRef {
@@ -451,14 +453,17 @@ public:
   }
 };
 
-class MergeStringSection : public OutputChunk {
+class MergeableSection : public OutputChunk {
 public:
-  static MergeStringSection *get_instance(StringRef name, u64 flags, u32 type);
+  static MergeableSection *get_instance(StringRef name, u64 flags, u32 type);
+
+  static inline std::vector<MergeableSection *> instances;
 
   ConcurrentMap<StringPiece> map;
+  std::atomic_uint32_t size;
 
 private:
-  MergeStringSection(StringRef name, u64 flags, u32 type);
+  MergeableSection(StringRef name, u64 flags, u32 type);
 };
 
 bool is_c_identifier(StringRef name);
@@ -504,7 +509,7 @@ inline u64 Symbol::get_addr() const {
 }
 
 inline u64 StringPiece::get_addr() const {
-  return chunk->shdr.sh_addr + output_offset;
+  return output_section->shdr.sh_addr + output_offset;
 }
 
 //
@@ -532,6 +537,7 @@ public:
   void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void hanlde_undefined_weak_symbols();
   void eliminate_duplicate_comdat_groups();
+  void resolve_mergeable_strings();
   void convert_common_symbols();
   void scan_relocations();
   void compute_symtab();
