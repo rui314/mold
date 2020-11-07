@@ -142,6 +142,8 @@ public:
     return const_cast<ValueT *>(&acc->second);
   }
 
+  size_t size() const { return map.size(); }
+
 private:
   MapT map;
 };
