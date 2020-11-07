@@ -590,7 +590,7 @@ private:
   void initialize_symbols();
   void read_string_pieces(InputSection *isec);
 
-  void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym);
+  void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx);
   void remove_comdat_members(u32 section_idx);
   void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 

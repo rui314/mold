@@ -310,7 +310,7 @@ void ObjectFile::parse() {
   }
 }
 
-void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym) {
+void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx) {
   InputSection *isec = nullptr;
   if (!esym.isAbsolute() && !esym.isCommon())
     isec = sections[esym.st_shndx];
@@ -327,6 +327,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym) {
   if (is_new || win || tie_but_higher_priority) {
     sym.file = this;
     sym.input_section = isec;
+    sym.piece_ref = sym_pieces[idx];
     sym.value = esym.st_value;
     sym.type = esym.getType();
     sym.visibility = esym.getVisibility();
@@ -359,7 +360,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
       }
     } else {
-      maybe_override_symbol(esym, sym);
+      maybe_override_symbol(esym, sym, i);
     }
   }
 }
@@ -375,7 +376,7 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
 
     if (esym.isDefined()) {
       if (is_in_archive)
-        maybe_override_symbol(esym, sym);
+        maybe_override_symbol(esym, sym, i);
       continue;
     }
 
