@@ -775,7 +775,7 @@ int main(int argc, char **argv) {
 
     // Mark archive members we include into the final output.
     tbb::parallel_do(
-      objs.begin(), objs.end(),
+      objs,
       [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
         file->mark_live_archive_members(feeder);
       });
