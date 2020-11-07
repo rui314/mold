@@ -207,14 +207,6 @@ void ObjectFile::initialize_mergeable_sections() {
 
         isec->rel_pieces[i].piece = ref->piece;
         isec->rel_pieces[i].addend = offset - ref->input_offset;
-
-#if 0
-        llvm::outs() << "rel_pieces: sym=" << sym.name
-                     << " data=" << ref->piece->data
-                     << " ref->input_offset=" << ref->input_offset
-                     << " offset=" << offset
-                     << "\n";
-#endif
       }
     }
   }
@@ -236,7 +228,7 @@ void ObjectFile::initialize_mergeable_sections() {
       error(toString(this) + ": bad symbol value");
 
     sym_pieces[i].piece = ref->piece;
-    sym_pieces[i].input_offset = ref->input_offset - esym.st_value;
+    sym_pieces[i].addend = esym.st_value - ref->input_offset;
   }
 
   for (int i = 0; i < sections.size(); i++) {
