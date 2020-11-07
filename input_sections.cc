@@ -111,12 +111,10 @@ void InputSection::copy_to(u8 *buf) {
 
 static bool set_flag(Symbol *sym, u8 bit) {
   u8 flags = sym->flags;
-  for (;;) {
-    if (flags & bit)
-      return false;
+  while (!(flags & bit))
     if (sym->flags.compare_exchange_strong(flags, flags | bit))
       return true;
-  }
+  return false;
 }
 
 void InputSection::scan_relocations() {

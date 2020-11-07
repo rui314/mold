@@ -381,10 +381,8 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
       llvm::outs() << "trace: " << toString(this)
                    << ": reference to " << sym.name << "\n";
 
-    bool expected = false;
-
     if (esym.getBinding() != STB_WEAK && sym.file &&
-        sym.file->is_alive.compare_exchange_strong(expected, true)) {
+        !sym.file->is_alive.exchange(true)) {
       feeder.add(sym.file);
 
       if (UNLIKELY(sym.traced))

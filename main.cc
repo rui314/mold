@@ -132,12 +132,9 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
     for (InputSection *isec : file->mergeable_sections) {
       for (StringPieceRef &ref : isec->pieces) {
         InputSection *cur = ref.piece->isec;
-        for (;;) {
-          if (file && cur->file->priority <= isec->file->priority)
-            break;
+        while (!cur || cur->file->priority > isec->file->priority)
           if (ref.piece->isec.compare_exchange_strong(cur, isec))
             break;
-        }
       }
     }
   });
