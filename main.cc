@@ -128,7 +128,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
     counter.inc(osec->map.size());
 
   // Resolve mergeable string pieces
-  for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(files, [](ObjectFile *file) {
     for (InputSection *isec : file->mergeable_sections) {
       for (StringPieceRef &ref : isec->pieces) {
         for (;;) {
@@ -143,7 +143,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   });
 
   // Calculate the total bytes of mergeable strings for each input section.
-  for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(files, [](ObjectFile *file) {
     for (InputSection *isec : file->mergeable_sections) {
       u32 offset = 0;
       for (StringPieceRef &ref : isec->pieces) {
@@ -215,7 +215,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
 static void set_isec_offsets() {
 #if 1
-  for_each(OutputSection::instances, [&](OutputSection *osec) {
+  tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->sections.empty())
       return;
 
@@ -253,7 +253,7 @@ static void set_isec_offsets() {
     osec->shdr.sh_addralign = align;
   });
 #else
-  for_each(OutputSection::instances, [&](OutputSection *osec) {
+  tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->sections.empty())
       return;
 
@@ -274,7 +274,7 @@ static void set_isec_offsets() {
 }
 
 static void scan_rels(ArrayRef<ObjectFile *> files) {
-  for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
+  tbb::parallel_for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
@@ -302,7 +302,7 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
-  for_each(files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 got_offset = file->got_offset;
     u32 gotplt_offset = file->gotplt_offset;
     u32 plt_offset = file->plt_offset;
@@ -346,7 +346,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *plt = buf + out::plt->shdr.sh_offset;
   u8 *relplt = buf + out::relplt->shdr.sh_offset;
 
-  for_each(files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(files, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
@@ -741,12 +741,14 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     MyTimer t("parse", parse);
-    for_each(files, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) { file->parse(); });
   }
 
   {
     MyTimer t("merge", parse);
-    for_each(files, [](ObjectFile *file) { file->initialize_mergeable_sections(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) {
+      file->initialize_mergeable_sections();
+    });
   }
 
   Timer total_timer("total", "total");
@@ -765,7 +767,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("resolve_symbols", before_copy);
 
-    for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
 
     // Resolve symbols
     std::vector<ObjectFile *> objs;
@@ -786,7 +788,9 @@ int main(int argc, char **argv) {
                 files.end());
 
     // Convert weak symbols to absolute symbols with value 0.
-    for_each(files, [](ObjectFile *file) { file->hanlde_undefined_weak_symbols(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) {
+      file->hanlde_undefined_weak_symbols();
+    });
   }
 
   if (args.hasArg(OPT_trace))
@@ -796,7 +800,9 @@ int main(int argc, char **argv) {
   // Eliminate duplicate comdat groups.
   {
     MyTimer t("comdat", before_copy);
-    for_each(files, [](ObjectFile *file) { file->eliminate_duplicate_comdat_groups(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) {
+      file->eliminate_duplicate_comdat_groups();
+    });
   }
 
   // Resolve mergeable strings
@@ -808,7 +814,8 @@ int main(int argc, char **argv) {
   // Create .bss sections for common symbols.
   {
     MyTimer t("common", before_copy);
-    for_each(files, [](ObjectFile *file) { file->convert_common_symbols(); });
+    tbb::parallel_for_each(files,
+                           [](ObjectFile *file) { file->convert_common_symbols(); });
   }
 
   // Bin input sections into output sections
@@ -863,7 +870,7 @@ int main(int argc, char **argv) {
   // Compute .symtab and .strtab sizes
   {
     MyTimer t("symtab_size", before_copy);
-    for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
+    tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
     for (ObjectFile *file : files) {
       out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
@@ -955,7 +962,9 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy);
-    for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
+    tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
+      chunk->copy_to(buf);
+    });
   }
 
   // Fill .plt, .got, got.plt and .rela.plt sections
@@ -968,7 +977,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("write_merged_strings", copy);
 
-    for_each(files, [&](ObjectFile *file) {
+    tbb::parallel_for_each(files, [&](ObjectFile *file) {
       for (InputSection *isec : file->mergeable_sections) {
         MergedSection *osec = isec->merged_section;
         u8 *base = buf + osec->shdr.sh_offset + isec->merged_offset;

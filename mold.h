@@ -105,15 +105,6 @@ inline std::string toString(const Twine &s) { return s.str(); }
 
 std::string toString(ObjectFile *);
 
-template<typename T, typename Callable>
-static void for_each(T &arr, Callable callback) {
-#if 1
-  tbb::parallel_for_each(arr, callback);
-#else
-  std::for_each(arr.begin(), arr.end(), callback);
-#endif
-}
-
 //
 // Interned string
 //
@@ -335,7 +326,7 @@ public:
 
   void copy_to(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
+      tbb::parallel_for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
   }
 
   bool empty() const {
