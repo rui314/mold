@@ -168,9 +168,9 @@ struct StringPiece {
 };
 
 struct StringPieceRef {
-  StringPiece *piece;
-  u32 input_offset;
-  u32 addend;
+  StringPiece *piece = nullptr;
+  u32 input_offset = 0;
+  u32 addend = 0;
 };
 
 class Symbol {
