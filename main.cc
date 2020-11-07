@@ -754,6 +754,9 @@ int main(int argc, char **argv) {
   {
     MyTimer t("resolve_strings", before_copy);
     for_each(files, [](ObjectFile *file) { file->resolve_mergeable_strings(); });
+
+    for (MergeableSection *osec : MergeableSection::instances)
+      osec->shdr.sh_size = osec->size;
   }
 
   // Create .bss sections for common symbols.
@@ -778,6 +781,10 @@ int main(int argc, char **argv) {
 
   for (OutputSection *osec : OutputSection::instances)
     if (!osec->empty())
+      output_chunks.push_back(osec);
+
+  for (MergeableSection *osec : MergeableSection::instances)
+    if (osec->shdr.sh_size)
       output_chunks.push_back(osec);
 
   // Create a dummy file containing linker-synthesized symbols
