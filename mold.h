@@ -430,8 +430,12 @@ public:
 struct StringPiece {
   StringPiece(StringRef data) : data(data) {}
 
+  StringPiece(const StringPiece &other)
+    : data(other.data), file(other.file.load()),
+      chunk(other.chunk), offset(other.offset) {}
+
   StringRef data;
-  ObjectFile *file;
+  std::atomic<ObjectFile *> file;
   OutputChunk *chunk;
   u32 offset;
 };
