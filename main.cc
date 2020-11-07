@@ -12,6 +12,24 @@ using namespace llvm::ELF;
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
+class MyTimer {
+public:
+  MyTimer(StringRef name) {
+    timer = new Timer(name, name);
+    timer->startTimer();
+  }
+
+  MyTimer(StringRef name, llvm::TimerGroup &tg) {
+    timer = new Timer(name, name, tg);
+    timer->startTimer();
+  }
+
+  ~MyTimer() { timer->stopTimer(); }
+
+private:
+  llvm::Timer *timer;
+};
+
 //
 // Command-line option processing
 //
@@ -670,24 +688,6 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
                       files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
                     });
 }
-
-class MyTimer {
-public:
-  MyTimer(StringRef name) {
-    timer = new Timer(name, name);
-    timer->startTimer();
-  }
-
-  MyTimer(StringRef name, llvm::TimerGroup &tg) {
-    timer = new Timer(name, name, tg);
-    timer->startTimer();
-  }
-
-  ~MyTimer() { timer->stopTimer(); }
-
-private:
-  llvm::Timer *timer;
-};
 
 static int get_thread_count(InputArgList &args) {
   if (auto *arg = args.getLastArg(OPT_thread_count)) {
