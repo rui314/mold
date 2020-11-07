@@ -192,12 +192,15 @@ void ObjectFile::initialize_mergeable_sections() {
         if (sym_idx >= this->first_global)
           continue;
 
-        Symbol *sym = symbols[sym_idx];
-        ArrayRef<StringPieceRef> pieces = sym->input_section->pieces;
+        Symbol &sym = *symbols[sym_idx];
+        if (sym.type != STT_SECTION)
+          continue;
+
+        ArrayRef<StringPieceRef> pieces = sym.input_section->pieces;
         if (pieces.empty())
           continue;
 
-        u32 offset = sym->value + rel.r_addend;
+        u32 offset = sym.value + rel.r_addend;
         const StringPieceRef *ref = binary_search(pieces, offset);
         if (!ref)
           error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
@@ -205,12 +208,13 @@ void ObjectFile::initialize_mergeable_sections() {
         isec->rel_pieces[i].piece = ref->piece;
         isec->rel_pieces[i].input_offset = offset - ref->input_offset;
 
-        llvm::outs() << "rel_pieces: sym=" << sym->name
+#if 0
+        llvm::outs() << "rel_pieces: sym=" << sym.name
                      << " data=" << ref->piece->data
-                     << "@" << ref->input_offset
-                     << " value=" << sym->value
-                     << " addend=" << rel.r_addend
+                     << " ref->input_offset=" << ref->input_offset
+                     << " offset=" << offset
                      << "\n";
+#endif
       }
     }
   }
