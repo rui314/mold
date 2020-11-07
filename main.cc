@@ -728,6 +728,7 @@ int main(int argc, char **argv) {
 
   llvm::TimerGroup parse("parse", "parse");
   llvm::TimerGroup before_copy("before_copy", "before_copy");
+  llvm::TimerGroup copy("copy", "copy");
 
   // Open input files
   {
@@ -947,25 +948,25 @@ int main(int argc, char **argv) {
 
   // Fill .symtab and .strtab
   {
-    MyTimer t("write_symtab");
+    MyTimer t("write_symtab", copy);
     write_symtab(buf, files);
   }
 
   // Copy input sections to the output file
   {
-    MyTimer t("copy");
+    MyTimer t("copy", copy);
     for_each(output_chunks, [&](OutputChunk *chunk) { chunk->copy_to(buf); });
   }
 
   // Fill .plt, .got, got.plt and .rela.plt sections
   {
-    MyTimer t("write_got");
+    MyTimer t("write_got", copy);
     write_got(buf, files);
   }
 
   // Fill mergeable string sections
   {
-    MyTimer t("write_merged_strings");
+    MyTimer t("write_merged_strings", copy);
 
     for_each(files, [&](ObjectFile *file) {
       for (InputSection *isec : file->mergeable_sections) {
@@ -982,7 +983,7 @@ int main(int argc, char **argv) {
   }
 
   {
-    MyTimer t("commit");
+    MyTimer t("commit", copy);
     if (auto e = output_buffer->commit())
       error("failed to write to the output file: " + toString(std::move(e)));
   }
