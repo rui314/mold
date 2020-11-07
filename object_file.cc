@@ -71,10 +71,12 @@ void ObjectFile::initialize_sections() {
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
 
+#if 0
       if ((shdr.sh_flags & SHF_STRINGS) && shdr.sh_entsize == 1) {
         read_string_pieces(name, shdr);
         break;
       }
+#endif
 
       this->sections[i] = new InputSection(this, shdr, name);
       break;
@@ -149,14 +151,14 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-std::vector<StringPieceRef>
+InputSection *
 ObjectFile::read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr) {
   static Counter counter("string_pieces");
 
   MergeStringSection *osec =
     MergeStringSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
 
-  std::vector<StringPieceRef> ret;
+  auto *isec = new InputSection(this, shdr, name);
   u32 offset = 0;
 
   ArrayRef<u8> arr = CHECK(obj.getSectionContents(shdr), this);
@@ -170,14 +172,14 @@ ObjectFile::read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr) {
     StringRef substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
-    StringPiece *piece = map.insert(substr, StringPiece(substr));
-    ret.push_back({piece, offset});
+    StringPiece *piece = osec->map.insert(substr, StringPiece(substr));
+    isec->pieces.push_back({piece, offset});
     offset += substr.size();
 
     counter.inc();
   }
 
-  return ret;
+  return isec;
 }
 
 void ObjectFile::remove_comdat_members(u32 section_idx) {

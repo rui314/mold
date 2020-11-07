@@ -200,6 +200,24 @@ inline std::string toString(Symbol sym) {
 // input_sections.cc
 //
 
+struct StringPiece {
+  StringPiece(StringRef data) : data(data) {}
+
+  StringPiece(const StringPiece &other)
+    : data(other.data), file(other.file.load()),
+      chunk(other.chunk), offset(other.offset) {}
+
+  StringRef data;
+  std::atomic<ObjectFile *> file;
+  OutputChunk *chunk;
+  u32 offset;
+};
+
+struct StringPieceRef {
+  StringPiece *piece;
+  u32 input_offset;
+};
+
 class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
@@ -210,6 +228,7 @@ public:
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
+  std::vector<StringPieceRef> pieces;
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
@@ -427,29 +446,11 @@ public:
   }
 };
 
-struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
-
-  StringPiece(const StringPiece &other)
-    : data(other.data), file(other.file.load()),
-      chunk(other.chunk), offset(other.offset) {}
-
-  StringRef data;
-  std::atomic<ObjectFile *> file;
-  OutputChunk *chunk;
-  u32 offset;
-};
-
-struct StringPieceRef {
-  StringPiece piece;
-  u32 input_offset;
-};
-
 class MergeStringSection : public OutputChunk {
 public:
   static MergeStringSection *get_instance(StringRef name, u64 flags, u32 type);
 
-  ConcurrentMap<StringPiece *> map;
+  ConcurrentMap<StringPiece> map;
 
 private:
   MergeStringSection(StringRef name, u64 flags, u32 type);
@@ -559,6 +560,8 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
+  InputSection *read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr);
+
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym);
   void remove_comdat_members(u32 section_idx);
   void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
