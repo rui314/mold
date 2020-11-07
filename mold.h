@@ -158,14 +158,12 @@ struct StringPiece {
 
   StringPiece(const StringPiece &other)
     : data(other.data), isec(other.isec.load()),
-      output_section(other.output_section),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
   StringRef data;
   std::atomic<InputSection *> isec;
-  MergedSection *output_section = nullptr;
   u32 output_offset = 0;
 };
 
@@ -515,7 +513,8 @@ inline u64 Symbol::get_addr() const {
 }
 
 inline u64 StringPiece::get_addr() const {
-  return output_section->shdr.sh_addr + output_offset;
+  InputSection *is = isec;
+  return is->merged_section->shdr.sh_addr + is->merged_offset + output_offset;
 }
 
 //

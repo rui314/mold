@@ -124,7 +124,6 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
 
 static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   static Counter counter("merged_strings");
-
   for (MergedSection *osec : MergedSection::instances)
     counter.inc(osec->map.size());
 
