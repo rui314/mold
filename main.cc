@@ -149,7 +149,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
       for (StringPieceRef &ref : isec->pieces) {
         if (ref.piece->isec == isec) {
           ref.piece->output_offset = offset;
-          offset += ref.piece->data.size();
+          offset += ref.piece->data.size() + 1;
         }
       }
       isec->merged_size = offset;
