@@ -274,7 +274,7 @@ void ObjectFile::parse() {
   if (symtab_sec)
     initialize_symbols();
 
-  // initialize_mergeable_sections();
+  initialize_mergeable_sections();
 
   if (Counter::enabled) {
     static Counter defined("defined_syms");
