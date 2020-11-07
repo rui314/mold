@@ -123,7 +123,7 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
 }
 
 static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
-  static Counter counter("merged_strings");
+  static Counter counter("handle_merged_strings");
   for (MergedSection *osec : MergedSection::instances)
     counter.inc(osec->map.size());
 
@@ -957,6 +957,24 @@ int main(int argc, char **argv) {
   {
     MyTimer t("write_got");
     write_got(buf, files);
+  }
+
+  // Fill mergeable string sections
+  {
+    MyTimer t("write_merged_strings");
+
+    for_each(files, [&](ObjectFile *file) {
+      for (InputSection *isec : file->mergeable_sections) {
+        MergedSection *osec = isec->merged_section;
+        u8 *base = buf + osec->shdr.sh_offset + isec->merged_offset;
+
+        for (StringPieceRef &ref : isec->pieces) {
+          StringPiece &piece = *ref.piece;
+          if (piece.isec == isec)
+            memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
+        }
+      }
+    });
   }
 
   {
