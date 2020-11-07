@@ -156,6 +156,8 @@ struct StringPiece {
     : data(other.data), file(other.file.load()), chunk(other.chunk),
       output_offset(other.output_offset) {}
 
+  inline u64 get_addr() const;
+
   StringRef data;
   std::atomic<ObjectFile *> file;
   OutputChunk *chunk;
@@ -165,6 +167,7 @@ struct StringPiece {
 struct StringPieceRef {
   StringPiece *piece;
   u32 input_offset;
+  u32 addend;
 };
 
 class Symbol {
@@ -498,6 +501,10 @@ inline u64 Symbol::get_addr() const {
     return input_section->output_section->shdr.sh_addr +
       input_section->offset + value;
   return value;
+}
+
+inline u64 StringPiece::get_addr() const {
+  return chunk->shdr.sh_addr + output_offset;
 }
 
 //

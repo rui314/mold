@@ -206,7 +206,7 @@ void ObjectFile::initialize_mergeable_sections() {
           error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
 
         isec->rel_pieces[i].piece = ref->piece;
-        isec->rel_pieces[i].input_offset = offset - ref->input_offset;
+        isec->rel_pieces[i].addend = offset - ref->input_offset;
 
 #if 0
         llvm::outs() << "rel_pieces: sym=" << sym.name

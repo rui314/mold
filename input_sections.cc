@@ -22,16 +22,21 @@ void InputSection::copy_to(u8 *buf) {
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
   memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
-  for (const ELF64LE::Rela &rel : rels) {
-    Symbol *sym = file->symbols[rel.getSymbol(false)];
+  for (int i = 0; i < rels.size(); i++) {
+    const ELF64LE::Rela &rel = rels[i];
+    StringPieceRef &ref = rel_pieces[i];
+
+    Symbol &sym = *file->symbols[rel.getSymbol(false)];
     u8 *loc = buf + output_section->shdr.sh_offset + offset + rel.r_offset;
 
-    u64 G = sym->got_offset;
+    u64 G = sym.got_offset;
     u64 GOT = out::got->shdr.sh_addr;
-    u64 S = sym->get_addr();
+    //    u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
+    //    u64 A = ref.piece ? ref.addend : rel.r_addend;
+    u64 S = sym.get_addr();
     u64 A = rel.r_addend;
     u64 P = output_section->shdr.sh_addr + offset + rel.r_offset;
-    u64 L = out::plt->shdr.sh_addr + sym->plt_offset;
+    u64 L = out::plt->shdr.sh_addr + sym.plt_offset;
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -46,7 +51,7 @@ void InputSection::copy_to(u8 *buf) {
       *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
-      if (!config.is_static || sym->type == STT_GNU_IFUNC)
+      if (!config.is_static || sym.type == STT_GNU_IFUNC)
         *(u32 *)loc = L + A - P;
       else
         *(u32 *)loc = S + A - P; // todo
@@ -76,7 +81,7 @@ void InputSection::copy_to(u8 *buf) {
       // TODO
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = sym->gottp_offset + GOT + A - P;
+      *(u32 *)loc = sym.gottp_offset + GOT + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
