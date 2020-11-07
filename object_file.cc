@@ -71,14 +71,10 @@ void ObjectFile::initialize_sections() {
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
 
-#if 0
-      if ((shdr.sh_flags & SHF_STRINGS) && shdr.sh_entsize == 1) {
-        read_string_pieces(name, shdr);
-        break;
-      }
-#endif
-
-      this->sections[i] = new InputSection(this, shdr, name);
+      if ((shdr.sh_flags & SHF_STRINGS) && shdr.sh_entsize == 1)
+        this->sections[i] = read_string_pieces(name, shdr);
+      else
+        this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
     }

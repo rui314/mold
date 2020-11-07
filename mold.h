@@ -149,6 +149,24 @@ private:
 // Symbol
 //
 
+struct StringPiece {
+  StringPiece(StringRef data) : data(data) {}
+
+  StringPiece(const StringPiece &other)
+    : data(other.data), file(other.file.load()),
+      chunk(other.chunk), offset(other.offset) {}
+
+  StringRef data;
+  std::atomic<ObjectFile *> file;
+  OutputChunk *chunk;
+  u32 offset;
+};
+
+struct StringPieceRef {
+  StringPiece *piece;
+  u32 input_offset;
+};
+
 class Symbol {
 public:
   Symbol(StringRef name, ObjectFile *file = nullptr)
@@ -167,6 +185,7 @@ public:
   StringRef name;
   ObjectFile *file = nullptr;
   InputSection *input_section = nullptr;
+  StringPiece *piece = nullptr;
 
   u64 value = 0;
   u32 got_offset = 0;
@@ -199,24 +218,6 @@ inline std::string toString(Symbol sym) {
 //
 // input_sections.cc
 //
-
-struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
-
-  StringPiece(const StringPiece &other)
-    : data(other.data), file(other.file.load()),
-      chunk(other.chunk), offset(other.offset) {}
-
-  StringRef data;
-  std::atomic<ObjectFile *> file;
-  OutputChunk *chunk;
-  u32 offset;
-};
-
-struct StringPieceRef {
-  StringPiece *piece;
-  u32 input_offset;
-};
 
 class InputSection {
 public:
