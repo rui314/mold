@@ -205,7 +205,8 @@ void ObjectFile::initialize_mergeable_sections() {
         isec->rel_pieces[i].piece = ref->piece;
         isec->rel_pieces[i].input_offset = offset - ref->input_offset;
 
-        llvm::outs() << "rel_pieces: data=" << ref->piece->data
+        llvm::outs() << "rel_pieces: sym=" << sym->name
+                     << " data=" << ref->piece->data
                      << "@" << ref->input_offset
                      << " value=" << sym->value
                      << " addend=" << rel.r_addend
