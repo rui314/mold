@@ -440,6 +440,11 @@ struct StringPiece {
   u32 offset;
 };
 
+struct StringPieceRef {
+  StringPiece piece;
+  u32 input_offset;
+};
+
 class MergeStringSection : public OutputChunk {
 public:
   static MergeStringSection *get_instance(StringRef name, u64 flags, u32 type);
