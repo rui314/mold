@@ -150,16 +150,18 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
+  StringPiece(StringRef data, u32 offset)
+    : data(data), input_offset(offset) {}
 
   StringPiece(const StringPiece &other)
-    : data(other.data), file(other.file.load()),
-      chunk(other.chunk), offset(other.offset) {}
+    : data(other.data), file(other.file.load()), chunk(other.chunk),
+      input_offset(other.input_offset), output_offset(other.output_offset) {}
 
   StringRef data;
   std::atomic<ObjectFile *> file;
   OutputChunk *chunk;
-  u32 offset;
+  u32 input_offset;
+  u32 output_offset;
 };
 
 struct StringPieceRef {
@@ -223,13 +225,15 @@ class InputSection {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 
+  void set_relocations(ArrayRef<ELF64LE::Rela> rels);
   void copy_to(u8 *buf);
   void scan_relocations();
 
   ObjectFile *file;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  std::vector<StringPieceRef> pieces;
+  std::vector<StringPieceRef> rel_pieces;
+  std::vector<StringPiece *> pieces;
   const ELF64LE::Shdr &shdr;
 
   StringRef name;
@@ -537,6 +541,7 @@ public:
   ELFFile<ELF64LE> obj;
   std::vector<Symbol *> symbols;
   ArrayRef<ELF64LE::Sym> elf_syms;
+  int first_global = 0;
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
   bool is_dso;
@@ -571,7 +576,6 @@ private:
   std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
 
   std::vector<Symbol> local_symbols;
-  int first_global = 0;
   bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;

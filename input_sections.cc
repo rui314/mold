@@ -15,6 +15,46 @@ InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRe
     error(toString(file) + ": section sh_addralign is not a power of two");
 }
 
+static StringPiece *binary_search(ArrayRef<StringPiece *> pieces, u32 offset) {
+  while (!pieces.empty()) {
+    u32 mid = pieces.size() / 2;
+    StringPiece *piece = pieces[mid];
+
+    if (piece->input_offset == offset)
+      return piece;
+
+    if (offset < piece->input_offset)
+      pieces = pieces.slice(0, mid);
+    else
+      pieces = pieces.slice(mid);
+  }
+  return nullptr;
+}
+
+void InputSection::set_relocations(ArrayRef<ELF64LE::Rela> rels) {
+  this->rel_pieces.resize(rels.size());
+
+  for (int i = 0; i < rels.size(); i++) {
+    const ELF64LE::Rela &rel = rels[i];
+    u32 sym_idx = rel.getSymbol(false);
+    if (file->first_global <= sym_idx)
+      continue;
+
+    Symbol *sym = file->symbols[sym_idx];
+    ArrayRef<StringPiece *> pieces = sym->input_section->pieces;
+    if (pieces.empty())
+      continue;
+
+    u32 offset = sym->value + rel.r_addend;
+    StringPiece *piece = binary_search(pieces, offset);
+    if (!piece)
+      error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
+
+    rel_pieces[i].piece = piece;
+    rel_pieces[i].input_offset = piece->input_offset - offset;
+  }
+}
+
 void InputSection::copy_to(u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;

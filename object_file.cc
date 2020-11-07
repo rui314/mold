@@ -70,11 +70,7 @@ void ObjectFile::initialize_sections() {
       counter.inc();
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
-
-      if ((shdr.sh_flags & SHF_STRINGS) && shdr.sh_entsize == 1)
-        this->sections[i] = read_string_pieces(name, shdr);
-      else
-        this->sections[i] = new InputSection(this, shdr, name);
+      this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
     }
@@ -168,8 +164,8 @@ ObjectFile::read_string_pieces(StringRef name, const ELF64LE::Shdr &shdr) {
     StringRef substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
-    StringPiece *piece = osec->map.insert(substr, StringPiece(substr));
-    isec->pieces.push_back({piece, offset});
+    StringPiece *piece = osec->map.insert(substr, StringPiece(substr, offset));
+    isec->pieces.push_back(piece);
     offset += substr.size();
 
     counter.inc();
