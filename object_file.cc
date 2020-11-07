@@ -249,7 +249,7 @@ void ObjectFile::read_string_pieces(InputSection *isec) {
 
   MergeableSection *osec =
     MergeableSection::get_instance(isec->name, isec->shdr.sh_flags,
-                                         isec->shdr.sh_type);
+                                   isec->shdr.sh_type);
 
   u32 offset = 0;
 
@@ -264,7 +264,7 @@ void ObjectFile::read_string_pieces(InputSection *isec) {
     StringRef substr = data.substr(0, end);
     data = data.substr(end + 1);
 
-    StringPiece *piece = osec->map.insert(substr, StringPiece(substr));
+    StringPiece *piece = osec->map.insert(substr, StringPiece(substr, osec));
     isec->pieces.push_back({piece, offset});
     offset += substr.size() + 1;
 

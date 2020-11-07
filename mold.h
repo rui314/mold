@@ -151,7 +151,8 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
+  StringPiece(StringRef data, MergeableSection *osec)
+    : data(data), output_section(osec) {}
 
   StringPiece(const StringPiece &other)
     : data(other.data), file(other.file.load()),
