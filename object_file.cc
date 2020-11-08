@@ -51,7 +51,7 @@ void ObjectFile::initialize_sections() {
 
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
-      comdat_groups.push_back({group, i});
+      comdat_groups.push_back({group, entries});
 
       static Counter counter("comdats");
       counter.inc();
@@ -413,14 +413,10 @@ void ObjectFile::resolve_comdat_groups() {
 void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    u32 section_idx = pair.second;
-
     if (group->file == this)
       continue;
 
-    const ELF64LE::Shdr &shdr = elf_sections[section_idx];
-    ArrayRef<ELF64LE::Word> entries =
-      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
+    ArrayRef<ELF64LE::Word> entries = pair.second;
     for (u32 i : entries)
       sections[i] = nullptr;
   }

@@ -620,7 +620,7 @@ private:
   void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
   MemoryBufferRef mb;
-  std::vector<std::pair<ComdatGroup *, u32>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, ArrayRef<ELF64LE::Word>>> comdat_groups;
 
   std::vector<Symbol> local_symbols;
   std::vector<StringPieceRef> sym_pieces;
