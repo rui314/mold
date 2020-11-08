@@ -249,7 +249,7 @@ public:
   u32 merged_size = 0;
 };
 
-std::string toString(InputSection *isec);
+std::string toString(InputChunk *isec);
 
 inline u64 align_to(u64 val, u64 align) {
   assert(__builtin_popcount(align) == 1);
@@ -270,7 +270,7 @@ public:
   int shndx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
-  std::vector<InputSection *> sections;
+  std::vector<InputChunk *> sections;
 };
 
 // ELF header
@@ -337,13 +337,13 @@ public:
 
   void copy_to(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      tbb::parallel_for_each(sections, [&](InputSection *isec) { isec->copy_to(buf); });
+      tbb::parallel_for_each(sections, [&](InputChunk *isec) { isec->copy_to(buf); });
   }
 
   bool empty() const {
     if (!sections.empty())
-      for (InputSection *isec : sections)
-        if (isec->shdr.sh_size)
+      for (InputChunk *chunk : sections)
+        if (chunk->shdr.sh_size)
           return false;
     return true;
   }

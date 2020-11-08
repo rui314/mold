@@ -155,6 +155,6 @@ void InputSection::scan_relocations() {
   }
 }
 
-std::string toString(InputSection *isec) {
-  return (toString(isec->file) + ":(" + isec->name + ")").str();
+std::string toString(InputChunk *chunk) {
+  return (toString(chunk->file) + ":(" + chunk->name + ")").str();
 }

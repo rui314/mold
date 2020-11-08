@@ -6,7 +6,7 @@ using namespace llvm;
 
 void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections) {
   // Construct a section-to-symbol map.
-  std::unordered_multimap<InputSection *, Symbol *> map;
+  std::unordered_multimap<InputChunk *, Symbol *> map;
   for (ObjectFile *file : files)
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->input_section)
@@ -20,7 +20,7 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
                            (u64)chunk->shdr.sh_addralign)
                  << chunk->name << "\n";
 
-    for (InputSection *isec : chunk->sections) {
+    for (InputChunk *isec : chunk->sections) {
       llvm::outs() << format("%16llx %8llx %5lld         ",
                              chunk->shdr.sh_addr + isec->offset,
                              (u64)isec->shdr.sh_size,

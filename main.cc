@@ -187,7 +187,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
   int num_osec = OutputSection::instances.size();
 
-  std::vector<std::vector<std::vector<InputSection *>>> groups(slices.size());
+  std::vector<std::vector<std::vector<InputChunk *>>> groups(slices.size());
   for (int i = 0; i < groups.size(); i++)
     groups[i].resize(num_osec);
 
@@ -204,7 +204,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
   std::vector<int> sizes(num_osec);
 
-  for (ArrayRef<std::vector<InputSection *>> group : groups)
+  for (ArrayRef<std::vector<InputChunk *>> group : groups)
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
@@ -212,7 +212,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
     OutputSection::instances[j]->sections.reserve(sizes[j]);
 
     for (int i = 0; i < groups.size(); i++) {
-      std::vector<InputSection *> &sections = OutputSection::instances[j]->sections;
+      std::vector<InputChunk *> &sections = OutputSection::instances[j]->sections;
       sections.insert(sections.end(), groups[i][j].begin(), groups[i][j].end());
     }
   });
@@ -223,7 +223,7 @@ static void set_isec_offsets() {
     if (osec->sections.empty())
       return;
 
-    std::vector<ArrayRef<InputSection *>> slices = split(osec->sections, 100000);
+    std::vector<ArrayRef<InputChunk *>> slices = split(osec->sections, 100000);
     std::vector<u64> size(slices.size());
     std::vector<u32> alignments(slices.size());
 
@@ -231,7 +231,7 @@ static void set_isec_offsets() {
       u64 off = 0;
       u32 align = 1;
 
-      for (InputSection *isec : slices[i]) {
+      for (InputChunk *isec : slices[i]) {
         off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
         off += isec->shdr.sh_size;
@@ -249,7 +249,7 @@ static void set_isec_offsets() {
       start[i] = align_to(start[i - 1] + size[i], align);
 
     tbb::parallel_for(1, (int)slices.size(), [&](int i) {
-      for (InputSection *isec : slices[i])
+      for (InputChunk *isec : slices[i])
         isec->offset += start[i];
     });
 
