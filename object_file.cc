@@ -164,10 +164,30 @@ binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
   return &pieces[0];
 }
 
+static bool is_mergeable(const ELF64LE::Shdr &shdr) {
+  return (shdr.sh_flags & SHF_MERGE) &&
+         (shdr.sh_flags & SHF_STRINGS) &&
+         shdr.sh_entsize == 1;
+}
+
 void ObjectFile::initialize_mergeable_sections() {
+  // Count the number of mergeable input sections.
+  u32 num_mergeable = 0;
+
   for (InputSection *isec : sections)
-    if (isec && (isec->shdr.sh_flags & SHF_STRINGS) && isec->shdr.sh_entsize == 1)
-      read_string_pieces(isec);
+    if (isec && is_mergeable(isec->shdr))
+      num_mergeable++;
+
+  mergeable_sections.reserve(num_mergeable);
+
+  for (int i = 0; i < sections.size(); i++) {
+    InputSection *isec = sections[i];
+    if (isec && is_mergeable(isec->shdr)) {
+      ArrayRef<u8> contents = CHECK(obj.getSectionContents(isec->shdr), this);
+      mergeable_sections.emplace_back(isec, contents);
+      sections[i] = nullptr;
+    }
+  }
 
   // Initialize rel_pieces
   for (InputSection *isec : sections) {
@@ -195,10 +215,18 @@ void ObjectFile::initialize_mergeable_sections() {
         Symbol &sym = *symbols[sym_idx];
         if (sym.type != STT_SECTION)
           continue;
-
-        ArrayRef<StringPieceRef> pieces = sym.input_section->pieces;
-        if (pieces.empty())
+        if (!is_mergeable(sym.input_section->shdr))
           continue;
+
+        ArrayRef<StringPieceRef> pieces;
+        for (MergeableSection &isec : mergeable_sections) {
+          if (isec.original == sym.input_section) {
+            pieces = isec.pieces;
+            break;
+          }
+        }
+
+        assert(!pieces.empty());
 
         u32 offset = sym.value + rel.r_addend;
         const StringPieceRef *ref = binary_search(pieces, offset);
@@ -220,51 +248,16 @@ void ObjectFile::initialize_mergeable_sections() {
       continue;
 
     InputSection *isec = sections[esym.st_shndx];
-    if (!isec || isec->pieces.empty())
+    if (!isec || isec->kind != InputChunk::MERGEABLE)
       continue;
 
-    const StringPieceRef *ref = binary_search(isec->pieces, esym.st_value);
+    ArrayRef<StringPieceRef> pieces = ((MergeableSection *)isec)->pieces;
+    const StringPieceRef *ref = binary_search(pieces, esym.st_value);
     if (!ref)
       error(toString(this) + ": bad symbol value");
 
     sym_pieces[i].piece = ref->piece;
     sym_pieces[i].addend = esym.st_value - ref->input_offset;
-  }
-
-  for (int i = 0; i < sections.size(); i++) {
-    if (sections[i] && !sections[i]->pieces.empty()) {
-      mergeable_sections.push_back(sections[i]);
-      sections[i] = nullptr;
-    }
-  }
-}
-
-void ObjectFile::read_string_pieces(InputSection *isec) {
-  static Counter counter("string_pieces");
-
-  isec->merged_section =
-    MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
-                               isec->shdr.sh_type);
-
-  u32 offset = 0;
-
-  ArrayRef<u8> arr = CHECK(obj.getSectionContents(isec->shdr), this);
-  StringRef data((const char *)&arr[0], arr.size());
-
-  while (!data.empty()) {
-    size_t end = data.find('\0');
-    if (end == StringRef::npos)
-      error(toString(this) + ": string is not null terminated");
-
-    StringRef substr = data.substr(0, end);
-    data = data.substr(end + 1);
-
-    StringPiece *piece =
-      isec->merged_section->map.insert(substr, StringPiece(substr, isec));
-    isec->pieces.push_back({piece, offset});
-    offset += substr.size() + 1;
-
-    counter.inc();
   }
 }
 

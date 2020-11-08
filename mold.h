@@ -146,8 +146,7 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data, InputSection *isec)
-    : data(data), isec(isec) {}
+  StringPiece(StringRef data) : data(data) {}
 
   StringPiece(const StringPiece &other)
     : data(other.data), isec(other.isec.load()),
@@ -156,7 +155,7 @@ struct StringPiece {
   inline u64 get_addr() const;
 
   StringRef data;
-  std::atomic<InputSection *> isec;
+  std::atomic<MergeableSection *> isec = ATOMIC_VAR_INIT(nullptr);
   u32 output_offset = 0;
 };
 
@@ -183,7 +182,7 @@ public:
 
   StringRef name;
   ObjectFile *file = nullptr;
-  InputSection *input_section = nullptr;
+  InputChunk *input_section = nullptr;
   StringPieceRef piece_ref;
 
   u64 value = 0;
@@ -220,7 +219,7 @@ inline std::string toString(Symbol sym) {
 
 class InputChunk {
 public:
-  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
+  enum Kind : u8 { REGULAR, MERGEABLE };
 
   virtual void scan_relocations() {}
   virtual void copy_to(u8 *buf) {}
@@ -231,23 +230,32 @@ public:
 
   StringRef name;
   u32 offset;
+  Kind kind;
+
+protected:
+  InputChunk(Kind kind, ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 };
 
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
-    : InputChunk(file, shdr, name) {}
+    : InputChunk(REGULAR, file, shdr, name) {}
 
   void copy_to(u8 *buf);
   void scan_relocations();
 
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
+};
 
-  MergedSection *merged_section = nullptr;
+class MergeableSection : public InputChunk {
+public:
+  MergeableSection(InputSection *isec, ArrayRef<u8> contents);
+
+  InputSection *original;
+  MergedSection &parent;
   std::vector<StringPieceRef> pieces;
-  u32 merged_offset = 0;
-  u32 merged_size = 0;
+  u32 size = 0;
 };
 
 std::string toString(InputChunk *isec);
@@ -520,8 +528,8 @@ inline u64 Symbol::get_addr() const {
 }
 
 inline u64 StringPiece::get_addr() const {
-  InputSection *is = isec;
-  return is->merged_section->shdr.sh_addr + is->merged_offset + output_offset;
+  MergeableSection *is = isec.load();
+  return is->parent.shdr.sh_addr + is->offset + output_offset;
 }
 
 //
@@ -586,12 +594,12 @@ public:
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
 
-  std::vector<InputSection *> mergeable_sections;
+  std::vector<MergeableSection> mergeable_sections;
 
 private:
   void initialize_sections();
   void initialize_symbols();
-  void read_string_pieces(InputSection *isec);
+  std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
 
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx);
   void remove_comdat_members(u32 section_idx);

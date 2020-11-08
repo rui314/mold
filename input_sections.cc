@@ -3,8 +3,9 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-InputChunk::InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
-  : file(file), shdr(shdr), name(name) {
+InputChunk::InputChunk(Kind kind, ObjectFile *file, const ELF64LE::Shdr &shdr,
+                       StringRef name)
+  : kind(kind), file(file), shdr(shdr), name(name) {
   output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
 
   u64 align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
@@ -153,6 +154,31 @@ void InputSection::scan_relocations() {
       break;
     }
   }
+}
+
+MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
+  : InputChunk(MERGEABLE, isec->file, isec->shdr, isec->name),
+    original(isec),
+    parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
+                                        isec->shdr.sh_type)) {
+  StringRef data((const char *)&contents[0], contents.size());
+  u32 offset = 0;
+
+  while (!data.empty()) {
+    size_t end = data.find('\0');
+    if (end == StringRef::npos)
+      error(toString(this) + ": string is not null terminated");
+
+    StringRef substr = data.substr(0, end);
+    data = data.substr(end + 1);
+
+    StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
+    pieces.push_back({piece, offset});
+    offset += substr.size() + 1;
+  }
+
+  static Counter counter("string_pieces");
+  counter.inc(pieces.size());
 }
 
 std::string toString(InputChunk *chunk) {
