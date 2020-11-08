@@ -219,7 +219,6 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 }
 
 static void set_isec_offsets() {
-#if 1
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->sections.empty())
       return;
@@ -257,25 +256,6 @@ static void set_isec_offsets() {
     osec->shdr.sh_size = start.back() + size.back();
     osec->shdr.sh_addralign = align;
   });
-#else
-  tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
-    if (osec->sections.empty())
-      return;
-
-    u64 off = 0;
-    u32 align = 0;
-
-    for (InputSection *isec : osec->sections) {
-      off = align_to(off, isec->shdr.sh_addralign);
-      isec->offset = off;
-      off += isec->shdr.sh_size;
-      align = std::max<u32>(align, isec->shdr.sh_addralign);
-    }
-
-    osec->shdr.sh_size = off;
-    osec->shdr.sh_addralign = align;
-  });
-#endif
 }
 
 static void scan_rels(ArrayRef<ObjectFile *> files) {
