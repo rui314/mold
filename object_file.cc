@@ -408,40 +408,22 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
   }
 }
 
+void ObjectFile::resolve_comdat_groups() {
+  for (auto &pair : comdat_groups) {
+    ComdatGroup *group = pair.first;
+    ObjectFile *cur = group->file;
+    while (!cur || cur->priority > this->priority)
+      if (group->file.compare_exchange_strong(cur, this))
+        break;
+  }
+}
+
 void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
-    ComdatGroup *g = pair.first;
+    ComdatGroup *group = pair.first;
     u32 section_idx = pair.second;
-
-    ObjectFile *other = g->file;
-    if (other && other->priority < this->priority) {
-      this->remove_comdat_members(section_idx);
-      continue;
-    }
-
-    ObjectFile *file;
-    u32 idx;
-
-    {
-      std::lock_guard lock(g->mu);
-      if (g->file == nullptr) {
-        g->file = this;
-        g->section_idx = section_idx;
-        continue;
-      }
-
-      if (g->file.load()->priority < this->priority) {
-        file = this;
-        idx = section_idx;
-      } else {
-        file = g->file;
-        idx = g->section_idx;
-        g->file = this;
-        g->section_idx = section_idx;
-      }
-    }
-
-    file->remove_comdat_members(idx);
+    if (group->file != this)
+      remove_comdat_members(section_idx);
   }
 }
 

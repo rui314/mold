@@ -140,6 +140,16 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
+static void eliminate_comdats(std::vector<ObjectFile *> &files) {
+  tbb::parallel_for_each(files, [](ObjectFile *file) {
+    file->resolve_comdat_groups();
+  });
+
+  tbb::parallel_for_each(files, [](ObjectFile *file) {
+    file->eliminate_duplicate_comdat_groups();
+  });
+}
+
 static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   // Resolve mergeable string pieces
   tbb::parallel_for_each(files, [](ObjectFile *file) {
@@ -778,9 +788,7 @@ int main(int argc, char **argv) {
   // Eliminate duplicate comdat groups.
   {
     MyTimer t("comdat", before_copy);
-    tbb::parallel_for_each(files, [](ObjectFile *file) {
-      file->eliminate_duplicate_comdat_groups();
-    });
+    eliminate_comdats(files);
   }
 
   // Resolve mergeable strings

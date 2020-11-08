@@ -557,7 +557,6 @@ struct ComdatGroup {
   ComdatGroup(const ComdatGroup &other)
     : file(other.file.load()), section_idx(other.section_idx) {}
 
-  tbb::spin_mutex mu;
   std::atomic<ObjectFile *> file;
   u32 section_idx;
 };
@@ -571,6 +570,7 @@ public:
   void resolve_symbols();
   void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void hanlde_undefined_weak_symbols();
+  void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
   void assign_mergeable_string_offsets();
   void convert_common_symbols();
