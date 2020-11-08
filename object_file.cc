@@ -254,14 +254,6 @@ void ObjectFile::initialize_mergeable_sections() {
   }
 }
 
-void ObjectFile::remove_comdat_members(u32 section_idx) {
-  const ELF64LE::Shdr &shdr = elf_sections[section_idx];
-  ArrayRef<ELF64LE::Word> entries =
-    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
-  for (u32 i : entries)
-    sections[i] = nullptr;
-}
-
 void ObjectFile::parse() {
   is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 
@@ -422,8 +414,15 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     u32 section_idx = pair.second;
-    if (group->file != this)
-      remove_comdat_members(section_idx);
+
+    if (group->file == this)
+      continue;
+
+    const ELF64LE::Shdr &shdr = elf_sections[section_idx];
+    ArrayRef<ELF64LE::Word> entries =
+      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Word>(shdr), this);
+    for (u32 i : entries)
+      sections[i] = nullptr;
   }
 }
 
