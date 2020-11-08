@@ -224,16 +224,16 @@ public:
   void scan_relocations();
 
   ObjectFile *file;
+  const ELF64LE::Shdr &shdr;
   OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
-  const ELF64LE::Shdr &shdr;
+  std::vector<StringPieceRef> rel_pieces;
 
   StringRef name;
   u32 offset;
 
   MergedSection *merged_section = nullptr;
   std::vector<StringPieceRef> pieces;
-  std::vector<StringPieceRef> rel_pieces;
   u32 merged_offset = 0;
   u32 merged_size = 0;
 };
@@ -547,9 +547,10 @@ public:
 
   static ObjectFile *create_internal_file(ArrayRef<OutputChunk *> output_chunks);
 
-  std::vector<InputSection *> sections;
+  std::string name;
   StringRef archive_name;
   ELFFile<ELF64LE> obj;
+  std::vector<InputSection *> sections;
   std::vector<Symbol *> symbols;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
@@ -557,7 +558,6 @@ public:
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
   bool is_dso;
   const bool is_in_archive;
-  std::string name;
 
   u64 local_symtab_size = 0;
   u64 local_strtab_size = 0;
