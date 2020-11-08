@@ -419,6 +419,9 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     ArrayRef<ELF64LE::Word> entries = pair.second;
     for (u32 i : entries)
       sections[i] = nullptr;
+
+    static Counter counter("removed_comdat_mem");
+    counter.inc(entries.size());
   }
 }
 
