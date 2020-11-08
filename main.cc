@@ -206,9 +206,9 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
   for (ArrayRef<std::vector<InputSection *>> group : groups)
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
-
-  for (int i = 0; i < sizes.size(); i++)
+  tbb::parallel_for(0, (int)sizes.size(), [&](int i) {
     OutputSection::instances[i]->sections.reserve(sizes[i]);
+  });
 
   for (ArrayRef<std::vector<InputSection *>> group : groups) {
     for (int i = 0; i < group.size(); i++) {
