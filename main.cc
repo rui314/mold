@@ -879,7 +879,8 @@ int main(int argc, char **argv) {
   // Add ELF header, program header and .interp to the output.
   output_chunks.insert(output_chunks.begin(), out::ehdr);
   output_chunks.insert(output_chunks.begin() + 1, out::phdr);
-  // output_chunks.insert(output_chunks.begin() + 2, out::interp);
+  if (out::interp)
+    output_chunks.insert(output_chunks.begin() + 2, out::interp);
 
   // Add a string table for section names.
   output_chunks.push_back(out::shstrtab);
