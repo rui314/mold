@@ -208,11 +208,9 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
-  tbb::parallel_for(0, (int)sizes.size(), [&](int i) {
-    OutputSection::instances[i]->sections.reserve(sizes[i]);
-  });
-
   tbb::parallel_for(0, num_osec, [&](int j) {
+    OutputSection::instances[j]->sections.reserve(sizes[j]);
+
     for (int i = 0; i < groups.size(); i++) {
       std::vector<InputSection *> &sections = OutputSection::instances[j]->sections;
       sections.insert(sections.end(), groups[i][j].begin(), groups[i][j].end());
