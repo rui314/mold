@@ -206,6 +206,7 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
   for (ArrayRef<std::vector<InputSection *>> group : groups)
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
+
   tbb::parallel_for(0, (int)sizes.size(), [&](int i) {
     OutputSection::instances[i]->sections.reserve(sizes[i]);
   });
@@ -216,6 +217,37 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
       sections.insert(sections.end(), group[i].begin(), group[i].end());
     }
   }
+#elif 1
+  int num_osec = OutputSection::instances.size();
+  std::vector<std::vector<int>> sizes(files.size(), std::vector<int>(num_osec));
+
+  tbb::parallel_for(0, (int)files.size(), [&](int i) {
+    for (InputSection *isec : files[i]->sections) {
+      if (isec) {
+        OutputSection *osec = isec->output_section;
+        sizes[i][osec->idx]++;
+      }
+    }
+  });
+
+  std::vector<std::vector<int>> offsets(files.size() + 1, std::vector<int>(num_osec));
+
+  for (int i = 1; i < files.size() + 1; i++)
+    for (int j = 0; j < num_osec; j++)
+      offsets[i][j] = offsets[i - 1][j] + sizes[i - 1][j];
+
+  tbb::parallel_for(0, num_osec, [&](int j) {
+    OutputSection::instances[j]->sections.resize(offsets[files.size()][j]);
+  });
+
+  tbb::parallel_for(0, (int)files.size(), [&](int i) {
+    for (InputSection *isec : files[i]->sections) {
+      if (isec) {
+        OutputSection *osec = isec->output_section;
+        osec->sections[offsets[i][osec->idx]++] = isec;
+      }
+    }
+  });
 #else
   for (ObjectFile *file : files) {
     for (InputSection *isec : file->sections) {
