@@ -20,7 +20,10 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
                            (u64)osec->shdr.sh_addralign)
                  << osec->name << "\n";
 
-    for (InputChunk *mem : osec->members) {
+    if (osec->kind != OutputChunk::REGULAR)
+      continue;
+
+    for (InputChunk *mem : ((OutputSection *)osec)->members) {
       llvm::outs() << format("%16llx %8llx %5lld         ",
                              osec->shdr.sh_addr + mem->offset,
                              (u64)mem->shdr.sh_size,

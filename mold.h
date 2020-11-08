@@ -271,7 +271,7 @@ inline u64 align_to(u64 val, u64 align) {
 
 class OutputChunk {
 public:
-  enum Kind : u8 { REGULAR, SYNTHETIC };
+  enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
@@ -282,13 +282,12 @@ public:
   int shndx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
-  std::vector<InputChunk *> members;
 };
 
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  OutputEhdr() : OutputChunk(SYNTHETIC) {
+  OutputEhdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_size = sizeof(ELF64LE::Ehdr);
   }
@@ -299,7 +298,7 @@ public:
 // Section header
 class OutputShdr : public OutputChunk {
 public:
-  OutputShdr() : OutputChunk(SYNTHETIC) {
+  OutputShdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
   }
 
@@ -325,7 +324,7 @@ public:
     std::vector<OutputChunk *> members;
   };
 
-  OutputPhdr() : OutputChunk(SYNTHETIC) {
+  OutputPhdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
   }
 
@@ -345,7 +344,7 @@ public:
   static OutputSection *get_instance(StringRef name, u64 flags, u32 type);
 
   OutputSection(StringRef name, u64 flags, u32 type)
-    : OutputChunk(SYNTHETIC) {
+    : OutputChunk(REGULAR) {
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
@@ -368,6 +367,7 @@ public:
 
   static inline std::vector<OutputSection *> instances;
 
+  std::vector<InputChunk *> members;
   u32 idx;
 };
 

@@ -417,7 +417,7 @@ create_shdr(ArrayRef<OutputChunk *> output_chunks) {
 
   int shndx = 1;
   for (OutputChunk *chunk : output_chunks) {
-    if (!chunk->name.empty()) {
+    if (chunk->kind != OutputChunk::HEADER) {
       vec.push_back(&chunk->shdr);
       chunk->shndx = shndx++;
     }
@@ -552,7 +552,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
 
   // __bss_start
   for (OutputChunk *chunk : output_chunks) {
-    if (chunk->name == ".bss" && !chunk->members.empty()) {
+    if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
       start(chunk, out::__bss_start);
       break;
     }
@@ -587,7 +587,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
 
   // _end, end, _etext, etext, _edata and edata
   for (OutputChunk *chunk : output_chunks) {
-    if (chunk->members.empty())
+    if (chunk->kind == OutputChunk::HEADER)
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
