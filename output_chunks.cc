@@ -88,13 +88,6 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   return new OutputSection(name, flags, type);
 }
 
-MergedSection::MergedSection(StringRef name, u64 flags, u32 type) {
-  this->name = name;
-  shdr.sh_flags = flags;
-  shdr.sh_type = type;
-  shdr.sh_addralign = 1;
-}
-
 MergedSection *
 MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);

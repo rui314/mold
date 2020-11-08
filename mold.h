@@ -271,11 +271,14 @@ inline u64 align_to(u64 val, u64 align) {
 
 class OutputChunk {
 public:
-  OutputChunk() { shdr.sh_addralign = 1; }
+  enum Kind : u8 { REGULAR, SYNTHETIC };
+
+  OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
   virtual void copy_to(u8 *buf) {}
 
   StringRef name;
+  Kind kind;
   int shndx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
@@ -285,7 +288,7 @@ public:
 // ELF header
 class OutputEhdr : public OutputChunk {
 public:
-  OutputEhdr() {
+  OutputEhdr() : OutputChunk(SYNTHETIC) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_size = sizeof(ELF64LE::Ehdr);
   }
@@ -296,7 +299,9 @@ public:
 // Section header
 class OutputShdr : public OutputChunk {
 public:
-  OutputShdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputShdr() : OutputChunk(SYNTHETIC) {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+  }
 
   void copy_to(u8 *buf) override {
     auto *p = (ELF64LE::Shdr *)(buf + shdr.sh_offset);
@@ -320,7 +325,10 @@ public:
     std::vector<OutputChunk *> members;
   };
 
-  OutputPhdr() { shdr.sh_flags = llvm::ELF::SHF_ALLOC; }
+  OutputPhdr() : OutputChunk(SYNTHETIC) {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+  }
+
   void copy_to(u8 *buf) override;
 
   void set_entries(std::vector<Entry> vec) {
@@ -336,7 +344,8 @@ class OutputSection : public OutputChunk {
 public:
   static OutputSection *get_instance(StringRef name, u64 flags, u32 type);
 
-  OutputSection(StringRef name, u64 flags, u32 type) {
+  OutputSection(StringRef name, u64 flags, u32 type)
+    : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
@@ -364,7 +373,7 @@ public:
 
 class InterpSection : public OutputChunk {
 public:
-  InterpSection() {
+  InterpSection() : OutputChunk(SYNTHETIC) {
     name = ".interp";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
@@ -382,7 +391,7 @@ private:
 
 class GotSection : public OutputChunk {
 public:
-  GotSection(StringRef name) {
+  GotSection(StringRef name) : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
@@ -392,7 +401,7 @@ public:
 
 class PltSection : public OutputChunk {
 public:
-  PltSection() {
+  PltSection() : OutputChunk(SYNTHETIC) {
     this->name = ".plt";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
@@ -408,7 +417,7 @@ public:
 
 class RelPltSection : public OutputChunk {
 public:
-  RelPltSection() {
+  RelPltSection() : OutputChunk(SYNTHETIC) {
     this->name = ".rela.plt";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_RELA;
@@ -419,7 +428,7 @@ public:
 
 class ShstrtabSection : public OutputChunk {
 public:
-  ShstrtabSection() {
+  ShstrtabSection() : OutputChunk(SYNTHETIC) {
     this->name = ".shstrtab";
     contents = '\0';
     shdr.sh_flags = 0;
@@ -445,7 +454,7 @@ private:
 
 class SymtabSection : public OutputChunk {
 public:
-  SymtabSection() {
+  SymtabSection() : OutputChunk(SYNTHETIC) {
     this->name = ".symtab";
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
@@ -461,7 +470,7 @@ private:
 
 class StrtabSection : public OutputChunk {
 public:
-  StrtabSection() {
+  StrtabSection() : OutputChunk(SYNTHETIC) {
     this->name = ".strtab";
     shdr.sh_flags = 0;
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
@@ -478,7 +487,13 @@ public:
   ConcurrentMap<StringPiece> map;
 
 private:
-  MergedSection(StringRef name, u64 flags, u32 type);
+  MergedSection(StringRef name, u64 flags, u32 type)
+    : OutputChunk(SYNTHETIC) {
+    this->name = name;
+    shdr.sh_flags = flags;
+    shdr.sh_type = type;
+    shdr.sh_addralign = 1;
+  }
 };
 
 bool is_c_identifier(StringRef name);
