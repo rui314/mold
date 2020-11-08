@@ -270,7 +270,7 @@ public:
   int shndx = 0;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
-  std::vector<InputChunk *> sections;
+  std::vector<InputChunk *> members;
 };
 
 // ELF header
@@ -337,13 +337,13 @@ public:
 
   void copy_to(u8 *buf) override {
     if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      tbb::parallel_for_each(sections, [&](InputChunk *isec) { isec->copy_to(buf); });
+      tbb::parallel_for_each(members, [&](InputChunk *mem) { mem->copy_to(buf); });
   }
 
   bool empty() const {
-    if (!sections.empty())
-      for (InputChunk *chunk : sections)
-        if (chunk->shdr.sh_size)
+    if (!members.empty())
+      for (InputChunk *mem : members)
+        if (mem->shdr.sh_size)
           return false;
     return true;
   }

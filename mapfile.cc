@@ -13,21 +13,21 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
         map.insert({sym->input_section, sym});
 
   llvm::outs() << "             VMA     Size Align Out     In      Symbol\n";
-  for (OutputChunk *chunk : output_sections) {
+  for (OutputChunk *osec : output_sections) {
     llvm::outs() << format("%16llx %8llx %5lld ",
-                           (u64)chunk->shdr.sh_addr,
-                           (u64)chunk->shdr.sh_size,
-                           (u64)chunk->shdr.sh_addralign)
-                 << chunk->name << "\n";
+                           (u64)osec->shdr.sh_addr,
+                           (u64)osec->shdr.sh_size,
+                           (u64)osec->shdr.sh_addralign)
+                 << osec->name << "\n";
 
-    for (InputChunk *isec : chunk->sections) {
+    for (InputChunk *mem : osec->members) {
       llvm::outs() << format("%16llx %8llx %5lld         ",
-                             chunk->shdr.sh_addr + isec->offset,
-                             (u64)isec->shdr.sh_size,
-                             (u64)isec->shdr.sh_addralign)
-                   << toString(isec) << "\n";
+                             osec->shdr.sh_addr + mem->offset,
+                             (u64)mem->shdr.sh_size,
+                             (u64)mem->shdr.sh_addralign)
+                   << toString(mem) << "\n";
 
-      auto range = map.equal_range(isec);
+      auto range = map.equal_range(mem);
       for (auto it = range.first; it != range.second; ++it) {
         Symbol *sym = it->second;
         llvm::outs()

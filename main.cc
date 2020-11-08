@@ -209,10 +209,10 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
       sizes[i] += group[i].size();
 
   tbb::parallel_for(0, num_osec, [&](int j) {
-    OutputSection::instances[j]->sections.reserve(sizes[j]);
+    OutputSection::instances[j]->members.reserve(sizes[j]);
 
     for (int i = 0; i < groups.size(); i++) {
-      std::vector<InputChunk *> &sections = OutputSection::instances[j]->sections;
+      std::vector<InputChunk *> &sections = OutputSection::instances[j]->members;
       sections.insert(sections.end(), groups[i][j].begin(), groups[i][j].end());
     }
   });
@@ -220,10 +220,10 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 
 static void set_isec_offsets() {
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
-    if (osec->sections.empty())
+    if (osec->members.empty())
       return;
 
-    std::vector<ArrayRef<InputChunk *>> slices = split(osec->sections, 100000);
+    std::vector<ArrayRef<InputChunk *>> slices = split(osec->members, 100000);
     std::vector<u64> size(slices.size());
     std::vector<u32> alignments(slices.size());
 
@@ -553,7 +553,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
 
   // __bss_start
   for (OutputChunk *chunk : output_chunks) {
-    if (chunk->name == ".bss" && !chunk->sections.empty()) {
+    if (chunk->name == ".bss" && !chunk->members.empty()) {
       start(chunk, out::__bss_start);
       break;
     }
@@ -588,7 +588,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
 
   // _end, end, _etext, etext, _edata and edata
   for (OutputChunk *chunk : output_chunks) {
-    if (chunk->sections.empty())
+    if (chunk->members.empty())
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
