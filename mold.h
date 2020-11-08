@@ -51,6 +51,7 @@ using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
 
 class Symbol;
+class InputChunk;
 class InputSection;
 class ObjectFile;
 class OutputChunk;
@@ -216,21 +217,31 @@ inline std::string toString(Symbol sym) {
 // input_sections.cc
 //
 
-class InputSection {
+class InputChunk {
 public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
+  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
+
+  virtual void scan_relocations() {}
+  virtual void copy_to(u8 *buf) {}
+
+  ObjectFile *file;
+  const ELF64LE::Shdr &shdr;
+  OutputSection *output_section = nullptr;
+
+  StringRef name;
+  u32 offset;
+};
+
+class InputSection : public InputChunk {
+public:
+  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
+    : InputChunk(file, shdr, name) {}
 
   void copy_to(u8 *buf);
   void scan_relocations();
 
-  ObjectFile *file;
-  const ELF64LE::Shdr &shdr;
-  OutputSection *output_section;
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
-
-  StringRef name;
-  u32 offset;
 
   MergedSection *merged_section = nullptr;
   std::vector<StringPieceRef> pieces;

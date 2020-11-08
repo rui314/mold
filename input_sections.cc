@@ -3,10 +3,9 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-InputSection::InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
-  : file(file), shdr(shdr) {
-  this->name = name;
-  this->output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
+InputChunk::InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
+  : file(file), shdr(shdr), name(name) {
+  output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
 
   u64 align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
   if (align > UINT32_MAX)
