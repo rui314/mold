@@ -71,6 +71,8 @@ void ObjectFile::initialize_sections() {
       counter.inc();
 
       StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
+      if (name == ".eh_frame")
+        break;
       this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
@@ -214,7 +216,7 @@ void ObjectFile::initialize_mergeable_sections() {
           continue;
 
         Symbol &sym = *symbols[sym_idx];
-        if (sym.type != STT_SECTION)
+        if (sym.type != STT_SECTION || !sym.input_section)
           continue;
 
         MergeableSection *mergeable = sym.input_section->mergeable;

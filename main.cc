@@ -639,38 +639,35 @@ static FileOutputBuffer *open_output_file(u64 filesize) {
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
-  std::vector<u64> symtab_off(files.size() + 1);
-  std::vector<u64> strtab_off(files.size() + 1);
-  symtab_off[0] = sizeof(ELF64LE::Sym);
-  strtab_off[0] = 1;
+  std::vector<u64> local_symtab_off(files.size() + 1);
+  std::vector<u64> local_strtab_off(files.size() + 1);
+  local_symtab_off[0] = sizeof(ELF64LE::Sym);
+  local_strtab_off[0] = 1;
 
   for (int i = 1; i < files.size() + 1; i++) {
-    symtab_off[i] = symtab_off[i - 1] + files[i - 1]->local_symtab_size;
-    strtab_off[i] = strtab_off[i - 1] + files[i - 1]->local_strtab_size;
+    local_symtab_off[i] = local_symtab_off[i - 1] + files[i - 1]->local_symtab_size;
+    local_strtab_off[i] = local_strtab_off[i - 1] + files[i - 1]->local_strtab_size;
   }
 
-  out::symtab->shdr.sh_info = symtab_off.back() / sizeof(ELF64LE::Sym);
+  out::symtab->shdr.sh_info = local_symtab_off.back() / sizeof(ELF64LE::Sym);
 
-  tbb::parallel_for((size_t)0, files.size(),
-                    [&](size_t i) {
-                      files[i]->write_local_symtab(buf, symtab_off[i], strtab_off[i]);
-                    });
-
-  symtab_off[0] = symtab_off.back();
-  strtab_off[0] = strtab_off.back();
+  std::vector<u64> global_symtab_off(files.size() + 1);
+  std::vector<u64> global_strtab_off(files.size() + 1);
+  global_symtab_off[0] = local_symtab_off.back();
+  global_strtab_off[0] = local_strtab_off.back();
 
   for (int i = 1; i < files.size() + 1; i++) {
-    symtab_off[i] = symtab_off[i - 1] + files[i - 1]->global_symtab_size;
-    strtab_off[i] = strtab_off[i - 1] + files[i - 1]->global_strtab_size;
+    global_symtab_off[i] = global_symtab_off[i - 1] + files[i - 1]->global_symtab_size;
+    global_strtab_off[i] = global_strtab_off[i - 1] + files[i - 1]->global_strtab_size;
   }
 
-  assert(symtab_off.back() == out::symtab->shdr.sh_size);
-  assert(strtab_off.back() == out::strtab->shdr.sh_size);
+  assert(global_symtab_off.back() == out::symtab->shdr.sh_size);
+  assert(global_strtab_off.back() == out::strtab->shdr.sh_size);
 
-  tbb::parallel_for((size_t)0, files.size(),
-                    [&](size_t i) {
-                      files[i]->write_global_symtab(buf, symtab_off[i], strtab_off[i]);
-                    });
+  tbb::parallel_for((size_t)0, files.size(), [&](size_t i) {
+    files[i]->write_local_symtab(buf, local_symtab_off[i], local_strtab_off[i]);
+    files[i]->write_global_symtab(buf, global_symtab_off[i], global_strtab_off[i]);
+  });
 }
 
 static int get_thread_count(InputArgList &args) {
