@@ -380,6 +380,21 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
+static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
+  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+    for (InputSection *isec : file->mergeable_sections) {
+      MergedSection *osec = isec->merged_section;
+      u8 *base = buf + osec->shdr.sh_offset + isec->merged_offset;
+
+      for (StringPieceRef &ref : isec->pieces) {
+        StringPiece &piece = *ref.piece;
+        if (piece.isec == isec)
+          memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
+      }
+    }
+  });
+}
+
 // We want to sort output sections in the following order.
 //
 // alloc readonly data
@@ -963,19 +978,7 @@ int main(int argc, char **argv) {
   // Fill mergeable string sections
   {
     MyTimer t("write_merged_strings", copy);
-
-    tbb::parallel_for_each(files, [&](ObjectFile *file) {
-      for (InputSection *isec : file->mergeable_sections) {
-        MergedSection *osec = isec->merged_section;
-        u8 *base = buf + osec->shdr.sh_offset + isec->merged_offset;
-
-        for (StringPieceRef &ref : isec->pieces) {
-          StringPiece &piece = *ref.piece;
-          if (piece.isec == isec)
-            memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
-        }
-      }
-    });
+    write_merged_strings(buf, files);
   }
 
   {
