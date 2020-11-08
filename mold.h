@@ -53,6 +53,7 @@ using llvm::object::ELFFile;
 class Symbol;
 class InputChunk;
 class InputSection;
+class MergeableSection;
 class ObjectFile;
 class OutputChunk;
 class OutputSection;

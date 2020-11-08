@@ -141,10 +141,6 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
 }
 
 static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
-  static Counter counter("merged_strings");
-  for (MergedSection *osec : MergedSection::instances)
-    counter.inc(osec->map.size());
-
   // Resolve mergeable string pieces
   tbb::parallel_for_each(files, [](ObjectFile *file) {
     for (InputSection *isec : file->mergeable_sections) {
@@ -179,6 +175,10 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
       osec->shdr.sh_size += isec->merged_size;
     }
   }
+
+  static Counter counter("merged_strings");
+  for (MergedSection *osec : MergedSection::instances)
+    counter.inc(osec->map.size());
 }
 
 static void bin_sections(std::vector<ObjectFile *> &files) {
