@@ -182,7 +182,7 @@ public:
 
   StringRef name;
   ObjectFile *file = nullptr;
-  InputChunk *input_section = nullptr;
+  InputSection *input_section = nullptr;
   StringPieceRef piece_ref;
 
   u64 value = 0;
@@ -246,13 +246,13 @@ public:
 
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
+  MergeableSection *mergeable = nullptr;
 };
 
 class MergeableSection : public InputChunk {
 public:
   MergeableSection(InputSection *isec, ArrayRef<u8> contents);
 
-  InputSection *original;
   MergedSection &parent;
   std::vector<StringPieceRef> pieces;
   u32 size = 0;

@@ -158,7 +158,6 @@ void InputSection::scan_relocations() {
 
 MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
   : InputChunk(MERGEABLE, isec->file, isec->shdr, isec->name),
-    original(isec),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
                                         isec->shdr.sh_type)) {
   StringRef data((const char *)&contents[0], contents.size());

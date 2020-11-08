@@ -185,6 +185,7 @@ void ObjectFile::initialize_mergeable_sections() {
     if (isec && is_mergeable(isec->shdr)) {
       ArrayRef<u8> contents = CHECK(obj.getSectionContents(isec->shdr), this);
       mergeable_sections.emplace_back(isec, contents);
+      isec->mergeable = &mergeable_sections.back();
       sections[i] = nullptr;
     }
   }
@@ -215,21 +216,13 @@ void ObjectFile::initialize_mergeable_sections() {
         Symbol &sym = *symbols[sym_idx];
         if (sym.type != STT_SECTION)
           continue;
-        if (!is_mergeable(sym.input_section->shdr))
+
+        MergeableSection *mergeable = sym.input_section->mergeable;
+        if (!mergeable)
           continue;
 
-        ArrayRef<StringPieceRef> pieces;
-        for (MergeableSection &isec : mergeable_sections) {
-          if (isec.original == sym.input_section) {
-            pieces = isec.pieces;
-            break;
-          }
-        }
-
-        assert(!pieces.empty());
-
         u32 offset = sym.value + rel.r_addend;
-        const StringPieceRef *ref = binary_search(pieces, offset);
+        const StringPieceRef *ref = binary_search(mergeable->pieces, offset);
         if (!ref)
           error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
 
