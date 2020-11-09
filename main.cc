@@ -6,6 +6,7 @@
 
 #include <fcntl.h>
 #include <iostream>
+#include <libgen.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -649,15 +650,20 @@ static void unlink_async(tbb::task_group &tg, StringRef path) {
   tg.run([=]() { close(fd); });
 }
 
-static FileOutputBuffer *open_output_file(u64 filesize) {
-  Expected<std::unique_ptr<FileOutputBuffer>> buf_or_err =
-    FileOutputBuffer::create(config.output, filesize, FileOutputBuffer::F_executable);
+static u8 *open_output_file(u64 filesize) {
+  int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777);
+  if (fd == -1)
+    error("cannot open " + config.output + ": " + strerror(errno));
 
-  if (!buf_or_err)
-    error("failed to open " + config.output + ": " +
-          llvm::toString(buf_or_err.takeError()));
+  fallocate(fd, 0, 0, filesize);  
 
-  return std::move(*buf_or_err).release();
+  void *addr = mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                    MAP_SHARED, fd, 0);
+  if (addr == MAP_FAILED)
+    error(config.output + ": mmap failed: " + strerror(errno));
+  close(fd);
+
+  return (u8 *)addr;
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
@@ -931,14 +937,12 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  FileOutputBuffer *output_buffer;
+  u8 *buf = nullptr;
 
   {
     MyTimer t("open_output_file");
-    output_buffer = open_output_file(filesize);
+    buf = open_output_file(filesize);
   }
-
-  u8 *buf = output_buffer->getBufferStart();
 
   // Fill .symtab and .strtab
   {
@@ -968,8 +972,8 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("commit", copy);
-    if (auto e = output_buffer->commit())
-      error("failed to write to the output file: " + toString(std::move(e)));
+    if (munmap(buf, filesize) == -1)
+      error("munmap failed");
   }
 
   total_timer.stopTimer();
