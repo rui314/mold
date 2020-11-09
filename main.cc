@@ -290,10 +290,10 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
     relplt_offset += file->num_relplt * sizeof(ELF64LE::Rela);
   }
 
-  out::got->shdr.sh_size = got_offset;
-  out::gotplt->shdr.sh_size = gotplt_offset;
-  out::plt->shdr.sh_size = plt_offset;
-  out::relplt->shdr.sh_size = relplt_offset;
+  out::got.shdr.sh_size = got_offset;
+  out::gotplt.shdr.sh_size = gotplt_offset;
+  out::plt.shdr.sh_size = plt_offset;
+  out::relplt.shdr.sh_size = relplt_offset;
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
@@ -337,9 +337,9 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
 }
 
 static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
-  u8 *got = buf + out::got->shdr.sh_offset;
-  u8 *plt = buf + out::plt->shdr.sh_offset;
-  u8 *relplt = buf + out::relplt->shdr.sh_offset;
+  u8 *got = buf + out::got.shdr.sh_offset;
+  u8 *plt = buf + out::plt.shdr.sh_offset;
+  u8 *relplt = buf + out::relplt.shdr.sh_offset;
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
@@ -356,13 +356,13 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
 
       if (flags & Symbol::NEEDS_PLT) {
         // Write a .plt entry
-        u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
-        u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
-        out::plt->write_entry(plt + sym->plt_offset, S - P - 6);
+        u64 S = out::gotplt.shdr.sh_addr + sym->gotplt_offset;
+        u64 P = out::plt.shdr.sh_addr + sym->plt_offset;
+        out::plt.write_entry(plt + sym->plt_offset, S - P - 6);
 
         // Write a .rela.dyn entry
         auto *rel = (ELF64LE::Rela *)(relplt + sym->relplt_offset);
-        rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
+        rel->r_offset = out::gotplt.shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
         rel->r_addend = sym->get_addr();
       }
@@ -457,11 +457,11 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   };
 
   // Create a PT_PHDR for the program header itself.
-  add(PT_PHDR, PF_R, 8, {out::phdr});
+  add(PT_PHDR, PF_R, 8, {&out::phdr});
 
   // Create an PT_INTERP.
-  if (out::interp)
-    add(PT_INTERP, PF_R, 1, {out::interp});
+  if (!config.is_static)
+    add(PT_INTERP, PF_R, 1, {&out::interp});
 
   // Create PT_LOAD segments.
   bool first = true;
@@ -572,14 +572,14 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
-      out::__ehdr_start->value = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+      out::__ehdr_start->value = out::ehdr.shdr.sh_addr - chunk->shdr.sh_addr;
       break;
     }
   }
 
   // __rela_iplt_start and __rela_iplt_end
-  start(out::relplt, out::__rela_iplt_start);
-  stop(out::relplt, out::__rela_iplt_end);
+  start(&out::relplt, out::__rela_iplt_start);
+  stop(&out::relplt, out::__rela_iplt_end);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk *chunk : output_chunks) {
@@ -659,7 +659,7 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
     local_strtab_off[i] = local_strtab_off[i - 1] + files[i - 1]->local_strtab_size;
   }
 
-  out::symtab->shdr.sh_info = local_symtab_off.back() / sizeof(ELF64LE::Sym);
+  out::symtab.shdr.sh_info = local_symtab_off.back() / sizeof(ELF64LE::Sym);
 
   std::vector<u64> global_symtab_off(files.size() + 1);
   std::vector<u64> global_strtab_off(files.size() + 1);
@@ -671,8 +671,8 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
     global_strtab_off[i] = global_strtab_off[i - 1] + files[i - 1]->global_strtab_size;
   }
 
-  assert(global_symtab_off.back() == out::symtab->shdr.sh_size);
-  assert(global_strtab_off.back() == out::strtab->shdr.sh_size);
+  assert(global_symtab_off.back() == out::symtab.shdr.sh_size);
+  assert(global_strtab_off.back() == out::strtab.shdr.sh_size);
 
   tbb::parallel_for((size_t)0, files.size(), [&](size_t i) {
     files[i]->write_local_symtab(buf, local_symtab_off[i], local_strtab_off[i]);
@@ -820,34 +820,15 @@ int main(int argc, char **argv) {
   std::vector<OutputChunk *> output_chunks;
 
   for (OutputSection *osec : OutputSection::instances)
-    if (osec->shdr.sh_size)
-      output_chunks.push_back(osec);
-
+    output_chunks.push_back(osec);
   for (MergedSection *osec : MergedSection::instances)
-    if (osec->shdr.sh_size)
-      output_chunks.push_back(osec);
+    output_chunks.push_back(osec);
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
   ObjectFile *internal_file = ObjectFile::create_internal_file(output_chunks);
   internal_file->priority = priority++;
   files.push_back(internal_file);
-
-  // Create linker-synthesized sections.
-  out::ehdr = new OutputEhdr;
-  out::phdr = new OutputPhdr;
-  out::shdr = new OutputShdr;
-  if (!config.is_static) {
-    out::interp = new InterpSection;
-    out::dynamic = new DynamicSection;
-  }
-  out::got = new GotSection(".got");
-  out::gotplt = new GotSection(".got.plt");
-  out::plt = new PltSection;
-  out::relplt = new RelPltSection;
-  out::shstrtab = new ShstrtabSection;
-  out::symtab = new SymtabSection;
-  out::strtab = new StrtabSection;
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
@@ -862,47 +843,46 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
     for (ObjectFile *file : files) {
-      out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
-      out::strtab->shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
+      out::symtab.shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
+      out::strtab.shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
     }
   }
 
   // Add synthetic sections.
-  if (out::got->shdr.sh_size)
-    output_chunks.push_back(out::got);
-  if (out::plt->shdr.sh_size)
-    output_chunks.push_back(out::plt);
-  if (out::gotplt->shdr.sh_size)
-    output_chunks.push_back(out::gotplt);
-  if (out::relplt->shdr.sh_size)
-    output_chunks.push_back(out::relplt);
-  output_chunks.push_back(out::shstrtab);
-  output_chunks.push_back(out::symtab);
-  output_chunks.push_back(out::strtab);
-  if (out::dynamic)
-    output_chunks.push_back(out::dynamic);
+  output_chunks.push_back(&out::got);
+  output_chunks.push_back(&out::plt);
+  output_chunks.push_back(&out::gotplt);
+  output_chunks.push_back(&out::relplt);
+  output_chunks.push_back(&out::dynamic);
+  output_chunks.push_back(&out::shstrtab);
+  output_chunks.push_back(&out::symtab);
+  output_chunks.push_back(&out::strtab);
 
+  output_chunks.erase(std::remove_if(output_chunks.begin(), output_chunks.end(),
+                                     [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
+                      output_chunks.end());
+  
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
   sort_output_chunks(output_chunks);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
-  output_chunks.insert(output_chunks.begin(), out::ehdr);
-  output_chunks.insert(output_chunks.begin() + 1, out::phdr);
+  output_chunks.insert(output_chunks.begin(), &out::ehdr);
+  output_chunks.insert(output_chunks.begin() + 1, &out::phdr);
   if (!config.is_static)
-    output_chunks.insert(output_chunks.begin() + 2, out::interp);
-  output_chunks.push_back(out::shdr);
+    output_chunks.insert(output_chunks.begin() + 2, &out::interp);
+  output_chunks.push_back(&out::shdr);
 
   // Fix .shstrtab contents.
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
-      chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
+      chunk->shdr.sh_name = out::shstrtab.add_string(chunk->name);
 
   // Create section header and program header contents.
-  out::shdr->set_entries(create_shdr(output_chunks));
-  out::phdr->set_entries(create_phdr(output_chunks));
-  out::symtab->shdr.sh_link = out::strtab->shndx;
+  out::shdr.set_entries(create_shdr(output_chunks));
+  out::phdr.set_entries(create_phdr(output_chunks));
+  out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
   u64 filesize = 0;

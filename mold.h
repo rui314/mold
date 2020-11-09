@@ -509,18 +509,18 @@ private:
 bool is_c_identifier(StringRef name);
 
 namespace out {
-inline OutputEhdr *ehdr;
-inline OutputShdr *shdr;
-inline OutputPhdr *phdr;
-inline InterpSection *interp;
-inline GotSection *got;
-inline GotSection *gotplt;
-inline PltSection *plt;
-inline RelPltSection *relplt;
-inline DynamicSection *dynamic;
-inline ShstrtabSection *shstrtab;
-inline SymtabSection *symtab;
-inline StrtabSection *strtab;
+inline OutputEhdr ehdr;
+inline OutputShdr shdr;
+inline OutputPhdr phdr;
+inline InterpSection interp;
+inline GotSection got(".got");
+inline GotSection gotplt(".gotplt");
+inline PltSection plt;
+inline RelPltSection relplt;
+inline DynamicSection dynamic;
+inline ShstrtabSection shstrtab;
+inline SymtabSection symtab;
+inline StrtabSection strtab;
 
 inline u64 tls_end;
 
