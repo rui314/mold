@@ -356,18 +356,8 @@ public:
     instances.push_back(this);
   }
 
-  void copy_to(u8 *buf) override {
-    if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
-      tbb::parallel_for_each(members, [&](InputChunk *mem) { mem->copy_to(buf); });
-  }
-
-  bool empty() const {
-    if (!members.empty())
-      for (InputChunk *mem : members)
-        if (mem->shdr.sh_size)
-          return false;
-    return true;
-  }
+  void copy_to(u8 *buf) override;
+  bool empty() const;
 
   static inline std::vector<OutputSection *> instances;
 

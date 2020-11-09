@@ -88,6 +88,19 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   return new OutputSection(name, flags, type);
 }
 
+void OutputSection::copy_to(u8 *buf) {
+  if (shdr.sh_type != llvm::ELF::SHT_NOBITS)
+    tbb::parallel_for_each(members, [&](InputChunk *mem) { mem->copy_to(buf); });
+}
+
+bool OutputSection::empty() const {
+  if (!members.empty())
+    for (InputChunk *mem : members)
+      if (mem->shdr.sh_size)
+        return false;
+  return true;
+}
+
 MergedSection *
 MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);
