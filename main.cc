@@ -397,6 +397,20 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
+static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
+                          u64 filesize) {
+  auto zero = [&](OutputChunk *chunk, u64 next_start) {
+    if (chunk->shdr.sh_type != SHT_NOBITS) {
+      u64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;
+      memset(buf + pos, 0, next_start - pos);
+    }
+  };
+
+  for (int i = 1; i < output_chunks.size(); i++)
+    zero(output_chunks[i - 1], output_chunks[i]->shdr.sh_offset);
+  zero(output_chunks.back(), filesize);
+}
+
 // We want to sort output sections in the following order.
 //
 // alloc readonly data
@@ -980,6 +994,12 @@ int main(int argc, char **argv) {
   {
     MyTimer t("write_merged_strings", copy);
     write_merged_strings(buf, files);
+  }
+
+  // Zero-clear paddings between sections
+  {
+    MyTimer t("clear_padding", copy);
+    clear_padding(buf, output_chunks, filesize);
   }
 
   // Commit
