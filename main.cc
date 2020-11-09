@@ -639,19 +639,19 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 }
 
-static std::pair<u8 *, int> open_output_file(u64 filesize) {
-  int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777);
+static u8 *open_output_file(u64 filesize) {
+  int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT, 0777);
   if (fd == -1)
     error("cannot open " + config.output + ": " + strerror(errno));
 
-  fallocate(fd, 0, 0, filesize);
+  if (ftruncate(fd, filesize))
+    error("ftruncate");
 
-  u8 *buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
-                       MAP_SHARED, fd, 0);
+  void *buf = mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
-
-  return {buf, fd};
+  close(fd);
+  return (u8 *)buf;
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
@@ -773,36 +773,6 @@ int main(int argc, char **argv) {
     MyTimer t("merge", parse);
     tbb::parallel_for_each(files, [](ObjectFile *file) {
       file->initialize_mergeable_sections();
-    });
-  }
-
-  u64 prealloc_size = 0;
-  if (struct stat st; stat(config.output.str().c_str(), &st) == 0)
-    prealloc_size = st.st_size * 1.2;
-
-  sys::fs::remove(config.output);
-
-  u8 *buf = nullptr;
-  int output_fd = -1;
-  if (prealloc_size)
-    std::tie(buf, output_fd) = open_output_file(prealloc_size);
-
-  // Prefaulting an output file
-  std::atomic_bool run_prefetch = ATOMIC_VAR_INIT(true);
-  tbb::task_group prefetch_tg;
-
-  if (buf) {
-    prefetch_tg.run([&]() {
-      MyTimer t("prefault");
-      u64 i = 0;
-      for (; run_prefetch && i < prealloc_size; i += PAGE_SIZE) {
-        u8 x = buf[i];
-        auto *loc = (std::atomic_uint8_t *)(buf + i);
-        while (!std::atomic_compare_exchange_strong(loc, &x, x));
-      }
-      llvm::outs() << "prefetcher progress: "
-                   << (i / PAGE_SIZE) << "/" << (prealloc_size / PAGE_SIZE)
-                   << "\n";
     });
   }
 
@@ -980,8 +950,11 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  if (!buf)
-    std::tie(buf, output_fd) = open_output_file(prealloc_size);
+  u8 *buf;
+  {
+    MyTimer t("open_file", before_copy);
+    buf = open_output_file(filesize);
+  }
 
   // Copy input sections to the output file
   {
@@ -1009,19 +982,10 @@ int main(int argc, char **argv) {
     write_merged_strings(buf, files);
   }
 
-  // Stop prefetcher
-  if (buf) {
-    MyTimer t("wait_prefetcher", before_copy);
-    run_prefetch = false;
-    prefetch_tg.wait();
-  }
-
   // Commit
   {
     MyTimer t("commit", copy);
     munmap(buf, filesize);
-    ftruncate(output_fd, filesize);
-    close(output_fd);
   }
 
   total_timer.stopTimer();
