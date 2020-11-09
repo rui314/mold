@@ -836,8 +836,10 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::phdr = new OutputPhdr;
   out::shdr = new OutputShdr;
-  if (!config.is_static)
+  if (!config.is_static) {
     out::interp = new InterpSection;
+    out::dynamic = new DynamicSection;
+  }
   out::got = new GotSection(".got");
   out::gotplt = new GotSection(".got.plt");
   out::plt = new PltSection;
@@ -864,7 +866,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Add output sections.
+  // Add synthetic sections.
   if (out::got->shdr.sh_size)
     output_chunks.push_back(out::got);
   if (out::plt->shdr.sh_size)
@@ -873,24 +875,23 @@ int main(int argc, char **argv) {
     output_chunks.push_back(out::gotplt);
   if (out::relplt->shdr.sh_size)
     output_chunks.push_back(out::relplt);
+  output_chunks.push_back(out::shstrtab);
+  output_chunks.push_back(out::symtab);
+  output_chunks.push_back(out::strtab);
+  if (out::dynamic)
+    output_chunks.push_back(out::dynamic);
 
+  // Sort the sections by section flags so that we'll have to create
+  // as few segments as possible.
   sort_output_chunks(output_chunks);
 
-  // Add ELF header, program header and .interp to the output.
+  // Add headers and sections that have to be at the beginning
+  // or the ending of a file.
   output_chunks.insert(output_chunks.begin(), out::ehdr);
   output_chunks.insert(output_chunks.begin() + 1, out::phdr);
   if (out::interp)
     output_chunks.insert(output_chunks.begin() + 2, out::interp);
-
-  // Add a string table for section names.
-  output_chunks.push_back(out::shstrtab);
-
-  // Add a section header.
   output_chunks.push_back(out::shdr);
-
-  // Add .symtab and .strtab.
-  output_chunks.push_back(out::symtab);
-  output_chunks.push_back(out::strtab);
 
   // Fix .shstrtab contents.
   for (OutputChunk *chunk : output_chunks)
