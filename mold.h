@@ -452,6 +452,16 @@ private:
   std::string contents;
 };
 
+class DynamicSection : public OutputChunk {
+public:
+  DynamicSection() : OutputChunk(SYNTHETIC) {
+    this->name = ".dynamic";
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
+    shdr.sh_addralign = 8;
+  }
+};
+
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection() : OutputChunk(SYNTHETIC) {
@@ -507,6 +517,7 @@ inline GotSection *got;
 inline GotSection *gotplt;
 inline PltSection *plt;
 inline RelPltSection *relplt;
+inline DynamicSection *dynamic;
 inline ShstrtabSection *shstrtab;
 inline SymtabSection *symtab;
 inline StrtabSection *strtab;
