@@ -647,7 +647,7 @@ static std::pair<u8 *, int> open_output_file(u64 filesize) {
   fallocate(fd, 0, 0, filesize);
 
   u8 *buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
-                       MAP_SHARED | MAP_POPULATE, fd, 0);
+                       MAP_SHARED, fd, 0);
   if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
 
@@ -776,14 +776,35 @@ int main(int argc, char **argv) {
     });
   }
 
-  u64 preallocate_size = 0;
-  {
-    struct stat st;
-    if (stat(config.output.str().c_str(), &st) == 0)
-      preallocate_size = st.st_size * 1.2;
-  }
+  u64 prealloc_size = 0;
+  if (struct stat st; stat(config.output.str().c_str(), &st) == 0)
+    prealloc_size = st.st_size * 1.2;
 
   sys::fs::remove(config.output);
+
+  u8 *buf = nullptr;
+  int output_fd = -1;
+  if (prealloc_size)
+    std::tie(buf, output_fd) = open_output_file(prealloc_size);
+
+  // Prefaulting an output file
+  std::atomic_bool run_prefetch = ATOMIC_VAR_INIT(true);
+  tbb::task_group prefetch_tg;
+
+  if (buf) {
+    prefetch_tg.run([&]() {
+      MyTimer t("prefault");
+      u64 i = 0;
+      for (; run_prefetch && i < prealloc_size; i += PAGE_SIZE) {
+        u8 x = buf[i];
+        auto *loc = (std::atomic_uint8_t *)(buf + i);
+        while (!std::atomic_compare_exchange_strong(loc, &x, x));
+      }
+      llvm::outs() << "prefetcher progress: "
+                   << (i / PAGE_SIZE) << "/" << (prealloc_size / PAGE_SIZE)
+                   << "\n";
+    });
+  }
 
   Timer total_timer("total", "total");
   total_timer.startTimer();
@@ -939,20 +960,6 @@ int main(int argc, char **argv) {
     filesize = set_osec_offsets(output_chunks);
   }
 
-  // Create an output file
-  u8 *buf = nullptr;
-  {
-    MyTimer t("open_mmap", before_copy);
-    buf = (u8 *)mmap(nullptr, align_to(filesize, PAGE_SIZE),
-                     PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (buf == MAP_FAILED)
-      error("mmap failed");
-
-    if (madvise(buf, filesize, MADV_HUGEPAGE) == -1)
-      error("madvise failed");
-  }
-
   // Assign symbols to GOT offsets
   {
     MyTimer t("assign_got_offsets", before_copy);
@@ -971,6 +978,10 @@ int main(int argc, char **argv) {
     if (shdr.sh_flags & SHF_TLS)
       out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
   }
+
+  // Create an output file
+  if (!buf)
+    std::tie(buf, output_fd) = open_output_file(prealloc_size);
 
   // Copy input sections to the output file
   {
@@ -998,19 +1009,19 @@ int main(int argc, char **argv) {
     write_merged_strings(buf, files);
   }
 
+  // Stop prefetcher
+  if (buf) {
+    MyTimer t("wait_prefetcher", before_copy);
+    run_prefetch = false;
+    prefetch_tg.wait();
+  }
+
+  // Commit
   {
     MyTimer t("commit", copy);
-
-    int fd = open(config.output.str().c_str(),
-                  O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0777);
-    if (fd == -1)
-      error("cannot open " + config.output + ": " + strerror(errno));
-
-    fallocate(fd, 0, 0, filesize);
-    {
-      MyTimer t("parallel_write");
-      parallel_write(fd, buf, align_to(filesize, PAGE_SIZE));
-    }
+    munmap(buf, filesize);
+    ftruncate(output_fd, filesize);
+    close(output_fd);
   }
 
   total_timer.stopTimer();
