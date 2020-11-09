@@ -816,10 +816,11 @@ int main(int argc, char **argv) {
     set_isec_offsets();
   }
 
+  // Create a list of output sections.
   std::vector<OutputChunk *> output_chunks;
 
   for (OutputSection *osec : OutputSection::instances)
-    if (!osec->empty())
+    if (osec->shdr.sh_size)
       output_chunks.push_back(osec);
 
   for (MergedSection *osec : MergedSection::instances)
