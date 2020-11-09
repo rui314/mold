@@ -707,6 +707,27 @@ static void parallel_memcpy(u8 *dst, u8 *src, u64 size) {
   memcpy(dst + num_units * unit, src + num_units * unit, size % unit);
 }
 
+void parallel_write(int fd, u8 *buf, u64 size) {
+  u64 unit = 4 * 1024 * 1024;
+  u64 num_units = size / unit;
+
+  auto write_loop = [&](u64 off, u64 size) {
+    while (size) {
+      size_t n = pwrite(fd, buf + off, size, off);
+      if (n == -1)
+        error("write failed");
+      off += n;
+      size -= n;
+    }
+  };
+
+  tbb::parallel_for((u64)0, num_units, [&](u64 i) {
+    write_loop(unit * i, unit);
+  });
+
+  write_loop(num_units * unit, size % unit);
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -764,35 +785,8 @@ int main(int argc, char **argv) {
 
   sys::fs::remove(config.output);
 
-  //  Timer total_timer("total", "total");
-  //  total_timer.startTimer();
-
-  u8 *buf = nullptr;
-  int output_fd = -1;
-
-  // Speculatively create an output file
-  if (preallocate_size) {
-    MyTimer t("preopen_output_file");
-    std::tie(buf, output_fd) = open_output_file(preallocate_size);
-    //    for (u64 i = 0; i < preallocate_size; i += PAGE_SIZE)
-    //      buf[i] = 0;
-    madvise(buf, preallocate_size, MADV_WILLNEED);
-  }
-
   Timer total_timer("total", "total");
   total_timer.startTimer();
-
-  // Prefaulting an output file
-  std::atomic_bool run_prefetch = ATOMIC_VAR_INIT(true);
-#if 0
-  tbb::task_arena arena(1, 1);
-  if (buf) {
-    arena.execute([&]() {
-      for (u64 i = 0; run_prefetch && i < preallocate_size; i += PAGE_SIZE)
-        volatile u8 x = buf[i];
-    });
-  }
-#endif
 
   // Set priorities to files
   int priority = 1;
@@ -946,10 +940,17 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
+  u8 *buf = nullptr;
   {
-    MyTimer t("open_output_file", before_copy);
-    if (!buf)
-      std::tie(buf, output_fd) = open_output_file(filesize);
+    MyTimer t("open_mmap", before_copy);
+    buf = (u8 *)mmap(nullptr, align_to(filesize, PAGE_SIZE),
+                     PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (buf == MAP_FAILED)
+      error("mmap failed");
+
+    if (madvise(buf, filesize, MADV_HUGEPAGE) == -1)
+      error("madvise failed");
   }
 
   // Assign symbols to GOT offsets
@@ -974,14 +975,9 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy);
-    for (OutputChunk *chunk : output_chunks)
-      chunk->copy_to(buf);
-
-#if 0
     tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
       chunk->copy_to(buf);
     });
-#endif
   }
 
   // Fill .symtab and .strtab
@@ -1004,10 +1000,17 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("commit", copy);
-    run_prefetch = false;
-    ftruncate(output_fd, filesize);
-    if (munmap(buf, filesize) == -1)
-      error("munmap failed");
+
+    int fd = open(config.output.str().c_str(),
+                  O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0777);
+    if (fd == -1)
+      error("cannot open " + config.output + ": " + strerror(errno));
+
+    fallocate(fd, 0, 0, filesize);
+    {
+      MyTimer t("parallel_write");
+      parallel_write(fd, buf, align_to(filesize, PAGE_SIZE));
+    }
   }
 
   total_timer.stopTimer();
