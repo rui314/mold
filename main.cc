@@ -919,6 +919,10 @@ int main(int argc, char **argv) {
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(output_chunks);
 
+  // At this point, file layout is fixed. Beyond this, you can assume
+  // that symbol addresses including their GOT/PLT/etc addresses have
+  // a correct final value.
+
   for (OutputChunk *chunk : output_chunks) {
     ELF64LE::Shdr &shdr = chunk->shdr;
     if (shdr.sh_flags & SHF_TLS)
