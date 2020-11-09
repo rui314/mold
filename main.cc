@@ -639,31 +639,19 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 }
 
-static void unlink_async(tbb::task_group &tg, StringRef path) {
-  if (!sys::fs::exists(path) || !sys::fs::is_regular_file(path))
-    return;
-
-  int fd;
-  if (std::error_code ec = sys::fs::openFileForRead(path, fd))
-    return;
-  sys::fs::remove(path);
-  tg.run([=]() { close(fd); });
-}
-
-static u8 *open_output_file(u64 filesize) {
+static std::pair<u8 *, int> open_output_file(u64 filesize) {
   int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777);
   if (fd == -1)
     error("cannot open " + config.output + ": " + strerror(errno));
 
-  fallocate(fd, 0, 0, filesize);  
+  fallocate(fd, 0, 0, filesize);
 
-  void *addr = mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
-                    MAP_SHARED, fd, 0);
-  if (addr == MAP_FAILED)
+  u8 *buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_POPULATE, fd, 0);
+  if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
-  close(fd);
 
-  return (u8 *)addr;
+  return {buf, fd};
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
@@ -707,6 +695,16 @@ static int get_thread_count(InputArgList &args) {
     return n;
   }
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+}
+
+static void parallel_memcpy(u8 *dst, u8 *src, u64 size) {
+  u64 unit = 4 * 1024 * 1024;
+  u64 num_units = size / unit;
+
+  tbb::parallel_for((u64)0, num_units, [&](u64 off) {
+    memcpy(dst + off * unit, src + off * unit, unit);
+  });
+  memcpy(dst + num_units * unit, src + num_units * unit, size % unit);
 }
 
 int main(int argc, char **argv) {
@@ -757,8 +755,44 @@ int main(int argc, char **argv) {
     });
   }
 
+  u64 preallocate_size = 0;
+  {
+    struct stat st;
+    if (stat(config.output.str().c_str(), &st) == 0)
+      preallocate_size = st.st_size * 1.2;
+  }
+
+  sys::fs::remove(config.output);
+
+  //  Timer total_timer("total", "total");
+  //  total_timer.startTimer();
+
+  u8 *buf = nullptr;
+  int output_fd = -1;
+
+  // Speculatively create an output file
+  if (preallocate_size) {
+    MyTimer t("preopen_output_file");
+    std::tie(buf, output_fd) = open_output_file(preallocate_size);
+    //    for (u64 i = 0; i < preallocate_size; i += PAGE_SIZE)
+    //      buf[i] = 0;
+    madvise(buf, preallocate_size, MADV_WILLNEED);
+  }
+
   Timer total_timer("total", "total");
   total_timer.startTimer();
+
+  // Prefaulting an output file
+  std::atomic_bool run_prefetch = ATOMIC_VAR_INIT(true);
+#if 0
+  tbb::task_arena arena(1, 1);
+  if (buf) {
+    arena.execute([&]() {
+      for (u64 i = 0; run_prefetch && i < preallocate_size; i += PAGE_SIZE)
+        volatile u8 x = buf[i];
+    });
+  }
+#endif
 
   // Set priorities to files
   int priority = 1;
@@ -881,7 +915,7 @@ int main(int argc, char **argv) {
   output_chunks.erase(std::remove_if(output_chunks.begin(), output_chunks.end(),
                                      [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
                       output_chunks.end());
-  
+
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
   sort_output_chunks(output_chunks);
@@ -911,6 +945,13 @@ int main(int argc, char **argv) {
     filesize = set_osec_offsets(output_chunks);
   }
 
+  // Create an output file
+  {
+    MyTimer t("open_output_file", before_copy);
+    if (!buf)
+      std::tie(buf, output_fd) = open_output_file(filesize);
+  }
+
   // Assign symbols to GOT offsets
   {
     MyTimer t("assign_got_offsets", before_copy);
@@ -930,32 +971,23 @@ int main(int argc, char **argv) {
       out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
   }
 
-  tbb::task_group tg_unlink;
+  // Copy input sections to the output file
   {
-    MyTimer t("unlink");
-    unlink_async(tg_unlink, config.output);
-  }
+    MyTimer t("copy", copy);
+    for (OutputChunk *chunk : output_chunks)
+      chunk->copy_to(buf);
 
-  // Create an output file
-  u8 *buf = nullptr;
-
-  {
-    MyTimer t("open_output_file");
-    buf = open_output_file(filesize);
+#if 0
+    tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
+      chunk->copy_to(buf);
+    });
+#endif
   }
 
   // Fill .symtab and .strtab
   {
     MyTimer t("write_symtab", copy);
     write_symtab(buf, files);
-  }
-
-  // Copy input sections to the output file
-  {
-    MyTimer t("copy", copy);
-    tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
-      chunk->copy_to(buf);
-    });
   }
 
   // Fill .plt, .got, got.plt and .rela.plt sections
@@ -972,16 +1004,13 @@ int main(int argc, char **argv) {
 
   {
     MyTimer t("commit", copy);
+    run_prefetch = false;
+    ftruncate(output_fd, filesize);
     if (munmap(buf, filesize) == -1)
       error("munmap failed");
   }
 
   total_timer.stopTimer();
-
-  {
-    MyTimer t("unlink_wait");
-    tg_unlink.wait();
-  }
 
   if (config.print_map) {
     MyTimer t("print_map");
