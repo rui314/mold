@@ -245,8 +245,8 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
     : InputChunk(REGULAR, file, shdr, name) {}
 
-  void copy_to(u8 *buf);
-  void scan_relocations();
+  void copy_to(u8 *buf) override;
+  void scan_relocations() override;
 
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
