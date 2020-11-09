@@ -830,6 +830,8 @@ int main(int argc, char **argv) {
   internal_file->priority = priority++;
   files.push_back(internal_file);
 
+  // Beyond this point, no new symbols will be added to the result.
+
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   {
