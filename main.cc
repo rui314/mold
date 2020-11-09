@@ -4,7 +4,12 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileOutputBuffer.h"
 
+#include <fcntl.h>
 #include <iostream>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -104,22 +109,29 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
 }
 
 static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
-  auto mb_or_err = MemoryBuffer::getFile(path, -1, false);
-  if (auto ec = mb_or_err.getError())
-    error("cannot open " + path + ": " + ec.message());
+  int fd = open(path.str().c_str(), O_RDONLY);
+  if (fd == -1)
+    error("cannot open " + path);
 
-  std::unique_ptr<MemoryBuffer> &mb = *mb_or_err;
-  MemoryBufferRef mbref = mb->getMemBufferRef();
-  mb.release();
+  struct stat st;
+  if (fstat(fd, &st) == -1)
+    error(path + ": stat failed");
 
-  switch (identify_magic(mbref.getBuffer())) {
+  void *addr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (addr == MAP_FAILED)
+    error(path + ": mmap failed: " + strerror(errno));
+  close(fd);
+
+  auto &mb = *new MemoryBufferRef(StringRef((char *)addr, st.st_size), path);
+
+  switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
-    for (MemoryBufferRef member : get_archive_members(mbref))
+    for (MemoryBufferRef member : get_archive_members(mb))
       files.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
   case file_magic::elf_shared_object:
-    files.push_back(new ObjectFile(mbref, ""));
+    files.push_back(new ObjectFile(mb, ""));
     break;
   default:
     error(path + ": unknown file type");
