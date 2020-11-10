@@ -404,10 +404,10 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
 static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
                           u64 filesize) {
   auto zero = [&](OutputChunk *chunk, u64 next_start) {
-    if (chunk->shdr.sh_type != SHT_NOBITS) {
-      u64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;
-      memset(buf + pos, 0, next_start - pos);
-    }
+    u64 pos = chunk->shdr.sh_offset;
+    if (chunk->shdr.sh_type != SHT_NOBITS)
+      pos += chunk->shdr.sh_size;
+    memset(buf + pos, 0, next_start - pos);
   };
 
   for (int i = 1; i < output_chunks.size(); i++)
