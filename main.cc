@@ -666,8 +666,6 @@ static u8 *open_output_file(u64 filesize) {
   if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
   close(fd);
-
-  memset(buf, 0, filesize);
   return (u8 *)buf;
 }
 
@@ -988,6 +986,10 @@ int main(int argc, char **argv) {
   {
     MyTimer t("write_symtab", copy);
     write_symtab(buf, files);
+
+    // Rewrite the section header gbecause write_symtab updates
+    // .sytmab's sh_info.
+    out::shdr.copy_to(buf);
   }
 
   // Fill .plt, .got, got.plt and .rela.plt sections
