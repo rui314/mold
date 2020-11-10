@@ -469,17 +469,17 @@ static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> output_chunks) {
   return to_u8vector(vec);
 }
 
-static u32 to_phdr_flags(u64 sh_flags) {
+static u32 to_phdr_flags(OutputChunk *chunk) {
   u32 ret = PF_R;
-  if (sh_flags & SHF_WRITE)
+  if (chunk->shdr.sh_flags & SHF_WRITE)
     ret |= PF_W;
-  if (sh_flags & SHF_EXECINSTR)
+  if (chunk->shdr.sh_flags & SHF_EXECINSTR)
     ret |= PF_X;
   return ret;
 }
 
 static std::vector<OutputPhdr::Entry>
-create_phdr(ArrayRef<OutputChunk *> output_chunks) {
+create_phdr(ArrayRef<OutputChunk *> chunks) {
   std::vector<OutputPhdr::Entry> entries;
 
   auto add = [&](u32 type, u32 flags, u32 align, std::vector<OutputChunk *> members) {
@@ -490,6 +490,10 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
     entries.push_back({phdr, members});
   };
 
+  auto is_bss = [](OutputChunk *chunk) {
+    return chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS);
+  };
+
   // Create a PT_PHDR for the program header itself.
   add(PT_PHDR, PF_R, 8, {&out::phdr});
 
@@ -498,39 +502,29 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
     add(PT_INTERP, PF_R, 1, {&out::interp});
 
   // Create PT_LOAD segments.
-  bool first = true;
-  bool last_was_bss;
-
-  for (OutputChunk *chunk : output_chunks) {
-    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+  for (int i = 0, end = chunks.size(); i < end;) {
+    OutputChunk *first = chunks[i++];
+    if (!(first->shdr.sh_flags & SHF_ALLOC))
       break;
 
-    u32 flags = to_phdr_flags(chunk->shdr.sh_flags);
-    bool this_is_bss =
-      (chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS));
+    u32 flags = to_phdr_flags(first);
+    add(PT_LOAD, flags, PAGE_SIZE, {first});
 
-    if (first) {
-      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
-      last_was_bss = this_is_bss;
-      first = false;
-      continue;
-    }
+    if (!is_bss(first))
+      while (i < end && to_phdr_flags(chunks[i]) == flags && !is_bss(chunks[i]))
+        entries.back().members.push_back(chunks[i++]);
 
-    if (entries.back().phdr.p_flags != flags || (last_was_bss && !this_is_bss))
-      add(PT_LOAD, flags, PAGE_SIZE, {chunk});
-    else
-      entries.back().members.push_back(chunk);
-
-    last_was_bss = this_is_bss;
+    while (i < end && to_phdr_flags(chunks[i]) == flags && is_bss(chunks[i]))
+      entries.back().members.push_back(chunks[i++]);
   }
 
   // Create a PT_TLS.
-  for (int i = 0; i < output_chunks.size(); i++) {
-    if (output_chunks[i]->shdr.sh_flags & SHF_TLS) {
-      std::vector<OutputChunk *> vec = {output_chunks[i++]};
-      while (i < output_chunks.size() && (output_chunks[i]->shdr.sh_flags & SHF_TLS))
-        vec.push_back(output_chunks[i++]);
-      add(PT_TLS, to_phdr_flags(output_chunks[i]->shdr.sh_flags), 1, vec);
+  for (int i = 0; i < chunks.size(); i++) {
+    if (chunks[i]->shdr.sh_flags & SHF_TLS) {
+      std::vector<OutputChunk *> vec = {chunks[i++]};
+      while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS))
+        vec.push_back(chunks[i++]);
+      add(PT_TLS, to_phdr_flags(chunks[i]), 1, vec);
     }
   }
 
