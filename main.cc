@@ -375,6 +375,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
 
         // Write a .rela.dyn entry
         auto *rel = (ELF64LE::Rela *)(relplt + sym->relplt_offset);
+        memset(rel, 0, sizeof(*rel));
         rel->r_offset = out::gotplt.shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
         rel->r_addend = sym->get_addr();
@@ -665,10 +666,15 @@ static u8 *open_output_file(u64 filesize) {
   if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
   close(fd);
+
+  memset(buf, 0, filesize);
   return (u8 *)buf;
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
+  memset(buf + out::symtab.shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+  memset(buf + out::strtab.shdr.sh_offset, 0, 1);
+
   std::vector<u64> local_symtab_off(files.size() + 1);
   std::vector<u64> local_strtab_off(files.size() + 1);
   local_symtab_off[0] = sizeof(ELF64LE::Sym);
