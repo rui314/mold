@@ -354,6 +354,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *plt = buf + out::plt.shdr.sh_offset;
   u8 *relplt = buf + out::relplt.shdr.sh_offset;
 
+  memset(buf + out::gotplt.shdr.sh_offset, 0, out::gotplt.shdr.sh_size);
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
@@ -391,8 +393,10 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
 
       for (StringPieceRef &ref : isec.pieces) {
         StringPiece &piece = *ref.piece;
-        if (piece.isec == &isec)
+        if (piece.isec == &isec) {
           memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
+          base[piece.output_offset + piece.data.size()] = '\0';
+        }
       }
     }
   });
@@ -702,6 +706,7 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
     files[i]->write_local_symtab(buf, local_symtab_off[i], local_strtab_off[i]);
     files[i]->write_global_symtab(buf, global_symtab_off[i], global_strtab_off[i]);
   });
+
 }
 
 static int get_thread_count(InputArgList &args) {

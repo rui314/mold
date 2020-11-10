@@ -403,6 +403,7 @@ public:
   }
 
   void write_entry(u8 *buf, u32 value) {
+    memset(buf, 0, 16);
     buf[0] = 0xff;
     buf[1] = 0x25;
     *(u32 *)(buf + 2) = value;

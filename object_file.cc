@@ -117,7 +117,6 @@ void ObjectFile::initialize_symbols() {
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
 
-
     sym.file = this;
     sym.type = esym.getType();
     sym.value = esym.st_value;
@@ -501,7 +500,7 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
       esym.st_shndx = SHN_ABS;
 
     memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
-    strtab[strtab_off] = '\0';
+    strtab[strtab_off + sym.name.size()] = '\0';
     strtab_off += sym.name.size() + 1;
   }
 }
@@ -567,7 +566,7 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   // Update metadata
   for (Symbol *sym : obj->symbols)
     obj->local_strtab_size += sym->name.size() + 1;
-  obj->local_symtab_size = sizeof(ELF64LE::Sym) * obj->symbols.size();
+  obj->local_symtab_size = sizeof(ELF64LE::Sym) * (obj->symbols.size() - 1);
   obj->first_global = obj->symbols.size();
 
   // Add global symbols
