@@ -168,12 +168,12 @@ MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
     if (end == StringRef::npos)
       error(toString(this) + ": string is not null terminated");
 
-    StringRef substr = data.substr(0, end);
+    StringRef substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
     StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
     pieces.push_back({piece, offset});
-    offset += substr.size() + 1;
+    offset += substr.size();
   }
 
   static Counter counter("string_pieces");

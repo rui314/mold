@@ -183,7 +183,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
       for (StringPieceRef &ref : isec.pieces) {
         if (ref.piece->isec == &isec) {
           ref.piece->output_offset = offset;
-          offset += ref.piece->data.size() + 1;
+          offset += ref.piece->data.size();
         }
       }
       isec.size = offset;
@@ -393,10 +393,8 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
 
       for (StringPieceRef &ref : isec.pieces) {
         StringPiece &piece = *ref.piece;
-        if (piece.isec == &isec) {
+        if (piece.isec == &isec)
           memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
-          base[piece.output_offset + piece.data.size()] = '\0';
-        }
       }
     }
   });
