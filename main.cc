@@ -269,7 +269,7 @@ static void set_isec_offsets() {
 
     std::vector<u64> start(slices.size());
     for (int i = 1; i < slices.size(); i++)
-      start[i] = align_to(start[i - 1] + size[i], align);
+      start[i] = align_to(start[i - 1] + size[i - 1], align);
 
     tbb::parallel_for(1, (int)slices.size(), [&](int i) {
       for (InputChunk *isec : slices[i])

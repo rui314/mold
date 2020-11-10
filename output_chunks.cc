@@ -92,20 +92,19 @@ void OutputSection::copy_to(u8 *buf) {
   if (shdr.sh_type == llvm::ELF::SHT_NOBITS)
     return;
 
-  tbb::parallel_for(0, (int)members.size() - 1, [&](int i) {
-    // Copy section contents to an output file
-    members[i]->copy_to(buf);
+  int num_members = members.size();
 
-    // Zero-clear trailing padding
-    u64 pos = members[i]->offset + members[i]->shdr.sh_size;
-    memset(buf + shdr.sh_offset + pos, 0, members[i + 1]->offset - pos);
+  tbb::parallel_for(0, num_members, [&](int i) {
+    if (members[i]->shdr.sh_type != SHT_NOBITS) {
+      // Copy section contents to an output file
+      members[i]->copy_to(buf);
+
+      // Zero-clear trailing padding
+      u64 this_end = members[i]->offset + members[i]->shdr.sh_size;
+      u64 next_start = (i == num_members - 1) ? shdr.sh_size : members[i + 1]->offset;
+      memset(buf + shdr.sh_offset + this_end, 0, next_start - this_end);
+    }
   });
-
-  // Copy the last one
-  InputChunk *last = members.back();
-  last->copy_to(buf);
-  u64 pos = last->offset + last->shdr.sh_size;
-  memset(buf + shdr.sh_offset + pos, 0, shdr.sh_size - pos);
 }
 
 bool OutputSection::empty() const {
