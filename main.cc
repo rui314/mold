@@ -490,9 +490,11 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   // Create a PT_PHDR for the program header itself.
   add(PT_PHDR, PF_R, 8, {&out::phdr});
 
-  // Create an PT_INTERP.
-  if (!config.is_static)
+  // Create an PT_INTERP and PT_DYNAMIC.
+  if (!config.is_static) {
     add(PT_INTERP, PF_R, 1, {&out::interp});
+    add(PT_DYNAMIC, PF_R | PF_W, out::dynamic.shdr.sh_addralign, {&out::dynamic});
+  }
 
   // Create PT_LOAD segments.
   bool first = true;
@@ -540,6 +542,12 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
       ent.members.front()->starts_new_ptload = true;
 
   return entries;
+}
+
+static std::vector<std::pair<u64, u64>> create_dynamic_section() {
+  std::vector<std::pair<u64, u64>> vec;
+  vec.push_back({DT_NULL, 0});
+  return vec;
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
@@ -914,10 +922,11 @@ int main(int argc, char **argv) {
   output_chunks.push_back(&out::plt);
   output_chunks.push_back(&out::gotplt);
   output_chunks.push_back(&out::relplt);
-  output_chunks.push_back(&out::dynamic);
   output_chunks.push_back(&out::shstrtab);
   output_chunks.push_back(&out::symtab);
   output_chunks.push_back(&out::strtab);
+  if (!config.is_static)
+    output_chunks.push_back(&out::dynamic);
 
   output_chunks.erase(std::remove_if(output_chunks.begin(), output_chunks.end(),
                                      [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
@@ -940,9 +949,10 @@ int main(int argc, char **argv) {
     if (!chunk->name.empty())
       chunk->shdr.sh_name = out::shstrtab.add_string(chunk->name);
 
-  // Create section header and program header contents.
+  // Initialize synthetic section contents
   out::shdr.set_entries(create_shdr(output_chunks));
   out::phdr.set_entries(create_phdr(output_chunks));
+  out::dynamic.shdr.sh_size = create_dynamic_section().size() * sizeof(ELF64LE::Dyn);
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
@@ -996,10 +1006,19 @@ int main(int argc, char **argv) {
     out::shdr.copy_to(buf);
   }
 
-  // Fill .plt, .got, got.plt and .rela.plt sections
+  // Fill .plt, .got, got.plt, .rela.plt and .dynamic sections
   {
-    MyTimer t("write_got", copy);
+    MyTimer t("write_synthetic", copy);
     write_got(buf, files);
+
+    if (!config.is_static) {
+      auto *ent = (ELF64LE::Dyn *)(buf + out::dynamic.shdr.sh_offset);
+      for (std::pair<u64, u64> val : create_dynamic_section()) {
+        ent->d_tag = val.first;
+        ent->d_un.d_val = val.second;
+        ent++;
+      }
+    }
   }
 
   // Fill mergeable string sections

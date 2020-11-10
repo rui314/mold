@@ -453,6 +453,7 @@ public:
     this->name = ".dynamic";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
+    shdr.sh_size = 8;
     shdr.sh_addralign = 8;
   }
 };
