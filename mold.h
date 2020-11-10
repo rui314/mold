@@ -338,6 +338,18 @@ public:
   u32 idx;
 };
 
+class SpecialSection : public OutputChunk {
+public:
+  SpecialSection(StringRef name, u64 flags, u32 type, u32 align, u32 entsize)
+    : OutputChunk(SYNTHETIC) {
+    name = name;
+    shdr.sh_flags = flags;
+    shdr.sh_type = type;
+    shdr.sh_addralign = align;
+    shdr.sh_entsize = entsize;
+  }
+};
+
 class InterpSection : public OutputChunk {
 public:
   InterpSection() : OutputChunk(SYNTHETIC) {
@@ -352,17 +364,6 @@ public:
   }
 
   StringRef path;
-};
-
-
-class GotSection : public OutputChunk {
-public:
-  GotSection(StringRef name) : OutputChunk(SYNTHETIC) {
-    this->name = name;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
-    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_addralign = 8;
-  }
 };
 
 class PltSection : public OutputChunk {
@@ -419,16 +420,6 @@ private:
   std::string contents;
 };
 
-class DynamicSection : public OutputChunk {
-public:
-  DynamicSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".dynamic";
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
-    shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
-    shdr.sh_addralign = 8;
-  }
-};
-
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection() : OutputChunk(SYNTHETIC) {
@@ -443,16 +434,6 @@ public:
 
 private:
   std::vector<ELF64LE::Sym> contents;
-};
-
-class StrtabSection : public OutputChunk {
-public:
-  StrtabSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".strtab";
-    shdr.sh_flags = 0;
-    shdr.sh_type = llvm::ELF::SHT_STRTAB;
-    shdr.sh_size = 1;
-  }
 };
 
 class MergedSection : public OutputChunk {
@@ -476,18 +457,20 @@ private:
 bool is_c_identifier(StringRef name);
 
 namespace out {
+using namespace llvm::ELF;
+
 inline OutputEhdr ehdr;
 inline OutputShdr shdr;
 inline OutputPhdr phdr;
 inline InterpSection interp;
-inline GotSection got(".got");
-inline GotSection gotplt(".gotplt");
+inline SpecialSection got(".got", SHF_ALLOC | SHF_WRITE, SHT_PROGBITS, 8, 0);
+inline SpecialSection gotplt(".gotplt", SHF_ALLOC | SHF_WRITE, SHT_PROGBITS, 8, 0);
 inline PltSection plt;
-inline RelPltSection relplt;
-inline DynamicSection dynamic;
+inline SpecialSection relplt(".rela.plt", SHF_ALLOC, SHT_RELA, 8, sizeof(ELF64LE::Rela));
+inline SpecialSection dynamic(".dynamic", SHF_ALLOC | SHF_WRITE, SHT_DYNAMIC, 8, 0);
 inline ShstrtabSection shstrtab;
 inline SymtabSection symtab;
-inline StrtabSection strtab;
+inline SpecialSection strtab(".strtab", 0, SHT_STRTAB, 1, 0);
 
 inline u64 tls_end;
 

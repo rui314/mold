@@ -928,6 +928,7 @@ int main(int argc, char **argv) {
     MyTimer t("symtab_size", before_copy);
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
+    out::strtab.shdr.sh_size = 1;
     for (ObjectFile *file : files) {
       out::symtab.shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
       out::strtab.shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
