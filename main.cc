@@ -546,20 +546,20 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   return entries;
 }
 
-static int write_dynamic_section(u8 *buf) {
-  auto *dyn = (ELF64LE::Dyn *)buf;
+static std::vector<u8> create_dynamic_section() {
+  std::vector<u64> vec;
 
-  auto write = [&](u64 tag, u64 val) {
-    if (buf) {
-      dyn->d_tag = tag;
-      dyn->d_un.d_val = val;
-    }
-    dyn++;
+  auto define = [&](u64 tag, u64 val) {
+    vec.push_back(tag);
+    vec.push_back(val);
   };
 
-  write(DT_RELAENT, sizeof(ELF64LE::Rela));
-  write(DT_NULL, 0);
-  return (u8 *)dyn - buf;
+  define(DT_RELAENT, sizeof(ELF64LE::Rela));
+  define(DT_NULL, 0);
+
+  std::vector<u8> ret(vec.size() * 8);
+  memcpy(ret.data(), vec.data(), ret.size());
+  return ret;
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
@@ -970,7 +970,7 @@ int main(int argc, char **argv) {
   out::shdr.set_entries(create_shdr(output_chunks));
   out::phdr.set_entries(create_phdr(output_chunks));
   if (out::dynamic.shdr.sh_size)
-    out::dynamic.shdr.sh_size = write_dynamic_section(nullptr);
+    out::dynamic.shdr.sh_size = create_dynamic_section().size();
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
@@ -1029,8 +1029,10 @@ int main(int argc, char **argv) {
     MyTimer t("write_synthetic", copy);
     write_got(buf, files);
 
-    if (out::dynamic.shdr.sh_size)
-      write_dynamic_section(buf + out::dynamic.shdr.sh_offset);
+    if (out::dynamic.shdr.sh_size) {
+      std::vector<u8> vec = create_dynamic_section();
+      memcpy(buf + out::dynamic.shdr.sh_offset, vec.data(), vec.size());
+    }
   }
 
   // Fill mergeable string sections
