@@ -25,7 +25,7 @@ void OutputEhdr::copy_to(u8 *buf) {
   hdr.e_phentsize = sizeof(ELF64LE::Phdr);
   hdr.e_phnum = out::phdr.shdr.sh_size / sizeof(ELF64LE::Phdr);
   hdr.e_shentsize = sizeof(ELF64LE::Shdr);
-  hdr.e_shnum = out::shdr.entries.size();
+  hdr.e_shnum = out::shdr.shdr.sh_size / sizeof(ELF64LE::Shdr);
   hdr.e_shstrndx = out::shstrtab.shndx;
 }
 

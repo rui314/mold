@@ -449,21 +449,24 @@ static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
   });
 }
 
-static std::vector<ELF64LE::Shdr *>
-create_shdr(ArrayRef<OutputChunk *> output_chunks) {
-  static ELF64LE::Shdr null_entry = {};
+template<typename T>
+static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
+  std::vector<u8> ret(vec.size() * sizeof(T));
+  memcpy(ret.data(), vec.data(), vec.size());
+  return ret;
+}
 
-  std::vector<ELF64LE::Shdr *> vec;
-  vec.push_back(&null_entry);
+static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> output_chunks) {
+  std::vector<ELF64LE::Shdr> vec(1);
 
   int shndx = 1;
   for (OutputChunk *chunk : output_chunks) {
     if (chunk->kind != OutputChunk::HEADER) {
-      vec.push_back(&chunk->shdr);
+      vec.push_back(chunk->shdr);
       chunk->shndx = shndx++;
     }
   }
-  return vec;
+  return to_u8vector(vec);
 }
 
 static u32 to_phdr_flags(u64 sh_flags) {
@@ -556,10 +559,7 @@ static std::vector<u8> create_dynamic_section() {
 
   define(DT_RELAENT, sizeof(ELF64LE::Rela));
   define(DT_NULL, 0);
-
-  std::vector<u8> ret(vec.size() * 8);
-  memcpy(ret.data(), vec.data(), ret.size());
-  return ret;
+  return to_u8vector(vec);
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
@@ -770,6 +770,10 @@ void parallel_write(int fd, u8 *buf, u64 size) {
   write_loop(num_units * unit, size % unit);
 }
 
+static void write_vector(u8 *buf, ArrayRef<u8> vec) {
+  memcpy(buf, vec.data(), vec.size());
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -967,7 +971,7 @@ int main(int argc, char **argv) {
       chunk->shdr.sh_name = out::shstrtab.add_string(chunk->name);
 
   // Initialize synthetic section contents
-  out::shdr.set_entries(create_shdr(output_chunks));
+  out::shdr.shdr.sh_size = create_shdr(output_chunks).size();
   out::phdr.set_entries(create_phdr(output_chunks));
   if (out::dynamic.shdr.sh_size)
     out::dynamic.shdr.sh_size = create_dynamic_section().size();
@@ -1024,15 +1028,10 @@ int main(int argc, char **argv) {
     out::shdr.copy_to(buf);
   }
 
-  // Fill .plt, .got, got.plt, .rela.plt and .dynamic sections
+  // Fill .plt, .got, got.plt, .rela.plt sections
   {
     MyTimer t("write_synthetic", copy);
     write_got(buf, files);
-
-    if (out::dynamic.shdr.sh_size) {
-      std::vector<u8> vec = create_dynamic_section();
-      memcpy(buf + out::dynamic.shdr.sh_offset, vec.data(), vec.size());
-    }
   }
 
   // Fill mergeable string sections
@@ -1040,6 +1039,11 @@ int main(int argc, char **argv) {
     MyTimer t("write_merged_strings", copy);
     write_merged_strings(buf, files);
   }
+
+  // Write headers and synthetic sections.
+  write_vector(buf + out::shdr.shdr.sh_offset, create_shdr(output_chunks));
+  if (out::dynamic.shdr.sh_size)
+    write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section());
 
   // Zero-clear paddings between sections
   {

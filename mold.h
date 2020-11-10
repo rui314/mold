@@ -305,19 +305,6 @@ public:
   OutputShdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
   }
-
-  void copy_to(u8 *buf) override {
-    auto *p = (ELF64LE::Shdr *)(buf + shdr.sh_offset);
-    for (ELF64LE::Shdr *ent : entries)
-      *p++ = *ent;
-  }
-
-  void set_entries(std::vector<ELF64LE::Shdr *> vec) {
-    shdr.sh_size = vec.size() * sizeof(ELF64LE::Shdr);
-    entries = std::move(vec);
-  }
-
-  std::vector<ELF64LE::Shdr *> entries;
 };
 
 // Program header
