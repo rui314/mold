@@ -310,23 +310,9 @@ public:
 // Program header
 class OutputPhdr : public OutputChunk {
 public:
-  struct Entry {
-    ELF64LE::Phdr phdr;
-    std::vector<OutputChunk *> members;
-  };
-
   OutputPhdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
   }
-
-  void copy_to(u8 *buf) override;
-
-  void set_entries(std::vector<Entry> vec) {
-    shdr.sh_size = vec.size() * sizeof(ELF64LE::Phdr);
-    entries = std::move(vec);
-  }
-
-  std::vector<Entry> entries;
 };
 
 // Sections
