@@ -491,10 +491,8 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   add(PT_PHDR, PF_R, 8, {&out::phdr});
 
   // Create an PT_INTERP and PT_DYNAMIC.
-  if (!config.is_static) {
+  if (out::interp.shdr.sh_size)
     add(PT_INTERP, PF_R, 1, {&out::interp});
-    add(PT_DYNAMIC, PF_R | PF_W, out::dynamic.shdr.sh_addralign, {&out::dynamic});
-  }
 
   // Create PT_LOAD segments.
   bool first = true;
@@ -532,6 +530,10 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
       add(PT_TLS, to_phdr_flags(output_chunks[i]->shdr.sh_flags), 1, vec);
     }
   }
+
+  // Add PT_DYNAMIC
+  if (out::dynamic.shdr.sh_size)
+    add(PT_DYNAMIC, PF_R | PF_W, out::dynamic.shdr.sh_addralign, {&out::dynamic});
 
   for (OutputPhdr::Entry &ent : entries)
     for (OutputChunk *chunk : ent.members)
