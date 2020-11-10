@@ -160,7 +160,7 @@ struct StringPiece {
 
   StringRef data;
   std::atomic<MergeableSection *> isec = ATOMIC_VAR_INIT(nullptr);
-  u32 output_offset = 0;
+  u32 output_offset = -1;
 };
 
 struct StringPieceRef {

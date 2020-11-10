@@ -181,7 +181,8 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
     for (MergeableSection &isec : file->mergeable_sections) {
       u32 offset = 0;
       for (StringPieceRef &ref : isec.pieces) {
-        if (ref.piece->isec == &isec) {
+        StringPiece &piece = *ref.piece;
+        if (piece.isec == &isec && piece.output_offset == -1) {
           ref.piece->output_offset = offset;
           offset += ref.piece->data.size();
         }
