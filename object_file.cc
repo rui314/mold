@@ -564,8 +564,8 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
 
   // Update metadata
-  for (Symbol *sym : obj->symbols)
-    obj->local_strtab_size += sym->name.size() + 1;
+  for (int i = 1; i < obj->symbols.size(); i++)
+    obj->local_strtab_size += obj->symbols[i]->name.size() + 1;
   obj->local_symtab_size = sizeof(ELF64LE::Sym) * (obj->symbols.size() - 1);
   obj->first_global = obj->symbols.size();
 

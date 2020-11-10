@@ -674,7 +674,7 @@ static u8 *open_output_file(u64 filesize) {
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   memset(buf + out::symtab.shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
-  memset(buf + out::strtab.shdr.sh_offset, 0, 1);
+  buf[out::strtab.shdr.sh_offset] = '\0';
 
   std::vector<u64> local_symtab_off(files.size() + 1);
   std::vector<u64> local_strtab_off(files.size() + 1);
