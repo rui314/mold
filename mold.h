@@ -371,15 +371,14 @@ public:
     name = ".interp";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_size = sizeof(path);
   }
 
   void copy_to(u8 *buf) override {
-    memcpy(buf + shdr.sh_offset, path, sizeof(path));
+    memcpy(buf + shdr.sh_offset, path.data(), path.size());
+    buf[shdr.sh_offset + path.size()] = '\0';
   }
 
-private:
-  static constexpr char path[] = "/lib64/ld-linux-x86-64.so.2";
+  StringRef path;
 };
 
 
@@ -453,7 +452,6 @@ public:
     this->name = ".dynamic";
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
-    shdr.sh_size = 8;
     shdr.sh_addralign = 8;
   }
 };

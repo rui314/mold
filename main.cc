@@ -544,10 +544,20 @@ create_phdr(ArrayRef<OutputChunk *> output_chunks) {
   return entries;
 }
 
-static std::vector<std::pair<u64, u64>> create_dynamic_section() {
-  std::vector<std::pair<u64, u64>> vec;
-  vec.push_back({DT_NULL, 0});
-  return vec;
+static int write_dynamic_section(u8 *buf) {
+  auto *dyn = (ELF64LE::Dyn *)buf;
+
+  auto write = [&](u64 tag, u64 val) {
+    if (buf) {
+      dyn->d_tag = tag;
+      dyn->d_un.d_val = val;
+    }
+    dyn++;
+  };
+
+  write(DT_RELAENT, sizeof(ELF64LE::Rela));
+  write(DT_NULL, 0);
+  return (u8 *)dyn - buf;
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
@@ -809,6 +819,12 @@ int main(int argc, char **argv) {
   Timer total_timer("total", "total");
   total_timer.startTimer();
 
+  if (!config.is_static) {
+    out::interp.path = "/lib64/ld-linux-x86-64.so.2";
+    out::interp.shdr.sh_size = out::interp.path.size() + 1;
+    out::dynamic.shdr.sh_size = 1;
+  }
+
   // Set priorities to files
   int priority = 1;
   for (ObjectFile *file : files)
@@ -922,11 +938,10 @@ int main(int argc, char **argv) {
   output_chunks.push_back(&out::plt);
   output_chunks.push_back(&out::gotplt);
   output_chunks.push_back(&out::relplt);
+  output_chunks.push_back(&out::dynamic);
   output_chunks.push_back(&out::shstrtab);
   output_chunks.push_back(&out::symtab);
   output_chunks.push_back(&out::strtab);
-  if (!config.is_static)
-    output_chunks.push_back(&out::dynamic);
 
   output_chunks.erase(std::remove_if(output_chunks.begin(), output_chunks.end(),
                                      [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
@@ -952,7 +967,8 @@ int main(int argc, char **argv) {
   // Initialize synthetic section contents
   out::shdr.set_entries(create_shdr(output_chunks));
   out::phdr.set_entries(create_phdr(output_chunks));
-  out::dynamic.shdr.sh_size = create_dynamic_section().size() * sizeof(ELF64LE::Dyn);
+  if (out::dynamic.shdr.sh_size)
+    out::dynamic.shdr.sh_size = write_dynamic_section(nullptr);
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
@@ -1011,14 +1027,8 @@ int main(int argc, char **argv) {
     MyTimer t("write_synthetic", copy);
     write_got(buf, files);
 
-    if (!config.is_static) {
-      auto *ent = (ELF64LE::Dyn *)(buf + out::dynamic.shdr.sh_offset);
-      for (std::pair<u64, u64> val : create_dynamic_section()) {
-        ent->d_tag = val.first;
-        ent->d_un.d_val = val.second;
-        ent++;
-      }
-    }
+    if (out::dynamic.shdr.sh_size)
+      write_dynamic_section(buf + out::dynamic.shdr.sh_offset);
   }
 
   // Fill mergeable string sections
