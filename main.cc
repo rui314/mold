@@ -452,20 +452,15 @@ static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
 template<typename T>
 static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   std::vector<u8> ret(vec.size() * sizeof(T));
-  memcpy(ret.data(), vec.data(), vec.size());
+  memcpy(ret.data(), vec.data(), ret.size());
   return ret;
 }
 
 static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<ELF64LE::Shdr> vec(1);
-
-  int shndx = 1;
-  for (OutputChunk *chunk : output_chunks) {
-    if (chunk->kind != OutputChunk::HEADER) {
+  for (OutputChunk *chunk : output_chunks)
+    if (chunk->kind != OutputChunk::HEADER)
       vec.push_back(chunk->shdr);
-      chunk->shndx = shndx++;
-    }
-  }
   return to_u8vector(vec);
 }
 
@@ -963,6 +958,11 @@ int main(int argc, char **argv) {
   for (OutputChunk *chunk : output_chunks)
     if (!chunk->name.empty())
       chunk->shdr.sh_name = out::shstrtab.add_string(chunk->name);
+
+  // Set section indices.
+  for (int i = 0, shndx = 1; i < output_chunks.size(); i++)
+    if (output_chunks[i]->kind != OutputChunk::HEADER)
+      output_chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
   out::shdr.shdr.sh_size = create_shdr(output_chunks).size();
