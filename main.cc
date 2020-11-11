@@ -449,6 +449,34 @@ static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
   });
 }
 
+static std::vector<u8> create_ehdr() {
+  ELF64LE::Ehdr hdr = {};
+
+  memcpy(&hdr.e_ident, "\177ELF", 4);
+  hdr.e_ident[EI_CLASS] = ELFCLASS64;
+  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_VERSION] = EV_CURRENT;
+  hdr.e_ident[EI_OSABI] = 0;
+  hdr.e_ident[EI_ABIVERSION] = 0;
+  hdr.e_type = ET_EXEC;
+  hdr.e_machine = EM_X86_64;
+  hdr.e_version = EV_CURRENT;
+  hdr.e_entry = Symbol::intern("_start")->get_addr();
+  hdr.e_phoff = out::phdr.shdr.sh_offset;
+  hdr.e_shoff = out::shdr.shdr.sh_offset;
+  hdr.e_flags = 0;
+  hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
+  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
+  hdr.e_phnum = out::phdr.shdr.sh_size / sizeof(ELF64LE::Phdr);
+  hdr.e_shentsize = sizeof(ELF64LE::Shdr);
+  hdr.e_shnum = out::shdr.shdr.sh_size / sizeof(ELF64LE::Shdr);
+  hdr.e_shstrndx = out::shstrtab.shndx;
+
+  std::vector<u8> ret(sizeof(hdr));
+  memcpy(ret.data(), &hdr, sizeof(hdr));
+  return ret;
+}
+
 template<typename T>
 static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   std::vector<u8> ret(vec.size() * sizeof(T));
@@ -821,8 +849,7 @@ int main(int argc, char **argv) {
   total_timer.startTimer();
 
   if (!config.is_static) {
-    out::interp.path = "/lib64/ld-linux-x86-64.so.2";
-    out::interp.shdr.sh_size = out::interp.path.size() + 1;
+    out::interp.shdr.sh_size = config.dynamic_linker.size() + 1;
     out::dynamic.shdr.sh_size = 1;
   }
 
@@ -972,6 +999,7 @@ int main(int argc, char **argv) {
       output_chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
+  out::ehdr.shdr.sh_size = sizeof(ELF64LE::Ehdr);
   out::shdr.shdr.sh_size = create_shdr(output_chunks).size();
   out::phdr.shdr.sh_size = create_phdr(output_chunks).size();
   if (out::dynamic.shdr.sh_size)
@@ -1038,8 +1066,16 @@ int main(int argc, char **argv) {
   }
 
   // Write headers and synthetic sections.
+  write_vector(buf + out::ehdr.shdr.sh_offset, create_ehdr());
   write_vector(buf + out::shdr.shdr.sh_offset, create_shdr(output_chunks));
   write_vector(buf + out::phdr.shdr.sh_offset, create_phdr(output_chunks));
+
+  if (out::interp.shdr.sh_size) {
+    StringRef path = config.dynamic_linker;
+    memcpy(buf + out::interp.shdr.sh_offset, path.data(), path.size());
+    buf[out::interp.shdr.sh_offset + path.size()] = '\0';
+  }
+    
   if (out::dynamic.shdr.sh_size)
     write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section());
 
