@@ -1064,10 +1064,8 @@ int main(int argc, char **argv) {
 
   if (out::interp.shdr.sh_size)
     write_string(buf + out::interp.shdr.sh_offset, config.dynamic_linker);
-
   if (out::dynamic.shdr.sh_size)
-    write_vector(buf + out::dynamic.shdr.sh_offset,
-                 create_dynamic_section(chunks));
+    write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section(chunks));
 
   // Zero-clear paddings between sections
   clear_padding(buf, chunks, filesize);
