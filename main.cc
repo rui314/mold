@@ -505,7 +505,8 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
   std::vector<ELF64LE::Phdr> vec;
 
   auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {
-    ELF64LE::Phdr phdr = {};
+    vec.push_back({});
+    ELF64LE::Phdr &phdr = vec.back();
     phdr.p_type = type;
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(align, chunk->shdr.sh_addralign);
@@ -513,7 +514,6 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
-    vec.push_back(phdr);
 
     if (type == PT_LOAD)
       chunk->starts_new_ptload = true;
