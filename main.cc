@@ -985,7 +985,7 @@ int main(int argc, char **argv) {
   // or the ending of a file.
   output_chunks.insert(output_chunks.begin(), &out::ehdr);
   output_chunks.insert(output_chunks.begin() + 1, &out::phdr);
-  if (!config.is_static)
+  if (out::interp.shdr.sh_size)
     output_chunks.insert(output_chunks.begin() + 2, &out::interp);
   output_chunks.push_back(&out::shdr);
 

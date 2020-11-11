@@ -324,7 +324,7 @@ class SpecialSection : public OutputChunk {
 public:
   SpecialSection(StringRef name, u32 type, u64 flags, u32 align, u32 entsize)
     : OutputChunk(SYNTHETIC) {
-    name = name;
+    this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
     shdr.sh_addralign = align;
