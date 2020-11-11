@@ -939,6 +939,10 @@ int main(int argc, char **argv) {
     out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
     out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8);
     out::hash = new HashSection;
+
+    out::interp->shdr.sh_size = config.dynamic_linker.size() + 1;
+    out::dynstr->shdr.sh_size = 1;
+    out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
   }
 
   // Set priorities to files
@@ -981,9 +985,11 @@ int main(int argc, char **argv) {
   std::vector<OutputChunk *> chunks;
 
   for (OutputSection *osec : OutputSection::instances)
-    chunks.push_back(osec);
+    if (osec->shdr.sh_size)
+      chunks.push_back(osec);
   for (MergedSection *osec : MergedSection::instances)
-    chunks.push_back(osec);
+    if (osec->shdr.sh_size)
+      chunks.push_back(osec);
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
@@ -1024,8 +1030,8 @@ int main(int argc, char **argv) {
   chunks.push_back(out::hash);
 
   chunks.erase(std::remove_if(chunks.begin(), chunks.end(),
-                              [](OutputChunk *c){ return !c || c->shdr.sh_size == 0; }),
-                      chunks.end());
+                              [](OutputChunk *c){ return !c; }),
+               chunks.end());
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
