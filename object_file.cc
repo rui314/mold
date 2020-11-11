@@ -523,7 +523,7 @@ bool is_c_identifier(StringRef name) {
   return true;
 }
 
-ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chunks) {
+ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> chunks) {
   // Create a dummy object file.
   constexpr int bufsz = 256;
   char *buf = new char[bufsz];
@@ -581,7 +581,7 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> output_chun
   if (!Symbol::intern("edata")->file)
     out::edata = add("edata", STB_GLOBAL);
 
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
 

@@ -515,7 +515,7 @@ public:
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
   void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
 
-  static ObjectFile *create_internal_file(ArrayRef<OutputChunk *> output_chunks);
+  static ObjectFile *create_internal_file(ArrayRef<OutputChunk *> chunks);
 
   std::string name;
   StringRef archive_name;

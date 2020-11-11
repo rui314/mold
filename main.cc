@@ -457,8 +457,7 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
-static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
-                          u64 filesize) {
+static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> chunks, u64 filesize) {
   MyTimer t("clear_padding", copy_timer);
 
   auto zero = [&](OutputChunk *chunk, u64 next_start) {
@@ -468,9 +467,9 @@ static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
     memset(buf + pos, 0, next_start - pos);
   };
 
-  for (int i = 1; i < output_chunks.size(); i++)
-    zero(output_chunks[i - 1], output_chunks[i]->shdr.sh_offset);
-  zero(output_chunks.back(), filesize);
+  for (int i = 1; i < chunks.size(); i++)
+    zero(chunks[i - 1], chunks[i]->shdr.sh_offset);
+  zero(chunks.back(), filesize);
 }
 
 // We want to sort output sections in the following order.
@@ -542,9 +541,9 @@ static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   return ret;
 }
 
-static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> output_chunks) {
+static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> chunks) {
   std::vector<ELF64LE::Shdr> vec(1);
-  for (OutputChunk *chunk : output_chunks)
+  for (OutputChunk *chunk : chunks)
     if (chunk->kind != OutputChunk::HEADER)
       vec.push_back(chunk->shdr);
   return to_u8vector(vec);
@@ -632,7 +631,7 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
 }
 
 static std::vector<u8>
-create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
+create_dynamic_section(ArrayRef<OutputChunk *> chunks) {
   std::vector<u64> vec;
 
   auto define = [&](u64 tag, u64 val) {
@@ -652,7 +651,7 @@ create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
   define(DT_STRTAB, out::dynstr.shdr.sh_addr);
   define(DT_STRSZ, out::dynstr.shdr.sh_size);
 
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->shdr.sh_type == SHT_INIT_ARRAY) {
       define(DT_INIT_ARRAY, chunk->shdr.sh_addr);
       define(DT_INIT_ARRAYSZ, chunk->shdr.sh_size);
@@ -660,7 +659,7 @@ create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
     }
   }
 
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->shdr.sh_type == SHT_FINI_ARRAY) {
       define(DT_FINI_ARRAY, chunk->shdr.sh_addr);
       define(DT_FINI_ARRAYSZ, chunk->shdr.sh_size);
@@ -672,13 +671,13 @@ create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
   return to_u8vector(vec);
 }
 
-static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
+static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
   MyTimer t("osec_offset", before_copy_timer);
 
   u64 fileoff = 0;
   u64 vaddr = 0x200000;
 
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->starts_new_ptload)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
@@ -708,7 +707,7 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
   return fileoff;
 }
 
-static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
+static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
   auto start = [&](OutputChunk *chunk, Symbol *sym) {
     if (sym) {
       sym->shndx = chunk->shndx;
@@ -724,7 +723,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   };
 
   // __bss_start
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
       start(chunk, out::__bss_start);
       break;
@@ -732,7 +731,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 
   // __ehdr_start
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
       out::__ehdr_start->value = out::ehdr.shdr.sh_addr - chunk->shdr.sh_addr;
@@ -745,7 +744,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   stop(&out::relplt, out::__rela_iplt_end);
 
   // __{init,fini}_array_{start,end}
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(chunk, out::__init_array_start);
@@ -759,7 +758,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 
   // _end, end, _etext, etext, _edata and edata
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (chunk->kind == OutputChunk::HEADER)
       continue;
 
@@ -780,7 +779,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   }
 
   // __start_ and __stop_ symbols
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
 
@@ -949,16 +948,16 @@ int main(int argc, char **argv) {
   set_isec_offsets();
 
   // Create a list of output sections.
-  std::vector<OutputChunk *> output_chunks;
+  std::vector<OutputChunk *> chunks;
 
   for (OutputSection *osec : OutputSection::instances)
-    output_chunks.push_back(osec);
+    chunks.push_back(osec);
   for (MergedSection *osec : MergedSection::instances)
-    output_chunks.push_back(osec);
+    chunks.push_back(osec);
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ObjectFile *internal_file = ObjectFile::create_internal_file(output_chunks);
+  ObjectFile *internal_file = ObjectFile::create_internal_file(chunks);
   internal_file->priority = priority++;
   files.push_back(internal_file);
 
@@ -981,60 +980,60 @@ int main(int argc, char **argv) {
   }
 
   // Add synthetic sections.
-  output_chunks.push_back(&out::got);
-  output_chunks.push_back(&out::plt);
-  output_chunks.push_back(&out::gotplt);
-  output_chunks.push_back(&out::relplt);
-  output_chunks.push_back(&out::reldyn);
-  output_chunks.push_back(&out::dynamic);
-  output_chunks.push_back(&out::dynsym);
-  output_chunks.push_back(&out::dynstr);
-  output_chunks.push_back(&out::shstrtab);
-  output_chunks.push_back(&out::symtab);
-  output_chunks.push_back(&out::strtab);
+  chunks.push_back(&out::got);
+  chunks.push_back(&out::plt);
+  chunks.push_back(&out::gotplt);
+  chunks.push_back(&out::relplt);
+  chunks.push_back(&out::reldyn);
+  chunks.push_back(&out::dynamic);
+  chunks.push_back(&out::dynsym);
+  chunks.push_back(&out::dynstr);
+  chunks.push_back(&out::shstrtab);
+  chunks.push_back(&out::symtab);
+  chunks.push_back(&out::strtab);
 
-  output_chunks.erase(std::remove_if(output_chunks.begin(), output_chunks.end(),
-                                     [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
-                      output_chunks.end());
+  chunks.erase(std::remove_if(chunks.begin(), chunks.end(),
+                              [](OutputChunk *c){ return c->shdr.sh_size == 0; }),
+                      chunks.end());
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
-  sort_output_chunks(output_chunks);
+  sort_output_chunks(chunks);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
-  output_chunks.insert(output_chunks.begin(), &out::ehdr);
-  output_chunks.insert(output_chunks.begin() + 1, &out::phdr);
+  chunks.insert(chunks.begin(), &out::ehdr);
+  chunks.insert(chunks.begin() + 1, &out::phdr);
   if (out::interp.shdr.sh_size)
-    output_chunks.insert(output_chunks.begin() + 2, &out::interp);
-  output_chunks.push_back(&out::shdr);
+    chunks.insert(chunks.begin() + 2, &out::interp);
+  chunks.push_back(&out::shdr);
 
   // Fix .shstrtab contents.
-  for (OutputChunk *chunk : output_chunks)
+  for (OutputChunk *chunk : chunks)
     if (!chunk->name.empty())
       chunk->shdr.sh_name = out::shstrtab.add_string(chunk->name);
 
   // Set section indices.
-  for (int i = 0, shndx = 1; i < output_chunks.size(); i++)
-    if (output_chunks[i]->kind != OutputChunk::HEADER)
-      output_chunks[i]->shndx = shndx++;
+  for (int i = 0, shndx = 1; i < chunks.size(); i++)
+    if (chunks[i]->kind != OutputChunk::HEADER)
+      chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
   out::ehdr.shdr.sh_size = sizeof(ELF64LE::Ehdr);
-  out::shdr.shdr.sh_size = create_shdr(output_chunks).size();
-  out::phdr.shdr.sh_size = create_phdr(output_chunks).size();
+  out::shdr.shdr.sh_size = create_shdr(chunks).size();
+  out::phdr.shdr.sh_size = create_phdr(chunks).size();
   if (out::dynamic.shdr.sh_size)
-    out::dynamic.shdr.sh_size = create_dynamic_section(output_chunks).size();
+    out::dynamic.shdr.sh_size = create_dynamic_section(chunks).size();
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
-  u64 filesize = set_osec_offsets(output_chunks);
+  u64 filesize = set_osec_offsets(chunks);
 
   // Assign symbols to GOT offsets
   assign_got_offsets(files);
 
   // Fix linker-synthesized symbol addresses.
-  fix_synthetic_symbols(output_chunks);
+  fix_synthetic_symbols(chunks);
 
   // At this point, file layout is fixed. Beyond this, you can assume
   // that symbol addresses including their GOT/PLT/etc addresses have
@@ -1042,7 +1041,7 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the ending address
   // of the TLS section. Find it out now.
-  for (OutputChunk *chunk : output_chunks) {
+  for (OutputChunk *chunk : chunks) {
     ELF64LE::Shdr &shdr = chunk->shdr;
     if (shdr.sh_flags & SHF_TLS)
       out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
@@ -1058,7 +1057,7 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy_timer);
-    tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
+    tbb::parallel_for_each(chunks, [&](OutputChunk *chunk) {
       chunk->copy_to(buf);
     });
   }
@@ -1074,18 +1073,18 @@ int main(int argc, char **argv) {
 
   // Write headers and synthetic sections.
   write_vector(buf + out::ehdr.shdr.sh_offset, create_ehdr());
-  write_vector(buf + out::shdr.shdr.sh_offset, create_shdr(output_chunks));
-  write_vector(buf + out::phdr.shdr.sh_offset, create_phdr(output_chunks));
+  write_vector(buf + out::shdr.shdr.sh_offset, create_shdr(chunks));
+  write_vector(buf + out::phdr.shdr.sh_offset, create_phdr(chunks));
 
   if (out::interp.shdr.sh_size)
     write_string(buf + out::interp.shdr.sh_offset, config.dynamic_linker);
 
   if (out::dynamic.shdr.sh_size)
     write_vector(buf + out::dynamic.shdr.sh_offset,
-                 create_dynamic_section(output_chunks));
+                 create_dynamic_section(chunks));
 
   // Zero-clear paddings between sections
-  clear_padding(buf, output_chunks, filesize);
+  clear_padding(buf, chunks, filesize);
 
   // Commit
   {
@@ -1097,7 +1096,7 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(files, output_chunks);
+    print_map(files, chunks);
   }
 
 #if 0
@@ -1112,7 +1111,7 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : files)
     num_input_sections.inc(file->sections.size());
 
-  Counter num_output_chunks("output_chunks", output_chunks.size());
+  Counter num_output_chunks("output_chunks", chunks.size());
   Counter num_files("files", files.size());
   Counter filesize_counter("filesize", filesize);
 
