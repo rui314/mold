@@ -23,7 +23,6 @@ static const ELF64LE::Shdr
 
 void ObjectFile::initialize_sections() {
   StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
-  sections.resize(elf_sections.size());
 
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
@@ -266,10 +265,8 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
-
-  if (is_dso)
-    sections.resize(elf_sections.size());
-  else
+  sections.resize(elf_sections.size());
+  if (!is_dso)
     initialize_sections();
 
   if (symtab_sec)
