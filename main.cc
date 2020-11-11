@@ -650,23 +650,10 @@ create_dynamic_section(ArrayRef<OutputChunk *> chunks) {
   define(DT_SYMENT, sizeof(ELF64LE::Sym));
   define(DT_STRTAB, out::dynstr.shdr.sh_addr);
   define(DT_STRSZ, out::dynstr.shdr.sh_size);
-
-  for (OutputChunk *chunk : chunks) {
-    if (chunk->shdr.sh_type == SHT_INIT_ARRAY) {
-      define(DT_INIT_ARRAY, chunk->shdr.sh_addr);
-      define(DT_INIT_ARRAYSZ, chunk->shdr.sh_size);
-      break;
-    }
-  }
-
-  for (OutputChunk *chunk : chunks) {
-    if (chunk->shdr.sh_type == SHT_FINI_ARRAY) {
-      define(DT_FINI_ARRAY, chunk->shdr.sh_addr);
-      define(DT_FINI_ARRAYSZ, chunk->shdr.sh_size);
-      break;
-    }
-  }
-
+  define(DT_INIT_ARRAY, out::__init_array_start->value);
+  define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
+  define(DT_FINI_ARRAY, out::__fini_array_start->value);
+  define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
   define(DT_NULL, 0);
   return to_u8vector(vec);
 }
