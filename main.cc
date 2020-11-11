@@ -365,7 +365,6 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
     u32 plt_offset = file->plt_offset;
     u32 relplt_offset = file->relplt_offset;
     u32 dynsym_offset = file->dynsym_offset;
-    u32 dynstr_offset = file->dynstr_offset;
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
@@ -400,9 +399,6 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
       if (flags & Symbol::NEEDS_DYNSYM) {
         sym->dynsym_offset = dynsym_offset;
         dynsym_offset += sizeof(ELF64LE::Sym);
-
-        sym->dynstr_offset = dynstr_offset;
-        dynstr_offset += sym->name.size() + 1;
       }
     }
   });
@@ -418,8 +414,12 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *dynstr = buf + out::dynstr.shdr.sh_offset;
 
   memset(buf + out::gotplt.shdr.sh_offset, 0, out::gotplt.shdr.sh_size);
+  memset(dynsym, 0, sizeof(ELF64LE::Sym));
+  dynstr[0] = '\0';
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
+    u32 dynstr_offset = file->dynstr_offset;
+
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
@@ -447,7 +447,16 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       }
 
       if (flags & Symbol::NEEDS_DYNSYM) {
-        auto *dsym = (ELF64LE::Sym *)(dynsym + sym->dynsym_offset);
+        // Write to .dynsym
+        auto &esym = *(ELF64LE::Sym *)(dynsym + sym->dynsym_offset);
+        memset(&esym, 0, sizeof(esym));
+        esym.st_name = dynstr_offset;
+        esym.setType(sym->type);
+        esym.setBinding(STB_GLOBAL);
+
+        // Write to .dynstr
+        write_string(dynstr + dynstr_offset, sym->name);
+        dynstr_offset += sym->name.size() + 1;
       }
     }
   });
@@ -1023,6 +1032,8 @@ int main(int argc, char **argv) {
   if (out::dynamic.shdr.sh_size)
     out::dynamic.shdr.sh_size = create_dynamic_section(chunks).size();
   out::symtab.shdr.sh_link = out::strtab.shndx;
+  out::dynsym.shdr.sh_info = 1;
+  out::dynsym.shdr.sh_link = out::dynstr.shndx;
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(chunks);
