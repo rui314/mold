@@ -344,19 +344,19 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 
   for (ObjectFile *file : files) {
     file->got_offset = got_offset;
-    got_offset += file->num_got * 8;
+    got_offset += file->got_size;
 
     file->gotplt_offset = gotplt_offset;
-    gotplt_offset += file->num_gotplt * 8;
+    gotplt_offset += file->gotplt_size;
 
     file->plt_offset = plt_offset;
-    plt_offset += file->num_plt * 16;
+    plt_offset += file->plt_size;
 
     file->relplt_offset = relplt_offset;
-    relplt_offset += file->num_relplt * sizeof(ELF64LE::Rela);
+    relplt_offset += file->relplt_size;
 
     file->dynsym_offset = dynsym_offset;
-    dynsym_offset += file->num_dynsym * sizeof(ELF64LE::Sym);
+    dynsym_offset += file->dynsym_size;
 
     file->dynstr_offset = dynstr_offset;
     dynstr_offset += file->dynstr_size;
@@ -387,22 +387,22 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
 
       if (flags & Symbol::NEEDS_GOT) {
         sym->got_offset = got_offset;
-        got_offset += 8;
+        got_offset += GOT_SIZE;
       }
 
       if (flags & Symbol::NEEDS_GOTTP) {
         sym->gottp_offset = got_offset;
-        got_offset += 8;
+        got_offset += GOT_SIZE;
       }
 
       if (flags & Symbol::NEEDS_PLT) {
         // Write a .got.plt entry
         sym->gotplt_offset = gotplt_offset;
-        gotplt_offset += 8;
+        gotplt_offset += GOT_SIZE;
 
         // Write a .plt entry
         sym->plt_offset = plt_offset;
-        plt_offset += 16;
+        plt_offset += PLT_SIZE;
 
         // Write a .rela.dyn entry
         sym->relplt_offset = relplt_offset;

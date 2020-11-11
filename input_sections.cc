@@ -137,19 +137,19 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
       if (set_flag(sym, Symbol::NEEDS_GOT))
-        sym->file->num_got++;
+        sym->file->got_size += GOT_SIZE;
       break;
     case R_X86_64_GOTTPOFF:
       if (set_flag(sym, Symbol::NEEDS_GOTTP))
-        sym->file->num_got++;
+        sym->file->got_size += GOT_SIZE;
       break;
     case R_X86_64_PLT32:
       if (config.is_static && sym->type != STT_GNU_IFUNC)
         break;
       if (set_flag(sym, Symbol::NEEDS_PLT)) {
-        sym->file->num_plt++;
-        sym->file->num_gotplt++;
-        sym->file->num_relplt++;
+        sym->file->plt_size += PLT_SIZE;
+        sym->file->gotplt_size += GOT_SIZE;
+        sym->file->relplt_size += sizeof(ELF64LE::Rela);
       }
       break;
     }
