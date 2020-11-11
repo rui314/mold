@@ -535,7 +535,7 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
   // Create a PT_PHDR for the program header itself.
   define(PT_PHDR, PF_R, 8, &out::phdr);
 
-  // Create an PT_INTERP and PT_DYNAMIC.
+  // Create an PT_INTERP.
   if (out::interp.shdr.sh_size)
     define(PT_INTERP, PF_R, 1, &out::interp);
 
@@ -549,10 +549,10 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
     define(PT_LOAD, flags, PAGE_SIZE, first);
 
     if (!is_bss(first))
-      while (i < end && to_phdr_flags(chunks[i]) == flags && !is_bss(chunks[i]))
+      while (i < end && !is_bss(chunks[i]) && to_phdr_flags(chunks[i]) == flags)
         append(chunks[i++]);
 
-    while (i < end && to_phdr_flags(chunks[i]) == flags && is_bss(chunks[i]))
+    while (i < end && is_bss(chunks[i]) && to_phdr_flags(chunks[i]) == flags)
       append(chunks[i++]);
   }
 
@@ -560,8 +560,9 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
   for (int i = 0; i < chunks.size(); i++) {
     if (chunks[i]->shdr.sh_flags & SHF_TLS) {
       define(PT_TLS, to_phdr_flags(chunks[i]), 1, chunks[i]);
-      for (i++; i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS); i++)
-        append(chunks[i]);
+      i++;
+      while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS))
+        append(chunks[i++]);
     }
   }
 
