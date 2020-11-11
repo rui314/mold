@@ -36,6 +36,10 @@ private:
   llvm::Timer *timer;
 };
 
+llvm::TimerGroup parse_timer("parse", "parse");
+llvm::TimerGroup before_copy_timer("before_copy", "before_copy");
+llvm::TimerGroup copy_timer("copy", "copy");
+
 //
 // Command-line option processing
 //
@@ -153,7 +157,38 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
+static void resolve_symbols(std::vector<ObjectFile *> &files) {
+  MyTimer t("resolve_symbols", before_copy_timer);
+
+  tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
+
+  // Resolve symbols
+  std::vector<ObjectFile *> root;
+  for (ObjectFile *file : files)
+    if (file->is_alive)
+      root.push_back(file);
+
+  // Mark archive members we include into the final output.
+  tbb::parallel_do(
+    root,
+    [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+      file->mark_live_archive_members(feeder);
+    });
+
+  // Eliminate unused archive members.
+  files.erase(std::remove_if(files.begin(), files.end(),
+                             [](ObjectFile *file){ return !file->is_alive; }),
+              files.end());
+
+  // Convert weak symbols to absolute symbols with value 0.
+  tbb::parallel_for_each(files, [](ObjectFile *file) {
+                                  file->hanlde_undefined_weak_symbols();
+                                });
+}
+
 static void eliminate_comdats(std::vector<ObjectFile *> &files) {
+  MyTimer t("comdat", before_copy_timer);
+
   tbb::parallel_for_each(files, [](ObjectFile *file) {
     file->resolve_comdat_groups();
   });
@@ -164,6 +199,8 @@ static void eliminate_comdats(std::vector<ObjectFile *> &files) {
 }
 
 static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
+  MyTimer t("resolve_strings", before_copy_timer);
+
   // Resolve mergeable string pieces
   tbb::parallel_for_each(files, [](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
@@ -206,6 +243,8 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
 }
 
 static void bin_sections(std::vector<ObjectFile *> &files) {
+  MyTimer t("bin_sections", before_copy_timer);
+
   int unit = (files.size() + 127) / 128;
   std::vector<ArrayRef<ObjectFile *>> slices = split(files, unit);
 
@@ -243,6 +282,8 @@ static void bin_sections(std::vector<ObjectFile *> &files) {
 }
 
 static void set_isec_offsets() {
+  MyTimer t("isec_offsets", before_copy_timer);
+
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->members.empty())
       return;
@@ -283,6 +324,8 @@ static void set_isec_offsets() {
 }
 
 static void scan_rels(ArrayRef<ObjectFile *> files) {
+  MyTimer t("scan_rels", before_copy_timer);
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
   u32 got_offset = 0;
@@ -311,6 +354,8 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
+  MyTimer t("assign_got_offsets", before_copy_timer);
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 got_offset = file->got_offset;
     u32 gotplt_offset = file->gotplt_offset;
@@ -351,6 +396,8 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
 }
 
 static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
+  MyTimer t("write_synthetic", copy_timer);
+
   u8 *got = buf + out::got.shdr.sh_offset;
   u8 *plt = buf + out::plt.shdr.sh_offset;
   u8 *relplt = buf + out::relplt.shdr.sh_offset;
@@ -388,6 +435,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
 }
 
 static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
+  MyTimer t("write_merged_strings", copy_timer);
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       u8 *base = buf + isec.parent.shdr.sh_offset + isec.offset;
@@ -403,6 +452,8 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
 
 static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
                           u64 filesize) {
+  MyTimer t("clear_padding", copy_timer);
+
   auto zero = [&](OutputChunk *chunk, u64 next_start) {
     u64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
@@ -587,6 +638,8 @@ static std::vector<u8> create_dynamic_section() {
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
+  MyTimer t("osec_offset", before_copy_timer);
+
   u64 fileoff = 0;
   u64 vaddr = 0x200000;
 
@@ -717,6 +770,8 @@ static u8 *open_output_file(u64 filesize) {
 }
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
+  MyTimer t("write_symtab", copy_timer);
+
   memset(buf + out::symtab.shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
   buf[out::strtab.shdr.sh_offset] = '\0';
 
@@ -821,13 +876,9 @@ int main(int argc, char **argv) {
 
   std::vector<ObjectFile *> files;
 
-  llvm::TimerGroup parse("parse", "parse");
-  llvm::TimerGroup before_copy("before_copy", "before_copy");
-  llvm::TimerGroup copy("copy", "copy");
-
   // Open input files
   {
-    MyTimer t("open", parse);
+    MyTimer t("open", parse_timer);
     for (auto *arg : args)
       if (arg->getOption().getID() == OPT_INPUT)
         read_file(files, arg->getValue());
@@ -835,12 +886,12 @@ int main(int argc, char **argv) {
 
   // Parse input files
   {
-    MyTimer t("parse", parse);
+    MyTimer t("parse", parse_timer);
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->parse(); });
   }
 
   {
-    MyTimer t("merge", parse);
+    MyTimer t("merge", parse_timer);
     tbb::parallel_for_each(files, [](ObjectFile *file) {
       file->initialize_mergeable_sections();
     });
@@ -863,70 +914,32 @@ int main(int argc, char **argv) {
     if (file->is_in_archive)
       file->priority = priority++;
 
-  // Resolve symbols
-  {
-    MyTimer t("resolve_symbols", before_copy);
-
-    tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
-
-    // Resolve symbols
-    std::vector<ObjectFile *> root;
-    for (ObjectFile *file : files)
-      if (file->is_alive)
-        root.push_back(file);
-
-    // Mark archive members we include into the final output.
-    tbb::parallel_do(
-      root,
-      [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-        file->mark_live_archive_members(feeder);
-      });
-
-    // Eliminate unused archive members.
-    files.erase(std::remove_if(files.begin(), files.end(),
-                               [](ObjectFile *file){ return !file->is_alive; }),
-                files.end());
-
-    // Convert weak symbols to absolute symbols with value 0.
-    tbb::parallel_for_each(files, [](ObjectFile *file) {
-      file->hanlde_undefined_weak_symbols();
-    });
-  }
+  // Resolve symbols and fix the set of object files that are
+  // included to the final output.
+  resolve_symbols(files);
 
   if (args.hasArg(OPT_trace))
     for (ObjectFile *file : files)
       llvm::outs() << toString(file) << "\n";
 
-  // Eliminate duplicate comdat groups.
-  {
-    MyTimer t("comdat", before_copy);
-    eliminate_comdats(files);
-  }
+  // Remove redundant comdat sections (e.g. duplicate inline functions).
+  eliminate_comdats(files);
 
-  // Resolve mergeable strings
-  {
-    MyTimer t("resolve_strings", before_copy);
-    handle_mergeable_strings(files);
-  }
+  // Merge strings constants in SHF_MERGE sections.
+  handle_mergeable_strings(files);
 
   // Create .bss sections for common symbols.
   {
-    MyTimer t("common", before_copy);
+    MyTimer t("common", before_copy_timer);
     tbb::parallel_for_each(files,
                            [](ObjectFile *file) { file->convert_common_symbols(); });
   }
 
   // Bin input sections into output sections
-  {
-    MyTimer t("bin_sections", before_copy);
-    bin_sections(files);
-  }
+  bin_sections(files);
 
   // Assign offsets within an output section to input sections.
-  {
-    MyTimer t("isec_offsets", before_copy);
-    set_isec_offsets();
-  }
+  set_isec_offsets();
 
   // Create a list of output sections.
   std::vector<OutputChunk *> output_chunks;
@@ -946,14 +959,11 @@ int main(int argc, char **argv) {
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  {
-    MyTimer t("scan_rels", before_copy);
-    scan_rels(files);
-  }
+  scan_rels(files);
 
   // Compute .symtab and .strtab sizes
   {
-    MyTimer t("symtab_size", before_copy);
+    MyTimer t("symtab_size", before_copy_timer);
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
     out::strtab.shdr.sh_size = 1;
@@ -1008,17 +1018,10 @@ int main(int argc, char **argv) {
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
-  u64 filesize = 0;
-  {
-    MyTimer t("osec_offset", before_copy);
-    filesize = set_osec_offsets(output_chunks);
-  }
+  u64 filesize = set_osec_offsets(output_chunks);
 
   // Assign symbols to GOT offsets
-  {
-    MyTimer t("assign_got_offsets", before_copy);
-    assign_got_offsets(files);
-  }
+  assign_got_offsets(files);
 
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(output_chunks);
@@ -1027,6 +1030,8 @@ int main(int argc, char **argv) {
   // that symbol addresses including their GOT/PLT/etc addresses have
   // a correct final value.
 
+  // Some types of relocations for TLS symbols need the ending address
+  // of the TLS section. Find it out now.
   for (OutputChunk *chunk : output_chunks) {
     ELF64LE::Shdr &shdr = chunk->shdr;
     if (shdr.sh_flags & SHF_TLS)
@@ -1036,35 +1041,26 @@ int main(int argc, char **argv) {
   // Create an output file
   u8 *buf;
   {
-    MyTimer t("open_file", before_copy);
+    MyTimer t("open_file", before_copy_timer);
     buf = open_output_file(filesize);
   }
 
   // Copy input sections to the output file
   {
-    MyTimer t("copy", copy);
+    MyTimer t("copy", copy_timer);
     tbb::parallel_for_each(output_chunks, [&](OutputChunk *chunk) {
       chunk->copy_to(buf);
     });
   }
 
   // Fill .symtab and .strtab
-  {
-    MyTimer t("write_symtab", copy);
-    write_symtab(buf, files);
-  }
+  write_symtab(buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
-  {
-    MyTimer t("write_synthetic", copy);
-    write_got(buf, files);
-  }
+  write_got(buf, files);
 
   // Fill mergeable string sections
-  {
-    MyTimer t("write_merged_strings", copy);
-    write_merged_strings(buf, files);
-  }
+  write_merged_strings(buf, files);
 
   // Write headers and synthetic sections.
   write_vector(buf + out::ehdr.shdr.sh_offset, create_ehdr());
@@ -1078,14 +1074,11 @@ int main(int argc, char **argv) {
     write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section());
 
   // Zero-clear paddings between sections
-  {
-    MyTimer t("clear_padding", copy);
-    clear_padding(buf, output_chunks, filesize);
-  }
+  clear_padding(buf, output_chunks, filesize);
 
   // Commit
   {
-    MyTimer t("commit", copy);
+    MyTimer t("munmap", copy_timer);
     munmap(buf, filesize);
   }
 
