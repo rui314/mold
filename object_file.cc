@@ -3,6 +3,7 @@
 #include "llvm/BinaryFormat/Magic.h"
 
 #include <cstring>
+#include <regex>
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -513,14 +514,8 @@ void ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
 }
 
 bool is_c_identifier(StringRef name) {
-  if (name == "")
-    return false;
-  if (!isalpha(name[0]) && name[0] != '_')
-    return false;
-  for (int i = 1; i < name.size(); i++)
-    if (!isalnum(name[i]) && name[i] != '_')
-      return false;
-  return true;
+  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*");
+  return std::regex_match(name.begin(), name.end(), re);
 }
 
 ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> chunks) {
