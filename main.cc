@@ -780,11 +780,10 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
 
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
-    if (!is_c_identifier(chunk->name))
-      continue;
-
-    start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
-    stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
+    if (is_c_identifier(chunk->name)) {
+      start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
+      stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
+    }
   }
 }
 
