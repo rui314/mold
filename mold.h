@@ -578,12 +578,7 @@ public:
     instances.push_back(this);
   }
 
-  void inc() {
-    if (enabled)
-      value++;
-  }
-
-  void inc(u32 delta) {
+  void inc(u32 delta = 1) {
     if (enabled)
       value += delta;
   }
