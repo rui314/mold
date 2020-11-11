@@ -322,7 +322,7 @@ public:
 
 class SpecialSection : public OutputChunk {
 public:
-  SpecialSection(StringRef name, u64 flags, u32 type, u32 align, u32 entsize)
+  SpecialSection(StringRef name, u32 type, u64 flags, u32 align, u32 entsize)
     : OutputChunk(SYNTHETIC) {
     name = name;
     shdr.sh_flags = flags;
@@ -428,12 +428,12 @@ using namespace llvm::ELF;
 inline OutputHeader ehdr;
 inline OutputHeader shdr;
 inline OutputHeader phdr;
-inline SpecialSection interp(".interp", SHF_ALLOC, SHT_PROGBITS, 1, 0);
-inline SpecialSection got(".got", SHF_ALLOC | SHF_WRITE, SHT_PROGBITS, 8, 0);
-inline SpecialSection gotplt(".gotplt", SHF_ALLOC | SHF_WRITE, SHT_PROGBITS, 8, 0);
-inline SpecialSection relplt(".rela.plt", SHF_ALLOC, SHT_RELA, 8, sizeof(ELF64LE::Rela));
-inline SpecialSection dynamic(".dynamic", SHF_ALLOC | SHF_WRITE, SHT_DYNAMIC, 8, 0);
-inline SpecialSection strtab(".strtab", 0, SHT_STRTAB, 1, 0);
+inline SpecialSection interp(".interp", SHT_PROGBITS, SHF_ALLOC, 1, 0);
+inline SpecialSection got(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
+inline SpecialSection gotplt(".gotplt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
+inline SpecialSection relplt(".rela.plt", SHT_RELA, SHF_ALLOC, 8, sizeof(ELF64LE::Rela));
+inline SpecialSection dynamic(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE, 8, 0);
+inline SpecialSection strtab(".strtab", SHT_STRTAB, 0, 1, 0);
 inline ShstrtabSection shstrtab;
 inline PltSection plt;
 inline SymtabSection symtab;
