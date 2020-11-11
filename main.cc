@@ -631,7 +631,8 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
   return to_u8vector(vec);
 }
 
-static std::vector<u8> create_dynamic_section() {
+static std::vector<u8>
+create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
   std::vector<u64> vec;
 
   auto define = [&](u64 tag, u64 val) {
@@ -639,21 +640,33 @@ static std::vector<u8> create_dynamic_section() {
     vec.push_back(val);
   };
 
-  define(DT_RELA, 0);
-  define(DT_RELASZ, 0);
+  define(DT_RELA, out::reldyn.shdr.sh_addr);
+  define(DT_RELASZ, out::reldyn.shdr.sh_size);
   define(DT_RELAENT, sizeof(ELF64LE::Rela));
   define(DT_JMPREL, out::relplt.shdr.sh_addr);
   define(DT_PLTRELSZ, out::relplt.shdr.sh_size);
   define(DT_PLTGOT, out::gotplt.shdr.sh_addr);
   define(DT_PLTREL, DT_RELA);
-  define(DT_SYMTAB, 0);
+  define(DT_SYMTAB, out::dynsym.shdr.sh_addr);
   define(DT_SYMENT, sizeof(ELF64LE::Sym));
-  define(DT_STRTAB, 0);
-  define(DT_STRSZ, 0);
-  define(DT_INIT_ARRAY, 0);
-  define(DT_INIT_ARRAYSZ, 0);
-  define(DT_FINI_ARRAY, 0);
-  define(DT_FINI_ARRAYSZ, 0);
+  define(DT_STRTAB, out::dynstr.shdr.sh_addr);
+  define(DT_STRSZ, out::dynstr.shdr.sh_size);
+
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->shdr.sh_type == SHT_INIT_ARRAY) {
+      define(DT_INIT_ARRAY, chunk->shdr.sh_addr);
+      define(DT_INIT_ARRAYSZ, chunk->shdr.sh_size);
+      break;
+    }
+  }
+
+  for (OutputChunk *chunk : output_chunks) {
+    if (chunk->shdr.sh_type == SHT_FINI_ARRAY) {
+      define(DT_FINI_ARRAY, chunk->shdr.sh_addr);
+      define(DT_FINI_ARRAYSZ, chunk->shdr.sh_size);
+    }
+  }
+
   define(DT_NULL, 0);
   return to_u8vector(vec);
 }
@@ -893,6 +906,9 @@ int main(int argc, char **argv) {
   if (!config.is_static) {
     out::interp.shdr.sh_size = config.dynamic_linker.size() + 1;
     out::dynamic.shdr.sh_size = 1;
+    out::dynstr.shdr.sh_size = 1;
+    out::dynsym.shdr.sh_size = sizeof(ELF64LE::Sym);
+    out::reldyn.shdr.sh_size = sizeof(ELF64LE::Rel);
   }
 
   // Set priorities to files
@@ -968,7 +984,10 @@ int main(int argc, char **argv) {
   output_chunks.push_back(&out::plt);
   output_chunks.push_back(&out::gotplt);
   output_chunks.push_back(&out::relplt);
+  output_chunks.push_back(&out::reldyn);
   output_chunks.push_back(&out::dynamic);
+  output_chunks.push_back(&out::dynsym);
+  output_chunks.push_back(&out::dynstr);
   output_chunks.push_back(&out::shstrtab);
   output_chunks.push_back(&out::symtab);
   output_chunks.push_back(&out::strtab);
@@ -1004,7 +1023,7 @@ int main(int argc, char **argv) {
   out::shdr.shdr.sh_size = create_shdr(output_chunks).size();
   out::phdr.shdr.sh_size = create_phdr(output_chunks).size();
   if (out::dynamic.shdr.sh_size)
-    out::dynamic.shdr.sh_size = create_dynamic_section().size();
+    out::dynamic.shdr.sh_size = create_dynamic_section(output_chunks).size();
   out::symtab.shdr.sh_link = out::strtab.shndx;
 
   // Assign offsets to output sections
@@ -1061,7 +1080,8 @@ int main(int argc, char **argv) {
     write_string(buf + out::interp.shdr.sh_offset, config.dynamic_linker);
 
   if (out::dynamic.shdr.sh_size)
-    write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section());
+    write_vector(buf + out::dynamic.shdr.sh_offset,
+                 create_dynamic_section(output_chunks));
 
   // Zero-clear paddings between sections
   clear_padding(buf, output_chunks, filesize);

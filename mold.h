@@ -388,10 +388,10 @@ private:
 
 class SymtabSection : public OutputChunk {
 public:
-  SymtabSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".symtab";
-    shdr.sh_flags = 0;
+  SymtabSection(StringRef name, u32 flags) : OutputChunk(SYNTHETIC) {
+    this->name = name;
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
+    shdr.sh_flags = flags;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ELF64LE::Sym);
@@ -432,11 +432,14 @@ inline SpecialSection interp(".interp", SHT_PROGBITS, SHF_ALLOC, 1, 0);
 inline SpecialSection got(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection gotplt(".got.plt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection relplt(".rela.plt", SHT_RELA, SHF_ALLOC, 8, sizeof(ELF64LE::Rela));
+inline SpecialSection reldyn(".rela.dyn", SHT_RELA, SHF_ALLOC, 8, sizeof(ELF64LE::Rela));
 inline SpecialSection dynamic(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection strtab(".strtab", SHT_STRTAB, 0, 1, 0);
+inline SpecialSection dynstr(".dynstr", SHT_STRTAB, SHF_ALLOC, 1, 0);
 inline ShstrtabSection shstrtab;
 inline PltSection plt;
-inline SymtabSection symtab;
+inline SymtabSection symtab(".symtab", 0);
+inline SymtabSection dynsym(".dynsym", SHF_ALLOC);
 
 inline u64 tls_end;
 
