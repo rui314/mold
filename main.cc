@@ -335,39 +335,25 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
 
-  u32 got_offset = 0;
-  u32 gotplt_offset = 0;
-  u32 plt_offset = 0;
-  u32 relplt_offset = 0;
-  u32 dynsym_offset = 0;
-  u32 dynstr_offset = 0;
-
   for (ObjectFile *file : files) {
-    file->got_offset = got_offset;
-    got_offset += file->got_size;
+    file->got_offset = out::got.shdr.sh_size;
+    out::got.shdr.sh_size += file->got_size;
 
-    file->gotplt_offset = gotplt_offset;
-    gotplt_offset += file->gotplt_size;
+    file->gotplt_offset = out::gotplt.shdr.sh_size;
+    out::gotplt.shdr.sh_size += file->gotplt_size;
 
-    file->plt_offset = plt_offset;
-    plt_offset += file->plt_size;
+    file->plt_offset = out::plt.shdr.sh_size;
+    out::plt.shdr.sh_size += file->plt_size;
 
-    file->relplt_offset = relplt_offset;
-    relplt_offset += file->relplt_size;
+    file->relplt_offset = out::relplt.shdr.sh_size;
+    out::relplt.shdr.sh_size += file->relplt_size;
 
-    file->dynsym_offset = dynsym_offset;
-    dynsym_offset += file->dynsym_size;
+    file->dynsym_offset = out::dynsym.shdr.sh_size;
+    out::dynsym.shdr.sh_size += file->dynsym_size;
 
-    file->dynstr_offset = dynstr_offset;
-    dynstr_offset += file->dynstr_size;
+    file->dynstr_offset = out::dynstr.shdr.sh_size;
+    out::dynstr.shdr.sh_size += file->dynstr_size;
   }
-
-  out::got.shdr.sh_size = got_offset;
-  out::gotplt.shdr.sh_size = gotplt_offset;
-  out::plt.shdr.sh_size = plt_offset;
-  out::relplt.shdr.sh_size = relplt_offset;
-  out::dynsym.shdr.sh_size = dynsym_offset;
-  out::dynstr.shdr.sh_size = dynstr_offset;
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
@@ -428,6 +414,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *got = buf + out::got.shdr.sh_offset;
   u8 *plt = buf + out::plt.shdr.sh_offset;
   u8 *relplt = buf + out::relplt.shdr.sh_offset;
+  u8 *dynsym = buf + out::dynsym.shdr.sh_offset;
+  u8 *dynstr = buf + out::dynstr.shdr.sh_offset;
 
   memset(buf + out::gotplt.shdr.sh_offset, 0, out::gotplt.shdr.sh_size);
 
@@ -456,6 +444,10 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         rel->r_offset = out::gotplt.shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
         rel->r_addend = sym->get_addr();
+      }
+
+      if (flags & Symbol::NEEDS_DYNSYM) {
+        auto *dsym = (ELF64LE::Sym *)(dynsym + sym->dynsym_offset);
       }
     }
   });
