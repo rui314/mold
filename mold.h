@@ -538,11 +538,15 @@ public:
   std::atomic_uint32_t num_got = ATOMIC_VAR_INIT(0);
   std::atomic_uint32_t num_gotplt = ATOMIC_VAR_INIT(0);
   std::atomic_uint32_t num_relplt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_dynsym = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t dynstr_size = ATOMIC_VAR_INIT(0);
 
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
+  u32 dynsym_offset = 0;
+  u32 dynstr_offset = 0;
 
   std::vector<MergeableSection> mergeable_sections;
 
