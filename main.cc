@@ -160,15 +160,16 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
 static void resolve_symbols(std::vector<ObjectFile *> &files) {
   MyTimer t("resolve_symbols", before_copy_timer);
 
+  // Register defined symbols
   tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
 
-  // Resolve symbols
+
+  // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
   for (ObjectFile *file : files)
     if (file->is_alive)
       root.push_back(file);
 
-  // Mark archive members we include into the final output.
   tbb::parallel_do(
     root,
     [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
@@ -182,8 +183,8 @@ static void resolve_symbols(std::vector<ObjectFile *> &files) {
 
   // Convert weak symbols to absolute symbols with value 0.
   tbb::parallel_for_each(files, [](ObjectFile *file) {
-                                  file->hanlde_undefined_weak_symbols();
-                                });
+    file->hanlde_undefined_weak_symbols();
+  });
 }
 
 static void eliminate_comdats(std::vector<ObjectFile *> &files) {
@@ -242,6 +243,12 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
     counter.inc(osec->map.size());
 }
 
+// So far, each input section has a pointer to its corresponding
+// output section, but there's no reverse edge to get a list of
+// input sections from an output section. This function creates it.
+//
+// An output section may contain millions of input sections.
+// So, we append input sections to output sections in parallel.
 static void bin_sections(std::vector<ObjectFile *> &files) {
   MyTimer t("bin_sections", before_copy_timer);
 
