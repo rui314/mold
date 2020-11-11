@@ -499,8 +499,7 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
     else
       esym.st_shndx = SHN_ABS;
 
-    memcpy(strtab + strtab_off, sym.name.data(), sym.name.size());
-    strtab[strtab_off + sym.name.size()] = '\0';
+    write_string(strtab + strtab_off, sym.name);
     strtab_off += sym.name.size() + 1;
   }
 }

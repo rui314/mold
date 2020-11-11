@@ -1071,12 +1071,9 @@ int main(int argc, char **argv) {
   write_vector(buf + out::shdr.shdr.sh_offset, create_shdr(output_chunks));
   write_vector(buf + out::phdr.shdr.sh_offset, create_phdr(output_chunks));
 
-  if (out::interp.shdr.sh_size) {
-    StringRef path = config.dynamic_linker;
-    memcpy(buf + out::interp.shdr.sh_offset, path.data(), path.size());
-    buf[out::interp.shdr.sh_offset + path.size()] = '\0';
-  }
-    
+  if (out::interp.shdr.sh_size)
+    write_string(buf + out::interp.shdr.sh_offset, config.dynamic_linker);
+
   if (out::dynamic.shdr.sh_size)
     write_vector(buf + out::dynamic.shdr.sh_offset, create_dynamic_section());
 

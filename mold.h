@@ -474,6 +474,11 @@ inline u64 StringPiece::get_addr() const {
   return is->parent.shdr.sh_addr + is->offset + output_offset;
 }
 
+inline void write_string(u8 *buf, StringRef str) {
+  memcpy(buf, str.data(), str.size());
+  buf[str.size()] = '\0';
+}
+
 //
 // object_file.cc
 //
