@@ -26,7 +26,7 @@ void InputSection::copy_to(u8 *buf) {
   // Apply relocations
   u8 *base = buf + output_section->shdr.sh_offset + offset;
   u64 sh_addr = output_section->shdr.sh_addr + offset;
-  u64 GOT = out::got.shdr.sh_addr;
+  u64 GOT = out::got->shdr.sh_addr;
 
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
@@ -39,7 +39,7 @@ void InputSection::copy_to(u8 *buf) {
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
     u64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = sh_addr + rel.r_offset;
-    u64 L = out::plt.shdr.sh_addr + sym.plt_offset;
+    u64 L = out::plt->shdr.sh_addr + sym.plt_offset;
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
