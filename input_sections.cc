@@ -126,6 +126,11 @@ void InputSection::scan_relocations() {
     if (!sym->file || !sym->file->is_alive)
       continue;
 
+    if (sym->file->is_dso && set_flag(sym, Symbol::NEEDS_DYNSYM)) {
+      sym->file->dynsym_size += sizeof(ELF64LE::Sym);
+      sym->file->dynstr_size += sym->name.size() + 1;
+    }
+
     switch (rel.getType(false)) {
     case R_X86_64_GOT32:
     case R_X86_64_GOT64:

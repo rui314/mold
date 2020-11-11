@@ -209,7 +209,7 @@ public:
   u8 is_undef_weak : 1;
   u8 traced : 1;
 
-  enum { NEEDS_GOT = 1, NEEDS_GOTTP = 2, NEEDS_PLT = 4 };
+  enum { NEEDS_GOT = 1, NEEDS_GOTTP = 2, NEEDS_PLT = 4, NEEDS_DYNSYM = 8 };
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
 
   u8 visibility = 0;
