@@ -378,6 +378,8 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
     u32 gotplt_offset = file->gotplt_offset;
     u32 plt_offset = file->plt_offset;
     u32 relplt_offset = file->relplt_offset;
+    u32 dynsym_offset = file->dynsym_offset;
+    u32 dynstr_offset = file->dynstr_offset;
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
@@ -407,6 +409,14 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
         // Write a .rela.dyn entry
         sym->relplt_offset = relplt_offset;
         relplt_offset += sizeof(ELF64LE::Rela);
+      }
+
+      if (flags & Symbol::NEEDS_DYNSYM) {
+        sym->dynsym_offset = dynsym_offset;
+        dynsym_offset += sizeof(ELF64LE::Sym);
+
+        sym->dynstr_offset = dynstr_offset;
+        dynstr_offset += sym->name.size() + 1;
       }
     }
   });

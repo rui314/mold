@@ -198,6 +198,8 @@ public:
   u32 gottp_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
+  u32 dynsym_offset = 0;
+  u32 dynstr_offset = 0;
 
   u32 shndx = 0;
 
