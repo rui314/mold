@@ -675,18 +675,18 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> output_chunks) {
 
 static void fix_synthetic_symbols(ArrayRef<OutputChunk *> output_chunks) {
   auto start = [&](OutputChunk *chunk, Symbol *sym) {
-                 if (sym) {
-                   sym->shndx = chunk->shndx;
-                   sym->value = chunk->shdr.sh_addr;
-                 }
-               };
+    if (sym) {
+      sym->shndx = chunk->shndx;
+      sym->value = chunk->shdr.sh_addr;
+    }
+  };
 
   auto stop = [&](OutputChunk *chunk, Symbol *sym) {
-                if (sym) {
-                  sym->shndx = chunk->shndx;
-                  sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
-                }
-              };
+    if (sym) {
+      sym->shndx = chunk->shndx;
+      sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+    }
+  };
 
   // __bss_start
   for (OutputChunk *chunk : output_chunks) {
