@@ -430,7 +430,7 @@ inline OutputHeader shdr;
 inline OutputHeader phdr;
 inline SpecialSection interp(".interp", SHT_PROGBITS, SHF_ALLOC, 1, 0);
 inline SpecialSection got(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
-inline SpecialSection gotplt(".gotplt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
+inline SpecialSection gotplt(".got.plt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection relplt(".rela.plt", SHT_RELA, SHF_ALLOC, 8, sizeof(ELF64LE::Rela));
 inline SpecialSection dynamic(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection strtab(".strtab", SHT_STRTAB, 0, 1, 0);

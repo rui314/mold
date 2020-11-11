@@ -639,7 +639,21 @@ static std::vector<u8> create_dynamic_section() {
     vec.push_back(val);
   };
 
+  define(DT_RELA, 0);
+  define(DT_RELASZ, 0);
   define(DT_RELAENT, sizeof(ELF64LE::Rela));
+  define(DT_JMPREL, out::relplt.shdr.sh_addr);
+  define(DT_PLTRELSZ, out::relplt.shdr.sh_size);
+  define(DT_PLTGOT, out::gotplt.shdr.sh_addr);
+  define(DT_PLTREL, DT_RELA);
+  define(DT_SYMTAB, 0);
+  define(DT_SYMENT, sizeof(ELF64LE::Sym));
+  define(DT_STRTAB, 0);
+  define(DT_STRSZ, 0);
+  define(DT_INIT_ARRAY, 0);
+  define(DT_INIT_ARRAYSZ, 0);
+  define(DT_FINI_ARRAY, 0);
+  define(DT_FINI_ARRAYSZ, 0);
   define(DT_NULL, 0);
   return to_u8vector(vec);
 }
