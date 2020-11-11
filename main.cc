@@ -664,6 +664,7 @@ create_dynamic_section(ArrayRef<OutputChunk *> output_chunks) {
     if (chunk->shdr.sh_type == SHT_FINI_ARRAY) {
       define(DT_FINI_ARRAY, chunk->shdr.sh_addr);
       define(DT_FINI_ARRAYSZ, chunk->shdr.sh_size);
+      break;
     }
   }
 
