@@ -482,7 +482,7 @@ static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> output_chunks,
 // alloc writable data
 // alloc writable bss
 // nonalloc
-static int get_rank(const ELF64LE::Shdr shdr) {
+static int get_rank(const ELF64LE::Shdr &shdr) {
   bool alloc = shdr.sh_flags & SHF_ALLOC;
   bool writable = shdr.sh_flags & SHF_WRITE;
   bool exec = shdr.sh_flags & SHF_EXECINSTR;
@@ -823,37 +823,6 @@ static int get_thread_count(InputArgList &args) {
     return n;
   }
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
-}
-
-static void parallel_memcpy(u8 *dst, u8 *src, u64 size) {
-  u64 unit = 4 * 1024 * 1024;
-  u64 num_units = size / unit;
-
-  tbb::parallel_for((u64)0, num_units, [&](u64 off) {
-    memcpy(dst + off * unit, src + off * unit, unit);
-  });
-  memcpy(dst + num_units * unit, src + num_units * unit, size % unit);
-}
-
-void parallel_write(int fd, u8 *buf, u64 size) {
-  u64 unit = 4 * 1024 * 1024;
-  u64 num_units = size / unit;
-
-  auto write_loop = [&](u64 off, u64 size) {
-    while (size) {
-      size_t n = pwrite(fd, buf + off, size, off);
-      if (n == -1)
-        error("write failed");
-      off += n;
-      size -= n;
-    }
-  };
-
-  tbb::parallel_for((u64)0, num_units, [&](u64 i) {
-    write_loop(unit * i, unit);
-  });
-
-  write_loop(num_units * unit, size % unit);
 }
 
 static void write_vector(u8 *buf, ArrayRef<u8> vec) {
