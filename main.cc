@@ -339,6 +339,8 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
+  u32 dynsym_offset = 0;
+  u32 dynstr_offset = 0;
 
   for (ObjectFile *file : files) {
     file->got_offset = got_offset;
@@ -352,12 +354,20 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
 
     file->relplt_offset = relplt_offset;
     relplt_offset += file->num_relplt * sizeof(ELF64LE::Rela);
+
+    file->dynsym_offset = dynsym_offset;
+    dynsym_offset += file->num_dynsym * sizeof(ELF64LE::Sym);
+
+    file->dynstr_offset = dynstr_offset;
+    dynstr_offset += file->dynstr_size;
   }
 
   out::got.shdr.sh_size = got_offset;
   out::gotplt.shdr.sh_size = gotplt_offset;
   out::plt.shdr.sh_size = plt_offset;
   out::relplt.shdr.sh_size = relplt_offset;
+  out::dynsym.shdr.sh_size = dynsym_offset;
+  out::dynstr.shdr.sh_size = dynstr_offset;
 }
 
 static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
