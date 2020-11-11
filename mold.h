@@ -405,6 +405,21 @@ private:
   std::vector<ELF64LE::Sym> contents;
 };
 
+class HashSection : public OutputChunk {
+public:
+  HashSection() : OutputChunk(SYNTHETIC) {
+    this->name = ".hash";
+    shdr.sh_type = llvm::ELF::SHT_HASH;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_entsize = 4;
+    shdr.sh_addralign = 4;
+  }
+
+  void write_symbol(u8 *buf, Symbol *sym) {
+    u8 *base = buf + shdr.sh_offset;
+  }
+};
+
 class MergedSection : public OutputChunk {
 public:
   static MergedSection *get_instance(StringRef name, u64 flags, u32 type);
@@ -439,6 +454,7 @@ inline SpecialSection reldyn(".rela.dyn", SHT_RELA, SHF_ALLOC, 8, sizeof(ELF64LE
 inline SpecialSection dynamic(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE, 8, 0);
 inline SpecialSection strtab(".strtab", SHT_STRTAB, 0, 1, 0);
 inline SpecialSection dynstr(".dynstr", SHT_STRTAB, SHF_ALLOC, 1, 0);
+inline HashSection hash;
 inline ShstrtabSection shstrtab;
 inline PltSection plt;
 inline SymtabSection symtab(".symtab", 0);

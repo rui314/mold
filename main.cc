@@ -912,10 +912,11 @@ int main(int argc, char **argv) {
 
   if (!config.is_static) {
     out::interp.shdr.sh_size = config.dynamic_linker.size() + 1;
-    out::dynamic.shdr.sh_size = 1;
-    out::dynstr.shdr.sh_size = 1;
+    out::dynamic.shdr.sh_size = -1;
+    out::dynstr.shdr.sh_size = -1;
     out::dynsym.shdr.sh_size = sizeof(ELF64LE::Sym);
     out::reldyn.shdr.sh_size = sizeof(ELF64LE::Rel);
+    out::hash.shdr.sh_size = -1;
   }
 
   // Set priorities to files
@@ -1031,6 +1032,12 @@ int main(int argc, char **argv) {
   out::phdr.shdr.sh_size = create_phdr(chunks).size();
   if (out::dynamic.shdr.sh_size)
     out::dynamic.shdr.sh_size = create_dynamic_section(chunks).size();
+
+  if (out::hash.shdr.sh_size) {
+    u32 num_dynsym = out::dynsym.shdr.sh_size / sizeof(ELF64LE::Sym);
+    out::hash.shdr.sh_size = num_dynsym * 8 + 8;
+  }
+
   out::symtab.shdr.sh_link = out::strtab.shndx;
   out::dynsym.shdr.sh_info = 1;
   out::dynsym.shdr.sh_link = out::dynstr.shndx;
