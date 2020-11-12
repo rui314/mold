@@ -411,11 +411,11 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
 static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_synthetic", copy_timer);
 
-  u8 *got = buf + out::got->shdr.sh_offset;
-  u8 *plt = buf + out::plt->shdr.sh_offset;
-  u8 *relplt = buf + out::relplt->shdr.sh_offset;
-  u8 *dynsym = buf + out::dynsym->shdr.sh_offset;
-  u8 *dynstr = buf + out::dynstr->shdr.sh_offset;
+  u8 *got_buf = buf + out::got->shdr.sh_offset;
+  u8 *plt_buf = buf + out::plt->shdr.sh_offset;
+  u8 *relplt_buf = buf + out::relplt->shdr.sh_offset;
+  u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
+  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
 
   memset(buf + out::gotplt->shdr.sh_offset, 0, out::gotplt->shdr.sh_size);
 
@@ -429,19 +429,19 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       u8 flags = sym->flags.load(std::memory_order_relaxed);
 
       if (flags & Symbol::NEEDS_GOT)
-        *(u64 *)(got + sym->got_offset) = sym->get_addr();
+        *(u64 *)(got_buf + sym->got_offset) = sym->get_addr();
 
       if (flags & Symbol::NEEDS_GOTTP)
-        *(u64 *)(got + sym->gottp_offset) = sym->get_addr() - out::tls_end;
+        *(u64 *)(got_buf + sym->gottp_offset) = sym->get_addr() - out::tls_end;
 
       if (flags & Symbol::NEEDS_PLT) {
         // Write a .plt entry
         u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
-        out::plt->write_entry(plt + sym->plt_offset, S - P - 6);
+        out::plt->write_entry(plt_buf + sym->plt_offset, S - P - 6);
 
         // Write a .rela.dyn entry
-        auto *rel = (ELF64LE::Rela *)(relplt + sym->relplt_offset);
+        auto *rel = (ELF64LE::Rela *)(relplt_buf + sym->relplt_offset);
         memset(rel, 0, sizeof(*rel));
         rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         rel->setType(R_X86_64_IRELATIVE, false);
@@ -450,7 +450,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
 
       if (flags & Symbol::NEEDS_DYNSYM) {
         // Write to .dynsym
-        auto &esym = *(ELF64LE::Sym *)buf;
+        auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_offset);
         memset(&esym, 0, sizeof(esym));
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
@@ -458,7 +458,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         llvm::outs() << "dynstr_offset=" << dynstr_offset << "\n";
 
         // Write to .dynstr
-        write_string(dynstr + dynstr_offset, sym->name);
+        write_string(dynstr_buf + dynstr_offset, sym->name);
         dynstr_offset += sym->name.size() + 1;
 
         // Write to .hash
