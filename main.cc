@@ -807,7 +807,6 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   MyTimer t("write_symtab", copy_timer);
 
   memset(buf + out::symtab->shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
-  buf[out::strtab->shdr.sh_offset] = '\0';
 
   std::vector<u64> local_symtab_off(files.size() + 1);
   std::vector<u64> local_strtab_off(files.size() + 1);
@@ -925,15 +924,14 @@ int main(int argc, char **argv) {
   out::gotplt = new SpecialSection(".got.plt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
   out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
                                    8, sizeof(ELF64LE::Rela));
-  out::strtab = new SpecialSection(".strtab", SHT_STRTAB, 0);
+  out::strtab = new StrtabSection(".strtab", 0);
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", 0);
   out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
-  out::dynstr = new SpecialSection(".dynstr", SHT_STRTAB, SHF_ALLOC);
+  out::dynstr = new StrtabSection(".dynstr", SHF_ALLOC);
 
   out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
-  out::dynstr->shdr.sh_size = 1;
 
   if (!config.is_static) {
     out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
@@ -1022,7 +1020,6 @@ int main(int argc, char **argv) {
     MyTimer t("symtab_size", before_copy_timer);
     tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
 
-    out::strtab->shdr.sh_size = 1;
     for (ObjectFile *file : files) {
       out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
       out::strtab->shdr.sh_size += file->local_strtab_size + file->global_strtab_size;

@@ -365,6 +365,22 @@ public:
   }
 };
 
+class StrtabSection : public OutputChunk {
+public:
+  StrtabSection(StringRef name, u64 flags) : OutputChunk(SYNTHETIC) {
+    this->name = name;
+    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_flags = flags;
+    shdr.sh_addralign = 1;
+    shdr.sh_entsize = 0;
+    shdr.sh_size = 1;
+  }
+
+  void initialize(u8 *buf) override {
+    buf[shdr.sh_offset] = '\0';
+  }
+};
+
 class ShstrtabSection : public OutputChunk {
 public:
   ShstrtabSection() : OutputChunk(SYNTHETIC) {
@@ -478,8 +494,8 @@ inline SpecialSection *gotplt;
 inline SpecialSection *relplt;
 inline SpecialSection *reldyn;
 inline SpecialSection *dynamic;
-inline SpecialSection *strtab;
-inline SpecialSection *dynstr;
+inline StrtabSection *strtab;
+inline StrtabSection *dynstr;
 inline HashSection *hash;
 inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
