@@ -470,6 +470,16 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
+static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
+  u8 *ptr = buf + out::shstrtab->shdr.sh_offset + 1;
+  for (OutputChunk *chunk : chunks) {
+    if (!chunk->name.empty()) {
+      write_string(ptr, chunk->name);
+      ptr += chunk->name.size() + 1;
+    }
+  }
+}
+
 static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_merged_strings", copy_timer);
 
@@ -925,7 +935,7 @@ int main(int argc, char **argv) {
   out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
                                    8, sizeof(ELF64LE::Rela));
   out::strtab = new StrtabSection(".strtab", 0);
-  out::shstrtab = new ShstrtabSection;
+  out::shstrtab = new StrtabSection(".shstrtab", 0);
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", 0);
   out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
@@ -1059,9 +1069,12 @@ int main(int argc, char **argv) {
   chunks.push_back(out::shdr);
 
   // Fix .shstrtab contents.
-  for (OutputChunk *chunk : chunks)
-    if (!chunk->name.empty())
-      chunk->shdr.sh_name = out::shstrtab->add_string(chunk->name);
+  for (OutputChunk *chunk : chunks) {
+    if (!chunk->name.empty()) {
+      chunk->shdr.sh_name = out::shstrtab->shdr.sh_size;
+      out::shstrtab->shdr.sh_size += chunk->name.size() + 1;
+    }
+  }
 
   // Set section indices.
   for (int i = 0, shndx = 1; i < chunks.size(); i++)
@@ -1137,6 +1150,9 @@ int main(int argc, char **argv) {
 
   // Fill .symtab and .strtab
   write_symtab(buf, files);
+
+  // Fill .shstrtab
+  write_shstrtab(buf, chunks);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
   write_got(buf, files);

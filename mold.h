@@ -381,32 +381,6 @@ public:
   }
 };
 
-class ShstrtabSection : public OutputChunk {
-public:
-  ShstrtabSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".shstrtab";
-    contents = '\0';
-    shdr.sh_flags = 0;
-    shdr.sh_type = llvm::ELF::SHT_STRTAB;
-    shdr.sh_size = 1;
-  }
-
-  u64 add_string(StringRef s) {
-    u64 ret = contents.size();
-    contents += s.str();
-    contents += '\0';
-    shdr.sh_size = contents.size();
-    return ret;
-  }
-
-  void copy_to(u8 *buf) override {
-    memcpy(buf + shdr.sh_offset, &contents[0], contents.size());
-  }
-
-private:
-  std::string contents;
-};
-
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection(StringRef name, u32 flags) : OutputChunk(SYNTHETIC) {
@@ -497,7 +471,7 @@ inline SpecialSection *dynamic;
 inline StrtabSection *strtab;
 inline StrtabSection *dynstr;
 inline HashSection *hash;
-inline ShstrtabSection *shstrtab;
+inline StrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
 inline SymtabSection *dynsym;
