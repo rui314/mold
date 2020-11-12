@@ -421,6 +421,9 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   memset(dynsym, 0, sizeof(ELF64LE::Sym));
   dynstr[0] = '\0';
 
+  if (out::hash)
+    out::hash->initialize(buf);
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
 

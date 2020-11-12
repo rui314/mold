@@ -416,8 +416,9 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void copy_to(u8 *buf) override {
+  void initialize(u8 *buf) {
     u32 *hdr = (u32 *)(buf + shdr.sh_offset);
+    memset(buf + shdr.sh_offset, 0, shdr.sh_size);
     hdr[0] = hdr[1] = num_dynsym;
   }
 
@@ -611,8 +612,7 @@ private:
 };
 
 inline void HashSection::write_symbol(u8 *buf, Symbol *sym) {
-  u32 dynsym_idx =
-    (sym->file->dynsym_offset + sym->dynsym_offset) / sizeof(ELF64LE::Sym);
+  u32 dynsym_idx = sym->dynsym_offset / sizeof(ELF64LE::Sym);
   u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);
   u32 *chains = buckets + num_dynsym;
   u32 idx = hash(sym->name) % num_dynsym;
