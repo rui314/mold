@@ -1076,6 +1076,12 @@ int main(int argc, char **argv) {
     out::dynsym->shdr.sh_link = out::dynstr->shndx;
   }
 
+  if (out::hash && out::dynsym)
+    out::hash->shdr.sh_link = out::dynsym->shndx;
+
+  if (out::dynamic && out::dynstr)
+    out::dynamic->shdr.sh_link = out::dynstr->shndx;
+
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(chunks);
 
