@@ -393,6 +393,10 @@ public:
     contents.push_back({});
   }
 
+  void initialize(u8 *buf) override {
+    memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+  }
+
 private:
   std::vector<ELF64LE::Sym> contents;
 };

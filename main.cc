@@ -418,8 +418,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *dynstr = buf + out::dynstr->shdr.sh_offset;
 
   memset(buf + out::gotplt->shdr.sh_offset, 0, out::gotplt->shdr.sh_size);
-  memset(dynsym, 0, sizeof(ELF64LE::Sym));
-  dynstr[0] = '\0';
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
@@ -471,11 +469,11 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
 }
 
 static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
-  u8 *ptr = buf + out::shstrtab->shdr.sh_offset + 1;
+  int offset = out::shstrtab->shdr.sh_offset + 1;
   for (OutputChunk *chunk : chunks) {
     if (!chunk->name.empty()) {
-      write_string(ptr, chunk->name);
-      ptr += chunk->name.size() + 1;
+      write_string(buf + offset, chunk->name);
+      offset += chunk->name.size() + 1;
     }
   }
 }
@@ -815,8 +813,6 @@ static u8 *open_output_file(u64 filesize) {
 
 static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
   MyTimer t("write_symtab", copy_timer);
-
-  memset(buf + out::symtab->shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
 
   std::vector<u64> local_symtab_off(files.size() + 1);
   std::vector<u64> local_strtab_off(files.size() + 1);
