@@ -543,7 +543,7 @@ public:
   int first_global = 0;
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
-  bool is_dso;
+  bool is_dso = false;
   const bool is_in_archive;
 
   u64 local_symtab_size = 0;
