@@ -70,6 +70,7 @@ struct Config {
   StringRef output;
   bool is_static = false;
   bool print_map = false;
+  int filler = -1;
 };
 
 inline Config config;

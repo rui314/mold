@@ -811,6 +811,9 @@ static u8 *open_output_file(u64 filesize) {
   if (buf == MAP_FAILED)
     error(config.output + ": mmap failed: " + strerror(errno));
   close(fd);
+
+  if (config.filler != -1)
+    memset(buf, config.filler, filesize);
   return (u8 *)buf;
 }
 
@@ -867,6 +870,20 @@ static void write_vector(u8 *buf, ArrayRef<u8> vec) {
   memcpy(buf, vec.data(), vec.size());
 }
 
+static int parse_filler(opt::InputArgList &args) {
+  auto *arg = args.getLastArg(OPT_filler);
+  if (!arg)
+    return -1;
+
+  StringRef val = arg->getValue();
+  if (!val.startswith("0x"))
+    error("invalid argument: " + arg->getAsString(args));
+  int ret;
+  if (!to_integer(val.substr(2), ret, 16))
+    error("invalid argument: " + arg->getAsString(args));
+  return (u8)ret;
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -884,6 +901,7 @@ int main(int argc, char **argv) {
 
   config.print_map = args.hasArg(OPT_print_map);
   config.is_static = args.hasArg(OPT_static);
+  config.filler = parse_filler(args);
 
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
