@@ -506,7 +506,7 @@ static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> chunks, u64 filesize)
 // alloc writable data
 // alloc writable bss
 // nonalloc
-static int get_rank(const ELF64LE::Shdr &shdr) {
+static int get_section_rank(const ELF64LE::Shdr &shdr) {
   bool alloc = shdr.sh_flags & SHF_ALLOC;
   bool writable = shdr.sh_flags & SHF_WRITE;
   bool exec = shdr.sh_flags & SHF_EXECINSTR;
@@ -516,19 +516,6 @@ static int get_rank(const ELF64LE::Shdr &shdr) {
 }
 
 static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
-  std::sort(chunks.begin(), chunks.end(), [](OutputChunk *a, OutputChunk *b) {
-    int x = get_rank(a->shdr);
-    int y = get_rank(b->shdr);
-    if (x != y)
-      return x > y;
-
-    // Tie-break to make output deterministic.
-    if (a->shdr.sh_flags != b->shdr.sh_flags)
-      return a->shdr.sh_flags < b->shdr.sh_flags;
-    if (a->shdr.sh_type != b->shdr.sh_type)
-      return a->shdr.sh_type < b->shdr.sh_type;
-    return a->name < b->name;
-  });
 }
 
 static std::vector<u8> create_ehdr() {
@@ -1056,7 +1043,9 @@ int main(int argc, char **argv) {
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
-  sort_output_chunks(chunks);
+  std::stable_sort(chunks.begin(), chunks.end(), [](OutputChunk *a, OutputChunk *b) {
+    return get_section_rank(a->shdr) > get_section_rank(b->shdr);
+  });
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
