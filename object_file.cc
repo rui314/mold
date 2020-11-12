@@ -566,13 +566,6 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> chunks) {
   out::_etext = add("_etext", STB_GLOBAL);
   out::_edata = add("_edata", STB_GLOBAL);
 
-  if (!Symbol::intern("end")->file)
-    out::end = add("end", STB_GLOBAL);
-  if (!Symbol::intern("etext")->file)
-    out::etext = add("etext", STB_GLOBAL);
-  if (!Symbol::intern("edata")->file)
-    out::edata = add("edata", STB_GLOBAL);
-
   for (OutputChunk *chunk : chunks) {
     if (!is_c_identifier(chunk->name))
       continue;

@@ -4,7 +4,7 @@
 // RUN: mold -o %t.exe %t1.o %t2.o
 // RUN: readelf --symbols %t.exe | FileCheck %s
 
-// CHECK: Symbol table '.symtab' contains 22 entries:
+// CHECK: Symbol table '.symtab' contains 19 entries:
 // CHECK: Num:    Value          Size Type    Bind   Vis      Ndx Name
 // CHECK:   0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND
 // CHECK:   1: 0000000000201000     0 NOTYPE  LOCAL  DEFAULT    8 local1
@@ -25,9 +25,6 @@
 // CHECK:  16: 0000000000202110     0 NOTYPE  GLOBAL DEFAULT   11 _end
 // CHECK:  17: 0000000000201001     0 NOTYPE  GLOBAL DEFAULT    8 _etext
 // CHECK:  18: 0000000000202110     0 NOTYPE  GLOBAL DEFAULT   11 _edata
-// CHECK:  19: 0000000000202110     0 NOTYPE  GLOBAL DEFAULT   11 end
-// CHECK:  20: 0000000000201001     0 NOTYPE  GLOBAL DEFAULT    8 etext
-// CHECK:  21: 0000000000202110     0 NOTYPE  GLOBAL DEFAULT   11 edata
 
         .globl foo, bar, this_is_global
 local1:

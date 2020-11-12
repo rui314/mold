@@ -780,20 +780,14 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
     if (chunk->kind == OutputChunk::HEADER)
       continue;
 
-    if (chunk->shdr.sh_flags & SHF_ALLOC) {
-      stop(chunk, out::end);
+    if (chunk->shdr.sh_flags & SHF_ALLOC)
       stop(chunk, out::_end);
-    }
 
-    if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
-      stop(chunk, out::etext);
+    if (chunk->shdr.sh_flags & SHF_EXECINSTR)
       stop(chunk, out::_etext);
-    }
 
-    if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC) {
-      stop(chunk, out::edata);
+    if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC)
       stop(chunk, out::_edata);
-    }
   }
 
   // __start_ and __stop_ symbols
