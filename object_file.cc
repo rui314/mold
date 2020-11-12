@@ -60,6 +60,17 @@ void ObjectFile::initialize_sections() {
     case SHT_SYMTAB_SHNDX:
       error(toString(this) + ": SHT_SYMTAB_SHNDX section is not supported");
       break;
+    case SHT_DYNAMIC: {
+     ArrayRef<ELF64LE::Dyn> tags =
+       CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
+     for (const ELF64LE::Dyn &dyn : tags) {
+       if (dyn.d_tag == DT_NEEDED) {
+         soname = StringRef(symbol_strtab.data() + dyn.d_un.d_val);
+         break;
+       }
+     }
+     break;
+    }
     case SHT_SYMTAB:
     case SHT_STRTAB:
     case SHT_REL:

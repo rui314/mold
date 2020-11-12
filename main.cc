@@ -1072,6 +1072,13 @@ int main(int argc, char **argv) {
     }
   }
 
+  // Reserve space in .dynsym for DT_NEEDED strings.
+#if 0
+  for (ObjectFile *file : files)
+    if (file->is_alive && file->is_dso)
+      out::dynsym->shdr.sh_size += file->
+#endif
+
   // Set section indices.
   for (int i = 0, shndx = 1; i < chunks.size(); i++)
     if (chunks[i]->kind != OutputChunk::HEADER)

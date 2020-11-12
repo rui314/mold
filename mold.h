@@ -555,6 +555,7 @@ public:
 
   std::string name;
   StringRef archive_name;
+  StringRef soname;
   ELFFile<ELF64LE> obj;
   std::vector<InputSection *> sections;
   std::vector<Symbol *> symbols;
