@@ -752,7 +752,7 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
   for (OutputChunk *chunk : chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
-      out::__ehdr_start->value = out::ehdr->shdr.sh_addr - chunk->shdr.sh_addr;
+      out::__ehdr_start->value = out::ehdr->shdr.sh_addr;
       break;
     }
   }
