@@ -427,23 +427,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
 
-    auto write_dynsym = [&](Symbol *sym) {
-      // Write to .dynsym
-      auto &esym = *(ELF64LE::Sym *)buf;
-      memset(&esym, 0, sizeof(esym));
-      esym.st_name = dynstr_offset;
-      esym.setType(sym->type);
-      esym.setBinding(STB_GLOBAL);
-
-      // Write to .dynstr
-      write_string(dynstr + dynstr_offset, sym->name);
-      dynstr_offset += sym->name.size() + 1;
-
-      // Write to .hash
-      if (out::hash)
-        out::hash->write_symbol(buf, sym);
-    };
-
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
@@ -470,8 +453,22 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         rel->r_addend = sym->get_addr();
       }
 
-      if (flags & Symbol::NEEDS_DYNSYM)
-        write_dynsym(sym);
+      if (flags & Symbol::NEEDS_DYNSYM) {
+        // Write to .dynsym
+        auto &esym = *(ELF64LE::Sym *)buf;
+        memset(&esym, 0, sizeof(esym));
+        esym.st_name = dynstr_offset;
+        esym.setType(sym->type);
+        esym.setBinding(STB_GLOBAL);
+
+        // Write to .dynstr
+        write_string(dynstr + dynstr_offset, sym->name);
+        dynstr_offset += sym->name.size() + 1;
+
+        // Write to .hash
+        if (out::hash)
+          out::hash->write_symbol(buf, sym);
+      }
     }
   });
 }
