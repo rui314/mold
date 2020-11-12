@@ -680,6 +680,7 @@ create_dynamic_section(ArrayRef<OutputChunk *> chunks) {
   define(DT_SYMENT, sizeof(ELF64LE::Sym));
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
+  define(DT_HASH, out::hash->shdr.sh_addr);
   define(DT_INIT_ARRAY, out::__init_array_start->value);
   define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);

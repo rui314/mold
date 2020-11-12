@@ -16,4 +16,6 @@ config.test_format = lit.formats.ShTest(False)
 config.test_source_root = os.path.dirname(__file__)
 
 config.environment['PATH'] = os.path.pathsep.join((
-    os.path.dirname(__file__) + '/..', config.environment['PATH']))
+    os.path.dirname(__file__) + '/..',
+    os.path.dirname(__file__) + '/../llvm-project/build/bin',
+    config.environment['PATH']))
