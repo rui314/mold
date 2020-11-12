@@ -455,7 +455,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
         esym.setBinding(STB_GLOBAL);
-        llvm::outs() << "dynstr_offset=" << dynstr_offset << "\n";
 
         // Write to .dynstr
         write_string(dynstr_buf + dynstr_offset, sym->name);
