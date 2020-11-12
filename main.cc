@@ -455,6 +455,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
         esym.setBinding(STB_GLOBAL);
+        llvm::outs() << "dynstr_offset=" << dynstr_offset << "\n";
 
         // Write to .dynstr
         write_string(dynstr + dynstr_offset, sym->name);
@@ -943,8 +944,8 @@ int main(int argc, char **argv) {
   out::strtab = new StrtabSection(".strtab", 0);
   out::shstrtab = new StrtabSection(".shstrtab", 0);
   out::plt = new PltSection;
-  out::symtab = new SymtabSection(".symtab", 0);
-  out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
+  out::symtab = new SymtabSection(".symtab", SHT_SYMTAB, 0);
+  out::dynsym = new SymtabSection(".dynsym", SHT_DYNSYM, SHF_ALLOC);
   out::dynstr = new StrtabSection(".dynstr", SHF_ALLOC);
 
   out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
@@ -1027,6 +1028,11 @@ int main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
+  // Reserve space in .dynsym for DT_NEEDED strings.
+  for (ObjectFile *file : files)
+    if (file->is_alive && file->is_dso)
+      out::dynstr->shdr.sh_size += file->soname.size() + 1;
+
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
   scan_rels(files);
@@ -1081,11 +1087,6 @@ int main(int argc, char **argv) {
       out::shstrtab->shdr.sh_size += chunk->name.size() + 1;
     }
   }
-
-  // Reserve space in .dynsym for DT_NEEDED strings.
-  for (ObjectFile *file : files)
-    if (file->is_alive && file->is_dso)
-      out::dynstr->shdr.sh_size += file->soname.size() + 1;
 
   // Set section indices.
   for (int i = 0, shndx = 1; i < chunks.size(); i++)

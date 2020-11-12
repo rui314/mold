@@ -383,9 +383,9 @@ public:
 
 class SymtabSection : public OutputChunk {
 public:
-  SymtabSection(StringRef name, u32 flags) : OutputChunk(SYNTHETIC) {
+  SymtabSection(StringRef name, u32 type, u64 flags) : OutputChunk(SYNTHETIC) {
     this->name = name;
-    shdr.sh_type = llvm::ELF::SHT_SYMTAB;
+    shdr.sh_type = type;
     shdr.sh_flags = flags;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
     shdr.sh_addralign = 8;
