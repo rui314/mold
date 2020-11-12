@@ -515,7 +515,7 @@ bool is_c_identifier(StringRef name) {
   return std::regex_match(name.begin(), name.end(), re);
 }
 
-ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> chunks) {
+ObjectFile *ObjectFile::create_internal_file(std::vector<OutputChunk *> chunks) {
   // Create a dummy object file.
   constexpr int bufsz = 256;
   char *buf = new char[bufsz];
@@ -565,6 +565,10 @@ ObjectFile *ObjectFile::create_internal_file(ArrayRef<OutputChunk *> chunks) {
   out::_end = add("_end", STB_GLOBAL);
   out::_etext = add("_etext", STB_GLOBAL);
   out::_edata = add("_edata", STB_GLOBAL);
+
+  std::sort(chunks.begin(), chunks.end(), [](OutputChunk *x, OutputChunk *y) {
+    return x->name < y->name;
+  });
 
   for (OutputChunk *chunk : chunks) {
     if (!is_c_identifier(chunk->name))

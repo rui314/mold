@@ -1,5 +1,5 @@
 // RUN: cc -o %t.o -c %s
-// RUN: mold -static --filler=0xfe -o %t1.exe \
+// RUN: mold -static --filler 0xfe -o %t1.exe \
 // RUN:   /usr/lib/x86_64-linux-gnu/crt1.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crti.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginT.o \
@@ -9,7 +9,7 @@
 // RUN:   /usr/lib/x86_64-linux-gnu/libc.a \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crtn.o
-// RUN: mold -static --filler=0 -o %t2.exe \
+// RUN: mold -static --filler 0x0 -o %t2.exe \
 // RUN:   /usr/lib/x86_64-linux-gnu/crt1.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crti.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginT.o \
@@ -19,7 +19,9 @@
 // RUN:   /usr/lib/x86_64-linux-gnu/libc.a \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crtn.o
-// RUN: diff %t1.exe %t2.exe
+// RUN: hexdump -C %t1.exe > %t1.txt
+// RUN: hexdump -C %t2.exe > %t2.txt
+// RUN: diff %t1.txt %t2.txt
 
         .text
         .globl main

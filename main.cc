@@ -414,17 +414,12 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *got = buf + out::got->shdr.sh_offset;
   u8 *plt = buf + out::plt->shdr.sh_offset;
   u8 *relplt = buf + out::relplt->shdr.sh_offset;
-  u8 *dynsym = nullptr;
-  u8 *dynstr = nullptr;
+  u8 *dynsym = buf + out::dynsym->shdr.sh_offset;
+  u8 *dynstr = buf + out::dynstr->shdr.sh_offset;
 
   memset(buf + out::gotplt->shdr.sh_offset, 0, out::gotplt->shdr.sh_size);
-
-  if (out::dynstr) {
-    dynsym = buf + out::dynsym->shdr.sh_offset;
-    dynstr = buf + out::dynstr->shdr.sh_offset;
-    memset(dynsym, 0, sizeof(ELF64LE::Sym));
-    dynstr[0] = '\0';
-  }
+  memset(dynsym, 0, sizeof(ELF64LE::Sym));
+  dynstr[0] = '\0';
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
@@ -943,20 +938,21 @@ int main(int argc, char **argv) {
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", 0);
+  out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
+  out::dynstr = new SpecialSection(".dynstr", SHT_STRTAB, SHF_ALLOC);
+
+  out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
+  out::dynstr->shdr.sh_size = 1;
 
   if (!config.is_static) {
     out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
     out::dynamic = new SpecialSection(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE,
                                       8, sizeof(ELF64LE::Dyn));
-    out::dynstr = new SpecialSection(".dynstr", SHT_STRTAB, SHF_ALLOC);
-    out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
     out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8,
                                      sizeof(ELF64LE::Rela));
     out::hash = new HashSection;
 
     out::interp->shdr.sh_size = config.dynamic_linker.size() + 1;
-    out::dynstr->shdr.sh_size = 1;
-    out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
   }
 
   // Set priorities to files
