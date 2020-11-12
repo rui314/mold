@@ -994,6 +994,17 @@ int main(int argc, char **argv) {
   // Create a list of output sections.
   std::vector<OutputChunk *> chunks;
 
+  // Sort sections to make the output deterministic.
+  auto section_compare = [](OutputChunk *x, OutputChunk *y) {
+    return std::make_tuple(x->name, (u32)x->shdr.sh_type, (u64)x->shdr.sh_flags) <
+           std::make_tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
+  };
+
+  std::stable_sort(OutputSection::instances.begin(), OutputSection::instances.end(),
+                   section_compare);
+  std::stable_sort(MergedSection::instances.begin(), MergedSection::instances.end(),
+                   section_compare);
+
   for (OutputSection *osec : OutputSection::instances)
     if (osec->shdr.sh_size)
       chunks.push_back(osec);
