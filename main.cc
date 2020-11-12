@@ -665,13 +665,21 @@ static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
 }
 
 static std::vector<u8>
-create_dynamic_section(ArrayRef<OutputChunk *> chunks) {
+create_dynamic_section(ArrayRef<ObjectFile *> files) {
   std::vector<u64> vec;
 
   auto define = [&](u64 tag, u64 val) {
     vec.push_back(tag);
     vec.push_back(val);
   };
+
+  int i = 1;
+  for (ObjectFile *file : files) {
+    if (!file->soname.empty()) {
+      define(DT_NEEDED, i);
+      i += file->soname.size() + 1;
+    }
+  }
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
@@ -1097,7 +1105,7 @@ int main(int argc, char **argv) {
   out::shdr->shdr.sh_size = create_shdr(chunks).size();
   out::phdr->shdr.sh_size = create_phdr(chunks).size();
   if (out::dynamic)
-    out::dynamic->shdr.sh_size = create_dynamic_section(chunks).size();
+    out::dynamic->shdr.sh_size = create_dynamic_section(files).size();
 
   if (out::hash)
     out::hash->set_num_dynsym(out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym));
@@ -1182,7 +1190,7 @@ int main(int argc, char **argv) {
   if (out::interp)
     write_string(buf + out::interp->shdr.sh_offset, config.dynamic_linker);
   if (out::dynamic)
-    write_vector(buf + out::dynamic->shdr.sh_offset, create_dynamic_section(chunks));
+    write_vector(buf + out::dynamic->shdr.sh_offset, create_dynamic_section(files));
 
   // Zero-clear paddings between sections
   clear_padding(buf, chunks, filesize);
