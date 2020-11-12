@@ -284,6 +284,7 @@ public:
 
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
+  virtual void initialize(u8 *buf) {}
   virtual void copy_to(u8 *buf) {}
 
   StringRef name;
@@ -416,7 +417,7 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void initialize(u8 *buf) {
+  void initialize(u8 *buf) override {
     u32 *hdr = (u32 *)(buf + shdr.sh_offset);
     memset(buf + shdr.sh_offset, 0, shdr.sh_size);
     hdr[0] = hdr[1] = num_dynsym;

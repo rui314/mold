@@ -421,9 +421,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   memset(dynsym, 0, sizeof(ELF64LE::Sym));
   dynstr[0] = '\0';
 
-  if (out::hash)
-    out::hash->initialize(buf);
-
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
 
@@ -1123,6 +1120,14 @@ int main(int argc, char **argv) {
   {
     MyTimer t("open_file", before_copy_timer);
     buf = open_output_file(filesize);
+  }
+
+  // Initialize the output buffer.
+  {
+    MyTimer t("copy", copy_timer);
+    tbb::parallel_for_each(chunks, [&](OutputChunk *chunk) {
+      chunk->initialize(buf);
+    });
   }
 
   // Copy input sections to the output file
