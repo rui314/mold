@@ -419,6 +419,20 @@ public:
   void write_symbol(u8 *buf, Symbol *sym) {
     u8 *base = buf + shdr.sh_offset;
   }
+
+  static u32 hash(StringRef name) {
+    u32 h = 0;
+    for (char c : name) {
+      h = (h << 4) + c;
+      u32 g = h & 0xf0000000;
+      if (g != 0)
+        h ^= g >> 24;
+      h &= ~g;
+    }
+    return h;
+  }
+
+  u32 num_dynsym;
 };
 
 class MergedSection : public OutputChunk {

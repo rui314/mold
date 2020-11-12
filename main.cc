@@ -421,8 +421,36 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   memset(dynsym, 0, sizeof(ELF64LE::Sym));
   dynstr[0] = '\0';
 
+  if (out::hash) {
+    *(u32 *)(buf + out::hash->shdr.sh_offset) = out::hash->num_dynsym;
+    *(u32 *)(buf + out::hash->shdr.sh_offset + 4) = out::hash->num_dynsym;
+  }
+
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
+
+    auto write_dynsym = [&](u8 *buf, Symbol *sym) {
+      // Write to .dynsym
+      auto &esym = *(ELF64LE::Sym *)buf;
+      memset(&esym, 0, sizeof(esym));
+      esym.st_name = dynstr_offset;
+      esym.setType(sym->type);
+      esym.setBinding(STB_GLOBAL);
+
+      // Write to .dynstr
+      write_string(dynstr + dynstr_offset, sym->name);
+      dynstr_offset += sym->name.size() + 1;
+
+      // Write to .hash
+      if (out::hash) {
+        u32 *buckets = (u32 *)(buf + out::hash->shdr.sh_offset + 8);
+        u32 *chains = buckets + out::hash->num_dynsym;
+        u32 dynsym_idx = (buf - dynsym) / sizeof(ELF64LE::Sym);
+        u32 hash = HashSection::hash(sym->name) % out::hash->num_dynsym;
+        chains[dynsym_idx] = buckets[hash];
+        buckets[hash] = dynsym_idx;
+      }
+    };
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
@@ -450,18 +478,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         rel->r_addend = sym->get_addr();
       }
 
-      if (flags & Symbol::NEEDS_DYNSYM) {
-        // Write to .dynsym
-        auto &esym = *(ELF64LE::Sym *)(dynsym + sym->dynsym_offset);
-        memset(&esym, 0, sizeof(esym));
-        esym.st_name = dynstr_offset;
-        esym.setType(sym->type);
-        esym.setBinding(STB_GLOBAL);
-
-        // Write to .dynstr
-        write_string(dynstr + dynstr_offset, sym->name);
-        dynstr_offset += sym->name.size() + 1;
-      }
+      if (flags & Symbol::NEEDS_DYNSYM)
+        write_dynsym(dynsym + sym->dynsym_offset, sym);
     }
   });
 }
@@ -1075,8 +1093,8 @@ int main(int argc, char **argv) {
     out::dynamic->shdr.sh_size = create_dynamic_section(chunks).size();
 
   if (out::hash) {
-    u32 num_dynsym = out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym);
-    out::hash->shdr.sh_size = num_dynsym * 8 + 8;
+    out::hash->num_dynsym = out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym);
+    out::hash->shdr.sh_size = out::hash->num_dynsym * 8 + 8;
   }
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
