@@ -935,10 +935,11 @@ int main(int argc, char **argv) {
   if (!config.is_static) {
     out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
     out::dynamic = new SpecialSection(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE,
-                                      8, sizeof(ELF64LE::Rela));
+                                      8, sizeof(ELF64LE::Dyn));
     out::dynstr = new SpecialSection(".dynstr", SHT_STRTAB, SHF_ALLOC);
     out::dynsym = new SymtabSection(".dynsym", SHF_ALLOC);
-    out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8);
+    out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8,
+                                     sizeof(ELF64LE::Rela));
     out::hash = new HashSection;
 
     out::interp->shdr.sh_size = config.dynamic_linker.size() + 1;
