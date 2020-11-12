@@ -421,15 +421,10 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   memset(dynsym, 0, sizeof(ELF64LE::Sym));
   dynstr[0] = '\0';
 
-  if (out::hash) {
-    *(u32 *)(buf + out::hash->shdr.sh_offset) = out::hash->num_dynsym;
-    *(u32 *)(buf + out::hash->shdr.sh_offset + 4) = out::hash->num_dynsym;
-  }
-
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
 
-    auto write_dynsym = [&](u8 *buf, Symbol *sym) {
+    auto write_dynsym = [&](Symbol *sym) {
       // Write to .dynsym
       auto &esym = *(ELF64LE::Sym *)buf;
       memset(&esym, 0, sizeof(esym));
@@ -442,14 +437,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       dynstr_offset += sym->name.size() + 1;
 
       // Write to .hash
-      if (out::hash) {
-        u32 *buckets = (u32 *)(buf + out::hash->shdr.sh_offset + 8);
-        u32 *chains = buckets + out::hash->num_dynsym;
-        u32 dynsym_idx = (buf - dynsym) / sizeof(ELF64LE::Sym);
-        u32 hash = HashSection::hash(sym->name) % out::hash->num_dynsym;
-        chains[dynsym_idx] = buckets[hash];
-        buckets[hash] = dynsym_idx;
-      }
+      if (out::hash)
+        out::hash->write_symbol(buf, sym);
     };
 
     for (Symbol *sym : file->symbols) {
@@ -479,7 +468,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       }
 
       if (flags & Symbol::NEEDS_DYNSYM)
-        write_dynsym(dynsym + sym->dynsym_offset, sym);
+        write_dynsym(sym);
     }
   });
 }
@@ -1092,10 +1081,8 @@ int main(int argc, char **argv) {
   if (out::dynamic)
     out::dynamic->shdr.sh_size = create_dynamic_section(chunks).size();
 
-  if (out::hash) {
-    out::hash->num_dynsym = out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym);
-    out::hash->shdr.sh_size = out::hash->num_dynsym * 8 + 8;
-  }
+  if (out::hash)
+    out::hash->set_num_dynsym(out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym));
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
 

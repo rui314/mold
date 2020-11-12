@@ -416,9 +416,20 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void write_symbol(u8 *buf, Symbol *sym) {
-    u8 *base = buf + shdr.sh_offset;
+  void copy_to(u8 *buf) override {
+    u32 *hdr = (u32 *)(buf + shdr.sh_offset);
+    hdr[0] = hdr[1] = num_dynsym;
   }
+
+  inline void write_symbol(u8 *buf, Symbol *sym);
+
+  void set_num_dynsym(u32 num_dynsym) {
+    this->num_dynsym = num_dynsym;
+    shdr.sh_size = num_dynsym * 8 + 8;
+  }
+
+private:
+  u32 num_dynsym;
 
   static u32 hash(StringRef name) {
     u32 h = 0;
@@ -431,8 +442,6 @@ public:
     }
     return h;
   }
-
-  u32 num_dynsym;
 };
 
 class MergedSection : public OutputChunk {
@@ -600,6 +609,16 @@ private:
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
+
+inline void HashSection::write_symbol(u8 *buf, Symbol *sym) {
+  u32 dynsym_idx =
+    (sym->file->dynsym_offset + sym->dynsym_offset) / sizeof(ELF64LE::Sym);
+  u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);
+  u32 *chains = buckets + num_dynsym;
+  u32 idx = hash(sym->name) % num_dynsym;
+  chains[dynsym_idx] = buckets[idx];
+  buckets[idx] = dynsym_idx;
+}
 
 //
 // perf.cc
