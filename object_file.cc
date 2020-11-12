@@ -21,6 +21,23 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
+void ObjectFile::initialize_soname() {
+  for (const ELF64LE::Shdr &shdr : elf_sections) {
+    if (shdr.sh_type != SHT_DYNAMIC)
+      continue;
+
+    ArrayRef<ELF64LE::Dyn> tags =
+      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
+
+    for (const ELF64LE::Dyn &dyn : tags) {
+      if (dyn.d_tag == DT_NEEDED) {
+        this->soname = StringRef(symbol_strtab.data() + dyn.d_un.d_val);
+        return;
+      }
+    }
+  }
+}
+
 void ObjectFile::initialize_sections() {
   StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
 
@@ -60,17 +77,6 @@ void ObjectFile::initialize_sections() {
     case SHT_SYMTAB_SHNDX:
       error(toString(this) + ": SHT_SYMTAB_SHNDX section is not supported");
       break;
-    case SHT_DYNAMIC: {
-     ArrayRef<ELF64LE::Dyn> tags =
-       CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
-     for (const ELF64LE::Dyn &dyn : tags) {
-       if (dyn.d_tag == DT_NEEDED) {
-         soname = StringRef(symbol_strtab.data() + dyn.d_un.d_val);
-         break;
-       }
-     }
-     break;
-    }
     case SHT_SYMTAB:
     case SHT_STRTAB:
     case SHT_REL:
@@ -277,7 +283,10 @@ void ObjectFile::parse() {
   }
 
   sections.resize(elf_sections.size());
-  if (!is_dso)
+
+  if (is_dso)
+    initialize_soname();
+  else
     initialize_sections();
 
   if (symtab_sec)

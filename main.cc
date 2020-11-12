@@ -478,6 +478,16 @@ static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
   }
 }
 
+static void write_dso_paths(u8 *buf, ArrayRef<ObjectFile *> files) {
+  int offset = out::dynstr->shdr.sh_offset + 1;
+  for (ObjectFile *file : files) {
+    if (!file->soname.empty()) {
+      write_string(buf + offset, file->soname);
+      offset += file->soname.size() + 1;
+    }
+  }
+}
+
 static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_merged_strings", copy_timer);
 
@@ -1073,11 +1083,9 @@ int main(int argc, char **argv) {
   }
 
   // Reserve space in .dynsym for DT_NEEDED strings.
-#if 0
   for (ObjectFile *file : files)
     if (file->is_alive && file->is_dso)
-      out::dynsym->shdr.sh_size += file->
-#endif
+      out::dynstr->shdr.sh_size += file->soname.size() + 1;
 
   // Set section indices.
   for (int i = 0, shndx = 1; i < chunks.size(); i++)
@@ -1156,6 +1164,9 @@ int main(int argc, char **argv) {
 
   // Fill .shstrtab
   write_shstrtab(buf, chunks);
+
+  // Write DT_NEEDED paths to .dynstr.
+  write_dso_paths(buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
   write_got(buf, files);

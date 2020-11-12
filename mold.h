@@ -588,6 +588,7 @@ public:
   std::vector<MergeableSection> mergeable_sections;
 
 private:
+  void initialize_soname();
   void initialize_sections();
   void initialize_symbols();
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
