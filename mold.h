@@ -589,11 +589,11 @@ public:
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
 
-  std::atomic_uint32_t plt_size = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t got_size = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t gotplt_size = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t relplt_size = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t dynsym_size = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_plt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_got = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_gotplt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_relplt = ATOMIC_VAR_INIT(0);
+  std::atomic_uint32_t num_dynsym = ATOMIC_VAR_INIT(0);
   std::atomic_uint32_t dynstr_size = ATOMIC_VAR_INIT(0);
 
   u32 got_offset = 0;

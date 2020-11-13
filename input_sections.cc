@@ -127,15 +127,15 @@ void InputSection::scan_relocations() {
       continue;
 
     if (sym->file->is_dso && set_flag(sym, Symbol::NEEDS_DYNSYM)) {
-      sym->file->dynsym_size += sizeof(ELF64LE::Sym);
+      sym->file->num_dynsym++;
       sym->file->dynstr_size += sym->name.size() + 1;
     }
 
     if (sym->type == STT_GNU_IFUNC && set_flag(sym, Symbol::NEEDS_IFUNC) &&
         set_flag(sym, Symbol::NEEDS_PLT)) {
-      sym->file->plt_size += PLT_SIZE;
-      sym->file->gotplt_size += GOT_SIZE;
-      sym->file->relplt_size += sizeof(ELF64LE::Rela);
+      sym->file->num_plt++;
+      sym->file->num_gotplt++;
+      sym->file->num_relplt++;
     }
 
     switch (rel.getType(false)) {
@@ -149,19 +149,19 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
       if (set_flag(sym, Symbol::NEEDS_GOT))
-        sym->file->got_size += GOT_SIZE;
+        sym->file->num_got++;
       break;
     case R_X86_64_GOTTPOFF:
       if (set_flag(sym, Symbol::NEEDS_GOTTP))
-        sym->file->got_size += GOT_SIZE;
+        sym->file->num_got++;
       break;
     case R_X86_64_PLT32:
       if (config.is_static)
         break;
       if (set_flag(sym, Symbol::NEEDS_PLT)) {
-        sym->file->plt_size += PLT_SIZE;
-        sym->file->gotplt_size += GOT_SIZE;
-        sym->file->relplt_size += sizeof(ELF64LE::Rela);
+        sym->file->num_plt++;
+        sym->file->num_gotplt++;
+        sym->file->num_relplt++;
       }
       break;
     }
