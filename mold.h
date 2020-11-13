@@ -216,6 +216,7 @@ public:
     NEEDS_GOTTP  = 1 << 1,
     NEEDS_PLT    = 1 << 2,
     NEEDS_DYNSYM = 1 << 3,
+    NEEDS_IFUNC  = 1 << 4,
   };
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
