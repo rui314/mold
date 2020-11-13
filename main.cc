@@ -387,15 +387,12 @@ static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
       }
 
       if (flags & Symbol::NEEDS_PLT) {
-        // Write a .got.plt entry
         sym->gotplt_offset = gotplt_offset;
         gotplt_offset += GOT_SIZE;
 
-        // Write a .plt entry
         sym->plt_offset = plt_offset;
         plt_offset += PLT_SIZE;
 
-        // Write a .rela.dyn entry
         sym->relplt_offset = relplt_offset;
         relplt_offset += sizeof(ELF64LE::Rela);
       }
