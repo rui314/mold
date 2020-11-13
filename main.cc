@@ -340,13 +340,13 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
     out::got->shdr.sh_size += file->num_got * GOT_SIZE;
 
     file->gotplt_offset = out::gotplt->shdr.sh_size;
-    out::gotplt->shdr.sh_size += file->num_gotplt * GOT_SIZE;
+    out::gotplt->shdr.sh_size += file->num_plt * GOT_SIZE;
 
     file->plt_offset = out::plt->shdr.sh_size;
     out::plt->shdr.sh_size += file->num_plt * PLT_SIZE;
 
     file->relplt_offset = out::relplt->shdr.sh_size;
-    out::relplt->shdr.sh_size += file->num_relplt * sizeof(ELF64LE::Rela);
+    out::relplt->shdr.sh_size += file->num_plt * sizeof(ELF64LE::Rela);
 
     if (out::dynsym) {
       file->dynsym_offset = out::dynsym->shdr.sh_size;

@@ -131,12 +131,8 @@ void InputSection::scan_relocations() {
       sym->file->dynstr_size += sym->name.size() + 1;
     }
 
-    if (sym->type == STT_GNU_IFUNC && set_flag(sym, Symbol::NEEDS_IFUNC) &&
-        set_flag(sym, Symbol::NEEDS_PLT)) {
+    if (sym->type == STT_GNU_IFUNC && set_flag(sym, Symbol::NEEDS_PLT))
       sym->file->num_plt++;
-      sym->file->num_gotplt++;
-      sym->file->num_relplt++;
-    }
 
     switch (rel.getType(false)) {
     case R_X86_64_GOT32:
@@ -158,11 +154,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_PLT32:
       if (config.is_static)
         break;
-      if (set_flag(sym, Symbol::NEEDS_PLT)) {
+      if (set_flag(sym, Symbol::NEEDS_PLT))
         sym->file->num_plt++;
-        sym->file->num_gotplt++;
-        sym->file->num_relplt++;
-      }
       break;
     }
   }
