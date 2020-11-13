@@ -71,6 +71,19 @@ bool OutputSection::empty() const {
   return true;
 }
 
+void PltSection::initialize(u8 *buf) {
+  const u8 data[] = {
+    0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
+    0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
+    0x0f, 0x1f, 0x40, 0x00, // nop
+  };
+
+  u8 *base = buf + shdr.sh_offset;
+  memcpy(base, data, sizeof(data));
+  *(u32 *)(base + 2) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 2;
+  *(u32 *)(base + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
+}
+
 MergedSection *
 MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);

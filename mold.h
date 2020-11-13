@@ -183,7 +183,7 @@ public:
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
-    return map.insert(name, Symbol(name));    
+    return map.insert(name, Symbol(name));
   }
 
   inline u64 get_addr() const;
@@ -344,10 +344,13 @@ public:
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_addralign = 8;
+    shdr.sh_size = PLT_SIZE;
   }
 
+  void initialize(u8 *buf) override;
+
   void write_entry(u8 *buf, u32 value) {
-    memset(buf, 0, 16);
+    memset(buf, 0, PLT_SIZE);
     buf[0] = 0xff;
     buf[1] = 0x25;
     *(u32 *)(buf + 2) = value;
@@ -646,7 +649,7 @@ public:
 private:
   StringRef name;
   std::atomic_uint32_t value;
-  
+
   static std::vector<Counter *> instances;
 };
 
