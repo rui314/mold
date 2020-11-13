@@ -435,15 +435,20 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
         out::plt->write_entry(buf, sym);
 
-        // Write a .got.plt entry
-        *(u64 *)(gotplt_buf + sym->gotplt_offset) = sym->get_addr();
-
-        // Write a .rela.dyn entry
-        auto *rel = (ELF64LE::Rela *)(relplt_buf + sym->relplt_offset);
+        ELF64LE::Rela *rel = (ELF64LE::Rela *)(relplt_buf + sym->relplt_offset);
         memset(rel, 0, sizeof(*rel));
         rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
-        rel->setType(R_X86_64_IRELATIVE, false);
-        rel->r_addend = sym->get_addr();
+
+        if (sym->type == STT_GNU_IFUNC) {
+          // Write a .got.plt entry
+          *(u64 *)(gotplt_buf + sym->gotplt_offset) = sym->get_addr();
+
+          // Write a .rela.dyn entry
+          rel->setType(R_X86_64_IRELATIVE, false);
+          rel->r_addend = sym->get_addr();
+        } else {
+          rel->setType(R_X86_64_GLOB_DAT, false);
+        }
       }
 
       if (flags & Symbol::NEEDS_DYNSYM) {

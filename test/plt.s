@@ -1,7 +1,8 @@
+// RUN: cc -o %t.o -c %s
 // RUN: mold -o %t.exe /usr/lib/x86_64-linux-gnu/crt1.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crti.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
-// RUN:   /home/ruiu/mold/test/Output/hello-dynamic.s.tmp.o \
+// RUN:   %t.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crtn.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/libgcc.a \
@@ -24,5 +25,15 @@
 // PLT: 2011ae: ff 25 b4 0e 00 00       jmpq   *0xeb4(%rip)  # 202068
 // PLT: 2011b4: 0f 1f 40 00             nopl   0x0(%rax)
 
+        .text
         .globl main
 main:
+        lea msg(%rip), %rdi
+        xor %rax, %rax
+        call printf@PLT
+        xor %rax, %rax
+        ret
+
+        .data
+msg:
+        .string "Hello world\n"
