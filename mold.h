@@ -211,7 +211,13 @@ public:
   u8 is_undef_weak : 1;
   u8 traced : 1;
 
-  enum { NEEDS_GOT = 1, NEEDS_GOTTP = 2, NEEDS_PLT = 4, NEEDS_DYNSYM = 8 };
+  enum {
+    NEEDS_GOT    = 1 << 0,
+    NEEDS_GOTTP  = 1 << 1,
+    NEEDS_PLT    = 1 << 2,
+    NEEDS_DYNSYM = 1 << 3,
+  };
+
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
 
   u8 visibility = 0;
@@ -361,13 +367,7 @@ public:
   }
 
   void initialize(u8 *buf) override;
-
-  void write_entry(u8 *buf, u32 value) {
-    memset(buf, 0, PLT_SIZE);
-    buf[0] = 0xff;
-    buf[1] = 0x25;
-    *(u32 *)(buf + 2) = value;
-  }
+  void write_entry(u8 *buf, Symbol *sym);
 };
 
 class RelPltSection : public OutputChunk {

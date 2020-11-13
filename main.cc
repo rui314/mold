@@ -412,7 +412,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_synthetic", copy_timer);
 
   u8 *got_buf = buf + out::got->shdr.sh_offset;
-  u8 *plt_buf = buf + out::plt->shdr.sh_offset;
+  u8 *gotplt_buf = buf + out::gotplt->shdr.sh_offset;
   u8 *relplt_buf = buf + out::relplt->shdr.sh_offset;
   u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
   u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
@@ -436,7 +436,10 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         // Write a .plt entry
         u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
-        out::plt->write_entry(plt_buf + sym->plt_offset, S - P - 6);
+        out::plt->write_entry(buf, sym);
+
+        // Write a .got.plt entry
+        *(u64 *)(gotplt_buf + sym->gotplt_offset) = sym->get_addr();
 
         // Write a .rela.dyn entry
         auto *rel = (ELF64LE::Rela *)(relplt_buf + sym->relplt_offset);
@@ -462,6 +465,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         if (out::hash)
           out::hash->write_symbol(buf, sym);
       }
+
+
     }
   });
 }

@@ -91,6 +91,22 @@ void PltSection::initialize(u8 *buf) {
   *(u32 *)(base + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
 }
 
+void PltSection::write_entry(u8 *buf, Symbol *sym) {
+  const u8 data[] = {
+    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
+    0x68, 0,    0, 0, 0,    // push  $index_in_relplt
+    0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
+  };
+
+  u64 entry_addr = shdr.sh_addr + sym->plt_offset;
+
+  u8 *base = buf + shdr.sh_offset + sym->plt_offset;
+  memcpy(base, data, sizeof(data));
+  *(u32 *)(base + 2) = out::gotplt->shdr.sh_addr + sym->gotplt_offset - entry_addr - 6;
+  *(u32 *)(base + 7) = sym->plt_offset / PLT_SIZE;
+  *(u32 *)(base + 12) = shdr.sh_addr - entry_addr - 16;
+}
+
 MergedSection *
 MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
   name = get_output_name(name);
