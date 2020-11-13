@@ -802,6 +802,10 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
       stop(chunk, out::_edata);
   }
 
+  // _DYNAMIC
+  if (out::dynamic)
+    start(out::dynamic, out::_DYNAMIC);
+
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
     if (is_c_identifier(chunk->name)) {
@@ -861,7 +865,6 @@ static void write_symtab(u8 *buf, std::vector<ObjectFile *> files) {
     files[i]->write_local_symtab(buf, local_symtab_off[i], local_strtab_off[i]);
     files[i]->write_global_symtab(buf, global_symtab_off[i], global_strtab_off[i]);
   });
-
 }
 
 static int get_thread_count(InputArgList &args) {

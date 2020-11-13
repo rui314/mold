@@ -504,11 +504,9 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
     auto &esym = *(ELF64LE::Sym *)(symtab + symtab_off);
     symtab_off += sizeof(ELF64LE::Sym);
 
-    memset(&esym, 0, sizeof(esym));
+    esym = elf_syms[i];
     esym.st_name = strtab_off;
     esym.st_value = sym.get_addr();
-    esym.st_size = elf_syms[i].st_size;
-    esym.st_info = elf_syms[i].st_info;
 
     if (sym.input_section)
       esym.st_shndx = sym.input_section->output_section->shndx;
@@ -551,7 +549,7 @@ ObjectFile *ObjectFile::create_internal_file(std::vector<OutputChunk *> chunks) 
   obj->symbols.push_back(new Symbol(""));
   obj->is_alive = true;
 
-  auto add = [&](StringRef name, u8 binding) {
+  auto add = [&](StringRef name, u8 binding, u8 visibility = STV_DEFAULT) {
     Symbol *sym = Symbol::intern(name);
     sym->file = obj;
     obj->symbols.push_back(sym);
@@ -559,6 +557,7 @@ ObjectFile *ObjectFile::create_internal_file(std::vector<OutputChunk *> chunks) 
     ELF64LE::Sym esym = {};
     esym.setType(STT_NOTYPE);
     esym.setBinding(binding);
+    esym.setVisibility(visibility);
     elf_syms->push_back(esym);
     return sym;
   };
@@ -573,6 +572,7 @@ ObjectFile *ObjectFile::create_internal_file(std::vector<OutputChunk *> chunks) 
   out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
+  out::_DYNAMIC = add("_DYNAMIC", STB_LOCAL, STV_HIDDEN);
 
   // Update metadata
   for (int i = 1; i < obj->symbols.size(); i++)
