@@ -417,8 +417,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
   u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
 
-  memset(buf + out::gotplt->shdr.sh_offset, 0, out::gotplt->shdr.sh_size);
-
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
     u32 dynstr_offset = file->dynstr_offset;
 

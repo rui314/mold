@@ -71,6 +71,13 @@ bool OutputSection::empty() const {
   return true;
 }
 
+void GotPltSection::initialize(u8 *buf) {
+  u8 *base = buf + shdr.sh_offset;
+  memset(base, 0, shdr.sh_size);
+  if (out::dynamic)
+    *(u64 *)base = out::dynamic->shdr.sh_addr;
+}
+
 void PltSection::initialize(u8 *buf) {
   const u8 data[] = {
     0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)

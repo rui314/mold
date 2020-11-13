@@ -340,16 +340,14 @@ public:
 class GotPltSection : public OutputChunk {
 public:
   GotPltSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".gotplt";
+    this->name = ".got.plt";
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
     shdr.sh_size = GOT_SIZE * 3;
   }
 
-  void initialize(u8 *buf) override {
-    memset(buf + shdr.sh_offset, 0, GOT_SIZE * 3);
-  }
+  void initialize(u8 *buf) override;
 };
 
 class PltSection : public OutputChunk {
