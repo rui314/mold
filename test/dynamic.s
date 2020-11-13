@@ -11,7 +11,7 @@
 // RUN:   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 // RUN: readelf --dynamic %t.exe | FileCheck %s
-// CHECK: Dynamic section at offset 0x2068 contains 19 entries:
+// CHECK: Dynamic section at offset 0x2080 contains 19 entries:
 // CHECK:   Tag        Type                         Name/Value
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [ld-linux-x86-64.so.2]

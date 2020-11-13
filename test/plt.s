@@ -10,10 +10,14 @@
 // RUN:   /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
 // RUN:   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
-// RUN: objdump -d -j .plt %t.exe
-// CHECK: 2011a8: ff 35 b2 0e 00 00  pushq  0xeb2(%rip)  # 202060 <__init_array_end+0x30>
-// CHECK: 2011ae: ff 25 b4 0e 00 00  jmpq   *0xeb4(%rip) # 202068 <_DYNAMIC>
-// CHECK: 2011b4: 0f 1f 40 00        nopl   0x0(%rax)
+// RUN: readelf --sections %t.exe | FileCheck --check-prefix=SECTIONS %s
+// SECTIONS: [19] .gotplt           PROGBITS         0000000000202058  00002058
+// SECTIONS:       0000000000000028  0000000000000000  WA       0     0     8
+
+// RUN: objdump -d -j .plt %t.exe | FileCheck %s
+// CHECK: 2011a8: ff 35 b2 0e 00 00       pushq  0xeb2(%rip)   # 202060
+// CHECK: 2011ae: ff 25 b4 0e 00 00       jmpq   *0xeb4(%rip)  # 202068
+// CHECK: 2011b4: 0f 1f 40 00             nopl   0x0(%rax)
 
         .globl main
 main:

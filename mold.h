@@ -307,11 +307,11 @@ class OutputSection : public OutputChunk {
 public:
   static OutputSection *get_instance(StringRef name, u64 flags, u32 type);
 
-  OutputSection(StringRef name, u64 flags, u32 type)
+  OutputSection(StringRef name, u32 type, u64 flags)
     : OutputChunk(REGULAR) {
     this->name = name;
-    shdr.sh_flags = flags;
     shdr.sh_type = type;
+    shdr.sh_flags = flags;
     idx = instances.size();
     instances.push_back(this);
   }
@@ -330,10 +330,25 @@ public:
   SpecialSection(StringRef name, u32 type, u64 flags, u32 align = 1, u32 entsize = 0)
     : OutputChunk(SYNTHETIC) {
     this->name = name;
-    shdr.sh_flags = flags;
     shdr.sh_type = type;
+    shdr.sh_flags = flags;
     shdr.sh_addralign = align;
     shdr.sh_entsize = entsize;
+  }
+};
+
+class GotPltSection : public OutputChunk {
+public:
+  GotPltSection() : OutputChunk(SYNTHETIC) {
+    this->name = ".gotplt";
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_addralign = GOT_SIZE;
+    shdr.sh_size = GOT_SIZE * 3;
+  }
+
+  void initialize(u8 *buf) override {
+    memset(buf + shdr.sh_offset, 0, GOT_SIZE * 3);
   }
 };
 
@@ -341,8 +356,8 @@ class PltSection : public OutputChunk {
 public:
   PltSection() : OutputChunk(SYNTHETIC) {
     this->name = ".plt";
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
     shdr.sh_addralign = 8;
     shdr.sh_size = PLT_SIZE;
   }
@@ -361,8 +376,8 @@ class RelPltSection : public OutputChunk {
 public:
   RelPltSection() : OutputChunk(SYNTHETIC) {
     this->name = ".rela.plt";
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_type = llvm::ELF::SHT_RELA;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_entsize = sizeof(ELF64LE::Rela);
     shdr.sh_addralign = 8;
   }
@@ -471,7 +486,7 @@ inline OutputHeader *shdr;
 inline OutputHeader *phdr;
 inline SpecialSection *interp;
 inline SpecialSection *got;
-inline SpecialSection *gotplt;
+inline GotPltSection *gotplt;
 inline SpecialSection *relplt;
 inline SpecialSection *reldyn;
 inline SpecialSection *dynamic;

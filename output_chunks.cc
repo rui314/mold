@@ -23,8 +23,8 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
 
   auto find = [&]() -> OutputSection * {
     for (OutputSection *osec : OutputSection::instances)
-      if (name == osec->name && flags == (osec->shdr.sh_flags & ~SHF_GROUP) &&
-          type == osec->shdr.sh_type)
+      if (name == osec->name && type == osec->shdr.sh_type &&
+          flags == (osec->shdr.sh_flags & ~SHF_GROUP))
         return osec;
     return nullptr;
   };
@@ -41,7 +41,7 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   std::unique_lock lock(mu);
   if (OutputSection *osec = find())
     return osec;
-  return new OutputSection(name, flags, type);
+  return new OutputSection(name, type, flags);
 }
 
 void OutputSection::copy_to(u8 *buf) {

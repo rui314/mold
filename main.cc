@@ -948,7 +948,7 @@ int main(int argc, char **argv) {
   out::shdr = new OutputHeader;
   out::phdr = new OutputHeader;
   out::got = new SpecialSection(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
-  out::gotplt = new SpecialSection(".got.plt", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
+  out::gotplt = new GotPltSection;
   out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
                                    8, sizeof(ELF64LE::Rela));
   out::strtab = new StrtabSection(".strtab", 0);
