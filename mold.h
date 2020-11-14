@@ -220,6 +220,18 @@ public:
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
 
+  enum {
+    HAS_ADDR_REL  = 1 << 0,
+    HAS_GOT_REL   = 1 << 1,
+    HAS_PLT_REL   = 1 << 2,
+    HAS_GOTTP_REL = 1 << 3,
+    HAS_TLSGD_REL = 1 << 4,
+    HAS_TLSLD_REL = 1 << 5,
+    HAS_TPOFF_REL = 1 << 6,
+  };
+
+  std::atomic_uint8_t flags2 = ATOMIC_VAR_INIT(0);
+
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
 };

@@ -117,6 +117,14 @@ static bool set_flag(Symbol *sym, u8 bit) {
   return false;
 }
 
+static bool set_flag2(Symbol *sym, u8 bit) {
+  u8 flags = sym->flags2;
+  while (!(flags & bit))
+    if (sym->flags.compare_exchange_strong(flags, flags | bit))
+      return true;
+  return false;
+}
+
 void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
@@ -135,6 +143,46 @@ void InputSection::scan_relocations() {
       sym->file->num_plt++;
 
     switch (rel.getType(false)) {
+    case R_X86_64_8:
+    case R_X86_64_16:
+    case R_X86_64_32:
+    case R_X86_64_32S:
+    case R_X86_64_64:
+    case R_X86_64_PC8:
+    case R_X86_64_PC16:
+    case R_X86_64_PC32:
+    case R_X86_64_PC64:
+      sym->flags2 |= Symbol::HAS_ADDR_REL;
+      break;
+    case R_X86_64_GOT32:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
+      sym->flags2 |= Symbol::HAS_GOT_REL;
+      break;
+    case R_X86_64_PLT32:
+      sym->flags2 |= Symbol::HAS_PLT_REL;
+      break;
+    case R_X86_64_TLSGD:
+      sym->flags2 |= Symbol::HAS_TLSGD_REL;
+      break;
+    case R_X86_64_TLSLD:
+      sym->flags2 |= Symbol::HAS_TLSLD_REL;
+      break;
+    case R_X86_64_DTPOFF32:
+    case R_X86_64_GOTTPOFF:
+    case R_X86_64_TPOFF32:
+      sym->flags2 |= Symbol::HAS_TPOFF_REL;
+      break;
+    case R_X86_64_NONE:
+      break;
+    default:
+      error(toString(this) + ": unknown relocation: " +
+            std::to_string(rel.getType(false)));
+    }
+
+    switch (rel.getType(false)) {
     case R_X86_64_GOT32:
     case R_X86_64_GOT64:
     case R_X86_64_GOTOFF64:
@@ -144,18 +192,24 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
+      sym->flags2 |= Symbol::HAS_GOT_REL;
       if (set_flag(sym, Symbol::NEEDS_GOT))
         sym->file->num_got++;
       break;
     case R_X86_64_GOTTPOFF:
+      sym->flags2 |= Symbol::HAS_GOTTP_REL;
       if (set_flag(sym, Symbol::NEEDS_GOTTP))
         sym->file->num_got++;
       break;
     case R_X86_64_PLT32:
+      sym->flags2 |= Symbol::HAS_PLT_REL;
       if (config.is_static)
         break;
       if (set_flag(sym, Symbol::NEEDS_PLT))
         sym->file->num_plt++;
+      break;
+    default:
+      sym->flags2 |= Symbol::HAS_ADDR_REL;
       break;
     }
   }
