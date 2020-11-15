@@ -446,11 +446,11 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
   }
 }
 
-static void write_dynamic_rel(u8 *buf, u8 type, u64 offset, u64 addend) {
+static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
   ELF64LE::Rela *rel = (ELF64LE::Rela *)buf;
   memset(rel, 0, sizeof(*rel));
-  rel->setType(type, false);
-  rel->r_offset = offset;
+  rel->setSymbolAndType(dynsym_idx, type, false);
+  rel->r_offset = addr;
   rel->r_addend = addend;
 }
 
@@ -478,7 +478,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         } else {
           u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
           write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
-                            R_X86_64_GLOB_DAT, sym->get_got_addr(), 0);
+                            R_X86_64_GLOB_DAT, sym->get_got_addr(), 0, 0);
         }
       }
 
@@ -495,13 +495,14 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         out::plt->write_entry(buf, sym);
 
       if (sym->relplt_idx != -1) {
+        int idx = file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
         if (sym->type == STT_GNU_IFUNC) {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                             R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
-                            sym->get_addr());
+                            idx, sym->get_addr());
         } else {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(), 0);
+                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(), idx, 0);
         }
       }
 
