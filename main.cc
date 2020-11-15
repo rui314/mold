@@ -345,16 +345,17 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
         continue;
 
       u8 rels = sym->rels.load(std::memory_order_relaxed);
+      bool needs_dynsym = false;
 
       if (rels & Symbol::HAS_GOT_REL) {
         sym->got_idx = file->num_got++;
         file->num_reldyn++;
-        sym->needs_dynsym = true;
+        needs_dynsym = true;
       }
 
       if (rels & Symbol::HAS_PLT_REL) {
         sym->plt_idx = file->num_plt++;
-        sym->needs_dynsym = true;
+        needs_dynsym = true;
 
         if (sym->got_idx == -1) {
           sym->gotplt_idx = file->num_gotplt++;
@@ -362,24 +363,24 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
         }
       }
 
-      if (rels & Symbol::HAS_GOTGD_REL) {
+      if (rels & Symbol::HAS_TLSGD_REL) {
         sym->gotgd_idx = file->num_got;
         file->num_got += 2;
         file->num_reldyn += 2;
-        sym->needs_dynsym = true;
+        needs_dynsym = true;
       }
 
-      if (rels & Symbol::HAS_GOTLD_REL) {
+      if (rels & Symbol::HAS_TLSLD_REL) {
         sym->gotgd_idx = file->num_got++;
         file->num_reldyn++;
-        sym->needs_dynsym = true;
+        needs_dynsym = true;
       }
 
       if (rels & Symbol::HAS_GOTTP_REL)
        sym->gottp_idx = file->num_got++;
 
-      if (sym->needs_dynsym)
-        file->num_dynsym++;
+      if (needs_dynsym)
+        sym->dynsym_idx = file->num_dynsym++;
     }
   });
 
@@ -426,15 +427,16 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
     u8 *relplt_buf = buf + out::relplt->shdr.sh_offset + file->relplt_offset;
     u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
     u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset + file->dynsym_offset;
-    u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset + file->dynstr_offset;
+    u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
 
     int reldyn_idx = 0;
+    int dynstr_offset = file->dynstr_offset;
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
 
-      if (got_idx != -1) {
+      if (sym->got_idx != -1) {
         *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
         write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
                           R_X86_64_GLOB_DAT, sym->get_got_addr(), 0);
@@ -453,48 +455,19 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         out::plt->write_entry(buf, sym);
 
       if (sym->relplt_idx != -1) {
-        if (sym->type == STT_GNU_IFUNC)
+        if (sym->type == STT_GNU_IFUNC) {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                             R_X86_64_IRELATIVE, sym->get_plt_addr(), 0);
-        else
+        } else {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                             R_X86_64_JUMP_SLOT, sym->get_plt_addr(), 0);
-      }
-
-
-      if (rels & Symbol::NEEDS_GOT)
-        *(u64 *)(got_buf + sym->got_offset) = sym->get_addr();
-
-      if (rels & Symbol::NEEDS_GOTTP)
-
-
-
-
-      if (rels & Symbol::NEEDS_PLT) {
-        // Write a .plt entry
-        u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
-        u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
-        out::plt->write_entry(buf, sym);
-
-        ELF64LE::Rela *rel = (ELF64LE::Rela *)(relplt_buf + sym->relplt_offset);
-        memset(rel, 0, sizeof(*rel));
-        rel->r_offset = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
-
-        if (sym->type == STT_GNU_IFUNC) {
-          // Write a .got.plt entry
-          *(u64 *)(gotplt_buf + sym->gotplt_offset) = sym->get_addr();
-
-          // Write a .rela.dyn entry
-          rel->setType(R_X86_64_IRELATIVE, false);
-          rel->r_addend = sym->get_addr();
-        } else {
-          rel->setType(R_X86_64_GLOB_DAT, false);
         }
       }
 
-      if (rels & Symbol::NEEDS_DYNSYM) {
+      if (sym->dynsym_idx != -1) {
         // Write to .dynsym
-        auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_offset);
+        auto &esym = *(ELF64LE::Sym *)(dynsym_buf +
+                                       sym->dynsym_idx * sizeof(ELF64LE::Sym));
         memset(&esym, 0, sizeof(esym));
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
@@ -508,8 +481,6 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         if (out::hash)
           out::hash->write_symbol(buf, sym);
       }
-
-
     }
   });
 }

@@ -35,11 +35,11 @@ void InputSection::copy_to(u8 *buf) {
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
     u8 *loc = base + rel.r_offset;
 
-    u64 G = sym.got_offset;
+    u64 G = sym.get_got_addr() - GOT;
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
     u64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = sh_addr + rel.r_offset;
-    u64 L = out::plt->shdr.sh_addr + sym.plt_offset;
+    u64 L = sym.get_plt_addr();
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -84,7 +84,7 @@ void InputSection::copy_to(u8 *buf) {
       // TODO
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = sym.gottp_offset + GOT + A - P;
+      *(u32 *)loc = sym.get_gottp_addr() + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
@@ -107,22 +107,6 @@ void InputSection::copy_to(u8 *buf) {
 
   static Counter counter("relocs");
   counter.inc(rels.size());
-}
-
-static bool set_flag(Symbol *sym, u8 bit) {
-  u8 flags = sym->flags;
-  while (!(flags & bit))
-    if (sym->flags.compare_exchange_strong(flags, flags | bit))
-      return true;
-  return false;
-}
-
-static bool set_flag2(Symbol *sym, u8 bit) {
-  u8 flags = sym->rels;
-  while (!(flags & bit))
-    if (sym->flags.compare_exchange_strong(flags, flags | bit))
-      return true;
-  return false;
 }
 
 void InputSection::scan_relocations() {

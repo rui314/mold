@@ -207,8 +207,7 @@ public:
   u32 gotld_idx = -1;
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
-  u32 dynsym_offset = -1;
-  bool needs_dynsym = false;
+  u32 dynsym_idx = -1;
 
   u32 shndx = 0;
 
@@ -526,57 +525,6 @@ inline Symbol *_etext;
 inline Symbol *_edata;
 }
 
-inline u64 Symbol::get_addr() const {
-  if (piece_ref.piece)
-    return piece_ref.piece->get_addr() + piece_ref.addend;
-
-  if (input_section)
-    return input_section->output_section->shdr.sh_addr +
-           input_section->offset + value;
-
-  return value;
-}
-
-inline u64 Symbol::get_got_addr() const {
-  assert(got_idx != -1);
-  return out::got->shdr.sh_addr + sym->file->got_offset + got_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_gotplt_addr() const {
-  assert(gotplt_idx != -1);
-  return out::gotplt->shdr.sh_addr + sym->file->gotplt_offset + gotplt_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_gottp_addr() const {
-  assert(gottp_idx != -1);
-  return out::got->shdr.sh_addr + sym->file->got_offset + gottp_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_gotgd_addr() const {
-  assert(gotgd_idx != -1);
-  return out::got->shdr.sh_addr + sym->file->got_offset + gotgd_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_gotld_addr() const {
-  assert(gotld_idx != -1);
-  return out::got->shdr.sh_addr + sym->file->got_offset + gotld_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_plt_addr() const {
-  assert(plt_idx != -1);
-  return out::plt->shdr.sh_addr + sym->file->plt_offset + plt_idx * PLT_SIZE;
-}
-
-inline u64 StringPiece::get_addr() const {
-  MergeableSection *is = isec.load();
-  return is->parent.shdr.sh_addr + is->offset + output_offset;
-}
-
-inline void write_string(u8 *buf, StringRef str) {
-  memcpy(buf, str.data(), str.size());
-  buf[str.size()] = '\0';
-}
-
 //
 // object_file.cc
 //
@@ -669,12 +617,63 @@ private:
 };
 
 inline void HashSection::write_symbol(u8 *buf, Symbol *sym) {
-  u32 dynsym_idx = sym->dynsym_offset / sizeof(ELF64LE::Sym);
+  u32 dynsym_idx = sym->file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
   u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);
   u32 *chains = buckets + num_dynsym;
   u32 idx = hash(sym->name) % num_dynsym;
   chains[dynsym_idx] = buckets[idx];
   buckets[idx] = dynsym_idx;
+}
+
+inline u64 Symbol::get_addr() const {
+  if (piece_ref.piece)
+    return piece_ref.piece->get_addr() + piece_ref.addend;
+
+  if (input_section)
+    return input_section->output_section->shdr.sh_addr +
+           input_section->offset + value;
+
+  return value;
+}
+
+inline u64 Symbol::get_got_addr() const {
+  assert(got_idx != -1);
+  return out::got->shdr.sh_addr + file->got_offset + got_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotplt_addr() const {
+  assert(gotplt_idx != -1);
+  return out::gotplt->shdr.sh_addr + file->gotplt_offset + gotplt_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gottp_addr() const {
+  assert(gottp_idx != -1);
+  return out::got->shdr.sh_addr + file->got_offset + gottp_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotgd_addr() const {
+  assert(gotgd_idx != -1);
+  return out::got->shdr.sh_addr + file->got_offset + gotgd_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotld_addr() const {
+  assert(gotld_idx != -1);
+  return out::got->shdr.sh_addr + file->got_offset + gotld_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_plt_addr() const {
+  assert(plt_idx != -1);
+  return out::plt->shdr.sh_addr + file->plt_offset + plt_idx * PLT_SIZE;
+}
+
+inline u64 StringPiece::get_addr() const {
+  MergeableSection *is = isec.load();
+  return is->parent.shdr.sh_addr + is->offset + output_offset;
+}
+
+inline void write_string(u8 *buf, StringRef str) {
+  memcpy(buf, str.data(), str.size());
+  buf[str.size()] = '\0';
 }
 
 //
