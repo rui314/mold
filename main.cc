@@ -167,7 +167,7 @@ static void resolve_symbols(std::vector<ObjectFile *> &files) {
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
   for (ObjectFile *file : files)
-    if (file->is_alive)
+    if (file->is_alive && !file->is_dso)
       root.push_back(file);
 
   tbb::parallel_do(
@@ -514,7 +514,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         memset(&esym, 0, sizeof(esym));
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
-        esym.setBinding(STB_GLOBAL);
+        esym.setBinding(sym->binding);
 
         // Write to .dynstr
         write_string(dynstr_buf + dynstr_offset, sym->name);

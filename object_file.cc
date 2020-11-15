@@ -136,6 +136,7 @@ void ObjectFile::initialize_symbols() {
 
     sym.file = this;
     sym.type = esym.getType();
+    sym.binding = esym.getBinding();
     sym.value = esym.st_value;
 
     if (!esym.isAbsolute()) {
@@ -325,6 +326,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.piece_ref = sym_pieces[idx];
     sym.value = esym.st_value;
     sym.type = esym.getType();
+    sym.binding = esym.getBinding();
     sym.visibility = esym.getVisibility();
     sym.is_placeholder = false;
     sym.is_weak = is_weak;
