@@ -1172,17 +1172,18 @@ int main(int argc, char **argv) {
     out::hash->set_num_dynsym(out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym));
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
-
-  if (out::dynsym) {
-    out::dynsym->shdr.sh_info = 1;
-    out::dynsym->shdr.sh_link = out::dynstr->shndx;
-  }
+  out::relplt->shdr.sh_link = out::dynsym->shndx;
+  out::dynsym->shdr.sh_info = 1;
+  out::dynsym->shdr.sh_link = out::dynstr->shndx;
 
   if (out::hash && out::dynsym)
     out::hash->shdr.sh_link = out::dynsym->shndx;
 
   if (out::dynamic && out::dynstr)
     out::dynamic->shdr.sh_link = out::dynstr->shndx;
+
+  if (out::reldyn)
+    out::reldyn->shdr.sh_link = out::dynsym->shndx;
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(chunks);
