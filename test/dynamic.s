@@ -25,8 +25,8 @@
 // CHECK:  0x0000000000000006 (SYMTAB)             0x200418
 // CHECK:  0x000000000000000b (SYMENT)             24 (bytes)
 // CHECK:  0x0000000000000005 (STRTAB)             0x2004d8
-// CHECK:  0x000000000000000a (STRSZ)              33 (bytes)
-// CHECK:  0x0000000000000004 (HASH)               0x2004fc
+// CHECK:  0x000000000000000a (STRSZ)              116 (bytes)
+// CHECK:  0x0000000000000004 (HASH)               0x20054c
 // CHECK:  0x0000000000000019 (INIT_ARRAY)         0x202028
 // CHECK:  0x000000000000001b (INIT_ARRAYSZ)       8 (bytes)
 // CHECK:  0x000000000000001a (FINI_ARRAY)         0x202020
@@ -35,9 +35,14 @@
 
 // RUN: readelf --symbols --use-dynamic %t.exe | FileCheck --check-prefix=DYNAMIC %s
 // DYNAMIC: Symbol table for image:
-// DYNAMIC: Num Buc:    Value          Size   Type   Bind Vis      Ndx Name
-// DYNAMIC:   2   1: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_start_main
-// DYNAMIC:   1   2: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND printf
+// DYNAMIC:   Num Buc:    Value          Size   Type   Bind Vis      Ndx Name
+// DYNAMIC:     7   1: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_csu_fini
+// DYNAMIC:     6   4: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_csu_init
+// DYNAMIC:     2   4: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND _init
+// DYNAMIC:     5   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_start_main
+// DYNAMIC:     4   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND printf
+// DYNAMIC:     3   6: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT UND main
+// DYNAMIC:     1   7: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT UND __gmon_start__
 
         .globl main
 main:

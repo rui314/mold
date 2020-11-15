@@ -444,7 +444,7 @@ public:
     hdr[0] = hdr[1] = num_dynsym;
   }
 
-  inline void write_symbol(u8 *buf, Symbol *sym);
+  void write_symbol(u8 *buf, Symbol *sym);
 
   void set_num_dynsym(u32 num_dynsym) {
     this->num_dynsym = num_dynsym;
@@ -615,15 +615,6 @@ private:
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
-
-inline void HashSection::write_symbol(u8 *buf, Symbol *sym) {
-  u32 dynsym_idx = sym->file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
-  u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);
-  u32 *chains = buckets + num_dynsym;
-  u32 idx = hash(sym->name) % num_dynsym;
-  chains[dynsym_idx] = buckets[idx];
-  buckets[idx] = dynsym_idx;
-}
 
 inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)

@@ -397,8 +397,10 @@ static void scan_rels_dynamic(ObjectFile *file) {
     if (rels & Symbol::HAS_GOTTP_REL)
       sym->gottp_idx = file->num_got++;
 
-    if (needs_dynsym)
+    if (needs_dynsym) {
       sym->dynsym_idx = file->num_dynsym++;
+      file->dynstr_size += sym->name.size() + 1;
+    }
   }
 }
 
