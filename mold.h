@@ -212,15 +212,6 @@ public:
   u8 traced : 1;
 
   enum {
-    NEEDS_GOT    = 1 << 0,
-    NEEDS_GOTTP  = 1 << 1,
-    NEEDS_PLT    = 1 << 2,
-    NEEDS_DYNSYM = 1 << 3,
-  };
-
-  std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
-
-  enum {
     HAS_ADDR_REL  = 1 << 0,
     HAS_GOT_REL   = 1 << 1,
     HAS_PLT_REL   = 1 << 2,
@@ -230,7 +221,7 @@ public:
     HAS_TPOFF_REL = 1 << 6,
   };
 
-  std::atomic_uint8_t flags2 = ATOMIC_VAR_INIT(0);
+  std::atomic_uint8_t rels = ATOMIC_VAR_INIT(0);
 
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
