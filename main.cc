@@ -495,10 +495,11 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
       if (sym->relplt_idx != -1) {
         if (sym->type == STT_GNU_IFUNC) {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_IRELATIVE, sym->get_plt_addr(), 0);
+                            R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
+                            sym->get_addr());
         } else {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_JUMP_SLOT, sym->get_plt_addr(), 0);
+                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(), 0);
         }
       }
 
