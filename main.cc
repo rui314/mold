@@ -333,103 +333,144 @@ static void set_isec_offsets() {
 static void scan_rels(ArrayRef<ObjectFile *> files) {
   MyTimer t("scan_rels", before_copy_timer);
 
-  tbb::parallel_for_each(files, [&](ObjectFile *file) { file->scan_relocations(); });
+  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+    for (InputSection *isec : file->sections)
+      if (isec)
+        isec->scan_relocations();
+  });
+
+  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+    for (Symbol *sym : file->symbols) {
+      if (sym->file != file)
+        continue;
+
+      u8 rels = sym->rels.load(std::memory_order_relaxed);
+
+      if (rels & Symbol::HAS_GOT_REL) {
+        sym->got_idx = file->num_got++;
+        file->num_reldyn++;
+        sym->needs_dynsym = true;
+      }
+
+      if (rels & Symbol::HAS_PLT_REL) {
+        sym->plt_idx = file->num_plt++;
+        sym->needs_dynsym = true;
+
+        if (sym->got_idx == -1) {
+          sym->gotplt_idx = file->num_gotplt++;
+          sym->relplt_idx = file->num_relplt++;
+        }
+      }
+
+      if (rels & Symbol::HAS_GOTGD_REL) {
+        sym->gotgd_idx = file->num_got;
+        file->num_got += 2;
+        file->num_reldyn += 2;
+        sym->needs_dynsym = true;
+      }
+
+      if (rels & Symbol::HAS_GOTLD_REL) {
+        sym->gotgd_idx = file->num_got++;
+        file->num_reldyn++;
+        sym->needs_dynsym = true;
+      }
+
+      if (rels & Symbol::HAS_GOTTP_REL)
+       sym->gottp_idx = file->num_got++;
+
+      if (sym->needs_dynsym)
+        file->num_dynsym++;
+    }
+  });
 
   for (ObjectFile *file : files) {
+
     file->got_offset = out::got->shdr.sh_size;
     out::got->shdr.sh_size += file->num_got * GOT_SIZE;
 
     file->gotplt_offset = out::gotplt->shdr.sh_size;
-    out::gotplt->shdr.sh_size += file->num_plt * GOT_SIZE;
+    out::gotplt->shdr.sh_size += file->num_gotplt * GOT_SIZE;
 
     file->plt_offset = out::plt->shdr.sh_size;
     out::plt->shdr.sh_size += file->num_plt * PLT_SIZE;
 
     file->relplt_offset = out::relplt->shdr.sh_size;
-    out::relplt->shdr.sh_size += file->num_plt * sizeof(ELF64LE::Rela);
+    out::relplt->shdr.sh_size += file->num_relplt * sizeof(ELF64LE::Rela);
 
-    if (out::dynsym) {
-      file->dynsym_offset = out::dynsym->shdr.sh_size;
-      out::dynsym->shdr.sh_size += file->num_dynsym * sizeof(ELF64LE::Sym);
-    }
+    file->reldyn_offset = out::reldyn->shdr.sh_size;
+    out::reldyn->shdr.sh_size += file->num_reldyn * sizeof(ELF64LE::Rela);
 
-    if (out::dynstr) {
-      file->dynstr_offset = out::dynstr->shdr.sh_size;
-      out::dynstr->shdr.sh_size += file->dynstr_size;
-    }
+    file->dynsym_offset = out::dynsym->shdr.sh_size;
+    out::dynsym->shdr.sh_size += file->num_dynsym * sizeof(ELF64LE::Sym);
+
+    file->dynstr_offset = out::dynstr->shdr.sh_size;
+    out::dynstr->shdr.sh_size += file->dynstr_size;
   }
 }
 
-static void assign_got_offsets(ArrayRef<ObjectFile *> files) {
-  MyTimer t("assign_got_offsets", before_copy_timer);
-
-  tbb::parallel_for_each(files, [&](ObjectFile *file) {
-    u32 got_offset = file->got_offset;
-    u32 gotplt_offset = file->gotplt_offset;
-    u32 plt_offset = file->plt_offset;
-    u32 relplt_offset = file->relplt_offset;
-    u32 dynsym_offset = file->dynsym_offset;
-
-    for (Symbol *sym : file->symbols) {
-      if (sym->file != file)
-        continue;
-
-      u8 flags = sym->flags.load(std::memory_order_relaxed);
-
-      if (flags & Symbol::NEEDS_GOT) {
-        sym->got_offset = got_offset;
-        got_offset += GOT_SIZE;
-      }
-
-      if (flags & Symbol::NEEDS_GOTTP) {
-        sym->gottp_offset = got_offset;
-        got_offset += GOT_SIZE;
-      }
-
-      if (flags & Symbol::NEEDS_PLT) {
-        sym->gotplt_offset = gotplt_offset;
-        gotplt_offset += GOT_SIZE;
-
-        sym->plt_offset = plt_offset;
-        plt_offset += PLT_SIZE;
-
-        sym->relplt_offset = relplt_offset;
-        relplt_offset += sizeof(ELF64LE::Rela);
-      }
-
-      if (flags & Symbol::NEEDS_DYNSYM) {
-        sym->dynsym_offset = dynsym_offset;
-        dynsym_offset += sizeof(ELF64LE::Sym);
-      }
-    }
-  });
+static void write_dynamic_rel(u8 *buf, u8 type, u64 offset, u64 addend) {
+  ELF64LE::Rela *rel = (ELF64LE::Rela *)buf;
+  memset(rel, 0, sizeof(*rel));
+  rel->setType(type, false);
+  rel->r_offset = offset;
+  rel->r_addend = addend;
 }
 
 static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_synthetic", copy_timer);
 
-  u8 *got_buf = buf + out::got->shdr.sh_offset;
-  u8 *gotplt_buf = buf + out::gotplt->shdr.sh_offset;
-  u8 *relplt_buf = buf + out::relplt->shdr.sh_offset;
-  u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
-  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
-
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
-    u32 dynstr_offset = file->dynstr_offset;
+    u8 *got_buf = buf + out::got->shdr.sh_offset + file->got_offset;
+    u8 *gotplt_buf = buf + out::gotplt->shdr.sh_offset + file->gotplt_offset;
+    u8 *plt_buf = buf + out::plt->shdr.sh_offset + file->plt_offset;
+    u8 *relplt_buf = buf + out::relplt->shdr.sh_offset + file->relplt_offset;
+    u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
+    u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset + file->dynsym_offset;
+    u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset + file->dynstr_offset;
+
+    int reldyn_idx = 0;
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
         continue;
 
-      u8 flags = sym->flags.load(std::memory_order_relaxed);
+      if (got_idx != -1) {
+        *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
+        write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
+                          R_X86_64_GLOB_DAT, sym->get_got_addr(), 0);
+      }
 
-      if (flags & Symbol::NEEDS_GOT)
+      if (sym->gottp_idx != -1)
+        *(u64 *)(got_buf + sym->gottp_idx * GOT_SIZE) = sym->get_addr() - out::tls_end;
+
+      if (sym->gotgd_idx != -1)
+        error("unimplemented");
+
+      if (sym->gotld_idx != -1)
+        error("unimplemented");
+
+      if (sym->plt_idx != -1)
+        out::plt->write_entry(buf, sym);
+
+      if (sym->relplt_idx != -1) {
+        if (sym->type == STT_GNU_IFUNC)
+          write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
+                            R_X86_64_IRELATIVE, sym->get_plt_addr(), 0);
+        else
+          write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
+                            R_X86_64_JUMP_SLOT, sym->get_plt_addr(), 0);
+      }
+
+
+      if (rels & Symbol::NEEDS_GOT)
         *(u64 *)(got_buf + sym->got_offset) = sym->get_addr();
 
-      if (flags & Symbol::NEEDS_GOTTP)
-        *(u64 *)(got_buf + sym->gottp_offset) = sym->get_addr() - out::tls_end;
+      if (rels & Symbol::NEEDS_GOTTP)
 
-      if (flags & Symbol::NEEDS_PLT) {
+
+
+
+      if (rels & Symbol::NEEDS_PLT) {
         // Write a .plt entry
         u64 S = out::gotplt->shdr.sh_addr + sym->gotplt_offset;
         u64 P = out::plt->shdr.sh_addr + sym->plt_offset;
@@ -451,7 +492,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         }
       }
 
-      if (flags & Symbol::NEEDS_DYNSYM) {
+      if (rels & Symbol::NEEDS_DYNSYM) {
         // Write to .dynsym
         auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_offset);
         memset(&esym, 0, sizeof(esym));
@@ -1133,9 +1174,6 @@ int main(int argc, char **argv) {
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(chunks);
-
-  // Assign symbols to GOT offsets
-  assign_got_offsets(files);
 
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(chunks);

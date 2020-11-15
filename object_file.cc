@@ -473,12 +473,6 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-void ObjectFile::scan_relocations() {
-  for (InputSection *isec : sections)
-    if (isec)
-      isec->scan_relocations();
-}
-
 void ObjectFile::compute_symtab() {
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];

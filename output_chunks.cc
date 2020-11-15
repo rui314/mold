@@ -92,19 +92,28 @@ void PltSection::initialize(u8 *buf) {
 }
 
 void PltSection::write_entry(u8 *buf, Symbol *sym) {
-  const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
-    0x68, 0,    0, 0, 0,    // push  $index_in_relplt
-    0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
-  };
+  if (sym->got_idx == -1) {
+    const u8 data[] = {
+      0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
+      0x68, 0,    0, 0, 0,    // push  $index_in_relplt
+      0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
+    };
 
-  u64 entry_addr = shdr.sh_addr + sym->plt_offset;
+    u8 *base = buf + shdr.sh_offset + sym->plt_offset;
+    memcpy(base, data, sizeof(data));
+    *(u32 *)(base + 2) = sym->get_gotplt_addr() - sym->get_plt_addr() - 6;
+    *(u32 *)(base + 7) = sym->relplt_idx;
+    *(u32 *)(base + 12) = shdr.sh_addr - sym->get_plt_addr() - 16;
+  } else {
+    const u8 data[] = {
+      0xff, 0x25, 0,    0,    0,    0,                  // jmp   *foo@GOTPLT
+      0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0, // nop
+    };
 
-  u8 *base = buf + shdr.sh_offset + sym->plt_offset;
-  memcpy(base, data, sizeof(data));
-  *(u32 *)(base + 2) = out::gotplt->shdr.sh_addr + sym->gotplt_offset - entry_addr - 6;
-  *(u32 *)(base + 7) = sym->plt_offset / PLT_SIZE;
-  *(u32 *)(base + 12) = shdr.sh_addr - entry_addr - 16;
+    u8 *base = buf + shdr.sh_offset + sym->plt_offset;
+    memcpy(base, data, sizeof(data));
+    *(u32 *)(base + 2) = sym->get_got_addr() - sym->get_plt_addr() - 6;
+  }
 }
 
 MergedSection *

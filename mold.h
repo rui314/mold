@@ -187,6 +187,12 @@ public:
   }
 
   inline u64 get_addr() const;
+  inline u64 get_got_addr() const;
+  inline u64 get_gotplt_addr() const;
+  inline u64 get_gottp_addr() const;
+  inline u64 get_gotgd_addr() const;
+  inline u64 get_gotld_addr() const;
+  inline u64 get_plt_addr() const;
 
   StringRef name;
   ObjectFile *file = nullptr;
@@ -194,12 +200,15 @@ public:
   StringPieceRef piece_ref;
 
   u64 value = 0;
-  u32 got_offset = 0;
-  u32 gotplt_offset = 0;
-  u32 gottp_offset = 0;
-  u32 plt_offset = 0;
-  u32 relplt_offset = 0;
-  u32 dynsym_offset = 0;
+  u32 got_idx = -1;
+  u32 gotplt_idx = -1;
+  u32 gottp_idx = -1;
+  u32 gotgd_idx = -1;
+  u32 gotld_idx = -1;
+  u32 plt_idx = -1;
+  u32 relplt_idx = -1;
+  u32 dynsym_offset = -1;
+  bool needs_dynsym = false;
 
   u32 shndx = 0;
 
@@ -528,6 +537,36 @@ inline u64 Symbol::get_addr() const {
   return value;
 }
 
+inline u64 Symbol::get_got_addr() const {
+  assert(got_idx != -1);
+  return out::got->shdr.sh_addr + sym->file->got_offset + got_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotplt_addr() const {
+  assert(gotplt_idx != -1);
+  return out::gotplt->shdr.sh_addr + sym->file->gotplt_offset + gotplt_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gottp_addr() const {
+  assert(gottp_idx != -1);
+  return out::got->shdr.sh_addr + sym->file->got_offset + gottp_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotgd_addr() const {
+  assert(gotgd_idx != -1);
+  return out::got->shdr.sh_addr + sym->file->got_offset + gotgd_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_gotld_addr() const {
+  assert(gotld_idx != -1);
+  return out::got->shdr.sh_addr + sym->file->got_offset + gotld_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_plt_addr() const {
+  assert(plt_idx != -1);
+  return out::plt->shdr.sh_addr + sym->file->plt_offset + plt_idx * PLT_SIZE;
+}
+
 inline u64 StringPiece::get_addr() const {
   MergeableSection *is = isec.load();
   return is->parent.shdr.sh_addr + is->offset + output_offset;
@@ -565,7 +604,6 @@ public:
   void eliminate_duplicate_comdat_groups();
   void assign_mergeable_string_offsets();
   void convert_common_symbols();
-  void scan_relocations();
   void compute_symtab();
 
   void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
@@ -591,15 +629,19 @@ public:
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
 
-  std::atomic_uint32_t num_got = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t num_plt = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t num_dynsym = ATOMIC_VAR_INIT(0);
-  std::atomic_uint32_t dynstr_size = ATOMIC_VAR_INIT(0);
+  u32 num_got = 0;
+  u32 num_gotplt = 0;
+  u32 num_plt = 0;
+  u32 num_relplt = 0;
+  u32 num_reldyn = 0;
+  u32 num_dynsym = 0;
+  u32 dynstr_size = 0;
 
   u32 got_offset = 0;
   u32 gotplt_offset = 0;
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
+  u32 reldyn_offset = 0;
   u32 dynsym_offset = 0;
   u32 dynstr_offset = 0;
 
