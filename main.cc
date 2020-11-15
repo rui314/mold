@@ -477,8 +477,9 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
           *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
         } else {
           u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
+          int idx = file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
           write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
-                            R_X86_64_GLOB_DAT, sym->get_got_addr(), 0, 0);
+                            R_X86_64_GLOB_DAT, sym->get_got_addr(), idx, 0);
         }
       }
 
