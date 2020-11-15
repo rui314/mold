@@ -35,11 +35,9 @@ void InputSection::copy_to(u8 *buf) {
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
     u8 *loc = base + rel.r_offset;
 
-    u64 G = sym.get_got_addr() - GOT;
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
     u64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = sh_addr + rel.r_offset;
-    u64 L = sym.get_plt_addr();
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -51,16 +49,16 @@ void InputSection::copy_to(u8 *buf) {
       *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      *(u64 *)loc = G + A;
+      *(u64 *)loc = sym.get_got_addr() - GOT + A;
       break;
     case R_X86_64_PLT32:
       if (config.is_static && sym.type != STT_GNU_IFUNC)
         *(u32 *)loc = S + A - P; // todo
       else
-        *(u32 *)loc = L + A - P;
+        *(u32 *)loc = sym.get_plt_addr() + A - P;
       break;
     case R_X86_64_GOTPCREL:
-      *(u32 *)loc = G + GOT + A - P;
+      *(u32 *)loc = sym.get_got_addr() + A - P;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
@@ -97,7 +95,7 @@ void InputSection::copy_to(u8 *buf) {
       break;
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = G + GOT + A - P;
+      *(u32 *)loc = sym.get_got_addr() + A - P;
       break;
     default:
       error(toString(this) + ": unknown relocation: " +
@@ -146,8 +144,9 @@ void InputSection::scan_relocations() {
     case R_X86_64_TLSLD:
       sym->rels |= Symbol::HAS_TLSLD_REL;
       break;
-    case R_X86_64_DTPOFF32:
     case R_X86_64_GOTTPOFF:
+      sym->rels |= Symbol::HAS_GOTTP_REL;
+    case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
       sym->rels |= Symbol::HAS_TPOFF_REL;
       break;
