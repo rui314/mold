@@ -586,6 +586,7 @@ ObjectFile *ObjectFile::create_internal_file(std::vector<OutputChunk *> chunks) 
   out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
   out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
   out::_DYNAMIC = add("_DYNAMIC", STB_LOCAL, STV_HIDDEN);
+  out::_GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STB_LOCAL);
 
   // Update metadata
   for (int i = 1; i < obj->symbols.size(); i++)

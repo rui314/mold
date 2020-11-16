@@ -504,6 +504,8 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         } else {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                             R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(), idx, 0);
+          *(u64 *)(gotplt_buf + sym->gotplt_idx * sizeof(ELF64LE::Sym)) =
+            sym->get_plt_addr() + 6;
         }
       }
 
@@ -875,6 +877,10 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
   // _DYNAMIC
   if (out::dynamic)
     start(out::dynamic, out::_DYNAMIC);
+
+  // _GLOBAL_OFFSET_TABLE_
+  if (out::gotplt)
+    start(out::gotplt, out::_GLOBAL_OFFSET_TABLE_);
 
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {

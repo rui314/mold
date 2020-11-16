@@ -522,6 +522,7 @@ inline Symbol *__fini_array_end;
 inline Symbol *__preinit_array_start;
 inline Symbol *__preinit_array_end;
 inline Symbol *_DYNAMIC;
+inline Symbol *_GLOBAL_OFFSET_TABLE_;
 inline Symbol *_end;
 inline Symbol *_etext;
 inline Symbol *_edata;
