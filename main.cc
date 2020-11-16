@@ -516,6 +516,16 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         esym.setType(sym->type);
         esym.setBinding(sym->esym->getBinding());
 
+        if (sym->file->is_dso) {
+          esym.st_shndx = SHN_UNDEF;
+        } else if (!sym->input_section) {
+          esym.st_shndx = SHN_ABS;
+          esym.st_value = sym->get_addr();
+        } else {
+          esym.st_shndx = sym->input_section->output_section->shndx;
+          esym.st_value = sym->get_addr();
+        }
+
         // Write to .dynstr
         write_string(dynstr_buf + dynstr_offset, sym->name);
         dynstr_offset += sym->name.size() + 1;
