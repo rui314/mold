@@ -1149,7 +1149,7 @@ int main(int argc, char **argv) {
     out::dynamic->shdr.sh_size = create_dynamic_section(files).size();
 
   if (out::hash)
-    out::hash->update_size();
+    out::hash->update_shdr();
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
   out::relplt->shdr.sh_link = out::dynsym->shndx;

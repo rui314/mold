@@ -161,7 +161,7 @@ void DynsymSection::copy_to(u8 *buf) {
   });
 }
 
-void HashSection::update_size() {
+void HashSection::update_shdr() {
   int header_size = 8;
   int num_slots = out::dynsym->symbols.size() + 1;
   shdr.sh_size = header_size + num_slots * 8;

@@ -310,6 +310,7 @@ public:
 
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
+  virtual void update_shdr() {}
   virtual void initialize(u8 *buf) {}
   virtual void copy_to(u8 *buf) {}
 
@@ -466,8 +467,8 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void update_size();
-  void copy_to(u8 *buf);
+  void update_shdr() override;
+  void copy_to(u8 *buf) override;
 
 private:
   static u32 hash(StringRef name);
