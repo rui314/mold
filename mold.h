@@ -343,13 +343,15 @@ public:
   void copy_to(u8 *buf) override;
 };
 
-// ELF, Section or Program header
-class OutputHeader : public OutputChunk {
+// Program header
+class OutputPhdr : public OutputChunk {
 public:
-  OutputHeader(u32 size) : OutputChunk(HEADER) {
+  OutputPhdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_size = size;
   }
+
+  void update_shdr() override;
+  void copy_to(u8 *buf) override;
 };
 
 // Sections
@@ -524,7 +526,7 @@ inline std::vector<OutputChunk *> chunks;
 
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
-inline OutputHeader *phdr;
+inline OutputPhdr *phdr;
 inline SpecialSection *interp;
 inline SpecialSection *got;
 inline GotPltSection *gotplt;

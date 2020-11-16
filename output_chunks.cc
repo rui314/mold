@@ -48,6 +48,99 @@ void OutputShdr::copy_to(u8 *buf) {
       *ptr++ = chunk->shdr;
 }
 
+static u32 to_phdr_flags(OutputChunk *chunk) {
+  u32 ret = PF_R;
+  if (chunk->shdr.sh_flags & SHF_WRITE)
+    ret |= PF_W;
+  if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+    ret |= PF_X;
+  return ret;
+}
+
+static std::vector<ELF64LE::Phdr> create_phdr() {
+  std::vector<ELF64LE::Phdr> vec;
+
+  auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {
+    vec.push_back({});
+    ELF64LE::Phdr &phdr = vec.back();
+    phdr.p_type = type;
+    phdr.p_flags = flags;
+    phdr.p_align = std::max<u64>(align, chunk->shdr.sh_addralign);
+    phdr.p_offset = chunk->shdr.sh_offset;
+    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
+    phdr.p_vaddr = chunk->shdr.sh_addr;
+    phdr.p_memsz = chunk->shdr.sh_size;
+
+    if (type == PT_LOAD)
+      chunk->starts_new_ptload = true;
+  };
+
+  auto append = [&](OutputChunk *chunk) {
+    ELF64LE::Phdr &phdr = vec.back();
+    phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
+    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
+      ? chunk->shdr.sh_offset - phdr.p_offset
+      : chunk->shdr.sh_offset + chunk->shdr.sh_size - phdr.p_offset;
+    phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
+  };
+
+  auto is_bss = [](OutputChunk *chunk) {
+    return chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS);
+  };
+
+  // Create a PT_PHDR for the program header itself.
+  define(PT_PHDR, PF_R, 8, out::phdr);
+
+  // Create an PT_INTERP.
+  if (out::interp)
+    define(PT_INTERP, PF_R, 1, out::interp);
+
+  // Create PT_LOAD segments.
+  for (int i = 0, end = out::chunks.size(); i < end;) {
+    OutputChunk *first = out::chunks[i++];
+    if (!(first->shdr.sh_flags & SHF_ALLOC))
+      break;
+
+    u32 flags = to_phdr_flags(first);
+    define(PT_LOAD, flags, PAGE_SIZE, first);
+
+    if (!is_bss(first))
+      while (i < end && !is_bss(out::chunks[i]) &&
+             to_phdr_flags(out::chunks[i]) == flags)
+        append(out::chunks[i++]);
+
+    while (i < end && is_bss(out::chunks[i]) &&
+           to_phdr_flags(out::chunks[i]) == flags)
+      append(out::chunks[i++]);
+  }
+
+  // Create a PT_TLS.
+  for (int i = 0; i < out::chunks.size(); i++) {
+    if (out::chunks[i]->shdr.sh_flags & SHF_TLS) {
+      define(PT_TLS, to_phdr_flags(out::chunks[i]), 1, out::chunks[i]);
+      i++;
+      while (i < out::chunks.size() && (out::chunks[i]->shdr.sh_flags & SHF_TLS))
+        append(out::chunks[i++]);
+    }
+  }
+
+  // Add PT_DYNAMIC
+  if (out::dynamic)
+    define(PT_DYNAMIC, PF_R | PF_W, out::dynamic->shdr.sh_addralign, out::dynamic);
+
+  return vec;
+}
+
+void OutputPhdr::update_shdr() {
+  shdr.sh_size = create_phdr().size() * sizeof(ELF64LE::Phdr);
+}
+
+void OutputPhdr::copy_to(u8 *buf) {
+  auto *ptr = (ELF64LE::Phdr *)(buf + shdr.sh_offset);
+  for (ELF64LE::Phdr &phdr : create_phdr())
+    *ptr++ = phdr;
+}
+
 static StringRef get_output_name(StringRef name) {
   static StringRef common_names[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",

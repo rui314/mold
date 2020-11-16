@@ -583,87 +583,6 @@ static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   return ret;
 }
 
-static u32 to_phdr_flags(OutputChunk *chunk) {
-  u32 ret = PF_R;
-  if (chunk->shdr.sh_flags & SHF_WRITE)
-    ret |= PF_W;
-  if (chunk->shdr.sh_flags & SHF_EXECINSTR)
-    ret |= PF_X;
-  return ret;
-}
-
-static std::vector<u8> create_phdr(ArrayRef<OutputChunk *> chunks) {
-  std::vector<ELF64LE::Phdr> vec;
-
-  auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {
-    vec.push_back({});
-    ELF64LE::Phdr &phdr = vec.back();
-    phdr.p_type = type;
-    phdr.p_flags = flags;
-    phdr.p_align = std::max<u64>(align, chunk->shdr.sh_addralign);
-    phdr.p_offset = chunk->shdr.sh_offset;
-    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
-    phdr.p_vaddr = chunk->shdr.sh_addr;
-    phdr.p_memsz = chunk->shdr.sh_size;
-
-    if (type == PT_LOAD)
-      chunk->starts_new_ptload = true;
-  };
-
-  auto append = [&](OutputChunk *chunk) {
-    ELF64LE::Phdr &phdr = vec.back();
-    phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
-    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
-      ? chunk->shdr.sh_offset - phdr.p_offset
-      : chunk->shdr.sh_offset + chunk->shdr.sh_size - phdr.p_offset;
-    phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
-  };
-
-  auto is_bss = [](OutputChunk *chunk) {
-    return chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS);
-  };
-
-  // Create a PT_PHDR for the program header itself.
-  define(PT_PHDR, PF_R, 8, out::phdr);
-
-  // Create an PT_INTERP.
-  if (out::interp)
-    define(PT_INTERP, PF_R, 1, out::interp);
-
-  // Create PT_LOAD segments.
-  for (int i = 0, end = chunks.size(); i < end;) {
-    OutputChunk *first = chunks[i++];
-    if (!(first->shdr.sh_flags & SHF_ALLOC))
-      break;
-
-    u32 flags = to_phdr_flags(first);
-    define(PT_LOAD, flags, PAGE_SIZE, first);
-
-    if (!is_bss(first))
-      while (i < end && !is_bss(chunks[i]) && to_phdr_flags(chunks[i]) == flags)
-        append(chunks[i++]);
-
-    while (i < end && is_bss(chunks[i]) && to_phdr_flags(chunks[i]) == flags)
-      append(chunks[i++]);
-  }
-
-  // Create a PT_TLS.
-  for (int i = 0; i < chunks.size(); i++) {
-    if (chunks[i]->shdr.sh_flags & SHF_TLS) {
-      define(PT_TLS, to_phdr_flags(chunks[i]), 1, chunks[i]);
-      i++;
-      while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_TLS))
-        append(chunks[i++]);
-    }
-  }
-
-  // Add PT_DYNAMIC
-  if (out::dynamic)
-    define(PT_DYNAMIC, PF_R | PF_W, out::dynamic->shdr.sh_addralign, out::dynamic);
-
-  return to_u8vector(vec);
-}
-
 static std::vector<u8>
 create_dynamic_section(ArrayRef<ObjectFile *> files) {
   std::vector<u64> vec;
@@ -950,7 +869,7 @@ int main(int argc, char **argv) {
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
-  out::phdr = new OutputHeader(0);
+  out::phdr = new OutputPhdr;
   out::got = new SpecialSection(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
   out::gotplt = new GotPltSection;
   out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
@@ -1108,8 +1027,8 @@ int main(int argc, char **argv) {
   // Initialize synthetic section contents
   out::chunks = chunks;
   out::shdr->update_shdr();
+  out::phdr->update_shdr();
 
-  out::phdr->shdr.sh_size = create_phdr(chunks).size();
   if (out::dynamic)
     out::dynamic->shdr.sh_size = create_dynamic_section(files).size();
 
@@ -1183,9 +1102,6 @@ int main(int argc, char **argv) {
 
   // Fill mergeable string sections
   write_merged_strings(buf, files);
-
-  // Write headers and synthetic sections.
-  write_vector(buf + out::phdr->shdr.sh_offset, create_phdr(chunks));
 
   if (out::interp)
     write_string(buf + out::interp->shdr.sh_offset, config.dynamic_linker);
