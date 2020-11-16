@@ -103,7 +103,8 @@ void PltSection::write_entry(u8 *buf, Symbol *sym) {
 
     memcpy(base, data, sizeof(data));
     *(u32 *)(base + 2) = sym->get_gotplt_addr() - sym->get_plt_addr() - 6;
-    *(u32 *)(base + 7) = sym->relplt_idx;
+    *(u32 *)(base + 7) = sym->file->relplt_offset / sizeof(ELF64LE::Rela) +
+      sym->relplt_idx;
     *(u32 *)(base + 12) = shdr.sh_addr - sym->get_plt_addr() - 16;
   } else {
     const u8 data[] = {
