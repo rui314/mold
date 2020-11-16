@@ -354,6 +354,18 @@ public:
   void copy_to(u8 *buf) override;
 };
 
+class InterpSection : public OutputChunk {
+public:
+  InterpSection() : OutputChunk(SYNTHETIC) {
+    name = ".interp";
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_size = config.dynamic_linker.size() + 1;
+  }
+
+  void copy_to(u8 *buf) override;
+};
+
 // Sections
 class OutputSection : public OutputChunk {
 public:
@@ -392,7 +404,7 @@ public:
 class GotPltSection : public OutputChunk {
 public:
   GotPltSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".got.plt";
+    name = ".got.plt";
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
@@ -405,7 +417,7 @@ public:
 class PltSection : public OutputChunk {
 public:
   PltSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".plt";
+    name = ".plt";
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
     shdr.sh_addralign = 8;
@@ -419,7 +431,7 @@ public:
 class RelPltSection : public OutputChunk {
 public:
   RelPltSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".rela.plt";
+    name = ".rela.plt";
     shdr.sh_type = llvm::ELF::SHT_RELA;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_entsize = sizeof(ELF64LE::Rela);
@@ -446,7 +458,7 @@ public:
 class DynamicSection : public OutputChunk {
 public:
   DynamicSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".dynamic";
+    name = ".dynamic";
     shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = 8;
@@ -480,7 +492,7 @@ private:
 class DynsymSection : public OutputChunk {
 public:
   DynsymSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".dynsym";
+    name = ".dynsym";
     shdr.sh_type = llvm::ELF::SHT_DYNSYM;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
@@ -499,7 +511,7 @@ public:
 class HashSection : public OutputChunk {
 public:
   HashSection() : OutputChunk(SYNTHETIC) {
-    this->name = ".hash";
+    name = ".hash";
     shdr.sh_type = llvm::ELF::SHT_HASH;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
     shdr.sh_entsize = 4;
@@ -542,7 +554,7 @@ inline ArrayRef<OutputChunk *> chunks;
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
 inline OutputPhdr *phdr;
-inline SpecialSection *interp;
+inline InterpSection *interp;
 inline SpecialSection *got;
 inline GotPltSection *gotplt;
 inline SpecialSection *relplt;

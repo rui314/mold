@@ -139,6 +139,10 @@ void OutputPhdr::copy_to(u8 *buf) {
   write_vector(buf + shdr.sh_offset, create_phdr());
 }
 
+void InterpSection::copy_to(u8 *buf) {
+  write_string(buf + shdr.sh_offset, config.dynamic_linker);
+}
+
 static std::vector<u64> create_dynamic_section() {
   std::vector<u64> vec;
 

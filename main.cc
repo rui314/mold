@@ -841,13 +841,11 @@ int main(int argc, char **argv) {
   out::dynstr = new StrtabSection(".dynstr", SHF_ALLOC);
 
   if (!config.is_static) {
-    out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
+    out::interp = new InterpSection;
     out::dynamic = new DynamicSection;
     out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8,
                                      sizeof(ELF64LE::Rela));
     out::hash = new HashSection;
-
-    out::interp->shdr.sh_size = config.dynamic_linker.size() + 1;
   }
 
   // Set priorities to files
@@ -1050,9 +1048,6 @@ int main(int argc, char **argv) {
 
   // Fill mergeable string sections
   write_merged_strings(buf, files);
-
-  if (out::interp)
-    write_string(buf + out::interp->shdr.sh_offset, config.dynamic_linker);
 
   // Zero-clear paddings between sections
   clear_padding(buf, chunks, filesize);
