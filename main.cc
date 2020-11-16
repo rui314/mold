@@ -397,14 +397,12 @@ static void scan_rels_dynamic(ObjectFile *file) {
     if (rels & Symbol::HAS_GOTTP_REL)
       sym->gottp_idx = file->num_got++;
 
-    if (needs_dynsym) {
-      sym->dynsym_idx = file->num_dynsym++;
-      file->dynstr_size += sym->name.size() + 1;
-    }
+    if (needs_dynsym)
+      file->dynsyms.push_back(sym);
   }
 }
 
-static void scan_rels(ArrayRef<ObjectFile *> files) {
+static std::vector<Symbol *> scan_rels(ArrayRef<ObjectFile *> files) {
   MyTimer t("scan_rels", before_copy_timer);
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
@@ -437,13 +435,20 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
       file->reldyn_offset = out::reldyn->shdr.sh_size;
       out::reldyn->shdr.sh_size += file->num_reldyn * sizeof(ELF64LE::Rela);
     }
-
-    file->dynsym_offset = out::dynsym->shdr.sh_size;
-    out::dynsym->shdr.sh_size += file->num_dynsym * sizeof(ELF64LE::Sym);
-
-    file->dynstr_offset = out::dynstr->shdr.sh_size;
-    out::dynstr->shdr.sh_size += file->dynstr_size;
   }
+
+  std::vector<Symbol *> dynsyms;
+  for (ObjectFile *file : files)
+    dynsyms.insert(dynsyms.end(), file->dynsyms.begin(), file->dynsyms.end());
+
+  int idx = out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym);
+  for (Symbol *sym : dynsyms) {
+    sym->dynsym_idx = idx++;
+    sym->dynstr_offset = out::dynstr->shdr.sh_size;
+    out::dynsym->shdr.sh_size += sizeof(ELF64LE::Sym);
+    out::dynstr->shdr.sh_size += sym->name.size() + 1;
+  }
+  return dynsyms;
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
@@ -454,7 +459,8 @@ static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 ad
   rel->r_addend = addend;
 }
 
-static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
+static void
+write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
   MyTimer t("write_synthetic", copy_timer);
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
@@ -462,11 +468,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
     u8 *gotplt_buf = buf + out::gotplt->shdr.sh_offset + file->gotplt_offset;
     u8 *plt_buf = buf + out::plt->shdr.sh_offset + file->plt_offset;
     u8 *relplt_buf = buf + out::relplt->shdr.sh_offset + file->relplt_offset;
-    u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset + file->dynsym_offset;
-    u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
-
     int reldyn_idx = 0;
-    int dynstr_offset = file->dynstr_offset;
 
     for (Symbol *sym : file->symbols) {
       if (sym->file != file)
@@ -477,9 +479,9 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
           *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
         } else {
           u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
-          int idx = file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
           write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
-                            R_X86_64_GLOB_DAT, sym->get_got_addr(), idx, 0);
+                            R_X86_64_GLOB_DAT, sym->get_got_addr(),
+                            sym->dynsym_idx, 0);
         }
       }
 
@@ -496,48 +498,51 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         out::plt->write_entry(buf, sym);
 
       if (sym->relplt_idx != -1) {
-        int idx = file->dynsym_offset / sizeof(ELF64LE::Sym) + sym->dynsym_idx;
         if (sym->type == STT_GNU_IFUNC) {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                             R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
-                            idx, sym->get_addr());
+                            sym->dynsym_idx, sym->get_addr());
         } else {
           write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(), idx, 0);
+                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(),
+                            sym->dynsym_idx, 0);
           *(u64 *)(gotplt_buf + sym->gotplt_idx * sizeof(ELF64LE::Sym)) =
             sym->get_plt_addr() + 6;
         }
       }
-
-      if (sym->dynsym_idx != -1) {
-        // Write to .dynsym
-        auto &esym = *(ELF64LE::Sym *)(dynsym_buf +
-                                       sym->dynsym_idx * sizeof(ELF64LE::Sym));
-        memset(&esym, 0, sizeof(esym));
-        esym.st_name = dynstr_offset;
-        esym.setType(sym->type);
-        esym.setBinding(sym->esym->getBinding());
-
-        if (sym->file->is_dso || sym->esym->isUndefined()) {
-          esym.st_shndx = SHN_UNDEF;
-        } else if (!sym->input_section) {
-          esym.st_shndx = SHN_ABS;
-          esym.st_value = sym->get_addr();
-        } else {
-          esym.st_shndx = sym->input_section->output_section->shndx;
-          esym.st_value = sym->get_addr();
-        }
-
-        // Write to .dynstr
-        write_string(dynstr_buf + dynstr_offset, sym->name);
-        dynstr_offset += sym->name.size() + 1;
-
-        // Write to .hash
-        if (out::hash)
-          out::hash->write_symbol(buf, sym);
-      }
     }
   });
+}
+
+static void write_dynsyms(u8 *buf, ArrayRef<Symbol *> dynsyms) {
+  u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
+  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
+
+  for (Symbol *sym : dynsyms) {
+    // Write to .dynsym
+    auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_idx * sizeof(ELF64LE::Sym));
+    memset(&esym, 0, sizeof(esym));
+    esym.st_name = sym->dynstr_offset;
+    esym.setType(sym->type);
+    esym.setBinding(sym->esym->getBinding());
+
+    if (sym->file->is_dso || sym->esym->isUndefined()) {
+      esym.st_shndx = SHN_UNDEF;
+    } else if (!sym->input_section) {
+      esym.st_shndx = SHN_ABS;
+      esym.st_value = sym->get_addr();
+    } else {
+      esym.st_shndx = sym->input_section->output_section->shndx;
+      esym.st_value = sym->get_addr();
+    }
+
+    // Write to .dynstr
+    write_string(dynstr_buf + sym->dynstr_offset, sym->name);
+
+    // Write to .hash
+    if (out::hash)
+      out::hash->write_symbol(buf, sym);
+  }
 }
 
 static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
@@ -1121,7 +1126,7 @@ int main(int argc, char **argv) {
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  scan_rels(files);
+  std::vector<Symbol *> dynsyms = scan_rels(files);
 
   // Compute .symtab and .strtab sizes
   {
@@ -1254,7 +1259,10 @@ int main(int argc, char **argv) {
   write_dso_paths(buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
-  write_got(buf, files);
+  write_got_plt(buf, files);
+
+  // Fill .dynsym and .dynstr sections
+  write_dynsyms(buf, dynsyms);
 
   // Fill mergeable string sections
   write_merged_strings(buf, files);

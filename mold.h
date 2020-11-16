@@ -214,6 +214,7 @@ public:
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
+  u32 dynstr_offset = -1;
 
   u32 shndx = 0;
 
@@ -599,10 +600,9 @@ public:
   u32 plt_offset = 0;
   u32 relplt_offset = 0;
   u32 reldyn_offset = 0;
-  u32 dynsym_offset = 0;
-  u32 dynstr_offset = 0;
 
   std::vector<MergeableSection> mergeable_sections;
+  std::vector<Symbol *> dynsyms;
 
 private:
   void initialize_soname();
