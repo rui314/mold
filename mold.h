@@ -332,6 +332,17 @@ public:
   void copy_to(u8 *buf) override;
 };
 
+// Section header
+class OutputShdr : public OutputChunk {
+public:
+  OutputShdr() : OutputChunk(HEADER) {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+  }
+
+  void update_shdr() override;
+  void copy_to(u8 *buf) override;
+};
+
 // ELF, Section or Program header
 class OutputHeader : public OutputChunk {
 public:
@@ -509,8 +520,10 @@ bool is_c_identifier(StringRef name);
 namespace out {
 using namespace llvm::ELF;
 
+inline std::vector<OutputChunk *> chunks;
+
 inline OutputEhdr *ehdr;
-inline OutputHeader *shdr;
+inline OutputShdr *shdr;
 inline OutputHeader *phdr;
 inline SpecialSection *interp;
 inline SpecialSection *got;

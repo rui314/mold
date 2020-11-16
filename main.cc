@@ -583,14 +583,6 @@ static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   return ret;
 }
 
-static std::vector<u8> create_shdr(ArrayRef<OutputChunk *> chunks) {
-  std::vector<ELF64LE::Shdr> vec(1);
-  for (OutputChunk *chunk : chunks)
-    if (chunk->kind != OutputChunk::HEADER)
-      vec.push_back(chunk->shdr);
-  return to_u8vector(vec);
-}
-
 static u32 to_phdr_flags(OutputChunk *chunk) {
   u32 ret = PF_R;
   if (chunk->shdr.sh_flags & SHF_WRITE)
@@ -957,7 +949,7 @@ int main(int argc, char **argv) {
   total_timer.startTimer();
 
   out::ehdr = new OutputEhdr;
-  out::shdr = new OutputHeader(0);
+  out::shdr = new OutputShdr;
   out::phdr = new OutputHeader(0);
   out::got = new SpecialSection(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
   out::gotplt = new GotPltSection;
@@ -1114,7 +1106,9 @@ int main(int argc, char **argv) {
       chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
-  out::shdr->shdr.sh_size = create_shdr(chunks).size();
+  out::chunks = chunks;
+  out::shdr->update_shdr();
+
   out::phdr->shdr.sh_size = create_phdr(chunks).size();
   if (out::dynamic)
     out::dynamic->shdr.sh_size = create_dynamic_section(files).size();
@@ -1191,7 +1185,6 @@ int main(int argc, char **argv) {
   write_merged_strings(buf, files);
 
   // Write headers and synthetic sections.
-  write_vector(buf + out::shdr->shdr.sh_offset, create_shdr(chunks));
   write_vector(buf + out::phdr->shdr.sh_offset, create_phdr(chunks));
 
   if (out::interp)

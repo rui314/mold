@@ -29,6 +29,25 @@ void OutputEhdr::copy_to(u8 *buf) {
   hdr.e_shstrndx = out::shstrtab->shndx;
 }
 
+void OutputShdr::update_shdr() {
+  int i = 1;
+  for (OutputChunk *chunk : out::chunks)
+    if (chunk->kind != OutputChunk::HEADER)
+      i++;
+  shdr.sh_size = i * sizeof(ELF64LE::Shdr);
+}
+
+void OutputShdr::copy_to(u8 *buf) {
+  u8 *base = buf + shdr.sh_offset;
+
+  memset(base, 0, sizeof(ELF64LE::Shdr));
+
+  auto *ptr = (ELF64LE::Shdr *)(base + sizeof(ELF64LE::Shdr));
+  for (OutputChunk *chunk : out::chunks)
+    if (chunk->kind != OutputChunk::HEADER)
+      *ptr++ = chunk->shdr;
+}
+
 static StringRef get_output_name(StringRef name) {
   static StringRef common_names[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
