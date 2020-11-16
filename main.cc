@@ -514,7 +514,7 @@ static void write_got(u8 *buf, ArrayRef<ObjectFile *> files) {
         memset(&esym, 0, sizeof(esym));
         esym.st_name = dynstr_offset;
         esym.setType(sym->type);
-        esym.setBinding(sym->binding);
+        esym.setBinding(sym->esym->getBinding());
 
         // Write to .dynstr
         write_string(dynstr_buf + dynstr_offset, sym->name);
