@@ -985,23 +985,15 @@ int main(int argc, char **argv) {
   // Initialize synthetic section contents
   out::files = files;
   out::chunks = chunks;
-  out::shdr->update_shdr();
-  out::phdr->update_shdr();
-
-  if (out::dynamic)
-    out::dynamic->update_shdr();
-
-  if (out::hash)
-    out::hash->update_shdr();
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
   out::relplt->shdr.sh_link = out::dynsym->shndx;
 
-  if (out::hash && out::dynsym)
-    out::hash->shdr.sh_link = out::dynsym->shndx;
-
   if (out::reldyn)
     out::reldyn->shdr.sh_link = out::dynsym->shndx;
+
+  for (OutputChunk *chunk : chunks)
+    chunk->update_shdr();
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(chunks);

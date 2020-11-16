@@ -345,6 +345,7 @@ void HashSection::update_shdr() {
   int header_size = 8;
   int num_slots = out::dynsym->symbols.size() + 1;
   shdr.sh_size = header_size + num_slots * 8;
+  shdr.sh_link = out::dynsym->shndx;
 }
 
 void HashSection::copy_to(u8 *buf) {
