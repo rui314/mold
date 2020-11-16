@@ -171,8 +171,8 @@ void HashSection::copy_to(u8 *buf) {
   u8 *base = buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
-  u32 *hdr = (u32 *)base;
   int num_slots = out::dynsym->symbols.size() + 1;
+  u32 *hdr = (u32 *)base;
   u32 *buckets = (u32 *)(base + 8);
   u32 *chains = buckets + num_slots;
 
