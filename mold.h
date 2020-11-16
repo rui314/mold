@@ -502,6 +502,7 @@ public:
   }
 
   void add_symbols(ArrayRef<Symbol *> syms);
+  void update_shdr() override;
   void initialize(u8 *buf) override;
   void copy_to(u8 *buf) override;
 

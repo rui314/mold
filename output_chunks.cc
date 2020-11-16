@@ -313,8 +313,11 @@ void DynsymSection::add_symbols(ArrayRef<Symbol *> syms) {
   shdr.sh_size = (symbols.size() + 1) * sizeof(ELF64LE::Sym);
 }
 
-void DynsymSection::initialize(u8 *buf) {
+void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
+}
+
+void DynsymSection::initialize(u8 *buf) {
   memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
 }
 
