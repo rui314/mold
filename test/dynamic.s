@@ -36,13 +36,13 @@
 // RUN: readelf --symbols --use-dynamic %t.exe | FileCheck --check-prefix=DYNAMIC %s
 // DYNAMIC: Symbol table for image:
 // DYNAMIC:   Num Buc:    Value          Size   Type   Bind Vis      Ndx Name
-// DYNAMIC:     7   1: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_csu_fini
-// DYNAMIC:     6   4: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_csu_init
-// DYNAMIC:     2   4: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND _init
-// DYNAMIC:     5   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_start_main
-// DYNAMIC:     4   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND printf
-// DYNAMIC:     3   6: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT UND main
-// DYNAMIC:     1   7: 0000000000000000     0 NOTYPE  WEAK   DEFAULT UND __gmon_start__
+// DYNAMIC:    7   1: 00000000002011a0     0 FUNC    GLOBAL DEFAULT  13 __libc_csu_fini
+// DYNAMIC:    6   4: 0000000000201130     0 FUNC    GLOBAL DEFAULT  13 __libc_csu_init
+// DYNAMIC:    2   4: 0000000000201010     0 FUNC    GLOBAL DEFAULT  12 _init
+// DYNAMIC:    5   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND __libc_start_main
+// DYNAMIC:    4   6: 0000000000000000     0 FUNC    GLOBAL DEFAULT UND printf
+// DYNAMIC:    3   6: 0000000000201116     0 NOTYPE  GLOBAL DEFAULT  13 main
+// DYNAMIC:    1   7: 0000000000000000     0 NOTYPE  WEAK   DEFAULT UND __gmon_start__
 
         .globl main
 main:
