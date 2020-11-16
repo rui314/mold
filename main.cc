@@ -518,7 +518,7 @@ static void write_dynsyms(u8 *buf, ArrayRef<Symbol *> dynsyms) {
   u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
   u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
 
-  for (Symbol *sym : dynsyms) {
+  tbb::parallel_for_each(dynsyms, [&](Symbol *sym) {
     // Write to .dynsym
     auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_idx * sizeof(ELF64LE::Sym));
     memset(&esym, 0, sizeof(esym));
@@ -538,11 +538,12 @@ static void write_dynsyms(u8 *buf, ArrayRef<Symbol *> dynsyms) {
 
     // Write to .dynstr
     write_string(dynstr_buf + sym->dynstr_offset, sym->name);
+  });
 
-    // Write to .hash
-    if (out::hash)
+  // Write to .hash
+  if (out::hash)
+    for (Symbol *sym : dynsyms)
       out::hash->write_symbol(buf, sym);
-  }
 }
 
 static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
