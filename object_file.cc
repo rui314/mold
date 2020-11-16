@@ -138,6 +138,7 @@ void ObjectFile::initialize_symbols() {
     sym.type = esym.getType();
     sym.binding = esym.getBinding();
     sym.value = esym.st_value;
+    sym.esym = &esym;
 
     if (!esym.isAbsolute()) {
       if (esym.isCommon())
@@ -306,21 +307,35 @@ void ObjectFile::parse() {
   }
 }
 
+static u64 get_rank(ObjectFile *file, const ELF64LE::Sym &esym) {
+  if (esym.isUndefined()) {
+    assert(esym.getBinding() == STB_WEAK);
+    return ((u64)2 << 32) + file->priority;
+  }
+  if (esym.getBinding() == STB_WEAK)
+    return ((u64)1 << 32) + file->priority;
+  return file->priority;
+}
+
+static u64 get_rank(const Symbol &sym) {
+  if (!sym.file)
+    return (u64)4 << 32;
+  if (sym.is_placeholder)
+    return ((u64)3 << 32) + sym.file->priority;
+  return get_rank(sym.file, *sym.esym);
+}
+
 void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx) {
   InputSection *isec = nullptr;
   if (!esym.isAbsolute() && !esym.isCommon())
     isec = sections[esym.st_shndx];
 
-  bool is_weak = (esym.getBinding() == STB_WEAK);
-
   std::lock_guard lock(sym.mu);
 
-  bool is_new = !sym.file;
-  bool win = sym.is_placeholder || (sym.is_weak && !is_weak);
-  bool tie_but_higher_priority =
-    !is_new && !win && this->priority < sym.file->priority;
+  u64 new_rank = get_rank(this, esym);
+  u64 existing_rank = get_rank(sym);
 
-  if (is_new || win || tie_but_higher_priority) {
+  if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
     sym.piece_ref = sym_pieces[idx];
@@ -328,14 +343,15 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.type = esym.getType();
     sym.binding = esym.getBinding();
     sym.visibility = esym.getVisibility();
+    sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_weak = is_weak;
+    sym.is_weak = (esym.getBinding() == STB_WEAK);
     sym.is_dso = is_dso;
-  }
 
-  if (UNLIKELY(sym.traced) && sym.file == this)
-    llvm::outs() << "trace: " << toString(sym.file) << ": definition of "
-                 << sym.name << "\n";
+    if (UNLIKELY(sym.traced))
+      llvm::outs() << "trace: " << toString(sym.file) << ": definition of "
+                   << sym.name << "\n";
+  }
 }
 
 void ObjectFile::resolve_symbols() {
@@ -409,6 +425,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
         sym.input_section = nullptr;
         sym.value = 0;
         sym.visibility = esym.getVisibility();
+        sym.esym = &esym;
         sym.is_undef_weak = true;
 
         if (UNLIKELY(sym.traced))

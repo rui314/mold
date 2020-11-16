@@ -234,6 +234,7 @@ public:
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
   u8 binding = llvm::ELF::STB_GLOBAL;
+  const ELF64LE::Sym *esym;
 };
 
 inline std::string toString(Symbol sym) {
