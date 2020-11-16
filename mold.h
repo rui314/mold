@@ -447,13 +447,14 @@ public:
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ELF64LE::Sym);
     shdr.sh_info = 1;
-    contents.push_back({});
   }
 
+  void add_symbols(ArrayRef<Symbol *> syms);
   void initialize(u8 *buf) override;
+  void copy_to(u8 *buf) override;
 
 private:
-  std::vector<ELF64LE::Sym> contents;
+  std::vector<Symbol *> symbols;
 };
 
 class HashSection : public OutputChunk {

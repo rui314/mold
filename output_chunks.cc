@@ -117,9 +117,53 @@ void PltSection::write_entry(u8 *buf, Symbol *sym) {
   }
 }
 
+void DynsymSection::add_symbols(ArrayRef<Symbol *> syms) {
+  for (Symbol *sym : syms) {
+    sym->dynsym_idx = symbols.size() + 1;
+    symbols.push_back(sym);
+
+    sym->dynstr_offset = out::dynstr->shdr.sh_size;
+    out::dynstr->shdr.sh_size += sym->name.size() + 1;
+  }
+
+  shdr.sh_size = (symbols.size() + 1) * sizeof(ELF64LE::Sym);
+}
+
 void DynsymSection::initialize(u8 *buf) {
   shdr.sh_link = out::dynstr->shndx;
   memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+}
+
+void DynsymSection::copy_to(u8 *buf) {
+  u8 *dynsym_buf = buf + shdr.sh_offset;
+  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
+
+  tbb::parallel_for_each(symbols, [&](Symbol *sym) {
+    // Write to .dynsym
+    auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_idx * sizeof(ELF64LE::Sym));
+    memset(&esym, 0, sizeof(esym));
+    esym.st_name = sym->dynstr_offset;
+    esym.setType(sym->type);
+    esym.setBinding(sym->esym->getBinding());
+
+    if (sym->file->is_dso || sym->esym->isUndefined()) {
+      esym.st_shndx = SHN_UNDEF;
+    } else if (!sym->input_section) {
+      esym.st_shndx = SHN_ABS;
+      esym.st_value = sym->get_addr();
+    } else {
+      esym.st_shndx = sym->input_section->output_section->shndx;
+      esym.st_value = sym->get_addr();
+    }
+
+    // Write to .dynstr
+    write_string(dynstr_buf + sym->dynstr_offset, sym->name);
+  });
+
+  // Write to .hash
+  if (out::hash)
+    for (Symbol *sym : symbols)
+      out::hash->write_symbol(buf, sym);
 }
 
 void HashSection::write_symbol(u8 *buf, Symbol *sym) {

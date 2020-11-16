@@ -402,7 +402,7 @@ static void scan_rels_dynamic(ObjectFile *file) {
   }
 }
 
-static std::vector<Symbol *> scan_rels(ArrayRef<ObjectFile *> files) {
+static void scan_rels(ArrayRef<ObjectFile *> files) {
   MyTimer t("scan_rels", before_copy_timer);
 
   tbb::parallel_for_each(files, [&](ObjectFile *file) {
@@ -437,18 +437,8 @@ static std::vector<Symbol *> scan_rels(ArrayRef<ObjectFile *> files) {
     }
   }
 
-  std::vector<Symbol *> dynsyms;
   for (ObjectFile *file : files)
-    dynsyms.insert(dynsyms.end(), file->dynsyms.begin(), file->dynsyms.end());
-
-  int idx = out::dynsym->shdr.sh_size / sizeof(ELF64LE::Sym);
-  for (Symbol *sym : dynsyms) {
-    sym->dynsym_idx = idx++;
-    sym->dynstr_offset = out::dynstr->shdr.sh_size;
-    out::dynsym->shdr.sh_size += sizeof(ELF64LE::Sym);
-    out::dynstr->shdr.sh_size += sym->name.size() + 1;
-  }
-  return dynsyms;
+    out::dynsym->add_symbols(file->dynsyms);
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
@@ -512,38 +502,6 @@ write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
       }
     }
   });
-}
-
-static void write_dynsyms(u8 *buf, ArrayRef<Symbol *> dynsyms) {
-  u8 *dynsym_buf = buf + out::dynsym->shdr.sh_offset;
-  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
-
-  tbb::parallel_for_each(dynsyms, [&](Symbol *sym) {
-    // Write to .dynsym
-    auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_idx * sizeof(ELF64LE::Sym));
-    memset(&esym, 0, sizeof(esym));
-    esym.st_name = sym->dynstr_offset;
-    esym.setType(sym->type);
-    esym.setBinding(sym->esym->getBinding());
-
-    if (sym->file->is_dso || sym->esym->isUndefined()) {
-      esym.st_shndx = SHN_UNDEF;
-    } else if (!sym->input_section) {
-      esym.st_shndx = SHN_ABS;
-      esym.st_value = sym->get_addr();
-    } else {
-      esym.st_shndx = sym->input_section->output_section->shndx;
-      esym.st_value = sym->get_addr();
-    }
-
-    // Write to .dynstr
-    write_string(dynstr_buf + sym->dynstr_offset, sym->name);
-  });
-
-  // Write to .hash
-  if (out::hash)
-    for (Symbol *sym : dynsyms)
-      out::hash->write_symbol(buf, sym);
 }
 
 static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
@@ -1125,7 +1083,7 @@ int main(int argc, char **argv) {
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  std::vector<Symbol *> dynsyms = scan_rels(files);
+  scan_rels(files);
 
   // Compute .symtab and .strtab sizes
   {
@@ -1257,9 +1215,6 @@ int main(int argc, char **argv) {
 
   // Fill .plt, .got, got.plt, .rela.plt sections
   write_got_plt(buf, files);
-
-  // Fill .dynsym and .dynstr sections
-  write_dynsyms(buf, dynsyms);
 
   // Fill mergeable string sections
   write_merged_strings(buf, files);
