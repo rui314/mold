@@ -1062,7 +1062,7 @@ int main(int argc, char **argv) {
 
   if (args.hasArg(OPT_trace))
     for (ObjectFile *file : files)
-      llvm::outs() << toString(file) << "\n";
+      message(toString(file));
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats(files);
@@ -1289,7 +1289,7 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : files)
     for (InputSection *isec : file->sections)
       if (isec)
-        llvm::outs() << toString(isec) << "\n";
+        message(toString(isec));
 #endif
 
   // Show stat numbers

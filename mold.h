@@ -109,6 +109,12 @@ T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
   return std::move(*e);
 }
 
+inline void message(const Twine &msg) {
+  static std::mutex mu;
+  std::lock_guard lock(mu);
+  llvm::outs() << msg << "\n";
+}
+
 inline std::string toString(const Twine &s) { return s.str(); }
 
 #define CHECK(E, S) check2((E), [&] { return toString(S); })

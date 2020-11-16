@@ -391,16 +391,15 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
     }
 
     if (UNLIKELY(sym.traced))
-      llvm::outs() << "trace: " << toString(this)
-                   << ": reference to " << sym.name << "\n";
+      message("trace: " + toString(this) + ": reference to " + sym.name);
 
     if (esym.getBinding() != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
       feeder.add(sym.file);
 
       if (UNLIKELY(sym.traced))
-        llvm::outs() << "trace: " << toString(this) << " keeps "
-                     << toString(sym.file) << " for " << sym.name << "\n";
+        message("trace: " + toString(this) + " keeps " + toString(sym.file) +
+                " for " + sym.name);
     }
   }
 }
@@ -429,8 +428,7 @@ void ObjectFile::hanlde_undefined_weak_symbols() {
         sym.is_undef_weak = true;
 
         if (UNLIKELY(sym.traced))
-          llvm::outs() << "trace: " << toString(this)
-                       << ": unresolved weak symbol " << sym.name << "\n";
+          message("trace: " + toString(this) + ": unresolved weak symbol " + sym.name);
       }
     }
   }
