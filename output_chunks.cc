@@ -159,20 +159,42 @@ void DynsymSection::copy_to(u8 *buf) {
     // Write to .dynstr
     write_string(dynstr_buf + sym->dynstr_offset, sym->name);
   });
-
-  // Write to .hash
-  if (out::hash)
-    for (Symbol *sym : symbols)
-      out::hash->write_symbol(buf, sym);
 }
 
-void HashSection::write_symbol(u8 *buf, Symbol *sym) {
-  assert(sym->dynsym_idx != -1);
-  u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);
-  u32 *chains = buckets + num_dynsym;
-  u32 idx = hash(sym->name) % num_dynsym;
-  chains[sym->dynsym_idx] = buckets[idx];
-  buckets[idx] = sym->dynsym_idx;
+void HashSection::update_size() {
+  int header_size = 8;
+  int num_slots = out::dynsym->symbols.size() + 1;
+  shdr.sh_size = header_size + num_slots * 8;
+}
+
+void HashSection::copy_to(u8 *buf) {
+  u8 *base = buf + shdr.sh_offset;
+  memset(base, 0, shdr.sh_size);
+
+  u32 *hdr = (u32 *)base;
+  int num_slots = out::dynsym->symbols.size() + 1;
+  u32 *buckets = (u32 *)(base + 8);
+  u32 *chains = buckets + num_slots;
+
+  hdr[0] = hdr[1] = num_slots;
+
+  for (Symbol *sym : out::dynsym->symbols) {
+    u32 i = hash(sym->name) % num_slots;
+    chains[sym->dynsym_idx] = buckets[i];
+    buckets[i] = sym->dynsym_idx;
+  }
+}
+
+u32 HashSection::hash(StringRef name) {
+  u32 h = 0;
+  for (char c : name) {
+    h = (h << 4) + c;
+    u32 g = h & 0xf0000000;
+    if (g != 0)
+      h ^= g >> 24;
+    h &= ~g;
+  }
+  return h;
 }
 
 MergedSection *

@@ -453,7 +453,6 @@ public:
   void initialize(u8 *buf) override;
   void copy_to(u8 *buf) override;
 
-private:
   std::vector<Symbol *> symbols;
 };
 
@@ -467,33 +466,11 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void initialize(u8 *buf) override {
-    u32 *hdr = (u32 *)(buf + shdr.sh_offset);
-    memset(buf + shdr.sh_offset, 0, shdr.sh_size);
-    hdr[0] = hdr[1] = num_dynsym;
-  }
-
-  void write_symbol(u8 *buf, Symbol *sym);
-
-  void set_num_dynsym(u32 num_dynsym) {
-    this->num_dynsym = num_dynsym;
-    shdr.sh_size = num_dynsym * 8 + 8;
-  }
+  void update_size();
+  void copy_to(u8 *buf);
 
 private:
-  u32 num_dynsym;
-
-  static u32 hash(StringRef name) {
-    u32 h = 0;
-    for (char c : name) {
-      h = (h << 4) + c;
-      u32 g = h & 0xf0000000;
-      if (g != 0)
-        h ^= g >> 24;
-      h &= ~g;
-    }
-    return h;
-  }
+  static u32 hash(StringRef name);
 };
 
 class MergedSection : public OutputChunk {
