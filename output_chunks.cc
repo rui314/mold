@@ -4,6 +4,31 @@
 
 using namespace llvm::ELF;
 
+void OutputEhdr::copy_to(u8 *buf) {
+  auto &hdr = *(ELF64LE::Ehdr *)(buf + shdr.sh_offset);
+
+  memset(&hdr, 0, sizeof(hdr));
+  memcpy(&hdr.e_ident, "\177ELF", 4);
+  hdr.e_ident[EI_CLASS] = ELFCLASS64;
+  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_VERSION] = EV_CURRENT;
+  hdr.e_ident[EI_OSABI] = 0;
+  hdr.e_ident[EI_ABIVERSION] = 0;
+  hdr.e_type = ET_EXEC;
+  hdr.e_machine = EM_X86_64;
+  hdr.e_version = EV_CURRENT;
+  hdr.e_entry = Symbol::intern("_start")->get_addr();
+  hdr.e_phoff = out::phdr->shdr.sh_offset;
+  hdr.e_shoff = out::shdr->shdr.sh_offset;
+  hdr.e_flags = 0;
+  hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
+  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
+  hdr.e_phnum = out::phdr->shdr.sh_size / sizeof(ELF64LE::Phdr);
+  hdr.e_shentsize = sizeof(ELF64LE::Shdr);
+  hdr.e_shnum = out::shdr->shdr.sh_size / sizeof(ELF64LE::Shdr);
+  hdr.e_shstrndx = out::shstrtab->shndx;
+}
+
 static StringRef get_output_name(StringRef name) {
   static StringRef common_names[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",

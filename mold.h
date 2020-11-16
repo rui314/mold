@@ -321,11 +321,23 @@ public:
   ELF64LE::Shdr shdr = {};
 };
 
+// ELF header
+class OutputEhdr : public OutputChunk {
+public:
+  OutputEhdr() : OutputChunk(HEADER) {
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_size = sizeof(ELF64LE::Ehdr);
+  }
+
+  void copy_to(u8 *buf) override;
+};
+
 // ELF, Section or Program header
 class OutputHeader : public OutputChunk {
 public:
-  OutputHeader() : OutputChunk(HEADER) {
+  OutputHeader(u32 size) : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_size = size;
   }
 };
 
@@ -497,7 +509,7 @@ bool is_c_identifier(StringRef name);
 namespace out {
 using namespace llvm::ELF;
 
-inline OutputHeader *ehdr;
+inline OutputEhdr *ehdr;
 inline OutputHeader *shdr;
 inline OutputHeader *phdr;
 inline SpecialSection *interp;
