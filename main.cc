@@ -583,43 +583,6 @@ static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
   return ret;
 }
 
-static std::vector<u8>
-create_dynamic_section(ArrayRef<ObjectFile *> files) {
-  std::vector<u64> vec;
-
-  auto define = [&](u64 tag, u64 val) {
-    vec.push_back(tag);
-    vec.push_back(val);
-  };
-
-  int i = 1;
-  for (ObjectFile *file : files) {
-    if (!file->soname.empty()) {
-      define(DT_NEEDED, i);
-      i += file->soname.size() + 1;
-    }
-  }
-
-  define(DT_RELA, out::reldyn->shdr.sh_addr);
-  define(DT_RELASZ, out::reldyn->shdr.sh_size);
-  define(DT_RELAENT, sizeof(ELF64LE::Rela));
-  define(DT_JMPREL, out::relplt->shdr.sh_addr);
-  define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
-  define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
-  define(DT_PLTREL, DT_RELA);
-  define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
-  define(DT_SYMENT, sizeof(ELF64LE::Sym));
-  define(DT_STRTAB, out::dynstr->shdr.sh_addr);
-  define(DT_STRSZ, out::dynstr->shdr.sh_size);
-  define(DT_HASH, out::hash->shdr.sh_addr);
-  define(DT_INIT_ARRAY, out::__init_array_start->value);
-  define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
-  define(DT_FINI_ARRAY, out::__fini_array_start->value);
-  define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
-  define(DT_NULL, 0);
-  return to_u8vector(vec);
-}
-
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
   MyTimer t("osec_offset", before_copy_timer);
 
@@ -801,10 +764,6 @@ static int get_thread_count(InputArgList &args) {
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 }
 
-static void write_vector(u8 *buf, ArrayRef<u8> vec) {
-  memcpy(buf, vec.data(), vec.size());
-}
-
 static int parse_filler(opt::InputArgList &args) {
   auto *arg = args.getLastArg(OPT_filler);
   if (!arg)
@@ -883,8 +842,7 @@ int main(int argc, char **argv) {
 
   if (!config.is_static) {
     out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
-    out::dynamic = new SpecialSection(".dynamic", SHT_DYNAMIC, SHF_ALLOC | SHF_WRITE,
-                                      8, sizeof(ELF64LE::Dyn));
+    out::dynamic = new DynamicSection;
     out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8,
                                      sizeof(ELF64LE::Rela));
     out::hash = new HashSection;
@@ -1025,12 +983,13 @@ int main(int argc, char **argv) {
       chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
+  out::files = files;
   out::chunks = chunks;
   out::shdr->update_shdr();
   out::phdr->update_shdr();
 
   if (out::dynamic)
-    out::dynamic->shdr.sh_size = create_dynamic_section(files).size();
+    out::dynamic->update_shdr();
 
   if (out::hash)
     out::hash->update_shdr();
@@ -1040,9 +999,6 @@ int main(int argc, char **argv) {
 
   if (out::hash && out::dynsym)
     out::hash->shdr.sh_link = out::dynsym->shndx;
-
-  if (out::dynamic && out::dynstr)
-    out::dynamic->shdr.sh_link = out::dynstr->shndx;
 
   if (out::reldyn)
     out::reldyn->shdr.sh_link = out::dynsym->shndx;
@@ -1105,8 +1061,6 @@ int main(int argc, char **argv) {
 
   if (out::interp)
     write_string(buf + out::interp->shdr.sh_offset, config.dynamic_linker);
-  if (out::dynamic)
-    write_vector(buf + out::dynamic->shdr.sh_offset, create_dynamic_section(files));
 
   // Zero-clear paddings between sections
   clear_padding(buf, chunks, filesize);

@@ -443,6 +443,20 @@ public:
   }
 };
 
+class DynamicSection : public OutputChunk {
+public:
+  DynamicSection() : OutputChunk(SYNTHETIC) {
+    this->name = ".dynamic";
+    shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_addralign = 8;
+    shdr.sh_entsize = sizeof(ELF64LE::Dyn);
+  }
+
+  void update_shdr() override;
+  void copy_to(u8 *buf) override;
+};
+
 class SymtabSection : public OutputChunk {
 public:
   SymtabSection(StringRef name, u32 type, u64 flags) : OutputChunk(SYNTHETIC) {
@@ -522,7 +536,8 @@ bool is_c_identifier(StringRef name);
 namespace out {
 using namespace llvm::ELF;
 
-inline std::vector<OutputChunk *> chunks;
+inline ArrayRef<ObjectFile *> files;
+inline ArrayRef<OutputChunk *> chunks;
 
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
@@ -532,7 +547,7 @@ inline SpecialSection *got;
 inline GotPltSection *gotplt;
 inline SpecialSection *relplt;
 inline SpecialSection *reldyn;
-inline SpecialSection *dynamic;
+inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
 inline StrtabSection *dynstr;
 inline HashSection *hash;
@@ -699,6 +714,11 @@ inline u64 StringPiece::get_addr() const {
 inline void write_string(u8 *buf, StringRef str) {
   memcpy(buf, str.data(), str.size());
   buf[str.size()] = '\0';
+}
+
+template <typename T>
+inline void write_vector(u8 *buf, const std::vector<T> &vec) {
+  memcpy(buf, vec.data(), vec.size() * sizeof(T));
 }
 
 //
