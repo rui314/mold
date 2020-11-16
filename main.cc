@@ -1037,10 +1037,8 @@ int main(int argc, char **argv) {
   out::shstrtab = new StrtabSection(".shstrtab", 0);
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", SHT_SYMTAB, 0);
-  out::dynsym = new SymtabSection(".dynsym", SHT_DYNSYM, SHF_ALLOC);
+  out::dynsym = new DynsymSection;
   out::dynstr = new StrtabSection(".dynstr", SHF_ALLOC);
-
-  out::dynsym->shdr.sh_size = sizeof(ELF64LE::Sym);
 
   if (!config.is_static) {
     out::interp = new SpecialSection(".interp", SHT_PROGBITS, SHF_ALLOC);
@@ -1197,8 +1195,6 @@ int main(int argc, char **argv) {
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
   out::relplt->shdr.sh_link = out::dynsym->shndx;
-  out::dynsym->shdr.sh_info = 1;
-  out::dynsym->shdr.sh_link = out::dynstr->shndx;
 
   if (out::hash && out::dynsym)
     out::hash->shdr.sh_link = out::dynsym->shndx;

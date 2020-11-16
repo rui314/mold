@@ -117,6 +117,11 @@ void PltSection::write_entry(u8 *buf, Symbol *sym) {
   }
 }
 
+void DynsymSection::initialize(u8 *buf) {
+  shdr.sh_link = out::dynstr->shndx;
+  memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+}
+
 void HashSection::write_symbol(u8 *buf, Symbol *sym) {
   assert(sym->dynsym_idx != -1);
   u32 *buckets = (u32 *)(buf + shdr.sh_offset + 8);

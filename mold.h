@@ -437,6 +437,25 @@ private:
   std::vector<ELF64LE::Sym> contents;
 };
 
+class DynsymSection : public OutputChunk {
+public:
+  DynsymSection() : OutputChunk(SYNTHETIC) {
+    this->name = ".dynsym";
+    shdr.sh_type = llvm::ELF::SHT_DYNSYM;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_entsize = sizeof(ELF64LE::Sym);
+    shdr.sh_addralign = 8;
+    shdr.sh_size = sizeof(ELF64LE::Sym);
+    shdr.sh_info = 1;
+    contents.push_back({});
+  }
+
+  void initialize(u8 *buf) override;
+
+private:
+  std::vector<ELF64LE::Sym> contents;
+};
+
 class HashSection : public OutputChunk {
 public:
   HashSection() : OutputChunk(SYNTHETIC) {
@@ -514,7 +533,7 @@ inline HashSection *hash;
 inline StrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
-inline SymtabSection *dynsym;
+inline DynsymSection *dynsym;
 
 inline u64 tls_end;
 
