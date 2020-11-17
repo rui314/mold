@@ -518,14 +518,16 @@ public:
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ELF64LE::Sym);
-    contents.push_back({});
   }
 
   void update_shdr() override;
-  void initialize_buf() override;
+  void copy_buf() override;
 
 private:
-  std::vector<ELF64LE::Sym> contents;
+  std::vector<u64> local_symtab_off;
+  std::vector<u64> local_strtab_off;
+  std::vector<u64> global_symtab_off;
+  std::vector<u64> global_strtab_off;
 };
 
 class DynsymSection : public OutputChunk {
