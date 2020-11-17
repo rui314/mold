@@ -588,7 +588,7 @@ bool is_c_identifier(StringRef name);
 namespace out {
 using namespace llvm::ELF;
 
-inline ArrayRef<ObjectFile *> files;
+inline std::vector<ObjectFile *> files;
 inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 

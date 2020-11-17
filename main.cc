@@ -113,7 +113,7 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   return vec;
 }
 
-static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
+static void read_file(StringRef path) {
   int fd = open(path.str().c_str(), O_RDONLY);
   if (fd == -1)
     error("cannot open " + path);
@@ -132,11 +132,11 @@ static void read_file(std::vector<ObjectFile *> &files, StringRef path) {
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : get_archive_members(mb))
-      files.push_back(new ObjectFile(member, path));
+      out::files.push_back(new ObjectFile(member, path));
     break;
   case file_magic::elf_relocatable:
   case file_magic::elf_shared_object:
-    files.push_back(new ObjectFile(mb, ""));
+    out::files.push_back(new ObjectFile(mb, ""));
     break;
   default:
     error(path + ": unknown file type");
@@ -671,6 +671,8 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
 }
 
 static u8 *open_output_file(u64 filesize) {
+  MyTimer t("open_file", before_copy_timer);
+
   int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT, 0777);
   if (fd == -1)
     error("cannot open " + config.output + ": " + strerror(errno));
@@ -771,25 +773,23 @@ int main(int argc, char **argv) {
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
 
-  std::vector<ObjectFile *> files;
-
   // Open input files
   {
     MyTimer t("open", parse_timer);
     for (auto *arg : args)
       if (arg->getOption().getID() == OPT_INPUT)
-        read_file(files, arg->getValue());
+        read_file(arg->getValue());
   }
 
   // Parse input files
   {
     MyTimer t("parse", parse_timer);
-    tbb::parallel_for_each(files, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(out::files, [](ObjectFile *file) { file->parse(); });
   }
 
   {
     MyTimer t("merge", parse_timer);
-    tbb::parallel_for_each(files, [](ObjectFile *file) {
+    tbb::parallel_for_each(out::files, [](ObjectFile *file) {
       file->initialize_mergeable_sections();
     });
   }
@@ -819,36 +819,36 @@ int main(int argc, char **argv) {
 
   // Set priorities to files
   int priority = 1;
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     if (!file->is_in_archive)
       file->priority = priority++;
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     if (file->is_in_archive)
       file->priority = priority++;
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
-  resolve_symbols(files);
+  resolve_symbols(out::files);
 
   if (args.hasArg(OPT_trace))
-    for (ObjectFile *file : files)
+    for (ObjectFile *file : out::files)
       message(toString(file));
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
-  eliminate_comdats(files);
+  eliminate_comdats(out::files);
 
   // Merge strings constants in SHF_MERGE sections.
-  handle_mergeable_strings(files);
+  handle_mergeable_strings(out::files);
 
   // Create .bss sections for common symbols.
   {
     MyTimer t("common", before_copy_timer);
-    tbb::parallel_for_each(files,
+    tbb::parallel_for_each(out::files,
                            [](ObjectFile *file) { file->convert_common_symbols(); });
   }
 
   // Bin input sections into output sections
-  bin_sections(files);
+  bin_sections(out::files);
 
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
@@ -877,25 +877,25 @@ int main(int argc, char **argv) {
   // (e.g. `__bss_start`).
   ObjectFile *internal_file = ObjectFile::create_internal_file();
   internal_file->priority = priority++;
-  files.push_back(internal_file);
+  out::files.push_back(internal_file);
 
   // Beyond this point, no new symbols will be added to the result.
 
   // Copy shared object name strings to .dynsym
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     if (file->is_alive && file->is_dso)
       out::dynstr->add_string(file->soname);
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  scan_rels(files);
+  scan_rels(out::files);
 
   // Compute .symtab and .strtab sizes
   {
     MyTimer t("symtab_size", before_copy_timer);
-    tbb::parallel_for_each(files, [](ObjectFile *file) { file->compute_symtab(); });
+    tbb::parallel_for_each(out::files, [](ObjectFile *file) { file->compute_symtab(); });
 
-    for (ObjectFile *file : files) {
+    for (ObjectFile *file : out::files) {
       out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
       out::strtab->shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
     }
@@ -939,9 +939,6 @@ int main(int argc, char **argv) {
     if (out::chunks[i]->kind != OutputChunk::HEADER)
       out::chunks[i]->shndx = shndx++;
 
-  // Initialize synthetic section contents
-  out::files = files;
-
   for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
@@ -964,10 +961,7 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  {
-    MyTimer t("open_file", before_copy_timer);
-    out::buf = open_output_file(filesize);
-  }
+  out::buf = open_output_file(filesize);
 
   // Initialize the output buffer.
   {
@@ -1007,11 +1001,11 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(files, out::chunks);
+    print_map(out::files, out::chunks);
   }
 
 #if 0
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     for (InputSection *isec : file->sections)
       if (isec)
         message(toString(isec));
@@ -1019,11 +1013,11 @@ int main(int argc, char **argv) {
 
   // Show stat numbers
   Counter num_input_sections("input_sections");
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     num_input_sections.inc(file->sections.size());
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
-  Counter num_files("files", files.size());
+  Counter num_files("files", out::files.size());
   Counter filesize_counter("filesize", filesize);
 
   Counter::print();
