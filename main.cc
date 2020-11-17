@@ -990,7 +990,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("copy", copy_timer);
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
-      chunk->copy_to(out::buf);
+      chunk->copy_buf();
     });
   }
 

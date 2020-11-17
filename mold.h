@@ -257,7 +257,7 @@ public:
   enum Kind : u8 { REGULAR, MERGEABLE };
 
   virtual void scan_relocations() {}
-  virtual void copy_to(u8 *buf) {}
+  virtual void copy_buf() {}
 
   ObjectFile *file;
   const ELF64LE::Shdr &shdr;
@@ -276,7 +276,7 @@ public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
     : InputChunk(REGULAR, file, shdr, name) {}
 
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
   void scan_relocations() override;
 
   ArrayRef<ELF64LE::Rela> rels;
@@ -312,7 +312,7 @@ public:
 
   virtual void update_shdr() {}
   virtual void initialize_buf() {}
-  virtual void copy_to(u8 *buf) {}
+  virtual void copy_buf() {}
 
   StringRef name;
   Kind kind;
@@ -329,7 +329,7 @@ public:
     shdr.sh_size = sizeof(ELF64LE::Ehdr);
   }
 
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 // Section header
@@ -340,7 +340,7 @@ public:
   }
 
   void update_shdr() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 // Program header
@@ -351,7 +351,7 @@ public:
   }
 
   void update_shdr() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 class InterpSection : public OutputChunk {
@@ -363,7 +363,7 @@ public:
     shdr.sh_size = config.dynamic_linker.size() + 1;
   }
 
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 // Sections
@@ -380,7 +380,7 @@ public:
     instances.push_back(this);
   }
 
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
   bool empty() const;
 
   static inline std::vector<OutputSection *> instances;
@@ -476,7 +476,7 @@ public:
   }
 
   void update_shdr() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 class DynstrSection : public OutputChunk {
@@ -490,7 +490,7 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
   }
 
   u32 add_string(StringRef str);
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 
 private:
   std::vector<StringRef> contents;
@@ -507,7 +507,7 @@ public:
   }
 
   void update_shdr() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 };
 
 class SymtabSection : public OutputChunk {
@@ -543,7 +543,7 @@ public:
   void add_symbols(ArrayRef<Symbol *> syms);
   void update_shdr() override;
   void initialize_buf() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 
   std::vector<Symbol *> symbols;
 };
@@ -559,7 +559,7 @@ public:
   }
 
   void update_shdr() override;
-  void copy_to(u8 *buf) override;
+  void copy_buf() override;
 
 private:
   static u32 hash(StringRef name);

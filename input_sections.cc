@@ -15,16 +15,16 @@ InputChunk::InputChunk(Kind kind, ObjectFile *file, const ELF64LE::Shdr &shdr,
     error(toString(file) + ": section sh_addralign is not a power of two");
 }
 
-void InputSection::copy_to(u8 *buf) {
+void InputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
   // Copy data
   ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
-  memcpy(buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
+  memcpy(out::buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
   // Apply relocations
-  u8 *base = buf + output_section->shdr.sh_offset + offset;
+  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
   u64 sh_addr = output_section->shdr.sh_addr + offset;
   u64 GOT = out::got->shdr.sh_addr;
 

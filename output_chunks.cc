@@ -4,8 +4,8 @@
 
 using namespace llvm::ELF;
 
-void OutputEhdr::copy_to(u8 *buf) {
-  auto &hdr = *(ELF64LE::Ehdr *)(buf + shdr.sh_offset);
+void OutputEhdr::copy_buf() {
+  auto &hdr = *(ELF64LE::Ehdr *)(out::buf + shdr.sh_offset);
 
   memset(&hdr, 0, sizeof(hdr));
   memcpy(&hdr.e_ident, "\177ELF", 4);
@@ -37,8 +37,8 @@ void OutputShdr::update_shdr() {
   shdr.sh_size = i * sizeof(ELF64LE::Shdr);
 }
 
-void OutputShdr::copy_to(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void OutputShdr::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
 
   memset(base, 0, sizeof(ELF64LE::Shdr));
 
@@ -135,12 +135,12 @@ void OutputPhdr::update_shdr() {
   shdr.sh_size = create_phdr().size() * sizeof(ELF64LE::Phdr);
 }
 
-void OutputPhdr::copy_to(u8 *buf) {
-  write_vector(buf + shdr.sh_offset, create_phdr());
+void OutputPhdr::copy_buf() {
+  write_vector(out::buf + shdr.sh_offset, create_phdr());
 }
 
-void InterpSection::copy_to(u8 *buf) {
-  write_string(buf + shdr.sh_offset, config.dynamic_linker);
+void InterpSection::copy_buf() {
+  write_string(out::buf + shdr.sh_offset, config.dynamic_linker);
 }
 
 static std::vector<u64> create_dynamic_section() {
@@ -201,8 +201,8 @@ void ShstrtabSection::update_shdr() {
   }  
 }
 
-void ShstrtabSection::copy_to(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void ShstrtabSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
 
   int i = 1;
@@ -221,8 +221,8 @@ u32 DynstrSection::add_string(StringRef str) {
   return ret;
 }
 
-void DynstrSection::copy_to(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void DynstrSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
 
   int i = 1;
@@ -245,8 +245,8 @@ void DynamicSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
 }
 
-void DynamicSection::copy_to(u8 *buf) {
-  write_vector(buf + shdr.sh_offset, create_dynamic_section());
+void DynamicSection::copy_buf() {
+  write_vector(out::buf + shdr.sh_offset, create_dynamic_section());
 }
 
 static StringRef get_output_name(StringRef name) {
@@ -289,7 +289,7 @@ OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
   return new OutputSection(name, type, flags);
 }
 
-void OutputSection::copy_to(u8 *buf) {
+void OutputSection::copy_buf() {
   if (shdr.sh_type == llvm::ELF::SHT_NOBITS)
     return;
 
@@ -298,12 +298,12 @@ void OutputSection::copy_to(u8 *buf) {
   tbb::parallel_for(0, num_members, [&](int i) {
     if (members[i]->shdr.sh_type != SHT_NOBITS) {
       // Copy section contents to an output file
-      members[i]->copy_to(buf);
+      members[i]->copy_buf();
 
       // Zero-clear trailing padding
       u64 this_end = members[i]->offset + members[i]->shdr.sh_size;
       u64 next_start = (i == num_members - 1) ? shdr.sh_size : members[i + 1]->offset;
-      memset(buf + shdr.sh_offset + this_end, 0, next_start - this_end);
+      memset(out::buf + shdr.sh_offset + this_end, 0, next_start - this_end);
     }
   });
 }
@@ -337,7 +337,7 @@ void PltSection::initialize_buf() {
 }
 
 void PltSection::write_entry(u8 *buf, Symbol *sym) {
-  u8 *base = buf + shdr.sh_offset + sym->file->plt_offset + sym->plt_idx * PLT_SIZE;
+  u8 *base = out::buf + shdr.sh_offset + sym->file->plt_offset + sym->plt_idx * PLT_SIZE;
 
   if (sym->got_idx == -1) {
     const u8 data[] = {
@@ -380,8 +380,8 @@ void DynsymSection::initialize_buf() {
   memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
 }
 
-void DynsymSection::copy_to(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void DynsymSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
 
   tbb::parallel_for_each(symbols, [&](Symbol *sym) {
     auto &esym = *(ELF64LE::Sym *)(base + sym->dynsym_idx * sizeof(ELF64LE::Sym));
@@ -409,8 +409,8 @@ void HashSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 }
 
-void HashSection::copy_to(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void HashSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
   int num_slots = out::dynsym->symbols.size() + 1;
