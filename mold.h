@@ -238,6 +238,16 @@ public:
 
   std::atomic_uint8_t rels = ATOMIC_VAR_INIT(0);
 
+  enum {
+    NEEDS_GOT      = 1 << 0,
+    NEEDS_PLT      =1 << 1,
+    NEEDS_GOTTPOFF = 1 << 2,
+    NEEDS_TLSGD    = 1 << 3,
+    NEEDS_TLSLD    = 1 << 4,
+  };
+
+  std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
+
   u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
   u8 binding = llvm::ELF::STB_GLOBAL;

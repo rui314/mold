@@ -133,18 +133,24 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
+      sym->flags |= Symbol::NEEDS_GOT;
       sym->rels |= Symbol::HAS_GOT_REL;
       break;
     case R_X86_64_PLT32:
+      if (!config.is_static || sym->type == STT_GNU_IFUNC)
+        sym->flags |= Symbol::NEEDS_PLT;
       sym->rels |= Symbol::HAS_PLT_REL;
       break;
     case R_X86_64_TLSGD:
+      sym->flags |= Symbol::NEEDS_TLSGD;
       sym->rels |= Symbol::HAS_TLSGD_REL;
       break;
     case R_X86_64_TLSLD:
+      sym->flags |= Symbol::NEEDS_TLSLD;
       sym->rels |= Symbol::HAS_TLSLD_REL;
       break;
     case R_X86_64_GOTTPOFF:
+      sym->flags |= Symbol::NEEDS_GOTTPOFF;
       sym->rels |= Symbol::HAS_GOTTP_REL;
       break;
     case R_X86_64_NONE:
