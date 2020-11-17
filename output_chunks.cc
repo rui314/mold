@@ -408,7 +408,7 @@ void DynsymSection::add_symbol(Symbol *sym) {
 
 void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
-  shdr.sh_size = sizeof(ELF64LE::Sym) * symbols.size();
+  shdr.sh_size = sizeof(ELF64LE::Sym) * (symbols.size() + 1);
 }
 
 void DynsymSection::initialize_buf() {
