@@ -786,6 +786,14 @@ inline void write_vector(u8 *buf, const std::vector<T> &vec) {
   memcpy(buf, vec.data(), vec.size() * sizeof(T));
 }
 
+template <typename T>
+inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
+  std::vector<T> ret;
+  for (std::vector<T> &v : vec)
+    ret.insert(ret.end(), v.begin(), v.end());
+  return ret;
+}
+
 //
 // perf.cc
 //

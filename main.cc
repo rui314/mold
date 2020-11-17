@@ -406,11 +406,20 @@ static void scan_rels_dynamic(ObjectFile *file) {
 static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
-  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
+  std::vector<std::vector<Symbol *>> vec(out::files.size());
+
+  tbb::parallel_for(0, (int)out::files.size(), [&](int i) {
+    ObjectFile *file = out::files[i];
     for (InputSection *isec : file->sections)
       if (isec)
         isec->scan_relocations();
+
+    for (Symbol *sym : file->symbols)
+      if (sym->file == file && sym->flags)
+        vec[i].push_back(sym);
   });
+
+  std::vector<Symbol *> syms = flatten(vec);
 
   tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
     if (config.is_static)
