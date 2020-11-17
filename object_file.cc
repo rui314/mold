@@ -502,10 +502,9 @@ void ObjectFile::compute_symtab() {
   }
 }
 
-void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
-                              u32 start, u32 end) {
-  u8 *symtab = buf + out::symtab->shdr.sh_offset;
-  u8 *strtab = buf + out::strtab->shdr.sh_offset;
+void ObjectFile::write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end) {
+  u8 *symtab = out::buf + out::symtab->shdr.sh_offset;
+  u8 *strtab = out::buf + out::strtab->shdr.sh_offset;
 
   for (int i = start; i < end; i++) {
     Symbol &sym = *symbols[i];
@@ -531,12 +530,12 @@ void ObjectFile::write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off,
   }
 }
 
-void ObjectFile::write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
-  write_symtab(buf, symtab_off, strtab_off, 1, first_global);
+void ObjectFile::write_local_symtab(u64 symtab_off, u64 strtab_off) {
+  write_symtab(symtab_off, strtab_off, 1, first_global);
 }
 
-void ObjectFile::write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off) {
-  write_symtab(buf, symtab_off, strtab_off, first_global, elf_syms.size());
+void ObjectFile::write_global_symtab(u64 symtab_off, u64 strtab_off) {
+  write_symtab(symtab_off, strtab_off, first_global, elf_syms.size());
 }
 
 bool is_c_identifier(StringRef name) {

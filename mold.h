@@ -657,8 +657,8 @@ public:
   void convert_common_symbols();
   void compute_symtab();
 
-  void write_local_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
-  void write_global_symtab(u8 *buf, u64 symtab_off, u64 strtab_off);
+  void write_local_symtab(u64 symtab_off, u64 strtab_off);
+  void write_global_symtab(u64 symtab_off, u64 strtab_off);
 
   static ObjectFile *create_internal_file();
 
@@ -704,7 +704,7 @@ private:
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
 
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx);
-  void write_symtab(u8 *buf, u64 symtab_off, u64 strtab_off, u32 start, u32 end);
+  void write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
   MemoryBufferRef mb;
   std::vector<std::pair<ComdatGroup *, ArrayRef<ELF64LE::Word>>> comdat_groups;
