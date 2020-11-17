@@ -336,7 +336,7 @@ void PltSection::initialize_buf() {
   *(u32 *)(base + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
 }
 
-void PltSection::write_entry(u8 *buf, Symbol *sym) {
+void PltSection::write_entry(Symbol *sym) {
   u8 *base = out::buf + shdr.sh_offset + sym->file->plt_offset + sym->plt_idx * PLT_SIZE;
 
   if (sym->got_idx == -1) {

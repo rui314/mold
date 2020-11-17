@@ -449,15 +449,14 @@ static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 ad
   rel->r_addend = addend;
 }
 
-static void
-write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
+static void write_got_plt() {
   MyTimer t("write_synthetic", copy_timer);
 
-  tbb::parallel_for_each(files, [&](ObjectFile *file) {
-    u8 *got_buf = buf + out::got->shdr.sh_offset + file->got_offset;
-    u8 *gotplt_buf = buf + out::gotplt->shdr.sh_offset + file->gotplt_offset;
-    u8 *plt_buf = buf + out::plt->shdr.sh_offset + file->plt_offset;
-    u8 *relplt_buf = buf + out::relplt->shdr.sh_offset + file->relplt_offset;
+  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
+    u8 *got_buf = out::buf + out::got->shdr.sh_offset + file->got_offset;
+    u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset + file->gotplt_offset;
+    u8 *plt_buf = out::buf + out::plt->shdr.sh_offset + file->plt_offset;
+    u8 *relplt_buf = out::buf + out::relplt->shdr.sh_offset + file->relplt_offset;
     int reldyn_idx = 0;
 
     for (Symbol *sym : file->symbols) {
@@ -468,7 +467,7 @@ write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
         if (config.is_static) {
           *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
         } else {
-          u8 *reldyn_buf = buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
+          u8 *reldyn_buf = out::buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
           write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
                             R_X86_64_GLOB_DAT, sym->get_got_addr(),
                             sym->dynsym_idx, 0);
@@ -485,7 +484,7 @@ write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
         error("unimplemented");
 
       if (sym->plt_idx != -1)
-        out::plt->write_entry(buf, sym);
+        out::plt->write_entry(sym);
 
       if (sym->relplt_idx != -1) {
         if (sym->type == STT_GNU_IFUNC) {
@@ -998,7 +997,7 @@ int main(int argc, char **argv) {
   write_symtab(out::buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
-  write_got_plt(out::buf, files);
+  write_got_plt();
 
   // Fill mergeable string sections
   write_merged_strings(out::buf, files);

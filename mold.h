@@ -425,7 +425,7 @@ public:
   }
 
   void initialize_buf() override;
-  void write_entry(u8 *buf, Symbol *sym);
+  void write_entry(Symbol *sym);
 };
 
 class RelPltSection : public OutputChunk {
