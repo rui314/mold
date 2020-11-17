@@ -233,10 +233,10 @@ void DynstrSection::copy_buf() {
 }
 
 void SymtabSection::update_shdr() {
+  shdr.sh_link = out::strtab->shndx;
+
   tbb::parallel_for_each(out::files,
                          [](ObjectFile *file) { file->compute_symtab(); });
-
-  shdr.sh_link = out::strtab->shndx;
 
   local_symtab_off.resize(out::files.size() + 1);
   local_strtab_off.resize(out::files.size() + 1);
