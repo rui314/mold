@@ -446,13 +446,24 @@ public:
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
     shdr.sh_flags = flags;
     shdr.sh_addralign = 1;
-    shdr.sh_entsize = 0;
     shdr.sh_size = 1;
   }
 
   void initialize(u8 *buf) override {
     buf[shdr.sh_offset] = '\0';
   }
+};
+
+class ShstrtabSection : public OutputChunk {
+public:
+  ShstrtabSection() : OutputChunk(SYNTHETIC) {
+    name = ".shstrtab";
+    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_addralign = 1;
+  }
+
+  void update_shdr() override;
+  void copy_to(u8 *buf) override;
 };
 
 class DynamicSection : public OutputChunk {
@@ -564,7 +575,7 @@ inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
 inline StrtabSection *dynstr;
 inline HashSection *hash;
-inline StrtabSection *shstrtab;
+inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;

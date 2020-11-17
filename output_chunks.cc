@@ -179,6 +179,29 @@ static std::vector<u64> create_dynamic_section() {
   return vec;
 }
 
+void ShstrtabSection::update_shdr() {
+  shdr.sh_size = 1;
+  for (OutputChunk *chunk : out::chunks) {
+    if (!chunk->name.empty()) {
+      chunk->shdr.sh_name = shdr.sh_size;
+      shdr.sh_size += chunk->name.size() + 1;
+    }
+  }  
+}
+
+void ShstrtabSection::copy_to(u8 *buf) {
+  u8 *base = buf + shdr.sh_offset;
+  base[0] = '\0';
+
+  int offset = 1;
+  for (OutputChunk *chunk : out::chunks) {
+    if (!chunk->name.empty()) {
+      write_string(base + offset, chunk->name);
+      offset += chunk->name.size() + 1;
+    }
+  }
+}
+
 void DynamicSection::update_shdr() {
   shdr.sh_size = create_dynamic_section().size() * 8;
   shdr.sh_link = out::dynstr->shndx;

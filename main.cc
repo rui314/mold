@@ -504,16 +504,6 @@ write_got_plt(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
-static void write_shstrtab(u8 *buf, ArrayRef<OutputChunk *> chunks) {
-  int offset = out::shstrtab->shdr.sh_offset + 1;
-  for (OutputChunk *chunk : chunks) {
-    if (!chunk->name.empty()) {
-      write_string(buf + offset, chunk->name);
-      offset += chunk->name.size() + 1;
-    }
-  }
-}
-
 static void write_dso_paths(u8 *buf, ArrayRef<ObjectFile *> files) {
   int offset = out::dynstr->shdr.sh_offset + 1;
   for (ObjectFile *file : files) {
@@ -834,7 +824,7 @@ int main(int argc, char **argv) {
   out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
                                    8, sizeof(ELF64LE::Rela));
   out::strtab = new StrtabSection(".strtab", 0);
-  out::shstrtab = new StrtabSection(".shstrtab", 0);
+  out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", SHT_SYMTAB, 0);
   out::dynsym = new DynsymSection;
@@ -967,14 +957,6 @@ int main(int argc, char **argv) {
     chunks.insert(chunks.begin() + 2, out::interp);
   chunks.push_back(out::shdr);
 
-  // Fix .shstrtab contents.
-  for (OutputChunk *chunk : chunks) {
-    if (!chunk->name.empty()) {
-      chunk->shdr.sh_name = out::shstrtab->shdr.sh_size;
-      out::shstrtab->shdr.sh_size += chunk->name.size() + 1;
-    }
-  }
-
   // Set section indices.
   for (int i = 0, shndx = 1; i < chunks.size(); i++)
     if (chunks[i]->kind != OutputChunk::HEADER)
@@ -1036,9 +1018,6 @@ int main(int argc, char **argv) {
 
   // Fill .symtab and .strtab
   write_symtab(buf, files);
-
-  // Fill .shstrtab
-  write_shstrtab(buf, chunks);
 
   // Write DT_NEEDED paths to .dynstr.
   write_dso_paths(buf, files);
