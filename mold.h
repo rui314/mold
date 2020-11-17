@@ -466,6 +466,23 @@ public:
   void copy_to(u8 *buf) override;
 };
 
+class DynstrSection : public OutputChunk {
+public:
+DynstrSection() : OutputChunk(SYNTHETIC) {
+    name = ".dynstr";
+    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_size = 1;
+    shdr.sh_addralign = 1;
+  }
+
+  u32 add_string(StringRef str);
+  void copy_to(u8 *buf) override;
+
+private:
+  std::vector<StringRef> contents;
+};
+
 class DynamicSection : public OutputChunk {
 public:
   DynamicSection() : OutputChunk(SYNTHETIC) {
@@ -573,7 +590,7 @@ inline SpecialSection *relplt;
 inline SpecialSection *reldyn;
 inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
-inline StrtabSection *dynstr;
+inline DynstrSection *dynstr;
 inline HashSection *hash;
 inline ShstrtabSection *shstrtab;
 inline PltSection *plt;

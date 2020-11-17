@@ -193,12 +193,30 @@ void ShstrtabSection::copy_to(u8 *buf) {
   u8 *base = buf + shdr.sh_offset;
   base[0] = '\0';
 
-  int offset = 1;
+  int i = 1;
   for (OutputChunk *chunk : out::chunks) {
     if (!chunk->name.empty()) {
-      write_string(base + offset, chunk->name);
-      offset += chunk->name.size() + 1;
+      write_string(base + i, chunk->name);
+      i += chunk->name.size() + 1;
     }
+  }
+}
+
+u32 DynstrSection::add_string(StringRef str) {
+  u32 ret = shdr.sh_size;
+  shdr.sh_size += str.size() + 1;
+  contents.push_back(str);
+  return ret;
+}
+
+void DynstrSection::copy_to(u8 *buf) {
+  u8 *base = buf + shdr.sh_offset;
+  base[0] = '\0';
+
+  int i = 1;
+  for (StringRef s : contents) {
+    write_string(base + i, s);
+    i += s.size() + 1;
   }
 }
 
@@ -327,10 +345,8 @@ void PltSection::write_entry(u8 *buf, Symbol *sym) {
 void DynsymSection::add_symbols(ArrayRef<Symbol *> syms) {
   for (Symbol *sym : syms) {
     sym->dynsym_idx = symbols.size() + 1;
+    sym->dynstr_offset = out::dynstr->add_string(sym->name);
     symbols.push_back(sym);
-
-    sym->dynstr_offset = out::dynstr->shdr.sh_size;
-    out::dynstr->shdr.sh_size += sym->name.size() + 1;
   }
 
   shdr.sh_size = (symbols.size() + 1) * sizeof(ELF64LE::Sym);
@@ -345,12 +361,10 @@ void DynsymSection::initialize(u8 *buf) {
 }
 
 void DynsymSection::copy_to(u8 *buf) {
-  u8 *dynsym_buf = buf + shdr.sh_offset;
-  u8 *dynstr_buf = buf + out::dynstr->shdr.sh_offset;
+  u8 *base = buf + shdr.sh_offset;
 
   tbb::parallel_for_each(symbols, [&](Symbol *sym) {
-    // Write to .dynsym
-    auto &esym = *(ELF64LE::Sym *)(dynsym_buf + sym->dynsym_idx * sizeof(ELF64LE::Sym));
+    auto &esym = *(ELF64LE::Sym *)(base + sym->dynsym_idx * sizeof(ELF64LE::Sym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = sym->dynstr_offset;
     esym.setType(sym->type);
@@ -365,9 +379,6 @@ void DynsymSection::copy_to(u8 *buf) {
       esym.st_shndx = sym->input_section->output_section->shndx;
       esym.st_value = sym->get_addr();
     }
-
-    // Write to .dynstr
-    write_string(dynstr_buf + sym->dynstr_offset, sym->name);
   });
 }
 

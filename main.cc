@@ -818,7 +818,7 @@ int main(int argc, char **argv) {
   out::plt = new PltSection;
   out::symtab = new SymtabSection(".symtab", SHT_SYMTAB, 0);
   out::dynsym = new DynsymSection;
-  out::dynstr = new StrtabSection(".dynstr", SHF_ALLOC);
+  out::dynstr = new DynstrSection;
 
   if (!config.is_static) {
     out::interp = new InterpSection;
@@ -895,10 +895,10 @@ int main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
-  // Reserve space in .dynsym for DT_NEEDED strings.
+  // Copy shared object name strings to .dynsym
   for (ObjectFile *file : files)
     if (file->is_alive && file->is_dso)
-      out::dynstr->shdr.sh_size += file->soname.size() + 1;
+      out::dynstr->add_string(file->soname);
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
@@ -1008,9 +1008,6 @@ int main(int argc, char **argv) {
 
   // Fill .symtab and .strtab
   write_symtab(buf, files);
-
-  // Write DT_NEEDED paths to .dynstr.
-  write_dso_paths(buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
   write_got_plt(buf, files);
