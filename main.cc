@@ -331,78 +331,6 @@ static void set_isec_offsets() {
   });
 }
 
-static void scan_rels_static(ObjectFile *file) {
-  for (Symbol *sym : file->symbols) {
-    if (sym->file != file)
-      continue;
-
-    u8 rels = sym->rels.load(std::memory_order_relaxed);
-
-    if (rels & Symbol::HAS_GOT_REL)
-      sym->got_idx = file->num_got++;
-
-    if ((rels & Symbol::HAS_PLT_REL) && sym->type == STT_GNU_IFUNC) {
-      sym->plt_idx = file->num_plt++;
-      sym->gotplt_idx = file->num_gotplt++;
-      sym->relplt_idx = file->num_relplt++;
-    }
-
-    if (rels & Symbol::HAS_TLSGD_REL)
-      error("not implemented");
-
-    if (rels & Symbol::HAS_TLSLD_REL)
-      error("not implemented");
-
-    if (rels & Symbol::HAS_GOTTP_REL)
-      sym->gottp_idx = file->num_got++;
-  }
-}
-
-static void scan_rels_dynamic(ObjectFile *file) {
-  for (Symbol *sym : file->symbols) {
-    if (sym->file != file)
-      continue;
-
-    u8 rels = sym->rels.load(std::memory_order_relaxed);
-    bool needs_dynsym = false;
-
-    if (rels & Symbol::HAS_GOT_REL) {
-      sym->got_idx = file->num_got++;
-      file->num_reldyn++;
-      needs_dynsym = true;
-    }
-
-    if (rels & Symbol::HAS_PLT_REL) {
-      sym->plt_idx = file->num_plt++;
-      needs_dynsym = true;
-
-      if (sym->got_idx == -1) {
-        sym->gotplt_idx = file->num_gotplt++;
-        sym->relplt_idx = file->num_relplt++;
-      }
-    }
-
-    if (rels & Symbol::HAS_TLSGD_REL) {
-      sym->gotgd_idx = file->num_got;
-      file->num_got += 2;
-      file->num_reldyn += 2;
-      needs_dynsym = true;
-    }
-
-    if (rels & Symbol::HAS_TLSLD_REL) {
-      sym->gotgd_idx = file->num_got++;
-      file->num_reldyn++;
-      needs_dynsym = true;
-    }
-
-    if (rels & Symbol::HAS_GOTTP_REL)
-      sym->gottp_idx = file->num_got++;
-
-    if (needs_dynsym)
-      file->dynsyms.push_back(sym);
-  }
-}
-
 static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
@@ -419,36 +347,43 @@ static void scan_rels() {
         vec[i].push_back(sym);
   });
 
-  std::vector<Symbol *> syms = flatten(vec);
+  out::dynsyms = flatten(vec);
 
-  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
-    if (config.is_static)
-      scan_rels_static(file);
-    else
-      scan_rels_dynamic(file);
-  });
+  u32 got_idx = 0;
+  u32 plt_idx = 0;
+  u32 gotplt_idx = 0;
+  u32 relplt_idx = 0;
+  u32 reldyn_idx = 0;
 
-  for (ObjectFile *file : out::files) {
-    file->got_offset = out::got->shdr.sh_size;
-    out::got->shdr.sh_size += file->num_got * GOT_SIZE;
+  for (Symbol *sym : out::dynsyms) {
+    if (sym->flags & Symbol::NEEDS_GOT) {
+      sym->got_idx = got_idx++;
 
-    file->gotplt_offset = out::gotplt->shdr.sh_size;
-    out::gotplt->shdr.sh_size += file->num_gotplt * GOT_SIZE;
-
-    file->plt_offset = out::plt->shdr.sh_size;
-    out::plt->shdr.sh_size += file->num_plt * PLT_SIZE;
-
-    file->relplt_offset = out::relplt->shdr.sh_size;
-    out::relplt->shdr.sh_size += file->num_relplt * sizeof(ELF64LE::Rela);
-
-    if (out::reldyn) {
-      file->reldyn_offset = out::reldyn->shdr.sh_size;
-      out::reldyn->shdr.sh_size += file->num_reldyn * sizeof(ELF64LE::Rela);
+      if (!config.is_static) {
+        out::dynsym->add_symbol(sym);
+        sym->reldyn_idx = reldyn_idx++;
+      }
     }
-  }
 
-  for (ObjectFile *file : out::files)
-    out::dynsym->add_symbols(file->dynsyms);
+    if (sym->flags & Symbol::NEEDS_PLT) {
+      sym->plt_idx = plt_idx++;
+
+      if (sym->got_idx == -1) {
+        sym->gotplt_idx = gotplt_idx++;
+        sym->relplt_idx = relplt_idx++;
+        sym->reldyn_idx = reldyn_idx++;
+      }
+
+      if (!config.is_static)
+        out::dynsym->add_symbol(sym);
+    }
+
+    if ((sym->flags & Symbol::NEEDS_TLSGD) || (sym->flags & Symbol::NEEDS_TLSLD))
+      error("not implemented");
+
+    if (sym->flags & Symbol::NEEDS_GOTTPOFF)
+      sym->gottp_idx = got_idx++;
+  }
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
@@ -462,52 +397,43 @@ static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 ad
 static void write_got_plt() {
   MyTimer t("write_synthetic", copy_timer);
 
-  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
-    u8 *got_buf = out::buf + out::got->shdr.sh_offset + file->got_offset;
-    u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset + file->gotplt_offset;
-    u8 *plt_buf = out::buf + out::plt->shdr.sh_offset + file->plt_offset;
-    u8 *relplt_buf = out::buf + out::relplt->shdr.sh_offset + file->relplt_offset;
-    int reldyn_idx = 0;
+  u8 *got_buf = out::buf + out::got->shdr.sh_offset;
+  u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset;
+  u8 *plt_buf = out::buf + out::plt->shdr.sh_offset;
+  u8 *relplt_buf = out::buf + out::relplt->shdr.sh_offset;
 
-    for (Symbol *sym : file->symbols) {
-      if (sym->file != file)
-        continue;
-
-      if (sym->got_idx != -1) {
-        if (config.is_static) {
-          *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
-        } else {
-          u8 *reldyn_buf = out::buf + out::reldyn->shdr.sh_offset + file->reldyn_offset;
-          write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
-                            R_X86_64_GLOB_DAT, sym->get_got_addr(),
-                            sym->dynsym_idx, 0);
-        }
+  tbb::parallel_for_each(out::dynsyms, [&](Symbol *sym) {
+    if (sym->got_idx != -1) {
+      if (config.is_static) {
+        *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
+      } else {
+        u8 *reldyn_buf = out::buf + out::reldyn->shdr.sh_offset;
+        write_dynamic_rel(reldyn_buf + sym->reldyn_idx * sizeof(ELF64LE::Rela),
+                          R_X86_64_GLOB_DAT, sym->get_got_addr(),
+                          sym->dynsym_idx, 0);
       }
+    }
 
-      if (sym->gottp_idx != -1)
-        *(u64 *)(got_buf + sym->gottp_idx * GOT_SIZE) = sym->get_addr() - out::tls_end;
+    if (sym->gottp_idx != -1)
+      *(u64 *)(got_buf + sym->gottp_idx * GOT_SIZE) = sym->get_addr() - out::tls_end;
 
-      if (sym->gotgd_idx != -1)
-        error("unimplemented");
+    if (sym->gotgd_idx != -1 || sym->gotld_idx != -1)
+      error("not implemented");
 
-      if (sym->gotld_idx != -1)
-        error("unimplemented");
+    if (sym->plt_idx != -1)
+      out::plt->write_entry(sym);
 
-      if (sym->plt_idx != -1)
-        out::plt->write_entry(sym);
-
-      if (sym->relplt_idx != -1) {
-        if (sym->type == STT_GNU_IFUNC) {
-          write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
-                            sym->dynsym_idx, sym->get_addr());
-        } else {
-          write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                            R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(),
-                            sym->dynsym_idx, 0);
-          *(u64 *)(gotplt_buf + sym->gotplt_idx * sizeof(ELF64LE::Sym)) =
-            sym->get_plt_addr() + 6;
-        }
+    if (sym->relplt_idx != -1) {
+      if (sym->type == STT_GNU_IFUNC) {
+        write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
+                          R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
+                          sym->dynsym_idx, sym->get_addr());
+      } else {
+        write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
+                          R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(),
+                          sym->dynsym_idx, 0);
+        *(u64 *)(gotplt_buf + sym->gotplt_idx * sizeof(ELF64LE::Sym)) =
+          sym->get_plt_addr() + 6;
       }
     }
   });

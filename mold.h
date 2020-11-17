@@ -214,6 +214,7 @@ public:
   u32 gotld_idx = -1;
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
+  u32 reldyn_idx = -1;
   u32 dynsym_idx = -1;
   u32 dynstr_offset = -1;
 
@@ -226,17 +227,6 @@ public:
   u8 is_weak : 1;
   u8 is_undef_weak : 1;
   u8 traced : 1;
-
-  enum {
-    HAS_ADDR_REL  = 1 << 0,
-    HAS_GOT_REL   = 1 << 1,
-    HAS_PLT_REL   = 1 << 2,
-    HAS_GOTTP_REL = 1 << 3,
-    HAS_TLSGD_REL = 1 << 4,
-    HAS_TLSLD_REL = 1 << 5,
-  };
-
-  std::atomic_uint8_t rels = ATOMIC_VAR_INIT(0);
 
   enum {
     NEEDS_GOT      = 1 << 0,
@@ -552,7 +542,7 @@ public:
     shdr.sh_info = 1;
   }
 
-  void add_symbols(ArrayRef<Symbol *> syms);
+  void add_symbol(Symbol *sym);
   void update_shdr() override;
   void initialize_buf() override;
   void copy_buf() override;
@@ -602,6 +592,7 @@ using namespace llvm::ELF;
 
 inline std::vector<ObjectFile *> files;
 inline std::vector<OutputChunk *> chunks;
+inline std::vector<Symbol *> dynsyms;
 inline u8 *buf;
 
 inline OutputEhdr *ehdr;

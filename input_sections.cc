@@ -116,6 +116,7 @@ void InputSection::scan_relocations() {
       continue;
 
     switch (rel.getType(false)) {
+    case R_X86_64_NONE:
     case R_X86_64_8:
     case R_X86_64_16:
     case R_X86_64_32:
@@ -126,7 +127,6 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC32:
     case R_X86_64_PC64:
     case R_X86_64_TPOFF32:
-      sym->rels |= Symbol::HAS_ADDR_REL;
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:
@@ -134,26 +134,19 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
       sym->flags |= Symbol::NEEDS_GOT;
-      sym->rels |= Symbol::HAS_GOT_REL;
       break;
     case R_X86_64_PLT32:
       if (!config.is_static || sym->type == STT_GNU_IFUNC)
         sym->flags |= Symbol::NEEDS_PLT;
-      sym->rels |= Symbol::HAS_PLT_REL;
       break;
     case R_X86_64_TLSGD:
       sym->flags |= Symbol::NEEDS_TLSGD;
-      sym->rels |= Symbol::HAS_TLSGD_REL;
       break;
     case R_X86_64_TLSLD:
       sym->flags |= Symbol::NEEDS_TLSLD;
-      sym->rels |= Symbol::HAS_TLSLD_REL;
       break;
     case R_X86_64_GOTTPOFF:
       sym->flags |= Symbol::NEEDS_GOTTPOFF;
-      sym->rels |= Symbol::HAS_GOTTP_REL;
-      break;
-    case R_X86_64_NONE:
       break;
     default:
       error(toString(this) + ": unknown relocation: " +

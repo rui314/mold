@@ -398,18 +398,17 @@ void PltSection::write_entry(Symbol *sym) {
   }
 }
 
-void DynsymSection::add_symbols(ArrayRef<Symbol *> syms) {
-  for (Symbol *sym : syms) {
+void DynsymSection::add_symbol(Symbol *sym) {
+  if (sym->dynsym_idx == -1) {
     sym->dynsym_idx = symbols.size() + 1;
     sym->dynstr_offset = out::dynstr->add_string(sym->name);
     symbols.push_back(sym);
   }
-
-  shdr.sh_size = (symbols.size() + 1) * sizeof(ELF64LE::Sym);
 }
 
 void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
+  shdr.sh_size = sizeof(ELF64LE::Sym) * symbols.size();
 }
 
 void DynsymSection::initialize_buf() {
