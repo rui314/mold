@@ -224,6 +224,10 @@ void DynstrSection::copy_to(u8 *buf) {
   }
 }
 
+void SymtabSection::update_shdr() {
+  shdr.sh_link = out::strtab->shndx;
+}
+
 void DynamicSection::update_shdr() {
   shdr.sh_size = create_dynamic_section().size() * 8;
   shdr.sh_link = out::dynstr->shndx;

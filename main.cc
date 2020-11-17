@@ -816,7 +816,7 @@ int main(int argc, char **argv) {
   out::strtab = new StrtabSection(".strtab", 0);
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
-  out::symtab = new SymtabSection(".symtab", SHT_SYMTAB, 0);
+  out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
 
@@ -955,7 +955,6 @@ int main(int argc, char **argv) {
   out::files = files;
   out::chunks = chunks;
 
-  out::symtab->shdr.sh_link = out::strtab->shndx;
   out::relplt->shdr.sh_link = out::dynsym->shndx;
 
   for (OutputChunk *chunk : chunks)

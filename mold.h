@@ -512,15 +512,16 @@ public:
 
 class SymtabSection : public OutputChunk {
 public:
-  SymtabSection(StringRef name, u32 type, u64 flags) : OutputChunk(SYNTHETIC) {
-    this->name = name;
-    shdr.sh_type = type;
-    shdr.sh_flags = flags;
+  SymtabSection() : OutputChunk(SYNTHETIC) {
+    name = ".symtab";
+    shdr.sh_type = llvm::ELF::SHT_SYMTAB;
     shdr.sh_entsize = sizeof(ELF64LE::Sym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ELF64LE::Sym);
     contents.push_back({});
   }
+
+  void update_shdr() override;
 
   void initialize(u8 *buf) override {
     memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
