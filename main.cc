@@ -855,18 +855,6 @@ int main(int argc, char **argv) {
   // .rela.dyn, .rela.plt.
   scan_rels();
 
-  // Compute .symtab and .strtab sizes
-  {
-    MyTimer t("symtab_size", before_copy_timer);
-    tbb::parallel_for_each(out::files,
-                           [](ObjectFile *file) { file->compute_symtab(); });
-
-    for (ObjectFile *file : out::files) {
-      out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
-      out::strtab->shdr.sh_size += file->local_strtab_size + file->global_strtab_size;
-    }
-  }
-
   // Add synthetic sections.
   out::chunks.push_back(out::got);
   out::chunks.push_back(out::plt);

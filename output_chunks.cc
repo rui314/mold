@@ -233,6 +233,9 @@ void DynstrSection::copy_buf() {
 }
 
 void SymtabSection::update_shdr() {
+  tbb::parallel_for_each(out::files,
+                         [](ObjectFile *file) { file->compute_symtab(); });
+
   shdr.sh_link = out::strtab->shndx;
 
   local_symtab_off.resize(out::files.size() + 1);
@@ -260,8 +263,8 @@ void SymtabSection::update_shdr() {
       global_strtab_off[i - 1] + out::files[i - 1]->global_strtab_size;
   }
 
-  assert(global_symtab_off.back() == out::symtab->shdr.sh_size);
-  assert(global_strtab_off.back() == out::strtab->shdr.sh_size);
+  shdr.sh_size = global_symtab_off.back();
+  out::strtab->shdr.sh_size = global_strtab_off.back();
 }
 
 void SymtabSection::copy_buf() {
