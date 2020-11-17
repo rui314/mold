@@ -595,6 +595,7 @@ using namespace llvm::ELF;
 
 inline ArrayRef<ObjectFile *> files;
 inline std::vector<OutputChunk *> chunks;
+inline u8 *buf;
 
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;

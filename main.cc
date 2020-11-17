@@ -973,17 +973,16 @@ int main(int argc, char **argv) {
   }
 
   // Create an output file
-  u8 *buf;
   {
     MyTimer t("open_file", before_copy_timer);
-    buf = open_output_file(filesize);
+    out::buf = open_output_file(filesize);
   }
 
   // Initialize the output buffer.
   {
     MyTimer t("copy", copy_timer);
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
-      chunk->initialize(buf);
+      chunk->initialize(out::buf);
     });
   }
 
@@ -991,26 +990,26 @@ int main(int argc, char **argv) {
   {
     MyTimer t("copy", copy_timer);
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
-      chunk->copy_to(buf);
+      chunk->copy_to(out::buf);
     });
   }
 
   // Fill .symtab and .strtab
-  write_symtab(buf, files);
+  write_symtab(out::buf, files);
 
   // Fill .plt, .got, got.plt, .rela.plt sections
-  write_got_plt(buf, files);
+  write_got_plt(out::buf, files);
 
   // Fill mergeable string sections
-  write_merged_strings(buf, files);
+  write_merged_strings(out::buf, files);
 
   // Zero-clear paddings between sections
-  clear_padding(buf, out::chunks, filesize);
+  clear_padding(out::buf, out::chunks, filesize);
 
   // Commit
   {
     MyTimer t("munmap", copy_timer);
-    munmap(buf, filesize);
+    munmap(out::buf, filesize);
   }
 
   total_timer.stopTimer();
