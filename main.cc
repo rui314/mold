@@ -550,7 +550,7 @@ static int get_section_rank(const ELF64LE::Shdr &shdr) {
   bool exec = shdr.sh_flags & SHF_EXECINSTR;
   bool tls = shdr.sh_flags & SHF_TLS;
   bool nobits = shdr.sh_type == SHT_NOBITS;
-  return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
+  return (!alloc << 5) | (writable << 4) | (exec << 3) | (!tls << 2) | nobits;
 }
 
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
@@ -877,7 +877,7 @@ int main(int argc, char **argv) {
   // as few segments as possible.
   std::stable_sort(out::chunks.begin(), out::chunks.end(),
                    [](OutputChunk *a, OutputChunk *b) {
-                     return get_section_rank(a->shdr) > get_section_rank(b->shdr);
+                     return get_section_rank(a->shdr) < get_section_rank(b->shdr);
                    });
 
   // Add headers and sections that have to be at the beginning
