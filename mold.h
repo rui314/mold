@@ -439,6 +439,19 @@ public:
   }
 };
 
+class RelDynSection : public OutputChunk {
+public:
+  RelDynSection() : OutputChunk(SYNTHETIC) {
+    name = ".rela.dyn";
+    shdr.sh_type = llvm::ELF::SHT_RELA;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_entsize = sizeof(ELF64LE::Rela);
+    shdr.sh_addralign = 8;
+  }
+
+  void update_shdr() override;
+};
+
 class StrtabSection : public OutputChunk {
 public:
   StrtabSection(StringRef name, u64 flags) : OutputChunk(SYNTHETIC) {
@@ -587,7 +600,7 @@ inline InterpSection *interp;
 inline SpecialSection *got;
 inline GotPltSection *gotplt;
 inline SpecialSection *relplt;
-inline SpecialSection *reldyn;
+inline RelDynSection *reldyn;
 inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
 inline DynstrSection *dynstr;

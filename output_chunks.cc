@@ -179,6 +179,10 @@ static std::vector<u64> create_dynamic_section() {
   return vec;
 }
 
+void RelDynSection::update_shdr() {
+  shdr.sh_link = out::dynsym->shndx;
+}
+
 void ShstrtabSection::update_shdr() {
   shdr.sh_size = 1;
   for (OutputChunk *chunk : out::chunks) {

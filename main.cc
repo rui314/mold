@@ -823,8 +823,7 @@ int main(int argc, char **argv) {
   if (!config.is_static) {
     out::interp = new InterpSection;
     out::dynamic = new DynamicSection;
-    out::reldyn = new SpecialSection(".rela.dyn", SHT_RELA, SHF_ALLOC, 8,
-                                     sizeof(ELF64LE::Rela));
+    out::reldyn = new RelDynSection;
     out::hash = new HashSection;
   }
 
@@ -958,9 +957,6 @@ int main(int argc, char **argv) {
 
   out::symtab->shdr.sh_link = out::strtab->shndx;
   out::relplt->shdr.sh_link = out::dynsym->shndx;
-
-  if (out::reldyn)
-    out::reldyn->shdr.sh_link = out::dynsym->shndx;
 
   for (OutputChunk *chunk : chunks)
     chunk->update_shdr();
