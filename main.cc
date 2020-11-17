@@ -811,8 +811,7 @@ int main(int argc, char **argv) {
   out::phdr = new OutputPhdr;
   out::got = new SpecialSection(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
   out::gotplt = new GotPltSection;
-  out::relplt = new SpecialSection(".rela.plt", SHT_RELA, SHF_ALLOC,
-                                   8, sizeof(ELF64LE::Rela));
+  out::relplt = new RelPltSection;
   out::strtab = new StrtabSection(".strtab", 0);
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
@@ -954,8 +953,6 @@ int main(int argc, char **argv) {
   // Initialize synthetic section contents
   out::files = files;
   out::chunks = chunks;
-
-  out::relplt->shdr.sh_link = out::dynsym->shndx;
 
   for (OutputChunk *chunk : chunks)
     chunk->update_shdr();

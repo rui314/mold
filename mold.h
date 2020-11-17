@@ -437,6 +437,8 @@ public:
     shdr.sh_entsize = sizeof(ELF64LE::Rela);
     shdr.sh_addralign = 8;
   }
+
+  void update_shdr() override;
 };
 
 class RelDynSection : public OutputChunk {
@@ -600,7 +602,7 @@ inline OutputPhdr *phdr;
 inline InterpSection *interp;
 inline SpecialSection *got;
 inline GotPltSection *gotplt;
-inline SpecialSection *relplt;
+inline RelPltSection *relplt;
 inline RelDynSection *reldyn;
 inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
