@@ -187,6 +187,10 @@ void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 }
 
+void StrtabSection::initialize_buf() {
+  out::buf[shdr.sh_offset] = '\0';
+}
+
 void ShstrtabSection::update_shdr() {
   shdr.sh_size = 1;
   for (OutputChunk *chunk : out::chunks) {
@@ -230,6 +234,10 @@ void DynstrSection::copy_to(u8 *buf) {
 
 void SymtabSection::update_shdr() {
   shdr.sh_link = out::strtab->shndx;
+}
+
+void SymtabSection::initialize_buf() {
+  memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
 }
 
 void DynamicSection::update_shdr() {
@@ -308,21 +316,21 @@ bool OutputSection::empty() const {
   return true;
 }
 
-void GotPltSection::initialize(u8 *buf) {
-  u8 *base = buf + shdr.sh_offset;
+void GotPltSection::initialize_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
   if (out::dynamic)
     *(u64 *)base = out::dynamic->shdr.sh_addr;
 }
 
-void PltSection::initialize(u8 *buf) {
+void PltSection::initialize_buf() {
   const u8 data[] = {
     0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
     0x0f, 0x1f, 0x40, 0x00, // nop
   };
 
-  u8 *base = buf + shdr.sh_offset;
+  u8 *base = out::buf + shdr.sh_offset;
   memcpy(base, data, sizeof(data));
   *(u32 *)(base + 2) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 2;
   *(u32 *)(base + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
@@ -368,8 +376,8 @@ void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
 }
 
-void DynsymSection::initialize(u8 *buf) {
-  memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+void DynsymSection::initialize_buf() {
+  memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
 }
 
 void DynsymSection::copy_to(u8 *buf) {

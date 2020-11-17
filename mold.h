@@ -311,7 +311,7 @@ public:
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
   virtual void update_shdr() {}
-  virtual void initialize(u8 *buf) {}
+  virtual void initialize_buf() {}
   virtual void copy_to(u8 *buf) {}
 
   StringRef name;
@@ -411,7 +411,7 @@ public:
     shdr.sh_size = GOT_SIZE * 3;
   }
 
-  void initialize(u8 *buf) override;
+  void initialize_buf() override;
 };
 
 class PltSection : public OutputChunk {
@@ -424,7 +424,7 @@ public:
     shdr.sh_size = PLT_SIZE;
   }
 
-  void initialize(u8 *buf) override;
+  void initialize_buf() override;
   void write_entry(u8 *buf, Symbol *sym);
 };
 
@@ -464,9 +464,7 @@ public:
     shdr.sh_size = 1;
   }
 
-  void initialize(u8 *buf) override {
-    buf[shdr.sh_offset] = '\0';
-  }
+  void initialize_buf() override;
 };
 
 class ShstrtabSection : public OutputChunk {
@@ -524,10 +522,7 @@ public:
   }
 
   void update_shdr() override;
-
-  void initialize(u8 *buf) override {
-    memset(buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
-  }
+  void initialize_buf() override;
 
 private:
   std::vector<ELF64LE::Sym> contents;
@@ -547,7 +542,7 @@ public:
 
   void add_symbols(ArrayRef<Symbol *> syms);
   void update_shdr() override;
-  void initialize(u8 *buf) override;
+  void initialize_buf() override;
   void copy_to(u8 *buf) override;
 
   std::vector<Symbol *> symbols;
