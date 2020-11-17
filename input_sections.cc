@@ -78,7 +78,6 @@ void InputSection::copy_buf() {
       break;
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
-    case R_X86_64_DTPOFF32:
       // TODO
       break;
     case R_X86_64_GOTTPOFF:
@@ -146,7 +145,6 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_GOTTPOFF:
       sym->rels |= Symbol::HAS_GOTTP_REL;
-    case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
       sym->rels |= Symbol::HAS_TPOFF_REL;
       break;
