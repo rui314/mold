@@ -71,6 +71,7 @@ struct Config {
   bool is_static = false;
   bool print_map = false;
   int filler = -1;
+  u64 image_base = 0x200000;
 };
 
 inline Config config;

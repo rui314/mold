@@ -557,7 +557,7 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
   MyTimer t("osec_offset", before_copy_timer);
 
   u64 fileoff = 0;
-  u64 vaddr = 0x200000;
+  u64 vaddr = config.image_base;
 
   for (OutputChunk *chunk : chunks) {
     if (chunk->starts_new_ptload)
