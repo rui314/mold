@@ -503,22 +503,12 @@ static void write_got_plt() {
   });
 }
 
-static void write_dso_paths(u8 *buf, ArrayRef<ObjectFile *> files) {
-  int offset = out::dynstr->shdr.sh_offset + 1;
-  for (ObjectFile *file : files) {
-    if (!file->soname.empty()) {
-      write_string(buf + offset, file->soname);
-      offset += file->soname.size() + 1;
-    }
-  }
-}
-
-static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
+static void write_merged_strings() {
   MyTimer t("write_merged_strings", copy_timer);
 
-  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
-      u8 *base = buf + isec.parent.shdr.sh_offset + isec.offset;
+      u8 *base = out::buf + isec.parent.shdr.sh_offset + isec.offset;
 
       for (StringPieceRef &ref : isec.pieces) {
         StringPiece &piece = *ref.piece;
@@ -529,19 +519,19 @@ static void write_merged_strings(u8 *buf, ArrayRef<ObjectFile *> files) {
   });
 }
 
-static void clear_padding(u8 *buf, ArrayRef<OutputChunk *> chunks, u64 filesize) {
+static void clear_padding(u64 filesize) {
   MyTimer t("clear_padding", copy_timer);
 
   auto zero = [&](OutputChunk *chunk, u64 next_start) {
     u64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
-    memset(buf + pos, 0, next_start - pos);
+    memset(out::buf + pos, 0, next_start - pos);
   };
 
-  for (int i = 1; i < chunks.size(); i++)
-    zero(chunks[i - 1], chunks[i]->shdr.sh_offset);
-  zero(chunks.back(), filesize);
+  for (int i = 1; i < out::chunks.size(); i++)
+    zero(out::chunks[i - 1], out::chunks[i]->shdr.sh_offset);
+  zero(out::chunks.back(), filesize);
 }
 
 // We want to sort output sections in the following order.
@@ -1000,10 +990,10 @@ int main(int argc, char **argv) {
   write_got_plt();
 
   // Fill mergeable string sections
-  write_merged_strings(out::buf, files);
+  write_merged_strings();
 
   // Zero-clear paddings between sections
-  clear_padding(out::buf, out::chunks, filesize);
+  clear_padding(filesize);
 
   // Commit
   {
