@@ -691,12 +691,6 @@ public:
   u32 num_dynsym = 0;
   u32 dynstr_size = 0;
 
-  u32 got_offset = 0;
-  u32 gotplt_offset = 0;
-  u32 plt_offset = 0;
-  u32 relplt_offset = 0;
-  u32 reldyn_offset = 0;
-
   std::vector<MergeableSection> mergeable_sections;
   std::vector<Symbol *> dynsyms;
 
@@ -734,32 +728,32 @@ inline u64 Symbol::get_addr() const {
 
 inline u64 Symbol::get_got_addr() const {
   assert(got_idx != -1);
-  return out::got->shdr.sh_addr + file->got_offset + got_idx * GOT_SIZE;
+  return out::got->shdr.sh_addr + got_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gotplt_addr() const {
   assert(gotplt_idx != -1);
-  return out::gotplt->shdr.sh_addr + file->gotplt_offset + gotplt_idx * GOT_SIZE;
+  return out::gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gottp_addr() const {
   assert(gottp_idx != -1);
-  return out::got->shdr.sh_addr + file->got_offset + gottp_idx * GOT_SIZE;
+  return out::got->shdr.sh_addr + gottp_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gotgd_addr() const {
   assert(gotgd_idx != -1);
-  return out::got->shdr.sh_addr + file->got_offset + gotgd_idx * GOT_SIZE;
+  return out::got->shdr.sh_addr + gotgd_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gotld_addr() const {
   assert(gotld_idx != -1);
-  return out::got->shdr.sh_addr + file->got_offset + gotld_idx * GOT_SIZE;
+  return out::got->shdr.sh_addr + gotld_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_plt_addr() const {
   assert(plt_idx != -1);
-  return out::plt->shdr.sh_addr + file->plt_offset + plt_idx * PLT_SIZE;
+  return out::plt->shdr.sh_addr + plt_idx * PLT_SIZE;
 }
 
 inline u64 StringPiece::get_addr() const {

@@ -52,7 +52,7 @@ void InputSection::copy_buf() {
       *(u64 *)loc = sym.get_got_addr() - GOT + A;
       break;
     case R_X86_64_PLT32:
-      if (sym.type == STT_GNU_IFUNC || (!config.is_static && sym.file->is_dso))
+      if (sym.plt_idx != -1)
         *(u32 *)loc = sym.get_plt_addr() + A - P;
       else
         *(u32 *)loc = S + A - P; // todo

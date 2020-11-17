@@ -384,6 +384,8 @@ static void scan_rels() {
     if (sym->flags & Symbol::NEEDS_GOTTPOFF)
       sym->gottp_idx = got_idx++;
   }
+
+  out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
