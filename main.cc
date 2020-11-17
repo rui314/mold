@@ -862,9 +862,6 @@ int main(int argc, char **argv) {
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
 
-  // Create a list of output sections.
-  std::vector<OutputChunk *> chunks;
-
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel. Sor them to to make the output deterministic.
   auto section_compare = [](OutputChunk *x, OutputChunk *y) {
@@ -880,14 +877,14 @@ int main(int argc, char **argv) {
   // Add sections to the section lists
   for (OutputSection *osec : OutputSection::instances)
     if (osec->shdr.sh_size)
-      chunks.push_back(osec);
+      out::chunks.push_back(osec);
   for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
-      chunks.push_back(osec);
+      out::chunks.push_back(osec);
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ObjectFile *internal_file = ObjectFile::create_internal_file(chunks);
+  ObjectFile *internal_file = ObjectFile::create_internal_file();
   internal_file->priority = priority++;
   files.push_back(internal_file);
 
@@ -914,54 +911,54 @@ int main(int argc, char **argv) {
   }
 
   // Add synthetic sections.
-  chunks.push_back(out::got);
-  chunks.push_back(out::plt);
-  chunks.push_back(out::gotplt);
-  chunks.push_back(out::relplt);
-  chunks.push_back(out::reldyn);
-  chunks.push_back(out::dynamic);
-  chunks.push_back(out::dynsym);
-  chunks.push_back(out::dynstr);
-  chunks.push_back(out::shstrtab);
-  chunks.push_back(out::symtab);
-  chunks.push_back(out::strtab);
-  chunks.push_back(out::hash);
+  out::chunks.push_back(out::got);
+  out::chunks.push_back(out::plt);
+  out::chunks.push_back(out::gotplt);
+  out::chunks.push_back(out::relplt);
+  out::chunks.push_back(out::reldyn);
+  out::chunks.push_back(out::dynamic);
+  out::chunks.push_back(out::dynsym);
+  out::chunks.push_back(out::dynstr);
+  out::chunks.push_back(out::shstrtab);
+  out::chunks.push_back(out::symtab);
+  out::chunks.push_back(out::strtab);
+  out::chunks.push_back(out::hash);
 
-  chunks.erase(std::remove_if(chunks.begin(), chunks.end(),
-                              [](OutputChunk *c){ return !c; }),
-               chunks.end());
+  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
+                                   [](OutputChunk *c){ return !c; }),
+                    out::chunks.end());
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
-  std::stable_sort(chunks.begin(), chunks.end(), [](OutputChunk *a, OutputChunk *b) {
-    return get_section_rank(a->shdr) > get_section_rank(b->shdr);
-  });
+  std::stable_sort(out::chunks.begin(), out::chunks.end(),
+                   [](OutputChunk *a, OutputChunk *b) {
+                     return get_section_rank(a->shdr) > get_section_rank(b->shdr);
+                   });
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
-  chunks.insert(chunks.begin(), out::ehdr);
-  chunks.insert(chunks.begin() + 1, out::phdr);
+  out::chunks.insert(out::chunks.begin(), out::ehdr);
+  out::chunks.insert(out::chunks.begin() + 1, out::phdr);
   if (out::interp)
-    chunks.insert(chunks.begin() + 2, out::interp);
-  chunks.push_back(out::shdr);
+    out::chunks.insert(out::chunks.begin() + 2, out::interp);
+  out::chunks.push_back(out::shdr);
 
   // Set section indices.
-  for (int i = 0, shndx = 1; i < chunks.size(); i++)
-    if (chunks[i]->kind != OutputChunk::HEADER)
-      chunks[i]->shndx = shndx++;
+  for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
+    if (out::chunks[i]->kind != OutputChunk::HEADER)
+      out::chunks[i]->shndx = shndx++;
 
   // Initialize synthetic section contents
   out::files = files;
-  out::chunks = chunks;
 
-  for (OutputChunk *chunk : chunks)
+  for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
   // Assign offsets to output sections
-  u64 filesize = set_osec_offsets(chunks);
+  u64 filesize = set_osec_offsets(out::chunks);
 
   // Fix linker-synthesized symbol addresses.
-  fix_synthetic_symbols(chunks);
+  fix_synthetic_symbols(out::chunks);
 
   // At this point, file layout is fixed. Beyond this, you can assume
   // that symbol addresses including their GOT/PLT/etc addresses have
@@ -969,7 +966,7 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the ending address
   // of the TLS section. Find it out now.
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : out::chunks) {
     ELF64LE::Shdr &shdr = chunk->shdr;
     if (shdr.sh_flags & SHF_TLS)
       out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
@@ -985,7 +982,7 @@ int main(int argc, char **argv) {
   // Initialize the output buffer.
   {
     MyTimer t("copy", copy_timer);
-    tbb::parallel_for_each(chunks, [&](OutputChunk *chunk) {
+    tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->initialize(buf);
     });
   }
@@ -993,7 +990,7 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy_timer);
-    tbb::parallel_for_each(chunks, [&](OutputChunk *chunk) {
+    tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_to(buf);
     });
   }
@@ -1008,7 +1005,7 @@ int main(int argc, char **argv) {
   write_merged_strings(buf, files);
 
   // Zero-clear paddings between sections
-  clear_padding(buf, chunks, filesize);
+  clear_padding(buf, out::chunks, filesize);
 
   // Commit
   {
@@ -1020,7 +1017,7 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(files, chunks);
+    print_map(files, out::chunks);
   }
 
 #if 0
@@ -1035,7 +1032,7 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : files)
     num_input_sections.inc(file->sections.size());
 
-  Counter num_output_chunks("output_chunks", chunks.size());
+  Counter num_output_chunks("output_out::chunks", out::chunks.size());
   Counter num_files("files", files.size());
   Counter filesize_counter("filesize", filesize);
 
