@@ -187,23 +187,23 @@ static void resolve_symbols(std::vector<ObjectFile *> &files) {
   });
 }
 
-static void eliminate_comdats(std::vector<ObjectFile *> &files) {
+static void eliminate_comdats() {
   MyTimer t("comdat", before_copy_timer);
 
-  tbb::parallel_for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
     file->resolve_comdat_groups();
   });
 
-  tbb::parallel_for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
     file->eliminate_duplicate_comdat_groups();
   });
 }
 
-static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
+static void handle_mergeable_strings() {
   MyTimer t("resolve_strings", before_copy_timer);
 
   // Resolve mergeable string pieces
-  tbb::parallel_for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       for (StringPieceRef &ref : isec.pieces) {
         MergeableSection *cur = ref.piece->isec;
@@ -215,7 +215,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   });
 
   // Calculate the total bytes of mergeable strings for each input section.
-  tbb::parallel_for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       u32 offset = 0;
       for (StringPieceRef &ref : isec.pieces) {
@@ -230,7 +230,7 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
   });
 
   // Assign each mergeable input section a unique index.
-  for (ObjectFile *file : files) {
+  for (ObjectFile *file : out::files) {
     for (MergeableSection &isec : file->mergeable_sections) {
       MergedSection &osec = isec.parent;
       isec.offset = osec.shdr.sh_size;
@@ -249,11 +249,11 @@ static void handle_mergeable_strings(std::vector<ObjectFile *> &files) {
 //
 // An output section may contain millions of input sections.
 // So, we append input sections to output sections in parallel.
-static void bin_sections(std::vector<ObjectFile *> &files) {
+static void bin_sections() {
   MyTimer t("bin_sections", before_copy_timer);
 
-  int unit = (files.size() + 127) / 128;
-  std::vector<ArrayRef<ObjectFile *>> slices = split(files, unit);
+  int unit = (out::files.size() + 127) / 128;
+  std::vector<ArrayRef<ObjectFile *>> slices = split(out::files, unit);
 
   int num_osec = OutputSection::instances.size();
 
@@ -402,23 +402,23 @@ static void scan_rels_dynamic(ObjectFile *file) {
   }
 }
 
-static void scan_rels(ArrayRef<ObjectFile *> files) {
+static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
-  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections)
       if (isec)
         isec->scan_relocations();
   });
 
-  tbb::parallel_for_each(files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
     if (config.is_static)
       scan_rels_static(file);
     else
       scan_rels_dynamic(file);
   });
 
-  for (ObjectFile *file : files) {
+  for (ObjectFile *file : out::files) {
     file->got_offset = out::got->shdr.sh_size;
     out::got->shdr.sh_size += file->num_got * GOT_SIZE;
 
@@ -437,7 +437,7 @@ static void scan_rels(ArrayRef<ObjectFile *> files) {
     }
   }
 
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     out::dynsym->add_symbols(file->dynsyms);
 }
 
@@ -835,10 +835,10 @@ int main(int argc, char **argv) {
       message(toString(file));
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
-  eliminate_comdats(out::files);
+  eliminate_comdats();
 
   // Merge strings constants in SHF_MERGE sections.
-  handle_mergeable_strings(out::files);
+  handle_mergeable_strings();
 
   // Create .bss sections for common symbols.
   {
@@ -848,7 +848,7 @@ int main(int argc, char **argv) {
   }
 
   // Bin input sections into output sections
-  bin_sections(out::files);
+  bin_sections();
 
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
@@ -888,12 +888,13 @@ int main(int argc, char **argv) {
 
   // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
   // .rela.dyn, .rela.plt.
-  scan_rels(out::files);
+  scan_rels();
 
   // Compute .symtab and .strtab sizes
   {
     MyTimer t("symtab_size", before_copy_timer);
-    tbb::parallel_for_each(out::files, [](ObjectFile *file) { file->compute_symtab(); });
+    tbb::parallel_for_each(out::files,
+                           [](ObjectFile *file) { file->compute_symtab(); });
 
     for (ObjectFile *file : out::files) {
       out::symtab->shdr.sh_size += file->local_symtab_size + file->global_symtab_size;
