@@ -157,16 +157,17 @@ static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
   return vec;
 }
 
-static void resolve_symbols(std::vector<ObjectFile *> &files) {
+static void resolve_symbols() {
   MyTimer t("resolve_symbols", before_copy_timer);
 
   // Register defined symbols
-  tbb::parallel_for_each(files, [](ObjectFile *file) { file->resolve_symbols(); });
+  tbb::parallel_for_each(out::files,
+                         [](ObjectFile *file) { file->resolve_symbols(); });
 
 
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
-  for (ObjectFile *file : files)
+  for (ObjectFile *file : out::files)
     if (file->is_alive && !file->is_dso)
       root.push_back(file);
 
@@ -177,12 +178,12 @@ static void resolve_symbols(std::vector<ObjectFile *> &files) {
     });
 
   // Eliminate unused archive members.
-  files.erase(std::remove_if(files.begin(), files.end(),
-                             [](ObjectFile *file){ return !file->is_alive; }),
-              files.end());
+  out::files.erase(std::remove_if(out::files.begin(), out::files.end(),
+                                  [](ObjectFile *file){ return !file->is_alive; }),
+                   out::files.end());
 
   // Convert weak symbols to absolute symbols with value 0.
-  tbb::parallel_for_each(files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
     file->hanlde_undefined_weak_symbols();
   });
 }
@@ -828,7 +829,7 @@ int main(int argc, char **argv) {
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
-  resolve_symbols(out::files);
+  resolve_symbols();
 
   if (args.hasArg(OPT_trace))
     for (ObjectFile *file : out::files)
