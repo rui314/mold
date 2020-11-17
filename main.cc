@@ -441,8 +441,7 @@ static void write_got_plt() {
         write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
                           R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(),
                           sym->dynsym_idx, 0);
-        *(u64 *)(gotplt_buf + sym->gotplt_idx * sizeof(ELF64LE::Sym)) =
-          sym->get_plt_addr() + 6;
+        *(u64 *)(gotplt_buf + sym->gotplt_idx * GOT_SIZE) = sym->get_plt_addr() + 6;
       }
     }
   });
