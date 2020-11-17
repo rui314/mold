@@ -125,6 +125,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
+    case R_X86_64_TPOFF32:
       sym->rels |= Symbol::HAS_ADDR_REL;
       break;
     case R_X86_64_GOT32:
@@ -145,8 +146,6 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_GOTTPOFF:
       sym->rels |= Symbol::HAS_GOTTP_REL;
-    case R_X86_64_TPOFF32:
-      sym->rels |= Symbol::HAS_TPOFF_REL;
       break;
     case R_X86_64_NONE:
       break;

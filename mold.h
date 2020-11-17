@@ -234,7 +234,6 @@ public:
     HAS_GOTTP_REL = 1 << 3,
     HAS_TLSGD_REL = 1 << 4,
     HAS_TLSLD_REL = 1 << 5,
-    HAS_TPOFF_REL = 1 << 6,
   };
 
   std::atomic_uint8_t rels = ATOMIC_VAR_INIT(0);
