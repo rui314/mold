@@ -917,17 +917,14 @@ int main(int argc, char **argv) {
   // Create an output file
   out::buf = open_output_file(filesize);
 
-  // Initialize the output buffer.
-  {
-    MyTimer t("copy", copy_timer);
-    tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
-      chunk->initialize_buf();
-    });
-  }
-
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy_timer);
+
+    tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
+      chunk->initialize_buf();
+    });
+
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
