@@ -334,14 +334,16 @@ static void set_isec_offsets() {
 static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
+  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
+    for (InputSection *isec : file->sections)
+      if (isec)
+        isec->scan_relocations();
+  });
+
   std::vector<std::vector<Symbol *>> vec(out::files.size());
 
   tbb::parallel_for(0, (int)out::files.size(), [&](int i) {
     ObjectFile *file = out::files[i];
-    for (InputSection *isec : file->sections)
-      if (isec)
-        isec->scan_relocations();
-
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->flags)
         vec[i].push_back(sym);
@@ -357,6 +359,7 @@ static void scan_rels() {
 
   for (Symbol *sym : out::dynsyms) {
     if (sym->flags & Symbol::NEEDS_GOT) {
+      llvm::outs() << "got=" << sym->name << "\n";
       sym->got_idx = got_idx++;
 
       if (!config.is_static) {
@@ -386,6 +389,7 @@ static void scan_rels() {
   }
 
   out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
+  out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
