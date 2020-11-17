@@ -563,16 +563,6 @@ static int get_section_rank(const ELF64LE::Shdr &shdr) {
   return (alloc << 5) | (!writable << 4) | (!exec << 3) | (tls << 2) | !nobits;
 }
 
-static void sort_output_chunks(std::vector<OutputChunk *> &chunks) {
-}
-
-template<typename T>
-static std::vector<u8> to_u8vector(const std::vector<T> &vec) {
-  std::vector<u8> ret(vec.size() * sizeof(T));
-  memcpy(ret.data(), vec.data(), ret.size());
-  return ret;
-}
-
 static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
   MyTimer t("osec_offset", before_copy_timer);
 
