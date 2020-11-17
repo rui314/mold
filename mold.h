@@ -408,8 +408,10 @@ public:
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
-    shdr.sh_size = GOT_SIZE * 3;
+    shdr.sh_size = GOT_SIZE * INIT_SIZE;
   }
+
+  enum { INIT_SIZE = 3 };
 
   void initialize_buf() override;
 };
@@ -423,6 +425,8 @@ public:
     shdr.sh_addralign = 8;
     shdr.sh_size = PLT_SIZE;
   }
+
+  enum { INIT_SIZE = 1 };
 
   void initialize_buf() override;
   void write_entry(Symbol *sym);

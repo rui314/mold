@@ -352,8 +352,8 @@ static void scan_rels() {
   out::dynsyms = flatten(vec);
 
   u32 got_idx = 0;
-  u32 plt_idx = 0;
-  u32 gotplt_idx = 0;
+  u32 plt_idx = PltSection::INIT_SIZE;
+  u32 gotplt_idx = GotPltSection::INIT_SIZE;
   u32 relplt_idx = 0;
   u32 reldyn_idx = 0;
 
@@ -388,6 +388,9 @@ static void scan_rels() {
       sym->gottp_idx = got_idx++;
   }
 
+  out::got->shdr.sh_size = got_idx * GOT_SIZE;
+  out::plt->shdr.sh_size = plt_idx * PLT_SIZE;
+  out::gotplt->shdr.sh_size = gotplt_idx * GOT_SIZE;
   out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
   out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
 }
