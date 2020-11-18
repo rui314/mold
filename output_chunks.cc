@@ -149,6 +149,24 @@ void RelPltSection::update_shdr() {
 
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
+
+  if (!config.is_static)
+    for (Symbol *sym : out::got->got_syms)
+      shdr.sh_size += sizeof(ELF64LE::Rela);
+}
+
+void RelDynSection::copy_buf() {
+  ELF64LE::Rela *rel = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
+
+  if (!config.is_static) {
+    for (Symbol *sym : out::got->got_syms) {
+      memset(rel, 0, sizeof(*rel));
+      rel->setSymbol(sym->dynsym_idx, false);
+      rel->setType(R_X86_64_GLOB_DAT, false);
+      rel->r_offset = sym->get_got_addr();
+      rel++;
+    }
+  }
 }
 
 void StrtabSection::initialize_buf() {
@@ -350,6 +368,33 @@ bool OutputSection::empty() const {
       if (mem->shdr.sh_size)
         return false;
   return true;
+}
+
+void GotSection::add_symbol(Symbol *sym) {
+  sym->got_idx = shdr.sh_size / GOT_SIZE;
+  shdr.sh_size += GOT_SIZE;
+  got_syms.push_back(sym);
+
+  if (!config.is_static)
+    out::dynsym->add_symbol(sym);
+}
+
+void GotSection::add_gottp_symbol(Symbol *sym) {
+  sym->gottp_idx = shdr.sh_size / GOT_SIZE;
+  shdr.sh_size += GOT_SIZE;
+  gottp_syms.push_back(sym);
+}
+
+void GotSection::copy_buf() {
+  u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
+  memset(buf, 0, shdr.sh_size);
+
+  if (config.is_static)
+    for (Symbol *sym : got_syms)
+      buf[sym->got_idx] = sym->get_addr();
+
+  for (Symbol *sym : gottp_syms)
+    buf[sym->gottp_idx] = sym->get_addr() - out::tls_end;
 }
 
 void GotPltSection::initialize_buf() {

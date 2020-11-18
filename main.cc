@@ -355,19 +355,10 @@ static void scan_rels() {
   u32 plt_idx = PltSection::INIT_SIZE;
   u32 gotplt_idx = GotPltSection::INIT_SIZE;
   u32 relplt_idx = 0;
-  u32 reldyn_idx = 0;
 
   for (Symbol *sym : out::dynsyms) {
-    sym->reldyn_idx = reldyn_idx;
-
-    if (sym->flags & Symbol::NEEDS_GOT) {
-      sym->got_idx = got_idx++;
-
-      if (!config.is_static) {
-        out::dynsym->add_symbol(sym);
-        reldyn_idx++;
-      }
-    }
+    if (sym->flags & Symbol::NEEDS_GOT)
+      out::got->add_symbol(sym);
 
     if (sym->flags & Symbol::NEEDS_PLT) {
       sym->plt_idx = plt_idx++;
@@ -385,15 +376,12 @@ static void scan_rels() {
       error("not implemented");
 
     if (sym->flags & Symbol::NEEDS_GOTTPOFF)
-      sym->gottp_idx = got_idx++;
+      out::got->add_gottp_symbol(sym);
   }
 
-  out::got->shdr.sh_size = got_idx * GOT_SIZE;
   out::plt->shdr.sh_size = plt_idx * PLT_SIZE;
   out::gotplt->shdr.sh_size = gotplt_idx * GOT_SIZE;
   out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
-  if (out::reldyn)
-    out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
 }
 
 static void write_got_plt() {
@@ -404,26 +392,8 @@ static void write_got_plt() {
   u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset;
 
   tbb::parallel_for_each(out::dynsyms, [&](Symbol *sym) {
-    u32 reldyn_idx = sym->reldyn_idx;
-
-    if (sym->got_idx != -1) {
-      if (config.is_static) {
-        *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
-      } else {
-        auto *rel = (ELF64LE::Rela *)(out::buf + out::reldyn->shdr.sh_offset +
-                                      reldyn_idx++ * sizeof(ELF64LE::Rela));
-        memset(rel, 0, sizeof(*rel));
-        rel->setSymbol(sym->dynsym_idx, false);
-        rel->setType(R_X86_64_GLOB_DAT, false);
-        rel->r_offset = sym->get_got_addr();
-      }
-    }
-
     if (sym->gotplt_idx != -1)
       *(u64 *)(gotplt_buf + sym->gotplt_idx * GOT_SIZE) = sym->get_plt_addr() + 6;
-
-    if (sym->gottp_idx != -1)
-      *(u64 *)(got_buf + sym->gottp_idx * GOT_SIZE) = sym->get_addr() - out::tls_end;
 
     if (sym->gotgd_idx != -1 || sym->gotld_idx != -1)
       error("not implemented");

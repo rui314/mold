@@ -214,7 +214,6 @@ public:
   u32 gotld_idx = -1;
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
-  u32 reldyn_idx = -1;
   u32 dynsym_idx = -1;
   u32 dynstr_offset = -1;
 
@@ -409,6 +408,13 @@ public:
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
   }
+
+  void add_symbol(Symbol *sym);
+  void add_gottp_symbol(Symbol *sym);
+  void copy_buf() override;
+
+  std::vector<Symbol *> got_syms;
+  std::vector<Symbol *> gottp_syms;
 };
 
 class GotPltSection : public OutputChunk {
@@ -467,6 +473,7 @@ public:
   }
 
   void update_shdr() override;
+  void copy_buf() override;
 };
 
 class StrtabSection : public OutputChunk {
@@ -702,7 +709,6 @@ public:
   u32 num_gotplt = 0;
   u32 num_plt = 0;
   u32 num_relplt = 0;
-  u32 num_reldyn = 0;
   u32 num_dynsym = 0;
   u32 dynstr_size = 0;
 
