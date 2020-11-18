@@ -41,6 +41,7 @@ void InputSection::copy_buf() {
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
+    case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_64:
       *(u64 *)loc = S + A;
@@ -127,6 +128,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC32:
     case R_X86_64_PC64:
     case R_X86_64_TPOFF32:
+    case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:

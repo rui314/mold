@@ -361,7 +361,6 @@ static void scan_rels() {
     sym->reldyn_idx = reldyn_idx;
 
     if (sym->flags & Symbol::NEEDS_GOT) {
-      llvm::outs() << "got=" << sym->name << "\n";
       sym->got_idx = got_idx++;
 
       if (!config.is_static) {
