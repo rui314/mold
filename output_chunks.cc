@@ -143,10 +143,6 @@ void InterpSection::copy_buf() {
   write_string(out::buf + shdr.sh_offset, config.dynamic_linker);
 }
 
-void RelPltSection::update_shdr() {
-  shdr.sh_link = out::dynsym->shndx;
-}
-
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
@@ -180,7 +176,7 @@ void ShstrtabSection::update_shdr() {
       chunk->shdr.sh_name = shdr.sh_size;
       shdr.sh_size += chunk->name.size() + 1;
     }
-  }  
+  }
 }
 
 void ShstrtabSection::copy_buf() {
@@ -397,64 +393,95 @@ void GotSection::copy_buf() {
     buf[sym->gottp_idx] = sym->get_addr() - out::tls_end;
 }
 
-void GotPltSection::initialize_buf() {
-  u8 *base = out::buf + shdr.sh_offset;
-  memset(base, 0, shdr.sh_size);
-  if (out::dynamic)
-    *(u64 *)base = out::dynamic->shdr.sh_addr;
+void GotPltSection::copy_buf() {
+  u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
+
+  buf[0] = out::dynamic ? out::dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
+
+  for (Symbol *sym : out::plt->symbols)
+    buf[sym->gotplt_idx] = sym->get_plt_addr() + 6;
 }
 
-void PltSection::initialize_buf() {
-  const u8 data[] = {
+void PltSection::add_symbol(Symbol *sym) {
+  sym->plt_idx = shdr.sh_size / PLT_SIZE;
+  shdr.sh_size += PLT_SIZE;
+  symbols.push_back(sym);
+
+  if (sym->got_idx == -1) {
+    sym->gotplt_idx = out::gotplt->shdr.sh_size / GOT_SIZE;
+    out::gotplt->shdr.sh_size += GOT_SIZE;
+
+    sym->relplt_idx = out::relplt->shdr.sh_size / sizeof(ELF64LE::Rela);
+    out::relplt->shdr.sh_size += sizeof(ELF64LE::Rela);
+  }
+
+  if (!config.is_static)
+    out::dynsym->add_symbol(sym);
+}
+
+void PltSection::copy_buf() {
+  u8 *buf = out::buf + shdr.sh_offset;
+
+  const u8 plt0[] = {
     0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
     0x0f, 0x1f, 0x40, 0x00, // nop
   };
 
-  u8 *base = out::buf + shdr.sh_offset;
-  memcpy(base, data, sizeof(data));
-  *(u32 *)(base + 2) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 2;
-  *(u32 *)(base + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
-}
+  memcpy(buf, plt0, sizeof(plt0));
+  *(u32 *)(buf + 2) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 2;
+  *(u32 *)(buf + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
 
-void PltSection::write_entry(Symbol *sym) {
-  u8 *base = out::buf + shdr.sh_offset + sym->plt_idx * PLT_SIZE;
+  for (Symbol *sym : symbols) {
+    u8 *ent = buf + sym->plt_idx * PLT_SIZE;
 
-  if (sym->got_idx == -1) {
-    const u8 data[] = {
-      0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
-      0x68, 0,    0, 0, 0,    // push  $index_in_relplt
-      0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
-    };
+    if (sym->got_idx == -1) {
+      const u8 data[] = {
+        0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
+        0x68, 0,    0, 0, 0,    // push  $index_in_relplt
+        0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
+      };
 
-    memcpy(base, data, sizeof(data));
-    *(u32 *)(base + 2) = sym->get_gotplt_addr() - sym->get_plt_addr() - 6;
-    *(u32 *)(base + 7) = sym->relplt_idx;
-    *(u32 *)(base + 12) = shdr.sh_addr - sym->get_plt_addr() - 16;
-  } else {
-    const u8 data[] = {
-      0xff, 0x25, 0,    0,    0,    0,                   // jmp   *foo@GOTPLT
-      0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0, // nop
-    };
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) = sym->get_gotplt_addr() - sym->get_plt_addr() - 6;
+      *(u32 *)(ent + 7) = sym->relplt_idx;
+      *(u32 *)(ent + 12) = shdr.sh_addr - sym->get_plt_addr() - 16;
+    } else {
+      const u8 data[] = {
+        0xff, 0x25, 0,    0,    0,    0,                   // jmp   *foo@GOT
+        0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0, // nop
+      };
 
-    memcpy(base, data, sizeof(data));
-    *(u32 *)(base + 2) = sym->get_got_addr() - sym->get_plt_addr() - 6;
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) = sym->get_got_addr() - sym->get_plt_addr() - 6;
+    }
   }
 }
 
+void RelPltSection::update_shdr() {
+  shdr.sh_link = out::dynsym->shndx;
+}
 
-void RelPltSection::write_entry(Symbol *sym) {
-  auto *rel = (ELF64LE::Rela *)(out::buf + out::relplt->shdr.sh_offset +
-                                sym->relplt_idx * sizeof(ELF64LE::Rela));
-  memset(rel, 0, sizeof(*rel));
-  rel->setSymbol(sym->dynsym_idx, false);
-  rel->r_offset = sym->get_gotplt_addr();
+void RelPltSection::copy_buf() {
+  ELF64LE::Rela *buf = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
 
-  if (sym->type == STT_GNU_IFUNC) {
-    rel->setType(R_X86_64_IRELATIVE, false);
-    rel->r_addend = sym->get_addr();
-  } else {
-    rel->setType(R_X86_64_JUMP_SLOT, false);
+  for (Symbol *sym : out::plt->symbols) {
+    if (sym->relplt_idx == -1)
+      continue;
+
+    ELF64LE::Rela &rel = buf[sym->relplt_idx];
+    memset(&rel, 0, sizeof(rel));
+    rel.setSymbol(sym->dynsym_idx, false);
+    rel.r_offset = sym->get_gotplt_addr();
+
+    if (sym->type == STT_GNU_IFUNC) {
+      rel.setType(R_X86_64_IRELATIVE, false);
+      rel.r_addend = sym->get_addr();
+    } else {
+      rel.setType(R_X86_64_JUMP_SLOT, false);
+    }
   }
 }
 

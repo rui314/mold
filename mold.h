@@ -429,7 +429,7 @@ public:
 
   enum { INIT_SIZE = 3 };
 
-  void initialize_buf() override;
+  void copy_buf() override;
 };
 
 class PltSection : public OutputChunk {
@@ -442,10 +442,10 @@ public:
     shdr.sh_size = PLT_SIZE;
   }
 
-  enum { INIT_SIZE = 1 };
+  void add_symbol(Symbol *sym);
+  void copy_buf() override;
 
-  void initialize_buf() override;
-  void write_entry(Symbol *sym);
+  std::vector<Symbol *> symbols;
 };
 
 class RelPltSection : public OutputChunk {
@@ -459,7 +459,7 @@ public:
   }
 
   void update_shdr() override;
-  void write_entry(Symbol *sym);
+  void copy_buf() override;
 };
 
 class RelDynSection : public OutputChunk {

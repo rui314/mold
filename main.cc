@@ -351,59 +351,19 @@ static void scan_rels() {
 
   out::dynsyms = flatten(vec);
 
-  u32 got_idx = 0;
-  u32 plt_idx = PltSection::INIT_SIZE;
-  u32 gotplt_idx = GotPltSection::INIT_SIZE;
-  u32 relplt_idx = 0;
-
   for (Symbol *sym : out::dynsyms) {
     if (sym->flags & Symbol::NEEDS_GOT)
       out::got->add_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_PLT) {
-      sym->plt_idx = plt_idx++;
-
-      if (sym->got_idx == -1) {
-        sym->gotplt_idx = gotplt_idx++;
-        sym->relplt_idx = relplt_idx++;
-      }
-
-      if (!config.is_static)
-        out::dynsym->add_symbol(sym);
-    }
-
-    if ((sym->flags & Symbol::NEEDS_TLSGD) || (sym->flags & Symbol::NEEDS_TLSLD))
-      error("not implemented");
+    if (sym->flags & Symbol::NEEDS_PLT)
+      out::plt->add_symbol(sym);
 
     if (sym->flags & Symbol::NEEDS_GOTTPOFF)
       out::got->add_gottp_symbol(sym);
-  }
 
-  out::plt->shdr.sh_size = plt_idx * PLT_SIZE;
-  out::gotplt->shdr.sh_size = gotplt_idx * GOT_SIZE;
-  out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
-}
-
-static void write_got_plt() {
-  MyTimer t("write_synthetic", copy_timer);
-
-  u8 *got_buf = out::buf + out::got->shdr.sh_offset;
-  u8 *plt_buf = out::buf + out::plt->shdr.sh_offset;
-  u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset;
-
-  tbb::parallel_for_each(out::dynsyms, [&](Symbol *sym) {
-    if (sym->gotplt_idx != -1)
-      *(u64 *)(gotplt_buf + sym->gotplt_idx * GOT_SIZE) = sym->get_plt_addr() + 6;
-
-    if (sym->gotgd_idx != -1 || sym->gotld_idx != -1)
+    if ((sym->flags & Symbol::NEEDS_TLSGD) || (sym->flags & Symbol::NEEDS_TLSLD))
       error("not implemented");
-
-    if (sym->plt_idx != -1)
-      out::plt->write_entry(sym);
-
-    if (sym->relplt_idx != -1)
-      out::relplt->write_entry(sym);
-  });
+  }
 }
 
 static void write_merged_strings() {
@@ -831,9 +791,6 @@ int main(int argc, char **argv) {
       chunk->copy_buf();
     });
   }
-
-  // Fill .plt, .got, got.plt, .rela.plt sections
-  write_got_plt();
 
   // Fill mergeable string sections
   write_merged_strings();
