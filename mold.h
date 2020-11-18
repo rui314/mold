@@ -443,6 +443,7 @@ public:
   }
 
   void update_shdr() override;
+  void write_entry(Symbol *sym);
 };
 
 class RelDynSection : public OutputChunk {

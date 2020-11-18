@@ -396,21 +396,12 @@ static void scan_rels() {
     out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
 }
 
-static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
-  ELF64LE::Rela *rel = (ELF64LE::Rela *)buf;
-  memset(rel, 0, sizeof(*rel));
-  rel->setSymbolAndType(dynsym_idx, type, false);
-  rel->r_offset = addr;
-  rel->r_addend = addend;
-}
-
 static void write_got_plt() {
   MyTimer t("write_synthetic", copy_timer);
 
   u8 *got_buf = out::buf + out::got->shdr.sh_offset;
-  u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset;
   u8 *plt_buf = out::buf + out::plt->shdr.sh_offset;
-  u8 *relplt_buf = out::buf + out::relplt->shdr.sh_offset;
+  u8 *gotplt_buf = out::buf + out::gotplt->shdr.sh_offset;
 
   tbb::parallel_for_each(out::dynsyms, [&](Symbol *sym) {
     u32 reldyn_idx = sym->reldyn_idx;
@@ -419,12 +410,17 @@ static void write_got_plt() {
       if (config.is_static) {
         *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
       } else {
-        u8 *reldyn_buf = out::buf + out::reldyn->shdr.sh_offset;
-        write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
-                          R_X86_64_GLOB_DAT, sym->get_got_addr(),
-                          sym->dynsym_idx, 0);
+        auto *rel = (ELF64LE::Rela *)(out::buf + out::reldyn->shdr.sh_offset +
+                                      reldyn_idx++ * sizeof(ELF64LE::Rela));
+        memset(rel, 0, sizeof(*rel));
+        rel->setSymbol(sym->dynsym_idx, false);
+        rel->setType(R_X86_64_GLOB_DAT, false);
+        rel->r_offset = sym->get_got_addr();
       }
     }
+
+    if (sym->gotplt_idx != -1)
+      *(u64 *)(gotplt_buf + sym->gotplt_idx * GOT_SIZE) = sym->get_plt_addr() + 6;
 
     if (sym->gottp_idx != -1)
       *(u64 *)(got_buf + sym->gottp_idx * GOT_SIZE) = sym->get_addr() - out::tls_end;
@@ -435,18 +431,8 @@ static void write_got_plt() {
     if (sym->plt_idx != -1)
       out::plt->write_entry(sym);
 
-    if (sym->relplt_idx != -1) {
-      if (sym->type == STT_GNU_IFUNC) {
-        write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                          R_X86_64_IRELATIVE, sym->get_gotplt_addr(),
-                          sym->dynsym_idx, sym->get_addr());
-      } else {
-        write_dynamic_rel(relplt_buf + sym->relplt_idx * sizeof(ELF64LE::Rela),
-                          R_X86_64_JUMP_SLOT, sym->get_gotplt_addr(),
-                          sym->dynsym_idx, 0);
-        *(u64 *)(gotplt_buf + sym->gotplt_idx * GOT_SIZE) = sym->get_plt_addr() + 6;
-      }
-    }
+    if (sym->relplt_idx != -1)
+      out::relplt->write_entry(sym);
   });
 }
 

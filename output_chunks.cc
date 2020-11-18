@@ -397,6 +397,22 @@ void PltSection::write_entry(Symbol *sym) {
   }
 }
 
+
+void RelPltSection::write_entry(Symbol *sym) {
+  auto *rel = (ELF64LE::Rela *)(out::buf + out::relplt->shdr.sh_offset +
+                                sym->relplt_idx * sizeof(ELF64LE::Rela));
+  memset(rel, 0, sizeof(*rel));
+  rel->setSymbol(sym->dynsym_idx, false);
+  rel->r_offset = sym->get_gotplt_addr();
+
+  if (sym->type == STT_GNU_IFUNC) {
+    rel->setType(R_X86_64_IRELATIVE, false);
+    rel->r_addend = sym->get_addr();
+  } else {
+    rel->setType(R_X86_64_JUMP_SLOT, false);
+  }
+}
+
 void DynsymSection::add_symbol(Symbol *sym) {
   if (sym->dynsym_idx == -1) {
     sym->dynsym_idx = symbols.size() + 1;
