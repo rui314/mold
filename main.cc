@@ -358,13 +358,15 @@ static void scan_rels() {
   u32 reldyn_idx = 0;
 
   for (Symbol *sym : out::dynsyms) {
+    sym->reldyn_idx = reldyn_idx;
+
     if (sym->flags & Symbol::NEEDS_GOT) {
       llvm::outs() << "got=" << sym->name << "\n";
       sym->got_idx = got_idx++;
 
       if (!config.is_static) {
         out::dynsym->add_symbol(sym);
-        sym->reldyn_idx = reldyn_idx++;
+        reldyn_idx++;
       }
     }
 
@@ -374,7 +376,6 @@ static void scan_rels() {
       if (sym->got_idx == -1) {
         sym->gotplt_idx = gotplt_idx++;
         sym->relplt_idx = relplt_idx++;
-        sym->reldyn_idx = reldyn_idx++;
       }
 
       if (!config.is_static)
@@ -392,7 +393,8 @@ static void scan_rels() {
   out::plt->shdr.sh_size = plt_idx * PLT_SIZE;
   out::gotplt->shdr.sh_size = gotplt_idx * GOT_SIZE;
   out::relplt->shdr.sh_size = relplt_idx * sizeof(ELF64LE::Rela);
-  out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
+  if (out::reldyn)
+    out::reldyn->shdr.sh_size = reldyn_idx * sizeof(ELF64LE::Rela);
 }
 
 static void write_dynamic_rel(u8 *buf, u8 type, u64 addr, int dynsym_idx, u64 addend) {
@@ -412,12 +414,14 @@ static void write_got_plt() {
   u8 *relplt_buf = out::buf + out::relplt->shdr.sh_offset;
 
   tbb::parallel_for_each(out::dynsyms, [&](Symbol *sym) {
+    u32 reldyn_idx = sym->reldyn_idx;
+
     if (sym->got_idx != -1) {
       if (config.is_static) {
         *(u64 *)(got_buf + sym->got_idx * GOT_SIZE) = sym->get_addr();
       } else {
         u8 *reldyn_buf = out::buf + out::reldyn->shdr.sh_offset;
-        write_dynamic_rel(reldyn_buf + sym->reldyn_idx * sizeof(ELF64LE::Rela),
+        write_dynamic_rel(reldyn_buf + reldyn_idx++ * sizeof(ELF64LE::Rela),
                           R_X86_64_GLOB_DAT, sym->get_got_addr(),
                           sym->dynsym_idx, 0);
       }
