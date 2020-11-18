@@ -697,7 +697,7 @@ int main(int argc, char **argv) {
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
-  out::got = new SpecialSection(".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 8);
+  out::got = new GotSection;
   out::gotplt = new GotPltSection;
   out::relplt = new RelPltSection;
   out::strtab = new StrtabSection(".strtab", 0);

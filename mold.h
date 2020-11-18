@@ -401,6 +401,16 @@ public:
   }
 };
 
+class GotSection : public OutputChunk {
+public:
+  GotSection() : OutputChunk(SYNTHETIC) {
+    name = ".got";
+    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_addralign = GOT_SIZE;
+  }
+};
+
 class GotPltSection : public OutputChunk {
 public:
   GotPltSection() : OutputChunk(SYNTHETIC) {
@@ -604,7 +614,7 @@ inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
 inline OutputPhdr *phdr;
 inline InterpSection *interp;
-inline SpecialSection *got;
+inline GotSection *got;
 inline GotPltSection *gotplt;
 inline RelPltSection *relplt;
 inline RelDynSection *reldyn;
