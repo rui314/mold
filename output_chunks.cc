@@ -143,42 +143,6 @@ void InterpSection::copy_buf() {
   write_string(out::buf + shdr.sh_offset, config.dynamic_linker);
 }
 
-static std::vector<u64> create_dynamic_section() {
-  std::vector<u64> vec;
-
-  auto define = [&](u64 tag, u64 val) {
-    vec.push_back(tag);
-    vec.push_back(val);
-  };
-
-  int i = 1;
-  for (ObjectFile *file : out::files) {
-    if (!file->soname.empty()) {
-      define(DT_NEEDED, i);
-      i += file->soname.size() + 1;
-    }
-  }
-
-  define(DT_RELA, out::reldyn->shdr.sh_addr);
-  define(DT_RELASZ, out::reldyn->shdr.sh_size);
-  define(DT_RELAENT, sizeof(ELF64LE::Rela));
-  define(DT_JMPREL, out::relplt->shdr.sh_addr);
-  define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
-  define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
-  define(DT_PLTREL, DT_RELA);
-  define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
-  define(DT_SYMENT, sizeof(ELF64LE::Sym));
-  define(DT_STRTAB, out::dynstr->shdr.sh_addr);
-  define(DT_STRSZ, out::dynstr->shdr.sh_size);
-  define(DT_HASH, out::hash->shdr.sh_addr);
-  define(DT_INIT_ARRAY, out::__init_array_start->value);
-  define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
-  define(DT_FINI_ARRAY, out::__fini_array_start->value);
-  define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
-  define(DT_NULL, 0);
-  return vec;
-}
-
 void RelPltSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 }
@@ -274,6 +238,42 @@ void SymtabSection::copy_buf() {
     out::files[i]->write_local_symtab(local_symtab_off[i], local_strtab_off[i]);
     out::files[i]->write_global_symtab(global_symtab_off[i], global_strtab_off[i]);
   });
+}
+
+static std::vector<u64> create_dynamic_section() {
+  std::vector<u64> vec;
+
+  auto define = [&](u64 tag, u64 val) {
+    vec.push_back(tag);
+    vec.push_back(val);
+  };
+
+  int i = 1;
+  for (ObjectFile *file : out::files) {
+    if (!file->soname.empty()) {
+      define(DT_NEEDED, i);
+      i += file->soname.size() + 1;
+    }
+  }
+
+  define(DT_RELA, out::reldyn->shdr.sh_addr);
+  define(DT_RELASZ, out::reldyn->shdr.sh_size);
+  define(DT_RELAENT, sizeof(ELF64LE::Rela));
+  define(DT_JMPREL, out::relplt->shdr.sh_addr);
+  define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
+  define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
+  define(DT_PLTREL, DT_RELA);
+  define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
+  define(DT_SYMENT, sizeof(ELF64LE::Sym));
+  define(DT_STRTAB, out::dynstr->shdr.sh_addr);
+  define(DT_STRSZ, out::dynstr->shdr.sh_size);
+  define(DT_HASH, out::hash->shdr.sh_addr);
+  define(DT_INIT_ARRAY, out::__init_array_start->value);
+  define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
+  define(DT_FINI_ARRAY, out::__fini_array_start->value);
+  define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
+  define(DT_NULL, 0);
+  return vec;
 }
 
 void DynamicSection::update_shdr() {
