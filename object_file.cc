@@ -357,6 +357,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.getBinding() == STB_WEAK);
+    sym.is_imported = is_dso;
 
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(sym.file) +
@@ -442,6 +443,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.visibility = esym.getVisibility();
         sym.esym = &esym;
         sym.is_undef_weak = true;
+        sym.is_imported = !config.is_static;
 
         if (UNLIKELY(sym.traced))
           message("trace: " + toString(this) + ": unresolved weak symbol " + sym.name);

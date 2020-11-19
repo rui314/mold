@@ -512,7 +512,7 @@ void DynsymSection::copy_buf() {
     esym.setType(sym->type);
     esym.setBinding(sym->esym->getBinding());
 
-    if (sym->file->is_dso || sym->esym->isUndefined()) {
+    if (sym->is_imported || sym->esym->isUndefined()) {
       esym.st_shndx = SHN_UNDEF;
     } else if (!sym->input_section) {
       esym.st_shndx = SHN_ABS;
