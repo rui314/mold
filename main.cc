@@ -167,7 +167,6 @@ static void resolve_symbols() {
   tbb::parallel_for_each(out::files,
                          [](ObjectFile *file) { file->resolve_symbols(); });
 
-
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
   for (ObjectFile *file : out::files)
@@ -187,7 +186,7 @@ static void resolve_symbols() {
 
   // Convert weak symbols to absolute symbols with value 0.
   tbb::parallel_for_each(out::files, [](ObjectFile *file) {
-    file->hanlde_undefined_weak_symbols();
+    file->handle_undefined_weak_symbols();
   });
 }
 
