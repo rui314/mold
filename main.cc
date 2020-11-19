@@ -757,8 +757,9 @@ int main(int argc, char **argv) {
     if (out::chunks[i]->kind != OutputChunk::HEADER)
       out::chunks[i]->shndx = i + 1;
 
-  // Now that we have computed sizes and offsets for all output sections,
-  // so we can fix section header contents for all sections.
+  // Now that we have computed sizes for all sections and assigned
+  // section indices to them, so we can fix section header contents
+  // for all output sections.
   for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
