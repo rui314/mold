@@ -141,7 +141,7 @@ void read_file(StringRef path) {
     out::files.push_back(new ObjectFile(mb, ""));
     break;
   case file_magic::unknown:
-    parse_linker_script(mb.getBuffer());
+    parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
     break;
   default:
     error(path + ": unknown file type");
@@ -589,7 +589,7 @@ static int parse_filler(opt::InputArgList &args) {
   return (u8)ret;
 }
 
-static std::string find_library(StringRef name) {
+std::string find_library(StringRef name) {
   for (StringRef dir : config.library_paths) {
     if (std::string path = (dir + "/lib" + name + ".a").str(); fs::exists(path))
       return path;

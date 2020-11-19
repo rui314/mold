@@ -1,5 +1,13 @@
 #include "mold.h"
 
+#include "llvm/Support/FileSystem.h"
+
+using namespace llvm;
+using namespace llvm::sys;
+
+static thread_local StringRef script_path;
+static thread_local StringRef script_dir;
+
 static std::vector<StringRef> tokenize(StringRef input) {
   std::vector<StringRef> vec;
   while (!input.empty()) {
@@ -52,6 +60,21 @@ static ArrayRef<StringRef> read_output_format(ArrayRef<StringRef> tok) {
   return tok.slice(1);
 }
 
+static std::string resolve_path(StringRef str) {
+  if (str.startswith("/"))
+    return str.str();
+  if (str.startswith("-l"))
+    return find_library(str.substr(2));
+  if (std::string path = (script_dir + "/" + str).str(); fs::exists(path))
+    return path;
+  if (fs::exists(str))
+    return str.str();
+  for (StringRef dir : config.library_paths)
+    if (std::string path = (dir + "/" + str).str(); fs::exists(path))
+      return path;
+  error("library not found: " + str);
+}
+
 static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
   tok = skip(tok, "(");
 
@@ -61,7 +84,7 @@ static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
       continue;
     }
 
-    read_file(tok[0]);
+    read_file(resolve_path(tok[0]));
     tok = tok.slice(1);
   }
 
@@ -70,7 +93,10 @@ static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
   return tok.slice(1);
 }
 
-void parse_linker_script(StringRef input) {
+void parse_linker_script(StringRef path, StringRef input) {
+  script_path = path;
+  script_dir = path.substr(0, path.find_last_of('/'));
+
   std::vector<StringRef> vec = tokenize(input);
   ArrayRef<StringRef> tok = vec;
 

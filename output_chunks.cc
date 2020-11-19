@@ -267,7 +267,6 @@ static std::vector<u64> create_dynamic_section() {
     if (!file->soname.empty()) {
       define(DT_NEEDED, i);
       i += file->soname.size() + 1;
-      llvm::outs() << "file=" << file->name << " soname=" << file->soname << "\n";
     }
   }
 
