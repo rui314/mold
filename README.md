@@ -147,6 +147,19 @@ implemented and tested with benchmarks. Here is a brain dump:
   and the first process exits. The second process can take time to
   exit, because it is not an interactive process.
 
+- At least on Linux, it looks like the filesystem's performance to
+  allocate new blocks to a new file is the limiting factor when
+  creating a new large file and filling its contents using mmap.
+  If you already have a large file on a filesystem, writing to it is
+  much faster than creating a new fresh file and writing to it.
+  Based on this observation, mold should overwrite to an existing
+  executable file if exists. My quick benchmark showed that I could
+  save 300 milliseconds when creating a 2 GiB output file.
+
+  Linux doesn't allow to open an executable for writing if it is
+  running (you'll get "text busy" error if you attempt). mold should
+  fall back to the usual way if it fails to open an output file.
+
 - The output from the linker should be deterministic for the sake of
   [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
   and ease of debugging. This might add a little bit of overhead to
