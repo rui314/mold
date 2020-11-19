@@ -30,12 +30,14 @@ void ObjectFile::initialize_soname() {
       CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
 
     for (const ELF64LE::Dyn &dyn : tags) {
-      if (dyn.d_tag == DT_NEEDED) {
+      if (dyn.d_tag == DT_SONAME) {
         this->soname = StringRef(symbol_strtab.data() + dyn.d_un.d_val);
         return;
       }
     }
   }
+
+  this->soname = this->name;
 }
 
 void ObjectFile::initialize_sections() {
@@ -340,7 +342,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.input_section = isec;
     sym.piece_ref = sym_pieces[idx];
     sym.value = esym.st_value;
-    sym.type = esym.getType();
+    sym.type = (is_dso && esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
     sym.binding = esym.getBinding();
     sym.visibility = esym.getVisibility();
     sym.esym = &esym;
