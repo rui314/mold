@@ -25,3 +25,6 @@ defm trace_symbol: Eq<"trace-symbol", "Trace references to symbol">;
 def trace: F<"trace">, HelpText<"Print the name of each input file">;
 
 def filler: Separate<["--", "-"], "filler">;
+
+def: F<"as-needed">;
+def: F<"no-as-needed">;
