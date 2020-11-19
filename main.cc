@@ -116,6 +116,8 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
 }
 
 void read_file(StringRef path) {
+  path = *new std::string(path);
+
   int fd = open(path.str().c_str(), O_RDONLY);
   if (fd == -1)
     error("cannot open " + path);
