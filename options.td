@@ -26,5 +26,14 @@ def trace: F<"trace">, HelpText<"Print the name of each input file">;
 
 def filler: Separate<["--", "-"], "filler">;
 
+defm library: Eq<"library", "Root name of library to use">,
+  MetaVarName<"<libName>">;
+
+defm library_path: Eq<"library-path", "Add a directory to the library search path">,
+   MetaVarName<"<dir>">;
+
+def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library">;
+def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
+
 def: F<"as-needed">;
 def: F<"no-as-needed">;

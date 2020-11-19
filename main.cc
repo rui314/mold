@@ -566,6 +566,13 @@ static int get_thread_count(InputArgList &args) {
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 }
 
+std::vector<StringRef> get_args(opt::InputArgList &args, int id) {
+  std::vector<StringRef> vec;
+  for (auto *arg : args.filtered(id))
+    vec.push_back(arg->getValue());
+  return vec;
+}
+
 static int parse_filler(opt::InputArgList &args) {
   auto *arg = args.getLastArg(OPT_filler);
   if (!arg)
@@ -598,6 +605,7 @@ int main(int argc, char **argv) {
   config.print_map = args.hasArg(OPT_print_map);
   config.is_static = args.hasArg(OPT_static);
   config.filler = parse_filler(args);
+  config.library_paths = get_args(args, OPT_library_path);
 
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
