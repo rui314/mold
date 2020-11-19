@@ -632,7 +632,7 @@ int main(int argc, char **argv) {
   out::got = new GotSection;
   out::gotplt = new GotPltSection;
   out::relplt = new RelPltSection;
-  out::strtab = new StrtabSection(".strtab", 0);
+  out::strtab = new StrtabSection;
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
   out::symtab = new SymtabSection;

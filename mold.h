@@ -478,10 +478,9 @@ public:
 
 class StrtabSection : public OutputChunk {
 public:
-  StrtabSection(StringRef name, u64 flags) : OutputChunk(SYNTHETIC) {
-    this->name = name;
+  StrtabSection() : OutputChunk(SYNTHETIC) {
+    name = ".strtab";
     shdr.sh_type = llvm::ELF::SHT_STRTAB;
-    shdr.sh_flags = flags;
     shdr.sh_addralign = 1;
     shdr.sh_size = 1;
   }
