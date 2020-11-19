@@ -309,6 +309,15 @@ void ObjectFile::parse() {
   }
 }
 
+// Symbols with higher priorities overwrites symbols with lower priorities.
+// Here is the list of priorities, from the highest to the lowest.
+//
+//  1. Strong defined symbol
+//  2. Weak defined symbol
+//  3. Defined symbol in an archive member
+//  4. Unclaimed (nonexistent) symbol
+//
+// Ties are broken by file priority.
 static u64 get_rank(ObjectFile *file, const ELF64LE::Sym &esym) {
   if (esym.isUndefined()) {
     assert(esym.getBinding() == STB_WEAK);
@@ -351,8 +360,9 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.is_dso = is_dso;
 
     if (UNLIKELY(sym.traced))
-      llvm::outs() << "trace: " << toString(sym.file) << ": definition of "
-                   << sym.name << "\n";
+      message("trace: " + toString(sym.file) +
+              (sym.is_weak ? ": weak definition of " : ": definition of ") +
+              sym.name);
   }
 }
 
@@ -373,6 +383,9 @@ void ObjectFile::resolve_symbols() {
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
         sym.is_placeholder = true;
+
+        if (UNLIKELY(sym.traced))
+          message("trace: " + toString(sym.file) + ": lazy definition of " + sym.name);
       }
     } else {
       maybe_override_symbol(esym, sym, i);
@@ -382,6 +395,8 @@ void ObjectFile::resolve_symbols() {
 
 void
 ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+  assert(is_alive);
+
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
