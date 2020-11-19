@@ -357,7 +357,6 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.getBinding() == STB_WEAK);
-    sym.is_dso = is_dso;
 
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(sym.file) +
