@@ -3,6 +3,7 @@
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileOutputBuffer.h"
+#include "llvm/Support/FileSystem.h"
 
 #include <fcntl.h>
 #include <iostream>
@@ -14,6 +15,7 @@
 
 using namespace llvm;
 using namespace llvm::ELF;
+using namespace llvm::sys;
 
 using llvm::object::Archive;
 using llvm::opt::InputArgList;
@@ -587,6 +589,17 @@ static int parse_filler(opt::InputArgList &args) {
   return (u8)ret;
 }
 
+static std::string find_library(StringRef name) {
+  for (StringRef dir : config.library_paths) {
+    if (std::string path = (dir + "/lib" + name + ".a").str(); fs::exists(path))
+      return path;
+    if (!config.is_static)
+      if (std::string path = (dir + "/lib" + name + ".so").str(); fs::exists(path))
+        return path;
+  }
+  error("library not found: " + name);
+}
+
 int main(int argc, char **argv) {
   // Parse command line options
   MyOptTable opt_table;
@@ -613,9 +626,16 @@ int main(int argc, char **argv) {
   // Open input files
   {
     MyTimer t("open", parse_timer);
-    for (auto *arg : args)
-      if (arg->getOption().getID() == OPT_INPUT)
+    for (auto *arg : args) {
+      switch (arg->getOption().getID()) {
+      case OPT_INPUT:
         read_file(arg->getValue());
+        break;
+      case OPT_library:
+        read_file(find_library(arg->getValue()));
+        break;
+      }
+    }
   }
 
   // Parse input files
