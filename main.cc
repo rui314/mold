@@ -753,10 +753,12 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::shdr);
 
   // Set section indices.
-  for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
+  for (int i = 0; i < out::chunks.size(); i++)
     if (out::chunks[i]->kind != OutputChunk::HEADER)
-      out::chunks[i]->shndx = shndx++;
+      out::chunks[i]->shndx = i + 1;
 
+  // Now that we have computed sizes and offsets for all output sections,
+  // so we can fix section header contents for all sections.
   for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
