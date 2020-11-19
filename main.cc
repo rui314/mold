@@ -113,7 +113,7 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   return vec;
 }
 
-static void read_file(StringRef path) {
+void read_file(StringRef path) {
   int fd = open(path.str().c_str(), O_RDONLY);
   if (fd == -1)
     error("cannot open " + path);
@@ -137,6 +137,9 @@ static void read_file(StringRef path) {
   case file_magic::elf_relocatable:
   case file_magic::elf_shared_object:
     out::files.push_back(new ObjectFile(mb, ""));
+    break;
+  case file_magic::unknown:
+    parse_linker_script(mb.getBuffer());
     break;
   default:
     error(path + ": unknown file type");
@@ -541,7 +544,7 @@ static u8 *open_output_file(u64 filesize) {
     error("cannot open " + config.output + ": " + strerror(errno));
 
   if (ftruncate(fd, filesize))
-    error("ftruncate");
+    error("ftruncate failed");
 
   void *buf = mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (buf == MAP_FAILED)

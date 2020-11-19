@@ -801,6 +801,12 @@ inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
 }
 
 //
+// linker_script.cc
+//
+
+void parse_linker_script(StringRef input);
+
+//
 // perf.cc
 //
 
@@ -837,3 +843,8 @@ private:
 //
 
 void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections);
+
+//
+// main.cc
+//
+void read_file(StringRef path);
