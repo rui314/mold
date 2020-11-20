@@ -643,7 +643,8 @@ static int parse_filler(opt::InputArgList &args) {
 
 std::string find_library(StringRef name) {
   for (StringRef dir : config.library_paths) {
-    std::string stem = (config.sysroot + dir + "/lib" + name).str();
+    std::string root = dir.startswith("/") ? config.sysroot : "";
+    std::string stem = (root + dir + "/lib" + name).str();
     if (!config.is_static)
       if (fs::exists(stem + ".so"))
         return stem + ".so";
@@ -672,9 +673,7 @@ int main(int argc, char **argv) {
   config.is_static = args.hasArg(OPT_static);
   config.library_paths = get_args(args, OPT_library_path);
   config.print_map = args.hasArg(OPT_print_map);
-
-  if (auto *arg = args.getLastArg(OPT_sysroot))
-    config.sysroot = (Twine(arg->getValue()) + "/").str();
+  config.sysroot = args.getLastArgValue(OPT_sysroot, "");
 
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
@@ -688,7 +687,6 @@ int main(int argc, char **argv) {
         read_file(arg->getValue());
         break;
       case OPT_library:
-        message("lib " + find_library(arg->getValue()));
         read_file(find_library(arg->getValue()));
         break;
       }

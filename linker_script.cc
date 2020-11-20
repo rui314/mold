@@ -62,16 +62,18 @@ static ArrayRef<StringRef> read_output_format(ArrayRef<StringRef> tok) {
 
 static std::string resolve_path(StringRef str) {
   if (str.startswith("/"))
-    return str.str();
+    return (config.sysroot + str).str();
   if (str.startswith("-l"))
     return find_library(str.substr(2));
   if (std::string path = (script_dir + "/" + str).str(); fs::exists(path))
     return path;
   if (fs::exists(str))
     return str.str();
-  for (StringRef dir : config.library_paths)
-    if (std::string path = (config.sysroot + dir + "/" + str).str(); fs::exists(path))
+  for (StringRef dir : config.library_paths) {
+    std::string root = dir.startswith("/") ? config.sysroot : "";
+    if (std::string path = (root + dir + "/" + str).str(); fs::exists(path))
       return path;
+  }
   error("library not found: " + str);
 }
 
@@ -84,7 +86,6 @@ static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
       continue;
     }
 
-    message("from script: " + resolve_path(tok[0]));
     read_file(resolve_path(tok[0]));
     tok = tok.slice(1);
   }
@@ -95,7 +96,6 @@ static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
 }
 
 void parse_linker_script(StringRef path, StringRef input) {
-  message("script: " + path);
   script_path = path;
   script_dir = path.substr(0, path.find_last_of('/'));
 
