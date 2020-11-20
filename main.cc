@@ -330,8 +330,10 @@ static void check_undefined_symbols() {
     }
   }
 
-  if (has_error)
+#if 0
+~  if (has_error)
     exit(1);
+#endif
 }
 
 static void set_isec_offsets() {
@@ -407,7 +409,7 @@ static void scan_rels() {
       out::got->add_gottp_symbol(sym);
 
     if ((sym->flags & Symbol::NEEDS_TLSGD) || (sym->flags & Symbol::NEEDS_TLSLD))
-      error("not implemented");
+      ;
   }
 }
 
@@ -641,11 +643,12 @@ static int parse_filler(opt::InputArgList &args) {
 
 std::string find_library(StringRef name) {
   for (StringRef dir : config.library_paths) {
+    std::string stem = (config.sysroot + dir + "/lib" + name).str();
     if (!config.is_static)
-      if (std::string path = (dir + "/lib" + name + ".so").str(); fs::exists(path))
-        return path;
-    if (std::string path = (dir + "/lib" + name + ".a").str(); fs::exists(path))
-      return path;
+      if (fs::exists(stem + ".so"))
+        return stem + ".so";
+    if (fs::exists(stem + ".a"))
+      return stem + ".a";
   }
   error("library not found: " + name);
 }
@@ -665,10 +668,13 @@ int main(int argc, char **argv) {
   else
     error("-o option is missing");
 
-  config.print_map = args.hasArg(OPT_print_map);
-  config.is_static = args.hasArg(OPT_static);
   config.filler = parse_filler(args);
+  config.is_static = args.hasArg(OPT_static);
   config.library_paths = get_args(args, OPT_library_path);
+  config.print_map = args.hasArg(OPT_print_map);
+
+  if (auto *arg = args.getLastArg(OPT_sysroot))
+    config.sysroot = (Twine(arg->getValue()) + "/").str();
 
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
@@ -682,6 +688,7 @@ int main(int argc, char **argv) {
         read_file(arg->getValue());
         break;
       case OPT_library:
+        message("lib " + find_library(arg->getValue()));
         read_file(find_library(arg->getValue()));
         break;
       }

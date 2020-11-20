@@ -35,6 +35,9 @@ void InputSection::copy_buf() {
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
     u8 *loc = base + rel.r_offset;
 
+    if (!sym.file)
+      continue;
+
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
     u64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = sh_addr + rel.r_offset;
@@ -113,6 +116,8 @@ void InputSection::scan_relocations() {
 
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
+    if (!sym->file)
+      continue;
     assert(sym->file);
 
     switch (rel.getType(false)) {

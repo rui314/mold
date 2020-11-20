@@ -32,6 +32,8 @@ defm library: Eq<"library", "Root name of library to use">,
 defm library_path: Eq<"library-path", "Add a directory to the library search path">,
    MetaVarName<"<dir>">;
 
+defm sysroot: Eq<"sysroot", "Set the system root">;
+
 def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library">;
 def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
 
