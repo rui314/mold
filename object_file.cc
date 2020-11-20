@@ -160,6 +160,10 @@ void ObjectFile::initialize_symbols() {
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    int pos = name.find('@');
+    if (pos != StringRef::npos)
+      name = name.substr(0, pos);
+
     symbols.push_back(Symbol::intern(name));
 
     if (esym.isCommon())
