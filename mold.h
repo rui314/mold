@@ -849,5 +849,7 @@ void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sect
 // main.cc
 //
 
-std::string find_library(StringRef name);
-void read_file(StringRef path);
+MemoryBufferRef find_library(const Twine &path);
+MemoryBufferRef *open_input_file(const Twine &path);
+MemoryBufferRef must_open_input_file(const Twine &path);
+void read_file(MemoryBufferRef mb);

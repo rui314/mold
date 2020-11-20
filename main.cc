@@ -116,12 +116,10 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   return vec;
 }
 
-void read_file(StringRef path) {
-  path = *new std::string(path);
-
+MemoryBufferRef *open_input_file(const Twine &path) {
   int fd = open(path.str().c_str(), O_RDONLY);
   if (fd == -1)
-    error("cannot open " + path);
+    return nullptr;
 
   struct stat st;
   if (fstat(fd, &st) == -1)
@@ -132,12 +130,22 @@ void read_file(StringRef path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  auto &mb = *new MemoryBufferRef(StringRef((char *)addr, st.st_size), path);
+  return new MemoryBufferRef(StringRef((char *)addr, st.st_size),
+                             *new std::string(path.str()));
+}
 
+MemoryBufferRef must_open_input_file(const Twine &path) {
+  MemoryBufferRef *mb = open_input_file(path);
+  if (!mb)
+    error("cannot open " + path);
+  return *mb;
+}
+
+void read_file(MemoryBufferRef mb) {
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : get_archive_members(mb))
-      out::files.push_back(new ObjectFile(member, path));
+      out::files.push_back(new ObjectFile(member, mb.getBufferIdentifier()));
     break;
   case file_magic::elf_relocatable:
   case file_magic::elf_shared_object:
@@ -147,7 +155,7 @@ void read_file(StringRef path) {
     parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
     break;
   default:
-    error(path + ": unknown file type");
+    error(mb.getBufferIdentifier() + ": unknown file type");
   }
 }
 
@@ -641,15 +649,15 @@ static int parse_filler(opt::InputArgList &args) {
   return (u8)ret;
 }
 
-std::string find_library(StringRef name) {
+MemoryBufferRef find_library(const Twine &name) {
   for (StringRef dir : config.library_paths) {
     std::string root = dir.startswith("/") ? config.sysroot : "";
     std::string stem = (root + dir + "/lib" + name).str();
     if (!config.is_static)
-      if (fs::exists(stem + ".so"))
-        return stem + ".so";
-    if (fs::exists(stem + ".a"))
-      return stem + ".a";
+      if (MemoryBufferRef *mb = open_input_file(stem + ".so"))
+        return *mb;
+    if (MemoryBufferRef *mb = open_input_file(stem + ".a"))
+      return *mb;
   }
   error("library not found: " + name);
 }
@@ -684,7 +692,7 @@ int main(int argc, char **argv) {
     for (auto *arg : args) {
       switch (arg->getOption().getID()) {
       case OPT_INPUT:
-        read_file(arg->getValue());
+        read_file(must_open_input_file(arg->getValue()));
         break;
       case OPT_library:
         read_file(find_library(arg->getValue()));

@@ -60,19 +60,19 @@ static ArrayRef<StringRef> read_output_format(ArrayRef<StringRef> tok) {
   return tok.slice(1);
 }
 
-static std::string resolve_path(StringRef str) {
+static MemoryBufferRef resolve_path(StringRef str) {
   if (str.startswith("/"))
-    return (config.sysroot + str).str();
+    return must_open_input_file(config.sysroot + str);
   if (str.startswith("-l"))
     return find_library(str.substr(2));
   if (std::string path = (script_dir + "/" + str).str(); fs::exists(path))
-    return path;
-  if (fs::exists(str))
-    return str.str();
+    return must_open_input_file(path);
+  if (MemoryBufferRef *mb = open_input_file(str))
+    return *mb;
   for (StringRef dir : config.library_paths) {
     std::string root = dir.startswith("/") ? config.sysroot : "";
-    if (std::string path = (root + dir + "/" + str).str(); fs::exists(path))
-      return path;
+    if (MemoryBufferRef *mb = open_input_file(root + dir + "/" + str))
+      return *mb;
   }
   error("library not found: " + str);
 }
