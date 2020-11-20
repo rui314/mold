@@ -286,6 +286,19 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);
   define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
+
+  auto find = [](StringRef name) -> OutputChunk * {
+    for (OutputChunk *chunk : out::chunks)
+      if (chunk->name == name)
+        return chunk;
+    return nullptr;
+  };
+
+  if (OutputChunk *chunk = find(".init"))
+    define(DT_INIT, chunk->shdr.sh_addr);
+  if (OutputChunk *chunk = find(".fini"))
+    define(DT_FINI, chunk->shdr.sh_addr);
+
   define(DT_NULL, 0);
   return vec;
 }

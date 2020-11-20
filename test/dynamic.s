@@ -11,7 +11,7 @@
 // RUN:   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 // RUN: readelf --dynamic %t.exe | FileCheck %s
-// CHECK: Dynamic section at offset 0x2080 contains 20 entries:
+// CHECK: Dynamic section at offset 0x2080 contains 22 entries:
 // CHECK:   Tag        Type                         Name/Value
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
@@ -32,6 +32,8 @@
 // CHECK:  0x000000000000001b (INIT_ARRAYSZ)       8 (bytes)
 // CHECK:  0x000000000000001a (FINI_ARRAY)         0x202020
 // CHECK:  0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)
+// CHECK:  0x000000000000000c (INIT)               0x201010
+// CHECK:  0x000000000000000d (FINI)               0x201000
 // CHECK:  0x0000000000000000 (NULL)               0x0
 
 // RUN: readelf --symbols --use-dynamic %t.exe | FileCheck --check-prefix=DYNAMIC %s
