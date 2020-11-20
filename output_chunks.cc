@@ -146,22 +146,23 @@ void InterpSection::copy_buf() {
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
-  if (!config.is_static)
-    for (Symbol *sym : out::got->got_syms)
+  for (Symbol *sym : out::got->got_syms)
+    if (sym->is_imported)
       shdr.sh_size += sizeof(ELF64LE::Rela);
 }
 
 void RelDynSection::copy_buf() {
   ELF64LE::Rela *rel = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
 
-  if (!config.is_static) {
-    for (Symbol *sym : out::got->got_syms) {
-      memset(rel, 0, sizeof(*rel));
-      rel->setSymbol(sym->dynsym_idx, false);
-      rel->setType(R_X86_64_GLOB_DAT, false);
-      rel->r_offset = sym->get_got_addr();
-      rel++;
-    }
+  for (Symbol *sym : out::got->got_syms) {
+    if (!sym->is_imported)
+      continue;
+
+    memset(rel, 0, sizeof(*rel));
+    rel->setSymbol(sym->dynsym_idx, false);
+    rel->setType(R_X86_64_GLOB_DAT, false);
+    rel->r_offset = sym->get_got_addr();
+    rel++;
   }
 }
 
@@ -399,7 +400,7 @@ void GotSection::copy_buf() {
   memset(buf, 0, shdr.sh_size);
 
   for (Symbol *sym : got_syms)
-    if (sym->is_imported)
+    if (!sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
 
   for (Symbol *sym : gottp_syms)
@@ -429,10 +430,9 @@ void PltSection::add_symbol(Symbol *sym) {
 
     sym->relplt_idx = out::relplt->shdr.sh_size / sizeof(ELF64LE::Rela);
     out::relplt->shdr.sh_size += sizeof(ELF64LE::Rela);
-  }
 
-  if (sym->is_imported)
     out::dynsym->add_symbol(sym);
+  }
 }
 
 void PltSection::copy_buf() {
