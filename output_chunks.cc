@@ -401,7 +401,8 @@ void GotPltSection::copy_buf() {
   buf[2] = 0;
 
   for (Symbol *sym : out::plt->symbols)
-    buf[sym->gotplt_idx] = sym->get_plt_addr() + 6;
+    if (sym->gotplt_idx != -1)
+      buf[sym->gotplt_idx] = sym->get_plt_addr() + 6;
 }
 
 void PltSection::add_symbol(Symbol *sym) {

@@ -422,7 +422,7 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
 }
 
 void ObjectFile::handle_undefined_weak_symbols() {
-  if (!is_alive)
+  if (!is_alive || is_dso)
     return;
 
   for (int i = first_global; i < symbols.size(); i++) {

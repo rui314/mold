@@ -230,7 +230,7 @@ public:
 
   enum {
     NEEDS_GOT      = 1 << 0,
-    NEEDS_PLT      =1 << 1,
+    NEEDS_PLT      = 1 << 1,
     NEEDS_GOTTPOFF = 1 << 2,
     NEEDS_TLSGD    = 1 << 3,
     NEEDS_TLSLD    = 1 << 4,
