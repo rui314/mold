@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <unordered_set>
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -641,6 +642,19 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(out::files, [](ObjectFile *file) { file->parse(); });
   }
 
+  // Uniquify shared object files with soname
+  {
+    llvm::StringSet<> seen;
+    for (auto it = out::files.begin(); it != out::files.end();) {
+      StringRef soname = (*it)->soname;
+      if (!soname.empty() && !seen.insert(soname).second)
+        out::files.erase(it);
+      else
+        it++;
+    }
+  }
+
+  // Parse mergeable string sections
   {
     MyTimer t("merge", parse_timer);
     tbb::parallel_for_each(out::files, [](ObjectFile *file) {
@@ -741,7 +755,7 @@ int main(int argc, char **argv) {
       out::chunks.push_back(osec);
 
   out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
-                                   [](OutputChunk *c){ return !c; }),
+                                   [](OutputChunk *c) { return !c; }),
                     out::chunks.end());
 
   // Sort the sections by section flags so that we'll have to create
