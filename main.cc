@@ -671,6 +671,19 @@ int main(int argc, char **argv) {
     out::hash = new HashSection;
   }
 
+  out::chunks.push_back(out::got);
+  out::chunks.push_back(out::plt);
+  out::chunks.push_back(out::gotplt);
+  out::chunks.push_back(out::relplt);
+  out::chunks.push_back(out::reldyn);
+  out::chunks.push_back(out::dynamic);
+  out::chunks.push_back(out::dynsym);
+  out::chunks.push_back(out::dynstr);
+  out::chunks.push_back(out::shstrtab);
+  out::chunks.push_back(out::symtab);
+  out::chunks.push_back(out::strtab);
+  out::chunks.push_back(out::hash);
+
   // Set priorities to files
   int priority = 1;
   for (ObjectFile *file : out::files)
@@ -727,10 +740,22 @@ int main(int argc, char **argv) {
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
 
+  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
+                                   [](OutputChunk *c){ return !c; }),
+                    out::chunks.end());
+
+  // Sort the sections by section flags so that we'll have to create
+  // as few segments as possible.
+  std::stable_sort(out::chunks.begin(), out::chunks.end(),
+                   [](OutputChunk *a, OutputChunk *b) {
+                     return get_section_rank(a->shdr) < get_section_rank(b->shdr);
+                   });
+
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
   ObjectFile *internal_file = ObjectFile::create_internal_file();
   internal_file->priority = priority++;
+  internal_file->resolve_symbols();
   out::files.push_back(internal_file);
 
   // Convert weak symbols to absolute symbols with value 0.
@@ -745,35 +770,6 @@ int main(int argc, char **argv) {
     if (file->is_alive && file->is_dso)
       out::dynstr->add_string(file->soname);
 
-  // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
-  // .rela.dyn, .rela.plt.
-  scan_rels();
-
-  // Add synthetic sections.
-  out::chunks.push_back(out::got);
-  out::chunks.push_back(out::plt);
-  out::chunks.push_back(out::gotplt);
-  out::chunks.push_back(out::relplt);
-  out::chunks.push_back(out::reldyn);
-  out::chunks.push_back(out::dynamic);
-  out::chunks.push_back(out::dynsym);
-  out::chunks.push_back(out::dynstr);
-  out::chunks.push_back(out::shstrtab);
-  out::chunks.push_back(out::symtab);
-  out::chunks.push_back(out::strtab);
-  out::chunks.push_back(out::hash);
-
-  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
-                                   [](OutputChunk *c){ return !c; }),
-                    out::chunks.end());
-
-  // Sort the sections by section flags so that we'll have to create
-  // as few segments as possible.
-  std::stable_sort(out::chunks.begin(), out::chunks.end(),
-                   [](OutputChunk *a, OutputChunk *b) {
-                     return get_section_rank(a->shdr) < get_section_rank(b->shdr);
-                   });
-
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
   out::chunks.insert(out::chunks.begin(), out::ehdr);
@@ -786,6 +782,10 @@ int main(int argc, char **argv) {
   for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
     if (out::chunks[i]->kind != OutputChunk::HEADER)
       out::chunks[i]->shndx = shndx++;
+
+  // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
+  // .rela.dyn, .rela.plt.
+  scan_rels();
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents

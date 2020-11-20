@@ -575,50 +575,37 @@ ObjectFile *ObjectFile::create_internal_file() {
   // Create linker-synthesized symbols.
   auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
   obj->symbols.push_back(new Symbol(""));
+  obj->first_global = 1;
   obj->is_alive = true;
 
-  auto add = [&](StringRef name, u8 binding, u8 visibility = STV_DEFAULT) {
-    Symbol *sym = Symbol::intern(name);
-    sym->file = obj;
-    obj->symbols.push_back(sym);
-
+  auto add = [&](StringRef name, u8 visibility = STV_DEFAULT) {
     ELF64LE::Sym esym = {};
     esym.setType(STT_NOTYPE);
-    esym.setBinding(binding);
+    esym.st_shndx = SHN_ABS;
+    esym.setBinding(STB_GLOBAL);
     esym.setVisibility(visibility);
     elf_syms->push_back(esym);
+
+    Symbol *sym = Symbol::intern(name);
+    obj->symbols.push_back(sym);
     return sym;
   };
 
-  // Add local symbols
-  out::__ehdr_start = add("__ehdr_start", STB_LOCAL);
-  out::__rela_iplt_start = add("__rela_iplt_start", STB_LOCAL);
-  out::__rela_iplt_end = add("__rela_iplt_end", STB_LOCAL);
-  out::__init_array_start = add("__init_array_start", STB_LOCAL);
-  out::__init_array_end = add("__init_array_end", STB_LOCAL);
-  out::__fini_array_start = add("__fini_array_start", STB_LOCAL);
-  out::__fini_array_end = add("__fini_array_end", STB_LOCAL);
-  out::__preinit_array_start = add("__preinit_array_start", STB_LOCAL);
-  out::__preinit_array_end = add("__preinit_array_end", STB_LOCAL);
-  out::_DYNAMIC = add("_DYNAMIC", STB_LOCAL, STV_HIDDEN);
-  out::_GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STB_LOCAL);
-
-  // Update metadata
-  for (int i = 1; i < obj->symbols.size(); i++)
-    obj->local_strtab_size += obj->symbols[i]->name.size() + 1;
-  obj->local_symtab_size = sizeof(ELF64LE::Sym) * (obj->symbols.size() - 1);
-  obj->first_global = obj->symbols.size();
-
-  // Add global symbols
-  out::__bss_start = add("__bss_start", STB_GLOBAL);
-  out::_end = add("_end", STB_GLOBAL);
-  out::_etext = add("_etext", STB_GLOBAL);
-  out::_edata = add("_edata", STB_GLOBAL);
-
-  std::sort(out::chunks.begin(), out::chunks.end(),
-            [](OutputChunk *x, OutputChunk *y) {
-              return x->name < y->name;
-            });
+  out::__ehdr_start = add("__ehdr_start", STV_HIDDEN);
+  out::__rela_iplt_start = add("__rela_iplt_start", STV_HIDDEN);
+  out::__rela_iplt_end = add("__rela_iplt_end", STV_HIDDEN);
+  out::__init_array_start = add("__init_array_start", STV_HIDDEN);
+  out::__init_array_end = add("__init_array_end", STV_HIDDEN);
+  out::__fini_array_start = add("__fini_array_start", STV_HIDDEN);
+  out::__fini_array_end = add("__fini_array_end", STV_HIDDEN);
+  out::__preinit_array_start = add("__preinit_array_start", STV_HIDDEN);
+  out::__preinit_array_end = add("__preinit_array_end", STV_HIDDEN);
+  out::_DYNAMIC = add("_DYNAMIC", STV_HIDDEN);
+  out::_GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STV_HIDDEN);
+  out::__bss_start = add("__bss_start", STV_HIDDEN);
+  out::_end = add("_end", STV_HIDDEN);
+  out::_etext = add("_etext", STV_HIDDEN);
+  out::_edata = add("_edata", STV_HIDDEN);
 
   for (OutputChunk *chunk : out::chunks) {
     if (!is_c_identifier(chunk->name))
@@ -626,14 +613,12 @@ ObjectFile *ObjectFile::create_internal_file() {
 
     auto *start = new std::string(("__start_" + chunk->name).str());
     auto *stop = new std::string(("__stop_" + chunk->name).str());
-    add(*start, STB_GLOBAL);
-    add(*stop, STB_GLOBAL);
+    add(*start, STV_HIDDEN);
+    add(*stop, STV_HIDDEN);
   }
 
   obj->elf_syms = *elf_syms;
-
-  for (int i = 0; i < obj->symbols.size(); i++)
-    obj->symbols[i]->esym = &obj->elf_syms[i];
+  obj->sym_pieces.resize(elf_syms->size());
   return obj;
 }
 
