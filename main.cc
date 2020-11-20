@@ -589,11 +589,11 @@ static int parse_filler(opt::InputArgList &args) {
 
 std::string find_library(StringRef name) {
   for (StringRef dir : config.library_paths) {
-    if (std::string path = (dir + "/lib" + name + ".a").str(); fs::exists(path))
-      return path;
     if (!config.is_static)
       if (std::string path = (dir + "/lib" + name + ".so").str(); fs::exists(path))
         return path;
+    if (std::string path = (dir + "/lib" + name + ".a").str(); fs::exists(path))
+      return path;
   }
   error("library not found: " + name);
 }
