@@ -117,3 +117,18 @@ it first aligns the end of the thread-local variable area address to
 alignment, `%fs` is set to a wrong place.
 
 I fixed `PT_TLS` alignment, and the bug was gone.
+
+## stdio buffering (another issue)
+
+I noticed that a dynamically-linked "hello world" program didn't
+flush its stdout buffer on exit. The cause of the problem was that the
+executable had more than one DT_NEEDED entry for `libc.so`.
+
+DT_NEEDED entries in `.dynamic` section specify a list of shared
+object file names which need to be linked at runtime. I added one
+DT_NEEDED entry for each library specified with the `-l` option.
+The pitfall is, unlike object files, libraries are allowed to
+appear more than once in a command line, and the linker has to
+de-duplicate them before processing. Adding more than one DT_NEEDED
+entry for the same shared object is illegal and causes mysterious
+issues like this.
