@@ -137,7 +137,7 @@ void InputSection::scan_relocations() {
       sym->flags |= Symbol::NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
-      if (!config.is_static || sym->type == STT_GNU_IFUNC)
+      if (sym->type == STT_GNU_IFUNC || sym->is_imported)
         sym->flags |= Symbol::NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:

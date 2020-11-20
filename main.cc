@@ -187,11 +187,6 @@ static void resolve_symbols() {
   out::files.erase(std::remove_if(out::files.begin(), out::files.end(),
                                   [](ObjectFile *file){ return !file->is_alive; }),
                    out::files.end());
-
-  // Convert weak symbols to absolute symbols with value 0.
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
-    file->handle_undefined_weak_symbols();
-  });
 }
 
 static void eliminate_comdats() {
@@ -737,6 +732,11 @@ int main(int argc, char **argv) {
   ObjectFile *internal_file = ObjectFile::create_internal_file();
   internal_file->priority = priority++;
   out::files.push_back(internal_file);
+
+  // Convert weak symbols to absolute symbols with value 0.
+  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+    file->handle_undefined_weak_symbols();
+  });
 
   // Beyond this point, no new symbols will be added to the result.
 

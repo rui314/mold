@@ -631,6 +631,9 @@ ObjectFile *ObjectFile::create_internal_file() {
   }
 
   obj->elf_syms = *elf_syms;
+
+  for (int i = 0; i < obj->symbols.size(); i++)
+    obj->symbols[i]->esym = &obj->elf_syms[i];
   return obj;
 }
 
