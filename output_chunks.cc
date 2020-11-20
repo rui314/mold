@@ -384,7 +384,7 @@ void GotSection::add_symbol(Symbol *sym) {
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
 
-  if (!config.is_static)
+  if (sym->is_imported)
     out::dynsym->add_symbol(sym);
 }
 
@@ -398,8 +398,8 @@ void GotSection::copy_buf() {
   u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
-  if (config.is_static)
-    for (Symbol *sym : got_syms)
+  for (Symbol *sym : got_syms)
+    if (sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
 
   for (Symbol *sym : gottp_syms)
@@ -431,7 +431,7 @@ void PltSection::add_symbol(Symbol *sym) {
     out::relplt->shdr.sh_size += sizeof(ELF64LE::Rela);
   }
 
-  if (!config.is_static)
+  if (sym->is_imported)
     out::dynsym->add_symbol(sym);
 }
 
