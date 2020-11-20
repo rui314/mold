@@ -113,8 +113,6 @@ void InputSection::scan_relocations() {
 
   for (const ELF64LE::Rela &rel : rels) {
     Symbol *sym = file->symbols[rel.getSymbol(false)];
-    if (!sym->file)
-      error("ERROR:" + sym->name);
     assert(sym->file);
 
     switch (rel.getType(false)) {

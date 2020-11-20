@@ -535,6 +535,12 @@ static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
   }
 }
 
+static u32 get_umask() {
+  u32 mask = umask(0);
+  umask(mask);
+  return mask;
+}
+
 static u8 *open_output_file(u64 filesize) {
   MyTimer t("open_file", before_copy_timer);
 
@@ -544,6 +550,9 @@ static u8 *open_output_file(u64 filesize) {
 
   if (ftruncate(fd, filesize))
     error("ftruncate failed");
+
+  if (fchmod(fd, (0777 & ~get_umask())) == -1)
+    error("fchmod failed");
 
   void *buf = mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (buf == MAP_FAILED)

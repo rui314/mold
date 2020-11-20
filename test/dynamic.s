@@ -1,3 +1,4 @@
+// RUN: cc -o %t.o -c %s
 // RUN: mold -o %t.exe /usr/lib/x86_64-linux-gnu/crt1.o \
 // RUN:   /usr/lib/x86_64-linux-gnu/crti.o \
 // RUN:   /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
