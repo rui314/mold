@@ -291,6 +291,49 @@ static void bin_sections() {
   });
 }
 
+static void check_undefined_symbols() {
+  MyTimer t("check_undef_syms", before_copy_timer);
+  std::vector<bool> has_errors(out::files.size());
+
+  tbb::parallel_for(0, (int)out::files.size(), [&](int i) {
+    ObjectFile *file = out::files[i];
+    if (!file->is_alive || file->is_dso)
+      return;
+
+    for (int j = file->first_global; j < file->elf_syms.size(); j++) {
+      const ELF64LE::Sym &esym = file->elf_syms[j];
+      Symbol &sym = *file->symbols[j];
+      if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
+          (!sym.file || sym.is_placeholder)) {
+        has_errors[i] = true;
+        return;
+      }
+    }
+  });
+
+  bool has_error = false;
+
+  for (int i = 0; i < out::files.size(); i++) {
+    if (!has_errors[i])
+      continue;
+    has_error = true;
+
+    ObjectFile *file = out::files[i];
+
+    for (int j = file->first_global; j < file->elf_syms.size(); j++) {
+      const ELF64LE::Sym &esym = file->elf_syms[j];
+      Symbol &sym = *file->symbols[j];
+      if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
+          (!sym.file || sym.is_placeholder))
+        llvm::errs() << "undefined symbol: " << toString(file)
+                     << ": " << sym.name << "\n";
+    }
+  }
+
+  if (has_error)
+    exit(1);
+}
+
 static void set_isec_offsets() {
   MyTimer t("isec_offsets", before_copy_timer);
 
@@ -787,6 +830,9 @@ int main(int argc, char **argv) {
   });
 
   // Beyond this point, no new symbols will be added to the result.
+
+  // Make sure that all symbols have been resolved.
+  check_undefined_symbols();
 
   // Copy shared object name strings to .dynsym
   for (ObjectFile *file : out::files)
