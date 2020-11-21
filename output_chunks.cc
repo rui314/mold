@@ -471,6 +471,7 @@ void GotPltSection::copy_buf() {
 }
 
 void PltSection::add_symbol(Symbol *sym) {
+  assert(sym->plt_idx != -1);
   sym->plt_idx = shdr.sh_size / PLT_SIZE;
   shdr.sh_size += PLT_SIZE;
   symbols.push_back(sym);

@@ -619,7 +619,6 @@ using namespace llvm::ELF;
 
 inline std::vector<ObjectFile *> files;
 inline std::vector<OutputChunk *> chunks;
-inline std::vector<Symbol *> dynsyms;
 inline u8 *buf;
 
 inline OutputEhdr *ehdr;
