@@ -404,7 +404,7 @@ static void scan_rels() {
 
   for (Symbol *sym : flatten(vec)) {
     if (sym->flags & Symbol::NEEDS_GOT)
-      out::got->add_symbol(sym);
+      out::got->add_got_symbol(sym);
 
     if (sym->flags & Symbol::NEEDS_PLT)
       out::plt->add_symbol(sym);

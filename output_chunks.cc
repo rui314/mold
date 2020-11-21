@@ -413,7 +413,8 @@ bool OutputSection::empty() const {
   return true;
 }
 
-void GotSection::add_symbol(Symbol *sym) {
+void GotSection::add_got_symbol(Symbol *sym) {
+  assert(sym->got_idx == -1);
   sym->got_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
@@ -423,12 +424,14 @@ void GotSection::add_symbol(Symbol *sym) {
 }
 
 void GotSection::add_gottpoff_symbol(Symbol *sym) {
+  assert(sym->gottpoff_idx == -1);
   sym->gottpoff_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   gottpoff_syms.push_back(sym);
 }
 
 void GotSection::add_tlsgd_symbol(Symbol *sym) {
+  assert(sym->tlsgd_idx == -1);
   sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsgd_syms.push_back(sym);
@@ -438,6 +441,7 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
 }
 
 void GotSection::add_tlsld_symbol(Symbol *sym) {
+  assert(sym->tlsld_idx == -1);
   sym->tlsld_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsld_syms.push_back(sym);
@@ -471,7 +475,7 @@ void GotPltSection::copy_buf() {
 }
 
 void PltSection::add_symbol(Symbol *sym) {
-  assert(sym->plt_idx != -1);
+  assert(sym->plt_idx == -1);
   sym->plt_idx = shdr.sh_size / PLT_SIZE;
   shdr.sh_size += PLT_SIZE;
   symbols.push_back(sym);

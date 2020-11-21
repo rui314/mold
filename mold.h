@@ -411,7 +411,7 @@ public:
     shdr.sh_addralign = GOT_SIZE;
   }
 
-  void add_symbol(Symbol *sym);
+  void add_got_symbol(Symbol *sym);
   void add_gottpoff_symbol(Symbol *sym);
   void add_tlsgd_symbol(Symbol *sym);
   void add_tlsld_symbol(Symbol *sym);
