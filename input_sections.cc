@@ -81,8 +81,10 @@ void InputSection::copy_buf() {
       *loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
+      *(u64 *)loc = sym.get_tlsgd_addr() + A - P;
+      break;
     case R_X86_64_TLSLD:
-      // TODO
+      *(u64 *)loc = sym.get_tlsld_addr() + A - P;
       break;
     case R_X86_64_GOTTPOFF:
       *(u32 *)loc = sym.get_gottpoff_addr() + A - P;

@@ -146,9 +146,20 @@ void InterpSection::copy_buf() {
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
+  auto count = [](ArrayRef<Symbol *> syms) {
+    int i = 0;
+    return i;
+  };
+
   for (Symbol *sym : out::got->got_syms)
     if (sym->is_imported)
       shdr.sh_size += sizeof(ELF64LE::Rela);
+
+  for (Symbol *sym : out::got->tlsgd_syms)
+    shdr.sh_size += sizeof(ELF64LE::Rela) * 2;
+
+  for (Symbol *sym : out::got->tlsld_syms)
+    shdr.sh_size += sizeof(ELF64LE::Rela);
 }
 
 void RelDynSection::copy_buf() {
@@ -162,6 +173,28 @@ void RelDynSection::copy_buf() {
     rel->setSymbol(sym->dynsym_idx, false);
     rel->setType(R_X86_64_GLOB_DAT, false);
     rel->r_offset = sym->get_got_addr();
+    rel++;
+  }
+
+  for (Symbol *sym : out::got->tlsgd_syms) {
+    memset(rel, 0, sizeof(*rel));
+    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
+    rel->setType(R_X86_64_DTPMOD64, false);
+    rel->r_offset = sym->get_tlsgd_addr();
+    rel++;
+
+    memset(rel, 0, sizeof(*rel));
+    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
+    rel->setType(R_X86_64_DTPOFF64, false);
+    rel->r_offset = sym->get_tlsgd_addr() + GOT_SIZE;
+    rel++;
+  }
+
+  for (Symbol *sym : out::got->tlsld_syms) {
+    memset(rel, 0, sizeof(*rel));
+    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
+    rel->setType(R_X86_64_DTPMOD64, false);
+    rel->r_offset = sym->get_tlsld_addr();
     rel++;
   }
 }
@@ -399,12 +432,18 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
   sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsgd_syms.push_back(sym);
+
+  if (sym->is_imported)
+    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_tlsld_symbol(Symbol *sym) {
   sym->tlsld_idx = shdr.sh_size / GOT_SIZE;
-  shdr.sh_size += GOT_SIZE;
+  shdr.sh_size += GOT_SIZE * 2;
   tlsld_syms.push_back(sym);
+
+  if (sym->is_imported)
+    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::copy_buf() {
