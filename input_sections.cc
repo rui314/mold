@@ -115,10 +115,8 @@ void InputSection::scan_relocations() {
     return;
 
   for (const ELF64LE::Rela &rel : rels) {
-    Symbol *sym = file->symbols[rel.getSymbol(false)];
-    if (!sym->file)
-      continue;
-    assert(sym->file);
+    Symbol &sym = *file->symbols[rel.getSymbol(false)];
+    assert(sym.file);
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -139,20 +137,20 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      sym->flags |= Symbol::NEEDS_GOT;
+      sym.flags |= Symbol::NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
-      if (sym->is_imported || sym->type == STT_GNU_IFUNC)
-        sym->flags |= Symbol::NEEDS_PLT;
+      if (sym.is_imported || sym.type == STT_GNU_IFUNC)
+        sym.flags |= Symbol::NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      sym->flags |= Symbol::NEEDS_TLSGD;
+      sym.flags |= Symbol::NEEDS_TLSGD;
       break;
     case R_X86_64_TLSLD:
-      sym->flags |= Symbol::NEEDS_TLSLD;
+      sym.flags |= Symbol::NEEDS_TLSLD;
       break;
     case R_X86_64_GOTTPOFF:
-      sym->flags |= Symbol::NEEDS_GOTTPOFF;
+      sym.flags |= Symbol::NEEDS_GOTTPOFF;
       break;
     default:
       error(toString(this) + ": unknown relocation: " +
