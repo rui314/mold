@@ -414,7 +414,7 @@ static void scan_rels() {
       out::plt->add_symbol(sym);
 
     if (sym->flags & Symbol::NEEDS_GOTTPOFF)
-      out::got->add_gottp_symbol(sym);
+      out::got->add_gottpoff_symbol(sym);
 
     if (sym->flags & Symbol::NEEDS_TLSGD)
       out::got->add_tlsgd_symbol(sym);

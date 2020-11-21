@@ -389,10 +389,10 @@ void GotSection::add_symbol(Symbol *sym) {
     out::dynsym->add_symbol(sym);
 }
 
-void GotSection::add_gottp_symbol(Symbol *sym) {
-  sym->gottp_idx = shdr.sh_size / GOT_SIZE;
+void GotSection::add_gottpoff_symbol(Symbol *sym) {
+  sym->gottpoff_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
-  gottp_syms.push_back(sym);
+  gottpoff_syms.push_back(sym);
 }
 
 void GotSection::add_tlsgd_symbol(Symbol *sym) {
@@ -415,8 +415,8 @@ void GotSection::copy_buf() {
     if (!sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
 
-  for (Symbol *sym : gottp_syms)
-    buf[sym->gottp_idx] = sym->get_addr() - out::tls_end;
+  for (Symbol *sym : gottpoff_syms)
+    buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
 }
 
 void GotPltSection::copy_buf() {

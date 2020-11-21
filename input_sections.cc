@@ -85,7 +85,7 @@ void InputSection::copy_buf() {
       // TODO
       break;
     case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = sym.get_gottp_addr() + A - P;
+      *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
       break;
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;

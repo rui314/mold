@@ -198,7 +198,7 @@ public:
   inline u64 get_addr() const;
   inline u64 get_got_addr() const;
   inline u64 get_gotplt_addr() const;
-  inline u64 get_gottp_addr() const;
+  inline u64 get_gottpoff_addr() const;
   inline u64 get_tlsgd_addr() const;
   inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
@@ -211,7 +211,7 @@ public:
   u64 value = 0;
   u32 got_idx = -1;
   u32 gotplt_idx = -1;
-  u32 gottp_idx = -1;
+  u32 gottpoff_idx = -1;
   u32 tlsgd_idx = -1;
   u32 tlsld_idx = -1;
   u32 plt_idx = -1;
@@ -412,13 +412,13 @@ public:
   }
 
   void add_symbol(Symbol *sym);
-  void add_gottp_symbol(Symbol *sym);
+  void add_gottpoff_symbol(Symbol *sym);
   void add_tlsgd_symbol(Symbol *sym);
   void add_tlsld_symbol(Symbol *sym);
   void copy_buf() override;
 
   std::vector<Symbol *> got_syms;
-  std::vector<Symbol *> gottp_syms;
+  std::vector<Symbol *> gottpoff_syms;
   std::vector<Symbol *> tlsgd_syms;
   std::vector<Symbol *> tlsld_syms;
 };
@@ -762,9 +762,9 @@ inline u64 Symbol::get_gotplt_addr() const {
   return out::gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gottp_addr() const {
-  assert(gottp_idx != -1);
-  return out::got->shdr.sh_addr + gottp_idx * GOT_SIZE;
+inline u64 Symbol::get_gottpoff_addr() const {
+  assert(gottpoff_idx != -1);
+  return out::got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_tlsgd_addr() const {
