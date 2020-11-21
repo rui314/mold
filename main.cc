@@ -338,10 +338,8 @@ static void check_undefined_symbols() {
     }
   }
 
-#if 0
-~  if (has_error)
+  if (has_error)
     exit(1);
-#endif
 }
 
 static void set_isec_offsets() {
