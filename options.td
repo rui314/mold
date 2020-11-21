@@ -34,6 +34,8 @@ defm library_path: Eq<"library-path", "Add a directory to the library search pat
 
 defm sysroot: Eq<"sysroot", "Set the system root">;
 
+defm dynamic_linker: Eq<"dynamic-linker", "Which dynamic linker to use">;
+
 def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library">;
 def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
 

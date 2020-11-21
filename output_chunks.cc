@@ -502,7 +502,7 @@ void PltSection::copy_buf() {
   for (Symbol *sym : symbols) {
     u8 *ent = buf + sym->plt_idx * PLT_SIZE;
 
-    if (sym->got_idx == -1) {
+    if (sym->gotplt_idx != -1) {
       const u8 data[] = {
         0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
         0x68, 0,    0, 0, 0,    // push  $index_in_relplt
@@ -531,6 +531,7 @@ void RelPltSection::update_shdr() {
 
 void RelPltSection::copy_buf() {
   ELF64LE::Rela *buf = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
+  memset(buf, 0, shdr.sh_size);
 
   for (Symbol *sym : out::plt->symbols) {
     if (sym->relplt_idx == -1)
