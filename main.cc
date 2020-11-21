@@ -416,8 +416,11 @@ static void scan_rels() {
     if (sym->flags & Symbol::NEEDS_GOTTPOFF)
       out::got->add_gottp_symbol(sym);
 
-    if ((sym->flags & Symbol::NEEDS_TLSGD) || (sym->flags & Symbol::NEEDS_TLSLD))
-      ;
+    if (sym->flags & Symbol::NEEDS_TLSGD)
+      out::got->add_tlsgd_symbol(sym);
+
+    if (sym->flags & Symbol::NEEDS_TLSLD)
+      out::got->add_tlsld_symbol(sym);
   }
 }
 

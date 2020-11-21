@@ -395,6 +395,18 @@ void GotSection::add_gottp_symbol(Symbol *sym) {
   gottp_syms.push_back(sym);
 }
 
+void GotSection::add_tlsgd_symbol(Symbol *sym) {
+  sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
+  shdr.sh_size += GOT_SIZE * 2;
+  tlsgd_syms.push_back(sym);
+}
+
+void GotSection::add_tlsld_symbol(Symbol *sym) {
+  sym->tlsld_idx = shdr.sh_size / GOT_SIZE;
+  shdr.sh_size += GOT_SIZE;
+  tlsld_syms.push_back(sym);
+}
+
 void GotSection::copy_buf() {
   u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);

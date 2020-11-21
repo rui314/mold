@@ -199,8 +199,8 @@ public:
   inline u64 get_got_addr() const;
   inline u64 get_gotplt_addr() const;
   inline u64 get_gottp_addr() const;
-  inline u64 get_gotgd_addr() const;
-  inline u64 get_gotld_addr() const;
+  inline u64 get_tlsgd_addr() const;
+  inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
 
   StringRef name;
@@ -212,8 +212,8 @@ public:
   u32 got_idx = -1;
   u32 gotplt_idx = -1;
   u32 gottp_idx = -1;
-  u32 gotgd_idx = -1;
-  u32 gotld_idx = -1;
+  u32 tlsgd_idx = -1;
+  u32 tlsld_idx = -1;
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
@@ -413,10 +413,14 @@ public:
 
   void add_symbol(Symbol *sym);
   void add_gottp_symbol(Symbol *sym);
+  void add_tlsgd_symbol(Symbol *sym);
+  void add_tlsld_symbol(Symbol *sym);
   void copy_buf() override;
 
   std::vector<Symbol *> got_syms;
   std::vector<Symbol *> gottp_syms;
+  std::vector<Symbol *> tlsgd_syms;
+  std::vector<Symbol *> tlsld_syms;
 };
 
 class GotPltSection : public OutputChunk {
@@ -763,14 +767,14 @@ inline u64 Symbol::get_gottp_addr() const {
   return out::got->shdr.sh_addr + gottp_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gotgd_addr() const {
-  assert(gotgd_idx != -1);
-  return out::got->shdr.sh_addr + gotgd_idx * GOT_SIZE;
+inline u64 Symbol::get_tlsgd_addr() const {
+  assert(tlsgd_idx != -1);
+  return out::got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gotld_addr() const {
-  assert(gotld_idx != -1);
-  return out::got->shdr.sh_addr + gotld_idx * GOT_SIZE;
+inline u64 Symbol::get_tlsld_addr() const {
+  assert(tlsld_idx != -1);
+  return out::got->shdr.sh_addr + tlsld_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_plt_addr() const {
