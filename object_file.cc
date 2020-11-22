@@ -21,7 +21,7 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
-void ObjectFile::initialize_soname() {
+StringRef ObjectFile::get_soname() {
   for (const ELF64LE::Shdr &shdr : elf_sections) {
     if (shdr.sh_type != SHT_DYNAMIC)
       continue;
@@ -29,15 +29,12 @@ void ObjectFile::initialize_soname() {
     ArrayRef<ELF64LE::Dyn> tags =
       CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
 
-    for (const ELF64LE::Dyn &dyn : tags) {
-      if (dyn.d_tag == DT_SONAME) {
-        this->soname = StringRef(symbol_strtab.data() + dyn.d_un.d_val);
-        return;
-      }
-    }
+    for (const ELF64LE::Dyn &dyn : tags)
+      if (dyn.d_tag == DT_SONAME)
+        return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
   }
 
-  this->soname = this->name;
+  return name;
 }
 
 void ObjectFile::initialize_sections() {
@@ -293,7 +290,7 @@ void ObjectFile::parse() {
   sections.resize(elf_sections.size());
 
   if (is_dso)
-    initialize_soname();
+    soname = get_soname();
   else
     initialize_sections();
 

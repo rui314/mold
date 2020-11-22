@@ -720,9 +720,9 @@ public:
   std::vector<Symbol *> dynsyms;
 
 private:
-  void initialize_soname();
   void initialize_sections();
   void initialize_symbols();
+  StringRef get_soname();
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
 
   void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx);
