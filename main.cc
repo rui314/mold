@@ -311,8 +311,14 @@ static void check_undefined_symbols() {
     for (int j = file->first_global; j < file->elf_syms.size(); j++) {
       const ELF64LE::Sym &esym = file->elf_syms[j];
       Symbol &sym = *file->symbols[j];
-      if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
-          (!sym.file || sym.is_placeholder)) {
+      bool is_weak = (esym.getBinding() == STB_WEAK);
+
+      if (esym.isUndefined() && !is_weak && (!sym.file || sym.is_placeholder)) {
+        has_errors[i] = true;
+        return;
+      }
+
+      if (esym.isDefined() && !is_weak && sym.file != file) {
         has_errors[i] = true;
         return;
       }
@@ -331,10 +337,16 @@ static void check_undefined_symbols() {
     for (int j = file->first_global; j < file->elf_syms.size(); j++) {
       const ELF64LE::Sym &esym = file->elf_syms[j];
       Symbol &sym = *file->symbols[j];
-      if (esym.isUndefined() && esym.getBinding() != STB_WEAK &&
-          (!sym.file || sym.is_placeholder))
+      bool is_weak = (esym.getBinding() == STB_WEAK);
+
+      if (esym.isUndefined() && !is_weak && (!sym.file || sym.is_placeholder))
         llvm::errs() << "undefined symbol: " << toString(file)
                      << ": " << sym.name << "\n";
+
+      if (esym.isDefined() && !is_weak && sym.file != file)
+        llvm::errs() << "duplicate symbol: " << toString(file)
+                     << ": " << toString(sym.file) << ": "
+                     << sym.name << "\n";
     }
   }
 
@@ -762,13 +774,16 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
 
-  // Set priorities to files
-  int priority = 1;
+  // Set priorities to files. File priority 1 is reserved for the internal file.
+  int priority = 2;
   for (ObjectFile *file : out::files)
-    if (!file->is_in_archive)
+    if (!file->is_in_archive && !file->is_dso)
       file->priority = priority++;
   for (ObjectFile *file : out::files)
-    if (file->is_in_archive)
+    if (file->is_in_archive && !file->is_dso)
+      file->priority = priority++;
+  for (ObjectFile *file : out::files)
+    if (file->is_dso)
       file->priority = priority++;
 
   // Resolve symbols and fix the set of object files that are
@@ -832,7 +847,7 @@ int main(int argc, char **argv) {
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
   ObjectFile *internal_file = ObjectFile::create_internal_file();
-  internal_file->priority = priority++;
+  internal_file->priority = 1;
   internal_file->resolve_symbols();
   out::files.push_back(internal_file);
 
