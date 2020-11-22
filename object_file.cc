@@ -115,6 +115,9 @@ void ObjectFile::initialize_sections() {
 }
 
 void ObjectFile::initialize_symbols() {
+  if (!symtab_sec)
+    return;
+
   static Counter counter("all_syms");
   counter.inc(elf_syms.size());
 
@@ -279,6 +282,7 @@ void ObjectFile::parse() {
   is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
 
   elf_sections = CHECK(obj.sections(), this);
+  sections.resize(elf_sections.size());
   symtab_sec = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
 
   if (symtab_sec) {
@@ -287,15 +291,13 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
-  sections.resize(elf_sections.size());
-
-  if (is_dso)
+  if (is_dso) {
     soname = get_soname();
-  else
-    initialize_sections();
-
-  if (symtab_sec)
     initialize_symbols();
+  } else {
+    initialize_sections();
+    initialize_symbols();
+  }
 
   if (Counter::enabled) {
     static Counter defined("defined_syms");
