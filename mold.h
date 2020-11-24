@@ -181,7 +181,7 @@ struct StringPiece {
 struct StringPieceRef {
   StringPiece *piece = nullptr;
   u32 input_offset = 0;
-  u32 addend = 0;
+  i32 addend = 0;
 };
 
 class Symbol {

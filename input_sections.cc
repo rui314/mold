@@ -39,7 +39,7 @@ void InputSection::copy_buf() {
       continue;
 
     u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
-    u64 A = ref.piece ? ref.addend : rel.r_addend;
+    i64 A = ref.piece ? ref.addend : rel.r_addend;
     u64 P = sh_addr + rel.r_offset;
 
     switch (rel.getType(false)) {
