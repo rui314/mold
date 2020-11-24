@@ -28,6 +28,8 @@ void InputSection::copy_buf() {
   u64 sh_addr = output_section->shdr.sh_addr + offset;
   u64 GOT = out::got->shdr.sh_addr;
 
+  bool debug = (file->name == "setup.o");
+
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
     StringPieceRef &ref = rel_pieces[i];

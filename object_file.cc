@@ -212,7 +212,6 @@ void ObjectFile::initialize_mergeable_sections() {
       ArrayRef<u8> contents = CHECK(obj.getSectionContents(isec->shdr), this);
       mergeable_sections.emplace_back(isec, contents);
       isec->mergeable = &mergeable_sections.back();
-      sections[i] = nullptr;
     }
   }
 
@@ -258,6 +257,8 @@ void ObjectFile::initialize_mergeable_sections() {
     }
   }
 
+  bool debug = (name == "setup.o");
+
   // Initialize sym_pieces
   sym_pieces.resize(elf_syms.size());
 
@@ -267,17 +268,25 @@ void ObjectFile::initialize_mergeable_sections() {
       continue;
 
     InputSection *isec = sections[esym.st_shndx];
-    if (!isec || isec->kind != InputChunk::MERGEABLE)
+    if (!isec || !isec->mergeable)
       continue;
 
-    ArrayRef<StringPieceRef> pieces = ((MergeableSection *)isec)->pieces;
+    ArrayRef<StringPieceRef> pieces = isec->mergeable->pieces;
     const StringPieceRef *ref = binary_search(pieces, esym.st_value);
     if (!ref)
       error(toString(this) + ": bad symbol value");
 
-    sym_pieces[i].piece = ref->piece;
-    sym_pieces[i].addend = esym.st_value - ref->input_offset;
+    if (i < first_global) {
+      local_symbols[i].piece_ref = *ref;
+    } else {
+      sym_pieces[i].piece = ref->piece;
+      sym_pieces[i].addend = esym.st_value - ref->input_offset;
+    }
   }
+
+  for (int i = 0; i < sections.size(); i++)
+    if (sections[i] && sections[i]->mergeable)
+      sections[i] = nullptr;
 }
 
 void ObjectFile::parse() {
