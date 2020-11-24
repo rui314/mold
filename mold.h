@@ -756,7 +756,7 @@ private:
   StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
 
-  ArrayRef<ELF64LE::Sym> elf_syms;
+  std::vector<ELF64LE::Sym> elf_syms;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };

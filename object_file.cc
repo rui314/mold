@@ -312,14 +312,15 @@ void SharedFile::parse() {
     return;
 
   int first_global = symtab_sec->sh_info;
+  ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
 
-  elf_syms = CHECK(obj.symbols(symtab_sec), this).slice(first_global);
   symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   soname = get_soname(elf_sections);
 
-  for (const ELF64LE::Sym &esym : elf_syms) {
+  for (const ELF64LE::Sym &esym : esyms.slice(first_global)) {
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
+    elf_syms.push_back(esym);
   }
 
   static Counter counter("dso_syms");
