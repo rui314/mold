@@ -710,15 +710,7 @@ public:
   u64 global_symtab_size = 0;
   u64 global_strtab_size = 0;
 
-  u32 num_got = 0;
-  u32 num_gotplt = 0;
-  u32 num_plt = 0;
-  u32 num_relplt = 0;
-  u32 num_dynsym = 0;
-  u32 dynstr_size = 0;
-
   std::vector<MergeableSection> mergeable_sections;
-  std::vector<Symbol *> dynsyms;
 
 private:
   void initialize_sections();
