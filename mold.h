@@ -676,12 +676,12 @@ struct ComdatGroup {
 
 class InputFile {
 public:
-  InputFile(MemoryBufferRef mb)
-    : mb(mb), name(mb.getBufferIdentifier()),
+  InputFile(MemoryBufferRef mb, bool is_dso)
+    : mb(mb), name(mb.getBufferIdentifier()), is_dso(is_dso),
       obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
 
   std::string name;
-  bool is_dso = false;
+  bool is_dso;
   u32 priority;
   MemoryBufferRef mb;
   ELFFile<ELF64LE> obj;
@@ -743,9 +743,7 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryBufferRef mb) : InputFile(mb) {
-    is_dso = true;
-  }
+  SharedFile(MemoryBufferRef mb) : InputFile(mb, true) {}
 
   void parse();
   void resolve_symbols();

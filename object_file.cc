@@ -12,7 +12,7 @@ using namespace llvm;
 using namespace llvm::ELF;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
-  : InputFile(mb), archive_name(archive_name),
+  : InputFile(mb, false), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
 }
