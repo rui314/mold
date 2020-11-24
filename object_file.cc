@@ -15,7 +15,7 @@ ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
 }
 
 static const ELF64LE::Shdr
-*findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
+*find_section(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
   for (const ELF64LE::Shdr &sec : sections)
     if (sec.sh_type == type)
       return &sec;
@@ -157,18 +157,16 @@ void ObjectFile::initialize_symbols() {
 }
 
 StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
-  for (const ELF64LE::Shdr &shdr : elf_sections) {
-    if (shdr.sh_type != SHT_DYNAMIC)
-      continue;
+  const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_DYNAMIC);
+  if (!sec)
+    return name;
 
-    ArrayRef<ELF64LE::Dyn> tags =
-      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
+  ArrayRef<ELF64LE::Dyn> tags =
+    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(*sec), this);
 
-    for (const ELF64LE::Dyn &dyn : tags)
-      if (dyn.d_tag == DT_SONAME)
-        return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
-  }
-
+  for (const ELF64LE::Dyn &dyn : tags)
+    if (dyn.d_tag == DT_SONAME)
+      return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
   return name;
 }
 
@@ -282,7 +280,7 @@ void ObjectFile::initialize_mergeable_sections() {
 void ObjectFile::parse() {
   elf_sections = CHECK(obj.sections(), this);
   sections.resize(elf_sections.size());
-  symtab_sec = findSection(elf_sections, SHT_SYMTAB);
+  symtab_sec = find_section(elf_sections, SHT_SYMTAB);
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
@@ -308,15 +306,14 @@ void ObjectFile::parse() {
 
 void SharedFile::parse() {
   ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
-  symtab_sec = findSection(elf_sections, SHT_DYNSYM);
+  symtab_sec = find_section(elf_sections, SHT_DYNSYM);
 
   if (!symtab_sec)
     return;
 
-  if (symtab_sec->sh_info != 1)
-    error(toString(this) + ": invalid .dynsym sh_info");
+  int first_global = symtab_sec->sh_info;
 
-  elf_syms = CHECK(obj.symbols(symtab_sec), this).slice(1);
+  elf_syms = CHECK(obj.symbols(symtab_sec), this).slice(first_global);
   symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   soname = get_soname(elf_sections);
 
