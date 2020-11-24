@@ -148,8 +148,10 @@ void read_file(MemoryBufferRef mb) {
       out::objs.push_back(new ObjectFile(member, mb.getBufferIdentifier()));
     break;
   case file_magic::elf_relocatable:
-  case file_magic::elf_shared_object:
     out::objs.push_back(new ObjectFile(mb, ""));
+    break;
+  case file_magic::elf_shared_object:
+    out::dsos.push_back(new ObjectFile(mb, ""));
     break;
   case file_magic::unknown:
     parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
@@ -177,13 +179,13 @@ static void resolve_symbols() {
   MyTimer t("resolve_symbols", before_copy_timer);
 
   // Register defined symbols
-  tbb::parallel_for_each(out::objs,
-                         [](ObjectFile *file) { file->resolve_symbols(); });
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
+  tbb::parallel_for_each(out::dsos, [](ObjectFile *file) { file->resolve_symbols(); });
 
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
   for (ObjectFile *file : out::objs)
-    if (file->is_alive && !file->is_dso)
+    if (file->is_alive)
       root.push_back(file);
 
   tbb::parallel_do(
@@ -405,12 +407,12 @@ static void scan_rels() {
         isec->scan_relocations();
   });
 
-  std::vector<std::vector<Symbol *>> vec(out::objs.size());
+  std::vector<ObjectFile *> files = join(out::objs, out::dsos);
+  std::vector<std::vector<Symbol *>> vec(files.size());
 
-  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
-    ObjectFile *file = out::objs[i];
-    for (Symbol *sym : file->symbols)
-      if (sym->file == file && sym->flags)
+  tbb::parallel_for(0, (int)files.size(), [&](int i) {
+    for (Symbol *sym : files[i]->symbols)
+      if (sym->file == files[i] && sym->flags)
         vec[i].push_back(sym);
   });
 
@@ -716,17 +718,17 @@ int main(int argc, char **argv) {
   {
     MyTimer t("parse", parse_timer);
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(out::dsos, [](ObjectFile *file) { file->parse(); });
   }
 
   // Uniquify shared object files with soname
   {
     llvm::StringSet<> seen;
-    for (auto it = out::objs.begin(); it != out::objs.end();) {
-      StringRef soname = (*it)->soname;
-      if (!soname.empty() && !seen.insert(soname).second)
-        out::objs.erase(it);
+    for (int i = 0; i < out::dsos.size();) {
+      if (seen.insert(out::dsos[i]->soname).second)
+        i++;
       else
-        it++;
+        out::dsos.erase(out::dsos.begin() + i);
     }
   }
 
@@ -777,22 +779,24 @@ int main(int argc, char **argv) {
   // Set priorities to files. File priority 1 is reserved for the internal file.
   int priority = 2;
   for (ObjectFile *file : out::objs)
-    if (!file->is_in_archive && !file->is_dso)
+    if (!file->is_in_archive)
       file->priority = priority++;
   for (ObjectFile *file : out::objs)
-    if (file->is_in_archive && !file->is_dso)
+    if (file->is_in_archive)
       file->priority = priority++;
-  for (ObjectFile *file : out::objs)
-    if (file->is_dso)
-      file->priority = priority++;
+  for (ObjectFile *file : out::dsos)
+    file->priority = priority++;
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_symbols();
 
-  if (args.hasArg(OPT_trace))
+  if (args.hasArg(OPT_trace)) {
     for (ObjectFile *file : out::objs)
       message(toString(file));
+    for (ObjectFile *file : out::dsos)
+      message(toString(file));
+  }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats();
@@ -862,9 +866,8 @@ int main(int argc, char **argv) {
   check_undefined_symbols();
 
   // Copy shared object name strings to .dynsym
-  for (ObjectFile *file : out::objs)
-    if (file->is_alive && file->is_dso)
-      out::dynstr->add_string(file->soname);
+  for (ObjectFile *file : out::dsos)
+    out::dynstr->add_string(file->soname);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
@@ -939,15 +942,8 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(out::objs, out::chunks);
+    print_map();
   }
-
-#if 0
-  for (ObjectFile *file : out::objs)
-    for (InputSection *isec : file->sections)
-      if (isec)
-        message(toString(isec));
-#endif
 
   // Show stat numbers
   Counter num_input_sections("input_sections");
@@ -955,7 +951,8 @@ int main(int argc, char **argv) {
     num_input_sections.inc(file->sections.size());
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
-  Counter num_files("files", out::objs.size());
+  Counter num_objs("num_objs", out::objs.size());
+  Counter num_dsos("num_dsos", out::dsos.size());
   Counter filesize_counter("filesize", filesize);
 
   Counter::print();

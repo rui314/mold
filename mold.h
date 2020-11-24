@@ -618,6 +618,7 @@ namespace out {
 using namespace llvm::ELF;
 
 inline std::vector<ObjectFile *> objs;
+inline std::vector<ObjectFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 
@@ -797,6 +798,13 @@ inline void write_vector(u8 *buf, const std::vector<T> &vec) {
 }
 
 template <typename T>
+inline std::vector<T> join(std::vector<T> &a, std::vector<T> &b) {
+  std::vector<T> vec(a);
+  vec.insert(vec.end(), b.begin(), b.end());
+  return vec;
+}
+
+template <typename T>
 inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
   std::vector<T> ret;
   for (std::vector<T> &v : vec)
@@ -846,7 +854,7 @@ private:
 // mapfile.cc
 //
 
-void print_map(ArrayRef<ObjectFile *> files, ArrayRef<OutputChunk *> output_sections);
+void print_map();
 
 //
 // main.cc

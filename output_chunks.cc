@@ -297,11 +297,9 @@ static std::vector<u64> create_dynamic_section() {
   };
 
   int i = 1;
-  for (ObjectFile *file : out::objs) {
-    if (!file->soname.empty()) {
-      define(DT_NEEDED, i);
-      i += file->soname.size() + 1;
-    }
+  for (ObjectFile *file : out::dsos) {
+    define(DT_NEEDED, i);
+    i += file->soname.size() + 1;
   }
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);

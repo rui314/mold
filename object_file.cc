@@ -352,7 +352,7 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
   if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
-    sym.piece_ref = sym_pieces[idx];
+    sym.piece_ref = (idx < sym_pieces.size()) ? sym_pieces[idx] : StringPieceRef();
     sym.value = esym.st_value;
     sym.type = (is_dso && esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
     sym.binding = esym.getBinding();
