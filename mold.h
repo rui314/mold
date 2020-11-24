@@ -56,14 +56,16 @@ using llvm::Twine;
 using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
 
-class Symbol;
 class InputChunk;
+class InputFile;
 class InputSection;
 class MergeableSection;
+class MergedSection;
 class ObjectFile;
 class OutputChunk;
 class OutputSection;
-class MergedSection;
+class SharedFile;
+class Symbol;
 
 struct Config {
   StringRef dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
@@ -122,7 +124,7 @@ inline std::string toString(const Twine &s) { return s.str(); }
 
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
 
-std::string toString(ObjectFile *);
+std::string toString(InputFile *);
 
 //
 // Interned string
@@ -184,7 +186,7 @@ struct StringPieceRef {
 
 class Symbol {
 public:
-  Symbol(StringRef name, ObjectFile *file = nullptr)
+  Symbol(StringRef name, InputFile *file = nullptr)
     : name(name), file(file), is_placeholder(false), is_imported(false),
       is_weak(false), is_undef_weak(false), traced(false) {}
 
@@ -204,7 +206,7 @@ public:
   inline u64 get_plt_addr() const;
 
   StringRef name;
-  ObjectFile *file = nullptr;
+  InputFile *file = nullptr;
   InputSection *input_section = nullptr;
   StringPieceRef piece_ref;
 
@@ -618,7 +620,7 @@ namespace out {
 using namespace llvm::ELF;
 
 inline std::vector<ObjectFile *> objs;
-inline std::vector<ObjectFile *> dsos;
+inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 
@@ -672,7 +674,22 @@ struct ComdatGroup {
   u32 section_idx;
 };
 
-class ObjectFile {
+class InputFile {
+public:
+  InputFile(MemoryBufferRef mb)
+    : mb(mb), name(mb.getBufferIdentifier()),
+      obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
+
+  std::string name;
+  bool is_dso = false;
+  u32 priority;
+  MemoryBufferRef mb;
+  ELFFile<ELF64LE> obj;
+  std::vector<Symbol *> symbols;
+  std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
+};
+
+class ObjectFile : public InputFile {
 public:
   ObjectFile(MemoryBufferRef mb, StringRef archive_name);
 
@@ -692,17 +709,10 @@ public:
 
   static ObjectFile *create_internal_file();
 
-  std::string name;
   StringRef archive_name;
-  StringRef soname;
-  ELFFile<ELF64LE> obj;
   std::vector<InputSection *> sections;
-  std::vector<Symbol *> symbols;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
-  u32 priority;
-  std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
-  bool is_dso = false;
   const bool is_in_archive;
 
   u64 local_symtab_size = 0;
@@ -715,13 +725,11 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
-  StringRef get_soname();
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
 
-  void maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx);
+  void maybe_override_symbol(Symbol &sym, int symidx);
   void write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
-  MemoryBufferRef mb;
   std::vector<std::pair<ComdatGroup *, ArrayRef<ELF64LE::Word>>> comdat_groups;
 
   std::vector<Symbol> local_symbols;
@@ -729,6 +737,26 @@ private:
   bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
+  StringRef symbol_strtab;
+  const ELF64LE::Shdr *symtab_sec;
+};
+
+class SharedFile : public InputFile {
+public:
+  SharedFile(MemoryBufferRef mb) : InputFile(mb) {
+    is_dso = true;
+  }
+
+  void parse();
+  void resolve_symbols();
+
+  StringRef soname;
+
+private:
+  StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
+  void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
+
+  ArrayRef<ELF64LE::Sym> elf_syms;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
@@ -787,13 +815,6 @@ inline void write_string(u8 *buf, StringRef str) {
 template <typename T>
 inline void write_vector(u8 *buf, const std::vector<T> &vec) {
   memcpy(buf, vec.data(), vec.size() * sizeof(T));
-}
-
-template <typename T>
-inline std::vector<T> join(std::vector<T> &a, std::vector<T> &b) {
-  std::vector<T> vec(a);
-  vec.insert(vec.end(), b.begin(), b.end());
-  return vec;
 }
 
 template <typename T>

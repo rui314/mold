@@ -297,7 +297,7 @@ static std::vector<u64> create_dynamic_section() {
   };
 
   int i = 1;
-  for (ObjectFile *file : out::dsos) {
+  for (SharedFile *file : out::dsos) {
     define(DT_NEEDED, i);
     i += file->soname.size() + 1;
   }

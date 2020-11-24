@@ -9,9 +9,10 @@ using namespace llvm;
 using namespace llvm::ELF;
 
 ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
-  : mb(mb), name(mb.getBufferIdentifier()), archive_name(archive_name),
-    obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))),
-    is_alive(archive_name == ""), is_in_archive(archive_name != "") {}
+  : InputFile(mb), archive_name(archive_name),
+    is_in_archive(archive_name != "") {
+  is_alive = (archive_name == "");
+}
 
 static const ELF64LE::Shdr
 *findSection(ArrayRef<ELF64LE::Shdr> sections, u32 type) {
@@ -19,22 +20,6 @@ static const ELF64LE::Shdr
     if (sec.sh_type == type)
       return &sec;
   return nullptr;
-}
-
-StringRef ObjectFile::get_soname() {
-  for (const ELF64LE::Shdr &shdr : elf_sections) {
-    if (shdr.sh_type != SHT_DYNAMIC)
-      continue;
-
-    ArrayRef<ELF64LE::Dyn> tags =
-      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
-
-    for (const ELF64LE::Dyn &dyn : tags)
-      if (dyn.d_tag == DT_SONAME)
-        return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
-  }
-
-  return name;
 }
 
 void ObjectFile::initialize_sections() {
@@ -171,6 +156,22 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
+StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
+  for (const ELF64LE::Shdr &shdr : elf_sections) {
+    if (shdr.sh_type != SHT_DYNAMIC)
+      continue;
+
+    ArrayRef<ELF64LE::Dyn> tags =
+      CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(shdr), this);
+
+    for (const ELF64LE::Dyn &dyn : tags)
+      if (dyn.d_tag == DT_SONAME)
+        return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
+  }
+
+  return name;
+}
+
 static const StringPieceRef *
 binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
   if (offset < pieces[0].input_offset)
@@ -279,11 +280,9 @@ void ObjectFile::initialize_mergeable_sections() {
 }
 
 void ObjectFile::parse() {
-  is_dso = (identify_magic(mb.getBuffer()) == file_magic::elf_shared_object);
-
   elf_sections = CHECK(obj.sections(), this);
   sections.resize(elf_sections.size());
-  symtab_sec = findSection(elf_sections, is_dso ? SHT_DYNSYM : SHT_SYMTAB);
+  symtab_sec = findSection(elf_sections, SHT_SYMTAB);
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
@@ -291,13 +290,8 @@ void ObjectFile::parse() {
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
-  if (is_dso) {
-    soname = get_soname();
-    initialize_symbols();
-  } else {
-    initialize_sections();
-    initialize_symbols();
-  }
+  initialize_sections();
+  initialize_symbols();
 
   if (Counter::enabled) {
     static Counter defined("defined_syms");
@@ -312,6 +306,29 @@ void ObjectFile::parse() {
   }
 }
 
+void SharedFile::parse() {
+  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
+  symtab_sec = findSection(elf_sections, SHT_DYNSYM);
+
+  if (!symtab_sec)
+    return;
+
+  if (symtab_sec->sh_info != 1)
+    error(toString(this) + ": invalid .dynsym sh_info");
+
+  elf_syms = CHECK(obj.symbols(symtab_sec), this).slice(1);
+  symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+  soname = get_soname(elf_sections);
+
+  for (const ELF64LE::Sym &esym : elf_syms) {
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    symbols.push_back(Symbol::intern(name));
+  }
+
+  static Counter counter("dso_syms");
+  counter.inc(elf_syms.size());
+}
+
 // Symbols with higher priorities overwrites symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
@@ -321,7 +338,7 @@ void ObjectFile::parse() {
 //  4. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
-static u64 get_rank(ObjectFile *file, const ELF64LE::Sym &esym) {
+static u64 get_rank(InputFile *file, const ELF64LE::Sym &esym) {
   if (esym.isUndefined()) {
     assert(esym.getBinding() == STB_WEAK);
     return ((u64)2 << 32) + file->priority;
@@ -339,8 +356,9 @@ static u64 get_rank(const Symbol &sym) {
   return get_rank(sym.file, *sym.esym);
 }
 
-void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, int idx) {
+void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   InputSection *isec = nullptr;
+  const ELF64LE::Sym &esym = elf_syms[symidx];
   if (!esym.isAbsolute() && !esym.isCommon())
     isec = sections[esym.st_shndx];
 
@@ -352,15 +370,41 @@ void ObjectFile::maybe_override_symbol(const ELF64LE::Sym &esym, Symbol &sym, in
   if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
-    sym.piece_ref = (idx < sym_pieces.size()) ? sym_pieces[idx] : StringPieceRef();
+    sym.piece_ref = sym_pieces[symidx];
     sym.value = esym.st_value;
-    sym.type = (is_dso && esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
+    sym.type = esym.getType();
     sym.binding = esym.getBinding();
     sym.visibility = esym.getVisibility();
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.getBinding() == STB_WEAK);
-    sym.is_imported = is_dso;
+    sym.is_imported = false;
+
+    if (UNLIKELY(sym.traced))
+      message("trace: " + toString(sym.file) +
+              (sym.is_weak ? ": weak definition of " : ": definition of ") +
+              sym.name);
+  }
+}
+
+void SharedFile::maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym) {
+  std::lock_guard lock(sym.mu);
+
+  u64 new_rank = get_rank(this, esym);
+  u64 existing_rank = get_rank(sym);
+
+  if (new_rank < existing_rank) {
+    sym.file = this;
+    sym.input_section = nullptr;
+    sym.piece_ref = {};
+    sym.value = esym.st_value;
+    sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
+    sym.binding = esym.getBinding();
+    sym.visibility = esym.getVisibility();
+    sym.esym = &esym;
+    sym.is_placeholder = false;
+    sym.is_weak = (esym.getBinding() == STB_WEAK);
+    sym.is_imported = true;
 
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(sym.file) +
@@ -391,9 +435,15 @@ void ObjectFile::resolve_symbols() {
           message("trace: " + toString(sym.file) + ": lazy definition of " + sym.name);
       }
     } else {
-      maybe_override_symbol(esym, sym, i);
+      maybe_override_symbol(sym, i);
     }
   }
+}
+
+void SharedFile::resolve_symbols() {
+  for (int i = 0; i < symbols.size(); i++)
+    if (elf_syms[i].isDefined())
+      maybe_override_symbol(*symbols[i], elf_syms[i]);
 }
 
 void
@@ -406,16 +456,16 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
 
     if (esym.isDefined()) {
       if (is_in_archive)
-        maybe_override_symbol(esym, sym, i);
+        maybe_override_symbol(sym, i);
       continue;
     }
 
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(this) + ": reference to " + sym.name);
 
-    if (esym.getBinding() != STB_WEAK && sym.file &&
+    if (esym.getBinding() != STB_WEAK && sym.file && !sym.file->is_dso &&
         !sym.file->is_alive.exchange(true)) {
-      feeder.add(sym.file);
+      feeder.add((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
         message("trace: " + toString(this) + " keeps " + toString(sym.file) +
@@ -625,9 +675,12 @@ ObjectFile *ObjectFile::create_internal_file() {
   return obj;
 }
 
-std::string toString(ObjectFile *obj) {
-  StringRef s = obj->name;
+std::string toString(InputFile *file) {
+  if (file->is_dso)
+    return file->name;
+
+  ObjectFile *obj = (ObjectFile *)file;
   if (obj->archive_name == "")
-    return s.str();
-  return (obj->archive_name + ":" + s).str();
+    return obj->name;
+  return (obj->archive_name + ":" + obj->name).str();
 }

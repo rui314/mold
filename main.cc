@@ -151,7 +151,7 @@ void read_file(MemoryBufferRef mb) {
     out::objs.push_back(new ObjectFile(mb, ""));
     break;
   case file_magic::elf_shared_object:
-    out::dsos.push_back(new ObjectFile(mb, ""));
+    out::dsos.push_back(new SharedFile(mb));
     break;
   case file_magic::unknown:
     parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
@@ -180,7 +180,7 @@ static void resolve_symbols() {
 
   // Register defined symbols
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
-  tbb::parallel_for_each(out::dsos, [](ObjectFile *file) { file->resolve_symbols(); });
+  tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->resolve_symbols(); });
 
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
@@ -407,7 +407,10 @@ static void scan_rels() {
         isec->scan_relocations();
   });
 
-  std::vector<ObjectFile *> files = join(out::objs, out::dsos);
+  std::vector<InputFile *> files;
+  files.insert(files.end(), out::objs.begin(), out::objs.end());
+  files.insert(files.end(), out::dsos.begin(), out::dsos.end());
+
   std::vector<std::vector<Symbol *>> vec(files.size());
 
   tbb::parallel_for(0, (int)files.size(), [&](int i) {
@@ -718,7 +721,7 @@ int main(int argc, char **argv) {
   {
     MyTimer t("parse", parse_timer);
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
-    tbb::parallel_for_each(out::dsos, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->parse(); });
   }
 
   // Uniquify shared object files with soname
@@ -784,7 +787,7 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : out::objs)
     if (file->is_in_archive)
       file->priority = priority++;
-  for (ObjectFile *file : out::dsos)
+  for (SharedFile *file : out::dsos)
     file->priority = priority++;
 
   // Resolve symbols and fix the set of object files that are
@@ -794,7 +797,7 @@ int main(int argc, char **argv) {
   if (args.hasArg(OPT_trace)) {
     for (ObjectFile *file : out::objs)
       message(toString(file));
-    for (ObjectFile *file : out::dsos)
+    for (SharedFile *file : out::dsos)
       message(toString(file));
   }
 
@@ -866,7 +869,7 @@ int main(int argc, char **argv) {
   check_undefined_symbols();
 
   // Copy shared object name strings to .dynsym
-  for (ObjectFile *file : out::dsos)
+  for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
 
   // Add headers and sections that have to be at the beginning
