@@ -5,6 +5,9 @@
 #include <cstring>
 #include <regex>
 
+#define SHT_VERSYM 0x6fffffff
+#define SHT_VERNEED 0x6ffffffe
+
 using namespace llvm;
 using namespace llvm::ELF;
 
@@ -317,10 +320,16 @@ void SharedFile::parse() {
   symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   soname = get_soname(elf_sections);
 
-  for (const ELF64LE::Sym &esym : esyms.slice(first_global)) {
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+  ArrayRef<u16> versyms;
+  if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_VERSYM))
+    versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
+
+  for (int i = first_global; i < esyms.size(); i++) {
+    if (!versyms.empty() && versyms[i] >> 15)
+      continue;
+    StringRef name = CHECK(esyms[i].getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
-    elf_syms.push_back(esym);
+    elf_syms.push_back(esyms[i]);
   }
 
   static Counter counter("dso_syms");
