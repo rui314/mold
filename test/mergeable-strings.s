@@ -13,16 +13,17 @@
         .text
         .globl main
 main:
-        mov $.rodata.str1.1, %rdi
+        mov $.L.str+3, %rdi
         xor %rax, %rax
         call printf
-        mov $.rodata.str1.1+9, %rdi
+        mov $.rodata.str1.1+16, %rdi
         xor %rax, %rax
         call printf
         xor %rax, %rax
         ret
 
         .section .rodata.str1.1, "aMS", @progbits, 1
+        .string "bar"
 .L.str:
-        .string "Hello"
+        .string "xyzHello"
         .string "foo world\n"
