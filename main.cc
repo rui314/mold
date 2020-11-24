@@ -145,11 +145,11 @@ void read_file(MemoryBufferRef mb) {
   switch (identify_magic(mb.getBuffer())) {
   case file_magic::archive:
     for (MemoryBufferRef member : get_archive_members(mb))
-      out::files.push_back(new ObjectFile(member, mb.getBufferIdentifier()));
+      out::objs.push_back(new ObjectFile(member, mb.getBufferIdentifier()));
     break;
   case file_magic::elf_relocatable:
   case file_magic::elf_shared_object:
-    out::files.push_back(new ObjectFile(mb, ""));
+    out::objs.push_back(new ObjectFile(mb, ""));
     break;
   case file_magic::unknown:
     parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
@@ -177,12 +177,12 @@ static void resolve_symbols() {
   MyTimer t("resolve_symbols", before_copy_timer);
 
   // Register defined symbols
-  tbb::parallel_for_each(out::files,
+  tbb::parallel_for_each(out::objs,
                          [](ObjectFile *file) { file->resolve_symbols(); });
 
   // Mark archive members we include into the final output.
   std::vector<ObjectFile *> root;
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     if (file->is_alive && !file->is_dso)
       root.push_back(file);
 
@@ -193,19 +193,19 @@ static void resolve_symbols() {
     });
 
   // Eliminate unused archive members.
-  out::files.erase(std::remove_if(out::files.begin(), out::files.end(),
+  out::objs.erase(std::remove_if(out::objs.begin(), out::objs.end(),
                                   [](ObjectFile *file){ return !file->is_alive; }),
-                   out::files.end());
+                   out::objs.end());
 }
 
 static void eliminate_comdats() {
   MyTimer t("comdat", before_copy_timer);
 
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->resolve_comdat_groups();
   });
 
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->eliminate_duplicate_comdat_groups();
   });
 }
@@ -214,7 +214,7 @@ static void handle_mergeable_strings() {
   MyTimer t("resolve_strings", before_copy_timer);
 
   // Resolve mergeable string pieces
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       for (StringPieceRef &ref : isec.pieces) {
         MergeableSection *cur = ref.piece->isec;
@@ -226,7 +226,7 @@ static void handle_mergeable_strings() {
   });
 
   // Calculate the total bytes of mergeable strings for each input section.
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       u32 offset = 0;
       for (StringPieceRef &ref : isec.pieces) {
@@ -241,7 +241,7 @@ static void handle_mergeable_strings() {
   });
 
   // Assign each mergeable input section a unique index.
-  for (ObjectFile *file : out::files) {
+  for (ObjectFile *file : out::objs) {
     for (MergeableSection &isec : file->mergeable_sections) {
       MergedSection &osec = isec.parent;
       isec.offset = osec.shdr.sh_size;
@@ -263,8 +263,8 @@ static void handle_mergeable_strings() {
 static void bin_sections() {
   MyTimer t("bin_sections", before_copy_timer);
 
-  int unit = (out::files.size() + 127) / 128;
-  std::vector<ArrayRef<ObjectFile *>> slices = split(out::files, unit);
+  int unit = (out::objs.size() + 127) / 128;
+  std::vector<ArrayRef<ObjectFile *>> slices = split(out::objs, unit);
 
   int num_osec = OutputSection::instances.size();
 
@@ -301,10 +301,10 @@ static void bin_sections() {
 
 static void check_undefined_symbols() {
   MyTimer t("check_undef_syms", before_copy_timer);
-  std::vector<bool> has_errors(out::files.size());
+  std::vector<bool> has_errors(out::objs.size());
 
-  tbb::parallel_for(0, (int)out::files.size(), [&](int i) {
-    ObjectFile *file = out::files[i];
+  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+    ObjectFile *file = out::objs[i];
     if (!file->is_alive || file->is_dso)
       return;
 
@@ -327,12 +327,12 @@ static void check_undefined_symbols() {
 
   bool has_error = false;
 
-  for (int i = 0; i < out::files.size(); i++) {
+  for (int i = 0; i < out::objs.size(); i++) {
     if (!has_errors[i])
       continue;
     has_error = true;
 
-    ObjectFile *file = out::files[i];
+    ObjectFile *file = out::objs[i];
 
     for (int j = file->first_global; j < file->elf_syms.size(); j++) {
       const ELF64LE::Sym &esym = file->elf_syms[j];
@@ -399,16 +399,16 @@ static void set_isec_offsets() {
 static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
-  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections)
       if (isec)
         isec->scan_relocations();
   });
 
-  std::vector<std::vector<Symbol *>> vec(out::files.size());
+  std::vector<std::vector<Symbol *>> vec(out::objs.size());
 
-  tbb::parallel_for(0, (int)out::files.size(), [&](int i) {
-    ObjectFile *file = out::files[i];
+  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+    ObjectFile *file = out::objs[i];
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->flags)
         vec[i].push_back(sym);
@@ -435,7 +435,7 @@ static void scan_rels() {
 static void write_merged_strings() {
   MyTimer t("write_merged_strings", copy_timer);
 
-  tbb::parallel_for_each(out::files, [&](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
       u8 *base = out::buf + isec.parent.shdr.sh_offset + isec.offset;
 
@@ -715,16 +715,16 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     MyTimer t("parse", parse_timer);
-    tbb::parallel_for_each(out::files, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
   }
 
   // Uniquify shared object files with soname
   {
     llvm::StringSet<> seen;
-    for (auto it = out::files.begin(); it != out::files.end();) {
+    for (auto it = out::objs.begin(); it != out::objs.end();) {
       StringRef soname = (*it)->soname;
       if (!soname.empty() && !seen.insert(soname).second)
-        out::files.erase(it);
+        out::objs.erase(it);
       else
         it++;
     }
@@ -733,7 +733,7 @@ int main(int argc, char **argv) {
   // Parse mergeable string sections
   {
     MyTimer t("merge", parse_timer);
-    tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
       file->initialize_mergeable_sections();
     });
   }
@@ -776,13 +776,13 @@ int main(int argc, char **argv) {
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
   int priority = 2;
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     if (!file->is_in_archive && !file->is_dso)
       file->priority = priority++;
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     if (file->is_in_archive && !file->is_dso)
       file->priority = priority++;
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     if (file->is_dso)
       file->priority = priority++;
 
@@ -791,7 +791,7 @@ int main(int argc, char **argv) {
   resolve_symbols();
 
   if (args.hasArg(OPT_trace))
-    for (ObjectFile *file : out::files)
+    for (ObjectFile *file : out::objs)
       message(toString(file));
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
@@ -803,7 +803,7 @@ int main(int argc, char **argv) {
   // Create .bss sections for common symbols.
   {
     MyTimer t("common", before_copy_timer);
-    tbb::parallel_for_each(out::files,
+    tbb::parallel_for_each(out::objs,
                            [](ObjectFile *file) { file->convert_common_symbols(); });
   }
 
@@ -849,10 +849,10 @@ int main(int argc, char **argv) {
   ObjectFile *internal_file = ObjectFile::create_internal_file();
   internal_file->priority = 1;
   internal_file->resolve_symbols();
-  out::files.push_back(internal_file);
+  out::objs.push_back(internal_file);
 
   // Convert weak symbols to absolute symbols with value 0.
-  tbb::parallel_for_each(out::files, [](ObjectFile *file) {
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->handle_undefined_weak_symbols();
   });
 
@@ -862,7 +862,7 @@ int main(int argc, char **argv) {
   check_undefined_symbols();
 
   // Copy shared object name strings to .dynsym
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     if (file->is_alive && file->is_dso)
       out::dynstr->add_string(file->soname);
 
@@ -939,11 +939,11 @@ int main(int argc, char **argv) {
 
   if (config.print_map) {
     MyTimer t("print_map");
-    print_map(out::files, out::chunks);
+    print_map(out::objs, out::chunks);
   }
 
 #if 0
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     for (InputSection *isec : file->sections)
       if (isec)
         message(toString(isec));
@@ -951,11 +951,11 @@ int main(int argc, char **argv) {
 
   // Show stat numbers
   Counter num_input_sections("input_sections");
-  for (ObjectFile *file : out::files)
+  for (ObjectFile *file : out::objs)
     num_input_sections.inc(file->sections.size());
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
-  Counter num_files("files", out::files.size());
+  Counter num_files("files", out::objs.size());
   Counter filesize_counter("filesize", filesize);
 
   Counter::print();
