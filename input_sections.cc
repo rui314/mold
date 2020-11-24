@@ -58,10 +58,10 @@ void InputSection::copy_buf() {
       *(u64 *)loc = sym.get_got_addr() - GOT + A;
       break;
     case R_X86_64_PLT32:
-      if (sym.plt_idx != -1)
-        *(u32 *)loc = sym.get_plt_addr() + A - P;
+      if (sym.plt_idx == -1)
+        *(u32 *)loc = S + A - P;
       else
-        *(u32 *)loc = S + A - P; // todo
+        *(u32 *)loc = sym.get_plt_addr() + A - P;
       break;
     case R_X86_64_GOTPCREL:
       *(u32 *)loc = sym.get_got_addr() + A - P;
