@@ -145,6 +145,7 @@ void InputSection::scan_relocations() {
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
+      break;
     case R_X86_64_8:
     case R_X86_64_16:
     case R_X86_64_32:
@@ -154,8 +155,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-    case R_X86_64_TPOFF32:
-    case R_X86_64_DTPOFF32:
+      if (sym.is_imported)
+        sym.flags |= Symbol::NEEDS_COPYREL;
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:
@@ -181,6 +182,9 @@ void InputSection::scan_relocations() {
         sym.flags |= Symbol::NEEDS_TLSLD;
       else
         i++;
+      break;
+    case R_X86_64_TPOFF32:
+    case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_GOTTPOFF:
       sym.flags |= Symbol::NEEDS_GOTTPOFF;

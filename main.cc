@@ -434,6 +434,9 @@ static void scan_rels() {
 
     if (sym->flags & Symbol::NEEDS_TLSLD)
       out::got->add_tlsld_symbol(sym);
+
+    if (sym->flags & Symbol::NEEDS_COPYREL)
+      out::copyrel->add_symbol(sym);
   }
 }
 
@@ -755,6 +758,7 @@ int main(int argc, char **argv) {
   out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
+  out::copyrel = new CopyrelSection;
 
   if (!config.is_static) {
     out::interp = new InterpSection;
@@ -775,6 +779,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::symtab);
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
+  out::chunks.push_back(out::copyrel);
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
   int priority = 2;

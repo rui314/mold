@@ -220,6 +220,7 @@ public:
   u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
   u32 dynstr_offset = -1;
+  u32 copyrel_offset = -1;
 
   u32 shndx = 0;
 
@@ -237,6 +238,7 @@ public:
     NEEDS_GOTTPOFF = 1 << 2,
     NEEDS_TLSGD    = 1 << 3,
     NEEDS_TLSLD    = 1 << 4,
+    NEEDS_COPYREL  = 1 << 5,
   };
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
@@ -314,9 +316,9 @@ public:
 
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
-  virtual void update_shdr() {}
   virtual void initialize_buf() {}
   virtual void copy_buf() {}
+  virtual void update_shdr() {}
 
   StringRef name;
   Kind kind;
@@ -615,6 +617,20 @@ private:
   }
 };
 
+class CopyrelSection : public OutputChunk {
+public:
+  CopyrelSection() : OutputChunk(SYNTHETIC) {
+    name = ".bss";
+    shdr.sh_type = llvm::ELF::SHT_NOBITS;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_addralign = 32;
+  }
+
+  void add_symbol(Symbol *sym);
+
+  std::vector<Symbol *> symbols;
+};
+
 bool is_c_identifier(StringRef name);
 
 namespace out {
@@ -641,6 +657,7 @@ inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
+inline CopyrelSection *copyrel;
 
 inline u64 tls_end;
 
@@ -763,6 +780,8 @@ private:
 inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)
     return piece_ref.piece->get_addr() + piece_ref.addend;
+  if (copyrel_offset != -1)
+    return out::copyrel->shdr.sh_addr + copyrel_offset;
   if (input_section)
     return input_section->get_addr() + value;
   return value;

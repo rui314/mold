@@ -146,20 +146,16 @@ void InterpSection::copy_buf() {
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
-  auto count = [](ArrayRef<Symbol *> syms) {
-    int i = 0;
-    return i;
-  };
-
+  int n = 0;
   for (Symbol *sym : out::got->got_syms)
     if (sym->is_imported)
-      shdr.sh_size += sizeof(ELF64LE::Rela);
+      n++;
 
-  for (Symbol *sym : out::got->tlsgd_syms)
-    shdr.sh_size += sizeof(ELF64LE::Rela) * 2;
-
-  for (Symbol *sym : out::got->tlsld_syms)
-    shdr.sh_size += sizeof(ELF64LE::Rela);
+  n += out::got->tlsgd_syms.size() * 2;
+  n += out::got->tlsld_syms.size();
+  n += out::got->tlsld_syms.size();
+  n += out::copyrel->symbols.size();
+  shdr.sh_size = n * sizeof(ELF64LE::Rela);
 }
 
 void RelDynSection::copy_buf() {
@@ -188,6 +184,9 @@ void RelDynSection::copy_buf() {
   for (Symbol *sym : out::got->gottpoff_syms)
     if (sym->is_imported)
       write(sym, R_X86_64_TPOFF32, sym->get_gottpoff_addr());
+
+  for (Symbol *sym : out::copyrel->symbols)
+    write(sym, R_X86_64_COPY, sym->get_addr());
 }
 
 void StrtabSection::initialize_buf() {
@@ -575,6 +574,7 @@ void DynsymSection::copy_buf() {
     esym.st_name = sym->dynstr_offset;
     esym.setType(sym->type);
     esym.setBinding(sym->esym->getBinding());
+    esym.st_size = sym->esym->st_size;
 
     if (sym->is_imported || sym->esym->isUndefined()) {
       esym.st_shndx = SHN_UNDEF;
@@ -654,4 +654,12 @@ MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
   auto *osec = new MergedSection(name, flags, type);
   MergedSection::instances.push_back(osec);
   return osec;
+}
+
+void CopyrelSection::add_symbol(Symbol *sym) {
+  assert(sym->is_imported);
+  sym->copyrel_offset = align_to(shdr.sh_size, shdr.sh_addralign);
+  shdr.sh_size += sym->esym->st_size;
+  symbols.push_back(sym);
+  out::dynsym->add_symbol(sym);
 }
