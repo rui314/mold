@@ -31,7 +31,7 @@
 // PLT: 0000000000201010 <printf@plt>:
 // PLT:   201010:       ff 25 2a 10 00 00       jmpq   *0x102a(%rip)        # 202040 <printf>
 // PLT:   201016:       68 00 00 00 00          pushq  $0x0
-// PLT:   20101b:       e9 e0 ff ff ff          jmpq   201000 <_IO_stdin_used+0xb70>
+// PLT:   20101b:       e9 e0 ff ff ff          jmpq   201000 <_IO_stdin_used+0xac8>
 
         .text
         .globl main
