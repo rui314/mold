@@ -90,8 +90,8 @@ void InputSection::copy_buf() {
           0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff, %rax
         };
         memcpy(loc - 4, insn, sizeof(insn));
-        i++;
         *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
+        i++;
       } else {
         *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
       }
