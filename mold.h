@@ -261,6 +261,7 @@ public:
 
   virtual void scan_relocations() {}
   virtual void copy_buf() {}
+  u64 get_addr() const;
 
   ObjectFile *file;
   const ELF64LE::Shdr &shdr;
@@ -762,11 +763,8 @@ private:
 inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)
     return piece_ref.piece->get_addr() + piece_ref.addend;
-
   if (input_section)
-    return input_section->output_section->shdr.sh_addr +
-           input_section->offset + value;
-
+    return input_section->get_addr() + value;
   return value;
 }
 
@@ -803,6 +801,10 @@ inline u64 Symbol::get_plt_addr() const {
 inline u64 StringPiece::get_addr() const {
   MergeableSection *is = isec.load();
   return is->parent.shdr.sh_addr + is->offset + output_offset;
+}
+
+inline u64 InputChunk::get_addr() const {
+  return output_section->shdr.sh_addr + offset;
 }
 
 inline void write_string(u8 *buf, StringRef str) {

@@ -46,7 +46,6 @@ void InputSection::copy_buf() {
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
-    case R_X86_64_DTPOFF32:
       break;
     case R_X86_64_64:
       *(u64 *)loc = S + A;
@@ -100,9 +99,7 @@ void InputSection::copy_buf() {
       if (sym.tlsld_idx == -1) {
         // Relax LD to LE
         static const u8 insn[] = {
-          0x66, 0x66,                               // .word 0x6666
-          0x66,                                     // .byte 0x66
-          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+          0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
         };
         memcpy(loc - 3, insn, sizeof(insn));
         i++;
@@ -110,11 +107,12 @@ void InputSection::copy_buf() {
         *(u32 *)loc = sym.get_tlsld_addr() + A - P;
       }
       break;
-    case R_X86_64_GOTTPOFF:
-      *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
-      break;
+    case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
       *(u32 *)loc = S - out::tls_end;
+      break;
+    case R_X86_64_GOTTPOFF:
+      *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
       break;
     case R_X86_64_PC64:
       *(u64 *)loc = S + A - P;
