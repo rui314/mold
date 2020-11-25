@@ -105,6 +105,7 @@ void InputSection::copy_buf() {
           0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
         };
         memcpy(loc - 3, insn, sizeof(insn));
+        i++;
       } else {
         *(u32 *)loc = sym.get_tlsld_addr() + A - P;
       }
@@ -177,8 +178,11 @@ void InputSection::scan_relocations() {
         i++;
       break;
     case R_X86_64_TLSLD:
+      assert(rels[i + 1].getType(false) == R_X86_64_PLT32);
       if (sym.is_imported)
         sym.flags |= Symbol::NEEDS_TLSLD;
+      else
+        i++;
       break;
     case R_X86_64_GOTTPOFF:
       sym.flags |= Symbol::NEEDS_GOTTPOFF;
