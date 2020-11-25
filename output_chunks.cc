@@ -165,38 +165,29 @@ void RelDynSection::update_shdr() {
 void RelDynSection::copy_buf() {
   ELF64LE::Rela *rel = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
 
-  for (Symbol *sym : out::got->got_syms) {
-    if (!sym->is_imported)
-      continue;
-
+  auto write = [&](Symbol *sym, u8 type, u64 offset) {
     memset(rel, 0, sizeof(*rel));
     rel->setSymbol(sym->dynsym_idx, false);
-    rel->setType(R_X86_64_GLOB_DAT, false);
-    rel->r_offset = sym->get_got_addr();
+    rel->setType(type, false);
+    rel->r_offset = offset;
     rel++;
-  }
+  };
+
+  for (Symbol *sym : out::got->got_syms)
+    if (sym->is_imported)
+      write(sym, R_X86_64_GLOB_DAT, sym->get_got_addr());
 
   for (Symbol *sym : out::got->tlsgd_syms) {
-    memset(rel, 0, sizeof(*rel));
-    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
-    rel->setType(R_X86_64_DTPMOD64, false);
-    rel->r_offset = sym->get_tlsgd_addr();
-    rel++;
-
-    memset(rel, 0, sizeof(*rel));
-    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
-    rel->setType(R_X86_64_DTPOFF64, false);
-    rel->r_offset = sym->get_tlsgd_addr() + GOT_SIZE;
-    rel++;
+    write(sym, R_X86_64_DTPMOD64, sym->get_tlsgd_addr());
+    write(sym, R_X86_64_DTPOFF64, sym->get_tlsgd_addr() + GOT_SIZE);
   }
 
-  for (Symbol *sym : out::got->tlsld_syms) {
-    memset(rel, 0, sizeof(*rel));
-    rel->setSymbol(sym->is_imported ? sym->dynsym_idx : 0, false);
-    rel->setType(R_X86_64_DTPMOD64, false);
-    rel->r_offset = sym->get_tlsld_addr();
-    rel++;
-  }
+  for (Symbol *sym : out::got->tlsld_syms)
+    write(sym, R_X86_64_DTPMOD64, sym->get_tlsld_addr());
+
+  for (Symbol *sym : out::got->gottpoff_syms)
+    if (sym->is_imported)
+      write(sym, R_X86_64_TPOFF32, sym->get_gottpoff_addr());
 }
 
 void StrtabSection::initialize_buf() {
@@ -426,6 +417,9 @@ void GotSection::add_gottpoff_symbol(Symbol *sym) {
   sym->gottpoff_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   gottpoff_syms.push_back(sym);
+
+  if (sym->is_imported)
+    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_tlsgd_symbol(Symbol *sym) {
@@ -457,7 +451,8 @@ void GotSection::copy_buf() {
       buf[sym->got_idx] = sym->get_addr();
 
   for (Symbol *sym : gottpoff_syms)
-    buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
+    if (!sym->is_imported)
+      buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
 }
 
 void GotPltSection::copy_buf() {

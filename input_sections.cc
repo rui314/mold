@@ -83,10 +83,31 @@ void InputSection::copy_buf() {
       *loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
-      *(u64 *)loc = sym.get_tlsgd_addr() + A - P;
+      if (sym.tlsgd_idx == -1) {
+        // Relax GD to LE
+        static const u8 insn[] = {
+          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+          0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff, %rax
+        };
+        memcpy(loc - 4, insn, sizeof(insn));
+        i++;
+        *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
+      } else {
+        *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
+      }
       break;
     case R_X86_64_TLSLD:
-      *(u64 *)loc = sym.get_tlsld_addr() + A - P;
+      if (sym.tlsld_idx == -1) {
+        // Relax LD to LE
+        static const u8 insn[] = {
+          0x66, 0x66,                               // .word 0x6666
+          0x66,                                     // .byte 0x66
+          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+        };
+        memcpy(loc - 3, insn, sizeof(insn));
+      } else {
+        *(u32 *)loc = sym.get_tlsld_addr() + A - P;
+      }
       break;
     case R_X86_64_GOTTPOFF:
       *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
@@ -118,7 +139,8 @@ void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
-  for (const ELF64LE::Rela &rel : rels) {
+  for (int i = 0; i < rels.size(); i++) {
+    const ELF64LE::Rela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
     assert(sym.file);
 
@@ -148,10 +170,15 @@ void InputSection::scan_relocations() {
         sym.flags |= Symbol::NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      sym.flags |= Symbol::NEEDS_TLSGD;
+      assert(rels[i + 1].getType(false) == R_X86_64_PLT32);
+      if (sym.is_imported)
+        sym.flags |= Symbol::NEEDS_TLSGD;
+      else
+        i++;
       break;
     case R_X86_64_TLSLD:
-      sym.flags |= Symbol::NEEDS_TLSLD;
+      if (sym.is_imported)
+        sym.flags |= Symbol::NEEDS_TLSLD;
       break;
     case R_X86_64_GOTTPOFF:
       sym.flags |= Symbol::NEEDS_GOTTPOFF;
