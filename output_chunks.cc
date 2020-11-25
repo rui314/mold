@@ -658,6 +658,10 @@ MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
 
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(sym->is_imported);
+
+  if (sym->copyrel_offset != -1)
+    return;
+
   sym->copyrel_offset = align_to(shdr.sh_size, shdr.sh_addralign);
   shdr.sh_size += sym->esym->st_size;
   symbols.push_back(sym);

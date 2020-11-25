@@ -435,8 +435,17 @@ static void scan_rels() {
     if (sym->flags & Symbol::NEEDS_TLSLD)
       out::got->add_tlsld_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_COPYREL)
+    if (sym->flags & Symbol::NEEDS_COPYREL) {
       out::copyrel->add_symbol(sym);
+      assert(sym->file->is_dso);
+
+      for (Symbol *alias : ((SharedFile *)sym->file)->find_aliases(sym)) {
+        assert(alias->copyrel_offset == -1 ||
+               alias->copyrel_offset == sym->copyrel_offset);
+        alias->copyrel_offset = sym->copyrel_offset;
+        out::dynsym->add_symbol(alias);
+      }
+    }
   }
 }
 

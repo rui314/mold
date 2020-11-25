@@ -765,6 +765,7 @@ public:
 
   void parse();
   void resolve_symbols();
+  ArrayRef<Symbol *> find_aliases(Symbol *sym);
 
   StringRef soname;
 

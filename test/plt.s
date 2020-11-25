@@ -23,7 +23,6 @@
 // GOTPLT:   0x00202038 00000000 00000000 16102000 00000000 .......... .....
 
 // RUN: objdump -d -j .plt %t.exe | FileCheck --check-prefix=PLT %s
-// PLT: Disassembly of section .plt:
 // PLT: 0000000000201000 <printf@plt-0x10>:
 // PLT:   201000:       ff 35 2a 10 00 00       pushq  0x102a(%rip)        # 202030 <_GLOBAL_OFFSET_TABLE_+0x8>
 // PLT:   201006:       ff 25 2c 10 00 00       jmpq   *0x102c(%rip)        # 202038 <_GLOBAL_OFFSET_TABLE_+0x10>
@@ -31,7 +30,7 @@
 // PLT: 0000000000201010 <printf@plt>:
 // PLT:   201010:       ff 25 2a 10 00 00       jmpq   *0x102a(%rip)        # 202040 <printf>
 // PLT:   201016:       68 00 00 00 00          pushq  $0x0
-// PLT:   20101b:       e9 e0 ff ff ff          jmpq   201000 <_IO_stdin_used+0xac8>
+// PLT:   20101b:       e9 e0 ff ff ff          jmpq   201000 <_IO_stdin_used+0xbb8>
 
         .text
         .globl main

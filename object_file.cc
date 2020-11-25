@@ -518,7 +518,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.visibility = esym.getVisibility();
         sym.esym = &esym;
         sym.is_undef_weak = true;
-        sym.is_imported = !config.is_static;
+        sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
           message("trace: " + toString(this) + ": unresolved weak symbol " + sym.name);
@@ -705,4 +705,12 @@ std::string toString(InputFile *file) {
   if (obj->archive_name == "")
     return obj->name;
   return (obj->archive_name + ":" + obj->name).str();
+}
+
+ArrayRef<Symbol *> SharedFile::find_aliases(Symbol *sym) {
+  assert(sym->file == this);
+  auto [begin, end] = std::equal_range(
+    symbols.begin(), symbols.end(), sym,
+    [&](Symbol *a, Symbol *b) { return a->value < b->value; });
+  return ArrayRef<Symbol *>(&*begin, end - begin);
 }
