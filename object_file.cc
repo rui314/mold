@@ -333,12 +333,18 @@ void SharedFile::parse() {
   if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_VERSYM))
     versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
 
-  for (int i = first_global; i < esyms.size(); i++) {
-    if (!versyms.empty() && versyms[i] >> 15)
-      continue;
-    StringRef name = CHECK(esyms[i].getName(symbol_strtab), this);
+  for (int i = first_global; i < esyms.size(); i++)
+    if (versyms.empty() || (versyms[i] >> 15) == 0)
+      elf_syms.push_back(esyms[i]);
+
+  std::stable_sort(elf_syms.begin(), elf_syms.end(),
+                   [](const ELF64LE::Sym &a, const ELF64LE::Sym &b) {
+                     return a.st_value < b.st_value;
+                   });
+
+  for (ELF64LE::Sym &esym : elf_syms) {
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
-    elf_syms.push_back(esyms[i]);
   }
 
   static Counter counter("dso_syms");

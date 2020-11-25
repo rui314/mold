@@ -38,13 +38,14 @@
 // CHECK:  0x0000000000000000 (NULL)               0x0
 
 // RUN: readelf --symbols --use-dynamic %t.exe | FileCheck --check-prefix=DYNAMIC %s
+	
 // DYNAMIC: Symbol table for image:
 // DYNAMIC:   Num Buc:    Value          Size   Type   Bind Vis      Ndx Name
 // DYNAMIC:     3   1: 0000000000000000     0 NOTYPE  WEAK   DEFAULT UND _ITM_registerTMCloneTable
 // DYNAMIC:     2   1: 0000000000000000     0 NOTYPE  WEAK   DEFAULT UND _ITM_deregisterTMCloneTab
-// DYNAMIC:     4   2: 0000000000000000   204 FUNC    GLOBAL DEFAULT UND printf
+// DYNAMIC:     5   2: 0000000000000000   204 FUNC    GLOBAL DEFAULT UND printf
 // DYNAMIC:     1   3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT UND __gmon_start__
-// DYNAMIC:     5   4: 0000000000000000   483 FUNC    GLOBAL DEFAULT UND __libc_start_main
+// DYNAMIC:     4   4: 0000000000000000   483 FUNC    GLOBAL DEFAULT UND __libc_start_main
 
         .globl main
 main:
