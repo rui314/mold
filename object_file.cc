@@ -519,6 +519,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.value = 0;
         sym.visibility = esym.getVisibility();
         sym.esym = &esym;
+        sym.is_placeholder = false;
         sym.is_undef_weak = true;
         sym.is_imported = false;
 

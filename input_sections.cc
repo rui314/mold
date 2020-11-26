@@ -148,7 +148,11 @@ void InputSection::scan_relocations() {
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.getSymbol(false)];
-    assert(sym.file);
+
+    if (!sym.file || sym.is_placeholder) {
+      file->has_error = true;
+      continue;
+    }
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -204,6 +208,18 @@ void InputSection::scan_relocations() {
       error(toString(this) + ": unknown relocation: " +
             std::to_string(rel.getType(false)));
     }
+  }
+}
+
+void InputSection::report_undefined_symbols() {
+  if (!(shdr.sh_flags & SHF_ALLOC))
+    return;
+
+  for (const ELF64LE::Rela &rel : rels) {
+    Symbol &sym = *file->symbols[rel.getSymbol(false)];
+    if (!sym.file || sym.is_placeholder)
+      llvm::errs() << "undefined symbol: " << toString(file)
+                   << ": " << sym.name << "\n";
   }
 }
 

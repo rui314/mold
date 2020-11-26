@@ -261,7 +261,6 @@ class InputChunk {
 public:
   enum Kind : u8 { REGULAR, MERGEABLE };
 
-  virtual void scan_relocations() {}
   virtual void copy_buf() {}
   u64 get_addr() const;
 
@@ -283,7 +282,8 @@ public:
     : InputChunk(REGULAR, file, shdr, name) {}
 
   void copy_buf() override;
-  void scan_relocations() override;
+  void scan_relocations();
+  void report_undefined_symbols();
 
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
@@ -732,6 +732,7 @@ public:
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
   const bool is_in_archive;
+  std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
 
   u64 local_symtab_size = 0;
   u64 local_strtab_size = 0;
