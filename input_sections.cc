@@ -155,7 +155,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      if (sym.is_imported)
+      if (sym.is_imported && sym.type == STT_OBJECT)
         sym.flags |= Symbol::NEEDS_COPYREL;
       break;
     case R_X86_64_GOT32:
