@@ -38,6 +38,7 @@ defm dynamic_linker: Eq<"dynamic-linker", "Which dynamic linker to use">;
 
 def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library">;
 def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
+def: JoinedOrSeparate<["-"], "y">, Alias<trace_symbol>, HelpText<"Alias for --trace-symbol">;
 
 def: F<"as-needed">;
 def: F<"no-as-needed">;
