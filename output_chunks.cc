@@ -576,7 +576,10 @@ void DynsymSection::copy_buf() {
     esym.setBinding(sym->esym->getBinding());
     esym.st_size = sym->esym->st_size;
 
-    if (sym->is_imported || sym->esym->isUndefined()) {
+    if (sym->copyrel_offset != -1) {
+      esym.st_shndx = out::copyrel->shndx;
+      esym.st_value = sym->get_addr();
+    } else if (sym->is_imported || sym->esym->isUndefined()) {
       esym.st_shndx = SHN_UNDEF;
     } else if (!sym->input_section) {
       esym.st_shndx = SHN_ABS;
@@ -662,7 +665,8 @@ void CopyrelSection::add_symbol(Symbol *sym) {
   if (sym->copyrel_offset != -1)
     return;
 
-  sym->copyrel_offset = align_to(shdr.sh_size, shdr.sh_addralign);
+  shdr.sh_size = align_to(shdr.sh_size, shdr.sh_addralign);
+  sym->copyrel_offset = shdr.sh_size;
   shdr.sh_size += sym->esym->st_size;
   symbols.push_back(sym);
   out::dynsym->add_symbol(sym);
