@@ -26,9 +26,6 @@ void InputSection::copy_buf() {
   // Apply relocations
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
   u64 sh_addr = output_section->shdr.sh_addr + offset;
-  u64 GOT = out::got->shdr.sh_addr;
-
-  bool debug = (file->name == "setup.o");
 
   for (int i = 0; i < rels.size(); i++) {
     const ELF64LE::Rela &rel = rels[i];
@@ -40,9 +37,12 @@ void InputSection::copy_buf() {
     if (!sym.file)
       continue;
 
-    u64 S = ref.piece ? ref.piece->get_addr() : sym.get_addr();
-    i64 A = ref.piece ? ref.addend : rel.r_addend;
-    u64 P = sh_addr + rel.r_offset;
+#define S   (ref.piece ? ref.piece->get_addr() : sym.get_addr())
+#define A   (ref.piece ? ref.addend : rel.r_addend)
+#define P   (sh_addr + rel.r_offset)
+#define L   sym.get_plt_addr()
+#define G   sym.get_got_addr()
+#define GOT out::got->shdr.sh_addr
 
     switch (rel.getType(false)) {
     case R_X86_64_NONE:
@@ -54,16 +54,16 @@ void InputSection::copy_buf() {
       *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      *(u64 *)loc = sym.get_got_addr() - GOT + A;
+      *(u64 *)loc = G - GOT + A;
       break;
     case R_X86_64_PLT32:
       if (sym.plt_idx == -1)
         *(u32 *)loc = S + A - P;
       else
-        *(u32 *)loc = sym.get_plt_addr() + A - P;
+        *(u32 *)loc = L + A - P;
       break;
     case R_X86_64_GOTPCREL:
-      *(u32 *)loc = sym.get_got_addr() + A - P;
+      *(u32 *)loc = G + A - P;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
@@ -122,12 +122,19 @@ void InputSection::copy_buf() {
       break;
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = sym.get_got_addr() + A - P;
+      *(u32 *)loc = G + A - P;
       break;
     default:
       error(toString(this) + ": unknown relocation: " +
             std::to_string(rel.getType(false)));
     }
+
+#undef S
+#undef A
+#undef P
+#undef L
+#undef G
+#undef GOT
   }
 
   static Counter counter("relocs");
@@ -155,8 +162,12 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      if (sym.is_imported && sym.type == STT_OBJECT)
-        sym.flags |= Symbol::NEEDS_COPYREL;
+      if (sym.is_imported) {
+        if (sym.type == STT_OBJECT)
+          sym.flags |= Symbol::NEEDS_COPYREL;
+        else
+          sym.flags |= Symbol::NEEDS_PLT;
+      }
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:

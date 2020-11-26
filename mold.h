@@ -210,7 +210,7 @@ public:
   InputSection *input_section = nullptr;
   StringPieceRef piece_ref;
 
-  u64 value = 0;
+  u64 value = -1;
   u32 got_idx = -1;
   u32 gotplt_idx = -1;
   u32 gottpoff_idx = -1;
@@ -785,6 +785,8 @@ inline u64 Symbol::get_addr() const {
     return out::copyrel->shdr.sh_addr + copyrel_offset;
   if (input_section)
     return input_section->get_addr() + value;
+  if (file && file->is_dso && copyrel_offset == -1)
+    return get_plt_addr();
   return value;
 }
 
