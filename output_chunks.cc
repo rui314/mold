@@ -661,7 +661,6 @@ MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
 
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(sym->is_imported);
-
   if (sym->copyrel_offset != -1)
     return;
 
