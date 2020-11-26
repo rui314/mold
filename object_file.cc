@@ -337,6 +337,8 @@ void SharedFile::parse() {
     if (versyms.empty() || (versyms[i] >> 15) == 0)
       elf_syms.push_back(esyms[i]);
 
+  // Sort symbols by value for find_aliases(), as find_aliases() does
+  // binary search on symbols.
   std::stable_sort(elf_syms.begin(), elf_syms.end(),
                    [](const ELF64LE::Sym &a, const ELF64LE::Sym &b) {
                      return a.st_value < b.st_value;
