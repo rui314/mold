@@ -132,3 +132,17 @@ appear more than once in a command line, and the linker has to
 de-duplicate them before processing. Adding more than one DT_NEEDED
 entry for the same shared object is illegal and causes mysterious
 issues like this.
+
+# Copy relocations and symbol aliases
+
+environ, _environ and __environ point to the same location in libc.so,
+so when we create a copy relocation for one of the symbols, we need to
+do that for all of them. Otherwise, they'll end up pointing to different
+places which causes a very mysterious issue.
+
+# DT_DEBUG and gdb
+
+If you forget to add an entry with type DT_DEBUG to .dynamic, gdb's
+`info sharedlibrary` command doesn't print out a list of shared
+libraries loaded to memory. The value of the entry doesn't matter, so
+it can be just zero. The existence of it is important.
