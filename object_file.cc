@@ -5,9 +5,6 @@
 #include <cstring>
 #include <regex>
 
-#define SHT_VERSYM 0x6fffffff
-#define SHT_VERNEED 0x6ffffffe
-
 using namespace llvm;
 using namespace llvm::ELF;
 

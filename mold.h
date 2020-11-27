@@ -27,6 +27,9 @@
 #include <mutex>
 #include <string>
 
+#define SHT_VERSYM 0x6fffffff
+#define SHT_VERNEED 0x6ffffffe
+
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
 #define GOT_SIZE 8
@@ -631,6 +634,32 @@ public:
   std::vector<Symbol *> symbols;
 };
 
+class VersymSection : public OutputChunk {
+public:
+  VersymSection() : OutputChunk(SYNTHETIC) {
+    name = ".gnu.version";
+    shdr.sh_type = SHT_VERSYM;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_addralign = 2;
+  }
+
+  void update_shdr() override;
+  void copy_buf() override;
+};
+
+class VerneedSection : public OutputChunk {
+public:
+  VerneedSection() : OutputChunk(SYNTHETIC) {
+    name = ".gnu.version_r";
+    shdr.sh_type = SHT_VERNEED;
+    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_addralign = 4;
+  }
+
+  void update_shdr() override;
+  void copy_buf() override;
+};
+
 bool is_c_identifier(StringRef name);
 
 namespace out {
@@ -769,6 +798,7 @@ public:
   ArrayRef<Symbol *> find_aliases(Symbol *sym);
 
   StringRef soname;
+  u32 dynstr_idx = -1;
 
 private:
   StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);

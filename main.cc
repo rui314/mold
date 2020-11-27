@@ -873,7 +873,7 @@ int main(int argc, char **argv) {
 
   // Copy shared object name strings to .dynsym
   for (SharedFile *file : out::dsos)
-    out::dynstr->add_string(file->soname);
+    file->soname_dynstr_idx = out::dynstr->add_string(file->soname);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.

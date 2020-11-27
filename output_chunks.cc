@@ -671,3 +671,17 @@ void CopyrelSection::add_symbol(Symbol *sym) {
   symbols.push_back(sym);
   out::dynsym->add_symbol(sym);
 }
+
+void VersymSection::update_shdr() {
+  shdr.sh_link = out::dynsym->shndx;
+}
+
+void VersymSection::copy_buf() {
+}
+
+void VerneedSection::update_shdr() {
+  shdr.sh_link = out::dynstr->shndx;
+}
+
+void VerneedSection::copy_buf() {
+}
