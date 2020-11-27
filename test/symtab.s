@@ -26,7 +26,7 @@
 // CHECK:     17: 0000000000000000     0 NOTYPE  GLOBAL HIDDEN   ABS __bss_start
 // CHECK:     18: 0000000000202140     0 NOTYPE  GLOBAL HIDDEN    12 _end
 // CHECK:     19: 0000000000201011     0 NOTYPE  GLOBAL HIDDEN     8 _etext
-// CHECK:     20: 0000000000202128     0 NOTYPE  GLOBAL HIDDEN    11 _edata
+// CHECK:     20: 0000000000202138     0 NOTYPE  GLOBAL HIDDEN    11 _edata
 
         .globl foo, bar, this_is_global
 local1:

@@ -308,6 +308,7 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);
   define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
+  define(DT_DEBUG, 0);
 
   auto find = [](StringRef name) -> OutputChunk * {
     for (OutputChunk *chunk : out::chunks)
