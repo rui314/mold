@@ -93,6 +93,7 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = CHECK(obj.relas(shdr), this);
+      target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
         static Counter counter("relocs_alloc");
@@ -111,6 +112,7 @@ void ObjectFile::initialize_symbols() {
 
   symbols.reserve(elf_syms.size());
   local_symbols.reserve(first_global);
+  sym_pieces.resize(elf_syms.size());
 
   // First symbol entry is always null
   local_symbols.emplace_back("");
@@ -220,8 +222,6 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!isec || isec->rels.empty())
       continue;
 
-    isec->rel_pieces.resize(isec->rels.size());
-
     for (int i = 0; i < isec->rels.size(); i++) {
       const ELF64LE::Rela &rel = isec->rels[i];
 
@@ -260,8 +260,6 @@ void ObjectFile::initialize_mergeable_sections() {
   bool debug = (name == "setup.o");
 
   // Initialize sym_pieces
-  sym_pieces.resize(elf_syms.size());
-
   for (int i = 0; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
     if (esym.isAbsolute() || esym.isCommon())
