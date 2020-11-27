@@ -345,32 +345,34 @@ void SharedFile::parse() {
     symbols.push_back(Symbol::intern(name));
   }
 
-  // Read version info.
-  if (!versyms.empty()) {
-    const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
-    if (!verdef_sec)
-      error(toString(this) + ": .gnu.version_d is missing");
-
-    const ELF64LE::Shdr *vername_sec = CHECK(obj.getSection(verdef_sec->sh_link), this);
-    if (!vername_sec)
-      error(toString(this) + ": .gnu.version_d is corrupted");
-
-    ArrayRef<u8> verdef =
-      CHECK(obj.template getSectionContentsAsArray<u8>(*verdef_sec), this);
-    StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
-
-    ELF64LE::Verdef *ver = (ELF64LE::Verdef *)(verdef.data());
-    do {
-      if (this->versions.size() <= ver->vd_ndx)
-        this->versions.resize(ver->vd_ndx);
-      //      this->versions[ver->vd_ndx] = strtab.data() + ver->vd_
-
-      ELF64LE::Verdef *ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
-    } while (ver->vd_next);
-  }
+  versions = read_version_info(versyms);
 
   static Counter counter("dso_syms");
   counter.inc(elf_syms.size());
+}
+
+std::vector<StringRef> SharedFile::read_version_info(ArrayRef<u16> versyms) {
+  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
+  const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
+  if (!verdef_sec)
+    return {};
+
+  const ELF64LE::Shdr *vername_sec = CHECK(obj.getSection(verdef_sec->sh_link), this);
+  if (!vername_sec)
+    error(toString(this) + ": .gnu.version_d is corrupted");
+
+  ArrayRef<u8> verdef = CHECK(obj.getSectionContents(*verdef_sec), this);
+  StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
+
+  std::vector<StringRef> ret(verdef_sec->sh_info);
+  auto *ver = (ELF64LE::Verdef *)verdef.data();
+
+  while (ver->vd_next) {
+    auto *aux = (ELF64LE::Verdaux *)((u8 *)ver + ver->vd_aux);
+    ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
+    ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
+  }
+  return ret;
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.
