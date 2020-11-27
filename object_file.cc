@@ -318,6 +318,7 @@ void SharedFile::parse() {
   if (!symtab_sec)
     return;
 
+  // Read a symbol table.
   int first_global = symtab_sec->sh_info;
   ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
 
@@ -325,7 +326,7 @@ void SharedFile::parse() {
   soname = get_soname(elf_sections);
 
   ArrayRef<u16> versyms;
-  if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_VERSYM))
+  if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
     versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
 
   for (int i = first_global; i < esyms.size(); i++)
@@ -342,6 +343,30 @@ void SharedFile::parse() {
   for (ELF64LE::Sym &esym : elf_syms) {
     StringRef name = CHECK(esym.getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
+  }
+
+  // Read version info.
+  if (!versyms.empty()) {
+    const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
+    if (!verdef_sec)
+      error(toString(this) + ": .gnu.version_d is missing");
+
+    const ELF64LE::Shdr *vername_sec = CHECK(obj.getSection(verdef_sec->sh_link), this);
+    if (!vername_sec)
+      error(toString(this) + ": .gnu.version_d is corrupted");
+
+    ArrayRef<u8> verdef =
+      CHECK(obj.template getSectionContentsAsArray<u8>(*verdef_sec), this);
+    StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
+
+    ELF64LE::Verdef *ver = (ELF64LE::Verdef *)(verdef.data());
+    do {
+      if (this->versions.size() <= ver->vd_ndx)
+        this->versions.resize(ver->vd_ndx);
+      //      this->versions[ver->vd_ndx] = strtab.data() + ver->vd_
+
+      ELF64LE::Verdef *ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
+    } while (ver->vd_next);
   }
 
   static Counter counter("dso_syms");
