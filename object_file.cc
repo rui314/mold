@@ -645,7 +645,7 @@ void SharedFile::parse() {
 
   symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   soname = get_soname(elf_sections);
-  verdefs = read_verdef();
+  version_strings = read_verdef();
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
@@ -735,6 +735,7 @@ void SharedFile::resolve_symbols() {
       sym.input_section = nullptr;
       sym.piece_ref = {};
       sym.value = esym.st_value;
+      sym.ver_idx = versyms[i];
       sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
       sym.binding = esym.getBinding();
       sym.visibility = esym.getVisibility();
