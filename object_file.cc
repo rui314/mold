@@ -158,20 +158,6 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
-  const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_DYNAMIC);
-  if (!sec)
-    return name;
-
-  ArrayRef<ELF64LE::Dyn> tags =
-    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(*sec), this);
-
-  for (const ELF64LE::Dyn &dyn : tags)
-    if (dyn.d_tag == DT_SONAME)
-      return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
-  return name;
-}
-
 static const StringPieceRef *
 binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
   if (offset < pieces[0].input_offset)
@@ -311,70 +297,6 @@ void ObjectFile::parse() {
   }
 }
 
-void SharedFile::parse() {
-  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
-  symtab_sec = find_section(elf_sections, SHT_DYNSYM);
-
-  if (!symtab_sec)
-    return;
-
-  // Read a symbol table.
-  int first_global = symtab_sec->sh_info;
-  ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
-
-  symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
-  soname = get_soname(elf_sections);
-
-  ArrayRef<u16> versyms;
-  if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
-    versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
-
-  for (int i = first_global; i < esyms.size(); i++)
-    if (versyms.empty() || (versyms[i] >> 15) == 0)
-      elf_syms.push_back(esyms[i]);
-
-  // Sort symbols by value for find_aliases(), as find_aliases() does
-  // binary search on symbols.
-  std::stable_sort(elf_syms.begin(), elf_syms.end(),
-                   [](const ELF64LE::Sym &a, const ELF64LE::Sym &b) {
-                     return a.st_value < b.st_value;
-                   });
-
-  for (ELF64LE::Sym &esym : elf_syms) {
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
-    symbols.push_back(Symbol::intern(name));
-  }
-
-  versions = read_version_info(versyms);
-
-  static Counter counter("dso_syms");
-  counter.inc(elf_syms.size());
-}
-
-std::vector<StringRef> SharedFile::read_version_info(ArrayRef<u16> versyms) {
-  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
-  const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
-  if (!verdef_sec)
-    return {};
-
-  const ELF64LE::Shdr *vername_sec = CHECK(obj.getSection(verdef_sec->sh_link), this);
-  if (!vername_sec)
-    error(toString(this) + ": .gnu.version_d is corrupted");
-
-  ArrayRef<u8> verdef = CHECK(obj.getSectionContents(*verdef_sec), this);
-  StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
-
-  std::vector<StringRef> ret(verdef_sec->sh_info);
-  auto *ver = (ELF64LE::Verdef *)verdef.data();
-
-  while (ver->vd_next) {
-    auto *aux = (ELF64LE::Verdaux *)((u8 *)ver + ver->vd_aux);
-    ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
-    ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
-  }
-  return ret;
-}
-
 // Symbols with higher priorities overwrites symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
@@ -433,32 +355,6 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   }
 }
 
-void SharedFile::maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym) {
-  std::lock_guard lock(sym.mu);
-
-  u64 new_rank = get_rank(this, esym);
-  u64 existing_rank = get_rank(sym);
-
-  if (new_rank < existing_rank) {
-    sym.file = this;
-    sym.input_section = nullptr;
-    sym.piece_ref = {};
-    sym.value = esym.st_value;
-    sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
-    sym.binding = esym.getBinding();
-    sym.visibility = esym.getVisibility();
-    sym.esym = &esym;
-    sym.is_placeholder = false;
-    sym.is_weak = (esym.getBinding() == STB_WEAK);
-    sym.is_imported = true;
-
-    if (UNLIKELY(sym.traced))
-      message("trace: " + toString(sym.file) +
-              (sym.is_weak ? ": weak definition of " : ": definition of ") +
-              sym.name);
-  }
-}
-
 void ObjectFile::resolve_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
@@ -484,12 +380,6 @@ void ObjectFile::resolve_symbols() {
       maybe_override_symbol(sym, i);
     }
   }
-}
-
-void SharedFile::resolve_symbols() {
-  for (int i = 0; i < symbols.size(); i++)
-    if (elf_syms[i].isDefined())
-      maybe_override_symbol(*symbols[i], elf_syms[i]);
 }
 
 void
@@ -730,6 +620,116 @@ std::string toString(InputFile *file) {
   if (obj->archive_name == "")
     return obj->name;
   return (obj->archive_name + ":" + obj->name).str();
+}
+
+StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
+  const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_DYNAMIC);
+  if (!sec)
+    return name;
+
+  ArrayRef<ELF64LE::Dyn> tags =
+    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(*sec), this);
+
+  for (const ELF64LE::Dyn &dyn : tags)
+    if (dyn.d_tag == DT_SONAME)
+      return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
+  return name;
+}
+
+void SharedFile::parse() {
+  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
+  symtab_sec = find_section(elf_sections, SHT_DYNSYM);
+
+  if (!symtab_sec)
+    return;
+
+  // Read a symbol table.
+  int first_global = symtab_sec->sh_info;
+  ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
+
+  symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+  soname = get_soname(elf_sections);
+
+  ArrayRef<u16> versyms;
+  if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
+    versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
+
+  for (int i = first_global; i < esyms.size(); i++)
+    if (versyms.empty() || (versyms[i] >> 15) == 0)
+      elf_syms.push_back(esyms[i]);
+
+  // Sort symbols by value for find_aliases(), as find_aliases() does
+  // binary search on symbols.
+  std::stable_sort(elf_syms.begin(), elf_syms.end(),
+                   [](const ELF64LE::Sym &a, const ELF64LE::Sym &b) {
+                     return a.st_value < b.st_value;
+                   });
+
+  for (ELF64LE::Sym &esym : elf_syms) {
+    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    symbols.push_back(Symbol::intern(name));
+  }
+
+  versions = read_version_info(versyms);
+
+  static Counter counter("dso_syms");
+  counter.inc(elf_syms.size());
+}
+
+std::vector<StringRef> SharedFile::read_version_info(ArrayRef<u16> versyms) {
+  ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
+  const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
+  if (!verdef_sec)
+    return {};
+
+  const ELF64LE::Shdr *vername_sec = CHECK(obj.getSection(verdef_sec->sh_link), this);
+  if (!vername_sec)
+    error(toString(this) + ": .gnu.version_d is corrupted");
+
+  ArrayRef<u8> verdef = CHECK(obj.getSectionContents(*verdef_sec), this);
+  StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
+
+  std::vector<StringRef> ret(verdef_sec->sh_info);
+  auto *ver = (ELF64LE::Verdef *)verdef.data();
+
+  while (ver->vd_next) {
+    auto *aux = (ELF64LE::Verdaux *)((u8 *)ver + ver->vd_aux);
+    ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
+    ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
+  }
+  return ret;
+}
+
+void SharedFile::maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym) {
+  std::lock_guard lock(sym.mu);
+
+  u64 new_rank = get_rank(this, esym);
+  u64 existing_rank = get_rank(sym);
+
+  if (new_rank < existing_rank) {
+    sym.file = this;
+    sym.input_section = nullptr;
+    sym.piece_ref = {};
+    sym.value = esym.st_value;
+    sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
+    sym.binding = esym.getBinding();
+    sym.visibility = esym.getVisibility();
+    sym.esym = &esym;
+    sym.is_placeholder = false;
+    sym.is_weak = (esym.getBinding() == STB_WEAK);
+    sym.is_imported = true;
+
+    if (UNLIKELY(sym.traced))
+      message("trace: " + toString(sym.file) +
+              (sym.is_weak ? ": weak definition of " : ": definition of ") +
+              sym.name);
+  }
+}
+
+void SharedFile::resolve_symbols() {
+  for (int i = 0; i < symbols.size(); i++)
+    if (elf_syms[i].isDefined())
+      maybe_override_symbol(*symbols[i], elf_syms[i]);
 }
 
 ArrayRef<Symbol *> SharedFile::find_aliases(Symbol *sym) {
