@@ -671,13 +671,13 @@ void SharedFile::parse() {
     symbols.push_back(Symbol::intern(name));
   }
 
-  versions = read_version_info(versyms);
+  versions = read_version_info();
 
   static Counter counter("dso_syms");
   counter.inc(elf_syms.size());
 }
 
-std::vector<StringRef> SharedFile::read_version_info(ArrayRef<u16> versyms) {
+std::vector<StringRef> SharedFile::read_version_info() {
   ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
   const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
   if (!verdef_sec)
