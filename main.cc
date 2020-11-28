@@ -414,7 +414,9 @@ static void scan_rels() {
         vec[i].push_back(sym);
   });
 
-  for (Symbol *sym : flatten(vec)) {
+  std::vector<Symbol *> dynsyms = flatten(vec);
+
+  for (Symbol *sym : dynsyms) {
     if (sym->flags & Symbol::NEEDS_GOT)
       out::got->add_got_symbol(sym);
 
