@@ -797,14 +797,15 @@ public:
   StringRef soname;
   u32 soname_dynstr_idx = -1;
 
-  std::vector<StringRef> versions;
+  std::vector<u16> versyms;
+  std::vector<StringRef> verdefs;
 
 private:
   StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
-  std::vector<StringRef> read_version_info();
+  std::vector<StringRef> read_verdef();
 
-  std::vector<ELF64LE::Sym> elf_syms;
+  std::vector<const ELF64LE::Sym *> elf_syms;
   StringRef symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };

@@ -643,41 +643,56 @@ void SharedFile::parse() {
   if (!symtab_sec)
     return;
 
+  symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
+  soname = get_soname(elf_sections);
+  verdefs = read_verdef();
+
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
   ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
-
-  symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
-  soname = get_soname(elf_sections);
-
-  ArrayRef<u16> versyms;
+  ArrayRef<u16> vers;
   if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
-    versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
+    vers = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
 
-  for (int i = first_global; i < esyms.size(); i++)
-    if (esyms[i].isDefined())
-      if (versyms.empty() || (versyms[i] >> 15) == 0)
-        elf_syms.push_back(esyms[i]);
+  std::vector<std::pair<const ELF64LE::Sym *, u16>> pairs;
+
+  for (int i = first_global; i < esyms.size(); i++) {
+    if (!esyms[i].isDefined())
+      continue;
+    if (!vers.empty() && (vers[i] >> 15) == 1)
+      continue;
+
+    if (vers.empty())
+      pairs.push_back({&esyms[i], 1});
+    else
+      pairs.push_back({&esyms[i], vers[i]});
+  }
 
   // Sort symbols by value for find_aliases(), as find_aliases() does
   // binary search on symbols.
-  std::stable_sort(elf_syms.begin(), elf_syms.end(),
-                   [](const ELF64LE::Sym &a, const ELF64LE::Sym &b) {
-                     return a.st_value < b.st_value;
+  std::stable_sort(pairs.begin(), pairs.end(),
+                   [](const std::pair<const ELF64LE::Sym *, u16> &a,
+                      const std::pair<const ELF64LE::Sym *, u16> &b) {
+                     return a.first->st_value < b.first->st_value;
                    });
 
-  for (ELF64LE::Sym &esym : elf_syms) {
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+  elf_syms.reserve(pairs.size());
+  versyms.reserve(pairs.size());
+  symbols.reserve(pairs.size());
+
+  for (std::pair<const ELF64LE::Sym *, u16> &x : pairs) {
+    elf_syms.push_back(x.first);
+    versyms.push_back(x.second);
+
+    StringRef name = CHECK(x.first->getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
   }
-
-  versions = read_version_info();
 
   static Counter counter("dso_syms");
   counter.inc(elf_syms.size());
 }
 
-std::vector<StringRef> SharedFile::read_version_info() {
+std::vector<StringRef> SharedFile::read_verdef() {
   ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
   const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
   if (!verdef_sec)
@@ -704,7 +719,7 @@ std::vector<StringRef> SharedFile::read_version_info() {
 void SharedFile::resolve_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
-    ELF64LE::Sym &esym = elf_syms[i];
+    const ELF64LE::Sym &esym = *elf_syms[i];
 
     std::lock_guard lock(sym.mu);
 
