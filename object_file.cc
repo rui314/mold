@@ -655,8 +655,9 @@ void SharedFile::parse() {
     versyms = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
 
   for (int i = first_global; i < esyms.size(); i++)
-    if (versyms.empty() || (versyms[i] >> 15) == 0)
-      elf_syms.push_back(esyms[i]);
+    if (esyms[i].isDefined())
+      if (versyms.empty() || (versyms[i] >> 15) == 0)
+        elf_syms.push_back(esyms[i]);
 
   // Sort symbols by value for find_aliases(), as find_aliases() does
   // binary search on symbols.
@@ -700,36 +701,35 @@ std::vector<StringRef> SharedFile::read_version_info(ArrayRef<u16> versyms) {
   return ret;
 }
 
-void SharedFile::maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym) {
-  std::lock_guard lock(sym.mu);
-
-  u64 new_rank = get_rank(this, esym);
-  u64 existing_rank = get_rank(sym);
-
-  if (new_rank < existing_rank) {
-    sym.file = this;
-    sym.input_section = nullptr;
-    sym.piece_ref = {};
-    sym.value = esym.st_value;
-    sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
-    sym.binding = esym.getBinding();
-    sym.visibility = esym.getVisibility();
-    sym.esym = &esym;
-    sym.is_placeholder = false;
-    sym.is_weak = (esym.getBinding() == STB_WEAK);
-    sym.is_imported = true;
-
-    if (UNLIKELY(sym.traced))
-      message("trace: " + toString(sym.file) +
-              (sym.is_weak ? ": weak definition of " : ": definition of ") +
-              sym.name);
-  }
-}
-
 void SharedFile::resolve_symbols() {
-  for (int i = 0; i < symbols.size(); i++)
-    if (elf_syms[i].isDefined())
-      maybe_override_symbol(*symbols[i], elf_syms[i]);
+  for (int i = 0; i < symbols.size(); i++) {
+    Symbol &sym = *symbols[i];
+    ELF64LE::Sym &esym = elf_syms[i];
+
+    std::lock_guard lock(sym.mu);
+
+    u64 new_rank = get_rank(this, esym);
+    u64 existing_rank = get_rank(sym);
+
+    if (new_rank < existing_rank) {
+      sym.file = this;
+      sym.input_section = nullptr;
+      sym.piece_ref = {};
+      sym.value = esym.st_value;
+      sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
+      sym.binding = esym.getBinding();
+      sym.visibility = esym.getVisibility();
+      sym.esym = &esym;
+      sym.is_placeholder = false;
+      sym.is_weak = (esym.getBinding() == STB_WEAK);
+      sym.is_imported = true;
+
+      if (UNLIKELY(sym.traced))
+        message("trace: " + toString(sym.file) +
+                (sym.is_weak ? ": weak definition of " : ": definition of ") +
+                sym.name);
+    }
+  }
 }
 
 ArrayRef<Symbol *> SharedFile::find_aliases(Symbol *sym) {

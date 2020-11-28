@@ -802,7 +802,7 @@ public:
 private:
   StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
-  std::vector<StringRef>  read_version_info(ArrayRef<u16> versyms);
+  std::vector<StringRef> read_version_info(ArrayRef<u16> versyms);
 
   std::vector<ELF64LE::Sym> elf_syms;
   StringRef symbol_strtab;
