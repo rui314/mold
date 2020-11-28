@@ -705,12 +705,16 @@ std::vector<StringRef> SharedFile::read_verdef() {
   ArrayRef<u8> verdef = CHECK(obj.getSectionContents(*verdef_sec), this);
   StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
 
-  std::vector<StringRef> ret(verdef_sec->sh_info);
+  std::vector<StringRef> ret(2);
   auto *ver = (ELF64LE::Verdef *)verdef.data();
 
-  while (ver->vd_next) {
+  for (;;) {
+    if (ret.size() <= ver->vd_ndx)
+      ret.resize(ver->vd_ndx + 1);
     auto *aux = (ELF64LE::Verdaux *)((u8 *)ver + ver->vd_aux);
     ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
+    if (!ver->vd_next)
+      break;
     ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
   }
   return ret;
