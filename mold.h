@@ -178,7 +178,7 @@ struct StringPieceRef {
 class Symbol {
 public:
   Symbol(StringRef name)
-    : name(name), file(nullptr), is_placeholder(false), is_imported(false),
+    : name(name), is_placeholder(false), is_imported(false),
       is_weak(false), is_undef_weak(false), traced(false) {}
 
   Symbol(const Symbol &other) : Symbol(other.name) {}
@@ -198,6 +198,7 @@ public:
 
   StringRef name;
   InputFile *file = nullptr;
+  const ELF64LE::Sym *esym = nullptr;
   InputSection *input_section = nullptr;
   StringPieceRef piece_ref;
 
@@ -235,7 +236,6 @@ public:
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
 
   u8 type = llvm::ELF::STT_NOTYPE;
-  const ELF64LE::Sym *esym;
 };
 
 //
@@ -244,8 +244,6 @@ public:
 
 class InputChunk {
 public:
-  enum Kind : u8 { REGULAR, MERGEABLE };
-
   virtual void copy_buf() {}
   u64 get_addr() const;
 
@@ -255,16 +253,15 @@ public:
 
   StringRef name;
   u32 offset;
-  Kind kind;
 
 protected:
-  InputChunk(Kind kind, ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
+  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
 };
 
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
-    : InputChunk(REGULAR, file, shdr, name) {}
+    : InputChunk(file, shdr, name) {}
 
   void copy_buf() override;
   void scan_relocations();

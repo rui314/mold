@@ -3,17 +3,10 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-InputChunk::InputChunk(Kind kind, ObjectFile *file, const ELF64LE::Shdr &shdr,
+InputChunk::InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr,
                        StringRef name)
-  : kind(kind), file(file), shdr(shdr), name(name) {
-  output_section = OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type);
-
-  u64 align = (shdr.sh_addralign == 0) ? 1 : shdr.sh_addralign;
-  if (align > UINT32_MAX)
-    error(toString(file) + ": section sh_addralign is too large");
-  if (__builtin_popcount(align) != 1)
-    error(toString(file) + ": section sh_addralign is not a power of two");
-}
+  : file(file), shdr(shdr), name(name),
+    output_section(OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type)) {}
 
 void InputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
@@ -224,7 +217,7 @@ void InputSection::report_undefined_symbols() {
 }
 
 MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
-  : InputChunk(MERGEABLE, isec->file, isec->shdr, isec->name),
+  : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
                                         isec->shdr.sh_type)) {
   StringRef data((const char *)&contents[0], contents.size());
