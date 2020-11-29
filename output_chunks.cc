@@ -551,12 +551,9 @@ void DynsymSection::update_shdr() {
   shdr.sh_size = sizeof(ELF64LE::Sym) * (symbols.size() + 1);
 }
 
-void DynsymSection::initialize_buf() {
-  memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
-}
-
 void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
+  memset(base, 0, sizeof(ELF64LE::Sym));
 
   tbb::parallel_for_each(symbols, [&](Symbol *sym) {
     auto &esym = *(ELF64LE::Sym *)(base + sym->dynsym_idx * sizeof(ELF64LE::Sym));

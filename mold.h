@@ -234,7 +234,6 @@ public:
   };
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
-
   u8 type = llvm::ELF::STT_NOTYPE;
 };
 
@@ -293,7 +292,6 @@ public:
 
   OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
 
-  virtual void initialize_buf() {}
   virtual void copy_buf() {}
   virtual void update_shdr() {}
 
@@ -547,7 +545,6 @@ public:
 
   void add_symbol(Symbol *sym);
   void update_shdr() override;
-  void initialize_buf() override;
   void copy_buf() override;
 
   std::vector<Symbol *> symbols;
