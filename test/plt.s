@@ -12,9 +12,9 @@
 // RUN:   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 // RUN: readelf --sections %t.exe | FileCheck --check-prefix=SECTIONS %s
-// SECTIONS:   [15] .got              PROGBITS         0000000000202000  00002000
+// SECTIONS:   [17] .got              PROGBITS         0000000000202000  00002000
 // SECTIONS:        0000000000000028  0000000000000000  WA       0     0     8
-// SECTIONS:   [16] .got.plt          PROGBITS         0000000000202028  00002028
+// SECTIONS:   [18] .got.plt          PROGBITS         0000000000202028  00002028
 // SECTIONS:        0000000000000020  0000000000000000  WA       0     0     8
 
 // RUN: readelf -x .got.plt %t.exe | FileCheck --check-prefix=GOTPLT %s

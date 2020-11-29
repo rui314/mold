@@ -12,7 +12,7 @@
 // RUN:   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 // RUN: readelf --dynamic %t.exe | FileCheck %s
-// CHECK: Dynamic section at offset 0x2048 contains 23 entries:
+// CHECK: Dynamic section at offset 0x2048 contains 26 entries:
 // CHECK:   Tag        Type                         Name/Value
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
 // CHECK:  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
@@ -27,12 +27,15 @@
 // CHECK:  0x0000000000000006 (SYMTAB)             0x2001e0
 // CHECK:  0x000000000000000b (SYMENT)             24 (bytes)
 // CHECK:  0x0000000000000005 (STRTAB)             0x200228
-// CHECK:  0x000000000000000a (STRSZ)              71 (bytes)
-// CHECK:  0x0000000000000004 (HASH)               0x200270
-// CHECK:  0x0000000000000019 (INIT_ARRAY)         0x2021e0
+// CHECK:  0x000000000000000a (STRSZ)              83 (bytes)
+// CHECK:  0x0000000000000004 (HASH)               0x20027c
+// CHECK:  0x0000000000000019 (INIT_ARRAY)         0x202210
 // CHECK:  0x000000000000001b (INIT_ARRAYSZ)       8 (bytes)
-// CHECK:  0x000000000000001a (FINI_ARRAY)         0x2021d8
+// CHECK:  0x000000000000001a (FINI_ARRAY)         0x202208
 // CHECK:  0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)
+// CHECK:  0x000000006ffffff0 (VERSYM)             0x20029c
+// CHECK:  0x000000006ffffffe (VERNEED)            0x2002a4
+// CHECK:  0x000000006fffffff (VERNEEDNUM)         1
 // CHECK:  0x0000000000000015 (DEBUG)              0x0
 // CHECK:  0x000000000000000c (INIT)               0x201030
 // CHECK:  0x000000000000000d (FINI)               0x201020
