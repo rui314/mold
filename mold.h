@@ -474,7 +474,6 @@ public:
   }
 
   void update_shdr() override;
-  void initialize_buf() override;
 };
 
 class ShstrtabSection : public OutputChunk {

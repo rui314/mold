@@ -198,10 +198,6 @@ void StrtabSection::update_shdr() {
   out::strtab->shdr.sh_size = size;
 }
 
-void StrtabSection::initialize_buf() {
-  out::buf[shdr.sh_offset] = '\0';
-}
-
 void ShstrtabSection::update_shdr() {
   shdr.sh_size = 1;
   for (OutputChunk *chunk : out::chunks) {
@@ -263,6 +259,8 @@ void SymtabSection::update_shdr() {
 
 void SymtabSection::copy_buf() {
   memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+  out::buf[out::strtab->shdr.sh_offset] = '\0';
+
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->write_symtab(); });
 }
 
