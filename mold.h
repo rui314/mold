@@ -632,7 +632,7 @@ public:
     name = ".gnu.version_r";
     shdr.sh_type = llvm::ELF::SHT_GNU_verneed;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_addralign = 4;
+    shdr.sh_addralign = 8;
   }
 
   void update_shdr() override;
