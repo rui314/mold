@@ -524,11 +524,15 @@ static void fill_symbol_versions() {
   };
 
   start(syms[0]);
+  out::versym->contents[syms[0]->dynsym_idx] = version;
+  llvm::outs() << "idx=" << syms[0]->dynsym_idx << " ver=" << version << "\n";
+
   for (int i = 1; i < syms.size(); i++) {
     if (syms[i - 1]->file != syms[i]->file)
       start(syms[i]);
     else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
       add(syms[i]);
+    llvm::outs() << "idx=" << syms[i]->dynsym_idx << " ver=" << version << "\n";
     out::versym->contents[syms[i]->dynsym_idx] = version;
   }
 }

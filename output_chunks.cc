@@ -308,6 +308,9 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);
   define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
+  define(DT_VERSYM, out::versym->shdr.sh_addr);
+  define(DT_VERNEED, out::verneed->shdr.sh_addr);
+  define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
 
   auto find = [](StringRef name) -> OutputChunk * {
