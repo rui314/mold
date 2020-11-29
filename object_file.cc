@@ -125,7 +125,6 @@ void ObjectFile::initialize_symbols() {
 
     sym.file = this;
     sym.type = esym.getType();
-    sym.binding = esym.getBinding();
     sym.value = esym.st_value;
     sym.esym = &esym;
 
@@ -341,8 +340,6 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.piece_ref = sym_pieces[symidx];
     sym.value = esym.st_value;
     sym.type = esym.getType();
-    sym.binding = esym.getBinding();
-    sym.visibility = esym.getVisibility();
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.getBinding() == STB_WEAK);
@@ -429,7 +426,6 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.file = this;
         sym.input_section = nullptr;
         sym.value = 0;
-        sym.visibility = esym.getVisibility();
         sym.esym = &esym;
         sym.is_placeholder = false;
         sym.is_undef_weak = true;
@@ -737,8 +733,6 @@ void SharedFile::resolve_symbols() {
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
       sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
-      sym.binding = esym.getBinding();
-      sym.visibility = esym.getVisibility();
       sym.esym = &esym;
       sym.is_placeholder = false;
       sym.is_weak = (esym.getBinding() == STB_WEAK);

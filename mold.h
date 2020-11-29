@@ -83,7 +83,6 @@ inline Config config;
 [[noreturn]] inline void error(const Twine &msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
-
   llvm::errs() << msg << "\n";
   exit(1);
 }
@@ -186,11 +185,11 @@ struct StringPieceRef {
 
 class Symbol {
 public:
-  Symbol(StringRef name, InputFile *file = nullptr)
-    : name(name), file(file), is_placeholder(false), is_imported(false),
+  Symbol(StringRef name)
+    : name(name), file(nullptr), is_placeholder(false), is_imported(false),
       is_weak(false), is_undef_weak(false), traced(false) {}
 
-  Symbol(const Symbol &other) : Symbol(other.name, other.file) {}
+  Symbol(const Symbol &other) : Symbol(other.name) {}
 
   static Symbol *intern(StringRef name) {
     static ConcurrentMap<Symbol> map;
@@ -243,9 +242,7 @@ public:
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
 
-  u8 visibility = 0;
   u8 type = llvm::ELF::STT_NOTYPE;
-  u8 binding = llvm::ELF::STB_GLOBAL;
   const ELF64LE::Sym *esym;
 };
 
