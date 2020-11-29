@@ -487,50 +487,48 @@ static void fill_symbol_versions() {
   u8 *buf = (u8 *)&out::verneed->contents[0];
   u16 version = 1;
   ELF64LE::Verneed *verneed = nullptr;
+  ELF64LE::Vernaux *aux = nullptr;
 
-  auto start = [&](Symbol *sym) {
-    out::verneed->shdr.sh_info += 1;
+  auto add_aux = [&](Symbol *sym) {
     SharedFile *file = (SharedFile *)sym->file;
+    StringRef verstr = file->version_strings[sym->ver_idx];
+
+    verneed->vn_cnt += 1;
+    if (aux)
+      aux->vna_next = sizeof(ELF64LE::Vernaux);
+
+    aux = (ELF64LE::Vernaux *)buf;
+    buf += sizeof(*aux);
+    aux->vna_hash = elf_hash(verstr);
+    aux->vna_other = ++version;
+    aux->vna_name = out::dynstr->add_string(verstr);
+  };
+
+  auto add_verneed = [&](Symbol *sym) {
+    SharedFile *file = (SharedFile *)sym->file;
+
+    out::verneed->shdr.sh_info += 1;
+    if (verneed)
+      verneed->vn_next = buf - (u8 *)verneed;
 
     verneed = (ELF64LE::Verneed *)buf;
     buf += sizeof(*verneed);
     verneed->vn_version = 1;
-    verneed->vn_cnt = 1;
     verneed->vn_file = file->soname_dynstr_idx;
     verneed->vn_aux = sizeof(ELF64LE::Verneed);
 
-    StringRef verstr = file->version_strings[sym->ver_idx];
-
-    auto *aux = (ELF64LE::Vernaux *)buf;
-    buf += sizeof(*aux);
-    aux->vna_hash = elf_hash(verstr);
-    aux->vna_other = ++version;
-    aux->vna_name = out::dynstr->add_string(verstr);
+    aux = nullptr;
+    add_aux(sym);
   };
 
-  auto add = [&](Symbol *sym) {
-    verneed->vn_cnt += 1;
-    auto *prev = (ELF64LE::Vernaux *)(buf - sizeof(ELF64LE::Vernaux));
-    prev->vna_next = sizeof(ELF64LE::Vernaux);
-
-    SharedFile *file = (SharedFile *)sym->file;
-    StringRef verstr = file->version_strings[sym->ver_idx];
-
-    auto *aux = (ELF64LE::Vernaux *)buf;
-    buf += sizeof(*aux);
-    aux->vna_hash = elf_hash(verstr);
-    aux->vna_other = ++version;
-    aux->vna_name = out::dynstr->add_string(verstr);
-  };
-
-  start(syms[0]);
+  add_verneed(syms[0]);
   out::versym->contents[syms[0]->dynsym_idx] = version;
 
   for (int i = 1; i < syms.size(); i++) {
     if (syms[i - 1]->file != syms[i]->file)
-      start(syms[i]);
+      add_verneed(syms[i]);
     else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
-      add(syms[i]);
+      add_aux(syms[i]);
     out::versym->contents[syms[i]->dynsym_idx] = version;
   }
 }
