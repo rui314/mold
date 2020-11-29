@@ -244,7 +244,7 @@ public:
 class InputChunk {
 public:
   virtual void copy_buf() {}
-  u64 get_addr() const;
+  inline u64 get_addr() const;
 
   ObjectFile *file;
   const ELF64LE::Shdr &shdr;
@@ -296,8 +296,8 @@ public:
   virtual void update_shdr() {}
 
   StringRef name;
-  Kind kind;
   int shndx = 0;
+  Kind kind;
   bool starts_new_ptload = false;
   ELF64LE::Shdr shdr = {};
 };
