@@ -362,7 +362,6 @@ public:
   }
 
   void copy_buf() override;
-  bool empty() const;
 
   static inline std::vector<OutputSection *> instances;
 
