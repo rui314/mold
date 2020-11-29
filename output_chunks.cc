@@ -189,6 +189,15 @@ void RelDynSection::copy_buf() {
     write(sym, R_X86_64_COPY, sym->get_addr());
 }
 
+void StrtabSection::update_shdr() {
+  u32 size = 1;
+  for (ObjectFile *file : out::objs) {
+    file->strtab_offset = size;
+    size += file->strtab_size;
+  }
+  out::strtab->shdr.sh_size = size;
+}
+
 void StrtabSection::initialize_buf() {
   out::buf[shdr.sh_offset] = '\0';
 }
@@ -235,41 +244,21 @@ void DynstrSection::copy_buf() {
 }
 
 void SymtabSection::update_shdr() {
-  shdr.sh_link = out::strtab->shndx;
+  u32 size = sizeof(ELF64LE::Sym);
 
-  tbb::parallel_for_each(out::objs,
-                         [](ObjectFile *file) { file->compute_symtab(); });
-
-  // Initialize symbol offsets.
-  out::objs[0]->local_symtab_offset = sizeof(ELF64LE::Sym);
-
-  for (int i = 1; i < out::objs.size(); i++) {
-    out::objs[i]->local_symtab_offset =
-      out::objs[i - 1]->local_symtab_offset + out::objs[i - 1]->local_symtab_size;
+  for (ObjectFile *file : out::objs) {
+    file->local_symtab_offset = size;
+    size += file->local_symtab_size;
   }
 
-  out::objs[0]->global_symtab_offset =
-    out::objs.back()->local_symtab_offset + out::objs.back()->local_symtab_size;
-
-  for (int i = 1; i < out::objs.size(); i++) {
-    out::objs[i]->global_symtab_offset =
-      out::objs[i - 1]->global_symtab_offset + out::objs[i - 1]->global_symtab_size;
+  for (ObjectFile *file : out::objs) {
+    file->global_symtab_offset = size;
+    size += file->global_symtab_size;
   }
 
   shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ELF64LE::Sym);
-  shdr.sh_size =
-    out::objs.back()->global_symtab_offset + out::objs.back()->global_symtab_size;
-
-  // Initialize strtab offsets.
-  out::objs[0]->strtab_offset = 1;
-
-  for (int i = 1; i < out::objs.size(); i++) {
-    out::objs[i]->strtab_offset =
-      out::objs[i - 1]->strtab_offset + out::objs[i - 1]->strtab_size;
-  }
-
-  out::strtab->shdr.sh_size =
-    out::objs.back()->strtab_offset + out::objs.back()->strtab_size;
+  shdr.sh_link = out::strtab->shndx;
+  shdr.sh_size = size;
 }
 
 void SymtabSection::copy_buf() {

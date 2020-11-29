@@ -473,6 +473,7 @@ public:
     shdr.sh_size = 1;
   }
 
+  void update_shdr() override;
   void initialize_buf() override;
 };
 

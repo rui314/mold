@@ -991,11 +991,17 @@ int main(int argc, char **argv) {
   // Fill .gnu.version and .gnu.version_r section contents.
   fill_symbol_versions();
 
+  // Compute .symtab and .strtab sizes for each file.
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    file->compute_symtab();
+  });
+
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
   // for all output sections.
-  for (OutputChunk *chunk : out::chunks)
-    chunk->update_shdr();
+  tbb::parallel_for_each(out::chunks, [](OutputChunk *chunk) {
+     chunk->update_shdr();
+   });
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(out::chunks);
