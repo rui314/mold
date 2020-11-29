@@ -922,6 +922,18 @@ inline u64 InputChunk::get_addr() const {
   return output_section->shdr.sh_addr + offset;
 }
 
+inline u32 elf_hash(StringRef name) {
+  u32 h = 0;
+  for (char c : name) {
+    h = (h << 4) + c;
+    u32 g = h & 0xf0000000;
+    if (g != 0)
+      h ^= g >> 24;
+    h &= ~g;
+  }
+  return h;
+}
+
 inline void write_string(u8 *buf, StringRef str) {
   memcpy(buf, str.data(), str.size());
   buf[str.size()] = '\0';

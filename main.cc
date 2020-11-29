@@ -485,6 +485,49 @@ static void fill_symbol_versions() {
 
   // Fill .gnu.versoin_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
+  u16 version = 1;
+
+  auto start = [&](Symbol *sym) {
+    out::verneed->shdr.sh_info += 1;
+    SharedFile *file = (SharedFile *)sym->file;
+
+    auto *verneed = (ELF64LE::Verneed *)buf;
+    buf += sizeof(*verneed);
+    verneed->vn_version = 1;
+    verneed->vn_file = file->soname_dynstr_idx;
+    verneed->vn_aux = sizeof(ELF64LE::Verneed);
+
+    StringRef verstr = file->version_strings[sym->ver_idx];
+
+    auto *aux = (ELF64LE::Vernaux *)buf;
+    buf += sizeof(*aux);
+    aux->vna_hash = elf_hash(verstr);
+    aux->vna_other = ++version;
+    aux->vna_name = out::dynstr->add_string(verstr);
+  };
+
+  auto add = [&](Symbol *sym) {
+    auto *prev = (ELF64LE::Vernaux *)(buf - sizeof(ELF64LE::Vernaux));
+    prev->vna_next = sizeof(ELF64LE::Vernaux);
+
+    SharedFile *file = (SharedFile *)sym->file;
+    StringRef verstr = file->version_strings[sym->ver_idx];
+
+    auto *aux = (ELF64LE::Vernaux *)buf;
+    buf += sizeof(*aux);
+    aux->vna_hash = elf_hash(verstr);
+    aux->vna_other = ++version;
+    aux->vna_name = out::dynstr->add_string(verstr);
+  };
+
+  start(syms[0]);
+  for (int i = 1; i < syms.size(); i++) {
+    if (syms[i - 1]->file != syms[i]->file)
+      start(syms[i]);
+    else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
+      add(syms[i]);
+    out::versym->contents[syms[i]->dynsym_idx] = version;
+  }
 }
 
 static void write_merged_strings() {
@@ -829,6 +872,8 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
   out::chunks.push_back(out::copyrel);
+  out::chunks.push_back(out::versym);
+  out::chunks.push_back(out::verneed);
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
   int priority = 2;

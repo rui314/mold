@@ -611,22 +611,10 @@ void HashSection::copy_buf() {
   hdr[0] = hdr[1] = num_slots;
 
   for (Symbol *sym : out::dynsym->symbols) {
-    u32 i = hash(sym->name) % num_slots;
+    u32 i = elf_hash(sym->name) % num_slots;
     chains[sym->dynsym_idx] = buckets[i];
     buckets[i] = sym->dynsym_idx;
   }
-}
-
-u32 HashSection::hash(StringRef name) {
-  u32 h = 0;
-  for (char c : name) {
-    h = (h << 4) + c;
-    u32 g = h & 0xf0000000;
-    if (g != 0)
-      h ^= g >> 24;
-    h &= ~g;
-  }
-  return h;
 }
 
 MergedSection *
@@ -673,7 +661,7 @@ void CopyrelSection::add_symbol(Symbol *sym) {
 }
 
 void VersymSection::update_shdr() {
-  shdr.sh_size = (out::dynsym->symbols.size() + 1) * 2;
+  shdr.sh_size = contents.size() * sizeof(contents[0]);
   shdr.sh_link = out::dynsym->shndx;
 }
 
@@ -682,6 +670,7 @@ void VersymSection::copy_buf() {
 }
 
 void VerneedSection::update_shdr() {
+  shdr.sh_size = contents.size() * sizeof(contents[0]);
   shdr.sh_link = out::dynstr->shndx;
 }
 
