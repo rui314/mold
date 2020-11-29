@@ -486,14 +486,16 @@ static void fill_symbol_versions() {
   // Fill .gnu.versoin_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
   u16 version = 1;
+  ELF64LE::Verneed *verneed = nullptr;
 
   auto start = [&](Symbol *sym) {
     out::verneed->shdr.sh_info += 1;
     SharedFile *file = (SharedFile *)sym->file;
 
-    auto *verneed = (ELF64LE::Verneed *)buf;
+    verneed = (ELF64LE::Verneed *)buf;
     buf += sizeof(*verneed);
     verneed->vn_version = 1;
+    verneed->vn_cnt = 1;
     verneed->vn_file = file->soname_dynstr_idx;
     verneed->vn_aux = sizeof(ELF64LE::Verneed);
 
@@ -507,6 +509,7 @@ static void fill_symbol_versions() {
   };
 
   auto add = [&](Symbol *sym) {
+    verneed->vn_cnt += 1;
     auto *prev = (ELF64LE::Vernaux *)(buf - sizeof(ELF64LE::Vernaux));
     prev->vna_next = sizeof(ELF64LE::Vernaux);
 
