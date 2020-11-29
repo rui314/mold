@@ -471,7 +471,7 @@ static void fill_symbol_versions() {
   });
 
   // Compute sizes of .gnu.version and .gnu.version_r sections.
-  out::versym->contents.resize((out::dynsym->symbols.size() + 1) * 2, 1);
+  out::versym->contents.resize(out::dynsym->symbols.size() + 1, 1);
   out::versym->contents[0] = 0;
 
   int sz = sizeof(ELF64LE::Verneed) + sizeof(ELF64LE::Vernaux);
