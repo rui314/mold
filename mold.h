@@ -78,8 +78,6 @@ struct Config {
   u64 image_base = 0x200000;
 };
 
-inline Config config;
-
 [[noreturn]] inline void error(const Twine &msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
@@ -112,14 +110,6 @@ T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
     error(prefix() + ": " + toString(e.takeError()));
   return std::move(*e);
 }
-
-inline void message(const Twine &msg) {
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-  llvm::outs() << msg << "\n";
-}
-
-inline std::string toString(const Twine &s) { return s.str(); }
 
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
 
@@ -246,10 +236,6 @@ public:
   const ELF64LE::Sym *esym;
 };
 
-inline std::string toString(Symbol sym) {
-  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
-}
-
 //
 // input_sections.cc
 //
@@ -297,11 +283,6 @@ public:
 };
 
 std::string toString(InputChunk *isec);
-
-inline u64 align_to(u64 val, u64 align) {
-  assert(__builtin_popcount(align) == 1);
-  return (val + align - 1) & ~(align - 1);
-}
 
 //
 // output_chunks.cc
@@ -656,51 +637,6 @@ public:
 
 bool is_c_identifier(StringRef name);
 
-namespace out {
-using namespace llvm::ELF;
-
-inline std::vector<ObjectFile *> objs;
-inline std::vector<SharedFile *> dsos;
-inline std::vector<OutputChunk *> chunks;
-inline u8 *buf;
-
-inline OutputEhdr *ehdr;
-inline OutputShdr *shdr;
-inline OutputPhdr *phdr;
-inline InterpSection *interp;
-inline GotSection *got;
-inline GotPltSection *gotplt;
-inline RelPltSection *relplt;
-inline RelDynSection *reldyn;
-inline DynamicSection *dynamic;
-inline StrtabSection *strtab;
-inline DynstrSection *dynstr;
-inline HashSection *hash;
-inline ShstrtabSection *shstrtab;
-inline PltSection *plt;
-inline SymtabSection *symtab;
-inline DynsymSection *dynsym;
-inline CopyrelSection *copyrel;
-
-inline u64 tls_end;
-
-inline Symbol *__bss_start;
-inline Symbol *__ehdr_start;
-inline Symbol *__rela_iplt_start;
-inline Symbol *__rela_iplt_end;
-inline Symbol *__init_array_start;
-inline Symbol *__init_array_end;
-inline Symbol *__fini_array_start;
-inline Symbol *__fini_array_end;
-inline Symbol *__preinit_array_start;
-inline Symbol *__preinit_array_end;
-inline Symbol *_DYNAMIC;
-inline Symbol *_GLOBAL_OFFSET_TABLE_;
-inline Symbol *_end;
-inline Symbol *_etext;
-inline Symbol *_edata;
-}
-
 //
 // object_file.cc
 //
@@ -808,6 +744,127 @@ private:
   const ELF64LE::Shdr *symtab_sec;
 };
 
+//
+// linker_script.cc
+//
+
+void parse_linker_script(StringRef path, StringRef input);
+
+//
+// perf.cc
+//
+
+class Counter {
+public:
+  Counter(StringRef name, u32 value = 0) : name(name), value(value) {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    instances.push_back(this);
+  }
+
+  void inc(u32 delta = 1) {
+    if (enabled)
+      value += delta;
+  }
+
+  void set(u32 value) {
+    this->value = value;
+  }
+
+  static void print();
+
+  static bool enabled;
+
+private:
+  StringRef name;
+  std::atomic_uint32_t value;
+
+  static std::vector<Counter *> instances;
+};
+
+//
+// mapfile.cc
+//
+
+void print_map();
+
+//
+// main.cc
+//
+
+MemoryBufferRef find_library(const Twine &path);
+MemoryBufferRef *open_input_file(const Twine &path);
+MemoryBufferRef must_open_input_file(const Twine &path);
+void read_file(MemoryBufferRef mb);
+
+//
+// Inline objects and functions
+//
+
+inline Config config;
+
+namespace out {
+using namespace llvm::ELF;
+
+inline std::vector<ObjectFile *> objs;
+inline std::vector<SharedFile *> dsos;
+inline std::vector<OutputChunk *> chunks;
+inline u8 *buf;
+
+inline OutputEhdr *ehdr;
+inline OutputShdr *shdr;
+inline OutputPhdr *phdr;
+inline InterpSection *interp;
+inline GotSection *got;
+inline GotPltSection *gotplt;
+inline RelPltSection *relplt;
+inline RelDynSection *reldyn;
+inline DynamicSection *dynamic;
+inline StrtabSection *strtab;
+inline DynstrSection *dynstr;
+inline HashSection *hash;
+inline ShstrtabSection *shstrtab;
+inline PltSection *plt;
+inline SymtabSection *symtab;
+inline DynsymSection *dynsym;
+inline CopyrelSection *copyrel;
+
+inline u64 tls_end;
+
+inline Symbol *__bss_start;
+inline Symbol *__ehdr_start;
+inline Symbol *__rela_iplt_start;
+inline Symbol *__rela_iplt_end;
+inline Symbol *__init_array_start;
+inline Symbol *__init_array_end;
+inline Symbol *__fini_array_start;
+inline Symbol *__fini_array_end;
+inline Symbol *__preinit_array_start;
+inline Symbol *__preinit_array_end;
+inline Symbol *_DYNAMIC;
+inline Symbol *_GLOBAL_OFFSET_TABLE_;
+inline Symbol *_end;
+inline Symbol *_etext;
+inline Symbol *_edata;
+}
+
+inline void message(const Twine &msg) {
+  static std::mutex mu;
+  std::lock_guard lock(mu);
+  llvm::outs() << msg << "\n";
+}
+
+inline std::string toString(const Twine &s) { return s.str(); }
+
+inline std::string toString(Symbol sym) {
+  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
+}
+
+inline u64 align_to(u64 val, u64 align) {
+  assert(__builtin_popcount(align) == 1);
+  return (val + align - 1) & ~(align - 1);
+}
+
 inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)
     return piece_ref.piece->get_addr() + piece_ref.addend;
@@ -876,56 +933,3 @@ inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
     ret.insert(ret.end(), v.begin(), v.end());
   return ret;
 }
-
-//
-// linker_script.cc
-//
-
-void parse_linker_script(StringRef path, StringRef input);
-
-//
-// perf.cc
-//
-
-class Counter {
-public:
-  Counter(StringRef name, u32 value = 0) : name(name), value(value) {
-    static std::mutex mu;
-    std::lock_guard lock(mu);
-    instances.push_back(this);
-  }
-
-  void inc(u32 delta = 1) {
-    if (enabled)
-      value += delta;
-  }
-
-  void set(u32 value) {
-    this->value = value;
-  }
-
-  static void print();
-
-  static bool enabled;
-
-private:
-  StringRef name;
-  std::atomic_uint32_t value;
-
-  static std::vector<Counter *> instances;
-};
-
-//
-// mapfile.cc
-//
-
-void print_map();
-
-//
-// main.cc
-//
-
-MemoryBufferRef find_library(const Twine &path);
-MemoryBufferRef *open_input_file(const Twine &path);
-MemoryBufferRef must_open_input_file(const Twine &path);
-void read_file(MemoryBufferRef mb);
