@@ -673,10 +673,12 @@ void CopyrelSection::add_symbol(Symbol *sym) {
 }
 
 void VersymSection::update_shdr() {
+  shdr.sh_size = (out::dynsym->symbols.size() + 1) * 2;
   shdr.sh_link = out::dynsym->shndx;
 }
 
 void VersymSection::copy_buf() {
+  write_vector(out::buf + shdr.sh_offset, contents);
 }
 
 void VerneedSection::update_shdr() {
@@ -684,4 +686,5 @@ void VerneedSection::update_shdr() {
 }
 
 void VerneedSection::copy_buf() {
+  write_vector(out::buf + shdr.sh_offset, contents);
 }

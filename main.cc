@@ -450,6 +450,26 @@ static void scan_rels() {
   }
 }
 
+static void fill_symbol_versions() {
+  MyTimer t("fill_symbol_versions", before_copy_timer);
+
+  std::vector<Symbol *> syms = out::dynsym->symbols;
+  syms.erase(std::remove_if(syms.begin(), syms.end(),
+                            [](Symbol *sym){ return sym->ver_idx < 2; }),
+             syms.end());
+
+  std::stable_sort(syms.begin(), syms.end(), [](Symbol *a, Symbol *b) {
+    SharedFile *x = (SharedFile *)a->file;
+    SharedFile *y = (SharedFile *)b->file;
+    return std::make_tuple(x->soname_dynstr_idx, a->ver_idx) <
+           std::make_tuple(y->soname_dynstr_idx, b->ver_idx);
+  });
+
+  for (Symbol *sym : out::dynsym->symbols) {
+    
+  }
+}
+
 static void write_merged_strings() {
   MyTimer t("write_merged_strings", copy_timer);
 
@@ -900,6 +920,9 @@ int main(int argc, char **argv) {
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels();
+
+  // Fill .gnu.version and .gnu.version_r section contents.
+  fill_symbol_versions();
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents

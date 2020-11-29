@@ -622,6 +622,8 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
+
+  std::vector<u16> contents;
 };
 
 class VerneedSection : public OutputChunk {
@@ -635,6 +637,8 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
+
+  std::vector<u8> contents;
 };
 
 bool is_c_identifier(StringRef name);
