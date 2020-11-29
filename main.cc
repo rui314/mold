@@ -383,15 +383,18 @@ static void set_isec_offsets() {
   });
 }
 
-static std::vector<Symbol *> scan_rels() {
+static void scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
+  // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections)
       if (isec)
         isec->scan_relocations();
   });
 
+  // If there was a relocation that refers an undefined symbol,
+  // report an error.
   for (ObjectFile *file : out::objs)
     if (file->has_error)
       for (InputSection *isec : file->sections)
@@ -402,6 +405,7 @@ static std::vector<Symbol *> scan_rels() {
     if (file->has_error)
       _exit(1);
 
+  // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
   files.insert(files.end(), out::objs.begin(), out::objs.end());
   files.insert(files.end(), out::dsos.begin(), out::dsos.end());
@@ -414,11 +418,8 @@ static std::vector<Symbol *> scan_rels() {
         vec[i].push_back(sym);
   });
 
-  return flatten(vec);
-}
-
-static void handle_dynsyms(std::vector<Symbol *> dynsyms) {
-  for (Symbol *sym : dynsyms) {
+  // Assign offsets in additional tables for each dynamic symbol.
+  for (Symbol *sym : flatten(vec)) {
     if (sym->flags & Symbol::NEEDS_GOT)
       out::got->add_got_symbol(sym);
 
@@ -898,10 +899,7 @@ int main(int argc, char **argv) {
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
-  std::vector<Symbol *> dynsyms = scan_rels();
-
-  // Fill contents of .got, .plt, .got.plt, .dynsym, .dynstr, etc.
-  handle_dynsyms(std::move(dynsyms));
+  scan_rels();
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
