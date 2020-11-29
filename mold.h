@@ -617,6 +617,7 @@ public:
     name = ".gnu.version";
     shdr.sh_type = llvm::ELF::SHT_GNU_versym;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_entsize = 2;
     shdr.sh_addralign = 2;
   }
 
