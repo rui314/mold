@@ -832,6 +832,8 @@ inline PltSection *plt;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
 inline CopyrelSection *copyrel;
+inline VersymSection *versym;
+inline VerneedSection *verneed;
 
 inline u64 tls_end;
 

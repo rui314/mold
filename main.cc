@@ -453,10 +453,15 @@ static void scan_rels() {
 static void fill_symbol_versions() {
   MyTimer t("fill_symbol_versions", before_copy_timer);
 
+  // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms = out::dynsym->symbols;
+
   syms.erase(std::remove_if(syms.begin(), syms.end(),
                             [](Symbol *sym){ return sym->ver_idx < 2; }),
              syms.end());
+
+  if (syms.empty())
+    return;
 
   std::stable_sort(syms.begin(), syms.end(), [](Symbol *a, Symbol *b) {
     SharedFile *x = (SharedFile *)a->file;
@@ -465,9 +470,21 @@ static void fill_symbol_versions() {
            std::make_tuple(y->soname_dynstr_idx, b->ver_idx);
   });
 
-  for (Symbol *sym : out::dynsym->symbols) {
-    
+  // Compute sizes of .gnu.version and .gnu.version_r sections.
+  out::versym->contents.resize((out::dynsym->symbols.size() + 1) * 2, 1);
+  out::versym->contents[0] = 0;
+
+  int sz = sizeof(ELF64LE::Verneed) + sizeof(ELF64LE::Vernaux);
+  for (int i = 1; i < syms.size(); i++) {
+    if (syms[i - 1]->file != syms[i]->file)
+      sz += sizeof(ELF64LE::Verneed) + sizeof(ELF64LE::Vernaux);
+    else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
+      sz += sizeof(ELF64LE::Vernaux);
   }
+  out::verneed->contents.resize(sz);
+
+  // Fill .gnu.versoin_r.
+  u8 *buf = (u8 *)&out::verneed->contents[0];
 }
 
 static void write_merged_strings() {
@@ -795,6 +812,8 @@ int main(int argc, char **argv) {
     out::dynamic = new DynamicSection;
     out::reldyn = new RelDynSection;
     out::hash = new HashSection;
+    out::versym = new VersymSection;
+    out::verneed = new VerneedSection;
   }
 
   out::chunks.push_back(out::got);
