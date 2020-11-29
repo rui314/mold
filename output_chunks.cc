@@ -240,34 +240,36 @@ void SymtabSection::update_shdr() {
   tbb::parallel_for_each(out::objs,
                          [](ObjectFile *file) { file->compute_symtab(); });
 
-  out::objs[0]->local_symtab_off = sizeof(ELF64LE::Sym);
-  out::objs[0]->local_strtab_off = 1;
+  // Initialize symbol offsets.
+  out::objs[0]->local_symtab_offset = sizeof(ELF64LE::Sym);
 
-  for (int i = 1; i < out::objs.size() + 1; i++) {
-    out::objs[i]->local_symtab_off =
-      out::objs[i - 1]->local_symtab_off + out::objs[i - 1]->local_symtab_size;
-    out::objs[i]->local_strtab_off =
-      out::objs[i - 1]->local_strtab_off + out::objs[i - 1]->local_strtab_size;
+  for (int i = 1; i < out::objs.size(); i++) {
+    out::objs[i]->local_symtab_offset =
+      out::objs[i - 1]->local_symtab_offset + out::objs[i - 1]->local_symtab_size;
   }
 
-  out::objs[0]->global_symtab_off =
-    out::objs.back()->local_symtab_off + out::objs.back()->local_symtab_size;
-  out::objs[0]->global_strtab_off =
-    out::objs.back()->local_strtab_off + out::objs.back()->local_strtab_size;
+  out::objs[0]->global_symtab_offset =
+    out::objs.back()->local_symtab_offset + out::objs.back()->local_symtab_size;
 
-  shdr.sh_info = out::objs[0]->global_symtab_off / sizeof(ELF64LE::Sym);
-
-  for (int i = 1; i < out::objs.size() + 1; i++) {
-    out::objs[i]->global_symtab_off =
-      out::objs[i - 1]->global_symtab_off + out::objs[i - 1]->global_symtab_size;
-    out::objs[i]->global_strtab_off =
-      out::objs[i - 1]->global_strtab_off + out::objs[i - 1]->global_strtab_size;
+  for (int i = 1; i < out::objs.size(); i++) {
+    out::objs[i]->global_symtab_offset =
+      out::objs[i - 1]->global_symtab_offset + out::objs[i - 1]->global_symtab_size;
   }
 
+  shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ELF64LE::Sym);
   shdr.sh_size =
-    out::objs.back()->global_symtab_off + out::objs.back()->global_symtab_size;
+    out::objs.back()->global_symtab_offset + out::objs.back()->global_symtab_size;
+
+  // Initialize strtab offsets.
+  out::objs[0]->strtab_offset = 1;
+
+  for (int i = 1; i < out::objs.size(); i++) {
+    out::objs[i]->strtab_offset =
+      out::objs[i - 1]->strtab_offset + out::objs[i - 1]->strtab_size;
+  }
+
   out::strtab->shdr.sh_size =
-    out::objs.back()->global_strtab_off + out::objs.back()->global_strtab_size;
+    out::objs.back()->strtab_offset + out::objs.back()->strtab_size;
 }
 
 void SymtabSection::copy_buf() {

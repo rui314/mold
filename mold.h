@@ -689,14 +689,12 @@ public:
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
 
-  u64 local_symtab_off = 0;
+  u64 local_symtab_offset = 0;
   u64 local_symtab_size = 0;
-  u64 local_strtab_off = 0;
-  u64 local_strtab_size = 0;
-  u64 global_symtab_off = 0;
+  u64 global_symtab_offset = 0;
   u64 global_symtab_size = 0;
-  u64 global_strtab_off = 0;
-  u64 global_strtab_size = 0;
+  u64 strtab_offset = 0;
+  u64 strtab_size = 0;
 
   std::vector<MergeableSection> mergeable_sections;
 

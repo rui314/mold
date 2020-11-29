@@ -137,7 +137,7 @@ void ObjectFile::initialize_symbols() {
     symbols.push_back(&local_symbols.back());
 
     if (esym.getType() != STT_SECTION) {
-      local_strtab_size += name.size() + 1;
+      strtab_size += name.size() + 1;
       local_symtab_size += sizeof(ELF64LE::Sym);
     }
   }
@@ -500,8 +500,8 @@ void ObjectFile::compute_symtab() {
     Symbol &sym = *symbols[i];
 
     if (esym.getType() != STT_SECTION && sym.file == this) {
-      global_strtab_size += sym.name.size() + 1;
       global_symtab_size += sizeof(ELF64LE::Sym);
+      strtab_size += sym.name.size() + 1;
     }
   }
 }
@@ -509,13 +509,17 @@ void ObjectFile::compute_symtab() {
 void ObjectFile::write_symtab() {
   u8 *symtab_base = out::buf + out::symtab->shdr.sh_offset;
   u8 *strtab_base = out::buf + out::strtab->shdr.sh_offset;
+  u32 symtab_off;
+  u32 strtab_off = strtab_offset;
 
-  auto write_sym = [&](u32 i, u32 symtab_off, u32 strtab_off) -> std::pair<u32, u32> {
+  auto write_sym = [&](u32 i) {
     Symbol &sym = *symbols[i];
     if (sym.type == STT_SECTION || sym.file != this)
-      return {symtab_off, strtab_off};
+      return;
 
     ELF64LE::Sym &esym = *(ELF64LE::Sym *)(symtab_base + symtab_off);
+    symtab_off += sizeof(ELF64LE::Sym);
+
     esym = elf_syms[i];
     esym.st_name = strtab_off;
     esym.st_value = sym.get_addr();
@@ -528,18 +532,16 @@ void ObjectFile::write_symtab() {
       esym.st_shndx = SHN_ABS;
 
     write_string(strtab_base + strtab_off, sym.name);
-    return {symtab_off + sizeof(ELF64LE::Sym), strtab_off + sym.name.size() + 1};
+    strtab_off += sym.name.size() + 1;
   };
 
-  u32 symtab_off = local_symtab_off;
-  u32 strtab_off = local_strtab_off;
+  symtab_off = local_symtab_offset;
   for (int i = 1; i < first_global; i++)
-    std::tie(symtab_off, strtab_off) = write_sym(i, symtab_off, strtab_off);
+    write_sym(i);
 
-  symtab_off = global_symtab_off;
-  strtab_off = global_strtab_off;
+  symtab_off = global_symtab_offset;
   for (int i = first_global; i < elf_syms.size(); i++)
-    std::tie(symtab_off, strtab_off) = write_sym(i, symtab_off, strtab_off);
+    write_sym(i);
 }
 
 bool is_c_identifier(StringRef name) {
