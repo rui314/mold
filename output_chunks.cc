@@ -240,42 +240,39 @@ void SymtabSection::update_shdr() {
   tbb::parallel_for_each(out::objs,
                          [](ObjectFile *file) { file->compute_symtab(); });
 
-  local_symtab_off.resize(out::objs.size() + 1);
-  local_strtab_off.resize(out::objs.size() + 1);
-  global_symtab_off.resize(out::objs.size() + 1);
-  global_strtab_off.resize(out::objs.size() + 1);
-
-  local_symtab_off[0] = sizeof(ELF64LE::Sym);
-  local_strtab_off[0] = 1;
+  out::objs[0]->local_symtab_off = sizeof(ELF64LE::Sym);
+  out::objs[0]->local_strtab_off = 1;
 
   for (int i = 1; i < out::objs.size() + 1; i++) {
-    local_symtab_off[i] = local_symtab_off[i - 1] + out::objs[i - 1]->local_symtab_size;
-    local_strtab_off[i] = local_strtab_off[i - 1] + out::objs[i - 1]->local_strtab_size;
+    out::objs[i]->local_symtab_off =
+      out::objs[i - 1]->local_symtab_off + out::objs[i - 1]->local_symtab_size;
+    out::objs[i]->local_strtab_off =
+      out::objs[i - 1]->local_strtab_off + out::objs[i - 1]->local_strtab_size;
   }
 
-  shdr.sh_info = local_symtab_off.back() / sizeof(ELF64LE::Sym);
+  out::objs[0]->global_symtab_off =
+    out::objs.back()->local_symtab_off + out::objs.back()->local_symtab_size;
+  out::objs[0]->global_strtab_off =
+    out::objs.back()->local_strtab_off + out::objs.back()->local_strtab_size;
 
-  global_symtab_off[0] = local_symtab_off.back();
-  global_strtab_off[0] = local_strtab_off.back();
+  shdr.sh_info = out::objs[0]->global_symtab_off / sizeof(ELF64LE::Sym);
 
   for (int i = 1; i < out::objs.size() + 1; i++) {
-    global_symtab_off[i] =
-      global_symtab_off[i - 1] + out::objs[i - 1]->global_symtab_size;
-    global_strtab_off[i] =
-      global_strtab_off[i - 1] + out::objs[i - 1]->global_strtab_size;
+    out::objs[i]->global_symtab_off =
+      out::objs[i - 1]->global_symtab_off + out::objs[i - 1]->global_symtab_size;
+    out::objs[i]->global_strtab_off =
+      out::objs[i - 1]->global_strtab_off + out::objs[i - 1]->global_strtab_size;
   }
 
-  shdr.sh_size = global_symtab_off.back();
-  out::strtab->shdr.sh_size = global_strtab_off.back();
+  shdr.sh_size =
+    out::objs.back()->global_symtab_off + out::objs.back()->global_symtab_size;
+  out::strtab->shdr.sh_size =
+    out::objs.back()->global_strtab_off + out::objs.back()->global_strtab_size;
 }
 
 void SymtabSection::copy_buf() {
   memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
-
-  tbb::parallel_for((size_t)0, out::objs.size(), [&](size_t i) {
-    out::objs[i]->write_local_symtab(local_symtab_off[i], local_strtab_off[i]);
-    out::objs[i]->write_global_symtab(global_symtab_off[i], global_strtab_off[i]);
-  });
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->write_symtab(); });
 }
 
 static std::vector<u64> create_dynamic_section() {

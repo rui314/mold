@@ -506,18 +506,16 @@ void ObjectFile::compute_symtab() {
   }
 }
 
-void ObjectFile::write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end) {
-  u8 *symtab = out::buf + out::symtab->shdr.sh_offset;
-  u8 *strtab = out::buf + out::strtab->shdr.sh_offset;
+void ObjectFile::write_symtab() {
+  u8 *symtab_base = out::buf + out::symtab->shdr.sh_offset;
+  u8 *strtab_base = out::buf + out::strtab->shdr.sh_offset;
 
-  for (int i = start; i < end; i++) {
+  auto write_sym = [&](u32 i, u32 symtab_off, u32 strtab_off) -> std::pair<u32, u32> {
     Symbol &sym = *symbols[i];
     if (sym.type == STT_SECTION || sym.file != this)
-      continue;
+      return {symtab_off, strtab_off};
 
-    auto &esym = *(ELF64LE::Sym *)(symtab + symtab_off);
-    symtab_off += sizeof(ELF64LE::Sym);
-
+    ELF64LE::Sym &esym = *(ELF64LE::Sym *)(symtab_base + symtab_off);
     esym = elf_syms[i];
     esym.st_name = strtab_off;
     esym.st_value = sym.get_addr();
@@ -529,17 +527,19 @@ void ObjectFile::write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end
     else
       esym.st_shndx = SHN_ABS;
 
-    write_string(strtab + strtab_off, sym.name);
-    strtab_off += sym.name.size() + 1;
-  }
-}
+    write_string(strtab_base + strtab_off, sym.name);
+    return {symtab_off + sizeof(ELF64LE::Sym), strtab_off + sym.name.size() + 1};
+  };
 
-void ObjectFile::write_local_symtab(u64 symtab_off, u64 strtab_off) {
-  write_symtab(symtab_off, strtab_off, 1, first_global);
-}
+  u32 symtab_off = local_symtab_off;
+  u32 strtab_off = local_strtab_off;
+  for (int i = 1; i < first_global; i++)
+    std::tie(symtab_off, strtab_off) = write_sym(i, symtab_off, strtab_off);
 
-void ObjectFile::write_global_symtab(u64 symtab_off, u64 strtab_off) {
-  write_symtab(symtab_off, strtab_off, first_global, elf_syms.size());
+  symtab_off = global_symtab_off;
+  strtab_off = global_strtab_off;
+  for (int i = first_global; i < elf_syms.size(); i++)
+    std::tie(symtab_off, strtab_off) = write_sym(i, symtab_off, strtab_off);
 }
 
 bool is_c_identifier(StringRef name) {

@@ -531,12 +531,6 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
-
-private:
-  std::vector<u64> local_symtab_off;
-  std::vector<u64> local_strtab_off;
-  std::vector<u64> global_symtab_off;
-  std::vector<u64> global_strtab_off;
 };
 
 class DynsymSection : public OutputChunk {
@@ -684,9 +678,7 @@ public:
   void assign_mergeable_string_offsets();
   void convert_common_symbols();
   void compute_symtab();
-
-  void write_local_symtab(u64 symtab_off, u64 strtab_off);
-  void write_global_symtab(u64 symtab_off, u64 strtab_off);
+  void write_symtab();
 
   static ObjectFile *create_internal_file();
 
@@ -697,9 +689,13 @@ public:
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
 
+  u64 local_symtab_off = 0;
   u64 local_symtab_size = 0;
+  u64 local_strtab_off = 0;
   u64 local_strtab_size = 0;
+  u64 global_symtab_off = 0;
   u64 global_symtab_size = 0;
+  u64 global_strtab_off = 0;
   u64 global_strtab_size = 0;
 
   std::vector<MergeableSection> mergeable_sections;
@@ -708,12 +704,9 @@ private:
   void initialize_sections();
   void initialize_symbols();
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
-
   void maybe_override_symbol(Symbol &sym, int symidx);
-  void write_symtab(u64 symtab_off, u64 strtab_off, u32 start, u32 end);
 
   std::vector<std::pair<ComdatGroup *, ArrayRef<ELF64LE::Word>>> comdat_groups;
-
   std::vector<Symbol> local_symbols;
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
