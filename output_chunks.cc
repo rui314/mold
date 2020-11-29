@@ -187,12 +187,11 @@ void RelDynSection::copy_buf() {
 }
 
 void StrtabSection::update_shdr() {
-  u32 size = 1;
+  shdr.sh_size = 1;
   for (ObjectFile *file : out::objs) {
-    file->strtab_offset = size;
-    size += file->strtab_size;
+    file->strtab_offset = shdr.sh_size;
+    shdr.sh_size += file->strtab_size;
   }
-  out::strtab->shdr.sh_size = size;
 }
 
 void ShstrtabSection::update_shdr() {
@@ -237,21 +236,20 @@ void DynstrSection::copy_buf() {
 }
 
 void SymtabSection::update_shdr() {
-  u32 size = sizeof(ELF64LE::Sym);
+  shdr.sh_size = sizeof(ELF64LE::Sym);
 
   for (ObjectFile *file : out::objs) {
-    file->local_symtab_offset = size;
-    size += file->local_symtab_size;
+    file->local_symtab_offset = shdr.sh_size;
+    shdr.sh_size += file->local_symtab_size;
   }
 
   for (ObjectFile *file : out::objs) {
-    file->global_symtab_offset = size;
-    size += file->global_symtab_size;
+    file->global_symtab_offset = shdr.sh_size;
+    shdr.sh_size += file->global_symtab_size;
   }
 
   shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ELF64LE::Sym);
   shdr.sh_link = out::strtab->shndx;
-  shdr.sh_size = size;
 }
 
 void SymtabSection::copy_buf() {
