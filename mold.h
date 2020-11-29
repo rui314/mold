@@ -911,7 +911,7 @@ inline u64 InputChunk::get_addr() const {
 
 inline u32 elf_hash(StringRef name) {
   u32 h = 0;
-  for (char c : name) {
+  for (u8 c : name) {
     h = (h << 4) + c;
     u32 g = h & 0xf0000000;
     if (g != 0)
