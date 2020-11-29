@@ -820,13 +820,12 @@ int main(int argc, char **argv) {
 
   // Uniquify shared object files with soname
   {
+    std::vector<SharedFile *> vec;
     llvm::StringSet<> seen;
-    for (int i = 0; i < out::dsos.size();) {
-      if (seen.insert(out::dsos[i]->soname).second)
-        i++;
-      else
-        out::dsos.erase(out::dsos.begin() + i);
-    }
+    for (SharedFile *file : out::dsos)
+      if (seen.insert(file->soname).second)
+        vec.push_back(file);
+    out::dsos = vec;
   }
 
   // Parse mergeable string sections
