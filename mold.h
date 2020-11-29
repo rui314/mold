@@ -631,6 +631,7 @@ public:
 };
 
 bool is_c_identifier(StringRef name);
+std::vector<ELF64LE::Phdr> create_phdr();
 
 //
 // object_file.cc

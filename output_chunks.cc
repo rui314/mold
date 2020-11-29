@@ -57,7 +57,7 @@ static u32 to_phdr_flags(OutputChunk *chunk) {
   return ret;
 }
 
-static std::vector<ELF64LE::Phdr> create_phdr() {
+std::vector<ELF64LE::Phdr> create_phdr() {
   std::vector<ELF64LE::Phdr> vec;
 
   auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {

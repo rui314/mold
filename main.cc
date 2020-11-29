@@ -130,8 +130,9 @@ MemoryBufferRef *open_input_file(const Twine &path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  return new MemoryBufferRef(StringRef((char *)addr, st.st_size),
-                             *new std::string(path.str()));
+  StringRef buf((char *)addr, st.st_size);
+  std::string *filename = new std::string(path.str());
+  return new MemoryBufferRef(buf, *filename);
 }
 
 MemoryBufferRef must_open_input_file(const Twine &path) {
@@ -1015,11 +1016,9 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the ending address
   // of the TLS section. Find it out now.
-  for (OutputChunk *chunk : out::chunks) {
-    ELF64LE::Shdr &shdr = chunk->shdr;
-    if (shdr.sh_flags & SHF_TLS)
-      out::tls_end = align_to(shdr.sh_addr + shdr.sh_size, shdr.sh_addralign);
-  }
+  for (ELF64LE::Phdr phdr : create_phdr())
+    if (phdr.p_type == PT_TLS)
+      out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
 
   // Create an output file
   out::buf = open_output_file(filesize);
@@ -1027,7 +1026,6 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     MyTimer t("copy", copy_timer);
-
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
