@@ -383,7 +383,7 @@ static void set_isec_offsets() {
   });
 }
 
-static void scan_rels() {
+static std::vector<Symbol *> scan_rels() {
   MyTimer t("scan_rels", before_copy_timer);
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
@@ -414,8 +414,10 @@ static void scan_rels() {
         vec[i].push_back(sym);
   });
 
-  std::vector<Symbol *> dynsyms = flatten(vec);
+  return flatten(vec);
+}
 
+static void handle_dynsyms(std::vector<Symbol *> dynsyms) {
   for (Symbol *sym : dynsyms) {
     if (sym->flags & Symbol::NEEDS_GOT)
       out::got->add_got_symbol(sym);
@@ -437,8 +439,9 @@ static void scan_rels() {
       assert(sym->file->is_dso);
 
       for (Symbol *alias : ((SharedFile *)sym->file)->find_aliases(sym)) {
-        assert(alias->copyrel_offset == -1 ||
-               alias->copyrel_offset == sym->copyrel_offset);
+        if (sym == alias)
+          continue;
+        assert(alias->copyrel_offset == -1);
         alias->copyrel_offset = sym->copyrel_offset;
         out::dynsym->add_symbol(alias);
       }
@@ -893,9 +896,12 @@ int main(int argc, char **argv) {
   // Make sure that all symbols have been resolved.
   check_duplicate_symbols();
 
-  // Scan relocations to fix the sizes of .got, .plt, .got.plt, .dynstr,
-  // .rela.dyn, .rela.plt.
-  scan_rels();
+  // Scan relocations to find symbols that need entries in .got, .plt,
+  // .got.plt, .dynsym, .dynstr, etc.
+  std::vector<Symbol *> dynsyms = scan_rels();
+
+  // Fill contents of .got, .plt, .got.plt, .dynsym, .dynstr, etc.
+  handle_dynsyms(std::move(dynsyms));
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents

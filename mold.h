@@ -78,6 +78,8 @@ struct Config {
   u64 image_base = 0x200000;
 };
 
+inline Config config;
+
 [[noreturn]] inline void error(const Twine &msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
@@ -800,8 +802,6 @@ void read_file(MemoryBufferRef mb);
 //
 // Inline objects and functions
 //
-
-inline Config config;
 
 namespace out {
 using namespace llvm::ELF;
