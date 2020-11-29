@@ -34,7 +34,7 @@
 // CHECK:  0x000000000000001a (FINI_ARRAY)         0x202208
 // CHECK:  0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)
 // CHECK:  0x000000006ffffff0 (VERSYM)             0x20029c
-// CHECK:  0x000000006ffffffe (VERNEED)            0x2002a4
+// CHECK:  0x000000006ffffffe (VERNEED)            0x2002a8
 // CHECK:  0x000000006fffffff (VERNEEDNUM)         1
 // CHECK:  0x0000000000000015 (DEBUG)              0x0
 // CHECK:  0x000000000000000c (INIT)               0x201030
