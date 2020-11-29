@@ -349,7 +349,7 @@ static void set_isec_offsets() {
     if (osec->members.empty())
       return;
 
-    std::vector<ArrayRef<InputChunk *>> slices = split(osec->members, 100000);
+    std::vector<ArrayRef<InputChunk *>> slices = split(osec->members, 10000);
     std::vector<u64> size(slices.size());
     std::vector<u32> alignments(slices.size());
 
@@ -553,7 +553,7 @@ static void write_merged_strings() {
 static void clear_padding(u64 filesize) {
   MyTimer t("clear_padding", copy_timer);
 
-  auto zero = [&](OutputChunk *chunk, u64 next_start) {
+  auto zero = [](OutputChunk *chunk, u64 next_start) {
     u64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
@@ -617,14 +617,14 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
 }
 
 static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
-  auto start = [&](OutputChunk *chunk, Symbol *sym) {
+  auto start = [](OutputChunk *chunk, Symbol *sym) {
     if (sym) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
-  auto stop = [&](OutputChunk *chunk, Symbol *sym) {
+  auto stop = [](OutputChunk *chunk, Symbol *sym) {
     if (sym) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
