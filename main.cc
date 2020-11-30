@@ -316,8 +316,9 @@ static void check_duplicate_symbols() {
       const ELF64LE::Sym &esym = file->elf_syms[i];
       Symbol &sym = *file->symbols[i];
       bool is_weak = (esym.getBinding() == STB_WEAK);
+      bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
 
-      if (esym.isDefined() && !is_weak && sym.file != file) {
+      if (esym.isDefined() && !is_weak && !is_unique && sym.file != file) {
         file->has_error = true;
         return;
       }
@@ -332,8 +333,9 @@ static void check_duplicate_symbols() {
       const ELF64LE::Sym &esym = file->elf_syms[i];
       Symbol &sym = *file->symbols[i];
       bool is_weak = (esym.getBinding() == STB_WEAK);
+      bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
 
-      if (esym.isDefined() && !is_weak && sym.file != file)
+      if (esym.isDefined() && !is_weak && !is_unique  && sym.file != file)
         llvm::errs() << "duplicate symbol: " << toString(file)
                      << ": " << toString(sym.file) << ": "
                      << sym.name << "\n";
