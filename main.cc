@@ -470,8 +470,8 @@ static void fill_symbol_versions() {
   std::stable_sort(syms.begin(), syms.end(), [](Symbol *a, Symbol *b) {
     SharedFile *x = (SharedFile *)a->file;
     SharedFile *y = (SharedFile *)b->file;
-    return std::make_tuple(x->soname_dynstr_idx, a->ver_idx) <
-           std::make_tuple(y->soname_dynstr_idx, b->ver_idx);
+    return std::make_tuple(x->soname, a->ver_idx) <
+           std::make_tuple(y->soname, b->ver_idx);
   });
 
   // Compute sizes of .gnu.version and .gnu.version_r sections.
@@ -518,7 +518,7 @@ static void fill_symbol_versions() {
     verneed = (ELF64LE::Verneed *)buf;
     buf += sizeof(*verneed);
     verneed->vn_version = 1;
-    verneed->vn_file = file->soname_dynstr_idx;
+    verneed->vn_file = out::dynstr->find_string(file->soname);
     verneed->vn_aux = sizeof(ELF64LE::Verneed);
 
     aux = nullptr;
@@ -975,7 +975,7 @@ int main(int argc, char **argv) {
 
   // Copy shared object name strings to .dynsym
   for (SharedFile *file : out::dsos)
-    file->soname_dynstr_idx = out::dynstr->add_string(file->soname);
+    out::dynstr->add_string(file->soname);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.

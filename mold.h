@@ -116,6 +116,9 @@ T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
 
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
 
+#define unreachable() \
+  error(Twine("internal error at ") + __FILE__ + ":" + Twine(__LINE__))
+
 std::string toString(InputFile *);
 
 //
@@ -497,6 +500,7 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
   }
 
   u32 add_string(StringRef str);
+  u32 find_string(StringRef str);
   void copy_buf() override;
 
 private:
@@ -723,7 +727,6 @@ public:
   ArrayRef<Symbol *> find_aliases(Symbol *sym);
 
   StringRef soname;
-  u32 soname_dynstr_idx = -1;
 
   std::vector<StringRef> version_strings;
 

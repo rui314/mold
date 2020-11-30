@@ -224,6 +224,16 @@ u32 DynstrSection::add_string(StringRef str) {
   return ret;
 }
 
+u32 DynstrSection::find_string(StringRef str) {
+  u32 i = 1;
+  for (StringRef s : contents) {
+    if (s == str)
+      return i;
+    i += s.size() + 1;
+  }
+  unreachable();
+}
+
 void DynstrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
@@ -268,7 +278,7 @@ static std::vector<u64> create_dynamic_section() {
   };
 
   for (SharedFile *file : out::dsos)
-    define(DT_NEEDED, file->soname_dynstr_idx);
+    define(DT_NEEDED, out::dynstr->find_string(file->soname));
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
