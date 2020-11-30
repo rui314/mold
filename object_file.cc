@@ -380,7 +380,7 @@ void ObjectFile::resolve_symbols() {
 }
 
 void
-ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
   assert(is_alive);
 
   for (int i = first_global; i < symbols.size(); i++) {
@@ -396,9 +396,10 @@ ObjectFile::mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &fee
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(this) + ": reference to " + sym.name);
 
-    if (esym.getBinding() != STB_WEAK && sym.file && !sym.file->is_dso &&
+    if (esym.getBinding() != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
-      feeder.add((ObjectFile *)sym.file);
+      if (!sym.file->is_dso)
+        feeder.add((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
         message("trace: " + toString(this) + " keeps " + toString(sym.file) +

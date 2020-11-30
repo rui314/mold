@@ -82,7 +82,9 @@ static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
+      bool orig = config.as_needed;
       tok = read_group(tok.slice(1));
+      config.as_needed = orig;
       continue;
     }
 

@@ -1,6 +1,7 @@
 include "llvm/Option/OptParser.td"
 
 class F<string name>: Flag<["--", "-"], name>;
+class J<string name>: Joined<["--", "-"], name>;
 
 multiclass Eq<string name, string help> {
   def NAME: Separate<["--", "-"], name>;
@@ -40,5 +41,13 @@ def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library
 def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
 def: JoinedOrSeparate<["-"], "y">, Alias<trace_symbol>, HelpText<"Alias for --trace-symbol">;
 
-def: F<"as-needed">;
-def: F<"no-as-needed">;
+def as_needed: F<"as-needed">;
+def no_as_needed: F<"no-as-needed">;
+
+def: JoinedOrSeparate<["-"], "z">;
+def: F<"hash-style">;
+def: J<"hash-style=">;
+def: F<"build-id">;
+def: J<"build-id=">;
+def: F<"eh-frame-hdr">;
+def: JoinedOrSeparate<["-"], "m">;

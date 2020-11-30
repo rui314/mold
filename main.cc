@@ -152,7 +152,7 @@ void read_file(MemoryBufferRef mb) {
     out::objs.push_back(new ObjectFile(mb, ""));
     break;
   case file_magic::elf_shared_object:
-    out::dsos.push_back(new SharedFile(mb));
+    out::dsos.push_back(new SharedFile(mb, config.as_needed));
     break;
   case file_magic::unknown:
     parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
@@ -183,7 +183,8 @@ static void resolve_symbols() {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
   tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->resolve_symbols(); });
 
-  // Mark archive members we include into the final output.
+  // Mark reachable objects and DSOs to decide which files to include
+  // into an output.
   std::vector<ObjectFile *> root;
   for (ObjectFile *file : out::objs)
     if (file->is_alive)
@@ -192,13 +193,15 @@ static void resolve_symbols() {
   tbb::parallel_do(
     root,
     [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-      file->mark_live_archive_members(feeder);
+      file->mark_live_objects(feeder);
     });
 
-  // Eliminate unused archive members.
-  out::objs.erase(std::remove_if(out::objs.begin(), out::objs.end(),
-                                  [](ObjectFile *file){ return !file->is_alive; }),
-                   out::objs.end());
+  // Eliminate unused archive members and as-needed DSOs.
+  auto callback = [](InputFile *file){ return !file->is_alive; };
+  out::objs.erase(std::remove_if(out::objs.begin(), out::objs.end(), callback),
+                  out::objs.end());
+  out::dsos.erase(std::remove_if(out::dsos.begin(), out::dsos.end(), callback),
+                  out::dsos.end());
 }
 
 static void eliminate_comdats() {
@@ -806,6 +809,12 @@ int main(int argc, char **argv) {
         break;
       case OPT_library:
         read_file(find_library(arg->getValue()));
+        break;
+      case OPT_as_needed:
+        config.as_needed = true;
+        break;
+      case OPT_no_as_needed:
+        config.as_needed = false;
         break;
       }
     }

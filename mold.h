@@ -70,6 +70,7 @@ class Symbol;
 struct Config {
   StringRef dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
   StringRef output;
+  bool as_needed = false;
   bool is_static = false;
   bool print_map = false;
   int filler = -1;
@@ -668,7 +669,7 @@ public:
   void parse();
   void initialize_mergeable_sections();
   void resolve_symbols();
-  void mark_live_archive_members(tbb::parallel_do_feeder<ObjectFile *> &feeder);
+  void mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder);
   void handle_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
@@ -713,7 +714,9 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryBufferRef mb) : InputFile(mb, true) {}
+  SharedFile(MemoryBufferRef mb, bool as_needed) : InputFile(mb, true) {
+    is_alive = !as_needed;
+  }
 
   void parse();
   void resolve_symbols();
