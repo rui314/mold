@@ -53,3 +53,5 @@ def: F<"build-id">;
 def: J<"build-id=">;
 def: F<"eh-frame-hdr">;
 def: JoinedOrSeparate<["-"], "m">;
+def: F<"start-group">;
+def: F<"end-group">;
