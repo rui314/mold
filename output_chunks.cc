@@ -267,11 +267,8 @@ static std::vector<u64> create_dynamic_section() {
     vec.push_back(val);
   };
 
-  int i = 1;
-  for (SharedFile *file : out::dsos) {
-    define(DT_NEEDED, i);
-    i += file->soname.size() + 1;
-  }
+  for (SharedFile *file : out::dsos)
+    define(DT_NEEDED, file->soname_dynstr_idx);
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
