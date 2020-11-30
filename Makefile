@@ -14,7 +14,7 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
   linker_script.o
 
 mold: $(OBJS)
-	@$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 $(OBJS): mold.h Makefile
 
