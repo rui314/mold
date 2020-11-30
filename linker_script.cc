@@ -110,6 +110,6 @@ void parse_linker_script(StringRef path, StringRef input) {
     else if (tok[0] == "GROUP")
       tok = read_group(tok.slice(1));
     else
-      error("unknown token: " + tok[0]);
+      error(path + ": unknown token: " + tok[0]);
   }
 }
