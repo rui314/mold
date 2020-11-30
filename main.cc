@@ -308,39 +308,33 @@ static void bin_sections() {
 static void check_duplicate_symbols() {
   MyTimer t("check_undef_syms", before_copy_timer);
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  auto is_error = [](ObjectFile *file, int i) {
+    const ELF64LE::Sym &esym = file->elf_syms[i];
+    Symbol &sym = *file->symbols[i];
+    bool is_weak = (esym.getBinding() == STB_WEAK);
+    bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
+    return esym.isDefined() && !is_weak && !is_unique && sym.file != file;
+  };
+
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     if (!file->is_alive)
       return;
 
     for (int i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ELF64LE::Sym &esym = file->elf_syms[i];
-      Symbol &sym = *file->symbols[i];
-      bool is_weak = (esym.getBinding() == STB_WEAK);
-      bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
-
-      if (esym.isDefined() && !is_weak && !is_unique && sym.file != file) {
+      if (is_error(file, i)) {
         file->has_error = true;
         return;
       }
     }
   });
 
-  for (ObjectFile *file : out::objs) {
-    if (!file->has_error)
-      continue;
-
-    for (int i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ELF64LE::Sym &esym = file->elf_syms[i];
-      Symbol &sym = *file->symbols[i];
-      bool is_weak = (esym.getBinding() == STB_WEAK);
-      bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
-
-      if (esym.isDefined() && !is_weak && !is_unique  && sym.file != file)
-        llvm::errs() << "duplicate symbol: " << toString(file)
-                     << ": " << toString(sym.file) << ": "
-                     << sym.name << "\n";
-    }
-  }
+  for (ObjectFile *file : out::objs)
+    if (file->has_error)
+      for (int i = file->first_global; i < file->elf_syms.size(); i++)
+        if (is_error(file, i))
+          llvm::errs() << "duplicate symbol: " << toString(file)
+                       << ": " << toString(file->symbols[i]->file) << ": "
+                       << file->symbols[i]->name << "\n";
 
   for (ObjectFile *file : out::objs)
     if (file->has_error)
