@@ -107,7 +107,7 @@ void parse_linker_script(StringRef path, StringRef input) {
   while (!tok.empty()) {
     if (tok[0] == "OUTPUT_FORMAT")
       tok = read_output_format(tok.slice(1));
-    else if (tok[0] == "GROUP")
+    else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.slice(1));
     else
       error(path + ": unknown token: " + tok[0]);
