@@ -444,7 +444,7 @@ void ObjectFile::resolve_comdat_groups() {
     ComdatGroup *group = pair.first;
     ObjectFile *cur = group->file;
     while (!cur || cur->priority > this->priority)
-      if (group->file.compare_exchange_strong(cur, this))
+      if (group->file.compare_exchange_weak(cur, this))
         break;
   }
 }
