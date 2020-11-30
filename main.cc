@@ -796,6 +796,9 @@ int main(int argc, char **argv) {
   config.print_map = args.hasArg(OPT_print_map);
   config.sysroot = args.getLastArgValue(OPT_sysroot, "");
 
+  for (auto *arg : args.filtered(OPT_rpath))
+    config.rpaths.push_back(arg->getValue());
+
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
 
@@ -973,9 +976,13 @@ int main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
-  // Copy shared object name strings to .dynsym
+  // Copy shared object name strings to .dynstr
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
+
+  // Copy DT_RUNPATH strings to .dynstr.
+  for (StringRef path : config.rpaths)
+    out::dynstr->add_string(path);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.

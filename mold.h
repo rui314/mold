@@ -76,6 +76,7 @@ struct Config {
   int filler = -1;
   std::string sysroot;
   std::vector<StringRef> library_paths;
+  std::vector<StringRef> rpaths;
   u64 image_base = 0x200000;
 };
 

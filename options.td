@@ -44,6 +44,8 @@ def: JoinedOrSeparate<["-"], "y">, Alias<trace_symbol>, HelpText<"Alias for --tr
 def as_needed: F<"as-needed">;
 def no_as_needed: F<"no-as-needed">;
 
+defm rpath: Eq<"rpath", "Add a DT_RUNPATH to the output">;
+
 def: JoinedOrSeparate<["-"], "z">;
 def: F<"hash-style">;
 def: J<"hash-style=">;
