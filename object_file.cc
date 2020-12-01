@@ -440,6 +440,9 @@ void ObjectFile::handle_undefined_weak_symbols() {
 }
 
 void ObjectFile::resolve_comdat_groups() {
+  if (!is_alive)
+    return;
+
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     ObjectFile *cur = group->file;
@@ -450,14 +453,20 @@ void ObjectFile::resolve_comdat_groups() {
 }
 
 void ObjectFile::eliminate_duplicate_comdat_groups() {
+  if (!is_alive)
+    return;
+
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     if (group->file == this)
       continue;
 
     ArrayRef<ELF64LE::Word> entries = pair.second;
-    for (u32 i : entries)
+    for (u32 i : entries) {
+      if (sections[i])
+        sections[i]->is_alive = false;
       sections[i] = nullptr;
+    }
 
     static Counter counter("removed_comdat_mem");
     counter.inc(entries.size());

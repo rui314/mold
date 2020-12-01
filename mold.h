@@ -274,6 +274,7 @@ public:
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
   MergeableSection *mergeable = nullptr;
+  bool is_alive = true;
 };
 
 class MergeableSection : public InputChunk {
@@ -869,8 +870,10 @@ inline u64 Symbol::get_addr() const {
     return piece_ref.piece->get_addr() + piece_ref.addend;
   if (copyrel_offset != -1)
     return out::copyrel->shdr.sh_addr + copyrel_offset;
-  if (input_section)
+  if (input_section) {
+    assert(input_section->is_alive);
     return input_section->get_addr() + value;
+  }
   if (file && file->is_dso && copyrel_offset == -1)
     return get_plt_addr();
   return value;
