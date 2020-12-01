@@ -274,6 +274,7 @@ public:
   ArrayRef<ELF64LE::Rela> rels;
   std::vector<StringPieceRef> rel_pieces;
   MergeableSection *mergeable = nullptr;
+  bool is_comdat_member = false;
   bool is_alive = true;
 };
 
@@ -871,6 +872,8 @@ inline u64 Symbol::get_addr() const {
   if (copyrel_offset != -1)
     return out::copyrel->shdr.sh_addr + copyrel_offset;
   if (input_section) {
+    if (!input_section->is_alive)
+      message("file=" + toString(file) + " sym=" + name);
     assert(input_section->is_alive);
     return input_section->get_addr() + value;
   }

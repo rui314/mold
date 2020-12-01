@@ -98,6 +98,14 @@ void ObjectFile::initialize_sections() {
       }
     }
   }
+
+  // Set is_comdat_member bits.
+  for (auto &pair : comdat_groups) {
+    ArrayRef<ELF64LE::Word> entries = pair.second;
+    for (u32 i : entries)
+      if (this->sections[i])
+        this->sections[i]->is_comdat_member = true;
+  }
 }
 
 void ObjectFile::initialize_symbols() {
@@ -305,7 +313,9 @@ void ObjectFile::parse() {
 //  4. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
-static u64 get_rank(InputFile *file, const ELF64LE::Sym &esym) {
+static u64 get_rank(InputFile *file, const ELF64LE::Sym &esym, InputSection *isec) {
+  if (isec && isec->is_comdat_member)
+    return file->priority;
   if (esym.isUndefined()) {
     assert(esym.getBinding() == STB_WEAK);
     return ((u64)2 << 32) + file->priority;
@@ -320,7 +330,7 @@ static u64 get_rank(const Symbol &sym) {
     return (u64)4 << 32;
   if (sym.is_placeholder)
     return ((u64)3 << 32) + sym.file->priority;
-  return get_rank(sym.file, *sym.esym);
+  return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
 void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
@@ -331,7 +341,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
 
   std::lock_guard lock(sym.mu);
 
-  u64 new_rank = get_rank(this, esym);
+  u64 new_rank = get_rank(this, esym, isec);
   u64 existing_rank = get_rank(sym);
 
   if (new_rank < existing_rank) {
@@ -735,7 +745,7 @@ void SharedFile::resolve_symbols() {
 
     std::lock_guard lock(sym.mu);
 
-    u64 new_rank = get_rank(this, esym);
+    u64 new_rank = get_rank(this, esym, nullptr);
     u64 existing_rank = get_rank(sym);
 
     if (new_rank < existing_rank) {

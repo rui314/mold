@@ -312,8 +312,9 @@ static void check_duplicate_symbols() {
     const ELF64LE::Sym &esym = file->elf_syms[i];
     Symbol &sym = *file->symbols[i];
     bool is_weak = (esym.getBinding() == STB_WEAK);
-    bool is_unique = (esym.getBinding() == STB_GNU_UNIQUE);
-    return esym.isDefined() && !is_weak && !is_unique && sym.file != file;
+    bool is_eliminated =
+      !esym.isAbsolute() && !esym.isCommon() && !file->sections[esym.st_shndx];
+    return esym.isDefined() && !is_weak && !is_eliminated && sym.file != file;
   };
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
