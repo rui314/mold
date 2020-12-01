@@ -71,6 +71,7 @@ struct Config {
   StringRef dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
   StringRef output;
   bool as_needed = false;
+  bool export_dynamic = false;
   bool is_static = false;
   bool print_map = false;
   int filler = -1;
@@ -869,16 +870,26 @@ inline u64 align_to(u64 val, u64 align) {
 inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)
     return piece_ref.piece->get_addr() + piece_ref.addend;
+
   if (copyrel_offset != -1)
     return out::copyrel->shdr.sh_addr + copyrel_offset;
+
   if (input_section) {
-    if (!input_section->is_alive)
-      message("file=" + toString(file) + " sym=" + name);
-    assert(input_section->is_alive);
+    if (!input_section->is_alive) {
+      // The control can reach here if there's a relocation that refers
+      // a local symbol belonging to a comdat group section. This is a
+      // violation of the spec, as all relocations should use only global
+      // symbols of comdat members. However, .eh_frame tends to have such
+      // relocations.
+      return 0;
+    }
+
     return input_section->get_addr() + value;
   }
+
   if (file && file->is_dso && copyrel_offset == -1)
     return get_plt_addr();
+
   return value;
 }
 

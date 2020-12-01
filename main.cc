@@ -225,7 +225,7 @@ static void handle_mergeable_strings() {
       for (StringPieceRef &ref : isec.pieces) {
         MergeableSection *cur = ref.piece->isec;
         while (!cur || cur->file->priority > isec.file->priority)
-          if (ref.piece->isec.compare_exchange_strong(cur, &isec))
+          if (ref.piece->isec.compare_exchange_weak(cur, &isec))
             break;
       }
     }
@@ -792,6 +792,7 @@ int main(int argc, char **argv) {
   config.library_paths = get_args(args, OPT_library_path);
   config.print_map = args.hasArg(OPT_print_map);
   config.sysroot = args.getLastArgValue(OPT_sysroot, "");
+  config.export_dynamic = args.hasArg(OPT_export_dynamic);
 
   for (auto *arg : args.filtered(OPT_rpath))
     config.rpaths.push_back(arg->getValue());

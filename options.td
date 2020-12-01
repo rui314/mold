@@ -46,6 +46,9 @@ def no_as_needed: F<"no-as-needed">;
 
 defm rpath: Eq<"rpath", "Add a DT_RUNPATH to the output">;
 
+def export_dynamic: F<"export-dynamic">,
+  HelpText<"Put symbols in the dynamic symbol table">;
+
 def: JoinedOrSeparate<["-"], "z">;
 def: F<"hash-style">;
 def: J<"hash-style=">;
