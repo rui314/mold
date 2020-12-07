@@ -815,6 +815,9 @@ int main(int argc, char **argv) {
   for (auto *arg : args.filtered(OPT_rpath))
     config.rpaths.push_back(arg->getValue());
 
+  for (auto *arg : args.filtered(OPT_version_script))
+    parse_version_script(arg->getValue());
+
   for (auto *arg : args.filtered(OPT_trace_symbol))
     Symbol::intern(arg->getValue())->traced = true;
 

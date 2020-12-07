@@ -49,6 +49,8 @@ defm rpath: Eq<"rpath", "Add a DT_RUNPATH to the output">;
 def export_dynamic: F<"export-dynamic">,
   HelpText<"Put symbols in the dynamic symbol table">;
 
+defm version_script: Eq<"version-script", "Read a version script">;
+
 def: JoinedOrSeparate<["-"], "z">;
 def: F<"hash-style">;
 def: J<"hash-style=">;
@@ -58,3 +60,6 @@ def: F<"eh-frame-hdr">;
 def: JoinedOrSeparate<["-"], "m">;
 def: F<"start-group">;
 def: F<"end-group">;
+def: F<"pie">;
+def: F<"fatal-warnings">;
+def: F<"disable-new-dtags">;

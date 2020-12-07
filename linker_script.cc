@@ -115,17 +115,18 @@ void parse_linker_script(StringRef path, StringRef input) {
   }
 }
 
-void parse_version_script(StringRef path, StringRef input) {
+void parse_version_script(StringRef path) {
   script_path = path;
   script_dir = path.substr(0, path.find_last_of('/'));
 
-  std::vector<StringRef> vec = tokenize(input);
+  MemoryBufferRef mb = must_open_input_file(path);
+  std::vector<StringRef> vec = tokenize(mb.getBuffer());
   ArrayRef<StringRef> tok = vec;
   tok = skip(tok, "{");
 
   std::vector<StringRef> *cur = &config.verdefs[VER_NDX_LOCAL];
 
-  while (!tok.empty()) {
+  while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "local:") {
       cur = &config.verdefs[VER_NDX_LOCAL];
       tok = tok.slice(1);
@@ -155,6 +156,8 @@ void parse_version_script(StringRef path, StringRef input) {
   }
 
   tok = skip(tok, "}");
+  tok = skip(tok, ";");
+
   if (!tok.empty())
     error(path + ": trailing garbage token: " + tok[0]);
 }

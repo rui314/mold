@@ -750,7 +750,7 @@ private:
 //
 
 void parse_linker_script(StringRef path, StringRef input);
-void parse_version_script(StringRef path, StringRef input);
+void parse_version_script(StringRef path);
 
 //
 // perf.cc
