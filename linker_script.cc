@@ -132,29 +132,31 @@ void parse_version_script(StringRef path) {
   ArrayRef<StringRef> tok = vec;
   tok = skip(tok, "{");
 
-  std::vector<StringRef> *cur = &config.verdefs[VER_NDX_LOCAL];
+  std::vector<StringRef> locals;
+  std::vector<StringRef> globals;
+  std::vector<StringRef> *cur = &locals;
 
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "local:") {
-      cur = &config.verdefs[VER_NDX_LOCAL];
+      cur = &locals;
       tok = tok.slice(1);
       continue;
     }
 
     if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
-      cur = &config.verdefs[VER_NDX_LOCAL];
+      cur = &locals;
       tok = tok.slice(2);
       continue;
     }
 
     if (tok[0] == "global:") {
-      cur = &config.verdefs[VER_NDX_GLOBAL];
+      cur = &globals;
       tok = tok.slice(1);
       continue;
     }
 
     if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
-      cur = &config.verdefs[VER_NDX_GLOBAL];
+      cur = &globals;
       tok = tok.slice(2);
       continue;
     }
@@ -168,4 +170,9 @@ void parse_version_script(StringRef path) {
 
   if (!tok.empty())
     error(path + ": trailing garbage token: " + tok[0]);
+
+  if (locals.size() != 1 || locals[0] != "*")
+    error(path + ": unsupported version script");
+  config.export_dynamic = false;
+  config.globals = globals;
 }

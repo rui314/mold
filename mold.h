@@ -78,7 +78,7 @@ struct Config {
   std::string sysroot;
   std::vector<StringRef> library_paths;
   std::vector<StringRef> rpaths;
-  std::vector<std::vector<StringRef>> verdefs{2};
+  std::vector<StringRef> globals;
   u64 image_base = 0x200000;
 };
 
