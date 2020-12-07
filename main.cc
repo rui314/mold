@@ -1007,11 +1007,6 @@ int main(int argc, char **argv) {
     out::chunks.insert(out::chunks.begin() + 2, out::interp);
   out::chunks.push_back(out::shdr);
 
-  // Set section indices.
-  for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
-    if (out::chunks[i]->kind != OutputChunk::HEADER)
-      out::chunks[i]->shndx = shndx++;
-
   // Make sure that all symbols have been resolved.
   check_duplicate_symbols();
 
@@ -1033,9 +1028,20 @@ int main(int argc, char **argv) {
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
   // for all output sections.
-  tbb::parallel_for_each(out::chunks, [](OutputChunk *chunk) {
+  for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
-  });
+
+  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
+                                   [](OutputChunk *c) { return c->shdr.sh_size == 0; }),
+                    out::chunks.end());
+
+  // Set section indices.
+  for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
+    if (out::chunks[i]->kind != OutputChunk::HEADER)
+      out::chunks[i]->shndx = shndx++;
+
+  for (OutputChunk *chunk : out::chunks)
+    chunk->update_shdr();
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(out::chunks);

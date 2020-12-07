@@ -417,10 +417,8 @@ public:
     shdr.sh_type = llvm::ELF::SHT_PROGBITS;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
-    shdr.sh_size = GOT_SIZE * INIT_SIZE;
+    shdr.sh_size = GOT_SIZE * 3;
   }
-
-  enum { INIT_SIZE = 3 };
 
   void copy_buf() override;
 };
