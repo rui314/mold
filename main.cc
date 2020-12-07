@@ -451,6 +451,23 @@ static void scan_rels() {
   }
 }
 
+static void export_dynamic() {
+  MyTimer t("export_dynamic", before_copy_timer);
+  if (!config.export_dynamic)
+    return;
+
+  std::vector<std::vector<Symbol *>> vec(out::objs.size());
+
+  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+    for (Symbol *sym : out::objs[i]->symbols)
+      if (sym->file == out::objs[i])
+        vec[i].push_back(sym);
+  });
+
+  for (Symbol *sym : flatten(vec))
+    out::dynsym->add_symbol(sym);
+}
+
 static void fill_symbol_versions() {
   MyTimer t("fill_symbol_versions", before_copy_timer);
 
@@ -1002,6 +1019,9 @@ int main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels();
 
+  // Put symbols to .dynsym.
+  export_dynamic();
+
   // Fill .gnu.version and .gnu.version_r section contents.
   fill_symbol_versions();
 
@@ -1014,8 +1034,8 @@ int main(int argc, char **argv) {
   // section indices to them, so we can fix section header contents
   // for all output sections.
   tbb::parallel_for_each(out::chunks, [](OutputChunk *chunk) {
-     chunk->update_shdr();
-   });
+    chunk->update_shdr();
+  });
 
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(out::chunks);

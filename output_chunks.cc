@@ -27,11 +27,10 @@ void OutputEhdr::copy_buf() {
 }
 
 void OutputShdr::update_shdr() {
-  int i = 1;
+  shdr.sh_size = sizeof(ELF64LE::Shdr);
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
-      i++;
-  shdr.sh_size = i * sizeof(ELF64LE::Shdr);
+      shdr.sh_size += sizeof(ELF64LE::Shdr);
 }
 
 void OutputShdr::copy_buf() {
