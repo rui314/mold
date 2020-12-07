@@ -512,6 +512,8 @@ static void export_dynamic() {
 
   std::vector<std::pair<std::regex, u16>> regexs = get_version_scripts();
 
+{
+  MyTimer t("export_dynamic2", before_copy_timer);
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global)) {
@@ -526,6 +528,7 @@ static void export_dynamic() {
           sym->ver_idx = pair.second;
     }
   });
+}
 
   std::vector<std::vector<Symbol *>> vec(out::objs.size());
 
