@@ -25,6 +25,14 @@ static std::vector<StringRef> tokenize(StringRef input) {
       continue;
     }
 
+    if (input[0] == '#') {
+      int pos = input.find("\n", 1);
+      if (pos == StringRef::npos)
+        break;
+      input = input.substr(pos + 1);
+      continue;
+    }
+
     if (input[0] == '"') {
       int pos = input.find('"', 1);
       if (pos == StringRef::npos)
@@ -160,4 +168,14 @@ void parse_version_script(StringRef path) {
 
   if (!tok.empty())
     error(path + ": trailing garbage token: " + tok[0]);
+
+  llvm::outs() << "local:";
+  for (StringRef s : config.verdefs[VER_NDX_LOCAL])
+    llvm::outs() << " " << s;
+  llvm::outs() << "\n";
+
+  llvm::outs() << "global:";
+  for (StringRef s : config.verdefs[VER_NDX_GLOBAL])
+    llvm::outs() << " " << s;
+  llvm::outs() << "\n";
 }
