@@ -459,7 +459,8 @@ static void export_dynamic() {
   std::vector<std::vector<Symbol *>> vec(out::objs.size());
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
-    for (Symbol *sym : out::objs[i]->symbols)
+    ObjectFile *file = out::objs[i];
+    for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global))
       if (sym->file == out::objs[i])
         vec[i].push_back(sym);
   });
