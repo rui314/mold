@@ -3,6 +3,7 @@
 #include "llvm/Support/FileSystem.h"
 
 using namespace llvm;
+using namespace llvm::ELF;
 using namespace llvm::sys;
 
 static thread_local StringRef script_path;
@@ -112,4 +113,48 @@ void parse_linker_script(StringRef path, StringRef input) {
     else
       error(path + ": unknown token: " + tok[0]);
   }
+}
+
+void parse_version_script(StringRef path, StringRef input) {
+  script_path = path;
+  script_dir = path.substr(0, path.find_last_of('/'));
+
+  std::vector<StringRef> vec = tokenize(input);
+  ArrayRef<StringRef> tok = vec;
+  tok = skip(tok, "{");
+
+  std::vector<StringRef> *cur = &config.verdefs[VER_NDX_LOCAL];
+
+  while (!tok.empty()) {
+    if (tok[0] == "local:") {
+      cur = &config.verdefs[VER_NDX_LOCAL];
+      tok = tok.slice(1);
+      continue;
+    }
+
+    if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
+      cur = &config.verdefs[VER_NDX_LOCAL];
+      tok = tok.slice(2);
+      continue;
+    }
+
+    if (tok[0] == "global:") {
+      cur = &config.verdefs[VER_NDX_GLOBAL];
+      tok = tok.slice(1);
+      continue;
+    }
+
+    if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
+      cur = &config.verdefs[VER_NDX_GLOBAL];
+      tok = tok.slice(2);
+      continue;
+    }
+
+    cur->push_back(tok[0]);
+    tok = tok.slice(1);
+  }
+
+  tok = skip(tok, "}");
+  if (!tok.empty())
+    error(path + ": trailing garbage token: " + tok[0]);
 }

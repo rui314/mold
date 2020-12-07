@@ -78,6 +78,7 @@ struct Config {
   std::string sysroot;
   std::vector<StringRef> library_paths;
   std::vector<StringRef> rpaths;
+  std::vector<std::vector<StringRef>> verdefs{2};
   u64 image_base = 0x200000;
 };
 
@@ -749,6 +750,7 @@ private:
 //
 
 void parse_linker_script(StringRef path, StringRef input);
+void parse_version_script(StringRef path, StringRef input);
 
 //
 // perf.cc
