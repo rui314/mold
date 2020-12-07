@@ -349,6 +349,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.input_section = isec;
     sym.piece_ref = sym_pieces[symidx];
     sym.value = esym.st_value;
+    sym.ver_idx = 0;
     sym.type = esym.getType();
     sym.esym = &esym;
     sym.is_placeholder = false;
