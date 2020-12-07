@@ -160,7 +160,7 @@ void parse_version_script(StringRef path) {
     }
 
     cur->push_back(tok[0]);
-    tok = tok.slice(1);
+    tok = skip(tok.slice(1), ";");
   }
 
   tok = skip(tok, "}");

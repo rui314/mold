@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <libgen.h>
+#include <regex>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -451,17 +452,87 @@ static void scan_rels() {
   }
 }
 
+static std::string glob_to_regex(StringRef str) {
+  std::string ret;
+  for (char c : str) {
+    if (c == '*') {
+      ret += ".*";
+    } else if (ispunct(c)) {
+      ret += "\\";
+      ret += c;
+    } else {
+      ret += c;
+    }
+  }
+  return ret;
+}
+
+static std::regex one_of(ArrayRef<StringRef> glob_pats) {
+  std::string re = "(?:";
+  for (int i = 0; i < glob_pats.size(); i++) {
+    if (i > 0)
+      re += "|";
+    re += glob_to_regex(glob_pats[i]);
+  }
+  re += ")";
+  return std::regex(re, std::regex::ECMAScript | std::regex::optimize);
+}
+
+static bool contains_wildcard(StringRef str) {
+  return str.find("*") != StringRef::npos;
+}
+
+static std::vector<std::pair<std::regex, u16>> get_version_scripts() {
+  std::vector<std::pair<std::regex, u16>> ret;
+
+  for (int i = config.verdefs.size() - 1; i >= 0; i--) {
+    std::vector<StringRef> vec;
+    for (StringRef str : config.verdefs[i])
+      if (contains_wildcard(str))
+        vec.push_back(str);
+    if (!vec.empty())
+      ret.push_back({one_of(vec), i});
+  }
+
+  for (int i = config.verdefs.size() - 1; i >= 0; i--) {
+    std::vector<StringRef> vec;
+    for (StringRef str : config.verdefs[i])
+      if (!contains_wildcard(str))
+        vec.push_back(str);
+    if (!vec.empty())
+      ret.push_back({one_of(vec), i});
+  }
+  return ret;
+}
+
 static void export_dynamic() {
   MyTimer t("export_dynamic", before_copy_timer);
   if (!config.export_dynamic)
     return;
+
+  std::vector<std::pair<std::regex, u16>> regexs = get_version_scripts();
+
+  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+    ObjectFile *file = out::objs[i];
+    for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global)) {
+      if (sym->file != file)
+        continue;
+
+      if (config.export_dynamic)
+        sym->ver_idx = VER_NDX_GLOBAL;
+
+      for (std::pair<std::regex, u16> &pair : regexs)
+        if (std::regex_match(sym->name.begin(), sym->name.end(), pair.first))
+          sym->ver_idx = pair.second;
+    }
+  });
 
   std::vector<std::vector<Symbol *>> vec(out::objs.size());
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global))
-      if (sym->file == out::objs[i])
+      if (sym->file == file && sym->ver_idx != VER_NDX_LOCAL)
         vec[i].push_back(sym);
   });
 
