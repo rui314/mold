@@ -168,14 +168,4 @@ void parse_version_script(StringRef path) {
 
   if (!tok.empty())
     error(path + ": trailing garbage token: " + tok[0]);
-
-  llvm::outs() << "local:";
-  for (StringRef s : config.verdefs[VER_NDX_LOCAL])
-    llvm::outs() << " " << s;
-  llvm::outs() << "\n";
-
-  llvm::outs() << "global:";
-  for (StringRef s : config.verdefs[VER_NDX_GLOBAL])
-    llvm::outs() << " " << s;
-  llvm::outs() << "\n";
 }
