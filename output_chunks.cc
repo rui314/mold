@@ -2,8 +2,6 @@
 
 #include <shared_mutex>
 
-using namespace llvm::ELF;
-
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
 

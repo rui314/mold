@@ -16,7 +16,6 @@
 #include <unordered_set>
 
 using namespace llvm;
-using namespace llvm::ELF;
 using namespace llvm::sys;
 
 using llvm::object::Archive;

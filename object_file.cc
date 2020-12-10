@@ -6,7 +6,6 @@
 #include <regex>
 
 using namespace llvm;
-using namespace llvm::ELF;
 
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
   : InputFile(mb, false), archive_name(archive_name),
@@ -670,7 +669,7 @@ void SharedFile::parse() {
   std::span<ElfSym> esyms = obj.get_data<ElfSym>(*symtab_sec);
 
   std::span<u16> vers;
-  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_versym))
+  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_VERSYM))
     vers = obj.get_data<u16>(*sec);
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
@@ -713,7 +712,7 @@ void SharedFile::parse() {
 
 std::vector<std::string_view> SharedFile::read_verdef() {
   std::span<ElfShdr> elf_sections = obj.get_sections();
-  const ElfShdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
+  const ElfShdr *verdef_sec = find_section(elf_sections, SHT_GNU_VERDEF);
   if (!verdef_sec)
     return {};
 
@@ -721,16 +720,16 @@ std::vector<std::string_view> SharedFile::read_verdef() {
   std::string_view strtab = obj.get_string(verdef_sec->sh_link);
 
   std::vector<std::string_view> ret(2);
-  auto *ver = (ELF64LE::Verdef *)verdef.data();
+  auto *ver = (ElfVerdef *)verdef.data();
 
   for (;;) {
     if (ret.size() <= ver->vd_ndx)
       ret.resize(ver->vd_ndx + 1);
-    auto *aux = (ELF64LE::Verdaux *)((u8 *)ver + ver->vd_aux);
+    auto *aux = (ElfVerdaux *)((u8 *)ver + ver->vd_aux);
     ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
     if (!ver->vd_next)
       break;
-    ver = (ELF64LE::Verdef *)((u8 *)ver + ver->vd_next);
+    ver = (ElfVerdef *)((u8 *)ver + ver->vd_next);
   }
   return ret;
 }

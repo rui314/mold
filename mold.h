@@ -4,7 +4,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"
@@ -44,8 +43,6 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
-
-using llvm::object::ELF64LE;
 
 class InputChunk;
 class InputFile;
@@ -128,6 +125,175 @@ private:
 static constexpr u32 SHN_UNDEF = 0;
 static constexpr u32 SHN_ABS = 0xfff1;
 static constexpr u32 SHN_COMMON = 0xfff2;
+
+static constexpr u32 SHT_NULL = 0;
+static constexpr u32 SHT_PROGBITS = 1;
+static constexpr u32 SHT_SYMTAB = 2;
+static constexpr u32 SHT_STRTAB = 3;
+static constexpr u32 SHT_RELA = 4;
+static constexpr u32 SHT_HASH = 5;
+static constexpr u32 SHT_DYNAMIC = 6;
+static constexpr u32 SHT_NOTE = 7;
+static constexpr u32 SHT_NOBITS = 8;
+static constexpr u32 SHT_REL = 9;
+static constexpr u32 SHT_SHLIB = 10;
+static constexpr u32 SHT_DYNSYM = 11;
+static constexpr u32 SHT_INIT_ARRAY = 14;
+static constexpr u32 SHT_FINI_ARRAY = 15;
+static constexpr u32 SHT_PREINIT_ARRAY = 16;
+static constexpr u32 SHT_GROUP = 17;
+static constexpr u32 SHT_SYMTAB_SHNDX = 18;
+static constexpr u32 SHT_GNU_HASH = 0x6ffffff6;
+static constexpr u32 SHT_GNU_VERDEF = 0x6ffffffd;
+static constexpr u32 SHT_GNU_VERNEED = 0x6ffffffe;
+static constexpr u32 SHT_GNU_VERSYM = 0x6fffffff;
+
+static constexpr u32 SHF_WRITE = 0x1;
+static constexpr u32 SHF_ALLOC = 0x2;
+static constexpr u32 SHF_EXECINSTR = 0x4;
+static constexpr u32 SHF_MERGE = 0x10;
+static constexpr u32 SHF_STRINGS = 0x20;
+static constexpr u32 SHF_INFO_LINK = 0x40U;
+static constexpr u32 SHF_LINK_ORDER = 0x80U;
+static constexpr u32 SHF_GROUP = 0x200U;
+static constexpr u32 SHF_TLS = 0x400U;
+static constexpr u32 SHF_COMPRESSED = 0x800U;
+static constexpr u32 SHF_EXCLUDE = 0x80000000U;
+
+static constexpr u32 GRP_COMDAT = 1;
+
+static constexpr u32 STT_NOTYPE = 0;
+static constexpr u32 STT_OBJECT = 1;
+static constexpr u32 STT_FUNC = 2;
+static constexpr u32 STT_SECTION = 3;
+static constexpr u32 STT_FILE = 4;
+static constexpr u32 STT_COMMON = 5;
+static constexpr u32 STT_TLS = 6;
+static constexpr u32 STT_GNU_IFUNC = 10;
+
+static constexpr u32 STB_LOCAL = 0;
+static constexpr u32 STB_GLOBAL = 1;
+static constexpr u32 STB_WEAK = 2;
+static constexpr u32 STB_GNU_UNIQUE = 10;
+
+static constexpr u32 STV_DEFAULT = 0;
+static constexpr u32 STV_INTERNAL = 1;
+static constexpr u32 STV_HIDDEN = 2;
+static constexpr u32 STV_PROTECTED = 3;
+
+static constexpr u32 VER_NDX_LOCAL = 0;
+static constexpr u32 VER_NDX_GLOBAL = 1;
+
+static constexpr u32 PT_NULL = 0;
+static constexpr u32 PT_LOAD = 1;
+static constexpr u32 PT_DYNAMIC = 2;
+static constexpr u32 PT_INTERP = 3;
+static constexpr u32 PT_NOTE = 4;
+static constexpr u32 PT_SHLIB = 5;
+static constexpr u32 PT_PHDR = 6;
+static constexpr u32 PT_TLS = 7;
+
+static constexpr u32 PF_X = 1;
+static constexpr u32 PF_W = 2;
+static constexpr u32 PF_R = 4;
+
+static constexpr u32 ET_NONE = 0;
+static constexpr u32 ET_REL = 1;
+static constexpr u32 ET_EXEC = 2;
+static constexpr u32 ET_DYN = 3;
+
+static constexpr u32 ELFDATA2LSB = 1;
+static constexpr u32 ELFDATA2MSB = 2;
+
+static constexpr u32 ELFCLASS32 = 1;
+static constexpr u32 ELFCLASS64 = 2;
+
+static constexpr u32 EV_CURRENT = 1;
+
+static constexpr u32 EM_X86_64 = 62;
+
+static constexpr u32 EI_CLASS = 4;
+static constexpr u32 EI_DATA = 5;
+static constexpr u32 EI_VERSION = 6;
+static constexpr u32 EI_OSABI = 7;
+static constexpr u32 EI_ABIVERSION = 8;
+
+static constexpr u32 DT_NULL = 0;
+static constexpr u32 DT_NEEDED = 1;
+static constexpr u32 DT_PLTRELSZ = 2;
+static constexpr u32 DT_PLTGOT = 3;
+static constexpr u32 DT_HASH = 4;
+static constexpr u32 DT_STRTAB = 5;
+static constexpr u32 DT_SYMTAB = 6;
+static constexpr u32 DT_RELA = 7;
+static constexpr u32 DT_RELASZ = 8;
+static constexpr u32 DT_RELAENT = 9;
+static constexpr u32 DT_STRSZ = 10;
+static constexpr u32 DT_SYMENT = 11;
+static constexpr u32 DT_INIT = 12;
+static constexpr u32 DT_FINI = 13;
+static constexpr u32 DT_SONAME = 14;
+static constexpr u32 DT_RPATH = 15;
+static constexpr u32 DT_SYMBOLIC = 16;
+static constexpr u32 DT_REL = 17;
+static constexpr u32 DT_RELSZ = 18;
+static constexpr u32 DT_RELENT = 19;
+static constexpr u32 DT_PLTREL = 20;
+static constexpr u32 DT_DEBUG = 21;
+static constexpr u32 DT_TEXTREL = 22;
+static constexpr u32 DT_JMPREL = 23;
+static constexpr u32 DT_BIND_NOW = 24;
+static constexpr u32 DT_INIT_ARRAY = 25;
+static constexpr u32 DT_FINI_ARRAY = 26;
+static constexpr u32 DT_INIT_ARRAYSZ = 27;
+static constexpr u32 DT_FINI_ARRAYSZ = 28;
+static constexpr u32 DT_RUNPATH = 29;
+static constexpr u32 DT_VERSYM = 0x6FFFFFF0;
+static constexpr u32 DT_VERDEF = 0x6FFFFFFC;
+static constexpr u32 DT_VERDEFNUM = 0x6FFFFFFD;
+static constexpr u32 DT_VERNEED = 0x6FFFFFFE;
+static constexpr u32 DT_VERNEEDNUM = 0x6FFFFFFF;
+
+static constexpr u32 R_X86_64_NONE = 0;
+static constexpr u32 R_X86_64_64 = 1;
+static constexpr u32 R_X86_64_PC32 = 2;
+static constexpr u32 R_X86_64_GOT32 = 3;
+static constexpr u32 R_X86_64_PLT32 = 4;
+static constexpr u32 R_X86_64_COPY = 5;
+static constexpr u32 R_X86_64_GLOB_DAT = 6;
+static constexpr u32 R_X86_64_JUMP_SLOT = 7;
+static constexpr u32 R_X86_64_RELATIVE = 8;
+static constexpr u32 R_X86_64_GOTPCREL = 9;
+static constexpr u32 R_X86_64_32 = 10;
+static constexpr u32 R_X86_64_32S = 11;
+static constexpr u32 R_X86_64_16 = 12;
+static constexpr u32 R_X86_64_PC16 = 13;
+static constexpr u32 R_X86_64_8 = 14;
+static constexpr u32 R_X86_64_PC8 = 15;
+static constexpr u32 R_X86_64_DTPMOD64 = 16;
+static constexpr u32 R_X86_64_DTPOFF64 = 17;
+static constexpr u32 R_X86_64_TPOFF64 = 18;
+static constexpr u32 R_X86_64_TLSGD = 19;
+static constexpr u32 R_X86_64_TLSLD = 20;
+static constexpr u32 R_X86_64_DTPOFF32 = 21;
+static constexpr u32 R_X86_64_GOTTPOFF = 22;
+static constexpr u32 R_X86_64_TPOFF32 = 23;
+static constexpr u32 R_X86_64_PC64 = 24;
+static constexpr u32 R_X86_64_GOTOFF64 = 25;
+static constexpr u32 R_X86_64_GOTPC32 = 26;
+static constexpr u32 R_X86_64_GOT64 = 27;
+static constexpr u32 R_X86_64_GOTPCREL64 = 28;
+static constexpr u32 R_X86_64_GOTPC64 = 29;
+static constexpr u32 R_X86_64_GOTPLT64 = 30;
+static constexpr u32 R_X86_64_PLTOFF64 = 31;
+static constexpr u32 R_X86_64_SIZE32 = 32;
+static constexpr u32 R_X86_64_SIZE64 = 33;
+static constexpr u32 R_X86_64_GOTPC32_TLSDESC = 34;
+static constexpr u32 R_X86_64_TLSDESC_CALL = 35;
+static constexpr u32 R_X86_64_TLSDESC = 36;
+static constexpr u32 R_X86_64_IRELATIVE = 37;
+static constexpr u32 R_X86_64_GOTPCRELX = 41;
+static constexpr u32 R_X86_64_REX_GOTPCRELX = 42;
 
 struct ElfSym {
   bool is_defined() const { return !is_undef(); }
@@ -376,7 +542,7 @@ public:
   };
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
-  u8 type = llvm::ELF::STT_NOTYPE;
+  u8 type = STT_NOTYPE;
 };
 
 //
@@ -450,7 +616,7 @@ public:
 class OutputEhdr : public OutputChunk {
 public:
   OutputEhdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_size = sizeof(ElfEhdr);
   }
 
@@ -461,7 +627,7 @@ public:
 class OutputShdr : public OutputChunk {
 public:
   OutputShdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_flags = SHF_ALLOC;
   }
 
   void update_shdr() override;
@@ -472,7 +638,7 @@ public:
 class OutputPhdr : public OutputChunk {
 public:
   OutputPhdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_flags = SHF_ALLOC;
   }
 
   void update_shdr() override;
@@ -483,8 +649,8 @@ class InterpSection : public OutputChunk {
 public:
   InterpSection() : OutputChunk(SYNTHETIC) {
     name = ".interp";
-    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_size = config.dynamic_linker.size() + 1;
   }
 
@@ -529,8 +695,8 @@ class GotSection : public OutputChunk {
 public:
   GotSection() : OutputChunk(SYNTHETIC) {
     name = ".got";
-    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
   }
 
@@ -550,8 +716,8 @@ class GotPltSection : public OutputChunk {
 public:
   GotPltSection() : OutputChunk(SYNTHETIC) {
     name = ".got.plt";
-    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
     shdr.sh_size = GOT_SIZE * 3;
   }
@@ -563,8 +729,8 @@ class PltSection : public OutputChunk {
 public:
   PltSection() : OutputChunk(SYNTHETIC) {
     name = ".plt";
-    shdr.sh_type = llvm::ELF::SHT_PROGBITS;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_EXECINSTR;
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     shdr.sh_addralign = 8;
     shdr.sh_size = PLT_SIZE;
   }
@@ -579,8 +745,8 @@ class RelPltSection : public OutputChunk {
 public:
   RelPltSection() : OutputChunk(SYNTHETIC) {
     name = ".rela.plt";
-    shdr.sh_type = llvm::ELF::SHT_RELA;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_RELA;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = sizeof(ElfRela);
     shdr.sh_addralign = 8;
   }
@@ -593,8 +759,8 @@ class RelDynSection : public OutputChunk {
 public:
   RelDynSection() : OutputChunk(SYNTHETIC) {
     name = ".rela.dyn";
-    shdr.sh_type = llvm::ELF::SHT_RELA;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_RELA;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = sizeof(ElfRela);
     shdr.sh_addralign = 8;
   }
@@ -607,7 +773,7 @@ class StrtabSection : public OutputChunk {
 public:
   StrtabSection() : OutputChunk(SYNTHETIC) {
     name = ".strtab";
-    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_type = SHT_STRTAB;
     shdr.sh_addralign = 1;
     shdr.sh_size = 1;
   }
@@ -619,7 +785,7 @@ class ShstrtabSection : public OutputChunk {
 public:
   ShstrtabSection() : OutputChunk(SYNTHETIC) {
     name = ".shstrtab";
-    shdr.sh_type = llvm::ELF::SHT_STRTAB;
+    shdr.sh_type = SHT_STRTAB;
     shdr.sh_addralign = 1;
   }
 
@@ -631,8 +797,8 @@ class DynstrSection : public OutputChunk {
 public:
 DynstrSection() : OutputChunk(SYNTHETIC) {
     name = ".dynstr";
-    shdr.sh_type = llvm::ELF::SHT_STRTAB;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_STRTAB;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_size = 1;
     shdr.sh_addralign = 1;
   }
@@ -649,8 +815,8 @@ class DynamicSection : public OutputChunk {
 public:
   DynamicSection() : OutputChunk(SYNTHETIC) {
     name = ".dynamic";
-    shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_type = SHT_DYNAMIC;
+    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = 8;
     shdr.sh_entsize = sizeof(ElfDyn);
   }
@@ -663,7 +829,7 @@ class SymtabSection : public OutputChunk {
 public:
   SymtabSection() : OutputChunk(SYNTHETIC) {
     name = ".symtab";
-    shdr.sh_type = llvm::ELF::SHT_SYMTAB;
+    shdr.sh_type = SHT_SYMTAB;
     shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ElfSym);
@@ -677,8 +843,8 @@ class DynsymSection : public OutputChunk {
 public:
   DynsymSection() : OutputChunk(SYNTHETIC) {
     name = ".dynsym";
-    shdr.sh_type = llvm::ELF::SHT_DYNSYM;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_DYNSYM;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ElfSym);
@@ -696,8 +862,8 @@ class HashSection : public OutputChunk {
 public:
   HashSection() : OutputChunk(SYNTHETIC) {
     name = ".hash";
-    shdr.sh_type = llvm::ELF::SHT_HASH;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_HASH;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = 4;
     shdr.sh_addralign = 4;
   }
@@ -731,8 +897,8 @@ class CopyrelSection : public OutputChunk {
 public:
   CopyrelSection() : OutputChunk(SYNTHETIC) {
     name = ".bss";
-    shdr.sh_type = llvm::ELF::SHT_NOBITS;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
+    shdr.sh_type = SHT_NOBITS;
+    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = 32;
   }
 
@@ -745,8 +911,8 @@ class VersymSection : public OutputChunk {
 public:
   VersymSection() : OutputChunk(SYNTHETIC) {
     name = ".gnu.version";
-    shdr.sh_type = llvm::ELF::SHT_GNU_versym;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_GNU_VERSYM;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = 2;
     shdr.sh_addralign = 2;
   }
@@ -761,8 +927,8 @@ class VerneedSection : public OutputChunk {
 public:
   VerneedSection() : OutputChunk(SYNTHETIC) {
     name = ".gnu.version_r";
-    shdr.sh_type = llvm::ELF::SHT_GNU_verneed;
-    shdr.sh_flags = llvm::ELF::SHF_ALLOC;
+    shdr.sh_type = SHT_GNU_VERNEED;
+    shdr.sh_flags = SHF_ALLOC;
     shdr.sh_addralign = 8;
   }
 
