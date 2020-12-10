@@ -155,7 +155,7 @@ void read_file(MemoryMappedFile mb) {
     out::dsos.push_back(new SharedFile(mb, config.as_needed));
     break;
   case file_magic::unknown:
-    parse_linker_script(std::string(mb.name), mb.data);
+    parse_linker_script(mb);
     break;
   default:
     error(mb.name + ": unknown file type");

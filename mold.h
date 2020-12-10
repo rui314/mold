@@ -758,7 +758,7 @@ private:
 // linker_script.cc
 //
 
-void parse_linker_script(std::string path, std::string_view input);
+void parse_linker_script(MemoryMappedFile mb);
 void parse_version_script(std::string path);
 
 //

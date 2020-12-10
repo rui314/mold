@@ -107,11 +107,11 @@ static std::span<std::string_view> read_group(std::span<std::string_view> tok) {
   return tok.subspan(1);
 }
 
-void parse_linker_script(std::string path, std::string_view input) {
-  script_path = path;
-  script_dir = path.substr(0, path.find_last_of('/'));
+void parse_linker_script(MemoryMappedFile mb) {
+  script_path = mb.name;
+  script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
 
-  std::vector<std::string_view> vec = tokenize(input);
+  std::vector<std::string_view> vec = tokenize(mb.data);
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -120,7 +120,7 @@ void parse_linker_script(std::string path, std::string_view input) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1));
     else
-      error(path + ": unknown token: " + std::string(tok[0]));
+      error(mb.name + ": unknown token: " + std::string(tok[0]));
   }
 }
 
