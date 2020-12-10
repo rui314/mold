@@ -169,7 +169,7 @@ void ObjectFile::initialize_symbols() {
 }
 
 static const StringPieceRef *
-binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
+binary_search(std::span<StringPieceRef> pieces, u32 offset) {
   if (offset < pieces[0].input_offset)
     return nullptr;
 
@@ -178,9 +178,9 @@ binary_search(ArrayRef<StringPieceRef> pieces, u32 offset) {
     const StringPieceRef &ref = pieces[mid];
 
     if (offset < ref.input_offset)
-      pieces = pieces.slice(0, mid);
+      pieces = pieces.subspan(0, mid);
     else
-      pieces = pieces.slice(mid);
+      pieces = pieces.subspan(mid);
   }
   return &pieces[0];
 }
@@ -261,8 +261,9 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!isec || !isec->mergeable)
       continue;
 
-    ArrayRef<StringPieceRef> pieces = isec->mergeable->pieces;
-    const StringPieceRef *ref = binary_search(pieces, esym.st_value);
+    const StringPieceRef *ref =
+      binary_search(isec->mergeable->pieces, esym.st_value);
+
     if (!ref)
       error(toString(this) + ": bad symbol value");
 
