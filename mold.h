@@ -51,7 +51,6 @@ using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
 using llvm::Expected;
-using llvm::SmallVector;
 using llvm::Twine;
 using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
