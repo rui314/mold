@@ -218,6 +218,22 @@ struct ElfDyn {
   };
 };
 
+struct ElfVerneed {
+  u16 vn_version;
+  u16 vn_cnt;
+  u32 vn_file;
+  u32 vn_aux;
+  u32 vn_next;
+};
+
+struct ElfVernaux {
+  u32 vna_hash;
+  u16 vna_flags;
+  u16 vna_other;
+  u32 vna_name;
+  u32 vna_next;
+};
+
 struct MemoryMappedFile {
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data(data), size(size) {}
