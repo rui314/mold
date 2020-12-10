@@ -844,7 +844,7 @@ public:
 
   void parse();
   void resolve_symbols();
-  ArrayRef<Symbol *> find_aliases(Symbol *sym);
+  std::span<Symbol *> find_aliases(Symbol *sym);
 
   std::string_view soname;
 

@@ -764,10 +764,10 @@ void SharedFile::resolve_symbols() {
   }
 }
 
-ArrayRef<Symbol *> SharedFile::find_aliases(Symbol *sym) {
+std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
   assert(sym->file == this);
   auto [begin, end] = std::equal_range(
     symbols.begin(), symbols.end(), sym,
     [&](Symbol *a, Symbol *b) { return a->value < b->value; });
-  return ArrayRef<Symbol *>(&*begin, end - begin);
+  return {begin, end};
 }
