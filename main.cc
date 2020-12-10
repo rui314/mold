@@ -93,32 +93,6 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 // Main
 //
 
-static std::vector<MemoryMappedFile> get_archive_members(MemoryMappedFile mb) {
-  std::unique_ptr<Archive> file =
-    CHECK(Archive::create(mb), mb.name + ": failed to parse archive");
-
-  std::vector<MemoryMappedFile> vec;
-
-  Error err = Error::success();
-
-  for (const Archive::Child &c : file->children(err)) {
-    MemoryBufferRef mb =
-      CHECK(c.getMemoryBufferRef(),
-            mb.getBufferIdentifier().str() +
-              ": could not get the buffer for a child of the archive");
-    MemoryMappedFile file(mb.getBufferIdentifier().str(),
-                          (u8 *)mb.getBufferStart(),
-                          mb.getBufferSize());
-    vec.push_back(file);
-  }
-
-  if (err)
-    error(mb.name + ": Archive::children failed: " + toString(std::move(err)));
-
-  file.release(); // leak
-  return vec;
-}
-
 MemoryMappedFile *open_input_file(std::string path) {
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1)

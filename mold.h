@@ -45,9 +45,6 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-using llvm::ErrorOr;
-using llvm::Error;
-using llvm::Expected;
 using llvm::object::ELF64LE;
 
 class InputChunk;
@@ -84,36 +81,6 @@ inline Config config;
   llvm::errs() << msg << "\n";
   exit(1);
 }
-
-template <class T> T check(ErrorOr<T> e) {
-  if (auto ec = e.getError())
-    error(ec.message());
-  return std::move(*e);
-}
-
-template <class T> T check(Expected<T> e) {
-  if (!e)
-    error(llvm::toString(e.takeError()));
-  return std::move(*e);
-}
-
-template <class T>
-T check2(ErrorOr<T> e, llvm::function_ref<std::string()> prefix) {
-  if (auto ec = e.getError())
-    error(prefix() + ": " + ec.message());
-  return std::move(*e);
-}
-
-template <class T>
-T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
-  if (!e)
-    error(prefix() + ": " + toString(e.takeError()));
-  return std::move(*e);
-}
-
-inline std::string toString(std::string s) { return s; }
-
-#define CHECK(E, S) check2((E), [&] { return toString(S); })
 
 #define unreachable() \
   error("internal error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__))

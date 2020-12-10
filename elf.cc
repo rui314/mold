@@ -37,19 +37,6 @@ std::string_view ElfFile::get_string(u32 idx) const {
 }
 
 struct ArHdr {
-  std::string get_name() const {
-    std::string_view view(ar_name);
-    return std::string(view.substr(0, view.find(' ')));
-  }
-
-  u32 get_size() const {
-    u32 sz = 0;
-    for (char c : ar_size)
-      if (isdigit(c))
-        sz = sz * 10 + c - '0';
-    return sz;
-  }
-
   char ar_name[16];
   char ar_date[12];
   char ar_uid[6];
@@ -65,16 +52,28 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
   u8 *data = mb.data + 8;
 
   std::vector<MemoryMappedFile> vec;
+  std::string_view strtab;
 
   while (data < mb.data + mb.size) {
     ArHdr &hdr = *(ArHdr *)data;
     data += sizeof(ArHdr);
     
-    std::string name = hdr.get_name();
-    u32 size = hdr.get_size();
-    if (name != "/" && name != "//" && name != "__.SYMDEF")
+    std::string name(hdr.ar_name, strchr(hdr.ar_name, ' '));
+    u32 size = atoi(hdr.ar_size);
+    
+    if (name == "//")
+      strtab = {(char *)data, size};
+    else if (name != "/" && name != "__.SYMDEF")
       vec.push_back({name, data, size});
     data += size;
   }
+
+  for (MemoryMappedFile &mb : vec) {
+    if (mb.name.size() > 0 && mb.name[0] == '/') {
+      u32 pos = atoi(mb.name.data() + 1);
+      mb.name = strtab.substr(pos, strtab.find('\n', pos));
+    }
+  }
+
   return vec;
 }
