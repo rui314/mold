@@ -252,16 +252,25 @@ public:
   ElfFile(MemoryMappedFile mb);
 
   std::span<ElfShdr> get_sections() const;
-  std::span<ElfSym> get_symbols(const ElfShdr &shdr) const;
-  std::span<ElfRela> get_relocs(const ElfShdr &shdr) const;
+
+  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const {
+    std::string_view view = get_string(shdr);
+    if (view.size() % sizeof(T))
+      error(mb.name + ": corrupted section");
+    return {(T *)view.data(), view.size() / sizeof(T)};
+  }
+
+  template<typename T> std::span<T> get_data(u32 idx) const {
+    if (sections.size() <= idx)
+      error(mb.name + ": invalid section index");
+    return get_data<T>(sections[idx]);
+  }
 
   std::string_view get_section_name(const ElfShdr &shdr) const;
-  std::string_view get_section_data(const ElfShdr &shdr) const;
-  std::string_view get_section_data(u32 idx) const;
+  std::string_view get_string(const ElfShdr &shdr) const;
+  std::string_view get_string(u32 idx) const;
 
 private:
-  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const;
-
   MemoryMappedFile mb;
   ElfEhdr &ehdr;
   std::span<ElfShdr> sections;
@@ -391,7 +400,7 @@ public:
 
 class MergeableSection : public InputChunk {
 public:
-  MergeableSection(InputSection *isec, ArrayRef<u8> contents);
+  MergeableSection(InputSection *isec, std::string_view contents);
 
   MergedSection &parent;
   std::vector<StringPieceRef> pieces;
@@ -817,7 +826,7 @@ private:
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
   void maybe_override_symbol(Symbol &sym, int symidx);
 
-  std::vector<std::pair<ComdatGroup *, ArrayRef<u32>>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   std::vector<Symbol> local_symbols;
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;

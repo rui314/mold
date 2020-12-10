@@ -13,7 +13,7 @@ void InputSection::copy_buf() {
     return;
 
   // Copy data
-  std::string_view data = file->obj.get_section_data(shdr);
+  std::string_view data = file->obj.get_string(shdr);
   memcpy(out::buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
   // Apply relocations
@@ -218,11 +218,10 @@ void InputSection::report_undefined_symbols() {
   }
 }
 
-MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
+MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
                                         isec->shdr.sh_type)) {
-  std::string_view data((const char *)&contents[0], contents.size());
   u32 offset = 0;
 
   while (!data.empty()) {

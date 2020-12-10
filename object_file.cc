@@ -44,8 +44,7 @@ void ObjectFile::initialize_sections() {
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
       // Get comdat group members.
-      std::string_view view = obj.get_section_data(shdr);
-      ArrayRef<u32> entries = {(u32 *)view.data(), view.size() / 4};
+      std::span<u32> entries = obj.get_data<u32>(shdr);
 
       if (entries.empty())
         error(toString(this) + ": empty SHT_GROUP");
@@ -93,7 +92,7 @@ void ObjectFile::initialize_sections() {
 
     InputSection *target = sections[shdr.sh_info];
     if (target) {
-      target->rels = obj.get_relocs(shdr);
+      target->rels = obj.get_data<ElfRela>(shdr);
       target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
@@ -105,7 +104,7 @@ void ObjectFile::initialize_sections() {
 
   // Set is_comdat_member bits.
   for (auto &pair : comdat_groups) {
-    ArrayRef<u32> entries = pair.second;
+    std::span<u32> entries = pair.second;
     for (u32 i : entries)
       if (this->sections[i])
         this->sections[i]->is_comdat_member = true;
@@ -205,8 +204,7 @@ void ObjectFile::initialize_mergeable_sections() {
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
     if (isec && is_mergeable(isec->shdr)) {
-      std::string_view view = obj.get_section_data(isec->shdr);
-      ArrayRef<u8> contents = {(u8 *)view.data(), view.size()};
+      std::string_view contents = obj.get_string(isec->shdr);
       mergeable_sections.emplace_back(isec, contents);
       isec->mergeable = &mergeable_sections.back();
     }
@@ -288,8 +286,8 @@ void ObjectFile::parse() {
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
-    elf_syms = obj.get_symbols(*symtab_sec);
-    symbol_strtab = obj.get_section_data(symtab_sec->sh_link);
+    elf_syms = obj.get_data<ElfSym>(*symtab_sec);
+    symbol_strtab = obj.get_string(symtab_sec->sh_link);
   }
 
   initialize_sections();
@@ -478,7 +476,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     if (group->file == this)
       continue;
 
-    ArrayRef<u32> entries = pair.second;
+    std::span<u32> entries = pair.second;
     for (u32 i : entries) {
       if (sections[i])
         sections[i]->is_alive = false;
@@ -649,11 +647,7 @@ std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
   if (!sec)
     return name;
 
-  std::string_view view = obj.get_section_data(*sec);
-  ArrayRef<ELF64LE::Dyn> tags
-    = {(ELF64LE::Dyn *)view.data(), view.size() / sizeof(ELF64LE::Dyn)};
-
-  for (const ELF64LE::Dyn &dyn : tags)
+  for (const ELF64LE::Dyn &dyn : obj.get_data<ELF64LE::Dyn>(*sec))
     if (dyn.d_tag == DT_SONAME)
       return std::string_view(symbol_strtab.data() + dyn.d_un.d_val);
   return name;
@@ -666,19 +660,17 @@ void SharedFile::parse() {
   if (!symtab_sec)
     return;
 
-  symbol_strtab = obj.get_section_data(symtab_sec->sh_link);
+  symbol_strtab = obj.get_string(symtab_sec->sh_link);
   soname = get_soname(elf_sections);
   version_strings = read_verdef();
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
-  std::span<ElfSym> esyms = obj.get_symbols(*symtab_sec);
+  std::span<ElfSym> esyms = obj.get_data<ElfSym>(*symtab_sec);
 
-  ArrayRef<u16> vers;
-  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_versym)) {
-    std::string_view view = obj.get_section_data(*sec);
-    vers = {(u16 *)view.data(), view.size() / 2};
-  }
+  std::span<u16> vers;
+  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_versym))
+    vers = obj.get_data<u16>(*sec);
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
 
@@ -724,8 +716,8 @@ std::vector<std::string_view> SharedFile::read_verdef() {
   if (!verdef_sec)
     return {};
 
-  std::string_view verdef = obj.get_section_data(*verdef_sec);
-  std::string_view strtab = obj.get_section_data(verdef_sec->sh_link);
+  std::string_view verdef = obj.get_string(*verdef_sec);
+  std::string_view strtab = obj.get_string(verdef_sec->sh_link);
 
   std::vector<std::string_view> ret(2);
   auto *ver = (ELF64LE::Verdef *)verdef.data();
