@@ -8,7 +8,7 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-ObjectFile::ObjectFile(MemoryBufferRef mb, StringRef archive_name)
+ObjectFile::ObjectFile(MemoryBufferRef mb, std::string_view archive_name)
   : InputFile(mb, false), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
@@ -23,7 +23,7 @@ static const ELF64LE::Shdr
 }
 
 void ObjectFile::initialize_sections() {
-  StringRef section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
+  std::string_view section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
 
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
@@ -38,7 +38,7 @@ void ObjectFile::initialize_sections() {
       if (shdr.sh_info >= elf_syms.size())
         error(toString(this) + ": invalid symbol index");
       const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
-      StringRef signature = CHECK(sym.getName(symbol_strtab), this);
+      std::string_view signature = CHECK(sym.getName(symbol_strtab), this);
 
       // Get comdat group members.
       ArrayRef<ELF64LE::Word> entries =
@@ -71,7 +71,8 @@ void ObjectFile::initialize_sections() {
       static Counter counter("regular_sections");
       counter.inc();
 
-      StringRef name = CHECK(obj.getSectionName(shdr, section_strtab), this);
+      std::string_view name =
+        CHECK(obj.getSectionName(shdr, StringRef(section_strtab)), this);
       this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
@@ -126,7 +127,7 @@ void ObjectFile::initialize_symbols() {
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    std::string_view name = CHECK(esym.getName(symbol_strtab), this);
 
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
@@ -153,9 +154,9 @@ void ObjectFile::initialize_symbols() {
   // Initialize global symbols
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ELF64LE::Sym &esym = elf_syms[i];
-    StringRef name = CHECK(esym.getName(symbol_strtab), this);
+    std::string_view name = CHECK(esym.getName(symbol_strtab), this);
     int pos = name.find('@');
-    if (pos != StringRef::npos)
+    if (pos != std::string_view::npos)
       name = name.substr(0, pos);
 
     symbols.push_back(Symbol::intern(name));
@@ -359,7 +360,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(sym.file) +
               (sym.is_weak ? ": weak definition of " : ": definition of ") +
-              sym.name);
+              std::string(sym.name));
   }
 }
 
@@ -382,7 +383,8 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + toString(sym.file) + ": lazy definition of " + sym.name);
+          message("trace: " + toString(sym.file) + ": lazy definition of " +
+                  std::string(sym.name));
       }
     } else {
       maybe_override_symbol(sym, i);
@@ -405,7 +407,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
     }
 
     if (UNLIKELY(sym.traced))
-      message("trace: " + toString(this) + ": reference to " + sym.name);
+      message("trace: " + toString(this) + ": reference to " + std::string(sym.name));
 
     if (esym.getBinding() != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
@@ -414,7 +416,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
 
       if (UNLIKELY(sym.traced))
         message("trace: " + toString(this) + " keeps " + toString(sym.file) +
-                " for " + sym.name);
+                " for " + std::string(sym.name));
     }
   }
 }
@@ -444,7 +446,8 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + toString(this) + ": unresolved weak symbol " + sym.name);
+          message("trace: " + toString(this) + ": unresolved weak symbol " +
+                  std::string(sym.name));
       }
     }
   }
@@ -565,7 +568,7 @@ void ObjectFile::write_symtab() {
     write_sym(i);
 }
 
-bool is_c_identifier(StringRef name) {
+bool is_c_identifier(std::string_view name) {
   static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*");
   return std::regex_match(name.begin(), name.end(), re);
 }
@@ -575,7 +578,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   constexpr int bufsz = 256;
   char *buf = new char[bufsz];
   std::unique_ptr<MemoryBuffer> mb =
-    MemoryBuffer::getMemBuffer(StringRef(buf, bufsz));
+    MemoryBuffer::getMemBuffer(std::string_view(buf, bufsz));
 
   auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
   obj->name = "<internal>";
@@ -587,7 +590,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   obj->first_global = 1;
   obj->is_alive = true;
 
-  auto add = [&](StringRef name, u8 visibility = STV_DEFAULT) {
+  auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
     ELF64LE::Sym esym = {};
     esym.setType(STT_NOTYPE);
     esym.st_shndx = SHN_ABS;
@@ -641,7 +644,7 @@ std::string toString(InputFile *file) {
   return (obj->archive_name + ":" + obj->name).str();
 }
 
-StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
+std::string_view SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
   const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_DYNAMIC);
   if (!sec)
     return name;
@@ -651,7 +654,7 @@ StringRef SharedFile::get_soname(ArrayRef<ELF64LE::Shdr> elf_sections) {
 
   for (const ELF64LE::Dyn &dyn : tags)
     if (dyn.d_tag == DT_SONAME)
-      return StringRef(symbol_strtab.data() + dyn.d_un.d_val);
+      return std::string_view(symbol_strtab.data() + dyn.d_un.d_val);
   return name;
 }
 
@@ -703,7 +706,7 @@ void SharedFile::parse() {
     elf_syms.push_back(x.first);
     versyms.push_back(x.second);
 
-    StringRef name = CHECK(x.first->getName(symbol_strtab), this);
+    std::string_view name = CHECK(x.first->getName(symbol_strtab), this);
     symbols.push_back(Symbol::intern(name));
   }
 
@@ -711,7 +714,7 @@ void SharedFile::parse() {
   counter.inc(elf_syms.size());
 }
 
-std::vector<StringRef> SharedFile::read_verdef() {
+std::vector<std::string_view> SharedFile::read_verdef() {
   ArrayRef<ELF64LE::Shdr> elf_sections = CHECK(obj.sections(), this);
   const ELF64LE::Shdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
   if (!verdef_sec)
@@ -722,9 +725,9 @@ std::vector<StringRef> SharedFile::read_verdef() {
     error(toString(this) + ": .gnu.version_d is corrupted");
 
   ArrayRef<u8> verdef = CHECK(obj.getSectionContents(*verdef_sec), this);
-  StringRef strtab = CHECK(obj.getStringTable(*vername_sec), this);
+  std::string_view strtab = CHECK(obj.getStringTable(*vername_sec), this);
 
-  std::vector<StringRef> ret(2);
+  std::vector<std::string_view> ret(2);
   auto *ver = (ELF64LE::Verdef *)verdef.data();
 
   for (;;) {
@@ -764,7 +767,7 @@ void SharedFile::resolve_symbols() {
       if (UNLIKELY(sym.traced))
         message("trace: " + toString(sym.file) +
                 (sym.is_weak ? ": weak definition of " : ": definition of ") +
-                sym.name);
+                std::string(sym.name));
     }
   }
 }

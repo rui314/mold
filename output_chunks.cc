@@ -216,16 +216,16 @@ void ShstrtabSection::copy_buf() {
   }
 }
 
-u32 DynstrSection::add_string(StringRef str) {
+u32 DynstrSection::add_string(std::string_view str) {
   u32 ret = shdr.sh_size;
   shdr.sh_size += str.size() + 1;
   contents.push_back(str);
   return ret;
 }
 
-u32 DynstrSection::find_string(StringRef str) {
+u32 DynstrSection::find_string(std::string_view str) {
   u32 i = 1;
-  for (StringRef s : contents) {
+  for (std::string_view s : contents) {
     if (s == str)
       return i;
     i += s.size() + 1;
@@ -238,7 +238,7 @@ void DynstrSection::copy_buf() {
   base[0] = '\0';
 
   int i = 1;
-  for (StringRef s : contents) {
+  for (std::string_view s : contents) {
     write_string(base + i, s);
     i += s.size() + 1;
   }
@@ -279,7 +279,7 @@ static std::vector<u64> create_dynamic_section() {
   for (SharedFile *file : out::dsos)
     define(DT_NEEDED, out::dynstr->find_string(file->soname));
 
-  for (StringRef path : config.rpaths)
+  for (std::string_view path : config.rpaths)
     define(DT_RUNPATH, out::dynstr->find_string(path));
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);
@@ -303,7 +303,7 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
 
-  auto find = [](StringRef name) -> OutputChunk * {
+  auto find = [](std::string_view name) -> OutputChunk * {
     for (OutputChunk *chunk : out::chunks)
       if (chunk->name == name)
         return chunk;
@@ -328,20 +328,20 @@ void DynamicSection::copy_buf() {
   write_vector(out::buf + shdr.sh_offset, create_dynamic_section());
 }
 
-static StringRef get_output_name(StringRef name) {
-  static StringRef common_names[] = {
+static std::string_view get_output_name(std::string_view name) {
+  static std::string_view common_names[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
     ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
   };
 
-  for (StringRef s : common_names)
-    if (name.startswith(s) || name == s.drop_back())
-      return s.drop_back();
+  for (std::string_view s : common_names)
+    if (name.starts_with(s) || name == s.substr(0, s.size() - 1))
+      return s.substr(0, s.size() - 1);
   return name;
 }
 
 OutputSection *
-OutputSection::get_instance(StringRef name, u64 flags, u32 type) {
+OutputSection::get_instance(std::string_view name, u64 flags, u32 type) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_GROUP;
 
@@ -600,7 +600,7 @@ void HashSection::copy_buf() {
 }
 
 MergedSection *
-MergedSection::get_instance(StringRef name, u64 flags, u32 type) {
+MergedSection::get_instance(std::string_view name, u64 flags, u32 type) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 

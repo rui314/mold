@@ -24,12 +24,12 @@ using llvm::opt::InputArgList;
 
 class MyTimer {
 public:
-  MyTimer(StringRef name) {
+  MyTimer(std::string_view name) {
     timer = new Timer(name, name);
     timer->startTimer();
   }
 
-  MyTimer(StringRef name, llvm::TimerGroup &tg) {
+  MyTimer(std::string_view name, llvm::TimerGroup &tg) {
     timer = new Timer(name, name, tg);
     timer->startTimer();
   }
@@ -117,8 +117,8 @@ static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
   return vec;
 }
 
-MemoryBufferRef *open_input_file(const Twine &path) {
-  int fd = open(path.str().c_str(), O_RDONLY);
+MemoryBufferRef *open_input_file(std::string path) {
+  int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1)
     return nullptr;
 
@@ -131,12 +131,12 @@ MemoryBufferRef *open_input_file(const Twine &path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  StringRef buf((char *)addr, st.st_size);
-  std::string *filename = new std::string(path.str());
+  std::string_view buf((char *)addr, st.st_size);
+  std::string *filename = new std::string(path);
   return new MemoryBufferRef(buf, *filename);
 }
 
-MemoryBufferRef must_open_input_file(const Twine &path) {
+MemoryBufferRef must_open_input_file(std::string path) {
   MemoryBufferRef *mb = open_input_file(path);
   if (!mb)
     error("cannot open " + path);
@@ -156,7 +156,7 @@ void read_file(MemoryBufferRef mb) {
     out::dsos.push_back(new SharedFile(mb, config.as_needed));
     break;
   case file_magic::unknown:
-    parse_linker_script(mb.getBufferIdentifier(), mb.getBuffer());
+    parse_linker_script(std::string(mb.getBufferIdentifier()), mb.getBuffer());
     break;
   default:
     error(mb.getBufferIdentifier() + ": unknown file type");
@@ -462,7 +462,7 @@ static void export_dynamic() {
         sym->ver_idx = VER_NDX_GLOBAL;
   });
 
-  for (StringRef name : config.globals)
+  for (std::string_view name : config.globals)
     Symbol::intern(name)->ver_idx = VER_NDX_GLOBAL;
 
   std::vector<std::vector<Symbol *>> vec(out::objs.size());
@@ -519,7 +519,7 @@ static void fill_symbol_versions() {
 
   auto add_aux = [&](Symbol *sym) {
     SharedFile *file = (SharedFile *)sym->file;
-    StringRef verstr = file->version_strings[sym->ver_idx];
+    std::string_view verstr = file->version_strings[sym->ver_idx];
 
     verneed->vn_cnt += 1;
     if (aux)
@@ -734,7 +734,7 @@ static u32 get_umask() {
 static u8 *open_output_file(u64 filesize) {
   MyTimer t("open_file", before_copy_timer);
 
-  int fd = open(config.output.str().c_str(), O_RDWR | O_CREAT, 0777);
+  int fd = open(std::string(config.output).c_str(), O_RDWR | O_CREAT, 0777);
   if (fd == -1)
     error("cannot open " + config.output + ": " + strerror(errno));
 
@@ -765,8 +765,8 @@ static int get_thread_count(InputArgList &args) {
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 }
 
-std::vector<StringRef> get_args(opt::InputArgList &args, int id) {
-  std::vector<StringRef> vec;
+std::vector<std::string> get_args(opt::InputArgList &args, int id) {
+  std::vector<std::string> vec;
   for (auto *arg : args.filtered(id))
     vec.push_back(arg->getValue());
   return vec;
@@ -777,8 +777,8 @@ static int parse_filler(opt::InputArgList &args) {
   if (!arg)
     return -1;
 
-  StringRef val = arg->getValue();
-  if (!val.startswith("0x"))
+  std::string_view val = arg->getValue();
+  if (!val.starts_with("0x"))
     error("invalid argument: " + arg->getAsString(args));
   int ret;
   if (!to_integer(val.substr(2), ret, 16))
@@ -786,10 +786,10 @@ static int parse_filler(opt::InputArgList &args) {
   return (u8)ret;
 }
 
-MemoryBufferRef find_library(const Twine &name) {
-  for (StringRef dir : config.library_paths) {
-    std::string root = dir.startswith("/") ? config.sysroot : "";
-    std::string stem = (root + dir + "/lib" + name).str();
+MemoryBufferRef find_library(std::string name) {
+  for (std::string_view dir : config.library_paths) {
+    std::string root = dir.starts_with("/") ? config.sysroot : "";
+    std::string stem = root + std::string(dir) + "/lib" + name;
     if (!config.is_static)
       if (MemoryBufferRef *mb = open_input_file(stem + ".so"))
         return *mb;
@@ -1009,7 +1009,7 @@ int main(int argc, char **argv) {
     out::dynstr->add_string(file->soname);
 
   // Copy DT_RUNPATH strings to .dynstr.
-  for (StringRef path : config.rpaths)
+  for (std::string_view path : config.rpaths)
     out::dynstr->add_string(path);
 
   // Add headers and sections that have to be at the beginning

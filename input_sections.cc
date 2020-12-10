@@ -4,7 +4,7 @@ using namespace llvm;
 using namespace llvm::ELF;
 
 InputChunk::InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr,
-                       StringRef name)
+                       std::string_view name)
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type)) {}
 
@@ -224,15 +224,15 @@ MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
   : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
                                         isec->shdr.sh_type)) {
-  StringRef data((const char *)&contents[0], contents.size());
+  std::string_view data((const char *)&contents[0], contents.size());
   u32 offset = 0;
 
   while (!data.empty()) {
     size_t end = data.find('\0');
-    if (end == StringRef::npos)
+    if (end == std::string_view::npos)
       error(toString(this) + ": string is not null terminated");
 
-    StringRef substr = data.substr(0, end + 1);
+    std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
     StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
@@ -245,5 +245,5 @@ MergeableSection::MergeableSection(InputSection *isec, ArrayRef<u8> contents)
 }
 
 std::string toString(InputChunk *chunk) {
-  return (toString(chunk->file) + ":(" + chunk->name + ")").str();
+  return toString(chunk->file) + ":(" + std::string(chunk->name) + ")";
 }

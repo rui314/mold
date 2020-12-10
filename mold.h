@@ -27,6 +27,7 @@
 #include <mutex>
 #include <span>
 #include <string>
+#include <string_view>
 
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
@@ -52,7 +53,6 @@ using llvm::Error;
 using llvm::Expected;
 using llvm::MemoryBufferRef;
 using llvm::SmallVector;
-using llvm::StringRef;
 using llvm::Twine;
 using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
@@ -69,17 +69,17 @@ class SharedFile;
 class Symbol;
 
 struct Config {
-  StringRef dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
-  StringRef output;
+  std::string_view dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
+  std::string_view output;
   bool as_needed = false;
   bool export_dynamic = false;
   bool is_static = false;
   bool print_map = false;
   int filler = -1;
   std::string sysroot;
-  std::vector<StringRef> library_paths;
-  std::vector<StringRef> rpaths;
-  std::vector<StringRef> globals;
+  std::vector<std::string> library_paths;
+  std::vector<std::string> rpaths;
+  std::vector<std::string> globals;
   u64 image_base = 0x200000;
 };
 
@@ -131,12 +131,12 @@ std::string toString(InputFile *);
 
 namespace tbb {
 template<>
-struct tbb_hash_compare<StringRef> {
-  static size_t hash(const StringRef& k) {
+struct tbb_hash_compare<std::string_view> {
+  static size_t hash(const std::string_view& k) {
     return llvm::hash_value(k);
   }
 
-  static bool equal(const StringRef& k1, const StringRef& k2) {
+  static bool equal(const std::string_view& k1, const std::string_view& k2) {
     return k1 == k2;
   }
 };
@@ -145,9 +145,9 @@ struct tbb_hash_compare<StringRef> {
 template<typename ValueT>
 class ConcurrentMap {
 public:
-  typedef tbb::concurrent_hash_map<StringRef, ValueT> MapT;
+  typedef tbb::concurrent_hash_map<std::string_view, ValueT> MapT;
 
-  ValueT *insert(StringRef key, const ValueT &val) {
+  ValueT *insert(std::string_view key, const ValueT &val) {
     typename MapT::const_accessor acc;
     map.insert(acc, std::make_pair(key, val));
     return const_cast<ValueT *>(&acc->second);
@@ -164,7 +164,7 @@ private:
 //
 
 struct StringPiece {
-  StringPiece(StringRef data) : data(data) {}
+  StringPiece(std::string_view data) : data(data) {}
 
   StringPiece(const StringPiece &other)
     : data(other.data), isec(other.isec.load()),
@@ -172,7 +172,7 @@ struct StringPiece {
 
   inline u64 get_addr() const;
 
-  StringRef data;
+  std::string_view data;
   std::atomic<MergeableSection *> isec = ATOMIC_VAR_INIT(nullptr);
   u32 output_offset = -1;
 };
@@ -185,13 +185,13 @@ struct StringPieceRef {
 
 class Symbol {
 public:
-  Symbol(StringRef name)
+  Symbol(std::string_view name)
     : name(name), is_placeholder(false), is_imported(false),
       is_weak(false), is_undef_weak(false), traced(false) {}
 
   Symbol(const Symbol &other) : Symbol(other.name) {}
 
-  static Symbol *intern(StringRef name) {
+  static Symbol *intern(std::string_view name) {
     static ConcurrentMap<Symbol> map;
     return map.insert(name, Symbol(name));
   }
@@ -204,7 +204,7 @@ public:
   inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
 
-  StringRef name;
+  std::string_view name;
   InputFile *file = nullptr;
   const ELF64LE::Sym *esym = nullptr;
   InputSection *input_section = nullptr;
@@ -258,16 +258,16 @@ public:
   const ELF64LE::Shdr &shdr;
   OutputSection *output_section = nullptr;
 
-  StringRef name;
+  std::string_view name;
   u32 offset;
 
 protected:
-  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name);
+  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, std::string_view name);
 };
 
 class InputSection : public InputChunk {
 public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, StringRef name)
+  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, std::string_view name)
     : InputChunk(file, shdr, name) {}
 
   void copy_buf() override;
@@ -305,7 +305,7 @@ public:
   virtual void copy_buf() {}
   virtual void update_shdr() {}
 
-  StringRef name;
+  std::string_view name;
   int shndx = 0;
   Kind kind;
   bool starts_new_ptload = false;
@@ -360,9 +360,9 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(StringRef name, u64 flags, u32 type);
+  static OutputSection *get_instance(std::string_view name, u64 flags, u32 type);
 
-  OutputSection(StringRef name, u32 type, u64 flags)
+  OutputSection(std::string_view name, u32 type, u64 flags)
     : OutputChunk(REGULAR) {
     this->name = name;
     shdr.sh_type = type;
@@ -381,7 +381,7 @@ public:
 
 class SpecialSection : public OutputChunk {
 public:
-  SpecialSection(StringRef name, u32 type, u64 flags, u32 align = 1, u32 entsize = 0)
+  SpecialSection(std::string_view name, u32 type, u64 flags, u32 align = 1, u32 entsize = 0)
     : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_type = type;
@@ -503,12 +503,12 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
     shdr.sh_addralign = 1;
   }
 
-  u32 add_string(StringRef str);
-  u32 find_string(StringRef str);
+  u32 add_string(std::string_view str);
+  u32 find_string(std::string_view str);
   void copy_buf() override;
 
 private:
-  std::vector<StringRef> contents;
+  std::vector<std::string_view> contents;
 };
 
 class DynamicSection : public OutputChunk {
@@ -572,19 +572,19 @@ public:
   void copy_buf() override;
 
 private:
-  static u32 hash(StringRef name);
+  static u32 hash(std::string_view name);
 };
 
 class MergedSection : public OutputChunk {
 public:
-  static MergedSection *get_instance(StringRef name, u64 flags, u32 type);
+  static MergedSection *get_instance(std::string_view name, u64 flags, u32 type);
 
   static inline std::vector<MergedSection *> instances;
 
   ConcurrentMap<StringPiece> map;
 
 private:
-  MergedSection(StringRef name, u64 flags, u32 type)
+  MergedSection(std::string_view name, u64 flags, u32 type)
     : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_flags = flags;
@@ -638,7 +638,7 @@ public:
   std::vector<u8> contents;
 };
 
-bool is_c_identifier(StringRef name);
+bool is_c_identifier(std::string_view name);
 std::vector<ELF64LE::Phdr> create_phdr();
 
 //
@@ -672,7 +672,7 @@ public:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryBufferRef mb, StringRef archive_name);
+  ObjectFile(MemoryBufferRef mb, std::string_view archive_name);
 
   void parse();
   void initialize_mergeable_sections();
@@ -688,7 +688,7 @@ public:
 
   static ObjectFile *create_internal_file();
 
-  StringRef archive_name;
+  std::string_view archive_name;
   std::vector<InputSection *> sections;
   ArrayRef<ELF64LE::Sym> elf_syms;
   int first_global = 0;
@@ -716,7 +716,7 @@ private:
   bool has_common_symbol;
 
   ArrayRef<ELF64LE::Shdr> elf_sections;
-  StringRef symbol_strtab;
+  std::string_view symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
 
@@ -730,19 +730,19 @@ public:
   void resolve_symbols();
   ArrayRef<Symbol *> find_aliases(Symbol *sym);
 
-  StringRef soname;
+  std::string_view soname;
 
-  std::vector<StringRef> version_strings;
+  std::vector<std::string_view> version_strings;
 
 private:
-  StringRef get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
+  std::string_view get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
-  std::vector<StringRef> read_verdef();
+  std::vector<std::string_view> read_verdef();
 
   std::vector<const ELF64LE::Sym *> elf_syms;
   std::vector<u16> versyms;
 
-  StringRef symbol_strtab;
+  std::string_view symbol_strtab;
   const ELF64LE::Shdr *symtab_sec;
 };
 
@@ -750,8 +750,8 @@ private:
 // linker_script.cc
 //
 
-void parse_linker_script(StringRef path, StringRef input);
-void parse_version_script(StringRef path);
+void parse_linker_script(std::string path, std::string_view input);
+void parse_version_script(std::string path);
 
 //
 // perf.cc
@@ -759,7 +759,7 @@ void parse_version_script(StringRef path);
 
 class Counter {
 public:
-  Counter(StringRef name, u32 value = 0) : name(name), value(value) {
+  Counter(std::string_view name, u32 value = 0) : name(name), value(value) {
     static std::mutex mu;
     std::lock_guard lock(mu);
     instances.push_back(this);
@@ -779,7 +779,7 @@ public:
   static bool enabled;
 
 private:
-  StringRef name;
+  std::string_view name;
   std::atomic_uint32_t value;
 
   static std::vector<Counter *> instances;
@@ -795,9 +795,9 @@ void print_map();
 // main.cc
 //
 
-MemoryBufferRef find_library(const Twine &path);
-MemoryBufferRef *open_input_file(const Twine &path);
-MemoryBufferRef must_open_input_file(const Twine &path);
+MemoryBufferRef find_library(std::string path);
+MemoryBufferRef *open_input_file(std::string path);
+MemoryBufferRef must_open_input_file(std::string path);
 void read_file(MemoryBufferRef mb);
 
 //
@@ -860,7 +860,7 @@ inline void message(const Twine &msg) {
 inline std::string toString(const Twine &s) { return s.str(); }
 
 inline std::string toString(Symbol sym) {
-  return (StringRef(sym.name) + "(" + toString(sym.file) + ")").str();
+  return std::string(sym.name) + "(" + toString(sym.file) + ")";
 }
 
 inline u64 align_to(u64 val, u64 align) {
@@ -933,7 +933,7 @@ inline u64 InputChunk::get_addr() const {
   return output_section->shdr.sh_addr + offset;
 }
 
-inline u32 elf_hash(StringRef name) {
+inline u32 elf_hash(std::string_view name) {
   u32 h = 0;
   for (u8 c : name) {
     h = (h << 4) + c;
@@ -945,7 +945,7 @@ inline u32 elf_hash(StringRef name) {
   return h;
 }
 
-inline void write_string(u8 *buf, StringRef str) {
+inline void write_string(u8 *buf, std::string_view str) {
   memcpy(buf, str.data(), str.size());
   buf[str.size()] = '\0';
 }
