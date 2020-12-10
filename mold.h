@@ -185,6 +185,17 @@ struct ElfEhdr {
   u16 e_shstrndx;
 };
 
+struct ElfPhdr {
+  u32 p_type;
+  u32 p_flags;
+  u64 p_offset;
+  u64 p_vaddr;
+  u64 p_paddr;
+  u64 p_filesz;
+  u64 p_memsz;
+  u64 p_align;
+};
+
 struct ElfRela {
   u64 r_offset;
 
@@ -401,7 +412,7 @@ class OutputEhdr : public OutputChunk {
 public:
   OutputEhdr() : OutputChunk(HEADER) {
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_size = sizeof(ELF64LE::Ehdr);
+    shdr.sh_size = sizeof(ElfEhdr);
   }
 
   void copy_buf() override;
@@ -723,7 +734,7 @@ public:
 };
 
 bool is_c_identifier(std::string_view name);
-std::vector<ELF64LE::Phdr> create_phdr();
+std::vector<ElfPhdr> create_phdr();
 
 //
 // object_file.cc

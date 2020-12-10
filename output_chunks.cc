@@ -5,7 +5,7 @@
 using namespace llvm::ELF;
 
 void OutputEhdr::copy_buf() {
-  auto &hdr = *(ELF64LE::Ehdr *)(out::buf + shdr.sh_offset);
+  auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
 
   memset(&hdr, 0, sizeof(hdr));
   memcpy(&hdr.e_ident, "\177ELF", 4);
@@ -18,9 +18,9 @@ void OutputEhdr::copy_buf() {
   hdr.e_entry = Symbol::intern("_start")->get_addr();
   hdr.e_phoff = out::phdr->shdr.sh_offset;
   hdr.e_shoff = out::shdr->shdr.sh_offset;
-  hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
-  hdr.e_phentsize = sizeof(ELF64LE::Phdr);
-  hdr.e_phnum = out::phdr->shdr.sh_size / sizeof(ELF64LE::Phdr);
+  hdr.e_ehsize = sizeof(ElfEhdr);
+  hdr.e_phentsize = sizeof(ElfPhdr);
+  hdr.e_phnum = out::phdr->shdr.sh_size / sizeof(ElfPhdr);
   hdr.e_shentsize = sizeof(ElfShdr);
   hdr.e_shnum = out::shdr->shdr.sh_size / sizeof(ElfShdr);
   hdr.e_shstrndx = out::shstrtab->shndx;
@@ -53,12 +53,12 @@ static u32 to_phdr_flags(OutputChunk *chunk) {
   return ret;
 }
 
-std::vector<ELF64LE::Phdr> create_phdr() {
-  std::vector<ELF64LE::Phdr> vec;
+std::vector<ElfPhdr> create_phdr() {
+  std::vector<ElfPhdr> vec;
 
   auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {
     vec.push_back({});
-    ELF64LE::Phdr &phdr = vec.back();
+    ElfPhdr &phdr = vec.back();
     phdr.p_type = type;
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(align, chunk->shdr.sh_addralign);
@@ -72,7 +72,7 @@ std::vector<ELF64LE::Phdr> create_phdr() {
   };
 
   auto append = [&](OutputChunk *chunk) {
-    ELF64LE::Phdr &phdr = vec.back();
+    ElfPhdr &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
       ? chunk->shdr.sh_offset - phdr.p_offset
@@ -128,7 +128,7 @@ std::vector<ELF64LE::Phdr> create_phdr() {
 }
 
 void OutputPhdr::update_shdr() {
-  shdr.sh_size = create_phdr().size() * sizeof(ELF64LE::Phdr);
+  shdr.sh_size = create_phdr().size() * sizeof(ElfPhdr);
 }
 
 void OutputPhdr::copy_buf() {

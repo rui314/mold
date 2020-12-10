@@ -1042,7 +1042,7 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the ending address
   // of the TLS section. Find it out now.
-  for (ELF64LE::Phdr phdr : create_phdr())
+  for (ElfPhdr phdr : create_phdr())
     if (phdr.p_type == PT_TLS)
       out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
 
