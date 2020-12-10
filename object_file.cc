@@ -15,7 +15,7 @@ ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
 }
 
 static const ElfShdr
-*find_section(ArrayRef<ElfShdr> sections, u32 type) {
+*find_section(std::span<ElfShdr> sections, u32 type) {
   for (const ElfShdr &sec : sections)
     if (sec.sh_type == type)
       return &sec;
@@ -28,10 +28,6 @@ static std::string_view get_substr(std::string_view view, u32 offset) {
 }
 
 void ObjectFile::initialize_sections() {
-  ArrayRef<ELF64LE::Shdr> tmp((ELF64LE::Shdr *)elf_sections.data(), elf_sections.size());
-  std::string_view section_strtab =
-    CHECK(obj.getSectionStringTable(tmp), this);
-
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
     const ElfShdr &shdr = elf_sections[i];
@@ -48,8 +44,9 @@ void ObjectFile::initialize_sections() {
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
       // Get comdat group members.
-      ArrayRef<u32> entries =
-          CHECK(obj.template getSectionContentsAsArray<u32>((ELF64LE::Shdr &)shdr), this);
+      std::string_view view = obj.get_section_contents(shdr);
+      ArrayRef<u32> entries = {(u32 *)view.data(), view.size() / 4};
+
       if (entries.empty())
         error(toString(this) + ": empty SHT_GROUP");
       if (entries[0] == 0)
@@ -78,9 +75,7 @@ void ObjectFile::initialize_sections() {
       static Counter counter("regular_sections");
       counter.inc();
 
-      std::string_view name =
-        CHECK(obj.getSectionName((ELF64LE::Shdr &)shdr, StringRef(section_strtab)),
-              this);
+      std::string_view name = obj.get_section_name(shdr);
       this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
@@ -98,7 +93,8 @@ void ObjectFile::initialize_sections() {
 
     InputSection *target = sections[shdr.sh_info];
     if (target) {
-      target->rels = CHECK(obj.relas((ELF64LE::Shdr &)shdr), this);
+      std::string_view view = obj.get_section_contents(shdr);
+      target->rels = {(ELF64LE::Rela *)view.data(), view.size() / sizeof(ELF64LE::Rela)};
       target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
@@ -210,8 +206,8 @@ void ObjectFile::initialize_mergeable_sections() {
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
     if (isec && is_mergeable(isec->shdr)) {
-      ArrayRef<u8> contents =
-        CHECK(obj.getSectionContents((ELF64LE::Shdr &)isec->shdr), this);
+      std::string_view view = obj.get_section_contents(isec->shdr);
+      ArrayRef<u8> contents = {(u8 *)view.data(), view.size()};
       mergeable_sections.emplace_back(isec, contents);
       isec->mergeable = &mergeable_sections.back();
     }
@@ -288,19 +284,14 @@ void ObjectFile::initialize_mergeable_sections() {
 }
 
 void ObjectFile::parse() {
-  ArrayRef<ELF64LE::Shdr> tmp = CHECK(obj.sections(), this);
-  elf_sections = {(ElfShdr *)tmp.data(), tmp.size()};
+  elf_sections = obj.get_sections();
   sections.resize(elf_sections.size());
   symtab_sec = find_section(elf_sections, SHT_SYMTAB);
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
-    ArrayRef<ELF64LE::Sym> tmp = CHECK(obj.symbols((ELF64LE::Shdr *)symtab_sec), this);
-    elf_syms = {(ElfSym *)tmp.data(), tmp.size()};
-    symbol_strtab =
-      CHECK(obj.getStringTableForSymtab(*(ELF64LE::Shdr *)symtab_sec,
-                                        CHECK(obj.sections(), this)),
-            this);
+    elf_syms = obj.get_symbols(*symtab_sec);
+    symbol_strtab = obj.get_section_contents(symtab_sec->sh_link);
   }
 
   initialize_sections();
@@ -591,6 +582,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   // Create a dummy object file.
   constexpr int bufsz = 256;
   u8 *buf = new u8[bufsz];
+  memcpy(buf, "\177ELF", 4);
   MemoryMappedFile *mb = new MemoryMappedFile("<internal>", buf, bufsz);
   auto *obj = new ObjectFile(*mb, "");
 
@@ -654,14 +646,14 @@ std::string toString(InputFile *file) {
   return (obj->archive_name + ":" + obj->name).str();
 }
 
-std::string_view SharedFile::get_soname(ArrayRef<ElfShdr> elf_sections) {
+std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
   const ElfShdr *sec = find_section(elf_sections, SHT_DYNAMIC);
   if (!sec)
     return name;
 
-  ArrayRef<ELF64LE::Dyn> tags =
-    CHECK(obj.template getSectionContentsAsArray<ELF64LE::Dyn>(*(ELF64LE::Shdr *)sec),
-          this);
+  std::string_view view = obj.get_section_contents(*sec);
+  ArrayRef<ELF64LE::Dyn> tags
+    = {(ELF64LE::Dyn *)view.data(), view.size() / sizeof(ELF64LE::Dyn)};
 
   for (const ELF64LE::Dyn &dyn : tags)
     if (dyn.d_tag == DT_SONAME)
@@ -670,28 +662,25 @@ std::string_view SharedFile::get_soname(ArrayRef<ElfShdr> elf_sections) {
 }
 
 void SharedFile::parse() {
-  ArrayRef<ELF64LE::Shdr> tmp = CHECK(obj.sections(), this);
-  ArrayRef<ElfShdr> elf_sections = {(ElfShdr *)tmp.data(), tmp.size()};
+  std::span<ElfShdr> elf_sections = obj.get_sections();
   symtab_sec = find_section(elf_sections, SHT_DYNSYM);
 
   if (!symtab_sec)
     return;
 
-  symbol_strtab =
-    CHECK(obj.getStringTableForSymtab(*(ELF64LE::Shdr *)symtab_sec,
-                                      CHECK(obj.sections(), this)),
-          this);
+  symbol_strtab = obj.get_section_contents(symtab_sec->sh_link);
   soname = get_soname(elf_sections);
   version_strings = read_verdef();
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
-  ArrayRef<ELF64LE::Sym> tmp2 = CHECK(obj.symbols((ELF64LE::Shdr *)symtab_sec), this);
-  ArrayRef<ElfSym> esyms = {(ElfSym *)tmp2.data(), tmp2.size()};
+  std::span<ElfSym> esyms = obj.get_symbols(*symtab_sec);
+
   ArrayRef<u16> vers;
-  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_versym))
-    vers = CHECK(obj.template getSectionContentsAsArray<u16>(*(ELF64LE::Shdr *)sec),
-                 this);
+  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_versym)) {
+    std::string_view view = obj.get_section_contents(*sec);
+    vers = {(u16 *)view.data(), view.size() / 2};
+  }
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
 
@@ -732,21 +721,13 @@ void SharedFile::parse() {
 }
 
 std::vector<std::string_view> SharedFile::read_verdef() {
-  ArrayRef<ELF64LE::Shdr> tmp = CHECK(obj.sections(), this);
-  ArrayRef<ElfShdr> elf_sections = {(ElfShdr *)tmp.data(), tmp.size()};
+  std::span<ElfShdr> elf_sections = obj.get_sections();
   const ElfShdr *verdef_sec = find_section(elf_sections, SHT_GNU_verdef);
   if (!verdef_sec)
     return {};
 
-  const ElfShdr *vername_sec =
-    (const ElfShdr *)CHECK(obj.getSection(verdef_sec->sh_link), this);
-  if (!vername_sec)
-    error(toString(this) + ": .gnu.version_d is corrupted");
-
-  ArrayRef<u8> verdef =
-    CHECK(obj.getSectionContents(*(ELF64LE::Shdr *)verdef_sec), this);
-  std::string_view strtab =
-    CHECK(obj.getStringTable(*(ELF64LE::Shdr *)vername_sec), this);
+  std::string_view verdef = obj.get_section_contents(*verdef_sec);
+  std::string_view strtab = obj.get_section_contents(verdef_sec->sh_link);
 
   std::vector<std::string_view> ret(2);
   auto *ver = (ELF64LE::Verdef *)verdef.data();

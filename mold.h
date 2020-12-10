@@ -51,7 +51,6 @@ using llvm::ErrorOr;
 using llvm::Error;
 using llvm::Expected;
 using llvm::object::ELF64LE;
-using llvm::object::ELFFile;
 
 class InputChunk;
 class InputFile;
@@ -240,13 +239,14 @@ public:
 
   std::span<ElfShdr> get_sections() const;
   std::span<ElfSym> get_symbols(const ElfShdr &shdr) const;
-  std::string_view get_section_name(const ElfShdr &shdr);
-  std::string_view get_section_contents(const ElfShdr &shdr);
+  std::string_view get_section_name(const ElfShdr &shdr) const;
+  std::string_view get_section_contents(const ElfShdr &shdr) const;
+  std::string_view get_section_contents(u32 idx) const;
 
 private:
   MemoryMappedFile mb;
   ElfEhdr &ehdr;
-  std::span<ElfShdr> section;
+  std::span<ElfShdr> sections;
 };
 
 //
@@ -748,14 +748,13 @@ struct ComdatGroup {
 class InputFile {
 public:
   InputFile(MemoryMappedFile mb, bool is_dso)
-    : mb(mb), name(mb.name), is_dso(is_dso),
-      obj(check(ELFFile<ELF64LE>::create({(char *)mb.data, mb.size}))) {}
+    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb) {}
 
   std::string name;
   bool is_dso;
   u32 priority;
   MemoryMappedFile mb;
-  ELFFile<ELF64LE> obj;
+  ElfFile obj;
   std::vector<Symbol *> symbols;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 };
@@ -780,7 +779,7 @@ public:
 
   std::string_view archive_name;
   std::vector<InputSection *> sections;
-  ArrayRef<ElfSym> elf_syms;
+  std::span<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
@@ -805,7 +804,7 @@ private:
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
 
-  ArrayRef<ElfShdr> elf_sections;
+  std::span<ElfShdr> elf_sections;
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
 };
@@ -825,7 +824,7 @@ public:
   std::vector<std::string_view> version_strings;
 
 private:
-  std::string_view get_soname(ArrayRef<ElfShdr> elf_sections);
+  std::string_view get_soname(std::span<ElfShdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
   std::vector<std::string_view> read_verdef();
 
