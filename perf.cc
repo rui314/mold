@@ -1,5 +1,8 @@
 #include "mold.h"
 
+#include <iomanip>
+#include <ios>
+
 using namespace llvm;
 
 std::vector<Counter *> Counter::instances;
@@ -15,5 +18,5 @@ void Counter::print() {
   });
 
   for (Counter *c : vec)
-    llvm::outs() << right_justify(c->name, 20) << "=" << c->value << "\n";
+    std::cout << std::setw(20) << std::right << c->name << "=" << c->value << "\n";
 }

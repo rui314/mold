@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
 #include <span>
 #include <string>
@@ -73,7 +74,7 @@ inline Config config;
 [[noreturn]] inline void error(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
-  llvm::errs() << msg << "\n";
+  std::cerr << msg << "\n";
   exit(1);
 }
 
@@ -1149,7 +1150,7 @@ inline Symbol *_edata;
 inline void message(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
-  llvm::outs() << msg << "\n";
+  std::cout << msg << "\n";
 }
 
 inline std::string toString(Symbol sym) {
