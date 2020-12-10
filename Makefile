@@ -11,7 +11,7 @@ CPPFLAGS=-g $(shell $(LLVM_CONFIG) --cxxflags) -IoneTBB/include -pthread -std=c+
 LDFLAGS=$(shell $(LLVM_CONFIG) --ldflags) -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) -fuse-ld=lld
 LIBS=-pthread -ltbb -lcurses -Wl,--start-group $(LLVM_LIBS) -Wl,--end-group
 OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
-  linker_script.o
+  linker_script.o elf.o
 
 mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)

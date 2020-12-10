@@ -107,7 +107,8 @@ static std::vector<MemoryMappedFile> get_archive_members(MemoryMappedFile mb) {
             mb.getBufferIdentifier().str() +
               ": could not get the buffer for a child of the archive");
     MemoryMappedFile file(mb.getBufferIdentifier().str(),
-                          {mb.getBufferStart(), mb.getBufferSize()});
+                          (u8 *)mb.getBufferStart(),
+                          mb.getBufferSize());
     vec.push_back(file);
   }
 
@@ -132,7 +133,7 @@ MemoryMappedFile *open_input_file(std::string path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  return new MemoryMappedFile(path, {(char *)addr, (size_t)st.st_size});
+  return new MemoryMappedFile(path, (u8 *)addr, st.st_size);
 }
 
 MemoryMappedFile must_open_input_file(std::string path) {
@@ -143,7 +144,7 @@ MemoryMappedFile must_open_input_file(std::string path) {
 }
 
 void read_file(MemoryMappedFile mb) {
-  switch (identify_magic(mb.data)) {
+  switch (identify_magic({(char *)mb.data, mb.size})) {
   case file_magic::archive:
     for (MemoryMappedFile member : get_archive_members(mb))
       out::objs.push_back(new ObjectFile(member, mb.name));

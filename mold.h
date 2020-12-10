@@ -204,6 +204,51 @@ struct ElfShdr {
   u64 sh_entsize;
 };
 
+struct ElfEhdr {
+  u8 e_ident[16];
+  u16 e_type;
+  u16 e_machine;
+  u32 e_version;
+  u64 e_entry;
+  u64 e_phoff;
+  u64 e_shoff;
+  u32 e_flags;
+  u16 e_ehsize;
+  u16 e_phentsize;
+  u16 e_phnum;
+  u16 e_shentsize;
+  u16 e_shnum;
+  u16 e_shstrndx;
+};
+
+struct MemoryMappedFile {
+  MemoryMappedFile(std::string name, u8 *data, u64 size)
+    : name(name), data(data), size(size) {}
+
+  operator llvm::MemoryBufferRef() const {
+    return {{(char *)data, size}, name};
+  }
+
+  std::string name;
+  u8 *data;
+  u64 size;
+};
+
+class ElfFile {
+public:
+  ElfFile(MemoryMappedFile mb);
+
+  std::span<ElfShdr> get_sections() const;
+  std::span<ElfSym> get_symbols(const ElfShdr &shdr) const;
+  std::string_view get_section_name(const ElfShdr &shdr);
+  std::string_view get_section_contents(const ElfShdr &shdr);
+
+private:
+  MemoryMappedFile mb;
+  ElfEhdr &ehdr;
+  std::span<ElfShdr> section;
+};
+
 //
 // Symbol
 //
@@ -700,21 +745,11 @@ struct ComdatGroup {
   u32 section_idx;
 };
 
-struct MemoryMappedFile {
-  MemoryMappedFile(std::string name, std::string_view data)
-    : name(name), data(data) {}
-
-  operator llvm::MemoryBufferRef() const { return {data, name}; }
-
-  std::string name;
-  std::string_view data;
-};
-
 class InputFile {
 public:
   InputFile(MemoryMappedFile mb, bool is_dso)
     : mb(mb), name(mb.name), is_dso(is_dso),
-      obj(check(ELFFile<ELF64LE>::create(mb.data))) {}
+      obj(check(ELFFile<ELF64LE>::create({(char *)mb.data, mb.size}))) {}
 
   std::string name;
   bool is_dso;

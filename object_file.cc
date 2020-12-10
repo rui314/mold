@@ -590,9 +590,8 @@ bool is_c_identifier(std::string_view name) {
 ObjectFile *ObjectFile::create_internal_file() {
   // Create a dummy object file.
   constexpr int bufsz = 256;
-  char *buf = new char[bufsz];
-  MemoryMappedFile *mb =
-    new MemoryMappedFile("<internal>", std::string_view(buf, bufsz));
+  u8 *buf = new u8[bufsz];
+  MemoryMappedFile *mb = new MemoryMappedFile("<internal>", buf, bufsz);
   auto *obj = new ObjectFile(*mb, "");
 
   // Create linker-synthesized symbols.
