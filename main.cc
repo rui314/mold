@@ -307,9 +307,9 @@ static void check_duplicate_symbols() {
     if (file->has_error)
       for (int i = file->first_global; i < file->elf_syms.size(); i++)
         if (is_error(file, i))
-          llvm::errs() << "duplicate symbol: " << toString(file)
-                       << ": " << toString(file->symbols[i]->file) << ": "
-                       << file->symbols[i]->name << "\n";
+          std::cerr << "duplicate symbol: " << toString(file)
+                    << ": " << toString(file->symbols[i]->file) << ": "
+                    << file->symbols[i]->name << "\n";
 
   for (ObjectFile *file : out::objs)
     if (file->has_error)
