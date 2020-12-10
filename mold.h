@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <string>
 
 #define SECTOR_SIZE 512

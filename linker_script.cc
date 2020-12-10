@@ -54,19 +54,19 @@ static std::vector<StringRef> tokenize(StringRef input) {
   return vec;
 }
 
-static ArrayRef<StringRef> skip(ArrayRef<StringRef> tok, StringRef str) {
+static std::span<StringRef> skip(std::span<StringRef> tok, StringRef str) {
   if (tok.empty() || tok[0] != str)
     error("expected '" + str + "'");
-  return tok.slice(1);
+  return tok.subspan(1);
 }
 
-static ArrayRef<StringRef> read_output_format(ArrayRef<StringRef> tok) {
+static std::span<StringRef> read_output_format(std::span<StringRef> tok) {
   tok = skip(tok, "(");
   while (!tok.empty() && tok[0] != ")")
-    tok = tok.slice(1);
+    tok = tok.subspan(1);
   if (tok.empty())
     error("expected ')'");
-  return tok.slice(1);
+  return tok.subspan(1);
 }
 
 static MemoryBufferRef resolve_path(StringRef str) {
@@ -86,24 +86,24 @@ static MemoryBufferRef resolve_path(StringRef str) {
   error("library not found: " + str);
 }
 
-static ArrayRef<StringRef> read_group(ArrayRef<StringRef> tok) {
+static std::span<StringRef> read_group(std::span<StringRef> tok) {
   tok = skip(tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
       bool orig = config.as_needed;
-      tok = read_group(tok.slice(1));
+      tok = read_group(tok.subspan(1));
       config.as_needed = orig;
       continue;
     }
 
     read_file(resolve_path(tok[0]));
-    tok = tok.slice(1);
+    tok = tok.subspan(1);
   }
 
   if (tok.empty())
     error("expected ')'");
-  return tok.slice(1);
+  return tok.subspan(1);
 }
 
 void parse_linker_script(StringRef path, StringRef input) {
@@ -111,13 +111,13 @@ void parse_linker_script(StringRef path, StringRef input) {
   script_dir = path.substr(0, path.find_last_of('/'));
 
   std::vector<StringRef> vec = tokenize(input);
-  ArrayRef<StringRef> tok = vec;
+  std::span<StringRef> tok = vec;
 
   while (!tok.empty()) {
     if (tok[0] == "OUTPUT_FORMAT")
-      tok = read_output_format(tok.slice(1));
+      tok = read_output_format(tok.subspan(1));
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
-      tok = read_group(tok.slice(1));
+      tok = read_group(tok.subspan(1));
     else
       error(path + ": unknown token: " + tok[0]);
   }
@@ -129,7 +129,7 @@ void parse_version_script(StringRef path) {
 
   MemoryBufferRef mb = must_open_input_file(path);
   std::vector<StringRef> vec = tokenize(mb.getBuffer());
-  ArrayRef<StringRef> tok = vec;
+  std::span<StringRef> tok = vec;
   tok = skip(tok, "{");
 
   std::vector<StringRef> locals;
@@ -139,30 +139,30 @@ void parse_version_script(StringRef path) {
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "local:") {
       cur = &locals;
-      tok = tok.slice(1);
+      tok = tok.subspan(1);
       continue;
     }
 
     if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
       cur = &locals;
-      tok = tok.slice(2);
+      tok = tok.subspan(2);
       continue;
     }
 
     if (tok[0] == "global:") {
       cur = &globals;
-      tok = tok.slice(1);
+      tok = tok.subspan(1);
       continue;
     }
 
     if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
       cur = &globals;
-      tok = tok.slice(2);
+      tok = tok.subspan(2);
       continue;
     }
 
     cur->push_back(tok[0]);
-    tok = skip(tok.slice(1), ";");
+    tok = skip(tok.subspan(1), ";");
   }
 
   tok = skip(tok, "}");
