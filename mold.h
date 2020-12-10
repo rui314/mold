@@ -531,7 +531,7 @@ public:
     name = ".rela.plt";
     shdr.sh_type = llvm::ELF::SHT_RELA;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ELF64LE::Rela);
+    shdr.sh_entsize = sizeof(ElfRela);
     shdr.sh_addralign = 8;
   }
 
@@ -545,7 +545,7 @@ public:
     name = ".rela.dyn";
     shdr.sh_type = llvm::ELF::SHT_RELA;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ELF64LE::Rela);
+    shdr.sh_entsize = sizeof(ElfRela);
     shdr.sh_addralign = 8;
   }
 

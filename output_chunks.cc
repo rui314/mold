@@ -151,16 +151,16 @@ void RelDynSection::update_shdr() {
   n += out::got->tlsld_syms.size();
   n += out::got->tlsld_syms.size();
   n += out::copyrel->symbols.size();
-  shdr.sh_size = n * sizeof(ELF64LE::Rela);
+  shdr.sh_size = n * sizeof(ElfRela);
 }
 
 void RelDynSection::copy_buf() {
-  ELF64LE::Rela *rel = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
+  ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
   auto write = [&](Symbol *sym, u8 type, u64 offset) {
     memset(rel, 0, sizeof(*rel));
-    rel->setSymbol(sym->dynsym_idx, false);
-    rel->setType(type, false);
+    rel->r_sym = sym->dynsym_idx;
+    rel->r_type = type;
     rel->r_offset = offset;
     rel++;
   };
@@ -284,7 +284,7 @@ static std::vector<u64> create_dynamic_section() {
 
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
-  define(DT_RELAENT, sizeof(ELF64LE::Rela));
+  define(DT_RELAENT, sizeof(ElfRela));
   define(DT_JMPREL, out::relplt->shdr.sh_addr);
   define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
   define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
@@ -462,8 +462,8 @@ void PltSection::add_symbol(Symbol *sym) {
     sym->gotplt_idx = out::gotplt->shdr.sh_size / GOT_SIZE;
     out::gotplt->shdr.sh_size += GOT_SIZE;
 
-    sym->relplt_idx = out::relplt->shdr.sh_size / sizeof(ELF64LE::Rela);
-    out::relplt->shdr.sh_size += sizeof(ELF64LE::Rela);
+    sym->relplt_idx = out::relplt->shdr.sh_size / sizeof(ElfRela);
+    out::relplt->shdr.sh_size += sizeof(ElfRela);
 
     out::dynsym->add_symbol(sym);
   }
@@ -513,23 +513,23 @@ void RelPltSection::update_shdr() {
 }
 
 void RelPltSection::copy_buf() {
-  ELF64LE::Rela *buf = (ELF64LE::Rela *)(out::buf + shdr.sh_offset);
+  ElfRela *buf = (ElfRela *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
   for (Symbol *sym : out::plt->symbols) {
     if (sym->relplt_idx == -1)
       continue;
 
-    ELF64LE::Rela &rel = buf[sym->relplt_idx];
+    ElfRela &rel = buf[sym->relplt_idx];
     memset(&rel, 0, sizeof(rel));
-    rel.setSymbol(sym->dynsym_idx, false);
+    rel.r_sym = sym->dynsym_idx;
     rel.r_offset = sym->get_gotplt_addr();
 
     if (sym->type == STT_GNU_IFUNC) {
-      rel.setType(R_X86_64_IRELATIVE, false);
+      rel.r_type = R_X86_64_IRELATIVE;
       rel.r_addend = sym->get_addr();
     } else {
-      rel.setType(R_X86_64_JUMP_SLOT, false);
+      rel.r_type = R_X86_64_JUMP_SLOT;
     }
   }
 }
