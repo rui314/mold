@@ -4,7 +4,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
@@ -46,7 +45,6 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
 using llvm::Expected;

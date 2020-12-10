@@ -164,16 +164,16 @@ void read_file(MemoryMappedFile mb) {
 }
 
 template <typename T>
-static std::vector<ArrayRef<T>> split(const std::vector<T> &input, int unit) {
-  ArrayRef<T> arr(input);
-  std::vector<ArrayRef<T>> vec;
+static std::vector<std::span<T>> split(std::vector<T> &input, int unit) {
+  std::span<T> span(input);
+  std::vector<std::span<T>> vec;
 
-  while (arr.size() >= unit) {
-    vec.push_back(arr.slice(0, unit));
-    arr = arr.slice(unit);
+  while (span.size() >= unit) {
+    vec.push_back(span.subspan(0, unit));
+    span = span.subspan(unit);
   }
-  if (!arr.empty())
-    vec.push_back(arr);
+  if (!span.empty())
+    vec.push_back(span);
   return vec;
 }
 
@@ -271,7 +271,7 @@ static void bin_sections() {
   MyTimer t("bin_sections", before_copy_timer);
 
   int unit = (out::objs.size() + 127) / 128;
-  std::vector<ArrayRef<ObjectFile *>> slices = split(out::objs, unit);
+  std::vector<std::span<ObjectFile *>> slices = split(out::objs, unit);
 
   int num_osec = OutputSection::instances.size();
 
@@ -292,7 +292,7 @@ static void bin_sections() {
 
   std::vector<int> sizes(num_osec);
 
-  for (ArrayRef<std::vector<InputChunk *>> group : groups)
+  for (std::span<std::vector<InputChunk *>> group : groups)
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
@@ -350,7 +350,7 @@ static void set_isec_offsets() {
     if (osec->members.empty())
       return;
 
-    std::vector<ArrayRef<InputChunk *>> slices = split(osec->members, 10000);
+    std::vector<std::span<InputChunk *>> slices = split(osec->members, 10000);
     std::vector<u64> size(slices.size());
     std::vector<u32> alignments(slices.size());
 
@@ -457,7 +457,7 @@ static void export_dynamic() {
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
-    for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global))
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
       if (sym->file == file && config.export_dynamic)
         sym->ver_idx = VER_NDX_GLOBAL;
   });
@@ -469,7 +469,7 @@ static void export_dynamic() {
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
-    for (Symbol *sym : makeArrayRef(file->symbols).slice(file->first_global))
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
       if (sym->file == file && sym->ver_idx != VER_NDX_LOCAL)
         vec[i].push_back(sym);
   });
@@ -610,7 +610,7 @@ static int get_section_rank(const ElfShdr &shdr) {
   return (!alloc << 5) | (writable << 4) | (exec << 3) | (!tls << 2) | nobits;
 }
 
-static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
+static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   MyTimer t("osec_offset", before_copy_timer);
 
   u64 fileoff = 0;
@@ -643,7 +643,7 @@ static u64 set_osec_offsets(ArrayRef<OutputChunk *> chunks) {
   return fileoff;
 }
 
-static void fix_synthetic_symbols(ArrayRef<OutputChunk *> chunks) {
+static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   auto start = [](OutputChunk *chunk, Symbol *sym) {
     if (sym) {
       sym->shndx = chunk->shndx;
