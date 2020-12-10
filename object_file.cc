@@ -22,6 +22,11 @@ static const ELF64LE::Shdr
   return nullptr;
 }
 
+static std::string_view get_substr(std::string_view view, u32 offset) {
+  u32 end = view.find('\0', offset);
+  return view.substr(offset, end);
+}
+
 void ObjectFile::initialize_sections() {
   std::string_view section_strtab = CHECK(obj.getSectionStringTable(elf_sections), this);
 
@@ -38,7 +43,7 @@ void ObjectFile::initialize_sections() {
       if (shdr.sh_info >= elf_syms.size())
         error(toString(this) + ": invalid symbol index");
       const ElfSym &sym = elf_syms[shdr.sh_info];
-      std::string_view signature = CHECK(sym.getName(symbol_strtab), this);
+      std::string_view signature = symbol_strtab.data() + sym.st_name;
 
       // Get comdat group members.
       ArrayRef<ELF64LE::Word> entries =
@@ -127,25 +132,25 @@ void ObjectFile::initialize_symbols() {
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
-    std::string_view name = CHECK(esym.getName(symbol_strtab), this);
+    std::string_view name = symbol_strtab.data() + esym.st_name;
 
     local_symbols.emplace_back(name);
     Symbol &sym = local_symbols.back();
 
     sym.file = this;
-    sym.type = esym.getType();
+    sym.type = esym.st_type;
     sym.value = esym.st_value;
     sym.esym = &esym;
 
-    if (!esym.isAbsolute()) {
-      if (esym.isCommon())
+    if (!esym.is_abs()) {
+      if (esym.is_common())
         error("common local symbol?");
       sym.input_section = sections[esym.st_shndx];
     }
 
     symbols.push_back(&local_symbols.back());
 
-    if (esym.getType() != STT_SECTION) {
+    if (esym.st_type != STT_SECTION) {
       strtab_size += name.size() + 1;
       local_symtab_size += sizeof(ElfSym);
     }
@@ -154,14 +159,14 @@ void ObjectFile::initialize_symbols() {
   // Initialize global symbols
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
-    std::string_view name = CHECK(esym.getName(symbol_strtab), this);
+    std::string_view name = symbol_strtab.data() + esym.st_name;
     int pos = name.find('@');
     if (pos != std::string_view::npos)
       name = name.substr(0, pos);
 
     symbols.push_back(Symbol::intern(name));
 
-    if (esym.isCommon())
+    if (esym.is_common())
       has_common_symbol = true;
   }
 }
@@ -253,7 +258,7 @@ void ObjectFile::initialize_mergeable_sections() {
   // Initialize sym_pieces
   for (int i = 0; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
-    if (esym.isAbsolute() || esym.isCommon())
+    if (esym.is_abs() || esym.is_common())
       continue;
 
     InputSection *isec = sections[esym.st_shndx];
@@ -285,7 +290,8 @@ void ObjectFile::parse() {
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
-    elf_syms = CHECK(obj.symbols(symtab_sec), this);
+    ArrayRef<ELF64LE::Sym> tmp = CHECK(obj.symbols(symtab_sec), this);
+    elf_syms = {(ElfSym *)tmp.data(), tmp.size()};
     symbol_strtab = CHECK(obj.getStringTableForSymtab(*symtab_sec, elf_sections), this);
   }
 
@@ -297,7 +303,7 @@ void ObjectFile::parse() {
     static Counter undefined("undefined_syms");
 
     for (const ElfSym &esym : elf_syms) {
-      if (esym.isDefined())
+      if (esym.is_defined())
         defined.inc();
       else
         undefined.inc();
@@ -317,11 +323,11 @@ void ObjectFile::parse() {
 static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
   if (isec && isec->is_comdat_member)
     return file->priority;
-  if (esym.isUndefined()) {
-    assert(esym.getBinding() == STB_WEAK);
+  if (esym.is_undef()) {
+    assert(esym.st_bind == STB_WEAK);
     return ((u64)2 << 32) + file->priority;
   }
-  if (esym.getBinding() == STB_WEAK)
+  if (esym.st_bind == STB_WEAK)
     return ((u64)1 << 32) + file->priority;
   return file->priority;
 }
@@ -337,7 +343,7 @@ static u64 get_rank(const Symbol &sym) {
 void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   InputSection *isec = nullptr;
   const ElfSym &esym = elf_syms[symidx];
-  if (!esym.isAbsolute() && !esym.isCommon())
+  if (!esym.is_abs() && !esym.is_common())
     isec = sections[esym.st_shndx];
 
   std::lock_guard lock(sym.mu);
@@ -351,10 +357,10 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.piece_ref = sym_pieces[symidx];
     sym.value = esym.st_value;
     sym.ver_idx = 0;
-    sym.type = esym.getType();
+    sym.type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_weak = (esym.getBinding() == STB_WEAK);
+    sym.is_weak = (esym.st_bind == STB_WEAK);
     sym.is_imported = false;
 
     if (UNLIKELY(sym.traced))
@@ -367,7 +373,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
 void ObjectFile::resolve_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
-    if (!esym.isDefined())
+    if (!esym.is_defined())
       continue;
 
     Symbol &sym = *symbols[i];
@@ -400,7 +406,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
-    if (esym.isDefined()) {
+    if (esym.is_defined()) {
       if (is_in_archive)
         maybe_override_symbol(sym, i);
       continue;
@@ -409,7 +415,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
     if (UNLIKELY(sym.traced))
       message("trace: " + toString(this) + ": reference to " + std::string(sym.name));
 
-    if (esym.getBinding() != STB_WEAK && sym.file &&
+    if (esym.st_bind != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
       if (!sym.file->is_dso)
         feeder.add((ObjectFile *)sym.file);
@@ -429,7 +435,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
-    if (esym.isUndefined() && esym.getBinding() == STB_WEAK) {
+    if (esym.is_undef() && esym.st_bind == STB_WEAK) {
       std::lock_guard lock(sym.mu);
 
       bool is_new = !sym.file || sym.is_placeholder;
@@ -495,7 +501,7 @@ void ObjectFile::convert_common_symbols() {
     OutputSection::get_instance(".bss", SHF_WRITE | SHF_ALLOC, SHT_NOBITS);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
-    if (!elf_syms[i].isCommon())
+    if (!elf_syms[i].is_common())
       continue;
 
     Symbol *sym = symbols[i];
@@ -523,7 +529,7 @@ void ObjectFile::compute_symtab() {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
-    if (esym.getType() != STT_SECTION && sym.file == this) {
+    if (esym.st_type != STT_SECTION && sym.file == this) {
       global_symtab_size += sizeof(ElfSym);
       strtab_size += sym.name.size() + 1;
     }
@@ -553,7 +559,7 @@ void ObjectFile::write_symtab() {
     else if (sym.shndx)
       esym.st_shndx = sym.shndx;
     else
-      esym.st_shndx = SHN_ABS;
+      esym.st_shndx = ::SHN_ABS;
 
     write_string(strtab_base + strtab_off, sym.name);
     strtab_off += sym.name.size() + 1;
@@ -589,10 +595,10 @@ ObjectFile *ObjectFile::create_internal_file() {
 
   auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
     ElfSym esym = {};
-    esym.setType(STT_NOTYPE);
-    esym.st_shndx = SHN_ABS;
-    esym.setBinding(STB_GLOBAL);
-    esym.setVisibility(visibility);
+    esym.st_type = STT_NOTYPE;
+    esym.st_shndx = ::SHN_ABS;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = visibility;
     elf_syms->push_back(esym);
 
     Symbol *sym = Symbol::intern(name);
@@ -668,7 +674,8 @@ void SharedFile::parse() {
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
-  ArrayRef<ElfSym> esyms = CHECK(obj.symbols(symtab_sec), this);
+  ArrayRef<ELF64LE::Sym> tmp = CHECK(obj.symbols(symtab_sec), this);
+  ArrayRef<ElfSym> esyms = {(ElfSym *)tmp.data(), tmp.size()};
   ArrayRef<u16> vers;
   if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
     vers = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
@@ -676,7 +683,7 @@ void SharedFile::parse() {
   std::vector<std::pair<const ElfSym *, u16>> pairs;
 
   for (int i = first_global; i < esyms.size(); i++) {
-    if (!esyms[i].isDefined())
+    if (!esyms[i].is_defined())
       continue;
     if (!vers.empty() && (vers[i] >> 15) == 1)
       continue;
@@ -703,7 +710,7 @@ void SharedFile::parse() {
     elf_syms.push_back(x.first);
     versyms.push_back(x.second);
 
-    std::string_view name = CHECK(x.first->getName(symbol_strtab), this);
+    std::string_view name = symbol_strtab.data() + x.first->st_name;
     symbols.push_back(Symbol::intern(name));
   }
 
@@ -755,10 +762,10 @@ void SharedFile::resolve_symbols() {
       sym.piece_ref = {};
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
-      sym.type = (esym.getType() == STT_GNU_IFUNC) ? STT_FUNC : esym.getType();
+      sym.type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
       sym.esym = &esym;
       sym.is_placeholder = false;
-      sym.is_weak = (esym.getBinding() == STB_WEAK);
+      sym.is_weak = (esym.st_bind == STB_WEAK);
       sym.is_imported = true;
 
       if (UNLIKELY(sym.traced))

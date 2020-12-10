@@ -311,10 +311,10 @@ static void check_duplicate_symbols() {
   auto is_error = [](ObjectFile *file, int i) {
     const ElfSym &esym = file->elf_syms[i];
     Symbol &sym = *file->symbols[i];
-    bool is_weak = (esym.getBinding() == STB_WEAK);
+    bool is_weak = (esym.st_bind == STB_WEAK);
     bool is_eliminated =
-      !esym.isAbsolute() && !esym.isCommon() && !file->sections[esym.st_shndx];
-    return esym.isDefined() && !is_weak && !is_eliminated && sym.file != file;
+      !esym.is_abs() && !esym.is_common() && !file->sections[esym.st_shndx];
+    return esym.is_defined() && !is_weak && !is_eliminated && sym.file != file;
   };
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {

@@ -555,17 +555,17 @@ void DynsymSection::copy_buf() {
     auto &esym = *(ElfSym *)(base + sym->dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = sym->dynstr_offset;
-    esym.setType(sym->type);
-    esym.setBinding(sym->esym->getBinding());
+    esym.st_type = sym->type;
+    esym.st_bind = sym->esym->st_bind;
     esym.st_size = sym->esym->st_size;
 
     if (sym->copyrel_offset != -1) {
       esym.st_shndx = out::copyrel->shndx;
       esym.st_value = sym->get_addr();
-    } else if (sym->is_imported || sym->esym->isUndefined()) {
-      esym.st_shndx = SHN_UNDEF;
+    } else if (sym->is_imported || sym->esym->is_undef()) {
+      esym.st_shndx = ::SHN_UNDEF;
     } else if (!sym->input_section) {
-      esym.st_shndx = SHN_ABS;
+      esym.st_shndx = ::SHN_ABS;
       esym.st_value = sym->get_addr();
     } else {
       esym.st_shndx = sym->input_section->output_section->shndx;

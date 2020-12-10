@@ -161,9 +161,15 @@ private:
 // ELF
 //
 
+static constexpr u32 SHN_UNDEF = 0;
+static constexpr u32 SHN_ABS = 0xfff1;
+static constexpr u32 SHN_COMMON = 0xfff2;
+
 struct ElfSym {
-  bool is_common() const { return sh_shndx == SHN_COMMON; }
-  bool is_abs() const { return sh_shndx == SHN_ABS; }
+  bool is_defined() const { return !is_undef(); }
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
 
   u32 st_name;
 
@@ -175,8 +181,12 @@ struct ElfSym {
     };
   };
 
-  u8  st_other;
-  u32 st_shndx;
+  union {
+    u8 st_other;
+    u8 st_visibility : 2;
+  };
+
+  u16 st_shndx;
   u64 st_value;
   u64 st_size;
 };
