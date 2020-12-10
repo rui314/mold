@@ -600,7 +600,7 @@ static void clear_padding(u64 filesize) {
 // alloc writable data
 // alloc writable bss
 // nonalloc
-static int get_section_rank(const ELF64LE::Shdr &shdr) {
+static int get_section_rank(const ElfShdr &shdr) {
   bool alloc = shdr.sh_flags & SHF_ALLOC;
   bool writable = shdr.sh_flags & SHF_WRITE;
   bool exec = shdr.sh_flags & SHF_EXECINSTR;

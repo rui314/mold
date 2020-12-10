@@ -21,24 +21,24 @@ void OutputEhdr::copy_buf() {
   hdr.e_ehsize = sizeof(ELF64LE::Ehdr);
   hdr.e_phentsize = sizeof(ELF64LE::Phdr);
   hdr.e_phnum = out::phdr->shdr.sh_size / sizeof(ELF64LE::Phdr);
-  hdr.e_shentsize = sizeof(ELF64LE::Shdr);
-  hdr.e_shnum = out::shdr->shdr.sh_size / sizeof(ELF64LE::Shdr);
+  hdr.e_shentsize = sizeof(ElfShdr);
+  hdr.e_shnum = out::shdr->shdr.sh_size / sizeof(ElfShdr);
   hdr.e_shstrndx = out::shstrtab->shndx;
 }
 
 void OutputShdr::update_shdr() {
-  shdr.sh_size = sizeof(ELF64LE::Shdr);
+  shdr.sh_size = sizeof(ElfShdr);
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
-      shdr.sh_size += sizeof(ELF64LE::Shdr);
+      shdr.sh_size += sizeof(ElfShdr);
 }
 
 void OutputShdr::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  memset(base, 0, sizeof(ELF64LE::Shdr));
+  memset(base, 0, sizeof(ElfShdr));
 
-  auto *ptr = (ELF64LE::Shdr *)(base + sizeof(ELF64LE::Shdr));
+  auto *ptr = (ElfShdr *)(base + sizeof(ElfShdr));
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
       *ptr++ = chunk->shdr;

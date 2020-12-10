@@ -191,6 +191,19 @@ struct ElfSym {
   u64 st_size;
 };
 
+struct ElfShdr {
+  u32 sh_name;
+  u32 sh_type;
+  u64 sh_flags;
+  u64 sh_addr;
+  u64 sh_offset;
+  u64 sh_size;
+  u32 sh_link;
+  u32 sh_info;
+  u64 sh_addralign;
+  u64 sh_entsize;
+};
+
 //
 // Symbol
 //
@@ -287,19 +300,19 @@ public:
   inline u64 get_addr() const;
 
   ObjectFile *file;
-  const ELF64LE::Shdr &shdr;
+  const ElfShdr &shdr;
   OutputSection *output_section = nullptr;
 
   std::string_view name;
   u32 offset;
 
 protected:
-  InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr, std::string_view name);
+  InputChunk(ObjectFile *file, const ElfShdr &shdr, std::string_view name);
 };
 
 class InputSection : public InputChunk {
 public:
-  InputSection(ObjectFile *file, const ELF64LE::Shdr &shdr, std::string_view name)
+  InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name)
     : InputChunk(file, shdr, name) {}
 
   void copy_buf() override;
@@ -341,7 +354,7 @@ public:
   int shndx = 0;
   Kind kind;
   bool starts_new_ptload = false;
-  ELF64LE::Shdr shdr = {};
+  ElfShdr shdr = {};
 };
 
 // ELF header
@@ -752,14 +765,14 @@ private:
   std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
   void maybe_override_symbol(Symbol &sym, int symidx);
 
-  std::vector<std::pair<ComdatGroup *, ArrayRef<ELF64LE::Word>>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, ArrayRef<u32>>> comdat_groups;
   std::vector<Symbol> local_symbols;
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
 
-  ArrayRef<ELF64LE::Shdr> elf_sections;
+  ArrayRef<ElfShdr> elf_sections;
   std::string_view symbol_strtab;
-  const ELF64LE::Shdr *symtab_sec;
+  const ElfShdr *symtab_sec;
 };
 
 class SharedFile : public InputFile {
@@ -777,7 +790,7 @@ public:
   std::vector<std::string_view> version_strings;
 
 private:
-  std::string_view get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
+  std::string_view get_soname(ArrayRef<ElfShdr> elf_sections);
   void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
   std::vector<std::string_view> read_verdef();
 
@@ -785,7 +798,7 @@ private:
   std::vector<u16> versyms;
 
   std::string_view symbol_strtab;
-  const ELF64LE::Shdr *symtab_sec;
+  const ElfShdr *symtab_sec;
 };
 
 //

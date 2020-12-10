@@ -3,7 +3,7 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-InputChunk::InputChunk(ObjectFile *file, const ELF64LE::Shdr &shdr,
+InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
                        std::string_view name)
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type)) {}
@@ -13,7 +13,7 @@ void InputSection::copy_buf() {
     return;
 
   // Copy data
-  ArrayRef<u8> data = check(file->obj.getSectionContents(shdr));
+  ArrayRef<u8> data = check(file->obj.getSectionContents((ELF64LE::Shdr &)shdr));
   memcpy(out::buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
   // Apply relocations
