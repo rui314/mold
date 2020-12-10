@@ -15,10 +15,10 @@
 #include <unistd.h>
 #include <unordered_set>
 
-using namespace llvm;
+using llvm::Timer;
+using llvm::SmallVector;
 using namespace llvm::sys;
 
-using llvm::object::Archive;
 using llvm::opt::InputArgList;
 
 class MyTimer {
@@ -117,23 +117,40 @@ MemoryMappedFile must_open_input_file(std::string path) {
 }
 
 void read_file(MemoryMappedFile mb) {
-  switch (identify_magic({(char *)mb.data, mb.size})) {
-  case file_magic::archive:
+  if (mb.size < 20)
+    error(mb.name + ": unknown file type");
+
+  // .a
+  if (memcmp(mb.data, "!<arch>\n", 8) == 0) {
     for (MemoryMappedFile &child : read_archive_members(mb))
       out::objs.push_back(new ObjectFile(child, mb.name));
-    break;
-  case file_magic::elf_relocatable:
-    out::objs.push_back(new ObjectFile(mb, ""));
-    break;
-  case file_magic::elf_shared_object:
-    out::dsos.push_back(new SharedFile(mb, config.as_needed));
-    break;
-  case file_magic::unknown:
-    parse_linker_script(mb);
-    break;
-  default:
-    error(mb.name + ": unknown file type");
+    return;
   }
+
+  if (memcmp(mb.data, "\177ELF", 4) == 0) {
+    ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
+
+    // .o
+    if (ehdr.e_type == ET_REL) {
+      out::objs.push_back(new ObjectFile(mb, ""));
+      return;
+    }
+
+    // .so
+    if (ehdr.e_type == ET_DYN) {
+      out::dsos.push_back(new SharedFile(mb, config.as_needed));
+      return;
+    }
+  }
+
+  // Linker script
+  if (isprint(mb.data[0]) && isprint(mb.data[1]) &&
+      isprint(mb.data[3]) && isprint(mb.data[4])) {
+    parse_linker_script(mb);
+    return;
+  }
+
+  error(mb.name + ": unknown file type");
 }
 
 template <typename T>
@@ -692,8 +709,8 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
     if (is_c_identifier(chunk->name)) {
-      start(chunk, Symbol::intern(("__start_" + chunk->name).str()));
-      stop(chunk, Symbol::intern(("__stop_" + chunk->name).str()));
+      start(chunk, Symbol::intern("__start_" + std::string(chunk->name)));
+      stop(chunk, Symbol::intern("__stop_" + std::string(chunk->name)));
     }
   }
 }
@@ -738,14 +755,14 @@ static int get_thread_count(InputArgList &args) {
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 }
 
-std::vector<std::string> get_args(opt::InputArgList &args, int id) {
+std::vector<std::string> get_args(llvm::opt::InputArgList &args, int id) {
   std::vector<std::string> vec;
   for (auto *arg : args.filtered(id))
     vec.push_back(arg->getValue());
   return vec;
 }
 
-static int parse_filler(opt::InputArgList &args) {
+static int parse_filler(llvm::opt::InputArgList &args) {
   auto *arg = args.getLastArg(OPT_filler);
   if (!arg)
     return -1;
@@ -753,10 +770,7 @@ static int parse_filler(opt::InputArgList &args) {
   std::string_view val = arg->getValue();
   if (!val.starts_with("0x"))
     error("invalid argument: " + arg->getAsString(args));
-  int ret;
-  if (!to_integer(val.substr(2), ret, 16))
-    error("invalid argument: " + arg->getAsString(args));
-  return (u8)ret;
+  return std::stoi(std::string(val.substr(2)), nullptr, 16);
 }
 
 MemoryMappedFile find_library(std::string name) {
