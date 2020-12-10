@@ -274,6 +274,8 @@ private:
   std::span<ElfShdr> sections;
 };
 
+std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
+
 //
 // Symbol
 //

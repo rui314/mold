@@ -146,8 +146,8 @@ MemoryMappedFile must_open_input_file(std::string path) {
 void read_file(MemoryMappedFile mb) {
   switch (identify_magic({(char *)mb.data, mb.size})) {
   case file_magic::archive:
-    for (MemoryMappedFile member : get_archive_members(mb))
-      out::objs.push_back(new ObjectFile(member, mb.name));
+    for (MemoryMappedFile &child : read_archive_members(mb))
+      out::objs.push_back(new ObjectFile(child, mb.name));
     break;
   case file_magic::elf_relocatable:
     out::objs.push_back(new ObjectFile(mb, ""));
