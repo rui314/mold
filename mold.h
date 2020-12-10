@@ -210,6 +210,14 @@ struct ElfRela {
   i64 r_addend;
 };
 
+struct ElfDyn {
+  i64 d_tag;
+  union {
+    u64 d_val;
+    u64 d_ptr;
+  };
+};
+
 struct MemoryMappedFile {
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data(data), size(size) {}
@@ -613,7 +621,7 @@ public:
     shdr.sh_type = llvm::ELF::SHT_DYNAMIC;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE;
     shdr.sh_addralign = 8;
-    shdr.sh_entsize = sizeof(ELF64LE::Dyn);
+    shdr.sh_entsize = sizeof(ElfDyn);
   }
 
   void update_shdr() override;

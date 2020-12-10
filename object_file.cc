@@ -648,9 +648,9 @@ std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
   if (!sec)
     return name;
 
-  for (const ELF64LE::Dyn &dyn : obj.get_data<ELF64LE::Dyn>(*sec))
+  for (const ElfDyn &dyn : obj.get_data<ElfDyn>(*sec))
     if (dyn.d_tag == DT_SONAME)
-      return std::string_view(symbol_strtab.data() + dyn.d_un.d_val);
+      return std::string_view(symbol_strtab.data() + dyn.d_val);
   return name;
 }
 
