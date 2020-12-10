@@ -8,7 +8,7 @@
 using namespace llvm;
 using namespace llvm::ELF;
 
-ObjectFile::ObjectFile(MemoryBufferRef mb, std::string_view archive_name)
+ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
   : InputFile(mb, false), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
@@ -577,12 +577,9 @@ ObjectFile *ObjectFile::create_internal_file() {
   // Create a dummy object file.
   constexpr int bufsz = 256;
   char *buf = new char[bufsz];
-  std::unique_ptr<MemoryBuffer> mb =
-    MemoryBuffer::getMemBuffer(std::string_view(buf, bufsz));
-
-  auto *obj = new ObjectFile(mb->getMemBufferRef(), "");
-  obj->name = "<internal>";
-  mb.release();
+  MemoryMappedFile *mb =
+    new MemoryMappedFile("<internal>", std::string_view(buf, bufsz));
+  auto *obj = new ObjectFile(*mb, "");
 
   // Create linker-synthesized symbols.
   auto *elf_syms = new std::vector<ELF64LE::Sym>(1);

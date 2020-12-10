@@ -51,7 +51,6 @@ using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
 using llvm::Expected;
-using llvm::MemoryBufferRef;
 using llvm::SmallVector;
 using llvm::Twine;
 using llvm::object::ELF64LE;
@@ -655,16 +654,26 @@ struct ComdatGroup {
   u32 section_idx;
 };
 
+struct MemoryMappedFile {
+  MemoryMappedFile(std::string name, std::string_view data)
+    : name(name), data(data) {}
+
+  operator llvm::MemoryBufferRef() const { return {data, name}; }
+
+  std::string name;
+  std::string_view data;
+};
+
 class InputFile {
 public:
-  InputFile(MemoryBufferRef mb, bool is_dso)
-    : mb(mb), name(mb.getBufferIdentifier()), is_dso(is_dso),
-      obj(check(ELFFile<ELF64LE>::create(mb.getBuffer()))) {}
+  InputFile(MemoryMappedFile mb, bool is_dso)
+    : mb(mb), name(mb.name), is_dso(is_dso),
+      obj(check(ELFFile<ELF64LE>::create(mb.data))) {}
 
   std::string name;
   bool is_dso;
   u32 priority;
-  MemoryBufferRef mb;
+  MemoryMappedFile mb;
   ELFFile<ELF64LE> obj;
   std::vector<Symbol *> symbols;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
@@ -672,7 +681,7 @@ public:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryBufferRef mb, std::string_view archive_name);
+  ObjectFile(MemoryMappedFile mb, std::string_view archive_name);
 
   void parse();
   void initialize_mergeable_sections();
@@ -722,7 +731,7 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryBufferRef mb, bool as_needed) : InputFile(mb, true) {
+  SharedFile(MemoryMappedFile mb, bool as_needed) : InputFile(mb, true) {
     is_alive = !as_needed;
   }
 
@@ -795,10 +804,10 @@ void print_map();
 // main.cc
 //
 
-MemoryBufferRef find_library(std::string path);
-MemoryBufferRef *open_input_file(std::string path);
-MemoryBufferRef must_open_input_file(std::string path);
-void read_file(MemoryBufferRef mb);
+MemoryMappedFile find_library(std::string path);
+MemoryMappedFile *open_input_file(std::string path);
+MemoryMappedFile must_open_input_file(std::string path);
+void read_file(MemoryMappedFile mb);
 
 //
 // Inline objects and functions

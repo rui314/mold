@@ -93,31 +93,32 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 // Main
 //
 
-static std::vector<MemoryBufferRef> get_archive_members(MemoryBufferRef mb) {
+static std::vector<MemoryMappedFile> get_archive_members(MemoryMappedFile mb) {
   std::unique_ptr<Archive> file =
-    CHECK(Archive::create(mb), mb.getBufferIdentifier() + ": failed to parse archive");
+    CHECK(Archive::create(mb), mb.name + ": failed to parse archive");
 
-  std::vector<MemoryBufferRef> vec;
+  std::vector<MemoryMappedFile> vec;
 
   Error err = Error::success();
 
   for (const Archive::Child &c : file->children(err)) {
-    MemoryBufferRef mbref =
-        CHECK(c.getMemoryBufferRef(),
-              mb.getBufferIdentifier() +
-                  ": could not get the buffer for a child of the archive");
-    vec.push_back(mbref);
+    MemoryBufferRef mb =
+      CHECK(c.getMemoryBufferRef(),
+            mb.getBufferIdentifier() +
+              ": could not get the buffer for a child of the archive");
+    MemoryMappedFile file(mb.getBufferIdentifier().str(),
+                          {mb.getBufferStart(), mb.getBufferSize()});
+    vec.push_back(file);
   }
 
   if (err)
-    error(mb.getBufferIdentifier() + ": Archive::children failed: " +
-          toString(std::move(err)));
+    error(mb.name + ": Archive::children failed: " + toString(std::move(err)));
 
   file.release(); // leak
   return vec;
 }
 
-MemoryBufferRef *open_input_file(std::string path) {
+MemoryMappedFile *open_input_file(std::string path) {
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1)
     return nullptr;
@@ -131,23 +132,21 @@ MemoryBufferRef *open_input_file(std::string path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  std::string_view buf((char *)addr, st.st_size);
-  std::string *filename = new std::string(path);
-  return new MemoryBufferRef(buf, *filename);
+  return new MemoryMappedFile(path, {(char *)addr, (size_t)st.st_size});
 }
 
-MemoryBufferRef must_open_input_file(std::string path) {
-  MemoryBufferRef *mb = open_input_file(path);
+MemoryMappedFile must_open_input_file(std::string path) {
+  MemoryMappedFile *mb = open_input_file(path);
   if (!mb)
     error("cannot open " + path);
   return *mb;
 }
 
-void read_file(MemoryBufferRef mb) {
-  switch (identify_magic(mb.getBuffer())) {
+void read_file(MemoryMappedFile mb) {
+  switch (identify_magic(mb.data)) {
   case file_magic::archive:
-    for (MemoryBufferRef member : get_archive_members(mb))
-      out::objs.push_back(new ObjectFile(member, mb.getBufferIdentifier()));
+    for (MemoryMappedFile member : get_archive_members(mb))
+      out::objs.push_back(new ObjectFile(member, mb.name));
     break;
   case file_magic::elf_relocatable:
     out::objs.push_back(new ObjectFile(mb, ""));
@@ -156,10 +155,10 @@ void read_file(MemoryBufferRef mb) {
     out::dsos.push_back(new SharedFile(mb, config.as_needed));
     break;
   case file_magic::unknown:
-    parse_linker_script(std::string(mb.getBufferIdentifier()), mb.getBuffer());
+    parse_linker_script(std::string(mb.name), mb.data);
     break;
   default:
-    error(mb.getBufferIdentifier() + ": unknown file type");
+    error(mb.name + ": unknown file type");
   }
 }
 
@@ -786,14 +785,14 @@ static int parse_filler(opt::InputArgList &args) {
   return (u8)ret;
 }
 
-MemoryBufferRef find_library(std::string name) {
+MemoryMappedFile find_library(std::string name) {
   for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!config.is_static)
-      if (MemoryBufferRef *mb = open_input_file(stem + ".so"))
+      if (MemoryMappedFile *mb = open_input_file(stem + ".so"))
         return *mb;
-    if (MemoryBufferRef *mb = open_input_file(stem + ".a"))
+    if (MemoryMappedFile *mb = open_input_file(stem + ".a"))
       return *mb;
   }
   error("library not found: " + name);

@@ -69,18 +69,18 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   return tok.subspan(1);
 }
 
-static MemoryBufferRef resolve_path(std::string str) {
+static MemoryMappedFile resolve_path(std::string str) {
   if (str.starts_with("/"))
     return must_open_input_file(config.sysroot + str);
   if (str.starts_with("-l"))
     return find_library(str.substr(2));
   if (std::string path = script_dir + "/" + str; fs::exists(path))
     return must_open_input_file(path);
-  if (MemoryBufferRef *mb = open_input_file(str))
+  if (MemoryMappedFile *mb = open_input_file(str))
     return *mb;
   for (std::string &dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
-    if (MemoryBufferRef *mb = open_input_file(root + dir + "/" + str))
+    if (MemoryMappedFile *mb = open_input_file(root + dir + "/" + str))
       return *mb;
   }
   error("library not found: " + str);
@@ -127,8 +127,8 @@ void parse_version_script(std::string path) {
   script_path = path;
   script_dir = path.substr(0, path.find_last_of('/'));
 
-  MemoryBufferRef mb = must_open_input_file(path);
-  std::vector<std::string_view> vec = tokenize(mb.getBuffer());
+  MemoryMappedFile mb = must_open_input_file(path);
+  std::vector<std::string_view> vec = tokenize(mb.data);
   std::span<std::string_view> tok = vec;
   tok = skip(tok, "{");
 
