@@ -476,20 +476,20 @@ static void fill_symbol_versions() {
   out::versym->contents.resize(out::dynsym->symbols.size() + 1, 1);
   out::versym->contents[0] = 0;
 
-  int sz = sizeof(ELF64LE::Verneed) + sizeof(ELF64LE::Vernaux);
+  int sz = sizeof(ElfVerneed) + sizeof(ElfVernaux);
   for (int i = 1; i < syms.size(); i++) {
     if (syms[i - 1]->file != syms[i]->file)
-      sz += sizeof(ELF64LE::Verneed) + sizeof(ELF64LE::Vernaux);
+      sz += sizeof(ElfVerneed) + sizeof(ElfVernaux);
     else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
-      sz += sizeof(ELF64LE::Vernaux);
+      sz += sizeof(ElfVernaux);
   }
   out::verneed->contents.resize(sz);
 
   // Fill .gnu.versoin_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
   u16 version = 1;
-  ELF64LE::Verneed *verneed = nullptr;
-  ELF64LE::Vernaux *aux = nullptr;
+  ElfVerneed *verneed = nullptr;
+  ElfVernaux *aux = nullptr;
 
   auto add_aux = [&](Symbol *sym) {
     SharedFile *file = (SharedFile *)sym->file;
@@ -497,9 +497,9 @@ static void fill_symbol_versions() {
 
     verneed->vn_cnt += 1;
     if (aux)
-      aux->vna_next = sizeof(ELF64LE::Vernaux);
+      aux->vna_next = sizeof(ElfVernaux);
 
-    aux = (ELF64LE::Vernaux *)buf;
+    aux = (ElfVernaux *)buf;
     buf += sizeof(*aux);
     aux->vna_hash = elf_hash(verstr);
     aux->vna_other = ++version;
@@ -513,11 +513,11 @@ static void fill_symbol_versions() {
     if (verneed)
       verneed->vn_next = buf - (u8 *)verneed;
 
-    verneed = (ELF64LE::Verneed *)buf;
+    verneed = (ElfVerneed *)buf;
     buf += sizeof(*verneed);
     verneed->vn_version = 1;
     verneed->vn_file = out::dynstr->find_string(file->soname);
-    verneed->vn_aux = sizeof(ELF64LE::Verneed);
+    verneed->vn_aux = sizeof(ElfVerneed);
 
     aux = nullptr;
     add_aux(sym);
