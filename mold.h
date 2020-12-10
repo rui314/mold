@@ -240,8 +240,8 @@ public:
   std::span<ElfShdr> get_sections() const;
   std::span<ElfSym> get_symbols(const ElfShdr &shdr) const;
   std::string_view get_section_name(const ElfShdr &shdr) const;
-  std::string_view get_section_contents(const ElfShdr &shdr) const;
-  std::string_view get_section_contents(u32 idx) const;
+  std::string_view get_section_data(const ElfShdr &shdr) const;
+  std::string_view get_section_data(u32 idx) const;
 
 private:
   MemoryMappedFile mb;

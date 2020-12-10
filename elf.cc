@@ -18,16 +18,16 @@ std::span<ElfShdr> ElfFile::get_sections() const {
 }
 
 std::span<ElfSym> ElfFile::get_symbols(const ElfShdr &shdr) const {
-  std::string_view view = get_section_contents(shdr);
+  std::string_view view = get_section_data(shdr);
   return {(ElfSym *)view.data(), view.size() / sizeof(ElfSym)};
 }
 
 std::string_view ElfFile::get_section_name(const ElfShdr &shdr) const {
-  std::string_view shstrtab = get_section_contents(ehdr.e_shstrndx);
+  std::string_view shstrtab = get_section_data(ehdr.e_shstrndx);
   return shstrtab.data() + shdr.sh_name;
 }
 
-std::string_view ElfFile::get_section_contents(const ElfShdr &shdr) const {
+std::string_view ElfFile::get_section_data(const ElfShdr &shdr) const {
   u8 *begin = mb.data + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb.data + mb.size < end)
@@ -35,8 +35,8 @@ std::string_view ElfFile::get_section_contents(const ElfShdr &shdr) const {
   return {(char *)begin, (char *)end};
 }
 
-std::string_view ElfFile::get_section_contents(u32 idx) const {
+std::string_view ElfFile::get_section_data(u32 idx) const {
   if (sections.size() <= idx)
     error(mb.name + ": invalid section index");
-  return get_section_contents(sections[idx]);
+  return get_section_data(sections[idx]);
 }
