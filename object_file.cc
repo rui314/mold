@@ -37,7 +37,7 @@ void ObjectFile::initialize_sections() {
       // Get the signature of this section group.
       if (shdr.sh_info >= elf_syms.size())
         error(toString(this) + ": invalid symbol index");
-      const ELF64LE::Sym &sym = elf_syms[shdr.sh_info];
+      const ElfSym &sym = elf_syms[shdr.sh_info];
       std::string_view signature = CHECK(sym.getName(symbol_strtab), this);
 
       // Get comdat group members.
@@ -126,7 +126,7 @@ void ObjectFile::initialize_symbols() {
 
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     std::string_view name = CHECK(esym.getName(symbol_strtab), this);
 
     local_symbols.emplace_back(name);
@@ -147,13 +147,13 @@ void ObjectFile::initialize_symbols() {
 
     if (esym.getType() != STT_SECTION) {
       strtab_size += name.size() + 1;
-      local_symtab_size += sizeof(ELF64LE::Sym);
+      local_symtab_size += sizeof(ElfSym);
     }
   }
 
   // Initialize global symbols
   for (int i = first_global; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     std::string_view name = CHECK(esym.getName(symbol_strtab), this);
     int pos = name.find('@');
     if (pos != std::string_view::npos)
@@ -252,7 +252,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
   // Initialize sym_pieces
   for (int i = 0; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     if (esym.isAbsolute() || esym.isCommon())
       continue;
 
@@ -296,7 +296,7 @@ void ObjectFile::parse() {
     static Counter defined("defined_syms");
     static Counter undefined("undefined_syms");
 
-    for (const ELF64LE::Sym &esym : elf_syms) {
+    for (const ElfSym &esym : elf_syms) {
       if (esym.isDefined())
         defined.inc();
       else
@@ -314,7 +314,7 @@ void ObjectFile::parse() {
 //  4. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
-static u64 get_rank(InputFile *file, const ELF64LE::Sym &esym, InputSection *isec) {
+static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
   if (isec && isec->is_comdat_member)
     return file->priority;
   if (esym.isUndefined()) {
@@ -336,7 +336,7 @@ static u64 get_rank(const Symbol &sym) {
 
 void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   InputSection *isec = nullptr;
-  const ELF64LE::Sym &esym = elf_syms[symidx];
+  const ElfSym &esym = elf_syms[symidx];
   if (!esym.isAbsolute() && !esym.isCommon())
     isec = sections[esym.st_shndx];
 
@@ -366,7 +366,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
 
 void ObjectFile::resolve_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     if (!esym.isDefined())
       continue;
 
@@ -397,7 +397,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
   assert(is_alive);
 
   for (int i = first_global; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.isDefined()) {
@@ -426,7 +426,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
     return;
 
   for (int i = first_global; i < symbols.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.isUndefined() && esym.getBinding() == STB_WEAK) {
@@ -520,11 +520,11 @@ void ObjectFile::convert_common_symbols() {
 
 void ObjectFile::compute_symtab() {
   for (int i = first_global; i < elf_syms.size(); i++) {
-    const ELF64LE::Sym &esym = elf_syms[i];
+    const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
     if (esym.getType() != STT_SECTION && sym.file == this) {
-      global_symtab_size += sizeof(ELF64LE::Sym);
+      global_symtab_size += sizeof(ElfSym);
       strtab_size += sym.name.size() + 1;
     }
   }
@@ -541,8 +541,8 @@ void ObjectFile::write_symtab() {
     if (sym.type == STT_SECTION || sym.file != this)
       return;
 
-    ELF64LE::Sym &esym = *(ELF64LE::Sym *)(symtab_base + symtab_off);
-    symtab_off += sizeof(ELF64LE::Sym);
+    ElfSym &esym = *(ElfSym *)(symtab_base + symtab_off);
+    symtab_off += sizeof(ElfSym);
 
     esym = elf_syms[i];
     esym.st_name = strtab_off;
@@ -582,13 +582,13 @@ ObjectFile *ObjectFile::create_internal_file() {
   auto *obj = new ObjectFile(*mb, "");
 
   // Create linker-synthesized symbols.
-  auto *elf_syms = new std::vector<ELF64LE::Sym>(1);
+  auto *elf_syms = new std::vector<ElfSym>(1);
   obj->symbols.push_back(new Symbol(""));
   obj->first_global = 1;
   obj->is_alive = true;
 
   auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
-    ELF64LE::Sym esym = {};
+    ElfSym esym = {};
     esym.setType(STT_NOTYPE);
     esym.st_shndx = SHN_ABS;
     esym.setBinding(STB_GLOBAL);
@@ -668,12 +668,12 @@ void SharedFile::parse() {
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
-  ArrayRef<ELF64LE::Sym> esyms = CHECK(obj.symbols(symtab_sec), this);
+  ArrayRef<ElfSym> esyms = CHECK(obj.symbols(symtab_sec), this);
   ArrayRef<u16> vers;
   if (const ELF64LE::Shdr *sec = find_section(elf_sections, SHT_GNU_versym))
     vers = CHECK(obj.template getSectionContentsAsArray<u16>(*sec), this);
 
-  std::vector<std::pair<const ELF64LE::Sym *, u16>> pairs;
+  std::vector<std::pair<const ElfSym *, u16>> pairs;
 
   for (int i = first_global; i < esyms.size(); i++) {
     if (!esyms[i].isDefined())
@@ -690,8 +690,8 @@ void SharedFile::parse() {
   // Sort symbols by value for find_aliases(), as find_aliases() does
   // binary search on symbols.
   std::stable_sort(pairs.begin(), pairs.end(),
-                   [](const std::pair<const ELF64LE::Sym *, u16> &a,
-                      const std::pair<const ELF64LE::Sym *, u16> &b) {
+                   [](const std::pair<const ElfSym *, u16> &a,
+                      const std::pair<const ElfSym *, u16> &b) {
                      return a.first->st_value < b.first->st_value;
                    });
 
@@ -699,7 +699,7 @@ void SharedFile::parse() {
   versyms.reserve(pairs.size());
   symbols.reserve(pairs.size());
 
-  for (std::pair<const ELF64LE::Sym *, u16> &x : pairs) {
+  for (std::pair<const ElfSym *, u16> &x : pairs) {
     elf_syms.push_back(x.first);
     versyms.push_back(x.second);
 
@@ -742,7 +742,7 @@ std::vector<std::string_view> SharedFile::read_verdef() {
 void SharedFile::resolve_symbols() {
   for (int i = 0; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
-    const ELF64LE::Sym &esym = *elf_syms[i];
+    const ElfSym &esym = *elf_syms[i];
 
     std::lock_guard lock(sym.mu);
 

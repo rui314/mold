@@ -309,7 +309,7 @@ static void check_duplicate_symbols() {
   MyTimer t("check_undef_syms", before_copy_timer);
 
   auto is_error = [](ObjectFile *file, int i) {
-    const ELF64LE::Sym &esym = file->elf_syms[i];
+    const ElfSym &esym = file->elf_syms[i];
     Symbol &sym = *file->symbols[i];
     bool is_weak = (esym.getBinding() == STB_WEAK);
     bool is_eliminated =

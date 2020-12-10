@@ -158,6 +158,30 @@ private:
 };
 
 //
+// ELF
+//
+
+struct ElfSym {
+  bool is_common() const { return sh_shndx == SHN_COMMON; }
+  bool is_abs() const { return sh_shndx == SHN_ABS; }
+
+  u32 st_name;
+
+  union {
+    u8 st_info;
+    struct {
+      u8 st_type : 4;
+      u8 st_bind : 4;
+    };
+  };
+
+  u8  st_other;
+  u32 st_shndx;
+  u64 st_value;
+  u64 st_size;
+};
+
+//
 // Symbol
 //
 
@@ -204,7 +228,7 @@ public:
 
   std::string_view name;
   InputFile *file = nullptr;
-  const ELF64LE::Sym *esym = nullptr;
+  const ElfSym *esym = nullptr;
   InputSection *input_section = nullptr;
   StringPieceRef piece_ref;
 
@@ -528,9 +552,9 @@ public:
   SymtabSection() : OutputChunk(SYNTHETIC) {
     name = ".symtab";
     shdr.sh_type = llvm::ELF::SHT_SYMTAB;
-    shdr.sh_entsize = sizeof(ELF64LE::Sym);
+    shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
-    shdr.sh_size = sizeof(ELF64LE::Sym);
+    shdr.sh_size = sizeof(ElfSym);
   }
 
   void update_shdr() override;
@@ -543,9 +567,9 @@ public:
     name = ".dynsym";
     shdr.sh_type = llvm::ELF::SHT_DYNSYM;
     shdr.sh_flags = llvm::ELF::SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ELF64LE::Sym);
+    shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
-    shdr.sh_size = sizeof(ELF64LE::Sym);
+    shdr.sh_size = sizeof(ElfSym);
     shdr.sh_info = 1;
   }
 
@@ -698,7 +722,7 @@ public:
 
   std::string_view archive_name;
   std::vector<InputSection *> sections;
-  ArrayRef<ELF64LE::Sym> elf_syms;
+  ArrayRef<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
@@ -744,10 +768,10 @@ public:
 
 private:
   std::string_view get_soname(ArrayRef<ELF64LE::Shdr> elf_sections);
-  void maybe_override_symbol(Symbol &sym, const ELF64LE::Sym &esym);
+  void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
   std::vector<std::string_view> read_verdef();
 
-  std::vector<const ELF64LE::Sym *> elf_syms;
+  std::vector<const ElfSym *> elf_syms;
   std::vector<u16> versyms;
 
   std::string_view symbol_strtab;

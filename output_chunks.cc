@@ -245,7 +245,7 @@ void DynstrSection::copy_buf() {
 }
 
 void SymtabSection::update_shdr() {
-  shdr.sh_size = sizeof(ELF64LE::Sym);
+  shdr.sh_size = sizeof(ElfSym);
 
   for (ObjectFile *file : out::objs) {
     file->local_symtab_offset = shdr.sh_size;
@@ -257,12 +257,12 @@ void SymtabSection::update_shdr() {
     shdr.sh_size += file->global_symtab_size;
   }
 
-  shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ELF64LE::Sym);
+  shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ElfSym);
   shdr.sh_link = out::strtab->shndx;
 }
 
 void SymtabSection::copy_buf() {
-  memset(out::buf + shdr.sh_offset, 0, sizeof(ELF64LE::Sym));
+  memset(out::buf + shdr.sh_offset, 0, sizeof(ElfSym));
   out::buf[out::strtab->shdr.sh_offset] = '\0';
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->write_symtab(); });
@@ -290,7 +290,7 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
   define(DT_PLTREL, DT_RELA);
   define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
-  define(DT_SYMENT, sizeof(ELF64LE::Sym));
+  define(DT_SYMENT, sizeof(ElfSym));
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
   define(DT_HASH, out::hash->shdr.sh_addr);
@@ -544,15 +544,15 @@ void DynsymSection::add_symbol(Symbol *sym) {
 
 void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
-  shdr.sh_size = sizeof(ELF64LE::Sym) * (symbols.size() + 1);
+  shdr.sh_size = sizeof(ElfSym) * (symbols.size() + 1);
 }
 
 void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
-  memset(base, 0, sizeof(ELF64LE::Sym));
+  memset(base, 0, sizeof(ElfSym));
 
   tbb::parallel_for_each(symbols, [&](Symbol *sym) {
-    auto &esym = *(ELF64LE::Sym *)(base + sym->dynsym_idx * sizeof(ELF64LE::Sym));
+    auto &esym = *(ElfSym *)(base + sym->dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = sym->dynstr_offset;
     esym.setType(sym->type);
