@@ -17,9 +17,20 @@ std::span<ElfShdr> ElfFile::get_sections() const {
   return sections;
 }
 
-std::span<ElfSym> ElfFile::get_symbols(const ElfShdr &shdr) const {
+template<typename T>
+std::span<T> ElfFile::get_data(const ElfShdr &shdr) const {
   std::string_view view = get_section_data(shdr);
-  return {(ElfSym *)view.data(), view.size() / sizeof(ElfSym)};
+  if (view.size() % sizeof(T))
+    error(mb.name + ": corrupted section");
+  return {(T *)view.data(), view.size() / sizeof(T)};
+}
+
+std::span<ElfSym> ElfFile::get_symbols(const ElfShdr &shdr) const {
+  return get_data<ElfSym>(shdr);
+}
+
+std::span<ElfRela> ElfFile::get_relocs(const ElfShdr &shdr) const {
+  return get_data<ElfRela>(shdr);
 }
 
 std::string_view ElfFile::get_section_name(const ElfShdr &shdr) const {

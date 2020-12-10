@@ -220,6 +220,12 @@ struct ElfEhdr {
   u16 e_shstrndx;
 };
 
+struct ElfRela {
+  u64 r_offset;
+  u64 r_info;
+  i64 r_addend;
+};
+
 struct MemoryMappedFile {
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data(data), size(size) {}
@@ -239,11 +245,15 @@ public:
 
   std::span<ElfShdr> get_sections() const;
   std::span<ElfSym> get_symbols(const ElfShdr &shdr) const;
+  std::span<ElfRela> get_relocs(const ElfShdr &shdr) const;
+
   std::string_view get_section_name(const ElfShdr &shdr) const;
   std::string_view get_section_data(const ElfShdr &shdr) const;
   std::string_view get_section_data(u32 idx) const;
 
 private:
+  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const;
+
   MemoryMappedFile mb;
   ElfEhdr &ehdr;
   std::span<ElfShdr> sections;
