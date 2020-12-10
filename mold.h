@@ -234,6 +234,21 @@ struct ElfVernaux {
   u32 vna_next;
 };
 
+struct ElfVerdef {
+  u16 vd_version;
+  u16 vd_flags;
+  u16 vd_ndx;
+  u16 vd_cnt;
+  u32 vd_hash;
+  u32 vd_aux;
+  u32 vd_next;
+};
+
+struct ElfVerdaux {
+  u32 vda_name;
+  u32 vda_next;
+};
+
 struct MemoryMappedFile {
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data(data), size(size) {}
