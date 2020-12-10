@@ -222,7 +222,15 @@ struct ElfEhdr {
 
 struct ElfRela {
   u64 r_offset;
-  u64 r_info;
+
+  union {
+    u64 r_info;
+    struct {
+      u32 r_type;
+      u32 r_sym;
+    };
+  };
+
   i64 r_addend;
 };
 
@@ -374,7 +382,7 @@ public:
   void scan_relocations();
   void report_undefined_symbols();
 
-  ArrayRef<ELF64LE::Rela> rels;
+  std::span<ElfRela> rels;
   std::vector<StringPieceRef> rel_pieces;
   MergeableSection *mergeable = nullptr;
   bool is_comdat_member = false;

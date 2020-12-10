@@ -21,10 +21,10 @@ void InputSection::copy_buf() {
   u64 sh_addr = output_section->shdr.sh_addr + offset;
 
   for (int i = 0; i < rels.size(); i++) {
-    const ELF64LE::Rela &rel = rels[i];
+    const ElfRela &rel = rels[i];
     StringPieceRef &ref = rel_pieces[i];
 
-    Symbol &sym = *file->symbols[rel.getSymbol(false)];
+    Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file)
@@ -37,7 +37,7 @@ void InputSection::copy_buf() {
 #define G   sym.get_got_addr()
 #define GOT out::got->shdr.sh_addr
 
-    switch (rel.getType(false)) {
+    switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
     case R_X86_64_64:
@@ -121,8 +121,7 @@ void InputSection::copy_buf() {
       *(u32 *)loc = G + A - P;
       break;
     default:
-      error(toString(this) + ": unknown relocation: " +
-            std::to_string(rel.getType(false)));
+      error(toString(this) + ": unknown relocation: " + std::to_string(rel.r_type));
     }
 
 #undef S
@@ -142,15 +141,15 @@ void InputSection::scan_relocations() {
     return;
 
   for (int i = 0; i < rels.size(); i++) {
-    const ELF64LE::Rela &rel = rels[i];
-    Symbol &sym = *file->symbols[rel.getSymbol(false)];
+    const ElfRela &rel = rels[i];
+    Symbol &sym = *file->symbols[rel.r_sym];
 
     if (!sym.file || sym.is_placeholder) {
       file->has_error = true;
       continue;
     }
 
-    switch (rel.getType(false)) {
+    switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
     case R_X86_64_8:
@@ -181,14 +180,14 @@ void InputSection::scan_relocations() {
         sym.flags |= Symbol::NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      assert(rels[i + 1].getType(false) == R_X86_64_PLT32);
+      assert(rels[i + 1].r_type == R_X86_64_PLT32);
       if (sym.is_imported)
         sym.flags |= Symbol::NEEDS_TLSGD;
       else
         i++;
       break;
     case R_X86_64_TLSLD:
-      assert(rels[i + 1].getType(false) == R_X86_64_PLT32);
+      assert(rels[i + 1].r_type == R_X86_64_PLT32);
       if (sym.is_imported)
         sym.flags |= Symbol::NEEDS_TLSLD;
       else
@@ -202,8 +201,7 @@ void InputSection::scan_relocations() {
       sym.flags |= Symbol::NEEDS_GOTTPOFF;
       break;
     default:
-      error(toString(this) + ": unknown relocation: " +
-            std::to_string(rel.getType(false)));
+      error(toString(this) + ": unknown relocation: " + std::to_string(rel.r_type));
     }
   }
 }
@@ -212,8 +210,8 @@ void InputSection::report_undefined_symbols() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
-  for (const ELF64LE::Rela &rel : rels) {
-    Symbol &sym = *file->symbols[rel.getSymbol(false)];
+  for (const ElfRela &rel : rels) {
+    Symbol &sym = *file->symbols[rel.r_sym];
     if (!sym.file || sym.is_placeholder)
       llvm::errs() << "undefined symbol: " << toString(file)
                    << ": " << sym.name << "\n";

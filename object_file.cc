@@ -93,8 +93,7 @@ void ObjectFile::initialize_sections() {
 
     InputSection *target = sections[shdr.sh_info];
     if (target) {
-      std::string_view view = obj.get_section_data(shdr);
-      target->rels = {(ELF64LE::Rela *)view.data(), view.size() / sizeof(ELF64LE::Rela)};
+      target->rels = obj.get_relocs(shdr);
       target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
@@ -219,9 +218,9 @@ void ObjectFile::initialize_mergeable_sections() {
       continue;
 
     for (int i = 0; i < isec->rels.size(); i++) {
-      const ELF64LE::Rela &rel = isec->rels[i];
+      const ElfRela &rel = isec->rels[i];
 
-      switch (rel.getType(false)) {
+      switch (rel.r_type) {
       case R_X86_64_64:
       case R_X86_64_PC32:
       case R_X86_64_32:
@@ -230,11 +229,10 @@ void ObjectFile::initialize_mergeable_sections() {
       case R_X86_64_PC16:
       case R_X86_64_8:
       case R_X86_64_PC8:
-        u32 sym_idx = rel.getSymbol(false);
-        if (sym_idx >= this->first_global)
+        if (rel.r_sym >= this->first_global)
           continue;
 
-        Symbol &sym = *symbols[sym_idx];
+        Symbol &sym = *symbols[rel.r_sym];
         if (sym.type != STT_SECTION || !sym.input_section)
           continue;
 
@@ -245,7 +243,7 @@ void ObjectFile::initialize_mergeable_sections() {
         u32 offset = sym.value + rel.r_addend;
         const StringPieceRef *ref = binary_search(mergeable->pieces, offset);
         if (!ref)
-          error(toString(this) + ": bad relocation at " + std::to_string(sym_idx));
+          error(toString(this) + ": bad relocation at " + std::to_string(rel.r_sym));
 
         isec->rel_pieces[i].piece = ref->piece;
         isec->rel_pieces[i].addend = offset - ref->input_offset;
