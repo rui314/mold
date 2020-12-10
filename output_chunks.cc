@@ -367,7 +367,7 @@ OutputSection::get_instance(std::string_view name, u64 flags, u32 type) {
 }
 
 void OutputSection::copy_buf() {
-  if (shdr.sh_type == llvm::ELF::SHT_NOBITS)
+  if (shdr.sh_type == SHT_NOBITS)
     return;
 
   int num_members = members.size();

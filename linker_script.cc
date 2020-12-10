@@ -3,7 +3,6 @@
 #include "llvm/Support/FileSystem.h"
 
 using namespace llvm;
-using namespace llvm::ELF;
 using namespace llvm::sys;
 
 static thread_local std::string script_path;

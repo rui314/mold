@@ -5,8 +5,6 @@
 #endif
 
 #include "llvm/Object/Archive.h"
-#include "llvm/Object/ELF.h"
-#include "llvm/Object/ELFTypes.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
@@ -1104,8 +1102,6 @@ void read_file(MemoryMappedFile mb);
 //
 
 namespace out {
-using namespace llvm::ELF;
-
 inline std::vector<ObjectFile *> objs;
 inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
