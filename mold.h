@@ -91,7 +91,7 @@ namespace tbb {
 template<>
 struct tbb_hash_compare<std::string_view> {
   static size_t hash(const std::string_view& k) {
-    return llvm::hash_value(k);
+    return std::hash<std::string_view>()(k);
   }
 
   static bool equal(const std::string_view& k1, const std::string_view& k2) {
