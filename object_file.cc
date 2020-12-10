@@ -86,7 +86,7 @@ void ObjectFile::initialize_sections() {
 
     if (shdr.sh_info >= sections.size())
       error(toString(this) + ": invalid relocated section index: " +
-            Twine(shdr.sh_info));
+            std::to_string((u32)shdr.sh_info));
 
     InputSection *target = sections[shdr.sh_info];
     if (target) {

@@ -82,7 +82,7 @@ InputArgList MyOptTable::parse(int argc, char **argv) {
 
   InputArgList args = this->ParseArgs(vec, missing_index, missing_count);
   if (missing_count)
-    error(Twine(args.getArgString(missing_index)) + ": missing argument");
+    error(std::string(args.getArgString(missing_index)) + ": missing argument");
 
   for (auto *arg : args.filtered(OPT_UNKNOWN))
     error("unknown argument '" + arg->getAsString(args) + "'");
@@ -104,7 +104,7 @@ static std::vector<MemoryMappedFile> get_archive_members(MemoryMappedFile mb) {
   for (const Archive::Child &c : file->children(err)) {
     MemoryBufferRef mb =
       CHECK(c.getMemoryBufferRef(),
-            mb.getBufferIdentifier() +
+            mb.getBufferIdentifier().str() +
               ": could not get the buffer for a child of the archive");
     MemoryMappedFile file(mb.getBufferIdentifier().str(),
                           {mb.getBufferStart(), mb.getBufferSize()});
@@ -757,7 +757,7 @@ static int get_thread_count(InputArgList &args) {
   if (auto *arg = args.getLastArg(OPT_thread_count)) {
     int n;
     if (!llvm::to_integer(arg->getValue(), n) || n <= 0)
-      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+      error(arg->getSpelling().str() + ": expected a positive integer, but got '" +
             arg->getValue() + "'");
     return n;
   }

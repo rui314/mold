@@ -6,7 +6,6 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Twine.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"
@@ -51,7 +50,6 @@ using llvm::ArrayRef;
 using llvm::ErrorOr;
 using llvm::Error;
 using llvm::Expected;
-using llvm::Twine;
 using llvm::object::ELF64LE;
 using llvm::object::ELFFile;
 
@@ -67,8 +65,8 @@ class SharedFile;
 class Symbol;
 
 struct Config {
-  std::string_view dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
-  std::string_view output;
+  std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
+  std::string output;
   bool as_needed = false;
   bool export_dynamic = false;
   bool is_static = false;
@@ -83,7 +81,7 @@ struct Config {
 
 inline Config config;
 
-[[noreturn]] inline void error(const Twine &msg) {
+[[noreturn]] inline void error(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
   llvm::errs() << msg << "\n";
@@ -116,10 +114,12 @@ T check2(Expected<T> e, llvm::function_ref<std::string()> prefix) {
   return std::move(*e);
 }
 
+inline std::string toString(std::string s) { return s; }
+
 #define CHECK(E, S) check2((E), [&] { return toString(S); })
 
 #define unreachable() \
-  error(Twine("internal error at ") + __FILE__ + ":" + Twine(__LINE__))
+  error("internal error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__))
 
 std::string toString(InputFile *);
 
@@ -859,13 +859,11 @@ inline Symbol *_etext;
 inline Symbol *_edata;
 }
 
-inline void message(const Twine &msg) {
+inline void message(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
   llvm::outs() << msg << "\n";
 }
-
-inline std::string toString(const Twine &s) { return s.str(); }
 
 inline std::string toString(Symbol sym) {
   return std::string(sym.name) + "(" + toString(sym.file) + ")";

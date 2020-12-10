@@ -54,9 +54,10 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
   return vec;
 }
 
-static std::span<std::string_view> skip(std::span<std::string_view> tok, std::string_view str) {
+static std::span<std::string_view>
+skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
-    error("expected '" + str + "'");
+    error("expected '" + std::string(str) + "'");
   return tok.subspan(1);
 }
 
