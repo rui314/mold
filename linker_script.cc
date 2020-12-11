@@ -1,10 +1,5 @@
 #include "mold.h"
 
-#include "llvm/Support/FileSystem.h"
-
-using namespace llvm;
-using namespace llvm::sys;
-
 static thread_local std::string script_path;
 static thread_local std::string script_dir;
 
@@ -74,8 +69,8 @@ static MemoryMappedFile resolve_path(std::string str) {
     return must_open_input_file(config.sysroot + str);
   if (str.starts_with("-l"))
     return find_library(str.substr(2));
-  if (std::string path = script_dir + "/" + str; fs::exists(path))
-    return must_open_input_file(path);
+  if (MemoryMappedFile *mb = open_input_file(script_dir + "/" + str))
+    return *mb;
   if (MemoryMappedFile *mb = open_input_file(str))
     return *mb;
   for (std::string &dir : config.library_paths) {
