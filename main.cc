@@ -783,57 +783,132 @@ MemoryMappedFile find_library(std::string name) {
   error("library not found: " + name);
 }
 
-int main(int argc, char **argv) {
-  // Parse command line options
-  MyOptTable opt_table;
-  InputArgList args = opt_table.parse(argc - 1, argv + 1);
+static bool read_arg(std::span<char *> &args, std::string &arg, std::string name) {
+  if (name.size() == 1) {
+    if (args[0] == "-" + name) {
+      if (args.size() == 1)
+        error("option -" + name + ": argument missing");
+      arg = args[1];
+      args = args.subspan(2);
+      return true;
+    }
 
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               get_thread_count(args));
+    if (std::string_view(args[0]).starts_with("-" + name)) {
+      arg = args[0] + name.size() + 1;
+      args = args.subspan(1);
+      return true;
+    }
+    return false;
+  }
 
-  Counter::enabled = args.hasArg(OPT_stat);
+  std::vector<std::string> opts;
+  opts.push_back("-" + name);
+  if (!name.starts_with("o"))
+    opts.push_back("--" + name);
 
-  if (auto *arg = args.getLastArg(OPT_o))
-    config.output = arg->getValue();
-  else
-    error("-o option is missing");
+  for (std::string opt : opts) {
+    if (args[0] == opt) {
+      if (args.size() == 1)
+        error("option " + name + ": argument missing");
+      arg = args[1];
+      args = args.subspan(2);
+      return true;
+    }
 
-  config.filler = parse_filler(args);
-  config.is_static = args.hasArg(OPT_static);
-  config.library_paths = get_args(args, OPT_library_path);
-  config.print_map = args.hasArg(OPT_print_map);
-  config.sysroot = args.getLastArgValue(OPT_sysroot, "");
-  config.export_dynamic = args.hasArg(OPT_export_dynamic);
-
-  for (auto *arg : args.filtered(OPT_rpath))
-    config.rpaths.push_back(arg->getValue());
-
-  for (auto *arg : args.filtered(OPT_version_script))
-    parse_version_script(arg->getValue());
-
-  for (auto *arg : args.filtered(OPT_trace_symbol))
-    Symbol::intern(arg->getValue())->traced = true;
-
-  // Open input files
-  {
-    MyTimer t("open", parse_timer);
-    for (auto *arg : args) {
-      switch (arg->getOption().getID()) {
-      case OPT_INPUT:
-        read_file(must_open_input_file(arg->getValue()));
-        break;
-      case OPT_library:
-        read_file(find_library(arg->getValue()));
-        break;
-      case OPT_as_needed:
-        config.as_needed = true;
-        break;
-      case OPT_no_as_needed:
-        config.as_needed = false;
-        break;
-      }
+    if (std::string_view(args[0]).starts_with(opt + "=")) {
+      arg = args[0] + opt.size() + 1;
+      args = args.subspan(1);
+      return true;
     }
   }
+  return false;
+}
+
+static bool read_flag(std::span<char *> &args, std::string name) {
+  std::vector<std::string> opts;
+  opts.push_back("-" + name);
+  if (!name.starts_with("o"))
+    opts.push_back("--" + name);
+
+  for (std::string opt : opts) {
+    if (args[0] == opt) {
+      args = args.subspan(1);
+      return true;
+    }
+  }  
+  return false;
+}
+
+static u64 parse_hex(std::string opt, std::string_view value) {
+  if (!value.starts_with("0x") && !value.starts_with("0X"))
+    error("option -" + opt + ": not a hexadecimal number");
+  value = value.substr(2);
+  if (value.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
+    error("option -" + opt + ": not a hexadecimal number");
+  return std::stol(std::string(value), nullptr, 16);
+}
+
+static u64 parse_number(std::string opt, std::string_view value) {
+  if (value.find_first_not_of("0123456789") != std::string_view::npos)
+    error("option -" + opt + ": not a number");
+  return std::stol(std::string(value));
+}
+
+int main(int argc, char **argv) {
+  config.thread_count =
+    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+
+  // Parse command line options
+  std::span<char *> args(argv + 1, argc -1 );
+
+  while (!args.empty()) {
+    std::string arg;
+
+    if (read_arg(args, arg, "o")) {
+      config.output = arg;
+    } else if (read_flag(args, "print-map")) {
+      config.print_map = true;
+    } else if (read_arg(args, arg, "thread-count")) {
+      config.thread_count = parse_number("thread-count", arg);
+    } else if (read_flag(args, "stat")) {
+      Counter::enabled = true;
+    } else if (read_flag(args, "static")) {
+      config.is_static = true;
+    } else if (read_arg(args, arg, "y") || read_arg(args, arg, "trace-symbol")) {
+      Symbol::intern(arg)->traced = true;
+    } else if (read_arg(args, arg, "filler")) {
+      config.filler = parse_hex("filler", arg);
+    } else if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
+      config.library_paths.push_back(arg);
+    } else if (read_arg(args, arg, "sysroot")) {
+      config.sysroot = arg;
+    } else if (read_flag(args, "trace")) {
+      config.trace = true;
+    } else if (read_flag(args, "export-dynamic")) {
+      config.export_dynamic = true;
+    } else if (read_flag(args, "as-needed")) {
+      config.as_needed = true;
+    } else if (read_flag(args, "no-as-needed")) {
+      config.as_needed = false;
+    } else if (read_arg(args, arg, "rpath")) {
+      config.rpaths.push_back(arg);
+    } else if (read_arg(args, arg, "version-script")) {
+      parse_version_script(arg);
+    } else if (read_arg(args, arg, "l")) {
+      read_file(find_library(arg));
+    } else if (args[0][0] == '-') {
+      error("unknown command line option: " + std::string(args[0]));
+    } else {
+      read_file(must_open_input_file(args[0]));
+      args = args.subspan(1);
+    }
+  }
+
+  if (config.output == "")
+    error("-o option is missing");
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
 
   // Parse input files
   {
@@ -917,7 +992,7 @@ int main(int argc, char **argv) {
   // included to the final output.
   resolve_symbols();
 
-  if (args.hasArg(OPT_trace)) {
+  if (config.trace) {
     for (ObjectFile *file : out::objs)
       message(to_string(file));
     for (SharedFile *file : out::dsos)

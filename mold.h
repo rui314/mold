@@ -58,7 +58,9 @@ struct Config {
   bool export_dynamic = false;
   bool is_static = false;
   bool print_map = false;
+  bool trace = false;
   int filler = -1;
+  int thread_count = -1;
   std::string sysroot;
   std::vector<std::string> library_paths;
   std::vector<std::string> rpaths;
