@@ -4,9 +4,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include "llvm/Object/Archive.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/global_control.h"
@@ -417,10 +414,6 @@ struct ElfVerdaux {
 struct MemoryMappedFile {
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data(data), size(size) {}
-
-  operator llvm::MemoryBufferRef() const {
-    return {{(char *)data, size}, name};
-  }
 
   std::string name;
   u8 *data;

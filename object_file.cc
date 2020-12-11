@@ -621,8 +621,8 @@ ObjectFile *ObjectFile::create_internal_file() {
     if (!is_c_identifier(chunk->name))
       continue;
 
-    auto *start = new std::string(("__start_" + chunk->name).str());
-    auto *stop = new std::string(("__stop_" + chunk->name).str());
+    auto *start = new std::string("__start_" + std::string(chunk->name));
+    auto *stop = new std::string("__stop_" + std::string(chunk->name));
     add(*start, STV_HIDDEN);
     add(*stop, STV_HIDDEN);
   }
@@ -639,7 +639,7 @@ std::string toString(InputFile *file) {
   ObjectFile *obj = (ObjectFile *)file;
   if (obj->archive_name == "")
     return obj->name;
-  return (obj->archive_name + ":" + obj->name).str();
+  return std::string(obj->archive_name) + ":" + std::string(obj->name);
 }
 
 std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
