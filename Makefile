@@ -15,12 +15,7 @@ mold: $(OBJS)
 
 $(OBJS): mold.h Makefile
 
-submodules: llvm intel_tbb
-
-llvm:
-	mkdir -p llvm-project/build
-	(cd llvm-project/build; cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS='lld;clang' -DLLVM_ENABLE_LLD=1 ../llvm)
-	ninja -C llvm-project/build
+submodules: intel_tbb
 
 intel_tbb:
 	$(MAKE) -C oneTBB
@@ -31,4 +26,4 @@ test: mold
 clean:
 	rm -f *.o *~ mold
 
-.PHONY: llvm intel_tbb test clean
+.PHONY: intel_tbb test clean
