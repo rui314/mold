@@ -38,7 +38,7 @@ void ObjectFile::initialize_sections() {
     case SHT_GROUP: {
       // Get the signature of this section group.
       if (shdr.sh_info >= elf_syms.size())
-        error(toString(this) + ": invalid symbol index");
+        error(to_string(this) + ": invalid symbol index");
       const ElfSym &sym = elf_syms[shdr.sh_info];
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
@@ -46,11 +46,11 @@ void ObjectFile::initialize_sections() {
       std::span<u32> entries = obj.get_data<u32>(shdr);
 
       if (entries.empty())
-        error(toString(this) + ": empty SHT_GROUP");
+        error(to_string(this) + ": empty SHT_GROUP");
       if (entries[0] == 0)
         continue;
       if (entries[0] != GRP_COMDAT)
-        error(toString(this) + ": unsupported SHT_GROUP format");
+        error(to_string(this) + ": unsupported SHT_GROUP format");
 
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
@@ -61,7 +61,7 @@ void ObjectFile::initialize_sections() {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      error(toString(this) + ": SHT_SYMTAB_SHNDX section is not supported");
+      error(to_string(this) + ": SHT_SYMTAB_SHNDX section is not supported");
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -86,7 +86,7 @@ void ObjectFile::initialize_sections() {
       continue;
 
     if (shdr.sh_info >= sections.size())
-      error(toString(this) + ": invalid relocated section index: " +
+      error(to_string(this) + ": invalid relocated section index: " +
             std::to_string((u32)shdr.sh_info));
 
     InputSection *target = sections[shdr.sh_info];
@@ -240,7 +240,7 @@ void ObjectFile::initialize_mergeable_sections() {
         u32 offset = sym.value + rel.r_addend;
         const StringPieceRef *ref = binary_search(mergeable->pieces, offset);
         if (!ref)
-          error(toString(this) + ": bad relocation at " + std::to_string(rel.r_sym));
+          error(to_string(this) + ": bad relocation at " + std::to_string(rel.r_sym));
 
         isec->rel_pieces[i].piece = ref->piece;
         isec->rel_pieces[i].addend = offset - ref->input_offset;
@@ -264,7 +264,7 @@ void ObjectFile::initialize_mergeable_sections() {
       binary_search(isec->mergeable->pieces, esym.st_value);
 
     if (!ref)
-      error(toString(this) + ": bad symbol value");
+      error(to_string(this) + ": bad symbol value");
 
     if (i < first_global) {
       local_symbols[i].piece_ref = *ref;
@@ -359,7 +359,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.is_imported = false;
 
     if (UNLIKELY(sym.traced))
-      message("trace: " + toString(sym.file) +
+      message("trace: " + to_string(sym.file) +
               (sym.is_weak ? ": weak definition of " : ": definition of ") +
               std::string(sym.name));
   }
@@ -384,7 +384,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + toString(sym.file) + ": lazy definition of " +
+          message("trace: " + to_string(sym.file) + ": lazy definition of " +
                   std::string(sym.name));
       }
     } else {
@@ -408,7 +408,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
     }
 
     if (UNLIKELY(sym.traced))
-      message("trace: " + toString(this) + ": reference to " + std::string(sym.name));
+      message("trace: " + to_string(this) + ": reference to " + std::string(sym.name));
 
     if (esym.st_bind != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
@@ -416,7 +416,7 @@ ObjectFile::mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder) {
         feeder.add((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
-        message("trace: " + toString(this) + " keeps " + toString(sym.file) +
+        message("trace: " + to_string(this) + " keeps " + to_string(sym.file) +
                 " for " + std::string(sym.name));
     }
   }
@@ -447,7 +447,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + toString(this) + ": unresolved weak symbol " +
+          message("trace: " + to_string(this) + ": unresolved weak symbol " +
                   std::string(sym.name));
       }
     }
@@ -632,7 +632,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   return obj;
 }
 
-std::string toString(InputFile *file) {
+std::string to_string(InputFile *file) {
   if (file->is_dso)
     return file->name;
 
@@ -757,7 +757,7 @@ void SharedFile::resolve_symbols() {
       sym.is_imported = true;
 
       if (UNLIKELY(sym.traced))
-        message("trace: " + toString(sym.file) +
+        message("trace: " + to_string(sym.file) +
                 (sym.is_weak ? ": weak definition of " : ": definition of ") +
                 std::string(sym.name));
     }

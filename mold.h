@@ -78,7 +78,7 @@ inline Config config;
 #define unreachable() \
   error("internal error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__))
 
-std::string toString(InputFile *);
+std::string to_string(InputFile *);
 
 //
 // Interned string
@@ -582,7 +582,7 @@ public:
   u32 size = 0;
 };
 
-std::string toString(InputChunk *isec);
+std::string to_string(InputChunk *isec);
 
 //
 // output_chunks.cc
@@ -1146,8 +1146,8 @@ inline void message(std::string msg) {
   std::cout << msg << "\n";
 }
 
-inline std::string toString(Symbol sym) {
-  return std::string(sym.name) + "(" + toString(sym.file) + ")";
+inline std::string to_string(Symbol sym) {
+  return std::string(sym.name) + "(" + to_string(sym.file) + ")";
 }
 
 inline u64 align_to(u64 val, u64 align) {

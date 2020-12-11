@@ -25,7 +25,7 @@ void print_map() {
       std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
                 << std::setw(8) << (u64)mem->shdr.sh_size
                 << std::setw(5) << (u64)mem->shdr.sh_addralign
-                << " " << toString(mem) << "\n";
+                << " " << to_string(mem) << "\n";
 
       auto range = map.equal_range(mem);
       for (auto it = range.first; it != range.second; ++it) {

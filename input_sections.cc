@@ -120,7 +120,7 @@ void InputSection::copy_buf() {
       *(u32 *)loc = G + A - P;
       break;
     default:
-      error(toString(this) + ": unknown relocation: " + std::to_string(rel.r_type));
+      error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
     }
 
 #undef S
@@ -200,7 +200,7 @@ void InputSection::scan_relocations() {
       sym.flags |= Symbol::NEEDS_GOTTPOFF;
       break;
     default:
-      error(toString(this) + ": unknown relocation: " + std::to_string(rel.r_type));
+      error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
     }
   }
 }
@@ -212,7 +212,7 @@ void InputSection::report_undefined_symbols() {
   for (const ElfRela &rel : rels) {
     Symbol &sym = *file->symbols[rel.r_sym];
     if (!sym.file || sym.is_placeholder)
-      std::cerr << "undefined symbol: " << toString(file)
+      std::cerr << "undefined symbol: " << to_string(file)
                 << ": " << sym.name << "\n";
   }
 }
@@ -226,7 +226,7 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   while (!data.empty()) {
     size_t end = data.find('\0');
     if (end == std::string_view::npos)
-      error(toString(this) + ": string is not null terminated");
+      error(to_string(this) + ": string is not null terminated");
 
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
@@ -240,6 +240,6 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   counter.inc(pieces.size());
 }
 
-std::string toString(InputChunk *chunk) {
-  return toString(chunk->file) + ":(" + std::string(chunk->name) + ")";
+std::string to_string(InputChunk *chunk) {
+  return to_string(chunk->file) + ":(" + std::string(chunk->name) + ")";
 }
