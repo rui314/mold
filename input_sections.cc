@@ -1,7 +1,5 @@
 #include "mold.h"
 
-using namespace llvm;
-
 InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
                        std::string_view name)
   : file(file), shdr(shdr), name(name),

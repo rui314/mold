@@ -3,8 +3,6 @@
 #include <iomanip>
 #include <ios>
 
-using namespace llvm;
-
 std::vector<Counter *> Counter::instances;
 bool Counter::enabled = true;
 

@@ -1,11 +1,7 @@
 #include "mold.h"
 
-#include "llvm/BinaryFormat/Magic.h"
-
 #include <cstring>
 #include <regex>
-
-using namespace llvm;
 
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
   : InputFile(mb, false), archive_name(archive_name),
