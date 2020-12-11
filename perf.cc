@@ -63,11 +63,10 @@ void Timer::print() {
 
   std::vector<int> depth(instances.size());
 
-  for (int i = 0, j = 0; j < instances.size(); j++) {
-    while (instances[i]->end < instances[j]->start)
-      i++;
-    depth[j] = j - i;
-  }
+  for (int i = 0; i < instances.size(); i++)
+    for (int j = 0; j < i; j++)
+      if (instances[i]->end < instances[j]->end)
+        depth[i]++;
 
   std::cout << "     User   System     Real  Name\n";
 
@@ -77,7 +76,7 @@ void Timer::print() {
            ((double)t.user / 1000000000),
            ((double)t.sys / 1000000000),
            (((double)t.end - t.start) / 1000000000),
-           std::string(" ", depth[i]).c_str(),
+           std::string(depth[i], ' ').c_str(),
            t.name.c_str());
   }
 

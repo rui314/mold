@@ -1057,6 +1057,7 @@ int main(int argc, char **argv) {
   }
 
   t_copy.stop();
+  t_total.stop();
   t_all.stop();
 
   if (config.print_map)
