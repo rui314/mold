@@ -13,8 +13,8 @@
 #include "tbb/task_group.h"
 
 #include <algorithm>
-#include <cassert>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
@@ -1076,6 +1076,37 @@ private:
   std::atomic_uint32_t value;
 
   static std::vector<Counter *> instances;
+};
+
+class Timer {
+public:
+  Timer(std::string name);
+  void stop();
+  static void print();
+
+private:
+  static std::vector<Timer *> instances;
+
+  std::string name;
+  u64 start;
+  u64 end;
+  u64 user;
+  u64 sys;
+  bool stopped = false;
+};
+
+class ScopedTimer {
+public:
+  ScopedTimer(std::string name) {
+    timer = new Timer(name);
+  }
+
+  ~ScopedTimer() {
+    timer->stop();
+  }
+
+private:
+  Timer *timer;
 };
 
 //

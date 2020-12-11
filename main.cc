@@ -1,8 +1,5 @@
 #include "mold.h"
 
-#include "llvm/Support/Timer.h"
-#include "llvm/Support/raw_ostream.h"
-
 #include <fcntl.h>
 #include <iostream>
 #include <libgen.h>
@@ -12,30 +9,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <unordered_set>
-
-using llvm::Timer;
-
-class MyTimer {
-public:
-  MyTimer(std::string_view name) {
-    timer = new Timer(name, name);
-    timer->startTimer();
-  }
-
-  MyTimer(std::string_view name, llvm::TimerGroup &tg) {
-    timer = new Timer(name, name, tg);
-    timer->startTimer();
-  }
-
-  ~MyTimer() { timer->stopTimer(); }
-
-private:
-  llvm::Timer *timer;
-};
-
-llvm::TimerGroup parse_timer("parse", "parse");
-llvm::TimerGroup before_copy_timer("before_copy", "before_copy");
-llvm::TimerGroup copy_timer("copy", "copy");
 
 //
 // Main
@@ -117,7 +90,7 @@ static std::vector<std::span<T>> split(std::vector<T> &input, int unit) {
 }
 
 static void resolve_symbols() {
-  MyTimer t("resolve_symbols", before_copy_timer);
+  ScopedTimer t("resolve_symbols");
 
   // Register defined symbols
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
@@ -145,7 +118,7 @@ static void resolve_symbols() {
 }
 
 static void eliminate_comdats() {
-  MyTimer t("comdat", before_copy_timer);
+  ScopedTimer t("comdat");
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->resolve_comdat_groups();
@@ -157,7 +130,7 @@ static void eliminate_comdats() {
 }
 
 static void handle_mergeable_strings() {
-  MyTimer t("resolve_strings", before_copy_timer);
+  ScopedTimer t("resolve_strings");
 
   // Resolve mergeable string pieces
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
@@ -207,7 +180,7 @@ static void handle_mergeable_strings() {
 // An output section may contain millions of input sections.
 // So, we append input sections to output sections in parallel.
 static void bin_sections() {
-  MyTimer t("bin_sections", before_copy_timer);
+  ScopedTimer t("bin_sections");
 
   int unit = (out::objs.size() + 127) / 128;
   std::vector<std::span<ObjectFile *>> slices = split(out::objs, unit);
@@ -246,7 +219,7 @@ static void bin_sections() {
 }
 
 static void check_duplicate_symbols() {
-  MyTimer t("check_undef_syms", before_copy_timer);
+  ScopedTimer t("check_undef_syms");
 
   auto is_error = [](ObjectFile *file, int i) {
     const ElfSym &esym = file->elf_syms[i];
@@ -283,7 +256,7 @@ static void check_duplicate_symbols() {
 }
 
 static void set_isec_offsets() {
-  MyTimer t("isec_offsets", before_copy_timer);
+  ScopedTimer t("isec_offsets");
 
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->members.empty())
@@ -325,7 +298,7 @@ static void set_isec_offsets() {
 }
 
 static void scan_rels() {
-  MyTimer t("scan_rels", before_copy_timer);
+  ScopedTimer t("scan_rels");
 
   // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
@@ -392,7 +365,7 @@ static void scan_rels() {
 }
 
 static void export_dynamic() {
-  MyTimer t("export_dynamic", before_copy_timer);
+  ScopedTimer t("export_dynamic");
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
@@ -418,7 +391,7 @@ static void export_dynamic() {
 }
 
 static void fill_symbol_versions() {
-  MyTimer t("fill_symbol_versions", before_copy_timer);
+  ScopedTimer t("fill_symbol_versions");
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms = out::dynsym->symbols;
@@ -501,7 +474,7 @@ static void fill_symbol_versions() {
 }
 
 static void write_merged_strings() {
-  MyTimer t("write_merged_strings", copy_timer);
+  ScopedTimer t("write_merged_strings");
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (MergeableSection &isec : file->mergeable_sections) {
@@ -517,7 +490,7 @@ static void write_merged_strings() {
 }
 
 static void clear_padding(u64 filesize) {
-  MyTimer t("clear_padding", copy_timer);
+  ScopedTimer t("clear_padding");
 
   auto zero = [](OutputChunk *chunk, u64 next_start) {
     u64 pos = chunk->shdr.sh_offset;
@@ -550,7 +523,7 @@ static int get_section_rank(const ElfShdr &shdr) {
 }
 
 static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
-  MyTimer t("osec_offset", before_copy_timer);
+  ScopedTimer t("osec_offset");
 
   u64 fileoff = 0;
   u64 vaddr = config.image_base;
@@ -671,7 +644,7 @@ static u32 get_umask() {
 }
 
 static u8 *open_output_file(u64 filesize) {
-  MyTimer t("open_file", before_copy_timer);
+  ScopedTimer t("open_file");
 
   int fd = open(std::string(config.output).c_str(), O_RDWR | O_CREAT, 0777);
   if (fd == -1)
@@ -778,6 +751,8 @@ static u64 parse_number(std::string opt, std::string_view value) {
 }
 
 int main(int argc, char **argv) {
+  Timer t_all("all");
+
   config.thread_count =
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
@@ -835,7 +810,7 @@ int main(int argc, char **argv) {
 
   // Parse input files
   {
-    MyTimer t("parse", parse_timer);
+    ScopedTimer t("parse");
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
     tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->parse(); });
   }
@@ -852,14 +827,14 @@ int main(int argc, char **argv) {
 
   // Parse mergeable string sections
   {
-    MyTimer t("merge", parse_timer);
+    ScopedTimer t("merge");
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
       file->initialize_mergeable_sections();
     });
   }
 
-  Timer total_timer("total", "total");
-  total_timer.startTimer();
+  Timer t_total("total");
+  Timer t_before_copy("before_copy");
 
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
@@ -930,7 +905,7 @@ int main(int argc, char **argv) {
 
   // Create .bss sections for common symbols.
   {
-    MyTimer t("common", before_copy_timer);
+    ScopedTimer t("common");
     tbb::parallel_for_each(out::objs,
                            [](ObjectFile *file) { file->convert_common_symbols(); });
   }
@@ -1054,12 +1029,16 @@ int main(int argc, char **argv) {
     if (phdr.p_type == PT_TLS)
       out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
 
+  t_before_copy.stop();
+
   // Create an output file
   out::buf = open_output_file(filesize);
 
+  Timer t_copy("copy");
+
   // Copy input sections to the output file
   {
-    MyTimer t("copy", copy_timer);
+    ScopedTimer t("copy_buf");
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
@@ -1073,16 +1052,15 @@ int main(int argc, char **argv) {
 
   // Commit
   {
-    MyTimer t("munmap", copy_timer);
+    ScopedTimer t("munmap");
     munmap(out::buf, filesize);
   }
 
-  total_timer.stopTimer();
+  t_copy.stop();
+  t_all.stop();
 
-  if (config.print_map) {
-    MyTimer t("print_map");
+  if (config.print_map)
     print_map();
-  }
 
   // Show stat numbers
   Counter num_input_sections("input_sections");
@@ -1095,8 +1073,6 @@ int main(int argc, char **argv) {
   Counter filesize_counter("filesize", filesize);
 
   Counter::print();
-  llvm::TimerGroup::printAll(llvm::outs());
-
-  llvm::outs().flush();
+  Timer::print();
   _exit(0);
 }
