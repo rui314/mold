@@ -26,7 +26,7 @@ intel_tbb:
 	$(MAKE) -C oneTBB
 
 test: mold
-	./llvm-project/build/bin/llvm-lit test
+	(cd test; for i in *.sh; do ./$$i; done)
 
 clean:
 	rm -f *.o *~ mold

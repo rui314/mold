@@ -9,7 +9,8 @@ ElfFile::ElfFile(MemoryMappedFile mb) : mb(mb), ehdr((ElfEhdr &)*mb.data) {
   u8 *begin = mb.data + ehdr.e_shoff;
   u8 *end = begin + ehdr.e_shnum * sizeof(ElfShdr);
   if (mb.data + mb.size < end)
-    error(mb.name + ": e_shoff or e_shnum corrupted");
+    error(mb.name + ": e_shoff or e_shnum corrupted: " +
+          std::to_string(mb.size) + " " + std::to_string(ehdr.e_shnum));
   sections = {(ElfShdr *)begin, (ElfShdr *)end};
 }
 

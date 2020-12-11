@@ -573,7 +573,7 @@ bool is_c_identifier(std::string_view name) {
 ObjectFile *ObjectFile::create_internal_file() {
   // Create a dummy object file.
   constexpr int bufsz = 256;
-  u8 *buf = new u8[bufsz];
+  u8 *buf = (u8 *)calloc(1, bufsz);
   memcpy(buf, "\177ELF", 4);
   MemoryMappedFile *mb = new MemoryMappedFile("<internal>", buf, bufsz);
   auto *obj = new ObjectFile(*mb, "");

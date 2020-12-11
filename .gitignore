@@ -1,6 +1,6 @@
 *.o
 *~
 /mold
-/test/Output
+/test/tmp
 options.inc
 core
