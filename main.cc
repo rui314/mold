@@ -1,6 +1,6 @@
 #include "mold.h"
 
-#include "llvm/Option/ArgList.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <fcntl.h>
@@ -14,10 +14,6 @@
 #include <unordered_set>
 
 using llvm::Timer;
-using llvm::SmallVector;
-using namespace llvm::sys;
-
-using llvm::opt::InputArgList;
 
 class MyTimer {
 public:
@@ -40,51 +36,6 @@ private:
 llvm::TimerGroup parse_timer("parse", "parse");
 llvm::TimerGroup before_copy_timer("before_copy", "before_copy");
 llvm::TimerGroup copy_timer("copy", "copy");
-
-//
-// Command-line option processing
-//
-
-enum {
-  OPT_INVALID = 0,
-#define OPTION(_1, _2, ID, _4, _5, _6, _7, _8, _9, _10, _11, _12) OPT_##ID,
-#include "options.inc"
-#undef OPTION
-};
-
-// Create prefix string literals used in Options.td
-#define PREFIX(NAME, VALUE) const char *const NAME[] = VALUE;
-#include "options.inc"
-#undef PREFIX
-
-// Create table mapping all options defined in Options.td
-static const llvm::opt::OptTable::Info opt_info[] = {
-#define OPTION(X1, X2, ID, KIND, GROUP, ALIAS, X7, X8, X9, X10, X11, X12)      \
-  {X1, X2, X10,         X11,         OPT_##ID, llvm::opt::Option::KIND##Class, \
-   X9, X8, OPT_##GROUP, OPT_##ALIAS, X7,       X12},
-#include "options.inc"
-#undef OPTION
-};
-
-class MyOptTable : llvm::opt::OptTable {
-public:
-  MyOptTable() : OptTable(opt_info) {}
-  InputArgList parse(int argc, char **argv);
-};
-
-InputArgList MyOptTable::parse(int argc, char **argv) {
-  unsigned missing_index = 0;
-  unsigned missing_count = 0;
-  SmallVector<const char *, 256> vec(argv, argv + argc);
-
-  InputArgList args = this->ParseArgs(vec, missing_index, missing_count);
-  if (missing_count)
-    error(std::string(args.getArgString(missing_index)) + ": missing argument");
-
-  for (auto *arg : args.filtered(OPT_UNKNOWN))
-    error("unknown argument '" + arg->getAsString(args) + "'");
-  return args;
-}
 
 //
 // Main
@@ -742,34 +693,6 @@ static u8 *open_output_file(u64 filesize) {
   return (u8 *)buf;
 }
 
-static int get_thread_count(InputArgList &args) {
-  if (auto *arg = args.getLastArg(OPT_thread_count)) {
-    if (std::string_view(arg->getValue()).find_first_not_of("0123456789"))
-      error(arg->getSpelling().str() + ": expected a positive integer, but got '" +
-            arg->getValue() + "'");
-    return std::stoi(arg->getValue());
-  }
-  return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
-}
-
-std::vector<std::string> get_args(llvm::opt::InputArgList &args, int id) {
-  std::vector<std::string> vec;
-  for (auto *arg : args.filtered(id))
-    vec.push_back(arg->getValue());
-  return vec;
-}
-
-static int parse_filler(llvm::opt::InputArgList &args) {
-  auto *arg = args.getLastArg(OPT_filler);
-  if (!arg)
-    return -1;
-
-  std::string_view val = arg->getValue();
-  if (!val.starts_with("0x"))
-    error("invalid argument: " + arg->getAsString(args));
-  return std::stoi(std::string(val.substr(2)), nullptr, 16);
-}
-
 MemoryMappedFile find_library(std::string name) {
   for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
@@ -920,7 +843,7 @@ int main(int argc, char **argv) {
   // Uniquify shared object files with soname
   {
     std::vector<SharedFile *> vec;
-    llvm::StringSet<> seen;
+    std::unordered_set<std::string_view> seen;
     for (SharedFile *file : out::dsos)
       if (seen.insert(file->soname).second)
         vec.push_back(file);

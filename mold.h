@@ -4,7 +4,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include "llvm/Support/Timer.h"
 #include "tbb/concurrent_hash_map.h"
 #include "tbb/global_control.h"
 #include "tbb/parallel_for_each.h"
@@ -14,6 +13,7 @@
 #include "tbb/task_group.h"
 
 #include <algorithm>
+#include <cassert>
 #include <atomic>
 #include <cstdint>
 #include <iostream>

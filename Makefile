@@ -18,11 +18,6 @@ mold: $(OBJS)
 
 $(OBJS): mold.h Makefile
 
-main.o: options.inc
-
-options.inc: options.td
-	$(LLVM_TBLGEN) -I=llvm-project/llvm/include --gen-opt-parser-defs -o $@ $^
-
 submodules: llvm intel_tbb
 
 llvm:
@@ -37,6 +32,6 @@ test: mold
 	./llvm-project/build/bin/llvm-lit test
 
 clean:
-	rm -f *.o *~ mold options.inc
+	rm -f *.o *~ mold
 
 .PHONY: llvm intel_tbb test clean
