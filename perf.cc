@@ -29,8 +29,8 @@ static u64 now_nsec() {
   return (u64)t.tv_sec * 1000000000 + t.tv_nsec;
 }
 
-static u64 to_usec(struct timeval t) {
-  return t.tv_sec * 1000000 + t.tv_usec;
+static u64 to_nsec(struct timeval t) {
+  return t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
 
 Timer::Timer(std::string name) : name(name) {
@@ -40,8 +40,8 @@ Timer::Timer(std::string name) : name(name) {
   getrusage(RUSAGE_SELF, &usage);
 
   start = now_nsec();
-  user = to_usec(usage.ru_utime);
-  sys = to_usec(usage.ru_stime);
+  user = to_nsec(usage.ru_utime);
+  sys = to_nsec(usage.ru_stime);
 }
 
 void Timer::stop() {
@@ -53,13 +53,13 @@ void Timer::stop() {
   getrusage(RUSAGE_SELF, &usage);
 
   end = now_nsec();
-  user = to_usec(usage.ru_utime) - user;
-  sys = to_usec(usage.ru_stime) - sys;
+  user = to_nsec(usage.ru_utime) - user;
+  sys = to_nsec(usage.ru_stime) - sys;
 }
 
 void Timer::print() {
-  for (Timer *t : instances)
-    t->stop();
+  for (int i = instances.size() - 1; i >= 0; i--)
+    instances[i]->stop();
 
   std::vector<int> depth(instances.size());
 
@@ -72,13 +72,14 @@ void Timer::print() {
   std::cout << "     User   System     Real  Name\n";
 
   for (int i = 0; i < instances.size(); i++) {
-    Timer &t = *instances[i];;
+    Timer &t = *instances[i];
     printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
-           ((double)t.user / 1000000),
-           ((double)t.sys / 1000000),
+           ((double)t.user / 1000000000),
+           ((double)t.sys / 1000000000),
            (((double)t.end - t.start) / 1000000000),
            std::string(" ", depth[i]).c_str(),
            t.name.c_str());
   }
+
   std::cout << std::flush;
 }
