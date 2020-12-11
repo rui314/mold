@@ -1,9 +1,7 @@
 #include "mold.h"
 
-#include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Option/ArgList.h"
-#include "llvm/Support/FileOutputBuffer.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <fcntl.h>
 #include <iostream>
@@ -746,11 +744,10 @@ static u8 *open_output_file(u64 filesize) {
 
 static int get_thread_count(InputArgList &args) {
   if (auto *arg = args.getLastArg(OPT_thread_count)) {
-    int n;
-    if (!llvm::to_integer(arg->getValue(), n) || n <= 0)
+    if (std::string_view(arg->getValue()).find_first_not_of("0123456789"))
       error(arg->getSpelling().str() + ": expected a positive integer, but got '" +
             arg->getValue() + "'");
-    return n;
+    return std::stoi(arg->getValue());
   }
   return tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 }
