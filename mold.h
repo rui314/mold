@@ -413,15 +413,6 @@ struct ElfVerdaux {
   u32 vda_next;
 };
 
-struct MemoryMappedFile {
-  MemoryMappedFile(std::string name, u8 *data, u64 size)
-    : name(name), data(data), size(size) {}
-
-  std::string name;
-  u8 *data;
-  u64 size;
-};
-
 //
 // Symbol
 //
@@ -916,6 +907,15 @@ struct ComdatGroup {
 
   std::atomic<ObjectFile *> file;
   u32 section_idx;
+};
+
+struct MemoryMappedFile {
+  MemoryMappedFile(std::string name, u8 *data, u64 size)
+    : name(name), data(data), size(size) {}
+
+  std::string name;
+  u8 *data;
+  u64 size;
 };
 
 class InputFile {
