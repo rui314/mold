@@ -575,7 +575,7 @@ void ObjectFile::write_symtab() {
     else if (sym.shndx)
       esym.st_shndx = sym.shndx;
     else
-      esym.st_shndx = ::SHN_ABS;
+      esym.st_shndx = SHN_ABS;
 
     write_string(strtab_base + strtab_off, sym.name);
     strtab_off += sym.name.size() + 1;
@@ -612,7 +612,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
     ElfSym esym = {};
     esym.st_type = STT_NOTYPE;
-    esym.st_shndx = ::SHN_ABS;
+    esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = visibility;
     elf_syms->push_back(esym);

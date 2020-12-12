@@ -561,9 +561,9 @@ void DynsymSection::copy_buf() {
       esym.st_shndx = out::copyrel->shndx;
       esym.st_value = sym->get_addr();
     } else if (sym->is_imported || sym->esym->is_undef()) {
-      esym.st_shndx = ::SHN_UNDEF;
+      esym.st_shndx = SHN_UNDEF;
     } else if (!sym->input_section) {
-      esym.st_shndx = ::SHN_ABS;
+      esym.st_shndx = SHN_ABS;
       esym.st_value = sym->get_addr();
     } else {
       esym.st_shndx = sym->input_section->output_section->shndx;
