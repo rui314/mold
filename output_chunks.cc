@@ -63,6 +63,7 @@ std::vector<ElfPhdr> create_phdr() {
     phdr.p_offset = chunk->shdr.sh_offset;
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
+    phdr.p_paddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
 
     if (type == PT_LOAD)
