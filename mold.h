@@ -422,35 +422,6 @@ struct MemoryMappedFile {
   u64 size;
 };
 
-class ElfFile {
-public:
-  ElfFile(MemoryMappedFile mb);
-
-  std::span<ElfShdr> get_sections() const;
-
-  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const {
-    std::string_view view = get_string(shdr);
-    if (view.size() % sizeof(T))
-      error(mb.name + ": corrupted section");
-    return {(T *)view.data(), view.size() / sizeof(T)};
-  }
-
-  template<typename T> std::span<T> get_data(u32 idx) const {
-    if (sections.size() <= idx)
-      error(mb.name + ": invalid section index");
-    return get_data<T>(sections[idx]);
-  }
-
-  std::string_view get_section_name(const ElfShdr &shdr) const;
-  std::string_view get_string(const ElfShdr &shdr) const;
-  std::string_view get_string(u32 idx) const;
-
-private:
-  MemoryMappedFile mb;
-  ElfEhdr &ehdr;
-  std::span<ElfShdr> sections;
-};
-
 std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
 
 //
@@ -954,7 +925,6 @@ public:
   InputFile(MemoryMappedFile mb);
 
   MemoryMappedFile mb;
-  ElfFile obj;
   ElfEhdr &ehdr;
   std::span<ElfShdr> elf_sections;
   std::vector<Symbol *> symbols;
