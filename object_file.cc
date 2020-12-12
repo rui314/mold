@@ -3,6 +3,22 @@
 #include <cstring>
 #include <regex>
 
+InputFile::InputFile(MemoryMappedFile mb)
+  : mb(mb), name(mb.name), obj(mb), ehdr(*(ElfEhdr *)mb.data),
+    is_dso(ehdr.e_type == ET_DYN) {
+  if (mb.size < sizeof(ElfEhdr))
+    error(mb.name + ": file too small");
+  if (memcmp(mb.data, "\177ELF", 4))
+    error(mb.name + ": not an ELF file");
+
+  u8 *sh_begin = mb.data + ehdr.e_shoff;
+  u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
+  if (mb.data + mb.size < sh_end)
+    error(mb.name + ": e_shoff or e_shnum corrupted: " +
+          std::to_string(mb.size) + " " + std::to_string(ehdr.e_shnum));
+  elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
+}
+
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
   : InputFile(mb), archive_name(archive_name),
     is_in_archive(archive_name != "") {

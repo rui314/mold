@@ -951,11 +951,7 @@ struct ComdatGroup {
 
 class InputFile {
 public:
-  InputFile(MemoryMappedFile mb)
-    : mb(mb), name(mb.name), obj(mb), ehdr(*(ElfEhdr *)mb.data) {
-    elf_sections = obj.get_sections();
-    is_dso = (ehdr.e_type == ET_DYN);
-  }
+  InputFile(MemoryMappedFile mb);
 
   MemoryMappedFile mb;
   ElfFile obj;
