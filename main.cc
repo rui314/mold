@@ -1063,7 +1063,15 @@ int main(int argc, char **argv) {
   if (config.print_map)
     print_map();
 
-  // Show stat numbers
+  // Show stats numbers
+  for (ObjectFile *obj : out::objs) {
+    static Counter defined("defined_syms");
+    defined.inc(obj->first_global - 1);
+
+    static Counter undefined("undefined_syms");
+    undefined.inc(obj->symbols.size() - obj->first_global);
+  }
+
   Counter num_input_sections("input_sections");
   for (ObjectFile *file : out::objs)
     num_input_sections.inc(file->sections.size());

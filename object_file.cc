@@ -325,18 +325,6 @@ void ObjectFile::parse() {
 
   initialize_sections();
   initialize_symbols();
-
-  if (Counter::enabled) {
-    static Counter defined("defined_syms");
-    static Counter undefined("undefined_syms");
-
-    for (const ElfSym &esym : elf_syms) {
-      if (esym.is_defined())
-        defined.inc();
-      else
-        undefined.inc();
-    }
-  }
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.
