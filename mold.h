@@ -422,8 +422,6 @@ struct MemoryMappedFile {
   u64 size;
 };
 
-std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
-
 //
 // Symbol
 //
@@ -1016,6 +1014,8 @@ private:
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
 };
+
+std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
 
 //
 // linker_script.cc
