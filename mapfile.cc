@@ -14,8 +14,8 @@ void print_map() {
   std::cout << "             VMA     Size Align Out     In      Symbol\n";
   for (OutputChunk *osec : out::chunks) {
     std::cout << std::setw(16) << (u64)osec->shdr.sh_addr
-              << std::setw(8) << (u64)osec->shdr.sh_size
-              << std::setw(5) << (u64)osec->shdr.sh_addralign
+              << std::setw(9) << (u64)osec->shdr.sh_size
+              << std::setw(6) << (u64)osec->shdr.sh_addralign
               << " " << osec->name << "\n";
 
     if (osec->kind != OutputChunk::REGULAR)
@@ -23,15 +23,15 @@ void print_map() {
 
     for (InputChunk *mem : ((OutputSection *)osec)->members) {
       std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-                << std::setw(8) << (u64)mem->shdr.sh_size
-                << std::setw(5) << (u64)mem->shdr.sh_addralign
-                << " " << to_string(mem) << "\n";
+                << std::setw(9) << (u64)mem->shdr.sh_size
+                << std::setw(6) << (u64)mem->shdr.sh_addralign
+                << "         " << to_string(mem) << "\n";
 
       auto range = map.equal_range(mem);
       for (auto it = range.first; it != range.second; ++it) {
         Symbol *sym = it->second;
         std::cout << std::setw(16) << sym->get_addr()
-                  << "       0    0 "
+                  << "        0     0                 "
                   << sym->name << "\n";
       }
     }
