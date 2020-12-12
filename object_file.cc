@@ -284,8 +284,6 @@ void ObjectFile::initialize_mergeable_sections() {
     }
   }
 
-  bool debug = (name == "setup.o");
-
   // Initialize sym_pieces
   for (int i = 0; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
