@@ -10,10 +10,6 @@
 #include <unistd.h>
 #include <unordered_set>
 
-//
-// Main
-//
-
 MemoryMappedFile *open_input_file(std::string path) {
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1)
@@ -1076,7 +1072,7 @@ int main(int argc, char **argv) {
 
     static Counter undefined("undefined_syms");
     undefined.inc(obj->symbols.size() - obj->first_global);
-  }
+v  }
 
   Counter num_input_sections("input_sections");
   for (ObjectFile *file : out::objs)
