@@ -4,7 +4,7 @@
 #include <regex>
 
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
-  : InputFile(mb, false), archive_name(archive_name),
+  : InputFile(mb), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
 }

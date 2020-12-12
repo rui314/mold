@@ -951,10 +951,10 @@ struct ComdatGroup {
 
 class InputFile {
 public:
-  InputFile(MemoryMappedFile mb, bool is_dso)
-    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb),
-      ehdr(*(ElfEhdr *)mb.data) {
+  InputFile(MemoryMappedFile mb)
+    : mb(mb), name(mb.name), obj(mb), ehdr(*(ElfEhdr *)mb.data) {
     elf_sections = obj.get_sections();
+    is_dso = (ehdr.e_type == ET_DYN);
   }
 
   MemoryMappedFile mb;
@@ -1040,7 +1040,7 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryMappedFile mb, bool as_needed) : InputFile(mb, true) {
+  SharedFile(MemoryMappedFile mb, bool as_needed) : InputFile(mb) {
     is_alive = !as_needed;
   }
 
