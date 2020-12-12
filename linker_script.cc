@@ -1,7 +1,6 @@
 #include "mold.h"
 
-static thread_local std::string script_path;
-static thread_local std::string script_dir;
+thread_local std::string script_dir;
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
   std::vector<std::string_view> vec;
@@ -102,7 +101,6 @@ static std::span<std::string_view> read_group(std::span<std::string_view> tok) {
 }
 
 void parse_linker_script(MemoryMappedFile mb) {
-  script_path = mb.name;
   script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
 
   std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
@@ -119,7 +117,6 @@ void parse_linker_script(MemoryMappedFile mb) {
 }
 
 void parse_version_script(std::string path) {
-  script_path = path;
   script_dir = path.substr(0, path.find_last_of('/'));
 
   MemoryMappedFile mb = must_open_input_file(path);

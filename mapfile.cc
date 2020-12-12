@@ -2,14 +2,21 @@
 
 #include <iomanip>
 #include <ios>
+#include <unordered_map>
 
 void print_map() {
   // Construct a section-to-symbol map.
-  std::unordered_multimap<InputChunk *, Symbol *> map;
+  std::unordered_map<InputChunk *, std::vector<Symbol *>> map;
   for (ObjectFile *file : out::objs)
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->input_section)
-        map.insert({sym->input_section, sym});
+        map[sym->input_section].push_back(sym);
+
+  for (auto &pair : map) {
+    std::vector<Symbol *> &vec = pair.second;
+    std::stable_sort(vec.begin(), vec.end(),
+                     [](Symbol *a, Symbol *b) { return a->value < b->value; });
+  }
 
   std::cout << "             VMA     Size Align Out     In      Symbol\n";
   for (OutputChunk *osec : out::chunks) {
@@ -27,13 +34,15 @@ void print_map() {
                 << std::setw(6) << (u64)mem->shdr.sh_addralign
                 << "         " << to_string(mem) << "\n";
 
-      auto range = map.equal_range(mem);
-      for (auto it = range.first; it != range.second; ++it) {
-        Symbol *sym = it->second;
+      auto it = map.find(mem);
+      if (it == map.end())
+        continue;
+
+      std::vector<Symbol *> syms = it->second;
+      for (Symbol *sym : syms)
         std::cout << std::setw(16) << sym->get_addr()
                   << "        0     0                 "
                   << sym->name << "\n";
-      }
     }
   }
 }

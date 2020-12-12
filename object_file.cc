@@ -568,7 +568,11 @@ void ObjectFile::write_symtab() {
 
     esym = elf_syms[i];
     esym.st_name = strtab_off;
-    esym.st_value = sym.get_addr();
+
+    if (sym.type == STT_TLS)
+      esym.st_value = sym.get_addr() - sym.input_section->output_section->shdr.sh_addr;
+    else
+      esym.st_value = sym.get_addr();
 
     if (sym.input_section)
       esym.st_shndx = sym.input_section->output_section->shndx;
@@ -812,10 +816,10 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
   while (data < mb.data + mb.size) {
     ArHdr &hdr = *(ArHdr *)data;
     data += sizeof(ArHdr);
-    
+
     std::string name(hdr.ar_name, strchr(hdr.ar_name, ' '));
     u32 size = atoi(hdr.ar_size);
-    
+
     if (name == "//")
       strtab = {(char *)data, size};
     else if (name != "/" && name != "__.SYMDEF")
