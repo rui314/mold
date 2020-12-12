@@ -276,7 +276,6 @@ void ObjectFile::initialize_mergeable_sections() {
 }
 
 void ObjectFile::parse() {
-  elf_sections = obj.get_sections();
   sections.resize(elf_sections.size());
   symtab_sec = find_section(elf_sections, SHT_SYMTAB);
 
@@ -650,7 +649,6 @@ std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
 }
 
 void SharedFile::parse() {
-  std::span<ElfShdr> elf_sections = obj.get_sections();
   symtab_sec = find_section(elf_sections, SHT_DYNSYM);
 
   if (!symtab_sec)
@@ -707,7 +705,6 @@ void SharedFile::parse() {
 }
 
 std::vector<std::string_view> SharedFile::read_verdef() {
-  std::span<ElfShdr> elf_sections = obj.get_sections();
   const ElfShdr *verdef_sec = find_section(elf_sections, SHT_GNU_VERDEF);
   if (!verdef_sec)
     return {};

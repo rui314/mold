@@ -952,13 +952,16 @@ struct ComdatGroup {
 class InputFile {
 public:
   InputFile(MemoryMappedFile mb, bool is_dso)
-    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb) {}
+    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb) {
+    elf_sections = obj.get_sections();
+  }
 
   std::string name;
   bool is_dso;
   u32 priority;
   MemoryMappedFile mb;
   ElfFile obj;
+  std::span<ElfShdr> elf_sections;
   std::vector<Symbol *> symbols;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 };
@@ -1008,7 +1011,6 @@ private:
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
 
-  std::span<ElfShdr> elf_sections;
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
 };
