@@ -4,8 +4,7 @@
 #include <regex>
 
 InputFile::InputFile(MemoryMappedFile mb)
-  : mb(mb), name(mb.name), ehdr(*(ElfEhdr *)mb.data),
-    is_dso(ehdr.e_type == ET_DYN) {
+  : mb(mb), name(mb.name), ehdr(*(ElfEhdr *)mb.data), is_dso(ehdr.e_type == ET_DYN) {
   if (mb.size < sizeof(ElfEhdr))
     error(mb.name + ": file too small");
   if (memcmp(mb.data, "\177ELF", 4))
