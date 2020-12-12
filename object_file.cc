@@ -6,14 +6,14 @@
 InputFile::InputFile(MemoryMappedFile mb)
   : mb(mb), name(mb.name), ehdr(*(ElfEhdr *)mb.data), is_dso(ehdr.e_type == ET_DYN) {
   if (mb.size < sizeof(ElfEhdr))
-    error(mb.name + ": file too small");
+    error(to_string(this) + ": file too small");
   if (memcmp(mb.data, "\177ELF", 4))
-    error(mb.name + ": not an ELF file");
+    error(to_string(this) + ": not an ELF file");
 
   u8 *sh_begin = mb.data + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
   if (mb.data + mb.size < sh_end)
-    error(mb.name + ": e_shoff or e_shnum corrupted: " +
+    error(to_string(this) + ": e_shoff or e_shnum corrupted: " +
           std::to_string(mb.size) + " " + std::to_string(ehdr.e_shnum));
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
 }
@@ -22,13 +22,13 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) const {
   u8 *begin = mb.data + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb.data + mb.size < end)
-    error(mb.name + ": shdr corrupted");
+    error(to_string(this) + ": shdr corrupted");
   return {(char *)begin, (char *)end};
 }
 
 std::string_view InputFile::get_string(u32 idx) const {
   if (elf_sections.size() <= idx)
-    error(mb.name + ": invalid section index");
+    error(to_string(this) + ": invalid section index");
   return get_string(elf_sections[idx]);
 }
 
@@ -36,14 +36,14 @@ template<typename T>
 std::span<T> InputFile::get_data(const ElfShdr &shdr) const {
   std::string_view view = get_string(shdr);
   if (view.size() % sizeof(T))
-    error(mb.name + ": corrupted section");
+    error(to_string(this) + ": corrupted section");
   return {(T *)view.data(), view.size() / sizeof(T)};
 }
 
 template<typename T>
 std::span<T> InputFile::get_data(u32 idx) const {
   if (elf_sections.size() <= idx)
-    error(mb.name + ": invalid section index");
+    error(to_string(this) + ": invalid section index");
   return get_data<T>(elf_sections[idx]);
 }
 
@@ -653,7 +653,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   return obj;
 }
 
-std::string to_string(InputFile *file) {
+std::string to_string(const InputFile *file) {
   if (file->is_dso)
     return file->name;
 

@@ -80,7 +80,7 @@ inline Config config;
 #define unreachable() \
   error("internal error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__))
 
-std::string to_string(InputFile *);
+std::string to_string(const InputFile *);
 
 //
 // Interned string
