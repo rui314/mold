@@ -69,7 +69,8 @@ void ObjectFile::initialize_sections() {
       static Counter counter("regular_sections");
       counter.inc();
 
-      std::string_view name = get_section_name(shdr);
+      std::string_view shstrtab = get_string(ehdr.e_shstrndx);
+      std::string_view name = shstrtab.data() + shdr.sh_name;
       this->sections[i] = new InputSection(this, shdr, name);
       break;
     }

@@ -952,17 +952,20 @@ struct ComdatGroup {
 class InputFile {
 public:
   InputFile(MemoryMappedFile mb, bool is_dso)
-    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb) {
+    : mb(mb), name(mb.name), is_dso(is_dso), obj(mb),
+      ehdr(*(ElfEhdr *)mb.data) {
     elf_sections = obj.get_sections();
   }
+
+  MemoryMappedFile mb;
+  ElfFile obj;
+  ElfEhdr &ehdr;
+  std::span<ElfShdr> elf_sections;
+  std::vector<Symbol *> symbols;
 
   std::string name;
   bool is_dso;
   u32 priority;
-  MemoryMappedFile mb;
-  ElfFile obj;
-  std::span<ElfShdr> elf_sections;
-  std::vector<Symbol *> symbols;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 
   std::string_view get_section_name(const ElfShdr &shdr) const {
