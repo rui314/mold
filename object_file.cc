@@ -39,7 +39,7 @@ void ObjectFile::initialize_sections() {
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
       // Get comdat group members.
-      std::span<u32> entries = obj.get_data<u32>(shdr);
+      std::span<u32> entries = get_data<u32>(shdr);
 
       if (entries.empty())
         error(to_string(this) + ": empty SHT_GROUP");
@@ -69,7 +69,7 @@ void ObjectFile::initialize_sections() {
       static Counter counter("regular_sections");
       counter.inc();
 
-      std::string_view name = obj.get_section_name(shdr);
+      std::string_view name = get_section_name(shdr);
       this->sections[i] = new InputSection(this, shdr, name);
       break;
     }
@@ -87,7 +87,7 @@ void ObjectFile::initialize_sections() {
 
     InputSection *target = sections[shdr.sh_info];
     if (target) {
-      target->rels = obj.get_data<ElfRela>(shdr);
+      target->rels = get_data<ElfRela>(shdr);
       target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
@@ -199,7 +199,7 @@ void ObjectFile::initialize_mergeable_sections() {
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
     if (isec && is_mergeable(isec->shdr)) {
-      std::string_view contents = obj.get_string(isec->shdr);
+      std::string_view contents = get_string(isec->shdr);
       mergeable_sections.emplace_back(isec, contents);
       isec->mergeable = &mergeable_sections.back();
     }
@@ -281,8 +281,8 @@ void ObjectFile::parse() {
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
-    elf_syms = obj.get_data<ElfSym>(*symtab_sec);
-    symbol_strtab = obj.get_string(symtab_sec->sh_link);
+    elf_syms = get_data<ElfSym>(*symtab_sec);
+    symbol_strtab = get_string(symtab_sec->sh_link);
   }
 
   initialize_sections();
@@ -642,7 +642,7 @@ std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
   if (!sec)
     return name;
 
-  for (const ElfDyn &dyn : obj.get_data<ElfDyn>(*sec))
+  for (const ElfDyn &dyn : get_data<ElfDyn>(*sec))
     if (dyn.d_tag == DT_SONAME)
       return std::string_view(symbol_strtab.data() + dyn.d_val);
   return name;
@@ -654,17 +654,17 @@ void SharedFile::parse() {
   if (!symtab_sec)
     return;
 
-  symbol_strtab = obj.get_string(symtab_sec->sh_link);
+  symbol_strtab = get_string(symtab_sec->sh_link);
   soname = get_soname(elf_sections);
   version_strings = read_verdef();
 
   // Read a symbol table.
   int first_global = symtab_sec->sh_info;
-  std::span<ElfSym> esyms = obj.get_data<ElfSym>(*symtab_sec);
+  std::span<ElfSym> esyms = get_data<ElfSym>(*symtab_sec);
 
   std::span<u16> vers;
   if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_VERSYM))
-    vers = obj.get_data<u16>(*sec);
+    vers = get_data<u16>(*sec);
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
 
@@ -709,8 +709,8 @@ std::vector<std::string_view> SharedFile::read_verdef() {
   if (!verdef_sec)
     return {};
 
-  std::string_view verdef = obj.get_string(*verdef_sec);
-  std::string_view strtab = obj.get_string(verdef_sec->sh_link);
+  std::string_view verdef = get_string(*verdef_sec);
+  std::string_view strtab = get_string(verdef_sec->sh_link);
 
   std::vector<std::string_view> ret(2);
   auto *ver = (ElfVerdef *)verdef.data();

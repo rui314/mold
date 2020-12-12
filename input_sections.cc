@@ -10,7 +10,7 @@ void InputSection::copy_buf() {
     return;
 
   // Copy data
-  std::string_view data = file->obj.get_string(shdr);
+  std::string_view data = file->get_string(shdr);
   memcpy(out::buf + output_section->shdr.sh_offset + offset, &data[0], data.size());
 
   // Apply relocations
