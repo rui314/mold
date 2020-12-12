@@ -61,11 +61,6 @@ static const ElfShdr
   return nullptr;
 }
 
-static std::string_view get_substr(std::string_view view, u32 offset) {
-  u32 end = view.find('\0', offset);
-  return view.substr(offset, end);
-}
-
 void ObjectFile::initialize_sections() {
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
