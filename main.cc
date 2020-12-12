@@ -1072,7 +1072,7 @@ int main(int argc, char **argv) {
 
     static Counter undefined("undefined_syms");
     undefined.inc(obj->symbols.size() - obj->first_global);
-v  }
+  }
 
   Counter num_input_sections("input_sections");
   for (ObjectFile *file : out::objs)

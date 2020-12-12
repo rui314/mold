@@ -76,7 +76,7 @@ void Timer::print() {
            ((double)t.user / 1000000000),
            ((double)t.sys / 1000000000),
            (((double)t.end - t.start) / 1000000000),
-           std::string(depth[i], ' ').c_str(),
+           std::string(depth[i] * 2, ' ').c_str(),
            t.name.c_str());
   }
 
