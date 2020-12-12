@@ -681,6 +681,14 @@ MemoryMappedFile find_library(std::string name) {
   error("library not found: " + name);
 }
 
+static std::vector<std::string> add_dashes(std::string name) {
+  std::vector<std::string> opts;
+  opts.push_back("-" + name);
+  if (!name.starts_with("o"))
+    opts.push_back("--" + name);
+  return opts;
+}
+
 static bool read_arg(std::span<char *> &args, std::string &arg, std::string name) {
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
@@ -699,12 +707,7 @@ static bool read_arg(std::span<char *> &args, std::string &arg, std::string name
     return false;
   }
 
-  std::vector<std::string> opts;
-  opts.push_back("-" + name);
-  if (!name.starts_with("o"))
-    opts.push_back("--" + name);
-
-  for (std::string opt : opts) {
+  for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
         error("option " + name + ": argument missing");
@@ -723,17 +726,32 @@ static bool read_arg(std::span<char *> &args, std::string &arg, std::string name
 }
 
 static bool read_flag(std::span<char *> &args, std::string name) {
-  std::vector<std::string> opts;
-  opts.push_back("-" + name);
-  if (!name.starts_with("o"))
-    opts.push_back("--" + name);
-
-  for (std::string opt : opts) {
+  for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       args = args.subspan(1);
       return true;
     }
   }  
+  return false;
+}
+
+static bool read_equal(std::span<char *> &args, std::string &arg,
+                       std::string name, std::string default_) {
+  for (std::string opt : add_dashes(name)) {
+    if (args[0] == opt) {
+      arg = default_;
+      args = args.subspan(1);
+      return true;
+    }
+  }  
+
+  for (std::string opt : add_dashes(name)) {
+    if (std::string_view(args[0]).starts_with(opt + "=")) {
+      arg = args[0] + opt.size() + 1;
+      args = args.subspan(1);
+      return true;
+    }
+  }
   return false;
 }
 
@@ -766,6 +784,8 @@ int main(int argc, char **argv) {
 
     if (read_arg(args, arg, "o")) {
       config.output = arg;
+    } else if (read_arg(args, arg, "dynamic-linker")) {
+      config.dynamic_linker = arg;
     } else if (read_flag(args, "print-map")) {
       config.print_map = true;
     } else if (read_arg(args, arg, "thread-count")) {
@@ -796,6 +816,16 @@ int main(int argc, char **argv) {
       parse_version_script(arg);
     } else if (read_arg(args, arg, "l")) {
       read_file(find_library(arg));
+    } else if (read_arg(args, arg, "z")) {
+    } else if (read_arg(args, arg, "hash-style")) {
+    } else if (read_arg(args, arg, "m")) {
+    } else if (read_equal(args, arg, "build-id", "none")) {
+    } else if (read_flag(args, "eh-frame-hdr")) {
+    } else if (read_flag(args, "start-group")) {
+    } else if (read_flag(args, "end-group")) {
+    } else if (read_flag(args, "pie")) {
+    } else if (read_flag(args, "fatal-warnings")) {
+    } else if (read_flag(args, "disable-new-dtags")) {
     } else if (args[0][0] == '-') {
       error("unknown command line option: " + std::string(args[0]));
     } else {
