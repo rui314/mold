@@ -11,7 +11,7 @@ main:
   call foo
 EOF
 
-! ../mold -o $t/exe $t/a.o 2> $t/log
+! ../mold -o $t/exe $t/a.o 2> $t/log > /dev/null
 grep -q 'undefined symbol: .*\.o: foo' $t/log
 
 echo ' OK'
