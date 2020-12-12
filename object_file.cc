@@ -19,6 +19,35 @@ InputFile::InputFile(MemoryMappedFile mb)
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
 }
 
+std::string_view InputFile::get_string(const ElfShdr &shdr) const {
+  u8 *begin = mb.data + shdr.sh_offset;
+  u8 *end = begin + shdr.sh_size;
+  if (mb.data + mb.size < end)
+    error(mb.name + ": shdr corrupted");
+  return {(char *)begin, (char *)end};
+}
+
+std::string_view InputFile::get_string(u32 idx) const {
+  if (elf_sections.size() <= idx)
+    error(mb.name + ": invalid section index");
+  return get_string(elf_sections[idx]);
+}
+
+template<typename T>
+std::span<T> InputFile::get_data(const ElfShdr &shdr) const {
+  std::string_view view = get_string(shdr);
+  if (view.size() % sizeof(T))
+    error(mb.name + ": corrupted section");
+  return {(T *)view.data(), view.size() / sizeof(T)};
+}
+
+template<typename T>
+std::span<T> InputFile::get_data(u32 idx) const {
+  if (elf_sections.size() <= idx)
+    error(mb.name + ": invalid section index");
+  return get_data<T>(elf_sections[idx]);
+}
+
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
   : InputFile(mb), archive_name(archive_name),
     is_in_archive(archive_name != "") {

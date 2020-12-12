@@ -964,25 +964,12 @@ public:
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 
-  std::string_view get_section_name(const ElfShdr &shdr) const {
-    return obj.get_section_name(shdr);
-  }
+  std::string_view get_string(const ElfShdr &shdr) const;
+  std::string_view get_string(u32 idx) const;
 
-  std::string_view get_string(const ElfShdr &shdr) const {
-    return obj.get_string(shdr);
-  }
-
-  std::string_view get_string(u32 idx) const {
-    return obj.get_string(idx);
-  }
-
-  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const {
-    return obj.get_data<T>(shdr);
-  }
-
-  template<typename T> std::span<T> get_data(u32 idx) const {
-    return obj.get_data<T>(idx);
-  }
+protected:
+  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const;
+  template<typename T> std::span<T> get_data(u32 idx) const;
 };
 
 class ObjectFile : public InputFile {
