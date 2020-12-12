@@ -4,8 +4,8 @@
 
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
-
   memset(&hdr, 0, sizeof(hdr));
+
   memcpy(&hdr.e_ident, "\177ELF", 4);
   hdr.e_ident[EI_CLASS] = ELFCLASS64;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
