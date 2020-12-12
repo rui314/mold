@@ -38,10 +38,15 @@ MemoryMappedFile must_open_input_file(std::string path) {
   return *mb;
 }
 
-void read_file(MemoryMappedFile mb) {
-  if (mb.size < 20)
-    error(mb.name + ": unknown file type");
+static bool is_text_file(MemoryMappedFile mb) {
+  return mb.size >= 4 &&
+         isprint(mb.data[0]) &&
+         isprint(mb.data[1]) &&
+         isprint(mb.data[2]) &&
+         isprint(mb.data[3]);
+}
 
+void read_file(MemoryMappedFile mb) {
   // .a
   if (memcmp(mb.data, "!<arch>\n", 8) == 0) {
     for (MemoryMappedFile &child : read_archive_members(mb))
@@ -51,6 +56,8 @@ void read_file(MemoryMappedFile mb) {
 
   if (memcmp(mb.data, "\177ELF", 4) == 0) {
     ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
+    if (mb.size < 20)
+      error(mb.name + ": broken ELF file");
 
     // .o
     if (ehdr.e_type == ET_REL) {
@@ -66,8 +73,7 @@ void read_file(MemoryMappedFile mb) {
   }
 
   // Linker script
-  if (isprint(mb.data[0]) && isprint(mb.data[1]) &&
-      isprint(mb.data[3]) && isprint(mb.data[4])) {
+  if (is_text_file(mb)) {
     parse_linker_script(mb);
     return;
   }
