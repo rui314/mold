@@ -50,6 +50,10 @@ void read_file(MemoryMappedFile mb) {
     return;
   }
 
+  // Thin .a
+  if (memcmp(mb.data, "!<thin>\n", 8) == 0)
+    error(mb.name + ": thin archive is not supported yet");
+
   if (memcmp(mb.data, "\177ELF", 4) == 0) {
     ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
     if (mb.size < 20)
