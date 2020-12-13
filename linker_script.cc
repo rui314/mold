@@ -1,6 +1,6 @@
 #include "mold.h"
 
-thread_local std::string script_dir;
+static thread_local std::string script_dir;
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
   std::vector<std::string_view> vec;
