@@ -44,15 +44,12 @@ static bool is_text_file(MemoryMappedFile mb) {
 
 void read_file(MemoryMappedFile mb) {
   // .a
-  if (memcmp(mb.data, "!<arch>\n", 8) == 0) {
+  if (memcmp(mb.data, "!<arch>\n", 8) == 0 ||
+      memcmp(mb.data, "!<thin>\n", 8) == 0) {
     for (MemoryMappedFile &child : read_archive_members(mb))
       out::objs.push_back(new ObjectFile(child, mb.name));
     return;
   }
-
-  // Thin .a
-  if (memcmp(mb.data, "!<thin>\n", 8) == 0)
-    error(mb.name + ": thin archive is not supported yet");
 
   if (memcmp(mb.data, "\177ELF", 4) == 0) {
     ElfEhdr &ehdr = *(ElfEhdr *)mb.data;

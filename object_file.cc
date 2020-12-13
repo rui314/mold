@@ -795,19 +795,25 @@ std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
   return {begin, end};
 }
 
-std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
-  struct ArHdr {
-    char ar_name[16];
-    char ar_date[12];
-    char ar_uid[6];
-    char ar_gid[6];
-    char ar_mode[8];
-    char ar_size[10];
-    char ar_fmag[2];
-  };
+struct ArHdr {
+  char ar_name[16];
+  char ar_date[12];
+  char ar_uid[6];
+  char ar_gid[6];
+  char ar_mode[8];
+  char ar_size[10];
+  char ar_fmag[2];
+};
 
-  if (mb.size < 8 || memcmp(mb.data, "!<arch>\n", 8))
+std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
+  if (mb.size < 8)
     error(mb.name + ": not an archive file");
+  if (memcmp(mb.data, "!<arch>\n", 8) && memcmp(mb.data, "!<thin>\n", 8))
+    error(mb.name + ": not an archive file");
+
+  bool is_thin = !memcmp(mb.data, "!<thin>\n", 8);
+  std::string basedir = mb.name.substr(0, mb.name.find_last_of('/'));
+
   u8 *data = mb.data + 8;
 
   std::vector<MemoryMappedFile> vec;
@@ -836,7 +842,13 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back({name, body, size});
+    if (is_thin) {
+      MemoryMappedFile mb = must_open_input_file(basedir + "/" + name);
+      mb.name = name;
+      vec.push_back(mb);
+      data -= size;
+    } else
+      vec.push_back({name, body, size});
   }
 
   return vec;
