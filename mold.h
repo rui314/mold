@@ -932,6 +932,7 @@ public:
 protected:
   template<typename T> std::span<T> get_data(const ElfShdr &shdr) const;
   template<typename T> std::span<T> get_data(u32 idx) const;
+  ElfShdr *find_section(u32 type);
 };
 
 class ObjectFile : public InputFile {
@@ -998,7 +999,7 @@ public:
   std::vector<std::string_view> version_strings;
 
 private:
-  std::string_view get_soname(std::span<ElfShdr> elf_sections);
+  std::string_view get_soname();
   void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
   std::vector<std::string_view> read_verdef();
 

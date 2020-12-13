@@ -47,18 +47,17 @@ std::span<T> InputFile::get_data(u32 idx) const {
   return get_data<T>(elf_sections[idx]);
 }
 
+ElfShdr *InputFile::find_section(u32 type) {
+  for (ElfShdr &sec : elf_sections)
+    if (sec.sh_type == type)
+      return &sec;
+  return nullptr;
+}
+
 ObjectFile::ObjectFile(MemoryMappedFile mb, std::string archive_name)
   : InputFile(mb), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
-}
-
-static const ElfShdr
-*find_section(std::span<ElfShdr> sections, u32 type) {
-  for (const ElfShdr &sec : sections)
-    if (sec.sh_type == type)
-      return &sec;
-  return nullptr;
 }
 
 void ObjectFile::initialize_sections() {
@@ -315,7 +314,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
 void ObjectFile::parse() {
   sections.resize(elf_sections.size());
-  symtab_sec = find_section(elf_sections, SHT_SYMTAB);
+  symtab_sec = find_section(SHT_SYMTAB);
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
@@ -667,25 +666,21 @@ std::string to_string(const InputFile *file) {
   return std::string(obj->archive_name) + ":(" + std::string(obj->name) + ")";
 }
 
-std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
-  const ElfShdr *sec = find_section(elf_sections, SHT_DYNAMIC);
-  if (!sec)
-    return name;
-
-  for (const ElfDyn &dyn : get_data<ElfDyn>(*sec))
-    if (dyn.d_tag == DT_SONAME)
-      return std::string_view(symbol_strtab.data() + dyn.d_val);
+std::string_view SharedFile::get_soname() {
+  if (ElfShdr *sec = find_section(SHT_DYNAMIC))
+    for (ElfDyn &dyn : get_data<ElfDyn>(*sec))
+      if (dyn.d_tag == DT_SONAME)
+        return std::string_view(symbol_strtab.data() + dyn.d_val);
   return name;
 }
 
 void SharedFile::parse() {
-  symtab_sec = find_section(elf_sections, SHT_DYNSYM);
-
+  symtab_sec = find_section(SHT_DYNSYM);
   if (!symtab_sec)
     return;
 
   symbol_strtab = get_string(symtab_sec->sh_link);
-  soname = get_soname(elf_sections);
+  soname = get_soname();
   version_strings = read_verdef();
 
   // Read a symbol table.
@@ -693,7 +688,7 @@ void SharedFile::parse() {
   std::span<ElfSym> esyms = get_data<ElfSym>(*symtab_sec);
 
   std::span<u16> vers;
-  if (const ElfShdr *sec = find_section(elf_sections, SHT_GNU_VERSYM))
+  if (ElfShdr *sec = find_section(SHT_GNU_VERSYM))
     vers = get_data<u16>(*sec);
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
@@ -735,7 +730,7 @@ void SharedFile::parse() {
 }
 
 std::vector<std::string_view> SharedFile::read_verdef() {
-  const ElfShdr *verdef_sec = find_section(elf_sections, SHT_GNU_VERDEF);
+  ElfShdr *verdef_sec = find_section(SHT_GNU_VERDEF);
   if (!verdef_sec)
     return {};
 
