@@ -341,6 +341,9 @@ static void scan_rels() {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
+    if (sym->is_imported)
+      out::dynsym->add_symbol(sym);
+
     if (sym->needs_got)
       out::got->add_got_symbol(sym);
 

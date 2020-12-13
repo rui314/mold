@@ -393,9 +393,6 @@ void GotSection::add_got_symbol(Symbol *sym) {
   sym->got_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
-
-  if (sym->is_imported)
-    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_gottpoff_symbol(Symbol *sym) {
@@ -403,9 +400,6 @@ void GotSection::add_gottpoff_symbol(Symbol *sym) {
   sym->gottpoff_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   gottpoff_syms.push_back(sym);
-
-  if (sym->is_imported)
-    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_tlsgd_symbol(Symbol *sym) {
@@ -413,9 +407,6 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
   sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsgd_syms.push_back(sym);
-
-  if (sym->is_imported)
-    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_tlsld_symbol(Symbol *sym) {
@@ -423,9 +414,6 @@ void GotSection::add_tlsld_symbol(Symbol *sym) {
   sym->tlsld_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsld_syms.push_back(sym);
-
-  if (sym->is_imported)
-    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::copy_buf() {
@@ -536,11 +524,11 @@ void RelPltSection::copy_buf() {
 }
 
 void DynsymSection::add_symbol(Symbol *sym) {
-  if (sym->dynsym_idx == -1) {
-    sym->dynsym_idx = symbols.size() + 1;
-    sym->dynstr_offset = out::dynstr->add_string(sym->name);
-    symbols.push_back(sym);
-  }
+  if (sym->dynsym_idx != -1)
+    return;
+  sym->dynsym_idx = symbols.size() + 1;
+  sym->dynstr_offset = out::dynstr->add_string(sym->name);
+  symbols.push_back(sym);
 }
 
 void DynsymSection::update_shdr() {
