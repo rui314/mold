@@ -778,9 +778,7 @@ int main(int argc, char **argv) {
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
   // Parse command line options
-  std::span<char *> args(argv + 1, argc -1 );
-
-  while (!args.empty()) {
+  for (std::span<char *> args(argv + 1, argc -1); !args.empty();) {
     std::string arg;
 
     if (read_arg(args, arg, "o")) {
