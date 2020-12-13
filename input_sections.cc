@@ -53,6 +53,8 @@ void InputSection::copy_buf() {
         *(u32 *)loc = L + A - P;
       break;
     case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
       *(u32 *)loc = G + A - P;
       break;
     case R_X86_64_32:
@@ -112,10 +114,6 @@ void InputSection::copy_buf() {
       break;
     case R_X86_64_GOTPC32:
       *(u32 *)loc = GOT + A - P;
-      break;
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = G + A - P;
       break;
     default:
       error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
