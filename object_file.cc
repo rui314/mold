@@ -837,7 +837,7 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
 
     if (hdr.ar_name[0] == '/') {
       const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-      name = {start, strchr(start, '/')};
+      name = {start, strstr(start, "/\n")};
     } else {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
