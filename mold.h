@@ -5,12 +5,10 @@
 #endif
 
 #include "tbb/concurrent_hash_map.h"
-#include "tbb/global_control.h"
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_invoke.h"
 #include "tbb/parallel_reduce.h"
 #include "tbb/spin_mutex.h"
-#include "tbb/task_group.h"
 
 #include <algorithm>
 #include <atomic>

@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include "tbb/global_control.h"
+
 #include <fcntl.h>
 #include <iostream>
 #include <libgen.h>
