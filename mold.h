@@ -942,7 +942,7 @@ protected:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryMappedFile mb, std::string_view archive_name);
+  ObjectFile(MemoryMappedFile mb, std::string archive_name);
 
   void parse();
   void initialize_mergeable_sections();
@@ -958,7 +958,7 @@ public:
 
   static ObjectFile *create_internal_file();
 
-  std::string_view archive_name;
+  std::string archive_name;
   std::vector<InputSection *> sections;
   std::span<ElfSym> elf_syms;
   int first_global = 0;

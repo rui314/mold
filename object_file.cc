@@ -47,7 +47,7 @@ std::span<T> InputFile::get_data(u32 idx) const {
   return get_data<T>(elf_sections[idx]);
 }
 
-ObjectFile::ObjectFile(MemoryMappedFile mb, std::string_view archive_name)
+ObjectFile::ObjectFile(MemoryMappedFile mb, std::string archive_name)
   : InputFile(mb), archive_name(archive_name),
     is_in_archive(archive_name != "") {
   is_alive = (archive_name == "");
@@ -664,7 +664,7 @@ std::string to_string(const InputFile *file) {
   ObjectFile *obj = (ObjectFile *)file;
   if (obj->archive_name == "")
     return obj->name;
-  return std::string(obj->archive_name) + ":" + std::string(obj->name);
+  return std::string(obj->archive_name) + ":(" + std::string(obj->name) + ")";
 }
 
 std::string_view SharedFile::get_soname(std::span<ElfShdr> elf_sections) {
@@ -815,23 +815,28 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
 
   while (data < mb.data + mb.size) {
     ArHdr &hdr = *(ArHdr *)data;
-    data += sizeof(ArHdr);
+    u8 *body = data + sizeof(hdr);
+    u64 size = atol(hdr.ar_size);
+    data = body + size;
 
-    std::string name(hdr.ar_name, strchr(hdr.ar_name, ' '));
-    u32 size = atoi(hdr.ar_size);
-
-    if (name == "//")
-      strtab = {(char *)data, size};
-    else if (name != "/" && name != "__.SYMDEF")
-      vec.push_back({name, data, size});
-    data += size;
-  }
-
-  for (MemoryMappedFile &mb : vec) {
-    if (mb.name.size() > 0 && mb.name[0] == '/') {
-      u32 pos = atoi(mb.name.data() + 1);
-      mb.name = strtab.substr(pos, strtab.find('\n', pos));
+    if (!memcmp(hdr.ar_name, "// ", 3)) {
+      strtab = {(char *)body, size};
+      continue;
     }
+
+    if (!memcmp(hdr.ar_name, "/ ", 2) || !memcmp(hdr.ar_name, "__.SYMDEF/", 10))
+      continue;
+
+    std::string name;
+
+    if (hdr.ar_name[0] == '/') {
+      const char *start = strtab.data() + atoi(hdr.ar_name + 1);
+      name = {start, strchr(start, '/')};
+    } else {
+      name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
+    }
+
+    vec.push_back({name, body, size});
   }
 
   return vec;

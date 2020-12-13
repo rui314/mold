@@ -21,7 +21,7 @@ intel_tbb:
 	$(MAKE) -C oneTBB
 
 test: mold
-	(cd test; for i in *.sh; do ./$$i; done)
+	(cd test; for i in *.sh; do ./$$i || exit 1; done)
 
 clean:
 	rm -f *.o *~ mold
