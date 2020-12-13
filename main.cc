@@ -944,8 +944,9 @@ int main(int argc, char **argv) {
   // Create .bss sections for common symbols.
   {
     ScopedTimer t("common");
-    tbb::parallel_for_each(out::objs,
-                           [](ObjectFile *file) { file->convert_common_symbols(); });
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      file->convert_common_symbols();
+    });
   }
 
   // Bin input sections into output sections
@@ -955,7 +956,7 @@ int main(int argc, char **argv) {
   set_isec_offsets();
 
   // Sections are added to the section lists in an arbitrary order because
-  // they are created in parallel. Sor them to to make the output deterministic.
+  // they are created in parallel. Sort them to to make the output deterministic.
   auto section_compare = [](OutputChunk *x, OutputChunk *y) {
     return std::make_tuple(x->name, (u32)x->shdr.sh_type, (u64)x->shdr.sh_flags) <
            std::make_tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
@@ -999,7 +1000,7 @@ int main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
-  // Copy shared object name strings to .dynstr
+  // Copy shared object name strings to .dynstr.
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
 
