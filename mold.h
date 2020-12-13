@@ -1010,6 +1010,10 @@ private:
   const ElfShdr *symtab_sec;
 };
 
+//
+// archive_file.cc
+//
+
 std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
 
 //

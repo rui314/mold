@@ -8,7 +8,7 @@ CPPFLAGS=-g -IoneTBB/include -pthread -std=c++20 -Wno-deprecated-volatile -O2
 LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) -fuse-ld=lld -pthread
 LIBS=-ltbb
 OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
-  linker_script.o
+  linker_script.o archive_file.o
 
 mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
