@@ -826,8 +826,9 @@ public:
   static MergedSection *get_instance(std::string_view name, u64 flags, u32 type);
 
   static inline std::vector<MergedSection *> instances;
-
   ConcurrentMap<StringPiece> map;
+
+  void copy_buf() override;
 
 private:
   MergedSection(std::string_view name, u64 flags, u32 type)

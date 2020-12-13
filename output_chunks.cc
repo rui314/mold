@@ -619,6 +619,20 @@ MergedSection::get_instance(std::string_view name, u64 flags, u32 type) {
   return osec;
 }
 
+void MergedSection::copy_buf() {
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (MergeableSection *isec : file->mergeable_sections) {
+      u8 *base = out::buf + isec->parent.shdr.sh_offset + isec->offset;
+
+      for (StringPieceRef &ref : isec->pieces) {
+        StringPiece &piece = *ref.piece;
+        if (piece.isec == isec)
+          memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
+      }
+    }
+  });
+}
+
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(sym->is_imported);
   if (sym->copyrel_offset != -1)

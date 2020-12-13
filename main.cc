@@ -472,22 +472,6 @@ static void fill_symbol_versions() {
   }
 }
 
-static void write_merged_strings() {
-  ScopedTimer t("write_merged_strings");
-
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      u8 *base = out::buf + isec->parent.shdr.sh_offset + isec->offset;
-
-      for (StringPieceRef &ref : isec->pieces) {
-        StringPiece &piece = *ref.piece;
-        if (piece.isec == isec)
-          memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
-      }
-    }
-  });
-}
-
 static void clear_padding(u64 filesize) {
   ScopedTimer t("clear_padding");
 
@@ -1069,9 +1053,6 @@ int main(int argc, char **argv) {
       chunk->copy_buf();
     });
   }
-
-  // Fill mergeable string sections
-  write_merged_strings();
 
   // Zero-clear paddings between sections
   clear_padding(filesize);
