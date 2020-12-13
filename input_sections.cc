@@ -31,7 +31,7 @@ void InputSection::copy_buf() {
 #define A   (ref.piece ? ref.addend : rel.r_addend)
 #define P   (sh_addr + rel.r_offset)
 #define L   sym.get_plt_addr()
-#define G   sym.get_got_addr()
+#define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
 
     switch (rel.r_type) {
@@ -44,7 +44,7 @@ void InputSection::copy_buf() {
       *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      *(u64 *)loc = G - GOT + A;
+      *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
       if (sym.plt_idx == -1)
@@ -55,7 +55,7 @@ void InputSection::copy_buf() {
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      *(u32 *)loc = G + A - P;
+      *(u32 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
