@@ -620,16 +620,12 @@ MergedSection::get_instance(std::string_view name, u64 flags, u32 type) {
 }
 
 void MergedSection::copy_buf() {
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      u8 *base = out::buf + isec->parent.shdr.sh_offset + isec->offset;
+  u8 *base = out::buf + shdr.sh_offset;
 
-      for (StringPieceRef &ref : isec->pieces) {
-        StringPiece &piece = *ref.piece;
-        if (piece.isec == isec)
-          memcpy(base + piece.output_offset, piece.data.data(), piece.data.size());
-      }
-    }
+  map.for_each_value([&](StringPiece &piece) {
+    if (MergeableSection *m = piece.isec)
+      memcpy(base + m->offset + piece.output_offset,
+             piece.data.data(), piece.data.size());
   });
 }
 

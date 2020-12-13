@@ -109,6 +109,11 @@ public:
     return const_cast<ValueT *>(&acc->second);
   }
 
+  void for_each_value(std::function<void(ValueT &)> fn) {
+    for (typename MapT::iterator it = map.begin(); it != map.end(); ++it)
+      fn(it->second);
+  }
+
   size_t size() const { return map.size(); }
 
 private:
