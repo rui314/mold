@@ -743,10 +743,12 @@ std::vector<std::string_view> SharedFile::read_verdef() {
   for (;;) {
     if (ret.size() <= ver->vd_ndx)
       ret.resize(ver->vd_ndx + 1);
-    auto *aux = (ElfVerdaux *)((u8 *)ver + ver->vd_aux);
+
+    ElfVerdaux *aux = (ElfVerdaux *)((u8 *)ver + ver->vd_aux);
     ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
     if (!ver->vd_next)
       break;
+
     ver = (ElfVerdef *)((u8 *)ver + ver->vd_next);
   }
   return ret;
