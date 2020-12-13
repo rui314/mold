@@ -333,9 +333,11 @@ static std::string_view get_output_name(std::string_view name) {
     ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
   };
 
-  for (std::string_view s : common_names)
-    if (name.starts_with(s) || name == s.substr(0, s.size() - 1))
-      return s.substr(0, s.size() - 1);
+  for (std::string_view s1 : common_names) {
+    std::string_view s2 = s1.substr(0, s1.size() - 1);
+    if (name.starts_with(s1) || name == s2)
+      return s2;
+  }
   return name;
 }
 
