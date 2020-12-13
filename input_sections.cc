@@ -101,10 +101,11 @@ void InputSection::copy_buf() {
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
-      *(u32 *)loc = S - out::tls_end;
+      *(u32 *)loc = S + A - out::tls_end;
       break;
     case R_X86_64_DTPOFF64:
-      *(u64 *)loc = S - out::tls_end;
+    case R_X86_64_TPOFF64:
+      *(u64 *)loc = S + A - out::tls_end;
       break;
     case R_X86_64_GOTTPOFF:
       *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
@@ -189,6 +190,7 @@ void InputSection::scan_relocations() {
         i++;
       break;
     case R_X86_64_TPOFF32:
+    case R_X86_64_TPOFF64:
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       break;
