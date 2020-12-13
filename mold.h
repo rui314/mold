@@ -519,7 +519,6 @@ public:
 
   void copy_buf() override;
   void scan_relocations();
-  int get_shndx();
   void report_undefined_symbols();
 
   std::span<ElfRela> rels;

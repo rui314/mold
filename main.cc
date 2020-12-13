@@ -164,9 +164,8 @@ static void handle_mergeable_strings() {
   // Assign each mergeable input section a unique index.
   for (ObjectFile *file : out::objs) {
     for (MergeableSection *m : file->mergeable_sections) {
-      MergedSection &osec = m->parent;
-      m->offset = osec.shdr.sh_size;
-      osec.shdr.sh_size += m->size;
+      m->offset = m->parent.shdr.sh_size;
+      m->parent.shdr.sh_size += m->size;
     }
   }
 

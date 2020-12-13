@@ -230,8 +230,10 @@ void ObjectFile::initialize_mergeable_sections() {
 
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
-    if (isec && is_mergeable(isec->shdr))
+    if (isec && is_mergeable(isec->shdr)) {
       mergeable_sections[i] = new MergeableSection(isec, get_string(isec->shdr));
+      sections[i] = nullptr;
+    }
   }
 
   // Initialize rel_pieces
@@ -254,15 +256,15 @@ void ObjectFile::initialize_mergeable_sections() {
         if (rel.r_sym >= this->first_global)
           continue;
 
-        Symbol &sym = *symbols[rel.r_sym];
-        if (sym.type != STT_SECTION || !sym.input_section)
+        const ElfSym &esym = elf_syms[rel.r_sym];
+        if (esym.st_type != STT_SECTION)
           continue;
 
-        MergeableSection *m = mergeable_sections[sym.input_section->get_shndx()];
+        MergeableSection *m = mergeable_sections[esym.st_shndx];
         if (!m)
           continue;
 
-        u32 offset = sym.value + rel.r_addend;
+        u32 offset = esym.st_value + rel.r_addend;
         const StringPieceRef *ref = binary_search(m->pieces, offset);
         if (!ref)
           error(to_string(this) + ": bad relocation at " + std::to_string(rel.r_sym));
@@ -294,10 +296,6 @@ void ObjectFile::initialize_mergeable_sections() {
       sym_pieces[i].addend = esym.st_value - ref->input_offset;
     }
   }
-
-  for (int i = 0; i < sections.size(); i++)
-    if (mergeable_sections[i])
-      sections[i] = nullptr;
 
   erase(mergeable_sections, [](MergeableSection *m) { return !m; });
 }
