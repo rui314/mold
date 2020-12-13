@@ -1120,5 +1120,5 @@ int main(int argc, char **argv) {
 
   std::cout << std::flush;
   std::cerr << std::flush;
-  _exit(0);
+  std::quick_exit(0);
 }
