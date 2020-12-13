@@ -136,11 +136,11 @@ static void handle_mergeable_strings() {
 
   // Resolve mergeable string pieces
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      for (StringPieceRef &ref : isec->pieces) {
+    for (MergeableSection *m : file->mergeable_sections) {
+      for (StringPieceRef &ref : m->pieces) {
         MergeableSection *cur = ref.piece->isec;
-        while (!cur || cur->file->priority > isec->file->priority)
-          if (ref.piece->isec.compare_exchange_weak(cur, isec))
+        while (!cur || cur->file->priority > m->file->priority)
+          if (ref.piece->isec.compare_exchange_weak(cur, m))
             break;
       }
     }
@@ -148,25 +148,25 @@ static void handle_mergeable_strings() {
 
   // Calculate the total bytes of mergeable strings for each input section.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
+    for (MergeableSection *m : file->mergeable_sections) {
       u32 offset = 0;
-      for (StringPieceRef &ref : isec->pieces) {
+      for (StringPieceRef &ref : m->pieces) {
         StringPiece &piece = *ref.piece;
-        if (piece.isec == isec && piece.output_offset == -1) {
+        if (piece.isec == m && piece.output_offset == -1) {
           ref.piece->output_offset = offset;
           offset += ref.piece->data.size();
         }
       }
-      isec->size = offset;
+      m->size = offset;
     }
   });
 
   // Assign each mergeable input section a unique index.
   for (ObjectFile *file : out::objs) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      MergedSection &osec = isec->parent;
-      isec->offset = osec.shdr.sh_size;
-      osec.shdr.sh_size += isec->size;
+    for (MergeableSection *m : file->mergeable_sections) {
+      MergedSection &osec = m->parent;
+      m->offset = osec.shdr.sh_size;
+      osec.shdr.sh_size += m->size;
     }
   }
 
