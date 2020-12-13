@@ -154,7 +154,7 @@ static void handle_mergeable_strings() {
         StringPiece &piece = *ref.piece;
         if (piece.isec == m && piece.output_offset == -1) {
           ref.piece->output_offset = offset;
-          offset += ref.piece->data.size();
+          offset += ref.piece->size;
         }
       }
       m->size = offset;

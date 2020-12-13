@@ -422,16 +422,18 @@ struct ElfVerdaux {
 //
 
 struct StringPiece {
-  StringPiece(std::string_view data) : data(data) {}
+  StringPiece(std::string_view view)
+    : data((const char *)view.data()), size(view.size()) {}
 
   StringPiece(const StringPiece &other)
-    : data(other.data), isec(other.isec.load()),
+    : isec(other.isec.load()), data(other.data), size(other.size),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
-  std::string_view data;
   std::atomic<MergeableSection *> isec = ATOMIC_VAR_INIT(nullptr);
+  const char *data;
+  u32 size;
   u32 output_offset = -1;
 };
 

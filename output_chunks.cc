@@ -624,8 +624,7 @@ void MergedSection::copy_buf() {
 
   map.for_each_value([&](StringPiece &piece) {
     if (MergeableSection *m = piece.isec)
-      memcpy(base + m->offset + piece.output_offset,
-             piece.data.data(), piece.data.size());
+      memcpy(base + m->offset + piece.output_offset, piece.data, piece.size);
   });
 }
 
