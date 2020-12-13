@@ -519,11 +519,11 @@ public:
 
   void copy_buf() override;
   void scan_relocations();
+  int get_shndx();
   void report_undefined_symbols();
 
   std::span<ElfRela> rels;
   std::vector<StringPieceRef> rel_pieces;
-  MergeableSection *mergeable = nullptr;
   bool is_comdat_member = false;
   bool is_alive = true;
 };
@@ -966,7 +966,7 @@ public:
   u64 strtab_offset = 0;
   u64 strtab_size = 0;
 
-  std::vector<MergeableSection> mergeable_sections;
+  std::vector<MergeableSection *> mergeable_sections;
 
 private:
   void initialize_sections();

@@ -226,22 +226,12 @@ static bool is_mergeable(const ElfShdr &shdr) {
 }
 
 void ObjectFile::initialize_mergeable_sections() {
-  // Count the number of mergeable input sections.
-  u32 num_mergeable = 0;
-
-  for (InputSection *isec : sections)
-    if (isec && is_mergeable(isec->shdr))
-      num_mergeable++;
-
-  mergeable_sections.reserve(num_mergeable);
+  mergeable_sections.resize(sections.size());
 
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
-    if (isec && is_mergeable(isec->shdr)) {
-      std::string_view contents = get_string(isec->shdr);
-      mergeable_sections.emplace_back(isec, contents);
-      isec->mergeable = &mergeable_sections.back();
-    }
+    if (isec && is_mergeable(isec->shdr))
+      mergeable_sections[i] = new MergeableSection(isec, get_string(isec->shdr));
   }
 
   // Initialize rel_pieces
@@ -268,12 +258,12 @@ void ObjectFile::initialize_mergeable_sections() {
         if (sym.type != STT_SECTION || !sym.input_section)
           continue;
 
-        MergeableSection *mergeable = sym.input_section->mergeable;
-        if (!mergeable)
+        MergeableSection *m = mergeable_sections[sym.input_section->get_shndx()];
+        if (!m)
           continue;
 
         u32 offset = sym.value + rel.r_addend;
-        const StringPieceRef *ref = binary_search(mergeable->pieces, offset);
+        const StringPieceRef *ref = binary_search(m->pieces, offset);
         if (!ref)
           error(to_string(this) + ": bad relocation at " + std::to_string(rel.r_sym));
 
@@ -289,13 +279,11 @@ void ObjectFile::initialize_mergeable_sections() {
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    InputSection *isec = sections[esym.st_shndx];
-    if (!isec || !isec->mergeable)
+    MergeableSection *m = mergeable_sections[esym.st_shndx];
+    if (!m)
       continue;
 
-    const StringPieceRef *ref =
-      binary_search(isec->mergeable->pieces, esym.st_value);
-
+    const StringPieceRef *ref = binary_search(m->pieces, esym.st_value);
     if (!ref)
       error(to_string(this) + ": bad symbol value");
 
@@ -308,8 +296,10 @@ void ObjectFile::initialize_mergeable_sections() {
   }
 
   for (int i = 0; i < sections.size(); i++)
-    if (sections[i] && sections[i]->mergeable)
+    if (mergeable_sections[i])
       sections[i] = nullptr;
+
+  erase(mergeable_sections, [](MergeableSection *m) { return !m; });
 }
 
 void ObjectFile::parse() {

@@ -214,6 +214,10 @@ void InputSection::scan_relocations() {
   }
 }
 
+int InputSection::get_shndx() {
+  return &shdr - file->elf_sections.data();
+}
+
 void InputSection::report_undefined_symbols() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
