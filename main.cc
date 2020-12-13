@@ -168,10 +168,6 @@ static void handle_mergeable_strings() {
       m->parent.shdr.sh_size += m->size;
     }
   }
-
-  static Counter counter("merged_strings");
-  for (MergedSection *osec : MergedSection::instances)
-    counter.inc(osec->map.size());
 }
 
 // So far, each input section has a pointer to its corresponding
@@ -1094,25 +1090,31 @@ int main(int argc, char **argv) {
     print_map();
 
   // Show stats numbers
-  for (ObjectFile *obj : out::objs) {
-    static Counter defined("defined_syms");
-    defined.inc(obj->first_global - 1);
+  if (Counter::enabled) {
+    for (ObjectFile *obj : out::objs) {
+      static Counter defined("defined_syms");
+      defined.inc(obj->first_global - 1);
 
-    static Counter undefined("undefined_syms");
-    undefined.inc(obj->symbols.size() - obj->first_global);
+      static Counter undefined("undefined_syms");
+      undefined.inc(obj->symbols.size() - obj->first_global);
+    }
+
+    Counter num_input_sections("input_sections");
+    for (ObjectFile *file : out::objs)
+      num_input_sections.inc(file->sections.size());
+
+    static Counter merged_strings("merged_strings");
+    for (MergedSection *osec : MergedSection::instances)
+      merged_strings.inc(osec->map.size());
+
+    Counter num_output_chunks("output_out::chunks", out::chunks.size());
+    Counter num_objs("num_objs", out::objs.size());
+    Counter num_dsos("num_dsos", out::dsos.size());
+    Counter filesize_counter("filesize", filesize);
+
+    Counter::print();
   }
 
-  Counter num_input_sections("input_sections");
-  for (ObjectFile *file : out::objs)
-    num_input_sections.inc(file->sections.size());
-
-  Counter num_output_chunks("output_out::chunks", out::chunks.size());
-  Counter num_objs("num_objs", out::objs.size());
-  Counter num_dsos("num_dsos", out::dsos.size());
-  Counter filesize_counter("filesize", filesize);
-
-  if (Counter::enabled)
-    Counter::print();
   if (config.perf)
     Timer::print();
 
