@@ -331,28 +331,30 @@ static void scan_rels() {
 
   tbb::parallel_for(0, (int)files.size(), [&](int i) {
     for (Symbol *sym : files[i]->symbols)
-      if (sym->file == files[i] && sym->flags)
-        vec[i].push_back(sym);
+      if (sym->file == files[i])
+        if (sym->needs_got || sym->needs_plt || sym->needs_gottpoff ||
+            sym->needs_tlsgd || sym->needs_tlsld || sym->needs_copyrel)
+          vec[i].push_back(sym);
   });
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
-    if (sym->flags & Symbol::NEEDS_GOT)
+    if (sym->needs_got)
       out::got->add_got_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_PLT)
+    if (sym->needs_plt)
       out::plt->add_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_GOTTPOFF)
+    if (sym->needs_gottpoff)
       out::got->add_gottpoff_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_TLSGD)
+    if (sym->needs_tlsgd)
       out::got->add_tlsgd_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_TLSLD)
+    if (sym->needs_tlsld)
       out::got->add_tlsld_symbol(sym);
 
-    if (sym->flags & Symbol::NEEDS_COPYREL) {
+    if (sym->needs_copyrel) {
       out::copyrel->add_symbol(sym);
       assert(sym->file->is_dso);
 

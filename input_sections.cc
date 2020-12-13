@@ -158,45 +158,56 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC32:
     case R_X86_64_PC64:
       if (sym.is_imported) {
+        std::lock_guard lock(sym.mu);
         if (sym.type == STT_OBJECT)
-          sym.flags |= Symbol::NEEDS_COPYREL;
+          sym.needs_copyrel = true;
         else
-          sym.flags |= Symbol::NEEDS_PLT;
+          sym.needs_plt = true;
       }
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOTPC32:
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-      sym.flags |= Symbol::NEEDS_GOT;
+    case R_X86_64_REX_GOTPCRELX: {
+      std::lock_guard lock(sym.mu);
+      sym.needs_got = true;
       break;
+    }
     case R_X86_64_PLT32:
-      if (sym.is_imported || sym.type == STT_GNU_IFUNC)
-        sym.flags |= Symbol::NEEDS_PLT;
+      if (sym.is_imported || sym.type == STT_GNU_IFUNC) {
+        std::lock_guard lock(sym.mu);
+        sym.needs_plt = true;
+      }
       break;
     case R_X86_64_TLSGD:
       assert(rels[i + 1].r_type == R_X86_64_PLT32);
-      if (sym.is_imported)
-        sym.flags |= Symbol::NEEDS_TLSGD;
-      else
+      if (sym.is_imported) {
+        std::lock_guard lock(sym.mu);
+        sym.needs_tlsgd = true;
+      } else {
         i++;
+      }
       break;
     case R_X86_64_TLSLD:
       assert(rels[i + 1].r_type == R_X86_64_PLT32);
-      if (sym.is_imported)
-        sym.flags |= Symbol::NEEDS_TLSLD;
-      else
+      if (sym.is_imported) {
+        std::lock_guard lock(sym.mu);
+        sym.needs_tlsld = true;
+      } else {
         i++;
+      }
       break;
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       break;
-    case R_X86_64_GOTTPOFF:
-      sym.flags |= Symbol::NEEDS_GOTTPOFF;
+    case R_X86_64_GOTTPOFF: {
+      std::lock_guard lock(sym.mu);
+      sym.needs_gottpoff = true;
       break;
+    }
     default:
       error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
     }
