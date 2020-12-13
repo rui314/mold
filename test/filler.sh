@@ -28,7 +28,7 @@ EOF
   /usr/lib/gcc/x86_64-linux-gnu/9/libgcc_eh.a \
   /usr/lib/x86_64-linux-gnu/libc.a \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o > /dev/null
+  /usr/lib/x86_64-linux-gnu/crtn.o
 
 ../mold -static --filler 0x0 -o $t/exe2 \
   /usr/lib/x86_64-linux-gnu/crt1.o \
@@ -39,7 +39,7 @@ EOF
   /usr/lib/gcc/x86_64-linux-gnu/9/libgcc_eh.a \
   /usr/lib/x86_64-linux-gnu/libc.a \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o > /dev/null
+  /usr/lib/x86_64-linux-gnu/crtn.o
 
 hexdump -C $t/exe1 > $t/txt1
 hexdump -C $t/exe2 > $t/txt2

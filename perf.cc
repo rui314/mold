@@ -6,7 +6,7 @@
 #include <sys/time.h>
 
 std::vector<Counter *> Counter::instances;
-bool Counter::enabled = true;
+bool Counter::enabled = false;
 
 std::vector<Timer *> Timer::instances;
 

@@ -12,7 +12,7 @@ _start:
 EOF
 
 
-../mold -o $t/exe $t/a.o > /dev/null
+../mold -o $t/exe $t/a.o
 readelf -a $t/exe > /dev/null
 
 echo ' OK'

@@ -11,6 +11,6 @@ _start:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o > /dev/null
+../mold -o $t/exe $t/a.o
 
 echo ' OK'

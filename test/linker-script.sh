@@ -35,7 +35,7 @@ EOF
   /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
   $t/script \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o > /dev/null
+  /usr/lib/x86_64-linux-gnu/crtn.o
 
 $t/exe | grep -q 'Hello world'
 

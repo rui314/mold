@@ -55,6 +55,7 @@ struct Config {
   bool as_needed = false;
   bool export_dynamic = false;
   bool is_static = false;
+  bool perf = false;
   bool print_map = false;
   bool trace = false;
   int filler = -1;

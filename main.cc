@@ -814,6 +814,8 @@ int main(int argc, char **argv) {
       config.rpaths.push_back(arg);
     } else if (read_arg(args, arg, "version-script")) {
       parse_version_script(arg);
+    } else if (read_flag(args, "perf")) {
+      config.perf = true;
     } else if (read_arg(args, arg, "l")) {
       read_file(find_library(arg));
     } else if (read_arg(args, arg, "z")) {
@@ -1110,7 +1112,12 @@ int main(int argc, char **argv) {
   Counter num_dsos("num_dsos", out::dsos.size());
   Counter filesize_counter("filesize", filesize);
 
-  Counter::print();
-  Timer::print();
+  if (Counter::enabled)
+    Counter::print();
+  if (config.perf)
+    Timer::print();
+
+  std::cout << std::flush;
+  std::cerr << std::flush;
   _exit(0);
 }

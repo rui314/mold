@@ -53,7 +53,7 @@ EOF
   /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
   /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o > /dev/null
+  /usr/lib/x86_64-linux-gnu/crtn.o
 
 $t/exe | grep -q 'Hello world'
 

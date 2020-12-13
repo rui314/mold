@@ -18,7 +18,7 @@ local2:
 this_is_global:
 EOF
 
-../mold -o $t/exe $t/a.o $t/b.o > /dev/null
+../mold -o $t/exe $t/a.o $t/b.o
 
 readelf --symbols $t/exe | grep -q "
 Symbol table '.symtab' contains 21 entries:

@@ -19,13 +19,13 @@ cat <<EOF | cc -o $t/c.so -shared -fPIC -Wl,-soname,libbar.so -xc -
 int fn2() { return 42; }
 EOF
 
-../mold -o $t/exe $t/a.o $t/b.so $t/c.so > /dev/null
+../mold -o $t/exe $t/a.o $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
 fgrep -q 'Shared library: [libbar.so]' $t/readelf
 
-../mold -o $t/exe $t/a.o --as-needed $t/b.so $t/c.so > /dev/null
+../mold -o $t/exe $t/a.o --as-needed $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
