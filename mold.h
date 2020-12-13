@@ -1257,3 +1257,8 @@ inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
     ret.insert(ret.end(), v.begin(), v.end());
   return ret;
 }
+
+template <typename T, typename U>
+inline void erase(std::vector<T> &vec, U pred) {
+  vec.erase(std::remove_if(vec.begin(), vec.end(), pred), vec.end());
+}

@@ -115,11 +115,8 @@ static void resolve_symbols() {
     });
 
   // Eliminate unused archive members and as-needed DSOs.
-  auto callback = [](InputFile *file){ return !file->is_alive; };
-  out::objs.erase(std::remove_if(out::objs.begin(), out::objs.end(), callback),
-                  out::objs.end());
-  out::dsos.erase(std::remove_if(out::dsos.begin(), out::dsos.end(), callback),
-                  out::dsos.end());
+  erase(out::objs, [](InputFile *file){ return !file->is_alive; });
+  erase(out::dsos, [](InputFile *file){ return !file->is_alive; });
 }
 
 static void eliminate_comdats() {
@@ -405,10 +402,7 @@ static void fill_symbol_versions() {
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms = out::dynsym->symbols;
-
-  syms.erase(std::remove_if(syms.begin(), syms.end(),
-                            [](Symbol *sym){ return sym->ver_idx < 2; }),
-             syms.end());
+  erase(syms, [](Symbol *sym){ return sym->ver_idx < 2; });
 
   if (syms.empty())
     return;
@@ -975,9 +969,7 @@ int main(int argc, char **argv) {
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
 
-  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
-                                   [](OutputChunk *c) { return !c; }),
-                    out::chunks.end());
+  erase(out::chunks, [](OutputChunk *c) { return !c; });
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
@@ -1040,9 +1032,7 @@ int main(int argc, char **argv) {
   for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
-  out::chunks.erase(std::remove_if(out::chunks.begin(), out::chunks.end(),
-                                   [](OutputChunk *c) { return c->shdr.sh_size == 0; }),
-                    out::chunks.end());
+  erase(out::chunks, [](OutputChunk *c) { return c->shdr.sh_size == 0; });
 
   // Set section indices.
   for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
