@@ -37,41 +37,47 @@ void InputSection::copy_buf() {
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
+    case R_X86_64_8:
+      *loc = S + A;
+      break;
+    case R_X86_64_16:
+      *(u16 *)loc = S + A;
+      break;
+    case R_X86_64_32:
+    case R_X86_64_32S:
+      *(u32 *)loc = S + A;
+      break;
     case R_X86_64_64:
       *(u64 *)loc = S + A;
+      break;
+    case R_X86_64_PC8:
+      *loc = S + A - P;
+      break;
+    case R_X86_64_PC16:
+      *(u16 *)loc = S + A - P;
       break;
     case R_X86_64_PC32:
       *(u32 *)loc = S + A - P;
       break;
+    case R_X86_64_PC64:
+      *(u64 *)loc = S + A - P;
+      break;
     case R_X86_64_GOT32:
       *(u64 *)loc = G + A;
       break;
-    case R_X86_64_PLT32:
-      if (sym.plt_idx != -1)
-        *(u32 *)loc = L + A - P;
-      else
-        *(u32 *)loc = S + A - P;
+    case R_X86_64_GOTPC32:
+      *(u32 *)loc = GOT + A - P;
       break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
       *(u32 *)loc = G + GOT + A - P;
       break;
-    case R_X86_64_32:
-    case R_X86_64_32S:
-      *(u32 *)loc = S + A;
-      break;
-    case R_X86_64_16:
-      *(u16 *)loc = S + A;
-      break;
-    case R_X86_64_PC16:
-      *(u16 *)loc = S + A - P;
-      break;
-    case R_X86_64_8:
-      *loc = S + A;
-      break;
-    case R_X86_64_PC8:
-      *loc = S + A - P;
+    case R_X86_64_PLT32:
+      if (sym.plt_idx != -1)
+        *(u32 *)loc = L + A - P;
+      else
+        *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
       if (sym.tlsgd_idx != -1) {
@@ -99,22 +105,16 @@ void InputSection::copy_buf() {
         i++;
       }
       break;
-    case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
+    case R_X86_64_DTPOFF32:
       *(u32 *)loc = S + A - out::tls_end;
       break;
-    case R_X86_64_DTPOFF64:
     case R_X86_64_TPOFF64:
+    case R_X86_64_DTPOFF64:
       *(u64 *)loc = S + A - out::tls_end;
       break;
     case R_X86_64_GOTTPOFF:
       *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
-      break;
-    case R_X86_64_PC64:
-      *(u64 *)loc = S + A - P;
-      break;
-    case R_X86_64_GOTPC32:
-      *(u32 *)loc = GOT + A - P;
       break;
     default:
       error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
