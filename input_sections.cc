@@ -47,10 +47,10 @@ void InputSection::copy_buf() {
       *(u64 *)loc = G + A;
       break;
     case R_X86_64_PLT32:
-      if (sym.plt_idx == -1)
-        *(u32 *)loc = S + A - P;
-      else
+      if (sym.plt_idx != -1)
         *(u32 *)loc = L + A - P;
+      else
+        *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
@@ -74,7 +74,9 @@ void InputSection::copy_buf() {
       *loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
-      if (sym.tlsgd_idx == -1) {
+      if (sym.tlsgd_idx != -1) {
+        *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
+      } else {
         // Relax GD to LE
         static const u8 insn[] = {
           0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
@@ -83,20 +85,18 @@ void InputSection::copy_buf() {
         memcpy(loc - 4, insn, sizeof(insn));
         *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
         i++;
-      } else {
-        *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
       }
       break;
     case R_X86_64_TLSLD:
-      if (sym.tlsld_idx == -1) {
+      if (sym.tlsld_idx != -1) {
+        *(u32 *)loc = sym.get_tlsld_addr() + A - P;
+      } else {
         // Relax LD to LE
         static const u8 insn[] = {
           0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
         };
         memcpy(loc - 3, insn, sizeof(insn));
         i++;
-      } else {
-        *(u32 *)loc = sym.get_tlsld_addr() + A - P;
       }
       break;
     case R_X86_64_DTPOFF32:
