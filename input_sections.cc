@@ -181,7 +181,8 @@ void InputSection::scan_relocations() {
       }
       break;
     case R_X86_64_TLSGD:
-      assert(rels[i + 1].r_type == R_X86_64_PLT32);
+      if (rels[i + 1].r_type != R_X86_64_PLT32)
+        error(to_string(this) + ": TLSGD reloc not followed by PLT32");
       if (sym.is_imported) {
         std::lock_guard lock(sym.mu);
         sym.needs_tlsgd = true;
@@ -190,7 +191,8 @@ void InputSection::scan_relocations() {
       }
       break;
     case R_X86_64_TLSLD:
-      assert(rels[i + 1].r_type == R_X86_64_PLT32);
+      if (rels[i + 1].r_type != R_X86_64_PLT32)
+        error(to_string(this) + ": TLSLD reloc not followed by PLT32");
       if (sym.is_imported) {
         std::lock_guard lock(sym.mu);
         sym.needs_tlsld = true;
