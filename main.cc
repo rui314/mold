@@ -765,6 +765,8 @@ int main(int argc, char **argv) {
       config.output = arg;
     } else if (read_arg(args, arg, "dynamic-linker")) {
       config.dynamic_linker = arg;
+    } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
+      config.entry = arg;
     } else if (read_flag(args, "print-map")) {
       config.print_map = true;
     } else if (read_arg(args, arg, "thread-count")) {

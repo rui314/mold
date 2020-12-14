@@ -51,6 +51,7 @@ class Symbol;
 
 struct Config {
   std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
+  std::string entry = "_start";
   std::string output;
   bool as_needed = false;
   bool export_dynamic = false;
