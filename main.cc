@@ -765,6 +765,8 @@ int main(int argc, char **argv) {
       config.output = arg;
     } else if (read_arg(args, arg, "dynamic-linker")) {
       config.dynamic_linker = arg;
+    } else if (read_flag(args, "export-dynamic")) {
+      config.export_dynamic = true;
     } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
       config.entry = arg;
     } else if (read_flag(args, "print-map")) {
@@ -785,8 +787,6 @@ int main(int argc, char **argv) {
       config.sysroot = arg;
     } else if (read_flag(args, "trace")) {
       config.trace = true;
-    } else if (read_flag(args, "export-dynamic")) {
-      config.export_dynamic = true;
     } else if (read_flag(args, "as-needed")) {
       config.as_needed = true;
     } else if (read_flag(args, "no-as-needed")) {
