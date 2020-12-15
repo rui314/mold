@@ -127,6 +127,7 @@ void ObjectFile::initialize_sections() {
     InputSection *target = sections[shdr.sh_info];
     if (target) {
       target->rels = get_data<ElfRela>(shdr);
+      target->rel_types.resize(target->rels.size());
       target->rel_pieces.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {

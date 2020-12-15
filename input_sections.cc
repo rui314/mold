@@ -5,6 +5,34 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type)) {}
 
+static int get_rel_size(u32 r_type) {
+  switch (r_type) {
+  case R_X86_64_NONE:
+    return 0;
+  case R_X86_64_32:
+  case R_X86_64_32S:
+  case R_X86_64_PC32:
+  case R_X86_64_GOT32:
+  case R_X86_64_GOTPC32:
+  case R_X86_64_GOTPCREL:
+  case R_X86_64_GOTPCRELX:
+  case R_X86_64_REX_GOTPCRELX:
+  case R_X86_64_PLT32:
+  case R_X86_64_TLSGD:
+  case R_X86_64_TLSLD:
+  case R_X86_64_TPOFF32:
+  case R_X86_64_DTPOFF32:
+  case R_X86_64_GOTTPOFF:
+    return 4;
+  case R_X86_64_64:
+  case R_X86_64_PC64:
+  case R_X86_64_TPOFF64:
+  case R_X86_64_DTPOFF64:
+    return 8;
+  }
+  unreachable();
+}
+
 void InputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
@@ -33,80 +61,76 @@ void InputSection::copy_buf() {
 #define L   sym.get_plt_addr()
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
-#define SL  ((sym.is_imported && sym.needs_plt) ? L : S)
 
-    switch (rel.r_type) {
-    case R_X86_64_NONE:
+    int sz = get_rel_size(rel.r_type);
+
+    switch (rel_types[i]) {
+    case R_NONE:
       break;
-    case R_X86_64_32:
-    case R_X86_64_32S:
-      *(u32 *)loc = SL + A;
+    case R_ABS:
+      if (sz == 4)
+        *(u32 *)loc = S + A;
+      else
+        *(u64 *)loc = S + A;
       break;
-    case R_X86_64_64:
-      *(u64 *)loc = SL + A;
+    case R_PC:
+      if (sz == 4)
+        *(u32 *)loc = S + A - P;
+      else
+        *(u64 *)loc = S + A - P;
       break;
-    case R_X86_64_PC32:
-      *(u32 *)loc = SL + A - P;
-      break;
-    case R_X86_64_PC64:
-      *(u64 *)loc = SL + A - P;
-      break;
-    case R_X86_64_GOT32:
+    case R_GOT:
       *(u32 *)loc = G + A;
       break;
-    case R_X86_64_GOTPC32:
+    case R_GOTPC:
       *(u32 *)loc = GOT + A - P;
       break;
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
+    case R_GOTPCREL:
       *(u32 *)loc = G + GOT + A - P;
       break;
-    case R_X86_64_PLT32:
-      if (sym.needs_plt)
+    case R_PLT:
+      if (sz == 4)
         *(u32 *)loc = L + A - P;
       else
-        *(u32 *)loc = S + A - P;
+        *(u64 *)loc = L + A - P;
       break;
-    case R_X86_64_TLSGD:
-      if (sym.needs_tlsgd) {
-        *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
-      } else {
-        // Relax GD to LE
-        static const u8 insn[] = {
-          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-          0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff, %rax
-        };
-        memcpy(loc - 4, insn, sizeof(insn));
-        *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
-        i++;
-      }
+    case R_TLSGD:
+      *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
       break;
-    case R_X86_64_TLSLD:
-      if (sym.needs_tlsld) {
-        *(u32 *)loc = sym.get_tlsld_addr() + A - P;
-      } else {
-        // Relax LD to LE
-        static const u8 insn[] = {
-          0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-        };
-        memcpy(loc - 3, insn, sizeof(insn));
-        i++;
-      }
+    case R_TLSGD_RELAX_LE: {
+      // Relax GD to LE
+      static const u8 insn[] = {
+        0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff, %rax
+      };
+      memcpy(loc - 4, insn, sizeof(insn));
+      *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
+      i++;
       break;
-    case R_X86_64_TPOFF32:
-    case R_X86_64_DTPOFF32:
-      *(u32 *)loc = S + A - out::tls_end;
+    }
+    case R_TLSLD:
+      *(u32 *)loc = sym.get_tlsld_addr() + A - P;
       break;
-    case R_X86_64_TPOFF64:
-    case R_X86_64_DTPOFF64:
-      *(u64 *)loc = S + A - out::tls_end;
+    case R_TLSLD_RELAX_LE: {
+      // Relax LD to LE
+      static const u8 insn[] = {
+        0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      };
+      memcpy(loc - 3, insn, sizeof(insn));
+      i++;
       break;
-    case R_X86_64_GOTTPOFF:
+    }
+    case R_TPOFF:
+      if (sz == 4)
+        *(u32 *)loc = S + A - out::tls_end;
+      else
+        *(u64 *)loc = S + A - out::tls_end;
+      break;
+    case R_GOTTPOFF:
       *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
       break;
     default:
-      error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
+      unreachable();
     }
 
 #undef S
@@ -115,7 +139,6 @@ void InputSection::copy_buf() {
 #undef L
 #undef G
 #undef GOT
-#undef SL
   }
 
   static Counter counter("relocs");
@@ -137,33 +160,66 @@ void InputSection::scan_relocations() {
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
+      rel_types[i] = R_NONE;
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
     case R_X86_64_64:
+      if (sym.is_imported) {
+        std::lock_guard lock(sym.mu);
+        if (sym.type == STT_OBJECT) {
+          sym.needs_copyrel = true;
+          rel_types[i] = R_ABS;
+        } else {
+          sym.needs_plt = true;
+          rel_types[i] = R_PLT;
+        }
+      } else {
+        rel_types[i] = R_ABS;
+      }
+      break;
     case R_X86_64_PC32:
     case R_X86_64_PC64:
       if (sym.is_imported) {
         std::lock_guard lock(sym.mu);
-        if (sym.type == STT_OBJECT)
+        if (sym.type == STT_OBJECT) {
           sym.needs_copyrel = true;
-        else
+          rel_types[i] = R_PC;
+        } else {
           sym.needs_plt = true;
+          rel_types[i] = R_PLT;
+        }
+      } else {
+        rel_types[i] = R_PC;
       }
       break;
-    case R_X86_64_GOT32:
-    case R_X86_64_GOTPC32:
+    case R_X86_64_GOT32:{
+      std::lock_guard lock(sym.mu);
+      sym.needs_got = true;
+      rel_types[i] = R_GOT;
+      break;
+    }
+    case R_X86_64_GOTPC32: {
+      std::lock_guard lock(sym.mu);
+      sym.needs_got = true;
+      rel_types[i] = R_GOTPC;
+      break;
+    }
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX: {
       std::lock_guard lock(sym.mu);
       sym.needs_got = true;
+      rel_types[i] = R_GOTPCREL;
       break;
     }
     case R_X86_64_PLT32:
       if (sym.is_imported || sym.type == STT_GNU_IFUNC) {
         std::lock_guard lock(sym.mu);
         sym.needs_plt = true;
+        rel_types[i] = R_PLT;
+      } else {
+        rel_types[i] = R_PC;
       }
       break;
     case R_X86_64_TLSGD:
@@ -172,7 +228,9 @@ void InputSection::scan_relocations() {
       if (sym.is_imported) {
         std::lock_guard lock(sym.mu);
         sym.needs_tlsgd = true;
+        rel_types[i] = R_TLSGD;
       } else {
+        rel_types[i] = R_TLSGD_RELAX_LE;
         i++;
       }
       break;
@@ -182,18 +240,22 @@ void InputSection::scan_relocations() {
       if (sym.is_imported) {
         std::lock_guard lock(sym.mu);
         sym.needs_tlsld = true;
+        rel_types[i] = R_TLSLD;
       } else {
+        rel_types[i] = R_TLSLD_RELAX_LE;
         i++;
       }
       break;
     case R_X86_64_TPOFF32:
-    case R_X86_64_TPOFF64:
     case R_X86_64_DTPOFF32:
+    case R_X86_64_TPOFF64:
     case R_X86_64_DTPOFF64:
+      rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF: {
       std::lock_guard lock(sym.mu);
       sym.needs_gottpoff = true;
+      rel_types[i] = R_GOTTPOFF;
       break;
     }
     default:

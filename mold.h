@@ -520,6 +520,22 @@ protected:
   InputChunk(ObjectFile *file, const ElfShdr &shdr, std::string_view name);
 };
 
+enum RelType : u8 {
+  R_NONE,
+  R_ABS,
+  R_PC,
+  R_GOT,
+  R_GOTPC,
+  R_GOTPCREL,
+  R_PLT,
+  R_TLSGD,
+  R_TLSGD_RELAX_LE,
+  R_TLSLD,
+  R_TLSLD_RELAX_LE,
+  R_TPOFF,
+  R_GOTTPOFF,
+};
+
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name)
@@ -531,6 +547,7 @@ public:
 
   std::span<ElfRela> rels;
   std::vector<StringPieceRef> rel_pieces;
+  std::vector<RelType> rel_types;
   bool is_comdat_member = false;
   bool is_alive = true;
 };
