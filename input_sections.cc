@@ -164,35 +164,37 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
-    case R_X86_64_64:
-      if (sym.is_imported) {
-        std::lock_guard lock(sym.mu);
-        if (sym.type == STT_OBJECT) {
-          sym.needs_copyrel = true;
-          rel_types[i] = R_ABS;
-        } else {
-          sym.needs_plt = true;
-          rel_types[i] = R_PLT;
-        }
-      } else {
+    case R_X86_64_64: {
+      if (!sym.is_imported) {
         rel_types[i] = R_ABS;
+        break;
       }
-      break;
-    case R_X86_64_PC32:
-    case R_X86_64_PC64:
-      if (sym.is_imported) {
-        std::lock_guard lock(sym.mu);
-        if (sym.type == STT_OBJECT) {
-          sym.needs_copyrel = true;
-          rel_types[i] = R_PC;
-        } else {
-          sym.needs_plt = true;
-          rel_types[i] = R_PLT;
-        }
+      std::lock_guard lock(sym.mu);
+      if (sym.type == STT_OBJECT) {
+        sym.needs_copyrel = true;
+        rel_types[i] = R_ABS;
       } else {
-        rel_types[i] = R_PC;
+        sym.needs_plt = true;
+        rel_types[i] = R_PLT;
       }
       break;
+    }
+    case R_X86_64_PC32:
+    case R_X86_64_PC64: {
+      if (!sym.is_imported) {
+        rel_types[i] = R_PC;
+        break;
+      }
+      std::lock_guard lock(sym.mu);
+      if (sym.type == STT_OBJECT) {
+        sym.needs_copyrel = true;
+        rel_types[i] = R_PC;
+      } else {
+        sym.needs_plt = true;
+        rel_types[i] = R_PLT;
+      }
+      break;
+    }
     case R_X86_64_GOT32:{
       std::lock_guard lock(sym.mu);
       sym.needs_got = true;
