@@ -33,34 +33,23 @@ void InputSection::copy_buf() {
 #define L   sym.get_plt_addr()
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
+#define SL  ((sym.is_imported && sym.needs_plt) ? L : S)
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
-    case R_X86_64_8:
-      *loc = S + A;
-      break;
-    case R_X86_64_16:
-      *(u16 *)loc = S + A;
-      break;
     case R_X86_64_32:
     case R_X86_64_32S:
-      *(u32 *)loc = S + A;
+      *(u32 *)loc = SL + A;
       break;
     case R_X86_64_64:
-      *(u64 *)loc = S + A;
-      break;
-    case R_X86_64_PC8:
-      *loc = S + A - P;
-      break;
-    case R_X86_64_PC16:
-      *(u16 *)loc = S + A - P;
+      *(u64 *)loc = SL + A;
       break;
     case R_X86_64_PC32:
-      *(u32 *)loc = S + A - P;
+      *(u32 *)loc = SL + A - P;
       break;
     case R_X86_64_PC64:
-      *(u64 *)loc = S + A - P;
+      *(u64 *)loc = SL + A - P;
       break;
     case R_X86_64_GOT32:
       *(u64 *)loc = G + A;
@@ -74,13 +63,13 @@ void InputSection::copy_buf() {
       *(u32 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_PLT32:
-      if (sym.plt_idx != -1)
+      if (sym.needs_plt)
         *(u32 *)loc = L + A - P;
       else
         *(u32 *)loc = S + A - P;
       break;
     case R_X86_64_TLSGD:
-      if (sym.tlsgd_idx != -1) {
+      if (sym.needs_tlsgd) {
         *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
       } else {
         // Relax GD to LE
@@ -94,7 +83,7 @@ void InputSection::copy_buf() {
       }
       break;
     case R_X86_64_TLSLD:
-      if (sym.tlsld_idx != -1) {
+      if (sym.needs_tlsld) {
         *(u32 *)loc = sym.get_tlsld_addr() + A - P;
       } else {
         // Relax LD to LE
@@ -126,6 +115,7 @@ void InputSection::copy_buf() {
 #undef L
 #undef G
 #undef GOT
+#undef SL
   }
 
   static Counter counter("relocs");
@@ -148,13 +138,9 @@ void InputSection::scan_relocations() {
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
-    case R_X86_64_8:
-    case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
     case R_X86_64_64:
-    case R_X86_64_PC8:
-    case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
       if (sym.is_imported) {
