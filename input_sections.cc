@@ -52,7 +52,7 @@ void InputSection::copy_buf() {
       *(u64 *)loc = SL + A - P;
       break;
     case R_X86_64_GOT32:
-      *(u64 *)loc = G + A;
+      *(u32 *)loc = G + A;
       break;
     case R_X86_64_GOTPC32:
       *(u32 *)loc = GOT + A - P;
