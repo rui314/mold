@@ -10,7 +10,7 @@ void OutputEhdr::copy_buf() {
   hdr.e_ident[EI_CLASS] = ELFCLASS64;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
-  hdr.e_type = ET_EXEC;
+  hdr.e_type = config.pie ? ET_DYN : ET_EXEC;
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
   hdr.e_entry = Symbol::intern(config.entry)->get_addr();
@@ -142,9 +142,14 @@ void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
   int n = 0;
-  for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported)
-      n++;
+
+  if (config.pie) {
+    n = out::got->got_syms.size();
+  } else {
+    for (Symbol *sym : out::got->got_syms)
+      if (sym->is_imported)
+        n++;
+  }
 
   n += out::got->tlsgd_syms.size() * 2;
   n += out::got->tlsld_syms.size();
@@ -161,18 +166,25 @@ void RelDynSection::update_shdr() {
 
 void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
+  memset(rel, 0, shdr.sh_size);
 
   auto write = [&](Symbol *sym, u8 type, u64 offset) {
-    memset(rel, 0, sizeof(*rel));
     rel->r_sym = sym->dynsym_idx;
     rel->r_type = type;
     rel->r_offset = offset;
     rel++;
   };
 
-  for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported)
+  for (Symbol *sym : out::got->got_syms) {
+    if (sym->is_imported) {
       write(sym, R_X86_64_GLOB_DAT, sym->get_got_addr());
+    } else if (config.pie) {
+      rel->r_type = R_X86_64_RELATIVE;
+      rel->r_offset = sym->get_got_addr();
+      rel->r_addend = sym->get_addr();
+      rel++;
+    }
+  }
 
   for (Symbol *sym : out::got->tlsgd_syms) {
     write(sym, R_X86_64_DTPMOD64, sym->get_tlsgd_addr());
@@ -188,6 +200,14 @@ void RelDynSection::copy_buf() {
 
   for (Symbol *sym : out::copyrel->symbols)
     write(sym, R_X86_64_COPY, sym->get_addr());
+}
+
+void RelDynSection::sort() {
+  ElfRela *begin = (ElfRela *)(out::buf + shdr.sh_offset);
+  ElfRela *end = begin + shdr.sh_size / sizeof(ElfRela);
+  std::stable_sort(begin, end, [](const ElfRela &a, const ElfRela &b) {
+    return a.r_type == R_X86_64_RELATIVE && b.r_type != R_X86_64_RELATIVE;
+  });
 }
 
 void StrtabSection::update_shdr() {
@@ -307,6 +327,9 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
+
+  if (config.pie)
+    define(DT_FLAGS_1, DF_1_PIE);
 
   auto find = [](std::string_view name) -> OutputChunk * {
     for (OutputChunk *chunk : out::chunks)

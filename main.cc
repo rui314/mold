@@ -797,6 +797,7 @@ int main(int argc, char **argv) {
       parse_version_script(arg);
     } else if (read_flag(args, "pie")) {
       config.pie = true;
+      config.image_base = 0;
     } else if (read_flag(args, "perf")) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
@@ -1056,6 +1057,11 @@ int main(int argc, char **argv) {
       chunk->copy_buf();
     });
   }
+
+#if 0
+  if (out::reldyn)
+    out::reldyn->sort();
+#endif
 
   // Zero-clear paddings between sections
   clear_padding(filesize);

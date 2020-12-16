@@ -74,6 +74,11 @@ void InputSection::copy_buf() {
     case R_NONE:
       break;
     case R_ABS:
+      if (sz == 4)
+        *(u32 *)loc = S + A;
+      else
+        *(u64 *)loc = S + A;
+
       if (config.pie) {
         assert(sz == 8);
         memset(dynrel, 0, sizeof(*dynrel));
@@ -81,13 +86,7 @@ void InputSection::copy_buf() {
         dynrel->r_type = R_X86_64_RELATIVE;
         dynrel->r_addend = S + A;
         dynrel++;
-        break;
       }
-
-      if (sz == 4)
-        *(u32 *)loc = S + A;
-      else
-        *(u64 *)loc = S + A;
       break;
     case R_DYN:
       memset(dynrel, 0, sizeof(*dynrel));

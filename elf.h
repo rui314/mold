@@ -43,12 +43,12 @@ static constexpr u32 SHF_ALLOC = 0x2;
 static constexpr u32 SHF_EXECINSTR = 0x4;
 static constexpr u32 SHF_MERGE = 0x10;
 static constexpr u32 SHF_STRINGS = 0x20;
-static constexpr u32 SHF_INFO_LINK = 0x40U;
-static constexpr u32 SHF_LINK_ORDER = 0x80U;
-static constexpr u32 SHF_GROUP = 0x200U;
-static constexpr u32 SHF_TLS = 0x400U;
-static constexpr u32 SHF_COMPRESSED = 0x800U;
-static constexpr u32 SHF_EXCLUDE = 0x80000000U;
+static constexpr u32 SHF_INFO_LINK = 0x40;
+static constexpr u32 SHF_LINK_ORDER = 0x80;
+static constexpr u32 SHF_GROUP = 0x200;
+static constexpr u32 SHF_TLS = 0x400;
+static constexpr u32 SHF_COMPRESSED = 0x800;
+static constexpr u32 SHF_EXCLUDE = 0x80000000;
 
 static constexpr u32 GRP_COMDAT = 1;
 
@@ -138,11 +138,23 @@ static constexpr u32 DT_FINI_ARRAY = 26;
 static constexpr u32 DT_INIT_ARRAYSZ = 27;
 static constexpr u32 DT_FINI_ARRAYSZ = 28;
 static constexpr u32 DT_RUNPATH = 29;
-static constexpr u32 DT_VERSYM = 0x6FFFFFF0;
-static constexpr u32 DT_VERDEF = 0x6FFFFFFC;
-static constexpr u32 DT_VERDEFNUM = 0x6FFFFFFD;
-static constexpr u32 DT_VERNEED = 0x6FFFFFFE;
-static constexpr u32 DT_VERNEEDNUM = 0x6FFFFFFF;
+static constexpr u32 DT_VERSYM = 0x6ffffff0;
+static constexpr u32 DT_RELACOUNT = 0x6ffffff9;
+static constexpr u32 DT_RELCOUNT = 0x6ffffffa;
+static constexpr u32 DT_FLAGS_1 = 0x6ffffffb;
+static constexpr u32 DT_VERDEF = 0x6ffffffc;
+static constexpr u32 DT_VERDEFNUM = 0x6ffffffd;
+static constexpr u32 DT_VERNEED = 0x6ffffffe;
+static constexpr u32 DT_VERNEEDNUM = 0x6fffffff;
+
+static constexpr u32 DF_ORIGIN = 0x01;
+static constexpr u32 DF_SYMBOLIC = 0x02;
+static constexpr u32 DF_TEXTREL = 0x04;
+static constexpr u32 DF_BIND_NOW = 0x08;
+static constexpr u32 DF_STATIC_TLS = 0x10;
+
+static constexpr u32 DF_1_NOW = 0x00000001;
+static constexpr u32 DF_1_PIE = 0x08000000;
 
 static constexpr u32 R_X86_64_NONE = 0;
 static constexpr u32 R_X86_64_64 = 1;

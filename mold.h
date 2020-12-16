@@ -362,18 +362,6 @@ public:
   u32 idx;
 };
 
-class SpecialSection : public OutputChunk {
-public:
-  SpecialSection(std::string_view name, u32 type, u64 flags, u32 align = 1, u32 entsize = 0)
-    : OutputChunk(SYNTHETIC) {
-    this->name = name;
-    shdr.sh_type = type;
-    shdr.sh_flags = flags;
-    shdr.sh_addralign = align;
-    shdr.sh_entsize = entsize;
-  }
-};
-
 class GotSection : public OutputChunk {
 public:
   GotSection() : OutputChunk(SYNTHETIC) {
@@ -450,6 +438,7 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
+  void sort();
 };
 
 class StrtabSection : public OutputChunk {
