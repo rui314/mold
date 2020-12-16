@@ -31,7 +31,7 @@ If a program is statically-linked, there's no dynamic loader that
 rewrites the GOT entries. Therefore, if a program is
 statically-linked, a libc's startup routine does that on behalf of the
 dynamic loader. Concretely, a startup routine interprets all dynamic
-relocations between `__rela_iplt_start` and `__rela_iplt_start`
+relocations between `__rela_iplt_start` and `__rela_iplt_stop`
 symbols.  It is linker's responsibility to emit dynamic relocations
 for IFUNC symbols even if it is linking a statically-linked program
 and mark the beginning and the ending of a `.rela.dyn` section with
