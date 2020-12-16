@@ -59,6 +59,7 @@ struct Config {
   bool export_dynamic = false;
   bool is_static = false;
   bool perf = false;
+  bool pie = false;
   bool print_map = false;
   bool trace = false;
   int filler = -1;
@@ -156,6 +157,7 @@ enum {
   NEEDS_TLSGD    = 1 << 3,
   NEEDS_TLSLD    = 1 << 4,
   NEEDS_COPYREL  = 1 << 5,
+  NEEDS_DYNSYM   = 1 << 6,
 };
 
 class Symbol {
@@ -231,6 +233,7 @@ protected:
 enum RelType : u8 {
   R_NONE,
   R_ABS,
+  R_DYN,
   R_PC,
   R_GOT,
   R_GOTPC,
@@ -256,6 +259,7 @@ public:
   std::span<ElfRela> rels;
   std::vector<StringPieceRef> rel_pieces;
   std::vector<RelType> rel_types;
+  u64 reldyn_offset = 0;
   bool is_comdat_member = false;
   bool is_alive = true;
 };
@@ -691,6 +695,9 @@ public:
   int first_global = 0;
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
+
+  u64 num_reldyn = 0;
+  u64 reldyn_offset = 0;
 
   u64 local_symtab_offset = 0;
   u64 local_symtab_size = 0;

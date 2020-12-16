@@ -299,9 +299,10 @@ static void scan_rels() {
 
   // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (InputSection *isec : file->sections)
+    for (InputSection *isec : file->sections) {
       if (isec)
         isec->scan_relocations();
+    }
   });
 
   // If there was a relocation that refers an undefined symbol,
@@ -332,7 +333,7 @@ static void scan_rels() {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
-    if (sym->is_imported)
+    if (sym->is_imported || (sym->flags & NEEDS_DYNSYM))
       out::dynsym->add_symbol(sym);
 
     if (sym->flags & NEEDS_GOT)

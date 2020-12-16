@@ -44,6 +44,8 @@ void InputSection::copy_buf() {
   // Apply relocations
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
   u64 sh_addr = output_section->shdr.sh_addr + offset;
+  ElfRela *dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
+                                file->reldyn_offset + reldyn_offset);
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
@@ -72,6 +74,14 @@ void InputSection::copy_buf() {
         *(u32 *)loc = S + A;
       else
         *(u64 *)loc = S + A;
+      break;
+    case R_DYN:
+      memset(dynrel, 0, sizeof(*dynrel));
+      dynrel->r_offset = P;
+      dynrel->r_type = R_X86_64_64;
+      dynrel->r_sym = sym.dynsym_idx;
+      dynrel->r_addend = A;
+      dynrel++;
       break;
     case R_PC:
       if (sz == 4)
@@ -149,6 +159,8 @@ void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
+  reldyn_offset = file->num_reldyn * sizeof(ElfRela);
+
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
@@ -164,7 +176,11 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_32:
     case R_X86_64_32S:
-    case R_X86_64_64:
+      if (config.pie)
+        error(to_string(this) + ": R_X86_64_32 relocation against symbol `" +
+              std::string(sym.name) + "' can not be used when making a PIE object;" +
+              " recompile with -fPIE");
+
       if (!sym.is_imported) {
         rel_types[i] = R_ABS;
         break;
@@ -176,6 +192,17 @@ void InputSection::scan_relocations() {
       } else {
         sym.flags |= NEEDS_PLT;
         rel_types[i] = R_PLT;
+      }
+      break;
+    case R_X86_64_64:
+      if (sym.is_imported) {
+        sym.flags |= NEEDS_DYNSYM;
+        rel_types[i] = R_DYN;
+        file->num_reldyn++;
+      } else {
+        rel_types[i] = R_ABS;
+        if (config.pie)
+          file->num_reldyn++;
       }
       break;
     case R_X86_64_PC32:

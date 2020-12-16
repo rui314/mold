@@ -150,6 +150,12 @@ void RelDynSection::update_shdr() {
   n += out::got->tlsld_syms.size();
   n += out::got->tlsld_syms.size();
   n += out::copyrel->symbols.size();
+
+  for (ObjectFile *file : out::objs) {
+    file->reldyn_offset = n * sizeof(ElfRela);
+    n += file->num_reldyn;
+  }
+
   shdr.sh_size = n * sizeof(ElfRela);
 }
 
