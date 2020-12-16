@@ -326,8 +326,7 @@ static void scan_rels() {
   tbb::parallel_for(0, (int)files.size(), [&](int i) {
     for (Symbol *sym : files[i]->symbols)
       if (sym->file == files[i])
-        if (sym->needs_got || sym->needs_plt || sym->needs_gottpoff ||
-            sym->needs_tlsgd || sym->needs_tlsld || sym->needs_copyrel)
+        if (sym->flags)
           vec[i].push_back(sym);
   });
 
@@ -336,22 +335,22 @@ static void scan_rels() {
     if (sym->is_imported)
       out::dynsym->add_symbol(sym);
 
-    if (sym->needs_got)
+    if (sym->flags & NEEDS_GOT)
       out::got->add_got_symbol(sym);
 
-    if (sym->needs_plt)
+    if (sym->flags & NEEDS_PLT)
       out::plt->add_symbol(sym);
 
-    if (sym->needs_gottpoff)
+    if (sym->flags & NEEDS_GOTTPOFF)
       out::got->add_gottpoff_symbol(sym);
 
-    if (sym->needs_tlsgd)
+    if (sym->flags & NEEDS_TLSGD)
       out::got->add_tlsgd_symbol(sym);
 
-    if (sym->needs_tlsld)
+    if (sym->flags & NEEDS_TLSLD)
       out::got->add_tlsld_symbol(sym);
 
-    if (sym->needs_copyrel) {
+    if (sym->flags & NEEDS_COPYREL) {
       out::copyrel->add_symbol(sym);
       assert(sym->file->is_dso);
 

@@ -149,6 +149,15 @@ struct StringPieceRef {
   i32 addend = 0;
 };
 
+enum {
+  NEEDS_GOT      = 1 << 0,
+  NEEDS_PLT      = 1 << 1,
+  NEEDS_GOTTPOFF = 1 << 2,
+  NEEDS_TLSGD    = 1 << 3,
+  NEEDS_TLSLD    = 1 << 4,
+  NEEDS_COPYREL  = 1 << 5,
+};
+
 class Symbol {
 public:
   Symbol(std::string_view name) : name(name) {}
@@ -195,13 +204,7 @@ public:
   u8 is_undef_weak : 1 = false;
   u8 traced : 1 = false;
 
-  u8 needs_got : 1 = false;
-  u8 needs_plt : 1 = false;
-  u8 needs_gottpoff : 1 = false;
-  u8 needs_tlsgd : 1 = false;
-  u8 needs_tlsld : 1 = false;
-  u8 needs_copyrel : 1 = false;
-
+  std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
   u8 type = STT_NOTYPE;
 };
 
