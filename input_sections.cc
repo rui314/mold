@@ -44,8 +44,12 @@ void InputSection::copy_buf() {
   // Apply relocations
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
   u64 sh_addr = output_section->shdr.sh_addr + offset;
-  ElfRela *dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
-                                file->reldyn_offset + reldyn_offset);
+
+  ElfRela *dynrel = nullptr;
+  if (out::reldyn) {
+    dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
+                         file->reldyn_offset + reldyn_offset);
+  }
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
@@ -70,6 +74,16 @@ void InputSection::copy_buf() {
     case R_NONE:
       break;
     case R_ABS:
+      if (config.pie) {
+        assert(sz == 8);
+        memset(dynrel, 0, sizeof(*dynrel));
+        dynrel->r_offset = P;
+        dynrel->r_type = R_X86_64_RELATIVE;
+        dynrel->r_addend = S + A;
+        dynrel++;
+        break;
+      }
+
       if (sz == 4)
         *(u32 *)loc = S + A;
       else

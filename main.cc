@@ -795,6 +795,8 @@ int main(int argc, char **argv) {
       config.rpaths.push_back(arg);
     } else if (read_arg(args, arg, "version-script")) {
       parse_version_script(arg);
+    } else if (read_flag(args, "pie")) {
+      config.pie = true;
     } else if (read_flag(args, "perf")) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
@@ -806,7 +808,6 @@ int main(int argc, char **argv) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
-    } else if (read_flag(args, "pie")) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
     } else if (args[0][0] == '-') {
