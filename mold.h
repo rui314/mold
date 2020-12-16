@@ -233,6 +233,7 @@ protected:
 enum RelType : u8 {
   R_NONE,
   R_ABS,
+  R_ZERO,
   R_DYN,
   R_PC,
   R_GOT,

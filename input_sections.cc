@@ -88,6 +88,12 @@ void InputSection::copy_buf() {
         dynrel++;
       }
       break;
+    case R_ZERO:
+      if (sz == 4)
+        *(u32 *)loc = 0;
+      else
+        *(u64 *)loc = 0;
+      break;
     case R_DYN:
       memset(dynrel, 0, sizeof(*dynrel));
       dynrel->r_offset = P;
@@ -200,18 +206,20 @@ void InputSection::scan_relocations() {
       }
 
       if (sym.type == STT_OBJECT) {
-        sym.flags |= NEEDS_COPYREL;
         rel_types[i] = R_ABS;
+        sym.flags |= NEEDS_COPYREL;
       } else {
-        sym.flags |= NEEDS_PLT;
         rel_types[i] = R_PLT;
+        sym.flags |= NEEDS_PLT;
       }
       break;
     case R_X86_64_64:
       if (sym.is_imported) {
-        sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_DYN;
+        sym.flags |= NEEDS_DYNSYM;
         file->num_reldyn++;
+      } else if (sym.is_undef_weak) {
+        rel_types[i] = R_ZERO;
       } else {
         rel_types[i] = R_ABS;
         if (config.pie)
@@ -226,31 +234,31 @@ void InputSection::scan_relocations() {
       }
 
       if (sym.type == STT_OBJECT) {
-        sym.flags |= NEEDS_COPYREL;
         rel_types[i] = R_PC;
+        sym.flags |= NEEDS_COPYREL;
       } else {
-        sym.flags |= NEEDS_PLT;
         rel_types[i] = R_PLT;
+        sym.flags |= NEEDS_PLT;
       }
       break;
     case R_X86_64_GOT32:
-      sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOT;
+      sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_GOTPC32:
-      sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPC;
+      sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPCREL;
+      sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
       if (sym.is_imported || sym.type == STT_GNU_IFUNC) {
-        sym.flags |= NEEDS_PLT;
         rel_types[i] = R_PLT;
+        sym.flags |= NEEDS_PLT;
       } else {
         rel_types[i] = R_PC;
       }
@@ -260,8 +268,8 @@ void InputSection::scan_relocations() {
         error(to_string(this) + ": TLSGD reloc not followed by PLT32");
 
       if (sym.is_imported) {
-        sym.flags |= NEEDS_TLSGD;
         rel_types[i] = R_TLSGD;
+        sym.flags |= NEEDS_TLSGD;
       } else {
         rel_types[i] = R_TLSGD_RELAX_LE;
         i++;
@@ -272,8 +280,8 @@ void InputSection::scan_relocations() {
         error(to_string(this) + ": TLSLD reloc not followed by PLT32");
 
       if (sym.is_imported) {
-        sym.flags |= NEEDS_TLSLD;
         rel_types[i] = R_TLSLD;
+        sym.flags |= NEEDS_TLSLD;
       } else {
         rel_types[i] = R_TLSLD_RELAX_LE;
         i++;
@@ -286,8 +294,8 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      sym.flags |= NEEDS_GOTTPOFF;
       rel_types[i] = R_GOTTPOFF;
+      sym.flags |= NEEDS_GOTTPOFF;
       break;
     default:
       error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
