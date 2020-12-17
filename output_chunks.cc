@@ -123,6 +123,13 @@ std::vector<ElfPhdr> create_phdr() {
   if (out::dynamic)
     define(PT_DYNAMIC, PF_R | PF_W, out::dynamic->shdr.sh_addralign, out::dynamic);
 
+  // Add PT_GNU_STACK, which is a marker segment that doesn't really
+  // contain any segments. If exists, the runtime turn on the No Exeecute
+  // bit for stack pages.
+  vec.push_back({});
+  vec.back().p_type = PT_GNU_STACK;
+  vec.back().p_flags = PF_R | PF_W;
+
   return vec;
 }
 
