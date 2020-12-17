@@ -3,7 +3,7 @@
 InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
                        std::string_view name)
   : file(file), shdr(shdr), name(name),
-    output_section(OutputSection::get_instance(name, shdr.sh_flags, shdr.sh_type)) {}
+    output_section(OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags)) {}
 
 static int get_rel_size(u32 r_type) {
   switch (r_type) {
@@ -308,8 +308,8 @@ void InputSection::report_undefined_symbols() {
 
 MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   : InputChunk(isec->file, isec->shdr, isec->name),
-    parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_flags,
-                                        isec->shdr.sh_type)) {
+    parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
+                                        isec->shdr.sh_flags)) {
   u32 offset = 0;
 
   while (!data.empty()) {

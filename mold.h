@@ -347,7 +347,7 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(std::string_view name, u64 flags, u32 type);
+  static OutputSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   OutputSection(std::string_view name, u32 type, u64 flags)
     : OutputChunk(REGULAR) {
@@ -553,7 +553,7 @@ private:
 
 class MergedSection : public OutputChunk {
 public:
-  static MergedSection *get_instance(std::string_view name, u64 flags, u32 type);
+  static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
   ConcurrentMap<StringPiece> map;

@@ -367,7 +367,7 @@ static std::string_view get_output_name(std::string_view name) {
 }
 
 OutputSection *
-OutputSection::get_instance(std::string_view name, u64 flags, u32 type) {
+OutputSection::get_instance(std::string_view name, u32 type, u64 flags) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_GROUP;
 
@@ -614,7 +614,7 @@ void HashSection::copy_buf() {
 }
 
 MergedSection *
-MergedSection::get_instance(std::string_view name, u64 flags, u32 type) {
+MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 

@@ -502,7 +502,7 @@ void ObjectFile::convert_common_symbols() {
     return;
 
   static OutputSection *bss =
-    OutputSection::get_instance(".bss", SHF_WRITE | SHF_ALLOC, SHT_NOBITS);
+    OutputSection::get_instance(".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
 
   for (int i = first_global; i < elf_syms.size(); i++) {
     if (!elf_syms[i].is_common())
