@@ -43,7 +43,6 @@ void InputSection::copy_buf() {
 
   // Apply relocations
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
-  u64 sh_addr = output_section->shdr.sh_addr + offset;
 
   ElfRela *dynrel = nullptr;
   if (out::reldyn) {
@@ -63,7 +62,7 @@ void InputSection::copy_buf() {
 
 #define S   (ref.piece ? ref.piece->get_addr() : sym.get_addr())
 #define A   (ref.piece ? ref.addend : rel.r_addend)
-#define P   (sh_addr + rel.r_offset)
+#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define L   sym.get_plt_addr()
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
