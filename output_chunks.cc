@@ -368,6 +368,9 @@ static std::string_view get_output_name(std::string_view name) {
 
 OutputSection *
 OutputSection::get_instance(std::string_view name, u32 type, u64 flags) {
+  if (name == ".eh_frame" && type == SHT_PROGBITS)
+    type = SHT_X86_64_UNWIND;
+
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_GROUP;
 
