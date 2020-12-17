@@ -797,7 +797,8 @@ int main(int argc, char **argv) {
       parse_version_script(std::string(arg));
     } else if (read_flag(args, "pie")) {
       config.pie = true;
-      config.image_base = 0;
+    } else if (read_flag(args, "no-pie")) {
+      config.pie = false;
     } else if (read_flag(args, "perf")) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
@@ -821,6 +822,9 @@ int main(int argc, char **argv) {
 
   if (config.output == "")
     error("-o option is missing");
+
+  if (config.pie)
+    config.image_base = 0;
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                config.thread_count);
@@ -1057,11 +1061,6 @@ int main(int argc, char **argv) {
       chunk->copy_buf();
     });
   }
-
-#if 0
-  if (out::reldyn)
-    out::reldyn->sort();
-#endif
 
   // Zero-clear paddings between sections
   clear_padding(filesize);

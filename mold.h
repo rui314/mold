@@ -442,7 +442,6 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
-  void sort();
 };
 
 class StrtabSection : public OutputChunk {

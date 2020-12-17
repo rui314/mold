@@ -175,6 +175,7 @@ void RelDynSection::copy_buf() {
     if (sym->is_imported) {
       write(sym, R_X86_64_GLOB_DAT, sym->get_got_addr());
     } else if (sym->needs_relative_rel()) {
+      memset(rel, 0, sizeof(ElfRela));
       rel->r_type = R_X86_64_RELATIVE;
       rel->r_offset = sym->get_got_addr();
       rel->r_addend = sym->get_addr();
@@ -196,14 +197,6 @@ void RelDynSection::copy_buf() {
 
   for (Symbol *sym : out::copyrel->symbols)
     write(sym, R_X86_64_COPY, sym->get_addr());
-}
-
-void RelDynSection::sort() {
-  ElfRela *begin = (ElfRela *)(out::buf + shdr.sh_offset);
-  ElfRela *end = begin + shdr.sh_size / sizeof(ElfRela);
-  std::stable_sort(begin, end, [](const ElfRela &a, const ElfRela &b) {
-    return a.r_type == R_X86_64_RELATIVE && b.r_type != R_X86_64_RELATIVE;
-  });
 }
 
 void StrtabSection::update_shdr() {
