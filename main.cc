@@ -712,7 +712,22 @@ static bool read_flag(std::span<char *> &args, std::string name) {
       args = args.subspan(1);
       return true;
     }
-  }  
+  }
+  return false;
+}
+
+static bool read_z_flag(std::span<char *> &args, std::string name) {
+  if (args.size() >= 2 && std::string_view(args[0]) == "-z" &&
+      std::string_view(args[1]) == name) {
+    args = args.subspan(2);
+    return true;
+  }
+
+  if (!args.empty() && std::string_view(args[0]) == "-z" + name) {
+    args = args.subspan(1);
+    return true;
+  }
+
   return false;
 }
 
@@ -724,7 +739,7 @@ static bool read_equal(std::span<char *> &args, std::string_view &arg,
       args = args.subspan(1);
       return true;
     }
-  }  
+  }
 
   for (std::string opt : add_dashes(name)) {
     if (std::string_view(args[0]).starts_with(opt + "=")) {
@@ -803,6 +818,8 @@ int main(int argc, char **argv) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
       read_file(find_library(std::string(arg)));
+    } else if (read_z_flag(args, "now")) {
+      config.z_now = true;
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {

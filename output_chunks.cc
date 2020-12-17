@@ -324,9 +324,6 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
 
-  if (config.pie)
-    define(DT_FLAGS_1, DF_1_PIE);
-
   auto find = [](std::string_view name) -> OutputChunk * {
     for (OutputChunk *chunk : out::chunks)
       if (chunk->name == name)
@@ -338,6 +335,22 @@ static std::vector<u64> create_dynamic_section() {
     define(DT_INIT, chunk->shdr.sh_addr);
   if (OutputChunk *chunk = find(".fini"))
     define(DT_FINI, chunk->shdr.sh_addr);
+
+  u32 flags = 0;
+  u32 flags1 = 0;
+
+  if (config.pie)
+    flags1 |= DF_1_PIE;
+
+  if (config.z_now) {
+    flags |= DF_BIND_NOW;
+    flags1 |= DF_1_NOW;
+  }
+
+  if (flags)
+    define(DT_FLAGS, flags);
+  if (flags1)
+    define(DT_FLAGS_1, flags1);
 
   define(DT_NULL, 0);
   return vec;

@@ -62,6 +62,7 @@ struct Config {
   bool pie = false;
   bool print_map = false;
   bool trace = false;
+  bool z_now = false;
   int filler = -1;
   int thread_count = -1;
   std::string sysroot;
