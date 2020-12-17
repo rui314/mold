@@ -670,7 +670,7 @@ static std::vector<std::string> add_dashes(std::string name) {
   return opts;
 }
 
-static bool read_arg(std::span<char *> &args, std::string &arg, std::string name) {
+static bool read_arg(std::span<char *> &args, std::string_view &arg, std::string name) {
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
       if (args.size() == 1)
@@ -716,7 +716,7 @@ static bool read_flag(std::span<char *> &args, std::string name) {
   return false;
 }
 
-static bool read_equal(std::span<char *> &args, std::string &arg,
+static bool read_equal(std::span<char *> &args, std::string_view &arg,
                        std::string name, std::string default_) {
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
@@ -759,7 +759,7 @@ int main(int argc, char **argv) {
 
   // Parse command line options
   for (std::span<char *> args(argv + 1, argc -1); !args.empty();) {
-    std::string arg;
+    std::string_view arg;
 
     if (read_arg(args, arg, "o")) {
       config.output = arg;
@@ -782,7 +782,7 @@ int main(int argc, char **argv) {
     } else if (read_arg(args, arg, "filler")) {
       config.filler = parse_hex("filler", arg);
     } else if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
-      config.library_paths.push_back(arg);
+      config.library_paths.push_back(std::string(arg));
     } else if (read_arg(args, arg, "sysroot")) {
       config.sysroot = arg;
     } else if (read_flag(args, "trace")) {
@@ -792,16 +792,16 @@ int main(int argc, char **argv) {
     } else if (read_flag(args, "no-as-needed")) {
       config.as_needed = false;
     } else if (read_arg(args, arg, "rpath")) {
-      config.rpaths.push_back(arg);
+      config.rpaths.push_back(std::string(arg));
     } else if (read_arg(args, arg, "version-script")) {
-      parse_version_script(arg);
+      parse_version_script(std::string(arg));
     } else if (read_flag(args, "pie")) {
       config.pie = true;
       config.image_base = 0;
     } else if (read_flag(args, "perf")) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
-      read_file(find_library(arg));
+      read_file(find_library(std::string(arg)));
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
