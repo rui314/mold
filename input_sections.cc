@@ -79,7 +79,7 @@ void InputSection::copy_buf() {
       else
         *(u64 *)loc = S + A;
 
-      if (config.pie) {
+      if (sym.needs_relative_rel()) {
         assert(sz == 8);
         memset(dynrel, 0, sizeof(*dynrel));
         dynrel->r_offset = P;
@@ -87,12 +87,6 @@ void InputSection::copy_buf() {
         dynrel->r_addend = S + A;
         dynrel++;
       }
-      break;
-    case R_ZERO:
-      if (sz == 4)
-        *(u32 *)loc = 0;
-      else
-        *(u64 *)loc = 0;
       break;
     case R_DYN:
       memset(dynrel, 0, sizeof(*dynrel));
@@ -218,11 +212,9 @@ void InputSection::scan_relocations() {
         rel_types[i] = R_DYN;
         sym.flags |= NEEDS_DYNSYM;
         file->num_reldyn++;
-      } else if (sym.is_undef_weak) {
-        rel_types[i] = R_ZERO;
       } else {
         rel_types[i] = R_ABS;
-        if (config.pie)
+        if (sym.needs_relative_rel())
           file->num_reldyn++;
       }
       break;

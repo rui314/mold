@@ -178,6 +178,10 @@ public:
   inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
 
+  bool needs_relative_rel() const {
+    return config.pie && !is_undef_weak;
+  }
+
   std::string_view name;
   InputFile *file = nullptr;
   const ElfSym *esym = nullptr;
@@ -233,7 +237,6 @@ protected:
 enum RelType : u8 {
   R_NONE,
   R_ABS,
-  R_ZERO,
   R_DYN,
   R_PC,
   R_GOT,
