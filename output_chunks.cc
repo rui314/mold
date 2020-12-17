@@ -162,9 +162,9 @@ void RelDynSection::update_shdr() {
 
 void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
-  memset(rel, 0, shdr.sh_size);
 
   auto write = [&](Symbol *sym, u8 type, u64 offset) {
+    memset(rel, 0, sizeof(ElfRela));
     rel->r_sym = sym->dynsym_idx;
     rel->r_type = type;
     rel->r_offset = offset;
