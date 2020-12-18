@@ -56,9 +56,6 @@ void InputSection::copy_buf() {
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    if (!sym.file)
-      continue;
-
 #define S   (ref.piece ? ref.piece->get_addr() : sym.get_addr())
 #define A   (ref.piece ? ref.addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
