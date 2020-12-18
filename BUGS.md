@@ -102,11 +102,10 @@ created, the image is memcpy'ed to the new thread's thread-local
 variable area. The initialization image itself is read-only at
 runtime.
 
-It took more than a day to find out the location where the memcpy call
-copies the initialization image to is different from the location
-where the thread-local variables reside. As a result, thread-local
-variables have garbage as initial values, and the program crashes when
-using them.
+It took more than a day to find out that memcpy copies the
+initialization image to a different place than the thread-local
+variables reside. That means, thread-local variables had garbage as
+initial values, and the program crashed when using them.
 
 The problem is that I set a very large value (4096) to the alignment
 of `PT_TLS` segment. All `PT_LOAD` segments are naturally aligned to
@@ -130,8 +129,7 @@ DT_NEEDED entry for each library specified with the `-l` option.
 The pitfall is, unlike object files, libraries are allowed to
 appear more than once in a command line, and the linker has to
 de-duplicate them before processing. Adding more than one DT_NEEDED
-entry for the same shared object is illegal and causes mysterious
-issues like this.
+entry for the same shared object causes mysterious issues like this.
 
 # Copy relocations and symbol aliases
 
