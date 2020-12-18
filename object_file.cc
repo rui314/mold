@@ -155,7 +155,7 @@ void ObjectFile::initialize_symbols() {
 
   symbols.reserve(elf_syms.size());
   local_symbols.reserve(first_global);
-  sym_pieces.resize(elf_syms.size());
+  sym_pieces.resize(elf_syms.size() - first_global);
 
   // First symbol entry is always null
   local_symbols.emplace_back("");
@@ -293,8 +293,8 @@ void ObjectFile::initialize_mergeable_sections() {
     if (i < first_global) {
       local_symbols[i].piece_ref = *ref;
     } else {
-      sym_pieces[i].piece = ref->piece;
-      sym_pieces[i].addend = esym.st_value - ref->input_offset;
+      sym_pieces[i - first_global].piece = ref->piece;
+      sym_pieces[i - first_global].addend = esym.st_value - ref->input_offset;
     }
   }
 
@@ -358,7 +358,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
-    sym.piece_ref = sym_pieces[symidx];
+    sym.piece_ref = sym_pieces[symidx - first_global];
     sym.value = esym.st_value;
     sym.ver_idx = 0;
     sym.type = esym.st_type;
@@ -641,7 +641,7 @@ ObjectFile *ObjectFile::create_internal_file() {
   }
 
   obj->elf_syms = *elf_syms;
-  obj->sym_pieces.resize(elf_syms->size());
+  obj->sym_pieces.resize(elf_syms->size() - obj->first_global);
   return obj;
 }
 
