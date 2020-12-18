@@ -670,7 +670,8 @@ static std::vector<std::string> add_dashes(std::string name) {
   return opts;
 }
 
-static bool read_arg(std::span<char *> &args, std::string_view &arg, std::string name) {
+static bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
+                     std::string name) {
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
       if (args.size() == 1)
@@ -680,8 +681,8 @@ static bool read_arg(std::span<char *> &args, std::string_view &arg, std::string
       return true;
     }
 
-    if (std::string_view(args[0]).starts_with("-" + name)) {
-      arg = args[0] + name.size() + 1;
+    if (args[0].starts_with("-" + name)) {
+      arg = args[0].substr(name.size() + 1);
       args = args.subspan(1);
       return true;
     }
@@ -697,8 +698,8 @@ static bool read_arg(std::span<char *> &args, std::string_view &arg, std::string
       return true;
     }
 
-    if (std::string_view(args[0]).starts_with(opt + "=")) {
-      arg = args[0] + opt.size() + 1;
+    if (args[0].starts_with(opt + "=")) {
+      arg = args[0].substr(opt.size() + 1);
       args = args.subspan(1);
       return true;
     }
@@ -706,7 +707,7 @@ static bool read_arg(std::span<char *> &args, std::string_view &arg, std::string
   return false;
 }
 
-static bool read_flag(std::span<char *> &args, std::string name) {
+static bool read_flag(std::span<std::string_view> &args, std::string name) {
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       args = args.subspan(1);
@@ -716,14 +717,13 @@ static bool read_flag(std::span<char *> &args, std::string name) {
   return false;
 }
 
-static bool read_z_flag(std::span<char *> &args, std::string name) {
-  if (args.size() >= 2 && std::string_view(args[0]) == "-z" &&
-      std::string_view(args[1]) == name) {
+static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
+  if (args.size() >= 2 && args[0] == "-z" && args[1] == name) {
     args = args.subspan(2);
     return true;
   }
 
-  if (!args.empty() && std::string_view(args[0]) == "-z" + name) {
+  if (!args.empty() && args[0] == "-z" + name) {
     args = args.subspan(1);
     return true;
   }
@@ -731,7 +731,7 @@ static bool read_z_flag(std::span<char *> &args, std::string name) {
   return false;
 }
 
-static bool read_equal(std::span<char *> &args, std::string_view &arg,
+static bool read_equal(std::span<std::string_view> &args, std::string_view &arg,
                        std::string name, std::string default_) {
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
@@ -742,8 +742,8 @@ static bool read_equal(std::span<char *> &args, std::string_view &arg,
   }
 
   for (std::string opt : add_dashes(name)) {
-    if (std::string_view(args[0]).starts_with(opt + "=")) {
-      arg = args[0] + opt.size() + 1;
+    if (args[0].starts_with(opt + "=")) {
+      arg = args[0].substr(opt.size() + 1);
       args = args.subspan(1);
       return true;
     }
@@ -773,7 +773,11 @@ int main(int argc, char **argv) {
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
   // Parse command line options
-  for (std::span<char *> args(argv + 1, argc -1); !args.empty();) {
+  std::vector<std::string_view> arg_vector;
+  for (int i = 1; i < argc; i++)
+    arg_vector.push_back(argv[i]);
+
+  for (std::span<std::string_view> args = arg_vector; !args.empty();) {
     std::string_view arg;
 
     if (read_arg(args, arg, "o")) {
@@ -832,7 +836,7 @@ int main(int argc, char **argv) {
     } else if (args[0][0] == '-') {
       error("unknown command line option: " + std::string(args[0]));
     } else {
-      read_file(must_open_input_file(args[0]));
+      read_file(must_open_input_file(std::string(args[0])));
       args = args.subspan(1);
     }
   }
