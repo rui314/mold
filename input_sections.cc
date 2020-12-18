@@ -52,9 +52,18 @@ void InputSection::copy_buf() {
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     StringPieceRef &ref = rel_pieces[i];
-
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
+
+    auto write = [&](u64 val) {
+      switch (get_rel_size(rel.r_type)) {
+      case 1: *loc = val; return;
+      case 2: *(u16 *)loc = val; return;
+      case 4: *(u32 *)loc = val; return;
+      case 8: *(u64 *)loc = val; return;
+      }
+      unreachable();
+    };
 
 #define S   (ref.piece ? ref.piece->get_addr() : sym.get_addr())
 #define A   (ref.piece ? ref.addend : rel.r_addend)
@@ -63,19 +72,14 @@ void InputSection::copy_buf() {
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
 
-    int sz = get_rel_size(rel.r_type);
-
     switch (rel_types[i]) {
     case R_NONE:
       break;
     case R_ABS:
-      if (sz == 4)
-        *(u32 *)loc = S + A;
-      else
-        *(u64 *)loc = S + A;
+      write(S + A);
 
       if (sym.needs_relative_rel()) {
-        assert(sz == 8);
+        assert(get_rel_size(rel.r_type) == 8);
         memset(dynrel, 0, sizeof(*dynrel));
         dynrel->r_offset = P;
         dynrel->r_type = R_X86_64_RELATIVE;
@@ -92,28 +96,22 @@ void InputSection::copy_buf() {
       dynrel++;
       break;
     case R_PC:
-      if (sz == 4)
-        *(u32 *)loc = S + A - P;
-      else
-        *(u64 *)loc = S + A - P;
+      write(S + A - P);
       break;
     case R_GOT:
-      *(u32 *)loc = G + A;
+      write(G + A);
       break;
     case R_GOTPC:
-      *(u32 *)loc = GOT + A - P;
+      write(GOT + A - P);
       break;
     case R_GOTPCREL:
-      *(u32 *)loc = G + GOT + A - P;
+      write(G + GOT + A - P);
       break;
     case R_PLT:
-      if (sz == 4)
-        *(u32 *)loc = L + A - P;
-      else
-        *(u64 *)loc = L + A - P;
+      write(L + A - P);
       break;
     case R_TLSGD:
-      *(u32 *)loc = sym.get_tlsgd_addr() + A - P;
+      write(sym.get_tlsgd_addr() + A - P);
       break;
     case R_TLSGD_RELAX_LE: {
       // Relax GD to LE
@@ -127,7 +125,7 @@ void InputSection::copy_buf() {
       break;
     }
     case R_TLSLD:
-      *(u32 *)loc = sym.get_tlsld_addr() + A - P;
+      write(sym.get_tlsld_addr() + A - P);
       break;
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
@@ -139,13 +137,10 @@ void InputSection::copy_buf() {
       break;
     }
     case R_TPOFF:
-      if (sz == 4)
-        *(u32 *)loc = S + A - out::tls_end;
-      else
-        *(u64 *)loc = S + A - out::tls_end;
+      write(S + A - out::tls_end);
       break;
     case R_GOTTPOFF:
-      *(u32 *)loc = sym.get_gottpoff_addr() + A - P;
+      write(sym.get_gottpoff_addr() + A - P);
       break;
     default:
       unreachable();
