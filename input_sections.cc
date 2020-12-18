@@ -45,10 +45,9 @@ void InputSection::copy_buf() {
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
 
   ElfRela *dynrel = nullptr;
-  if (out::reldyn) {
+  if (out::reldyn)
     dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
                          file->reldyn_offset + reldyn_offset);
-  }
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
@@ -171,7 +170,7 @@ void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
-  reldyn_offset = file->num_reldyn * sizeof(ElfRela);
+  reldyn_offset = file->num_dynrel * sizeof(ElfRela);
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
@@ -210,11 +209,11 @@ void InputSection::scan_relocations() {
       if (sym.is_imported) {
         rel_types[i] = R_DYN;
         sym.flags |= NEEDS_DYNSYM;
-        file->num_reldyn++;
+        file->num_dynrel++;
       } else {
         rel_types[i] = R_ABS;
         if (sym.needs_relative_rel())
-          file->num_reldyn++;
+          file->num_dynrel++;
       }
       break;
     case R_X86_64_PC32:

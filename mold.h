@@ -689,7 +689,7 @@ public:
   const bool is_in_archive;
   std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
 
-  u64 num_reldyn = 0;
+  u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
 
   u64 local_symtab_offset = 0;

@@ -161,7 +161,7 @@ void RelDynSection::update_shdr() {
 
   for (ObjectFile *file : out::objs) {
     file->reldyn_offset = n * sizeof(ElfRela);
-    n += file->num_reldyn;
+    n += file->num_dynrel;
   }
 
   shdr.sh_size = n * sizeof(ElfRela);
