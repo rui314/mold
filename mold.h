@@ -262,6 +262,7 @@ public:
   void report_undefined_symbols();
 
   std::span<ElfRela> rels;
+  std::vector<bool> has_rel_piece;
   std::vector<StringPieceRef> rel_pieces;
   std::vector<RelType> rel_types;
   u64 reldyn_offset = 0;

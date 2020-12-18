@@ -49,6 +49,7 @@ void InputSection::copy_buf() {
 
   // Apply relocations
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
+  int ref_idx = 0;
 
   ElfRela *dynrel = nullptr;
   if (out::reldyn)
@@ -57,9 +58,12 @@ void InputSection::copy_buf() {
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    StringPieceRef &ref = rel_pieces[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
+
+    const StringPieceRef *ref = nullptr;
+    if (has_rel_piece[i])
+      ref = &rel_pieces[ref_idx++];
 
     auto write = [&](u64 val) {
       switch (get_rel_size(rel.r_type)) {
@@ -71,8 +75,8 @@ void InputSection::copy_buf() {
       unreachable();
     };
 
-#define S   (ref.piece ? ref.piece->get_addr() : sym.get_addr())
-#define A   (ref.piece ? ref.addend : rel.r_addend)
+#define S   (ref ? ref->piece->get_addr() : sym.get_addr())
+#define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define L   sym.get_plt_addr()
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)

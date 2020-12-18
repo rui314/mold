@@ -128,7 +128,7 @@ void ObjectFile::initialize_sections() {
     if (target) {
       target->rels = get_data<ElfRela>(shdr);
       target->rel_types.resize(target->rels.size());
-      target->rel_pieces.resize(target->rels.size());
+      target->has_rel_piece.resize(target->rels.size());
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
         static Counter counter("relocs_alloc");
@@ -270,8 +270,9 @@ void ObjectFile::initialize_mergeable_sections() {
         if (!ref)
           error(to_string(this) + ": bad relocation at " + std::to_string(rel.r_sym));
 
-        isec->rel_pieces[i].piece = ref->piece;
-        isec->rel_pieces[i].addend = offset - ref->input_offset;
+        isec->rel_pieces.push_back(
+          {.piece = ref->piece, .addend = (i32)(offset - ref->input_offset)});
+        isec->has_rel_piece[i] = true;
       }
     }
   }
