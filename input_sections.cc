@@ -9,6 +9,12 @@ static int get_rel_size(u32 r_type) {
   switch (r_type) {
   case R_X86_64_NONE:
     return 0;
+  case R_X86_64_8:
+  case R_X86_64_PC8:
+    return 1;
+  case R_X86_64_16:
+  case R_X86_64_PC16:
+    return 2;
   case R_X86_64_32:
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -153,9 +159,20 @@ void InputSection::copy_buf() {
 #undef G
 #undef GOT
   }
+}
 
-  static Counter counter("relocs");
-  counter.inc(rels.size());
+static std::string rel_to_string(u32 r_type) {
+  switch (r_type) {
+  case R_X86_64_8:
+    return "R_X86_64_8";
+  case R_X86_64_16:
+    return "R_X86_64_16";
+  case R_X86_64_32:
+    return "R_X86_64_32";
+  case R_X86_64_32S:
+    return "R_X86_64_32S";
+  }
+  unreachable();
 }
 
 void InputSection::scan_relocations() {
@@ -163,6 +180,9 @@ void InputSection::scan_relocations() {
     return;
 
   reldyn_offset = file->num_dynrel * sizeof(ElfRela);
+
+  static Counter counter("relocs");
+  counter.inc(rels.size());
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
@@ -177,19 +197,18 @@ void InputSection::scan_relocations() {
     case R_X86_64_NONE:
       rel_types[i] = R_NONE;
       break;
+    case R_X86_64_8:
+    case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
       if (config.pie)
-        error(to_string(this) + ": R_X86_64_32 relocation against symbol `" +
-              std::string(sym.name) + "' can not be used when making a PIE object;" +
-              " recompile with -fPIE");
+        error(to_string(this) + ": " + rel_to_string(rel.r_type) +
+              " relocation against symbol `" + std::string(sym.name) +
+              "' can not be used when making a PIE object; recompile with -fPIE");
 
       if (!sym.is_imported) {
         rel_types[i] = R_ABS;
-        break;
-      }
-
-      if (sym.type == STT_OBJECT) {
+      } else if (sym.type == STT_OBJECT) {
         rel_types[i] = R_ABS;
         sym.flags |= NEEDS_COPYREL;
       } else {
@@ -208,14 +227,13 @@ void InputSection::scan_relocations() {
           file->num_dynrel++;
       }
       break;
+    case R_X86_64_PC8:
+    case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
       if (!sym.is_imported) {
         rel_types[i] = R_PC;
-        break;
-      }
-
-      if (sym.type == STT_OBJECT) {
+      } else if (sym.type == STT_OBJECT) {
         rel_types[i] = R_PC;
         sym.flags |= NEEDS_COPYREL;
       } else {
