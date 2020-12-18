@@ -11,7 +11,7 @@ _start:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o -rpath /foo -rpath /bar > /dev/null
+../mold -o $t/exe $t/a.o -rpath /foo -rpath /bar
 
 readelf --dynamic $t/exe | grep -q "
 0x000000000000001d (RUNPATH) Library runpath: [/foo]

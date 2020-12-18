@@ -19,7 +19,7 @@ _start:
 EOF
 
 cc -shared -fPIC -o $t/b.so -xc /dev/null
-../mold -o $t/exe $t/a.o $t/b.so --export-dynamic > /dev/null
+../mold -o $t/exe $t/a.o $t/b.so --export-dynamic
 
 readelf --dyn-syms $t/exe | grep -q "
 Symbol table '.dynsym' contains 19 entries:

@@ -29,7 +29,7 @@ EOF
   /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
   /lib/x86_64-linux-gnu/libc.so.6 \
   /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
-  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 > /dev/null
+  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 readelf --sections $t/exe | grep -q "
   [17] .got              PROGBITS         0000000000202000  00002000

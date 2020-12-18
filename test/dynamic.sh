@@ -16,7 +16,7 @@ echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
   /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
   /lib/x86_64-linux-gnu/libc.so.6 \
   /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
-  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 > /dev/null
+  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 
 readelf --dynamic $t/exe | grep -q "
 Dynamic section at offset 0x2048 contains 26 entries:
