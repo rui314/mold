@@ -766,7 +766,43 @@ static u64 parse_number(std::string opt, std::string_view value) {
   return std::stol(std::string(value));
 }
 
+// Exiting from a program with large memory usage is slow --
+// it may take a few hundred milliseconds. To hide the latency,
+// we fork a child and let it do the actual linking work.
+static std::function<void()> fork_child() {
+  int pipefd[2];
+  if (pipe(pipefd) == -1) {
+    perror("pipe");
+    exit(1);
+  }
+
+  pid_t pid = fork();
+  if (pid == -1) {
+    perror("fork");
+    exit(1);
+  }
+
+  if (pid > 0) {
+    // Parent
+    close(pipefd[1]);
+    char buf[1];
+    int r = read(pipefd[0], buf, 1);
+    _exit(r != 1);
+  }
+
+  // Child
+  close(pipefd[0]);
+
+  return [=]() {
+    write(pipefd[1], (char []){1}, 1);
+    close(pipefd[1]);
+ };
+}
+
 int main(int argc, char **argv) {
+  std::function<void()> on_complete = fork_child();
+
+  // Main
   Timer t_all("all");
 
   config.thread_count =
@@ -1130,5 +1166,6 @@ int main(int argc, char **argv) {
 
   std::cout << std::flush;
   std::cerr << std::flush;
+  on_complete();
   std::quick_exit(0);
 }
