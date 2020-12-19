@@ -809,6 +809,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; i++)
     arg_vector.push_back(argv[i]);
 
+  Timer t_open("open");
   for (std::span<std::string_view> args = arg_vector; !args.empty();) {
     std::string_view arg;
 
@@ -872,6 +873,8 @@ int main(int argc, char **argv) {
       args = args.subspan(1);
     }
   }
+
+  t_open.stop();
 
   if (config.output == "")
     error("-o option is missing");
