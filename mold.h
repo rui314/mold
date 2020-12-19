@@ -645,6 +645,7 @@ struct MemoryMappedFile {
 class InputFile {
 public:
   InputFile(MemoryMappedFile mb);
+  virtual void parse() = 0;
 
   MemoryMappedFile mb;
   ElfEhdr &ehdr;
@@ -669,7 +670,7 @@ class ObjectFile : public InputFile {
 public:
   ObjectFile(MemoryMappedFile mb, std::string archive_name);
 
-  void parse();
+  void parse() override;
   void initialize_mergeable_sections();
   void resolve_symbols();
   void mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder);
@@ -723,7 +724,7 @@ public:
     is_alive = !as_needed;
   }
 
-  void parse();
+  void parse() override;
   void resolve_symbols();
   std::span<Symbol *> find_aliases(Symbol *sym);
 
@@ -747,13 +748,14 @@ private:
 // archive_file.cc
 //
 
-std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
+std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile mb);
+std::vector<std::string> read_thin_archive_members(MemoryMappedFile mb);
 
 //
 // linker_script.cc
 //
 
-void parse_linker_script(MemoryMappedFile mb);
+std::vector<InputFile *> parse_linker_script(MemoryMappedFile mb, bool as_needed);
 void parse_version_script(std::string path);
 
 //
@@ -832,7 +834,7 @@ void print_map();
 MemoryMappedFile find_library(std::string path);
 MemoryMappedFile *open_input_file(std::string path);
 MemoryMappedFile must_open_input_file(std::string path);
-void read_file(MemoryMappedFile mb);
+std::vector<InputFile *> read_file(MemoryMappedFile mb, bool as_needed);
 
 //
 // Inline objects and functions
