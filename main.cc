@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include "tbb/global_control.h"
+#include "tbb/task_group.h"
 
 #include <fcntl.h>
 #include <iostream>
@@ -11,6 +12,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <unordered_set>
+
+tbb::task_group parser_tg;
 
 MemoryMappedFile *open_input_file(std::string path) {
   int fd = open(path.c_str(), O_RDONLY);
@@ -48,8 +51,11 @@ void read_file(MemoryMappedFile mb) {
   // .a
   if (memcmp(mb.data, "!<arch>\n", 8) == 0 ||
       memcmp(mb.data, "!<thin>\n", 8) == 0) {
-    for (MemoryMappedFile &child : read_archive_members(mb))
-      out::objs.push_back(new ObjectFile(child, mb.name));
+    for (MemoryMappedFile &child : read_archive_members(mb)) {
+      ObjectFile *file = new ObjectFile(child, mb.name);
+      parser_tg.run([=]() { file->parse(); });
+      out::objs.push_back(file);
+    }
     return;
   }
 
@@ -60,13 +66,17 @@ void read_file(MemoryMappedFile mb) {
 
     // .o
     if (ehdr.e_type == ET_REL) {
-      out::objs.push_back(new ObjectFile(mb, ""));
+      ObjectFile *file = new ObjectFile(mb, "");
+      parser_tg.run([=]() { file->parse(); });
+      out::objs.push_back(file);
       return;
     }
 
     // .so
     if (ehdr.e_type == ET_DYN) {
-      out::dsos.push_back(new SharedFile(mb, config.as_needed));
+      SharedFile *file = new SharedFile(mb, config.as_needed);
+      parser_tg.run([=]() { file->parse(); });
+      out::dsos.push_back(file);
       return;
     }
   }
@@ -796,20 +806,31 @@ static std::function<void()> fork_child() {
 }
 
 int main(int argc, char **argv) {
-  std::function<void()> on_complete = []() {};
-  if (std::string_view arg1 = argv[1]; arg1 != "-no-fork" && arg1 != "--no-fork")
-    on_complete = fork_child();
-
   // Main
   Timer t_all("all");
-
-  config.thread_count =
-    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
   // Parse command line options
   std::vector<std::string_view> arg_vector;
   for (int i = 1; i < argc; i++)
     arg_vector.push_back(argv[i]);
+
+  config.thread_count =
+    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+
+  for (std::span<std::string_view> args = arg_vector; !args.empty();) {
+    std::string_view arg;
+
+    if (read_flag(args, "no-fork"))
+      config.fork = false;
+    else if (read_arg(args, arg, "thread-count"))
+      config.thread_count = parse_number("thread-count", arg);
+    else
+      args = args.subspan(1);
+  }
+
+  std::function<void()> on_complete = config.fork ? fork_child() : []() {};
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
 
   Timer t_open("open");
   for (std::span<std::string_view> args = arg_vector; !args.empty();) {
@@ -825,8 +846,6 @@ int main(int argc, char **argv) {
       config.entry = arg;
     } else if (read_flag(args, "print-map")) {
       config.print_map = true;
-    } else if (read_arg(args, arg, "thread-count")) {
-      config.thread_count = parse_number("thread-count", arg);
     } else if (read_flag(args, "stat")) {
       Counter::enabled = true;
     } else if (read_flag(args, "static")) {
@@ -860,6 +879,7 @@ int main(int argc, char **argv) {
     } else if (read_z_flag(args, "now")) {
       config.z_now = true;
     } else if (read_arg(args, arg, "z")) {
+    } else if (read_arg(args, arg, "thread-count")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
     } else if (read_equal(args, arg, "build-id", "none")) {
@@ -877,6 +897,7 @@ int main(int argc, char **argv) {
     }
   }
 
+  parser_tg.wait();
   t_open.stop();
 
   if (config.output == "")
@@ -884,16 +905,6 @@ int main(int argc, char **argv) {
 
   if (config.pie)
     config.image_base = 0;
-
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
-
-  // Parse input files
-  {
-    ScopedTimer t("parse");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
-    tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->parse(); });
-  }
 
   // Uniquify shared object files with soname
   {

@@ -57,6 +57,7 @@ struct Config {
   std::string output;
   bool as_needed = false;
   bool export_dynamic = false;
+  bool fork = true;
   bool is_static = false;
   bool perf = false;
   bool pie = false;
