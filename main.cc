@@ -792,11 +792,7 @@ static std::function<void()> fork_child() {
 
   // Child
   close(pipefd[0]);
-
-  return [=]() {
-    write(pipefd[1], (char []){1}, 1);
-    close(pipefd[1]);
- };
+  return [=]() { write(pipefd[1], (char []){1}, 1); };
 }
 
 int main(int argc, char **argv) {
