@@ -899,14 +899,6 @@ int main(int argc, char **argv) {
     out::dsos = vec;
   }
 
-  // Parse mergeable string sections
-  {
-    ScopedTimer t("merge");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-      file->initialize_mergeable_sections();
-    });
-  }
-
   Timer t_total("total");
   Timer t_before_copy("before_copy");
 

@@ -314,6 +314,7 @@ void ObjectFile::parse() {
 
   initialize_sections();
   initialize_symbols();
+  initialize_mergeable_sections();
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.
