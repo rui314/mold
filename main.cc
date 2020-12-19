@@ -796,7 +796,9 @@ static std::function<void()> fork_child() {
 }
 
 int main(int argc, char **argv) {
-  std::function<void()> on_complete = fork_child();
+  std::function<void()> on_complete = []() {};
+  if (std::string_view arg1 = argv[1]; arg1 != "-no-fork" && arg1 != "--no-fork")
+    on_complete = fork_child();
 
   // Main
   Timer t_all("all");
@@ -862,6 +864,7 @@ int main(int argc, char **argv) {
     } else if (read_arg(args, arg, "m")) {
     } else if (read_equal(args, arg, "build-id", "none")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
+    } else if (read_flag(args, "no-fork")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
     } else if (read_flag(args, "fatal-warnings")) {
