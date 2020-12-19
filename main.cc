@@ -44,24 +44,13 @@ static bool is_text_file(MemoryMappedFile mb) {
          isprint(mb.data[3]);
 }
 
-std::vector<InputFile *> read_file(MemoryMappedFile mb, bool as_needed) {
-  std::vector<InputFile *> vec;
-
+void read_file(MemoryMappedFile mb) {
   // .a
-  if (memcmp(mb.data, "!<arch>\n", 8) == 0) {
-    for (MemoryMappedFile &child : read_fat_archive_members(mb))
-      vec.push_back(new ObjectFile(child, mb.name));
-    return vec;
-  }
-
-  // Thin .a
-  if (memcmp(mb.data, "!<thin>\n", 8) == 0) {
-    std::vector<std::string> paths = read_thin_archive_members(mb);
-    vec.resize(paths.size());
-    tbb::parallel_for(0, (int)paths.size(), [&](int i) {
-      vec[i] = new ObjectFile(must_open_input_file(paths[i]), mb.name);
-    });
-    return vec;
+  if (memcmp(mb.data, "!<arch>\n", 8) == 0 ||
+      memcmp(mb.data, "!<thin>\n", 8) == 0) {
+    for (MemoryMappedFile &child : read_archive_members(mb))
+      out::objs.push_back(new ObjectFile(child, mb.name));
+    return;
   }
 
   if (memcmp(mb.data, "\177ELF", 4) == 0) {
@@ -71,20 +60,22 @@ std::vector<InputFile *> read_file(MemoryMappedFile mb, bool as_needed) {
 
     // .o
     if (ehdr.e_type == ET_REL) {
-      vec.push_back(new ObjectFile(mb, ""));
-      return vec;
+      out::objs.push_back(new ObjectFile(mb, ""));
+      return;
     }
 
     // .so
     if (ehdr.e_type == ET_DYN) {
-      vec.push_back(new SharedFile(mb, as_needed));
-      return vec;
+      out::dsos.push_back(new SharedFile(mb, config.as_needed));
+      return;
     }
   }
 
   // Linker script
-  if (is_text_file(mb))
-    return parse_linker_script(mb, as_needed);
+  if (is_text_file(mb)) {
+    parse_linker_script(mb);
+    return;
+  }
 
   error(mb.name + ": unknown file type");
 }
@@ -819,8 +810,6 @@ int main(int argc, char **argv) {
     arg_vector.push_back(argv[i]);
 
   Timer t_open("open");
-  std::vector<std::pair<std::string, bool>> input_paths;
-
   for (std::span<std::string_view> args = arg_vector; !args.empty();) {
     std::string_view arg;
 
@@ -865,7 +854,7 @@ int main(int argc, char **argv) {
     } else if (read_flag(args, "perf")) {
       config.perf = true;
     } else if (read_arg(args, arg, "l")) {
-      input_paths.push_back({"-l" + std::string(arg), config.as_needed});
+      read_file(find_library(std::string(arg)));
     } else if (read_z_flag(args, "now")) {
       config.z_now = true;
     } else if (read_arg(args, arg, "z")) {
@@ -880,23 +869,10 @@ int main(int argc, char **argv) {
     } else if (args[0][0] == '-') {
       error("unknown command line option: " + std::string(args[0]));
     } else {
-      input_paths.push_back({std::string(args[0]), config.as_needed});
+      read_file(must_open_input_file(std::string(args[0])));
       args = args.subspan(1);
     }
   }
-
-  std::vector<std::vector<InputFile *>> input_file_vectors(input_paths.size());
-  tbb::parallel_for(0, (int)input_paths.size(), [&](int i) {
-    std::string path = input_paths[i].first;
-    bool as_needed = input_paths[i].second;
-
-    if (path.starts_with("-l"))
-      input_file_vectors[i] = read_file(find_library(path.substr(2)), as_needed);
-    else
-      input_file_vectors[i] = read_file(must_open_input_file(path), as_needed);
-  });
-
-  std::vector<InputFile *> input_files = flatten(input_file_vectors);
 
   t_open.stop();
 
@@ -912,14 +888,8 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     ScopedTimer t("parse");
-    tbb::parallel_for_each(input_files, [](InputFile *file) { file->parse(); });
-  }
-
-  for (InputFile *file : input_files) {
-    if (file->is_dso)
-      out::dsos.push_back((SharedFile *)file);
-    else
-      out::objs.push_back((ObjectFile *)file);
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->parse(); });
+    tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->parse(); });
   }
 
   // Uniquify shared object files with soname

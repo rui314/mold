@@ -10,9 +10,9 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-std::vector<std::string> read_thin_archive_members(MemoryMappedFile mb) {
+static std::vector<MemoryMappedFile> read_thin_archive_members(MemoryMappedFile mb) {
   u8 *data = mb.data + 8;
-  std::vector<std::string> vec;
+  std::vector<MemoryMappedFile> vec;
   std::string_view strtab;
   std::string basedir = mb.name.substr(0, mb.name.find_last_of('/'));
 
@@ -37,13 +37,16 @@ std::vector<std::string> read_thin_archive_members(MemoryMappedFile mb) {
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name = {start, strstr(start, "/\n")};
-    vec.push_back(basedir + "/" + name);
+
+    MemoryMappedFile mb = must_open_input_file(basedir + "/" + name);
+    mb.name = name;
+    vec.push_back(mb);
     data = body;
   }
   return vec;
 }
 
-std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile mb) {
+static std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile mb) {
   u8 *data = mb.data + 8;
   std::vector<MemoryMappedFile> vec;
   std::string_view strtab;
@@ -74,4 +77,16 @@ std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile mb) {
     vec.push_back({name, body, size});
   }
   return vec;
+}
+
+std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
+  if (mb.size < 8)
+    error(mb.name + ": not an archive file");
+  if (memcmp(mb.data, "!<arch>\n", 8) && memcmp(mb.data, "!<thin>\n", 8))
+    error(mb.name + ": not an archive file");
+
+  bool is_thin = !memcmp(mb.data, "!<thin>\n", 8);
+  if (is_thin)
+    return read_thin_archive_members(mb);
+  return read_fat_archive_members(mb);
 }

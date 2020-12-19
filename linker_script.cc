@@ -47,19 +47,20 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
   return vec;
 }
 
-static void skip(std::span<std::string_view> &tok, std::string_view str) {
+static std::span<std::string_view>
+skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
     error("expected '" + std::string(str) + "'");
-  tok = tok.subspan(1);
+  return tok.subspan(1);
 }
 
-static void read_output_format(std::span<std::string_view> &tok) {
-  skip(tok, "(");
+static std::span<std::string_view> read_output_format(std::span<std::string_view> tok) {
+  tok = skip(tok, "(");
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
     error("expected ')'");
-  tok = tok.subspan(1);
+  return tok.subspan(1);
 }
 
 static MemoryMappedFile resolve_path(std::string str) {
@@ -79,51 +80,40 @@ static MemoryMappedFile resolve_path(std::string str) {
   error("library not found: " + str);
 }
 
-static std::vector<InputFile *>
-read_group(std::span<std::string_view> &tok, bool as_needed) {
-  std::vector<InputFile *> files;
-  skip(tok, "(");
+static std::span<std::string_view> read_group(std::span<std::string_view> tok) {
+  tok = skip(tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
       bool orig = config.as_needed;
-      tok = tok.subspan(1);
-      for (InputFile *file : read_group(tok, true))
-        files.push_back(file);
+      tok = read_group(tok.subspan(1));
+      config.as_needed = orig;
       continue;
     }
 
-    for (InputFile *file : read_file(resolve_path(std::string(tok[0])), as_needed))
-      files.push_back(file);
+    read_file(resolve_path(std::string(tok[0])));
     tok = tok.subspan(1);
   }
 
   if (tok.empty())
     error("expected ')'");
-  tok = tok.subspan(1);
-  return files;
+  return tok.subspan(1);
 }
 
-std::vector<InputFile *> parse_linker_script(MemoryMappedFile mb, bool as_needed) {
+void parse_linker_script(MemoryMappedFile mb) {
   script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
 
-  std::vector<std::string_view> tokens = tokenize({(char *)mb.data, mb.size});
-  std::span<std::string_view> tok = tokens;
-  std::vector<InputFile *> files;
+  std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
+  std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
-    if (tok[0] == "OUTPUT_FORMAT") {
-      tok = tok.subspan(1);
-      read_output_format(tok);
-    } else if (tok[0] == "INPUT" || tok[0] == "GROUP") {
-      tok = tok.subspan(1);
-      for (InputFile *file : read_group(tok, as_needed))
-        files.push_back(file);
-    } else {
+    if (tok[0] == "OUTPUT_FORMAT")
+      tok = read_output_format(tok.subspan(1));
+    else if (tok[0] == "INPUT" || tok[0] == "GROUP")
+      tok = read_group(tok.subspan(1));
+    else
       error(mb.name + ": unknown token: " + std::string(tok[0]));
-    }
   }
-  return files;
 }
 
 void parse_version_script(std::string path) {
@@ -132,7 +122,7 @@ void parse_version_script(std::string path) {
   MemoryMappedFile mb = must_open_input_file(path);
   std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
   std::span<std::string_view> tok = vec;
-  skip(tok, "{");
+  tok = skip(tok, "{");
 
   std::vector<std::string> locals;
   std::vector<std::string> globals;
@@ -164,12 +154,11 @@ void parse_version_script(std::string path) {
     }
 
     cur->push_back(std::string(tok[0]));
-    tok = tok.subspan(1);
-    skip(tok, ";");
+    tok = skip(tok.subspan(1), ";");
   }
 
-  skip(tok, "}");
-  skip(tok, ";");
+  tok = skip(tok, "}");
+  tok = skip(tok, ";");
 
   if (!tok.empty())
     error(path + ": trailing garbage token: " + std::string(tok[0]));
