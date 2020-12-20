@@ -56,7 +56,7 @@ struct Config {
   std::string entry = "_start";
   std::string output;
   bool as_needed = false;
-  bool discard_locals = true;
+  bool discard_locals = false;
   bool export_dynamic = false;
   bool fork = true;
   bool is_static = false;
@@ -211,6 +211,7 @@ public:
   u8 is_imported : 1 = false;
   u8 is_weak : 1 = false;
   u8 is_undef_weak : 1 = false;
+  u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
 
   std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
