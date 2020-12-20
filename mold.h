@@ -991,7 +991,7 @@ inline void write_vector(u8 *buf, const std::vector<T> &vec) {
 }
 
 template <typename T, typename U>
-inline void append(std::vector<T> &vec1, std::vector<U> &vec2) {
+inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
   vec1.insert(vec1.end(), vec2.begin(), vec2.end());
 }
 

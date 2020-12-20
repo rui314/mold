@@ -805,14 +805,61 @@ static std::function<void()> fork_child() {
   return [=]() { write(pipefd[1], (char []){1}, 1); };
 }
 
+static std::vector<std::string_view> read_response_file(std::string_view path) {
+  std::vector<std::string_view> vec;
+  MemoryMappedFile mb = must_open_input_file(std::string(path));
+
+  auto read_quoted = [&](int i, char quote) {
+    std::string *buf = new std::string;
+    while (i < mb.size && mb.data[i] != quote) {
+      if (mb.data[i] == '\\') {
+        buf->append(1, mb.data[i + 1]);
+        i += 2;
+      } else {
+        buf->append(1, mb.data[i++]);
+      }
+    }
+    if (i >= mb.size)
+      error(std::string(path) + ": premature end of input");
+    vec.push_back(std::string_view(*buf));
+    return i + 1;
+  };
+
+  auto read_unquoted = [&](int i) {
+    std::string *buf = new std::string;
+    while (i < mb.size && !isspace(mb.data[i]))
+      buf->append(1, mb.data[i++]);
+    vec.push_back(std::string_view(*buf));
+    return i;
+  };
+
+  for (int i = 0; i < mb.size;) {
+    if (isspace(mb.data[i]))
+      i++;
+    else if (mb.data[i] == '\'')
+      i = read_quoted(i + 1, '\'');
+    else if (mb.data[i] == '\"')
+      i = read_quoted(i + 1, '\"');
+    else
+      i = read_unquoted(i);
+  }
+
+  munmap(mb.data, mb.size);
+  return vec;
+}
+
 int main(int argc, char **argv) {
   // Main
   Timer t_all("all");
 
   // Parse command line options
   std::vector<std::string_view> arg_vector;
-  for (int i = 1; i < argc; i++)
-    arg_vector.push_back(argv[i]);
+  for (int i = 1; i < argc; i++) {
+    if (argv[i][0] == '@')
+      append(arg_vector, read_response_file(argv[i] + 1));
+    else
+      arg_vector.push_back(argv[i]);
+  }
 
   config.thread_count =
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
