@@ -232,6 +232,8 @@ static void check_duplicate_symbols() {
     return esym.is_defined() && !is_weak && !is_eliminated && sym.file != file;
   };
 
+  std::atomic_bool has_error = false;
+
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     if (!file->is_alive)
       return;
@@ -252,9 +254,8 @@ static void check_duplicate_symbols() {
                     << ": " << to_string(file->symbols[i]->file) << ": "
                     << file->symbols[i]->name << "\n";
 
-  for (ObjectFile *file : out::objs)
-    if (file->has_error)
-      _exit(1);
+  if (has_error)
+    _exit(1);
 }
 
 static void set_isec_offsets() {
@@ -312,15 +313,18 @@ static void scan_rels() {
 
   // If there was a relocation that refers an undefined symbol,
   // report an error.
-  for (ObjectFile *file : out::objs)
-    if (file->has_error)
+  bool has_error = false;
+  for (ObjectFile *file : out::objs) {
+    if (file->has_error) {
+      has_error = true;
       for (InputSection *isec : file->sections)
         if (isec)
           isec->report_undefined_symbols();
+    }
+  }
 
-  for (ObjectFile *file : out::objs)
-    if (file->has_error)
-      _exit(1);
+  if (has_error)
+    _exit(1);
 
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
