@@ -80,18 +80,19 @@ static MemoryMappedFile resolve_path(std::string str) {
   error("library not found: " + str);
 }
 
-static std::span<std::string_view> read_group(std::span<std::string_view> tok) {
+static std::span<std::string_view>
+read_group(std::span<std::string_view> tok, bool as_needed) {
   tok = skip(tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
       bool orig = config.as_needed;
-      tok = read_group(tok.subspan(1));
+      tok = read_group(tok.subspan(1), true);
       config.as_needed = orig;
       continue;
     }
 
-    read_file(resolve_path(std::string(tok[0])));
+    read_file(resolve_path(std::string(tok[0])), as_needed);
     tok = tok.subspan(1);
   }
 
@@ -100,7 +101,7 @@ static std::span<std::string_view> read_group(std::span<std::string_view> tok) {
   return tok.subspan(1);
 }
 
-void parse_linker_script(MemoryMappedFile mb) {
+void parse_linker_script(MemoryMappedFile mb, bool as_needed) {
   script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
 
   std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
@@ -110,7 +111,7 @@ void parse_linker_script(MemoryMappedFile mb) {
     if (tok[0] == "OUTPUT_FORMAT")
       tok = read_output_format(tok.subspan(1));
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
-      tok = read_group(tok.subspan(1));
+      tok = read_group(tok.subspan(1), as_needed);
     else
       error(mb.name + ": unknown token: " + std::string(tok[0]));
   }

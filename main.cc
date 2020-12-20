@@ -47,7 +47,7 @@ static bool is_text_file(MemoryMappedFile mb) {
          isprint(mb.data[3]);
 }
 
-void read_file(MemoryMappedFile mb) {
+void read_file(MemoryMappedFile mb, bool as_needed) {
   // .a
   if (memcmp(mb.data, "!<arch>\n", 8) == 0 ||
       memcmp(mb.data, "!<thin>\n", 8) == 0) {
@@ -74,7 +74,7 @@ void read_file(MemoryMappedFile mb) {
 
     // .so
     if (ehdr.e_type == ET_DYN) {
-      SharedFile *file = new SharedFile(mb, config.as_needed);
+      SharedFile *file = new SharedFile(mb, as_needed);
       parser_tg.run([=]() { file->parse(); });
       out::dsos.push_back(file);
       return;
@@ -83,7 +83,7 @@ void read_file(MemoryMappedFile mb) {
 
   // Linker script
   if (is_text_file(mb)) {
-    parse_linker_script(mb);
+    parse_linker_script(mb, as_needed);
     return;
   }
 
@@ -929,12 +929,12 @@ int main(int argc, char **argv) {
     } else if (read_arg(args, arg, "version-script")) {
       lazy_params.push_back([=]() { parse_version_script(std::string(arg)); });
     } else if (read_arg(args, arg, "l")) {
-      lazy_params.push_back([=]() { read_file(find_library(std::string(arg))); });
+      lazy_params.push_back([=]() { read_file(find_library(std::string(arg)), config.as_needed); });
     } else {
       if (args[0][0] == '-')
         error("unknown command line option: " + std::string(args[0]));
       std::string arg(args[0]);
-      lazy_params.push_back([=]() { read_file(must_open_input_file(arg)); });
+      lazy_params.push_back([=]() { read_file(must_open_input_file(arg), config.as_needed); });
       args = args.subspan(1);
     }
   }

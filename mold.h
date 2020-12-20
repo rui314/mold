@@ -758,7 +758,7 @@ std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
 // linker_script.cc
 //
 
-void parse_linker_script(MemoryMappedFile mb);
+void parse_linker_script(MemoryMappedFile mb, bool as_needed);
 void parse_version_script(std::string path);
 
 //
@@ -837,7 +837,7 @@ void print_map();
 MemoryMappedFile find_library(std::string path);
 MemoryMappedFile *open_input_file(std::string path);
 MemoryMappedFile must_open_input_file(std::string path);
-void read_file(MemoryMappedFile mb);
+void read_file(MemoryMappedFile mb, bool as_needed);
 
 //
 // Inline objects and functions
