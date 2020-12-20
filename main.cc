@@ -121,12 +121,13 @@ static void resolve_symbols() {
   tbb::parallel_do(
     root,
     [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-      file->mark_live_objects(feeder);
+      for (ObjectFile *obj : file->mark_live_objects())
+        feeder.add(obj);
     });
 
   // Eliminate unused archive members and as-needed DSOs.
-  erase(out::objs, [](InputFile *file){ return !file->is_alive; });
-  erase(out::dsos, [](InputFile *file){ return !file->is_alive; });
+  erase(out::objs, [](InputFile *file) { return !file->is_alive; });
+  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
 }
 
 static void eliminate_comdats() {

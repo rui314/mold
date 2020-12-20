@@ -677,7 +677,7 @@ public:
   void parse();
   void initialize_mergeable_sections();
   void resolve_symbols();
-  void mark_live_objects(tbb::parallel_do_feeder<ObjectFile *> &feeder);
+  std::vector<ObjectFile *> mark_live_objects();
   void handle_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
