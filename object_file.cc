@@ -559,9 +559,6 @@ void ObjectFile::write_symtab() {
 
   auto write_sym = [&](u32 i) {
     Symbol &sym = *symbols[i];
-    if (sym.type == STT_SECTION || sym.file != this)
-      return;
-
     ElfSym &esym = *(ElfSym *)(symtab_base + symtab_off);
     symtab_off += sizeof(ElfSym);
 
@@ -591,7 +588,8 @@ void ObjectFile::write_symtab() {
 
   symtab_off = global_symtab_offset;
   for (int i = first_global; i < elf_syms.size(); i++)
-    write_sym(i);
+    if (symbols[i]->file == this && elf_syms[i].st_type != STT_SECTION)
+      write_sym(i);
 }
 
 bool is_c_identifier(std::string_view name) {
