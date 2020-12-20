@@ -47,47 +47,55 @@ static bool is_text_file(MemoryMappedFile mb) {
          isprint(mb.data[3]);
 }
 
+enum FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
+
+static FileType get_file_type(MemoryMappedFile mb) {
+  if (mb.size >= 20 && memcmp(mb.data, "\177ELF", 4) == 0) {
+    ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
+    if (ehdr.e_type == ET_REL)
+      return OBJ;
+    if (ehdr.e_type == ET_DYN)
+      return DSO;
+    return UNKNOWN;
+  }
+
+  if (mb.size >= 8 && memcmp(mb.data, "!<arch>\n", 8) == 0)
+    return AR;
+  if (mb.size >= 8 && memcmp(mb.data, "!<thin>\n", 8) == 0)
+    return THIN_AR;
+  if (is_text_file(mb))
+    return TEXT;
+  return UNKNOWN;
+}
+
 void read_file(MemoryMappedFile mb, bool as_needed) {
-  // .a
-  if (memcmp(mb.data, "!<arch>\n", 8) == 0 ||
-      memcmp(mb.data, "!<thin>\n", 8) == 0) {
+  switch (get_file_type(mb)) {
+  case OBJ: {
+    ObjectFile *file = new ObjectFile(mb, "");
+    parser_tg.run([=]() { file->parse(); });
+    out::objs.push_back(file);
+    return;
+  }
+  case DSO: {
+    SharedFile *file = new SharedFile(mb, as_needed);
+    parser_tg.run([=]() { file->parse(); });
+    out::dsos.push_back(file);
+    return;
+  }
+  case AR:
+  case THIN_AR:
     for (MemoryMappedFile &child : read_archive_members(mb)) {
       ObjectFile *file = new ObjectFile(child, mb.name);
       parser_tg.run([=]() { file->parse(); });
       out::objs.push_back(file);
     }
     return;
-  }
-
-  if (memcmp(mb.data, "\177ELF", 4) == 0) {
-    ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
-    if (mb.size < 20)
-      error(mb.name + ": broken ELF file");
-
-    // .o
-    if (ehdr.e_type == ET_REL) {
-      ObjectFile *file = new ObjectFile(mb, "");
-      parser_tg.run([=]() { file->parse(); });
-      out::objs.push_back(file);
-      return;
-    }
-
-    // .so
-    if (ehdr.e_type == ET_DYN) {
-      SharedFile *file = new SharedFile(mb, as_needed);
-      parser_tg.run([=]() { file->parse(); });
-      out::dsos.push_back(file);
-      return;
-    }
-  }
-
-  // Linker script
-  if (is_text_file(mb)) {
+  case TEXT:
     parse_linker_script(mb, as_needed);
     return;
+  default:
+    error(mb.name + ": unknown file type");
   }
-
-  error(mb.name + ": unknown file type");
 }
 
 template <typename T>
