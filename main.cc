@@ -200,14 +200,10 @@ static void bin_sections() {
     groups[i].resize(num_osec);
 
   tbb::parallel_for(0, (int)slices.size(), [&](int i) {
-    for (ObjectFile *file : slices[i]) {
-      for (InputSection *isec : file->sections) {
-        if (!isec)
-          continue;
-        OutputSection *osec = isec->output_section;
-        groups[i][osec->idx].push_back(isec);
-      }
-    }
+    for (ObjectFile *file : slices[i]) 
+      for (InputSection *isec : file->sections)
+        if (isec)
+          groups[i][isec->output_section->idx].push_back(isec);
   });
 
   std::vector<int> sizes(num_osec);
@@ -219,10 +215,8 @@ static void bin_sections() {
   tbb::parallel_for(0, num_osec, [&](int j) {
     OutputSection::instances[j]->members.reserve(sizes[j]);
 
-    for (int i = 0; i < groups.size(); i++) {
-      std::vector<InputChunk *> &sections = OutputSection::instances[j]->members;
-      append(sections, groups[i][j]);
-    }
+    for (int i = 0; i < groups.size(); i++)
+      append(OutputSection::instances[j]->members, groups[i][j]);
   });
 }
 
