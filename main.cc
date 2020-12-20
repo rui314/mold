@@ -220,7 +220,7 @@ static void bin_sections() {
 
     for (int i = 0; i < groups.size(); i++) {
       std::vector<InputChunk *> &sections = OutputSection::instances[j]->members;
-      sections.insert(sections.end(), groups[i][j].begin(), groups[i][j].end());
+      append(sections, groups[i][j]);
     }
   });
 }
@@ -329,8 +329,8 @@ static void scan_rels() {
 
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
-  files.insert(files.end(), out::objs.begin(), out::objs.end());
-  files.insert(files.end(), out::dsos.begin(), out::dsos.end());
+  append(files, out::objs);
+  append(files, out::dsos);
 
   std::vector<std::vector<Symbol *>> vec(files.size());
 

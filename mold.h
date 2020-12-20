@@ -990,11 +990,16 @@ inline void write_vector(u8 *buf, const std::vector<T> &vec) {
   memcpy(buf, vec.data(), vec.size() * sizeof(T));
 }
 
+template <typename T, typename U>
+inline void append(std::vector<T> &vec1, std::vector<U> &vec2) {
+  vec1.insert(vec1.end(), vec2.begin(), vec2.end());
+}
+
 template <typename T>
 inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
   std::vector<T> ret;
   for (std::vector<T> &v : vec)
-    ret.insert(ret.end(), v.begin(), v.end());
+    append(ret, v);
   return ret;
 }
 
