@@ -147,6 +147,8 @@ void ObjectFile::initialize_sections() {
 }
 
 static bool should_write_symtab(const ElfSym &esym, std::string_view name) {
+  if (config.discard_all)
+    return false;
   if (esym.st_type == STT_SECTION)
     return false;
   if (config.discard_locals && name.starts_with(".L"))

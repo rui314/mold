@@ -858,6 +858,8 @@ int main(int argc, char **argv) {
       config.fork = false;
     } else if (read_arg(args, arg, "thread-count")) {
       config.thread_count = parse_number("thread-count", arg);
+    } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
+      config.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
       config.discard_locals = true;
     } else if (read_arg(args, arg, "z")) {
