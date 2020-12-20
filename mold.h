@@ -69,7 +69,7 @@ struct Config {
   int filler = -1;
   int thread_count = -1;
   std::string sysroot;
-  std::vector<std::string> library_paths;
+  std::vector<std::string_view> library_paths;
   std::vector<std::string> rpaths;
   std::vector<std::string> globals;
   u64 image_base = 0x200000;
@@ -833,7 +833,7 @@ void print_map();
 // main.cc
 //
 
-MemoryMappedFile find_library(std::string path);
+MemoryMappedFile find_library(std::string path, std::span<std::string_view> lib_paths);
 MemoryMappedFile *open_input_file(std::string path);
 MemoryMappedFile must_open_input_file(std::string path);
 void read_file(MemoryMappedFile mb, bool as_needed);

@@ -67,14 +67,14 @@ static MemoryMappedFile resolve_path(std::string str) {
   if (str.starts_with("/"))
     return must_open_input_file(config.sysroot + str);
   if (str.starts_with("-l"))
-    return find_library(str.substr(2));
+    return find_library(str.substr(2), config.library_paths);
   if (MemoryMappedFile *mb = open_input_file(script_dir + "/" + str))
     return *mb;
   if (MemoryMappedFile *mb = open_input_file(str))
     return *mb;
-  for (std::string &dir : config.library_paths) {
+  for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
-    if (MemoryMappedFile *mb = open_input_file(root + dir + "/" + str))
+    if (MemoryMappedFile *mb = open_input_file(root + std::string(dir) + "/" + str))
       return *mb;
   }
   error("library not found: " + str);

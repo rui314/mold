@@ -667,8 +667,8 @@ static u8 *open_output_file(u64 filesize) {
   return (u8 *)buf;
 }
 
-MemoryMappedFile find_library(std::string name) {
-  for (std::string_view dir : config.library_paths) {
+MemoryMappedFile find_library(std::string name, std::span<std::string_view> lib_paths) {
+  for (std::string_view dir : lib_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!config.is_static)
@@ -856,34 +856,31 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
   return vec;
 }
 
-static std::unordered_set<std::string_view> get_opts_with_arg() {
-  static std::vector<std::string_view> opts = {
-    "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
-    "trace-symbol", "filler", "L", "library-path", "sysroot",
-    "thread-count", "z", "hash-style", "m", "build-id", "rpath",
-    "version-script",
-  };
-
-  std::unordered_set<std::string_view> set;
-  for (std::string_view opt : opts)
-    set.insert(opt);
-  return set;
-}
-
 static std::vector<std::string_view> get_input_files(std::span<std::string_view> args) {
-  static std::unordered_set<std::string_view> opts_with_arg = get_opts_with_arg();
+  static std::unordered_set<std::string_view> needs_arg({
+    "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
+    "trace-symbol", "filler", "sysroot", "thread-count", "z",
+    "hash-style", "m", "build-id", "rpath", "version-script",
+  });
 
   std::vector<std::string_view> vec;
+  std::vector<std::string> library_paths;
 
   while (args.empty()) {
-    if (opts_with_arg.contains(args[0])) {
+    if (needs_arg.contains(args[0])) {
       if (args.size() == 1)
         error(std::string(args[0]) + ": missing argument");
       args = args.subspan(2);
       continue;
     }
 
-    if (std::string_view arg; read_arg(args, arg, "l")) {
+    std::string_view arg;
+
+    if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
+      library_paths.push_back(std::string(arg));
+    }
+
+    if (read_arg(args, arg, "l")) {
       vec.push_back(arg);
       continue;
     }
@@ -940,7 +937,7 @@ int main(int argc, char **argv) {
     } else if (read_arg(args, arg, "filler")) {
       config.filler = parse_hex("filler", arg);
     } else if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
-      config.library_paths.push_back(std::string(arg));
+      config.library_paths.push_back(arg);
     } else if (read_arg(args, arg, "sysroot")) {
       config.sysroot = arg;
     } else if (read_flag(args, "trace")) {
@@ -981,7 +978,10 @@ int main(int argc, char **argv) {
     } else if (read_arg(args, arg, "version-script")) {
       lazy_params.push_back([=]() { parse_version_script(std::string(arg)); });
     } else if (read_arg(args, arg, "l")) {
-      lazy_params.push_back([=]() { read_file(find_library(std::string(arg)), as_needed); });
+      lazy_params.push_back([=]() {
+         MemoryMappedFile mb = find_library(std::string(arg), config.library_paths);
+         read_file(mb, as_needed);
+      });
     } else {
       if (args[0][0] == '-')
         error("unknown command line option: " + std::string(args[0]));
