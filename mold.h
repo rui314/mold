@@ -56,6 +56,7 @@ struct Config {
   std::string entry = "_start";
   std::string output;
   bool as_needed = false;
+  bool discard_locals = true;
   bool export_dynamic = false;
   bool fork = true;
   bool is_static = false;

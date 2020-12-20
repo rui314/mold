@@ -817,22 +817,8 @@ int main(int argc, char **argv) {
   config.thread_count =
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
-  for (std::span<std::string_view> args = arg_vector; !args.empty();) {
-    std::string_view arg;
+  std::vector<std::function<void()>> lazy_params;
 
-    if (read_flag(args, "no-fork"))
-      config.fork = false;
-    else if (read_arg(args, arg, "thread-count"))
-      config.thread_count = parse_number("thread-count", arg);
-    else
-      args = args.subspan(1);
-  }
-
-  std::function<void()> on_complete = config.fork ? fork_child() : []() {};
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
-
-  Timer t_open("open");
   for (std::span<std::string_view> args = arg_vector; !args.empty();) {
     std::string_view arg;
 
@@ -860,45 +846,62 @@ int main(int argc, char **argv) {
       config.sysroot = arg;
     } else if (read_flag(args, "trace")) {
       config.trace = true;
-    } else if (read_flag(args, "as-needed")) {
-      config.as_needed = true;
-    } else if (read_flag(args, "no-as-needed")) {
-      config.as_needed = false;
-    } else if (read_arg(args, arg, "rpath")) {
-      config.rpaths.push_back(std::string(arg));
-    } else if (read_arg(args, arg, "version-script")) {
-      parse_version_script(std::string(arg));
     } else if (read_flag(args, "pie")) {
       config.pie = true;
     } else if (read_flag(args, "no-pie")) {
       config.pie = false;
     } else if (read_flag(args, "perf")) {
       config.perf = true;
-    } else if (read_arg(args, arg, "l")) {
-      read_file(find_library(std::string(arg)));
     } else if (read_z_flag(args, "now")) {
       config.z_now = true;
-    } else if (read_arg(args, arg, "z")) {
+    } else if (read_flag(args, "no-fork")) {
+      config.fork = false;
     } else if (read_arg(args, arg, "thread-count")) {
+      config.thread_count = parse_number("thread-count", arg);
+    } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
+      config.discard_locals = true;
+    } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
     } else if (read_equal(args, arg, "build-id", "none")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
-    } else if (read_flag(args, "no-fork")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
-    } else if (args[0][0] == '-') {
-      error("unknown command line option: " + std::string(args[0]));
+    } else if (read_flag(args, "as-needed")) {
+      lazy_params.push_back([]() { config.as_needed = true; });
+    } else if (read_flag(args, "no-as-needed")) {
+      lazy_params.push_back([]() { config.as_needed = false; });
+    } else if (read_arg(args, arg, "rpath")) {
+      config.rpaths.push_back(std::string(arg));
+    } else if (read_arg(args, arg, "version-script")) {
+      lazy_params.push_back([=]() { parse_version_script(std::string(arg)); });
+    } else if (read_arg(args, arg, "l")) {
+      lazy_params.push_back([=]() { read_file(find_library(std::string(arg))); });
     } else {
-      read_file(must_open_input_file(std::string(args[0])));
+      if (args[0][0] == '-')
+        error("unknown command line option: " + std::string(args[0]));
+      std::string arg(args[0]);
+      lazy_params.push_back([=]() { read_file(must_open_input_file(arg)); });
       args = args.subspan(1);
     }
   }
 
-  parser_tg.wait();
-  t_open.stop();
+  std::function<void()> on_complete = []() {};
+  if (config.fork)
+    on_complete = fork_child();
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
+
+  // Parse input files
+  {
+    ScopedTimer t("parse");
+    for (std::function<void()> fn : lazy_params)
+      fn();
+    parser_tg.wait();
+  }
 
   if (config.output == "")
     error("-o option is missing");
