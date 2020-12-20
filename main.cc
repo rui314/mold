@@ -856,6 +856,49 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
   return vec;
 }
 
+static std::unordered_set<std::string_view> get_opts_with_arg() {
+  static std::vector<std::string_view> opts = {
+    "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
+    "trace-symbol", "filler", "L", "library-path", "sysroot",
+    "thread-count", "z", "hash-style", "m", "build-id", "rpath",
+    "version-script",
+  };
+
+  std::unordered_set<std::string_view> set;
+  for (std::string_view opt : opts)
+    set.insert(opt);
+  return set;
+}
+
+static std::vector<std::string_view> get_input_files(std::span<std::string_view> args) {
+  static std::unordered_set<std::string_view> opts_with_arg = get_opts_with_arg();
+
+  std::vector<std::string_view> vec;
+
+  while (args.empty()) {
+    if (opts_with_arg.contains(args[0])) {
+      if (args.size() == 1)
+        error(std::string(args[0]) + ": missing argument");
+      args = args.subspan(2);
+      continue;
+    }
+
+    if (std::string_view arg; read_arg(args, arg, "l")) {
+      vec.push_back(arg);
+      continue;
+    }
+
+    if (args[0].starts_with("-")) {
+      args = args.subspan(1);
+      continue;
+    }
+
+    vec.push_back(args[0]);
+    args = args.subspan(1);
+  }
+  return vec;
+}
+
 int main(int argc, char **argv) {
   // Main
   Timer t_all("all");
