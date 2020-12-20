@@ -147,7 +147,7 @@ void ObjectFile::initialize_sections() {
 }
 
 static bool should_write_symtab(const ElfSym &esym, std::string_view name) {
-  if (config.discard_all)
+  if (config.discard_all || config.strip_all)
     return false;
   if (esym.st_type == STT_SECTION)
     return false;
@@ -541,12 +541,16 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
+static bool should_write_global_symtab(Symbol &sym) {
+  return !config.strip_all && sym.esym->st_type != STT_SECTION;
+}
+
 void ObjectFile::compute_symtab() {
   for (int i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
-    if (esym.st_type != STT_SECTION && sym.file == this) {
+    if (sym.file == this && should_write_global_symtab(sym)) {
       global_symtab_size += sizeof(ElfSym);
       strtab_size += sym.name.size() + 1;
     }
@@ -590,7 +594,7 @@ void ObjectFile::write_symtab() {
 
   symtab_off = global_symtab_offset;
   for (int i = first_global; i < elf_syms.size(); i++)
-    if (symbols[i]->file == this && elf_syms[i].st_type != STT_SECTION)
+    if (symbols[i]->file == this && should_write_global_symtab(*symbols[i]))
       write_sym(i);
 }
 

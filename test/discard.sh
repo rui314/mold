@@ -16,15 +16,27 @@ foo:
 EOF
 
 ../mold -o $t/exe $t/a.o
-readelf --symbols $t/exe | fgrep -q foo
-readelf --symbols $t/exe | fgrep -q .Lbar
+readelf --symbols $t/exe > $t/log
+fgrep -q _start $t/log
+fgrep -q foo $t/log
+fgrep -q .Lbar $t/log
 
 ../mold -o $t/exe $t/a.o --discard-locals
-readelf --symbols $t/exe | fgrep -q foo
-! readelf --symbols $t/exe | fgrep -q .Lbar
+readelf --symbols $t/exe > $t/log
+fgrep -q _start $t/log
+fgrep -q foo $t/log
+! fgrep -q .Lbar $t/log
 
 ../mold -o $t/exe $t/a.o --discard-all
-! readelf --symbols $t/exe | fgrep -q foo
-! readelf --symbols $t/exe | fgrep -q .Lbar
+readelf --symbols $t/exe > $t/log
+fgrep -q _start $t/log
+! fgrep -q foo $t/log
+! fgrep -q .Lbar $t/log
+
+../mold -o $t/exe $t/a.o --strip-all
+readelf --symbols $t/exe > $t/log
+! fgrep -q _start $t/log
+! fgrep -q foo $t/log
+! fgrep -q .Lbar $t/log
 
 echo ' OK'

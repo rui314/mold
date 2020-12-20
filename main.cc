@@ -862,6 +862,8 @@ int main(int argc, char **argv) {
       config.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
       config.discard_locals = true;
+    } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
+      config.strip_all = true;
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {

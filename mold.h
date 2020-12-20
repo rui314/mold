@@ -64,6 +64,7 @@ struct Config {
   bool perf = false;
   bool pie = false;
   bool print_map = false;
+  bool strip_all = false;
   bool trace = false;
   bool z_now = false;
   int filler = -1;
