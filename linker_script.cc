@@ -86,9 +86,7 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
-      bool orig = config.as_needed;
       tok = read_group(tok.subspan(1), true);
-      config.as_needed = orig;
       continue;
     }
 

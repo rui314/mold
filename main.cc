@@ -873,6 +873,7 @@ int main(int argc, char **argv) {
     tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
   std::vector<std::function<void()>> lazy_params;
+  bool as_needed = false;
 
   for (std::span<std::string_view> args = arg_vector; !args.empty();) {
     std::string_view arg;
@@ -929,20 +930,20 @@ int main(int argc, char **argv) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
     } else if (read_flag(args, "as-needed")) {
-      lazy_params.push_back([]() { config.as_needed = true; });
+      as_needed = true;
     } else if (read_flag(args, "no-as-needed")) {
-      lazy_params.push_back([]() { config.as_needed = false; });
+      as_needed = false;
     } else if (read_arg(args, arg, "rpath")) {
       config.rpaths.push_back(std::string(arg));
     } else if (read_arg(args, arg, "version-script")) {
       lazy_params.push_back([=]() { parse_version_script(std::string(arg)); });
     } else if (read_arg(args, arg, "l")) {
-      lazy_params.push_back([=]() { read_file(find_library(std::string(arg)), config.as_needed); });
+      lazy_params.push_back([=]() { read_file(find_library(std::string(arg)), as_needed); });
     } else {
       if (args[0][0] == '-')
         error("unknown command line option: " + std::string(args[0]));
       std::string arg(args[0]);
-      lazy_params.push_back([=]() { read_file(must_open_input_file(arg), config.as_needed); });
+      lazy_params.push_back([=]() { read_file(must_open_input_file(arg), as_needed); });
       args = args.subspan(1);
     }
   }
