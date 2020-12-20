@@ -241,6 +241,7 @@ static void check_duplicate_symbols() {
     for (int i = file->first_global; i < file->elf_syms.size(); i++) {
       if (is_error(file, i)) {
         file->has_error = true;
+        has_error = true;
         return;
       }
     }
