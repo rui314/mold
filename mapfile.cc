@@ -14,8 +14,7 @@ void print_map() {
 
   for (auto &pair : map) {
     std::vector<Symbol *> &vec = pair.second;
-    std::stable_sort(vec.begin(), vec.end(),
-                     [](Symbol *a, Symbol *b) { return a->value < b->value; });
+    sort(vec, [](Symbol *a, Symbol *b) { return a->value < b->value; });
   }
 
   std::cout << "             VMA     Size Align Out     In      Symbol\n";

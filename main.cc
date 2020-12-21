@@ -421,11 +421,9 @@ static void fill_symbol_versions() {
   if (syms.empty())
     return;
 
-  std::stable_sort(syms.begin(), syms.end(), [](Symbol *a, Symbol *b) {
-    SharedFile *x = (SharedFile *)a->file;
-    SharedFile *y = (SharedFile *)b->file;
-    return std::make_tuple(x->soname, a->ver_idx) <
-           std::make_tuple(y->soname, b->ver_idx);
+  sort(syms, [](Symbol *a, Symbol *b) {
+    return std::make_tuple(((SharedFile *)a->file)->soname, a->ver_idx) <
+           std::make_tuple(((SharedFile *)b->file)->soname, b->ver_idx);
   });
 
   // Compute sizes of .gnu.version and .gnu.version_r sections.
@@ -1014,7 +1012,6 @@ static void show_stats() {
 }
 
 int main(int argc, char **argv) {
-  // Main
   Timer t_all("all");
 
   // Parse non-positional command line options
@@ -1168,10 +1165,8 @@ int main(int argc, char **argv) {
            std::make_tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
   };
 
-  std::stable_sort(OutputSection::instances.begin(), OutputSection::instances.end(),
-                   section_compare);
-  std::stable_sort(MergedSection::instances.begin(), MergedSection::instances.end(),
-                   section_compare);
+  sort(OutputSection::instances, section_compare);
+  sort(MergedSection::instances, section_compare);
 
   // Add sections to the section lists
   for (OutputSection *osec : OutputSection::instances)
@@ -1185,10 +1180,9 @@ int main(int argc, char **argv) {
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
-  std::stable_sort(out::chunks.begin(), out::chunks.end(),
-                   [](OutputChunk *a, OutputChunk *b) {
-                     return get_section_rank(a->shdr) < get_section_rank(b->shdr);
-                   });
+  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
+    return get_section_rank(a->shdr) < get_section_rank(b->shdr);
+  });
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).

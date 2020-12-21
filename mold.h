@@ -1009,3 +1009,8 @@ template <typename T, typename U>
 inline void erase(std::vector<T> &vec, U pred) {
   vec.erase(std::remove_if(vec.begin(), vec.end(), pred), vec.end());
 }
+
+template <typename T, typename U>
+inline void sort(T &vec, U less) {
+  std::stable_sort(vec.begin(), vec.end(), less);
+}

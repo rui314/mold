@@ -713,11 +713,10 @@ void SharedFile::parse() {
 
   // Sort symbols by value for find_aliases(), as find_aliases() does
   // binary search on symbols.
-  std::stable_sort(pairs.begin(), pairs.end(),
-                   [](const std::pair<const ElfSym *, u16> &a,
-                      const std::pair<const ElfSym *, u16> &b) {
-                     return a.first->st_value < b.first->st_value;
-                   });
+  sort(pairs, [](const std::pair<const ElfSym *, u16> &a,
+                 const std::pair<const ElfSym *, u16> &b) {
+    return a.first->st_value < b.first->st_value;
+  });
 
   elf_syms.reserve(pairs.size());
   versyms.reserve(pairs.size());
