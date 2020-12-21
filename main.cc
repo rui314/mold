@@ -647,6 +647,7 @@ static u32 get_umask() {
 
 static u8 *open_output_file(u64 filesize) {
   ScopedTimer t("open_file");
+  Counter counter("filesize", filesize);
 
   int fd = open(std::string(config.output).c_str(), O_RDWR | O_CREAT, 0777);
   if (fd == -1)
@@ -988,6 +989,30 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
   return conf;
 }
 
+static void show_stats() {
+  for (ObjectFile *obj : out::objs) {
+    static Counter defined("defined_syms");
+    defined.inc(obj->first_global - 1);
+
+    static Counter undefined("undefined_syms");
+    undefined.inc(obj->symbols.size() - obj->first_global);
+  }
+
+  Counter num_input_sections("input_sections");
+  for (ObjectFile *file : out::objs)
+    num_input_sections.inc(file->sections.size());
+
+  static Counter merged_strings("merged_strings");
+  for (MergedSection *osec : MergedSection::instances)
+    merged_strings.inc(osec->map.size());
+
+  Counter num_output_chunks("output_out::chunks", out::chunks.size());
+  Counter num_objs("num_objs", out::objs.size());
+  Counter num_dsos("num_dsos", out::dsos.size());
+
+  Counter::print();
+}
+
 int main(int argc, char **argv) {
   // Main
   Timer t_all("all");
@@ -1277,30 +1302,8 @@ int main(int argc, char **argv) {
     print_map();
 
   // Show stats numbers
-  if (Counter::enabled) {
-    for (ObjectFile *obj : out::objs) {
-      static Counter defined("defined_syms");
-      defined.inc(obj->first_global - 1);
-
-      static Counter undefined("undefined_syms");
-      undefined.inc(obj->symbols.size() - obj->first_global);
-    }
-
-    Counter num_input_sections("input_sections");
-    for (ObjectFile *file : out::objs)
-      num_input_sections.inc(file->sections.size());
-
-    static Counter merged_strings("merged_strings");
-    for (MergedSection *osec : MergedSection::instances)
-      merged_strings.inc(osec->map.size());
-
-    Counter num_output_chunks("output_out::chunks", out::chunks.size());
-    Counter num_objs("num_objs", out::objs.size());
-    Counter num_dsos("num_dsos", out::dsos.size());
-    Counter filesize_counter("filesize", filesize);
-
-    Counter::print();
-  }
+  if (Counter::enabled)
+    show_stats();
 
   if (config.perf)
     Timer::print();
