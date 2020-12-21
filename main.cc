@@ -1021,17 +1021,18 @@ int main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   config = parse_nonpositional_args(arg_vector, file_args);
 
+  if (config.output == "")
+    error("-o option is missing");
+
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                config.thread_count);
 
-  std::function<void()> on_complete = []() {};
+  std::function<void()> on_complete;
   if (config.fork)
     on_complete = fork_child();
 
   if (config.stat)
     Counter::enabled = true;
-  if (config.output == "")
-    error("-o option is missing");
   if (config.pie)
     config.image_base = 0;
 
@@ -1303,6 +1304,7 @@ int main(int argc, char **argv) {
 
   std::cout << std::flush;
   std::cerr << std::flush;
-  on_complete();
+  if (on_complete)
+    on_complete();
   std::quick_exit(0);
 }
