@@ -100,6 +100,7 @@ void read_file(MemoryMappedFile mb, bool as_needed) {
 
 template <typename T>
 static std::vector<std::span<T>> split(std::vector<T> &input, int unit) {
+  assert(input.size() > 0);
   std::span<T> span(input);
   std::vector<std::span<T>> vec;
 
@@ -856,6 +857,18 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
   return vec;
 }
 
+static std::vector<std::string_view> expand_response_files(char **argv) {
+  std::vector<std::string_view> vec;
+
+  for (int i = 0; argv[i]; i++) {
+    if (argv[i][0] == '@')
+      append(vec, read_response_file(argv[i] + 1));
+    else
+      vec.push_back(argv[i]);
+  }
+  return vec;
+}
+
 static std::vector<std::string_view> get_input_files(std::span<std::string_view> args) {
   static std::unordered_set<std::string_view> needs_arg({
     "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
@@ -896,70 +909,59 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
   return vec;
 }
 
-int main(int argc, char **argv) {
-  // Main
-  Timer t_all("all");
+static Config parse_nonpositional_args(std::span<std::string_view> args,
+                                       std::vector<std::string_view> &remaining) {
+  Config conf;
 
-  // Parse command line options
-  std::vector<std::string_view> arg_vector;
-  for (int i = 1; i < argc; i++) {
-    if (argv[i][0] == '@')
-      append(arg_vector, read_response_file(argv[i] + 1));
-    else
-      arg_vector.push_back(argv[i]);
-  }
-
-  config.thread_count =
-    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
-
-  std::vector<std::function<void()>> lazy_params;
-  bool as_needed = false;
-
-  for (std::span<std::string_view> args = arg_vector; !args.empty();) {
+  while (!args.empty()) {
     std::string_view arg;
 
     if (read_arg(args, arg, "o")) {
-      config.output = arg;
+      conf.output = arg;
     } else if (read_arg(args, arg, "dynamic-linker")) {
-      config.dynamic_linker = arg;
+      conf.dynamic_linker = arg;
     } else if (read_flag(args, "export-dynamic")) {
-      config.export_dynamic = true;
+      conf.export_dynamic = true;
     } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
-      config.entry = arg;
+      conf.entry = arg;
     } else if (read_flag(args, "print-map")) {
-      config.print_map = true;
+      conf.print_map = true;
     } else if (read_flag(args, "stat")) {
-      Counter::enabled = true;
+      conf.stat = true;
     } else if (read_flag(args, "static")) {
-      config.is_static = true;
+      conf.is_static = true;
     } else if (read_arg(args, arg, "y") || read_arg(args, arg, "trace-symbol")) {
-      Symbol::intern(arg)->traced = true;
+      conf.trace_symbol.push_back(arg);
     } else if (read_arg(args, arg, "filler")) {
-      config.filler = parse_hex("filler", arg);
+      conf.filler = parse_hex("filler", arg);
     } else if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
-      config.library_paths.push_back(arg);
+      conf.library_paths.push_back(arg);
     } else if (read_arg(args, arg, "sysroot")) {
-      config.sysroot = arg;
+      conf.sysroot = arg;
     } else if (read_flag(args, "trace")) {
-      config.trace = true;
+      conf.trace = true;
     } else if (read_flag(args, "pie")) {
-      config.pie = true;
+      conf.pie = true;
     } else if (read_flag(args, "no-pie")) {
-      config.pie = false;
+      conf.pie = false;
     } else if (read_flag(args, "perf")) {
-      config.perf = true;
+      conf.perf = true;
     } else if (read_z_flag(args, "now")) {
-      config.z_now = true;
+      conf.z_now = true;
     } else if (read_flag(args, "no-fork")) {
-      config.fork = false;
+      conf.fork = false;
     } else if (read_arg(args, arg, "thread-count")) {
-      config.thread_count = parse_number("thread-count", arg);
+      conf.thread_count = parse_number("thread-count", arg);
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
-      config.discard_all = true;
+      conf.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
-      config.discard_locals = true;
+      conf.discard_locals = true;
     } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
-      config.strip_all = true;
+      conf.strip_all = true;
+    } else if (read_arg(args, arg, "rpath")) {
+      conf.rpaths.push_back(std::string(arg));
+    } else if (read_arg(args, arg, "version-script")) {
+      conf.version_script.push_back(arg);
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
@@ -970,47 +972,75 @@ int main(int argc, char **argv) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
     } else if (read_flag(args, "as-needed")) {
-      as_needed = true;
+      remaining.push_back("-as-needed");
     } else if (read_flag(args, "no-as-needed")) {
-      as_needed = false;
-    } else if (read_arg(args, arg, "rpath")) {
-      config.rpaths.push_back(std::string(arg));
-    } else if (read_arg(args, arg, "version-script")) {
-      lazy_params.push_back([=]() { parse_version_script(std::string(arg)); });
+      remaining.push_back("-no-as-needed");
     } else if (read_arg(args, arg, "l")) {
-      lazy_params.push_back([=]() {
-         MemoryMappedFile mb = find_library(std::string(arg), config.library_paths);
-         read_file(mb, as_needed);
-      });
+      remaining.push_back("-l");
+      remaining.push_back(arg);
     } else {
       if (args[0][0] == '-')
         error("unknown command line option: " + std::string(args[0]));
-      std::string arg(args[0]);
-      lazy_params.push_back([=]() { read_file(must_open_input_file(arg), as_needed); });
+      remaining.push_back(args[0]);
       args = args.subspan(1);
     }
   }
+  return conf;
+}
+
+int main(int argc, char **argv) {
+  // Main
+  Timer t_all("all");
+
+  // Parse non-positional command line options
+  std::vector<std::string_view> arg_vector = expand_response_files(argv + 1);
+  std::vector<std::string_view> file_args;
+  config = parse_nonpositional_args(arg_vector, file_args);
+
+  int parallelism = (config.thread_count == -1)
+    ? tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
+    : config.thread_count;
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, parallelism);
 
   std::function<void()> on_complete = []() {};
   if (config.fork)
     on_complete = fork_child();
 
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
+  if (config.stat)
+    Counter::enabled = true;
+  if (config.output == "")
+    error("-o option is missing");
+  if (config.pie)
+    config.image_base = 0;
+
+  for (std::string_view arg : config.trace_symbol)
+    Symbol::intern(arg)->traced = true;
+
+  for (std::string_view arg : config.version_script)
+    parse_version_script(std::string(arg));
 
   // Parse input files
   {
     ScopedTimer t("parse");
-    for (std::function<void()> fn : lazy_params)
-      fn();
+    bool as_needed = false;
+
+    for (std::span<std::string_view> args = file_args; !args.empty();) {
+      std::string_view arg;
+
+      if (read_flag(args, "as-needed")) {
+        as_needed = true;
+      } else if (read_flag(args, "no-as-needed")) {
+        as_needed = false;
+      } else if (read_arg(args, arg, "l")) {
+        read_file(find_library(std::string(arg), config.library_paths), as_needed);
+      } else {
+        read_file(must_open_input_file(std::string(args[0])), as_needed);
+        args = args.subspan(1);
+      }
+    }
     parser_tg.wait();
   }
-
-  if (config.output == "")
-    error("-o option is missing");
-
-  if (config.pie)
-    config.image_base = 0;
 
   // Uniquify shared object files with soname
   {

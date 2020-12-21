@@ -4,7 +4,7 @@ CXX=clang++
 CURRENT_DIR=$(shell pwd)
 TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
 
-CPPFLAGS=-g -IoneTBB/include -pthread -std=c++20 -Wno-deprecated-volatile -O2
+CPPFLAGS=-g -IoneTBB/include -pthread -std=c++20 -Wno-deprecated-volatile
 LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) -fuse-ld=lld -pthread
 LIBS=-ltbb -ltbbmalloc -ltbbmalloc_proxy
 OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \

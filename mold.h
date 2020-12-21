@@ -63,15 +63,18 @@ struct Config {
   bool perf = false;
   bool pie = false;
   bool print_map = false;
+  bool stat = false;
   bool strip_all = false;
   bool trace = false;
   bool z_now = false;
   int filler = -1;
   int thread_count = -1;
   std::string sysroot;
-  std::vector<std::string_view> library_paths;
-  std::vector<std::string> rpaths;
   std::vector<std::string> globals;
+  std::vector<std::string> rpaths;
+  std::vector<std::string_view> library_paths;
+  std::vector<std::string_view> trace_symbol;
+  std::vector<std::string_view> version_script;
   u64 image_base = 0x200000;
 };
 
