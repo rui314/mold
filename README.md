@@ -66,11 +66,16 @@ implemented and tested with benchmarks. Here is a brain dump:
   there should be room for doing computationally-intensive tasks while
   copying data from one file to another.
 
-- After the first invocation of the linker, the linker should not exit
-  but instead become a daemon to keep parsed input files in memory.
-  Subsequent linker invocations for the same output file make the
-  linker daemon to reload updated input files, and then the daemon
-  calls fork(2) to create a subprocess and let it do the actual linking.
+- We should allow the linker to preload object files from disk and
+  parse them in memory before a complete set of input object files
+  is ready. My idea is this: if a user invokes the linker with
+  `--preload` flag along with other command line flags a few seconds
+  before the actual linker invocation, then the following actual
+  linker invocation with the same command line options (except
+  `--preload` flag) becomes magically faster. Behind the scenes, the
+  linker starts preloading object files on the first invocation and
+  becomes a daemon. The second invocation of the linker notifies the
+  daemon to reload updated object files and then proceed.
 
 - Daemonizing alone wouldn't make the linker magically faster. We need
   to split the linker into two in such a way that the latter half of
@@ -106,9 +111,7 @@ implemented and tested with benchmarks. Here is a brain dump:
   create a GOT entry for that symbol. Otherwise, we shouldn't. That
   means we need to scan all relocation tables to fix the length and
   the contents of a .got section. This is perhaps time-consuming, but
-  we can do that while copying data from input files to an output
-  file. After the data copy is done, we can attach a .got section at
-  the end of the output file.
+  this step is parallelizable.
 
 - Many linkers support incremental linking, but I think that's a hack
   to work around the slowness of regular linking. I want to focus on
