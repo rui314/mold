@@ -4,6 +4,7 @@
 #include "tbb/task_group.h"
 
 #include <fcntl.h>
+#include <functional>
 #include <iostream>
 #include <libgen.h>
 #include <regex>
@@ -29,7 +30,8 @@ MemoryMappedFile *open_input_file(std::string path) {
     error(path + ": mmap failed: " + strerror(errno));
   close(fd);
 
-  return new MemoryMappedFile(path, (u8 *)addr, st.st_size);
+  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+  return new MemoryMappedFile(path, (u8 *)addr, st.st_size, mtime);
 }
 
 MemoryMappedFile must_open_input_file(std::string path) {
@@ -68,27 +70,30 @@ static FileType get_file_type(MemoryMappedFile mb) {
   return UNKNOWN;
 }
 
+static ObjectFile *new_object_file(MemoryMappedFile mb, std::string archive_name) {
+  ObjectFile *file = new ObjectFile(mb, archive_name);
+  parser_tg.run([=]() { file->parse(); });
+  return file;
+}
+
+static SharedFile *new_shared_file(MemoryMappedFile mb, bool as_needed) {
+  SharedFile *file = new SharedFile(mb, as_needed);
+  parser_tg.run([=]() { file->parse(); });
+  return file;
+}
+
 void read_file(MemoryMappedFile mb, bool as_needed) {
   switch (get_file_type(mb)) {
-  case OBJ: {
-    ObjectFile *file = new ObjectFile(mb, "");
-    parser_tg.run([=]() { file->parse(); });
-    out::objs.push_back(file);
+  case OBJ:
+    out::objs.push_back(new_object_file(mb, ""));
     return;
-  }
-  case DSO: {
-    SharedFile *file = new SharedFile(mb, as_needed);
-    parser_tg.run([=]() { file->parse(); });
-    out::dsos.push_back(file);
+  case DSO:
+    out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
-  }
   case AR:
   case THIN_AR:
-    for (MemoryMappedFile &child : read_archive_members(mb)) {
-      ObjectFile *file = new ObjectFile(child, mb.name);
-      parser_tg.run([=]() { file->parse(); });
-      out::objs.push_back(file);
-    }
+    for (MemoryMappedFile &child : read_archive_members(mb))
+      out::objs.push_back(new_object_file(child, mb.name));
     return;
   case TEXT:
     parse_linker_script(mb, as_needed);
@@ -209,7 +214,7 @@ static void bin_sections() {
     groups[i].resize(num_osec);
 
   tbb::parallel_for(0, (int)slices.size(), [&](int i) {
-    for (ObjectFile *file : slices[i]) 
+    for (ObjectFile *file : slices[i])
       for (InputSection *isec : file->sections)
         if (isec)
           groups[i][isec->output_section->idx].push_back(isec);
@@ -987,6 +992,31 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     }
   }
   return conf;
+}
+
+typedef std::tuple<std::string_view, u64, u64> FileKey;
+
+static std::map<FileKey, std::vector<ObjectFile *>> preloaded_objs;
+
+static std::vector<ObjectFile *> get_preloaded_object(std::string_view path) {
+  struct stat st;
+  if (stat(std::string(path).c_str(), &st) == -1)
+    return {};
+
+  // Is regular file?
+  if ((st.st_mode & S_IFMT) != S_IFREG)
+    return {};
+
+  u64 size = st.st_size;
+  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+
+  auto it = preloaded_objs.find({path, size, mtime});
+  if (it == preloaded_objs.end())
+    return {};
+
+  std::vector<ObjectFile *> vec = it->second;
+  preloaded_objs.erase(it);
+  return vec;
 }
 
 static void show_stats() {

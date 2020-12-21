@@ -28,7 +28,7 @@ static u64 now_nsec() {
 }
 
 static u64 to_nsec(struct timeval t) {
-  return t.tv_sec * 1000000000 + t.tv_usec * 1000;
+  return (u64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
 
 Timer::Timer(std::string name) : name(name) {

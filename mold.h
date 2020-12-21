@@ -641,12 +641,13 @@ struct ComdatGroup {
 };
 
 struct MemoryMappedFile {
-  MemoryMappedFile(std::string name, u8 *data, u64 size)
-    : name(name), data(data), size(size) {}
+  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
+    : name(name), data(data), size(size), mtime(mtime) {}
 
   std::string name;
   u8 *data;
   u64 size;
+  u64 mtime;
 };
 
 class InputFile {
