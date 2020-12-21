@@ -1096,6 +1096,23 @@ int main(int argc, char **argv) {
   for (std::string_view arg : config.version_script)
     parse_version_script(std::string(arg));
 
+  // Preload input files
+  {
+    ScopedTimer t("parse");
+
+    for (std::span<std::string_view> args = file_args; !args.empty();) {
+      std::string_view arg;
+
+      if (read_flag(args, "as-needed") || read_flag(args, "no-as-needed") ||
+          read_arg(args, arg, "l"))
+        continue;
+
+      preload_object(args[0]);
+      args = args.subspan(1);
+    }
+    parser_tg.wait();
+  }
+
   // Parse input files
   {
     ScopedTimer t("parse");
@@ -1111,8 +1128,14 @@ int main(int argc, char **argv) {
       } else if (read_arg(args, arg, "l")) {
         read_file(find_library(std::string(arg), config.library_paths), as_needed);
       } else {
-        read_file(must_open_input_file(std::string(args[0])), as_needed);
+        std::string_view arg = args[0];
         args = args.subspan(1);
+        std::vector<ObjectFile *> objs = get_preloaded_object(arg);
+
+        if (objs.empty())
+          read_file(must_open_input_file(std::string(arg)), as_needed);
+        else
+          append(out::objs, objs);
       }
     }
     parser_tg.wait();
