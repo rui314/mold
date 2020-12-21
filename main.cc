@@ -960,7 +960,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
       conf.strip_all = true;
     } else if (read_arg(args, arg, "rpath")) {
-      conf.rpaths.push_back(std::string(arg));
+      conf.rpaths.push_back(arg);
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
     } else if (read_arg(args, arg, "z")) {
