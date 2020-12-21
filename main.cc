@@ -911,6 +911,8 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
 static Config parse_nonpositional_args(std::span<std::string_view> args,
                                        std::vector<std::string_view> &remaining) {
   Config conf;
+  conf.thread_count =
+    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
   while (!args.empty()) {
     std::string_view arg;
@@ -1019,11 +1021,8 @@ int main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   config = parse_nonpositional_args(arg_vector, file_args);
 
-  int parallelism = (config.thread_count == -1)
-    ? tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
-    : config.thread_count;
-
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism, parallelism);
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
 
   std::function<void()> on_complete = []() {};
   if (config.fork)
