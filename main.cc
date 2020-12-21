@@ -998,6 +998,31 @@ typedef std::tuple<std::string_view, u64, u64> FileKey;
 
 static std::map<FileKey, std::vector<ObjectFile *>> preloaded_objs;
 
+static void preload_object(std::string_view path) {
+  MemoryMappedFile *mb = open_input_file(std::string(path));
+  if (!mb)
+    return;
+
+  switch (get_file_type(*mb)) {
+  case OBJ:
+    preloaded_objs[{path, mb->size, mb->mtime}] = {new_object_file(*mb, "")};
+    return;
+  case AR: {
+    std::vector<ObjectFile *> objs;
+    for (MemoryMappedFile &child : read_archive_members(*mb))
+      objs.push_back(new_object_file(child, mb->name));
+    preloaded_objs[{path, mb->size, mb->mtime}] = objs;
+    return;
+  }
+  case THIN_AR:
+    for (MemoryMappedFile &child : read_archive_members(*mb)) {
+      FileKey key(child.name, child.size, child.mtime);
+      preloaded_objs[key] = {new_object_file(child, mb->name)};
+    }
+    return;
+  }
+}
+
 static std::vector<ObjectFile *> get_preloaded_object(std::string_view path) {
   struct stat st;
   if (stat(std::string(path).c_str(), &st) == -1)
