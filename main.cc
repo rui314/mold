@@ -14,8 +14,6 @@
 #include <unistd.h>
 #include <unordered_set>
 
-tbb::task_group parser_tg;
-
 MemoryMappedFile *open_input_file(std::string path) {
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1)
@@ -70,6 +68,11 @@ static FileType get_file_type(MemoryMappedFile mb) {
   return UNKNOWN;
 }
 
+typedef std::tuple<std::string_view, u64, u64> FileKey;
+
+tbb::task_group parser_tg;
+static std::map<FileKey, std::vector<ObjectFile *>> preloaded_objs;
+
 static ObjectFile *new_object_file(MemoryMappedFile mb, std::string archive_name) {
   ObjectFile *file = new ObjectFile(mb, archive_name);
   parser_tg.run([=]() { file->parse(); });
@@ -80,6 +83,52 @@ static SharedFile *new_shared_file(MemoryMappedFile mb, bool as_needed) {
   SharedFile *file = new SharedFile(mb, as_needed);
   parser_tg.run([=]() { file->parse(); });
   return file;
+}
+
+static void preload_object(std::string_view path) {
+  MemoryMappedFile *mb = open_input_file(std::string(path));
+  if (!mb)
+    return;
+
+  switch (get_file_type(*mb)) {
+  case OBJ:
+    preloaded_objs[{path, mb->size, mb->mtime}] = {new_object_file(*mb, "")};
+    return;
+  case AR: {
+    std::vector<ObjectFile *> objs;
+    for (MemoryMappedFile &child : read_archive_members(*mb))
+      objs.push_back(new_object_file(child, mb->name));
+    preloaded_objs[{path, mb->size, mb->mtime}] = objs;
+    return;
+  }
+  case THIN_AR:
+    for (MemoryMappedFile &child : read_archive_members(*mb)) {
+      FileKey key(child.name, child.size, child.mtime);
+      preloaded_objs[key] = {new_object_file(child, mb->name)};
+    }
+    return;
+  }
+}
+
+static std::vector<ObjectFile *> get_preloaded_object(std::string_view path) {
+  struct stat st;
+  if (stat(std::string(path).c_str(), &st) == -1)
+    return {};
+
+  // Is regular file?
+  if ((st.st_mode & S_IFMT) != S_IFREG)
+    return {};
+
+  u64 size = st.st_size;
+  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+
+  auto it = preloaded_objs.find({path, size, mtime});
+  if (it == preloaded_objs.end())
+    return {};
+
+  std::vector<ObjectFile *> vec = it->second;
+  preloaded_objs.erase(it);
+  return vec;
 }
 
 void read_file(MemoryMappedFile mb, bool as_needed) {
@@ -992,56 +1041,6 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     }
   }
   return conf;
-}
-
-typedef std::tuple<std::string_view, u64, u64> FileKey;
-
-static std::map<FileKey, std::vector<ObjectFile *>> preloaded_objs;
-
-static void preload_object(std::string_view path) {
-  MemoryMappedFile *mb = open_input_file(std::string(path));
-  if (!mb)
-    return;
-
-  switch (get_file_type(*mb)) {
-  case OBJ:
-    preloaded_objs[{path, mb->size, mb->mtime}] = {new_object_file(*mb, "")};
-    return;
-  case AR: {
-    std::vector<ObjectFile *> objs;
-    for (MemoryMappedFile &child : read_archive_members(*mb))
-      objs.push_back(new_object_file(child, mb->name));
-    preloaded_objs[{path, mb->size, mb->mtime}] = objs;
-    return;
-  }
-  case THIN_AR:
-    for (MemoryMappedFile &child : read_archive_members(*mb)) {
-      FileKey key(child.name, child.size, child.mtime);
-      preloaded_objs[key] = {new_object_file(child, mb->name)};
-    }
-    return;
-  }
-}
-
-static std::vector<ObjectFile *> get_preloaded_object(std::string_view path) {
-  struct stat st;
-  if (stat(std::string(path).c_str(), &st) == -1)
-    return {};
-
-  // Is regular file?
-  if ((st.st_mode & S_IFMT) != S_IFREG)
-    return {};
-
-  u64 size = st.st_size;
-  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-
-  auto it = preloaded_objs.find({path, size, mtime});
-  if (it == preloaded_objs.end())
-    return {};
-
-  std::vector<ObjectFile *> vec = it->second;
-  preloaded_objs.erase(it);
-  return vec;
 }
 
 static void show_stats() {
