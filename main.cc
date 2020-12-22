@@ -75,12 +75,18 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
 
   switch (get_file_type(mb)) {
   case OBJ: {
-    if (preloading)
+    if (preloading) {
       cache[get_key(mb)] = {new_object_file(mb, "")};
-    else if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
+      return;
+    }
+
+    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
       out::objs.push_back(objs[0]);
-    else
-      out::objs.push_back(new_object_file(mb, ""));
+      return;
+    }
+
+    message("reloading " + mb->name);
+    out::objs.push_back(new_object_file(mb, ""));
     return;
   }
   case DSO:
@@ -90,24 +96,32 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     if (preloading) {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         cache[get_key(mb)].push_back(new_object_file(child, mb->name));
-    } else if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
-      append(out::objs, objs);
-    } else {
-      for (MemoryMappedFile *child : read_archive_members(mb))
-        out::objs.push_back(new_object_file(child, mb->name));
+      return;
     }
+
+    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
+      append(out::objs, objs);
+      return;
+    }
+
+    message("reloading " + mb->name);
+    for (MemoryMappedFile *child : read_archive_members(mb))
+      out::objs.push_back(new_object_file(child, mb->name));
     return;
   }
   case THIN_AR:
     if (preloading) {
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
         cache[get_key(child)].push_back(new_object_file(child, mb->name));
-    } else {
-      for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
-        if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
-          out::objs.push_back(objs[0]);
-        else
-          out::objs.push_back(new_object_file(child, mb->name));
+      return;
+    }
+
+    for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
+      if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
+        out::objs.push_back(objs[0]);
+      } else {
+        message("reloading " + child->name);
+        out::objs.push_back(new_object_file(child, mb->name));
       }
     }
     return;
@@ -1083,12 +1097,27 @@ int main(int argc, char **argv) {
   for (std::string_view arg : config.version_script)
     parse_version_script(std::string(arg));
 
+#if 0
   // Preload input files
   {
     ScopedTimer t("preload");
     preloading = true;
     read_input_files(file_args);
+
+    std::cerr << "waiting...\n";
+
+    int fd = open("/tmp/mold", O_RDONLY, 0777);
+    if (fd < 0) {
+      perror("open");
+      exit(1);
+    }
+
+    char buf[1];
+    read(fd, buf, 1);
+
+    std::cerr << "resuming...\n";
   }
+#endif
 
   // Parse input files
   {
