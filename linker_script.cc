@@ -63,19 +63,19 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   return tok.subspan(1);
 }
 
-static MemoryMappedFile resolve_path(std::string str) {
+static MemoryMappedFile *resolve_path(std::string str) {
   if (str.starts_with("/"))
     return must_open_input_file(config.sysroot + str);
   if (str.starts_with("-l"))
     return find_library(str.substr(2), config.library_paths);
   if (MemoryMappedFile *mb = open_input_file(script_dir + "/" + str))
-    return *mb;
+    return mb;
   if (MemoryMappedFile *mb = open_input_file(str))
-    return *mb;
+    return mb;
   for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     if (MemoryMappedFile *mb = open_input_file(root + std::string(dir) + "/" + str))
-      return *mb;
+      return mb;
   }
   error("library not found: " + str);
 }
@@ -99,10 +99,10 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
   return tok.subspan(1);
 }
 
-void parse_linker_script(MemoryMappedFile mb, bool as_needed) {
-  script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
+void parse_linker_script(MemoryMappedFile *mb, bool as_needed) {
+  script_dir = mb->name.substr(0, mb->name.find_last_of('/'));
 
-  std::vector<std::string_view> vec = tokenize({(char *)mb.data(), mb.size()});
+  std::vector<std::string_view> vec = tokenize({(char *)mb->data(), mb->size()});
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -111,15 +111,15 @@ void parse_linker_script(MemoryMappedFile mb, bool as_needed) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1), as_needed);
     else
-      error(mb.name + ": unknown token: " + std::string(tok[0]));
+      error(mb->name + ": unknown token: " + std::string(tok[0]));
   }
 }
 
 void parse_version_script(std::string path) {
   script_dir = path.substr(0, path.find_last_of('/'));
 
-  MemoryMappedFile mb = must_open_input_file(path);
-  std::vector<std::string_view> vec = tokenize({(char *)mb.data(), mb.size()});
+  MemoryMappedFile *mb = must_open_input_file(path);
+  std::vector<std::string_view> vec = tokenize({(char *)mb->data(), mb->size()});
   std::span<std::string_view> tok = vec;
   tok = skip(tok, "{");
 

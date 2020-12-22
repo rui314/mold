@@ -645,8 +645,9 @@ public:
   MemoryMappedFile(std::string name, struct stat &st);
   MemoryMappedFile(std::string name, u8 *data, u64 size)
     : name(name), data_(data), size_(size) {}
+  MemoryMappedFile() = delete;
 
-  MemoryMappedFile slice(std::string name, u64 start, u64 size);
+  MemoryMappedFile *slice(std::string name, u64 start, u64 size);
 
   u8 *data();
   u64 size() { return size_; }
@@ -654,17 +655,18 @@ public:
   std::string name;
 
 private:
+  std::mutex mu;
   MemoryMappedFile *parent;
-  u8 *data_ = nullptr;
+  std::atomic<u8 *> data_;
   u64 size_ = 0;
   u64 mtime = 0;
 };
 
 class InputFile {
 public:
-  InputFile(MemoryMappedFile mb);
+  InputFile(MemoryMappedFile *mb);
 
-  MemoryMappedFile mb;
+  MemoryMappedFile *mb;
   ElfEhdr &ehdr;
   std::span<ElfShdr> elf_sections;
   std::vector<Symbol *> symbols;
@@ -685,7 +687,7 @@ protected:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryMappedFile mb, std::string archive_name);
+  ObjectFile(MemoryMappedFile *mb, std::string archive_name);
 
   void parse();
   void initialize_mergeable_sections();
@@ -737,7 +739,7 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryMappedFile mb, bool as_needed) : InputFile(mb) {
+  SharedFile(MemoryMappedFile *mb, bool as_needed) : InputFile(mb) {
     is_alive = !as_needed;
   }
 
@@ -765,13 +767,13 @@ private:
 // archive_file.cc
 //
 
-std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb);
+std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb);
 
 //
 // linker_script.cc
 //
 
-void parse_linker_script(MemoryMappedFile mb, bool as_needed);
+void parse_linker_script(MemoryMappedFile *mb, bool as_needed);
 void parse_version_script(std::string path);
 
 //
@@ -847,10 +849,10 @@ void print_map();
 // main.cc
 //
 
-MemoryMappedFile find_library(std::string path, std::span<std::string_view> lib_paths);
+MemoryMappedFile *find_library(std::string path, std::span<std::string_view> lib_paths);
 MemoryMappedFile *open_input_file(std::string path);
-MemoryMappedFile must_open_input_file(std::string path);
-void read_file(MemoryMappedFile mb, bool as_needed);
+MemoryMappedFile *must_open_input_file(std::string path);
+void read_file(MemoryMappedFile *mb, bool as_needed);
 
 //
 // Inline objects and functions

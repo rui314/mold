@@ -21,26 +21,26 @@ MemoryMappedFile *open_input_file(std::string path) {
   return new MemoryMappedFile(path, st);
 }
 
-MemoryMappedFile must_open_input_file(std::string path) {
+MemoryMappedFile *must_open_input_file(std::string path) {
   MemoryMappedFile *mb = open_input_file(path);
   if (!mb)
     error("cannot open " + path);
-  return *mb;
+  return mb;
 }
 
-static bool is_text_file(MemoryMappedFile mb) {
-  return mb.size() >= 4 &&
-         isprint(mb.data()[0]) &&
-         isprint(mb.data()[1]) &&
-         isprint(mb.data()[2]) &&
-         isprint(mb.data()[3]);
+static bool is_text_file(MemoryMappedFile *mb) {
+  return mb->size() >= 4 &&
+         isprint(mb->data()[0]) &&
+         isprint(mb->data()[1]) &&
+         isprint(mb->data()[2]) &&
+         isprint(mb->data()[3]);
 }
 
 enum FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
-static FileType get_file_type(MemoryMappedFile mb) {
-  if (mb.size() >= 20 && memcmp(mb.data(), "\177ELF", 4) == 0) {
-    ElfEhdr &ehdr = *(ElfEhdr *)mb.data();
+static FileType get_file_type(MemoryMappedFile *mb) {
+  if (mb->size() >= 20 && memcmp(mb->data(), "\177ELF", 4) == 0) {
+    ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
     if (ehdr.e_type == ET_REL)
       return OBJ;
     if (ehdr.e_type == ET_DYN)
@@ -48,9 +48,9 @@ static FileType get_file_type(MemoryMappedFile mb) {
     return UNKNOWN;
   }
 
-  if (mb.size() >= 8 && memcmp(mb.data(), "!<arch>\n", 8) == 0)
+  if (mb->size() >= 8 && memcmp(mb->data(), "!<arch>\n", 8) == 0)
     return AR;
-  if (mb.size() >= 8 && memcmp(mb.data(), "!<thin>\n", 8) == 0)
+  if (mb->size() >= 8 && memcmp(mb->data(), "!<thin>\n", 8) == 0)
     return THIN_AR;
   if (is_text_file(mb))
     return TEXT;
@@ -59,19 +59,19 @@ static FileType get_file_type(MemoryMappedFile mb) {
 
 tbb::task_group parser_tg;
 
-static ObjectFile *new_object_file(MemoryMappedFile mb, std::string archive_name) {
+static ObjectFile *new_object_file(MemoryMappedFile *mb, std::string archive_name) {
   ObjectFile *file = new ObjectFile(mb, archive_name);
   parser_tg.run([=]() { file->parse(); });
   return file;
 }
 
-static SharedFile *new_shared_file(MemoryMappedFile mb, bool as_needed) {
+static SharedFile *new_shared_file(MemoryMappedFile *mb, bool as_needed) {
   SharedFile *file = new SharedFile(mb, as_needed);
   parser_tg.run([=]() { file->parse(); });
   return file;
 }
 
-void read_file(MemoryMappedFile mb, bool as_needed) {
+void read_file(MemoryMappedFile *mb, bool as_needed) {
   switch (get_file_type(mb)) {
   case OBJ:
     out::objs.push_back(new_object_file(mb, ""));
@@ -81,14 +81,14 @@ void read_file(MemoryMappedFile mb, bool as_needed) {
     return;
   case AR:
   case THIN_AR:
-    for (MemoryMappedFile &child : read_archive_members(mb))
-      out::objs.push_back(new_object_file(child, mb.name));
+    for (MemoryMappedFile *child : read_archive_members(mb))
+      out::objs.push_back(new_object_file(child, mb->name));
     return;
   case TEXT:
     parse_linker_script(mb, as_needed);
     return;
   default:
-    error(mb.name + ": unknown file type");
+    error(mb->name + ": unknown file type");
   }
 }
 
@@ -661,15 +661,15 @@ static u8 *open_output_file(u64 filesize) {
   return (u8 *)buf;
 }
 
-MemoryMappedFile find_library(std::string name, std::span<std::string_view> lib_paths) {
+MemoryMappedFile *find_library(std::string name, std::span<std::string_view> lib_paths) {
   for (std::string_view dir : lib_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!config.is_static)
       if (MemoryMappedFile *mb = open_input_file(stem + ".so"))
-        return *mb;
+        return mb;
     if (MemoryMappedFile *mb = open_input_file(stem + ".a"))
-      return *mb;
+      return mb;
   }
   error("library not found: " + name);
 }
@@ -809,19 +809,19 @@ static std::function<void()> fork_child() {
 
 static std::vector<std::string_view> read_response_file(std::string_view path) {
   std::vector<std::string_view> vec;
-  MemoryMappedFile mb = must_open_input_file(std::string(path));
+  MemoryMappedFile *mb = must_open_input_file(std::string(path));
 
   auto read_quoted = [&](int i, char quote) {
     std::string *buf = new std::string;
-    while (i < mb.size() && mb.data()[i] != quote) {
-      if (mb.data()[i] == '\\') {
-        buf->append(1, mb.data()[i + 1]);
+    while (i < mb->size() && mb->data()[i] != quote) {
+      if (mb->data()[i] == '\\') {
+        buf->append(1, mb->data()[i + 1]);
         i += 2;
       } else {
-        buf->append(1, mb.data()[i++]);
+        buf->append(1, mb->data()[i++]);
       }
     }
-    if (i >= mb.size())
+    if (i >= mb->size())
       error(std::string(path) + ": premature end of input");
     vec.push_back(std::string_view(*buf));
     return i + 1;
@@ -829,24 +829,24 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
 
   auto read_unquoted = [&](int i) {
     std::string *buf = new std::string;
-    while (i < mb.size() && !isspace(mb.data()[i]))
-      buf->append(1, mb.data()[i++]);
+    while (i < mb->size() && !isspace(mb->data()[i]))
+      buf->append(1, mb->data()[i++]);
     vec.push_back(std::string_view(*buf));
     return i;
   };
 
-  for (int i = 0; i < mb.size();) {
-    if (isspace(mb.data()[i]))
+  for (int i = 0; i < mb->size();) {
+    if (isspace(mb->data()[i]))
       i++;
-    else if (mb.data()[i] == '\'')
+    else if (mb->data()[i] == '\'')
       i = read_quoted(i + 1, '\'');
-    else if (mb.data()[i] == '\"')
+    else if (mb->data()[i] == '\"')
       i = read_quoted(i + 1, '\"');
     else
       i = read_unquoted(i);
   }
 
-  munmap(mb.data(), mb.size());
+  munmap(mb->data(), mb->size());
   return vec;
 }
 

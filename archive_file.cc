@@ -10,13 +10,13 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-static std::vector<MemoryMappedFile> read_thin_archive_members(MemoryMappedFile mb) {
-  u8 *data = mb.data() + 8;
-  std::vector<MemoryMappedFile> vec;
+static std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) {
+  u8 *data = mb->data() + 8;
+  std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
-  std::string basedir = mb.name.substr(0, mb.name.find_last_of('/'));
+  std::string basedir = mb->name.substr(0, mb->name.find_last_of('/'));
 
-  while (data < mb.data() + mb.size()) {
+  while (data < mb->data() + mb->size()) {
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -33,7 +33,7 @@ static std::vector<MemoryMappedFile> read_thin_archive_members(MemoryMappedFile 
     }
 
     if (hdr.ar_name[0] != '/')
-      error(mb.name + ": filename is not stored as a long filename");
+      error(mb->name + ": filename is not stored as a long filename");
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name = {start, strstr(start, "/\n")};
@@ -44,12 +44,12 @@ static std::vector<MemoryMappedFile> read_thin_archive_members(MemoryMappedFile 
   return vec;
 }
 
-static std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile mb) {
-  u8 *data = mb.data() + 8;
-  std::vector<MemoryMappedFile> vec;
+static std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
+  u8 *data = mb->data() + 8;
+  std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
 
-  while (data < mb.data() + mb.size()) {
+  while (data < mb->data() + mb->size()) {
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -72,18 +72,18 @@ static std::vector<MemoryMappedFile> read_fat_archive_members(MemoryMappedFile m
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back(mb.slice(name, body - mb.data(), size));
+    vec.push_back(mb->slice(name, body - mb->data(), size));
   }
   return vec;
 }
 
-std::vector<MemoryMappedFile> read_archive_members(MemoryMappedFile mb) {
-  if (mb.size() < 8)
-    error(mb.name + ": not an archive file");
-  if (memcmp(mb.data(), "!<arch>\n", 8) && memcmp(mb.data(), "!<thin>\n", 8))
-    error(mb.name + ": not an archive file");
+std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb) {
+  if (mb->size() < 8)
+    error(mb->name + ": not an archive file");
+  if (memcmp(mb->data(), "!<arch>\n", 8) && memcmp(mb->data(), "!<thin>\n", 8))
+    error(mb->name + ": not an archive file");
 
-  bool is_thin = !memcmp(mb.data(), "!<thin>\n", 8);
+  bool is_thin = !memcmp(mb->data(), "!<thin>\n", 8);
   if (is_thin)
     return read_thin_archive_members(mb);
   return read_fat_archive_members(mb);
