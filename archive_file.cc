@@ -38,7 +38,7 @@ static std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFil
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name = {start, strstr(start, "/\n")};
 
-    vec.push_back(must_open_input_file(basedir + "/" + name));
+    vec.push_back(MemoryMappedFile::must_open(basedir + "/" + name));
     data = body;
   }
   return vec;

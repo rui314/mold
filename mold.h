@@ -642,9 +642,11 @@ struct ComdatGroup {
 
 class MemoryMappedFile {
 public:
-  MemoryMappedFile(std::string name, struct stat &st);
-  MemoryMappedFile(std::string name, u8 *data, u64 size)
-    : name(name), data_(data), size_(size) {}
+  static MemoryMappedFile *open(std::string path);
+  static MemoryMappedFile *must_open(std::string path);
+
+  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
+    : name(name), data_(data), size_(size), mtime(mtime) {}
   MemoryMappedFile() = delete;
 
   MemoryMappedFile *slice(std::string name, u64 start, u64 size);
@@ -850,8 +852,6 @@ void print_map();
 //
 
 MemoryMappedFile *find_library(std::string path, std::span<std::string_view> lib_paths);
-MemoryMappedFile *open_input_file(std::string path);
-MemoryMappedFile *must_open_input_file(std::string path);
 void read_file(MemoryMappedFile *mb, bool as_needed);
 
 //

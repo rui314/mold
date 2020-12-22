@@ -14,20 +14,6 @@
 #include <unistd.h>
 #include <unordered_set>
 
-MemoryMappedFile *open_input_file(std::string path) {
-  struct stat st;
-  if (stat(path.c_str(), &st) == -1)
-    return nullptr;
-  return new MemoryMappedFile(path, st);
-}
-
-MemoryMappedFile *must_open_input_file(std::string path) {
-  MemoryMappedFile *mb = open_input_file(path);
-  if (!mb)
-    error("cannot open " + path);
-  return mb;
-}
-
 static bool is_text_file(MemoryMappedFile *mb) {
   return mb->size() >= 4 &&
          isprint(mb->data()[0]) &&
@@ -666,9 +652,9 @@ MemoryMappedFile *find_library(std::string name, std::span<std::string_view> lib
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!config.is_static)
-      if (MemoryMappedFile *mb = open_input_file(stem + ".so"))
+      if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".so"))
         return mb;
-    if (MemoryMappedFile *mb = open_input_file(stem + ".a"))
+    if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
       return mb;
   }
   error("library not found: " + name);
@@ -809,7 +795,7 @@ static std::function<void()> fork_child() {
 
 static std::vector<std::string_view> read_response_file(std::string_view path) {
   std::vector<std::string_view> vec;
-  MemoryMappedFile *mb = must_open_input_file(std::string(path));
+  MemoryMappedFile *mb = MemoryMappedFile::must_open(std::string(path));
 
   auto read_quoted = [&](int i, char quote) {
     std::string *buf = new std::string;
@@ -1051,7 +1037,7 @@ int main(int argc, char **argv) {
       } else if (read_arg(args, arg, "l")) {
         read_file(find_library(std::string(arg), config.library_paths), as_needed);
       } else {
-        read_file(must_open_input_file(std::string(args[0])), as_needed);
+        read_file(MemoryMappedFile::must_open(std::string(args[0])), as_needed);
         args = args.subspan(1);
       }
     }

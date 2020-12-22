@@ -65,16 +65,16 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
 
 static MemoryMappedFile *resolve_path(std::string str) {
   if (str.starts_with("/"))
-    return must_open_input_file(config.sysroot + str);
+    return MemoryMappedFile::must_open(config.sysroot + str);
   if (str.starts_with("-l"))
     return find_library(str.substr(2), config.library_paths);
-  if (MemoryMappedFile *mb = open_input_file(script_dir + "/" + str))
+  if (MemoryMappedFile *mb = MemoryMappedFile::open(script_dir + "/" + str))
     return mb;
-  if (MemoryMappedFile *mb = open_input_file(str))
+  if (MemoryMappedFile *mb = MemoryMappedFile::open(str))
     return mb;
   for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
-    if (MemoryMappedFile *mb = open_input_file(root + std::string(dir) + "/" + str))
+    if (MemoryMappedFile *mb = MemoryMappedFile::open(root + std::string(dir) + "/" + str))
       return mb;
   }
   error("library not found: " + str);
@@ -118,7 +118,7 @@ void parse_linker_script(MemoryMappedFile *mb, bool as_needed) {
 void parse_version_script(std::string path) {
   script_dir = path.substr(0, path.find_last_of('/'));
 
-  MemoryMappedFile *mb = must_open_input_file(path);
+  MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize({(char *)mb->data(), mb->size()});
   std::span<std::string_view> tok = vec;
   tok = skip(tok, "{");

@@ -8,9 +8,19 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-MemoryMappedFile::MemoryMappedFile(std::string name, struct stat &st)
-  : name(name), size_(st.st_size),
-    mtime((u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec) {}
+MemoryMappedFile *MemoryMappedFile::open(std::string path) {
+  struct stat st;
+  if (stat(path.c_str(), &st) == -1)
+    return nullptr;
+  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+  return new MemoryMappedFile(path, nullptr, st.st_size, mtime);
+}
+
+MemoryMappedFile *MemoryMappedFile::must_open(std::string path) {
+  if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
+    return mb;
+  error("cannot open " + path);
+}
 
 u8 *MemoryMappedFile::data() {
   if (data_)
@@ -20,7 +30,7 @@ u8 *MemoryMappedFile::data() {
   if (data_)
     return data_;
 
-  int fd = open(name.c_str(), O_RDONLY);
+  int fd = ::open(name.c_str(), O_RDONLY);
   if (fd == -1)
     error(name + ": cannot open: " + strerror(errno));
 
