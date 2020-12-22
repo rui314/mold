@@ -66,15 +66,21 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     return {mb->name, mb->size(), mb->mtime};
   };
 
+  auto lookup = [&](MemoryMappedFile *mb) {
+    Key k = get_key(mb);
+    std::vector<ObjectFile *> objs = cache[k];
+    cache[k].clear();
+    return objs;
+  };
+
   switch (get_file_type(mb)) {
   case OBJ: {
-    if (preloading) {
+    if (preloading)
       cache[get_key(mb)] = {new_object_file(mb, "")};
-    } else if (std::vector<ObjectFile *> objs = cache[get_key(mb)]; !objs.empty()) {
+    else if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
       out::objs.push_back(objs[0]);
-    } else {
+    else
       out::objs.push_back(new_object_file(mb, ""));
-    }
     return;
   }
   case DSO:
@@ -84,7 +90,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     if (preloading) {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         cache[get_key(mb)].push_back(new_object_file(child, mb->name));
-    } else if (std::vector<ObjectFile *> objs = cache[get_key(mb)]; !objs.empty()) {
+    } else if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
       append(out::objs, objs);
     } else {
       for (MemoryMappedFile *child : read_archive_members(mb))
@@ -98,7 +104,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
         cache[get_key(child)].push_back(new_object_file(child, mb->name));
     } else {
       for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
-        if (std::vector<ObjectFile *> objs = cache[get_key(child)]; !objs.empty())
+        if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
           out::objs.push_back(objs[0]);
         else
           out::objs.push_back(new_object_file(child, mb->name));
@@ -1077,9 +1083,17 @@ int main(int argc, char **argv) {
   for (std::string_view arg : config.version_script)
     parse_version_script(std::string(arg));
 
+  // Preload input files
+  {
+    ScopedTimer t("preload");
+    preloading = true;
+    read_input_files(file_args);
+  }
+
   // Parse input files
   {
     ScopedTimer t("parse");
+    preloading = false;
     read_input_files(file_args);
   }
 
