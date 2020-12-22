@@ -1,39 +1,69 @@
 #include "mold.h"
 
 #include <cstring>
+#include <fcntl.h>
 #include <regex>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+MemoryMappedFile::MemoryMappedFile(std::string name, struct stat &st)
+  : name(name), size_(st.st_size),
+    mtime((u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec) {}
+
+u8 *MemoryMappedFile::data() {
+  if (data_)
+    return data_;
+
+  int fd = open(name.c_str(), O_RDONLY);
+  if (fd == -1)
+    error(name + ": cannot open: " + strerror(errno));
+
+  data_ = (u8 *)mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (data_ == MAP_FAILED)
+    error(name + ": mmap failed: " + strerror(errno));
+  close(fd);
+  return data_;
+}
+
+MemoryMappedFile MemoryMappedFile::slice(std::string name, u64 start, u64 size) {
+  MemoryMappedFile mb = {name, data_ + start, size};
+  mb.parent = this;
+  return mb;
+}
 
 InputFile::InputFile(MemoryMappedFile mb)
-  : mb(mb), name(mb.name), ehdr(*(ElfEhdr *)mb.data), is_dso(ehdr.e_type == ET_DYN) {
-  if (mb.size < sizeof(ElfEhdr))
+  : mb(mb), name(mb.name), ehdr(*(ElfEhdr *)mb.data()), is_dso(ehdr.e_type == ET_DYN) {
+  if (mb.size() < sizeof(ElfEhdr))
     error(to_string(this) + ": file too small");
-  if (memcmp(mb.data, "\177ELF", 4))
+  if (memcmp(mb.data(), "\177ELF", 4))
     error(to_string(this) + ": not an ELF file");
 
-  u8 *sh_begin = mb.data + ehdr.e_shoff;
+  u8 *sh_begin = mb.data() + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
-  if (mb.data + mb.size < sh_end)
+  if (mb.data() + mb.size() < sh_end)
     error(to_string(this) + ": e_shoff or e_shnum corrupted: " +
-          std::to_string(mb.size) + " " + std::to_string(ehdr.e_shnum));
+          std::to_string(mb.size()) + " " + std::to_string(ehdr.e_shnum));
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
 }
 
-std::string_view InputFile::get_string(const ElfShdr &shdr) const {
-  u8 *begin = mb.data + shdr.sh_offset;
+std::string_view InputFile::get_string(const ElfShdr &shdr) {
+  u8 *begin = mb.data() + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
-  if (mb.data + mb.size < end)
+  if (mb.data() + mb.size() < end)
     error(to_string(this) + ": shdr corrupted");
   return {(char *)begin, (char *)end};
 }
 
-std::string_view InputFile::get_string(u32 idx) const {
+std::string_view InputFile::get_string(u32 idx) {
   if (elf_sections.size() <= idx)
     error(to_string(this) + ": invalid section index");
   return get_string(elf_sections[idx]);
 }
 
 template<typename T>
-std::span<T> InputFile::get_data(const ElfShdr &shdr) const {
+std::span<T> InputFile::get_data(const ElfShdr &shdr) {
   std::string_view view = get_string(shdr);
   if (view.size() % sizeof(T))
     error(to_string(this) + ": corrupted section");
@@ -41,7 +71,7 @@ std::span<T> InputFile::get_data(const ElfShdr &shdr) const {
 }
 
 template<typename T>
-std::span<T> InputFile::get_data(u32 idx) const {
+std::span<T> InputFile::get_data(u32 idx) {
   if (elf_sections.size() <= idx)
     error(to_string(this) + ": invalid section index");
   return get_data<T>(elf_sections[idx]);

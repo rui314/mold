@@ -102,7 +102,7 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
 void parse_linker_script(MemoryMappedFile mb, bool as_needed) {
   script_dir = mb.name.substr(0, mb.name.find_last_of('/'));
 
-  std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
+  std::vector<std::string_view> vec = tokenize({(char *)mb.data(), mb.size()});
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -119,7 +119,7 @@ void parse_version_script(std::string path) {
   script_dir = path.substr(0, path.find_last_of('/'));
 
   MemoryMappedFile mb = must_open_input_file(path);
-  std::vector<std::string_view> vec = tokenize({(char *)mb.data, mb.size});
+  std::vector<std::string_view> vec = tokenize({(char *)mb.data(), mb.size()});
   std::span<std::string_view> tok = vec;
   tok = skip(tok, "{");
 

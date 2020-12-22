@@ -640,14 +640,24 @@ struct ComdatGroup {
   u32 section_idx;
 };
 
-struct MemoryMappedFile {
-  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
-    : name(name), data(data), size(size), mtime(mtime) {}
+class MemoryMappedFile {
+public:
+  MemoryMappedFile(std::string name, struct stat &st);
+  MemoryMappedFile(std::string name, u8 *data, u64 size)
+    : name(name), data_(data), size_(size) {}
+
+  MemoryMappedFile slice(std::string name, u64 start, u64 size);
+
+  u8 *data();
+  u64 size() { return size_; }
 
   std::string name;
-  u8 *data;
-  u64 size;
-  u64 mtime;
+
+private:
+  MemoryMappedFile *parent;
+  u8 *data_ = nullptr;
+  u64 size_ = 0;
+  u64 mtime = 0;
 };
 
 class InputFile {
@@ -664,12 +674,12 @@ public:
   u32 priority;
   std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
 
-  std::string_view get_string(const ElfShdr &shdr) const;
-  std::string_view get_string(u32 idx) const;
+  std::string_view get_string(const ElfShdr &shdr);
+  std::string_view get_string(u32 idx);
 
 protected:
-  template<typename T> std::span<T> get_data(const ElfShdr &shdr) const;
-  template<typename T> std::span<T> get_data(u32 idx) const;
+  template<typename T> std::span<T> get_data(const ElfShdr &shdr);
+  template<typename T> std::span<T> get_data(u32 idx);
   ElfShdr *find_section(u32 type);
 };
 

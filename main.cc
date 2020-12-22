@@ -15,21 +15,10 @@
 #include <unordered_set>
 
 MemoryMappedFile *open_input_file(std::string path) {
-  int fd = open(path.c_str(), O_RDONLY);
-  if (fd == -1)
-    return nullptr;
-
   struct stat st;
-  if (fstat(fd, &st) == -1)
-    error(path + ": stat failed");
-
-  void *addr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-  if (addr == MAP_FAILED)
-    error(path + ": mmap failed: " + strerror(errno));
-  close(fd);
-
-  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-  return new MemoryMappedFile(path, (u8 *)addr, st.st_size, mtime);
+  if (stat(path.c_str(), &st) == -1)
+    return nullptr;
+  return new MemoryMappedFile(path, st);
 }
 
 MemoryMappedFile must_open_input_file(std::string path) {
@@ -40,18 +29,18 @@ MemoryMappedFile must_open_input_file(std::string path) {
 }
 
 static bool is_text_file(MemoryMappedFile mb) {
-  return mb.size >= 4 &&
-         isprint(mb.data[0]) &&
-         isprint(mb.data[1]) &&
-         isprint(mb.data[2]) &&
-         isprint(mb.data[3]);
+  return mb.size() >= 4 &&
+         isprint(mb.data()[0]) &&
+         isprint(mb.data()[1]) &&
+         isprint(mb.data()[2]) &&
+         isprint(mb.data()[3]);
 }
 
 enum FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
 static FileType get_file_type(MemoryMappedFile mb) {
-  if (mb.size >= 20 && memcmp(mb.data, "\177ELF", 4) == 0) {
-    ElfEhdr &ehdr = *(ElfEhdr *)mb.data;
+  if (mb.size() >= 20 && memcmp(mb.data(), "\177ELF", 4) == 0) {
+    ElfEhdr &ehdr = *(ElfEhdr *)mb.data();
     if (ehdr.e_type == ET_REL)
       return OBJ;
     if (ehdr.e_type == ET_DYN)
@@ -59,19 +48,16 @@ static FileType get_file_type(MemoryMappedFile mb) {
     return UNKNOWN;
   }
 
-  if (mb.size >= 8 && memcmp(mb.data, "!<arch>\n", 8) == 0)
+  if (mb.size() >= 8 && memcmp(mb.data(), "!<arch>\n", 8) == 0)
     return AR;
-  if (mb.size >= 8 && memcmp(mb.data, "!<thin>\n", 8) == 0)
+  if (mb.size() >= 8 && memcmp(mb.data(), "!<thin>\n", 8) == 0)
     return THIN_AR;
   if (is_text_file(mb))
     return TEXT;
   return UNKNOWN;
 }
 
-typedef std::tuple<std::string_view, u64, u64> FileKey;
-
 tbb::task_group parser_tg;
-static std::map<FileKey, std::vector<ObjectFile *>> preloaded_objs;
 
 static ObjectFile *new_object_file(MemoryMappedFile mb, std::string archive_name) {
   ObjectFile *file = new ObjectFile(mb, archive_name);
@@ -83,52 +69,6 @@ static SharedFile *new_shared_file(MemoryMappedFile mb, bool as_needed) {
   SharedFile *file = new SharedFile(mb, as_needed);
   parser_tg.run([=]() { file->parse(); });
   return file;
-}
-
-static void preload_object(std::string_view path) {
-  MemoryMappedFile *mb = open_input_file(std::string(path));
-  if (!mb)
-    return;
-
-  switch (get_file_type(*mb)) {
-  case OBJ:
-    preloaded_objs[{path, mb->size, mb->mtime}] = {new_object_file(*mb, "")};
-    return;
-  case AR: {
-    std::vector<ObjectFile *> objs;
-    for (MemoryMappedFile &child : read_archive_members(*mb))
-      objs.push_back(new_object_file(child, mb->name));
-    preloaded_objs[{path, mb->size, mb->mtime}] = objs;
-    return;
-  }
-  case THIN_AR:
-    for (MemoryMappedFile &child : read_archive_members(*mb)) {
-      FileKey key(child.name, child.size, child.mtime);
-      preloaded_objs[key] = {new_object_file(child, mb->name)};
-    }
-    return;
-  }
-}
-
-static std::vector<ObjectFile *> get_preloaded_object(std::string_view path) {
-  struct stat st;
-  if (stat(std::string(path).c_str(), &st) == -1)
-    return {};
-
-  // Is regular file?
-  if ((st.st_mode & S_IFMT) != S_IFREG)
-    return {};
-
-  u64 size = st.st_size;
-  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-
-  auto it = preloaded_objs.find({path, size, mtime});
-  if (it == preloaded_objs.end())
-    return {};
-
-  std::vector<ObjectFile *> vec = it->second;
-  preloaded_objs.erase(it);
-  return vec;
 }
 
 void read_file(MemoryMappedFile mb, bool as_needed) {
@@ -873,15 +813,15 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
 
   auto read_quoted = [&](int i, char quote) {
     std::string *buf = new std::string;
-    while (i < mb.size && mb.data[i] != quote) {
-      if (mb.data[i] == '\\') {
-        buf->append(1, mb.data[i + 1]);
+    while (i < mb.size() && mb.data()[i] != quote) {
+      if (mb.data()[i] == '\\') {
+        buf->append(1, mb.data()[i + 1]);
         i += 2;
       } else {
-        buf->append(1, mb.data[i++]);
+        buf->append(1, mb.data()[i++]);
       }
     }
-    if (i >= mb.size)
+    if (i >= mb.size())
       error(std::string(path) + ": premature end of input");
     vec.push_back(std::string_view(*buf));
     return i + 1;
@@ -889,24 +829,24 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
 
   auto read_unquoted = [&](int i) {
     std::string *buf = new std::string;
-    while (i < mb.size && !isspace(mb.data[i]))
-      buf->append(1, mb.data[i++]);
+    while (i < mb.size() && !isspace(mb.data()[i]))
+      buf->append(1, mb.data()[i++]);
     vec.push_back(std::string_view(*buf));
     return i;
   };
 
-  for (int i = 0; i < mb.size;) {
-    if (isspace(mb.data[i]))
+  for (int i = 0; i < mb.size();) {
+    if (isspace(mb.data()[i]))
       i++;
-    else if (mb.data[i] == '\'')
+    else if (mb.data()[i] == '\'')
       i = read_quoted(i + 1, '\'');
-    else if (mb.data[i] == '\"')
+    else if (mb.data()[i] == '\"')
       i = read_quoted(i + 1, '\"');
     else
       i = read_unquoted(i);
   }
 
-  munmap(mb.data, mb.size);
+  munmap(mb.data(), mb.size());
   return vec;
 }
 
