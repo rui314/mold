@@ -85,7 +85,6 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
       return;
     }
 
-    message("reloading " + mb->name);
     out::objs.push_back(new_object_file(mb, ""));
     return;
   }
@@ -104,7 +103,6 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
       return;
     }
 
-    message("reloading " + mb->name);
     for (MemoryMappedFile *child : read_archive_members(mb))
       out::objs.push_back(new_object_file(child, mb->name));
     return;
@@ -117,10 +115,9 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     }
 
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
-      if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
+      if (std::vector<ObjectFile *> objs = lookup(child); !objs.empty()) {
         out::objs.push_back(objs[0]);
       } else {
-        message("reloading " + child->name);
         out::objs.push_back(new_object_file(child, mb->name));
       }
     }
@@ -998,6 +995,8 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.rpaths.push_back(arg);
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
+    } else if (read_flag(args, "preload")) {
+      conf.preload = true;
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
@@ -1097,9 +1096,8 @@ int main(int argc, char **argv) {
   for (std::string_view arg : config.version_script)
     parse_version_script(std::string(arg));
 
-#if 0
   // Preload input files
-  {
+  if (config.preload) {
     ScopedTimer t("preload");
     preloading = true;
     read_input_files(file_args);
@@ -1117,7 +1115,6 @@ int main(int argc, char **argv) {
 
     std::cerr << "resuming...\n";
   }
-#endif
 
   // Parse input files
   {

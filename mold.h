@@ -62,6 +62,7 @@ struct Config {
   bool is_static = false;
   bool perf = false;
   bool pie = false;
+  bool preload = false;
   bool print_map = false;
   bool stat = false;
   bool strip_all = false;
