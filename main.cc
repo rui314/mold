@@ -1004,6 +1004,26 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
   return conf;
 }
 
+static void read_input_files(std::span<std::string_view> args) {
+  bool as_needed = false;
+
+  while (!args.empty()) {
+    std::string_view arg;
+
+    if (read_flag(args, "as-needed")) {
+      as_needed = true;
+    } else if (read_flag(args, "no-as-needed")) {
+      as_needed = false;
+    } else if (read_arg(args, arg, "l")) {
+      read_file(find_library(std::string(arg), config.library_paths), as_needed);
+    } else {
+      read_file(MemoryMappedFile::must_open(std::string(args[0])), as_needed);
+      args = args.subspan(1);
+    }
+  }
+  parser_tg.wait();
+}
+
 static void show_stats() {
   for (ObjectFile *obj : out::objs) {
     static Counter defined("defined_syms");
@@ -1060,23 +1080,7 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     ScopedTimer t("parse");
-    bool as_needed = false;
-
-    for (std::span<std::string_view> args = file_args; !args.empty();) {
-      std::string_view arg;
-
-      if (read_flag(args, "as-needed")) {
-        as_needed = true;
-      } else if (read_flag(args, "no-as-needed")) {
-        as_needed = false;
-      } else if (read_arg(args, arg, "l")) {
-        read_file(find_library(std::string(arg), config.library_paths), as_needed);
-      } else {
-        read_file(MemoryMappedFile::must_open(std::string(args[0])), as_needed);
-        args = args.subspan(1);
-      }
-    }
-    parser_tg.wait();
+    read_input_files(file_args);
   }
 
   // Uniquify shared object files with soname
