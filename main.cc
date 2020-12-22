@@ -14,6 +14,9 @@
 #include <unistd.h>
 #include <unordered_set>
 
+static tbb::task_group parser_tg;
+static bool preloading;
+
 static bool is_text_file(MemoryMappedFile *mb) {
   return mb->size() >= 4 &&
          isprint(mb->data()[0]) &&
@@ -43,8 +46,6 @@ static FileType get_file_type(MemoryMappedFile *mb) {
   return UNKNOWN;
 }
 
-tbb::task_group parser_tg;
-
 static ObjectFile *new_object_file(MemoryMappedFile *mb, std::string archive_name) {
   ObjectFile *file = new ObjectFile(mb, archive_name);
   parser_tg.run([=]() { file->parse(); });
@@ -58,17 +59,51 @@ static SharedFile *new_shared_file(MemoryMappedFile *mb, bool as_needed) {
 }
 
 void read_file(MemoryMappedFile *mb, bool as_needed) {
+  typedef std::tuple<std::string, u64, u64> Key;
+  static std::map<Key, std::vector<ObjectFile *>> cache;
+
+  auto get_key = [](MemoryMappedFile *mb) -> Key {
+    return {mb->name, mb->size(), mb->mtime};
+  };
+
   switch (get_file_type(mb)) {
-  case OBJ:
-    out::objs.push_back(new_object_file(mb, ""));
+  case OBJ: {
+    if (preloading) {
+      cache[get_key(mb)] = {new_object_file(mb, "")};
+    } else if (std::vector<ObjectFile *> objs = cache[get_key(mb)]; !objs.empty()) {
+      out::objs.push_back(objs[0]);
+    } else {
+      out::objs.push_back(new_object_file(mb, ""));
+    }
     return;
+  }
   case DSO:
     out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
-  case AR:
+  case AR: {
+    if (preloading) {
+      for (MemoryMappedFile *child : read_fat_archive_members(mb))
+        cache[get_key(mb)].push_back(new_object_file(child, mb->name));
+    } else if (std::vector<ObjectFile *> objs = cache[get_key(mb)]; !objs.empty()) {
+      append(out::objs, objs);
+    } else {
+      for (MemoryMappedFile *child : read_archive_members(mb))
+        out::objs.push_back(new_object_file(child, mb->name));
+    }
+    return;
+  }
   case THIN_AR:
-    for (MemoryMappedFile *child : read_archive_members(mb))
-      out::objs.push_back(new_object_file(child, mb->name));
+    if (preloading) {
+      for (MemoryMappedFile *child : read_thin_archive_members(mb))
+        cache[get_key(child)].push_back(new_object_file(child, mb->name));
+    } else {
+      for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
+        if (std::vector<ObjectFile *> objs = cache[get_key(child)]; !objs.empty())
+          out::objs.push_back(objs[0]);
+        else
+          out::objs.push_back(new_object_file(child, mb->name));
+      }
+    }
     return;
   case TEXT:
     parse_linker_script(mb, as_needed);

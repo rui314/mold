@@ -10,7 +10,7 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-static std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) {
+std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) {
   u8 *data = mb->data() + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
@@ -44,7 +44,7 @@ static std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFil
   return vec;
 }
 
-static std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
+std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
   u8 *data = mb->data() + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;

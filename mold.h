@@ -655,13 +655,13 @@ public:
   u64 size() { return size_; }
 
   std::string name;
+  u64 mtime = 0;
 
 private:
   std::mutex mu;
   MemoryMappedFile *parent;
   std::atomic<u8 *> data_;
   u64 size_ = 0;
-  u64 mtime = 0;
 };
 
 class InputFile {
@@ -770,6 +770,8 @@ private:
 //
 
 std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb);
+std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb);
+std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 
 //
 // linker_script.cc
