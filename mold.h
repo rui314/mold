@@ -83,8 +83,8 @@ inline Config config;
 [[noreturn]] inline void error(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
-  std::cerr << msg << "\n";
-  exit(1);
+  std::cerr << msg << "\n" << std::flush;
+  _exit(1);
 }
 
 #define unreachable() \
