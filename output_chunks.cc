@@ -663,11 +663,10 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  for (decltype(set)::const_iterator it = set.begin(); it != set.end(); ++it) {
-    StringPiece &piece = *it;
+  map.for_each_value([&](const StringPiece &piece) {
     if (MergeableSection *m = piece.isec)
       memcpy(base + m->offset + piece.output_offset, piece.data, piece.size);
-  }
+  });
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

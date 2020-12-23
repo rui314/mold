@@ -130,10 +130,8 @@ void ObjectFile::initialize_sections() {
       if (entries[0] != GRP_COMDAT)
         error(to_string(this) + ": unsupported SHT_GROUP format");
 
-      static tbb::concurrent_hash_map<std::string_view, ComdatGroup> map;
-      decltype(map)::const_accessor acc;
-      map.insert(acc, {signature, ComdatGroup(nullptr, 0)});
-      ComdatGroup *group = const_cast<ComdatGroup *>(&acc->second);
+      static ConcurrentMap<ComdatGroup> map;
+      ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
       comdat_groups.push_back({group, entries});
 
       static Counter counter("comdats");

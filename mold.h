@@ -7,7 +7,6 @@
 #include "elf.h"
 
 #include "tbb/concurrent_hash_map.h"
-#include "tbb/concurrent_unordered_set.h"
 #include "tbb/parallel_for_each.h"
 #include "tbb/parallel_invoke.h"
 #include "tbb/parallel_reduce.h"
@@ -111,6 +110,28 @@ struct tbb_hash_compare<std::string_view> {
 };
 }
 
+template<typename ValueT>
+class ConcurrentMap {
+public:
+  typedef tbb::concurrent_hash_map<std::string_view, ValueT> MapT;
+
+  ValueT *insert(std::string_view key, const ValueT &val) {
+    typename MapT::const_accessor acc;
+    map.insert(acc, std::make_pair(key, val));
+    return const_cast<ValueT *>(&acc->second);
+  }
+
+  void for_each_value(std::function<void(const ValueT &)> fn) {
+    for (typename MapT::const_iterator it = map.begin(); it != map.end(); ++it)
+      fn(it->second);
+  }
+
+  size_t size() const { return map.size(); }
+
+private:
+  MapT map;
+};
+
 //
 // Symbol
 //
@@ -122,18 +143,6 @@ struct StringPiece {
   StringPiece(const StringPiece &other)
     : isec(other.isec.load()), data(other.data), size(other.size),
       output_offset(other.output_offset) {}
-
-  struct hash {
-    size_t operator()(const StringPiece &piece) const {
-      return std::hash<std::string_view>()({(char *)piece.data, piece.size});
-    }
-  };
-
-  struct equal {
-    bool operator()(const StringPiece &a, const StringPiece &b) const {
-      return a.size == b.size && memcmp(a.data, b.data, a.size) == 0;
-    }
-  };
 
   inline u64 get_addr() const;
 
@@ -164,22 +173,9 @@ public:
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : Symbol(other.name) {}
 
-  struct hash {
-    size_t operator()(const Symbol &sym) const {
-      return std::hash<std::string_view>()(sym.name);
-    }
-  };
-
-  struct equal {
-    bool operator()(const Symbol &a, const Symbol &b) const {
-      return a.name == b.name;
-    }
-  };
-
   static Symbol *intern(std::string_view name) {
-    static tbb::concurrent_unordered_set<Symbol, Symbol::hash, Symbol::equal> set;
-    auto [it, inserted] = set.insert(Symbol(name));
-    return &*it;
+    static ConcurrentMap<Symbol> map;
+    return map.insert(name, Symbol(name));
   }
 
   inline u64 get_addr() const;
@@ -569,7 +565,7 @@ public:
   static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
-  tbb::concurrent_unordered_set<StringPiece, StringPiece::hash, StringPiece::equal> set;
+  ConcurrentMap<StringPiece> map;
 
   void copy_buf() override;
 

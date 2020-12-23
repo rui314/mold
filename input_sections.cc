@@ -333,8 +333,7 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
-    auto [it, inserted] = parent.set.insert(StringPiece(substr));
-    StringPiece *piece = &*it;
+    StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
     pieces.push_back({piece, offset});
     offset += substr.size();
   }
