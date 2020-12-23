@@ -1057,7 +1057,7 @@ static void show_stats() {
 
   static Counter merged_strings("merged_strings");
   for (MergedSection *osec : MergedSection::instances)
-    merged_strings.inc(osec->map.size());
+    merged_strings.inc(osec->set.size());
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
   Counter num_objs("num_objs", out::objs.size());
