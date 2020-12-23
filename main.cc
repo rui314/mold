@@ -255,7 +255,6 @@ static void bin_sections() {
 
   tbb::parallel_for(0, num_osec, [&](int j) {
     OutputSection::instances[j]->members.reserve(sizes[j]);
-
     for (int i = 0; i < groups.size(); i++)
       append(OutputSection::instances[j]->members, groups[i][j]);
   });
