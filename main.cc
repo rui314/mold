@@ -670,9 +670,13 @@ static u32 get_umask() {
   return mask;
 }
 
-void sigint_handler(int s) {
+void cleanup() {
   if (output_tmpfile)
     unlink(output_tmpfile);
+}
+
+static void sigint_handler(int) {
+  cleanup();
   _exit(1);
 }
 

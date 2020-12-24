@@ -81,10 +81,13 @@ struct Config {
 
 inline Config config;
 
+void cleanup();
+
 [[noreturn]] inline void error(std::string msg) {
   static std::mutex mu;
   std::lock_guard lock(mu);
   std::cerr << msg << "\n" << std::flush;
+  cleanup();
   _exit(1);
 }
 
