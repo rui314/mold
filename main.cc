@@ -18,6 +18,8 @@
 #include <unistd.h>
 #include <unordered_set>
 
+#define DAEMON_TIMEOUT 30
+
 static tbb::task_group parser_tg;
 static bool preloading;
 static char *output_tmpfile;
@@ -858,8 +860,7 @@ static std::function<void()> fork_child() {
   if (pid > 0) {
     // Parent
     close(pipefd[1]);
-    char buf[1];
-    int r = read(pipefd[0], buf, 1);
+    int r = read(pipefd[0], (char[1]){}, 1);
     _exit(r != 1);
   }
 
@@ -873,7 +874,8 @@ static std::string compute_sha1(char **argv) {
   SHA1Reset(&ctx);
 
   for (int i = 0; argv[i]; i++)
-    SHA1Input(&ctx, (u8 *)argv[i], strlen(argv[i]) + 1);
+    if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
+      SHA1Input(&ctx, (u8 *)argv[i], strlen(argv[i]) + 1);
 
   u8 digest[21];
   memset(digest, 0, sizeof(digest));
@@ -942,10 +944,10 @@ static int recv_fd(int conn) {
   return *(int *)CMSG_DATA(cmsg);
 }
 
-static std::function<void()> daemonize(char **argv) {
+static int daemonize(char **argv) {
   compute_sha1(argv);
 
-  if (daemon(0, 0) == -1)
+  if (daemon(1, 0) == -1)
     error("daemon failed: " + std::string(strerror(errno)));
 
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -976,7 +978,7 @@ static std::function<void()> daemonize(char **argv) {
   FD_SET(sock, &rfds);
 
   struct timeval tv;
-  tv.tv_sec = 3;
+  tv.tv_sec = DAEMON_TIMEOUT;
   tv.tv_usec = 0;
 
   int res = select(sock + 1, &rfds, NULL, NULL, &tv);
@@ -991,11 +993,7 @@ static std::function<void()> daemonize(char **argv) {
   int conn = accept(sock, NULL, NULL);
   if (conn == -1)
     error("accept failed: " + std::string(strerror(errno)));
-
-  dup2(recv_fd(conn), STDOUT_FILENO);
-  dup2(recv_fd(conn), STDERR_FILENO);
-
-  return [=]() { write(conn, (char []){1}, 1); };
+  return conn;
 }
 
 static std::vector<std::string_view> read_response_file(std::string_view path) {
@@ -1230,14 +1228,36 @@ int main(int argc, char **argv) {
 
   if (config.output == "")
     error("-o option is missing");
-  if (config.preload && !config.fork)
-    error("--preload and --no-fork may not be used together");
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                config.thread_count);
 
   std::function<void()> on_complete;
-  if (config.fork)
+
+  if (!config.preload) {
+    int conn = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (conn == -1)
+      error("socket failed: " + std::string(strerror(errno)));
+
+    std::string path = "/tmp/mold-" + compute_sha1(argv);
+
+    struct sockaddr_un name;
+    memset(&name, 0, sizeof(name));
+    name.sun_family = AF_UNIX;
+    memcpy(name.sun_path, path.data(), path.size());
+
+    if (connect(conn, (struct sockaddr *)&name, sizeof(name)) == 0) {
+      std::cout << "connect\n";
+      send_fd(conn, STDOUT_FILENO);
+      send_fd(conn, STDERR_FILENO);
+      int r = read(conn, (char[1]){}, 1);
+      _exit(r != 1);
+    }
+
+    close(conn);
+  }
+
+  if (config.fork && !config.preload)
     on_complete = fork_child();
 
   signal(SIGINT, sigint_handler);
@@ -1254,8 +1274,16 @@ int main(int argc, char **argv) {
     parse_version_script(std::string(arg));
 
   // Preload input files
-  if (config.preload)
-    on_complete = daemonize(argv);
+  if (config.preload) {
+    int conn = daemonize(argv);
+
+    preloading = true;
+    read_input_files(file_args);
+
+    dup2(recv_fd(conn), STDOUT_FILENO);
+    dup2(recv_fd(conn), STDERR_FILENO);
+    on_complete = [=]() { write(conn, (char []){1}, 1); };
+  }
 
   // Parse input files
   {
