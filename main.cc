@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "sha1.h"
 
 #include "tbb/global_control.h"
 #include "tbb/task_group.h"
@@ -10,8 +11,10 @@
 #include <regex>
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <unordered_set>
 
@@ -865,6 +868,136 @@ static std::function<void()> fork_child() {
   return [=]() { write(pipefd[1], (char []){1}, 1); };
 }
 
+static std::string compute_sha1(char **argv) {
+  SHA1Context ctx;
+  SHA1Reset(&ctx);
+
+  for (int i = 0; argv[i]; i++)
+    SHA1Input(&ctx, (u8 *)argv[i], strlen(argv[i]) + 1);
+
+  u8 digest[21];
+  memset(digest, 0, sizeof(digest));
+  SHA1Result(&ctx, digest);
+
+  static char chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  std::string res;
+  for (int i = 0; i < sizeof(digest); i += 3) {
+    u32 x = (digest[i + 2] << 16) | (digest[i + 1] << 8) | digest[i];
+    res += chars[x & 0b111111];
+    res += chars[(x >> 6) & 0b111111];
+    res += chars[(x >> 12) & 0b111111];
+    res += chars[(x >> 18) & 0b111111];
+  }
+  return res;
+}
+
+static void send_fd(int conn, int fd) {
+  struct iovec iov;
+  char dummy = '1';
+  iov.iov_base = &dummy;
+  iov.iov_len = 1;
+
+  struct msghdr msg;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  char buf[CMSG_SPACE(sizeof(int))];
+  msg.msg_control = buf;
+  msg.msg_controllen = CMSG_LEN(sizeof(int));
+
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+  *(int *)CMSG_DATA(cmsg) = fd;
+
+  if (sendmsg(conn, &msg, 0) == -1)
+    error("sendmsg failed: " + std::string(strerror(errno)));
+}
+
+static int recv_fd(int conn) {
+  struct iovec iov;
+  char buf[1];
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
+
+  struct msghdr msg;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  char cmsgbuf[CMSG_SPACE(sizeof(int))];
+  msg.msg_control = (caddr_t)cmsgbuf;
+  msg.msg_controllen = sizeof(cmsgbuf);
+
+  int len = recvmsg(conn, &msg, 0);
+  if (len <= 0)
+    error("recvmsg failed: " + std::string(strerror(errno)));
+
+  struct cmsghdr *cmsg;
+  cmsg = CMSG_FIRSTHDR(&msg);
+  return *(int *)CMSG_DATA(cmsg);
+}
+
+static std::function<void()> daemonize(char **argv) {
+  compute_sha1(argv);
+
+  if (daemon(0, 0) == -1)
+    error("daemon failed: " + std::string(strerror(errno)));
+
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock == -1)
+    error("socket failed: " + std::string(strerror(errno)));
+
+  std::string path = "/tmp/mold-" + compute_sha1(argv);
+
+  struct sockaddr_un name;
+  memset(&name, 0, sizeof(name));
+  name.sun_family = AF_UNIX;
+  memcpy(name.sun_path, path.data(), path.size());
+
+  if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
+    if (errno != EADDRINUSE)
+      error("bind failed: " + std::string(strerror(errno)));
+
+    unlink(path.c_str());
+    if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
+      error("bind failed: " + std::string(strerror(errno)));
+  }
+
+  if (listen(sock, 0) == -1)
+    error("listen failed: " + std::string(strerror(errno)));
+
+  fd_set rfds;
+  FD_ZERO(&rfds);
+  FD_SET(sock, &rfds);
+
+  struct timeval tv;
+  tv.tv_sec = 3;
+  tv.tv_usec = 0;
+
+  int res = select(sock + 1, &rfds, NULL, NULL, &tv);
+  if (res == -1)
+    error("select failed: " + std::string(strerror(errno)));
+
+  if (res == 0) {
+    std::cout << "timeout\n";
+    exit(0);
+  }
+
+  int conn = accept(sock, NULL, NULL);
+  if (conn == -1)
+    error("accept failed: " + std::string(strerror(errno)));
+
+  dup2(recv_fd(conn), STDOUT_FILENO);
+  dup2(recv_fd(conn), STDERR_FILENO);
+
+  return [=]() { write(conn, (char []){1}, 1); };
+}
+
 static std::vector<std::string_view> read_response_file(std::string_view path) {
   std::vector<std::string_view> vec;
   MemoryMappedFile *mb = MemoryMappedFile::must_open(std::string(path));
@@ -1097,6 +1230,8 @@ int main(int argc, char **argv) {
 
   if (config.output == "")
     error("-o option is missing");
+  if (config.preload && !config.fork)
+    error("--preload and --no-fork may not be used together");
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                config.thread_count);
@@ -1119,24 +1254,8 @@ int main(int argc, char **argv) {
     parse_version_script(std::string(arg));
 
   // Preload input files
-  if (config.preload) {
-    ScopedTimer t("preload");
-    preloading = true;
-    read_input_files(file_args);
-
-    std::cerr << "waiting...\n";
-
-    int fd = open("/tmp/mold", O_RDONLY, 0777);
-    if (fd < 0) {
-      perror("open");
-      exit(1);
-    }
-
-    char buf[1];
-    read(fd, buf, 1);
-
-    std::cerr << "resuming...\n";
-  }
+  if (config.preload)
+    on_complete = daemonize(argv);
 
   // Parse input files
   {
