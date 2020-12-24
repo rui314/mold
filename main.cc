@@ -1371,6 +1371,7 @@ int main(int argc, char **argv) {
     munmap(out::buf, filesize);
     if (rename(output_tmpfile, config.output.c_str()) == -1)
       error(config.output + ": rename filed: " + strerror(errno));
+    output_tmpfile = nullptr;
   }
 
   t_copy.stop();
