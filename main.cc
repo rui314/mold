@@ -1245,7 +1245,7 @@ int main(int argc, char **argv) {
     memcpy(name.sun_path, path.data(), path.size());
 
     if (connect(conn, (struct sockaddr *)&name, sizeof(name)) == 0) {
-      std::cout << "connect\n";
+      std::cout << "connected\n";
       send_fd(conn, STDOUT_FILENO);
       send_fd(conn, STDERR_FILENO);
       int r = read(conn, (char[1]){}, 1);
