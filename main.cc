@@ -8,6 +8,7 @@
 #include <iostream>
 #include <libgen.h>
 #include <regex>
+#include <signal.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -16,6 +17,7 @@
 
 static tbb::task_group parser_tg;
 static bool preloading;
+static char *output_tmpfile;
 
 static bool is_text_file(MemoryMappedFile *mb) {
   return mb->size() >= 4 &&
@@ -674,13 +676,34 @@ static u32 get_umask() {
   return mask;
 }
 
+void sigint_handler(int s) {
+  if (output_tmpfile)
+    unlink(output_tmpfile);
+  _exit(1);
+}
+
 static u8 *open_output_file(u64 filesize) {
   ScopedTimer t("open_file");
   Counter counter("filesize", filesize);
 
-  int fd = open(std::string(config.output).c_str(), O_RDWR | O_CREAT, 0777);
+  std::string dir = dirname(strdup(config.output.c_str()));
+  output_tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
+  int fd = mkstemp(output_tmpfile);
   if (fd == -1)
-    error("cannot open " + config.output + ": " + strerror(errno));
+    error("cannot open " + std::string(output_tmpfile) + ": " + strerror(errno));
+
+  if (rename(config.output.c_str(), output_tmpfile) == 0) {
+    close(fd);
+    fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
+    if (fd == -1) {
+      if (errno != ETXTBSY)
+        error("cannot open " + config.output + ": " + strerror(errno));
+      unlink(output_tmpfile);
+      fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
+      if (fd == -1)
+        error("cannot open " + config.output + ": " + strerror(errno));
+    }
+  }
 
   if (ftruncate(fd, filesize))
     error("ftruncate failed");
@@ -1084,6 +1107,8 @@ int main(int argc, char **argv) {
   if (config.fork)
     on_complete = fork_child();
 
+  signal(SIGINT, sigint_handler);
+
   if (config.stat)
     Counter::enabled = true;
   if (config.pie)
@@ -1344,6 +1369,8 @@ int main(int argc, char **argv) {
   {
     ScopedTimer t("munmap");
     munmap(out::buf, filesize);
+    if (rename(output_tmpfile, config.output.c_str()) == -1)
+      error(config.output + ": rename filed: " + strerror(errno));
   }
 
   t_copy.stop();
