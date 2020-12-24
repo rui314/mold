@@ -76,24 +76,21 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
   };
 
   switch (get_file_type(mb)) {
-  case OBJ: {
+  case OBJ:
     if (preloading) {
       cache[get_key(mb)] = {new_object_file(mb, "")};
       return;
     }
 
-    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
+    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
       out::objs.push_back(objs[0]);
-      return;
-    }
-
-    out::objs.push_back(new_object_file(mb, ""));
+    else
+      out::objs.push_back(new_object_file(mb, ""));
     return;
-  }
   case DSO:
     out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
-  case AR: {
+  case AR:
     if (preloading) {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         cache[get_key(mb)].push_back(new_object_file(child, mb->name));
@@ -102,13 +99,11 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
 
     if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
       append(out::objs, objs);
-      return;
+    } else {
+      for (MemoryMappedFile *child : read_archive_members(mb))
+        out::objs.push_back(new_object_file(child, mb->name));
     }
-
-    for (MemoryMappedFile *child : read_archive_members(mb))
-      out::objs.push_back(new_object_file(child, mb->name));
     return;
-  }
   case THIN_AR:
     if (preloading) {
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
@@ -117,11 +112,10 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     }
 
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
-      if (std::vector<ObjectFile *> objs = lookup(child); !objs.empty()) {
+      if (std::vector<ObjectFile *> objs = lookup(child); !objs.empty())
         out::objs.push_back(objs[0]);
-      } else {
+      else
         out::objs.push_back(new_object_file(child, mb->name));
-      }
     }
     return;
   case TEXT:
