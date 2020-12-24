@@ -972,7 +972,10 @@ static int daemonize(char **argv) {
 
   if (listen(sock, 0) == -1)
     error("listen failed: " + std::string(strerror(errno)));
+  return sock;
+}
 
+static int wait_for_client(int sock) {
   fd_set rfds;
   FD_ZERO(&rfds);
   FD_SET(sock, &rfds);
@@ -1229,11 +1232,6 @@ int main(int argc, char **argv) {
   if (config.output == "")
     error("-o option is missing");
 
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
-
-  std::function<void()> on_complete;
-
   if (!config.preload) {
     int conn = socket(AF_UNIX, SOCK_STREAM, 0);
     if (conn == -1)
@@ -1257,8 +1255,27 @@ int main(int argc, char **argv) {
     close(conn);
   }
 
-  if (config.fork && !config.preload)
+  // Preload input files
+  int sock = -1;
+  if (config.preload)
+    sock = daemonize(argv);
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
+
+  std::function<void()> on_complete;
+
+  if (config.preload) {
+    preloading = true;
+    read_input_files(file_args);
+
+    int conn = wait_for_client(sock);
+    dup2(recv_fd(conn), STDOUT_FILENO);
+    dup2(recv_fd(conn), STDERR_FILENO);
+    on_complete = [=]() { write(conn, (char []){1}, 1); };
+  } else if (config.fork) {
     on_complete = fork_child();
+ }
 
   signal(SIGINT, sigint_handler);
 
@@ -1272,18 +1289,6 @@ int main(int argc, char **argv) {
 
   for (std::string_view arg : config.version_script)
     parse_version_script(std::string(arg));
-
-  // Preload input files
-  if (config.preload) {
-    int conn = daemonize(argv);
-
-    preloading = true;
-    read_input_files(file_args);
-
-    dup2(recv_fd(conn), STDOUT_FILENO);
-    dup2(recv_fd(conn), STDERR_FILENO);
-    on_complete = [=]() { write(conn, (char []){1}, 1); };
-  }
 
   // Parse input files
   {
