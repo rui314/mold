@@ -23,6 +23,7 @@
 static tbb::task_group parser_tg;
 static bool preloading;
 static char *output_tmpfile;
+static char *socket_tmpfile;
 
 static bool is_text_file(MemoryMappedFile *mb) {
   return mb->size() >= 4 &&
@@ -678,9 +679,11 @@ static u32 get_umask() {
 void cleanup() {
   if (output_tmpfile)
     unlink(output_tmpfile);
+  if (socket_tmpfile)
+    unlink(socket_tmpfile);
 }
 
-static void sigint_handler(int) {
+static void signal_handler(int) {
   cleanup();
   _exit(1);
 }
@@ -954,18 +957,18 @@ static int daemonize(char **argv) {
   if (sock == -1)
     error("socket failed: " + std::string(strerror(errno)));
 
-  std::string path = "/tmp/mold-" + compute_sha1(argv);
+  socket_tmpfile = strdup(("/tmp/mold-" + compute_sha1(argv)).c_str());
 
   struct sockaddr_un name;
   memset(&name, 0, sizeof(name));
   name.sun_family = AF_UNIX;
-  memcpy(name.sun_path, path.data(), path.size());
+  strcpy(name.sun_path, socket_tmpfile);
 
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
       error("bind failed: " + std::string(strerror(errno)));
 
-    unlink(path.c_str());
+    unlink(socket_tmpfile);
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
       error("bind failed: " + std::string(strerror(errno)));
   }
@@ -1265,6 +1268,9 @@ int main(int argc, char **argv) {
 
   std::function<void()> on_complete;
 
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
+
   if (config.preload) {
     preloading = true;
     read_input_files(file_args);
@@ -1276,8 +1282,6 @@ int main(int argc, char **argv) {
   } else if (config.fork) {
     on_complete = fork_child();
  }
-
-  signal(SIGINT, sigint_handler);
 
   if (config.stat)
     Counter::enabled = true;
