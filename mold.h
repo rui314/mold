@@ -873,7 +873,7 @@ private:
   u32 hash[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
   u32 length_low = 0;
   u32 length_high = 0;
-  i16 block_idx = 0;
+  i16 idx = 0;
   u8 block[64] = {};
   int computed = 0;
 };
