@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "sha1.h"
 
 #include "tbb/global_control.h"
 #include "tbb/task_group.h"
@@ -873,16 +872,15 @@ static std::function<void()> fork_child() {
 }
 
 static std::string compute_sha1(char **argv) {
-  SHA1Context ctx;
-  SHA1Reset(&ctx);
+  SHA1 sha1;
 
   for (int i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      SHA1Input(&ctx, (u8 *)argv[i], strlen(argv[i]) + 1);
+      sha1.update((u8 *)argv[i], strlen(argv[i]) + 1);
 
   u8 digest[21];
   memset(digest, 0, sizeof(digest));
-  SHA1Result(&ctx, digest);
+  sha1.get_result(digest);
 
   static char chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
