@@ -1,3 +1,8 @@
+// On Linux, /usr/lib/x86_64-linux-gnu/libc.so is not actually
+// a shared object file but an ASCII text file containing a linker
+// script to include a "real" libc.so file. Therefore, we need to
+// support a (very limited) subset of the linker script language.
+
 #include "mold.h"
 
 static thread_local std::string script_dir;
