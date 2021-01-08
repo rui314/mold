@@ -5,6 +5,89 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags)) {}
 
+static std::string rel_to_string(u32 r_type) {
+  switch (r_type) {
+  case R_X86_64_NONE: return "R_X86_64_NONE";
+  case R_X86_64_8: return "R_X86_64_8";
+  case R_X86_64_16: return "R_X86_64_16";
+  case R_X86_64_32: return "R_X86_64_32";
+  case R_X86_64_32S: return "R_X86_64_32S";
+  case R_X86_64_64: return "R_X86_64_64";
+  case R_X86_64_PC8: return "R_X86_64_PC8";
+  case R_X86_64_PC16: return "R_X86_64_PC16";
+  case R_X86_64_PC32: return "R_X86_64_PC32";
+  case R_X86_64_PC64: return "R_X86_64_PC64";
+  case R_X86_64_GOT32: return "R_X86_64_GOT32";
+  case R_X86_64_GOTPC32: return "R_X86_64_GOTPC32";
+  case R_X86_64_GOTPCREL: return "R_X86_64_GOTPCREL";
+  case R_X86_64_GOTPCRELX: return "R_X86_64_GOTPCRELX";
+  case R_X86_64_REX_GOTPCRELX: return "R_X86_64_REX_GOTPCRELX";
+  case R_X86_64_PLT32: return "R_X86_64_PLT32";
+  case R_X86_64_TLSGD: return "R_X86_64_TLSGD";
+  case R_X86_64_TLSLD: return "R_X86_64_TLSLD";
+  case R_X86_64_TPOFF32: return "R_X86_64_TPOFF32";
+  case R_X86_64_DTPOFF32: return "R_X86_64_DTPOFF32";
+  case R_X86_64_TPOFF64: return "R_X86_64_TPOFF64";
+  case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
+  case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
+  }
+  unreachable();
+}
+
+static void overflow_check(u32 r_type, u64 val) {
+  switch (r_type) {
+  case R_X86_64_8:
+    if (val != (u8)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string(val) + " is not in [0, 255]");
+    return;
+  case R_X86_64_PC8:
+    if (val != (i8)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string((i64)val) + " is not in [-128, 127]");
+    return;
+  case R_X86_64_16:
+    if (val != (u16)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string(val) + " is not in [0, 65535]");
+    return;
+  case R_X86_64_PC16:
+    if (val != (i16)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string((i64)val) + " is not in [-32768, 32767]");
+    return;
+  case R_X86_64_32:
+    if (val != (u32)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string(val) + " is not in [0, 4294967296]");
+    return;
+  case R_X86_64_32S:
+  case R_X86_64_PC32:
+  case R_X86_64_GOT32:
+  case R_X86_64_GOTPC32:
+  case R_X86_64_GOTPCREL:
+  case R_X86_64_GOTPCRELX:
+  case R_X86_64_REX_GOTPCRELX:
+  case R_X86_64_PLT32:
+  case R_X86_64_TLSGD:
+  case R_X86_64_TLSLD:
+  case R_X86_64_TPOFF32:
+  case R_X86_64_DTPOFF32:
+  case R_X86_64_GOTTPOFF:
+    if (val != (i32)val)
+      error("relocation " + rel_to_string(r_type) + " out of range: " +
+            std::to_string((i64)val) + " is not in [-2147483648, 2147483647]");
+    return;
+  case R_X86_64_NONE:
+  case R_X86_64_64:
+  case R_X86_64_PC64:
+  case R_X86_64_TPOFF64:
+  case R_X86_64_DTPOFF64:
+    return;
+  }
+  unreachable();
+}
+
 static int get_rel_size(u32 r_type) {
   switch (r_type) {
   case R_X86_64_NONE:
@@ -66,6 +149,7 @@ void InputSection::copy_buf() {
       ref = &rel_pieces[ref_idx++];
 
     auto write = [&](u64 val) {
+      overflow_check(rel.r_type, val);
       switch (get_rel_size(rel.r_type)) {
       case 1: *loc = val; return;
       case 2: *(u16 *)loc = val; return;
@@ -163,20 +247,6 @@ void InputSection::copy_buf() {
 #undef G
 #undef GOT
   }
-}
-
-static std::string rel_to_string(u32 r_type) {
-  switch (r_type) {
-  case R_X86_64_8:
-    return "R_X86_64_8";
-  case R_X86_64_16:
-    return "R_X86_64_16";
-  case R_X86_64_32:
-    return "R_X86_64_32";
-  case R_X86_64_32S:
-    return "R_X86_64_32S";
-  }
-  unreachable();
 }
 
 void InputSection::scan_relocations() {
