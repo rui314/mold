@@ -38,27 +38,27 @@ static void overflow_check(u32 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
+      error("relocation R_X86_64_8 out of range: " +
             std::to_string(val) + " is not in [0, 255]");
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
+      error("relocation R_X86_64_PC8 out of range: " +
             std::to_string((i64)val) + " is not in [-128, 127]");
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
+      error("relocation R_X86_64_16 out of range: " +
             std::to_string(val) + " is not in [0, 65535]");
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
+      error("relocation R_X86_64_PC16 out of range: " +
             std::to_string((i64)val) + " is not in [-32768, 32767]");
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
+      error("relocation R_X86_64_32 out of range: " +
             std::to_string(val) + " is not in [0, 4294967296]");
     return;
   case R_X86_64_32S:
