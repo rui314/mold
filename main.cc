@@ -472,7 +472,7 @@ static void fill_symbol_versions() {
     SharedFile *file = (SharedFile *)sym->file;
     std::string_view verstr = file->version_strings[sym->ver_idx];
 
-    verneed->vn_cnt += 1;
+    verneed->vn_cnt++;
     if (aux)
       aux->vna_next = sizeof(ElfVernaux);
 
@@ -486,7 +486,7 @@ static void fill_symbol_versions() {
   auto add_verneed = [&](Symbol *sym) {
     SharedFile *file = (SharedFile *)sym->file;
 
-    out::verneed->shdr.sh_info += 1;
+    out::verneed->shdr.sh_info++;
     if (verneed)
       verneed->vn_next = buf - (u8 *)verneed;
 
