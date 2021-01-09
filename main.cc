@@ -27,25 +27,25 @@ static bool is_text_file(MemoryMappedFile *mb) {
          isprint(mb->data()[3]);
 }
 
-enum FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
+enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
 static FileType get_file_type(MemoryMappedFile *mb) {
   if (mb->size() >= 20 && memcmp(mb->data(), "\177ELF", 4) == 0) {
     ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
     if (ehdr.e_type == ET_REL)
-      return OBJ;
+      return FileType::OBJ;
     if (ehdr.e_type == ET_DYN)
-      return DSO;
-    return UNKNOWN;
+      return FileType::DSO;
+    return FileType::UNKNOWN;
   }
 
   if (mb->size() >= 8 && memcmp(mb->data(), "!<arch>\n", 8) == 0)
-    return AR;
+    return FileType::AR;
   if (mb->size() >= 8 && memcmp(mb->data(), "!<thin>\n", 8) == 0)
-    return THIN_AR;
+    return FileType::THIN_AR;
   if (is_text_file(mb))
-    return TEXT;
-  return UNKNOWN;
+    return FileType::TEXT;
+  return FileType::UNKNOWN;
 }
 
 static ObjectFile *new_object_file(MemoryMappedFile *mb, std::string archive_name) {
@@ -76,7 +76,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
   };
 
   switch (get_file_type(mb)) {
-  case OBJ:
+  case FileType::OBJ:
     if (preloading) {
       cache[get_key(mb)] = {new_object_file(mb, "")};
       return;
@@ -87,10 +87,10 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     else
       out::objs.push_back(new_object_file(mb, ""));
     return;
-  case DSO:
+  case FileType::DSO:
     out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
-  case AR:
+  case FileType::AR:
     if (preloading) {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         cache[get_key(mb)].push_back(new_object_file(child, mb->name));
@@ -104,7 +104,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
         out::objs.push_back(new_object_file(child, mb->name));
     }
     return;
-  case THIN_AR:
+  case FileType::THIN_AR:
     if (preloading) {
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
         cache[get_key(child)].push_back(new_object_file(child, mb->name));
@@ -118,7 +118,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
         out::objs.push_back(new_object_file(child, mb->name));
     }
     return;
-  case TEXT:
+  case FileType::TEXT:
     parse_linker_script(mb, as_needed);
     return;
   default:
