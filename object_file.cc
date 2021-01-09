@@ -202,17 +202,17 @@ void ObjectFile::initialize_symbols() {
   static Counter counter("all_syms");
   counter.inc(elf_syms.size());
 
-  symbols.reserve(elf_syms.size());
+  symbols.resize(elf_syms.size());
   sym_pieces.resize(elf_syms.size() - first_global);
 
   // First symbol entry is always null
-  symbols.push_back(new Symbol);
+  symbols[0] = new Symbol;
 
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *new Symbol;
-    symbols.push_back(&sym);
+    symbols[i] = &sym;
 
     sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
@@ -241,7 +241,7 @@ void ObjectFile::initialize_symbols() {
     if (pos != std::string_view::npos)
       name = name.substr(0, pos);
 
-    symbols.push_back(Symbol::intern(name));
+    symbols[i] = Symbol::intern(name);
 
     if (esym.is_common())
       has_common_symbol = true;
