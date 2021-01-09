@@ -13,7 +13,7 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
 mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
-$(OBJS): mold.h Makefile
+$(OBJS): mold.h elf.h Makefile
 
 submodules: intel_tbb
 

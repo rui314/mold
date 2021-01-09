@@ -207,20 +207,9 @@ struct ElfSym {
   bool is_common() const { return st_shndx == SHN_COMMON; }
 
   u32 st_name;
-
-  union {
-    u8 st_info;
-    struct {
-      u8 st_type : 4;
-      u8 st_bind : 4;
-    };
-  };
-
-  union {
-    u8 st_other;
-    u8 st_visibility : 2;
-  };
-
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
   u16 st_shndx;
   u64 st_value;
   u64 st_size;
@@ -269,24 +258,14 @@ struct ElfPhdr {
 
 struct ElfRela {
   u64 r_offset;
-
-  union {
-    u64 r_info;
-    struct {
-      u32 r_type;
-      u32 r_sym;
-    };
-  };
-
+  u32 r_type;
+  u32 r_sym;
   i64 r_addend;
 };
 
 struct ElfDyn {
-  i64 d_tag;
-  union {
-    u64 d_val;
-    u64 d_ptr;
-  };
+  u64 d_tag;
+  u64 d_val;
 };
 
 struct ElfVerneed {
