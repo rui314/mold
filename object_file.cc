@@ -215,13 +215,13 @@ void ObjectFile::initialize_symbols() {
     const ElfSym &esym = elf_syms[i];
     local_symbols.push_back({});
     Symbol &sym = local_symbols.back();
+    symbols.push_back(&sym);
 
     sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
     sym.type = esym.st_type;
     sym.value = esym.st_value;
     sym.esym = &esym;
-    sym.write_symtab = should_write_symtab(esym, sym.name);
 
     if (!esym.is_abs()) {
       if (esym.is_common())
@@ -229,9 +229,8 @@ void ObjectFile::initialize_symbols() {
       sym.input_section = sections[esym.st_shndx];
     }
 
-    symbols.push_back(&local_symbols.back());
-
-    if (sym.write_symtab) {
+    if (should_write_symtab(esym, sym.name)) {
+      sym.write_symtab = true;
       strtab_size += sym.name.size() + 1;
       local_symtab_size += sizeof(ElfSym);
     }

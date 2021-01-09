@@ -280,6 +280,9 @@ void SymtabSection::update_shdr() {
 
   shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ElfSym);
   shdr.sh_link = out::strtab->shndx;
+
+  static Counter counter("symtab");
+  counter.inc(shdr.sh_size / sizeof(ElfSym));
 }
 
 void SymtabSection::copy_buf() {
