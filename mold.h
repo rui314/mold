@@ -149,27 +149,21 @@ public:
 
   ValueT *insert(std::string_view key, const ValueT &val) {
     typename MapT::const_accessor acc;
-    size_t hash = std::hash<std::string_view>()(key.size() <= 32 ? key : key.substr(0, 32));
-    map[hash % NUM_SHARDS].insert(acc, std::make_pair(key, val));
+    map.insert(acc, std::make_pair(key, val));
     return const_cast<ValueT *>(&acc->second);
   }
 
   void for_each_value(std::function<void(const ValueT &)> fn) {
-    for (int i = 0; i < NUM_SHARDS; i++)
-      for (typename MapT::const_iterator it = map[i].begin(); it != map[i].end(); ++it)
-        fn(it->second);
+    for (typename MapT::const_iterator it = map.begin(); it != map.end(); ++it)
+      fn(it->second);
   }
 
-  size_t size() const { 
-    size_t sum = 0;
-    for (int i = 0; i < NUM_SHARDS; i++)
-      sum += map[i].size();
-    return sum;
+  size_t size() const {
+    return map.size();
   }
 
 private:
-  enum { NUM_SHARDS = 4 };
-  MapT map[NUM_SHARDS];
+  MapT map;
 };
 
 //
