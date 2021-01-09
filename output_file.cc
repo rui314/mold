@@ -60,7 +60,8 @@ class MallocOutputFile : public OutputFile {
 public:
   MallocOutputFile(std::string path, u64 filesize)
     : OutputFile(path, filesize) {
-    buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
+    buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
+                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   }
 
   void close() override {
