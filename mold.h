@@ -925,6 +925,17 @@ private:
 void print_map();
 
 //
+// subprocess.cc
+//
+
+extern char *socket_tmpfile;
+
+std::function<void()> fork_child();
+bool resume_daemon(char **argv, int *code);
+void daemonize(char **argv, std::function<void()> *wait_for_client,
+               std::function<void()> *on_complete);
+
+//
 // main.cc
 //
 
