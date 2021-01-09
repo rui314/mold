@@ -894,7 +894,32 @@ static int recv_fd(int conn) {
   return *(int *)CMSG_DATA(cmsg);
 }
 
-static int daemonize(char **argv) {
+static bool resume_daemon(char **argv, int *code) {
+  int conn = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (conn == -1)
+    Error() << "socket failed: " << strerror(errno);
+
+  std::string path = "/tmp/mold-" + compute_sha1(argv);
+
+  struct sockaddr_un name;
+  memset(&name, 0, sizeof(name));
+  name.sun_family = AF_UNIX;
+  memcpy(name.sun_path, path.data(), path.size());
+
+  if (connect(conn, (struct sockaddr *)&name, sizeof(name)) != 0) {
+    close(conn);
+    return false;
+  }
+
+  send_fd(conn, STDOUT_FILENO);
+  send_fd(conn, STDERR_FILENO);
+  int r = read(conn, (char[1]){}, 1);
+  *code = (r != 1);
+  return true;
+}
+
+static void daemonize(char **argv, std::function<void()> *wait_for_client,
+                      std::function<void()> *on_complete) {
   compute_sha1(argv);
 
   if (daemon(1, 0) == -1)
@@ -922,31 +947,33 @@ static int daemonize(char **argv) {
 
   if (listen(sock, 0) == -1)
     Error() << "listen failed: " << strerror(errno);
-  return sock;
-}
 
-static int wait_for_client(int sock) {
-  fd_set rfds;
-  FD_ZERO(&rfds);
-  FD_SET(sock, &rfds);
+  static int conn = -1;
 
-  struct timeval tv;
-  tv.tv_sec = DAEMON_TIMEOUT;
-  tv.tv_usec = 0;
+  *wait_for_client = [=]() {
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(sock, &rfds);
 
-  int res = select(sock + 1, &rfds, NULL, NULL, &tv);
-  if (res == -1)
-    Error() << "select failed: " << strerror(errno);
+    struct timeval tv;
+    tv.tv_sec = DAEMON_TIMEOUT;
+    tv.tv_usec = 0;
 
-  if (res == 0) {
-    std::cout << "timeout\n";
-    exit(0);
-  }
+    int res = select(sock + 1, &rfds, NULL, NULL, &tv);
+    if (res == -1)
+      Error() << "select failed: " << strerror(errno);
 
-  int conn = accept(sock, NULL, NULL);
-  if (conn == -1)
-    Error() << "accept failed: " << strerror(errno);
-  return conn;
+    if (res == 0) {
+      std::cout << "timeout\n";
+      exit(0);
+    }
+
+    conn = accept(sock, NULL, NULL);
+    if (conn == -1)
+      Error() << "accept failed: " << strerror(errno);
+  };
+
+  *on_complete = [=]() { write(conn, (char []){1}, 1); };
 }
 
 static std::vector<std::string_view> read_response_file(std::string_view path) {
@@ -1180,53 +1207,28 @@ int main(int argc, char **argv) {
   if (config.output == "")
     Error() << "-o option is missing";
 
-  if (!config.preload) {
-    int conn = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (conn == -1)
-      Error() << "socket failed: " << strerror(errno);
-
-    std::string path = "/tmp/mold-" + compute_sha1(argv);
-
-    struct sockaddr_un name;
-    memset(&name, 0, sizeof(name));
-    name.sun_family = AF_UNIX;
-    memcpy(name.sun_path, path.data(), path.size());
-
-    if (connect(conn, (struct sockaddr *)&name, sizeof(name)) == 0) {
-      std::cout << "connected\n";
-      send_fd(conn, STDOUT_FILENO);
-      send_fd(conn, STDERR_FILENO);
-      int r = read(conn, (char[1]){}, 1);
-      _exit(r != 1);
-    }
-
-    close(conn);
-  }
-
-  // Preload input files
-  int sock = -1;
-  if (config.preload)
-    sock = daemonize(argv);
-
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
-
-  std::function<void()> on_complete;
+  if (!config.preload)
+    if (int code; resume_daemon(argv, &code))
+      _exit(code);
 
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
+  // Preload input files
+  std::function<void()> on_complete;
+
   if (config.preload) {
+    std::function<void()> wait_for_client;
+    daemonize(argv, &wait_for_client, &on_complete);
     preloading = true;
     read_input_files(file_args);
-
-    int conn = wait_for_client(sock);
-    dup2(recv_fd(conn), STDOUT_FILENO);
-    dup2(recv_fd(conn), STDERR_FILENO);
-    on_complete = [=]() { write(conn, (char []){1}, 1); };
+    wait_for_client();
   } else if (config.fork) {
     on_complete = fork_child();
- }
+  }
+
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
 
   if (config.stat)
     Counter::enabled = true;
