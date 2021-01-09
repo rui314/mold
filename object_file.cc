@@ -298,36 +298,25 @@ void ObjectFile::initialize_mergeable_sections() {
 
     for (int i = 0; i < isec->rels.size(); i++) {
       const ElfRela &rel = isec->rels[i];
+      if (rel.r_sym >= this->first_global)
+        continue;
 
-      switch (rel.r_type) {
-      case R_X86_64_64:
-      case R_X86_64_PC32:
-      case R_X86_64_32:
-      case R_X86_64_32S:
-      case R_X86_64_16:
-      case R_X86_64_PC16:
-      case R_X86_64_8:
-      case R_X86_64_PC8:
-        if (rel.r_sym >= this->first_global)
-          continue;
+      const ElfSym &esym = elf_syms[rel.r_sym];
+      if (esym.st_type != STT_SECTION)
+        continue;
 
-        const ElfSym &esym = elf_syms[rel.r_sym];
-        if (esym.st_type != STT_SECTION)
-          continue;
+      MergeableSection *m = mergeable_sections[esym.st_shndx];
+      if (!m)
+        continue;
 
-        MergeableSection *m = mergeable_sections[esym.st_shndx];
-        if (!m)
-          continue;
+      u32 offset = esym.st_value + rel.r_addend;
+      int idx = binary_search(m->piece_offsets, offset);
+      if (idx == -1)
+        Error() << *this << ": bad relocation at " << rel.r_sym;
 
-        u32 offset = esym.st_value + rel.r_addend;
-        int idx = binary_search(m->piece_offsets, offset);
-        if (idx == -1)
-          Error() << *this << ": bad relocation at " << rel.r_sym;
-
-        isec->rel_pieces.push_back(
-          {m->pieces[idx], (i32)(offset - m->piece_offsets[idx])});
-        isec->has_rel_piece[i] = true;
-      }
+      StringPieceRef ref{m->pieces[idx], (i32)(offset - m->piece_offsets[idx])};
+      isec->rel_pieces.push_back(ref);
+      isec->has_rel_piece[i] = true;
     }
   }
 
