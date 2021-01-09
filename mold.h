@@ -327,7 +327,10 @@ public:
   u32 size = 0;
 };
 
-std::string to_string(InputChunk *isec);
+inline std::ostream &operator<<(std::ostream &out, const InputChunk &isec) {
+  out << isec.file << ":(" << isec.name << ")";
+  return out;
+}
 
 //
 // output_chunks.cc
@@ -967,10 +970,6 @@ inline Symbol *_GLOBAL_OFFSET_TABLE_;
 inline Symbol *_end;
 inline Symbol *_etext;
 inline Symbol *_edata;
-}
-
-inline std::string to_string(Symbol sym) {
-  return std::string(sym.name) + "(" + to_string(sym.file) + ")";
 }
 
 inline u64 align_to(u64 val, u64 align) {

@@ -31,7 +31,7 @@ void print_map() {
       std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
                 << std::setw(9) << (u64)mem->shdr.sh_size
                 << std::setw(6) << (u64)mem->shdr.sh_addralign
-                << "         " << to_string(mem) << "\n";
+                << "         " << *mem << "\n";
 
       auto it = map.find(mem);
       if (it == map.end())

@@ -276,7 +276,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S:
       if (config.pie)
-        Error() << to_string(this) << ": " << rel_to_string(rel.r_type)
+        Error() << *this << ": " << rel_to_string(rel.r_type)
                 << " relocation against symbol `" << sym.name
                 << "' can not be used when making a PIE object;"
                 << " recompile with -fPIE";
@@ -340,7 +340,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << to_string(this) << ": TLSGD reloc not followed by PLT32";
+        Error() << *this << ": TLSGD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSGD;
@@ -352,7 +352,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << to_string(this) << ": TLSLD reloc not followed by PLT32";
+        Error() << *this << ": TLSLD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSLD;
@@ -373,7 +373,7 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOTTPOFF;
       break;
     default:
-      Error() << to_string(this) << ": unknown relocation: " << rel.r_type;
+      Error() << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }
@@ -399,7 +399,7 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   while (!data.empty()) {
     size_t end = data.find('\0');
     if (end == std::string_view::npos)
-      Error() << to_string(this) << ": string is not null terminated";
+      Error() << *this << ": string is not null terminated";
 
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
@@ -411,8 +411,4 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
 
   static Counter counter("string_pieces");
   counter.inc(pieces.size());
-}
-
-std::string to_string(InputChunk *chunk) {
-  return to_string(chunk->file) + ":(" + std::string(chunk->name) + ")";
 }
