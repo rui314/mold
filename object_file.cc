@@ -222,7 +222,7 @@ void ObjectFile::initialize_symbols() {
 
     if (!esym.is_abs()) {
       if (esym.is_common())
-        Error() << "common local symbol?";
+        Error() << *this << ": common local symbol?";
       sym.input_section = sections[esym.st_shndx];
     }
 
