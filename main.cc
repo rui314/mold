@@ -6,13 +6,9 @@
 #include <fcntl.h>
 #include <functional>
 #include <iostream>
-#include <libgen.h>
 #include <regex>
 #include <signal.h>
-#include <sys/mman.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <unordered_set>
@@ -21,7 +17,6 @@
 
 static tbb::task_group parser_tg;
 static bool preloading;
-static char *output_tmpfile;
 static char *socket_tmpfile;
 
 static bool is_text_file(MemoryMappedFile *mb) {
@@ -668,15 +663,9 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   }
 }
 
-static u32 get_umask() {
-  u32 mask = umask(0);
-  umask(mask);
-  return mask;
-}
-
 void cleanup() {
-  if (output_tmpfile)
-    unlink(output_tmpfile);
+  if (OutputFile::tmpfile)
+    unlink(OutputFile::tmpfile);
   if (socket_tmpfile)
     unlink(socket_tmpfile);
 }
@@ -684,45 +673,6 @@ void cleanup() {
 static void signal_handler(int) {
   cleanup();
   _exit(1);
-}
-
-static u8 *open_output_file(u64 filesize) {
-  ScopedTimer t("open_file");
-  Counter counter("filesize", filesize);
-
-  std::string dir = dirname(strdup(config.output.c_str()));
-  output_tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
-  int fd = mkstemp(output_tmpfile);
-  if (fd == -1)
-    Error() << "cannot open " << output_tmpfile <<  ": " << strerror(errno);
-
-  if (rename(config.output.c_str(), output_tmpfile) == 0) {
-    close(fd);
-    fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
-    if (fd == -1) {
-      if (errno != ETXTBSY)
-        Error() << "cannot open " << config.output << ": " << strerror(errno);
-      unlink(output_tmpfile);
-      fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
-      if (fd == -1)
-        Error() << "cannot open " << config.output << ": " << strerror(errno);
-    }
-  }
-
-  if (ftruncate(fd, filesize))
-    Error() << "ftruncate failed";
-
-  if (fchmod(fd, (0777 & ~get_umask())) == -1)
-    Error() << "fchmod failed";
-
-  void *buf = mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (buf == MAP_FAILED)
-    Error() << config.output << ": mmap failed: " << strerror(errno);
-  close(fd);
-
-  if (config.filler != -1)
-    memset(buf, config.filler, filesize);
-  return (u8 *)buf;
 }
 
 MemoryMappedFile *find_library(std::string name, std::span<std::string_view> lib_paths) {
@@ -1037,8 +987,6 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
     else
       i = read_unquoted(i);
   }
-
-  munmap(mb->data(), mb->size());
   return vec;
 }
 
@@ -1501,7 +1449,8 @@ int main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  out::buf = open_output_file(filesize);
+  OutputFile *file = OutputFile::open(config.output, filesize);
+  out::buf = file->buf;
 
   Timer t_copy("copy");
 
@@ -1517,13 +1466,7 @@ int main(int argc, char **argv) {
   clear_padding(filesize);
 
   // Commit
-  {
-    ScopedTimer t("munmap");
-    munmap(out::buf, filesize);
-    if (rename(output_tmpfile, config.output.c_str()) == -1)
-      Error() << config.output << ": rename filed: " << strerror(errno);
-    output_tmpfile = nullptr;
-  }
+  file->close();
 
   t_copy.stop();
   t_total.stop();

@@ -821,6 +821,25 @@ void parse_linker_script(MemoryMappedFile *mb, bool as_needed);
 void parse_version_script(std::string path);
 
 //
+// output_file.cc
+//
+
+class OutputFile {
+public:
+  static OutputFile *open(std::string path, u64 filesize);
+  virtual void close() = 0;
+
+  u8 *buf;
+  static inline char *tmpfile;
+
+protected:
+  OutputFile(std::string path, u64 filesize) : path(path), filesize(filesize) {}
+
+  std::string path;
+  u64 filesize;
+};
+
+//
 // perf.cc
 //
 
