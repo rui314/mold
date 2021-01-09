@@ -48,7 +48,7 @@ static std::string compute_sha1(char **argv) {
   sha1.get_result(digest);
 
   static char chars[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+_";
 
   std::string res;
   for (int i = 0; i < sizeof(digest); i += 3) {
