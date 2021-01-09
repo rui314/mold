@@ -186,7 +186,7 @@ struct StringPiece {
 
   inline u64 get_addr() const;
 
-  std::atomic<MergeableSection *> isec = ATOMIC_VAR_INIT(nullptr);
+  std::atomic<MergeableSection *> isec = nullptr;
   const char *data;
   u32 size;
   u32 output_offset = -1;
@@ -259,7 +259,7 @@ public:
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
 
-  std::atomic_uint8_t flags = ATOMIC_VAR_INIT(0);
+  std::atomic_uint8_t flags = 0;
   u8 type = STT_NOTYPE;
 };
 
@@ -720,7 +720,7 @@ public:
   std::string name;
   bool is_dso;
   u32 priority;
-  std::atomic_bool is_alive = ATOMIC_VAR_INIT(false);
+  std::atomic_bool is_alive = false;
 
   std::string_view get_string(const ElfShdr &shdr);
   std::string_view get_string(u32 idx);
@@ -754,7 +754,7 @@ public:
   std::span<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive;
-  std::atomic_bool has_error = ATOMIC_VAR_INIT(false);
+  std::atomic_bool has_error = false;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
