@@ -257,14 +257,14 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-static int binary_search(std::span<u32> span, u32 offset) {
-  if (offset < span[0])
+static int binary_search(std::span<u32> span, u32 val) {
+  if (val < span[0])
     return -1;
 
   int ret = 0;
   while (span.size() > 1) {
     u32 mid = span.size() / 2;
-    if (offset < span[mid]) {
+    if (val < span[mid]) {
       span = span.subspan(0, mid);
     } else {
       span = span.subspan(mid);
