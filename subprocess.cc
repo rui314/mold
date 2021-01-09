@@ -1,6 +1,8 @@
 #include "mold.h"
 
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -152,6 +154,8 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
   name.sun_family = AF_UNIX;
   strcpy(name.sun_path, socket_tmpfile);
 
+  u32 orig_mask = umask(0177);
+
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
       Error() << "bind failed: " << strerror(errno);
@@ -160,6 +164,8 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
       Error() << "bind failed: " << strerror(errno);
   }
+
+  umask(orig_mask);
 
   if (listen(sock, 0) == -1)
     Error() << "listen failed: " << strerror(errno);
