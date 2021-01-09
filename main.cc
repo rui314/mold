@@ -672,7 +672,8 @@ static void signal_handler(int) {
   _exit(1);
 }
 
-MemoryMappedFile *find_library(std::string name, std::span<std::string_view> lib_paths) {
+MemoryMappedFile *find_library(std::string name,
+                               std::span<std::string_view> lib_paths) {
   for (std::string_view dir : lib_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;

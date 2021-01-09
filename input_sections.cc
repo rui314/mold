@@ -225,7 +225,8 @@ void InputSection::copy_buf() {
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
       static const u8 insn[] = {
-        0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+        // mov %fs:0, %rax
+        0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0,
       };
       memcpy(loc - 3, insn, sizeof(insn));
       i++;
