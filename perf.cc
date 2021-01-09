@@ -42,6 +42,10 @@ Timer::Timer(std::string name) : name(name) {
   sys = to_nsec(usage.ru_stime);
 }
 
+Timer::~Timer() {
+  stop();
+}
+
 void Timer::stop() {
   if (stopped)
     return;

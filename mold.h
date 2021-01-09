@@ -874,6 +874,7 @@ private:
 class Timer {
 public:
   Timer(std::string name);
+  ~Timer();
   void stop();
   static void print();
 
@@ -886,20 +887,6 @@ private:
   u64 user;
   u64 sys;
   bool stopped = false;
-};
-
-class ScopedTimer {
-public:
-  ScopedTimer(std::string name) {
-    timer = new Timer(name);
-  }
-
-  ~ScopedTimer() {
-    timer->stop();
-  }
-
-private:
-  Timer *timer;
 };
 
 //

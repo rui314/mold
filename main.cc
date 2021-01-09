@@ -142,7 +142,7 @@ static std::vector<std::span<T>> split(std::vector<T> &input, int unit) {
 }
 
 static void resolve_symbols() {
-  ScopedTimer t("resolve_symbols");
+  Timer t("resolve_symbols");
 
   // Register defined symbols
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
@@ -168,7 +168,7 @@ static void resolve_symbols() {
 }
 
 static void eliminate_comdats() {
-  ScopedTimer t("comdat");
+  Timer t("comdat");
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->resolve_comdat_groups();
@@ -180,7 +180,7 @@ static void eliminate_comdats() {
 }
 
 static void handle_mergeable_strings() {
-  ScopedTimer t("resolve_strings");
+  Timer t("resolve_strings");
 
   // Resolve mergeable string pieces
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
@@ -224,7 +224,7 @@ static void handle_mergeable_strings() {
 // An output section may contain millions of input sections.
 // So, we append input sections to output sections in parallel.
 static void bin_sections() {
-  ScopedTimer t("bin_sections");
+  Timer t("bin_sections");
 
   int unit = (out::objs.size() + 127) / 128;
   std::vector<std::span<ObjectFile *>> slices = split(out::objs, unit);
@@ -256,7 +256,7 @@ static void bin_sections() {
 }
 
 static void check_duplicate_symbols() {
-  ScopedTimer t("check_undef_syms");
+  Timer t("check_undef_syms");
 
   auto is_error = [](ObjectFile *file, int i) {
     const ElfSym &esym = file->elf_syms[i];
@@ -295,7 +295,7 @@ static void check_duplicate_symbols() {
 }
 
 static void set_isec_offsets() {
-  ScopedTimer t("isec_offsets");
+  Timer t("isec_offsets");
 
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->members.empty())
@@ -337,7 +337,7 @@ static void set_isec_offsets() {
 }
 
 static void scan_rels() {
-  ScopedTimer t("scan_rels");
+  Timer t("scan_rels");
 
   // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
@@ -412,7 +412,7 @@ static void scan_rels() {
 }
 
 static void export_dynamic() {
-  ScopedTimer t("export_dynamic");
+  Timer t("export_dynamic");
 
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
@@ -438,7 +438,7 @@ static void export_dynamic() {
 }
 
 static void fill_symbol_versions() {
-  ScopedTimer t("fill_symbol_versions");
+  Timer t("fill_symbol_versions");
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms = out::dynsym->symbols;
@@ -516,7 +516,7 @@ static void fill_symbol_versions() {
 }
 
 static void clear_padding(u64 filesize) {
-  ScopedTimer t("clear_padding");
+  Timer t("clear_padding");
 
   auto zero = [](OutputChunk *chunk, u64 next_start) {
     u64 pos = chunk->shdr.sh_offset;
@@ -549,7 +549,7 @@ static int get_section_rank(const ElfShdr &shdr) {
 }
 
 static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
-  ScopedTimer t("osec_offset");
+  Timer t("osec_offset");
 
   u64 fileoff = 0;
   u64 vaddr = config.image_base;
@@ -1241,7 +1241,7 @@ int main(int argc, char **argv) {
 
   // Parse input files
   {
-    ScopedTimer t("parse");
+    Timer t("parse");
     preloading = false;
     read_input_files(file_args);
   }
@@ -1328,7 +1328,7 @@ int main(int argc, char **argv) {
 
   // Create .bss sections for common symbols.
   {
-    ScopedTimer t("common");
+    Timer t("common");
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
       file->convert_common_symbols();
     });
@@ -1456,7 +1456,7 @@ int main(int argc, char **argv) {
 
   // Copy input sections to the output file
   {
-    ScopedTimer t("copy_buf");
+    Timer t("copy_buf");
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });

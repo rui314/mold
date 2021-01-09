@@ -48,7 +48,7 @@ public:
   }
 
   void close() override {
-    ScopedTimer t("munmap");
+    Timer t("munmap");
     munmap(buf, filesize);
     if (rename(tmpfile, config.output.c_str()) == -1)
       Error() << config.output << ": rename filed: " << strerror(errno);
@@ -65,7 +65,7 @@ public:
   }
 
   void close() override {
-    ScopedTimer t("munmap");
+    Timer t("munmap");
     int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Error() << "cannot open " << config.output << ": " << strerror(errno);
@@ -77,7 +77,7 @@ public:
 };
 
 OutputFile *OutputFile::open(std::string path, u64 filesize) {
-  ScopedTimer t("open_file");
+  Timer t("open_file");
   Counter counter("filesize", filesize);
 
   bool is_special = false;
