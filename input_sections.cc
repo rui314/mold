@@ -385,8 +385,7 @@ void InputSection::report_undefined_symbols() {
   for (const ElfRela &rel : rels) {
     Symbol &sym = *file->symbols[rel.r_sym];
     if (!sym.file || sym.is_placeholder)
-      std::cerr << "undefined symbol: " << to_string(file)
-                << ": " << sym.name << "\n";
+      std::cerr << "undefined symbol: " << *file << ": " << sym.name << "\n";
   }
 }
 

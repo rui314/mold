@@ -123,7 +123,7 @@ private:
 #define unreachable() \
   Error() << "internal error at " << __FILE__ << ":" << __LINE__
 
-std::string to_string(const InputFile *);
+std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
 //
 // Interned string

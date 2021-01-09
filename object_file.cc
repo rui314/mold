@@ -50,14 +50,14 @@ MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start, u64 size)
 InputFile::InputFile(MemoryMappedFile *mb)
   : mb(mb), name(mb->name), ehdr(*(ElfEhdr *)mb->data()), is_dso(ehdr.e_type == ET_DYN) {
   if (mb->size() < sizeof(ElfEhdr))
-    Error() << to_string(this) << ": file too small";
+    Error() << *this << ": file too small";
   if (memcmp(mb->data(), "\177ELF", 4))
-    Error() << to_string(this) << ": not an ELF file";
+    Error() << *this << ": not an ELF file";
 
   u8 *sh_begin = mb->data() + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
   if (mb->data() + mb->size() < sh_end)
-    Error() << to_string(this) << ": e_shoff or e_shnum corrupted: "
+    Error() << *this << ": e_shoff or e_shnum corrupted: "
             << mb->size() << " " << ehdr.e_shnum;
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
 }
@@ -66,13 +66,13 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) {
   u8 *begin = mb->data() + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb->data() + mb->size() < end)
-    Error() << to_string(this) << ": shdr corrupted";
+    Error() << *this << ": shdr corrupted";
   return {(char *)begin, (char *)end};
 }
 
 std::string_view InputFile::get_string(u32 idx) {
   if (elf_sections.size() <= idx)
-    Error() << to_string(this) << ": invalid section index";
+    Error() << *this << ": invalid section index";
   return get_string(elf_sections[idx]);
 }
 
@@ -80,14 +80,14 @@ template<typename T>
 std::span<T> InputFile::get_data(const ElfShdr &shdr) {
   std::string_view view = get_string(shdr);
   if (view.size() % sizeof(T))
-    Error() << to_string(this) << ": corrupted section";
+    Error() << *this << ": corrupted section";
   return {(T *)view.data(), view.size() / sizeof(T)};
 }
 
 template<typename T>
 std::span<T> InputFile::get_data(u32 idx) {
   if (elf_sections.size() <= idx)
-    Error() << to_string(this) << ": invalid section index";
+    Error() << *this << ": invalid section index";
   return get_data<T>(elf_sections[idx]);
 }
 
@@ -116,7 +116,7 @@ void ObjectFile::initialize_sections() {
     case SHT_GROUP: {
       // Get the signature of this section group.
       if (shdr.sh_info >= elf_syms.size())
-        Error() << to_string(this) << ": invalid symbol index";
+        Error() << *this << ": invalid symbol index";
       const ElfSym &sym = elf_syms[shdr.sh_info];
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
@@ -124,11 +124,11 @@ void ObjectFile::initialize_sections() {
       std::span<u32> entries = get_data<u32>(shdr);
 
       if (entries.empty())
-        Error() << to_string(this) << ": empty SHT_GROUP";
+        Error() << *this << ": empty SHT_GROUP";
       if (entries[0] == 0)
         continue;
       if (entries[0] != GRP_COMDAT)
-        Error() << to_string(this) << ": unsupported SHT_GROUP format";
+        Error() << *this << ": unsupported SHT_GROUP format";
 
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
@@ -139,7 +139,7 @@ void ObjectFile::initialize_sections() {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      Error() << to_string(this) << ": SHT_SYMTAB_SHNDX section is not supported";
+      Error() << *this << ": SHT_SYMTAB_SHNDX section is not supported";
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -165,7 +165,7 @@ void ObjectFile::initialize_sections() {
       continue;
 
     if (shdr.sh_info >= sections.size())
-      Error() << to_string(this) << ": invalid relocated section index: "
+      Error() << *this << ": invalid relocated section index: "
               << (u32)shdr.sh_info;
 
     InputSection *target = sections[shdr.sh_info];
@@ -323,7 +323,7 @@ void ObjectFile::initialize_mergeable_sections() {
         u32 offset = esym.st_value + rel.r_addend;
         const StringPieceRef *ref = binary_search(m->pieces, offset);
         if (!ref)
-          Error() << to_string(this) << ": bad relocation at " << rel.r_sym;
+          Error() << *this << ": bad relocation at " << rel.r_sym;
 
         isec->rel_pieces.push_back(
           {.piece = ref->piece, .addend = (i32)(offset - ref->input_offset)});
@@ -344,7 +344,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
     const StringPieceRef *ref = binary_search(m->pieces, esym.st_value);
     if (!ref)
-      Error() << to_string(this) << ": bad symbol value";
+      Error() << *this << ": bad symbol value";
 
     if (i < first_global) {
       local_symbols[i].piece_ref = *ref;
@@ -473,7 +473,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
     }
 
     if (UNLIKELY(sym.traced))
-      Msg() << "trace: " <<  to_string(this) << ": reference to " << sym.name;
+      Msg() << "trace: " <<  *this << ": reference to " << sym.name;
 
     if (esym.st_bind != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
@@ -481,7 +481,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
         vec.push_back((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
-        Msg() << "trace: " << to_string(this) << " keeps " << sym.file
+        Msg() << "trace: " << *this << " keeps " << sym.file
               << " for " << sym.name;
     }
   }
@@ -513,8 +513,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
-          Msg() << "trace: " << to_string(this) << ": unresolved weak symbol "
-                << sym.name;
+          Msg() << "trace: " << *this << ": unresolved weak symbol " << sym.name;
       }
     }
   }
@@ -705,14 +704,18 @@ ObjectFile *ObjectFile::create_internal_file() {
   return obj;
 }
 
-std::string to_string(const InputFile *file) {
-  if (file->is_dso)
-    return file->name;
+std::ostream &operator<<(std::ostream &out, const InputFile &file) {
+  if (file.is_dso) {
+    out << file.name;
+    return out;
+  }
 
-  ObjectFile *obj = (ObjectFile *)file;
+  ObjectFile *obj = (ObjectFile *)&file;
   if (obj->archive_name == "")
-    return obj->name;
-  return std::string(obj->archive_name) + ":(" + std::string(obj->name) + ")";
+    out << obj->name;
+  else
+    out << obj->archive_name << ":(" << obj->name + ")";
+  return out;
 }
 
 std::string_view SharedFile::get_soname() {
@@ -825,7 +828,7 @@ void SharedFile::resolve_symbols() {
       sym.is_imported = true;
 
       if (UNLIKELY(sym.traced))
-        Msg() << "trace: " << to_string(sym.file)
+        Msg() << "trace: " << *sym.file
               << (sym.is_weak ? ": weak definition of " : ": definition of ")
               << sym.name;
     }

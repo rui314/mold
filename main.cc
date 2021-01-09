@@ -292,8 +292,8 @@ static void check_duplicate_symbols() {
     if (file->has_error)
       for (int i = file->first_global; i < file->elf_syms.size(); i++)
         if (is_error(file, i))
-          std::cerr << "duplicate symbol: " << to_string(file)
-                    << ": " << to_string(file->symbols[i]->file) << ": "
+          std::cerr << "duplicate symbol: " << *file
+                    << ": " << *file->symbols[i]->file << ": "
                     << file->symbols[i]->name << "\n";
 
   if (has_error)
@@ -1368,9 +1368,9 @@ int main(int argc, char **argv) {
 
   if (config.trace) {
     for (ObjectFile *file : out::objs)
-      Msg() << to_string(file);
+      Msg() << *file;
     for (SharedFile *file : out::dsos)
-      Msg() << to_string(file);
+      Msg() << *file;
   }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
