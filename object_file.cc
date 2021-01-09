@@ -347,6 +347,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
     if (i < first_global) {
       local_symbols[i].piece_ref.piece = m->pieces[idx];
+      local_symbols[i].piece_ref.addend = esym.st_value - m->piece_offsets[idx];
     } else {
       sym_pieces[i - first_global].piece = m->pieces[idx];
       sym_pieces[i - first_global].addend = esym.st_value - m->piece_offsets[idx];
