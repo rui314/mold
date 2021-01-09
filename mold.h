@@ -203,12 +203,14 @@ enum {
 
 class Symbol {
 public:
-  Symbol(std::string_view name) : name(name) {}
-  Symbol(const Symbol &other) : Symbol(other.name) {}
+  Symbol() {}
+  Symbol(const Symbol &other) : name(other.name) {}
 
   static Symbol *intern(std::string_view name) {
     static ConcurrentMap<Symbol> map;
-    return map.insert(name, Symbol(name));
+    Symbol sym;
+    sym.name = name;
+    return map.insert(name, sym);
   }
 
   inline u64 get_addr() const;

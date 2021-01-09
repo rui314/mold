@@ -212,22 +212,21 @@ void ObjectFile::initialize_symbols() {
   sym_pieces.resize(elf_syms.size() - first_global);
 
   // First symbol entry is always null
-  local_symbols.emplace_back("");
+  local_symbols.push_back({});
   symbols.push_back(&local_symbols.back());
 
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
-    std::string_view name = symbol_strtab.data() + esym.st_name;
-
-    local_symbols.emplace_back(name);
+    local_symbols.push_back({});
     Symbol &sym = local_symbols.back();
 
+    sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
     sym.type = esym.st_type;
     sym.value = esym.st_value;
     sym.esym = &esym;
-    sym.write_symtab = should_write_symtab(esym, name);
+    sym.write_symtab = should_write_symtab(esym, sym.name);
 
     if (!esym.is_abs()) {
       if (esym.is_common())
@@ -238,7 +237,7 @@ void ObjectFile::initialize_symbols() {
     symbols.push_back(&local_symbols.back());
 
     if (sym.write_symtab) {
-      strtab_size += name.size() + 1;
+      strtab_size += sym.name.size() + 1;
       local_symtab_size += sizeof(ElfSym);
     }
   }
@@ -657,7 +656,7 @@ ObjectFile *ObjectFile::create_internal_file() {
 
   // Create linker-synthesized symbols.
   auto *elf_syms = new std::vector<ElfSym>(1);
-  obj->symbols.push_back(new Symbol(""));
+  obj->symbols.push_back(new Symbol);
   obj->first_global = 1;
   obj->is_alive = true;
 
