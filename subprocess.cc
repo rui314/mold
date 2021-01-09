@@ -8,8 +8,6 @@
 
 #define DAEMON_TIMEOUT 30
 
-char *socket_tmpfile;
-
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
 // we fork a child and let it do the actual linking work.
@@ -45,8 +43,7 @@ static std::string compute_sha1(char **argv) {
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
       sha1.update((u8 *)argv[i], strlen(argv[i]) + 1);
 
-  u8 digest[21];
-  memset(digest, 0, sizeof(digest));
+  u8 digest[21] = {};
   sha1.get_result(digest);
 
   static char chars[] =
@@ -69,8 +66,7 @@ static void send_fd(int conn, int fd) {
   iov.iov_base = &dummy;
   iov.iov_len = 1;
 
-  struct msghdr msg;
-  memset(&msg, 0, sizeof(msg));
+  struct msghdr msg = {};
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
 
@@ -94,8 +90,7 @@ static int recv_fd(int conn) {
   iov.iov_base = buf;
   iov.iov_len = sizeof(buf);
 
-  struct msghdr msg;
-  memset(&msg, 0, sizeof(msg));
+  struct msghdr msg = {};
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
 
@@ -119,8 +114,7 @@ bool resume_daemon(char **argv, int *code) {
 
   std::string path = "/tmp/mold-" + compute_sha1(argv);
 
-  struct sockaddr_un name;
-  memset(&name, 0, sizeof(name));
+  struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
   memcpy(name.sun_path, path.data(), path.size());
 
@@ -149,8 +143,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
   socket_tmpfile = strdup(("/tmp/mold-" + compute_sha1(argv)).c_str());
 
-  struct sockaddr_un name;
-  memset(&name, 0, sizeof(name));
+  struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
   strcpy(name.sun_path, socket_tmpfile);
 

@@ -7,9 +7,9 @@
 #include <sys/types.h>
 
 static u32 get_umask() {
-  u32 mask = umask(0);
-  umask(mask);
-  return mask;
+  u32 orig_umask = umask(0);
+  umask(orig_umask);
+  return orig_umask;
 }
 
 class MemoryMappedOutputFile : public OutputFile {

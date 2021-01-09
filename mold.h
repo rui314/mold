@@ -928,7 +928,7 @@ void print_map();
 // subprocess.cc
 //
 
-extern char *socket_tmpfile;
+inline char *socket_tmpfile;
 
 std::function<void()> fork_child();
 bool resume_daemon(char **argv, int *code);
