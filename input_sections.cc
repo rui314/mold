@@ -405,7 +405,8 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
     data = data.substr(end + 1);
 
     StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
-    pieces.push_back({piece, offset});
+    pieces.push_back(piece);
+    piece_offsets.push_back(offset);
     offset += substr.size();
   }
 

@@ -188,7 +188,6 @@ struct StringPiece {
 
 struct StringPieceRef {
   StringPiece *piece = nullptr;
-  u32 input_offset = 0;
   i32 addend = 0;
 };
 
@@ -317,7 +316,8 @@ public:
   MergeableSection(InputSection *isec, std::string_view contents);
 
   MergedSection &parent;
-  std::vector<StringPieceRef> pieces;
+  std::vector<StringPiece *> pieces;
+  std::vector<u32> piece_offsets;
   u32 size = 0;
 };
 

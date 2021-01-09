@@ -258,21 +258,21 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-static const StringPieceRef *
-binary_search(std::span<StringPieceRef> pieces, u32 offset) {
-  if (offset < pieces[0].input_offset)
-    return nullptr;
+static int binary_search(std::span<u32> span, u32 offset) {
+  if (offset < span[0])
+    return -1;
 
-  while (pieces.size() > 1) {
-    u32 mid = pieces.size() / 2;
-    const StringPieceRef &ref = pieces[mid];
-
-    if (offset < ref.input_offset)
-      pieces = pieces.subspan(0, mid);
-    else
-      pieces = pieces.subspan(mid);
+  int ret = 0;
+  while (span.size() > 1) {
+    u32 mid = span.size() / 2;
+    if (offset < span[mid]) {
+      span = span.subspan(0, mid);
+    } else {
+      span = span.subspan(mid);
+      ret += mid;
+    }
   }
-  return &pieces[0];
+  return ret;
 }
 
 static bool is_mergeable(const ElfShdr &shdr) {
@@ -321,12 +321,12 @@ void ObjectFile::initialize_mergeable_sections() {
           continue;
 
         u32 offset = esym.st_value + rel.r_addend;
-        const StringPieceRef *ref = binary_search(m->pieces, offset);
-        if (!ref)
+        int idx = binary_search(m->piece_offsets, offset);
+        if (idx == -1)
           Error() << *this << ": bad relocation at " << rel.r_sym;
 
         isec->rel_pieces.push_back(
-          {.piece = ref->piece, .addend = (i32)(offset - ref->input_offset)});
+          {m->pieces[idx], (i32)(offset - m->piece_offsets[idx])});
         isec->has_rel_piece[i] = true;
       }
     }
@@ -342,15 +342,15 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!m)
       continue;
 
-    const StringPieceRef *ref = binary_search(m->pieces, esym.st_value);
-    if (!ref)
+    int idx = binary_search(m->piece_offsets, esym.st_value);
+    if (idx == -1)
       Error() << *this << ": bad symbol value";
 
     if (i < first_global) {
-      local_symbols[i].piece_ref = *ref;
+      local_symbols[i].piece_ref.piece = m->pieces[idx];
     } else {
-      sym_pieces[i - first_global].piece = ref->piece;
-      sym_pieces[i - first_global].addend = esym.st_value - ref->input_offset;
+      sym_pieces[i - first_global].piece = m->pieces[idx];
+      sym_pieces[i - first_global].addend = esym.st_value - m->piece_offsets[idx];
     }
   }
 

@@ -190,10 +190,10 @@ static void handle_mergeable_strings() {
   // Resolve mergeable string pieces
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *m : file->mergeable_sections) {
-      for (StringPieceRef &ref : m->pieces) {
-        MergeableSection *cur = ref.piece->isec;
+      for (StringPiece *piece : m->pieces) {
+        MergeableSection *cur = piece->isec;
         while (!cur || cur->file->priority > m->file->priority)
-          if (ref.piece->isec.compare_exchange_weak(cur, m))
+          if (piece->isec.compare_exchange_weak(cur, m))
             break;
       }
     }
@@ -203,11 +203,10 @@ static void handle_mergeable_strings() {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *m : file->mergeable_sections) {
       u32 offset = 0;
-      for (StringPieceRef &ref : m->pieces) {
-        StringPiece &piece = *ref.piece;
-        if (piece.isec == m && piece.output_offset == -1) {
-          ref.piece->output_offset = offset;
-          offset += ref.piece->size;
+      for (StringPiece *piece : m->pieces) {
+        if (piece->isec == m && piece->output_offset == -1) {
+          piece->output_offset = offset;
+          offset += piece->size;
         }
       }
       m->size = offset;
