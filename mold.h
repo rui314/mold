@@ -19,6 +19,7 @@
 #include <iostream>
 #include <mutex>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -83,16 +84,27 @@ inline Config config;
 
 void cleanup();
 
-[[noreturn]] inline void error(std::string msg) {
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-  std::cerr << msg << "\n" << std::flush;
-  cleanup();
-  _exit(1);
-}
+class Error {
+public:
+  [[noreturn]] ~Error() {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    std::cerr << out.str() << "\n" << std::flush;
+    cleanup();
+    _exit(1);
+  }
+
+  template <class T> Error &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::stringstream out;
+};
 
 #define unreachable() \
-  error("internal error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__))
+  Error() << "internal error at " << __FILE__ << ":" << __LINE__
 
 std::string to_string(const InputFile *);
 

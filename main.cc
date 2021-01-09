@@ -127,7 +127,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     parse_linker_script(mb, as_needed);
     return;
   default:
-    error(mb->name + ": unknown file type");
+    Error() << mb->name << ": unknown file type";
   }
 }
 
@@ -695,30 +695,30 @@ static u8 *open_output_file(u64 filesize) {
   output_tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
   int fd = mkstemp(output_tmpfile);
   if (fd == -1)
-    error("cannot open " + std::string(output_tmpfile) + ": " + strerror(errno));
+    Error() << "cannot open " << output_tmpfile <<  ": " << strerror(errno);
 
   if (rename(config.output.c_str(), output_tmpfile) == 0) {
     close(fd);
     fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
     if (fd == -1) {
       if (errno != ETXTBSY)
-        error("cannot open " + config.output + ": " + strerror(errno));
+        Error() << "cannot open " << config.output << ": " << strerror(errno);
       unlink(output_tmpfile);
       fd = open(output_tmpfile, O_RDWR | O_CREAT, 0777);
       if (fd == -1)
-        error("cannot open " + config.output + ": " + strerror(errno));
+        Error() << "cannot open " << config.output << ": " << strerror(errno);
     }
   }
 
   if (ftruncate(fd, filesize))
-    error("ftruncate failed");
+    Error() << "ftruncate failed";
 
   if (fchmod(fd, (0777 & ~get_umask())) == -1)
-    error("fchmod failed");
+    Error() << "fchmod failed";
 
   void *buf = mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (buf == MAP_FAILED)
-    error(config.output + ": mmap failed: " + strerror(errno));
+    Error() << config.output << ": mmap failed: " << strerror(errno);
   close(fd);
 
   if (config.filler != -1)
@@ -736,7 +736,7 @@ MemoryMappedFile *find_library(std::string name, std::span<std::string_view> lib
     if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
       return mb;
   }
-  error("library not found: " + name);
+  Error() << "library not found: " << name;
 }
 
 static std::vector<std::string> add_dashes(std::string name) {
@@ -752,7 +752,7 @@ static bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
       if (args.size() == 1)
-        error("option -" + name + ": argument missing");
+        Error() << "option -" << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -769,7 +769,7 @@ static bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
-        error("option " + name + ": argument missing");
+        Error() << "option " << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -830,16 +830,16 @@ static bool read_equal(std::span<std::string_view> &args, std::string_view &arg,
 
 static u64 parse_hex(std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
-    error("option -" + opt + ": not a hexadecimal number");
+    Error() << "option -" << opt << ": not a hexadecimal number";
   value = value.substr(2);
   if (value.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
-    error("option -" + opt + ": not a hexadecimal number");
+    Error() << "option -" << opt << ": not a hexadecimal number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
 static u64 parse_number(std::string opt, std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
-    error("option -" + opt + ": not a number");
+    Error() << "option -" << opt << ": not a number";
   return std::stol(std::string(value));
 }
 
@@ -918,7 +918,7 @@ static void send_fd(int conn, int fd) {
   *(int *)CMSG_DATA(cmsg) = fd;
 
   if (sendmsg(conn, &msg, 0) == -1)
-    error("sendmsg failed: " + std::string(strerror(errno)));
+    Error() << "sendmsg failed: " << strerror(errno);
 }
 
 static int recv_fd(int conn) {
@@ -938,7 +938,7 @@ static int recv_fd(int conn) {
 
   int len = recvmsg(conn, &msg, 0);
   if (len <= 0)
-    error("recvmsg failed: " + std::string(strerror(errno)));
+    Error() << "recvmsg failed: " << strerror(errno);
 
   struct cmsghdr *cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
@@ -949,11 +949,11 @@ static int daemonize(char **argv) {
   compute_sha1(argv);
 
   if (daemon(1, 0) == -1)
-    error("daemon failed: " + std::string(strerror(errno)));
+    Error() << "daemon failed: " << strerror(errno);
 
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock == -1)
-    error("socket failed: " + std::string(strerror(errno)));
+    Error() << "socket failed: " << strerror(errno);
 
   socket_tmpfile = strdup(("/tmp/mold-" + compute_sha1(argv)).c_str());
 
@@ -964,15 +964,15 @@ static int daemonize(char **argv) {
 
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
-      error("bind failed: " + std::string(strerror(errno)));
+      Error() << "bind failed: " << strerror(errno);
 
     unlink(socket_tmpfile);
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
-      error("bind failed: " + std::string(strerror(errno)));
+      Error() << "bind failed: " << strerror(errno);
   }
 
   if (listen(sock, 0) == -1)
-    error("listen failed: " + std::string(strerror(errno)));
+    Error() << "listen failed: " << strerror(errno);
   return sock;
 }
 
@@ -987,7 +987,7 @@ static int wait_for_client(int sock) {
 
   int res = select(sock + 1, &rfds, NULL, NULL, &tv);
   if (res == -1)
-    error("select failed: " + std::string(strerror(errno)));
+    Error() << "select failed: " << strerror(errno);
 
   if (res == 0) {
     std::cout << "timeout\n";
@@ -996,7 +996,7 @@ static int wait_for_client(int sock) {
 
   int conn = accept(sock, NULL, NULL);
   if (conn == -1)
-    error("accept failed: " + std::string(strerror(errno)));
+    Error() << "accept failed: " << strerror(errno);
   return conn;
 }
 
@@ -1015,7 +1015,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
       }
     }
     if (i >= mb->size())
-      error(std::string(path) + ": premature end of input");
+      Error() << path << ": premature end of input";
     vec.push_back(std::string_view(*buf));
     return i + 1;
   };
@@ -1068,7 +1068,7 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
   while (args.empty()) {
     if (needs_arg.contains(args[0])) {
       if (args.size() == 1)
-        error(std::string(args[0]) + ": missing argument");
+        Error() << args[0] << ": missing argument";
       args = args.subspan(2);
       continue;
     }
@@ -1170,7 +1170,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       remaining.push_back(arg);
     } else {
       if (args[0][0] == '-')
-        error("unknown command line option: " + std::string(args[0]));
+        Error() << "unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
     }
@@ -1231,12 +1231,12 @@ int main(int argc, char **argv) {
   config = parse_nonpositional_args(arg_vector, file_args);
 
   if (config.output == "")
-    error("-o option is missing");
+    Error() << "-o option is missing";
 
   if (!config.preload) {
     int conn = socket(AF_UNIX, SOCK_STREAM, 0);
     if (conn == -1)
-      error("socket failed: " + std::string(strerror(errno)));
+      Error() << "socket failed: " << strerror(errno);
 
     std::string path = "/tmp/mold-" + compute_sha1(argv);
 
@@ -1522,7 +1522,7 @@ int main(int argc, char **argv) {
     ScopedTimer t("munmap");
     munmap(out::buf, filesize);
     if (rename(output_tmpfile, config.output.c_str()) == -1)
-      error(config.output + ": rename filed: " + strerror(errno));
+      Error() << config.output << ": rename filed: " << strerror(errno);
     output_tmpfile = nullptr;
   }
 

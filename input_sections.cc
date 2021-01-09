@@ -38,28 +38,28 @@ static void overflow_check(u32 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      error("relocation R_X86_64_8 out of range: " +
-            std::to_string(val) + " is not in [0, 255]");
+      Error() << "relocation R_X86_64_8 out of range: " << val
+              << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      error("relocation R_X86_64_PC8 out of range: " +
-            std::to_string((i64)val) + " is not in [-128, 127]");
+      Error() << "relocation R_X86_64_PC8 out of range: " << (i64)val
+              << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      error("relocation R_X86_64_16 out of range: " +
-            std::to_string(val) + " is not in [0, 65535]");
+      Error() << "relocation R_X86_64_16 out of range: " << val
+              << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      error("relocation R_X86_64_PC16 out of range: " +
-            std::to_string((i64)val) + " is not in [-32768, 32767]");
+      Error() << "relocation R_X86_64_PC16 out of range: " << (i64)val
+              << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      error("relocation R_X86_64_32 out of range: " +
-            std::to_string(val) + " is not in [0, 4294967296]");
+      Error() << "relocation R_X86_64_32 out of range: " << val
+              << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -75,8 +75,8 @@ static void overflow_check(u32 r_type, u64 val) {
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
-      error("relocation " + rel_to_string(r_type) + " out of range: " +
-            std::to_string((i64)val) + " is not in [-2147483648, 2147483647]");
+      Error() << "relocation " << rel_to_string(r_type) << " out of range: "
+              << (i64)val << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
@@ -276,9 +276,10 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S:
       if (config.pie)
-        error(to_string(this) + ": " + rel_to_string(rel.r_type) +
-              " relocation against symbol `" + std::string(sym.name) +
-              "' can not be used when making a PIE object; recompile with -fPIE");
+        Error() << to_string(this) << ": " << rel_to_string(rel.r_type)
+                << " relocation against symbol `" << sym.name
+                << "' can not be used when making a PIE object;"
+                << " recompile with -fPIE";
 
       if (!sym.is_imported) {
         rel_types[i] = R_ABS;
@@ -339,7 +340,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        error(to_string(this) + ": TLSGD reloc not followed by PLT32");
+        Error() << to_string(this) << ": TLSGD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSGD;
@@ -351,7 +352,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        error(to_string(this) + ": TLSLD reloc not followed by PLT32");
+        Error() << to_string(this) << ": TLSLD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSLD;
@@ -372,7 +373,7 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOTTPOFF;
       break;
     default:
-      error(to_string(this) + ": unknown relocation: " + std::to_string(rel.r_type));
+      Error() << to_string(this) << ": unknown relocation: " << rel.r_type;
     }
   }
 }
@@ -398,7 +399,7 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
   while (!data.empty()) {
     size_t end = data.find('\0');
     if (end == std::string_view::npos)
-      error(to_string(this) + ": string is not null terminated");
+      Error() << to_string(this) << ": string is not null terminated";
 
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);

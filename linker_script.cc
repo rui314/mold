@@ -18,7 +18,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input.starts_with("/*")) {
       int pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
-        error("unclosed comment");
+        Error() << "unclosed comment";
       input = input.substr(pos + 2);
       continue;
     }
@@ -34,7 +34,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input[0] == '"') {
       int pos = input.find('"', 1);
       if (pos == std::string_view::npos)
-        error("unclosed string literal");
+        Error() << "unclosed string literal";
       vec.push_back(input.substr(0, pos));
       input = input.substr(pos);
       continue;
@@ -55,7 +55,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
 static std::span<std::string_view>
 skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
-    error("expected '" + std::string(str) + "'");
+    Error() << "expected '" << str << "'";
   return tok.subspan(1);
 }
 
@@ -64,7 +64,7 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    error("expected ')'");
+    Error() << "expected ')'";
   return tok.subspan(1);
 }
 
@@ -82,7 +82,7 @@ static MemoryMappedFile *resolve_path(std::string str) {
     if (MemoryMappedFile *mb = MemoryMappedFile::open(root + std::string(dir) + "/" + str))
       return mb;
   }
-  error("library not found: " + str);
+  Error() << "library not found: " << str;
 }
 
 static std::span<std::string_view>
@@ -100,7 +100,7 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
   }
 
   if (tok.empty())
-    error("expected ')'");
+    Error() << "expected ')'";
   return tok.subspan(1);
 }
 
@@ -116,7 +116,7 @@ void parse_linker_script(MemoryMappedFile *mb, bool as_needed) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1), as_needed);
     else
-      error(mb->name + ": unknown token: " + std::string(tok[0]));
+      Error() << mb->name << ": unknown token: " << tok[0];
   }
 }
 
@@ -165,10 +165,10 @@ void parse_version_script(std::string path) {
   tok = skip(tok, ";");
 
   if (!tok.empty())
-    error(path + ": trailing garbage token: " + std::string(tok[0]));
+    Error() << path << ": trailing garbage token: " << tok[0];
 
   if (locals.size() != 1 || locals[0] != "*")
-    error(path + ": unsupported version script");
+    Error() << path << ": unsupported version script";
   config.export_dynamic = false;
   config.globals = globals;
 }
