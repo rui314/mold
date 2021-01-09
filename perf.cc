@@ -5,9 +5,6 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
-std::vector<Counter *> Counter::instances;
-bool Counter::enabled = false;
-
 void Counter::print() {
   if (!enabled)
     return;

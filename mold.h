@@ -862,13 +862,13 @@ public:
 
   static void print();
 
-  static bool enabled;
+  static inline bool enabled = false;
 
 private:
   std::string_view name;
   std::atomic_uint32_t value;
 
-  static std::vector<Counter *> instances;
+  static inline std::vector<Counter *> instances;
 };
 
 struct TimerRecord {
