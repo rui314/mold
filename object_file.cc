@@ -425,9 +425,9 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.is_imported = false;
 
     if (UNLIKELY(sym.traced))
-      Msg() << "trace: " << sym.file
-            << (sym.is_weak ? ": weak definition of " : ": definition of ")
-            << sym.name;
+      SyncOut() << "trace: " << sym.file
+                << (sym.is_weak ? ": weak definition of " : ": definition of ")
+                << sym.name;
   }
 }
 
@@ -450,7 +450,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (UNLIKELY(sym.traced))
-          Msg() << "trace: " << sym.file << ": lazy definition of " << sym.name;
+          SyncOut() << "trace: " << sym.file << ": lazy definition of " << sym.name;
       }
     } else {
       maybe_override_symbol(sym, i);
@@ -473,7 +473,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
     }
 
     if (UNLIKELY(sym.traced))
-      Msg() << "trace: " <<  *this << ": reference to " << sym.name;
+      SyncOut() << "trace: " <<  *this << ": reference to " << sym.name;
 
     if (esym.st_bind != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
@@ -481,8 +481,8 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
         vec.push_back((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
-        Msg() << "trace: " << *this << " keeps " << sym.file
-              << " for " << sym.name;
+        SyncOut() << "trace: " << *this << " keeps " << sym.file
+                  << " for " << sym.name;
     }
   }
   return vec;
@@ -513,7 +513,8 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
-          Msg() << "trace: " << *this << ": unresolved weak symbol " << sym.name;
+          SyncOut() << "trace: " << *this << ": unresolved weak symbol "
+                    << sym.name;
       }
     }
   }
@@ -828,9 +829,9 @@ void SharedFile::resolve_symbols() {
       sym.is_imported = true;
 
       if (UNLIKELY(sym.traced))
-        Msg() << "trace: " << *sym.file
-              << (sym.is_weak ? ": weak definition of " : ": definition of ")
-              << sym.name;
+        SyncOut() << "trace: " << *sym.file
+                  << (sym.is_weak ? ": weak definition of " : ": definition of ")
+                  << sym.name;
     }
   }
 }

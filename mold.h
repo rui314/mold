@@ -103,15 +103,15 @@ private:
   std::stringstream out;
 };
 
-class Msg {
+class SyncOut {
 public:
-  ~Msg() {
+  ~SyncOut() {
     static std::mutex mu;
     std::lock_guard lock(mu);
     std::cout << out.str() << "\n";
   }
 
-  template <class T> Msg &operator<<(T &&val) {
+  template <class T> SyncOut &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
