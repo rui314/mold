@@ -103,6 +103,23 @@ private:
   std::stringstream out;
 };
 
+class Msg {
+public:
+  ~Msg() {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    std::cout << out.str() << "\n";
+  }
+
+  template <class T> Msg &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::stringstream out;
+};
+
 #define unreachable() \
   Error() << "internal error at " << __FILE__ << ":" << __LINE__
 
@@ -950,12 +967,6 @@ inline Symbol *_GLOBAL_OFFSET_TABLE_;
 inline Symbol *_end;
 inline Symbol *_etext;
 inline Symbol *_edata;
-}
-
-inline void message(std::string msg) {
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-  std::cout << msg << "\n";
 }
 
 inline std::string to_string(Symbol sym) {

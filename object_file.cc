@@ -425,9 +425,9 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.is_imported = false;
 
     if (UNLIKELY(sym.traced))
-      message("trace: " + to_string(sym.file) +
-              (sym.is_weak ? ": weak definition of " : ": definition of ") +
-              std::string(sym.name));
+      Msg() << "trace: " << sym.file
+            << (sym.is_weak ? ": weak definition of " : ": definition of ")
+            << sym.name;
   }
 }
 
@@ -450,8 +450,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + to_string(sym.file) + ": lazy definition of " +
-                  std::string(sym.name));
+          Msg() << "trace: " << sym.file << ": lazy definition of " << sym.name;
       }
     } else {
       maybe_override_symbol(sym, i);
@@ -474,7 +473,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
     }
 
     if (UNLIKELY(sym.traced))
-      message("trace: " + to_string(this) + ": reference to " + std::string(sym.name));
+      Msg() << "trace: " <<  to_string(this) << ": reference to " << sym.name;
 
     if (esym.st_bind != STB_WEAK && sym.file &&
         !sym.file->is_alive.exchange(true)) {
@@ -482,8 +481,8 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
         vec.push_back((ObjectFile *)sym.file);
 
       if (UNLIKELY(sym.traced))
-        message("trace: " + to_string(this) + " keeps " + to_string(sym.file) +
-                " for " + std::string(sym.name));
+        Msg() << "trace: " << to_string(this) << " keeps " << sym.file
+              << " for " << sym.name;
     }
   }
   return vec;
@@ -514,8 +513,8 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_imported = false;
 
         if (UNLIKELY(sym.traced))
-          message("trace: " + to_string(this) + ": unresolved weak symbol " +
-                  std::string(sym.name));
+          Msg() << "trace: " << to_string(this) << ": unresolved weak symbol "
+                << sym.name;
       }
     }
   }
@@ -826,9 +825,9 @@ void SharedFile::resolve_symbols() {
       sym.is_imported = true;
 
       if (UNLIKELY(sym.traced))
-        message("trace: " + to_string(sym.file) +
-                (sym.is_weak ? ": weak definition of " : ": definition of ") +
-                std::string(sym.name));
+        Msg() << "trace: " << to_string(sym.file)
+              << (sym.is_weak ? ": weak definition of " : ": definition of ")
+              << sym.name;
     }
   }
 }

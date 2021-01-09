@@ -1368,9 +1368,9 @@ int main(int argc, char **argv) {
 
   if (config.trace) {
     for (ObjectFile *file : out::objs)
-      message(to_string(file));
+      Msg() << to_string(file);
     for (SharedFile *file : out::dsos)
-      message(to_string(file));
+      Msg() << to_string(file);
   }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
