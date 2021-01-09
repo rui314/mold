@@ -173,11 +173,6 @@ void ObjectFile::initialize_sections() {
       target->rels = get_data<ElfRela>(shdr);
       target->rel_types.resize(target->rels.size());
       target->has_rel_piece.resize(target->rels.size());
-
-      if (target->shdr.sh_flags & SHF_ALLOC) {
-        static Counter counter("relocs_alloc");
-        counter.inc(target->rels.size());
-      }
     }
   }
 

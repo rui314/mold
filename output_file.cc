@@ -78,7 +78,6 @@ public:
 
 OutputFile *OutputFile::open(std::string path, u64 filesize) {
   Timer t("open_file");
-  Counter counter("filesize", filesize);
 
   bool is_special = false;
   struct stat st;
