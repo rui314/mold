@@ -8,8 +8,6 @@
 std::vector<Counter *> Counter::instances;
 bool Counter::enabled = false;
 
-std::vector<Timer *> Timer::instances;
-
 void Counter::print() {
   if (!enabled)
     return;
@@ -31,9 +29,7 @@ static u64 to_nsec(struct timeval t) {
   return (u64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
 
-Timer::Timer(std::string name) : name(name) {
-  instances.push_back(this);
-
+TimerRecord::TimerRecord(std::string name) : name(name) {
   struct rusage usage;
   getrusage(RUSAGE_SELF, &usage);
 
@@ -42,11 +38,7 @@ Timer::Timer(std::string name) : name(name) {
   sys = to_nsec(usage.ru_stime);
 }
 
-Timer::~Timer() {
-  stop();
-}
-
-void Timer::stop() {
+void TimerRecord::stop() {
   if (stopped)
     return;
   stopped = true;
@@ -59,27 +51,40 @@ void Timer::stop() {
   sys = to_nsec(usage.ru_stime) - sys;
 }
 
+Timer::Timer(std::string name) {
+  record = new TimerRecord(name);
+  records.push_back(record);
+}
+
+Timer::~Timer() {
+  record->stop();
+}
+
+void Timer::stop() {
+  record->stop();
+}
+
 void Timer::print() {
-  for (int i = instances.size() - 1; i >= 0; i--)
-    instances[i]->stop();
+  for (int i = records.size() - 1; i >= 0; i--)
+    records[i]->stop();
 
-  std::vector<int> depth(instances.size());
+  std::vector<int> depth(records.size());
 
-  for (int i = 0; i < instances.size(); i++)
+  for (int i = 0; i < records.size(); i++)
     for (int j = 0; j < i; j++)
-      if (instances[i]->end < instances[j]->end)
+      if (records[i]->end < records[j]->end)
         depth[i]++;
 
   std::cout << "     User   System     Real  Name\n";
 
-  for (int i = 0; i < instances.size(); i++) {
-    Timer &t = *instances[i];
+  for (int i = 0; i < records.size(); i++) {
+    TimerRecord &rec = *records[i];
     printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
-           ((double)t.user / 1000000000),
-           ((double)t.sys / 1000000000),
-           (((double)t.end - t.start) / 1000000000),
+           ((double)rec.user / 1000000000),
+           ((double)rec.sys / 1000000000),
+           (((double)rec.end - rec.start) / 1000000000),
            std::string(depth[i] * 2, ' ').c_str(),
-           t.name.c_str());
+           rec.name.c_str());
   }
 
   std::cout << std::flush;

@@ -871,6 +871,18 @@ private:
   static std::vector<Counter *> instances;
 };
 
+struct TimerRecord {
+  TimerRecord(std::string name);
+  void stop();
+
+  std::string name;
+  u64 start;
+  u64 end;
+  u64 user;
+  u64 sys;
+  bool stopped = false;
+};
+
 class Timer {
 public:
   Timer(std::string name);
@@ -879,14 +891,8 @@ public:
   static void print();
 
 private:
-  static std::vector<Timer *> instances;
-
-  std::string name;
-  u64 start;
-  u64 end;
-  u64 user;
-  u64 sys;
-  bool stopped = false;
+  static inline std::vector<TimerRecord *> records;
+  TimerRecord *record;
 };
 
 //
