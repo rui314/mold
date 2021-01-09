@@ -203,18 +203,15 @@ void ObjectFile::initialize_symbols() {
   counter.inc(elf_syms.size());
 
   symbols.reserve(elf_syms.size());
-  local_symbols.reserve(first_global);
   sym_pieces.resize(elf_syms.size() - first_global);
 
   // First symbol entry is always null
-  local_symbols.push_back({});
-  symbols.push_back(&local_symbols.back());
+  symbols.push_back(new Symbol);
 
   // Initialize local symbols
   for (int i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
-    local_symbols.push_back({});
-    Symbol &sym = local_symbols.back();
+    Symbol &sym = *new Symbol;
     symbols.push_back(&sym);
 
     sym.name = symbol_strtab.data() + esym.st_name;
@@ -329,8 +326,8 @@ void ObjectFile::initialize_mergeable_sections() {
       Error() << *this << ": bad symbol value";
 
     if (i < first_global) {
-      local_symbols[i].piece_ref.piece = m->pieces[idx];
-      local_symbols[i].piece_ref.addend = esym.st_value - m->piece_offsets[idx];
+      symbols[i]->piece_ref.piece = m->pieces[idx];
+      symbols[i]->piece_ref.addend = esym.st_value - m->piece_offsets[idx];
     } else {
       sym_pieces[i - first_global].piece = m->pieces[idx];
       sym_pieces[i - first_global].addend = esym.st_value - m->piece_offsets[idx];

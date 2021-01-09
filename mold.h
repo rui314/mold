@@ -771,7 +771,6 @@ private:
   void maybe_override_symbol(Symbol &sym, int symidx);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
-  std::vector<Symbol> local_symbols;
   std::vector<StringPieceRef> sym_pieces;
   bool has_common_symbol;
 
