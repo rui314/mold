@@ -1022,7 +1022,7 @@ int main(int argc, char **argv) {
 
   if (!config.preload)
     if (int code; resume_daemon(argv, &code))
-      _exit(code);
+      exit(code);
 
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);

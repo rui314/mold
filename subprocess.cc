@@ -188,6 +188,9 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
     if (conn == -1)
       Error() << "accept failed: " << strerror(errno);
     unlink(socket_tmpfile);
+
+    dup2(recv_fd(conn), STDOUT_FILENO);
+    dup2(recv_fd(conn), STDERR_FILENO);
   };
 
   *on_complete = [=]() { write(conn, (char []){1}, 1); };
