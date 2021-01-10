@@ -272,8 +272,13 @@ static void check_duplicate_symbols() {
       return;
 
     for (int i = file->first_global; i < file->elf_syms.size(); i++) {
-      if (is_error(file, i)) {
-        file->has_error = true;
+      const ElfSym &esym = file->elf_syms[i];
+      Symbol &sym = *file->symbols[i];
+      bool is_weak = (esym.st_bind == STB_WEAK);
+      bool is_eliminated =
+        !esym.is_abs() && !esym.is_common() && !file->sections[esym.st_shndx];
+
+      if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file) {
         has_error = true;
         return;
       }
@@ -281,12 +286,11 @@ static void check_duplicate_symbols() {
   });
 
   for (ObjectFile *file : out::objs)
-    if (file->has_error)
-      for (int i = file->first_global; i < file->elf_syms.size(); i++)
-        if (is_error(file, i))
-          std::cerr << "duplicate symbol: " << *file
-                    << ": " << *file->symbols[i]->file << ": "
-                    << file->symbols[i]->name << "\n";
+    for (int i = file->first_global; i < file->elf_syms.size(); i++)
+      if (is_error(file, i))
+        std::cerr << "duplicate symbol: " << *file
+                  << ": " << *file->symbols[i]->file << ": "
+                  << file->symbols[i]->name << "\n";
 
   if (has_error)
     _exit(1);
