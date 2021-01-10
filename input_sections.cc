@@ -202,6 +202,9 @@ void InputSection::copy_buf() {
     case R_PLT:
       write(L + A - P);
       break;
+    case R_PLT_ABS:
+      write(L + A);
+      break;
     case R_TLSGD:
       write(sym.get_tlsgd_addr() + A - P);
       break;
@@ -286,7 +289,7 @@ void InputSection::scan_relocations() {
         rel_types[i] = R_ABS;
         sym.flags |= NEEDS_COPYREL;
       } else {
-        rel_types[i] = R_PLT;
+        rel_types[i] = R_PLT_ABS;
         sym.flags |= NEEDS_PLT;
       }
       break;
