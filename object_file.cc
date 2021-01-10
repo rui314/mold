@@ -290,9 +290,6 @@ void ObjectFile::initialize_mergeable_sections() {
 
     for (int i = 0; i < isec->rels.size(); i++) {
       const ElfRela &rel = isec->rels[i];
-      if (rel.r_sym >= this->first_global)
-        continue;
-
       const ElfSym &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;
