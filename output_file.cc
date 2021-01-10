@@ -62,6 +62,8 @@ public:
     : OutputFile(path, filesize) {
     buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (buf == MAP_FAILED)
+      Error() << "mmap failed: " << strerror(errno);
   }
 
   void close() override {
