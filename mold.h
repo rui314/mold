@@ -320,11 +320,6 @@ public:
   u32 size = 0;
 };
 
-inline std::ostream &operator<<(std::ostream &out, const InputChunk &isec) {
-  out << isec.file << ":(" << isec.name << ")";
-  return out;
-}
-
 //
 // output_chunks.cc
 //
@@ -800,6 +795,11 @@ private:
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
 };
+
+inline std::ostream &operator<<(std::ostream &out, const InputChunk &isec) {
+  out << *isec.file << ":(" << isec.name << ")";
+  return out;
+}
 
 //
 // archive_file.cc

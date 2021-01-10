@@ -34,30 +34,32 @@ static std::string rel_to_string(u32 r_type) {
   unreachable();
 }
 
-static void overflow_check(std::ostringstream &out, u32 r_type, u8 *loc, u64 val) {
+static void overflow_check(InputSection *sec, u32 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      out << "relocation R_X86_64_8 out of range: " << val << " is not in [0, 255]";
+      Error() << *sec << ": relocation R_X86_64_8 out of range: " << val
+              << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      out << "relocation R_X86_64_PC8 out of range: " << (i64)val
-          << " is not in [-128, 127]";
+      Error() << *sec << ": relocation R_X86_64_PC8 out of range: " << (i64)val
+              << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      out << "relocation R_X86_64_16 out of range: " << val << " is not in [0, 65535]";
+      Error() << *sec << ": relocation R_X86_64_16 out of range: " << val
+              << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      out << "relocation R_X86_64_PC16 out of range: " << (i64)val
-          << " is not in [-32768, 32767]";
+      Error() << *sec << ": relocation R_X86_64_PC16 out of range: " << (i64)val
+              << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      out << "relocation R_X86_64_32 out of range: " << val
-          << " is not in [0, 4294967296]";
+      Error() << *sec << ": relocation R_X86_64_32 out of range: " << val
+              << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -73,8 +75,8 @@ static void overflow_check(std::ostringstream &out, u32 r_type, u8 *loc, u64 val
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
-      out << "relocation " << rel_to_string(r_type) << " out of range: "
-          << (i64)val << " is not in [-2147483648, 2147483647]";
+      Error() << *sec << ": relocation " << rel_to_string(r_type) << " out of range: "
+              << (i64)val << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
@@ -152,7 +154,7 @@ void InputSection::copy_buf() {
       ref = &rel_pieces[ref_idx++];
 
     auto write = [&](u64 val) {
-      overflow_check(file->err_out, rel.r_type, loc, val);
+      overflow_check(this, rel.r_type, loc, val);
       write_val(rel.r_type, loc, val);
     };
 
@@ -276,7 +278,7 @@ void InputSection::scan_relocations() {
         file->err_out << *this << ": " << rel_to_string(rel.r_type)
                       << " relocation against symbol `" << sym.name
                       << "' can not be used when making a PIE object;"
-                      << " recompile with -fPIE";
+                      << " recompile with -fPIE\n";
 
       if (!sym.is_imported) {
         rel_types[i] = R_ABS;
@@ -337,7 +339,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        file->err_out << *this << ": TLSGD reloc not followed by PLT32";
+        file->err_out << *this << ": TLSGD reloc not followed by PLT32\n";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSGD;
@@ -349,7 +351,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        file->err_out << *this << ": TLSLD reloc not followed by PLT32";
+        file->err_out << *this << ": TLSLD reloc not followed by PLT32\n";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSLD;
