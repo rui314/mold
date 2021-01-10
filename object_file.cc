@@ -105,6 +105,8 @@ ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name)
 }
 
 void ObjectFile::initialize_sections() {
+  std::string_view shstrtab = get_string(ehdr.e_shstrndx);
+
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
     const ElfShdr &shdr = elf_sections[i];
@@ -151,7 +153,6 @@ void ObjectFile::initialize_sections() {
       static Counter counter("regular_sections");
       counter.inc();
 
-      std::string_view shstrtab = get_string(ehdr.e_shstrndx);
       std::string_view name = shstrtab.data() + shdr.sh_name;
       this->sections[i] = new InputSection(this, shdr, name);
       break;
@@ -168,8 +169,7 @@ void ObjectFile::initialize_sections() {
       Error() << *this << ": invalid relocated section index: "
               << (u32)shdr.sh_info;
 
-    InputSection *target = sections[shdr.sh_info];
-    if (target) {
+    if (InputSection *target = sections[shdr.sh_info]) {
       target->rels = get_data<ElfRela>(shdr);
       target->rel_types.resize(target->rels.size());
       target->has_rel_piece.resize(target->rels.size());
