@@ -274,20 +274,12 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      if (config.pie)
+      if (config.pie || sym.is_imported)
         file->err_out << *this << ": " << rel_to_string(rel.r_type)
                       << " relocation against symbol `" << sym.name
-                      << "' can not be used when making a PIE object;"
-                      << " recompile with -fPIE\n";
+                      << "' can not be used; recompile with -fPIE\n";
 
       rel_types[i] = R_ABS;
-
-      if (sym.is_imported) {
-        if (sym.type == STT_OBJECT)
-          sym.flags |= NEEDS_COPYREL;
-        else
-          sym.flags |= NEEDS_PLT;
-      }
       break;
     case R_X86_64_64:
       if (sym.is_imported) {
