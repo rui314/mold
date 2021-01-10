@@ -468,9 +468,9 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
 void ObjectFile::handle_undefined_weak_symbols() {
   for (int i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i];
 
     if (esym.is_undef() && esym.st_bind == STB_WEAK) {
+      Symbol &sym = *symbols[i];
       std::lock_guard lock(sym.mu);
 
       bool is_new = !sym.file || sym.is_placeholder;

@@ -1175,9 +1175,12 @@ int main(int argc, char **argv) {
   out::objs.push_back(internal_file);
 
   // Convert weak symbols to absolute symbols with value 0.
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    file->handle_undefined_weak_symbols();
-  });
+  {
+    Timer t("undef_weak");
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      file->handle_undefined_weak_symbols();
+    });
+  }
 
   // Beyond this point, no new symbols will be added to the result.
 
