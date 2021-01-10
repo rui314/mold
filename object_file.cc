@@ -202,17 +202,12 @@ void ObjectFile::initialize_symbols() {
   static Counter counter("all_syms");
   counter.inc(elf_syms.size());
 
-  symbols.resize(elf_syms.size());
-  sym_pieces.resize(elf_syms.size() - first_global);
-
-  // First symbol entry is always null
-  symbols[0] = new Symbol;
-
   // Initialize local symbols
+  Symbol *locals = new Symbol[first_global];
+
   for (int i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
-    Symbol &sym = *new Symbol;
-    symbols[i] = &sym;
+    Symbol &sym = locals[i];
 
     sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
@@ -232,6 +227,12 @@ void ObjectFile::initialize_symbols() {
       local_symtab_size += sizeof(ElfSym);
     }
   }
+
+  symbols.resize(elf_syms.size());
+  sym_pieces.resize(elf_syms.size() - first_global);
+
+  for (int i = 0; i < first_global; i++)
+    symbols[i] = &locals[i];
 
   // Initialize global symbols
   for (int i = first_global; i < elf_syms.size(); i++) {
