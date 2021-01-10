@@ -202,9 +202,6 @@ void InputSection::copy_buf() {
     case R_PLT:
       write(L + A - P);
       break;
-    case R_PLT_ABS:
-      write(L + A);
-      break;
     case R_TLSGD:
       write(sym.get_tlsgd_addr() + A - P);
       break;
@@ -283,14 +280,13 @@ void InputSection::scan_relocations() {
                       << "' can not be used when making a PIE object;"
                       << " recompile with -fPIE\n";
 
-      if (!sym.is_imported) {
-        rel_types[i] = R_ABS;
-      } else if (sym.type == STT_OBJECT) {
-        rel_types[i] = R_ABS;
-        sym.flags |= NEEDS_COPYREL;
-      } else {
-        rel_types[i] = R_PLT_ABS;
-        sym.flags |= NEEDS_PLT;
+      rel_types[i] = R_ABS;
+
+      if (sym.is_imported) {
+        if (sym.type == STT_OBJECT)
+          sym.flags |= NEEDS_COPYREL;
+        else
+          sym.flags |= NEEDS_PLT;
       }
       break;
     case R_X86_64_64:
@@ -308,14 +304,12 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      if (!sym.is_imported) {
-        rel_types[i] = R_PC;
-      } else if (sym.type == STT_OBJECT) {
-        rel_types[i] = R_PC;
-        sym.flags |= NEEDS_COPYREL;
-      } else {
-        rel_types[i] = R_PLT;
-        sym.flags |= NEEDS_PLT;
+      rel_types[i] = R_PC;
+      if (sym.is_imported) {
+        if (sym.type == STT_OBJECT)
+          sym.flags |= NEEDS_COPYREL;
+        else
+          sym.flags |= NEEDS_PLT;
       }
       break;
     case R_X86_64_GOT32:
