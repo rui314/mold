@@ -74,7 +74,7 @@ static void overflow_check(std::ostringstream &out, u32 r_type, u8 *loc, u64 val
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
       out << "relocation " << rel_to_string(r_type) << " out of range: "
-              << (i64)val << " is not in [-2147483648, 2147483647]";
+          << (i64)val << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
