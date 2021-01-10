@@ -34,32 +34,30 @@ static std::string rel_to_string(u32 r_type) {
   unreachable();
 }
 
-static void overflow_check(u32 r_type, u64 val) {
+static void overflow_check(std::ostringstream &out, u32 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      Error() << "relocation R_X86_64_8 out of range: " << val
-              << " is not in [0, 255]";
+      out << "relocation R_X86_64_8 out of range: " << val << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      Error() << "relocation R_X86_64_PC8 out of range: " << (i64)val
-              << " is not in [-128, 127]";
+      out << "relocation R_X86_64_PC8 out of range: " << (i64)val
+          << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      Error() << "relocation R_X86_64_16 out of range: " << val
-              << " is not in [0, 65535]";
+      out << "relocation R_X86_64_16 out of range: " << val << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      Error() << "relocation R_X86_64_PC16 out of range: " << (i64)val
-              << " is not in [-32768, 32767]";
+      out << "relocation R_X86_64_PC16 out of range: " << (i64)val
+          << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      Error() << "relocation R_X86_64_32 out of range: " << val
-              << " is not in [0, 4294967296]";
+      out << "relocation R_X86_64_32 out of range: " << val
+          << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -75,7 +73,7 @@ static void overflow_check(u32 r_type, u64 val) {
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
-      Error() << "relocation " << rel_to_string(r_type) << " out of range: "
+      out << "relocation " << rel_to_string(r_type) << " out of range: "
               << (i64)val << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
@@ -150,7 +148,7 @@ void InputSection::copy_buf() {
       ref = &rel_pieces[ref_idx++];
 
     auto write = [&](u64 val) {
-      overflow_check(rel.r_type, val);
+      overflow_check(file->err_out, rel.r_type, val);
       switch (get_rel_size(rel.r_type)) {
       case 1: *loc = val; return;
       case 2: *(u16 *)loc = val; return;

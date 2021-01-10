@@ -253,9 +253,24 @@ static void bin_sections() {
   });
 }
 
+static void check_errors() {
+  bool has_error = false;
+
+  for (ObjectFile *file : out::objs) {
+    if (file->err_out.tellp()) {
+      std::cerr << file->err_out.str();
+      has_error = true;
+    }
+  }
+
+  if (has_error) {
+    cleanup();
+    _exit(1);
+  }
+}
+
 static void check_duplicate_symbols() {
   Timer t("check_undef_syms");
-  std::atomic_bool has_error = false;
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     if (!file->is_alive)
@@ -268,19 +283,13 @@ static void check_duplicate_symbols() {
       bool is_eliminated =
         !esym.is_abs() && !esym.is_common() && !file->sections[esym.st_shndx];
 
-      if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file) {
-        std::cerr << "duplicate symbol: " << *file << ": " << *sym.file << ": "
-                  << sym.name << "\n";
-        has_error = true;
-      }
+      if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file)
+        file->err_out << "duplicate symbol: " << *file << ": " << *sym.file
+                      << ": " << sym.name << "\n";
     }
   });
 
-  if (has_error) {
-    for (ObjectFile *file : out::objs)
-      std::cerr << file->err_out.str();
-    _exit(1);
-  }
+  check_errors();
 }
 
 static void set_isec_offsets() {
@@ -338,15 +347,7 @@ static void scan_rels() {
 
   // If there was a relocation that refers an undefined symbol,
   // report an error.
-  bool has_error = false;
-  for (ObjectFile *file : out::objs) {
-    if (file->err_out.tellp()) {
-      std::cerr << file->err_out.str();
-      has_error = true;
-    }
-  }
-  if (has_error)
-    _exit(1);
+  check_errors();
 
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
@@ -1265,6 +1266,7 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
+    check_errors();
   }
 
   // Zero-clear paddings between sections
