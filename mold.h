@@ -28,9 +28,6 @@
 #define GOT_SIZE 8
 #define PLT_SIZE 16
 
-#define LIKELY(x)   __builtin_expect((x), 1)
-#define UNLIKELY(x) __builtin_expect((x), 0)
-
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;

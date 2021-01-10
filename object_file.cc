@@ -402,7 +402,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.is_weak = (esym.st_bind == STB_WEAK);
     sym.is_imported = false;
 
-    if (UNLIKELY(sym.traced))
+    if (sym.traced)
       SyncOut() << "trace: " << sym.file
                 << (sym.is_weak ? ": weak definition of " : ": definition of ")
                 << sym.name;
@@ -427,7 +427,7 @@ void ObjectFile::resolve_symbols() {
         sym.file = this;
         sym.is_placeholder = true;
 
-        if (UNLIKELY(sym.traced))
+        if (sym.traced)
           SyncOut() << "trace: " << sym.file << ": lazy definition of " << sym.name;
       }
     } else {
@@ -450,7 +450,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
       continue;
     }
 
-    if (UNLIKELY(sym.traced))
+    if (sym.traced)
       SyncOut() << "trace: " <<  *this << ": reference to " << sym.name;
 
     if (esym.st_bind != STB_WEAK && sym.file &&
@@ -458,7 +458,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
       if (!sym.file->is_dso)
         vec.push_back((ObjectFile *)sym.file);
 
-      if (UNLIKELY(sym.traced))
+      if (sym.traced)
         SyncOut() << "trace: " << *this << " keeps " << sym.file
                   << " for " << sym.name;
     }
@@ -490,7 +490,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_undef_weak = true;
         sym.is_imported = false;
 
-        if (UNLIKELY(sym.traced))
+        if (sym.traced)
           SyncOut() << "trace: " << *this << ": unresolved weak symbol "
                     << sym.name;
       }
@@ -806,7 +806,7 @@ void SharedFile::resolve_symbols() {
       sym.is_weak = (esym.st_bind == STB_WEAK);
       sym.is_imported = true;
 
-      if (UNLIKELY(sym.traced))
+      if (sym.traced)
         SyncOut() << "trace: " << *sym.file
                   << (sym.is_weak ? ": weak definition of " : ": definition of ")
                   << sym.name;
