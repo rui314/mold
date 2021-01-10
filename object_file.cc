@@ -466,9 +466,6 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
 }
 
 void ObjectFile::handle_undefined_weak_symbols() {
-  if (!is_alive)
-    return;
-
   for (int i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
@@ -498,9 +495,6 @@ void ObjectFile::handle_undefined_weak_symbols() {
 }
 
 void ObjectFile::resolve_comdat_groups() {
-  if (!is_alive)
-    return;
-
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     ObjectFile *cur = group->file;
@@ -511,9 +505,6 @@ void ObjectFile::resolve_comdat_groups() {
 }
 
 void ObjectFile::eliminate_duplicate_comdat_groups() {
-  if (!is_alive)
-    return;
-
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     if (group->file == this)
