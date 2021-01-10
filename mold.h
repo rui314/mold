@@ -750,7 +750,6 @@ public:
   std::span<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive;
-  std::atomic_bool has_error = false;
   std::ostringstream err_out;
 
   u64 num_dynrel = 0;

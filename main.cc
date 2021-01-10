@@ -340,14 +340,11 @@ static void scan_rels() {
   // report an error.
   bool has_error = false;
   for (ObjectFile *file : out::objs) {
-    if (file->has_error) {
+    if (file->err_out.tellp()) {
+      std::cerr << file->err_out.str();
       has_error = true;
-      for (InputSection *isec : file->sections)
-        if (isec)
-          isec->report_undefined_symbols();
     }
   }
-
   if (has_error)
     _exit(1);
 

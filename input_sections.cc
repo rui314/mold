@@ -265,7 +265,7 @@ void InputSection::scan_relocations() {
     Symbol &sym = *file->symbols[rel.r_sym];
 
     if (!sym.file || sym.is_placeholder) {
-      file->has_error = true;
+      file->err_out << "undefined symbol: " << *file << ": " << sym.name << "\n";
       continue;
     }
 
@@ -278,10 +278,10 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S:
       if (config.pie)
-        Error() << *this << ": " << rel_to_string(rel.r_type)
-                << " relocation against symbol `" << sym.name
-                << "' can not be used when making a PIE object;"
-                << " recompile with -fPIE";
+        file->err_out << *this << ": " << rel_to_string(rel.r_type)
+                      << " relocation against symbol `" << sym.name
+                      << "' can not be used when making a PIE object;"
+                      << " recompile with -fPIE";
 
       if (!sym.is_imported) {
         rel_types[i] = R_ABS;
@@ -342,7 +342,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << *this << ": TLSGD reloc not followed by PLT32";
+        file->err_out << *this << ": TLSGD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSGD;
@@ -354,7 +354,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << *this << ": TLSLD reloc not followed by PLT32";
+        file->err_out << *this << ": TLSLD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSLD;
@@ -375,19 +375,8 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOTTPOFF;
       break;
     default:
-      Error() << *this << ": unknown relocation: " << rel.r_type;
+      file->err_out << *this << ": unknown relocation: " << rel.r_type;
     }
-  }
-}
-
-void InputSection::report_undefined_symbols() {
-  if (!(shdr.sh_flags & SHF_ALLOC))
-    return;
-
-  for (const ElfRela &rel : rels) {
-    Symbol &sym = *file->symbols[rel.r_sym];
-    if (!sym.file || sym.is_placeholder)
-      std::cerr << "undefined symbol: " << *file << ": " << sym.name << "\n";
   }
 }
 
