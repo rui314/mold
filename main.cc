@@ -270,12 +270,9 @@ static void check_errors() {
 }
 
 static void check_duplicate_symbols() {
-  Timer t("check_undef_syms");
+  Timer t("check_dup_syms");
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    if (!file->is_alive)
-      return;
-
     for (int i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym &esym = file->elf_syms[i];
       Symbol &sym = *file->symbols[i];

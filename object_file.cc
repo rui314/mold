@@ -453,8 +453,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
     if (sym.traced)
       SyncOut() << "trace: " <<  *this << ": reference to " << sym.name;
 
-    if (esym.st_bind != STB_WEAK && sym.file &&
-        !sym.file->is_alive.exchange(true)) {
+    if (esym.st_bind != STB_WEAK && sym.file && !sym.file->is_alive.exchange(true)) {
       if (!sym.file->is_dso)
         vec.push_back((ObjectFile *)sym.file);
 
