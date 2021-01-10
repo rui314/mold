@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include "tbb/global_control.h"
+#include "tbb/parallel_do.h"
 #include "tbb/task_group.h"
 
 #include <fcntl.h>
