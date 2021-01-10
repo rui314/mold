@@ -39,26 +39,26 @@ static void overflow_check(std::ostringstream &out, u32 r_type, u8 *loc, u64 val
   case R_X86_64_8:
     if (val != (u8)val)
       out << "relocation R_X86_64_8 out of range: " << val << " is not in [0, 255]";
-    break;
+    return;
   case R_X86_64_PC8:
     if (val != (i8)val)
       out << "relocation R_X86_64_PC8 out of range: " << (i64)val
           << " is not in [-128, 127]";
-    break;
+    return;
   case R_X86_64_16:
     if (val != (u16)val)
       out << "relocation R_X86_64_16 out of range: " << val << " is not in [0, 65535]";
-    break;
+    return;
   case R_X86_64_PC16:
     if (val != (i16)val)
       out << "relocation R_X86_64_PC16 out of range: " << (i64)val
           << " is not in [-32768, 32767]";
-    break;
+    return;
   case R_X86_64_32:
     if (val != (u32)val)
       out << "relocation R_X86_64_32 out of range: " << val
           << " is not in [0, 4294967296]";
-    break;
+    return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
   case R_X86_64_GOT32:
@@ -75,30 +75,29 @@ static void overflow_check(std::ostringstream &out, u32 r_type, u8 *loc, u64 val
     if (val != (i32)val)
       out << "relocation " << rel_to_string(r_type) << " out of range: "
               << (i64)val << " is not in [-2147483648, 2147483647]";
-    break;
+    return;
   case R_X86_64_NONE:
   case R_X86_64_64:
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
-    break;
-  default:
-    unreachable();
+    return;
   }
+  unreachable();
 }
 
 static void write_val(u32 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
-    break;
+    return;
   case R_X86_64_8:
   case R_X86_64_PC8:
     *loc = val;
-    break;
+    return;
   case R_X86_64_16:
   case R_X86_64_PC16:
     *(u16 *)loc = val;
-    break;
+    return;
   case R_X86_64_32:
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -114,16 +113,15 @@ static void write_val(u32 r_type, u8 *loc, u64 val) {
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
     *(u32 *)loc = val;
-    break;
+    return;
   case R_X86_64_64:
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
     *(u64 *)loc = val;
-    break;
-  default:
-    unreachable();
+    return;
   }
+  unreachable();
 }
 
 void InputSection::copy_buf() {
