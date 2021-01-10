@@ -584,7 +584,7 @@ void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
 
-  tbb::parallel_for_each(symbols, [&](Symbol *sym) {
+  for (Symbol *sym : symbols) {
     auto &esym = *(ElfSym *)(base + sym->dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = sym->dynstr_offset;
@@ -604,7 +604,7 @@ void DynsymSection::copy_buf() {
       esym.st_shndx = sym->input_section->output_section->shndx;
       esym.st_value = sym->get_addr();
     }
-  });
+  }
 }
 
 void HashSection::update_shdr() {
