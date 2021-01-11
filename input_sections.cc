@@ -298,7 +298,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC64:
       rel_types[i] = R_PC;
       if (sym.is_imported) {
-        if (sym.type == STT_OBJECT)
+        if (sym.st_type == STT_OBJECT)
           sym.flags |= NEEDS_COPYREL;
         else
           sym.flags |= NEEDS_PLT;
@@ -319,7 +319,7 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
-      if (sym.is_imported || sym.type == STT_GNU_IFUNC) {
+      if (sym.is_imported || sym.st_type == STT_GNU_IFUNC) {
         rel_types[i] = R_PLT;
         sym.flags |= NEEDS_PLT;
       } else {

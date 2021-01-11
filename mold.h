@@ -242,6 +242,9 @@ public:
   u16 shndx = 0;
   u16 ver_idx = 0;
 
+  std::atomic_uint8_t flags = 0;
+  u8 st_type = STT_NOTYPE;
+
   tbb::spin_mutex mu;
 
   u8 is_placeholder : 1 = false;
@@ -250,9 +253,6 @@ public:
   u8 is_undef_weak : 1 = false;
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
-
-  std::atomic_uint8_t flags = 0;
-  u8 type = STT_NOTYPE;
 };
 
 //

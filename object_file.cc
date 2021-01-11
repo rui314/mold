@@ -211,7 +211,7 @@ void ObjectFile::initialize_symbols() {
 
     sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
-    sym.type = esym.st_type;
+    sym.st_type = esym.st_type;
     sym.value = esym.st_value;
     sym.esym = &esym;
 
@@ -396,7 +396,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.piece_ref = sym_pieces[symidx - first_global];
     sym.value = esym.st_value;
     sym.ver_idx = 0;
-    sym.type = esym.st_type;
+    sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.st_bind == STB_WEAK);
@@ -583,7 +583,7 @@ void ObjectFile::write_symtab() {
     esym = elf_syms[i];
     esym.st_name = strtab_off;
 
-    if (sym.type == STT_TLS)
+    if (sym.st_type == STT_TLS)
       esym.st_value = sym.get_addr() - sym.input_section->output_section->shdr.sh_addr;
     else
       esym.st_value = sym.get_addr();
@@ -790,7 +790,7 @@ void SharedFile::resolve_symbols() {
       sym.piece_ref = {};
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
-      sym.type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
+      sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
       sym.esym = &esym;
       sym.is_placeholder = false;
       sym.is_weak = (esym.st_bind == STB_WEAK);

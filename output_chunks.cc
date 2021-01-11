@@ -558,7 +558,7 @@ void RelPltSection::copy_buf() {
     rel.r_sym = sym->dynsym_idx;
     rel.r_offset = sym->get_gotplt_addr();
 
-    if (sym->type == STT_GNU_IFUNC) {
+    if (sym->st_type == STT_GNU_IFUNC) {
       rel.r_type = R_X86_64_IRELATIVE;
       rel.r_addend = sym->get_addr();
     } else {
@@ -588,7 +588,7 @@ void DynsymSection::copy_buf() {
     auto &esym = *(ElfSym *)(base + sym->dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = sym->dynstr_offset;
-    esym.st_type = sym->type;
+    esym.st_type = sym->st_type;
     esym.st_bind = sym->esym->st_bind;
     esym.st_size = sym->esym->st_size;
 
