@@ -158,7 +158,8 @@ void InputSection::copy_buf() {
       write_val(rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->piece->get_addr() : sym.get_addr())
+#define S   (ref ? ref->piece->get_addr() \
+             : (sym.plt_idx == -1 ? sym.get_addr() : sym.get_plt_addr()))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define L   sym.get_plt_addr()
