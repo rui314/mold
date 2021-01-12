@@ -701,14 +701,14 @@ private:
 class InputFile {
 public:
   InputFile(MemoryMappedFile *mb);
+  InputFile() : name("<internal>") {}
 
   MemoryMappedFile *mb;
-  ElfEhdr &ehdr;
   std::span<ElfShdr> elf_sections;
   std::vector<Symbol *> symbols;
 
   std::string name;
-  bool is_dso;
+  bool is_dso = false;
   u32 priority;
   std::atomic_bool is_alive = false;
 
@@ -719,11 +719,14 @@ protected:
   template<typename T> std::span<T> get_data(const ElfShdr &shdr);
   template<typename T> std::span<T> get_data(u32 idx);
   ElfShdr *find_section(u32 type);
+
+  std::string_view shstrtab;
 };
 
 class ObjectFile : public InputFile {
 public:
   ObjectFile(MemoryMappedFile *mb, std::string archive_name);
+  ObjectFile();
 
   void parse();
   void initialize_mergeable_sections();
@@ -743,7 +746,7 @@ public:
   std::vector<InputSection *> sections;
   std::span<ElfSym> elf_syms;
   int first_global = 0;
-  const bool is_in_archive;
+  const bool is_in_archive = false;
   std::ostringstream err_out;
 
   u64 num_dynrel = 0;

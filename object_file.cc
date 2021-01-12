@@ -47,12 +47,14 @@ MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start, u64 size)
   return mb;
 }
 
-InputFile::InputFile(MemoryMappedFile *mb)
-  : mb(mb), name(mb->name), ehdr(*(ElfEhdr *)mb->data()), is_dso(ehdr.e_type == ET_DYN) {
+InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
   if (mb->size() < sizeof(ElfEhdr))
     Error() << *this << ": file too small";
   if (memcmp(mb->data(), "\177ELF", 4))
     Error() << *this << ": not an ELF file";
+
+  ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
+  is_dso = (ehdr.e_type == ET_DYN);
 
   u8 *sh_begin = mb->data() + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
@@ -60,6 +62,7 @@ InputFile::InputFile(MemoryMappedFile *mb)
     Error() << *this << ": e_shoff or e_shnum corrupted: "
             << mb->size() << " " << ehdr.e_shnum;
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
+  shstrtab = get_string(ehdr.e_shstrndx);
 }
 
 std::string_view InputFile::get_string(const ElfShdr &shdr) {
@@ -105,8 +108,6 @@ ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name)
 }
 
 void ObjectFile::initialize_sections() {
-  std::string_view shstrtab = get_string(ehdr.e_shstrndx);
-
   // Read sections
   for (int i = 0; i < elf_sections.size(); i++) {
     const ElfShdr &shdr = elf_sections[i];
@@ -615,19 +616,13 @@ bool is_c_identifier(std::string_view name) {
   return std::regex_match(name.begin(), name.end(), re);
 }
 
-ObjectFile *ObjectFile::create_internal_file() {
-  // Create a dummy object file.
-  constexpr int bufsz = 256;
-  u8 *buf = (u8 *)calloc(1, bufsz);
-  memcpy(buf, "\177ELF", 4);
-  MemoryMappedFile *mb = new MemoryMappedFile("<internal>", buf, bufsz);
-  auto *obj = new ObjectFile(mb, "");
-
+ObjectFile::ObjectFile() {
   // Create linker-synthesized symbols.
-  auto *elf_syms = new std::vector<ElfSym>(1);
-  obj->symbols.push_back(new Symbol);
-  obj->first_global = 1;
-  obj->is_alive = true;
+  auto *esyms = new std::vector<ElfSym>(1);
+  symbols.push_back(new Symbol);
+  first_global = 1;
+  is_alive = true;
+  priority = 1;
 
   auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
     ElfSym esym = {};
@@ -635,10 +630,10 @@ ObjectFile *ObjectFile::create_internal_file() {
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = visibility;
-    elf_syms->push_back(esym);
+    esyms->push_back(esym);
 
     Symbol *sym = Symbol::intern(name);
-    obj->symbols.push_back(sym);
+    symbols.push_back(sym);
     return sym;
   };
 
@@ -668,9 +663,8 @@ ObjectFile *ObjectFile::create_internal_file() {
     add(*stop, STV_HIDDEN);
   }
 
-  obj->elf_syms = *elf_syms;
-  obj->sym_pieces.resize(elf_syms->size() - obj->first_global);
-  return obj;
+  elf_syms = *esyms;
+  sym_pieces.resize(elf_syms.size() - first_global);
 }
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file) {

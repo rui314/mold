@@ -1169,8 +1169,7 @@ int main(int argc, char **argv) {
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ObjectFile *internal_file = ObjectFile::create_internal_file();
-  internal_file->priority = 1;
+  ObjectFile *internal_file = new ObjectFile;
   internal_file->resolve_symbols();
   out::objs.push_back(internal_file);
 
