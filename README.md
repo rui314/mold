@@ -127,15 +127,51 @@ implemented and tested with benchmarks. Here is a brain dump:
   fast, other projects would still be happy to adopt it by modifying
   their projects' build files.
 
-- I don't want to support the linker script language in mold because
-  it's so complicated and inevitably slows down the linker. User-land
-  programs rarely use linker scripts, so it shouldn't be a roadblock
-  for most projects.
-
 - mold emits Linux executables and runs only on Linux. I won't avoid
   Unix-ism when writing code (e.g. I'll probably use fork(2)).
   I don't want to think about portability until mold becomes a thing
   that's worth to be ported.
+
+## Linker Script
+
+Linker script is an embedded language for the linker. It is mainly
+used to control how input sections are mapped to output sections and
+the layout of the output, but it can also do a lot of tricky stuff.
+Its feature is useful especially for embedded programming, but it's
+also an awfully underdocumented and complex language.
+
+We have to implement a subset of the linker script language anwyay,
+because on Linux, /usr/lib/x86_64-linux-gnu/libc.so is (despite its
+name) not a shared object file but actually an ASCII file containing
+linker script code to load the _actual_ libc.so file. But the feature
+set for this purpose is very limited, and it is okay to implement them
+to mold.
+
+Besides that, we really don't want to implement the linker script
+langauge. But at the same time, we want to satisfy the user needs that
+are currently satisfied with the linker script langauge. So, what
+should we do? Here is my observation:
+
+- Linker script allows to do a lot of tricky stuff, such as specifying
+  the exact layout of a file, inserting arbitrary bytes between
+  sections, etc. But most of them can be done with a post-link binary
+  editing tool (such as `objcopy`).
+
+- It looks like there are two things that truely cannot be done by a
+  post-link editing tool: (a) mapping input sections to output
+  sections, and (b) applying relocations.
+
+From the above observation, I believe we need to provide only the
+following features instead of the entire linker script langauge:
+
+- A method to specify how input sections are mapped to output
+  sections, and
+
+- a method to set addresses to output sections, so that relocations
+  are applied based on desired adddresses.
+
+I believe everything else can be done with a post-link binary editing
+tool.
 
 ## Details
 
