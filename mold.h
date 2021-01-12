@@ -1013,7 +1013,7 @@ inline u64 Symbol::get_addr() const {
     return input_section->get_addr() + value;
   }
 
-  if (file && file->is_dso && copyrel_offset == -1)
+  if (file && file->is_dso)
     return get_plt_addr();
 
   return value;
