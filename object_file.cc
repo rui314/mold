@@ -404,7 +404,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
     sym.is_imported = false;
 
     if (sym.traced)
-      SyncOut() << "trace: " << sym.file
+      SyncOut() << "trace: " << *sym.file
                 << (sym.is_weak ? ": weak definition of " : ": definition of ")
                 << sym.name;
   }
