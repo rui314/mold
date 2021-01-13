@@ -270,6 +270,15 @@ void InputSection::scan_relocations() {
       continue;
     }
 
+    auto recompile_error = [&]() {
+      file->err_out << *this << ": " << rel_to_string(rel.r_type)
+                    << " relocation against symbol `" << sym.name
+                    << "' can not be used; recompile with -fPIE\n";
+    };
+
+    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+    bool is_code = !(sym.st_type == STT_OBJECT);
+
     switch (rel.r_type) {
     case R_X86_64_NONE:
       rel_types[i] = R_NONE;
@@ -279,10 +288,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S:
       if (config.pie || sym.is_imported)
-        file->err_out << *this << ": " << rel_to_string(rel.r_type)
-                      << " relocation against symbol `" << sym.name
-                      << "' can not be used; recompile with -fPIE\n";
-
+        recompile_error();
       rel_types[i] = R_ABS;
       break;
     case R_X86_64_64:
@@ -303,12 +309,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC32:
     case R_X86_64_PC64:
       rel_types[i] = R_PC;
-      if (sym.is_imported) {
-        if (sym.st_type == STT_OBJECT)
-          sym.flags |= NEEDS_COPYREL;
-        else
-          sym.flags |= NEEDS_PLT;
-      }
+      if (sym.is_imported)
+        sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
       break;
     case R_X86_64_GOT32:
       rel_types[i] = R_GOT;
