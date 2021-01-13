@@ -130,16 +130,16 @@ void InputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
+  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
+
   // Copy data
-  std::string_view view = file->get_string(shdr);
-  memcpy(out::buf + output_section->shdr.sh_offset + offset,
-         view.data(), view.size());
+  std::string_view contents = file->get_string(shdr);
+  memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
-  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
   int ref_idx = 0;
-
   ElfRela *dynrel = nullptr;
+
   if (out::reldyn)
     dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
                          file->reldyn_offset + reldyn_offset);
