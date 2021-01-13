@@ -218,8 +218,10 @@ public:
   inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
 
-  bool needs_relative_rel() const {
-    return config.pie && !is_undef_weak;
+  bool is_absolute() const;
+
+  bool is_relative() const {
+    return !is_absolute();
   }
 
   std::string_view name;
@@ -953,6 +955,8 @@ inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 
+inline ObjectFile *internal_file;
+
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
 inline OutputPhdr *phdr;
@@ -995,6 +999,10 @@ inline Symbol *_edata;
 inline u64 align_to(u64 val, u64 align) {
   assert(__builtin_popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
+}
+
+inline bool Symbol::is_absolute() const {
+  return input_section == nullptr && file != out::internal_file;
 }
 
 inline u64 Symbol::get_addr() const {

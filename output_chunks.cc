@@ -151,7 +151,7 @@ void RelDynSection::update_shdr() {
   int n = 0;
 
   for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported || sym->needs_relative_rel())
+    if (sym->is_imported || (config.pie && sym->is_relative()))
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
@@ -181,7 +181,7 @@ void RelDynSection::copy_buf() {
   for (Symbol *sym : out::got->got_syms) {
     if (sym->is_imported) {
       write(sym, R_X86_64_GLOB_DAT, sym->get_got_addr());
-    } else if (sym->needs_relative_rel()) {
+    } else if (config.pie && sym->is_relative()) {
       memset(rel, 0, sizeof(ElfRela));
       rel->r_type = R_X86_64_RELATIVE;
       rel->r_offset = sym->get_got_addr();
