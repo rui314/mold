@@ -38,9 +38,7 @@ void SHA1::update(const u8 *buf, u32 len) {
 
 void SHA1::process_message_block() {
   const u32 k[] = {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6};
-
   u32 w[80];
-  u32 a, b, c, d, e;
 
   for (int t = 0; t < 16; t++) {
     w[t] = block[t * 4] << 24;
@@ -52,17 +50,17 @@ void SHA1::process_message_block() {
   for (int t = 16; t < 80; t++)
     w[t] = circular_shift(1, w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]);
 
-  a = hash[0];
-  b = hash[1];
-  c = hash[2];
-  d = hash[3];
-  e = hash[4];
+  u32 a = hash[0];
+  u32 b = hash[1];
+  u32 c = hash[2];
+  u32 d = hash[3];
+  u32 e = hash[4];
 
   for (int t = 0; t < 20; t++) {
     u32 tmp =  circular_shift(5, a) + ((b & c) | (~b & d)) + e + w[t] + k[0];
     e = d;
     d = c;
-    c = circular_shift(30,b);
+    c = circular_shift(30, b);
     b = a;
     a = tmp;
   }
@@ -71,7 +69,7 @@ void SHA1::process_message_block() {
     u32 tmp = circular_shift(5, a) + (b ^ c ^ d) + e + w[t] + k[1];
     e = d;
     d = c;
-    c = circular_shift(30,b);
+    c = circular_shift(30, b);
     b = a;
     a = tmp;
   }
@@ -80,7 +78,7 @@ void SHA1::process_message_block() {
     u32 tmp = circular_shift(5,a) + ((b & c) | (b & d) | (c & d)) + e + w[t] + k[2];
     e = d;
     d = c;
-    c = circular_shift(30,b);
+    c = circular_shift(30, b);
     b = a;
     a = tmp;
   }
@@ -89,7 +87,7 @@ void SHA1::process_message_block() {
     u32 tmp = circular_shift(5, a) + (b ^ c ^ d) + e + w[t] + k[3];
     e = d;
     d = c;
-    c = circular_shift(30,b);
+    c = circular_shift(30, b);
     b = a;
     a = tmp;
   }
