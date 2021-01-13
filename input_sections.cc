@@ -288,19 +288,25 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
+      rel_types[i] = R_ABS;
       if (config.pie && sym.is_imported)
         sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
-      rel_types[i] = R_ABS;
       break;
     case R_X86_64_64:
-      if (sym.is_imported) {
-        rel_types[i] = R_DYN;
-        sym.flags |= NEEDS_DYNSYM;
-        file->num_dynrel++;
+      if (config.pie) {
+        if (sym.is_imported) {
+          rel_types[i] = R_DYN;
+          sym.flags |= NEEDS_DYNSYM;
+          file->num_dynrel++;
+        } else {
+          rel_types[i] = R_ABS;
+          if (sym.is_relative())
+            file->num_dynrel++;
+        }
       } else {
         rel_types[i] = R_ABS;
-        if (config.pie && sym.is_relative())
-          file->num_dynrel++;
+        if (sym.is_imported)
+          sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
       }
       break;
     case R_X86_64_PC8:
