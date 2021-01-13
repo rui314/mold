@@ -148,7 +148,6 @@ void InputSection::copy_buf() {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
-    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
 
     const StringPieceRef *ref = nullptr;
     if (has_rel_piece[i])
@@ -159,10 +158,18 @@ void InputSection::copy_buf() {
       write_val(rel.r_type, loc, val);
     };
 
-    auto recompile_error = [&]() {
-      Error() << *this << ": " << rel_to_string(rel.r_type)
-              << " relocation against symbol `" << sym.name
-              << "' can not be used; recompile with -fPIE";
+    auto write_dynrel = [&](u64 offset, u32 type, u32 symidx, i64 addend) {
+      if (!(shdr.sh_flags & SHF_WRITE))
+        Error() << *this << ": " << rel_to_string(rel.r_type)
+                << " relocation against symbol `" << sym.name
+                << "' can not be used; recompile with -fPIE";
+
+      memset(dynrel, 0, sizeof(*dynrel));
+      dynrel->r_offset = offset;
+      dynrel->r_type = type;
+      dynrel->r_sym = symidx;
+      dynrel->r_addend = addend;
+      dynrel++;
     };
 
 #define S   (ref ? ref->piece->get_addr() \
@@ -180,26 +187,11 @@ void InputSection::copy_buf() {
       write(S + A);
       break;
     case R_ABS_DYN:
-      if (is_readonly)
-        recompile_error();
-
       write(S + A);
-
-      memset(dynrel, 0, sizeof(*dynrel));
-      dynrel->r_offset = P;
-      dynrel->r_type = R_X86_64_RELATIVE;
-      dynrel->r_addend = S + A;
-      dynrel++;
+      write_dynrel(P, R_X86_64_RELATIVE, 0, S + A);
       break;
     case R_DYN:
-      if (is_readonly)
-        recompile_error();
-      memset(dynrel, 0, sizeof(*dynrel));
-      dynrel->r_offset = P;
-      dynrel->r_type = R_X86_64_64;
-      dynrel->r_sym = sym.dynsym_idx;
-      dynrel->r_addend = A;
-      dynrel++;
+      write_dynrel(P, R_X86_64_64, sym.dynsym_idx, A);
       break;
     case R_PC:
       write(S + A - P);
