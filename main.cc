@@ -564,14 +564,14 @@ static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
 }
 
 static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
-  auto start = [](OutputChunk *chunk, Symbol *sym) {
+  auto start = [](Symbol *sym, OutputChunk *chunk) {
     if (sym) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
-  auto stop = [](OutputChunk *chunk, Symbol *sym) {
+  auto stop = [](Symbol *sym, OutputChunk *chunk) {
     if (sym) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
@@ -581,7 +581,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   // __bss_start
   for (OutputChunk *chunk : chunks) {
     if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
-      start(chunk, out::__bss_start);
+      start(out::__bss_start, chunk);
       break;
     }
   }
@@ -596,19 +596,19 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   }
 
   // __rela_iplt_start and __rela_iplt_end
-  start(out::relplt, out::__rela_iplt_start);
-  stop(out::relplt, out::__rela_iplt_end);
+  start(out::__rela_iplt_start, out::relplt);
+  stop(out::__rela_iplt_end, out::relplt);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk *chunk : chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
-      start(chunk, out::__init_array_start);
-      stop(chunk, out::__init_array_end);
+      start(out::__init_array_start, chunk);
+      stop(out::__init_array_end, chunk);
       break;
     case SHT_FINI_ARRAY:
-      start(chunk, out::__fini_array_start);
-      stop(chunk, out::__fini_array_end);
+      start(out::__fini_array_start, chunk);
+      stop(out::__fini_array_end, chunk);
       break;
     }
   }
@@ -619,28 +619,28 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC)
-      stop(chunk, out::_end);
+      stop(out::_end, chunk);
 
     if (chunk->shdr.sh_flags & SHF_EXECINSTR)
-      stop(chunk, out::_etext);
+      stop(out::_etext, chunk);
 
     if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC)
-      stop(chunk, out::_edata);
+      stop(out::_edata, chunk);
   }
 
   // _DYNAMIC
   if (out::dynamic)
-    start(out::dynamic, out::_DYNAMIC);
+    start(out::_DYNAMIC, out::dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
   if (out::gotplt)
-    start(out::gotplt, out::_GLOBAL_OFFSET_TABLE_);
+    start(out::_GLOBAL_OFFSET_TABLE_, out::gotplt);
 
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
     if (is_c_identifier(chunk->name)) {
-      start(chunk, Symbol::intern("__start_" + std::string(chunk->name)));
-      stop(chunk, Symbol::intern("__stop_" + std::string(chunk->name)));
+      start(Symbol::intern("__start_" + std::string(chunk->name)), chunk);
+      stop(Symbol::intern("__stop_" + std::string(chunk->name)), chunk);
     }
   }
 }
