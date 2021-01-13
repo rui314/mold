@@ -18,7 +18,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input.starts_with("/*")) {
       int pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
-        Error() << "unclosed comment";
+        Fatal() << "unclosed comment";
       input = input.substr(pos + 2);
       continue;
     }
@@ -34,7 +34,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input[0] == '"') {
       int pos = input.find('"', 1);
       if (pos == std::string_view::npos)
-        Error() << "unclosed string literal";
+        Fatal() << "unclosed string literal";
       vec.push_back(input.substr(0, pos));
       input = input.substr(pos);
       continue;
@@ -55,7 +55,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
 static std::span<std::string_view>
 skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
-    Error() << "expected '" << str << "'";
+    Fatal() << "expected '" << str << "'";
   return tok.subspan(1);
 }
 
@@ -64,7 +64,7 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Error() << "expected ')'";
+    Fatal() << "expected ')'";
   return tok.subspan(1);
 }
 
@@ -100,7 +100,7 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
   }
 
   if (tok.empty())
-    Error() << "expected ')'";
+    Fatal() << "expected ')'";
   return tok.subspan(1);
 }
 
@@ -116,7 +116,7 @@ void parse_linker_script(MemoryMappedFile *mb, bool as_needed) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1), as_needed);
     else
-      Error() << mb->name << ": unknown token: " << tok[0];
+      Fatal() << mb->name << ": unknown token: " << tok[0];
   }
 }
 
@@ -165,10 +165,10 @@ void parse_version_script(std::string path) {
   tok = skip(tok, ";");
 
   if (!tok.empty())
-    Error() << path << ": trailing garbage token: " << tok[0];
+    Fatal() << path << ": trailing garbage token: " << tok[0];
 
   if (locals.size() != 1 || locals[0] != "*")
-    Error() << path << ": unsupported version script";
+    Fatal() << path << ": unsupported version script";
   config.export_dynamic = false;
   config.globals = globals;
 }
