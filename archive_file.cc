@@ -33,10 +33,10 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) 
     }
 
     if (hdr.ar_name[0] != '/')
-      Error() << mb->name << ": filename is not stored as a long filename";
+      Fatal() << mb->name << ": filename is not stored as a long filename";
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-    std::string name = {start, strstr(start, "/\n")};
+    std::string name(start, strstr(start, "/\n"));
 
     vec.push_back(MemoryMappedFile::must_open(basedir + "/" + name));
     data = body;
@@ -79,9 +79,9 @@ std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
 
 std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb) {
   if (mb->size() < 8)
-    Error() << mb->name << ": not an archive file";
+    Fatal() << mb->name << ": not an archive file";
   if (memcmp(mb->data(), "!<arch>\n", 8) && memcmp(mb->data(), "!<thin>\n", 8))
-    Error() << mb->name << ": not an archive file";
+    Fatal() << mb->name << ": not an archive file";
 
   bool is_thin = !memcmp(mb->data(), "!<thin>\n", 8);
   if (is_thin)
