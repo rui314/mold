@@ -120,7 +120,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     parse_linker_script(mb, as_needed);
     return;
   default:
-    Error() << mb->name << ": unknown file type";
+    Fatal() << mb->name << ": unknown file type";
   }
 }
 
@@ -667,7 +667,7 @@ static bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
       if (args.size() == 1)
-        Error() << "option -" << name << ": argument missing";
+        Fatal() << "option -" << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -684,7 +684,7 @@ static bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
-        Error() << "option " << name << ": argument missing";
+        Fatal() << "option " << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -745,16 +745,16 @@ static bool read_equal(std::span<std::string_view> &args, std::string_view &arg,
 
 static u64 parse_hex(std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
-    Error() << "option -" << opt << ": not a hexadecimal number";
+    Fatal() << "option -" << opt << ": not a hexadecimal number";
   value = value.substr(2);
   if (value.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
-    Error() << "option -" << opt << ": not a hexadecimal number";
+    Fatal() << "option -" << opt << ": not a hexadecimal number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
 static u64 parse_number(std::string opt, std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
-    Error() << "option -" << opt << ": not a number";
+    Fatal() << "option -" << opt << ": not a number";
   return std::stol(std::string(value));
 }
 
@@ -773,7 +773,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
       }
     }
     if (i >= mb->size())
-      Error() << path << ": premature end of input";
+      Fatal() << path << ": premature end of input";
     vec.push_back(std::string_view(*buf));
     return i + 1;
   };
@@ -824,7 +824,7 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
   while (args.empty()) {
     if (needs_arg.contains(args[0])) {
       if (args.size() == 1)
-        Error() << args[0] << ": missing argument";
+        Fatal() << args[0] << ": missing argument";
       args = args.subspan(2);
       continue;
     }
@@ -926,7 +926,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       remaining.push_back(arg);
     } else {
       if (args[0][0] == '-')
-        Error() << "unknown command line option: " << args[0];
+        Fatal() << "unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
     }
@@ -987,7 +987,7 @@ int main(int argc, char **argv) {
   config = parse_nonpositional_args(arg_vector, file_args);
 
   if (config.output == "")
-    Error() << "-o option is missing";
+    Fatal() << "-o option is missing";
 
   if (!config.preload)
     if (int code; resume_daemon(argv, &code))
