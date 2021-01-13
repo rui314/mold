@@ -178,16 +178,18 @@ void InputSection::copy_buf() {
       break;
     case R_ABS:
       write(S + A);
+      break;
+    case R_ABS_DYN:
+      if (is_readonly)
+        recompile_error();
 
-      if (config.pie && sym.is_relative()) {
-        if (is_readonly)
-          recompile_error();
-        memset(dynrel, 0, sizeof(*dynrel));
-        dynrel->r_offset = P;
-        dynrel->r_type = R_X86_64_RELATIVE;
-        dynrel->r_addend = S + A;
-        dynrel++;
-      }
+      write(S + A);
+
+      memset(dynrel, 0, sizeof(*dynrel));
+      dynrel->r_offset = P;
+      dynrel->r_type = R_X86_64_RELATIVE;
+      dynrel->r_addend = S + A;
+      dynrel++;
       break;
     case R_DYN:
       if (is_readonly)
@@ -298,10 +300,11 @@ void InputSection::scan_relocations() {
           rel_types[i] = R_DYN;
           sym.flags |= NEEDS_DYNSYM;
           file->num_dynrel++;
+        } else if (sym.is_relative()) {
+          rel_types[i] = R_ABS_DYN;
+          file->num_dynrel++;
         } else {
           rel_types[i] = R_ABS;
-          if (sym.is_relative())
-            file->num_dynrel++;
         }
       } else {
         rel_types[i] = R_ABS;

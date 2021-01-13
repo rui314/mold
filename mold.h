@@ -280,6 +280,7 @@ protected:
 enum RelType : u8 {
   R_NONE,
   R_ABS,
+  R_ABS_DYN,
   R_DYN,
   R_PC,
   R_GOT,
