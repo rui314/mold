@@ -253,22 +253,6 @@ static void bin_sections() {
   });
 }
 
-static void check_errors() {
-  bool has_error = false;
-
-  for (ObjectFile *file : out::objs) {
-    if (file->err_out.tellp()) {
-      std::cerr << file->err_out.str();
-      has_error = true;
-    }
-  }
-
-  if (has_error) {
-    cleanup();
-    _exit(1);
-  }
-}
-
 static void check_duplicate_symbols() {
   Timer t("check_dup_syms");
 
@@ -281,12 +265,12 @@ static void check_duplicate_symbols() {
         !esym.is_abs() && !esym.is_common() && !file->sections[esym.st_shndx];
 
       if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file)
-        file->err_out << "duplicate symbol: " << *file << ": " << *sym.file
-                      << ": " << sym.name << "\n";
+        Error() << "duplicate symbol: " << *file << ": " << *sym.file
+                << ": " << sym.name;
     }
   });
 
-  check_errors();
+  Error::checkpoint();
 }
 
 static void set_isec_offsets() {
@@ -341,9 +325,8 @@ static void scan_rels() {
         isec->scan_relocations();
   });
 
-  // If there was a relocation that refers an undefined symbol,
-  // report an error.
-  check_errors();
+  // Exit if there was a relocation that refers an undefined symbol.
+  Error::checkpoint();
 
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
@@ -668,7 +651,7 @@ MemoryMappedFile *find_library(std::string name,
     if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
       return mb;
   }
-  Error() << "library not found: " << name;
+  Fatal() << "library not found: " << name;
 }
 
 static std::vector<std::string> add_dashes(std::string name) {
@@ -1263,7 +1246,7 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
-    check_errors();
+    Error::checkpoint();
   }
 
   // Zero-clear paddings between sections

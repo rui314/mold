@@ -162,7 +162,7 @@ void InputSection::copy_buf() {
     auto recompile_error = [&]() {
       Error() << *this << ": " << rel_to_string(rel.r_type)
               << " relocation against symbol `" << sym.name
-              << "' can not be used; recompile with -fPIE\n";
+              << "' can not be used; recompile with -fPIE";
     };
 
 #define S   (ref ? ref->piece->get_addr() \
@@ -276,7 +276,7 @@ void InputSection::scan_relocations() {
     Symbol &sym = *file->symbols[rel.r_sym];
 
     if (!sym.file || sym.is_placeholder) {
-      file->err_out << "undefined symbol: " << *file << ": " << sym.name << "\n";
+      Error() << "undefined symbol: " << *file << ": " << sym.name;
       continue;
     }
 
@@ -344,7 +344,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        file->err_out << *this << ": TLSGD reloc not followed by PLT32\n";
+        Error() << *this << ": TLSGD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSGD;
@@ -356,7 +356,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
-        file->err_out << *this << ": TLSLD reloc not followed by PLT32\n";
+        Error() << *this << ": TLSLD reloc not followed by PLT32";
 
       if (sym.is_imported) {
         rel_types[i] = R_TLSLD;
@@ -377,7 +377,7 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOTTPOFF;
       break;
     default:
-      file->err_out << *this << ": unknown relocation: " << rel.r_type;
+      Error() << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }

@@ -81,14 +81,30 @@ inline Config config;
 
 void cleanup();
 
-class Error {
+class SyncOut {
 public:
-  [[noreturn]] ~Error() {
+  SyncOut(std::ostream &out = std::cout) : out(out) {}
+
+  ~SyncOut() {
     static std::mutex mu;
     std::lock_guard lock(mu);
-    std::cerr << out.str() << "\n" << std::flush;
-    cleanup();
-    _exit(1);
+    out << ss.str() << "\n";
+  }
+
+  template <class T> SyncOut &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+};
+
+class Error {
+public:
+  Error() {
+    has_error = true;
   }
 
   template <class T> Error &operator<<(T &&val) {
@@ -96,29 +112,37 @@ public:
     return *this;
   }
 
-private:
-  std::stringstream out;
-};
-
-class SyncOut {
-public:
-  ~SyncOut() {
-    static std::mutex mu;
-    std::lock_guard lock(mu);
-    std::cout << out.str() << "\n";
+  static void checkpoint() {
+    if (!has_error)
+      return;
+    cleanup();
+    _exit(1);
   }
 
-  template <class T> SyncOut &operator<<(T &&val) {
+private:
+  static inline std::atomic_bool has_error = false;
+  SyncOut out{std::cerr};
+};
+
+class Fatal {
+public:
+  [[noreturn]] ~Fatal() {
+    out.~SyncOut();
+    cleanup();
+    _exit(1);
+  }
+
+  template <class T> Fatal &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
 
 private:
-  std::stringstream out;
+  SyncOut out{std::cerr};
 };
 
 #define unreachable() \
-  Error() << "internal error at " << __FILE__ << ":" << __LINE__
+  Fatal() << "internal error at " << __FILE__ << ":" << __LINE__
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
@@ -748,7 +772,6 @@ public:
   std::span<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive = false;
-  std::ostringstream err_out;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;

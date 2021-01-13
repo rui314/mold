@@ -82,7 +82,7 @@ static MemoryMappedFile *resolve_path(std::string str) {
     if (MemoryMappedFile *mb = MemoryMappedFile::open(root + std::string(dir) + "/" + str))
       return mb;
   }
-  Error() << "library not found: " << str;
+  Fatal() << "library not found: " << str;
 }
 
 static std::span<std::string_view>

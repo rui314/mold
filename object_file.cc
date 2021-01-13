@@ -19,7 +19,7 @@ MemoryMappedFile *MemoryMappedFile::open(std::string path) {
 MemoryMappedFile *MemoryMappedFile::must_open(std::string path) {
   if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
     return mb;
-  Error() << "cannot open " << path;
+  Fatal() << "cannot open " << path;
 }
 
 u8 *MemoryMappedFile::data() {
@@ -32,11 +32,11 @@ u8 *MemoryMappedFile::data() {
 
   int fd = ::open(name.c_str(), O_RDONLY);
   if (fd == -1)
-    Error() << name << ": cannot open: " << strerror(errno);
+    Fatal() << name << ": cannot open: " << strerror(errno);
 
   data_ = (u8 *)mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
   if (data_ == MAP_FAILED)
-    Error() << name << ": mmap failed: " << strerror(errno);
+    Fatal() << name << ": mmap failed: " << strerror(errno);
   close(fd);
   return data_;
 }
@@ -49,9 +49,9 @@ MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start, u64 size)
 
 InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
   if (mb->size() < sizeof(ElfEhdr))
-    Error() << *this << ": file too small";
+    Fatal() << *this << ": file too small";
   if (memcmp(mb->data(), "\177ELF", 4))
-    Error() << *this << ": not an ELF file";
+    Fatal() << *this << ": not an ELF file";
 
   ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
   is_dso = (ehdr.e_type == ET_DYN);
@@ -59,7 +59,7 @@ InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
   u8 *sh_begin = mb->data() + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
   if (mb->data() + mb->size() < sh_end)
-    Error() << *this << ": e_shoff or e_shnum corrupted: "
+    Fatal() << *this << ": e_shoff or e_shnum corrupted: "
             << mb->size() << " " << ehdr.e_shnum;
   elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
   shstrtab = get_string(ehdr.e_shstrndx);
@@ -69,13 +69,13 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) {
   u8 *begin = mb->data() + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb->data() + mb->size() < end)
-    Error() << *this << ": shdr corrupted";
+    Fatal() << *this << ": shdr corrupted";
   return {(char *)begin, (char *)end};
 }
 
 std::string_view InputFile::get_string(u32 idx) {
   if (elf_sections.size() <= idx)
-    Error() << *this << ": invalid section index";
+    Fatal() << *this << ": invalid section index";
   return get_string(elf_sections[idx]);
 }
 
@@ -83,14 +83,14 @@ template<typename T>
 std::span<T> InputFile::get_data(const ElfShdr &shdr) {
   std::string_view view = get_string(shdr);
   if (view.size() % sizeof(T))
-    Error() << *this << ": corrupted section";
+    Fatal() << *this << ": corrupted section";
   return {(T *)view.data(), view.size() / sizeof(T)};
 }
 
 template<typename T>
 std::span<T> InputFile::get_data(u32 idx) {
   if (elf_sections.size() <= idx)
-    Error() << *this << ": invalid section index";
+    Fatal() << *this << ": invalid section index";
   return get_data<T>(elf_sections[idx]);
 }
 
@@ -119,7 +119,7 @@ void ObjectFile::initialize_sections() {
     case SHT_GROUP: {
       // Get the signature of this section group.
       if (shdr.sh_info >= elf_syms.size())
-        Error() << *this << ": invalid symbol index";
+        Fatal() << *this << ": invalid symbol index";
       const ElfSym &sym = elf_syms[shdr.sh_info];
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
@@ -127,11 +127,11 @@ void ObjectFile::initialize_sections() {
       std::span<u32> entries = get_data<u32>(shdr);
 
       if (entries.empty())
-        Error() << *this << ": empty SHT_GROUP";
+        Fatal() << *this << ": empty SHT_GROUP";
       if (entries[0] == 0)
         continue;
       if (entries[0] != GRP_COMDAT)
-        Error() << *this << ": unsupported SHT_GROUP format";
+        Fatal() << *this << ": unsupported SHT_GROUP format";
 
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
@@ -142,7 +142,7 @@ void ObjectFile::initialize_sections() {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      Error() << *this << ": SHT_SYMTAB_SHNDX section is not supported";
+      Fatal() << *this << ": SHT_SYMTAB_SHNDX section is not supported";
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -167,7 +167,7 @@ void ObjectFile::initialize_sections() {
       continue;
 
     if (shdr.sh_info >= sections.size())
-      Error() << *this << ": invalid relocated section index: "
+      Fatal() << *this << ": invalid relocated section index: "
               << (u32)shdr.sh_info;
 
     if (InputSection *target = sections[shdr.sh_info]) {
@@ -218,7 +218,7 @@ void ObjectFile::initialize_symbols() {
 
     if (!esym.is_abs()) {
       if (esym.is_common())
-        Error() << *this << ": common local symbol?";
+        Fatal() << *this << ": common local symbol?";
       sym.input_section = sections[esym.st_shndx];
     }
 
@@ -302,7 +302,7 @@ void ObjectFile::initialize_mergeable_sections() {
       u32 offset = esym.st_value + rel.r_addend;
       int idx = binary_search(m->piece_offsets, offset);
       if (idx == -1)
-        Error() << *this << ": bad relocation at " << rel.r_sym;
+        Fatal() << *this << ": bad relocation at " << rel.r_sym;
 
       StringPieceRef ref{m->pieces[idx], (i32)(offset - m->piece_offsets[idx])};
       isec->rel_pieces.push_back(ref);
@@ -322,7 +322,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
     int idx = binary_search(m->piece_offsets, esym.st_value);
     if (idx == -1)
-      Error() << *this << ": bad symbol value";
+      Fatal() << *this << ": bad symbol value";
 
     if (i < first_global) {
       symbols[i]->piece_ref.piece = m->pieces[idx];
