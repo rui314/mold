@@ -169,13 +169,10 @@ void InputSection::copy_buf() {
     switch (rel_types[i]) {
     case R_NONE:
       break;
-    case R_ZERO:
-      write(0);
-      break;
     case R_ABS:
       write(S + A);
 
-      if (config.pie) {
+      if (config.pie && sym.is_relative()) {
         memset(dynrel, 0, sizeof(*dynrel));
         dynrel->r_offset = P;
         dynrel->r_type = R_X86_64_RELATIVE;
@@ -292,15 +289,13 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_ABS;
       break;
     case R_X86_64_64:
-      if (sym.is_undef_weak) {
-        rel_types[i] = R_ZERO;
-      } else if (sym.is_imported) {
+      if (sym.is_imported) {
         rel_types[i] = R_DYN;
         sym.flags |= NEEDS_DYNSYM;
         file->num_dynrel++;
       } else {
         rel_types[i] = R_ABS;
-        if (config.pie)
+        if (config.pie && sym.is_relative())
           file->num_dynrel++;
       }
       break;
