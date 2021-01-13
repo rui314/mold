@@ -176,7 +176,6 @@ void InputSection::copy_buf() {
              : (sym.plt_idx == -1 ? sym.get_addr() : sym.get_plt_addr()))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define L   sym.get_plt_addr()
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
 #define GOT out::got->shdr.sh_addr
 
@@ -204,9 +203,6 @@ void InputSection::copy_buf() {
       break;
     case R_GOTPCREL:
       write(G + GOT + A - P);
-      break;
-    case R_PLT:
-      write(L + A - P);
       break;
     case R_TLSGD:
       write(sym.get_tlsgd_addr() + A - P);
@@ -248,7 +244,6 @@ void InputSection::copy_buf() {
 #undef S
 #undef A
 #undef P
-#undef L
 #undef G
 #undef GOT
   }
@@ -327,12 +322,9 @@ void InputSection::scan_relocations() {
       sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
-      if (sym.is_imported || sym.st_type == STT_GNU_IFUNC) {
-        rel_types[i] = R_PLT;
+      rel_types[i] = R_PC;
+      if (sym.is_imported || sym.st_type == STT_GNU_IFUNC)
         sym.flags |= NEEDS_PLT;
-      } else {
-        rel_types[i] = R_PC;
-      }
       break;
     case R_X86_64_TLSGD:
       if (rels[i + 1].r_type != R_X86_64_PLT32)
