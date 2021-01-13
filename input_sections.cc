@@ -291,7 +291,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S:
       rel_types[i] = R_ABS;
-      if (config.pie && sym.is_imported)
+      if (sym.is_imported)
         sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
       break;
     case R_X86_64_64:
