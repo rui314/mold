@@ -148,6 +148,7 @@ void InputSection::copy_buf() {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
+    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
 
     const StringPieceRef *ref = nullptr;
     if (has_rel_piece[i])
@@ -156,6 +157,12 @@ void InputSection::copy_buf() {
     auto write = [&](u64 val) {
       overflow_check(this, sym, rel.r_type, loc, val);
       write_val(rel.r_type, loc, val);
+    };
+
+    auto recompile_error = [&]() {
+      Error() << *this << ": " << rel_to_string(rel.r_type)
+              << " relocation against symbol `" << sym.name
+              << "' can not be used; recompile with -fPIE\n";
     };
 
 #define S   (ref ? ref->piece->get_addr() \
@@ -173,6 +180,8 @@ void InputSection::copy_buf() {
       write(S + A);
 
       if (config.pie && sym.is_relative()) {
+        if (is_readonly)
+          recompile_error();
         memset(dynrel, 0, sizeof(*dynrel));
         dynrel->r_offset = P;
         dynrel->r_type = R_X86_64_RELATIVE;
@@ -181,6 +190,8 @@ void InputSection::copy_buf() {
       }
       break;
     case R_DYN:
+      if (is_readonly)
+        recompile_error();
       memset(dynrel, 0, sizeof(*dynrel));
       dynrel->r_offset = P;
       dynrel->r_type = R_X86_64_64;
@@ -267,13 +278,6 @@ void InputSection::scan_relocations() {
       continue;
     }
 
-    auto recompile_error = [&]() {
-      file->err_out << *this << ": " << rel_to_string(rel.r_type)
-                    << " relocation against symbol `" << sym.name
-                    << "' can not be used; recompile with -fPIE\n";
-    };
-
-    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
     bool is_code = !(sym.st_type == STT_OBJECT);
 
     switch (rel.r_type) {
@@ -284,8 +288,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      if (config.pie || sym.is_imported)
-        recompile_error();
+      if (config.pie && sym.is_imported)
+        sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
       rel_types[i] = R_ABS;
       break;
     case R_X86_64_64:
