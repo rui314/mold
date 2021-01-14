@@ -169,40 +169,37 @@ void RelDynSection::update_shdr() {
 void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
-  auto write = [&](Symbol *sym, u8 type, u64 offset) {
-    memset(rel, 0, sizeof(ElfRela));
-    rel->r_sym = sym->dynsym_idx;
+  auto write = [&](u8 type, Symbol *sym, u64 offset, i64 addend = 0) {
+    memset(rel, 0, sizeof(*rel));
     rel->r_type = type;
+    if (sym)
+      rel->r_sym = sym->dynsym_idx;
     rel->r_offset = offset;
+    rel->r_addend = addend;
     rel++;
   };
 
   for (Symbol *sym : out::got->got_syms) {
-    if (sym->is_imported) {
-      write(sym, R_X86_64_GLOB_DAT, sym->get_got_addr());
-    } else if (config.pie && sym->is_relative()) {
-      memset(rel, 0, sizeof(ElfRela));
-      rel->r_type = R_X86_64_RELATIVE;
-      rel->r_offset = sym->get_got_addr();
-      rel->r_addend = sym->get_addr();
-      rel++;
-    }
+    if (sym->is_imported)
+      write(R_X86_64_GLOB_DAT, sym, sym->get_got_addr());
+    else if (config.pie && sym->is_relative())
+      write(R_X86_64_RELATIVE, nullptr, sym->get_got_addr(), sym->get_addr());
   }
 
   for (Symbol *sym : out::got->tlsgd_syms) {
-    write(sym, R_X86_64_DTPMOD64, sym->get_tlsgd_addr());
-    write(sym, R_X86_64_DTPOFF64, sym->get_tlsgd_addr() + GOT_SIZE);
+    write(R_X86_64_DTPMOD64, sym, sym->get_tlsgd_addr());
+    write(R_X86_64_DTPOFF64, sym, sym->get_tlsgd_addr() + GOT_SIZE);
   }
 
   for (Symbol *sym : out::got->tlsld_syms)
-    write(sym, R_X86_64_DTPMOD64, sym->get_tlsld_addr());
+    write(R_X86_64_DTPMOD64, nullptr, sym->get_tlsld_addr());
 
   for (Symbol *sym : out::got->gottpoff_syms)
     if (sym->is_imported)
-      write(sym, R_X86_64_TPOFF32, sym->get_gottpoff_addr());
+      write(R_X86_64_TPOFF32, sym, sym->get_gottpoff_addr());
 
   for (Symbol *sym : out::copyrel->symbols)
-    write(sym, R_X86_64_COPY, sym->get_addr());
+    write(R_X86_64_COPY, sym, sym->get_addr());
 }
 
 void StrtabSection::update_shdr() {
@@ -466,6 +463,9 @@ void GotSection::copy_buf() {
   for (Symbol *sym : got_syms)
     if (!sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
+
+  for (Symbol *sym : tlsld_syms)
+    buf[sym->tlsld_idx + 1] = out::tls_end - out::tls_begin;
 
   for (Symbol *sym : gottpoff_syms)
     if (!sym->is_imported)
