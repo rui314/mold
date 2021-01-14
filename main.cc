@@ -1230,8 +1230,8 @@ int main(int argc, char **argv) {
   // that symbol addresses including their GOT/PLT/etc addresses have
   // a correct final value.
 
-  // Some types of relocations for TLS symbols need the ending address
-  // of the TLS section. Find it out now.
+  // Some types of relocations for TLS symbols need the TLS segment
+  // address. Find it out now.
   for (ElfPhdr phdr : create_phdr()) {
     if (phdr.p_type == PT_TLS) {
       out::tls_begin = phdr.p_vaddr;
