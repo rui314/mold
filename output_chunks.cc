@@ -156,7 +156,6 @@ void RelDynSection::update_shdr() {
 
   n += out::got->tlsgd_syms.size() * 2;
   n += out::got->tlsld_syms.size();
-  n += out::got->tlsld_syms.size();
   n += out::copyrel->symbols.size();
 
   for (ObjectFile *file : out::objs) {
