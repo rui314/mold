@@ -260,7 +260,6 @@ public:
   u32 gottpoff_idx = -1;
   u32 tlsgd_idx = -1;
   u32 plt_idx = -1;
-  u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
   u32 copyrel_offset = -1;
   u16 shndx = 0;
@@ -277,6 +276,7 @@ public:
   u8 is_undef_weak : 1 = false;
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
+  u8 has_relplt : 1 = false;
 };
 
 //
