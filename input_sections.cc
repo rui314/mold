@@ -340,14 +340,16 @@ void InputSection::scan_relocations() {
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
+      if (sym.is_imported)
+        Error() << *this << ": TLSLD reloc refers external symbol " << sym.name;
 
-      if (sym.is_imported || !config.relax) {
+      if (config.relax) {
+        rel_types[i] = R_TLSLD_RELAX_LE;
+        i++;
+      } else {
         sym.flags |= NEEDS_TLSLD;
         sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_TLSLD;
-      } else {
-        rel_types[i] = R_TLSLD_RELAX_LE;
-        i++;
       }
       break;
     case R_X86_64_TPOFF32:
