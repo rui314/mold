@@ -229,13 +229,13 @@ total. The data contains the following items:
 | Public undefined symbols | 1,428,149
 | Mergeable strings        | 1,579,996
 | Comdat groups            | 9,914,510
-| Regular sections (*1)    | 10,345,314
+| Regular sections¹        | 10,345,314
 | Public defined symbols   | 10,512,135
 | Symbols                  | 23,953,607
 | Sections                 | 27,543,225
 | Relocations against SHF_ALLOC sections | 39,496,375
 | Relocations              | 62,024,719
 
-(*1) Sections that have to be copied from input object files to an
+¹ Sections that have to be copied from input object files to an
 output file. Sections that contain relocations or symbols are for
 example excluded.
