@@ -368,8 +368,8 @@ static void scan_rels() {
       for (Symbol *alias : ((SharedFile *)sym->file)->find_aliases(sym)) {
         if (sym == alias)
           continue;
-        assert(alias->copyrel_offset == -1);
-        alias->copyrel_offset = sym->copyrel_offset;
+        alias->has_copyrel = true;
+        alias->value = sym->value;
         out::dynsym->add_symbol(alias);
       }
     }

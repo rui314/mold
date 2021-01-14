@@ -261,7 +261,6 @@ public:
   u32 tlsgd_idx = -1;
   u32 plt_idx = -1;
   u32 dynsym_idx = -1;
-  u32 copyrel_offset = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;
 
@@ -277,6 +276,7 @@ public:
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_relplt : 1 = false;
+  u8 has_copyrel : 1 = false;
 };
 
 //
@@ -1037,8 +1037,8 @@ inline u64 Symbol::get_addr() const {
   if (piece_ref.piece)
     return piece_ref.piece->get_addr() + piece_ref.addend;
 
-  if (copyrel_offset != -1)
-    return out::copyrel->shdr.sh_addr + copyrel_offset;
+  if (has_copyrel)
+    return out::copyrel->shdr.sh_addr + value;
 
   if (input_section) {
     if (!input_section->is_alive) {

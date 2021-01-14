@@ -600,7 +600,7 @@ void DynsymSection::copy_buf() {
     esym.st_bind = sym.esym->st_bind;
     esym.st_size = sym.esym->st_size;
 
-    if (sym.copyrel_offset != -1) {
+    if (sym.has_copyrel) {
       esym.st_shndx = out::copyrel->shndx;
       esym.st_value = sym.get_addr();
     } else if (sym.is_imported || sym.esym->is_undef()) {
@@ -685,11 +685,12 @@ void MergedSection::copy_buf() {
 
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(sym->is_imported);
-  if (sym->copyrel_offset != -1)
+  if (sym->has_copyrel)
     return;
 
   shdr.sh_size = align_to(shdr.sh_size, shdr.sh_addralign);
-  sym->copyrel_offset = shdr.sh_size;
+  sym->value = shdr.sh_size;
+  sym->has_copyrel = true;
   shdr.sh_size += sym->esym->st_size;
   symbols.push_back(sym);
   out::dynsym->add_symbol(sym);
