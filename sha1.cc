@@ -17,7 +17,7 @@ void SHA1::get_result(u8 digest[hash_size]) {
   }
 
   for (int i = 0; i < hash_size; i++)
-    digest[i] = hash[i >> 2] >> 8 * (3 - (i & 3));
+    digest[i] = hash[i >> 2] >> (8 * (3 - (i & 3)));
 }
 
 void SHA1::update(const u8 *buf, u32 len) {
@@ -75,7 +75,7 @@ void SHA1::process_message_block() {
   }
 
   for (int t = 40; t < 60; t++) {
-    u32 tmp = circular_shift(5,a) + ((b & c) | (b & d) | (c & d)) + e + w[t] + k[2];
+    u32 tmp = circular_shift(5, a) + ((b & c) | (b & d) | (c & d)) + e + w[t] + k[2];
     e = d;
     d = c;
     c = circular_shift(30, b);

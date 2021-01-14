@@ -159,11 +159,6 @@ void InputSection::copy_buf() {
     };
 
     auto write_dynrel = [&](u64 offset, u32 type, u32 symidx, i64 addend) {
-      if (!(shdr.sh_flags & SHF_WRITE))
-        Error() << *this << ": " << rel_to_string(rel.r_type)
-                << " relocation against symbol `" << sym.name
-                << "' can not be used; recompile with -fPIE";
-
       memset(dynrel, 0, sizeof(*dynrel));
       dynrel->r_offset = offset;
       dynrel->r_type = type;
@@ -261,13 +256,19 @@ void InputSection::scan_relocations() {
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
+    bool is_code = !(sym.st_type == STT_OBJECT);
 
     if (!sym.file || sym.is_placeholder) {
       Error() << "undefined symbol: " << *file << ": " << sym.name;
       continue;
     }
 
-    bool is_code = !(sym.st_type == STT_OBJECT);
+    auto dynrel_check = [&]() {
+      if (!(shdr.sh_flags & SHF_WRITE))
+        Error() << *this << ": " << rel_to_string(rel.r_type)
+                << " relocation against symbol `" << sym.name
+                << "' can not be used; recompile with -fPIE";
+    };
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
@@ -277,74 +278,76 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      rel_types[i] = R_ABS;
       if (sym.is_imported)
         sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
+      rel_types[i] = R_ABS;
       break;
     case R_X86_64_64:
       if (config.pie) {
         if (sym.is_imported) {
-          rel_types[i] = R_DYN;
+          dynrel_check();
           sym.flags |= NEEDS_DYNSYM;
+          rel_types[i] = R_DYN;
           file->num_dynrel++;
         } else if (sym.is_relative()) {
+          dynrel_check();
           rel_types[i] = R_ABS_DYN;
           file->num_dynrel++;
         } else {
           rel_types[i] = R_ABS;
         }
       } else {
-        rel_types[i] = R_ABS;
         if (sym.is_imported)
           sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
+        rel_types[i] = R_ABS;
       }
       break;
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      rel_types[i] = R_PC;
       if (sym.is_imported)
         sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
+      rel_types[i] = R_PC;
       break;
     case R_X86_64_GOT32:
-      rel_types[i] = R_GOT;
       sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOT;
       break;
     case R_X86_64_GOTPC32:
-      rel_types[i] = R_GOTPC;
       sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOTPC;
       break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
-      rel_types[i] = R_GOTPCREL;
       sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOTPCREL;
       break;
     case R_X86_64_PLT32:
-      rel_types[i] = R_PC;
       if (sym.is_imported || sym.st_type == STT_GNU_IFUNC)
         sym.flags |= NEEDS_PLT;
+      rel_types[i] = R_PC;
       break;
     case R_X86_64_TLSGD:
-      if (rels[i + 1].r_type != R_X86_64_PLT32)
+      if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSGD reloc not followed by PLT32";
 
       if (sym.is_imported) {
-        rel_types[i] = R_TLSGD;
         sym.flags |= NEEDS_TLSGD;
+        rel_types[i] = R_TLSGD;
       } else {
         rel_types[i] = R_TLSGD_RELAX_LE;
         i++;
       }
       break;
     case R_X86_64_TLSLD:
-      if (rels[i + 1].r_type != R_X86_64_PLT32)
+      if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
 
       if (sym.is_imported) {
-        rel_types[i] = R_TLSLD;
         sym.flags |= NEEDS_TLSLD;
+        rel_types[i] = R_TLSLD;
       } else {
         rel_types[i] = R_TLSLD_RELAX_LE;
         i++;
@@ -357,8 +360,8 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      rel_types[i] = R_GOTTPOFF;
       sym.flags |= NEEDS_GOTTPOFF;
+      rel_types[i] = R_GOTTPOFF;
       break;
     default:
       Error() << *this << ": unknown relocation: " << rel.r_type;
