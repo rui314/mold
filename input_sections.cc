@@ -205,7 +205,7 @@ void InputSection::copy_buf() {
       break;
     }
     case R_TLSLD:
-      write(sym.get_tlsld_addr() + A - P);
+      write(out::got->get_tlsld_addr() + A - P);
       break;
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
@@ -351,7 +351,6 @@ void InputSection::scan_relocations() {
         i++;
       } else {
         sym.flags |= NEEDS_TLSLD;
-        sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_TLSLD;
       }
       break;

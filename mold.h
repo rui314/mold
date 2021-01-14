@@ -240,7 +240,6 @@ public:
   inline u64 get_gotplt_addr() const;
   inline u64 get_gottpoff_addr() const;
   inline u64 get_tlsgd_addr() const;
-  inline u64 get_tlsld_addr() const;
   inline u64 get_plt_addr() const;
 
   bool is_absolute() const;
@@ -260,7 +259,6 @@ public:
   u32 gotplt_idx = -1;
   u32 gottpoff_idx = -1;
   u32 tlsgd_idx = -1;
-  u32 tlsld_idx = -1;
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
@@ -447,13 +445,19 @@ public:
   void add_got_symbol(Symbol *sym);
   void add_gottpoff_symbol(Symbol *sym);
   void add_tlsgd_symbol(Symbol *sym);
-  void add_tlsld_symbol(Symbol *sym);
+  void add_tlsld();
+
+  u64 get_tlsld_addr() const {
+    assert(tlsld_idx != -1);
+    return shdr.sh_addr + tlsld_idx * GOT_SIZE;
+  }
+
   void copy_buf() override;
 
   std::vector<Symbol *> got_syms;
   std::vector<Symbol *> gottpoff_syms;
   std::vector<Symbol *> tlsgd_syms;
-  std::vector<Symbol *> tlsld_syms;
+  u32 tlsld_idx = -1;
 };
 
 class GotPltSection : public OutputChunk {
@@ -1073,11 +1077,6 @@ inline u64 Symbol::get_gottpoff_addr() const {
 inline u64 Symbol::get_tlsgd_addr() const {
   assert(tlsgd_idx != -1);
   return out::got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
-}
-
-inline u64 Symbol::get_tlsld_addr() const {
-  assert(tlsld_idx != -1);
-  return out::got->shdr.sh_addr + tlsld_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_plt_addr() const {

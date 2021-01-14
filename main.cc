@@ -359,7 +359,7 @@ static void scan_rels() {
       out::got->add_tlsgd_symbol(sym);
 
     if (sym->flags & NEEDS_TLSLD)
-      out::got->add_tlsld_symbol(sym);
+      out::got->add_tlsld();
 
     if (sym->flags & NEEDS_COPYREL) {
       out::copyrel->add_symbol(sym);

@@ -155,8 +155,10 @@ void RelDynSection::update_shdr() {
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
-  n += out::got->tlsld_syms.size();
   n += out::copyrel->symbols.size();
+
+  if (out::got->tlsld_idx != -1)
+    n++;
 
   for (ObjectFile *file : out::objs) {
     file->reldyn_offset = n * sizeof(ElfRela);
@@ -181,8 +183,8 @@ void RelDynSection::copy_buf() {
     *rel++ = {sym->get_tlsgd_addr() + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
   }
 
-  for (Symbol *sym : out::got->tlsld_syms)
-    *rel++ = {sym->get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
+  if (out::got->tlsld_idx != -1)
+    *rel++ = {out::got->get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
 
   for (Symbol *sym : out::got->gottpoff_syms)
     if (sym->is_imported)
@@ -439,11 +441,11 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
   tlsgd_syms.push_back(sym);
 }
 
-void GotSection::add_tlsld_symbol(Symbol *sym) {
-  assert(sym->tlsld_idx == -1);
-  sym->tlsld_idx = shdr.sh_size / GOT_SIZE;
+void GotSection::add_tlsld() {
+  if (tlsld_idx != -1)
+    return;
+  tlsld_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
-  tlsld_syms.push_back(sym);
 }
 
 void GotSection::copy_buf() {
