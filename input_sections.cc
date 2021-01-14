@@ -158,15 +158,6 @@ void InputSection::copy_buf() {
       write_val(rel.r_type, loc, val);
     };
 
-    auto write_dynrel = [&](u64 offset, u32 type, u32 symidx, i64 addend) {
-      memset(dynrel, 0, sizeof(*dynrel));
-      dynrel->r_offset = offset;
-      dynrel->r_type = type;
-      dynrel->r_sym = symidx;
-      dynrel->r_addend = addend;
-      dynrel++;
-    };
-
 #define S   (ref ? ref->piece->get_addr() \
              : (sym.plt_idx == -1 ? sym.get_addr() : sym.get_plt_addr()))
 #define A   (ref ? ref->addend : rel.r_addend)
@@ -182,10 +173,19 @@ void InputSection::copy_buf() {
       break;
     case R_ABS_DYN:
       write(S + A);
-      write_dynrel(P, R_X86_64_RELATIVE, 0, S + A);
+      memset(dynrel, 0, sizeof(*dynrel));
+      dynrel->r_offset = P;
+      dynrel->r_type = R_X86_64_RELATIVE;
+      dynrel->r_addend = S + A;
+      dynrel++;
       break;
     case R_DYN:
-      write_dynrel(P, R_X86_64_64, sym.dynsym_idx, A);
+      memset(dynrel, 0, sizeof(*dynrel));
+      dynrel->r_offset = P;
+      dynrel->r_type = R_X86_64_64;
+      dynrel->r_sym = sym.dynsym_idx;
+      dynrel->r_addend = A;
+      dynrel++;
       break;
     case R_PC:
       write(S + A - P);
@@ -256,6 +256,7 @@ void InputSection::scan_relocations() {
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
+    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
     bool is_code = !(sym.st_type == STT_OBJECT);
 
     if (!sym.file || sym.is_placeholder) {
@@ -263,11 +264,10 @@ void InputSection::scan_relocations() {
       continue;
     }
 
-    auto dynrel_check = [&]() {
-      if (!(shdr.sh_flags & SHF_WRITE))
-        Error() << *this << ": " << rel_to_string(rel.r_type)
-                << " relocation against symbol `" << sym.name
-                << "' can not be used; recompile with -fPIE";
+    auto report_error = [&]() {
+      Error() << *this << ": " << rel_to_string(rel.r_type)
+              << " relocation against symbol `" << sym.name
+              << "' can not be used; recompile with -fPIE";
     };
 
     switch (rel.r_type) {
@@ -278,6 +278,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
+      if (config.pie && sym.is_relative())
+        report_error();
       if (sym.is_imported)
         sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
       rel_types[i] = R_ABS;
@@ -285,12 +287,14 @@ void InputSection::scan_relocations() {
     case R_X86_64_64:
       if (config.pie) {
         if (sym.is_imported) {
-          dynrel_check();
+          if (is_readonly)
+            report_error();
           sym.flags |= NEEDS_DYNSYM;
           rel_types[i] = R_DYN;
           file->num_dynrel++;
         } else if (sym.is_relative()) {
-          dynrel_check();
+          if (is_readonly)
+            report_error();
           rel_types[i] = R_ABS_DYN;
           file->num_dynrel++;
         } else {
