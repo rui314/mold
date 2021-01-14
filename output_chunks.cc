@@ -454,9 +454,6 @@ void GotSection::copy_buf() {
     if (!sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
 
-  for (Symbol *sym : tlsld_syms)
-    buf[sym->tlsld_idx + 1] = out::tls_end - out::tls_begin;
-
   for (Symbol *sym : gottpoff_syms)
     if (!sym->is_imported)
       buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;

@@ -315,6 +315,7 @@ enum RelType : u8 {
   R_TLSGD_RELAX_LE,
   R_TLSLD,
   R_TLSLD_RELAX_LE,
+  R_DTPOFF,
   R_TPOFF,
   R_GOTTPOFF,
 };
