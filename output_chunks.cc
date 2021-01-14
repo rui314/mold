@@ -169,37 +169,37 @@ void RelDynSection::update_shdr() {
 void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
-  auto write = [&](u8 type, Symbol *sym, u64 offset, i64 addend = 0) {
+  auto write = [&](u64 offset, u8 type, Symbol *sym, i64 addend = 0) {
     memset(rel, 0, sizeof(*rel));
+    rel->r_offset = offset;
     rel->r_type = type;
     if (sym)
       rel->r_sym = sym->dynsym_idx;
-    rel->r_offset = offset;
     rel->r_addend = addend;
     rel++;
   };
 
   for (Symbol *sym : out::got->got_syms) {
     if (sym->is_imported)
-      write(R_X86_64_GLOB_DAT, sym, sym->get_got_addr());
+      write(sym->get_got_addr(), R_X86_64_GLOB_DAT, sym);
     else if (config.pie && sym->is_relative())
-      write(R_X86_64_RELATIVE, nullptr, sym->get_got_addr(), sym->get_addr());
+      write(sym->get_got_addr(), R_X86_64_RELATIVE, nullptr, sym->get_addr());
   }
 
   for (Symbol *sym : out::got->tlsgd_syms) {
-    write(R_X86_64_DTPMOD64, sym, sym->get_tlsgd_addr());
-    write(R_X86_64_DTPOFF64, sym, sym->get_tlsgd_addr() + GOT_SIZE);
+    write(sym->get_tlsgd_addr(), R_X86_64_DTPMOD64, sym);
+    write(sym->get_tlsgd_addr() + GOT_SIZE, R_X86_64_DTPOFF64, sym);
   }
 
   for (Symbol *sym : out::got->tlsld_syms)
-    write(R_X86_64_DTPMOD64, nullptr, sym->get_tlsld_addr());
+    write(sym->get_tlsld_addr(), R_X86_64_DTPMOD64, nullptr);
 
   for (Symbol *sym : out::got->gottpoff_syms)
     if (sym->is_imported)
-      write(R_X86_64_TPOFF32, sym, sym->get_gottpoff_addr());
+      write(sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym);
 
   for (Symbol *sym : out::copyrel->symbols)
-    write(R_X86_64_COPY, sym, sym->get_addr());
+    write(sym->get_addr(), R_X86_64_COPY, sym);
 }
 
 void StrtabSection::update_shdr() {
