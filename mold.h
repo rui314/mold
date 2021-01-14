@@ -262,7 +262,6 @@ public:
   u32 plt_idx = -1;
   u32 relplt_idx = -1;
   u32 dynsym_idx = -1;
-  u32 dynstr_offset = -1;
   u32 copyrel_offset = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;
@@ -604,6 +603,7 @@ public:
   void copy_buf() override;
 
   std::vector<Symbol *> symbols;
+  std::vector<u32> name_indices;
 };
 
 class HashSection : public OutputChunk {

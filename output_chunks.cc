@@ -559,8 +559,8 @@ void DynsymSection::add_symbol(Symbol *sym) {
   if (sym->dynsym_idx != -1)
     return;
   sym->dynsym_idx = -2;
-  sym->dynstr_offset = out::dynstr->add_string(sym->name);
   symbols.push_back(sym);
+  name_indices.push_back(out::dynstr->add_string(sym->name));
 }
 
 void DynsymSection::sort_symbols() {
@@ -586,28 +586,30 @@ void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
 
-  for (Symbol *sym : symbols) {
-    auto &esym = *(ElfSym *)(base + sym->dynsym_idx * sizeof(ElfSym));
-    memset(&esym, 0, sizeof(esym));
-    esym.st_name = sym->dynstr_offset;
-    esym.st_type = sym->st_type;
-    esym.st_bind = sym->esym->st_bind;
-    esym.st_size = sym->esym->st_size;
+  for (int i = 0; i < symbols.size(); i++) {
+    Symbol &sym = *symbols[i];
 
-    if (sym->copyrel_offset != -1) {
+    ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
+    memset(&esym, 0, sizeof(esym));
+    esym.st_name = name_indices[i];
+    esym.st_type = sym.st_type;
+    esym.st_bind = sym.esym->st_bind;
+    esym.st_size = sym.esym->st_size;
+
+    if (sym.copyrel_offset != -1) {
       esym.st_shndx = out::copyrel->shndx;
-      esym.st_value = sym->get_addr();
-    } else if (sym->is_imported || sym->esym->is_undef()) {
+      esym.st_value = sym.get_addr();
+    } else if (sym.is_imported || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
-    } else if (!sym->input_section) {
+    } else if (!sym.input_section) {
       esym.st_shndx = SHN_ABS;
-      esym.st_value = sym->get_addr();
-    } else if (sym->st_type == STT_TLS) {
-      esym.st_shndx = sym->input_section->output_section->shndx;
-      esym.st_value = sym->get_addr() - out::tls_begin;
+      esym.st_value = sym.get_addr();
+    } else if (sym.st_type == STT_TLS) {
+      esym.st_shndx = sym.input_section->output_section->shndx;
+      esym.st_value = sym.get_addr() - out::tls_begin;
     } else {
-      esym.st_shndx = sym->input_section->output_section->shndx;
-      esym.st_value = sym->get_addr();
+      esym.st_shndx = sym.input_section->output_section->shndx;
+      esym.st_value = sym.get_addr();
     }
   }
 }
