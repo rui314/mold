@@ -591,10 +591,10 @@ public:
     shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
     shdr.sh_size = sizeof(ElfSym);
-    shdr.sh_info = 1;
   }
 
   void add_symbol(Symbol *sym);
+  void sort_symbols();
   void update_shdr() override;
   void copy_buf() override;
 

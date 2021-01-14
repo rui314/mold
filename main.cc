@@ -1196,6 +1196,9 @@ int main(int argc, char **argv) {
   // Put symbols to .dynsym.
   export_dynamic();
 
+  // Sort .dynsym contents.
+  out::dynsym->sort_symbols();
+
   // Fill .gnu.version and .gnu.version_r section contents.
   fill_symbol_versions();
 

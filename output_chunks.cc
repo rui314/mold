@@ -559,9 +559,23 @@ void RelPltSection::copy_buf() {
 void DynsymSection::add_symbol(Symbol *sym) {
   if (sym->dynsym_idx != -1)
     return;
-  sym->dynsym_idx = symbols.size() + 1;
+  sym->dynsym_idx = -2;
   sym->dynstr_offset = out::dynstr->add_string(sym->name);
   symbols.push_back(sym);
+}
+
+void DynsymSection::sort_symbols() {
+  sort(symbols, [](Symbol *a, Symbol *b) {
+    return a->esym->st_bind == STB_LOCAL && b->esym->st_bind != STB_LOCAL;
+  });
+
+  for (int i = 0; i < symbols.size(); i++)
+    symbols[i]->dynsym_idx = i + 1;
+
+  int i = 0;
+  while (i < symbols.size() && symbols[i]->esym->st_bind == STB_LOCAL)
+    i++;
+  shdr.sh_info = i + 1;
 }
 
 void DynsymSection::update_shdr() {
