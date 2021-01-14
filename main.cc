@@ -888,6 +888,10 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.pie = true;
     } else if (read_flag(args, "no-pie")) {
       conf.pie = false;
+    } else if (read_flag(args, "relax")) {
+      conf.relax = true;
+    } else if (read_flag(args, "no-relax")) {
+      conf.relax = false;
     } else if (read_flag(args, "perf")) {
       conf.perf = true;
     } else if (read_z_flag(args, "now")) {
@@ -1228,9 +1232,12 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the ending address
   // of the TLS section. Find it out now.
-  for (ElfPhdr phdr : create_phdr())
-    if (phdr.p_type == PT_TLS)
+  for (ElfPhdr phdr : create_phdr()) {
+    if (phdr.p_type == PT_TLS) {
+      out::tls_begin = phdr.p_vaddr;
       out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+    }
+  }
 
   t_before_copy.stop();
 

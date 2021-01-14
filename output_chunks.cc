@@ -600,6 +600,9 @@ void DynsymSection::copy_buf() {
     } else if (!sym->input_section) {
       esym.st_shndx = SHN_ABS;
       esym.st_value = sym->get_addr();
+    } else if (sym->st_type == STT_TLS) {
+      esym.st_shndx = sym->input_section->output_section->shndx;
+      esym.st_value = sym->get_addr() - out::tls_begin;
     } else {
       esym.st_shndx = sym->input_section->output_section->shndx;
       esym.st_value = sym->get_addr();

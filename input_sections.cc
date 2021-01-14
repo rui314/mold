@@ -337,8 +337,9 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSGD reloc not followed by PLT32";
 
-      if (sym.is_imported) {
+      if (sym.is_imported || !config.relax) {
         sym.flags |= NEEDS_TLSGD;
+        sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_TLSGD;
       } else {
         rel_types[i] = R_TLSGD_RELAX_LE;
@@ -349,8 +350,9 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
 
-      if (sym.is_imported) {
+      if (sym.is_imported || !config.relax) {
         sym.flags |= NEEDS_TLSLD;
+        sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_TLSLD;
       } else {
         rel_types[i] = R_TLSLD_RELAX_LE;

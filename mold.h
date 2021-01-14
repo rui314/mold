@@ -62,6 +62,7 @@ struct Config {
   bool pie = false;
   bool preload = false;
   bool print_map = false;
+  bool relax = true;
   bool stat = false;
   bool strip_all = false;
   bool trace = false;
@@ -998,6 +999,7 @@ inline CopyrelSection *copyrel;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
 
+inline u64 tls_begin;
 inline u64 tls_end;
 
 inline Symbol *__bss_start;
