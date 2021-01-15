@@ -54,6 +54,7 @@ struct Config {
   std::string entry = "_start";
   std::string output;
   std::string rpaths;
+  bool build_id = false;
   bool discard_all = false;
   bool discard_locals = false;
   bool export_dynamic = false;
@@ -687,6 +688,20 @@ public:
   std::vector<u8> contents;
 };
 
+class BuildIdSection : public OutputChunk {
+public:
+  BuildIdSection() : OutputChunk(SYNTHETIC) {
+    name = ".note.gnu.build-id";
+    shdr.sh_type = SHT_NOTE;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 4;
+    shdr.sh_size = 48;
+  }
+
+  void copy_buf() override;
+  void write_buildid(u64 filesize);
+};
+
 bool is_c_identifier(std::string_view name);
 std::vector<ElfPhdr> create_phdr();
 
@@ -980,6 +995,7 @@ inline DynsymSection *dynsym;
 inline CopyrelSection *copyrel;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
+inline BuildIdSection *buildid;
 
 inline u64 tls_begin;
 inline u64 tls_end;

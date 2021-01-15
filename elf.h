@@ -159,6 +159,8 @@ static constexpr u32 DF_STATIC_TLS = 0x10;
 static constexpr u32 DF_1_NOW = 0x00000001;
 static constexpr u32 DF_1_PIE = 0x08000000;
 
+static constexpr u32 NT_GNU_BUILD_ID = 3;
+
 static constexpr u32 R_X86_64_NONE = 0;
 static constexpr u32 R_X86_64_64 = 1;
 static constexpr u32 R_X86_64_PC32 = 2;

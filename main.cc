@@ -745,26 +745,6 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   return false;
 }
 
-static bool read_equal(std::span<std::string_view> &args, std::string_view &arg,
-                       std::string name, std::string default_) {
-  for (std::string opt : add_dashes(name)) {
-    if (args[0] == opt) {
-      arg = default_;
-      args = args.subspan(1);
-      return true;
-    }
-  }
-
-  for (std::string opt : add_dashes(name)) {
-    if (args[0].starts_with(opt + "=")) {
-      arg = args[0].substr(opt.size() + 1);
-      args = args.subspan(1);
-      return true;
-    }
-  }
-  return false;
-}
-
 static u64 parse_hex(std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
     Fatal() << "option -" << opt << ": not a hexadecimal number";
@@ -837,7 +817,7 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
   static std::unordered_set<std::string_view> needs_arg({
     "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
     "trace-symbol", "filler", "sysroot", "thread-count", "z",
-    "hash-style", "m", "build-id", "rpath", "version-script",
+    "hash-style", "m", "rpath", "version-script",
   });
 
   std::vector<std::string_view> vec;
@@ -934,12 +914,15 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.rpaths += arg;
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
+    } else if (read_flag(args, "build-id") || read_flag(args, "build-id=sha256")) {
+      conf.build_id = true;
+    } else if (read_flag(args, "build-id=none")) {
+      conf.build_id = false;
     } else if (read_flag(args, "preload")) {
       conf.preload = true;
     } else if (read_arg(args, arg, "z")) {
     } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
-    } else if (read_equal(args, arg, "build-id", "none")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
@@ -1084,6 +1067,8 @@ int main(int argc, char **argv) {
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
   out::copyrel = new CopyrelSection;
+  if (config.build_id)
+    out::buildid = new BuildIdSection;
 
   if (!config.is_static) {
     out::interp = new InterpSection;
@@ -1109,6 +1094,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::copyrel);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);
+  out::chunks.push_back(out::buildid);
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
   int priority = 2;
@@ -1286,6 +1272,8 @@ int main(int argc, char **argv) {
   clear_padding(filesize);
 
   // Commit
+  if (out::buildid)
+    out::buildid->write_buildid(filesize);
   file->close();
 
   t_copy.stop();

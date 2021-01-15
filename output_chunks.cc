@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <openssl/sha.h>
 #include <shared_mutex>
 
 void OutputEhdr::copy_buf() {
@@ -708,4 +709,33 @@ void VerneedSection::update_shdr() {
 
 void VerneedSection::copy_buf() {
   write_vector(out::buf + shdr.sh_offset, contents);
+}
+
+void BuildIdSection::copy_buf() {
+  u32 *base = (u32 *)(out::buf + shdr.sh_offset);
+  memset(base, 0, shdr.sh_size);
+  base[0] = 4;                // Name size
+  base[1] = 32;               // Hash size
+  base[2] = NT_GNU_BUILD_ID;  // Type
+  memcpy(base + 3, "GNU", 4); // Name string
+}
+
+static void compute_treehash(u8 *buf, u64 filesize, u8 *digest) {
+}
+
+void BuildIdSection::write_buildid(u64 filesize) {
+  Timer t("build_id");
+
+  int chunk_size = 1024 * 1024;
+  int num_shards = filesize / chunk_size + 1;
+  u8 shards[num_shards][32];
+
+  tbb::parallel_for(0, num_shards, [&](int i) {
+    if (i == num_shards - 1)
+      SHA256(out::buf + chunk_size * i, filesize % chunk_size, shards[i]);
+    else
+      SHA256(out::buf + chunk_size * i, chunk_size, shards[i]);
+  });
+
+  SHA256((u8 *)shards, sizeof(shards), out::buf + shdr.sh_offset + 16);
 }
