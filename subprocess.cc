@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <openssl/sha.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -65,13 +66,15 @@ static std::string base64(std::string_view str) {
 }
 
 static std::string compute_sha1(char **argv) {
-  SHA1 sha1;
+  SHA_CTX ctx;
+  SHA1_Init(&ctx);
+
   for (int i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      sha1.update((u8 *)argv[i], strlen(argv[i]) + 1);
+      SHA1_Update(&ctx, argv[i], strlen(argv[i]) + 1);
 
-  u8 digest[20] = {};
-  sha1.get_result(digest);
+  u8 digest[20];
+  SHA1_Final(digest, &ctx);
   return base64({(char *)digest, 20});
 }
 
@@ -147,8 +150,6 @@ bool resume_daemon(char **argv, int *code) {
 
 void daemonize(char **argv, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
-  compute_sha1(argv);
-
   if (daemon(1, 0) == -1)
     Error() << "daemon failed: " << strerror(errno);
 

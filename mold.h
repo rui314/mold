@@ -926,29 +926,6 @@ private:
 };
 
 //
-// sha1.cc
-//
-
-class SHA1 {
-public:
-  enum { hash_size = 20 };
-
-  void update(const u8 *msg, u32 len);
-  void get_result(u8 *digest);
-
-private:
-  void process_message_block();
-  void pad_message();
-
-  u32 hash[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
-  u32 length_low = 0;
-  u32 length_high = 0;
-  i16 idx = 0;
-  u8 block[64] = {};
-  int computed = 0;
-};
-
-//
 // mapfile.cc
 //
 
