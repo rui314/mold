@@ -251,7 +251,7 @@ void InputSection::scan_relocations() {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-    bool is_code = !(sym.st_type == STT_OBJECT);
+    bool is_code = (sym.st_type == STT_FUNC);
 
     if (!sym.file || sym.is_placeholder) {
       Error() << "undefined symbol: " << *file << ": " << sym.name;
