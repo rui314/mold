@@ -37,45 +37,41 @@ std::function<void()> fork_child() {
   return [=]() { write(pipefd[1], (char []){1}, 1); };
 }
 
-static std::string base64(std::string_view str) {
+static std::string base64(u8 *data, u64 size) {
   static const char chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+_";
 
-  std::string res;
-  const u8 *buf = (u8 *)str.data();
+  std::ostringstream out;
 
   auto encode = [&](u32 x) {
-    res += chars[x & 0b111111];
-    res += chars[(x >> 6) & 0b111111];
-    res += chars[(x >> 12) & 0b111111];
-    res += chars[(x >> 18) & 0b111111];
+    out << chars[x & 0b111111]
+        << chars[(x >> 6) & 0b111111]
+        << chars[(x >> 12) & 0b111111]
+        << chars[(x >> 18) & 0b111111];
   };
 
   int i = 0;
-  for (; i < str.size() - 3; i += 3)
-    encode((buf[i + 2] << 16) | (buf[i + 1] << 8) | buf[i]);
+  for (; i < size - 3; i += 3)
+    encode((data[i + 2] << 16) | (data[i + 1] << 8) | data[i]);
 
-  if (i == str.size() - 1) {
-    encode(buf[i]);
-    res += "==";
-  } else if (i == str.size() - 2) {
-    encode((buf[i + 1] << 8) | buf[i]);
-    res += "=";
-  }
-  return res;
+  if (i == size - 1)
+    encode(data[i]);
+  else if (i == size - 2)
+    encode((data[i + 1] << 8) | data[i]);
+  return out.str();
 }
 
-static std::string compute_sha1(char **argv) {
-  SHA_CTX ctx;
-  SHA1_Init(&ctx);
+static std::string compute_sha256(char **argv) {
+  SHA256_CTX ctx;
+  SHA256_Init(&ctx);
 
   for (int i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      SHA1_Update(&ctx, argv[i], strlen(argv[i]) + 1);
+      SHA256_Update(&ctx, argv[i], strlen(argv[i]) + 1);
 
-  u8 digest[20];
-  SHA1_Final(digest, &ctx);
-  return base64({(char *)digest, 20});
+  u8 digest[SHA256_SIZE];
+  SHA256_Final(digest, &ctx);
+  return base64(digest, SHA256_SIZE);
 }
 
 static void send_fd(int conn, int fd) {
@@ -130,7 +126,7 @@ bool resume_daemon(char **argv, int *code) {
   if (conn == -1)
     Error() << "socket failed: " << strerror(errno);
 
-  std::string path = "/tmp/mold-" + compute_sha1(argv);
+  std::string path = "/tmp/mold-" + compute_sha256(argv);
 
   struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
@@ -157,7 +153,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
   if (sock == -1)
     Error() << "socket failed: " << strerror(errno);
 
-  socket_tmpfile = strdup(("/tmp/mold-" + compute_sha1(argv)).c_str());
+  socket_tmpfile = strdup(("/tmp/mold-" + compute_sha256(argv)).c_str());
 
   struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
