@@ -73,13 +73,30 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     return objs;
   };
 
-  switch (get_file_type(mb)) {
-  case FileType::OBJ:
-    if (preloading) {
+  if (preloading) {
+    switch (get_file_type(mb)) {
+    case FileType::OBJ:
       cache[get_key(mb)] = {new_object_file(mb, "")};
       return;
+    case FileType::DSO:
+      return;
+    case FileType::AR:
+      for (MemoryMappedFile *child : read_fat_archive_members(mb))
+        cache[get_key(mb)].push_back(new_object_file(child, mb->name));
+      return;
+    case FileType::THIN_AR:
+      for (MemoryMappedFile *child : read_thin_archive_members(mb))
+        cache[get_key(child)].push_back(new_object_file(child, mb->name));
+      return;
+    case FileType::TEXT:
+      parse_linker_script(mb, as_needed);
+      return;
     }
+    Fatal() << mb->name << ": unknown file type";
+  }
 
+  switch (get_file_type(mb)) {
+  case FileType::OBJ:
     if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
       out::objs.push_back(objs[0]);
     else
@@ -89,12 +106,6 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
   case FileType::AR:
-    if (preloading) {
-      for (MemoryMappedFile *child : read_fat_archive_members(mb))
-        cache[get_key(mb)].push_back(new_object_file(child, mb->name));
-      return;
-    }
-
     if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
       append(out::objs, objs);
     } else {
@@ -103,12 +114,6 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     }
     return;
   case FileType::THIN_AR:
-    if (preloading) {
-      for (MemoryMappedFile *child : read_thin_archive_members(mb))
-        cache[get_key(child)].push_back(new_object_file(child, mb->name));
-      return;
-    }
-
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
       if (std::vector<ObjectFile *> objs = lookup(child); !objs.empty())
         out::objs.push_back(objs[0]);
@@ -119,9 +124,8 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
   case FileType::TEXT:
     parse_linker_script(mb, as_needed);
     return;
-  default:
-    Fatal() << mb->name << ": unknown file type";
   }
+  Fatal() << mb->name << ": unknown file type";
 }
 
 template <typename T>
