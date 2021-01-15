@@ -58,35 +58,50 @@ static SharedFile *new_shared_file(MemoryMappedFile *mb, bool as_needed) {
   return file;
 }
 
-void read_file(MemoryMappedFile *mb, bool as_needed) {
-  typedef std::tuple<std::string, u64, u64> Key;
-  static std::map<Key, std::vector<ObjectFile *>> cache;
+template <typename T>
+class FileCache {
+public:
+  void store(MemoryMappedFile *mb, T *obj) {
+    Key k(mb->name, mb->size(), mb->mtime);
+    cache[k].push_back(obj);
+  }
 
-  auto get_key = [](MemoryMappedFile *mb) -> Key {
-    return {mb->name, mb->size(), mb->mtime};
-  };
-
-  auto lookup = [&](MemoryMappedFile *mb) {
-    Key k = get_key(mb);
-    std::vector<ObjectFile *> objs = cache[k];
+  std::vector<T *> get(MemoryMappedFile *mb) {
+    Key k(mb->name, mb->size(), mb->mtime);
+    std::vector<T *> objs = cache[k];
     cache[k].clear();
     return objs;
-  };
+  }
+
+  T *get_one(MemoryMappedFile *mb) {
+    std::vector<T *> objs = get(mb);
+    return objs.empty() ? nullptr : objs[0];
+  }
+
+private:
+  typedef std::tuple<std::string, u64, u64> Key;
+  std::map<Key, std::vector<T *>> cache;
+};
+
+void read_file(MemoryMappedFile *mb, bool as_needed) {
+  static FileCache<ObjectFile> obj_cache;
+  static FileCache<SharedFile> dso_cache;
 
   if (preloading) {
     switch (get_file_type(mb)) {
     case FileType::OBJ:
-      cache[get_key(mb)] = {new_object_file(mb, "")};
+      obj_cache.store(mb, new_object_file(mb, ""));
       return;
     case FileType::DSO:
+      dso_cache.store(mb, new_shared_file(mb, as_needed));
       return;
     case FileType::AR:
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
-        cache[get_key(mb)].push_back(new_object_file(child, mb->name));
+        obj_cache.store(mb, new_object_file(child, mb->name));
       return;
     case FileType::THIN_AR:
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
-        cache[get_key(child)].push_back(new_object_file(child, mb->name));
+        obj_cache.store(child, new_object_file(child, mb->name));
       return;
     case FileType::TEXT:
       parse_linker_script(mb, as_needed);
@@ -97,16 +112,19 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
 
   switch (get_file_type(mb)) {
   case FileType::OBJ:
-    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty())
-      out::objs.push_back(objs[0]);
+    if (ObjectFile *obj = obj_cache.get_one(mb))
+      out::objs.push_back(obj);
     else
       out::objs.push_back(new_object_file(mb, ""));
     return;
   case FileType::DSO:
-    out::dsos.push_back(new_shared_file(mb, as_needed));
+    if (SharedFile *obj = dso_cache.get_one(mb))
+      out::dsos.push_back(obj);
+    else
+      out::dsos.push_back(new_shared_file(mb, as_needed));
     return;
   case FileType::AR:
-    if (std::vector<ObjectFile *> objs = lookup(mb); !objs.empty()) {
+    if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
       append(out::objs, objs);
     } else {
       for (MemoryMappedFile *child : read_archive_members(mb))
@@ -115,8 +133,8 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
     return;
   case FileType::THIN_AR:
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
-      if (std::vector<ObjectFile *> objs = lookup(child); !objs.empty())
-        out::objs.push_back(objs[0]);
+      if (ObjectFile *obj = obj_cache.get_one(child))
+        out::objs.push_back(obj);
       else
         out::objs.push_back(new_object_file(child, mb->name));
     }
