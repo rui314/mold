@@ -907,7 +907,9 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
       conf.strip_all = true;
     } else if (read_arg(args, arg, "rpath")) {
-      conf.rpaths.push_back(arg);
+      if (!conf.rpaths.empty())
+        conf.rpaths += ":";
+      conf.rpaths += arg;
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
     } else if (read_flag(args, "preload")) {
@@ -1175,8 +1177,7 @@ int main(int argc, char **argv) {
     out::dynstr->add_string(file->soname);
 
   // Copy DT_RUNPATH strings to .dynstr.
-  for (std::string_view path : config.rpaths)
-    out::dynstr->add_string(path);
+  out::dynstr->add_string(config.rpaths);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.

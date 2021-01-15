@@ -53,6 +53,7 @@ struct Config {
   std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
   std::string entry = "_start";
   std::string output;
+  std::string rpaths;
   bool discard_all = false;
   bool discard_locals = false;
   bool export_dynamic = false;
@@ -71,7 +72,6 @@ struct Config {
   int thread_count = -1;
   std::string sysroot;
   std::vector<std::string> globals;
-  std::vector<std::string_view> rpaths;
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> version_script;
