@@ -566,17 +566,15 @@ void DynsymSection::add_symbol(Symbol *sym) {
 }
 
 void DynsymSection::sort_symbols() {
-  sort(symbols, [](Symbol *a, Symbol *b) {
-    return a->esym->st_bind == STB_LOCAL && b->esym->st_bind != STB_LOCAL;
-  });
+  auto first_global = std::stable_partition(
+    symbols.begin(), symbols.end(),
+    [](Symbol *sym) { return sym->esym->st_bind == STB_LOCAL; });
 
-  for (int i = 0; i < symbols.size(); i++)
-    symbols[i]->dynsym_idx = i + 1;
+  shdr.sh_info = first_global - symbols.begin() + 1;
 
-  int i = 0;
-  while (i < symbols.size() && symbols[i]->esym->st_bind == STB_LOCAL)
-    i++;
-  shdr.sh_info = i + 1;
+  int i = 1;
+  for (Symbol *sym : symbols)
+    sym->dynsym_idx = i++;
 }
 
 void DynsymSection::update_shdr() {
