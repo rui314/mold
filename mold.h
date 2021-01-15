@@ -27,6 +27,7 @@
 #define PAGE_SIZE 4096
 #define GOT_SIZE 8
 #define PLT_SIZE 16
+#define SHA256_SIZE 32
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -695,7 +696,7 @@ public:
     shdr.sh_type = SHT_NOTE;
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_addralign = 4;
-    shdr.sh_size = 48;
+    shdr.sh_size = 16 + SHA256_SIZE;
   }
 
   void copy_buf() override;
