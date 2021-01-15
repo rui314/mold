@@ -36,28 +36,43 @@ std::function<void()> fork_child() {
   return [=]() { write(pipefd[1], (char []){1}, 1); };
 }
 
-static std::string compute_sha1(char **argv) {
-  SHA1 sha1;
-
-  for (int i = 0; argv[i]; i++)
-    if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      sha1.update((u8 *)argv[i], strlen(argv[i]) + 1);
-
-  u8 digest[21] = {};
-  sha1.get_result(digest);
-
-  static char chars[] =
+static std::string base64(std::string_view str) {
+  static const char chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+_";
 
   std::string res;
-  for (int i = 0; i < sizeof(digest); i += 3) {
-    u32 x = (digest[i + 2] << 16) | (digest[i + 1] << 8) | digest[i];
+  const u8 *buf = (u8 *)str.data();
+
+  auto encode = [&](u32 x) {
     res += chars[x & 0b111111];
     res += chars[(x >> 6) & 0b111111];
     res += chars[(x >> 12) & 0b111111];
     res += chars[(x >> 18) & 0b111111];
+  };
+
+  int i = 0;
+  for (; i < str.size() - 3; i += 3)
+    encode((buf[i + 2] << 16) | (buf[i + 1] << 8) | buf[i]);
+
+  if (i == str.size() - 1) {
+    encode(buf[i]);
+    res += "==";
+  } else if (i == str.size() - 2) {
+    encode((buf[i + 1] << 8) | buf[i]);
+    res += "=";
   }
   return res;
+}
+
+static std::string compute_sha1(char **argv) {
+  SHA1 sha1;
+  for (int i = 0; argv[i]; i++)
+    if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
+      sha1.update((u8 *)argv[i], strlen(argv[i]) + 1);
+
+  u8 digest[20] = {};
+  sha1.get_result(digest);
+  return base64({(char *)digest, 20});
 }
 
 static void send_fd(int conn, int fd) {
