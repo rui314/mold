@@ -2,6 +2,7 @@
 
 #include <openssl/sha.h>
 #include <shared_mutex>
+#include <tbb/parallel_for_each.h>
 
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
@@ -87,9 +88,26 @@ std::vector<ElfPhdr> create_phdr() {
   // Create a PT_PHDR for the program header itself.
   define(PT_PHDR, PF_R, 8, out::phdr);
 
-  // Create an PT_INTERP.
+  // Create a PT_INTERP.
   if (out::interp)
     define(PT_INTERP, PF_R, 1, out::interp);
+
+  // Create a PT_NOTE for each group of SHF_NOTE sections with the same
+  // alignment requirement.
+  for (int i = 0, end = out::chunks.size(); i < end;) {
+    OutputChunk *first = out::chunks[i++];
+    if (first->shdr.sh_type != SHT_NOTE)
+      continue;
+
+    u32 flags = to_phdr_flags(first);
+    u32 alignment = first->shdr.sh_addralign;
+    define(PT_NOTE, flags, alignment, first);
+
+    while (i < end && out::chunks[i]->shdr.sh_type == SHT_NOTE &&
+           to_phdr_flags(out::chunks[i]) == flags &&
+           out::chunks[i]->shdr.sh_addralign == alignment)
+      append(out::chunks[i++]);
+  }
 
   // Create PT_LOAD segments.
   for (int i = 0, end = out::chunks.size(); i < end;) {
@@ -112,12 +130,13 @@ std::vector<ElfPhdr> create_phdr() {
 
   // Create a PT_TLS.
   for (int i = 0; i < out::chunks.size(); i++) {
-    if (out::chunks[i]->shdr.sh_flags & SHF_TLS) {
-      define(PT_TLS, to_phdr_flags(out::chunks[i]), 1, out::chunks[i]);
-      i++;
-      while (i < out::chunks.size() && (out::chunks[i]->shdr.sh_flags & SHF_TLS))
-        append(out::chunks[i++]);
-    }
+    if (!(out::chunks[i]->shdr.sh_flags & SHF_TLS))
+      continue;
+
+    define(PT_TLS, to_phdr_flags(out::chunks[i]), 1, out::chunks[i]);
+    i++;
+    while (i < out::chunks.size() && (out::chunks[i]->shdr.sh_flags & SHF_TLS))
+      append(out::chunks[i++]);
   }
 
   // Add PT_DYNAMIC

@@ -6,22 +6,18 @@
 
 #include "elf.h"
 
-#include "tbb/concurrent_hash_map.h"
-#include "tbb/parallel_for_each.h"
-#include "tbb/parallel_invoke.h"
-#include "tbb/parallel_reduce.h"
-#include "tbb/spin_mutex.h"
-
-#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/spin_mutex.h>
 #include <vector>
 
 #define SECTOR_SIZE 512

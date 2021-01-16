@@ -1,17 +1,13 @@
 #include "mold.h"
 
-#include "tbb/global_control.h"
-#include "tbb/parallel_do.h"
-#include "tbb/task_group.h"
-
-#include <fcntl.h>
 #include <functional>
 #include <iostream>
-#include <regex>
+#include <map>
 #include <signal.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
+#include <tbb/global_control.h>
+#include <tbb/parallel_do.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/task_group.h>
 #include <unordered_set>
 
 static tbb::task_group parser_tg;
@@ -519,6 +515,7 @@ static void clear_padding(u64 filesize) {
 
 // We want to sort output sections in the following order.
 //
+// note
 // alloc readonly data
 // alloc readonly code
 // alloc writable tdata
@@ -527,12 +524,14 @@ static void clear_padding(u64 filesize) {
 // alloc writable bss
 // nonalloc
 static int get_section_rank(const ElfShdr &shdr) {
+  bool note = shdr.sh_type == SHT_NOTE;
   bool alloc = shdr.sh_flags & SHF_ALLOC;
   bool writable = shdr.sh_flags & SHF_WRITE;
   bool exec = shdr.sh_flags & SHF_EXECINSTR;
   bool tls = shdr.sh_flags & SHF_TLS;
   bool nobits = shdr.sh_type == SHT_NOBITS;
-  return (!alloc << 5) | (writable << 4) | (exec << 3) | (!tls << 2) | nobits;
+  return (!note << 6) | (!alloc << 5) | (writable << 4) |
+         (exec << 3) | (!tls << 2) | nobits;
 }
 
 static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
