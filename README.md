@@ -221,6 +221,11 @@ tool.
   containers. We are particularly interested in using
   `parallel_for_each` and `concurrent_hash_map`.
 
+- TBB provides `tbbmalloc` which works better for multi-threaded
+  applications than the glib'c malloc, but it looks like
+  [jemalloc](https://github.com/jemalloc/jemalloc) is a little bit
+  more scalable than `tbbmalloc`.
+
 ## Size of the problem
 
 When linking Chrome, a linker reads 3,430,966,844 bytes of data in
