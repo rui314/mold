@@ -206,11 +206,14 @@ tool.
 
 - A .build-id, a unique ID embedded to an output file, is usually
   computed by applying a cryptographic hash function (e.g. SHA-1) to
-  an output file. But it adds an extra time for linking because a
-  linker has to compute a SHA-1 checksum after the actual linking is
-  done. We should instead compute a SHA-1 for the tuple of (all input
-  files, command line options, linker version) as a build-id, as it
-  should uniquely identify the output.
+  an output file. This is a slow step, but we can speed it up by
+  splitting a file into small chunks, computing SHA-1 for each chunk,
+  and then computing SHA-1 of the concatenated SHA-1 hashes
+  (i.e. constructing a [Markle
+  Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
+  Modern x86 processors have purpose-built instructions for SHA-1 and
+  can compute SHA-1 at about 2 GiB/s rate. Using 16 cores, a build-id
+  for a 2 GiB executable can be computed in 60 to 70 milliseconds.
 
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
