@@ -22,6 +22,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #define SECTOR_SIZE 512
 #define PAGE_SIZE 4096
