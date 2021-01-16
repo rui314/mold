@@ -299,7 +299,7 @@ protected:
 };
 
 enum RelType : u8 {
-  R_NONE,
+  R_NONE = 1,
   R_ABS,
   R_ABS_DYN,
   R_DYN,
@@ -334,7 +334,8 @@ public:
   bool is_alive = true;
 
 private:
-  void apply_reloc(u8 *base);
+  void apply_reloc_alloc(u8 *base);
+  void apply_reloc_nonalloc(u8 *base);
 };
 
 class MergeableSection : public InputChunk {

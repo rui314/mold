@@ -137,10 +137,13 @@ void InputSection::copy_buf() {
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
-  apply_reloc(base);
+  if (shdr.sh_flags & SHF_ALLOC)
+    apply_reloc_alloc(base);
+  else
+    apply_reloc_nonalloc(base);
 }
 
-void InputSection::apply_reloc(u8 *base) {
+void InputSection::apply_reloc_alloc(u8 *base) {
   int ref_idx = 0;
   ElfRela *dynrel = nullptr;
 
@@ -242,13 +245,66 @@ void InputSection::apply_reloc(u8 *base) {
   }
 }
 
+void InputSection::apply_reloc_nonalloc(u8 *base) {
+  static Counter counter("reloc_nonalloc");
+  counter.inc(rels.size());
+
+  for (int i = 0; i < rels.size(); i++) {
+    const ElfRela &rel = rels[i];
+    Symbol &sym = *file->symbols[rel.r_sym];
+
+    if (!sym.file || sym.is_placeholder) {
+      Error() << "undefined symbol: " << *file << ": " << sym.name;
+      continue;
+    }
+
+    switch (rel.r_type) {
+    case R_X86_64_NONE:
+      break;
+    case R_X86_64_8:
+    case R_X86_64_16:
+    case R_X86_64_32:
+    case R_X86_64_32S:
+    case R_X86_64_64: {
+      u8 *loc = base + rel.r_offset;
+      u64 val = sym.get_addr();
+      overflow_check(this, sym, rel.r_type, loc, val);
+      write_val(rel.r_type, loc, val);
+      break;
+    }
+    case R_X86_64_PC8:
+    case R_X86_64_PC16:
+    case R_X86_64_PC32:
+    case R_X86_64_PC64:
+    case R_X86_64_GOT32:
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCRELX:
+    case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_PLT32:
+    case R_X86_64_TLSGD:
+    case R_X86_64_TLSLD:
+    case R_X86_64_DTPOFF32:
+    case R_X86_64_DTPOFF64:
+    case R_X86_64_TPOFF32:
+    case R_X86_64_TPOFF64:
+    case R_X86_64_GOTTPOFF:
+      Error() << *this << ": invalid relocation for non-allocated sections: "
+              << rel.r_type;
+      break;
+    default:
+      Error() << *this << ": unknown relocation: " << rel.r_type;
+    }
+  }
+}
+
 void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
   reldyn_offset = file->num_dynrel * sizeof(ElfRela);
 
-  static Counter counter("relocs");
+  static Counter counter("reloc_alloc");
   counter.inc(rels.size());
 
   for (int i = 0; i < rels.size(); i++) {
