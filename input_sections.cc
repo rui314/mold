@@ -137,6 +137,10 @@ void InputSection::copy_buf() {
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
+  apply_reloc(base);
+}
+
+void InputSection::apply_reloc(u8 *base) {
   int ref_idx = 0;
   ElfRela *dynrel = nullptr;
 

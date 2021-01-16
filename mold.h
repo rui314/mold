@@ -332,6 +332,9 @@ public:
   u64 reldyn_offset = 0;
   bool is_comdat_member = false;
   bool is_alive = true;
+
+private:
+  void apply_reloc(u8 *base);
 };
 
 class MergeableSection : public InputChunk {
