@@ -249,6 +249,8 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter.inc(rels.size());
 
+  int ref_idx = 0;
+
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
@@ -257,6 +259,10 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
       Error() << "undefined symbol: " << *file << ": " << sym.name;
       continue;
     }
+
+    const StringPieceRef *ref = nullptr;
+    if (has_rel_piece[i])
+      ref = &rel_pieces[ref_idx++];
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
@@ -267,7 +273,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_32S:
     case R_X86_64_64: {
       u8 *loc = base + rel.r_offset;
-      u64 val = sym.get_addr();
+      u64 val = ref ? ref->piece->get_addr() : sym.get_addr();
       overflow_check(this, sym, rel.r_type, loc, val);
       write_val(rel.r_type, loc, val);
       break;
@@ -302,10 +308,11 @@ void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
-  reldyn_offset = file->num_dynrel * sizeof(ElfRela);
-
   static Counter counter("reloc_alloc");
   counter.inc(rels.size());
+
+  this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
+  this->rel_types.resize(rels.size());
 
   for (int i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
