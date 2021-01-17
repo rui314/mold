@@ -34,7 +34,7 @@ static std::string rel_to_string(u32 r_type) {
   unreachable();
 }
 
-static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u8 *loc, u64 val) {
+static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u64 val) {
   auto out_of_range = [&](std::string range) {
     Error() << *sec << ": relocation " << rel_to_string(r_type)
             << " against " << sym.name << " out of range: "
@@ -164,7 +164,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       ref = &rel_pieces[ref_idx++];
 
     auto write = [&](u64 val) {
-      overflow_check(this, sym, rel.r_type, loc, val);
+      overflow_check(this, sym, rel.r_type, val);
       write_val(rel.r_type, loc, val);
     };
 
@@ -277,7 +277,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_64: {
       u8 *loc = base + rel.r_offset;
       u64 val = ref ? ref->piece->get_addr() : sym.get_addr();
-      overflow_check(this, sym, rel.r_type, loc, val);
+      overflow_check(this, sym, rel.r_type, val);
       write_val(rel.r_type, loc, val);
       break;
     }
