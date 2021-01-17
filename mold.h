@@ -431,7 +431,7 @@ public:
 
   static inline std::vector<OutputSection *> instances;
 
-  std::vector<InputChunk *> members;
+  std::vector<InputSection *> members;
   u32 idx;
 };
 

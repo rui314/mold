@@ -247,7 +247,7 @@ static void bin_sections() {
 
   int num_osec = OutputSection::instances.size();
 
-  std::vector<std::vector<std::vector<InputChunk *>>> groups(slices.size());
+  std::vector<std::vector<std::vector<InputSection *>>> groups(slices.size());
   for (int i = 0; i < groups.size(); i++)
     groups[i].resize(num_osec);
 
@@ -260,7 +260,7 @@ static void bin_sections() {
 
   std::vector<int> sizes(num_osec);
 
-  for (std::span<std::vector<InputChunk *>> group : groups)
+  for (std::span<std::vector<InputSection *>> group : groups)
     for (int i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
@@ -298,7 +298,7 @@ static void set_isec_offsets() {
     if (osec->members.empty())
       return;
 
-    std::vector<std::span<InputChunk *>> slices = split(osec->members, 10000);
+    std::vector<std::span<InputSection *>> slices = split(osec->members, 10000);
     std::vector<u64> size(slices.size());
     std::vector<u32> alignments(slices.size());
 
