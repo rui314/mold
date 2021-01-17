@@ -458,7 +458,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
         vec.push_back((ObjectFile *)sym.file);
 
       if (sym.traced)
-        SyncOut() << "trace: " << *this << " keeps " << sym.file
+        SyncOut() << "trace: " << *this << " keeps " << *sym.file
                   << " for " << sym.name;
     }
   }
