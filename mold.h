@@ -333,7 +333,7 @@ public:
   bool is_comdat_member = false;
   bool is_alive = true;
 
-private:
+  void copy_contents(u8 *base);
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
 };
@@ -643,6 +643,24 @@ private:
     shdr.sh_type = type;
     shdr.sh_addralign = 1;
   }
+};
+
+class EhFrameSection : public OutputChunk {
+public:
+  EhFrameSection(OutputSection *original)
+    : OutputChunk(SYNTHETIC), members(std::move(original->members)) {
+    name = ".eh_frame";
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 4;
+  }
+
+  void finalize_contents();
+  void copy_buf() override;
+
+private:
+  std::vector<InputSection *> members;
+  std::vector<std::vector<u8>> contents;
 };
 
 class CopyrelSection : public OutputChunk {

@@ -699,6 +699,30 @@ void MergedSection::copy_buf() {
   });
 }
 
+void EhFrameSection::finalize_contents() {
+  for (int i = 0; i < members.size(); i++) {
+    InputSection &isec = *members[i];
+    if (isec.shdr.sh_type == SHT_NOBITS || isec.shdr.sh_size == 0)
+      return;
+
+    contents[i].resize(isec.shdr.sh_size);
+    u8 *buf = contents[i].data();
+
+    isec.copy_contents(buf);
+    isec.apply_reloc_alloc(buf);
+  }
+}
+
+void EhFrameSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
+  u64 offset = 0;
+
+  for (std::span<u8> buf : contents) {
+    memcpy(base + offset, buf.data(), buf.size());
+    offset += contents.size();
+  }
+}
+
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(sym->is_imported);
   if (sym->has_copyrel)

@@ -130,17 +130,20 @@ void InputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
-  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
-
   // Copy data
-  std::string_view contents = file->get_string(shdr);
-  memcpy(base, contents.data(), contents.size());
+  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
+  copy_contents(base);
 
   // Apply relocations
   if (shdr.sh_flags & SHF_ALLOC)
     apply_reloc_alloc(base);
   else
     apply_reloc_nonalloc(base);
+}
+
+void InputSection::copy_contents(u8 *base) {
+  std::string_view contents = file->get_string(shdr);
+  memcpy(base, contents.data(), contents.size());
 }
 
 void InputSection::apply_reloc_alloc(u8 *base) {
