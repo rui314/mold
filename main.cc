@@ -1204,7 +1204,8 @@ int main(int argc, char **argv) {
   // Put symbols to .dynsym.
   export_dynamic();
 
-  // Sort .dynsym contents.
+  // Sort .dynsym contents. Beyond this point, no symbol should be
+  // added to .dynsym.
   out::dynsym->sort_symbols();
 
   // Fill .gnu.version and .gnu.version_r section contents.
