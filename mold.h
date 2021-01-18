@@ -11,8 +11,8 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <mutex>
-#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -665,7 +665,7 @@ private:
 
   tbb::spin_rw_mutex mu;
   std::vector<InputSection *> members;
-  std::set<std::string_view> cies;
+  std::map<std::string_view, u32> cies;
 };
 
 class CopyrelSection : public OutputChunk {

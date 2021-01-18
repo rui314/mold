@@ -710,8 +710,10 @@ void EhFrameSection::set_isec_offsets() {
   });
 
   u32 offset = 0;
-  for (std::string_view cie : cies)
-    offset += cie.size();
+  for (std::pair<std::string_view, u32> pair : cies) {
+    cies[pair.first] = offset;
+    offset += pair.first.size();
+  }
 
   for (int i = 0; i < members.size(); i++) {
     members[i]->offset = offset;
@@ -751,7 +753,7 @@ int EhFrameSection::parse_eh_frame(InputSection &isec) {
       decltype(mu)::scoped_lock lock(mu, false);
       if (cies.count(cie) == 0)
         if (lock.upgrade_to_writer() || cies.count(cie) == 0)
-          cies.insert(cie);
+          cies[cie] = 0;
     } else {
       // FDE
       int offset = data.data() - begin + 8;
