@@ -732,7 +732,18 @@ void EhFrameSection::parse_eh_frame(InputSection &isec) {
     }
 
     u32 id = read_u32(4);
-    if (id != 0) {
+
+    if (id == 0) {
+      // CIE
+      std::string_view cie = data.substr(0, size + 4);
+      tbb::spin_rw_mutex::scoped_lock lock(mu, false);
+      if (std::find(cies.begin(), cies.end(), cie) == cies.end()) {
+        lock.upgrade_to_writer();
+        if (std::find(cies.begin(), cies.end(), cie) == cies.end())
+          cies.push_back(cie);
+      }
+    } else {
+      // FDE
       int offset = data.data() - begin + 8;
       while (!rels.empty() && rels[0].r_offset < offset)
         rels = rels.subspan(1);
