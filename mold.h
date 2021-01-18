@@ -654,7 +654,7 @@ public:
     name = ".eh_frame";
     shdr.sh_type = SHT_PROGBITS;
     shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 4;
+    shdr.sh_addralign = 8;
   }
 
   void set_isec_offsets();
