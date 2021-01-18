@@ -1135,7 +1135,7 @@ int main(int argc, char **argv) {
   bin_sections();
 
   for (OutputSection *osec : OutputSection::instances) {
-    if (osec->name == ".eh_frame") {
+    if (osec->name == ".eh_frame" && !osec->members.empty()) {
       out::ehframe = new EhFrameSection(osec);
       osec->members = {};
       break;
@@ -1162,6 +1162,8 @@ int main(int argc, char **argv) {
   for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
+  if (out::ehframe)
+    out::chunks.push_back(out::ehframe);
 
   erase(out::chunks, [](OutputChunk *c) { return !c; });
 

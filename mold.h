@@ -12,13 +12,14 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <set>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_vector.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/spin_rw_mutex.h>
 #include <vector>
 
 #define SECTOR_SIZE 512
@@ -660,11 +661,11 @@ public:
   void copy_buf() override;
 
 private:
-  int parse_eh_frame(InputSection &isec,
-                     tbb::concurrent_vector<std::string_view> &vec);
+  int parse_eh_frame(InputSection &isec);
 
+  tbb::spin_rw_mutex mu;
   std::vector<InputSection *> members;
-  std::vector<std::string_view> cies;
+  std::set<std::string_view> cies;
 };
 
 class CopyrelSection : public OutputChunk {

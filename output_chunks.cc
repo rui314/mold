@@ -700,22 +700,28 @@ void MergedSection::copy_buf() {
 }
 
 void EhFrameSection::set_isec_offsets() {
-  tbb::concurrent_vector<std::string_view> vec;
+  std::vector<u32> fde_sizes(members.size());
 
   tbb::parallel_for(0, (int)members.size(), [&](int i) {
     InputSection *isec = members[i];
     if (isec->shdr.sh_type == SHT_NOBITS)
       Fatal() << *isec->file << ": unsupported .eh_frame sectoin";
-    parse_eh_frame(*isec, vec);
+    fde_sizes[i] = parse_eh_frame(*isec);
   });
 
-  SyncOut() << "cies=" << cies.size();
+  u32 offset = 0;
+  for (std::string_view cie : cies)
+    offset += cie.size();
 
-  shdr.sh_size = 4;
+  for (int i = 0; i < members.size(); i++) {
+    members[i]->offset = offset;
+    offset += fde_sizes[i];
+  }
+
+  shdr.sh_size = offset;
 }
 
-int EhFrameSection::parse_eh_frame(InputSection &isec,
-                                   tbb::concurrent_vector<std::string_view> &vec) {
+int EhFrameSection::parse_eh_frame(InputSection &isec) {
   std::span<ElfRela> rels = isec.rels;
   std::span<Symbol *> syms = isec.file->symbols;
   std::string_view data = isec.file->get_string(isec.shdr);
@@ -741,7 +747,11 @@ int EhFrameSection::parse_eh_frame(InputSection &isec,
 
     if (id == 0) {
       // CIE
-      vec.push_back(data.substr(0, size + 4));
+      std::string_view cie = data.substr(0, size + 4);
+      decltype(mu)::scoped_lock lock(mu, false);
+      if (cies.count(cie) == 0)
+        if (lock.upgrade_to_writer() || cies.count(cie) == 0)
+          cies.insert(cie);
     } else {
       // FDE
       int offset = data.data() - begin + 8;
