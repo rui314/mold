@@ -3,15 +3,14 @@ CXX=clang++
 
 CURRENT_DIR=$(shell pwd)
 TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
-JEMALLOC_LIBDIR=$(CURRENT_DIR)/jemalloc/lib
+MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
 
 CPPFLAGS=-g -IoneTBB/include -pthread -std=c++20 -Wno-deprecated-volatile \
-  -Wno-switch -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc \
-  -fno-builtin-free -O2
+  -Wno-switch -O2 -flto
 LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
-  -L$(JEMALLOC_LIBDIR) -Wl,-rpath=$(JEMALLOC_LIBDIR) \
-  -lcrypto -pthread
-LIBS=-ltbb -ljemalloc
+  -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
+  -lcrypto -pthread -flto
+LIBS=-ltbb -lmimalloc
 OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
   linker_script.o archive_file.o output_file.o subprocess.o
 
@@ -22,8 +21,9 @@ $(OBJS): mold.h elf.h Makefile
 
 submodules:
 	$(MAKE) -C oneTBB
-	(cd jemalloc; ./autogen.sh)
-	$(MAKE) -C jemalloc
+	mkdir -p mimalloc/out/release
+	(cd mimalloc/out/release; cmake ../..)
+	$(MAKE) -C mimalloc/out/release
 
 test: mold
 	(cd test; for i in *.sh; do ./$$i || exit 1; done)

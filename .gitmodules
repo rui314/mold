@@ -1,6 +1,6 @@
 [submodule "oneTBB"]
 	path = oneTBB
 	url = https://github.com/oneapi-src/oneTBB.git
-[submodule "jemalloc"]
-	path = jemalloc
-	url = https://github.com/jemalloc/jemalloc.git
+[submodule "mimalloc"]
+	path = mimalloc
+	url = https://github.com/microsoft/mimalloc.git

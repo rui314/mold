@@ -225,7 +225,8 @@ tool.
 
 - TBB provides `tbbmalloc` which works better for multi-threaded
   applications than the glib'c malloc, but it looks like
-  [jemalloc](https://github.com/jemalloc/jemalloc) is a little bit
+  [jemalloc](https://github.com/jemalloc/jemalloc) and
+  [mimalloc](https://github.com/microsoft/mimalloc) are a little bit
   more scalable than `tbbmalloc`.
 
 ## Size of the problem
