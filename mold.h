@@ -18,6 +18,7 @@
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/spin_rw_mutex.h>
 #include <vector>
 
 #define SECTOR_SIZE 512
@@ -655,12 +656,15 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void finalize_contents();
+  void set_isec_offsets();
   void copy_buf() override;
 
 private:
+  void parse_eh_frame(InputSection &isec);
+
+  tbb::spin_rw_mutex mu;
   std::vector<InputSection *> members;
-  std::vector<std::vector<u8>> contents;
+  std::vector<std::string_view> cies;
 };
 
 class CopyrelSection : public OutputChunk {
@@ -1012,6 +1016,7 @@ inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
+inline EhFrameSection *ehframe;
 inline CopyrelSection *copyrel;
 inline VersymSection *versym;
 inline VerneedSection *verneed;

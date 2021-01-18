@@ -699,28 +699,62 @@ void MergedSection::copy_buf() {
   });
 }
 
-void EhFrameSection::finalize_contents() {
-  for (int i = 0; i < members.size(); i++) {
-    InputSection &isec = *members[i];
-    if (isec.shdr.sh_type == SHT_NOBITS || isec.shdr.sh_size == 0)
-      return;
+void EhFrameSection::set_isec_offsets() {
+  tbb::parallel_for_each(members, [&](InputSection *isec) {
+    if (isec->shdr.sh_type == SHT_NOBITS)
+      Fatal() << *isec->file << ": unsupported .eh_frame sectoin";
+    parse_eh_frame(*isec);
+  });
 
-    contents[i].resize(isec.shdr.sh_size);
-    u8 *buf = contents[i].data();
+  shdr.sh_size = 4;
+}
 
-    isec.copy_contents(buf);
-    isec.apply_reloc_alloc(buf);
+void EhFrameSection::parse_eh_frame(InputSection &isec) {
+  std::span<ElfRela> rels = isec.rels;
+  std::span<Symbol *> syms = isec.file->symbols;
+  std::string_view data = isec.file->get_string(isec.shdr);
+
+  auto read_u32 = [&](int offset) {
+    if (data.size() < offset + 4)
+      Fatal() << *isec.file << ": malformed .eh_frame section";
+    return *(u32 *)(data.data() + offset);
+  };
+
+  int fde_size = 0;
+  const char *begin = data.data();
+
+  while (!data.empty()) {
+    u32 size = read_u32(0);
+    if (size == 0) {
+      if (data.size() != 4)
+        Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
+      break;
+    }
+
+    u32 id = read_u32(4);
+    if (id != 0) {
+      int offset = data.data() - begin + 8;
+      while (!rels.empty() && rels[0].r_offset < offset)
+        rels = rels.subspan(1);
+
+      bool is_alive = true;
+      if (rels[0].r_offset == offset) {
+        Symbol *sym = syms[rels[0].r_sym];
+        if (sym->input_section && !sym->input_section->is_alive)
+          is_alive = false;
+      }
+
+      if (is_alive)
+        fde_size += size + 4;
+    }
+
+    data = data.substr(size + 4);
   }
 }
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
-  u64 offset = 0;
-
-  for (std::span<u8> buf : contents) {
-    memcpy(base + offset, buf.data(), buf.size());
-    offset += contents.size();
-  }
+  memset(base, 0, shdr.sh_size);
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

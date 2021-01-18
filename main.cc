@@ -1134,6 +1134,14 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
+  for (OutputSection *osec : OutputSection::instances) {
+    if (osec->name == ".eh_frame") {
+      out::ehframe = new EhFrameSection(osec);
+      osec->members = {};
+      break;
+    }
+  }
+
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
 
@@ -1215,6 +1223,12 @@ int main(int argc, char **argv) {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->compute_symtab();
   });
+
+  // Compute the size of .eh_frame.
+  if (out::ehframe) {
+    Timer t("eh_frame_offsets");
+    out::ehframe->set_isec_offsets();
+  }
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
