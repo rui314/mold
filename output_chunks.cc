@@ -824,9 +824,9 @@ void EhFrameSection::copy_buf() {
         }
 
         if (is_alive) {
-          u8 *loc = base + offset + write_offset;
+          u8 *loc = base + isec->offset + write_offset;
           memcpy(loc, data.data(), size + 4);
-          *(u32 *)(loc + 4) = offset + write_offset + 4 - cie_offset;
+          *(u32 *)(loc + 4) = isec->offset + write_offset + 4 - cie_offset;
           write_offset += size + 4;
         }
       }
