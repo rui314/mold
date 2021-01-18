@@ -756,7 +756,7 @@ int EhFrameSection::parse_eh_frame(InputSection &isec) {
           cies[cie] = 0;
     } else {
       // FDE
-      int offset = data.data() - begin + 8;
+      int offset = data.data() + 8 - begin;
       while (!rels.empty() && rels[0].r_offset < offset)
         rels = rels.subspan(1);
 
@@ -779,6 +779,61 @@ int EhFrameSection::parse_eh_frame(InputSection &isec) {
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
+
+  for (std::pair<std::string_view, u32> pair : cies) {
+    std::string_view cie = pair.first;
+    u32 offset = pair.second;
+    memcpy(base + offset, cie.data(), cie.size());
+  }
+
+  for (InputSection *isec : members) {
+    std::span<ElfRela> rels = isec->rels;
+    std::span<Symbol *> syms = isec->file->symbols;
+    std::string_view data = isec->file->get_string(isec->shdr);
+
+    const char *begin = data.data();
+    const char *cur_cie = nullptr;
+    u32 cie_offset = -1;
+    u32 write_offset = 0;
+
+    while (!data.empty()) {
+      u32 size = *(u32 *)(data.data());
+      if (size == 0)
+        return;
+
+      u32 id = *(u32 *)(data.data() + 4);
+
+      // FDE
+      if (id != 0) {
+        if (cur_cie == nullptr || cur_cie != data.data() + 4 - id) {
+          cur_cie = data.data() + 4 - id;
+          std::string_view cie = {cur_cie, *(u32 *)(cur_cie) + 4};
+          assert(cies.count(cie));
+          cie_offset = cies[cie];
+        }
+
+        int offset = data.data() + 8 - begin;
+        while (!rels.empty() && rels[0].r_offset < offset)
+          rels = rels.subspan(1);
+
+        bool is_alive = true;
+        if (rels[0].r_offset == offset) {
+          Symbol *sym = syms[rels[0].r_sym];
+          if (sym->input_section && !sym->input_section->is_alive)
+            is_alive = false;
+        }
+
+        if (is_alive) {
+          u8 *loc = base + offset + write_offset;
+          memcpy(loc, data.data(), size + 4);
+          *(u32 *)(loc + 4) = offset + write_offset + 4 - cie_offset;
+          write_offset += size + 4;
+        }
+      }
+
+      data = data.substr(size + 4);
+    }
+  }
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
