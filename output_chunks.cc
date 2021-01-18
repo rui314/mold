@@ -700,16 +700,22 @@ void MergedSection::copy_buf() {
 }
 
 void EhFrameSection::set_isec_offsets() {
-  tbb::parallel_for_each(members, [&](InputSection *isec) {
+  tbb::concurrent_vector<std::string_view> vec;
+
+  tbb::parallel_for(0, (int)members.size(), [&](int i) {
+    InputSection *isec = members[i];
     if (isec->shdr.sh_type == SHT_NOBITS)
       Fatal() << *isec->file << ": unsupported .eh_frame sectoin";
-    parse_eh_frame(*isec);
+    parse_eh_frame(*isec, vec);
   });
+
+  SyncOut() << "cies=" << cies.size();
 
   shdr.sh_size = 4;
 }
 
-void EhFrameSection::parse_eh_frame(InputSection &isec) {
+int EhFrameSection::parse_eh_frame(InputSection &isec,
+                                   tbb::concurrent_vector<std::string_view> &vec) {
   std::span<ElfRela> rels = isec.rels;
   std::span<Symbol *> syms = isec.file->symbols;
   std::string_view data = isec.file->get_string(isec.shdr);
@@ -735,13 +741,7 @@ void EhFrameSection::parse_eh_frame(InputSection &isec) {
 
     if (id == 0) {
       // CIE
-      std::string_view cie = data.substr(0, size + 4);
-      tbb::spin_rw_mutex::scoped_lock lock(mu, false);
-      if (std::find(cies.begin(), cies.end(), cie) == cies.end()) {
-        lock.upgrade_to_writer();
-        if (std::find(cies.begin(), cies.end(), cie) == cies.end())
-          cies.push_back(cie);
-      }
+      vec.push_back(data.substr(0, size + 4));
     } else {
       // FDE
       int offset = data.data() - begin + 8;
@@ -761,6 +761,7 @@ void EhFrameSection::parse_eh_frame(InputSection &isec) {
 
     data = data.substr(size + 4);
   }
+  return fde_size;
 }
 
 void EhFrameSection::copy_buf() {
