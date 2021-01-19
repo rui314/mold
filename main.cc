@@ -1270,9 +1270,15 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     Timer t("copy_buf");
+    tbb::task_group tg;
+    tg.run([]() { Timer t("eh_copy"); out::ehframe->copy_buf(); });
+
     tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
-      chunk->copy_buf();
+      if (chunk != out::ehframe)
+        chunk->copy_buf();
     });
+
+    tg.wait();
     Error::checkpoint();
   }
 
