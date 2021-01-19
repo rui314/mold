@@ -702,6 +702,7 @@ void MergedSection::copy_buf() {
 }
 
 void EhFrameSection::construct() {
+  // Aggreagate eh records
   std::vector<CieRecord *> vec;
   vec.reserve(out::objs.size());
 
@@ -721,7 +722,14 @@ void EhFrameSection::construct() {
                 std::back_inserter(cies.back()->fdes));
   }
 
-  shdr.sh_size = 4;
+  // Compute output size
+  u32 size = 0;
+  for (CieRecord *cie : cies) {
+    size += cie->contents.size();
+    for (FdeRecord &fde : cie->fdes)
+      size += fde.contents.size();
+  }
+  shdr.sh_size = size;
 }
 
 void EhFrameSection::copy_buf() {

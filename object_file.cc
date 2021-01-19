@@ -203,6 +203,11 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   CieRecord *cur_cie = nullptr;
   u32 cur_cie_offset = -1;
 
+  for (ElfRela rel : rels)
+    if (rel.r_type != R_X86_64_PC32)
+      Fatal() << *isec.file << ": .eh_frame: unsupported relocation type: "
+              << rel.r_type;
+
   while (!data.empty()) {
     u32 size = *(u32 *)data.data();
     if (size == 0) {
