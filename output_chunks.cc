@@ -699,6 +699,28 @@ void MergedSection::copy_buf() {
   });
 }
 
+bool Cie::operator=(const Cie &other) const {
+  if (contents != other.contents)
+    return false;
+  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
+    if (rels[i].sym->name != other.rels[i].sym->name ||
+        rels[i].offset != other.rels[i].offset)
+      return false;
+  return rels.size() < other.rels.size();
+}
+
+bool Cie::operator<(const Cie &other) const {
+  if (contents < other.contents)
+    return true;
+  if (rels.size() < other.rels.size())
+    return true;
+  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
+    if (rels[i].sym->name < other.rels[i].sym->name ||
+        rels[i].offset < other.rels[i].offset)
+      return true;
+  return rels.size() < other.rels.size();
+}
+
 void EhFrameSection::set_isec_offsets() {
   std::vector<u32> fde_sizes(members.size());
 
@@ -710,9 +732,9 @@ void EhFrameSection::set_isec_offsets() {
   });
 
   u32 offset = 0;
-  for (std::pair<std::string_view, u32> pair : cies) {
-    cies[pair.first] = offset;
-    offset += pair.first.size();
+  for (std::map<Cie, u32>::iterator it = cies.begin(); it != cies.end(); it++) {
+    it->second = offset;
+    offset += it->first.contents.size();
   }
 
   for (int i = 0; i < members.size(); i++) {
@@ -727,6 +749,7 @@ int EhFrameSection::parse_eh_frame(InputSection &isec) {
   std::span<ElfRela> rels = isec.rels;
   std::span<Symbol *> syms = isec.file->symbols;
   std::string_view data = isec.file->get_string(isec.shdr);
+  const char *begin = data.data();
 
   auto read_u32 = [&](int offset) {
     if (data.size() < offset + 4)
@@ -734,44 +757,75 @@ int EhFrameSection::parse_eh_frame(InputSection &isec) {
     return *(u32 *)(data.data() + offset);
   };
 
-  int fde_size = 0;
-  const char *begin = data.data();
-
-  while (!data.empty()) {
+  auto at_eof = [&]() {
+    if (data.empty())
+      return true;
     u32 size = read_u32(0);
     if (size == 0) {
       if (data.size() != 4)
         Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
-      break;
+      return true;
     }
+    return false;
+  };
+
+  auto read_record =
+      [&]() -> std::tuple<std::string_view, std::span<ElfRela>, bool> {
+    u32 size = read_u32(0);
+    u32 record_offset = data.data() - begin;
+    u32 record_end = record_offset + size + 4;
 
     u32 id = read_u32(4);
+    data = data.substr(size + 4);
+    std::string_view contents = data.substr(0, size + 4);
 
-    if (id == 0) {
-      // CIE
-      std::string_view cie = data.substr(0, size + 4);
+    if (!rels.empty() && rels[0].r_offset <= record_offset)
+      Fatal() << *isec.file << ": .eh_frame: unsupported relocation layout";
+
+    int i = 0;
+    while (!rels.empty() && rels[i].r_offset < record_end)
+      i++;
+    std::span<ElfRela> rec_rels = rels.subspan(0, i);
+    rels = rels.subspan(i);
+
+    // CIE's ID is always 0.
+    return {contents, rec_rels, id == 0};
+  };
+
+  int fde_size = 0;
+
+  while (!at_eof()) {
+    u32 record_offset = data.data() - begin;
+
+    std::string_view contents;
+    std::span<ElfRela> rec_rels;
+    bool is_cie;
+    std::tie(contents, rec_rels, is_cie) = read_record();
+
+    if (is_cie) {
+      Cie cie;
+      cie.contents = contents;
+
+      for (ElfRela &rel : rec_rels) {
+        Symbol *sym = syms[rel.r_sym];
+        cie.rels.push_back({sym, (u32)(rel.r_offset - record_offset)});
+      }
+
       decltype(mu)::scoped_lock lock(mu, false);
       if (cies.count(cie) == 0)
         if (lock.upgrade_to_writer() || cies.count(cie) == 0)
-          cies[cie] = 0;
+          cies[cie] = -1;
     } else {
-      // FDE
-      int offset = data.data() + 8 - begin;
-      while (!rels.empty() && rels[0].r_offset < offset)
-        rels = rels.subspan(1);
-
       bool is_alive = true;
-      if (rels[0].r_offset == offset) {
-        Symbol *sym = syms[rels[0].r_sym];
+      if (!rec_rels.empty()) {
+        Symbol *sym = syms[rec_rels[0].r_sym];
         if (sym->input_section && !sym->input_section->is_alive)
           is_alive = false;
       }
 
       if (is_alive)
-        fde_size += size + 4;
+        fde_size += contents.size();
     }
-
-    data = data.substr(size + 4);
   }
   return fde_size;
 }
@@ -780,12 +834,13 @@ void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
-  for (std::pair<std::string_view, u32> pair : cies) {
-    std::string_view cie = pair.first;
+  for (std::pair<const Cie, u32> &pair : cies) {
+    const Cie &cie = pair.first;
     u32 offset = pair.second;
-    memcpy(base + offset, cie.data(), cie.size());
+    memcpy(base + offset, cie.contents.data(), cie.contents.size());
   }
 
+#if 0
   for (InputSection *isec : members) {
     std::span<ElfRela> rels = isec->rels;
     std::span<Symbol *> syms = isec->file->symbols;
@@ -834,6 +889,7 @@ void EhFrameSection::copy_buf() {
       data = data.substr(size + 4);
     }
   }
+#endif
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

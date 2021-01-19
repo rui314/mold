@@ -13,6 +13,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -647,6 +648,16 @@ private:
   }
 };
 
+struct Cie {
+  typedef struct {Symbol *sym; u32 offset; } Reloc;
+
+  std::string_view contents;
+  std::vector<Reloc> rels;
+
+  bool operator=(const Cie &other) const;
+  bool operator<(const Cie &other) const;
+};
+
 class EhFrameSection : public OutputChunk {
 public:
   EhFrameSection(OutputSection *original)
@@ -665,7 +676,7 @@ private:
 
   tbb::spin_rw_mutex mu;
   std::vector<InputSection *> members;
-  std::map<std::string_view, u32> cies;
+  std::map<Cie, u32> cies;
 };
 
 class CopyrelSection : public OutputChunk {
