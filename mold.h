@@ -656,6 +656,7 @@ struct EhReloc {
 struct FdeRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
+  u32 offset = -1;
   bool is_alive() const;
 };
 
@@ -668,7 +669,10 @@ struct CieRecord {
   std::vector<EhReloc> rels;
   std::vector<FdeRecord> fdes;
 
+  u32 offset = -1;
+  u32 fde_offset = -1;
   u32 fde_size = -1;
+  u32 leader_offset = -1;
 };
 
 class EhFrameSection : public OutputChunk {

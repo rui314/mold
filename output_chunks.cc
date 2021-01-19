@@ -699,77 +699,78 @@ void MergedSection::copy_buf() {
   });
 }
 
+
 void EhFrameSection::construct() {
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     for (CieRecord &cie : file->cies) {
       erase(cie.fdes, [&](FdeRecord &fde) { return !fde.is_alive(); });
 
-      cie.fde_size = 0;
-      for (FdeRecord &fde : cie.fdes)
-        cie.fde_size += fde.contents.size();        
+      u32 offset = 0;
+      for (FdeRecord &fde : cie.fdes) {
+        fde.offset = offset;
+        offset += fde.contents.size();
+      }
+      cie.fde_size = offset;
     }
   });
 
   // Aggreagate eh records
-  std::vector<CieRecord *> vec;
-  vec.reserve(out::objs.size());
-
+  cies.reserve(out::objs.size());
   for (ObjectFile *file : out::objs)
     for (CieRecord &cie : file->cies)
-      vec.push_back(&cie);
+      cies.push_back(&cie);
 
-  std::stable_sort(vec.begin(), vec.end(), [](CieRecord *a, CieRecord *b) {
+  std::stable_sort(cies.begin(), cies.end(), [](CieRecord *a, CieRecord *b) {
     return *a < *b;
   });
 
-  for (CieRecord *cie : vec) {
-    if (cies.empty() || cies.back() != cie) {
-      cies.push_back(cie);
+  u32 offset = 0;
+  for (CieRecord *cie : cies) {
+    cie->offset = offset;
+    if (cies.empty() || cies.back() == cie) {
+      cie->leader_offset = offset;
+      offset += cie->contents.size() + cie->fde_size;
     } else {
-      std::move(cie->fdes.begin(), cie->fdes.end(),
-                std::back_inserter(cies.back()->fdes));
-      cies.back()->fde_size += cie->fde_size;
+      cie->leader_offset = cies.back()->leader_offset;
+      offset += cie->fde_size;
     }
+    cies.push_back(cie);
   }
-
-  u32 size = 0;
-  for (CieRecord *cie : vec) {
-    size += cie->contents.size();
-    size += cie->fde_size;
-  }
-
-  shdr.sh_size = size;
+  shdr.sh_size = offset;
 }
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
-  u32 offset = 0;
 
-  for (CieRecord *cie : cies) {
-    u32 cie_offset = offset;
-    memcpy(base + offset, cie->contents.data(), cie->contents.size());
-    offset += cie->contents.size();
+  tbb::parallel_for(0, (int)cies.size(), [&](int i) {
+    CieRecord &cie = *cies[i];
+    u32 cie_size = 0;
 
-    for (EhReloc &rel : cie->rels) {
-      u32 P = shdr.sh_offset + cie_offset + rel.offset;
-      u32 S = rel.sym->get_addr();
-      *(u32 *)(out::buf + P) = S - P;
-    }
+    if (cie.offset == cie.leader_offset) {
+      memcpy(base + cie.offset, cie.contents.data(), cie.contents.size());
+      cie_size = cie.contents.size();
 
-    for (FdeRecord &fde : cie->fdes) {
-      u32 fde_offset = offset;
-      memcpy(base + offset, fde.contents.data(), fde.contents.size());
-      *(u32 *)(base + offset + 4) = fde_offset + 4 - cie_offset;
-      offset += fde.contents.size();
-
-      for (EhReloc &rel : fde.rels) {
-        u32 P = shdr.sh_offset + fde_offset + rel.offset;
+      for (EhReloc &rel : cie.rels) {
+        u32 P = shdr.sh_offset + cie.offset + rel.offset;
         u32 S = rel.sym->get_addr();
         *(u32 *)(out::buf + P) = S - P;
       }
     }
-  }
+
+    for (FdeRecord &fde : cie.fdes) {
+      u32 fde_off = cie.offset + cie_size + fde.offset;
+      u8 *fde_loc = base + cie.offset + cie_size + fde.offset;
+      memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
+      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie.leader_offset;
+
+      for (EhReloc &rel : fde.rels) {
+        u32 P = shdr.sh_addr + fde_off + rel.offset;
+        u32 S = rel.sym->get_addr();
+        *(u32 *)(base + fde_off + rel.offset) = S - P;
+      }
+    }
+  });
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
