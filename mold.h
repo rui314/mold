@@ -656,6 +656,7 @@ struct EhReloc {
 struct FdeRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
+  bool is_alive() const;
 };
 
 struct CieRecord {
@@ -666,7 +667,6 @@ struct CieRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
   std::vector<FdeRecord> fdes;
-  u32 fde_size;
 };
 
 class EhFrameSection : public OutputChunk {

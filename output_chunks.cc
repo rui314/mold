@@ -700,6 +700,17 @@ void MergedSection::copy_buf() {
 }
 
 void EhFrameSection::construct() {
+  std::vector<u32> fde_size(out::objs.size());
+
+  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+    ObjectFile *file = out::objs[i];
+    for (CieRecord &cie : file->cies) {
+      erase(cie.fdes, [&](FdeRecord &fde) { return !fde.is_alive(); });
+      for (FdeRecord &fde : cie.fdes)
+        fde_size[i] += fde.contents.size();        
+    }
+  });
+
   // Aggreagate eh records
   std::vector<CieRecord *> vec;
   vec.reserve(out::objs.size());
@@ -713,28 +724,36 @@ void EhFrameSection::construct() {
   });
 
   for (CieRecord *cie : vec) {
-    if (cies.empty() || cies.back() != cie) {
+    if (cies.empty() || cies.back() != cie)
       cies.push_back(cie);
-    } else {
+    else
       std::move(cie->fdes.begin(), cie->fdes.end(),
                 std::back_inserter(cies.back()->fdes));
-      cies.back()->fde_size += cie->fde_size;
-    }
   }
 
   // Compute output size
   u32 size = 0;
-  for (CieRecord *cie : cies) {
+  for (CieRecord *cie : cies)
     size += cie->contents.size();
-    size += cie->fde_size;
-  }
-
+  for (u32 x : fde_size)
+    size += x;
   shdr.sh_size = size;
 }
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
-  memset(base, 0, shdr.sh_size);
+  u32 offset = 0;
+
+  for (CieRecord *cie : cies) {
+    u32 cie_offset = offset;
+    memcpy(base + offset, cie->contents.data(), cie->contents.size());
+    offset += cie->contents.size();
+
+    for (FdeRecord &fde : cie->fdes) {
+      memcpy(base + offset, fde.contents.data(), fde.contents.size());
+      offset += fde.contents.size();
+    }
+  }
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
