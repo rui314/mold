@@ -650,6 +650,7 @@ private:
 
 struct EhReloc {
   Symbol *sym;
+  u32 r_type;
   u32 offset;
 };
 

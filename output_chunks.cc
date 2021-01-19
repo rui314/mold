@@ -726,22 +726,32 @@ void EhFrameSection::construct() {
   });
 
   u32 offset = 0;
-  for (CieRecord *cie : cies) {
-    cie->offset = offset;
-    if (cies.empty() || cies.back() == cie) {
-      cie->leader_offset = offset;
-      offset += cie->contents.size() + cie->fde_size;
+  for (int i = 0; i < cies.size(); i++) {
+    CieRecord &cie = *cies[i];
+    cie.offset = offset;
+
+    if (i == 0 || cie == *cies[i - 1]) {
+      cie.leader_offset = offset;
+      offset += cie.contents.size() + cie.fde_size;
     } else {
-      cie->leader_offset = cies.back()->leader_offset;
-      offset += cie->fde_size;
+      cie.leader_offset = cies.back()->leader_offset;
+      offset += cie.fde_size;
     }
-    cies.push_back(cie);
   }
   shdr.sh_size = offset;
 }
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
+
+  auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 P, u32 S) {
+    if (rel.r_type == R_X86_64_32)
+      *(u32 *)loc = S;
+    else if (rel.r_type == R_X86_64_PC32)
+      *(u32 *)loc = S - P;
+    else
+      unreachable();
+  };
 
   tbb::parallel_for(0, (int)cies.size(), [&](int i) {
     CieRecord &cie = *cies[i];
@@ -754,7 +764,7 @@ void EhFrameSection::copy_buf() {
       for (EhReloc &rel : cie.rels) {
         u32 P = shdr.sh_addr + cie.offset + rel.offset;
         u32 S = rel.sym->get_addr();
-        *(u32 *)(base + cie.offset + rel.offset) = S - P;
+        apply_reloc(rel, base + cie.offset + rel.offset, P, S);
       }
     }
 
@@ -766,7 +776,7 @@ void EhFrameSection::copy_buf() {
       for (EhReloc &rel : fde.rels) {
         u32 P = shdr.sh_addr + fde_off + rel.offset;
         u32 S = rel.sym->get_addr();
-        *(u32 *)(base + fde_off + rel.offset) = S - P;
+        apply_reloc(rel, base + fde_off + rel.offset, P, S);
       }
     }
   });

@@ -204,7 +204,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   u32 cur_cie_offset = -1;
 
   for (ElfRela rel : rels)
-    if (rel.r_type != R_X86_64_PC32)
+    if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_PC32)
       Fatal() << *isec.file << ": .eh_frame: unsupported relocation type: "
               << rel.r_type;
 
@@ -228,7 +228,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     std::vector<EhReloc> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       Symbol *sym = symbols[rels[0].r_sym];
-      eh_rels.push_back({sym, (u32)(rels[0].r_offset - begin_offset)});
+      eh_rels.push_back({sym, rels[0].r_type,
+                         (u32)(rels[0].r_offset - begin_offset)});
       rels = rels.subspan(1);
     }
 
@@ -880,11 +881,13 @@ bool CieRecord::operator<(const CieRecord &other) const {
     return true;
   if (rels.size() < other.rels.size())
     return true;
+  if (rels.size() != other.rels.size())
+    return rels.size() < other.rels.size();
   for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
     if (rels[i].sym->name < other.rels[i].sym->name ||
         rels[i].offset < other.rels[i].offset)
       return true;
-  return rels.size() < other.rels.size();
+  return false;
 }
 
 bool CieRecord::operator==(const CieRecord &other) const {
