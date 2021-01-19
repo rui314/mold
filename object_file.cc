@@ -894,10 +894,3 @@ bool CieRecord::operator==(const CieRecord &other) const {
 bool CieRecord::operator!=(const CieRecord &other) const {
   return !(*this == other);
 }
-
-bool FdeRecord::is_alive() const {
-  if (rels.empty())
-    return true;
-  InputSection *isec = rels[0].sym->input_section;
-  return !isec || isec->is_alive;
-}

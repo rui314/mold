@@ -657,7 +657,14 @@ struct FdeRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
   u32 offset = -1;
-  bool is_alive() const;
+
+  bool is_alive() const {
+    if (!rels.empty())
+      if (InputSection *isec = rels[0].sym->input_section)
+        if (!isec->is_alive)
+          return false;
+    return true;
+  }
 };
 
 struct CieRecord {
