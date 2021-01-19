@@ -744,11 +744,11 @@ void EhFrameSection::construct() {
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 P, u32 S) {
+  auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 S, u32 P, i64 A) {
     if (rel.r_type == R_X86_64_32)
-      *(u32 *)loc = S;
+      *(u32 *)loc = S + A;
     else if (rel.r_type == R_X86_64_PC32)
-      *(u32 *)loc = S - P;
+      *(u32 *)loc = S + A - P;
     else
       unreachable();
   };
@@ -762,22 +762,21 @@ void EhFrameSection::copy_buf() {
       cie_size = cie.contents.size();
 
       for (EhReloc &rel : cie.rels) {
-        u32 P = shdr.sh_addr + cie.offset + rel.offset;
         u32 S = rel.sym->get_addr();
-        apply_reloc(rel, base + cie.offset + rel.offset, P, S);
+        u32 P = shdr.sh_addr + cie.offset + rel.offset;
+        apply_reloc(rel, base + cie.offset + rel.offset, S, P, rel.r_addend);
       }
     }
 
-    int j = 0;
     for (FdeRecord &fde : cie.fdes) {
       u32 fde_off = cie.offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie.leader_offset;
 
       for (EhReloc &rel : fde.rels) {
-        u32 P = shdr.sh_addr + fde_off + rel.offset;
         u32 S = rel.sym->get_addr();
-        apply_reloc(rel, base + fde_off + rel.offset, P, S);
+        u32 P = shdr.sh_addr + fde_off + rel.offset;
+        apply_reloc(rel, base + fde_off + rel.offset, S, P, rel.r_addend);
       }
     }
   });

@@ -229,7 +229,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       Symbol *sym = symbols[rels[0].r_sym];
       eh_rels.push_back({sym, rels[0].r_type,
-                         (u32)(rels[0].r_offset - begin_offset)});
+                         (u32)(rels[0].r_offset - begin_offset),
+                         rels[0].r_addend});
       rels = rels.subspan(1);
     }
 
