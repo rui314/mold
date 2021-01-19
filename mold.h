@@ -678,9 +678,9 @@ struct CieRecord {
   std::vector<FdeRecord> fdes;
 
   u32 offset = -1;
+  u32 leader_offset = -1;
   u32 fde_offset = -1;
   u32 fde_size = -1;
-  u32 leader_offset = -1;
 };
 
 class EhFrameSection : public OutputChunk {

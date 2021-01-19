@@ -730,11 +730,11 @@ void EhFrameSection::construct() {
     CieRecord &cie = *cies[i];
     cie.offset = offset;
 
-    if (i == 0 || cie == *cies[i - 1]) {
+    if (i == 0 || cie != *cies[i - 1]) {
       cie.leader_offset = offset;
       offset += cie.contents.size() + cie.fde_size;
     } else {
-      cie.leader_offset = cies.back()->leader_offset;
+      cie.leader_offset = cies[i - 1]->leader_offset;
       offset += cie.fde_size;
     }
   }
@@ -768,6 +768,7 @@ void EhFrameSection::copy_buf() {
       }
     }
 
+    int j = 0;
     for (FdeRecord &fde : cie.fdes) {
       u32 fde_off = cie.offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());

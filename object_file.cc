@@ -879,14 +879,13 @@ std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
 bool CieRecord::operator<(const CieRecord &other) const {
   if (contents < other.contents)
     return true;
-  if (rels.size() < other.rels.size())
-    return true;
   if (rels.size() != other.rels.size())
     return rels.size() < other.rels.size();
-  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
-    if (rels[i].sym->name < other.rels[i].sym->name ||
+  for (int i = 0; i < rels.size() && i < other.rels.size(); i++) {
+    if (rels[i].sym < other.rels[i].sym ||
         rels[i].offset < other.rels[i].offset)
       return true;
+  }
   return false;
 }
 
