@@ -853,10 +853,11 @@ public:
 
   std::vector<MergeableSection *> mergeable_sections;
 
+  void initialize_ehframe_sections();
+
 private:
   void initialize_sections();
   void initialize_symbols();
-  void initialize_ehframe_sections();
   void initialize_mergeable_sections();
   void read_ehframe(InputSection &isec);
   void maybe_override_symbol(Symbol &sym, int symidx);
