@@ -193,6 +193,10 @@ void ObjectFile::initialize_ehframe_sections() {
       sections[i] = nullptr;
     }
   }
+
+  for (CieRecord &cie : cies)
+    for (FdeRecord &fde : cie.fdes)
+      cie.fde_size += fde.contents.size();
 }
 
 void ObjectFile::read_ehframe(InputSection &isec) {

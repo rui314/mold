@@ -3,8 +3,6 @@
 #include <openssl/sha.h>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
-#include <tbb/concurrent_vector.h>
-#include <tbb/parallel_sort.h>
 
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
@@ -715,20 +713,22 @@ void EhFrameSection::construct() {
   });
 
   for (CieRecord *cie : vec) {
-    if (cies.empty() || cies.back() != cie)
+    if (cies.empty() || cies.back() != cie) {
       cies.push_back(cie);
-    else
+    } else {
       std::move(cie->fdes.begin(), cie->fdes.end(),
                 std::back_inserter(cies.back()->fdes));
+      cies.back()->fde_size += cie->fde_size;
+    }
   }
 
   // Compute output size
   u32 size = 0;
   for (CieRecord *cie : cies) {
     size += cie->contents.size();
-    for (FdeRecord &fde : cie->fdes)
-      size += fde.contents.size();
+    size += cie->fde_size;
   }
+
   shdr.sh_size = size;
 }
 

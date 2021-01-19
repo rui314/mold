@@ -666,6 +666,7 @@ struct CieRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
   std::vector<FdeRecord> fdes;
+  u32 fde_size;
 };
 
 class EhFrameSection : public OutputChunk {
