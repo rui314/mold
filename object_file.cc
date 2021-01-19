@@ -881,3 +881,11 @@ bool CieRecord::operator<(const CieRecord &other) const {
       return true;
   return rels.size() < other.rels.size();
 }
+
+bool CieRecord::operator==(const CieRecord &other) const {
+  return !(*this < other) && !(other < *this);
+}
+
+bool CieRecord::operator!=(const CieRecord &other) const {
+  return !(*this == other);
+}

@@ -3,6 +3,8 @@
 #include <openssl/sha.h>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/parallel_sort.h>
 
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
@@ -699,187 +701,32 @@ void MergedSection::copy_buf() {
   });
 }
 
-bool Cie::operator<(const Cie &other) const {
-  if (contents < other.contents)
-    return true;
-  if (rels.size() < other.rels.size())
-    return true;
-  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
-    if (rels[i].sym->name < other.rels[i].sym->name ||
-        rels[i].offset < other.rels[i].offset)
-      return true;
-  return rels.size() < other.rels.size();
-}
+void EhFrameSection::construct() {
+  std::vector<CieRecord *> vec;
+  vec.reserve(out::objs.size());
 
-void EhFrameSection::set_isec_offsets() {
-  std::vector<u32> fde_sizes(members.size());
+  for (ObjectFile *file : out::objs)
+    for (CieRecord &cie : file->cies)
+      vec.push_back(&cie);
 
-  tbb::parallel_for(0, (int)members.size(), [&](int i) {
-    InputSection *isec = members[i];
-    if (isec->shdr.sh_type == SHT_NOBITS)
-      Fatal() << *isec->file << ": unsupported .eh_frame sectoin";
-    fde_sizes[i] = parse_eh_frame(*isec);
+  std::stable_sort(vec.begin(), vec.end(), [](CieRecord *a, CieRecord *b) {
+    return *a < *b;
   });
 
-  u32 offset = 0;
-  for (std::map<Cie, u32>::iterator it = cies.begin(); it != cies.end(); it++) {
-    it->second = offset;
-    offset += it->first.contents.size();
+  for (CieRecord *cie : vec) {
+    if (cies.empty() || cies.back() != cie)
+      cies.push_back(cie);
+    else
+      std::move(cie->fdes.begin(), cie->fdes.end(),
+                std::back_inserter(cies.back()->fdes));
   }
 
-  for (int i = 0; i < members.size(); i++) {
-    members[i]->offset = offset;
-    offset += fde_sizes[i];
-  }
-
-  shdr.sh_size = offset;
-}
-
-int EhFrameSection::parse_eh_frame(InputSection &isec) {
-  std::span<ElfRela> rels = isec.rels;
-  std::span<Symbol *> syms = isec.file->symbols;
-  std::string_view data = isec.file->get_string(isec.shdr);
-  const char *begin = data.data();
-
-  auto read_u32 = [&](int offset) {
-    if (data.size() < offset + 4)
-      Fatal() << *isec.file << ": malformed .eh_frame section";
-    return *(u32 *)(data.data() + offset);
-  };
-
-  auto at_eof = [&]() {
-    if (data.empty())
-      return true;
-    u32 size = read_u32(0);
-    if (size == 0) {
-      if (data.size() != 4)
-        Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
-      return true;
-    }
-    return false;
-  };
-
-  auto read_record =
-      [&]() -> std::tuple<std::string_view, std::span<ElfRela>, bool> {
-    u32 size = read_u32(0);
-    u32 record_offset = data.data() - begin;
-    u32 record_end = record_offset + size + 4;
-
-    u32 id = read_u32(4);
-    data = data.substr(size + 4);
-    std::string_view contents = data.substr(0, size + 4);
-
-    if (!rels.empty() && rels[0].r_offset <= record_offset)
-      Fatal() << *isec.file << ": .eh_frame: unsupported relocation layout";
-
-    int i = 0;
-    while (!rels.empty() && rels[i].r_offset < record_end)
-      i++;
-    std::span<ElfRela> rec_rels = rels.subspan(0, i);
-    rels = rels.subspan(i);
-
-    // CIE's ID is always 0.
-    return {contents, rec_rels, id == 0};
-  };
-
-  int fde_size = 0;
-
-  while (!at_eof()) {
-    u32 record_offset = data.data() - begin;
-
-    std::string_view contents;
-    std::span<ElfRela> rec_rels;
-    bool is_cie;
-    std::tie(contents, rec_rels, is_cie) = read_record();
-
-    if (is_cie) {
-      Cie cie;
-      cie.contents = contents;
-
-      for (ElfRela &rel : rec_rels) {
-        Symbol *sym = syms[rel.r_sym];
-        cie.rels.push_back({sym, (u32)(rel.r_offset - record_offset)});
-      }
-
-      decltype(mu)::scoped_lock lock(mu, false);
-      if (cies.count(cie) == 0)
-        if (lock.upgrade_to_writer() || cies.count(cie) == 0)
-          cies[cie] = -1;
-    } else {
-      bool is_alive = true;
-      if (!rec_rels.empty()) {
-        Symbol *sym = syms[rec_rels[0].r_sym];
-        if (sym->input_section && !sym->input_section->is_alive)
-          is_alive = false;
-      }
-
-      if (is_alive)
-        fde_size += contents.size();
-    }
-  }
-  return fde_size;
+  shdr.sh_size = 4;
 }
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
-
-  for (std::pair<const Cie, u32> &pair : cies) {
-    const Cie &cie = pair.first;
-    u32 offset = pair.second;
-    memcpy(base + offset, cie.contents.data(), cie.contents.size());
-  }
-
-#if 0
-  for (InputSection *isec : members) {
-    std::span<ElfRela> rels = isec->rels;
-    std::span<Symbol *> syms = isec->file->symbols;
-    std::string_view data = isec->file->get_string(isec->shdr);
-
-    const char *begin = data.data();
-    const char *cur_cie = nullptr;
-    u32 cie_offset = -1;
-    u32 write_offset = 0;
-
-    while (!data.empty()) {
-      u32 size = *(u32 *)(data.data());
-      if (size == 0)
-        return;
-
-      u32 id = *(u32 *)(data.data() + 4);
-
-      // FDE
-      if (id != 0) {
-        if (cur_cie == nullptr || cur_cie != data.data() + 4 - id) {
-          cur_cie = data.data() + 4 - id;
-          std::string_view cie = {cur_cie, *(u32 *)(cur_cie) + 4};
-          assert(cies.count(cie));
-          cie_offset = cies[cie];
-        }
-
-        int offset = data.data() + 8 - begin;
-        while (!rels.empty() && rels[0].r_offset < offset)
-          rels = rels.subspan(1);
-
-        bool is_alive = true;
-        if (rels[0].r_offset == offset) {
-          Symbol *sym = syms[rels[0].r_sym];
-          if (sym->input_section && !sym->input_section->is_alive)
-            is_alive = false;
-        }
-
-        if (is_alive) {
-          u8 *loc = base + isec->offset + write_offset;
-          memcpy(loc, data.data(), size + 4);
-          *(u32 *)(loc + 4) = isec->offset + write_offset + 4 - cie_offset;
-          write_offset += size + 4;
-        }
-      }
-
-      data = data.substr(size + 4);
-    }
-  }
-#endif
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

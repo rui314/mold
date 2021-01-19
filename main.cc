@@ -1065,6 +1065,7 @@ int main(int argc, char **argv) {
   out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
+  out::ehframe = new EhFrameSection;
   out::copyrel = new CopyrelSection;
   if (config.build_id)
     out::buildid = new BuildIdSection;
@@ -1090,6 +1091,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::symtab);
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
+  out::chunks.push_back(out::ehframe);
   out::chunks.push_back(out::copyrel);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);
@@ -1134,12 +1136,10 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
-  for (OutputSection *osec : OutputSection::instances) {
-    if (osec->name == ".eh_frame" && !osec->members.empty()) {
-      out::ehframe = new EhFrameSection(osec);
-      osec->members = {};
-      break;
-    }
+  // Construct .eh_frame section
+  {
+    Timer t("eh_frame");
+    out::ehframe->construct();
   }
 
   // Assign offsets within an output section to input sections.
@@ -1162,8 +1162,6 @@ int main(int argc, char **argv) {
   for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
-  if (out::ehframe)
-    out::chunks.push_back(out::ehframe);
 
   erase(out::chunks, [](OutputChunk *c) { return !c; });
 
@@ -1225,12 +1223,6 @@ int main(int argc, char **argv) {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->compute_symtab();
   });
-
-  // Compute the size of .eh_frame.
-  if (out::ehframe) {
-    Timer t("eh_frame_offsets");
-    out::ehframe->set_isec_offsets();
-  }
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents

@@ -648,34 +648,40 @@ private:
   }
 };
 
-struct Cie {
-  typedef struct {Symbol *sym; u32 offset; } Reloc;
+struct EhReloc {
+  Symbol *sym;
+  u32 offset;
+};
+
+struct FdeRecord {
+  std::string_view contents;
+  std::vector<EhReloc> rels;
+};
+
+struct CieRecord {
+  bool operator<(const CieRecord &other) const;
+  bool operator==(const CieRecord &other) const;
+  bool operator!=(const CieRecord &other) const;
 
   std::string_view contents;
-  std::vector<Reloc> rels;
-
-  bool operator<(const Cie &other) const;
+  std::vector<EhReloc> rels;
+  std::vector<FdeRecord> fdes;
 };
 
 class EhFrameSection : public OutputChunk {
 public:
-  EhFrameSection(OutputSection *original)
-    : OutputChunk(SYNTHETIC), members(std::move(original->members)) {
+  EhFrameSection() : OutputChunk(SYNTHETIC) {
     name = ".eh_frame";
     shdr.sh_type = SHT_PROGBITS;
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_addralign = 8;
   }
 
-  void set_isec_offsets();
+  void construct();
   void copy_buf() override;
 
 private:
-  int parse_eh_frame(InputSection &isec);
-
-  tbb::spin_rw_mutex mu;
-  std::vector<InputSection *> members;
-  std::map<Cie, u32> cies;
+  std::vector<CieRecord *> cies;
 };
 
 class CopyrelSection : public OutputChunk {
@@ -801,24 +807,6 @@ protected:
   ElfShdr *find_section(u32 type);
 
   std::string_view shstrtab;
-};
-
-struct EhReloc {
-  Symbol *sym;
-  u32 offset;
-};
-
-struct FdeRecord {
-  std::string_view contents;
-  std::vector<EhReloc> rels;
-};
-
-struct CieRecord {
-  bool operator<(const CieRecord &other) const;
-
-  std::string_view contents;
-  std::vector<EhReloc> rels;
-  std::vector<FdeRecord> fdes;
 };
 
 class ObjectFile : public InputFile {
