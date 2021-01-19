@@ -654,7 +654,6 @@ struct Cie {
   std::string_view contents;
   std::vector<Reloc> rels;
 
-  bool operator=(const Cie &other) const;
   bool operator<(const Cie &other) const;
 };
 
@@ -804,13 +803,30 @@ protected:
   std::string_view shstrtab;
 };
 
+struct EhReloc {
+  Symbol *sym;
+  u32 offset;
+};
+
+struct FdeRecord {
+  std::string_view contents;
+  std::vector<EhReloc> rels;
+};
+
+struct CieRecord {
+  bool operator<(const CieRecord &other) const;
+
+  std::string_view contents;
+  std::vector<EhReloc> rels;
+  std::vector<FdeRecord> fdes;
+};
+
 class ObjectFile : public InputFile {
 public:
   ObjectFile(MemoryMappedFile *mb, std::string archive_name);
   ObjectFile();
 
   void parse();
-  void initialize_mergeable_sections();
   void resolve_symbols();
   std::vector<ObjectFile *> mark_live_objects();
   void handle_undefined_weak_symbols();
@@ -828,6 +844,7 @@ public:
   std::span<ElfSym> elf_syms;
   int first_global = 0;
   const bool is_in_archive = false;
+  std::vector<CieRecord> cies;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -844,7 +861,9 @@ public:
 private:
   void initialize_sections();
   void initialize_symbols();
-  std::vector<StringPieceRef> read_string_pieces(InputSection *isec);
+  void initialize_ehframe_sections();
+  void initialize_mergeable_sections();
+  void read_ehframe(InputSection &isec);
   void maybe_override_symbol(Symbol &sym, int symidx);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;

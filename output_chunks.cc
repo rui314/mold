@@ -699,16 +699,6 @@ void MergedSection::copy_buf() {
   });
 }
 
-bool Cie::operator=(const Cie &other) const {
-  if (contents != other.contents)
-    return false;
-  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
-    if (rels[i].sym->name != other.rels[i].sym->name ||
-        rels[i].offset != other.rels[i].offset)
-      return false;
-  return rels.size() < other.rels.size();
-}
-
 bool Cie::operator<(const Cie &other) const {
   if (contents < other.contents)
     return true;

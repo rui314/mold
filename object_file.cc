@@ -185,6 +185,70 @@ void ObjectFile::initialize_sections() {
   }
 }
 
+void ObjectFile::initialize_ehframe_sections() {
+  for (int i = 0; i < sections.size(); i++) {
+    InputSection *isec = sections[i];
+    if (isec && isec->name == ".eh_frame") {
+      read_ehframe(*isec);
+      sections[i] = nullptr;
+    }
+  }
+}
+
+void ObjectFile::read_ehframe(InputSection &isec) {
+  std::span<ElfRela> rels = isec.rels;
+  std::string_view data = get_string(isec.shdr);
+  const char *begin = data.data();
+  std::unordered_map<u32, CieRecord *> offset_to_cie;
+  CieRecord *cur_cie = nullptr;
+  u32 cur_cie_offset = -1;
+
+  while (!data.empty()) {
+    u32 size = *(u32 *)data.data();
+    if (size == 0) {
+      if (data.size() != 4)
+        Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
+      return;
+    }
+
+    u32 begin_offset = data.data() - begin;
+    u32 end_offset = begin_offset + size + 4;
+
+    if (!rels.empty() && rels[0].r_offset < begin_offset)
+      Fatal() << *isec.file << ": .eh_frame: unsupported relocation order";
+
+    std::string_view contents = data.substr(0, size + 4);
+    data = data.substr(size + 4);
+
+    std::vector<EhReloc> eh_rels;
+    while (!rels.empty() && rels[0].r_offset < end_offset) {
+      Symbol *sym = symbols[rels[0].r_sym];
+      eh_rels.push_back({sym, (u32)(rels[0].r_offset - begin_offset)});
+      rels = rels.subspan(1);
+    }
+
+    u32 id = *(u32 *)(contents.data() + 4);
+    if (id == 0) {
+      // CIE
+      cies.push_back({contents, std::move(eh_rels), {}});
+      offset_to_cie[begin_offset] = &cies.back();
+
+      cur_cie = &cies.back();
+      cur_cie_offset = begin_offset;
+    } else {
+      // FDE
+      u32 cie_offset = begin_offset + 4 - id;
+      if (cie_offset != cur_cie_offset) {
+        auto it = offset_to_cie.find(cie_offset);
+        assert(it != offset_to_cie.end());
+        cur_cie_offset = it->first;
+        cur_cie = it->second;
+      }
+      cur_cie->fdes.push_back({contents, std::move(eh_rels)});
+    }
+  }
+}
+
 static bool should_write_symtab(const ElfSym &esym, std::string_view name) {
   if (config.discard_all || config.strip_all)
     return false;
@@ -347,6 +411,7 @@ void ObjectFile::parse() {
 
   initialize_sections();
   initialize_symbols();
+  initialize_ehframe_sections();
   initialize_mergeable_sections();
 }
 
@@ -803,4 +868,16 @@ std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
     symbols.begin(), symbols.end(), sym,
     [&](Symbol *a, Symbol *b) { return a->value < b->value; });
   return {begin, end};
+}
+
+bool CieRecord::operator<(const CieRecord &other) const {
+  if (contents < other.contents)
+    return true;
+  if (rels.size() < other.rels.size())
+    return true;
+  for (int i = 0; i < rels.size() && i < other.rels.size(); i++)
+    if (rels[i].sym->name < other.rels[i].sym->name ||
+        rels[i].offset < other.rels[i].offset)
+      return true;
+  return rels.size() < other.rels.size();
 }
