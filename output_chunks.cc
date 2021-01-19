@@ -752,15 +752,14 @@ void EhFrameSection::copy_buf() {
       cie_size = cie.contents.size();
 
       for (EhReloc &rel : cie.rels) {
-        u32 P = shdr.sh_offset + cie.offset + rel.offset;
+        u32 P = shdr.sh_addr + cie.offset + rel.offset;
         u32 S = rel.sym->get_addr();
-        *(u32 *)(out::buf + P) = S - P;
+        *(u32 *)(base + cie.offset + rel.offset) = S - P;
       }
     }
 
     for (FdeRecord &fde : cie.fdes) {
       u32 fde_off = cie.offset + cie_size + fde.offset;
-      u8 *fde_loc = base + cie.offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie.leader_offset;
 
