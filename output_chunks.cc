@@ -706,10 +706,10 @@ void EhFrameSection::construct() {
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     for (CieRecord &cie : file->cies) {
-      erase(cie.fdes, [&](FdeRecord &fde) { return !fde.is_alive(); });
-
       u32 offset = 0;
       for (FdeRecord &fde : cie.fdes) {
+        if (!fde.is_alive())
+          continue;
         fde.offset = offset;
         offset += fde.contents.size();
       }
@@ -723,9 +723,7 @@ void EhFrameSection::construct() {
     for (CieRecord &cie : file->cies)
       cies.push_back(&cie);
 
-  std::stable_sort(cies.begin(), cies.end(), [](CieRecord *a, CieRecord *b) {
-    return *a < *b;
-  });
+  sort(cies, [](CieRecord *a, CieRecord *b) { return *a < *b; });
 
   // Assign offsets within the output section to CIEs.
   u32 offset = 0;
@@ -774,6 +772,9 @@ void EhFrameSection::copy_buf() {
 
     // Copy FDEs.
     for (FdeRecord &fde : cie->fdes) {
+      if (!fde.is_alive())
+        continue;
+
       u32 fde_off = cie->offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
