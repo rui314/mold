@@ -132,18 +132,14 @@ void InputSection::copy_buf() {
 
   // Copy data
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
-  copy_contents(base);
+  std::string_view contents = file->get_string(shdr);
+  memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
   if (shdr.sh_flags & SHF_ALLOC)
     apply_reloc_alloc(base);
   else
     apply_reloc_nonalloc(base);
-}
-
-void InputSection::copy_contents(u8 *base) {
-  std::string_view contents = file->get_string(shdr);
-  memcpy(base, contents.data(), contents.size());
 }
 
 void InputSection::apply_reloc_alloc(u8 *base) {

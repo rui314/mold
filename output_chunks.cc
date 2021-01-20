@@ -423,18 +423,19 @@ void OutputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS)
     return;
 
-  int num_members = members.size();
+  tbb::parallel_for(0, (int)members.size(), [&](int i) {
+    InputSection &isec = *members[i];
+    if (isec.shdr.sh_type == SHT_NOBITS)
+      return;
 
-  tbb::parallel_for(0, num_members, [&](int i) {
-    if (members[i]->shdr.sh_type != SHT_NOBITS) {
-      // Copy section contents to an output file
-      members[i]->copy_buf();
+    // Copy section contents to an output file
+    isec.copy_buf();
 
-      // Zero-clear trailing padding
-      u64 this_end = members[i]->offset + members[i]->shdr.sh_size;
-      u64 next_start = (i == num_members - 1) ? shdr.sh_size : members[i + 1]->offset;
-      memset(out::buf + shdr.sh_offset + this_end, 0, next_start - this_end);
-    }
+    // Zero-clear trailing padding
+    u64 this_end = isec.offset + isec.shdr.sh_size;
+    u64 next_start = (i == members.size() - 1) ?
+      shdr.sh_size : members[i + 1]->offset;
+    memset(out::buf + shdr.sh_offset + this_end, 0, next_start - this_end);
   });
 }
 

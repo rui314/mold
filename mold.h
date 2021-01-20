@@ -336,7 +336,6 @@ public:
   bool is_comdat_member = false;
   bool is_alive = true;
 
-  void copy_contents(u8 *base);
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
 };
