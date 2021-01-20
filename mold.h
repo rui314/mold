@@ -704,6 +704,7 @@ public:
 
 private:
   std::vector<CieRecord *> cies;
+  u32 num_fdes;
 };
 
 class CopyrelSection : public OutputChunk {
