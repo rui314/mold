@@ -58,6 +58,7 @@ struct Config {
   bool build_id = false;
   bool discard_all = false;
   bool discard_locals = false;
+  bool eh_frame_hdr = false;
   bool export_dynamic = false;
   bool fork = true;
   bool is_static = false;
@@ -711,6 +712,21 @@ private:
   u32 num_fdes;
 };
 
+class EhFrameHdrSection : public OutputChunk {
+public:
+  EhFrameHdrSection() : OutputChunk(SYNTHETIC) {
+    name = ".eh_frame_hdr";
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 4;
+    shdr.sh_size = HEADER_SIZE;
+  }
+
+  void write(std::span<CieRecord *> cies);
+
+  enum { HEADER_SIZE = 12 };
+};
+
 class CopyrelSection : public OutputChunk {
 public:
   CopyrelSection() : OutputChunk(SYNTHETIC) {
@@ -1062,7 +1078,8 @@ inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
-inline EhFrameSection *ehframe;
+inline EhFrameSection *eh_frame;
+inline EhFrameHdrSection *eh_frame_hdr;
 inline CopyrelSection *copyrel;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
@@ -1106,7 +1123,7 @@ inline u64 Symbol::get_addr() const {
 
   if (input_section) {
     if (input_section->is_ehframe)
-      return out::ehframe->get_addr(*this);
+      return out::eh_frame->get_addr(*this);
 
     if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers

@@ -885,6 +885,10 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.sysroot = arg;
     } else if (read_flag(args, "trace")) {
       conf.trace = true;
+    } else if (read_flag(args, "eh-frame-hdr")) {
+      conf.eh_frame_hdr = true;
+    } else if (read_flag(args, "no-eh-frame-hdr")) {
+      conf.eh_frame_hdr = false;
     } else if (read_flag(args, "pie")) {
       conf.pie = true;
     } else if (read_flag(args, "no-pie")) {
@@ -1065,10 +1069,13 @@ int main(int argc, char **argv) {
   out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
-  out::ehframe = new EhFrameSection;
+  out::eh_frame = new EhFrameSection;
   out::copyrel = new CopyrelSection;
+
   if (config.build_id)
     out::buildid = new BuildIdSection;
+  if (config.eh_frame_hdr)
+    out::eh_frame_hdr = new EhFrameHdrSection;
 
   if (!config.is_static) {
     out::interp = new InterpSection;
@@ -1091,7 +1098,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::symtab);
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
-  out::chunks.push_back(out::ehframe);
+  out::chunks.push_back(out::eh_frame);
   out::chunks.push_back(out::copyrel);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);
@@ -1228,7 +1235,7 @@ int main(int argc, char **argv) {
     erase(out::chunks, [](OutputChunk *chunk) {
       return chunk->kind == OutputChunk::REGULAR && chunk->name == ".eh_frame";
     });
-    out::ehframe->construct();
+    out::eh_frame->construct();
   }
 
   // Now that we have computed sizes for all sections and assigned

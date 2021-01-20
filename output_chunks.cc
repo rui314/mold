@@ -806,6 +806,10 @@ void EhFrameSection::copy_buf() {
       }
     }
   });
+
+  // Write to .eh_frame_hdr.
+  if (out::eh_frame_hdr)
+    out::eh_frame_hdr->write(cies);
 }
 
 u64 EhFrameSection::get_addr(const Symbol &sym) {
@@ -845,6 +849,18 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   }
 
   Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
+}
+
+void EhFrameHdrSection::write(std::span<CieRecord *> cies) {
+  u8 *base = out::buf + shdr.sh_offset;
+
+  base[0] = 1;
+  base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+  base[2] = DW_EH_PE_udata4;
+  base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
+
+  *(u32 *)(base + 4) = out::eh_frame->shdr.sh_addr - shdr.sh_addr - 4;
+
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

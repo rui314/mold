@@ -202,6 +202,23 @@ static constexpr u32 R_X86_64_IRELATIVE = 37;
 static constexpr u32 R_X86_64_GOTPCRELX = 41;
 static constexpr u32 R_X86_64_REX_GOTPCRELX = 42;
 
+static constexpr u32 DW_EH_PE_absptr = 0;
+static constexpr u32 DW_EH_PE_omit = 0xff;
+static constexpr u32 DW_EH_PE_uleb128 = 0x01;
+static constexpr u32 DW_EH_PE_udata2 = 0x02;
+static constexpr u32 DW_EH_PE_udata4 = 0x03;
+static constexpr u32 DW_EH_PE_udata8 = 0x04;
+static constexpr u32 DW_EH_PE_signed = 0x08;
+static constexpr u32 DW_EH_PE_sleb128 = 0x09;
+static constexpr u32 DW_EH_PE_sdata2 = 0x0a;
+static constexpr u32 DW_EH_PE_sdata4 = 0x0b;
+static constexpr u32 DW_EH_PE_sdata8 = 0x0c;
+static constexpr u32 DW_EH_PE_pcrel = 0x10;
+static constexpr u32 DW_EH_PE_textrel = 0x20;
+static constexpr u32 DW_EH_PE_datarel = 0x30;
+static constexpr u32 DW_EH_PE_funcrel = 0x40;
+static constexpr u32 DW_EH_PE_aligned = 0x50;
+
 struct ElfSym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
