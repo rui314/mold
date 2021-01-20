@@ -1136,12 +1136,6 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
-  // Construct .eh_frame section
-  {
-    Timer t("eh_frame");
-    out::ehframe->construct();
-  }
-
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
 
@@ -1223,6 +1217,19 @@ int main(int argc, char **argv) {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->compute_symtab();
   });
+
+  // .eh_frame is a special section from the linker's point of view,
+  // as it's contents are parsed, consumed and reconstructed by the
+  // linker, unlike other sections that consist of just opaque bytes.
+  // Here, we transplant .eh_frame sections from a regular output
+  // section to the special EHFrameSection.
+  {
+    Timer t("eh_frame");
+    erase(out::chunks, [](OutputChunk *chunk) {
+      return chunk->kind == OutputChunk::REGULAR && chunk->name == ".eh_frame";
+    });
+    out::ehframe->construct();
+  }
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents

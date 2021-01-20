@@ -191,7 +191,6 @@ void ObjectFile::initialize_ehframe_sections() {
     if (isec && isec->name == ".eh_frame") {
       read_ehframe(*isec);
       isec->is_ehframe = true;
-      sections[i] = nullptr;
     }
   }
 }
@@ -425,8 +424,8 @@ void ObjectFile::parse() {
 
   initialize_sections();
   initialize_symbols();
-  initialize_ehframe_sections();
   initialize_mergeable_sections();
+  initialize_ehframe_sections();
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.

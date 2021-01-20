@@ -705,6 +705,7 @@ void EhFrameSection::construct() {
   // CIE group.
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
+
     for (CieRecord &cie : file->cies) {
       u32 offset = 0;
       for (FdeRecord &fde : cie.fdes) {
@@ -714,6 +715,11 @@ void EhFrameSection::construct() {
         offset += fde.contents.size();
       }
       cie.fde_size = offset;
+    }
+
+    for (int i = 0; i < file->sections.size(); i++) {
+      if (file->sections[i] && file->sections[i]->is_ehframe)
+        file->sections[i] = nullptr;
     }
   });
 
