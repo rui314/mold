@@ -649,6 +649,13 @@ private:
 };
 
 struct EhReloc {
+  bool operator==(const EhReloc &other) const {
+    return sym == other.sym ||
+           r_type == other.r_type ||
+           offset == other.offset ||
+           r_addend == other.r_addend;
+  }
+
   Symbol *sym;
   u32 r_type;
   u32 offset;
@@ -658,7 +665,7 @@ struct EhReloc {
 struct FdeRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
-  u32 offset = -1;
+  u32 output_offset = -1;
 
   bool is_alive() const {
     if (!rels.empty())
@@ -670,15 +677,13 @@ struct FdeRecord {
 };
 
 struct CieRecord {
-  bool operator<(const CieRecord &other) const;
-  bool operator==(const CieRecord &other) const;
-  bool operator!=(const CieRecord &other) const;
+  bool should_merge(const CieRecord &other) const;
 
   std::string_view contents;
   std::vector<EhReloc> rels;
   std::vector<FdeRecord> fdes;
 
-  u32 offset = -1;
+  u32 output_offset = -1;
   u32 leader_offset = -1;
   u32 fde_offset = -1;
   u32 fde_size = -1;
@@ -695,6 +700,8 @@ public:
 
   void construct();
   void copy_buf() override;
+
+  static u64 get_addr(const Symbol &sym);
 
 private:
   std::vector<CieRecord *> cies;
@@ -1095,6 +1102,9 @@ inline u64 Symbol::get_addr() const {
     return out::copyrel->shdr.sh_addr + value;
 
   if (input_section) {
+    if (input_section->is_ehframe)
+      return EhFrameSection::get_addr(*this);
+
     if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers
       // a local symbol belonging to a comdat group section. This is a

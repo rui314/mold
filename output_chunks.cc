@@ -700,7 +700,6 @@ void MergedSection::copy_buf() {
   });
 }
 
-
 void EhFrameSection::construct() {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
@@ -711,7 +710,7 @@ void EhFrameSection::construct() {
       for (FdeRecord &fde : cie.fdes) {
         if (!fde.is_alive())
           continue;
-        fde.offset = offset;
+        fde.output_offset = offset;
         offset += fde.contents.size();
       }
       cie.fde_size = offset;
@@ -724,15 +723,17 @@ void EhFrameSection::construct() {
     for (CieRecord &cie : file->cies)
       cies.push_back(&cie);
 
-  sort(cies, [](CieRecord *a, CieRecord *b) { return *a < *b; });
-
   // Assign offsets within the output section to CIEs.
+  auto should_merge = [](CieRecord &a, CieRecord &b) {
+    return a.contents == b.contents && a.rels == b.rels;
+  };
+
   u32 offset = 0;
   for (int i = 0; i < cies.size(); i++) {
     CieRecord &cie = *cies[i];
-    cie.offset = offset;
+    cie.output_offset = offset;
 
-    if (i == 0 || cie != *cies[i - 1]) {
+    if (i == 0 || !should_merge(cie, *cies[i - 1])) {
       cie.leader_offset = offset;
       offset += cie.contents.size() + cie.fde_size;
     } else {
@@ -760,14 +761,16 @@ void EhFrameSection::copy_buf() {
     u32 cie_size = 0;
 
     // Copy a CIE.
-    if (cie->offset == cie->leader_offset) {
-      memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
+    if (cie->output_offset == cie->leader_offset) {
+      memcpy(base + cie->output_offset, cie->contents.data(),
+             cie->contents.size());
       cie_size = cie->contents.size();
 
       for (EhReloc &rel : cie->rels) {
         u32 S = rel.sym->get_addr();
-        u32 P = shdr.sh_addr + cie->offset + rel.offset;
-        apply_reloc(rel, base + cie->offset + rel.offset, S, P, rel.r_addend);
+        u32 P = shdr.sh_addr + cie->output_offset + rel.offset;
+        u8 *loc = base + cie->output_offset + rel.offset;
+        apply_reloc(rel, loc, S, P, rel.r_addend);
       }
     }
 
@@ -776,17 +779,57 @@ void EhFrameSection::copy_buf() {
       if (!fde.is_alive())
         continue;
 
-      u32 fde_off = cie->offset + cie_size + fde.offset;
+      u32 fde_off = cie->output_offset + cie_size + fde.output_offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
 
       for (EhReloc &rel : fde.rels) {
         u32 S = rel.sym->get_addr();
         u32 P = shdr.sh_addr + fde_off + rel.offset;
-        apply_reloc(rel, base + fde_off + rel.offset, S, P, rel.r_addend);
+        u8 *loc = base + fde_off + rel.offset;
+        apply_reloc(rel, loc, S, P, rel.r_addend);
       }
     }
   });
+}
+
+u64 EhFrameSection::get_addr(const Symbol &sym) {
+  InputSection &isec = *sym.input_section;
+  ObjectFile &file = *isec.file;
+  const char *section_begin = file.get_string(isec.shdr).data();
+
+  auto contains = [](std::string_view str, const char *ptr) {
+    const char *begin = str.data();
+    const char *end = begin + str.size();
+    return (begin == ptr) || (begin < ptr && ptr < end);
+  };
+
+  for (CieRecord &cie : file.cies) {
+    u64 offset = 0;
+
+    if (cie.output_offset == cie.leader_offset) {
+      if (contains(cie.contents, section_begin + offset)) {
+        u64 cie_addr = out::ehframe->shdr.sh_addr + cie.output_offset;
+        u64 addend = sym.value - offset;
+        return cie_addr + addend;
+      }
+      offset += cie.contents.size();
+    }
+
+    for (FdeRecord &fde : cie.fdes) {
+      if (contains(fde.contents, section_begin + offset)) {
+        if (!fde.is_alive())
+          return 0;
+
+        u64 fde_addr = out::ehframe->shdr.sh_addr + cie.output_offset + offset;
+        u64 addend = sym.value - offset;
+        return fde_addr + addend;
+      }
+      offset += fde.contents.size();
+    }
+  }
+
+  Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

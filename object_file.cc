@@ -200,8 +200,14 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   std::span<ElfRela> rels = isec.rels;
   std::string_view data = get_string(isec.shdr);
   const char *begin = data.data();
-  std::unordered_map<u32, CieRecord *> offset_to_cie;
-  CieRecord *cur_cie = nullptr;
+
+  if (data.empty()) {
+    cies.push_back({data});
+    return;
+  }
+
+  std::unordered_map<u32, u32> offset_to_cie;
+  u32 cur_cie = -1;
   u32 cur_cie_offset = -1;
 
   for (ElfRela rel : rels)
@@ -214,7 +220,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     if (size == 0) {
       if (data.size() != 4)
         Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
-      cies.push_back({data, {}, {}});
+      cies.push_back({data});
       return;
     }
 
@@ -239,21 +245,20 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     u32 id = *(u32 *)(contents.data() + 4);
     if (id == 0) {
       // CIE
-      cies.push_back({contents, std::move(eh_rels), {}});
-      offset_to_cie[begin_offset] = &cies.back();
-
-      cur_cie = &cies.back();
-      cur_cie_offset = begin_offset;
+      cur_cie = cies.size();
+      offset_to_cie[begin_offset] = cies.size();
+      cies.push_back({contents, std::move(eh_rels)});
     } else {
       // FDE
       u32 cie_offset = begin_offset + 4 - id;
       if (cie_offset != cur_cie_offset) {
         auto it = offset_to_cie.find(cie_offset);
-        assert(it != offset_to_cie.end());
-        cur_cie_offset = it->first;
+        if (it == offset_to_cie.end())
+          Fatal() << *isec.file << ": .eh_frame: bad FDE pointer";
         cur_cie = it->second;
+        cur_cie_offset = cie_offset;
       }
-      cur_cie->fdes.push_back({contents, std::move(eh_rels)});
+      cies[cur_cie].fdes.push_back({contents, std::move(eh_rels)});
     }
   }
 }
@@ -877,25 +882,4 @@ std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
     symbols.begin(), symbols.end(), sym,
     [&](Symbol *a, Symbol *b) { return a->value < b->value; });
   return {begin, end};
-}
-
-bool CieRecord::operator<(const CieRecord &other) const {
-  if (contents < other.contents)
-    return true;
-  if (rels.size() != other.rels.size())
-    return rels.size() < other.rels.size();
-  for (int i = 0; i < rels.size() && i < other.rels.size(); i++) {
-    if (rels[i].sym < other.rels[i].sym ||
-        rels[i].offset < other.rels[i].offset)
-      return true;
-  }
-  return false;
-}
-
-bool CieRecord::operator==(const CieRecord &other) const {
-  return !(*this < other) && !(other < *this);
-}
-
-bool CieRecord::operator!=(const CieRecord &other) const {
-  return !(*this == other);
 }
