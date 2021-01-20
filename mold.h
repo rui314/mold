@@ -700,8 +700,7 @@ public:
 
   void construct();
   void copy_buf() override;
-
-  static u64 get_addr(const Symbol &sym);
+  u64 get_addr(const Symbol &sym);
 
 private:
   std::vector<CieRecord *> cies;
@@ -1103,7 +1102,7 @@ inline u64 Symbol::get_addr() const {
 
   if (input_section) {
     if (input_section->is_ehframe)
-      return EhFrameSection::get_addr(*this);
+      return out::ehframe->get_addr(*this);
 
     if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers

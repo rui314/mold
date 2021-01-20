@@ -809,7 +809,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 
     if (cie.output_offset == cie.leader_offset) {
       if (contains(cie.contents, section_begin + offset)) {
-        u64 cie_addr = out::ehframe->shdr.sh_addr + cie.output_offset;
+        u64 cie_addr = shdr.sh_addr + cie.output_offset;
         u64 addend = sym.value - offset;
         return cie_addr + addend;
       }
@@ -821,7 +821,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
         if (!fde.is_alive())
           return 0;
 
-        u64 fde_addr = out::ehframe->shdr.sh_addr + cie.output_offset + offset;
+        u64 fde_addr = shdr.sh_addr + cie.output_offset + offset;
         u64 addend = sym.value - offset;
         return fde_addr + addend;
       }
