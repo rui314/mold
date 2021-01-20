@@ -707,7 +707,6 @@ public:
   void copy_buf() override;
   u64 get_addr(const Symbol &sym);
 
-private:
   std::vector<CieRecord *> cies;
   u32 num_fdes;
 };
@@ -722,7 +721,7 @@ public:
     shdr.sh_size = HEADER_SIZE;
   }
 
-  void write(std::span<CieRecord *> cies);
+  void write();
 
   enum { HEADER_SIZE = 12 };
 };

@@ -757,6 +757,10 @@ void EhFrameSection::construct() {
     }
   }
   shdr.sh_size = offset;
+
+  if (out::eh_frame_hdr)
+    out::eh_frame_hdr->shdr.sh_size =
+      out::eh_frame_hdr->HEADER_SIZE + num_fdes * 8;
 }
 
 void EhFrameSection::copy_buf() {
@@ -809,7 +813,7 @@ void EhFrameSection::copy_buf() {
 
   // Write to .eh_frame_hdr.
   if (out::eh_frame_hdr)
-    out::eh_frame_hdr->write(cies);
+    out::eh_frame_hdr->write();
 }
 
 u64 EhFrameSection::get_addr(const Symbol &sym) {
@@ -851,7 +855,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
 }
 
-void EhFrameHdrSection::write(std::span<CieRecord *> cies) {
+void EhFrameHdrSection::write() {
   u8 *base = out::buf + shdr.sh_offset;
 
   base[0] = 1;
@@ -860,7 +864,33 @@ void EhFrameHdrSection::write(std::span<CieRecord *> cies) {
   base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
 
   *(u32 *)(base + 4) = out::eh_frame->shdr.sh_addr - shdr.sh_addr - 4;
+  *(u32 *)(base + 8) = out::eh_frame->num_fdes;
 
+  tbb::parallel_for_each(out::eh_frame->cies, [](CieRecord *cie) {
+    u32 input_offset = cie->output_offset;
+    if (cie->output_offset == cie->leader_offset)
+      input_offset += cie->contents.size();
+
+    for (FdeRecord &fde : cie->fdes) {
+      if (!fde.is_alive())
+        continue;
+      if (fde.rels.empty())
+        Fatal() << "FDE has no relocation";
+
+      u32 fde_addr = out::eh_frame->shdr.sh_addr + input_offset;
+
+      u32 init_addr = *(u32 *)(fde.contents.data() + 8);
+      if (fde.rels[0].r_type == R_X86_64_PC32)
+        init_addr += fde_addr + fde.rels[0].offset;
+
+#if 0
+      *(u32 *)(base + output_offset) = init_addr;
+      *(u32 *)(base + output_offset + 4) = fde_addr;
+      output_offset += 8;
+      input_offset += fde.contents.size();
+#endif
+    }
+  });
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
