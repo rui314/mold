@@ -431,8 +431,8 @@ static void fill_symbol_versions() {
     return;
 
   sort(syms, [](Symbol *a, Symbol *b) {
-    return std::make_tuple(((SharedFile *)a->file)->soname, a->ver_idx) <
-           std::make_tuple(((SharedFile *)b->file)->soname, b->ver_idx);
+    return std::tuple(((SharedFile *)a->file)->soname, a->ver_idx) <
+           std::tuple(((SharedFile *)b->file)->soname, b->ver_idx);
   });
 
   // Compute sizes of .gnu.version and .gnu.version_r sections.
@@ -1148,8 +1148,8 @@ int main(int argc, char **argv) {
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel. Sort them to to make the output deterministic.
   auto section_compare = [](OutputChunk *x, OutputChunk *y) {
-    return std::make_tuple(x->name, (u32)x->shdr.sh_type, (u64)x->shdr.sh_flags) <
-           std::make_tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
+    return std::tuple(x->name, (u32)x->shdr.sh_type, (u64)x->shdr.sh_flags) <
+           std::tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
   };
 
   sort(OutputSection::instances, section_compare);
