@@ -822,18 +822,21 @@ void BuildIdSection::copy_buf() {
   memcpy(base + 3, "GNU", 4); // Name string
 }
 
-void BuildIdSection::write_buildid(u64 filesize) {
-  Timer t("build_id");
-
+static void compute_tree_hash(u8 *buf, u64 size, u8 *digest) {
   int shard_size = 1024 * 1024;
-  int num_shards = filesize / shard_size + 1;
-  u8 shards[num_shards][SHA256_SIZE];
+  int num_shards = size / shard_size + 1;
+  std::vector<u8> shards(num_shards * SHA256_SIZE);
 
   tbb::parallel_for(0, num_shards, [&](int i) {
-    u8 *begin = out::buf + shard_size * i;
-    u64 size = (i < num_shards - 1) ? shard_size : (filesize % shard_size);
-    SHA256(begin, size, shards[i]);
+    u8 *begin = buf + shard_size * i;
+    u64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
+    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
   });
 
-  SHA256((u8 *)shards, sizeof(shards), out::buf + shdr.sh_offset + 16);
+  SHA256(shards.data(), shards.size(), digest);
+}
+
+void BuildIdSection::write_buildid(u64 filesize) {
+  Timer t("build_id");
+  compute_tree_hash(out::buf, filesize, out::buf + shdr.sh_offset + 16);
 }
