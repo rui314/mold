@@ -701,6 +701,8 @@ void MergedSection::copy_buf() {
 
 
 void EhFrameSection::construct() {
+  // Remove dead FDEs and assign them offsets within their corresponding
+  // CIE group.
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     for (CieRecord &cie : file->cies) {
@@ -715,7 +717,7 @@ void EhFrameSection::construct() {
     }
   });
 
-  // Aggreagate eh records
+  // Aggreagate CIEs.
   cies.reserve(out::objs.size());
   for (ObjectFile *file : out::objs)
     for (CieRecord &cie : file->cies)
@@ -725,6 +727,7 @@ void EhFrameSection::construct() {
     return *a < *b;
   });
 
+  // Assign offsets within the output section to CIEs.
   u32 offset = 0;
   for (int i = 0; i < cies.size(); i++) {
     CieRecord &cie = *cies[i];
@@ -753,25 +756,27 @@ void EhFrameSection::copy_buf() {
       unreachable();
   };
 
-  tbb::parallel_for(0, (int)cies.size(), [&](int i) {
-    CieRecord &cie = *cies[i];
+  // Copy CIEs and FDEs.
+  tbb::parallel_for_each(cies, [&](CieRecord *cie) {
     u32 cie_size = 0;
 
-    if (cie.offset == cie.leader_offset) {
-      memcpy(base + cie.offset, cie.contents.data(), cie.contents.size());
-      cie_size = cie.contents.size();
+    // Copy a CIE.
+    if (cie->offset == cie->leader_offset) {
+      memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
+      cie_size = cie->contents.size();
 
-      for (EhReloc &rel : cie.rels) {
+      for (EhReloc &rel : cie->rels) {
         u32 S = rel.sym->get_addr();
-        u32 P = shdr.sh_addr + cie.offset + rel.offset;
-        apply_reloc(rel, base + cie.offset + rel.offset, S, P, rel.r_addend);
+        u32 P = shdr.sh_addr + cie->offset + rel.offset;
+        apply_reloc(rel, base + cie->offset + rel.offset, S, P, rel.r_addend);
       }
     }
 
-    for (FdeRecord &fde : cie.fdes) {
-      u32 fde_off = cie.offset + cie_size + fde.offset;
+    // Copy FDEs.
+    for (FdeRecord &fde : cie->fdes) {
+      u32 fde_off = cie->offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
-      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie.leader_offset;
+      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
 
       for (EhReloc &rel : fde.rels) {
         u32 S = rel.sym->get_addr();
