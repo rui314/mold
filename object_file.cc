@@ -190,6 +190,7 @@ void ObjectFile::initialize_ehframe_sections() {
     InputSection *isec = sections[i];
     if (isec && isec->name == ".eh_frame") {
       read_ehframe(*isec);
+      isec->is_ehframe = true;
       sections[i] = nullptr;
     }
   }
@@ -213,6 +214,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     if (size == 0) {
       if (data.size() != 4)
         Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
+      cies.push_back({data, {}, {}});
       return;
     }
 

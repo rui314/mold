@@ -144,3 +144,7 @@ If you forget to add an entry with type DT_DEBUG to .dynamic, gdb's
 `info sharedlibrary` command doesn't print out a list of shared
 libraries loaded to memory. The value of the entry doesn't matter, so
 it can be just zero. The existence of it is important.
+
+#
+
+__EH_FRAME_BEGIN__ in libgcc/crtstuff.c

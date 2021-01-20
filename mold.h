@@ -335,6 +335,7 @@ public:
   u64 reldyn_offset = 0;
   bool is_comdat_member = false;
   bool is_alive = true;
+  bool is_ehframe = false;
 
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
