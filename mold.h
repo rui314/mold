@@ -683,10 +683,14 @@ struct CieRecord {
   std::vector<EhReloc> rels;
   std::vector<FdeRecord> fdes;
 
+  // For .eh_frame
   u32 output_offset = -1;
   u32 leader_offset = -1;
-  u32 fde_offset = -1;
   u32 fde_size = -1;
+
+  // For .eh_frame_hdr
+  u32 num_fdes = 0;
+  u32 fde_idx = -1;
 };
 
 class EhFrameSection : public OutputChunk {

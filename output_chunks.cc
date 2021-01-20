@@ -703,8 +703,6 @@ void MergedSection::copy_buf() {
 void EhFrameSection::construct() {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
-  std::vector<u32> fde_counts(out::objs.size());
-
   tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
     ObjectFile *file = out::objs[i];
     u32 count = 0;
@@ -716,12 +714,11 @@ void EhFrameSection::construct() {
           continue;
         fde.output_offset = offset;
         offset += fde.contents.size();
-        count++;
+        cie.num_fdes++;
+
       }
       cie.fde_size = offset;
     }
-
-    fde_counts[i] = count;
 
     for (int i = 0; i < file->sections.size(); i++) {
       if (file->sections[i] && file->sections[i]->is_ehframe)
@@ -729,14 +726,17 @@ void EhFrameSection::construct() {
     }
   });
 
-  for (u32 n : fde_counts)
-    this->num_fdes += n;
-
   // Aggreagate CIEs.
   cies.reserve(out::objs.size());
   for (ObjectFile *file : out::objs)
     for (CieRecord &cie : file->cies)
       cies.push_back(&cie);
+
+  // Record the total number of FDes for .eh_frame_hdr.
+  for (CieRecord *cie : cies) {
+    cie->fde_idx = num_fdes;
+    num_fdes += cie->num_fdes;
+  }
 
   // Assign offsets within the output section to CIEs.
   auto should_merge = [](CieRecord &a, CieRecord &b) {
