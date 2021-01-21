@@ -884,7 +884,8 @@ void EhFrameHdrSection::copy_buf() {
       if (!fde.is_alive())
         continue;
 
-      entry->init_addr = fde.rels[0].sym->get_addr() - shdr.sh_addr;
+      EhReloc &rel = fde.rels[0];
+      entry->init_addr = rel.sym->get_addr() + rel.r_addend - shdr.sh_addr;
       entry->fde_addr =
         out::eh_frame->shdr.sh_addr + input_offset - shdr.sh_addr;
       entry++;
