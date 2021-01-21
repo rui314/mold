@@ -858,6 +858,8 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 }
 
 void EhFrameHdrSection::copy_buf() {
+  Timer t("eh_frame_hdr");
+
   u8 *base = out::buf + shdr.sh_offset;
 
   base[0] = 1;
@@ -896,8 +898,6 @@ void EhFrameHdrSection::copy_buf() {
 
   Entry *begin = (Entry *)(base + HEADER_SIZE);
   Entry *end = begin + out::eh_frame->num_fdes;
-
-  assert((u8 *)end == out::buf + shdr.sh_offset + shdr.sh_size);
 
   tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
     return a.init_addr < b.init_addr;
