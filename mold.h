@@ -58,7 +58,7 @@ struct Config {
   bool build_id = false;
   bool discard_all = false;
   bool discard_locals = false;
-  bool eh_frame_hdr = false;
+  bool eh_frame_hdr = true;
   bool export_dynamic = false;
   bool fork = true;
   bool is_static = false;

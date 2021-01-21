@@ -942,7 +942,7 @@ void BuildIdSection::copy_buf() {
 }
 
 static void compute_tree_hash(u8 *buf, u64 size, u8 *digest) {
-  int shard_size = 1024 * 1024;
+  u64 shard_size = 1024 * 1024;
   int num_shards = size / shard_size + 1;
   std::vector<u8> shards(num_shards * SHA256_SIZE);
 
