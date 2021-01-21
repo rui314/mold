@@ -35,32 +35,36 @@ static std::string rel_to_string(u32 r_type) {
 }
 
 static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u64 val) {
-  auto out_of_range = [&](std::string range) {
-    Error() << *sec << ": relocation " << rel_to_string(r_type)
-            << " against " << sym.name << " out of range: "
-            << val << " is not in [" << range << "]";
-  };
-
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      out_of_range("0, 255");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << val << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      out_of_range("-128, 127");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << (i64)val << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      out_of_range("0, 65535");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << val << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      out_of_range("-32768, 32767");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << (i64)val << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      out_of_range("0, 4294967296");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << val << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -76,7 +80,9 @@ static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u64 val) 
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
-      out_of_range("-2147483648, 2147483647");
+      Error() << *sec << ": relocation " << rel_to_string(r_type)
+              << " against " << sym.name << " out of range: "
+              << (i64)val << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
