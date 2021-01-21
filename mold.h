@@ -723,7 +723,7 @@ public:
 
   void copy_buf() override;
 
-  enum { HEADER_SIZE = 12 };
+  static constexpr int HEADER_SIZE = 12;
 };
 
 class CopyrelSection : public OutputChunk {
