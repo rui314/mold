@@ -721,7 +721,7 @@ public:
     shdr.sh_size = HEADER_SIZE;
   }
 
-  void write();
+  void copy_buf() override;
 
   enum { HEADER_SIZE = 12 };
 };

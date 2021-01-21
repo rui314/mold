@@ -816,10 +816,6 @@ void EhFrameSection::copy_buf() {
       }
     }
   });
-
-  // Write to .eh_frame_hdr.
-  if (out::eh_frame_hdr)
-    out::eh_frame_hdr->write();
 }
 
 u64 EhFrameSection::get_addr(const Symbol &sym) {
@@ -861,7 +857,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
 }
 
-void EhFrameHdrSection::write() {
+void EhFrameHdrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
   base[0] = 1;
@@ -872,37 +868,30 @@ void EhFrameHdrSection::write() {
   *(u32 *)(base + 4) = out::eh_frame->shdr.sh_addr - shdr.sh_addr - 4;
   *(u32 *)(base + 8) = out::eh_frame->num_fdes;
 
-  tbb::parallel_for_each(out::eh_frame->cies, [&](CieRecord *cie) {
-    u32 input_offset = cie->output_offset;
-    u32 output_offset = HEADER_SIZE + cie->fde_idx * 8;
-
-    if (cie->output_offset == cie->leader_offset)
-      input_offset += cie->contents.size();
-
-    for (FdeRecord &fde : cie->fdes) {
-      if (!fde.is_alive())
-        continue;
-      if (fde.rels.empty())
-        Fatal() << "FDE has no relocation";
-
-      u32 fde_addr = out::eh_frame->shdr.sh_addr + input_offset;
-
-      u32 init_addr =
-        *(u32 *)(out::buf + out::eh_frame->shdr.sh_offset + input_offset);
-      if (fde.rels[0].r_type == R_X86_64_PC32)
-        init_addr += fde_addr + fde.rels[0].offset;
-
-      *(u32 *)(base + output_offset) = init_addr - shdr.sh_addr;
-      *(u32 *)(base + output_offset + 4) = fde_addr - shdr.sh_addr;
-      output_offset += 8;
-      input_offset += fde.contents.size();
-    }
-  });
-
   struct Entry {
     i32 init_addr;
     i32 fde_addr;
   };
+
+  tbb::parallel_for_each(out::eh_frame->cies, [&](CieRecord *cie) {
+    u32 input_offset = cie->output_offset;
+    if (cie->output_offset == cie->leader_offset)
+      input_offset += cie->contents.size();
+
+    Entry *entry = (Entry *)(base + HEADER_SIZE) + cie->fde_idx;
+
+    for (FdeRecord &fde : cie->fdes) {
+      if (!fde.is_alive())
+        continue;
+
+      entry->init_addr = fde.rels[0].sym->get_addr() - shdr.sh_addr;
+      entry->fde_addr =
+        out::eh_frame->shdr.sh_addr + input_offset - shdr.sh_addr;
+      entry++;
+
+      input_offset += fde.contents.size();
+    }
+  });
 
   Entry *begin = (Entry *)(base + HEADER_SIZE);
   Entry *end = begin + out::eh_frame->num_fdes;
