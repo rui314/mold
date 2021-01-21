@@ -3,6 +3,7 @@
 #include <openssl/sha.h>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 
 void OutputEhdr::copy_buf() {
   auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
@@ -142,6 +143,11 @@ std::vector<ElfPhdr> create_phdr() {
   // Add PT_DYNAMIC
   if (out::dynamic)
     define(PT_DYNAMIC, PF_R | PF_W, out::dynamic->shdr.sh_addralign, out::dynamic);
+
+  // Add PT_GNU_EH_FRAME
+  if (out::eh_frame_hdr)
+    define(PT_GNU_EH_FRAME, PF_R, out::eh_frame_hdr->shdr.sh_addralign,
+           out::eh_frame_hdr);
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. If exists, the runtime turn on the No Exeecute
@@ -866,8 +872,10 @@ void EhFrameHdrSection::write() {
   *(u32 *)(base + 4) = out::eh_frame->shdr.sh_addr - shdr.sh_addr - 4;
   *(u32 *)(base + 8) = out::eh_frame->num_fdes;
 
-  tbb::parallel_for_each(out::eh_frame->cies, [](CieRecord *cie) {
+  tbb::parallel_for_each(out::eh_frame->cies, [&](CieRecord *cie) {
     u32 input_offset = cie->output_offset;
+    u32 output_offset = HEADER_SIZE + cie->fde_idx * 8;
+
     if (cie->output_offset == cie->leader_offset)
       input_offset += cie->contents.size();
 
@@ -883,13 +891,23 @@ void EhFrameHdrSection::write() {
       if (fde.rels[0].r_type == R_X86_64_PC32)
         init_addr += fde_addr + fde.rels[0].offset;
 
-#if 0
       *(u32 *)(base + output_offset) = init_addr;
       *(u32 *)(base + output_offset + 4) = fde_addr;
       output_offset += 8;
       input_offset += fde.contents.size();
-#endif
     }
+  });
+
+  struct Entry {
+    u32 init_addr;
+    u32 fde_addr;
+  };
+
+  Entry *begin = (Entry *)(base + HEADER_SIZE);
+  Entry *end = begin + out::eh_frame->num_fdes;
+
+  tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
+    return a.init_addr < b.init_addr;
   });
 }
 

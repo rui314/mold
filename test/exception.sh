@@ -15,7 +15,10 @@ int main() {
 }
 EOF
 
-clang++ -static -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc
+clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static
+$t/exe
+
+clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc
 $t/exe
 
 echo ' OK'
