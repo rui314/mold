@@ -708,7 +708,7 @@ public:
   u64 get_addr(const Symbol &sym);
 
   std::vector<CieRecord *> cies;
-  u32 num_fdes;
+  u32 num_fdes = 0;
 };
 
 class EhFrameHdrSection : public OutputChunk {
