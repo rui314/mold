@@ -771,6 +771,19 @@ void EhFrameSection::construct() {
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
+  u8 *hdr_base = nullptr;
+
+  if (out::eh_frame_hdr) {
+    hdr_base = out::buf + out::eh_frame_hdr->shdr.sh_offset;
+
+    hdr_base[0] = 1;
+    hdr_base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+    hdr_base[2] = DW_EH_PE_udata4;
+    hdr_base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
+
+    *(u32 *)(hdr_base + 4) = shdr.sh_addr - out::eh_frame_hdr->shdr.sh_addr - 4;
+    *(u32 *)(hdr_base + 8) = num_fdes;
+  }
 
   auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 S, u32 P, i64 A) {
     if (rel.r_type == R_X86_64_32)
@@ -781,9 +794,18 @@ void EhFrameSection::copy_buf() {
       unreachable();
   };
 
+  struct Entry {
+    i32 init_addr;
+    i32 fde_addr;
+  };
+
   // Copy CIEs and FDEs.
   tbb::parallel_for_each(cies, [&](CieRecord *cie) {
     u32 cie_size = 0;
+
+    Entry *entry = nullptr;
+    if (out::eh_frame_hdr)
+      entry = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE) + cie->fde_idx;
 
     // Copy a CIE.
     if (cie->output_offset == cie->leader_offset) {
@@ -801,21 +823,38 @@ void EhFrameSection::copy_buf() {
 
     // Copy FDEs.
     for (FdeRecord &fde : cie->fdes) {
-      if (!fde.is_alive())
+      if (fde.output_offset == -1)
         continue;
 
       u32 fde_off = cie->output_offset + cie_size + fde.output_offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
 
-      for (EhReloc &rel : fde.rels) {
+      for (int i = 0; i < fde.rels.size(); i++) {
+        EhReloc &rel = fde.rels[i];
         u32 S = rel.sym->get_addr();
         u32 P = shdr.sh_addr + fde_off + rel.offset;
         u8 *loc = base + fde_off + rel.offset;
         apply_reloc(rel, loc, S, P, rel.r_addend);
+
+        // Write to .eh_frame_hdr
+        if (out::eh_frame_hdr && i == 0) {
+          entry->init_addr = S + rel.r_addend - out::eh_frame_hdr->shdr.sh_addr;
+          entry->fde_addr = shdr.sh_addr + fde_off - out::eh_frame_hdr->shdr.sh_addr;
+          entry++;
+        }
       }
     }
   });
+
+  if (out::eh_frame_hdr) {
+    Entry *begin = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE);
+    Entry *end = begin + num_fdes;
+
+    tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
+      return a.init_addr < b.init_addr;
+    });
+  }
 }
 
 u64 EhFrameSection::get_addr(const Symbol &sym) {
@@ -855,53 +894,6 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   }
 
   Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
-}
-
-void EhFrameHdrSection::copy_buf() {
-  Timer t("eh_frame_hdr");
-
-  u8 *base = out::buf + shdr.sh_offset;
-
-  base[0] = 1;
-  base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
-  base[2] = DW_EH_PE_udata4;
-  base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
-
-  *(u32 *)(base + 4) = out::eh_frame->shdr.sh_addr - shdr.sh_addr - 4;
-  *(u32 *)(base + 8) = out::eh_frame->num_fdes;
-
-  struct Entry {
-    i32 init_addr;
-    i32 fde_addr;
-  };
-
-  tbb::parallel_for_each(out::eh_frame->cies, [&](CieRecord *cie) {
-    u32 input_offset = cie->output_offset;
-    if (cie->output_offset == cie->leader_offset)
-      input_offset += cie->contents.size();
-
-    Entry *entry = (Entry *)(base + HEADER_SIZE) + cie->fde_idx;
-
-    for (FdeRecord &fde : cie->fdes) {
-      if (!fde.is_alive())
-        continue;
-
-      EhReloc &rel = fde.rels[0];
-      entry->init_addr = rel.sym->get_addr() + rel.r_addend - shdr.sh_addr;
-      entry->fde_addr =
-        out::eh_frame->shdr.sh_addr + input_offset - shdr.sh_addr;
-      entry++;
-
-      input_offset += fde.contents.size();
-    }
-  });
-
-  Entry *begin = (Entry *)(base + HEADER_SIZE);
-  Entry *end = begin + out::eh_frame->num_fdes;
-
-  tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
-    return a.init_addr < b.init_addr;
-  });
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

@@ -721,8 +721,6 @@ public:
     shdr.sh_size = HEADER_SIZE;
   }
 
-  void copy_buf() override;
-
   static constexpr int HEADER_SIZE = 12;
 };
 
