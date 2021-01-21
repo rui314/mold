@@ -1098,8 +1098,8 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::symtab);
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
-  out::chunks.push_back(out::eh_frame);
   out::chunks.push_back(out::eh_frame_hdr);
+  out::chunks.push_back(out::eh_frame);
   out::chunks.push_back(out::copyrel);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);

@@ -887,20 +887,21 @@ void EhFrameHdrSection::write() {
 
       u32 fde_addr = out::eh_frame->shdr.sh_addr + input_offset;
 
-      u32 init_addr = *(u32 *)(fde.contents.data() + 8);
+      u32 init_addr =
+        *(u32 *)(out::buf + out::eh_frame->shdr.sh_offset + input_offset);
       if (fde.rels[0].r_type == R_X86_64_PC32)
         init_addr += fde_addr + fde.rels[0].offset;
 
-      *(u32 *)(base + output_offset) = init_addr;
-      *(u32 *)(base + output_offset + 4) = fde_addr;
+      *(u32 *)(base + output_offset) = init_addr - shdr.sh_addr;
+      *(u32 *)(base + output_offset + 4) = fde_addr - shdr.sh_addr;
       output_offset += 8;
       input_offset += fde.contents.size();
     }
   });
 
   struct Entry {
-    u32 init_addr;
-    u32 fde_addr;
+    i32 init_addr;
+    i32 fde_addr;
   };
 
   Entry *begin = (Entry *)(base + HEADER_SIZE);
