@@ -266,7 +266,7 @@ not plan to implement and why I turned them down.
 
   The linker has to de-duplicate comdat sections (i.e. inline
   functions that are included into multiple object files), so we
-  cannot compute the layout for regular sections until we resolve all
+  cannot compute the layout of regular sections until we resolve all
   symbols and de-duplicate comdats. That takes a few hundred
   milliseconds. After that, we can compute the sizes of
   variable-length sections in less than 100 milliseconds. It's quite
@@ -282,7 +282,7 @@ not plan to implement and why I turned them down.
   and thus speed up linking. GNU BFD and gold linkers support it.
 
   I turned it down because it (1) is complicated, (2) doesn't seem to
-  speed it up that much and (3) complicates build procedure. Let me
+  speed it up that much and (3) has several practical issues. Let me
   explain each of them.
 
   First, incremental linking for real C/C++ programs is not as easy as
@@ -293,37 +293,38 @@ not plan to implement and why I turned them down.
   defines malloc (such as libjemalloc or libtbbmallc) before libc,
   their malloc will override libc's malloc.
 
-  What if you remove your malloc from your code, or remove
-  `-ljemalloc` from your Makefile? The linker has to include a malloc
-  from libc, which may include more object files to satisfy its
-  dependencies. Such code change can affect the entire program rather
-  than just replacing one function. That's not just removing one
-  function from libc. The same is true to adding malloc to your
-  program. Making a local change doesn't necessarily result in a local
-  change in the binary level.
+  Assume that you are using a nonstandard malloc. What if you remove
+  your malloc from your code, or remove `-ljemalloc` from your
+  Makefile? The linker has to include a malloc from libc, which may
+  include more object files to satisfy its dependencies. Such code
+  change can affect the entire program rather than just replacing one
+  function. That's not just removing one function from libc. The same
+  is true to adding malloc to your program. Making a local change
+  doesn't necessarily result in a local change in the binary level.
+  It can easily have cascading effects.
 
-  Some ELF fancy features make the situation even worse. For example,
-  take the weak symbol as an example. If you define `atoi` as an weak
+  Some ELF fancy features make incremental linking harder to implement.
+  Take the weak symbol as an example. If you define `atoi` as an weak
   symbol in your program, and if you are not using `atoi` at all in
   your program, that symbol will be resolved to address 0. But if you
   start using some libc function that indirectly calls `atoi`, then
   `atoi` will be included to your program, and your weak symbol will
-  be resolved to that function. I don't know how to efficiently fix
-  up a binary for this case.
+  be resolved to that function. I don't know how to efficiently fix up
+  a binary for this case.
 
   This is a hard problem, so existing linkers don't try too hard to
-  solve it. For example, IIRC, gold falls back to full link if a
-  function is removed from a previous build. If you want to not
-  annoy users in the fallback case, you need to make the regular case
-  fast anyway.
+  solve it. For example, IIRC, gold falls back to full link if any
+  function is removed from a previous build. If you want to not annoy
+  users in the fallback case, you need to make full link fast anyway.
 
   Second, incremental linking itself has an overhead. It has to detect
-  which functions are updated and how to patch an existing output
-  file. GNU gold, for instance, takes almost 30 seconds on my machine
-  to a null incremental link for chrome (i.e. no object files are
-  updated from a previous build). It's just too slow.
+  updated sections, patch an existing output file and write additional
+  data to an output file for future incremental linking. GNU gold, for
+  instance, takes almost 30 seconds on my machine to do a null
+  incremental link (i.e. no object files are updated from a previous
+  build) for chrome. It's just too slow.
 
-  Third, there are other practical issues in incremental linking; it's
+  Third, there are other practical issues in incremental linking. It's
   not reproducible, so your binary isn't the same as other binaries
   even if you are compiling the same source tree using the same
   compiler toolchain. Or, it is complex and there might be a bug in
@@ -332,8 +333,8 @@ not plan to implement and why I turned them down.
   isn't ideal.
 
   So, all in all, incremental linking is tricky. I wanted to make the
-  regular full link as fast as possible, so that we don't have to
-  think about it.
+  full link as fast as possible, so that we don't have to think about
+  how to workaround the slowness of the full link.
 
 - Defining a completely new file format and use it
 
