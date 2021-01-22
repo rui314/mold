@@ -1007,6 +1007,9 @@ int main(int argc, char **argv) {
     if (int code; resume_daemon(argv, &code))
       exit(code);
 
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               config.thread_count);
+
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
@@ -1022,9 +1025,6 @@ int main(int argc, char **argv) {
   } else if (config.fork) {
     on_complete = fork_child();
   }
-
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
 
   if (config.stat)
     Counter::enabled = true;
