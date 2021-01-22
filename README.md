@@ -275,6 +275,15 @@ not plan to implement and why I turned them down.
   fast, so it doesn't seem to make much sense to proceed without
   fixing the final file layout.
 
+  There's actually a chance that copying section contents before
+  fixing the file layout slows down the linker overall. If we copy
+  file contents after fixing the layout, we can apply relocations
+  immediately after copying file contents, because we know the
+  addresses of all symbols when copying contents. In that case,
+  applying relocations is effectively zero-cost due to a very good
+  data locality. If we do that long after we copy file contents,
+  that's pretty expensive.
+
 - Incremental linking
 
   Idea: Incremental linking is a technique to patch a previous linker's
@@ -300,19 +309,18 @@ not plan to implement and why I turned them down.
   Makefile? The linker has to include a malloc from libc, which may
   include more object files to satisfy its dependencies. Such code
   change can affect the entire program rather than just replacing one
-  function. That's not just removing one function from libc. The same
-  is true to adding malloc to your program. Making a local change
-  doesn't necessarily result in a local change in the binary level.
-  It can easily have cascading effects.
+  function. The same is true to adding malloc to your program. Making
+  a local change doesn't necessarily result in a local change in the
+  binary level.  It can easily have cascading effects.
 
-  Some ELF fancy features make incremental linking harder to implement.
-  Take the weak symbol as an example. If you define `atoi` as an weak
-  symbol in your program, and if you are not using `atoi` at all in
-  your program, that symbol will be resolved to address 0. But if you
-  start using some libc function that indirectly calls `atoi`, then
-  `atoi` will be included to your program, and your weak symbol will
-  be resolved to that function. I don't know how to efficiently fix up
-  a binary for this case.
+  Some ELF fancy features make incremental linking even harder to
+  implement. Take the weak symbol as an example. If you define `atoi`
+  as a weak symbol in your program, and if you are not using `atoi`
+  at all in your program, that symbol will be resolved to address
+  0. But if you start using some libc function that indirectly calls
+  `atoi`, then `atoi` will be included to your program, and your weak
+  symbol will be resolved to that function. I don't know how to
+  efficiently fix up a binary for this case.
 
   This is a hard problem, so existing linkers don't try too hard to
   solve it. For example, IIRC, gold falls back to full link if any
@@ -320,23 +328,23 @@ not plan to implement and why I turned them down.
   users in the fallback case, you need to make full link fast anyway.
 
   Second, incremental linking itself has an overhead. It has to detect
-  updated sections, patch an existing output file and write additional
+  updated files, patch an existing output file and write additional
   data to an output file for future incremental linking. GNU gold, for
   instance, takes almost 30 seconds on my machine to do a null
   incremental link (i.e. no object files are updated from a previous
   build) for chrome. It's just too slow.
 
   Third, there are other practical issues in incremental linking. It's
-  not reproducible, so your binary isn't the same as other binaries
-  even if you are compiling the same source tree using the same
-  compiler toolchain. Or, it is complex and there might be a bug in
-  it. If something doesn't work correctly, "remove --incremental from
-  your Makefile and try again" could be a piece of advise, but that
-  isn't ideal.
+  not reproducible, so your binary isn't going to be the same as other
+  binaries even if you are compiling the same source tree using the
+  same compiler toolchain. Or, it is complex and there might be a bug
+  in it. If something doesn't work correctly, "remove --incremental
+  from your Makefile and try again" could be a piece of advise, but
+  that isn't ideal.
 
-  So, all in all, incremental linking is tricky. I wanted to make the
-  full link as fast as possible, so that we don't have to think about
-  how to workaround the slowness of the full link.
+  So, all in all, incremental linking is tricky. I wanted to make full
+  link as fast as possible, so that we don't have to think about how
+  to workaround the slowness of full link.
 
 - Defining a completely new file format and use it
 
@@ -356,16 +364,16 @@ not plan to implement and why I turned them down.
 - Watching object files using inotify(2)
 
   Idea: When mold is running as a daemon for preloading, use
-  inotify(2) to watch file system updates using so that it can reload
-  files as soon as they are updated.
+  inotify(2) to watch file system updates so that it can reload files
+  as soon as they are updated.
 
   Reason for rejection: Just like the maximum number of files you can
   simultaneously open, the maximum number of files you can watch using
-  inotify(2) isn't that large. Maybe just a single instance of mold
-  would work fine with inotify(2), but it may fail if you run multiple
-  of it.
+  inotify(2) isn't that large. Maybe just a single instance of mold is
+  fine with inotify(2), but it may fail if you run multiple of it.
 
-  Other reason for not doing it is because mold is quite fast without
-  it anyway. Invoking stat(2) on each file for file update check takes
-  less than 100 milliseconds for Chrome, and if most of the input
-  files are not updated, parsing updated files takes almost no time.
+  The other reason for not doing it is because mold is quite fast
+  without it anyway. Invoking stat(2) on each file for file update
+  check takes less than 100 milliseconds for Chrome, and if most of
+  the input files are not updated, parsing updated files takes almost
+  no time.
