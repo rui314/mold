@@ -217,13 +217,12 @@ enum {
 class Symbol {
 public:
   Symbol() {}
+  Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
 
   static Symbol *intern(std::string_view name) {
     static ConcurrentMap<Symbol> map;
-    Symbol sym;
-    sym.name = name;
-    return map.insert(name, sym);
+    return map.insert(name, {name});
   }
 
   inline u64 get_addr() const;
