@@ -193,12 +193,30 @@ struct SectionFragment {
   std::atomic<MergeableSection *> isec = nullptr;
   std::string_view data;
   u32 output_offset = -1;
+  u32 alignment = 1;
 };
 
 struct SectionFragmentRef {
   SectionFragment *frag = nullptr;
   i32 addend = 0;
 };
+
+struct SectionFragmentKey {
+  std::string_view data;
+  u32 alignment;
+};
+
+namespace tbb {
+template<> struct tbb_hash_compare<SectionFragmentKey> {
+  static size_t hash(const SectionFragmentKey &k) {
+    return std::hash<std::string_view>()(k.data) ^ std::hash<u32>()(k.alignment);
+  }
+
+  static bool equal(const SectionFragmentKey &k1, const SectionFragmentKey &k2) {
+    return k1.data == k2.data && k1.alignment == k2.alignment;
+  }
+};
+}
 
 enum {
   NEEDS_GOT      = 1 << 0,
@@ -273,6 +291,7 @@ class InputChunk {
 public:
   virtual void copy_buf() {}
   inline u64 get_addr() const;
+  std::string_view get_contents() const;
 
   ObjectFile *file;
   const ElfShdr &shdr;
@@ -327,12 +346,13 @@ public:
 
 class MergeableSection : public InputChunk {
 public:
-  MergeableSection(InputSection *isec, std::string_view contents);
+  MergeableSection(InputSection *isec);
 
   MergedSection &parent;
   std::vector<SectionFragment *> fragments;
   std::vector<u32> frag_offsets;
   u32 size = 0;
+  u32 alignment = 1;
 };
 
 //
@@ -619,8 +639,11 @@ public:
 
   static inline std::vector<MergedSection *> instances;
 
-  SectionFragment *insert(std::string_view data) {
-    return map.insert(data, SectionFragment(data));
+  SectionFragment *insert(std::string_view data, u32 alignment = 1) {
+    typename decltype(map)::const_accessor acc;
+    map.insert(acc, std::pair(SectionFragmentKey{data, alignment},
+                              SectionFragment(data)));
+    return const_cast<SectionFragment *>(&acc->second);
   }
 
   void copy_buf() override;
@@ -634,7 +657,7 @@ private:
     shdr.sh_addralign = 1;
   }
 
-  ConcurrentMap<SectionFragment> map;
+  tbb::concurrent_hash_map<SectionFragmentKey, SectionFragment> map;
 };
 
 struct EhReloc {

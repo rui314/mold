@@ -673,8 +673,8 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 
   auto find = [&]() -> MergedSection * {
     for (MergedSection *osec : MergedSection::instances)
-      if (name == osec->name && flags == osec->shdr.sh_flags &&
-          type == osec->shdr.sh_type)
+      if (std::tuple(name, flags, type) ==
+          std::tuple(osec->name, osec->shdr.sh_flags, osec->shdr.sh_type))
         return osec;
     return nullptr;
   };
@@ -700,7 +700,7 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  for (auto it = map.map.begin(); it != map.map.end(); ++it) {
+  for (auto it = map.begin(); it != map.end(); ++it) {
     SectionFragment &frag = it->second;
     if (MergeableSection *m = frag.isec)
       memcpy(base + m->offset + frag.output_offset,
@@ -708,7 +708,7 @@ void MergedSection::copy_buf() {
   }
 
   static Counter merged_strings("merged_strings");
-  merged_strings.inc(map.map.size());
+  merged_strings.inc(map.size());
 }
 
 void EhFrameSection::construct() {
@@ -865,7 +865,7 @@ void EhFrameSection::copy_buf() {
 u64 EhFrameSection::get_addr(const Symbol &sym) {
   InputSection &isec = *sym.input_section;
   ObjectFile &file = *isec.file;
-  const char *section_begin = file.get_string(isec.shdr).data();
+  const char *section_begin = isec.get_contents().data();
 
   auto contains = [](std::string_view str, const char *ptr) {
     const char *begin = str.data();

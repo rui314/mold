@@ -216,6 +216,7 @@ static void handle_mergeable_strings() {
       u32 offset = 0;
       for (SectionFragment *frag : m->fragments) {
         if (frag->isec == m && frag->output_offset == -1) {
+          offset = align_to(offset, frag->alignment);
           frag->output_offset = offset;
           offset += frag->data.size();
         }
@@ -227,8 +228,10 @@ static void handle_mergeable_strings() {
   // Assign each mergeable input section a unique index.
   for (ObjectFile *file : out::objs) {
     for (MergeableSection *m : file->mergeable_sections) {
-      m->offset = m->parent.shdr.sh_size;
-      m->parent.shdr.sh_size += m->size;
+      u64 &sh_size = m->parent.shdr.sh_size;
+      sh_size = align_to(sh_size, m->alignment);
+      m->offset = sh_size;
+      sh_size += m->size;
     }
   }
 }

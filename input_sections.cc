@@ -5,6 +5,10 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags)) {}
 
+std::string_view InputChunk::get_contents() const {
+  return file->get_string(shdr);
+}
+
 static std::string rel_to_string(u32 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
@@ -138,7 +142,7 @@ void InputSection::copy_buf() {
 
   // Copy data
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
-  std::string_view contents = file->get_string(shdr);
+  std::string_view contents = get_contents();
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
@@ -446,10 +450,11 @@ void InputSection::scan_relocations() {
   }
 }
 
-MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
+MergeableSection::MergeableSection(InputSection *isec)
   : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
                                         isec->shdr.sh_flags)) {
+  std::string_view data = isec->get_contents();
   u32 offset = 0;
 
   while (!data.empty()) {

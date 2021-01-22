@@ -375,7 +375,7 @@ void ObjectFile::initialize_mergeable_sections() {
   for (int i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
     if (isec && is_mergeable(isec->shdr)) {
-      mergeable_sections[i] = new MergeableSection(isec, get_string(isec->shdr));
+      mergeable_sections[i] = new MergeableSection(isec);
       sections[i] = nullptr;
     }
   }
