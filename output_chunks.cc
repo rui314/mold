@@ -700,9 +700,9 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  map.for_each_value([&](const StringPiece &piece) {
-    if (MergeableSection *m = piece.isec)
-      memcpy(base + m->offset + piece.output_offset, piece.data, piece.size);
+  map.for_each_value([&](const SectionFragment &frag) {
+    if (MergeableSection *m = frag.isec)
+      memcpy(base + m->offset + frag.output_offset, frag.data, frag.size);
   });
 }
 

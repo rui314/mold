@@ -161,16 +161,16 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const StringPieceRef *ref = nullptr;
-    if (has_rel_piece[i])
-      ref = &rel_pieces[ref_idx++];
+    const SectionFragmentRef *ref = nullptr;
+    if (has_rel_frag[i])
+      ref = &rel_fragments[ref_idx++];
 
     auto write = [&](u64 val) {
       overflow_check(this, sym, rel.r_type, val);
       write_val(rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->piece->get_addr() \
+#define S   (ref ? ref->frag->get_addr() \
              : (sym.plt_idx == -1 ? sym.get_addr() : sym.get_plt_addr()))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
@@ -265,9 +265,9 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
       continue;
     }
 
-    const StringPieceRef *ref = nullptr;
-    if (has_rel_piece[i])
-      ref = &rel_pieces[ref_idx++];
+    const SectionFragmentRef *ref = nullptr;
+    if (has_rel_frag[i])
+      ref = &rel_fragments[ref_idx++];
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
@@ -278,7 +278,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_32S:
     case R_X86_64_64: {
       u8 *loc = base + rel.r_offset;
-      u64 val = ref ? ref->piece->get_addr() : sym.get_addr();
+      u64 val = ref ? ref->frag->get_addr() : sym.get_addr();
       overflow_check(this, sym, rel.r_type, val);
       write_val(rel.r_type, loc, val);
       break;
@@ -460,12 +460,12 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
-    StringPiece *piece = parent.map.insert(substr, StringPiece(substr));
-    pieces.push_back(piece);
-    piece_offsets.push_back(offset);
+    SectionFragment *frag = parent.map.insert(substr, SectionFragment(substr));
+    fragments.push_back(frag);
+    frag_offsets.push_back(offset);
     offset += substr.size();
   }
 
-  static Counter counter("string_pieces");
-  counter.inc(pieces.size());
+  static Counter counter("string_fragments");
+  counter.inc(fragments.size());
 }

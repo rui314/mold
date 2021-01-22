@@ -172,7 +172,7 @@ void ObjectFile::initialize_sections() {
 
     if (InputSection *target = sections[shdr.sh_info]) {
       target->rels = get_data<ElfRela>(shdr);
-      target->has_rel_piece.resize(target->rels.size());
+      target->has_rel_frag.resize(target->rels.size());
     }
   }
 
@@ -332,7 +332,7 @@ void ObjectFile::initialize_symbols() {
   }
 
   symbols.resize(elf_syms.size());
-  sym_pieces.resize(elf_syms.size() - first_global);
+  sym_fragments.resize(elf_syms.size() - first_global);
 
   for (int i = 0; i < first_global; i++)
     symbols[i] = &locals[i];
@@ -380,7 +380,7 @@ void ObjectFile::initialize_mergeable_sections() {
     }
   }
 
-  // Initialize rel_pieces
+  // Initialize rel_fragments
   for (InputSection *isec : sections) {
     if (!isec || isec->rels.empty())
       continue;
@@ -396,17 +396,17 @@ void ObjectFile::initialize_mergeable_sections() {
         continue;
 
       u32 offset = esym.st_value + rel.r_addend;
-      int idx = binary_search(m->piece_offsets, offset);
+      int idx = binary_search(m->frag_offsets, offset);
       if (idx == -1)
         Fatal() << *this << ": bad relocation at " << rel.r_sym;
 
-      StringPieceRef ref{m->pieces[idx], (i32)(offset - m->piece_offsets[idx])};
-      isec->rel_pieces.push_back(ref);
-      isec->has_rel_piece[i] = true;
+      SectionFragmentRef ref{m->fragments[idx], (i32)(offset - m->frag_offsets[idx])};
+      isec->rel_fragments.push_back(ref);
+      isec->has_rel_frag[i] = true;
     }
   }
 
-  // Initialize sym_pieces
+  // Initialize sym_fragments
   for (int i = 0; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common())
@@ -416,16 +416,16 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!m)
       continue;
 
-    int idx = binary_search(m->piece_offsets, esym.st_value);
+    int idx = binary_search(m->frag_offsets, esym.st_value);
     if (idx == -1)
       Fatal() << *this << ": bad symbol value";
 
     if (i < first_global) {
-      symbols[i]->piece_ref.piece = m->pieces[idx];
-      symbols[i]->piece_ref.addend = esym.st_value - m->piece_offsets[idx];
+      symbols[i]->frag_ref.frag = m->fragments[idx];
+      symbols[i]->frag_ref.addend = esym.st_value - m->frag_offsets[idx];
     } else {
-      sym_pieces[i - first_global].piece = m->pieces[idx];
-      sym_pieces[i - first_global].addend = esym.st_value - m->piece_offsets[idx];
+      sym_fragments[i - first_global].frag = m->fragments[idx];
+      sym_fragments[i - first_global].addend = esym.st_value - m->frag_offsets[idx];
     }
   }
 
@@ -491,7 +491,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
   if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
-    sym.piece_ref = sym_pieces[symidx - first_global];
+    sym.frag_ref = sym_fragments[symidx - first_global];
     sym.value = esym.st_value;
     sym.ver_idx = 0;
     sym.st_type = esym.st_type;
@@ -761,7 +761,7 @@ ObjectFile::ObjectFile() {
   }
 
   elf_syms = *esyms;
-  sym_pieces.resize(elf_syms.size() - first_global);
+  sym_fragments.resize(elf_syms.size() - first_global);
 }
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file) {
@@ -878,7 +878,7 @@ void SharedFile::resolve_symbols() {
     if (new_rank < existing_rank) {
       sym.file = this;
       sym.input_section = nullptr;
-      sym.piece_ref = {};
+      sym.frag_ref = {};
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
       sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;

@@ -198,13 +198,13 @@ static void eliminate_comdats() {
 static void handle_mergeable_strings() {
   Timer t("resolve_strings");
 
-  // Resolve mergeable string pieces
+  // Resolve mergeable string fragments
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *m : file->mergeable_sections) {
-      for (StringPiece *piece : m->pieces) {
-        MergeableSection *cur = piece->isec;
+      for (SectionFragment *frag : m->fragments) {
+        MergeableSection *cur = frag->isec;
         while (!cur || cur->file->priority > m->file->priority)
-          if (piece->isec.compare_exchange_weak(cur, m))
+          if (frag->isec.compare_exchange_weak(cur, m))
             break;
       }
     }
@@ -214,10 +214,10 @@ static void handle_mergeable_strings() {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *m : file->mergeable_sections) {
       u32 offset = 0;
-      for (StringPiece *piece : m->pieces) {
-        if (piece->isec == m && piece->output_offset == -1) {
-          piece->output_offset = offset;
-          offset += piece->size;
+      for (SectionFragment *frag : m->fragments) {
+        if (frag->isec == m && frag->output_offset == -1) {
+          frag->output_offset = offset;
+          offset += frag->size;
         }
       }
       m->size = offset;

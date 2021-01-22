@@ -195,11 +195,11 @@ private:
 // Symbol
 //
 
-struct StringPiece {
-  StringPiece(std::string_view view)
+struct SectionFragment {
+  SectionFragment(std::string_view view)
     : data((const char *)view.data()), size(view.size()) {}
 
-  StringPiece(const StringPiece &other)
+  SectionFragment(const SectionFragment &other)
     : isec(other.isec.load()), data(other.data), size(other.size),
       output_offset(other.output_offset) {}
 
@@ -211,8 +211,8 @@ struct StringPiece {
   u32 output_offset = -1;
 };
 
-struct StringPieceRef {
-  StringPiece *piece = nullptr;
+struct SectionFragmentRef {
+  SectionFragment *frag = nullptr;
   i32 addend = 0;
 };
 
@@ -255,7 +255,7 @@ public:
   InputFile *file = nullptr;
   const ElfSym *esym = nullptr;
   InputSection *input_section = nullptr;
-  StringPieceRef piece_ref;
+  SectionFragmentRef frag_ref;
 
   u64 value = -1;
   u32 got_idx = -1;
@@ -330,8 +330,8 @@ public:
   void report_undefined_symbols();
 
   std::span<ElfRela> rels;
-  std::vector<bool> has_rel_piece;
-  std::vector<StringPieceRef> rel_pieces;
+  std::vector<bool> has_rel_frag;
+  std::vector<SectionFragmentRef> rel_fragments;
   std::vector<RelType> rel_types;
   u64 reldyn_offset = 0;
   bool is_comdat_member = false;
@@ -347,8 +347,8 @@ public:
   MergeableSection(InputSection *isec, std::string_view contents);
 
   MergedSection &parent;
-  std::vector<StringPiece *> pieces;
-  std::vector<u32> piece_offsets;
+  std::vector<SectionFragment *> fragments;
+  std::vector<u32> frag_offsets;
   u32 size = 0;
 };
 
@@ -635,7 +635,7 @@ public:
   static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
-  ConcurrentMap<StringPiece> map;
+  ConcurrentMap<SectionFragment> map;
 
   void copy_buf() override;
 
@@ -895,7 +895,7 @@ private:
   void maybe_override_symbol(Symbol &sym, int symidx);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
-  std::vector<StringPieceRef> sym_pieces;
+  std::vector<SectionFragmentRef> sym_fragments;
   bool has_common_symbol;
 
   std::string_view symbol_strtab;
@@ -1112,8 +1112,8 @@ inline bool Symbol::is_absolute() const {
 }
 
 inline u64 Symbol::get_addr() const {
-  if (piece_ref.piece)
-    return piece_ref.piece->get_addr() + piece_ref.addend;
+  if (frag_ref.frag)
+    return frag_ref.frag->get_addr() + frag_ref.addend;
 
   if (has_copyrel)
     return out::copyrel->shdr.sh_addr + value;
@@ -1165,7 +1165,7 @@ inline u64 Symbol::get_plt_addr() const {
   return out::plt->shdr.sh_addr + plt_idx * PLT_SIZE;
 }
 
-inline u64 StringPiece::get_addr() const {
+inline u64 SectionFragment::get_addr() const {
   MergeableSection *is = isec.load();
   return is->parent.shdr.sh_addr + is->offset + output_offset;
 }
