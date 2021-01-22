@@ -269,15 +269,6 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   }
 }
 
-static bool is_mergeable(const ElfShdr &shdr) {
-  bool mergeable = (shdr.sh_flags & SHF_MERGE);
-  bool mergeable_string = mergeable && (shdr.sh_flags & SHF_STRINGS) &&
-                          shdr.sh_entsize == 1;
-  bool mergeable_record = mergeable && !(shdr.sh_flags & SHF_STRINGS);
-
-  return mergeable_string || mergeable_record;
-}
-
 static bool should_write_symtab(Symbol &sym) {
   if (config.discard_all || config.strip_all)
     return false;
@@ -293,8 +284,9 @@ static bool should_write_symtab(Symbol &sym) {
   if (sym.name.starts_with(".L")) {
     if (config.discard_locals)
       return false;
+
     if (InputSection *isec = sym.input_section)
-      if (is_mergeable(isec->shdr))
+      if (isec->shdr.sh_flags & SHF_MERGE)
         return false;
   }
 
@@ -376,10 +368,11 @@ void ObjectFile::initialize_mergeable_sections() {
   mergeable_sections.resize(sections.size());
 
   for (int i = 0; i < sections.size(); i++) {
-    InputSection *isec = sections[i];
-    if (isec && is_mergeable(isec->shdr)) {
-      mergeable_sections[i] = new MergeableSection(isec);
-      sections[i] = nullptr;
+    if (InputSection *isec = sections[i]) {
+      if (isec->shdr.sh_flags & SHF_MERGE) {
+        mergeable_sections[i] = new MergeableSection(isec);
+        sections[i] = nullptr;
+      }
     }
   }
 

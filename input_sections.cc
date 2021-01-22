@@ -450,6 +450,18 @@ void InputSection::scan_relocations() {
   }
 }
 
+static size_t find_null(std::string_view data, u64 entsize) {
+  if (entsize == 1)
+    return data.find('\0');
+
+  for (i64 i = 0; i <= data.size() - entsize; i += entsize)
+    if (data.substr(i, i + entsize).find_first_not_of('\0') ==
+        std::string_view::npos)
+      return i;
+
+  return std::string_view::npos;
+}
+
 MergeableSection::MergeableSection(InputSection *isec)
   : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
@@ -459,15 +471,13 @@ MergeableSection::MergeableSection(InputSection *isec)
   u64 entsize = isec->shdr.sh_entsize;
 
   if (isec->shdr.sh_flags & SHF_STRINGS) {
-    assert(entsize == 1);
-
     while (!data.empty()) {
-      size_t end = data.find('\0');
+      size_t end = find_null(data, entsize);
       if (end == std::string_view::npos)
         Error() << *this << ": string is not null terminated";
 
-      std::string_view substr = data.substr(0, end + 1);
-      data = data.substr(end + 1);
+      std::string_view substr = data.substr(0, end + entsize);
+      data = data.substr(end + entsize);
 
       SectionFragment *frag = parent.insert(substr, isec->shdr.sh_addralign);
       fragments.push_back(frag);
