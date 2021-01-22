@@ -217,7 +217,7 @@ static void handle_mergeable_strings() {
       for (SectionFragment *frag : m->fragments) {
         if (frag->isec == m && frag->output_offset == -1) {
           frag->output_offset = offset;
-          offset += frag->size;
+          offset += frag->data.size();
         }
       }
       m->size = offset;
@@ -980,10 +980,6 @@ static void show_stats() {
   Counter num_input_sections("input_sections");
   for (ObjectFile *file : out::objs)
     num_input_sections.inc(file->sections.size());
-
-  static Counter merged_strings("merged_strings");
-  for (MergedSection *osec : MergedSection::instances)
-    merged_strings.inc(osec->map.size());
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
   Counter num_objs("num_objs", out::objs.size());
