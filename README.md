@@ -210,8 +210,9 @@ tool.
   (i.e. constructing a [Markle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
-  can compute SHA-1 at about 2 GiB/s rate. Using 16 cores, a build-id
-  for a 2 GiB executable can be computed in 60 to 70 milliseconds.
+  can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
+  cores, a build-id for a 2 GiB executable can be computed in 60 to 70
+  milliseconds.
 
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
@@ -255,14 +256,15 @@ not plan to implement and why I turned them down.
 - Placing variable-length sections at end of an output file and start
   copying file contents before fixing the output file layout
 
-  Here is the idea: fixing the layout of regular sections seems easy,
-  and if we place them at beginning of a file, we can start copying
-  their contents from their input files to an output file. While
-  copying file contents, we can compute the sizes of variable-length
-  sections such as .got or .plt.
+  Idea: fixing the layout of regular sections seems easy, and if we
+  place them at beginning of a file, we can start copying their
+  contents from their input files to an output file. While copying
+  file contents, we can compute the sizes of variable-length sections
+  such as .got or .plt.
 
-  I did not choose this design because I doubt if it could actually
-  shorten link time and I think I don't need it anyway.
+  Reason for rejection: I did not choose this design because I doubt
+  if it could actually shorten link time and I think I don't need it
+  anyway.
 
   The linker has to de-duplicate comdat sections (i.e. inline
   functions that are included into multiple object files), so we
@@ -275,15 +277,15 @@ not plan to implement and why I turned them down.
 
 - Incremental linking
 
-  Incremental linking is a technique to patch a previous linker's
+  Idea: Incremental linking is a technique to patch a previous linker's
   output file so that only functions or data that are updated from the
   previous build are written to it. It is expected to significantly
   reduce the amount of data copied from input files to an output file
   and thus speed up linking. GNU BFD and gold linkers support it.
 
-  I turned it down because it (1) is complicated, (2) doesn't seem to
-  speed it up that much and (3) has several practical issues. Let me
-  explain each of them.
+  Reason for rejection: I turned it down because it (1) is
+  complicated, (2) doesn't seem to speed it up that much and (3) has
+  several practical issues. Let me explain each of them.
 
   First, incremental linking for real C/C++ programs is not as easy as
   one might think. Let me take malloc as an example. malloc is usually
@@ -338,15 +340,32 @@ not plan to implement and why I turned them down.
 
 - Defining a completely new file format and use it
 
-  Sometimes, the ELF file format itself seems to be a limiting factor
-  of improving linker's performance. We might be able to make a far
-  better one if we create a new file format.
+  Idea: Sometimes, the ELF file format itself seems to be a limiting
+  factor of improving linker's performance. We might be able to make a
+  far better one if we create a new file format.
 
-  I rejected the idea because it apparently has the practical issue
-  (backward compatibility issue) and also doesn't seem to improve
-  performance of linkers that much. As clearly demonstrated by mold,
-  it seems that we can create a fast linker for ELF. I believe ELF
-  isn't that bad, after all. The semantics of the existing Unix
+  Reason for rejection: I rejected the idea because it apparently has
+  a practical issue (backward compatibility issue) and also doesn't
+  seem to improve performance of linkers that much. As clearly
+  demonstrated by mold, we can create a fast linker for ELF. I believe
+  ELF isn't that bad, after all. The semantics of the existing Unix
   linkers, such as the name resolution algorithm or the linker script,
   have slowed the linkers down, but that's not a problem of the file
   format itself.
+
+- Watching object files using inotify(2)
+
+  Idea: When mold is running as a daemon for preloading, use
+  inotify(2) to watch file system updates using so that it can reload
+  files as soon as they are updated.
+
+  Reason for rejection: Just like the maximum number of files you can
+  simultaneously open, the maximum number of files you can watch using
+  inotify(2) isn't that large. Maybe just a single instance of mold
+  would work fine with inotify(2), but it may fail if you run multiple
+  of it.
+
+  Other reason for not doing it is because mold is quite fast without
+  it anyway. Invoking stat(2) on each file for file update check takes
+  less than 100 milliseconds for Chrome, and if most of the input
+  files are not updated, parsing updated files takes almost no time.
