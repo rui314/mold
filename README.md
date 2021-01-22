@@ -258,10 +258,11 @@ not plan to implement and why I turned them down.
   Here is the idea: fixing the layout of regular sections seems easy,
   and if we place them at beginning of a file, we can start copying
   their contents from their input files to an output file. While
-  copying file contnets, we can compute the sizes of variable-length
+  copying file contents, we can compute the sizes of variable-length
   sections such as .got or .plt.
 
-  I did not choose this design because I think I don't need it.
+  I did not choose this design because I doubt if it could actually
+  shorten link time and I think I don't need it anyway.
 
   The linker has to de-duplicate comdat sections (i.e. inline
   functions that are included into multiple object files), so we
@@ -333,3 +334,18 @@ not plan to implement and why I turned them down.
   So, all in all, incremental linking is tricky. I wanted to make the
   regular full link as fast as possible, so that we don't have to
   think about it.
+
+- Defining a completely new file format and use it
+
+  Sometimes, the ELF file format itself seems to be a limiting factor
+  of improving linker's performance. We might be able to make a far
+  better one if we create a new file format.
+
+  I rejected the idea because it apparently has the practical issue
+  (backward compatibility issue) and also doesn't seem to improve
+  performance of linkers that much. As clearly demonstrated by mold,
+  it seems that we can create a fast linker for ELF. I believe ELF
+  isn't that bad, after all. The semantics of the existing Unix
+  linkers, such as the name resolution algorithm or the linker script,
+  have slowed the linkers down, but that's not a problem of the file
+  format itself.
