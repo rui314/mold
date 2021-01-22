@@ -155,20 +155,18 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file);
 //
 
 namespace tbb {
-template<>
-struct tbb_hash_compare<std::string_view> {
-  static size_t hash(const std::string_view& k) {
+template<> struct tbb_hash_compare<std::string_view> {
+  static size_t hash(const std::string_view &k) {
     return std::hash<std::string_view>()(k);
   }
 
-  static bool equal(const std::string_view& k1, const std::string_view& k2) {
+  static bool equal(const std::string_view &k1, const std::string_view &k2) {
     return k1 == k2;
   }
 };
 }
 
-template<typename ValueT>
-class ConcurrentMap {
+template<typename ValueT> class ConcurrentMap {
 public:
   ValueT *insert(std::string_view key, const ValueT &val) {
     typename decltype(map)::const_accessor acc;
