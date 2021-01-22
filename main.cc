@@ -908,8 +908,14 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.perf = true;
     } else if (read_z_flag(args, "now")) {
       conf.z_now = true;
+    } else if (read_flag(args, "fork")) {
+      conf.fork = true;
     } else if (read_flag(args, "no-fork")) {
       conf.fork = false;
+    } else if (read_flag(args, "quick-exit")) {
+      conf.quick_exit = true;
+    } else if (read_flag(args, "no-quick-exit")) {
+      conf.quick_exit = false;
     } else if (read_arg(args, arg, "thread-count")) {
       conf.thread_count = parse_number("thread-count", arg);
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
@@ -1320,5 +1326,8 @@ int main(int argc, char **argv) {
   std::cerr << std::flush;
   if (on_complete)
     on_complete();
-  std::quick_exit(0);
+
+  if (config.quick_exit)
+    std::quick_exit(0);
+  return 0;
 }

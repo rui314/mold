@@ -61,6 +61,7 @@ struct Config {
   bool eh_frame_hdr = true;
   bool export_dynamic = false;
   bool fork = true;
+  bool quick_exit = true;
   bool is_static = false;
   bool perf = false;
   bool pie = false;
