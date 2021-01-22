@@ -709,7 +709,7 @@ class EhFrameSection : public OutputChunk {
 public:
   EhFrameSection() : OutputChunk(SYNTHETIC) {
     name = ".eh_frame";
-    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_type = SHT_X86_64_UNWIND;
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_addralign = 8;
   }

@@ -866,6 +866,7 @@ void EhFrameSection::copy_buf() {
 
         // Write to .eh_frame_hdr
         if (out::eh_frame_hdr && i == 0) {
+          assert(rel.offset == 8);
           entry->init_addr = S + rel.r_addend - out::eh_frame_hdr->shdr.sh_addr;
           entry->fde_addr = shdr.sh_addr + fde_off - out::eh_frame_hdr->shdr.sh_addr;
           entry++;
