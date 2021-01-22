@@ -115,10 +115,6 @@ just a toy linker, and this is still just my pet project.
   the contents of a .got section. This is perhaps time-consuming, but
   this step is parallelizable.
 
-- Many linkers support incremental linking, but I think that's a hack
-  to work around the slowness of regular linking. I want to focus on
-  making the regular linking extremely fast.
-
 ## Compatibility
 
 - GNU ld, GNU gold and LLVM lld support essentially the same set of
@@ -250,3 +246,90 @@ total. The data contains the following items:
 ¹ Sections that have to be copied from input object files to an
 output file. Sections that contain relocations or symbols are for
 example excluded.
+
+## Rejected ideas
+
+In this section, I'll explain the alternative designs I currently do
+not plan to implement and why I turned them down.
+
+- Placing variable-length sections at end of an output file and start
+  copying file contents before fixing the output file layout
+
+  Here is the idea: fixing the layout of regular sections seems easy,
+  and if we place them at beginning of a file, we can start copying
+  their contents from their input files to an output file. While
+  copying file contnets, we can compute the sizes of variable-length
+  sections such as .got or .plt.
+
+  I did not choose this design because I think I don't need it.
+
+  The linker has to de-duplicate comdat sections (i.e. inline
+  functions that are included into multiple object files), so we
+  cannot compute the layout for regular sections until we resolve all
+  symbols and de-duplicate comdats. That takes a few hundred
+  milliseconds. After that, we can compute the sizes of
+  variable-length sections in less than 100 milliseconds. It's quite
+  fast, so it doesn't seem to make much sense to proceed without
+  fixing the final file layout.
+
+- Incremental linking
+
+  Incremental linking is a technique to patch a previous linker's
+  output file so that only functions or data that are updated from the
+  previous build are written to it. It is expected to significantly
+  reduce the amount of data copied from input files to an output file
+  and thus speed up linking. GNU BFD and gold linkers support it.
+
+  I turned it down because it (1) is complicated, (2) doesn't seem to
+  speed it up that much and (3) complicates build procedure. Let me
+  explain each of them.
+
+  First, incremental linking for real C/C++ programs is not as easy as
+  one might think. Let me take malloc as an example. malloc is usually
+  defined by libc, but you can implement it in your program, and if
+  that's the case, the symbol `malloc` will be resolved to your
+  function instead of the one in libc. If you include a library that
+  defines malloc (such as libjemalloc or libtbbmallc) before libc,
+  their malloc will override libc's malloc.
+
+  What if you remove your malloc from your code, or remove
+  `-ljemalloc` from your Makefile? The linker has to include a malloc
+  from libc, which may include more object files to satisfy its
+  dependencies. Such code change can affect the entire program rather
+  than just replacing one function. That's not just removing one
+  function from libc. The same is true to adding malloc to your
+  program. Making a local change doesn't necessarily result in a local
+  change in the binary level.
+
+  Some ELF fancy features make the situation even worse. For example,
+  take the weak symbol as an example. If you define `atoi` as an weak
+  symbol in your program, and if you are not using `atoi` at all in
+  your program, that symbol will be resolved to address 0. But if you
+  start using some libc function that indirectly calls `atoi`, then
+  `atoi` will be included to your program, and your weak symbol will
+  be resolved to that function. I don't know how to efficiently fix
+  up a binary for this case.
+
+  This is a hard problem, so existing linkers don't try too hard to
+  solve it. For example, IIRC, gold falls back to full link if a
+  function is removed from a previous build. If you want to not
+  annoy users in the fallback case, you need to make the regular case
+  fast anyway.
+
+  Second, incremental linking itself has an overhead. It has to detect
+  which functions are updated and how to patch an existing output
+  file. GNU gold, for instance, takes almost 30 seconds on my machine
+  to a null incremental link for chrome (i.e. no object files are
+  updated from a previous build). It's just too slow.
+
+  Third, there are other practical issues in incremental linking; it's
+  not reproducible, so your binary isn't the same as other binaries
+  even if you are compiling the same source tree using the same
+  compiler toolchain. Or, it is complex and there might be a bug in
+  it. If something doesn't work correctly, "remove --incremental from
+  your Makefile and try again" could be a piece of advise, but that
+  isn't ideal.
+
+  So, all in all, incremental linking is tricky. I wanted to make the
+  regular full link as fast as possible, so that we don't have to
+  think about it.
