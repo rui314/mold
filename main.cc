@@ -200,11 +200,11 @@ static void handle_mergeable_strings() {
 
   // Resolve mergeable string fragments
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *m : file->mergeable_sections) {
-      for (SectionFragment *frag : m->fragments) {
+    for (MergeableSection *isec : file->mergeable_sections) {
+      for (SectionFragment *frag : isec->fragments) {
         MergeableSection *cur = frag->isec;
-        while (!cur || cur->file->priority > m->file->priority)
-          if (frag->isec.compare_exchange_weak(cur, m))
+        while (!cur || cur->file->priority > isec->file->priority)
+          if (frag->isec.compare_exchange_weak(cur, isec))
             break;
       }
     }
@@ -212,26 +212,27 @@ static void handle_mergeable_strings() {
 
   // Calculate the total bytes of mergeable strings for each input section.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *m : file->mergeable_sections) {
+    for (MergeableSection *isec : file->mergeable_sections) {
       u32 offset = 0;
-      for (SectionFragment *frag : m->fragments) {
-        if (frag->isec == m && frag->output_offset == -1) {
+      for (SectionFragment *frag : isec->fragments) {
+        if (frag->isec == isec && frag->output_offset == -1) {
           offset = align_to(offset, frag->alignment);
           frag->output_offset = offset;
           offset += frag->data.size();
         }
       }
-      m->size = offset;
+      isec->size = offset;
     }
   });
 
   // Assign each mergeable input section a unique index.
   for (ObjectFile *file : out::objs) {
-    for (MergeableSection *m : file->mergeable_sections) {
-      u64 &sh_size = m->parent.shdr.sh_size;
-      sh_size = align_to(sh_size, m->alignment);
-      m->offset = sh_size;
-      sh_size += m->size;
+    for (MergeableSection *isec : file->mergeable_sections) {
+      u64 offset = isec->parent.shdr.sh_size;
+      u32 alignment = isec->shdr.sh_addralign;
+      isec->padding = align_to(offset, alignment) - offset;
+      isec->offset = offset + isec->padding;
+      isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
     }
   }
 }

@@ -352,7 +352,7 @@ public:
   std::vector<SectionFragment *> fragments;
   std::vector<u32> frag_offsets;
   u32 size = 0;
-  u32 alignment = 1;
+  u32 padding = 0;
 };
 
 //
@@ -1114,6 +1114,8 @@ inline Symbol *_edata;
 }
 
 inline u64 align_to(u64 val, u64 align) {
+  if (align == 0)
+    return val;
   assert(__builtin_popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
 }

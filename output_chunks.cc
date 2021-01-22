@@ -700,11 +700,33 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  for (auto it = map.begin(); it != map.end(); ++it) {
-    SectionFragment &frag = it->second;
-    if (MergeableSection *m = frag.isec)
-      memcpy(base + m->offset + frag.output_offset,
-             frag.data.data(), frag.data.size());
+  for (ObjectFile *file : out::objs) {
+    for (MergeableSection *isec : file->mergeable_sections) {
+      if (&isec->parent != this)
+        continue;
+
+      // Clear padding between input sections
+      if (isec->padding)
+        memset(base + isec->offset - isec->padding, 0, isec->padding);
+
+      u32 offset = 0;
+      for (SectionFragment *frag : isec->fragments) {
+        if (frag->isec != isec)
+          continue;
+        if (frag->output_offset < offset)
+          continue;
+
+        // Clear padding between section fragments
+        if (offset < frag->output_offset) {
+          memset(base + isec->offset + offset, 0, frag->output_offset - offset);
+          offset = frag->output_offset;
+        }
+
+        memcpy(base + isec->offset + frag->output_offset,
+               frag->data.data(), frag->data.size());
+        offset += frag->data.size();
+      }
+    }
   }
 
   static Counter merged_strings("merged_strings");
