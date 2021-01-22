@@ -269,13 +269,32 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   }
 }
 
-static bool should_write_symtab(const ElfSym &esym, std::string_view name) {
+static bool is_mergeable(const ElfShdr &shdr) {
+  return (shdr.sh_flags & SHF_MERGE) &&
+         (shdr.sh_flags & SHF_STRINGS) &&
+         shdr.sh_entsize == 1;
+}
+
+static bool should_write_symtab(Symbol &sym) {
   if (config.discard_all || config.strip_all)
     return false;
-  if (esym.st_type == STT_SECTION)
+  if (sym.esym->st_type == STT_SECTION)
     return false;
-  if (config.discard_locals && name.starts_with(".L"))
-    return false;
+
+  // Local symbols are discarded if --discard-local is given or they
+  // are not in a mergeable section. I *believe* we exclude symbols in
+  // mergeable sections because (1) they are too many and (2) they are
+  // merged, so their origins shouldn't matter, but I dont' really
+  // know the rationale. Anyway, this is the behavior of the
+  // traditional linkers.
+  if (sym.name.starts_with(".L")) {
+    if (config.discard_locals)
+      return false;
+    if (InputSection *isec = sym.input_section)
+      if (is_mergeable(isec->shdr))
+        return false;
+  }
+
   return true;
 }
 
@@ -305,7 +324,7 @@ void ObjectFile::initialize_symbols() {
       sym.input_section = sections[esym.st_shndx];
     }
 
-    if (should_write_symtab(esym, sym.name)) {
+    if (should_write_symtab(sym)) {
       sym.write_symtab = true;
       strtab_size += sym.name.size() + 1;
       local_symtab_size += sizeof(ElfSym);
@@ -348,12 +367,6 @@ static int binary_search(std::span<u32> span, u32 val) {
     }
   }
   return ret;
-}
-
-static bool is_mergeable(const ElfShdr &shdr) {
-  return (shdr.sh_flags & SHF_MERGE) &&
-         (shdr.sh_flags & SHF_STRINGS) &&
-         shdr.sh_entsize == 1;
 }
 
 void ObjectFile::initialize_mergeable_sections() {
