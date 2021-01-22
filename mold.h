@@ -639,7 +639,7 @@ public:
 
   static inline std::vector<MergedSection *> instances;
 
-  SectionFragment *insert(std::string_view data, u32 alignment = 1) {
+  SectionFragment *insert(std::string_view data, u32 alignment) {
     typename decltype(map)::const_accessor acc;
     map.insert(acc, std::pair(SectionFragmentKey{data, alignment},
                               SectionFragment(data)));

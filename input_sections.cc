@@ -455,20 +455,36 @@ MergeableSection::MergeableSection(InputSection *isec)
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
                                         isec->shdr.sh_flags)) {
   std::string_view data = isec->get_contents();
-  u32 offset = 0;
+  const char *begin = data.data();
+  u64 entsize = isec->shdr.sh_entsize;
 
-  while (!data.empty()) {
-    size_t end = data.find('\0');
-    if (end == std::string_view::npos)
-      Error() << *this << ": string is not null terminated";
+  if (isec->shdr.sh_flags & SHF_STRINGS) {
+    assert(entsize == 1);
 
-    std::string_view substr = data.substr(0, end + 1);
-    data = data.substr(end + 1);
+    while (!data.empty()) {
+      size_t end = data.find('\0');
+      if (end == std::string_view::npos)
+        Error() << *this << ": string is not null terminated";
 
-    SectionFragment *frag = parent.insert(substr);
-    fragments.push_back(frag);
-    frag_offsets.push_back(offset);
-    offset += substr.size();
+      std::string_view substr = data.substr(0, end + 1);
+      data = data.substr(end + 1);
+
+      SectionFragment *frag = parent.insert(substr, isec->shdr.sh_addralign);
+      fragments.push_back(frag);
+      frag_offsets.push_back(substr.data() - begin);
+    }
+  } else {
+    if (data.size() % entsize)
+      Fatal() << *isec << ": section size is not multiple of sh_entsize";
+
+    while (!data.empty()) {
+      std::string_view substr = data.substr(0, entsize);
+      data = data.substr(entsize);
+
+      SectionFragment *frag = parent.insert(substr, isec->shdr.sh_addralign);
+      fragments.push_back(frag);
+      frag_offsets.push_back(substr.data() - begin);
+    }
   }
 
   static Counter counter("string_fragments");

@@ -233,6 +233,9 @@ static void handle_mergeable_strings() {
       isec->padding = align_to(offset, alignment) - offset;
       isec->offset = offset + isec->padding;
       isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
+
+      isec->parent.shdr.sh_addralign =
+        std::max(isec->parent.shdr.sh_addralign, isec->shdr.sh_addralign);
     }
   }
 }

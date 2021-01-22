@@ -270,9 +270,12 @@ void ObjectFile::read_ehframe(InputSection &isec) {
 }
 
 static bool is_mergeable(const ElfShdr &shdr) {
-  return (shdr.sh_flags & SHF_MERGE) &&
-         (shdr.sh_flags & SHF_STRINGS) &&
-         shdr.sh_entsize == 1;
+  bool mergeable = (shdr.sh_flags & SHF_MERGE);
+  bool mergeable_string = mergeable && (shdr.sh_flags & SHF_STRINGS) &&
+                          shdr.sh_entsize == 1;
+  bool mergeable_record = mergeable && !(shdr.sh_flags & SHF_STRINGS);
+
+  return mergeable_string || mergeable_record;
 }
 
 static bool should_write_symtab(Symbol &sym) {
