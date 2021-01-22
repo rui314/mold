@@ -19,7 +19,6 @@
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_unordered_set.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/spin_rw_mutex.h>
 #include <vector>
@@ -158,11 +157,11 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file);
 namespace tbb {
 template<>
 struct tbb_hash_compare<std::string_view> {
-  static size_t hash(const std::string_view &k) {
+  static size_t hash(const std::string_view& k) {
     return std::hash<std::string_view>()(k);
   }
 
-  static bool equal(const std::string_view &k1, const std::string_view &k2) {
+  static bool equal(const std::string_view& k1, const std::string_view& k2) {
     return k1 == k2;
   }
 };
@@ -197,16 +196,18 @@ private:
 //
 
 struct SectionFragment {
-  SectionFragment(std::string_view data) : data(data) {}
+  SectionFragment(std::string_view view)
+    : data((const char *)view.data()), size(view.size()) {}
 
   SectionFragment(const SectionFragment &other)
-    : isec(other.isec.load()), data(other.data),
+    : isec(other.isec.load()), data(other.data), size(other.size),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
   std::atomic<MergeableSection *> isec = nullptr;
-  std::string_view data;
+  const char *data;
+  u32 size;
   u32 output_offset = -1;
 };
 
@@ -228,10 +229,14 @@ enum {
 class Symbol {
 public:
   Symbol() {}
-  Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
 
-  static inline Symbol *intern(std::string_view name);
+  static Symbol *intern(std::string_view name) {
+    static ConcurrentMap<Symbol> map;
+    Symbol sym;
+    sym.name = name;
+    return map.insert(name, sym);
+  }
 
   inline u64 get_addr() const;
   inline u64 get_got_addr() const;
@@ -276,38 +281,6 @@ public:
   u8 has_relplt : 1 = false;
   u8 has_copyrel : 1 = false;
 };
-
-namespace tbb {
-template<> struct tbb_hash<SectionFragment> {
-  size_t operator()(const SectionFragment &frag) const {
-    return std::hash<std::string_view>()(frag.data);
-  }
-};
-
-template<> struct tbb_hash<Symbol> {
-  size_t operator()(const Symbol &sym) const {
-    return std::hash<std::string_view>()(sym.name);
-  }
-};
-}
-
-template<> struct std::equal_to<SectionFragment> {
-  bool operator()(const SectionFragment &lhs, const SectionFragment &rhs) const {
-    return lhs.data == rhs.data;
-  }
-};
-
-template<> struct std::equal_to<Symbol> {
-  bool operator()(const Symbol &lhs, const Symbol &rhs) const {
-    return lhs.name == rhs.name;
-  }
-};
-
-inline Symbol *Symbol::intern(std::string_view name) {
-  static tbb::concurrent_unordered_set<Symbol> set;
-  auto [it, inserted] = set.emplace(name);
-  return &*it;
-}
 
 //
 // input_sections.cc
@@ -662,8 +635,7 @@ public:
   static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
-
-  inline SectionFragment *insert(std::string_view data);
+  ConcurrentMap<SectionFragment> map;
 
   void copy_buf() override;
 
@@ -675,8 +647,6 @@ private:
     shdr.sh_type = type;
     shdr.sh_addralign = 1;
   }
-
-  tbb::concurrent_unordered_set<SectionFragment> set;
 };
 
 struct EhReloc {
@@ -1247,9 +1217,4 @@ inline void erase(std::vector<T> &vec, U pred) {
 template <typename T, typename U>
 inline void sort(T &vec, U less) {
   std::stable_sort(vec.begin(), vec.end(), less);
-}
-
-inline SectionFragment *MergedSection::insert(std::string_view data) {
-  auto [it, inserted] = set.emplace(data);
-  return &*it;
 }
