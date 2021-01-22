@@ -460,7 +460,7 @@ MergeableSection::MergeableSection(InputSection *isec, std::string_view data)
     std::string_view substr = data.substr(0, end + 1);
     data = data.substr(end + 1);
 
-    SectionFragment *frag = parent.map.insert(substr, SectionFragment(substr));
+    SectionFragment *frag = parent.insert(substr);
     fragments.push_back(frag);
     frag_offsets.push_back(offset);
     offset += substr.size();

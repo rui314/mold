@@ -170,25 +170,13 @@ struct tbb_hash_compare<std::string_view> {
 template<typename ValueT>
 class ConcurrentMap {
 public:
-  typedef tbb::concurrent_hash_map<std::string_view, ValueT> MapT;
-
   ValueT *insert(std::string_view key, const ValueT &val) {
-    typename MapT::const_accessor acc;
+    typename decltype(map)::const_accessor acc;
     map.insert(acc, std::make_pair(key, val));
     return const_cast<ValueT *>(&acc->second);
   }
 
-  void for_each_value(std::function<void(const ValueT &)> fn) {
-    for (typename MapT::const_iterator it = map.begin(); it != map.end(); ++it)
-      fn(it->second);
-  }
-
-  size_t size() const {
-    return map.size();
-  }
-
-private:
-  MapT map;
+  tbb::concurrent_hash_map<std::string_view, ValueT> map;
 };
 
 //
@@ -635,7 +623,10 @@ public:
   static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
-  ConcurrentMap<SectionFragment> map;
+
+  SectionFragment *insert(std::string_view data) {
+    return map.insert(data, SectionFragment(data));
+  }
 
   void copy_buf() override;
 
@@ -647,6 +638,8 @@ private:
     shdr.sh_type = type;
     shdr.sh_addralign = 1;
   }
+
+  ConcurrentMap<SectionFragment> map;
 };
 
 struct EhReloc {

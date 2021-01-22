@@ -700,10 +700,14 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  map.for_each_value([&](const SectionFragment &frag) {
+  for (auto it = map.map.begin(); it != map.map.end(); ++it) {
+    SectionFragment &frag = it->second;
     if (MergeableSection *m = frag.isec)
       memcpy(base + m->offset + frag.output_offset, frag.data, frag.size);
-  });
+  }
+
+  static Counter merged_strings("merged_strings");
+  merged_strings.inc(map.map.size());
 }
 
 void EhFrameSection::construct() {
