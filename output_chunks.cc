@@ -713,16 +713,16 @@ void MergedSection::copy_buf() {
       for (SectionFragment *frag : isec->fragments) {
         if (frag->isec != isec)
           continue;
-        if (frag->output_offset < offset)
+        if (frag->offset < offset)
           continue;
 
         // Clear padding between section fragments
-        if (offset < frag->output_offset) {
-          memset(base + isec->offset + offset, 0, frag->output_offset - offset);
-          offset = frag->output_offset;
+        if (offset < frag->offset) {
+          memset(base + isec->offset + offset, 0, frag->offset - offset);
+          offset = frag->offset;
         }
 
-        memcpy(base + isec->offset + frag->output_offset,
+        memcpy(base + isec->offset + frag->offset,
                frag->data.data(), frag->data.size());
         offset += frag->data.size();
       }
@@ -745,7 +745,7 @@ void EhFrameSection::construct() {
       for (FdeRecord &fde : cie.fdes) {
         if (!fde.is_alive())
           continue;
-        fde.output_offset = offset;
+        fde.offset = offset;
         offset += fde.contents.size();
         cie.num_fdes++;
 
@@ -779,7 +779,7 @@ void EhFrameSection::construct() {
   u32 offset = 0;
   for (int i = 0; i < cies.size(); i++) {
     CieRecord &cie = *cies[i];
-    cie.output_offset = offset;
+    cie.offset = offset;
 
     if (i == 0 || !should_merge(cie, *cies[i - 1])) {
       cie.leader_offset = offset;
@@ -835,25 +835,24 @@ void EhFrameSection::copy_buf() {
       entry = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE) + cie->fde_idx;
 
     // Copy a CIE.
-    if (cie->output_offset == cie->leader_offset) {
-      memcpy(base + cie->output_offset, cie->contents.data(),
-             cie->contents.size());
+    if (cie->offset == cie->leader_offset) {
+      memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
       cie_size = cie->contents.size();
 
       for (EhReloc &rel : cie->rels) {
         u32 S = rel.sym->get_addr();
-        u32 P = shdr.sh_addr + cie->output_offset + rel.offset;
-        u8 *loc = base + cie->output_offset + rel.offset;
+        u32 P = shdr.sh_addr + cie->offset + rel.offset;
+        u8 *loc = base + cie->offset + rel.offset;
         apply_reloc(rel, loc, S, P, rel.r_addend);
       }
     }
 
     // Copy FDEs.
     for (FdeRecord &fde : cie->fdes) {
-      if (fde.output_offset == -1)
+      if (fde.offset == -1)
         continue;
 
-      u32 fde_off = cie->output_offset + cie_size + fde.output_offset;
+      u32 fde_off = cie->offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
 
@@ -899,9 +898,9 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   for (CieRecord &cie : file.cies) {
     u64 offset = 0;
 
-    if (cie.output_offset == cie.leader_offset) {
+    if (cie.offset == cie.leader_offset) {
       if (contains(cie.contents, section_begin + offset)) {
-        u64 cie_addr = shdr.sh_addr + cie.output_offset;
+        u64 cie_addr = shdr.sh_addr + cie.offset;
         u64 addend = sym.value - offset;
         return cie_addr + addend;
       }
@@ -913,7 +912,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
         if (!fde.is_alive())
           return 0;
 
-        u64 fde_addr = shdr.sh_addr + cie.output_offset + offset;
+        u64 fde_addr = shdr.sh_addr + cie.offset + offset;
         u64 addend = sym.value - offset;
         return fde_addr + addend;
       }

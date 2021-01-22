@@ -186,13 +186,13 @@ struct SectionFragment {
 
   SectionFragment(const SectionFragment &other)
     : isec(other.isec.load()), data(other.data),
-      output_offset(other.output_offset) {}
+      offset(other.offset) {}
 
   inline u64 get_addr() const;
 
   std::atomic<MergeableSection *> isec = nullptr;
   std::string_view data;
-  u32 output_offset = -1;
+  u32 offset = -1;
   u32 alignment = 1;
 };
 
@@ -677,7 +677,7 @@ struct EhReloc {
 struct FdeRecord {
   std::string_view contents;
   std::vector<EhReloc> rels;
-  u32 output_offset = -1;
+  u32 offset = -1;
 
   bool is_alive() const {
     if (!rels.empty())
@@ -696,7 +696,7 @@ struct CieRecord {
   std::vector<FdeRecord> fdes;
 
   // For .eh_frame
-  u32 output_offset = -1;
+  u32 offset = -1;
   u32 leader_offset = -1;
   u32 fde_size = -1;
 
@@ -1180,7 +1180,7 @@ inline u64 Symbol::get_plt_addr() const {
 
 inline u64 SectionFragment::get_addr() const {
   MergeableSection *is = isec.load();
-  return is->parent.shdr.sh_addr + is->offset + output_offset;
+  return is->parent.shdr.sh_addr + is->offset + offset;
 }
 
 inline u64 InputChunk::get_addr() const {

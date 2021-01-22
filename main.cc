@@ -215,9 +215,9 @@ static void handle_mergeable_strings() {
     for (MergeableSection *isec : file->mergeable_sections) {
       u32 offset = 0;
       for (SectionFragment *frag : isec->fragments) {
-        if (frag->isec == isec && frag->output_offset == -1) {
+        if (frag->isec == isec && frag->offset == -1) {
           offset = align_to(offset, frag->alignment);
-          frag->output_offset = offset;
+          frag->offset = offset;
           offset += frag->data.size();
         }
       }
