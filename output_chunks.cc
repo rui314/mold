@@ -703,7 +703,8 @@ void MergedSection::copy_buf() {
   for (auto it = map.map.begin(); it != map.map.end(); ++it) {
     SectionFragment &frag = it->second;
     if (MergeableSection *m = frag.isec)
-      memcpy(base + m->offset + frag.output_offset, frag.data, frag.size);
+      memcpy(base + m->offset + frag.output_offset,
+             frag.data.data(), frag.data.size());
   }
 
   static Counter merged_strings("merged_strings");

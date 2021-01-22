@@ -217,7 +217,7 @@ static void handle_mergeable_strings() {
       for (SectionFragment *frag : m->fragments) {
         if (frag->isec == m && frag->output_offset == -1) {
           frag->output_offset = offset;
-          offset += frag->size;
+          offset += frag->data.size();
         }
       }
       m->size = offset;

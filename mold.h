@@ -184,18 +184,16 @@ public:
 //
 
 struct SectionFragment {
-  SectionFragment(std::string_view view)
-    : data((const char *)view.data()), size(view.size()) {}
+  SectionFragment(std::string_view data) : data(data) {}
 
   SectionFragment(const SectionFragment &other)
-    : isec(other.isec.load()), data(other.data), size(other.size),
+    : isec(other.isec.load()), data(other.data),
       output_offset(other.output_offset) {}
 
   inline u64 get_addr() const;
 
   std::atomic<MergeableSection *> isec = nullptr;
-  const char *data;
-  u32 size;
+  std::string_view data;
   u32 output_offset = -1;
 };
 
