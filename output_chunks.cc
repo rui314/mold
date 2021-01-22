@@ -700,7 +700,7 @@ MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
 
-  for (ObjectFile *file : out::objs) {
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (MergeableSection *isec : file->mergeable_sections) {
       if (&isec->parent != this)
         continue;
@@ -727,7 +727,7 @@ void MergedSection::copy_buf() {
         offset += frag->data.size();
       }
     }
-  }
+  });
 
   static Counter merged_strings("merged_strings");
   merged_strings.inc(map.size());
