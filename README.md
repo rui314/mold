@@ -260,7 +260,7 @@ not plan to implement and why I turned them down.
   place them at beginning of a file, we can start copying their
   contents from their input files to an output file. While copying
   file contents, we can compute the sizes of variable-length sections
-  such as .got or .plt.
+  such as .got or .plt and place them at end of the file.
 
   Reason for rejection: I did not choose this design because I doubt
   if it could actually shorten link time and I think I don't need it
@@ -275,15 +275,16 @@ not plan to implement and why I turned them down.
   fast, so it doesn't seem to make much sense to proceed without
   fixing the final file layout.
 
-  There's actually a chance that this idea could slow down the linker
-  overall. If we copy file contents before fixing the layout, we can't
-  apply relocations to them while copying because symbol addresses are
-  not available yet. If we fix the file layout first, we can apply
-  relocations while copying, which is effectively zero-cost due to a
-  very good data locality. On the other hand, if we apply relocations
-  long after we copy file contents, it's pretty expensive because
-  section contents are very likely to have been evicted from CPU
-  cache.
+  The other reason to reject this idea is because there's good a
+  chance for this idea to have a negative impact on linker's overall
+  performance. If we copy file contents before fixing the layout, we
+  can't apply relocations to them while copying because symbol
+  addresses are not available yet. If we fix the file layout first, we
+  can apply relocations while copying, which is effectively zero-cost
+  due to a very good data locality. On the other hand, if we apply
+  relocations long after we copy file contents, it's pretty expensive
+  because section contents are very likely to have been evicted from
+  CPU cache.
 
 - Incremental linking
 
