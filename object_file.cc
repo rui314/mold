@@ -195,6 +195,35 @@ void ObjectFile::initialize_ehframe_sections() {
   }
 }
 
+// .eh_frame contains data records explaining how to handle exceptions.
+// When an exception is thrown, the runtime searches a record from
+// .eh_frame with the current program counter as a key. A record that
+// covers the current PC explains how to find a handler and transfer the
+// control ot it.
+//
+// Unlike most other sections, linker has to parse .eh_frame contents
+// because of the following reasons:
+//
+// - There's usually only one .eh_frame section for each object file,
+//   which explains how to handle exceptions for all functions in the same
+//   object. If we just copy them, the resulting .eh_frame section will
+//   contain lots of records for dead sections (i.e. de-duplicated inline
+//   functions). We want to only copy records for live functions.
+//
+// - .eh_frame contains two types of records: CIE and FDE. There's usually
+//   only one CIE at beginning of .eh_frame section followed by FDEs.
+//   Compiler usually emits the identical CIE record for all object files.
+//   We want to merge them in an output .eh_frame section to reduce the
+//   section size.
+//
+// - Scanning a .eh_frame section to find a record is a O(n) operation
+//   where n is the number of records in the section. To reduce it to
+//   O(log n), linker creates a .eh_frame_hdr section. The section
+//   contains a sorted list of [an address in .text, an FDE address whose
+//   coverage starts at the .text address] to make binary search doable.
+//   In order to create .eh_frame_hdr, linker has to read .eh_frame.
+//
+// This function parses an input .eh_frame section.
 void ObjectFile::read_ehframe(InputSection &isec) {
   std::span<ElfRela> rels = isec.rels;
   std::string_view data = get_string(isec.shdr);
