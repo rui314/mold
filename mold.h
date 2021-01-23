@@ -649,9 +649,9 @@ GnuHashSection() : OutputChunk(SYNTHETIC) {
   static constexpr int BLOOM_SHIFT = 26;
   static constexpr int ELFCLASS_BITS = 64;
 
-  u32 bucket_size = -1;
+  u32 num_buckets = -1;
   u32 symoffset = -1;
-  u32 bloom_size = 1;
+  u32 num_bloom = 1;
 };
 
 class MergedSection : public OutputChunk {

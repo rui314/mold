@@ -6,7 +6,7 @@
 #include <tbb/parallel_sort.h>
 
 void OutputEhdr::copy_buf() {
-  auto &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
+  ElfEhdr &hdr = *(ElfEhdr *)(out::buf + shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
@@ -28,21 +28,21 @@ void OutputEhdr::copy_buf() {
 }
 
 void OutputShdr::update_shdr() {
-  shdr.sh_size = sizeof(ElfShdr);
+  int n = 1;
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
-      shdr.sh_size += sizeof(ElfShdr);
+      n++;
+  shdr.sh_size = n * sizeof(ElfShdr);
 }
 
 void OutputShdr::copy_buf() {
-  u8 *base = out::buf + shdr.sh_offset;
+  ElfShdr *ent = (ElfShdr *)(out::buf + shdr.sh_offset);
+  ent[0] = {};
 
-  memset(base, 0, sizeof(ElfShdr));
-
-  auto *ptr = (ElfShdr *)(base + sizeof(ElfShdr));
+  int i = 1;
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
-      *ptr++ = chunk->shdr;
+      ent[i++] = chunk->shdr;
 }
 
 static u32 to_phdr_flags(OutputChunk *chunk) {
@@ -175,7 +175,6 @@ void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
   int n = 0;
-
   for (Symbol *sym : out::got->got_syms)
     if (sym->is_imported || (config.pie && sym->is_relative()))
       n++;
@@ -613,12 +612,12 @@ void DynsymSection::sort_symbols() {
       [](Symbol *sym) { return sym->is_imported || sym->esym->is_undef(); });
 
     int num_defined = symbols.end() - first_defined;
-    out::gnu_hash->bucket_size = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
+    out::gnu_hash->num_buckets = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
     out::gnu_hash->symoffset = first_defined - symbols.begin();
 
     std::stable_sort(first_defined, symbols.end(), [&](Symbol *a, Symbol *b) {
-      u32 x = gnu_hash(a->name) % out::gnu_hash->bucket_size;
-      u32 y = gnu_hash(b->name) % out::gnu_hash->bucket_size;
+      u32 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
+      u32 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
       return x < y;
     });
   }
@@ -698,24 +697,24 @@ void GnuHashSection::update_shdr() {
   if (int num_symbols = out::dynsym->symbols.size() - symoffset) {
     // We allocate 12 bits for each symbol in the bloom filter.
     int num_bits = num_symbols * 12;
-    bloom_size = next_power_of_two(num_bits / ELFCLASS_BITS);
+    num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
   }
 
   int num_symbols = out::dynsym->symbols.size() - symoffset;
 
-  shdr.sh_size = HEADER_SIZE;                     // Header
-  shdr.sh_size += bloom_size * ELFCLASS_BITS / 8; // Bloom filter
-  shdr.sh_size += bucket_size * 4;                // Hash buckets
-  shdr.sh_size += num_symbols * 4;                // Hash values
+  shdr.sh_size = HEADER_SIZE;                    // Header
+  shdr.sh_size += num_bloom * ELFCLASS_BITS / 8; // Bloom filter
+  shdr.sh_size += num_buckets * 4;               // Hash buckets
+  shdr.sh_size += num_symbols * 4;               // Hash values
 }
 
 void GnuHashSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
-  *(u32 *)base = bucket_size;
+  *(u32 *)base = num_buckets;
   *(u32 *)(base + 4) = symoffset;
-  *(u32 *)(base + 8) = bloom_size;
+  *(u32 *)(base + 8) = num_bloom;
   *(u32 *)(base + 12) = BLOOM_SHIFT;
 
   std::span<Symbol *> symbols = std::span(out::dynsym->symbols).subspan(symoffset);
@@ -726,25 +725,25 @@ void GnuHashSection::copy_buf() {
   // Write a bloom filter
   u64 *bloom = (u64 *)(base + HEADER_SIZE);
   for (u32 hash : hashes) {
-    u32 idx = (hash / 64) % bloom_size;
-    bloom[idx] |= (u64)1 << (hash % 64);
-    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % 64);
+    u32 idx = (hash / 64) % num_bloom;
+    bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
+    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % ELFCLASS_BITS);
   }
 
   // Write hash bucket indices
-  u32 *buckets = (u32 *)(bloom + bloom_size);
+  u32 *buckets = (u32 *)(bloom + num_bloom);
   for (int i = 1; i < hashes.size(); i++) {
-    u32 idx = hashes[i] % bucket_size;
+    u32 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
       buckets[idx] = i + symoffset;
   }
 
   // Write a hash table
-  u32 *table = buckets + bucket_size;
+  u32 *table = buckets + num_buckets;
   for (int i = 0; i < symbols.size(); i++) {
-    bool is_last = false;;
+    bool is_last = false;
     if (i == symbols.size() - 1 ||
-        (hashes[i] % bucket_size) != (hashes[i + 1] % bucket_size))
+        (hashes[i] % num_buckets) != (hashes[i + 1] % num_buckets))
       is_last = true;
 
     if (is_last)
@@ -886,19 +885,10 @@ void EhFrameSection::construct() {
 
 void EhFrameSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
+
   u8 *hdr_base = nullptr;
-
-  if (out::eh_frame_hdr) {
+  if (out::eh_frame_hdr)
     hdr_base = out::buf + out::eh_frame_hdr->shdr.sh_offset;
-
-    hdr_base[0] = 1;
-    hdr_base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
-    hdr_base[2] = DW_EH_PE_udata4;
-    hdr_base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
-
-    *(u32 *)(hdr_base + 4) = shdr.sh_addr - out::eh_frame_hdr->shdr.sh_addr - 4;
-    *(u32 *)(hdr_base + 8) = num_fdes;
-  }
 
   auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 S, u32 P, i64 A) {
     if (rel.r_type == R_X86_64_32)
@@ -963,6 +953,16 @@ void EhFrameSection::copy_buf() {
   });
 
   if (out::eh_frame_hdr) {
+    // Write .eh_frame_hdr header
+    hdr_base[0] = 1;
+    hdr_base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+    hdr_base[2] = DW_EH_PE_udata4;
+    hdr_base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
+
+    *(u32 *)(hdr_base + 4) = shdr.sh_addr - out::eh_frame_hdr->shdr.sh_addr - 4;
+    *(u32 *)(hdr_base + 8) = num_fdes;
+
+    // Sort .eh_frame_hdr contents
     Entry *begin = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE);
     Entry *end = begin + num_fdes;
 
