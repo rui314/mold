@@ -142,6 +142,7 @@ static constexpr u32 DT_INIT_ARRAYSZ = 27;
 static constexpr u32 DT_FINI_ARRAYSZ = 28;
 static constexpr u32 DT_RUNPATH = 29;
 static constexpr u32 DT_FLAGS = 30;
+static constexpr u32 DT_GNU_HASH = 0x6ffffef5;
 static constexpr u32 DT_VERSYM = 0x6ffffff0;
 static constexpr u32 DT_RELACOUNT = 0x6ffffff9;
 static constexpr u32 DT_RELCOUNT = 0x6ffffffa;

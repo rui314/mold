@@ -60,12 +60,14 @@ struct Config {
   bool eh_frame_hdr = true;
   bool export_dynamic = false;
   bool fork = true;
-  bool quick_exit = true;
+  bool hash_style_gnu = false;
+  bool hash_style_sysv = true;
   bool is_static = false;
   bool perf = false;
   bool pie = false;
   bool preload = false;
   bool print_map = false;
+  bool quick_exit = true;
   bool relax = true;
   bool stat = false;
   bool strip_all = false;
@@ -612,8 +614,8 @@ public:
   void update_shdr() override;
   void copy_buf() override;
 
-  std::vector<Symbol *> symbols;
-  std::vector<u32> name_indices;
+  std::vector<Symbol *> symbols = {nullptr};
+  std::vector<u32> name_indices = {(u32)-1};
 };
 
 class HashSection : public OutputChunk {
@@ -628,9 +630,28 @@ public:
 
   void update_shdr() override;
   void copy_buf() override;
+};
 
-private:
-  static u32 hash(std::string_view name);
+class GnuHashSection : public OutputChunk {
+public:
+GnuHashSection() : OutputChunk(SYNTHETIC) {
+    name = ".gnu.hash";
+    shdr.sh_type = SHT_GNU_HASH;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 8;
+  }
+
+  void update_shdr() override;
+  void copy_buf() override;
+
+  static constexpr int LOAD_FACTOR = 8;
+  static constexpr int HEADER_SIZE = 16;
+  static constexpr int BLOOM_SHIFT = 26;
+  static constexpr int ELFCLASS_BITS = 64;
+
+  u32 bucket_size = -1;
+  u32 symoffset = -1;
+  u32 bloom_size = 1;
 };
 
 class MergedSection : public OutputChunk {
@@ -1082,6 +1103,7 @@ inline DynamicSection *dynamic;
 inline StrtabSection *strtab;
 inline DynstrSection *dynstr;
 inline HashSection *hash;
+inline GnuHashSection *gnu_hash;
 inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
 inline SymtabSection *symtab;
@@ -1118,6 +1140,20 @@ inline u64 align_to(u64 val, u64 align) {
     return val;
   assert(__builtin_popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
+}
+
+inline u64 next_power_of_two(u64 val) {
+  if (!val)
+    return 1;
+
+  val--;
+  val |= val >> 1;
+  val |= val >> 2;
+  val |= val >> 4;
+  val |= val >> 8;
+  val |= val >> 16;
+  val |= val >> 32;
+  return val + 1;
 }
 
 inline bool Symbol::is_absolute() const {
@@ -1196,6 +1232,13 @@ inline u32 elf_hash(std::string_view name) {
       h ^= g >> 24;
     h &= ~g;
   }
+  return h;
+}
+
+inline u32 gnu_hash(std::string_view name) {
+  u32 h = 5381;
+  for (u8 c : name)
+    h = (h << 5) + h + c;
   return h;
 }
 

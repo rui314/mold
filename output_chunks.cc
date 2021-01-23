@@ -329,7 +329,6 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_SYMENT, sizeof(ElfSym));
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
-  define(DT_HASH, out::hash->shdr.sh_addr);
   define(DT_INIT_ARRAY, out::__init_array_start->value);
   define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);
@@ -338,6 +337,11 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
+
+  if (out::hash)
+    define(DT_HASH, out::hash->shdr.sh_addr);
+  if (out::gnu_hash)
+    define(DT_GNU_HASH, out::gnu_hash->shdr.sh_addr);
 
   auto find = [](std::string_view name) -> OutputChunk * {
     for (OutputChunk *chunk : out::chunks)
@@ -589,31 +593,52 @@ void DynsymSection::add_symbol(Symbol *sym) {
     return;
   sym->dynsym_idx = -2;
   symbols.push_back(sym);
-  name_indices.push_back(out::dynstr->add_string(sym->name));
 }
 
 void DynsymSection::sort_symbols() {
+  // In any ELF file, local symbols should precede global symbols.
   auto first_global = std::stable_partition(
-    symbols.begin(), symbols.end(),
+    symbols.begin() + 1, symbols.end(),
     [](Symbol *sym) { return sym->esym->st_bind == STB_LOCAL; });
 
-  shdr.sh_info = first_global - symbols.begin() + 1;
+  // In any ELF file, the index of the first global symbols can be
+  // found in the symtab's sh_info field.
+  shdr.sh_info = first_global - symbols.begin();
 
-  int i = 1;
-  for (Symbol *sym : symbols)
-    sym->dynsym_idx = i++;
+  // If we have .gnu.hash section, it imposes more constraints
+  // on the order of symbols.
+  if (out::gnu_hash) {
+    auto first_defined = std::stable_partition(
+      first_global, symbols.end(),
+      [](Symbol *sym) { return sym->is_imported || sym->esym->is_undef(); });
+
+    int num_defined = symbols.end() - first_defined;
+    out::gnu_hash->bucket_size = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
+    out::gnu_hash->symoffset = first_defined - symbols.begin();
+
+    std::stable_sort(first_defined, symbols.end(), [&](Symbol *a, Symbol *b) {
+      u32 x = gnu_hash(a->name) % out::gnu_hash->bucket_size;
+      u32 y = gnu_hash(b->name) % out::gnu_hash->bucket_size;
+      return x < y;
+    });
+  }
+
+  for (int i = 1; i < symbols.size(); i++) {
+    name_indices.push_back(out::dynstr->add_string(symbols[i]->name));
+    symbols[i]->dynsym_idx = i;
+  }
 }
 
 void DynsymSection::update_shdr() {
   shdr.sh_link = out::dynstr->shndx;
-  shdr.sh_size = sizeof(ElfSym) * (symbols.size() + 1);
+  shdr.sh_size = sizeof(ElfSym) * symbols.size();
 }
 
 void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
 
-  for (int i = 0; i < symbols.size(); i++) {
+  for (int i = 1; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
 
     ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
@@ -643,7 +668,7 @@ void DynsymSection::copy_buf() {
 
 void HashSection::update_shdr() {
   int header_size = 8;
-  int num_slots = out::dynsym->symbols.size() + 1;
+  int num_slots = out::dynsym->symbols.size();
   shdr.sh_size = header_size + num_slots * 8;
   shdr.sh_link = out::dynsym->shndx;
 }
@@ -652,17 +677,80 @@ void HashSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
-  int num_slots = out::dynsym->symbols.size() + 1;
+  int num_slots = out::dynsym->symbols.size();
   u32 *hdr = (u32 *)base;
   u32 *buckets = (u32 *)(base + 8);
   u32 *chains = buckets + num_slots;
 
   hdr[0] = hdr[1] = num_slots;
 
-  for (Symbol *sym : out::dynsym->symbols) {
-    u32 i = elf_hash(sym->name) % num_slots;
-    chains[sym->dynsym_idx] = buckets[i];
-    buckets[i] = sym->dynsym_idx;
+  for (int i = 1; i < out::dynsym->symbols.size(); i++) {
+    Symbol *sym = out::dynsym->symbols[i];
+    u32 idx = elf_hash(sym->name) % num_slots;
+    chains[sym->dynsym_idx] = buckets[idx];
+    buckets[idx] = sym->dynsym_idx;
+  }
+}
+
+void GnuHashSection::update_shdr() {
+  shdr.sh_link = out::dynsym->shndx;
+
+  if (int num_symbols = out::dynsym->symbols.size() - symoffset) {
+    // We allocate 12 bits for each symbol in the bloom filter.
+    int num_bits = num_symbols * 12;
+    bloom_size = next_power_of_two(num_bits / ELFCLASS_BITS);
+  }
+
+  int num_symbols = out::dynsym->symbols.size() - symoffset;
+
+  shdr.sh_size = HEADER_SIZE;                     // Header
+  shdr.sh_size += bloom_size * ELFCLASS_BITS / 8; // Bloom filter
+  shdr.sh_size += bucket_size * 4;                // Hash buckets
+  shdr.sh_size += num_symbols * 4;                // Hash values
+}
+
+void GnuHashSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
+  memset(base, 0, shdr.sh_size);
+
+  *(u32 *)base = bucket_size;
+  *(u32 *)(base + 4) = symoffset;
+  *(u32 *)(base + 8) = bloom_size;
+  *(u32 *)(base + 12) = BLOOM_SHIFT;
+
+  std::span<Symbol *> symbols = std::span(out::dynsym->symbols).subspan(symoffset);
+  std::vector<u32> hashes(symbols.size());
+  for (int i = 0; i < symbols.size(); i++)
+    hashes[i] = gnu_hash(symbols[i]->name);
+
+  // Write a bloom filter
+  u64 *bloom = (u64 *)(base + HEADER_SIZE);
+  for (u32 hash : hashes) {
+    u32 idx = (hash / 64) % bloom_size;
+    bloom[idx] |= (u64)1 << (hash % 64);
+    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % 64);
+  }
+
+  // Write hash bucket indices
+  u32 *buckets = (u32 *)(bloom + bloom_size);
+  for (int i = 1; i < hashes.size(); i++) {
+    u32 idx = hashes[i] % bucket_size;
+    if (!buckets[idx])
+      buckets[idx] = i + symoffset;
+  }
+
+  // Write a hash table
+  u32 *table = buckets + bucket_size;
+  for (int i = 0; i < symbols.size(); i++) {
+    bool is_last = false;;
+    if (i == symbols.size() - 1 ||
+        (hashes[i] % bucket_size) != (hashes[i + 1] % bucket_size))
+      is_last = true;
+
+    if (is_last)
+      table[i] = hashes[i] | 1;
+    else
+      table[i] = hashes[i] & ~(u32)1;
   }
 }
 

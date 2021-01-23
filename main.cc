@@ -431,7 +431,8 @@ static void fill_symbol_versions() {
   Timer t("fill_symbol_versions");
 
   // Create a list of versioned symbols and sort by file and version.
-  std::vector<Symbol *> syms = out::dynsym->symbols;
+  std::vector<Symbol *> syms(out::dynsym->symbols.begin() + 1,
+                             out::dynsym->symbols.end());
   erase(syms, [](Symbol *sym){ return sym->ver_idx < 2; });
 
   if (syms.empty())
@@ -443,7 +444,7 @@ static void fill_symbol_versions() {
   });
 
   // Compute sizes of .gnu.version and .gnu.version_r sections.
-  out::versym->contents.resize(out::dynsym->symbols.size() + 1, 1);
+  out::versym->contents.resize(out::dynsym->symbols.size(), 1);
   out::versym->contents[0] = 0;
 
   int sz = sizeof(ElfVerneed) + sizeof(ElfVernaux);
@@ -890,6 +891,19 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.library_paths.push_back(arg);
     } else if (read_arg(args, arg, "sysroot")) {
       conf.sysroot = arg;
+    } else if (read_arg(args, arg, "hash-style")) {
+      if (arg == "sysv") {
+        conf.hash_style_sysv = true;
+        conf.hash_style_gnu = false;
+      } else if (arg == "gnu") {
+        conf.hash_style_sysv = false;
+        conf.hash_style_gnu = true;
+      } else if (arg == "both") {
+        conf.hash_style_sysv = true;
+        conf.hash_style_gnu = true;
+      } else {
+        Fatal() << "invalid --hashstyle argument: " << arg;
+      }
     } else if (read_flag(args, "trace")) {
       conf.trace = true;
     } else if (read_flag(args, "eh-frame-hdr")) {
@@ -937,7 +951,6 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "preload")) {
       conf.preload = true;
     } else if (read_arg(args, arg, "z")) {
-    } else if (read_arg(args, arg, "hash-style")) {
     } else if (read_arg(args, arg, "m")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
@@ -1085,12 +1098,15 @@ int main(int argc, char **argv) {
     out::buildid = new BuildIdSection;
   if (config.eh_frame_hdr)
     out::eh_frame_hdr = new EhFrameHdrSection;
+  if (config.hash_style_sysv)
+    out::hash = new HashSection;
+  if (config.hash_style_gnu)
+    out::gnu_hash = new GnuHashSection;
 
   if (!config.is_static) {
     out::interp = new InterpSection;
     out::dynamic = new DynamicSection;
     out::reldyn = new RelDynSection;
-    out::hash = new HashSection;
     out::versym = new VersymSection;
     out::verneed = new VerneedSection;
   }
@@ -1107,6 +1123,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::symtab);
   out::chunks.push_back(out::strtab);
   out::chunks.push_back(out::hash);
+  out::chunks.push_back(out::gnu_hash);
   out::chunks.push_back(out::eh_frame_hdr);
   out::chunks.push_back(out::eh_frame);
   out::chunks.push_back(out::copyrel);
