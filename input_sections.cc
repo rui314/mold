@@ -152,6 +152,9 @@ void InputSection::copy_buf() {
     apply_reloc_nonalloc(base);
 }
 
+// Apply relocations to SHF_ALLOC sections (i.e. sections that are
+// mapped to memory at runtime) based on the result of
+// scan_relocations().
 void InputSection::apply_reloc_alloc(u8 *base) {
   int ref_idx = 0;
   ElfRela *dynrel = nullptr;
@@ -254,6 +257,18 @@ void InputSection::apply_reloc_alloc(u8 *base) {
   }
 }
 
+// This function is responsible for applying relocations against
+// non-SHF_ALLOC sections (i.e. sections that are not mapped to memory
+// at runtime).
+//
+// Relocations against non-SHF_ALLOC sections are much easier to
+// handle than that against SHF_ALLOC sections. It is because, since
+// they are not mapped to memory, they don't contain any variable or
+// function and never need PLT or GOT. Non-SHF_ALLOC sections are
+// mostly debug info sections.
+//
+// Relocations against non-SHF_ALLOC sections are not scanned by
+// scan_relocations.
 void InputSection::apply_reloc_nonalloc(u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter.inc(rels.size());
@@ -313,6 +328,11 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   }
 }
 
+// Linker has to create data structures in an output file to apply
+// some type of relocations. For example, if a relocation refers a GOT
+// or a PLT entry of a symbol, linker has to create an entry in .got
+// or in .plt for that symbol. In order to fix the file layout, we
+// need to scan relocations.
 void InputSection::scan_relocations() {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
@@ -462,6 +482,23 @@ static size_t find_null(std::string_view data, u64 entsize) {
   return std::string_view::npos;
 }
 
+// Mergeable sections (sections with SHF_MERGE bit) typically contain
+// string literals. Linker is expected to split the section contents
+// into null-terminated strings, merge them with mergeable strings
+// from other object files, and emit uniquified strings to an output
+// file.
+//
+// This mechanism reduces the size of an output file. If two source
+// files happen to contain the same string literal, the output will
+// contain only a single copy of it.
+//
+// It is less common than string literals, but mergeable sections can
+// contain fixed-sized read-only records too.
+//
+// This function splits the section contents into small pieces that we
+// call "section fragments". Section fragment is a unit of merging.
+//
+// We do not support mergeable sections that have relocations.
 MergeableSection::MergeableSection(InputSection *isec)
   : InputChunk(isec->file, isec->shdr, isec->name),
     parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
