@@ -20,7 +20,6 @@
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
-#include <tbb/spin_rw_mutex.h>
 #include <vector>
 
 #define SECTOR_SIZE 512

@@ -1139,7 +1139,7 @@ int main(int argc, char **argv) {
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats();
 
-  // Merge strings constants in SHF_MERGE sections.
+  // Merge string constants in SHF_MERGE sections.
   handle_mergeable_strings();
 
   // Create .bss sections for common symbols.
@@ -1198,6 +1198,9 @@ int main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
+  // Make sure that all symbols have been resolved.
+  check_duplicate_symbols();
+
   // Copy shared object name strings to .dynstr.
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
@@ -1212,9 +1215,6 @@ int main(int argc, char **argv) {
   if (out::interp)
     out::chunks.insert(out::chunks.begin() + 2, out::interp);
   out::chunks.push_back(out::shdr);
-
-  // Make sure that all symbols have been resolved.
-  check_duplicate_symbols();
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
@@ -1267,12 +1267,12 @@ int main(int argc, char **argv) {
   // Assign offsets to output sections
   u64 filesize = set_osec_offsets(out::chunks);
 
-  // Fix linker-synthesized symbol addresses.
-  fix_synthetic_symbols(out::chunks);
-
   // At this point, file layout is fixed. Beyond this, you can assume
   // that symbol addresses including their GOT/PLT/etc addresses have
   // a correct final value.
+
+  // Fix linker-synthesized symbol addresses.
+  fix_synthetic_symbols(out::chunks);
 
   // Some types of relocations for TLS symbols need the TLS segment
   // address. Find it out now.
@@ -1280,6 +1280,7 @@ int main(int argc, char **argv) {
     if (phdr.p_type == PT_TLS) {
       out::tls_begin = phdr.p_vaddr;
       out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+      break;
     }
   }
 
