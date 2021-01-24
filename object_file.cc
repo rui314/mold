@@ -551,7 +551,8 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (sym.traced)
-          SyncOut() << "trace: " << sym.file << ": lazy definition of " << sym.name;
+          SyncOut() << "trace: " << sym.file
+                    << ": lazy definition of " << sym.name;
       }
     } else {
       maybe_override_symbol(sym, i);
