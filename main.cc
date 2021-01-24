@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <functional>
-#include <iostream>
 #include <map>
 #include <signal.h>
 #include <tbb/global_control.h>
