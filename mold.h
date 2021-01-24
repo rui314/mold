@@ -365,8 +365,6 @@ class OutputChunk {
 public:
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
-  OutputChunk(Kind kind) : kind(kind) { shdr.sh_addralign = 1; }
-
   virtual void copy_buf() {}
   virtual void update_shdr() {}
 
@@ -374,7 +372,10 @@ public:
   int shndx = 0;
   Kind kind;
   bool starts_new_ptload = false;
-  ElfShdr shdr = {};
+  ElfShdr shdr = { .sh_addralign = 1 };
+
+protected:
+  OutputChunk(Kind kind) : kind(kind) {}
 };
 
 // ELF header
@@ -533,7 +534,6 @@ public:
   StrtabSection() : OutputChunk(SYNTHETIC) {
     name = ".strtab";
     shdr.sh_type = SHT_STRTAB;
-    shdr.sh_addralign = 1;
     shdr.sh_size = 1;
   }
 
@@ -545,7 +545,6 @@ public:
   ShstrtabSection() : OutputChunk(SYNTHETIC) {
     name = ".shstrtab";
     shdr.sh_type = SHT_STRTAB;
-    shdr.sh_addralign = 1;
   }
 
   void update_shdr() override;
@@ -559,7 +558,6 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
     shdr.sh_type = SHT_STRTAB;
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_size = 1;
-    shdr.sh_addralign = 1;
   }
 
   u32 add_string(std::string_view str);
@@ -675,7 +673,6 @@ private:
     this->name = name;
     shdr.sh_flags = flags;
     shdr.sh_type = type;
-    shdr.sh_addralign = 1;
   }
 
   tbb::concurrent_hash_map<SectionFragmentKey, SectionFragment> map;
