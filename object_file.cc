@@ -234,9 +234,9 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     return;
   }
 
-  std::unordered_map<u32, u32> offset_to_cie;
-  u32 cur_cie = -1;
-  u32 cur_cie_offset = -1;
+  std::unordered_map<i64, i64> offset_to_cie;
+  i64 cur_cie = -1;
+  i64 cur_cie_offset = -1;
 
   for (ElfRela rel : rels)
     if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_PC32)
@@ -244,7 +244,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
               << rel.r_type;
 
   while (!data.empty()) {
-    u32 size = *(u32 *)data.data();
+    i64 size = *(u32 *)data.data();
     if (size == 0) {
       if (data.size() != 4)
         Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
@@ -252,8 +252,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       return;
     }
 
-    u32 begin_offset = data.data() - begin;
-    u32 end_offset = begin_offset + size + 4;
+    i64 begin_offset = data.data() - begin;
+    i64 end_offset = begin_offset + size + 4;
 
     if (!rels.empty() && rels[0].r_offset < begin_offset)
       Fatal() << *isec.file << ": .eh_frame: unsupported relocation order";
@@ -270,7 +270,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       rels = rels.subspan(1);
     }
 
-    u32 id = *(u32 *)(contents.data() + 4);
+    i64 id = *(u32 *)(contents.data() + 4);
     if (id == 0) {
       // CIE
       cur_cie = cies.size();
@@ -278,7 +278,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       cies.push_back({contents, std::move(eh_rels)});
     } else {
       // FDE
-      u32 cie_offset = begin_offset + 4 - id;
+      i64 cie_offset = begin_offset + 4 - id;
       if (cie_offset != cur_cie_offset) {
         auto it = offset_to_cie.find(cie_offset);
         if (it == offset_to_cie.end())
