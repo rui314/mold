@@ -36,10 +36,20 @@ void gc_sections() {
   };
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (InputSection *isec : file->sections)
-      if (isec)
-        if (is_init_fini(*isec) || !(isec->shdr.sh_flags & SHF_ALLOC))
-          enqueue(isec);
+    for (InputSection *isec : file->sections) {
+      if (!isec)
+        continue;
+
+      // -gc-sections discards only SHF_ALLOC sections. If you want to
+      // reduce the amount of non-memory-mapped segments, you should
+      // use `strip` command, compile without debug info or use
+      // -strip-all linker option.
+      if (!(isec->shdr.sh_flags & SHF_ALLOC))
+        isec->is_visited = true;
+
+      if (is_init_fini(*isec))
+        enqueue(isec);
+    }
   });
 
   // Add sections referenced by root symbols.
@@ -93,7 +103,7 @@ void gc_sections() {
 
       if (isec && isec->is_alive && !isec->is_ehframe && !isec->is_visited) {
         if (config.print_gc_sections)
-          SyncOut() << "removed unused section " << *isec;
+          SyncOut() << "removing unused section " << *isec;
         isec->is_alive = false;
         file->sections[i] = nullptr;
       }
