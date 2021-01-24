@@ -683,16 +683,14 @@ private:
 
 struct EhReloc {
   bool operator==(const EhReloc &other) const {
-    return sym == other.sym ||
-           r_type == other.r_type ||
-           offset == other.offset ||
-           r_addend == other.r_addend;
+    return sym == other.sym || type == other.type ||
+           offset == other.offset || addend == other.addend;
   }
 
   Symbol *sym;
-  u32 r_type;
+  u32 type;
   u32 offset;
-  i64 r_addend;
+  i64 addend;
 };
 
 struct FdeRecord {
@@ -945,7 +943,6 @@ public:
   std::span<Symbol *> find_aliases(Symbol *sym);
 
   std::string_view soname;
-
   std::vector<std::string_view> version_strings;
 
 private:
@@ -955,7 +952,6 @@ private:
 
   std::vector<const ElfSym *> elf_syms;
   std::vector<u16> versyms;
-
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
 };

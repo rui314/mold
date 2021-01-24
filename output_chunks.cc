@@ -891,9 +891,9 @@ void EhFrameSection::copy_buf() {
     hdr_base = out::buf + out::eh_frame_hdr->shdr.sh_offset;
 
   auto apply_reloc = [&](EhReloc &rel, u64 loc, u64 val) {
-    if (rel.r_type == R_X86_64_32)
+    if (rel.type == R_X86_64_32)
       *(u32 *)(base + loc) = val;
-    else if (rel.r_type == R_X86_64_PC32)
+    else if (rel.type == R_X86_64_PC32)
       *(u32 *)(base + loc) = val - shdr.sh_addr - loc;
     else
       unreachable();
@@ -919,7 +919,7 @@ void EhFrameSection::copy_buf() {
 
       for (EhReloc &rel : cie->rels) {
         u64 loc = cie->offset + rel.offset;
-        u64 val = rel.sym->get_addr() + rel.r_addend;
+        u64 val = rel.sym->get_addr() + rel.addend;
         apply_reloc(rel, loc, val);
       }
     }
@@ -936,7 +936,7 @@ void EhFrameSection::copy_buf() {
       for (int i = 0; i < fde.rels.size(); i++) {
         EhReloc &rel = fde.rels[i];
         u64 loc = fde_off + rel.offset;
-        u64 val = rel.sym->get_addr() + rel.r_addend;
+        u64 val = rel.sym->get_addr() + rel.addend;
         apply_reloc(rel, loc, val);
 
         // Write to .eh_frame_hdr
