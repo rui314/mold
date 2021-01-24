@@ -290,7 +290,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       if (eh_rels.empty())
         Fatal() << *isec.file << ": .eh_frame: FDE has no relocations";
       if (eh_rels[0].offset != 8)
-        Fatal() << *isec.file << ": .eh_frame: FDE's first location "
+        Fatal() << *isec.file << ": .eh_frame: FDE's first relocation "
                 << "should have offset 8";
 
       cies[cur_cie].fdes.push_back({contents, std::move(eh_rels)});
