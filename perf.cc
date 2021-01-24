@@ -16,14 +16,14 @@ void Counter::print() {
     std::cout << std::setw(20) << std::right << c->name << "=" << c->value << "\n";
 }
 
-static u64 now_nsec() {
+static i64 now_nsec() {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
-  return (u64)t.tv_sec * 1000000000 + t.tv_nsec;
+  return (i64)t.tv_sec * 1000000000 + t.tv_nsec;
 }
 
-static u64 to_nsec(struct timeval t) {
-  return (u64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
+static i64 to_nsec(struct timeval t) {
+  return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
 
 TimerRecord::TimerRecord(std::string name) : name(name) {

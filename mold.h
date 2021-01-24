@@ -1031,10 +1031,10 @@ struct TimerRecord {
   void stop();
 
   std::string name;
-  u64 start;
-  u64 end;
-  u64 user;
-  u64 sys;
+  i64 start;
+  i64 end;
+  i64 user;
+  i64 sys;
   bool stopped = false;
 };
 
