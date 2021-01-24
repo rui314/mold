@@ -930,6 +930,14 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.fork = true;
     } else if (read_flag(args, "no-fork")) {
       conf.fork = false;
+    } else if (read_flag(args, "gc-sections")) {
+      conf.gc_sections = true;
+    } else if (read_flag(args, "no-gc-sections")) {
+      conf.gc_sections = false;
+    } else if (read_flag(args, "print-gc-sections")) {
+      conf.print_gc_sections = true;
+    } else if (read_flag(args, "no-print-gc-sections")) {
+      conf.print_gc_sections = false;
     } else if (read_flag(args, "quick-exit")) {
       conf.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {
@@ -1184,6 +1192,10 @@ int main(int argc, char **argv) {
       file->convert_common_symbols();
     });
   }
+
+  // Garbage-collect unreachable sections.
+  if (config.gc_sections)
+    gc_sections();
 
   // Bin input sections into output sections
   bin_sections();

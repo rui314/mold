@@ -60,12 +60,14 @@ struct Config {
   bool eh_frame_hdr = true;
   bool export_dynamic = false;
   bool fork = true;
+  bool gc_sections = false;
   bool hash_style_gnu = false;
   bool hash_style_sysv = true;
   bool is_static = false;
   bool perf = false;
   bool pie = false;
   bool preload = false;
+  bool print_gc_sections = false;
   bool print_map = false;
   bool quick_exit = true;
   bool relax = true;
@@ -339,8 +341,10 @@ public:
   std::vector<RelType> rel_types;
   u64 reldyn_offset = 0;
   bool is_comdat_member = false;
-  bool is_alive = true;
   bool is_ehframe = false;
+
+  bool is_alive = true;
+  std::atomic_bool is_visited = false;
 
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
@@ -1049,6 +1053,12 @@ private:
   static inline std::vector<TimerRecord *> records;
   TimerRecord *record;
 };
+
+//
+// gc_sections.cc
+//
+
+void gc_sections();
 
 //
 // mapfile.cc
