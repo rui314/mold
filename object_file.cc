@@ -807,7 +807,7 @@ std::string_view SharedFile::get_soname() {
   if (ElfShdr *sec = find_section(SHT_DYNAMIC))
     for (ElfDyn &dyn : get_data<ElfDyn>(*sec))
       if (dyn.d_tag == DT_SONAME)
-        return std::string_view(symbol_strtab.data() + dyn.d_val);
+        return symbol_strtab.data() + dyn.d_val;
   return name;
 }
 

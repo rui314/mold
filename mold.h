@@ -806,7 +806,7 @@ public:
   }
 
   void copy_buf() override;
-  void write_buildid(u64 filesize);
+  void write_buildid(u8 *digest);
 };
 
 bool is_c_identifier(std::string_view name);

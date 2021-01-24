@@ -1,6 +1,5 @@
 #include "mold.h"
 
-#include <openssl/sha.h>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -1049,21 +1048,6 @@ void BuildIdSection::copy_buf() {
   memcpy(base + 3, "GNU", 4); // Name string
 }
 
-static void compute_tree_hash(u8 *buf, u64 size, u8 *digest) {
-  u64 shard_size = 1024 * 1024;
-  int num_shards = size / shard_size + 1;
-  std::vector<u8> shards(num_shards * SHA256_SIZE);
-
-  tbb::parallel_for(0, num_shards, [&](int i) {
-    u8 *begin = buf + shard_size * i;
-    u64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
-    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
-  });
-
-  SHA256(shards.data(), shards.size(), digest);
-}
-
-void BuildIdSection::write_buildid(u64 filesize) {
-  Timer t("build_id");
-  compute_tree_hash(out::buf, filesize, out::buf + shdr.sh_offset + 16);
+void BuildIdSection::write_buildid(u8 *digest) {
+  memcpy(out::buf + shdr.sh_offset + 16, digest, SHA256_SIZE);
 }

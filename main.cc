@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <openssl/sha.h>
 #include <signal.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_do.h>
@@ -993,6 +994,20 @@ static void read_input_files(std::span<std::string_view> args) {
   parser_tg.wait();
 }
 
+static void compute_tree_hash(u8 *buf, u64 size, u8 *digest) {
+  i64 shard_size = 1024 * 1024;
+  i64 num_shards = size / shard_size + 1;
+  std::vector<u8> shards(num_shards * SHA256_SIZE);
+
+  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
+    u8 *begin = buf + shard_size * i;
+    i64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
+    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
+  });
+
+  SHA256(shards.data(), shards.size(), digest);
+}
+
 static void show_stats() {
   for (ObjectFile *obj : out::objs) {
     static Counter defined("defined_syms");
@@ -1321,8 +1336,13 @@ int main(int argc, char **argv) {
   clear_padding(filesize);
 
   // Commit
-  if (out::buildid)
-    out::buildid->write_buildid(filesize);
+  if (out::buildid) {
+    Timer t("build_id");
+    u8 digest[SHA256_SIZE];
+    compute_tree_hash(out::buf, filesize, digest);
+    out::buildid->write_buildid(digest);
+  }
+
   file->close();
 
   t_copy.stop();
