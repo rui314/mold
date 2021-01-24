@@ -36,13 +36,13 @@ void OutputShdr::update_shdr() {
 }
 
 void OutputShdr::copy_buf() {
-  ElfShdr *ent = (ElfShdr *)(out::buf + shdr.sh_offset);
-  ent[0] = {};
+  ElfShdr *hdr = (ElfShdr *)(out::buf + shdr.sh_offset);
+  hdr[0] = {};
 
   int i = 1;
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
-      ent[i++] = chunk->shdr;
+      hdr[i++] = chunk->shdr;
 }
 
 static u32 to_phdr_flags(OutputChunk *chunk) {
@@ -890,11 +890,11 @@ void EhFrameSection::copy_buf() {
   if (out::eh_frame_hdr)
     hdr_base = out::buf + out::eh_frame_hdr->shdr.sh_offset;
 
-  auto apply_reloc = [](EhReloc &rel, u8 *loc, u32 S, u32 P, i64 A) {
+  auto apply_reloc = [&](EhReloc &rel, u64 loc, u64 val) {
     if (rel.r_type == R_X86_64_32)
-      *(u32 *)loc = S + A;
+      *(u32 *)(base + loc) = val;
     else if (rel.r_type == R_X86_64_PC32)
-      *(u32 *)loc = S + A - P;
+      *(u32 *)(base + loc) = val - shdr.sh_addr - loc;
     else
       unreachable();
   };
@@ -918,10 +918,9 @@ void EhFrameSection::copy_buf() {
       cie_size = cie->contents.size();
 
       for (EhReloc &rel : cie->rels) {
-        u32 S = rel.sym->get_addr();
-        u32 P = shdr.sh_addr + cie->offset + rel.offset;
-        u8 *loc = base + cie->offset + rel.offset;
-        apply_reloc(rel, loc, S, P, rel.r_addend);
+        u64 loc = cie->offset + rel.offset;
+        u64 val = rel.sym->get_addr() + rel.r_addend;
+        apply_reloc(rel, loc, val);
       }
     }
 
@@ -936,15 +935,14 @@ void EhFrameSection::copy_buf() {
 
       for (int i = 0; i < fde.rels.size(); i++) {
         EhReloc &rel = fde.rels[i];
-        u32 S = rel.sym->get_addr();
-        u32 P = shdr.sh_addr + fde_off + rel.offset;
-        u8 *loc = base + fde_off + rel.offset;
-        apply_reloc(rel, loc, S, P, rel.r_addend);
+        u64 loc = fde_off + rel.offset;
+        u64 val = rel.sym->get_addr() + rel.r_addend;
+        apply_reloc(rel, loc, val);
 
         // Write to .eh_frame_hdr
         if (out::eh_frame_hdr && i == 0) {
           assert(rel.offset == 8);
-          entry->init_addr = S + rel.r_addend - out::eh_frame_hdr->shdr.sh_addr;
+          entry->init_addr = val - out::eh_frame_hdr->shdr.sh_addr;
           entry->fde_addr = shdr.sh_addr + fde_off - out::eh_frame_hdr->shdr.sh_addr;
           entry++;
         }
