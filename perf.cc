@@ -62,19 +62,19 @@ void Timer::stop() {
 }
 
 void Timer::print() {
-  for (int i = records.size() - 1; i >= 0; i--)
+  for (i64 i = records.size() - 1; i >= 0; i--)
     records[i]->stop();
 
-  std::vector<int> depth(records.size());
+  std::vector<i64> depth(records.size());
 
-  for (int i = 0; i < records.size(); i++)
-    for (int j = 0; j < i; j++)
+  for (i64 i = 0; i < records.size(); i++)
+    for (i64 j = 0; j < i; j++)
       if (records[i]->end < records[j]->end)
         depth[i]++;
 
   std::cout << "     User   System     Real  Name\n";
 
-  for (int i = 0; i < records.size(); i++) {
+  for (i64 i = 0; i < records.size(); i++) {
     TimerRecord &rec = *records[i];
     printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
            ((double)rec.user / 1000000000),

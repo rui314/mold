@@ -9,7 +9,7 @@ std::string_view InputChunk::get_contents() const {
   return file->get_string(shdr);
 }
 
-static std::string rel_to_string(u32 r_type) {
+static std::string rel_to_string(u64 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
   case R_X86_64_8: return "R_X86_64_8";
@@ -38,7 +38,7 @@ static std::string rel_to_string(u32 r_type) {
   unreachable();
 }
 
-static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u64 val) {
+static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
@@ -98,7 +98,7 @@ static void overflow_check(InputSection *sec, Symbol &sym, u32 r_type, u64 val) 
   unreachable();
 }
 
-static void write_val(u32 r_type, u8 *loc, u64 val) {
+static void write_val(u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
     return;
@@ -156,14 +156,14 @@ void InputSection::copy_buf() {
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
 void InputSection::apply_reloc_alloc(u8 *base) {
-  int ref_idx = 0;
+  i64 ref_idx = 0;
   ElfRela *dynrel = nullptr;
 
   if (out::reldyn)
     dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
                          file->reldyn_offset + reldyn_offset);
 
-  for (int i = 0; i < rels.size(); i++) {
+  for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -273,9 +273,9 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter.inc(rels.size());
 
-  int ref_idx = 0;
+  i64 ref_idx = 0;
 
-  for (int i = 0; i < rels.size(); i++) {
+  for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
 
@@ -343,7 +343,7 @@ void InputSection::scan_relocations() {
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   this->rel_types.resize(rels.size());
 
-  for (int i = 0; i < rels.size(); i++) {
+  for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
     bool is_readonly = !(shdr.sh_flags & SHF_WRITE);

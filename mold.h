@@ -73,8 +73,8 @@ struct Config {
   bool strip_all = false;
   bool trace = false;
   bool z_now = false;
-  int filler = -1;
-  int thread_count = -1;
+  i64 filler = -1;
+  i64 thread_count = -1;
   std::string sysroot;
   std::vector<std::string> globals;
   std::vector<std::string_view> library_paths;
@@ -369,7 +369,7 @@ public:
   virtual void update_shdr() {}
 
   std::string_view name;
-  int shndx = 0;
+  i64 shndx = 0;
   Kind kind;
   bool starts_new_ptload = false;
   ElfShdr shdr = { .sh_addralign = 1 };
@@ -426,7 +426,7 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(std::string_view name, u32 type, u64 flags);
+  static OutputSection *get_instance(std::string_view name, u64 type, u64 flags);
 
   OutputSection(std::string_view name, u32 type, u64 flags)
     : OutputChunk(REGULAR) {
@@ -560,8 +560,8 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
     shdr.sh_size = 1;
   }
 
-  u32 add_string(std::string_view str);
-  u32 find_string(std::string_view str);
+  i64 add_string(std::string_view str);
+  i64 find_string(std::string_view str);
   void copy_buf() override;
 
 private:
@@ -642,10 +642,10 @@ public:
   void update_shdr() override;
   void copy_buf() override;
 
-  static constexpr int LOAD_FACTOR = 8;
-  static constexpr int HEADER_SIZE = 16;
-  static constexpr int BLOOM_SHIFT = 26;
-  static constexpr int ELFCLASS_BITS = 64;
+  static constexpr i64 LOAD_FACTOR = 8;
+  static constexpr i64 HEADER_SIZE = 16;
+  static constexpr i64 BLOOM_SHIFT = 26;
+  static constexpr i64 ELFCLASS_BITS = 64;
 
   u32 num_buckets = -1;
   u32 symoffset = -1;
@@ -654,7 +654,7 @@ public:
 
 class MergedSection : public OutputChunk {
 public:
-  static MergedSection *get_instance(std::string_view name, u32 type, u64 flags);
+  static MergedSection *get_instance(std::string_view name, u64 type, u64 flags);
 
   static inline std::vector<MergedSection *> instances;
 
@@ -747,7 +747,7 @@ public:
     shdr.sh_size = HEADER_SIZE;
   }
 
-  static constexpr int HEADER_SIZE = 12;
+  static constexpr i64 HEADER_SIZE = 12;
 };
 
 class CopyrelSection : public OutputChunk {
@@ -837,16 +837,20 @@ public:
   MemoryMappedFile *slice(std::string name, u64 start, u64 size);
 
   u8 *data();
-  u64 size() { return size_; }
+  i64 size() const { return size_; }
+
+  std::string_view get_contents() {
+    return std::string_view((char *)data(), size());
+  }
 
   std::string name;
-  u64 mtime = 0;
+  i64 mtime = 0;
 
 private:
   std::mutex mu;
   MemoryMappedFile *parent;
   std::atomic<u8 *> data_;
-  u64 size_ = 0;
+  i64 size_ = 0;
 };
 
 class InputFile {
@@ -864,12 +868,12 @@ public:
   std::atomic_bool is_alive = false;
 
   std::string_view get_string(const ElfShdr &shdr);
-  std::string_view get_string(u32 idx);
+  std::string_view get_string(i64 idx);
 
 protected:
   template<typename T> std::span<T> get_data(const ElfShdr &shdr);
-  template<typename T> std::span<T> get_data(u32 idx);
-  ElfShdr *find_section(u32 type);
+  template<typename T> std::span<T> get_data(i64 idx);
+  ElfShdr *find_section(i64 type);
 
   std::string_view shstrtab;
 };
@@ -895,7 +899,7 @@ public:
   std::string archive_name;
   std::vector<InputSection *> sections;
   std::span<ElfSym> elf_syms;
-  int first_global = 0;
+  i64 first_global = 0;
   const bool is_in_archive = false;
   std::vector<CieRecord> cies;
 
@@ -917,7 +921,7 @@ private:
   void initialize_mergeable_sections();
   void initialize_ehframe_sections();
   void read_ehframe(InputSection &isec);
-  void maybe_override_symbol(Symbol &sym, int symidx);
+  void maybe_override_symbol(Symbol &sym, i64 symidx);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   std::vector<SectionFragmentRef> sym_fragments;
@@ -1059,7 +1063,7 @@ void print_map();
 inline char *socket_tmpfile;
 
 std::function<void()> fork_child();
-bool resume_daemon(char **argv, int *code);
+bool resume_daemon(char **argv, i64 *code);
 void daemonize(char **argv, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 

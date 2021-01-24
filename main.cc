@@ -75,7 +75,7 @@ public:
   }
 
 private:
-  typedef std::tuple<std::string, u64, u64> Key;
+  typedef std::tuple<std::string, i64, i64> Key;
   std::map<Key, std::vector<T *>> cache;
 };
 
@@ -143,7 +143,7 @@ void read_file(MemoryMappedFile *mb, bool as_needed) {
 }
 
 template <typename T>
-static std::vector<std::span<T>> split(std::vector<T> &input, int unit) {
+static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   assert(input.size() > 0);
   std::span<T> span(input);
   std::vector<std::span<T>> vec;
@@ -213,7 +213,7 @@ static void handle_mergeable_strings() {
   // Calculate the total bytes of mergeable strings for each input section.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *isec : file->mergeable_sections) {
-      u32 offset = 0;
+      i64 offset = 0;
       for (SectionFragment *frag : isec->fragments) {
         if (frag->isec == isec && frag->offset == -1) {
           offset = align_to(offset, frag->alignment);
@@ -228,8 +228,8 @@ static void handle_mergeable_strings() {
   // Assign each mergeable input section a unique index.
   for (ObjectFile *file : out::objs) {
     for (MergeableSection *isec : file->mergeable_sections) {
-      u64 offset = isec->parent.shdr.sh_size;
-      u32 alignment = isec->shdr.sh_addralign;
+      i64 offset = isec->parent.shdr.sh_size;
+      i64 alignment = isec->shdr.sh_addralign;
       isec->padding = align_to(offset, alignment) - offset;
       isec->offset = offset + isec->padding;
       isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
@@ -249,31 +249,31 @@ static void handle_mergeable_strings() {
 static void bin_sections() {
   Timer t("bin_sections");
 
-  int unit = (out::objs.size() + 127) / 128;
+  i64 unit = (out::objs.size() + 127) / 128;
   std::vector<std::span<ObjectFile *>> slices = split(out::objs, unit);
 
-  int num_osec = OutputSection::instances.size();
+  i64 num_osec = OutputSection::instances.size();
 
   std::vector<std::vector<std::vector<InputSection *>>> groups(slices.size());
-  for (int i = 0; i < groups.size(); i++)
+  for (i64 i = 0; i < groups.size(); i++)
     groups[i].resize(num_osec);
 
-  tbb::parallel_for(0, (int)slices.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
     for (ObjectFile *file : slices[i])
       for (InputSection *isec : file->sections)
         if (isec)
           groups[i][isec->output_section->idx].push_back(isec);
   });
 
-  std::vector<int> sizes(num_osec);
+  std::vector<i64> sizes(num_osec);
 
   for (std::span<std::vector<InputSection *>> group : groups)
-    for (int i = 0; i < group.size(); i++)
+    for (i64 i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
-  tbb::parallel_for(0, num_osec, [&](int j) {
+  tbb::parallel_for((i64)0, num_osec, [&](i64 j) {
     OutputSection::instances[j]->members.reserve(sizes[j]);
-    for (int i = 0; i < groups.size(); i++)
+    for (i64 i = 0; i < groups.size(); i++)
       append(OutputSection::instances[j]->members, groups[i][j]);
   });
 }
@@ -282,7 +282,7 @@ static void check_duplicate_symbols() {
   Timer t("check_dup_syms");
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (int i = file->first_global; i < file->elf_syms.size(); i++) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym &esym = file->elf_syms[i];
       Symbol &sym = *file->symbols[i];
       bool is_weak = (esym.st_bind == STB_WEAK);
@@ -306,31 +306,31 @@ static void set_isec_offsets() {
       return;
 
     std::vector<std::span<InputSection *>> slices = split(osec->members, 10000);
-    std::vector<u64> size(slices.size());
-    std::vector<u32> alignments(slices.size());
+    std::vector<i64> size(slices.size());
+    std::vector<i64> alignments(slices.size());
 
-    tbb::parallel_for(0, (int)slices.size(), [&](int i) {
-      u64 off = 0;
-      u32 align = 1;
+    tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
+      i64 off = 0;
+      i64 align = 1;
 
       for (InputChunk *isec : slices[i]) {
         off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
         off += isec->shdr.sh_size;
-        align = std::max<u32>(align, isec->shdr.sh_addralign);
+        align = std::max<i64>(align, isec->shdr.sh_addralign);
       }
 
       size[i] = off;
       alignments[i] = align;
     });
 
-    u32 align = *std::max_element(alignments.begin(), alignments.end());
+    i64 align = *std::max_element(alignments.begin(), alignments.end());
 
-    std::vector<u64> start(slices.size());
-    for (int i = 1; i < slices.size(); i++)
+    std::vector<i64> start(slices.size());
+    for (i64 i = 1; i < slices.size(); i++)
       start[i] = align_to(start[i - 1] + size[i - 1], align);
 
-    tbb::parallel_for(1, (int)slices.size(), [&](int i) {
+    tbb::parallel_for((i64)1, (i64)slices.size(), [&](i64 i) {
       for (InputChunk *isec : slices[i])
         isec->offset += start[i];
     });
@@ -360,7 +360,7 @@ static void scan_rels() {
 
   std::vector<std::vector<Symbol *>> vec(files.size());
 
-  tbb::parallel_for(0, (int)files.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
     for (Symbol *sym : files[i]->symbols)
       if (sym->flags && sym->file == files[i])
         vec[i].push_back(sym);
@@ -404,7 +404,7 @@ static void scan_rels() {
 static void export_dynamic() {
   Timer t("export_dynamic");
 
-  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     ObjectFile *file = out::objs[i];
     for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
       if (sym->file == file && config.export_dynamic)
@@ -416,7 +416,7 @@ static void export_dynamic() {
 
   std::vector<std::vector<Symbol *>> vec(out::objs.size());
 
-  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     ObjectFile *file = out::objs[i];
     for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
       if (sym->file == file && sym->ver_idx != VER_NDX_LOCAL)
@@ -447,8 +447,8 @@ static void fill_symbol_versions() {
   out::versym->contents.resize(out::dynsym->symbols.size(), 1);
   out::versym->contents[0] = 0;
 
-  int sz = sizeof(ElfVerneed) + sizeof(ElfVernaux);
-  for (int i = 1; i < syms.size(); i++) {
+  i64 sz = sizeof(ElfVerneed) + sizeof(ElfVernaux);
+  for (i64 i = 1; i < syms.size(); i++) {
     if (syms[i - 1]->file != syms[i]->file)
       sz += sizeof(ElfVerneed) + sizeof(ElfVernaux);
     else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
@@ -497,7 +497,7 @@ static void fill_symbol_versions() {
   add_verneed(syms[0]);
   out::versym->contents[syms[0]->dynsym_idx] = version;
 
-  for (int i = 1; i < syms.size(); i++) {
+  for (i64 i = 1; i < syms.size(); i++) {
     if (syms[i - 1]->file != syms[i]->file)
       add_verneed(syms[i]);
     else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
@@ -506,17 +506,17 @@ static void fill_symbol_versions() {
   }
 }
 
-static void clear_padding(u64 filesize) {
+static void clear_padding(i64 filesize) {
   Timer t("clear_padding");
 
-  auto zero = [](OutputChunk *chunk, u64 next_start) {
-    u64 pos = chunk->shdr.sh_offset;
+  auto zero = [](OutputChunk *chunk, i64 next_start) {
+    i64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
     memset(out::buf + pos, 0, next_start - pos);
   };
 
-  for (int i = 1; i < out::chunks.size(); i++)
+  for (i64 i = 1; i < out::chunks.size(); i++)
     zero(out::chunks[i - 1], out::chunks[i]->shdr.sh_offset);
   zero(out::chunks.back(), filesize);
 }
@@ -531,7 +531,7 @@ static void clear_padding(u64 filesize) {
 // alloc writable data
 // alloc writable bss
 // nonalloc
-static int get_section_rank(const ElfShdr &shdr) {
+static i64 get_section_rank(const ElfShdr &shdr) {
   bool note = shdr.sh_type == SHT_NOTE;
   bool alloc = shdr.sh_flags & SHF_ALLOC;
   bool writable = shdr.sh_flags & SHF_WRITE;
@@ -542,11 +542,11 @@ static int get_section_rank(const ElfShdr &shdr) {
          (exec << 3) | (!tls << 2) | nobits;
 }
 
-static u64 set_osec_offsets(std::span<OutputChunk *> chunks) {
+static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   Timer t("osec_offset");
 
-  u64 fileoff = 0;
-  u64 vaddr = config.image_base;
+  i64 fileoff = 0;
+  i64 vaddr = config.image_base;
 
   for (OutputChunk *chunk : chunks) {
     if (chunk->starts_new_ptload)
@@ -752,7 +752,7 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   return false;
 }
 
-static u64 parse_hex(std::string opt, std::string_view value) {
+static i64 parse_hex(std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
     Fatal() << "option -" << opt << ": not a hexadecimal number";
   value = value.substr(2);
@@ -761,7 +761,7 @@ static u64 parse_hex(std::string opt, std::string_view value) {
   return std::stol(std::string(value), nullptr, 16);
 }
 
-static u64 parse_number(std::string opt, std::string_view value) {
+static i64 parse_number(std::string opt, std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
     Fatal() << "option -" << opt << ": not a number";
   return std::stol(std::string(value));
@@ -771,7 +771,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
   std::vector<std::string_view> vec;
   MemoryMappedFile *mb = MemoryMappedFile::must_open(std::string(path));
 
-  auto read_quoted = [&](int i, char quote) {
+  auto read_quoted = [&](i64 i, char quote) {
     std::string *buf = new std::string;
     while (i < mb->size() && mb->data()[i] != quote) {
       if (mb->data()[i] == '\\') {
@@ -787,7 +787,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
     return i + 1;
   };
 
-  auto read_unquoted = [&](int i) {
+  auto read_unquoted = [&](i64 i) {
     std::string *buf = new std::string;
     while (i < mb->size() && !isspace(mb->data()[i]))
       buf->append(1, mb->data()[i++]);
@@ -795,7 +795,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
     return i;
   };
 
-  for (int i = 0; i < mb->size();) {
+  for (i64 i = 0; i < mb->size();) {
     if (isspace(mb->data()[i]))
       i++;
     else if (mb->data()[i] == '\'')
@@ -811,7 +811,7 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
 static std::vector<std::string_view> expand_response_files(char **argv) {
   std::vector<std::string_view> vec;
 
-  for (int i = 0; argv[i]; i++) {
+  for (i64 i = 0; argv[i]; i++) {
     if (argv[i][0] == '@')
       append(vec, read_response_file(argv[i] + 1));
     else
@@ -994,7 +994,7 @@ static void read_input_files(std::span<std::string_view> args) {
   parser_tg.wait();
 }
 
-static void compute_tree_hash(u8 *buf, u64 size, u8 *digest) {
+static void compute_tree_hash(u8 *buf, i64 size, u8 *digest) {
   i64 shard_size = 1024 * 1024;
   i64 num_shards = size / shard_size + 1;
   std::vector<u8> shards(num_shards * SHA256_SIZE);
@@ -1040,7 +1040,7 @@ int main(int argc, char **argv) {
     Fatal() << "-o option is missing";
 
   if (!config.preload)
-    if (int code; resume_daemon(argv, &code))
+    if (i64 code; resume_daemon(argv, &code))
       exit(code);
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
@@ -1146,7 +1146,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::buildid);
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
-  int priority = 2;
+  i64 priority = 2;
   for (ObjectFile *file : out::objs)
     if (!file->is_in_archive)
       file->priority = priority++;
@@ -1190,8 +1190,8 @@ int main(int argc, char **argv) {
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel. Sort them to to make the output deterministic.
   auto section_compare = [](OutputChunk *x, OutputChunk *y) {
-    return std::tuple(x->name, (u32)x->shdr.sh_type, (u64)x->shdr.sh_flags) <
-           std::tuple(y->name, (u32)y->shdr.sh_type, (u64)y->shdr.sh_flags);
+    return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
+           std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   };
 
   sort(OutputSection::instances, section_compare);
@@ -1288,7 +1288,7 @@ int main(int argc, char **argv) {
   erase(out::chunks, [](OutputChunk *c) { return c->shdr.sh_size == 0; });
 
   // Set section indices.
-  for (int i = 0, shndx = 1; i < out::chunks.size(); i++)
+  for (i64 i = 0, shndx = 1; i < out::chunks.size(); i++)
     if (out::chunks[i]->kind != OutputChunk::HEADER)
       out::chunks[i]->shndx = shndx++;
 
@@ -1296,7 +1296,7 @@ int main(int argc, char **argv) {
     chunk->update_shdr();
 
   // Assign offsets to output sections
-  u64 filesize = set_osec_offsets(out::chunks);
+  i64 filesize = set_osec_offsets(out::chunks);
 
   // At this point, file layout is fixed. Beyond this, you can assume
   // that symbol addresses including their GOT/PLT/etc addresses have

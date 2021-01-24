@@ -30,7 +30,7 @@ u8 *MemoryMappedFile::data() {
   if (data_)
     return data_;
 
-  int fd = ::open(name.c_str(), O_RDONLY);
+  i64 fd = ::open(name.c_str(), O_RDONLY);
   if (fd == -1)
     Fatal() << name << ": cannot open: " << strerror(errno);
 
@@ -73,7 +73,7 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) {
   return {(char *)begin, (char *)end};
 }
 
-std::string_view InputFile::get_string(u32 idx) {
+std::string_view InputFile::get_string(i64 idx) {
   if (elf_sections.size() <= idx)
     Fatal() << *this << ": invalid section index";
   return get_string(elf_sections[idx]);
@@ -88,13 +88,13 @@ std::span<T> InputFile::get_data(const ElfShdr &shdr) {
 }
 
 template<typename T>
-std::span<T> InputFile::get_data(u32 idx) {
+std::span<T> InputFile::get_data(i64 idx) {
   if (elf_sections.size() <= idx)
     Fatal() << *this << ": invalid section index";
   return get_data<T>(elf_sections[idx]);
 }
 
-ElfShdr *InputFile::find_section(u32 type) {
+ElfShdr *InputFile::find_section(i64 type) {
   for (ElfShdr &sec : elf_sections)
     if (sec.sh_type == type)
       return &sec;
@@ -109,7 +109,7 @@ ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name)
 
 void ObjectFile::initialize_sections() {
   // Read sections
-  for (int i = 0; i < elf_sections.size(); i++) {
+  for (i64 i = 0; i < elf_sections.size(); i++) {
     const ElfShdr &shdr = elf_sections[i];
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC))
@@ -179,14 +179,14 @@ void ObjectFile::initialize_sections() {
   // Set is_comdat_member bits.
   for (auto &pair : comdat_groups) {
     std::span<u32> entries = pair.second;
-    for (u32 i : entries)
+    for (i64 i : entries)
       if (this->sections[i])
         this->sections[i]->is_comdat_member = true;
   }
 }
 
 void ObjectFile::initialize_ehframe_sections() {
-  for (int i = 0; i < sections.size(); i++) {
+  for (i64 i = 0; i < sections.size(); i++) {
     InputSection *isec = sections[i];
     if (isec && isec->name == ".eh_frame") {
       read_ehframe(*isec);
@@ -332,7 +332,7 @@ void ObjectFile::initialize_symbols() {
   // Initialize local symbols
   Symbol *locals = new Symbol[first_global];
 
-  for (int i = 1; i < first_global; i++) {
+  for (i64 i = 1; i < first_global; i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = locals[i];
 
@@ -358,14 +358,14 @@ void ObjectFile::initialize_symbols() {
   symbols.resize(elf_syms.size());
   sym_fragments.resize(elf_syms.size() - first_global);
 
-  for (int i = 0; i < first_global; i++)
+  for (i64 i = 0; i < first_global; i++)
     symbols[i] = &locals[i];
 
   // Initialize global symbols
-  for (int i = first_global; i < elf_syms.size(); i++) {
+  for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     std::string_view name = symbol_strtab.data() + esym.st_name;
-    int pos = name.find('@');
+    i64 pos = name.find('@');
     if (pos != std::string_view::npos)
       name = name.substr(0, pos);
 
@@ -376,13 +376,13 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-static int binary_search(std::span<u32> span, u32 val) {
+static i64 binary_search(std::span<u32> span, i64 val) {
   if (val < span[0])
     return -1;
 
-  int ret = 0;
+  i64 ret = 0;
   while (span.size() > 1) {
-    u32 mid = span.size() / 2;
+    i64 mid = span.size() / 2;
     if (val < span[mid]) {
       span = span.subspan(0, mid);
     } else {
@@ -396,7 +396,7 @@ static int binary_search(std::span<u32> span, u32 val) {
 void ObjectFile::initialize_mergeable_sections() {
   mergeable_sections.resize(sections.size());
 
-  for (int i = 0; i < sections.size(); i++) {
+  for (i64 i = 0; i < sections.size(); i++) {
     if (InputSection *isec = sections[i]) {
       if (isec->shdr.sh_flags & SHF_MERGE) {
         mergeable_sections[i] = new MergeableSection(isec);
@@ -410,7 +410,7 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!isec || isec->rels.empty())
       continue;
 
-    for (int i = 0; i < isec->rels.size(); i++) {
+    for (i64 i = 0; i < isec->rels.size(); i++) {
       const ElfRela &rel = isec->rels[i];
       const ElfSym &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
@@ -420,8 +420,8 @@ void ObjectFile::initialize_mergeable_sections() {
       if (!m)
         continue;
 
-      u32 offset = esym.st_value + rel.r_addend;
-      int idx = binary_search(m->frag_offsets, offset);
+      i64 offset = esym.st_value + rel.r_addend;
+      i64 idx = binary_search(m->frag_offsets, offset);
       if (idx == -1)
         Fatal() << *this << ": bad relocation at " << rel.r_sym;
 
@@ -432,7 +432,7 @@ void ObjectFile::initialize_mergeable_sections() {
   }
 
   // Initialize sym_fragments
-  for (int i = 0; i < elf_syms.size(); i++) {
+  for (i64 i = 0; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common())
       continue;
@@ -441,7 +441,7 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!m)
       continue;
 
-    int idx = binary_search(m->frag_offsets, esym.st_value);
+    i64 idx = binary_search(m->frag_offsets, esym.st_value);
     if (idx == -1)
       Fatal() << *this << ": bad symbol value";
 
@@ -502,7 +502,7 @@ static u64 get_rank(const Symbol &sym) {
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
-void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
+void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
   InputSection *isec = nullptr;
   const ElfSym &esym = elf_syms[symidx];
   if (!esym.is_abs() && !esym.is_common())
@@ -533,7 +533,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, int symidx) {
 }
 
 void ObjectFile::resolve_symbols() {
-  for (int i = first_global; i < symbols.size(); i++) {
+  for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     if (!esym.is_defined())
       continue;
@@ -563,7 +563,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
   std::vector<ObjectFile *> vec;
   assert(is_alive);
 
-  for (int i = first_global; i < symbols.size(); i++) {
+  for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
@@ -589,7 +589,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
 }
 
 void ObjectFile::handle_undefined_weak_symbols() {
-  for (int i = first_global; i < symbols.size(); i++) {
+  for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
 
     if (esym.is_undef() && esym.st_bind == STB_WEAK) {
@@ -634,7 +634,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
       continue;
 
     std::span<u32> entries = pair.second;
-    for (u32 i : entries) {
+    for (i64 i : entries) {
       if (sections[i])
         sections[i]->is_alive = false;
       sections[i] = nullptr;
@@ -652,7 +652,7 @@ void ObjectFile::convert_common_symbols() {
   static OutputSection *bss =
     OutputSection::get_instance(".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
 
-  for (int i = first_global; i < elf_syms.size(); i++) {
+  for (i64 i = first_global; i < elf_syms.size(); i++) {
     if (!elf_syms[i].is_common())
       continue;
 
@@ -681,7 +681,7 @@ static bool should_write_global_symtab(Symbol &sym) {
 }
 
 void ObjectFile::compute_symtab() {
-  for (int i = first_global; i < elf_syms.size(); i++) {
+  for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
 
@@ -695,10 +695,10 @@ void ObjectFile::compute_symtab() {
 void ObjectFile::write_symtab() {
   u8 *symtab_base = out::buf + out::symtab->shdr.sh_offset;
   u8 *strtab_base = out::buf + out::strtab->shdr.sh_offset;
-  u32 symtab_off;
-  u32 strtab_off = strtab_offset;
+  i64 symtab_off;
+  i64 strtab_off = strtab_offset;
 
-  auto write_sym = [&](u32 i) {
+  auto write_sym = [&](i64 i) {
     Symbol &sym = *symbols[i];
     ElfSym &esym = *(ElfSym *)(symtab_base + symtab_off);
     symtab_off += sizeof(ElfSym);
@@ -723,12 +723,12 @@ void ObjectFile::write_symtab() {
   };
 
   symtab_off = local_symtab_offset;
-  for (int i = 1; i < first_global; i++)
+  for (i64 i = 1; i < first_global; i++)
     if (symbols[i]->write_symtab)
       write_sym(i);
 
   symtab_off = global_symtab_offset;
-  for (int i = first_global; i < elf_syms.size(); i++)
+  for (i64 i = first_global; i < elf_syms.size(); i++)
     if (symbols[i]->file == this && should_write_global_symtab(*symbols[i]))
       write_sym(i);
 }
@@ -821,7 +821,7 @@ void SharedFile::parse() {
   version_strings = read_verdef();
 
   // Read a symbol table.
-  int first_global = symtab_sec->sh_info;
+  i64 first_global = symtab_sec->sh_info;
   std::span<ElfSym> esyms = get_data<ElfSym>(*symtab_sec);
 
   std::span<u16> vers;
@@ -830,7 +830,7 @@ void SharedFile::parse() {
 
   std::vector<std::pair<const ElfSym *, u16>> pairs;
 
-  for (int i = first_global; i < esyms.size(); i++) {
+  for (i64 i = first_global; i < esyms.size(); i++) {
     if (!esyms[i].is_defined())
       continue;
     if (!vers.empty() && (vers[i] >> 15) == 1)
@@ -891,7 +891,7 @@ std::vector<std::string_view> SharedFile::read_verdef() {
 }
 
 void SharedFile::resolve_symbols() {
-  for (int i = 0; i < symbols.size(); i++) {
+  for (i64 i = 0; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
     const ElfSym &esym = *elf_syms[i];
 

@@ -28,7 +28,7 @@ std::function<void()> fork_child() {
   if (pid > 0) {
     // Parent
     close(pipefd[1]);
-    int r = read(pipefd[0], (char[1]){}, 1);
+    i64 r = read(pipefd[0], (char[1]){}, 1);
     _exit(r != 1);
   }
 
@@ -50,7 +50,7 @@ static std::string base64(u8 *data, u64 size) {
         << chars[(x >> 18) & 0b111111];
   };
 
-  int i = 0;
+  i64 i = 0;
   for (; i < size - 3; i += 3)
     encode((data[i + 2] << 16) | (data[i + 1] << 8) | data[i]);
 
@@ -65,7 +65,7 @@ static std::string compute_sha256(char **argv) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  for (int i = 0; argv[i]; i++)
+  for (i64 i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
       SHA256_Update(&ctx, argv[i], strlen(argv[i]) + 1);
 
@@ -74,7 +74,7 @@ static std::string compute_sha256(char **argv) {
   return base64(digest, SHA256_SIZE);
 }
 
-static void send_fd(int conn, int fd) {
+static void send_fd(i64 conn, i64 fd) {
   struct iovec iov;
   char dummy = '1';
   iov.iov_base = &dummy;
@@ -98,7 +98,7 @@ static void send_fd(int conn, int fd) {
     Error() << "sendmsg failed: " << strerror(errno);
 }
 
-static int recv_fd(int conn) {
+static i64 recv_fd(i64 conn) {
   struct iovec iov;
   char buf[1];
   iov.iov_base = buf;
@@ -112,7 +112,7 @@ static int recv_fd(int conn) {
   msg.msg_control = (caddr_t)cmsgbuf;
   msg.msg_controllen = sizeof(cmsgbuf);
 
-  int len = recvmsg(conn, &msg, 0);
+  i64 len = recvmsg(conn, &msg, 0);
   if (len <= 0)
     Error() << "recvmsg failed: " << strerror(errno);
 
@@ -121,8 +121,8 @@ static int recv_fd(int conn) {
   return *(int *)CMSG_DATA(cmsg);
 }
 
-bool resume_daemon(char **argv, int *code) {
-  int conn = socket(AF_UNIX, SOCK_STREAM, 0);
+bool resume_daemon(char **argv, i64 *code) {
+  i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
     Error() << "socket failed: " << strerror(errno);
 
@@ -139,7 +139,7 @@ bool resume_daemon(char **argv, int *code) {
 
   send_fd(conn, STDOUT_FILENO);
   send_fd(conn, STDERR_FILENO);
-  int r = read(conn, (char[1]){}, 1);
+  i64 r = read(conn, (char[1]){}, 1);
   *code = (r != 1);
   return true;
 }
@@ -149,7 +149,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
   if (daemon(1, 0) == -1)
     Error() << "daemon failed: " << strerror(errno);
 
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  i64 sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock == -1)
     Error() << "socket failed: " << strerror(errno);
 
@@ -175,7 +175,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
   if (listen(sock, 0) == -1)
     Error() << "listen failed: " << strerror(errno);
 
-  static int conn = -1;
+  static i64 conn = -1;
 
   *wait_for_client = [=]() {
     fd_set rfds;
@@ -186,7 +186,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
     tv.tv_sec = DAEMON_TIMEOUT;
     tv.tv_usec = 0;
 
-    int res = select(sock + 1, &rfds, NULL, NULL, &tv);
+    i64 res = select(sock + 1, &rfds, NULL, NULL, &tv);
     if (res == -1)
       Error() << "select failed: " << strerror(errno);
 

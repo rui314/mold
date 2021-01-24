@@ -16,7 +16,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     }
 
     if (input.starts_with("/*")) {
-      int pos = input.find("*/", 2);
+      i64 pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
         Fatal() << "unclosed comment";
       input = input.substr(pos + 2);
@@ -24,7 +24,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     }
 
     if (input[0] == '#') {
-      int pos = input.find("\n", 1);
+      i64 pos = input.find("\n", 1);
       if (pos == std::string_view::npos)
         break;
       input = input.substr(pos + 1);
@@ -32,7 +32,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     }
 
     if (input[0] == '"') {
-      int pos = input.find('"', 1);
+      i64 pos = input.find('"', 1);
       if (pos == std::string_view::npos)
         Fatal() << "unclosed string literal";
       vec.push_back(input.substr(0, pos));
@@ -40,7 +40,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
       continue;
     }
 
-    int pos = input.find_first_not_of(
+    i64 pos = input.find_first_not_of(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
       "0123456789_.$/\\~=+[]*?-!^:");
 
@@ -107,7 +107,7 @@ read_group(std::span<std::string_view> tok, bool as_needed) {
 void parse_linker_script(MemoryMappedFile *mb, bool as_needed) {
   script_dir = mb->name.substr(0, mb->name.find_last_of('/'));
 
-  std::vector<std::string_view> vec = tokenize({(char *)mb->data(), mb->size()});
+  std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -124,7 +124,7 @@ void parse_version_script(std::string path) {
   script_dir = path.substr(0, path.find_last_of('/'));
 
   MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
-  std::vector<std::string_view> vec = tokenize({(char *)mb->data(), mb->size()});
+  std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
   tok = skip(tok, "{");
 

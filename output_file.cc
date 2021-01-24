@@ -14,11 +14,11 @@ static u32 get_umask() {
 
 class MemoryMappedOutputFile : public OutputFile {
 public:
-  MemoryMappedOutputFile(std::string path, u64 filesize)
+  MemoryMappedOutputFile(std::string path, i64 filesize)
     : OutputFile(path, filesize) {
     std::string dir = dirname(strdup(config.output.c_str()));
     tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
-    int fd = mkstemp(tmpfile);
+    i64 fd = mkstemp(tmpfile);
     if (fd == -1)
       Error() << "cannot open " << tmpfile <<  ": " << strerror(errno);
 
@@ -68,7 +68,7 @@ public:
 
   void close() override {
     Timer t("munmap");
-    int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
+    i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Error() << "cannot open " << config.output << ": " << strerror(errno);
 

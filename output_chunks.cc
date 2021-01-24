@@ -27,7 +27,7 @@ void OutputEhdr::copy_buf() {
 }
 
 void OutputShdr::update_shdr() {
-  int n = 1;
+  i64 n = 1;
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
       n++;
@@ -38,14 +38,14 @@ void OutputShdr::copy_buf() {
   ElfShdr *hdr = (ElfShdr *)(out::buf + shdr.sh_offset);
   hdr[0] = {};
 
-  int i = 1;
+  i64 i = 1;
   for (OutputChunk *chunk : out::chunks)
     if (chunk->kind != OutputChunk::HEADER)
       hdr[i++] = chunk->shdr;
 }
 
-static u32 to_phdr_flags(OutputChunk *chunk) {
-  u32 ret = PF_R;
+static i64 to_phdr_flags(OutputChunk *chunk) {
+  i64 ret = PF_R;
   if (chunk->shdr.sh_flags & SHF_WRITE)
     ret |= PF_W;
   if (chunk->shdr.sh_flags & SHF_EXECINSTR)
@@ -56,7 +56,7 @@ static u32 to_phdr_flags(OutputChunk *chunk) {
 std::vector<ElfPhdr> create_phdr() {
   std::vector<ElfPhdr> vec;
 
-  auto define = [&](u32 type, u32 flags, u32 align, OutputChunk *chunk) {
+  auto define = [&](u64 type, u64 flags, i64 align, OutputChunk *chunk) {
     vec.push_back({});
     ElfPhdr &phdr = vec.back();
     phdr.p_type = type;
@@ -94,13 +94,13 @@ std::vector<ElfPhdr> create_phdr() {
 
   // Create a PT_NOTE for each group of SHF_NOTE sections with the same
   // alignment requirement.
-  for (int i = 0, end = out::chunks.size(); i < end;) {
+  for (i64 i = 0, end = out::chunks.size(); i < end;) {
     OutputChunk *first = out::chunks[i++];
     if (first->shdr.sh_type != SHT_NOTE)
       continue;
 
-    u32 flags = to_phdr_flags(first);
-    u32 alignment = first->shdr.sh_addralign;
+    i64 flags = to_phdr_flags(first);
+    i64 alignment = first->shdr.sh_addralign;
     define(PT_NOTE, flags, alignment, first);
 
     while (i < end && out::chunks[i]->shdr.sh_type == SHT_NOTE &&
@@ -110,12 +110,12 @@ std::vector<ElfPhdr> create_phdr() {
   }
 
   // Create PT_LOAD segments.
-  for (int i = 0, end = out::chunks.size(); i < end;) {
+  for (i64 i = 0, end = out::chunks.size(); i < end;) {
     OutputChunk *first = out::chunks[i++];
     if (!(first->shdr.sh_flags & SHF_ALLOC))
       break;
 
-    u32 flags = to_phdr_flags(first);
+    i64 flags = to_phdr_flags(first);
     define(PT_LOAD, flags, PAGE_SIZE, first);
 
     if (!is_bss(first))
@@ -129,7 +129,7 @@ std::vector<ElfPhdr> create_phdr() {
   }
 
   // Create a PT_TLS.
-  for (int i = 0; i < out::chunks.size(); i++) {
+  for (i64 i = 0; i < out::chunks.size(); i++) {
     if (!(out::chunks[i]->shdr.sh_flags & SHF_TLS))
       continue;
 
@@ -173,7 +173,7 @@ void InterpSection::copy_buf() {
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
-  int n = 0;
+  i64 n = 0;
   for (Symbol *sym : out::got->got_syms)
     if (sym->is_imported || (config.pie && sym->is_relative()))
       n++;
@@ -240,7 +240,7 @@ void ShstrtabSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
 
-  int i = 1;
+  i64 i = 1;
   for (OutputChunk *chunk : out::chunks) {
     if (!chunk->name.empty()) {
       write_string(base + i, chunk->name);
@@ -249,15 +249,15 @@ void ShstrtabSection::copy_buf() {
   }
 }
 
-u32 DynstrSection::add_string(std::string_view str) {
-  u32 ret = shdr.sh_size;
+i64 DynstrSection::add_string(std::string_view str) {
+  i64 ret = shdr.sh_size;
   shdr.sh_size += str.size() + 1;
   contents.push_back(str);
   return ret;
 }
 
-u32 DynstrSection::find_string(std::string_view str) {
-  u32 i = 1;
+i64 DynstrSection::find_string(std::string_view str) {
+  i64 i = 1;
   for (std::string_view s : contents) {
     if (s == str)
       return i;
@@ -270,7 +270,7 @@ void DynstrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
 
-  int i = 1;
+  i64 i = 1;
   for (std::string_view s : contents) {
     write_string(base + i, s);
     i += s.size() + 1;
@@ -353,8 +353,8 @@ static std::vector<u64> create_dynamic_section() {
   if (OutputChunk *chunk = find(".fini"))
     define(DT_FINI, chunk->shdr.sh_addr);
 
-  u32 flags = 0;
-  u32 flags1 = 0;
+  i64 flags = 0;
+  i64 flags1 = 0;
 
   if (config.pie)
     flags1 |= DF_1_PIE;
@@ -397,7 +397,7 @@ static std::string_view get_output_name(std::string_view name) {
 }
 
 OutputSection *
-OutputSection::get_instance(std::string_view name, u32 type, u64 flags) {
+OutputSection::get_instance(std::string_view name, u64 type, u64 flags) {
   if (name == ".eh_frame" && type == SHT_X86_64_UNWIND)
     type = SHT_PROGBITS;
 
@@ -431,7 +431,7 @@ void OutputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS)
     return;
 
-  tbb::parallel_for(0, (int)members.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)members.size(), [&](u64 i) {
     InputSection &isec = *members[i];
     if (isec.shdr.sh_type == SHT_NOBITS)
       return;
@@ -530,7 +530,7 @@ void PltSection::copy_buf() {
   *(u32 *)(buf + 2) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 2;
   *(u32 *)(buf + 8) = out::gotplt->shdr.sh_addr - shdr.sh_addr + 4;
 
-  int relplt_idx = 0;
+  i64 relplt_idx = 0;
 
   for (Symbol *sym : symbols) {
     u8 *ent = buf + sym->plt_idx * PLT_SIZE;
@@ -566,7 +566,7 @@ void RelPltSection::copy_buf() {
   ElfRela *buf = (ElfRela *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
-  int relplt_idx = 0;
+  i64 relplt_idx = 0;
 
   for (Symbol *sym : out::plt->symbols) {
     if (!sym->has_relplt)
@@ -610,18 +610,18 @@ void DynsymSection::sort_symbols() {
       first_global, symbols.end(),
       [](Symbol *sym) { return sym->is_imported || sym->esym->is_undef(); });
 
-    int num_defined = symbols.end() - first_defined;
+    i64 num_defined = symbols.end() - first_defined;
     out::gnu_hash->num_buckets = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
     out::gnu_hash->symoffset = first_defined - symbols.begin();
 
     std::stable_sort(first_defined, symbols.end(), [&](Symbol *a, Symbol *b) {
-      u32 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
-      u32 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
+      i64 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
+      i64 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
       return x < y;
     });
   }
 
-  for (int i = 1; i < symbols.size(); i++) {
+  for (i64 i = 1; i < symbols.size(); i++) {
     name_indices.push_back(out::dynstr->add_string(symbols[i]->name));
     symbols[i]->dynsym_idx = i;
   }
@@ -636,7 +636,7 @@ void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
 
-  for (int i = 1; i < symbols.size(); i++) {
+  for (i64 i = 1; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
 
     ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
@@ -665,8 +665,8 @@ void DynsymSection::copy_buf() {
 }
 
 void HashSection::update_shdr() {
-  int header_size = 8;
-  int num_slots = out::dynsym->symbols.size();
+  i64 header_size = 8;
+  i64 num_slots = out::dynsym->symbols.size();
   shdr.sh_size = header_size + num_slots * 8;
   shdr.sh_link = out::dynsym->shndx;
 }
@@ -675,16 +675,16 @@ void HashSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
-  int num_slots = out::dynsym->symbols.size();
+  i64 num_slots = out::dynsym->symbols.size();
   u32 *hdr = (u32 *)base;
   u32 *buckets = (u32 *)(base + 8);
   u32 *chains = buckets + num_slots;
 
   hdr[0] = hdr[1] = num_slots;
 
-  for (int i = 1; i < out::dynsym->symbols.size(); i++) {
+  for (i64 i = 1; i < out::dynsym->symbols.size(); i++) {
     Symbol *sym = out::dynsym->symbols[i];
-    u32 idx = elf_hash(sym->name) % num_slots;
+    i64 idx = elf_hash(sym->name) % num_slots;
     chains[sym->dynsym_idx] = buckets[idx];
     buckets[idx] = sym->dynsym_idx;
   }
@@ -693,13 +693,13 @@ void HashSection::copy_buf() {
 void GnuHashSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
-  if (int num_symbols = out::dynsym->symbols.size() - symoffset) {
+  if (i64 num_symbols = out::dynsym->symbols.size() - symoffset) {
     // We allocate 12 bits for each symbol in the bloom filter.
-    int num_bits = num_symbols * 12;
+    i64 num_bits = num_symbols * 12;
     num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
   }
 
-  int num_symbols = out::dynsym->symbols.size() - symoffset;
+  i64 num_symbols = out::dynsym->symbols.size() - symoffset;
 
   shdr.sh_size = HEADER_SIZE;                    // Header
   shdr.sh_size += num_bloom * ELFCLASS_BITS / 8; // Bloom filter
@@ -718,28 +718,28 @@ void GnuHashSection::copy_buf() {
 
   std::span<Symbol *> symbols = std::span(out::dynsym->symbols).subspan(symoffset);
   std::vector<u32> hashes(symbols.size());
-  for (int i = 0; i < symbols.size(); i++)
+  for (i64 i = 0; i < symbols.size(); i++)
     hashes[i] = gnu_hash(symbols[i]->name);
 
   // Write a bloom filter
   u64 *bloom = (u64 *)(base + HEADER_SIZE);
-  for (u32 hash : hashes) {
-    u32 idx = (hash / 64) % num_bloom;
+  for (i64 hash : hashes) {
+    i64 idx = (hash / 64) % num_bloom;
     bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
     bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % ELFCLASS_BITS);
   }
 
   // Write hash bucket indices
   u32 *buckets = (u32 *)(bloom + num_bloom);
-  for (int i = 1; i < hashes.size(); i++) {
-    u32 idx = hashes[i] % num_buckets;
+  for (i64 i = 1; i < hashes.size(); i++) {
+    i64 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
       buckets[idx] = i + symoffset;
   }
 
   // Write a hash table
   u32 *table = buckets + num_buckets;
-  for (int i = 0; i < symbols.size(); i++) {
+  for (i64 i = 0; i < symbols.size(); i++) {
     bool is_last = false;
     if (i == symbols.size() - 1 ||
         (hashes[i] % num_buckets) != (hashes[i + 1] % num_buckets))
@@ -753,7 +753,7 @@ void GnuHashSection::copy_buf() {
 }
 
 MergedSection *
-MergedSection::get_instance(std::string_view name, u32 type, u64 flags) {
+MergedSection::get_instance(std::string_view name, u64 type, u64 flags) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 
@@ -795,7 +795,7 @@ void MergedSection::copy_buf() {
       if (isec->padding)
         memset(base + isec->offset - isec->padding, 0, isec->padding);
 
-      u32 offset = 0;
+      i64 offset = 0;
       for (SectionFragment *frag : isec->fragments) {
         if (frag->isec != isec)
           continue;
@@ -822,12 +822,12 @@ void MergedSection::copy_buf() {
 void EhFrameSection::construct() {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
-  tbb::parallel_for(0, (int)out::objs.size(), [&](int i) {
+  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     ObjectFile *file = out::objs[i];
-    u32 count = 0;
+    i64 count = 0;
 
     for (CieRecord &cie : file->cies) {
-      u32 offset = 0;
+      i64 offset = 0;
       for (FdeRecord &fde : cie.fdes) {
         if (!fde.is_alive())
           continue;
@@ -839,7 +839,7 @@ void EhFrameSection::construct() {
       cie.fde_size = offset;
     }
 
-    for (int i = 0; i < file->sections.size(); i++) {
+    for (i64 i = 0; i < file->sections.size(); i++) {
       if (file->sections[i] && file->sections[i]->is_ehframe)
         file->sections[i] = nullptr;
     }
@@ -862,8 +862,8 @@ void EhFrameSection::construct() {
     return a.contents == b.contents && a.rels == b.rels;
   };
 
-  u32 offset = 0;
-  for (int i = 0; i < cies.size(); i++) {
+  i64 offset = 0;
+  for (i64 i = 0; i < cies.size(); i++) {
     CieRecord &cie = *cies[i];
     cie.offset = offset;
 
@@ -905,7 +905,7 @@ void EhFrameSection::copy_buf() {
 
   // Copy CIEs and FDEs.
   tbb::parallel_for_each(cies, [&](CieRecord *cie) {
-    u32 cie_size = 0;
+    i64 cie_size = 0;
 
     Entry *entry = nullptr;
     if (out::eh_frame_hdr)
@@ -928,11 +928,11 @@ void EhFrameSection::copy_buf() {
       if (fde.offset == -1)
         continue;
 
-      u32 fde_off = cie->offset + cie_size + fde.offset;
+      i64 fde_off = cie->offset + cie_size + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
       *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
 
-      for (int i = 0; i < fde.rels.size(); i++) {
+      for (i64 i = 0; i < fde.rels.size(); i++) {
         EhReloc &rel = fde.rels[i];
         u64 loc = fde_off + rel.offset;
         u64 val = rel.sym->get_addr() + rel.addend;
