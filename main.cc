@@ -161,8 +161,13 @@ static void resolve_symbols() {
   Timer t("resolve_symbols");
 
   // Register defined symbols
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->resolve_symbols(); });
-  tbb::parallel_for_each(out::dsos, [](SharedFile *file) { file->resolve_symbols(); });
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    file->resolve_symbols();
+  });
+
+  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+    file->resolve_symbols();
+  });
 
   // Mark reachable objects and DSOs to decide which files to include
   // into an output.
@@ -174,8 +179,7 @@ static void resolve_symbols() {
   tbb::parallel_do(
     root,
     [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-      for (ObjectFile *obj : file->mark_live_objects())
-        feeder.add(obj);
+      file->mark_live_objects([&](ObjectFile *obj) { feeder.add(obj); });
     });
 
   // Eliminate unused archive members and as-needed DSOs.

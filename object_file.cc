@@ -559,8 +559,7 @@ void ObjectFile::resolve_symbols() {
   }
 }
 
-std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
-  std::vector<ObjectFile *> vec;
+void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
   assert(is_alive);
 
   for (i64 i = first_global; i < symbols.size(); i++) {
@@ -578,14 +577,13 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects() {
 
     if (esym.st_bind != STB_WEAK && sym.file && !sym.file->is_alive.exchange(true)) {
       if (!sym.file->is_dso)
-        vec.push_back((ObjectFile *)sym.file);
+        feeder((ObjectFile *)sym.file);
 
       if (sym.traced)
         SyncOut() << "trace: " << *this << " keeps " << *sym.file
                   << " for " << sym.name;
     }
   }
-  return vec;
 }
 
 void ObjectFile::handle_undefined_weak_symbols() {

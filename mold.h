@@ -885,7 +885,7 @@ public:
 
   void parse();
   void resolve_symbols();
-  std::vector<ObjectFile *> mark_live_objects();
+  void mark_live_objects(std::function<void(ObjectFile *)> feeder);
   void handle_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
