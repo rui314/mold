@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include <limits>
+
 InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
                        std::string_view name)
   : file(file), shdr(shdr), name(name),
@@ -506,6 +508,10 @@ MergeableSection::MergeableSection(InputSection *isec)
   std::string_view data = isec->get_contents();
   const char *begin = data.data();
   u64 entsize = isec->shdr.sh_entsize;
+
+  static_assert(sizeof(SectionFragment::alignment) == 2);
+  if (isec->shdr.sh_addralign >= (1 << 16))
+    Fatal() << *isec << ": alignment too large";
 
   if (isec->shdr.sh_flags & SHF_STRINGS) {
     while (!data.empty()) {

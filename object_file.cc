@@ -798,7 +798,7 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   if (obj->archive_name == "")
     out << obj->name;
   else
-    out << obj->archive_name << ":(" << obj->name + ")";
+    out << obj->archive_name << "(" << obj->name + ")";
   return out;
 }
 

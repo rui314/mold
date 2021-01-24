@@ -38,8 +38,8 @@ rm -f $t/d.a
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
   /usr/lib/x86_64-linux-gnu/crtn.o > $t/log
 
-grep -Pq 'thin-archive/d.a:\(.*long-long-long-filename.o\)' $t/log
-grep -Pq 'thin-archive/d.a:\(.*b.o\)' $t/log
+grep -Pq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
+grep -Pq 'thin-archive/d.a\(.*b.o\)' $t/log
 fgrep -q thin-archive/c.o $t/log
 
 $t/exe | grep -q '8'

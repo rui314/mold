@@ -197,7 +197,8 @@ struct SectionFragment {
   std::atomic<MergeableSection *> isec = nullptr;
   std::string_view data;
   u32 offset = -1;
-  u32 alignment = 1;
+  u16 alignment = 1;
+  std::atomic_bool is_alive = false;
 };
 
 struct SectionFragmentRef {

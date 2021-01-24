@@ -49,6 +49,8 @@ void gc_sections() {
 
       if (is_init_fini(*isec))
         enqueue(isec);
+      if (isec->shdr.sh_type == SHT_NOTE)
+        enqueue(isec);
     }
   });
 
