@@ -20,6 +20,10 @@ static bool mark_section(InputSection *isec) {
 static void
 visit(InputSection *isec, std::function<void(InputSection *)> enqueue) {
   assert(isec->is_visited);
+
+  for (SectionFragmentRef &ref : isec->rel_fragments)
+    ref.frag->is_alive = true;
+
   for (ElfRela &rel : isec->rels)
     enqueue(isec->file->symbols[rel.r_sym]->input_section);
 }

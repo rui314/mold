@@ -172,7 +172,7 @@ void ObjectFile::initialize_sections() {
 
     if (InputSection *target = sections[shdr.sh_info]) {
       target->rels = get_data<ElfRela>(shdr);
-      target->has_rel_frag.resize(target->rels.size());
+      target->has_fragments.resize(target->rels.size());
     }
   }
 
@@ -427,7 +427,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
       SectionFragmentRef ref{m->fragments[idx], (i32)(offset - m->frag_offsets[idx])};
       isec->rel_fragments.push_back(ref);
-      isec->has_rel_frag[i] = true;
+      isec->has_fragments[i] = true;
     }
   }
 

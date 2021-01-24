@@ -337,7 +337,7 @@ public:
   void report_undefined_symbols();
 
   std::span<ElfRela> rels;
-  std::vector<bool> has_rel_frag;
+  std::vector<bool> has_fragments;
   std::vector<SectionFragmentRef> rel_fragments;
   std::vector<RelType> rel_types;
   u64 reldyn_offset = 0;

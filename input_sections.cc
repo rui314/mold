@@ -171,7 +171,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     const SectionFragmentRef *ref = nullptr;
-    if (has_rel_frag[i])
+    if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
     auto write = [&](u64 val) {
@@ -287,7 +287,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     }
 
     const SectionFragmentRef *ref = nullptr;
-    if (has_rel_frag[i])
+    if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
     switch (rel.r_type) {
