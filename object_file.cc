@@ -134,7 +134,7 @@ void ObjectFile::initialize_sections() {
         Fatal() << *this << ": unsupported SHT_GROUP format";
 
       static ConcurrentMap<ComdatGroup> map;
-      ComdatGroup *group = map.insert(signature, ComdatGroup(nullptr, 0));
+      ComdatGroup *group = map.insert(signature, ComdatGroup());
       comdat_groups.push_back({group, entries});
 
       static Counter counter("comdats");
@@ -620,9 +620,9 @@ void ObjectFile::handle_undefined_weak_symbols() {
 void ObjectFile::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    ObjectFile *cur = group->file;
+    ObjectFile *cur = group->owner;
     while (!cur || cur->priority > this->priority)
-      if (group->file.compare_exchange_weak(cur, this))
+      if (group->owner.compare_exchange_weak(cur, this))
         break;
   }
 }
@@ -630,7 +630,7 @@ void ObjectFile::resolve_comdat_groups() {
 void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    if (group->file == this)
+    if (group->owner == this)
       continue;
 
     std::span<u32> entries = pair.second;

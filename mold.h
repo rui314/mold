@@ -148,7 +148,7 @@ private:
 };
 
 #define unreachable() \
-  Fatal() << "internal error at " << __FILE__ << ":" << __LINE__
+  do { Fatal() << "internal error at " << __FILE__ << ":" << __LINE__; } while (0)
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
@@ -232,7 +232,7 @@ enum {
 
 class Symbol {
 public:
-  Symbol() {}
+  Symbol() = default;
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
 
@@ -634,7 +634,7 @@ public:
 
 class GnuHashSection : public OutputChunk {
 public:
-GnuHashSection() : OutputChunk(SYNTHETIC) {
+  GnuHashSection() : OutputChunk(SYNTHETIC) {
     name = ".gnu.hash";
     shdr.sh_type = SHT_GNU_HASH;
     shdr.sh_flags = SHF_ALLOC;
@@ -682,16 +682,16 @@ private:
 };
 
 struct EhReloc {
-  bool operator==(const EhReloc &other) const {
-    return sym == other.sym || type == other.type ||
-           offset == other.offset || addend == other.addend;
-  }
-
   Symbol *sym;
   u32 type;
   u32 offset;
   i64 addend;
 };
+
+inline bool operator==(const EhReloc &a, const EhReloc &b) {
+  return std::tuple(a.sym, a.type, a.offset, a.addend) ==
+         std::tuple(b.sym, b.type, b.offset, b.addend);
+}
 
 struct FdeRecord {
   std::string_view contents;
@@ -699,10 +699,9 @@ struct FdeRecord {
   u32 offset = -1;
 
   bool is_alive() const {
-    if (!rels.empty())
-      if (InputSection *isec = rels[0].sym->input_section)
-        if (!isec->is_alive)
-          return false;
+    if (InputSection *isec = rels[0].sym->input_section)
+      if (!isec->is_alive)
+        return false;
     return true;
   }
 };
@@ -821,13 +820,12 @@ std::vector<ElfPhdr> create_phdr();
 //
 
 struct ComdatGroup {
-  ComdatGroup(ObjectFile *file, u32 i)
-    : file(file), section_idx(i) {}
+  ComdatGroup() = default;
   ComdatGroup(const ComdatGroup &other)
-    : file(other.file.load()), section_idx(other.section_idx) {}
+    : owner(other.owner.load()), section_idx(other.section_idx) {}
 
-  std::atomic<ObjectFile *> file;
-  u32 section_idx;
+  std::atomic<ObjectFile *> owner = nullptr;
+  u32 section_idx = -1;
 };
 
 class MemoryMappedFile {
