@@ -1279,9 +1279,12 @@ int main(int argc, char **argv) {
   fill_symbol_versions();
 
   // Compute .symtab and .strtab sizes for each file.
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    file->compute_symtab();
-  });
+  {
+    Timer t("compute_symtab");
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      file->compute_symtab();
+    });
+  }
 
   // .eh_frame is a special section from the linker's point of view,
   // as it's contents are parsed, consumed and reconstructed by the
