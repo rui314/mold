@@ -18,7 +18,8 @@ static bool mark_section(InputSection *isec) {
 }
 
 static void visit(InputSection *isec,
-                  std::function<void(InputSection *)> enqueue) {
+                  tbb::parallel_do_feeder<InputSection *> &feeder,
+                  i64 depth) {
   assert(isec->is_visited);
 
   for (SectionFragmentRef &ref : isec->rel_fragments)
@@ -26,14 +27,25 @@ static void visit(InputSection *isec,
 
   for (FdeRecord &fde : isec->fdes)
     for (EhReloc &rel : std::span(fde.rels).subspan(1))
-      enqueue(rel.sym.input_section);
+      if (InputSection *isec = rel.sym.input_section)
+        if (mark_section(isec))
+          feeder.add(isec);
 
   for (ElfRela &rel : isec->rels) {
     Symbol &sym = *isec->file->symbols[rel.r_sym];
-    if (sym.fragref.frag)
+    if (sym.fragref.frag) {
       sym.fragref.frag->is_alive = true;
+      continue;
+    }
+
+    if (!mark_section(sym.input_section))
+      continue;
+
+    // For better performacne, we don't call `feeder.add` too often.
+    if (depth < 3)
+      visit(sym.input_section, feeder, depth + 1);
     else
-      enqueue(sym.input_section);
+      feeder.add(sym.input_section);
   }
 }
 
@@ -80,10 +92,7 @@ void gc_sections() {
   tbb::parallel_do(roots,
                    [&](InputSection *isec,
                        tbb::parallel_do_feeder<InputSection *> &feeder) {
-                     visit(isec, [&](InputSection *x) {
-                       if (mark_section(x))
-                         feeder.add(x);
-                     });
+                     visit(isec, feeder, 0);
                    });
 
   // Remove unreachable sections
