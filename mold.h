@@ -190,8 +190,7 @@ struct SectionFragment {
   SectionFragment(std::string_view data) : data(data) {}
 
   SectionFragment(const SectionFragment &other)
-    : isec(other.isec.load()), data(other.data),
-      offset(other.offset) {}
+    : isec(other.isec.load()), data(other.data), offset(other.offset) {}
 
   inline u64 get_addr() const;
 
