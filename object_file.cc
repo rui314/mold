@@ -230,7 +230,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   const char *begin = data.data();
 
   if (data.empty()) {
-    cies.push_back({data});
+    cies.push_back(CieRecord{data});
     return;
   }
 
@@ -248,7 +248,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     if (size == 0) {
       if (data.size() != 4)
         Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
-      cies.push_back({data});
+      cies.push_back(CieRecord{data});
       return;
     }
 
@@ -275,7 +275,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       // CIE
       cur_cie = cies.size();
       offset_to_cie[begin_offset] = cies.size();
-      cies.push_back({contents, std::move(eh_rels)});
+      cies.push_back(CieRecord{contents, std::move(eh_rels)});
     } else {
       // FDE
       i64 cie_offset = begin_offset + 4 - id;
@@ -293,7 +293,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
         Fatal() << *isec.file << ": .eh_frame: FDE's first relocation "
                 << "should have offset 8";
 
-      cies[cur_cie].fdes.push_back({contents, std::move(eh_rels)});
+      cies[cur_cie].fdes.push_back(FdeRecord{contents, std::move(eh_rels)});
     }
   }
 }
