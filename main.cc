@@ -171,16 +171,17 @@ static void resolve_symbols() {
 
   // Mark reachable objects and DSOs to decide which files to include
   // into an output.
-  std::vector<ObjectFile *> root;
+  std::vector<ObjectFile *> roots;
   for (ObjectFile *file : out::objs)
     if (file->is_alive)
-      root.push_back(file);
+      roots.push_back(file);
 
-  tbb::parallel_do(
-    root,
-    [&](ObjectFile *file, tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-      file->mark_live_objects([&](ObjectFile *obj) { feeder.add(obj); });
-    });
+  tbb::parallel_do(roots,
+                   [&](ObjectFile *file,
+                       tbb::parallel_do_feeder<ObjectFile *> &feeder) {
+                     file->mark_live_objects(
+                       [&](ObjectFile *obj) { feeder.add(obj); });
+                   });
 
   // Eliminate unused archive members and as-needed DSOs.
   erase(out::objs, [](InputFile *file) { return !file->is_alive; });

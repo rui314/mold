@@ -17,16 +17,16 @@ static bool mark_section(InputSection *isec) {
   return isec && isec->is_alive && !isec->is_visited.exchange(true);
 }
 
-static void
-visit(InputSection *isec, std::function<void(InputSection *)> enqueue) {
+static void visit(InputSection *isec,
+                  std::function<void(InputSection *)> enqueue) {
   assert(isec->is_visited);
 
   for (SectionFragmentRef &ref : isec->rel_fragments)
     ref.frag->is_alive = true;
 
   for (FdeRecord &fde : isec->fdes)
-    for (i64 i = 1; i < fde.rels.size(); i++)
-      enqueue(fde.rels[i].sym.input_section);
+    for (EhReloc &rel : std::span(fde.rels).subspan(1))
+      enqueue(rel.sym.input_section);
 
   for (ElfRela &rel : isec->rels) {
     Symbol &sym = *isec->file->symbols[rel.r_sym];
@@ -78,14 +78,14 @@ void gc_sections() {
   });
 
   // Mark all reachable sections
-  tbb::parallel_do(
-    roots,
-    [&](InputSection *isec, tbb::parallel_do_feeder<InputSection *> &feeder) {
-      visit(isec, [&](InputSection *x) {
-        if (mark_section(x))
-          feeder.add(x);
-      });
-    });
+  tbb::parallel_do(roots,
+                   [&](InputSection *isec,
+                       tbb::parallel_do_feeder<InputSection *> &feeder) {
+                     visit(isec, [&](InputSection *x) {
+                       if (mark_section(x))
+                         feeder.add(x);
+                     });
+                   });
 
   // Remove unreachable sections
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
