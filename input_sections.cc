@@ -345,6 +345,7 @@ void InputSection::scan_relocations() {
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   this->rel_types.resize(rels.size());
 
+  // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];

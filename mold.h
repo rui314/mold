@@ -889,7 +889,7 @@ public:
   void handle_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
-  void assign_mergeable_string_offsets();
+  void scan_relocations();
   void convert_common_symbols();
   void compute_symtab();
   void write_symtab();
