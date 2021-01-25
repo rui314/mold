@@ -751,7 +751,7 @@ void ObjectFile::write_symtab() {
     esym.st_name = strtab_off;
 
     if (sym.st_type == STT_TLS)
-      esym.st_value = sym.get_addr() - sym.input_section->output_section->shdr.sh_addr;
+      esym.st_value = sym.get_addr() - out::tls_begin;
     else
       esym.st_value = sym.get_addr();
 
