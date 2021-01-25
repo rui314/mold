@@ -265,8 +265,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       if (id && first_global <= rels[0].r_sym)
         Fatal() << isec << ": FDE with non-local relocations is not supported";
-      Symbol &sym = *symbols[rels[0].r_sym];
 
+      Symbol &sym = *symbols[rels[0].r_sym];
       eh_rels.push_back(EhReloc{sym, rels[0].r_type,
                                 (u32)(rels[0].r_offset - begin_offset),
                                 rels[0].r_addend});

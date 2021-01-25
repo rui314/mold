@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -45,4 +45,4 @@ Symbol table '.dynsym' contains 19 entries:
     18: 0000000000202178     0 NOTYPE  GLOBAL DEFAULT  ABS _edata
 "
 
-echo ' OK'
+echo OK

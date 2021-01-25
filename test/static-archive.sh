@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -44,4 +44,4 @@ fgrep -q static-archive/c.o $t/log
 
 $t/exe | grep -q '8'
 
-echo ' OK'
+echo OK

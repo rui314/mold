@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -51,4 +51,4 @@ cat $t/log.2 | grep -q  '0000000000000000 .* unused_var1'
 cat $t/log.2 | grep -q  '0000000000000000 .* unused_var2'
 $t/exe2 | grep -q '1 2'
 
-echo ' OK'
+echo OK

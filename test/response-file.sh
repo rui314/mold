@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -11,4 +11,4 @@ echo "-o $t/exe '$t/a.o' $t/b.o" > $t/rsp
 objdump -d $t/exe > /dev/null
 file $t/exe | grep -q ELF
 
-echo ' OK'
+echo OK

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -20,4 +20,4 @@ grep -q 'Entry point address:.*0x201010' $t/log
 readelf -e $t/exe > $t/log
 grep -q 'Entry point address:.*0x201018' $t/log
 
-echo ' OK'
+echo OK

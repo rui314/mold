@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -14,4 +14,4 @@ EOF
 ! ../mold -o $t/exe $t/a.o $t/a.o 2> $t/log
 grep -q 'duplicate symbol: .*\.o: .*\.o: main' $t/log
 
-echo ' OK'
+echo OK

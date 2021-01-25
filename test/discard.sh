@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -39,4 +39,4 @@ readelf --symbols $t/exe > $t/log
 ! fgrep -q foo $t/log
 ! fgrep -q .Lbar $t/log
 
-echo ' OK'
+echo OK

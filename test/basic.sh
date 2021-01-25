@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -10,4 +10,4 @@ echo '.globl loop; loop: jmp loop' | cc -o $t/b.o -c -x assembler -
 objdump -d $t/exe > /dev/null
 file $t/exe | grep -q ELF
 
-echo ' OK'
+echo OK

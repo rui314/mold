@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -31,4 +31,4 @@ readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
 ! fgrep -q 'Shared library: [libbar.so]' $t/readelf
 
-echo ' OK'
+echo OK

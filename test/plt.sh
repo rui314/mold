@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -58,4 +58,4 @@ Disassembly of section .plt:
   20101b: e9 e0 ff ff ff        jmpq   201000 <_IO_stdin_used+0xb80>
 "
 
-echo ' OK'
+echo OK

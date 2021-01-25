@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -31,4 +31,4 @@ EOF
 
 $t/exe | grep -q 'Hello world'
 
-echo ' OK'
+echo OK

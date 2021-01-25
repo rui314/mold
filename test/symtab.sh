@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -46,4 +46,4 @@ Symbol table '.symtab' contains 21 entries:
     20: 0000000000202168     0 NOTYPE  GLOBAL HIDDEN     8 _edata
 "
 
-echo ' OK'
+echo OK

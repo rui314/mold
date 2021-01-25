@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -46,4 +46,4 @@ hexdump -C $t/exe2 > $t/txt2
 
 diff -q $t/txt1 $t/txt2
 
-echo ' OK'
+echo OK

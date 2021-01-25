@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -18,4 +18,4 @@ readelf --dynamic $t/exe | grep -q "
 0x000000000000001d (RUNPATH) Library runpath: [/bar]
 "
 
-echo ' OK'
+echo OK

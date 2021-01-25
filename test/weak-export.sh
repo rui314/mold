@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo -n "Testing $(basename -s .sh $0) ..."
+echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
@@ -15,4 +15,4 @@ EOF
 ../mold -o $t/exe $t/a.o
 readelf -a $t/exe > /dev/null
 
-echo ' OK'
+echo OK
