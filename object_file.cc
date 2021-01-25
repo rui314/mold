@@ -263,10 +263,10 @@ void ObjectFile::read_ehframe(InputSection &isec) {
 
     std::vector<EhReloc> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
-      Symbol *sym = symbols[rels[0].r_sym];
-      eh_rels.push_back({sym, rels[0].r_type,
-                         (u32)(rels[0].r_offset - begin_offset),
-                         rels[0].r_addend});
+      Symbol &sym = *symbols[rels[0].r_sym];
+      eh_rels.push_back(EhReloc{sym, rels[0].r_type,
+                                (u32)(rels[0].r_offset - begin_offset),
+                                rels[0].r_addend});
       rels = rels.subspan(1);
     }
 
@@ -653,14 +653,13 @@ void ObjectFile::scan_relocations() {
   // Scan relocations against exception frames
   for (CieRecord &cie : cies) {
     for (EhReloc &rel : cie.rels) {
-      Symbol &sym = *rel.sym;
-      if (!sym.is_imported)
+      if (!rel.sym.is_imported)
         continue;
-      if (sym.st_type != STT_FUNC)
-        Fatal() << *this << ": " << sym.name
+      if (rel.sym.st_type != STT_FUNC)
+        Fatal() << *this << ": " << rel.sym.name
                 << ": .eh_frame CIE record with an external data reference"
                 << " is not supported";
-      sym.flags |= NEEDS_PLT;
+      rel.sym.flags |= NEEDS_PLT;
     }
   }
 }

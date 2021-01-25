@@ -918,7 +918,7 @@ void EhFrameSection::copy_buf() {
 
       for (EhReloc &rel : cie->rels) {
         u64 loc = cie->offset + rel.offset;
-        u64 val = rel.sym->get_addr() + rel.addend;
+        u64 val = rel.sym.get_addr() + rel.addend;
         apply_reloc(rel, loc, val);
       }
     }
@@ -935,7 +935,7 @@ void EhFrameSection::copy_buf() {
       for (i64 i = 0; i < fde.rels.size(); i++) {
         EhReloc &rel = fde.rels[i];
         u64 loc = fde_off + rel.offset;
-        u64 val = rel.sym->get_addr() + rel.addend;
+        u64 val = rel.sym.get_addr() + rel.addend;
         apply_reloc(rel, loc, val);
 
         // Write to .eh_frame_hdr

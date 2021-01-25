@@ -328,15 +328,15 @@ enum RelType : u8 {
 };
 
 struct EhReloc {
-  Symbol *sym;
+  Symbol &sym;
   u32 type;
   u32 offset;
   i64 addend;
 };
 
 inline bool operator==(const EhReloc &a, const EhReloc &b) {
-  return std::tuple(a.sym, a.type, a.offset, a.addend) ==
-         std::tuple(b.sym, b.type, b.offset, b.addend);
+  return std::tuple(&a.sym, a.type, a.offset, a.addend) ==
+         std::tuple(&b.sym, b.type, b.offset, b.addend);
 }
 
 struct FdeRecord {
@@ -1225,7 +1225,7 @@ inline u64 InputChunk::get_addr() const {
 }
 
 inline bool FdeRecord::is_alive() const {
-  if (InputSection *isec = rels[0].sym->input_section)
+  if (InputSection *isec = rels[0].sym.input_section)
     if (!isec->is_alive)
       return false;
   return true;

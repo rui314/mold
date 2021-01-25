@@ -67,7 +67,7 @@ void gc_sections() {
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (CieRecord &cie : file->cies)
       for (EhReloc &rel : cie.rels)
-        enqueue(rel.sym->input_section);
+        enqueue(rel.sym.input_section);
   });
 
   // Mark all reachable sections
@@ -90,7 +90,7 @@ void gc_sections() {
         // We skip the first relocation because it's always alive if
         // is_alive() returned true.
         for (i64 i = 1; i < fde.rels.size(); i++) {
-          InputSection *isec = fde.rels[i].sym->input_section;
+          InputSection *isec = fde.rels[i].sym.input_section;
           if (!isec)
             continue;
           if (!isec->rels.empty())
