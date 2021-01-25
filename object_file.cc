@@ -191,6 +191,7 @@ void ObjectFile::initialize_ehframe_sections() {
     if (isec && isec->name == ".eh_frame") {
       read_ehframe(*isec);
       isec->is_ehframe = true;
+      sections[i] = nullptr;
     }
   }
 }

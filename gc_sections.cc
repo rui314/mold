@@ -39,7 +39,6 @@ static void visit(InputSection *isec,
 
 void gc_sections() {
   Timer t("gc_sections");
-
   tbb::concurrent_vector<InputSection *> roots;
 
   // Add sections that are not subject to garbage collection.
@@ -92,7 +91,7 @@ void gc_sections() {
     for (i64 i = 0; i < file->sections.size(); i++) {
       InputSection *isec = file->sections[i];
 
-      if (isec && isec->is_alive && !isec->is_ehframe && !isec->is_visited) {
+      if (isec && isec->is_alive && !isec->is_visited) {
         if (config.print_gc_sections)
           SyncOut() << "removing unused section " << *isec;
         file->kill(i);

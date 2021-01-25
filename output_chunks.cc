@@ -836,11 +836,6 @@ void EhFrameSection::construct() {
       }
       cie.fde_size = offset;
     }
-
-    for (i64 i = 0; i < file->sections.size(); i++) {
-      if (file->sections[i] && file->sections[i]->is_ehframe)
-        file->sections[i] = nullptr;
-    }
   });
 
   // Aggreagate CIEs.
