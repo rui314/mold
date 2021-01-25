@@ -648,7 +648,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
     std::span<u32> entries = pair.second;
     for (i64 i : entries)
       if (sections[i])
-        sections[i]->kill();
+        kill(i);
 
     static Counter counter("removed_comdat_mem");
     counter.inc(entries.size());
@@ -761,6 +761,14 @@ void ObjectFile::write_symtab() {
   for (i64 i = first_global; i < elf_syms.size(); i++)
     if (symbols[i]->file == this && should_write_global_symtab(*symbols[i]))
       write_sym(i);
+}
+
+void ObjectFile::kill(i64 shndx) {
+  InputSection &isec = *sections[shndx];
+  isec.is_alive = false;
+  for (FdeRecord &fde : isec.fdes)
+    fde.is_alive = false;
+  sections[shndx] = nullptr;
 }
 
 bool is_c_identifier(std::string_view name) {

@@ -473,17 +473,6 @@ void InputSection::scan_relocations() {
   }
 }
 
-void InputSection::kill() {
-  is_alive = false;
-  for (FdeRecord &fde : fdes)
-    fde.is_alive = false;
-
-  assert(&file->elf_sections.front() <= &shdr &&
-         &shdr < &file->elf_sections.back());
-  i64 shndx = &shdr - &file->elf_sections.front();
-  file->sections[shndx] = nullptr;
-}
-
 static size_t find_null(std::string_view data, u64 entsize) {
   if (entsize == 1)
     return data.find('\0');

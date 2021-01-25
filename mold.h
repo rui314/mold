@@ -345,14 +345,12 @@ struct FdeRecord {
 
   FdeRecord(const FdeRecord &&other)
     : contents(other.contents), rels(std::move(other.rels)),
-      offset(other.offset), is_alive(other.is_alive.load()),
-      is_visited(other.is_visited.load()) {}
+      offset(other.offset), is_alive(other.is_alive.load()) {}
 
   std::string_view contents;
   std::vector<EhReloc> rels;
   u32 offset = -1;
   std::atomic_bool is_alive = true;
-  std::atomic_bool is_visited = false;
 };
 
 struct CieRecord {
@@ -380,7 +378,6 @@ public:
   void copy_buf() override;
   void scan_relocations();
   void report_undefined_symbols();
-  void kill();
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
@@ -903,6 +900,7 @@ public:
   void convert_common_symbols();
   void compute_symtab();
   void write_symtab();
+  void kill(i64 shndx);
 
   static ObjectFile *create_internal_file();
 
