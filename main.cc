@@ -1180,9 +1180,6 @@ int main(int argc, char **argv) {
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats();
 
-  // Merge string constants in SHF_MERGE sections.
-  handle_mergeable_strings();
-
   // Create .bss sections for common symbols.
   {
     Timer t("common");
@@ -1194,6 +1191,9 @@ int main(int argc, char **argv) {
   // Garbage-collect unreachable sections.
   if (config.gc_sections)
     gc_sections();
+
+  // Merge string constants in SHF_MERGE sections.
+  handle_mergeable_strings();
 
   // Bin input sections into output sections
   bin_sections();
