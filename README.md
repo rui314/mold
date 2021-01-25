@@ -192,10 +192,16 @@ tool.
   Based on this observation, mold should overwrite to an existing
   executable file if exists. My quick benchmark showed that I could
   save 300 milliseconds when creating a 2 GiB output file.
-
   Linux doesn't allow to open an executable for writing if it is
   running (you'll get "text busy" error if you attempt). mold should
   fall back to the usual way if it fails to open an output file.
+
+- As an implementation strategy, we do _not_ care about memory leak
+  because we really can't save that much memory by doing precise
+  memory management. It is because most objects that are allocated
+  during an execution of mold are needed until the very end of the
+  program. I'm sure this is an odd memory management scheme (or the
+  lack thereof), but this is what LLVM lld does too.
 
 - The output from the linker should be deterministic for the sake of
   [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
