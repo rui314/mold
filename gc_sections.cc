@@ -1,3 +1,7 @@
+// This file implements a mark-sweep garbage collector for -gc-sections.
+// In this algorithm, vertices are sections and edges are relocations.
+// Any section that is reachable from a root section is considered alive.
+
 #include "mold.h"
 
 #include <tbb/concurrent_vector.h>
@@ -22,9 +26,15 @@ static void visit(InputSection *isec,
                   i64 depth) {
   assert(isec->is_visited);
 
+  // A relocation can refer either a section fragment (i.e. a piece of
+  // string in a mergeable string section) or a symbol. Mark all
+  // section fragments as alive.
   for (SectionFragmentRef &ref : isec->rel_fragments)
     ref.frag->is_alive = true;
 
+  // If this is a text section, .eh_frame may contain records
+  // describing how to handle exceptions for that function.
+  // We want to keep associated .eh_frame records.
   for (FdeRecord &fde : isec->fdes)
     for (EhReloc &rel : std::span(fde.rels).subspan(1))
       if (InputSection *isec = rel.sym.input_section)
@@ -33,6 +43,9 @@ static void visit(InputSection *isec,
 
   for (ElfRela &rel : isec->rels) {
     Symbol &sym = *isec->file->symbols[rel.r_sym];
+
+    // Symbol can refer either a section fragment or an input section.
+    // Mark a fragment as alive.
     if (sym.fragref.frag) {
       sym.fragref.frag->is_alive = true;
       continue;
@@ -41,7 +54,8 @@ static void visit(InputSection *isec,
     if (!mark_section(sym.input_section))
       continue;
 
-    // For better performacne, we don't call `feeder.add` too often.
+    // Mark a section alive. For better performacne, we don't call
+    // `feeder.add` too often.
     if (depth < 3)
       visit(sym.input_section, feeder, depth + 1);
     else

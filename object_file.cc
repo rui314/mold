@@ -716,6 +716,8 @@ void ObjectFile::compute_symtab() {
     return;
 
   if (config.gc_sections && !config.discard_all) {
+    // Detect symbols pointing to sections discarded by -gc-sections
+    // to remove them from symtab.
     for (i64 i = 1; i < first_global; i++) {
       Symbol &sym = *symbols[i];
       if (sym.write_symtab && !sym.is_alive()) {
@@ -726,6 +728,7 @@ void ObjectFile::compute_symtab() {
     }
   }
 
+  // Compute the size of global symbols.
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     Symbol &sym = *symbols[i];
     if (sym.file == this && should_write_global_symtab(sym)) {
