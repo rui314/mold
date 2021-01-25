@@ -240,14 +240,13 @@ void ObjectFile::read_ehframe(InputSection &isec) {
 
   for (ElfRela rel : rels)
     if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_PC32)
-      Fatal() << *isec.file << ": .eh_frame: unsupported relocation type: "
-              << rel.r_type;
+      Fatal() << isec << ": unsupported relocation type: " << rel.r_type;
 
   while (!data.empty()) {
     i64 size = *(u32 *)data.data();
     if (size == 0) {
       if (data.size() != 4)
-        Fatal() << *isec.file << ": .eh_frame: garbage at end of section";
+        Fatal() << isec << ": garbage at end of section";
       cies.push_back(CieRecord{data});
       return;
     }
@@ -256,21 +255,24 @@ void ObjectFile::read_ehframe(InputSection &isec) {
     i64 end_offset = begin_offset + size + 4;
 
     if (!rels.empty() && rels[0].r_offset < begin_offset)
-      Fatal() << *isec.file << ": .eh_frame: unsupported relocation order";
+      Fatal() << isec << ": unsupported relocation order";
 
     std::string_view contents = data.substr(0, size + 4);
     data = data.substr(size + 4);
+    i64 id = *(u32 *)(contents.data() + 4);
 
     std::vector<EhReloc> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
+      if (id && first_global <= rels[0].r_sym)
+        Fatal() << isec << ": FDE with non-local relocations is not supported";
       Symbol &sym = *symbols[rels[0].r_sym];
+
       eh_rels.push_back(EhReloc{sym, rels[0].r_type,
                                 (u32)(rels[0].r_offset - begin_offset),
                                 rels[0].r_addend});
       rels = rels.subspan(1);
     }
 
-    i64 id = *(u32 *)(contents.data() + 4);
     if (id == 0) {
       // CIE
       cur_cie = cies.size();
@@ -282,16 +284,15 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       if (cie_offset != cur_cie_offset) {
         auto it = offset_to_cie.find(cie_offset);
         if (it == offset_to_cie.end())
-          Fatal() << *isec.file << ": .eh_frame: bad FDE pointer";
+          Fatal() << isec << ": bad FDE pointer";
         cur_cie = it->second;
         cur_cie_offset = cie_offset;
       }
 
       if (eh_rels.empty())
-        Fatal() << *isec.file << ": .eh_frame: FDE has no relocations";
+        Fatal() << isec << ": FDE has no relocations";
       if (eh_rels[0].offset != 8)
-        Fatal() << *isec.file << ": .eh_frame: FDE's first relocation "
-                << "should have offset 8";
+        Fatal() << isec << ": FDE's first relocation should have offset 8";
 
       cies[cur_cie].fdes.push_back(FdeRecord{contents, std::move(eh_rels)});
     }
