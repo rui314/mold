@@ -84,11 +84,11 @@ void gc_sections() {
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (CieRecord &cie : file->cies) {
       for (FdeRecord &fde : cie.fdes) {
-        if (!fde.is_alive())
+        if (!fde.is_alive)
           continue;
 
         // We skip the first relocation because it's always alive if
-        // is_alive() returned true.
+        // is_alive returned true.
         for (i64 i = 1; i < fde.rels.size(); i++) {
           InputSection *isec = fde.rels[i].sym.input_section;
           if (!isec)

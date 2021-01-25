@@ -829,7 +829,7 @@ void EhFrameSection::construct() {
     for (CieRecord &cie : file->cies) {
       i64 offset = 0;
       for (FdeRecord &fde : cie.fdes) {
-        if (!fde.is_alive())
+        if (!fde.is_alive)
           continue;
         fde.offset = offset;
         offset += fde.contents.size();
@@ -994,7 +994,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 
     for (FdeRecord &fde : cie.fdes) {
       if (contains(fde.contents, section_begin + offset)) {
-        if (!fde.is_alive())
+        if (!fde.is_alive)
           return 0;
 
         u64 fde_addr = shdr.sh_addr + cie.offset + offset;

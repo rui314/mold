@@ -647,8 +647,11 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
 
     std::span<u32> entries = pair.second;
     for (i64 i : entries) {
-      if (sections[i])
+      if (sections[i]) {
         sections[i]->is_alive = false;
+        for (FdeRecord &fde : sections[i]->fdes)
+          fde.is_alive = false;
+      }
       sections[i] = nullptr;
     }
 

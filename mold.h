@@ -340,10 +340,17 @@ inline bool operator==(const EhReloc &a, const EhReloc &b) {
 }
 
 struct FdeRecord {
+  FdeRecord(std::string_view contents, std::vector<EhReloc> &&rels)
+    : contents(contents), rels(std::move(rels)) {}
+
+  FdeRecord(const FdeRecord &&other)
+    : contents(other.contents), rels(std::move(other.rels)),
+      offset(other.offset), is_alive(other.is_alive.load()) {}
+
   std::string_view contents;
   std::vector<EhReloc> rels;
   u32 offset = -1;
-  inline bool is_alive() const;
+  std::atomic_bool is_alive = true;
 };
 
 struct CieRecord {
@@ -1222,13 +1229,6 @@ inline u64 SectionFragment::get_addr() const {
 
 inline u64 InputChunk::get_addr() const {
   return output_section->shdr.sh_addr + offset;
-}
-
-inline bool FdeRecord::is_alive() const {
-  if (InputSection *isec = rels[0].sym.input_section)
-    if (!isec->is_alive)
-      return false;
-  return true;
 }
 
 inline u32 elf_hash(std::string_view name) {
