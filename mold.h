@@ -378,6 +378,7 @@ public:
   void copy_buf() override;
   void scan_relocations();
   void report_undefined_symbols();
+  void kill();
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;

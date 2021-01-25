@@ -646,14 +646,9 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
       continue;
 
     std::span<u32> entries = pair.second;
-    for (i64 i : entries) {
-      if (sections[i]) {
-        sections[i]->is_alive = false;
-        for (FdeRecord &fde : sections[i]->fdes)
-          fde.is_alive = false;
-      }
-      sections[i] = nullptr;
-    }
+    for (i64 i : entries)
+      if (sections[i])
+        sections[i]->kill();
 
     static Counter counter("removed_comdat_mem");
     counter.inc(entries.size());
