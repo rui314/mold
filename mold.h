@@ -252,11 +252,9 @@ public:
   inline u64 get_tlsgd_addr() const;
   inline u64 get_plt_addr() const;
 
-  bool is_absolute() const;
-
-  bool is_relative() const {
-    return !is_absolute();
-  }
+  inline bool is_alive() const;
+  inline bool is_absolute() const;
+  inline bool is_relative() const { return !is_absolute(); }
 
   std::string_view name;
   InputFile *file = nullptr;
@@ -1161,6 +1159,14 @@ inline u64 next_power_of_two(u64 val) {
   val |= val >> 16;
   val |= val >> 32;
   return val + 1;
+}
+
+inline bool Symbol::is_alive() const {
+  if (frag_ref.frag)
+    return frag_ref.frag->is_alive;
+  if (input_section)
+    return input_section->is_alive;
+  return true;
 }
 
 inline bool Symbol::is_absolute() const {

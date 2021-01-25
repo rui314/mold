@@ -708,10 +708,21 @@ void ObjectFile::convert_common_symbols() {
 }
 
 static bool should_write_global_symtab(Symbol &sym) {
-  return !config.strip_all && sym.esym->st_type != STT_SECTION;
+  return !config.strip_all &&
+         sym.esym->st_type != STT_SECTION &&
+         sym.is_alive();
 }
 
 void ObjectFile::compute_symtab() {
+  for (i64 i = 1; i < first_global; i++) {
+    Symbol &sym = *symbols[i];
+    if (sym.write_symtab && !sym.is_alive()) {
+      strtab_size -= sym.name.size() + 1;
+      local_symtab_size -= sizeof(ElfSym);
+      sym.write_symtab = false;
+    }
+  }
+
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
