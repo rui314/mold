@@ -259,6 +259,7 @@ public:
   InputFile *file = nullptr;
   const ElfSym *esym = nullptr;
   InputSection *input_section = nullptr;
+  SectionFragment *frag = nullptr;
   SectionFragmentRef fragref;
 
   u64 value = -1;

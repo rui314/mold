@@ -41,12 +41,12 @@ void gc_sections() {
   Timer t("gc_sections");
   tbb::concurrent_vector<InputSection *> roots;
 
-  // Add sections that are not subject to garbage collection.
   auto enqueue = [&](InputSection *isec) {
     if (mark_section(isec))
       roots.push_back(isec);
   };
 
+  // Add sections that are not subject to garbage collection.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections) {
       if (!isec)
