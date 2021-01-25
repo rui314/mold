@@ -327,6 +327,42 @@ enum RelType : u8 {
   R_GOTTPOFF,
 };
 
+struct EhReloc {
+  Symbol *sym;
+  u32 type;
+  u32 offset;
+  i64 addend;
+};
+
+inline bool operator==(const EhReloc &a, const EhReloc &b) {
+  return std::tuple(a.sym, a.type, a.offset, a.addend) ==
+         std::tuple(b.sym, b.type, b.offset, b.addend);
+}
+
+struct FdeRecord {
+  std::string_view contents;
+  std::vector<EhReloc> rels;
+  u32 offset = -1;
+  inline bool is_alive() const;
+};
+
+struct CieRecord {
+  bool should_merge(const CieRecord &other) const;
+
+  std::string_view contents;
+  std::vector<EhReloc> rels;
+  std::vector<FdeRecord> fdes;
+
+  // For .eh_frame
+  u32 offset = -1;
+  u32 leader_offset = -1;
+  u32 fde_size = -1;
+
+  // For .eh_frame_hdr
+  u32 num_fdes = 0;
+  u32 fde_idx = -1;
+};
+
 class InputSection : public InputChunk {
 public:
   InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name)
@@ -340,6 +376,7 @@ public:
   std::vector<bool> has_fragments;
   std::vector<SectionFragmentRef> rel_fragments;
   std::vector<RelType> rel_types;
+  std::span<FdeRecord> fdes;
   u64 reldyn_offset = 0;
   bool is_comdat_member = false;
   bool is_ehframe = false;
@@ -681,48 +718,6 @@ private:
   }
 
   tbb::concurrent_hash_map<SectionFragmentKey, SectionFragment> map;
-};
-
-struct EhReloc {
-  Symbol *sym;
-  u32 type;
-  u32 offset;
-  i64 addend;
-};
-
-inline bool operator==(const EhReloc &a, const EhReloc &b) {
-  return std::tuple(a.sym, a.type, a.offset, a.addend) ==
-         std::tuple(b.sym, b.type, b.offset, b.addend);
-}
-
-struct FdeRecord {
-  std::string_view contents;
-  std::vector<EhReloc> rels;
-  u32 offset = -1;
-
-  bool is_alive() const {
-    if (InputSection *isec = rels[0].sym->input_section)
-      if (!isec->is_alive)
-        return false;
-    return true;
-  }
-};
-
-struct CieRecord {
-  bool should_merge(const CieRecord &other) const;
-
-  std::string_view contents;
-  std::vector<EhReloc> rels;
-  std::vector<FdeRecord> fdes;
-
-  // For .eh_frame
-  u32 offset = -1;
-  u32 leader_offset = -1;
-  u32 fde_size = -1;
-
-  // For .eh_frame_hdr
-  u32 num_fdes = 0;
-  u32 fde_idx = -1;
 };
 
 class EhFrameSection : public OutputChunk {
@@ -1227,6 +1222,13 @@ inline u64 SectionFragment::get_addr() const {
 
 inline u64 InputChunk::get_addr() const {
   return output_section->shdr.sh_addr + offset;
+}
+
+inline bool FdeRecord::is_alive() const {
+  if (InputSection *isec = rels[0].sym->input_section)
+    if (!isec->is_alive)
+      return false;
+  return true;
 }
 
 inline u32 elf_hash(std::string_view name) {
