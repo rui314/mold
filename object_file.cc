@@ -460,8 +460,8 @@ void ObjectFile::initialize_mergeable_sections() {
       Fatal() << *this << ": bad symbol value";
 
     if (i < first_global) {
-      symbols[i]->frag_ref.frag = m->fragments[idx];
-      symbols[i]->frag_ref.addend = esym.st_value - m->frag_offsets[idx];
+      symbols[i]->fragref.frag = m->fragments[idx];
+      symbols[i]->fragref.addend = esym.st_value - m->frag_offsets[idx];
     } else {
       sym_fragments[i - first_global].frag = m->fragments[idx];
       sym_fragments[i - first_global].addend = esym.st_value - m->frag_offsets[idx];
@@ -530,7 +530,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
   if (new_rank < existing_rank) {
     sym.file = this;
     sym.input_section = isec;
-    sym.frag_ref = sym_fragments[symidx - first_global];
+    sym.fragref = sym_fragments[symidx - first_global];
     sym.value = esym.st_value;
     sym.ver_idx = 0;
     sym.st_type = esym.st_type;
@@ -955,7 +955,7 @@ void SharedFile::resolve_symbols() {
     if (new_rank < existing_rank) {
       sym.file = this;
       sym.input_section = nullptr;
-      sym.frag_ref = {};
+      sym.fragref = {};
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
       sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;

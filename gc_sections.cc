@@ -30,8 +30,8 @@ static void visit(InputSection *isec,
 
   for (ElfRela &rel : isec->rels) {
     Symbol &sym = *isec->file->symbols[rel.r_sym];
-    if (sym.frag_ref.frag)
-      sym.frag_ref.frag->is_alive = true;
+    if (sym.fragref.frag)
+      sym.fragref.frag->is_alive = true;
     else
       enqueue(sym.input_section);
   }
