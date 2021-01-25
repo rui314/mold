@@ -206,6 +206,8 @@ static void handle_mergeable_strings() {
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (MergeableSection *isec : file->mergeable_sections) {
       for (SectionFragment *frag : isec->fragments) {
+        if (!frag->is_alive)
+          continue;
         MergeableSection *cur = frag->isec;
         while (!cur || cur->file->priority > isec->file->priority)
           if (frag->isec.compare_exchange_weak(cur, isec))

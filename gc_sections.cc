@@ -28,8 +28,13 @@ visit(InputSection *isec, std::function<void(InputSection *)> enqueue) {
     for (i64 i = 1; i < fde.rels.size(); i++)
       enqueue(fde.rels[i].sym.input_section);
 
-  for (ElfRela &rel : isec->rels)
-    enqueue(isec->file->symbols[rel.r_sym]->input_section);
+  for (ElfRela &rel : isec->rels) {
+    Symbol &sym = *isec->file->symbols[rel.r_sym];
+    if (sym.frag_ref.frag)
+      sym.frag_ref.frag->is_alive = true;
+    else
+      enqueue(sym.input_section);
+  }
 }
 
 void gc_sections() {
@@ -55,9 +60,7 @@ void gc_sections() {
       if (!(isec->shdr.sh_flags & SHF_ALLOC))
         isec->is_visited = true;
 
-      if (is_init_fini(*isec))
-        enqueue(isec);
-      if (isec->shdr.sh_type == SHT_NOTE)
+      if (is_init_fini(*isec) || isec->shdr.sh_type == SHT_NOTE)
         enqueue(isec);
     }
   });

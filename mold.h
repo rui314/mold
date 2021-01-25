@@ -198,7 +198,7 @@ struct SectionFragment {
   std::string_view data;
   u32 offset = -1;
   u16 alignment = 1;
-  std::atomic_bool is_alive = false;
+  std::atomic_bool is_alive = !config.gc_sections;
 };
 
 struct SectionFragmentRef {
@@ -1170,8 +1170,11 @@ inline bool Symbol::is_absolute() const {
 }
 
 inline u64 Symbol::get_addr() const {
-  if (frag_ref.frag)
-    return frag_ref.frag->get_addr() + frag_ref.addend;
+  if (frag_ref.frag) {
+    if (frag_ref.frag->is_alive)
+      return frag_ref.frag->get_addr() + frag_ref.addend;
+    return 0; // todo: do not return 0
+  }
 
   if (has_copyrel)
     return out::copyrel->shdr.sh_addr + value;
@@ -1224,6 +1227,9 @@ inline u64 Symbol::get_plt_addr() const {
 }
 
 inline u64 SectionFragment::get_addr() const {
+  if (!is_alive)
+    return 0; // todo: remove
+
   MergeableSection *is = isec.load();
   return is->parent.shdr.sh_addr + is->offset + offset;
 }

@@ -797,9 +797,7 @@ void MergedSection::copy_buf() {
 
       i64 offset = 0;
       for (SectionFragment *frag : isec->fragments) {
-        if (frag->isec != isec)
-          continue;
-        if (frag->offset < offset)
+        if (frag->isec != isec || !frag->is_alive || frag->offset < offset)
           continue;
 
         // Clear padding between section fragments
