@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <vector>
 
@@ -1008,28 +1009,25 @@ protected:
 
 class Counter {
 public:
-  Counter(std::string_view name, u32 value = 0) : name(name), value(value) {
+  Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
     static std::mutex mu;
     std::lock_guard lock(mu);
     instances.push_back(this);
   }
 
-  void inc(u32 delta = 1) {
+  void inc(i64 delta = 1) {
     if (enabled)
-      value += delta;
-  }
-
-  void set(u32 value) {
-    this->value = value;
+      values.local() += delta;
   }
 
   static void print();
-
   static inline bool enabled = false;
 
 private:
+  i64 get_value();
+
   std::string_view name;
-  std::atomic_uint32_t value;
+  tbb::enumerable_thread_specific<i64> values;
 
   static inline std::vector<Counter *> instances;
 };

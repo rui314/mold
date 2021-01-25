@@ -1,19 +1,26 @@
 #include "mold.h"
 
+#include <functional>
 #include <iomanip>
 #include <ios>
 #include <sys/resource.h>
 #include <sys/time.h>
 
+i64 Counter::get_value() {
+  return values.combine(std::plus());
+}
+
 void Counter::print() {
   if (!enabled)
     return;
 
-  std::vector<Counter *> vec = instances;
-  sort(vec, [](Counter *a, Counter *b) { return a->value > b->value; });
+  sort(instances, [](Counter *a, Counter *b) {
+    return a->get_value() > b->get_value();
+  });
 
-  for (Counter *c : vec)
-    std::cout << std::setw(20) << std::right << c->name << "=" << c->value << "\n";
+  for (Counter *c : instances)
+    std::cout << std::setw(20) << std::right << c->name
+              << "=" << c->get_value() << "\n";
 }
 
 static i64 now_nsec() {
