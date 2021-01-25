@@ -914,9 +914,9 @@ public:
   u64 reldyn_offset = 0;
 
   u64 local_symtab_offset = 0;
-  u64 local_symtab_size = 0;
   u64 global_symtab_offset = 0;
-  u64 global_symtab_size = 0;
+  u64 num_local_symtab = 0;
+  u64 num_global_symtab = 0;
   u64 strtab_offset = 0;
   u64 strtab_size = 0;
 

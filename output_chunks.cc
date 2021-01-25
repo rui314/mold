@@ -282,12 +282,12 @@ void SymtabSection::update_shdr() {
 
   for (ObjectFile *file : out::objs) {
     file->local_symtab_offset = shdr.sh_size;
-    shdr.sh_size += file->local_symtab_size;
+    shdr.sh_size += file->num_local_symtab * sizeof(ElfSym);
   }
 
   for (ObjectFile *file : out::objs) {
     file->global_symtab_offset = shdr.sh_size;
-    shdr.sh_size += file->global_symtab_size;
+    shdr.sh_size += file->num_global_symtab * sizeof(ElfSym);
   }
 
   shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ElfSym);

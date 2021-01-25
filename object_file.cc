@@ -365,7 +365,7 @@ void ObjectFile::initialize_symbols() {
     if (should_write_symtab(sym)) {
       sym.write_symtab = true;
       strtab_size += sym.name.size() + 1;
-      local_symtab_size += sizeof(ElfSym);
+      num_local_symtab++;
     }
   }
 
@@ -714,12 +714,14 @@ static bool should_write_global_symtab(Symbol &sym) {
 }
 
 void ObjectFile::compute_symtab() {
-  for (i64 i = 1; i < first_global; i++) {
-    Symbol &sym = *symbols[i];
-    if (sym.write_symtab && !sym.is_alive()) {
-      strtab_size -= sym.name.size() + 1;
-      local_symtab_size -= sizeof(ElfSym);
-      sym.write_symtab = false;
+  if (config.gc_sections) {
+    for (i64 i = 1; i < first_global; i++) {
+      Symbol &sym = *symbols[i];
+      if (sym.write_symtab && !sym.is_alive()) {
+        strtab_size -= sym.name.size() + 1;
+        num_local_symtab--;
+        sym.write_symtab = false;
+      }
     }
   }
 
@@ -728,8 +730,8 @@ void ObjectFile::compute_symtab() {
     Symbol &sym = *symbols[i];
 
     if (sym.file == this && should_write_global_symtab(sym)) {
-      global_symtab_size += sizeof(ElfSym);
       strtab_size += sym.name.size() + 1;
+      num_global_symtab++;
     }
   }
 }
