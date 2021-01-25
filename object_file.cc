@@ -297,6 +297,18 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       cies[cur_cie].fdes.push_back(FdeRecord{contents, std::move(eh_rels)});
     }
   }
+
+  for (CieRecord &cie : cies) {
+    std::span<FdeRecord> fdes = cie.fdes;
+    while (!fdes.empty()) {
+      InputSection *isec = fdes[0].rels[0].sym.input_section;
+      i64 i = 1;
+      while (i < fdes.size() && isec == fdes[i].rels[0].sym.input_section)
+        i++;
+      isec->fdes = fdes.subspan(0, i);
+      fdes = fdes.subspan(i);
+    }
+  }
 }
 
 static bool should_write_symtab(Symbol &sym) {
