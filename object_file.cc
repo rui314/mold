@@ -551,7 +551,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (sym.traced)
-          SyncOut() << "trace: " << sym.file
+          SyncOut() << "trace: " << *sym.file
                     << ": lazy definition of " << sym.name;
       }
     } else {
@@ -645,9 +645,24 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
 }
 
 void ObjectFile::scan_relocations() {
+  // Scan relocations against seciton contents
   for (InputSection *isec : sections)
     if (isec)
       isec->scan_relocations();
+
+  // Scan relocations against exception frames
+  for (CieRecord &cie : cies) {
+    for (EhReloc &rel : cie.rels) {
+      Symbol &sym = *rel.sym;
+      if (!sym.is_imported)
+        continue;
+      if (sym.st_type != STT_FUNC)
+        Fatal() << *this << ": " << sym.name
+                << ": .eh_frame CIE record with an external data reference"
+                << " is not supported";
+      sym.flags |= NEEDS_PLT;
+    }
+  }
 }
 
 void ObjectFile::convert_common_symbols() {
