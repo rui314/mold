@@ -345,12 +345,14 @@ struct FdeRecord {
 
   FdeRecord(const FdeRecord &&other)
     : contents(other.contents), rels(std::move(other.rels)),
-      offset(other.offset), is_alive(other.is_alive.load()) {}
+      offset(other.offset), is_alive(other.is_alive.load()),
+      is_visited(other.is_visited.load()) {}
 
   std::string_view contents;
   std::vector<EhReloc> rels;
   u32 offset = -1;
   std::atomic_bool is_alive = true;
+  std::atomic_bool is_visited = false;
 };
 
 struct CieRecord {

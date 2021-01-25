@@ -24,6 +24,10 @@ visit(InputSection *isec, std::function<void(InputSection *)> enqueue) {
   for (SectionFragmentRef &ref : isec->rel_fragments)
     ref.frag->is_alive = true;
 
+  for (FdeRecord &fde : isec->fdes)
+    for (i64 i = 1; i < fde.rels.size(); i++)
+      enqueue(fde.rels[i].sym.input_section);
+
   for (ElfRela &rel : isec->rels)
     enqueue(isec->file->symbols[rel.r_sym]->input_section);
 }
@@ -80,28 +84,6 @@ void gc_sections() {
       });
     });
 
-  // Mark everything that are referenced by live FDEs.
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (CieRecord &cie : file->cies) {
-      for (FdeRecord &fde : cie.fdes) {
-        if (!fde.is_alive)
-          continue;
-
-        // We skip the first relocation because it's always alive if
-        // is_alive returned true.
-        for (i64 i = 1; i < fde.rels.size(); i++) {
-          InputSection *isec = fde.rels[i].sym.input_section;
-          if (!isec)
-            continue;
-          if (!isec->rels.empty())
-            Fatal() << *isec << ": a section referenced by .eh_frame"
-                    << " with relocations is not supported";
-          enqueue(isec);
-        }
-      }
-    }
-  });
-
   // Remove unreachable sections
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
@@ -110,8 +92,7 @@ void gc_sections() {
       if (isec && isec->is_alive && !isec->is_ehframe && !isec->is_visited) {
         if (config.print_gc_sections)
           SyncOut() << "removing unused section " << *isec;
-        isec->is_alive = false;
-        file->sections[i] = nullptr;
+        isec->kill();
       }
     }
   });

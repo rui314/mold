@@ -21,4 +21,7 @@ $t/exe
 clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc
 $t/exe
 
+clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -Wl,--gc-sections
+$t/exe
+
 echo OK
