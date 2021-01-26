@@ -109,6 +109,8 @@ void gc_sections() {
                      visit(isec, feeder, 0);
                    });
 
+  static Counter counter("garbage_sections");
+
   // Remove unreachable sections
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
@@ -118,6 +120,7 @@ void gc_sections() {
         if (config.print_gc_sections)
           SyncOut() << "removing unused section " << *isec;
         file->kill(i);
+        counter.inc();
       }
     }
   });
