@@ -1,7 +1,8 @@
 #include "mold.h"
 
-#include <tbb/concurrent_unordered_map.h>
+#include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 #include <tbb/partitioner.h>
 
 static i64 slot = 0;
@@ -30,7 +31,7 @@ inline void hash_combine(u64 &seed, const T &val) {
 
 static u64 hash(InputSection &isec) {
   u64 hv = 0;
-  hash_combine(hv, isec.shdr.sh_flags); 
+  hash_combine(hv, isec.shdr.sh_flags);
   hash_combine(hv, isec.rels.size());
   hash_combine(hv, isec.get_contents());
 
@@ -46,9 +47,8 @@ static void propagate(InputSection &isec) {
   for (ElfRela &rel : isec.rels) {
     Symbol &sym = *isec.file->symbols[rel.r_sym];
     if (sym.input_section) {
-      std::atomic_uint64_t &klass = sym.input_section->eq_class[slot];
-      if (klass & 1)
-        klass += isec.eq_class[slot ^ 1] << 1;
+      if (sym.input_section->eq_class[slot] & 1)
+        sym.input_section->eq_class[slot ^ 1] += isec.eq_class[slot] << 1;
     }
   }
 }
@@ -88,6 +88,12 @@ static bool equal(InputSection &x, InputSection &y) {
     if (!symx.input_section ^ !symx.input_section)
       return false;
 
+    if (!symx.input_section || !symy.input_section) {
+      if (symx.value != symy.value)
+        return false;
+      continue;
+    }
+
     InputSection &isecx = *symx.input_section;
     InputSection &isecy = *symy.input_section;
     if (isecx.eq_class[slot] != isecy.eq_class[slot])
@@ -111,11 +117,15 @@ void icf_sections() {
     }
   });
 
-  slot ^= 1;
-
   {
     Timer t2("propagate");
-    for (i64 i = 0; i < 2; i++) {
+    for (i64 i = 0; i < 1; i++) {
+      tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+        for (InputSection *isec : file->sections)
+          if (isec)
+            isec->eq_class[slot ^ 1] = isec->eq_class[slot].load();
+      });
+
       tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
         for (InputSection *isec : file->sections)
           if (isec)
@@ -125,13 +135,55 @@ void icf_sections() {
     }
   }
 
+  std::vector<InputSection *> vec;
+
   {
-    Timer t2("multimap");
-    tbb::concurrent_unordered_multimap<u64, InputSection *> multimap;
-    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-      for (InputSection *isec : file->sections)
-        if (isec)
-          multimap.insert({isec->eq_class[slot], isec});
+    Timer t2("gather");
+
+    std::vector<i64> sizes(out::objs.size());
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      for (InputSection *isec : out::objs[i]->sections)
+        if (isec && is_eligible(*isec))
+          sizes[i]++;
     });
+
+    std::vector<i64> indices(out::objs.size() + 1);
+    for (i64 i = 0; i < sizes.size() + 1; i++)
+      indices[i + 1] = indices[i] + sizes[i];
+
+    vec.resize(indices.back());
+
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      i64 j = indices[i];
+      for (InputSection *isec : out::objs[i]->sections)
+        if (isec && is_eligible(*isec))
+          vec[j++] = isec;
+    });
+
+    tbb::parallel_sort(vec.begin(), vec.end(),
+                       [](InputSection *a, InputSection *b) {
+                         return a->eq_class[slot] < b->eq_class[slot];
+                       });
   }
+
+  i64 count = 0;
+  i64 non_eq = 0;
+
+  for (i64 i = 0; i < vec.size();) {
+    i64 j = i + 1;
+    while (j < vec.size() && vec[i]->eq_class[slot] == vec[j]->eq_class[slot])
+      j++;
+    if (j != i + 1)
+      count++;
+
+    for (i64 k = i + 1; k < j; k++) {
+      if (!equal(*vec[i], *vec[k])) {
+        non_eq++;
+        break;
+      }
+    }
+
+    i = j;
+  }
+  SyncOut() << "count=" << count << " non_eq=" << non_eq;
 }

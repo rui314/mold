@@ -1200,7 +1200,10 @@ int main(int argc, char **argv) {
     gc_sections();
 
   // Merge identical read-only sections.
-  icf_sections();
+#if 0
+  if (config.icf)
+    icf_sections();
+#endif
 
   // Merge string constants in SHF_MERGE sections.
   handle_mergeable_strings();
