@@ -1,11 +1,10 @@
 #include "mold.h"
 
+#include <tbb/concurrent_unordered_map.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
-#include <tbb/task_arena.h>
 
 static i64 slot = 0;
-static thread_local i64 noneligible_id = 0;
 
 static bool is_eligible(InputSection &isec) {
   return (isec.shdr.sh_flags & SHF_ALLOC) &&
@@ -46,8 +45,11 @@ static u64 hash(InputSection &isec) {
 static void propagate(InputSection &isec) {
   for (ElfRela &rel : isec.rels) {
     Symbol &sym = *isec.file->symbols[rel.r_sym];
-    if (sym.input_section)
-      sym.input_section->eq_class[slot] += isec.eq_class[slot ^ 1];
+    if (sym.input_section) {
+      std::atomic_uint64_t &klass = sym.input_section->eq_class[slot];
+      if (klass & 1)
+        klass += isec.eq_class[slot ^ 1] << 1;
+    }
   }
 }
 
@@ -102,12 +104,10 @@ void icf_sections() {
       if (!isec)
         continue;
 
-      if (is_eligible(*isec)) {
+      if (is_eligible(*isec))
         isec->eq_class[0] = hash(*isec) | 1;
-      } else {
-        i64 tid = tbb::task_arena::current_thread_index();
-        isec->eq_class[0] = (tid << 32) | (noneligible_id++ << 1);
-      }
+      else
+        isec->eq_class[0] = (u64)isec & ~(u64)1;
     }
   });
 
@@ -123,5 +123,15 @@ void icf_sections() {
       });
       slot ^= 1;
     }
+  }
+
+  {
+    Timer t2("multimap");
+    tbb::concurrent_unordered_multimap<u64, InputSection *> multimap;
+    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+      for (InputSection *isec : file->sections)
+        if (isec)
+          multimap.insert({isec->eq_class[slot], isec});
+    });
   }
 }
