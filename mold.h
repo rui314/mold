@@ -55,6 +55,7 @@ struct Config {
   std::string entry = "_start";
   std::string output;
   std::string rpaths;
+  bool allow_multiple_definition = false;
   bool build_id = false;
   bool discard_all = false;
   bool discard_locals = false;

@@ -909,6 +909,8 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       } else {
         Fatal() << "invalid --hashstyle argument: " << arg;
       }
+    } else if (read_flag(args, "allow-multiple-definition")) {
+      conf.allow_multiple_definition = true;
     } else if (read_flag(args, "trace")) {
       conf.trace = true;
     } else if (read_flag(args, "eh-frame-hdr")) {
@@ -1247,7 +1249,8 @@ int main(int argc, char **argv) {
   // Beyond this point, no new symbols will be added to the result.
 
   // Make sure that all symbols have been resolved.
-  check_duplicate_symbols();
+  if (!config.allow_multiple_definition)
+    check_duplicate_symbols();
 
   // Copy shared object name strings to .dynstr.
   for (SharedFile *file : out::dsos)
