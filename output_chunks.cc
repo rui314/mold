@@ -252,31 +252,23 @@ void ShstrtabSection::copy_buf() {
 }
 
 i64 DynstrSection::add_string(std::string_view str) {
-  i64 ret = shdr.sh_size;
-  shdr.sh_size += str.size() + 1;
-  contents.push_back(str);
-  return ret;
+  auto [it, inserted] = strings.insert({str, shdr.sh_size});
+  if (inserted)
+    shdr.sh_size += str.size() + 1;
+  return it->second;
 }
 
 i64 DynstrSection::find_string(std::string_view str) {
-  i64 i = 1;
-  for (std::string_view s : contents) {
-    if (s == str)
-      return i;
-    i += s.size() + 1;
-  }
-  unreachable();
+  auto it = strings.find(str);
+  assert(it != strings.end());
+  return it->second;
 }
 
 void DynstrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
-
-  i64 i = 1;
-  for (std::string_view s : contents) {
-    write_string(base + i, s);
-    i += s.size() + 1;
-  }
+  for (std::pair<std::string_view, i64> pair : strings)
+    write_string(base + pair.second, pair.first);
 }
 
 void SymtabSection::update_shdr() {

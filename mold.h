@@ -623,7 +623,7 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
   void copy_buf() override;
 
 private:
-  std::vector<std::string_view> contents;
+  std::unordered_map<std::string_view, i64> strings;
 };
 
 class DynamicSection : public OutputChunk {
