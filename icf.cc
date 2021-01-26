@@ -85,7 +85,9 @@ static bool equal(InputSection &x, InputSection &y) {
   return true;
 }
 
-void do_icf() {
+void icf_sections() {
+  Timer t("icf");
+
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (InputSection *isec : file->sections) {
       if (!isec)

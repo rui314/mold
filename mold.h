@@ -64,6 +64,7 @@ struct Config {
   bool gc_sections = false;
   bool hash_style_gnu = false;
   bool hash_style_sysv = true;
+  bool icf = false;
   bool is_static = false;
   bool perf = false;
   bool pie = false;
@@ -377,6 +378,8 @@ public:
   void copy_buf() override;
   void scan_relocations();
   void report_undefined_symbols();
+  void apply_reloc_alloc(u8 *base);
+  void apply_reloc_nonalloc(u8 *base);
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
@@ -387,12 +390,15 @@ public:
   bool is_comdat_member = false;
   bool is_ehframe = false;
 
+  // For COMDAT de-duplication and garbage collection
   bool is_alive = true;
-  std::atomic_bool is_visited = false;
-  std::atomic_uint64_t eq_class[2] = {0, 0};
 
-  void apply_reloc_alloc(u8 *base);
-  void apply_reloc_nonalloc(u8 *base);
+  // For garbage collection
+  std::atomic_bool is_visited = false;
+
+  // For ICF
+  std::atomic_uint64_t eq_class[2] = {0, 0};
+  InputSection *leader = nullptr;
 };
 
 class MergeableSection : public InputChunk {
@@ -1060,6 +1066,12 @@ private:
 //
 
 void gc_sections();
+
+//
+// icf.cc
+//
+
+void icf_sections();
 
 //
 // mapfile.cc
