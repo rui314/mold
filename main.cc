@@ -1113,7 +1113,8 @@ int main(int argc, char **argv) {
   out::strtab = new StrtabSection;
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
-  out::symtab = new SymtabSection;
+  if (!config.strip_all)
+    out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
   out::eh_frame = new EhFrameSection;
