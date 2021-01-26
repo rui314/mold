@@ -254,6 +254,85 @@ total. The data contains the following items:
 output file. Sections that contain relocations or symbols are for
 example excluded.
 
+## Internals
+
+In this section, I'll explain the internals of mold linker.
+
+### A brief history of Unix and the Unix linker
+
+Conceptually, what a linker does is pretty simple. A compiler compiles
+a fragment of a program (a single source file) into a fragment of
+machine code and data (an object file, which typically has the .o
+extension), and a linker stiches them together into a single
+executable image.
+
+In reality, modern linkers for Unix-like systems are much more
+compilcated than the naive understanding because it have gradually
+gained one feature at a time over the 50 years history of Unix, and
+it's now something like a bag of lots of miscellaneous features in
+which none of the features is more important than the others. It is
+very easy to miss the forest for the trees, since for those who don't
+know the details of the Unix linker, it is not clear which feature is
+essential and which is not.
+
+That being said, one thing is clear that at any point of Unix history,
+a Unix linker has a coherent feature set for the Unix of that age. So,
+let me entangle the history to see how the operating system, runtime
+and linker have gained features that we see today. That should give
+you an idea why a particular feature has been added to a linker in the
+first place.
+
+1. Original Unix doesn't support shared library, and a program is
+   always loaded to a fixed address. An executable is something like a
+   memory dump which is just loaded to a particular address by the
+   kernel. After loading, the kernel starts executing the program by
+   setting an instruction pointer to a particular address.
+
+   A linker for such a simple execution environment is pretty simple.
+   It concatenates all object files given to a linker to create an
+   executable memory image and then fixes up references between object
+   files so that object files can use functions and variables defined
+   in other object files.
+
+   Static library support, which is still an important feature of Unix
+   linker, dates back to this early period of Unix history.
+   To understand what it is, imagine that you are trying to compile
+   a program for the early Unix. You don't want to waste time to
+   compile the libc functions every time you compile your program (the
+   computers of the era was incredibly slow), so you have already
+   placed each libc function into a separate source file and compiled
+   them individually. That means, you have object files for each libc
+   function, e.g., printf.o, scanf.o, atoi.o, write.o, etc.
+
+   Given this configuration, all you have to do to link your program
+   against libc functions is to pick up a right set of libc object
+   files and give them to the linker along with object files of your
+   program. But, keeping the command line options in sync with the
+   libc functions you are using in your program is bothersome. You can
+   be conservative; you can specify all libc object files to the
+   command line, but that leads to a program bloat because the linker
+   unconditionally link all object files given to it. So, a new
+   feature was added to the linker to fix the problem. That is the
+   archive file.
+
+   If you put all libc object files into an archive file (which is
+   similar to zip but is not compressed, and typically named libc.a)
+   and pass the archive file to the linker, the linker pulls out an
+   object file _only when_ it is referenced by your program. In other
+   words, unlike object files directly given to a linker, object files
+   wrapped in an archive are not linked to an output by default.
+   Object files in an archive work as supplements to complete your
+   program.
+
+   Even today, you can still find a libc archive file. Run `ar t
+   /usr/lib/x86_64-linux-gnu/libc.a` on Linux should give you a list
+   of object files in the libc archive.
+
+2. In '80s, Sun Microsystems, a leading commercial Unix vendor at the
+   time, added a shared library support to their Unix variant, SunOS.
+
+(This section is incomplete.)
+
 ## Rejected ideas
 
 In this section, I'll explain the alternative designs I currently do
