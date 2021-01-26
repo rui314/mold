@@ -50,13 +50,11 @@ class OutputSection;
 class SharedFile;
 class Symbol;
 
+enum class BuildIdKind : u8 { NONE, MD5, SHA1, SHA256, UUID };
+
 struct Config {
-  std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
-  std::string entry = "_start";
-  std::string output;
-  std::string rpaths;
+  BuildIdKind build_id = BuildIdKind::NONE;
   bool allow_multiple_definition = false;
-  bool build_id = false;
   bool discard_all = false;
   bool discard_locals = false;
   bool eh_frame_hdr = true;
@@ -80,6 +78,10 @@ struct Config {
   bool z_now = false;
   i64 filler = -1;
   i64 thread_count = -1;
+  std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
+  std::string entry = "_start";
+  std::string output;
+  std::string rpaths;
   std::string sysroot;
   std::vector<std::string> globals;
   std::vector<std::string_view> library_paths;
@@ -816,11 +818,14 @@ public:
     shdr.sh_type = SHT_NOTE;
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_addralign = 4;
-    shdr.sh_size = 16 + SHA256_SIZE;
+    shdr.sh_size = 1;
   }
 
+  void update_shdr() override;
   void copy_buf() override;
-  void write_buildid(u8 *digest);
+  void write_buildid(i64 filesize);
+
+  static constexpr i64 HEADER_SIZE = 16;
 };
 
 bool is_c_identifier(std::string_view name);

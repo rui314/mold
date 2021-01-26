@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <map>
-#include <openssl/sha.h>
 #include <signal.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_do.h>
@@ -907,7 +906,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
         conf.hash_style_sysv = true;
         conf.hash_style_gnu = true;
       } else {
-        Fatal() << "invalid --hashstyle argument: " << arg;
+        Fatal() << "invalid --hash-style argument: " << arg;
       }
     } else if (read_flag(args, "allow-multiple-definition")) {
       conf.allow_multiple_definition = true;
@@ -959,10 +958,21 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.rpaths += arg;
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
-    } else if (read_flag(args, "build-id") || read_flag(args, "build-id=sha256")) {
-      conf.build_id = true;
-    } else if (read_flag(args, "build-id=none")) {
-      conf.build_id = false;
+    } else if (read_flag(args, "build-id")) {
+      conf.build_id = BuildIdKind::SHA256;
+    } else if (read_arg(args, arg, "build-id")) {
+      if (arg == "none")
+        conf.build_id = BuildIdKind::NONE;
+      else if (arg == "sha1")
+        conf.build_id = BuildIdKind::SHA1;
+      else if (arg == "md5")
+        conf.build_id = BuildIdKind::MD5;
+      else if (arg == "uuid")
+        conf.build_id = BuildIdKind::UUID;
+      else if (arg == "sha256")
+        conf.build_id = BuildIdKind::SHA256;
+      else
+        Fatal() << "invalid --build-id argument: " << arg;
     } else if (read_flag(args, "preload")) {
       conf.preload = true;
     } else if (read_arg(args, arg, "z")) {
@@ -1007,20 +1017,6 @@ static void read_input_files(std::span<std::string_view> args) {
     }
   }
   parser_tg.wait();
-}
-
-static void compute_tree_hash(u8 *buf, i64 size, u8 *digest) {
-  i64 shard_size = 1024 * 1024;
-  i64 num_shards = size / shard_size + 1;
-  std::vector<u8> shards(num_shards * SHA256_SIZE);
-
-  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-    u8 *begin = buf + shard_size * i;
-    i64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
-    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
-  });
-
-  SHA256(shards.data(), shards.size(), digest);
 }
 
 static void show_stats() {
@@ -1123,7 +1119,7 @@ int main(int argc, char **argv) {
   out::eh_frame = new EhFrameSection;
   out::copyrel = new CopyrelSection;
 
-  if (config.build_id)
+  if (config.build_id != BuildIdKind::NONE)
     out::buildid = new BuildIdSection;
   if (config.eh_frame_hdr)
     out::eh_frame_hdr = new EhFrameHdrSection;
@@ -1361,9 +1357,7 @@ int main(int argc, char **argv) {
   // Commit
   if (out::buildid) {
     Timer t("build_id");
-    u8 digest[SHA256_SIZE];
-    compute_tree_hash(out::buf, filesize, digest);
-    out::buildid->write_buildid(digest);
+    out::buildid->write_buildid(filesize);
   }
 
   file->close();
