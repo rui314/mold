@@ -939,10 +939,6 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.print_gc_sections = true;
     } else if (read_flag(args, "no-print-gc-sections")) {
       conf.print_gc_sections = false;
-    } else if (read_flag(args, "icf")) {
-      conf.icf = true;
-    } else if (read_flag(args, "no-icf")) {
-      conf.icf = false;
     } else if (read_flag(args, "quick-exit")) {
       conf.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {
@@ -1198,12 +1194,6 @@ int main(int argc, char **argv) {
   // Garbage-collect unreachable sections.
   if (config.gc_sections)
     gc_sections();
-
-  // Merge identical read-only sections.
-#if 0
-  if (config.icf)
-    icf_sections();
-#endif
 
   // Merge string constants in SHF_MERGE sections.
   handle_mergeable_strings();
