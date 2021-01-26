@@ -23,11 +23,11 @@
 #include <tbb/spin_mutex.h>
 #include <vector>
 
-#define SECTOR_SIZE 512
-#define PAGE_SIZE 4096
-#define GOT_SIZE 8
-#define PLT_SIZE 16
-#define SHA256_SIZE 32
+static constexpr i64 SECTOR_SIZE = 512;
+static constexpr i64 PAGE_SIZE = 4096;
+static constexpr i64 GOT_SIZE = 8;
+static constexpr i64 PLT_SIZE = 16;
+static constexpr i64 SHA256_SIZE = 32;
 
 typedef uint8_t u8;
 typedef uint16_t u16;
