@@ -389,6 +389,7 @@ public:
 
   bool is_alive = true;
   std::atomic_bool is_visited = false;
+  std::atomic_uint64_t eq_class[2] = {0, 0};
 
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
