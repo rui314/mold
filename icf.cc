@@ -42,9 +42,35 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
+  auto update_symbol = [&](Symbol &sym) {
+    if (SectionFragment *frag = sym.fragref.frag) {
+      update_i64(ctx, 2);
+      update_i64(ctx, sym.fragref.addend);
+      update_string(ctx, frag->data);
+    } else if (!sym.input_section) {
+      update_i64(ctx, 3);
+      update_i64(ctx, sym.value);
+    } else {
+      update_i64(ctx, 4);
+    }
+  };
+
   update_string(ctx, isec.get_contents());
   update_i64(ctx, isec.shdr.sh_flags);
+  update_i64(ctx, isec.fdes.size());
   update_i64(ctx, isec.rels.size());
+
+  for (FdeRecord &fde : isec.fdes) {
+    update_string(ctx, fde.contents);
+    update_i64(ctx, fde.rels.size());
+
+    for (EhReloc &rel : fde.rels) {
+      update_symbol(rel.sym);
+      update_i64(ctx, rel.type);
+      update_i64(ctx, rel.offset);
+      update_i64(ctx, rel.addend);
+    }
+  }
 
   i64 ref_idx = 0;
 
@@ -59,20 +85,8 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
       update_i64(ctx, 1);
       update_i64(ctx, ref.addend);
       update_string(ctx, ref.frag->data);
-      continue;
-    }
-
-    Symbol &sym = *isec.file->symbols[rel.r_sym];
-
-    if (SectionFragment *frag = sym.fragref.frag) {
-      update_i64(ctx, 2);
-      update_i64(ctx, sym.fragref.addend);
-      update_string(ctx, frag->data);
-    } else if (!sym.input_section) {
-      update_i64(ctx, 3);
-      update_i64(ctx, sym.value);
     } else {
-      update_i64(ctx, 4);
+      update_symbol(*isec.file->symbols[rel.r_sym]);
     }
   }
 
