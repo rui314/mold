@@ -264,12 +264,12 @@ Conceptually, what a linker does is pretty simple. A compiler compiles
 a fragment of a program (a single source file) into a fragment of
 machine code and data (an object file, which typically has the .o
 extension), and a linker stiches them together into a single
-executable image.
+executable or a shared library image.
 
 In reality, modern linkers for Unix-like systems are much more
-compilcated than the naive understanding because it have gradually
+compilcated than the naive understanding because they have gradually
 gained one feature at a time over the 50 years history of Unix, and
-it's now something like a bag of lots of miscellaneous features in
+they are now something like a bag of lots of miscellaneous features in
 which none of the features is more important than the others. It is
 very easy to miss the forest for the trees, since for those who don't
 know the details of the Unix linker, it is not clear which feature is
@@ -282,23 +282,23 @@ and linker have gained features that we see today. That should give
 you an idea why a particular feature has been added to a linker in the
 first place.
 
-1. Original Unix doesn't support shared library, and a program is
-   always loaded to a fixed address. An executable is something like a
-   memory dump which is just loaded to a particular address by the
-   kernel. After loading, the kernel starts executing the program by
-   setting an instruction pointer to a particular address.
+1. Original Unix didn't support shared library, and a program was
+   always loaded to a fixed address. An executable was something like
+   a memory dump which was just loaded to a particular address by the
+   kernel. After loading, the kernel started executing the program by
+   setting the instruction pointer to a particular address.
 
    A linker for such a simple execution environment is pretty simple.
    It concatenates all object files given to a linker to create an
    executable memory image and then fixes up references between object
-   files so that object files can use functions and variables defined
+   files so that object files can use functions or variables defined
    in other object files.
 
    Static library support, which is still an important feature of Unix
    linker, dates back to this early period of Unix history.
    To understand what it is, imagine that you are trying to compile
    a program for the early Unix. You don't want to waste time to
-   compile the libc functions every time you compile your program (the
+   compile libc functions every time you compile your program (the
    computers of the era was incredibly slow), so you have already
    placed each libc function into a separate source file and compiled
    them individually. That means, you have object files for each libc
@@ -307,22 +307,26 @@ first place.
    Given this configuration, all you have to do to link your program
    against libc functions is to pick up a right set of libc object
    files and give them to the linker along with object files of your
-   program. But, keeping the command line options in sync with the
+   program. But, keeping the linker command line in sync with the
    libc functions you are using in your program is bothersome. You can
    be conservative; you can specify all libc object files to the
-   command line, but that leads to a program bloat because the linker
-   unconditionally link all object files given to it. So, a new
-   feature was added to the linker to fix the problem. That is the
-   archive file.
+   command line, but that leads to program bloat because the linker
+   unconditionally link all object files given to it no matter whether
+   they are used or not. So, a new feature was added to the linker to
+   fix the problem. That is the static library, which is also called
+   the archive file.
 
-   If you put all libc object files into an archive file (which is
-   similar to zip but is not compressed, and typically named libc.a)
-   and pass the archive file to the linker, the linker pulls out an
-   object file _only when_ it is referenced by your program. In other
-   words, unlike object files directly given to a linker, object files
+   An archive file is just a bundle of object files, just like zip
+   file but an uncompressed form. An achive file typically has the .a
+   file extension and named after its contents. For example, the
+   archive file containing all libc objects is named `libc.a`.
+
+   If you pass an archive file along with other object files to the
+   linker, the linker pulls out an object file from the archive _only
+   when_ it is referenced by other object files. In other words,
+   unlike object files directly given to a linker, object files
    wrapped in an archive are not linked to an output by default.
-   Object files in an archive work as supplements to complete your
-   program.
+   An archive work as supplements to complete your program.
 
    Even today, you can still find a libc archive file. Run `ar t
    /usr/lib/x86_64-linux-gnu/libc.a` on Linux should give you a list
@@ -332,6 +336,58 @@ first place.
    time, added a shared library support to their Unix variant, SunOS.
 
 (This section is incomplete.)
+
+## Concurrency strategy
+
+In this section, I'll explain the high level concurrency strategy of
+mold.
+
+In most places, mold adopts data parallelism. That is, we have a huge
+number of piece of data of the same kind, and we process each of them
+individually using parallel for-loop. For example, after identifying
+the exact set of input object files, we need to scan all relocation
+tables to determine the sizes of .got and .plt sections. We do that
+using a parallel for-loop. The granularity of parallel processing in
+this case is the relocation table.
+
+Data parallelism is very efficient and scalable because there's no
+need for threads to communicate with each other while working on each
+element of data. In addition to that, data parallelism is easy to
+understand, as it is just a for-loop in which multiple iterations may
+be executed in parallel. We don't use high-level communication or
+synchronization mechanisms such as channels, futures, promises,
+latches or something like that in mold.
+
+In some cases, we need to share a little bit of data between threads
+while executing a parallel for-loop. For example, the loop to scan
+relocations turns on "requires GOT" or "requires PLT" flags in a
+symbol. Symbol is a shared resource, and writing to them from multiple
+threads without synchronization is unsafe. To deal with it, we made
+the flag an atomic variable.
+
+The other common pattern you can find in mold which is build on top of
+the parallel for-loop is the map-reduce pattern. That is, we run a
+parallel for-loop on a large data set to produce a small data set and
+process the small data set with a single thread. Let me take a
+build-id computation as an example. Build-id is typically computed by
+applying a cryptographic hash function such as SHA-1 on a linker's
+output file. To compute it, we first consider an output as a sequence
+of 1 MiB blocks and compute a SHA-1 hash for each block in parallel.
+Then, we concatenate the SHA-1 hashes and compute a SHA-1 hash on the
+hashes to get a final build-id.
+
+Finally, we use concurrent hashmap at a few places in mold. Concurrent
+hashmap is a hashmap to which multiple threads can safely insert items
+in parallel. We use it in the symbol resolution stage, for example.
+To resolve symbols, we basically have to throw in all defined symbols
+into a hash table, so that we can find a matching defined symbol for
+an undefined symbol by name. We do the hash table insertion from a
+parallel for-loop which iterates over a list of input files.
+
+Overall, even though mold is highly scalable, it succeeded to avoid
+complexties you often find in complex parallel programs. From high
+level, mold just serially executes each linker pass. Each pass is
+parallelized using parallel for-loops.
 
 ## Rejected ideas
 
