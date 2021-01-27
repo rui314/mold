@@ -200,8 +200,8 @@ void icf_sections() {
   gather_sections(sections, digests0, edges, edge_indices);
 
   std::vector<std::vector<std::array<u8, HASH_SIZE>>> digests(2);
-  digests[0] = digests0;
-  digests[1] = std::move(digests0);
+  digests[0] = std::move(digests0);
+  digests[1] = digests[0];
 
   i64 slot = 0;
   i64 num_eligibles = edge_indices.size();
