@@ -150,7 +150,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
     InputSection &isec = *sections[i];
 
     for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (isec.has_fragments[i])
+      if (isec.has_fragments[j])
         continue;
 
       ElfRela &rel = isec.rels[j];
@@ -171,7 +171,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
     i64 idx = edge_indices[i];
 
     for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (isec.has_fragments[i])
+      if (isec.has_fragments[j])
         continue;
 
       ElfRela &rel = isec.rels[j];
