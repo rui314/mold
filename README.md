@@ -306,7 +306,7 @@ first place.
 
    Given this configuration, all you have to do to link your program
    against libc functions is to pick up a right set of libc object
-   files and give them to the linker along with object files of your
+   files and give them to the linker along with the object files of your
    program. But, keeping the linker command line in sync with the
    libc functions you are using in your program is bothersome. You can
    be conservative; you can specify all libc object files to the
@@ -326,7 +326,7 @@ first place.
    when_ it is referenced by other object files. In other words,
    unlike object files directly given to a linker, object files
    wrapped in an archive are not linked to an output by default.
-   An archive work as supplements to complete your program.
+   An archive works as supplements to complete your program.
 
    Even today, you can still find a libc archive file. Run `ar t
    /usr/lib/x86_64-linux-gnu/libc.a` on Linux should give you a list
