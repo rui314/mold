@@ -200,24 +200,26 @@ void icf_sections() {
   digests[1] = std::move(digests0);
 
   i64 slot = 0;
+  i64 num_eligibles = edge_indices.size();
 
   Timer t2("rounds");
 
-  for (i64 i = 0; i < 30; i++) {
+  for (i64 i = 0; i < 50; i++) {
     tbb::enumerable_thread_specific<i64> num_classes;
-    tbb::parallel_for((i64)0, (i64)edge_indices.size() - 1, [&](i64 i) {
+    tbb::parallel_for((i64)0, num_eligibles - 1, [&](i64 i) {
       if (digests[slot][i] != digests[slot][i + 1])
         num_classes.local() += 1;
     });
+
     SyncOut() << "num_classes=" << num_classes.combine(std::plus());
 
-    tbb::parallel_for((i64)0, (i64)edge_indices.size(), [&](i64 i) {
+    tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
       SHA256_CTX ctx;
       SHA256_Init(&ctx);
       SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
 
       i64 begin = edge_indices[i];
-      i64 end = (i + 1 == edge_indices.size()) ? edges.size() : edge_indices[i + 1];
+      i64 end = (i + 1 == num_eligibles) ? edges.size() : edge_indices[i + 1];
       for (i64 j = begin; j < end; j++)
         SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
