@@ -20,49 +20,49 @@ static bool is_eligible(InputSection &isec) {
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
 }
 
-static void update_string(SHA256_CTX *ctx, std::string_view str) {
+static void update_string(SHA256_CTX &ctx, std::string_view str) {
   u64 size = str.size();
-  SHA256_Update(ctx, &size, 8);
-  SHA256_Update(ctx, str.data(), str.size());
+  SHA256_Update(&ctx, &size, 8);
+  SHA256_Update(&ctx, str.data(), str.size());
 }
 
-static void update_i64(SHA256_CTX *ctx, i64 val) {
-  SHA256_Update(ctx, &val, 8);
+static void update_i64(SHA256_CTX &ctx, i64 val) {
+  SHA256_Update(&ctx, &val, 8);
 }
 
 static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  update_string(&ctx, isec.get_contents());
-  update_i64(&ctx, isec.shdr.sh_flags);
-  update_i64(&ctx, isec.rels.size());
+  update_string(ctx, isec.get_contents());
+  update_i64(ctx, isec.shdr.sh_flags);
+  update_i64(ctx, isec.rels.size());
 
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < isec.rels.size(); i++) {
     ElfRela &rel = isec.rels[i];
-    update_i64(&ctx, rel.r_offset);
-    update_i64(&ctx, rel.r_type);
-    update_i64(&ctx, rel.r_addend);
+    update_i64(ctx, rel.r_offset);
+    update_i64(ctx, rel.r_type);
+    update_i64(ctx, rel.r_addend);
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
-      update_i64(&ctx, 1);
-      update_i64(&ctx, ref.addend);
-      update_string(&ctx, ref.frag->data);
+      update_i64(ctx, 1);
+      update_i64(ctx, ref.addend);
+      update_string(ctx, ref.frag->data);
       continue;
     }
 
     Symbol &sym = *isec.file->symbols[rel.r_sym];
 
     if (SectionFragment *frag = sym.fragref.frag) {
-      update_i64(&ctx, 2);
-      update_i64(&ctx, sym.fragref.addend);
-      update_string(&ctx, frag->data);
+      update_i64(ctx, 2);
+      update_i64(ctx, sym.fragref.addend);
+      update_string(ctx, frag->data);
     } else if (!sym.input_section) {
-      update_i64(&ctx, 3);
-      update_i64(&ctx, sym.value);
+      update_i64(ctx, 3);
+      update_i64(ctx, sym.value);
     }
   }
 
