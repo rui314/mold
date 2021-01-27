@@ -30,6 +30,15 @@ static void update_i64(SHA256_CTX &ctx, i64 val) {
   SHA256_Update(&ctx, &val, 8);
 }
 
+static std::array<u8, HASH_SIZE> digest_final(SHA256_CTX &ctx) {
+  u8 digest[SHA256_SIZE];
+  assert(SHA256_Final(digest, &ctx) == 1);
+
+  std::array<u8, HASH_SIZE> arr;
+  memcpy(arr.data(), digest, HASH_SIZE);
+  return arr;
+}
+
 static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
@@ -68,12 +77,7 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
     }
   }
 
-  u8 digest[SHA256_SIZE];
-  assert(SHA256_Final(digest, &ctx) == 1);
-
-  std::array<u8, HASH_SIZE> arr;
-  memcpy(arr.data(), digest, HASH_SIZE);
-  return arr;
+  return digest_final(ctx);
 }
 
 static std::array<u8, HASH_SIZE> get_random_bytes() {
@@ -202,16 +206,21 @@ void icf_sections() {
   i64 slot = 0;
   i64 num_eligibles = edge_indices.size();
 
-  Timer t2("rounds");
-
-  for (i64 i = 0; i < 50; i++) {
+  auto count_num_classes = [&]() {
     tbb::enumerable_thread_specific<i64> num_classes;
     tbb::parallel_for((i64)0, num_eligibles - 1, [&](i64 i) {
       if (digests[slot][i] != digests[slot][i + 1])
         num_classes.local() += 1;
     });
+    return num_classes.combine(std::plus());
+  };
 
-    SyncOut() << "num_classes=" << num_classes.combine(std::plus());
+  i64 num_classes = count_num_classes();
+
+  Timer t2("rounds");
+
+  for (;;) {
+    SyncOut() << "num_classes=" << num_classes;
 
     tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
       SHA256_CTX ctx;
@@ -223,9 +232,14 @@ void icf_sections() {
       for (i64 j = begin; j < end; j++)
         SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
-      assert(SHA256_Final(digests[slot ^ 1][i].data(), &ctx) == 1);
+      digests[slot ^ 1][i] = digest_final(ctx);
     });
 
     slot ^= 1;
+
+    i64 n = count_num_classes();
+    if (n == num_classes)
+      break;
+    num_classes = n;
   }
 }
