@@ -11,7 +11,8 @@ LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
         -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR)
 LIBS=-lcrypto -pthread -ltbb -lmimalloc
 OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
-     linker_script.o archive_file.o output_file.o subprocess.o gc_sections.o
+     linker_script.o archive_file.o output_file.o subprocess.o gc_sections.o \
+     icf.o
 
 mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
