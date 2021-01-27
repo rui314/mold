@@ -1199,8 +1199,8 @@ int main(int argc, char **argv) {
     gc_sections();
 
   // Merge identical read-only sections.
-  if (config.icf)
-    icf_sections();
+  //  if (config.icf)
+  icf_sections();
 
   // Merge string constants in SHF_MERGE sections.
   handle_mergeable_strings();
