@@ -215,8 +215,11 @@ void icf_sections() {
   };
 
   i64 num_classes = count_num_classes();
+  static Counter round("icf_round");
 
   for (;;) {
+    round.inc();
+
     tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
       SHA256_CTX ctx;
       SHA256_Init(&ctx);

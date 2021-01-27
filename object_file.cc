@@ -295,7 +295,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
       if (eh_rels[0].offset != 8)
         Fatal() << isec << ": FDE's first relocation should have offset 8";
 
-      cies[cur_cie].fdes.push_back(FdeRecord{contents, std::move(eh_rels)});
+      FdeRecord fde(contents, std::move(eh_rels), cur_cie);
+      cies[cur_cie].fdes.push_back(std::move(fde));
     }
   }
 

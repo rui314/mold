@@ -342,16 +342,21 @@ inline bool operator==(const EhReloc &a, const EhReloc &b) {
          std::tuple(&b.sym, b.type, b.offset, b.addend);
 }
 
+struct CieRecord;
+
 struct FdeRecord {
-  FdeRecord(std::string_view contents, std::vector<EhReloc> &&rels)
-    : contents(contents), rels(std::move(rels)) {}
+  FdeRecord(std::string_view contents, std::vector<EhReloc> &&rels,
+            u32 cie_idx)
+    : contents(contents), rels(std::move(rels)), cie_idx(cie_idx) {}
 
   FdeRecord(const FdeRecord &&other)
     : contents(other.contents), rels(std::move(other.rels)),
-      offset(other.offset), is_alive(other.is_alive.load()) {}
+      cie_idx(other.cie_idx), offset(other.offset),
+      is_alive(other.is_alive.load()) {}
 
   std::string_view contents;
   std::vector<EhReloc> rels;
+  u32 cie_idx = -1;
   u32 offset = -1;
   std::atomic_bool is_alive = true;
 };
