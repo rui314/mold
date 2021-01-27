@@ -114,6 +114,21 @@ static void gather_sections(std::vector<InputSection *> &sections,
 
   // Initialize edges and edge_indices
   std::vector<i64> num_edges(num_eligibles.combine(std::plus()));
+
+  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
+    assert(entries[i].is_eligible);
+    InputSection &isec = *sections[i];
+
+    for (i64 j = 0; j < isec.rels.size(); j++) {
+      if (isec.has_fragments[i])
+        continue;
+
+      ElfRela &rel = isec.rels[j];
+      Symbol &sym = *isec.file->symbols[rel.r_sym];
+      if (sym.input_section)
+        num_edges[i]++;
+    }
+  });
 }
 
 void icf_sections() {
