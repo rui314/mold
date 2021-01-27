@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <openssl/sha.h>
+#include <sys/signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -38,7 +39,7 @@ std::function<void()> fork_child() {
     if (WIFEXITED(status))
       _exit(WEXITSTATUS(status));
     if (WIFSIGNALED(status))
-      Error() << "mold: killed by signal " << WTERMSIG(status);
+      raise(WTERMSIG(status));
     _exit(1);
   }
 
