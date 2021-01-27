@@ -220,8 +220,6 @@ void icf_sections() {
   Timer t2("rounds");
 
   for (;;) {
-    SyncOut() << "num_classes=" << num_classes;
-
     tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
       SHA256_CTX ctx;
       SHA256_Init(&ctx);
