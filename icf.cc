@@ -129,6 +129,10 @@ static void gather_sections(std::vector<InputSection *> &sections,
         num_edges[i]++;
     }
   });
+
+  edge_indices.resize(num_edges.size() + 1);
+  for (i64 i = 0; i < num_edges.size(); i++)
+    edge_indices[i + 1] = edge_indices[i] + num_edges[i];
 }
 
 void icf_sections() {
