@@ -3,6 +3,7 @@
 #include <array>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -49,6 +50,12 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   return arr;
 }
 
+static std::array<u8, HASH_SIZE> get_random_bytes() {
+  std::array<u8, HASH_SIZE> arr;
+  assert(RAND_bytes(arr.data(), HASH_SIZE) == 1);
+  return arr;
+}
+
 struct Entry {
   InputSection *isec;
   bool is_eligible;
@@ -57,8 +64,8 @@ struct Entry {
 
 static void gather_sections(std::vector<InputSection *> &sections,
                             std::vector<std::array<u8, HASH_SIZE>> &digests,
-                            std::vector<u32> &indices,
-                            std::vector<u32> &edges) {
+                            std::vector<u32> &edges,
+                            std::vector<u32> &edge_indices) {
   std::vector<i64> num_sections(out::objs.size());
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
@@ -72,6 +79,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
     section_indices[i + 1] = section_indices[i] + num_sections[i];
 
   std::vector<Entry> entries(section_indices.back());
+  tbb::enumerable_thread_specific<i64> num_eligibles;
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
@@ -80,10 +88,10 @@ static void gather_sections(std::vector<InputSection *> &sections,
         Entry &ent = entries[idx++];
         ent.isec = isec;
         ent.is_eligible = is_eligible(*isec);
+        ent.digest = ent.is_eligible ? compute_digest(*isec) : get_random_bytes();
+
         if (ent.is_eligible)
-          ent.digest = compute_digest(*isec);
-        else
-          assert(RAND_bytes(ent.digest.data(), HASH_SIZE) == 1);
+          num_eligibles.local() += 1;
       }
     }
   });
@@ -94,6 +102,18 @@ static void gather_sections(std::vector<InputSection *> &sections,
                          return a.is_eligible && !b.is_eligible;
                        return a.digest < b.digest;
                      });
+
+  // Initialize sections and digests
+  sections.reserve(entries.size());
+  digests.reserve(entries.size());
+
+  for (Entry &ent : entries) {
+    sections.push_back(ent.isec);
+    digests.push_back(std::move(ent.digest));
+  }
+
+  // Initialize edges and edge_indices
+  std::vector<i64> num_edges(num_eligibles.combine(std::plus()));
 }
 
 void icf_sections() {
