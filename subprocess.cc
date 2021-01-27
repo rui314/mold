@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define DAEMON_TIMEOUT 30
@@ -28,8 +29,17 @@ std::function<void()> fork_child() {
   if (pid > 0) {
     // Parent
     close(pipefd[1]);
-    i64 r = read(pipefd[0], (char[1]){}, 1);
-    _exit(r != 1);
+    if (read(pipefd[0], (char[1]){}, 1) == 1)
+      _exit(0);
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status))
+      _exit(WEXITSTATUS(status));
+    if (WIFSIGNALED(status))
+      Error() << "mold: killed by signal " << WTERMSIG(status);
+    _exit(1);
   }
 
   // Child
