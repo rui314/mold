@@ -12,6 +12,7 @@ static constexpr i64 HASH_SIZE = 16;
 
 static bool is_eligible(InputSection &isec) {
   return (isec.shdr.sh_flags & SHF_ALLOC) &&
+         (isec.shdr.sh_type != SHT_NOBITS) &&
          !(isec.shdr.sh_flags & SHF_WRITE) &&
          !(isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init") &&
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
@@ -70,7 +71,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     for (InputSection *isec : out::objs[i]->sections)
-      if (isec && isec->shdr.sh_type != SHT_NOBITS)
+      if (isec)
         num_sections[i]++;
   });
 
@@ -84,7 +85,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
     for (InputSection *isec : out::objs[i]->sections) {
-      if (isec && isec->shdr.sh_type != SHT_NOBITS) {
+      if (isec) {
         Entry &ent = entries[idx++];
         ent.isec = isec;
         ent.is_eligible = is_eligible(*isec);
@@ -130,9 +131,30 @@ static void gather_sections(std::vector<InputSection *> &sections,
     }
   });
 
-  edge_indices.resize(num_edges.size() + 1);
-  for (i64 i = 0; i < num_edges.size(); i++)
+  edge_indices.resize(num_edges.size());
+  for (i64 i = 0; i < num_edges.size() - 1; i++)
     edge_indices[i + 1] = edge_indices[i] + num_edges[i];
+
+  edges.resize(edge_indices.back() + num_edges.back());
+
+  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
+    sections[i]->icf_idx = i;
+  });
+
+  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
+    InputSection &isec = *sections[i];
+    i64 idx = edge_indices[i];
+
+    for (i64 j = 0; j < isec.rels.size(); j++) {
+      if (isec.has_fragments[i])
+        continue;
+
+      ElfRela &rel = isec.rels[j];
+      Symbol &sym = *isec.file->symbols[rel.r_sym];
+      if (sym.input_section)
+        edges[idx++] = sym.input_section->icf_idx;
+    }
+  });
 }
 
 void icf_sections() {

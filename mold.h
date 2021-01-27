@@ -402,6 +402,7 @@ public:
   // For ICF
   std::atomic_uint64_t eq_class[2] = {0, 0};
   InputSection *leader = nullptr;
+  u32 icf_idx = -1;
 };
 
 class MergeableSection : public InputChunk {
