@@ -64,7 +64,7 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
     }
   }
 
-  u8 digest[32];
+  u8 digest[SHA256_SIZE];
   assert(SHA256_Final(digest, &ctx) == 1);
 
   std::array<u8, HASH_SIZE> arr;
