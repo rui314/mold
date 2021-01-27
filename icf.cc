@@ -113,6 +113,10 @@ static void gather_sections(std::vector<InputSection *> &sections,
     digests.push_back(std::move(ent.digest));
   }
 
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    sections[i]->icf_idx = i;
+  });
+
   // Initialize edges and edge_indices
   std::vector<i64> num_edges(num_eligibles.combine(std::plus()));
 
@@ -126,7 +130,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
 
       ElfRela &rel = isec.rels[j];
       Symbol &sym = *isec.file->symbols[rel.r_sym];
-      if (sym.input_section)
+      if (!sym.fragref.frag && sym.input_section)
         num_edges[i]++;
     }
   });
@@ -138,10 +142,6 @@ static void gather_sections(std::vector<InputSection *> &sections,
   edges.resize(edge_indices.back() + num_edges.back());
 
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
-    sections[i]->icf_idx = i;
-  });
-
-  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
     InputSection &isec = *sections[i];
     i64 idx = edge_indices[i];
 
@@ -150,9 +150,13 @@ static void gather_sections(std::vector<InputSection *> &sections,
         continue;
 
       ElfRela &rel = isec.rels[j];
+      
+
       Symbol &sym = *isec.file->symbols[rel.r_sym];
-      if (sym.input_section)
+      if (!sym.fragref.frag && sym.input_section) {
+        assert(sym.input_section->icf_idx != -1);
         edges[idx++] = sym.input_section->icf_idx;
+      }
     }
   });
 }
