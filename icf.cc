@@ -96,6 +96,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
                             std::vector<std::array<u8, HASH_SIZE>> &digests,
                             std::vector<u32> &edges,
                             std::vector<u32> &edge_indices) {
+  Timer t("gather");
   std::vector<i64> num_sections(out::objs.size());
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
@@ -134,16 +135,14 @@ static void gather_sections(std::vector<InputSection *> &sections,
                      });
 
   // Initialize sections and digests
-  sections.reserve(entries.size());
-  digests.reserve(entries.size());
-
-  for (Entry &ent : entries) {
-    sections.push_back(ent.isec);
-    digests.push_back(std::move(ent.digest));
-  }
+  sections.resize(entries.size());
+  digests.resize(entries.size());
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    sections[i]->icf_idx = i;
+    Entry &ent = entries[i];
+    ent.isec->icf_idx = i;
+    sections[i] = ent.isec;
+    digests[i] = std::move(ent.digest);
   });
 
   // Initialize edges and edge_indices
@@ -217,7 +216,7 @@ void icf_sections() {
 
   i64 num_classes = count_num_classes();
 
-  Timer t2("rounds");
+  Timer t2("propagate");
 
   for (;;) {
     tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
