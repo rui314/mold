@@ -19,16 +19,6 @@ static bool is_eligible(InputSection &isec) {
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
 }
 
-static void update_string(SHA256_CTX &ctx, std::string_view str) {
-  u64 size = str.size();
-  SHA256_Update(&ctx, &size, 8);
-  SHA256_Update(&ctx, str.data(), str.size());
-}
-
-static void update_i64(SHA256_CTX &ctx, i64 val) {
-  SHA256_Update(&ctx, &val, 8);
-}
-
 static std::array<u8, HASH_SIZE> digest_final(SHA256_CTX &ctx) {
   u8 digest[SHA256_SIZE];
   assert(SHA256_Final(digest, &ctx) == 1);
@@ -42,33 +32,43 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  auto update_symbol = [&](Symbol &sym) {
+  auto hash_string = [&](std::string_view str) {
+    u64 size = str.size();
+    SHA256_Update(&ctx, &size, 8);
+    SHA256_Update(&ctx, str.data(), str.size());
+  };
+
+  auto hash_i64 = [&](i64 val) {
+    SHA256_Update(&ctx, &val, 8);
+  };
+
+  auto hash_symbol = [&](Symbol &sym) {
     if (SectionFragment *frag = sym.fragref.frag) {
-      update_i64(ctx, 2);
-      update_i64(ctx, sym.fragref.addend);
-      update_string(ctx, frag->data);
+      hash_i64(2);
+      hash_i64(sym.fragref.addend);
+      hash_string(frag->data);
     } else if (!sym.input_section) {
-      update_i64(ctx, 3);
-      update_i64(ctx, sym.value);
+      hash_i64(3);
+      hash_i64(sym.value);
     } else {
-      update_i64(ctx, 4);
+      hash_i64(4);
     }
   };
 
-  update_string(ctx, isec.get_contents());
-  update_i64(ctx, isec.shdr.sh_flags);
-  update_i64(ctx, isec.fdes.size());
-  update_i64(ctx, isec.rels.size());
+  hash_string(isec.get_contents());
+  hash_i64(isec.shdr.sh_flags);
+  hash_i64(isec.fdes.size());
+  hash_i64(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
-    update_string(ctx, fde.contents);
-    update_i64(ctx, fde.rels.size());
+    hash_string(fde.contents);
+    hash_i64(fde.rels.size());
 
     for (EhReloc &rel : fde.rels) {
-      update_symbol(rel.sym);
-      update_i64(ctx, rel.type);
-      update_i64(ctx, rel.offset);
-      update_i64(ctx, rel.addend);
+      hash_symbol(rel.sym);
+      hash_i64(rel.type);
+      hash_i64(rel.offset);
+      hash_i64(rel.addend);
     }
   }
 
@@ -76,17 +76,17 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
 
   for (i64 i = 0; i < isec.rels.size(); i++) {
     ElfRela &rel = isec.rels[i];
-    update_i64(ctx, rel.r_offset);
-    update_i64(ctx, rel.r_type);
-    update_i64(ctx, rel.r_addend);
+    hash_i64(rel.r_offset);
+    hash_i64(rel.r_type);
+    hash_i64(rel.r_addend);
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
-      update_i64(ctx, 1);
-      update_i64(ctx, ref.addend);
-      update_string(ctx, ref.frag->data);
+      hash_i64(1);
+      hash_i64(ref.addend);
+      hash_string(ref.frag->data);
     } else {
-      update_symbol(*isec.file->symbols[rel.r_sym]);
+      hash_symbol(*isec.file->symbols[rel.r_sym]);
     }
   }
 
@@ -229,6 +229,7 @@ void icf_sections() {
   };
 
   i64 num_classes = count_num_classes();
+  SyncOut() << "num_classes=" << num_classes;
   static Counter round("icf_round");
 
   for (;;) {
@@ -250,6 +251,7 @@ void icf_sections() {
     slot ^= 1;
 
     i64 n = count_num_classes();
+    SyncOut() << "num_classes=" << n;
     if (n == num_classes)
       break;
     num_classes = n;
