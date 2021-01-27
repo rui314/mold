@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <array>
+#include <mutex>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -193,14 +194,14 @@ void icf_sections() {
   gather_sections(sections, digests0, edges, edge_indices);
 
   std::vector<std::vector<std::array<u8, HASH_SIZE>>> digests(2);
-  digests[0] = std::move(digests0);
-  digests[1].resize(digests[0].size());
+  digests[0] = digests0;
+  digests[1] = std::move(digests0);
 
   i64 slot = 0;
 
   Timer t2("rounds");
 
-  for (i64 i = 0; i < 10; i++) {
+  for (i64 i = 0; i < 30; i++) {
     tbb::enumerable_thread_specific<i64> num_classes;
     tbb::parallel_for((i64)0, (i64)edge_indices.size() - 1, [&](i64 i) {
       if (digests[slot][i] != digests[slot][i + 1])
