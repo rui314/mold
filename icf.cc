@@ -7,6 +7,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+#include <tbb/partitioner.h>
 
 static constexpr i64 HASH_SIZE = 16;
 
@@ -150,7 +151,7 @@ static void gather_sections(std::vector<InputSection *> &sections,
         continue;
 
       ElfRela &rel = isec.rels[j];
-      
+
 
       Symbol &sym = *isec.file->symbols[rel.r_sym];
       if (!sym.fragref.frag && sym.input_section) {
@@ -165,9 +166,34 @@ void icf_sections() {
   Timer t("icf");
 
   std::vector<InputSection *> sections;
-  std::vector<std::array<u8, HASH_SIZE>> digests;
-  std::vector<u32> indices;
+  std::vector<std::array<u8, HASH_SIZE>> digests0;
   std::vector<u32> edges;
+  std::vector<u32> edge_indices;
 
-  gather_sections(sections, digests, indices, edges);
+  gather_sections(sections, digests0, edges, edge_indices);
+
+  std::vector<std::vector<std::array<u8, HASH_SIZE>>> digests(2);
+  digests[0] = std::move(digests0);
+  digests[1].resize(digests[0].size());
+
+  i64 slot = 0;
+
+  Timer t2("rounds");
+
+  for (i64 i = 0; i < 10; i++) {
+    tbb::parallel_for((i64)0, (i64)edge_indices.size(), [&](i64 i) {
+      SHA256_CTX ctx;
+      SHA256_Init(&ctx);
+      SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
+
+      i64 begin = edge_indices[i];
+      i64 end = (i + 1 == edge_indices.size()) ? edges.size() : edge_indices[i + 1];
+      for (i64 j = begin; j < end; j++)
+        SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
+
+      assert(SHA256_Final(digests[slot ^ 1][i].data(), &ctx) == 1);
+    });
+
+    slot ^= 1;
+  }
 }
