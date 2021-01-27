@@ -26,8 +26,8 @@ static void update_string(SHA256_CTX *ctx, std::string_view str) {
   SHA256_Update(ctx, str.data(), str.size());
 }
 
-static void update_byte(SHA256_CTX *ctx, u8 byte) {
-  SHA256_Update(ctx, &byte, 1);
+static void update_i64(SHA256_CTX *ctx, i64 val) {
+  SHA256_Update(ctx, &val, 8);
 }
 
 static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
@@ -35,20 +35,21 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_Init(&ctx);
 
   update_string(&ctx, isec.get_contents());
-  SHA256_Update(&ctx, &isec.shdr.sh_flags, sizeof(isec.shdr.sh_flags));
+  update_i64(&ctx, isec.shdr.sh_flags);
+  update_i64(&ctx, isec.rels.size());
 
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < isec.rels.size(); i++) {
     ElfRela &rel = isec.rels[i];
-    SHA256_Update(&ctx, &rel.r_offset, sizeof(rel.r_offset));
-    SHA256_Update(&ctx, &rel.r_type, sizeof(rel.r_type));
-    SHA256_Update(&ctx, &rel.r_addend, sizeof(rel.r_addend));
+    update_i64(&ctx, rel.r_offset);
+    update_i64(&ctx, rel.r_type);
+    update_i64(&ctx, rel.r_addend);
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
-      update_byte(&ctx, 1);
-      SHA256_Update(&ctx, &ref.addend, sizeof(ref.addend));
+      update_i64(&ctx, 1);
+      update_i64(&ctx, ref.addend);
       update_string(&ctx, ref.frag->data);
       continue;
     }
@@ -56,12 +57,12 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
     Symbol &sym = *isec.file->symbols[rel.r_sym];
 
     if (SectionFragment *frag = sym.fragref.frag) {
-      update_byte(&ctx, 2);
-      SHA256_Update(&ctx, &sym.fragref.addend, sizeof(sym.fragref.addend));
+      update_i64(&ctx, 2);
+      update_i64(&ctx, sym.fragref.addend);
       update_string(&ctx, frag->data);
     } else if (!sym.input_section) {
-      update_byte(&ctx, 3);
-      SHA256_Update(&ctx, &sym.value, sizeof(sym.value));
+      update_i64(&ctx, 3);
+      update_i64(&ctx, sym.value);
     }
   }
 
