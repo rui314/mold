@@ -290,6 +290,8 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
+    u8 *loc = base + rel.r_offset;
+
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
@@ -298,12 +300,14 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_32:
     case R_X86_64_32S:
     case R_X86_64_64: {
-      u8 *loc = base + rel.r_offset;
       u64 val = ref ? ref->frag->get_addr() : sym.get_addr();
       overflow_check(this, sym, rel.r_type, val);
       write_val(rel.r_type, loc, val);
       break;
     }
+    case R_X86_64_DTPOFF64:
+      write_val(rel.r_type, loc, sym.get_addr() + rel.r_addend - out::tls_begin);
+      break;
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
@@ -317,7 +321,6 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
     case R_X86_64_DTPOFF32:
-    case R_X86_64_DTPOFF64:
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_GOTTPOFF:
