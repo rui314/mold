@@ -5,6 +5,7 @@
 #include <openssl/sha.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 
 static constexpr i64 HASH_SIZE = 16;
 
@@ -48,84 +49,51 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   return arr;
 }
 
+struct Entry {
+  InputSection *isec;
+  bool is_eligible;
+  std::array<u8, HASH_SIZE> digest;
+};
+
 static void gather_sections(std::vector<InputSection *> &sections,
                             std::vector<std::array<u8, HASH_SIZE>> &digests,
                             std::vector<u32> &indices,
                             std::vector<u32> &edges) {
-  // Compute the sizes of sections and digests.
-  std::vector<i64> num_sections1(out::objs.size());
-  std::vector<i64> num_sections2(out::objs.size());
+  std::vector<i64> num_sections(out::objs.size());
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    for (InputSection *isec : out::objs[i]->sections) {
-      if (!isec || isec->shdr.sh_type == SHT_NOBITS)
-        continue;
-
-      if (is_eligible(*isec))
-        num_sections1[i]++;
-      else
-        num_sections2[i]++;
-    }
+    for (InputSection *isec : out::objs[i]->sections)
+      if (isec && isec->shdr.sh_type != SHT_NOBITS)
+        num_sections[i]++;
   });
 
-  std::vector<i64> section_idx1(out::objs.size());
-  std::vector<i64> section_idx2(out::objs.size());
+  std::vector<i64> section_indices(out::objs.size() + 1);
+  for (i64 i = 0; i < out::objs.size(); i++)
+    section_indices[i + 1] = section_indices[i] + num_sections[i];
 
-  for (i64 i = 0; i < out::objs.size() + 1; i++)
-    section_idx1[i + 1] = section_idx1[i] + num_sections1[i];
+  std::vector<Entry> entries(section_indices.back());
 
-  section_idx2[0] = section_idx1.back();
-
-  for (i64 i = 0; i < out::objs.size() + 1; i++)
-    section_idx2[i + 1] = section_idx2[i] + num_sections2[i];
-
-  sections.resize(section_idx2.back());
-  digests.resize(section_idx2.back());
-
-  // Fill sections and digests.
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    i64 idx1 = section_idx1[i];
-    i64 idx2 = section_idx2[i];
-
+    i64 idx = section_indices[i];
     for (InputSection *isec : out::objs[i]->sections) {
-      if (!isec || isec->shdr.sh_type == SHT_NOBITS)
-        continue;
-
-      if (is_eligible(*isec)) {
-        sections[idx1] = isec;
-        digests[idx1] = compute_digest(*isec);
-        idx1++;
-      } else {
-        sections[idx2] = isec;
-        assert(RAND_bytes(digests[idx2].data(), HASH_SIZE) == 1);
-        idx2++;
+      if (isec && isec->shdr.sh_type != SHT_NOBITS) {
+        Entry &ent = entries[idx++];
+        ent.isec = isec;
+        ent.is_eligible = is_eligible(*isec);
+        if (ent.is_eligible)
+          ent.digest = compute_digest(*isec);
+        else
+          assert(RAND_bytes(ent.digest.data(), HASH_SIZE) == 1);
       }
     }
   });
 
-  // Initialize indices.
-  std::vector<i64> num_edges(section_idx1.back());
-
-  tbb::parallel_for((i64)0, section_idx1.back(), [&](i64 i) {
-    InputSection &isec = *sections[i];
-    for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (isec.has_fragments[i])
-        continue;
-
-      ElfRela &rel = isec.rels[j];
-      Symbol &sym = *isec.file->symbols[rel.r_sym];
-      if (sym.input_section)
-        num_edges[i]++;
-    }
-  });
-
-  indices.resize(num_edges.size() + 1);
-  for (i64 i = 0; i < indices.size() + 1; i++)
-    indices[i + 1] += indices[i] + num_edges[i];
-
-  // Initialize edges.
-  edges.resize(indices.back());
-  indices.resize(indices.size() - 1);
+  tbb::parallel_sort(entries.begin(), entries.end(),
+                     [](const Entry &a, const Entry &b) {
+                       if (!a.is_eligible || !b.is_eligible)
+                         return a.is_eligible && !b.is_eligible;
+                       return a.digest < b.digest;
+                     });
 }
 
 void icf_sections() {
