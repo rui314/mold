@@ -198,6 +198,7 @@ void icf_sections() {
 
   gather_sections(sections, digests0, edges, edge_indices);
 
+  Timer t2("propagate");
   std::vector<std::vector<std::array<u8, HASH_SIZE>>> digests(2);
   digests[0] = std::move(digests0);
   digests[1] = digests[0];
@@ -215,8 +216,6 @@ void icf_sections() {
   };
 
   i64 num_classes = count_num_classes();
-
-  Timer t2("propagate");
 
   for (;;) {
     tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
