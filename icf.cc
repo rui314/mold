@@ -172,9 +172,8 @@ static void gather_sections(std::vector<InputSection *> &sections,
         continue;
 
       ElfRela &rel = isec.rels[j];
-
-
       Symbol &sym = *isec.file->symbols[rel.r_sym];
+
       if (!sym.fragref.frag && sym.input_section) {
         assert(sym.input_section->icf_idx != -1);
         edges[idx++] = sym.input_section->icf_idx;
