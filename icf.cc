@@ -19,27 +19,47 @@ static bool is_eligible(InputSection &isec) {
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
 }
 
+static void update(SHA256_CTX *ctx, std::string_view str) {
+  u64 size = str.size();
+  SHA256_Update(ctx, &size, 8);
+  SHA256_Update(ctx, str.data(), str.size());
+}
+
+static void update_byte(SHA256_CTX *ctx, u8 byte) {
+  SHA256_Update(ctx, &byte, 1);
+}
+
 static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  std::string_view contents = isec.get_contents();
-  SHA256_Update(&ctx, contents.data(), contents.size());
+  update(&ctx, isec.get_contents());
   SHA256_Update(&ctx, &isec.shdr.sh_flags, sizeof(isec.shdr.sh_flags));
 
-  for (ElfRela &rel : isec.rels) {
+  i64 ref_idx = 0;
+
+  for (i64 i = 0; i < isec.rels.size(); i++) {
+    ElfRela &rel = isec.rels[i];
     SHA256_Update(&ctx, &rel.r_offset, sizeof(rel.r_offset));
     SHA256_Update(&ctx, &rel.r_type, sizeof(rel.r_type));
     SHA256_Update(&ctx, &rel.r_addend, sizeof(rel.r_addend));
 
-    // TODO: handle rel_fragments
+    if (isec.has_fragments[i]) {
+      SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
+      update_byte(&ctx, 1);
+      SHA256_Update(&ctx, &ref.addend, sizeof(ref.addend));
+      update(&ctx, ref.frag->data);
+      continue;
+    }
 
     Symbol &sym = *isec.file->symbols[rel.r_sym];
 
     if (SectionFragment *frag = sym.fragref.frag) {
-      SHA256_Update(&ctx, frag->data.data(), frag->data.size());
+      update_byte(&ctx, 2);
       SHA256_Update(&ctx, &sym.fragref.addend, sizeof(sym.fragref.addend));
+      update(&ctx, frag->data);
     } else if (!sym.input_section) {
+      update_byte(&ctx, 3);
       SHA256_Update(&ctx, &sym.value, sizeof(sym.value));
     }
   }
