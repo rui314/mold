@@ -288,14 +288,28 @@ first place.
    kernel. After loading, the kernel started executing the program by
    setting the instruction pointer to a particular address.
 
-   A linker for such a simple execution environment is pretty simple.
-   It concatenates all object files given to a linker to create an
-   executable memory image and then fixes up references between object
-   files so that object files can use functions or variables defined
-   in other object files.
+   The most essential feature for any linker is relocation processing.
+   The original Unix linker of course supported that. Let me explain
+   what that is.
+
+   Individual object files are inevitably incomplete as a program,
+   because when a compiler created them, it only see a part of an
+   entire program. For example, if an object file contains a function
+   call that refers other object file, the `call` instruction in the
+   object cannot be complete, as the compiler has no idea as to what
+   is the called function's address. To deal with this, the compiler
+   emits a placeholder value (typically just zero) instead of a real
+   address and leave a metadata in an object file saying "fix offset X
+   of this file with an address of Y". That metadata is called
+   "relocation". Relocations are typically processed by the linker.
+
+   It is easy for a linker to apply relocations for the original Unix
+   because a program is always loaded to a fixed address. It exactly
+   knows the addresses of all functions and data when linking a
+   program.
 
    Static library support, which is still an important feature of Unix
-   linker, dates back to this early period of Unix history.
+   linker, also dates back to this early period of Unix history.
    To understand what it is, imagine that you are trying to compile
    a program for the early Unix. You don't want to waste time to
    compile libc functions every time you compile your program (the
@@ -317,8 +331,8 @@ first place.
    the archive file.
 
    An archive file is just a bundle of object files, just like zip
-   file but an uncompressed form. An achive file typically has the .a
-   file extension and named after its contents. For example, the
+   file but in an uncompressed form. An achive file typically has the
+   .a file extension and named after its contents. For example, the
    archive file containing all libc objects is named `libc.a`.
 
    If you pass an archive file along with other object files to the
