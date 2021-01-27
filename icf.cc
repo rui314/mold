@@ -20,7 +20,7 @@ static bool is_eligible(InputSection &isec) {
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
 }
 
-static void update(SHA256_CTX *ctx, std::string_view str) {
+static void update_string(SHA256_CTX *ctx, std::string_view str) {
   u64 size = str.size();
   SHA256_Update(ctx, &size, 8);
   SHA256_Update(ctx, str.data(), str.size());
@@ -34,7 +34,7 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  update(&ctx, isec.get_contents());
+  update_string(&ctx, isec.get_contents());
   SHA256_Update(&ctx, &isec.shdr.sh_flags, sizeof(isec.shdr.sh_flags));
 
   i64 ref_idx = 0;
@@ -49,7 +49,7 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
       update_byte(&ctx, 1);
       SHA256_Update(&ctx, &ref.addend, sizeof(ref.addend));
-      update(&ctx, ref.frag->data);
+      update_string(&ctx, ref.frag->data);
       continue;
     }
 
@@ -58,7 +58,7 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
     if (SectionFragment *frag = sym.fragref.frag) {
       update_byte(&ctx, 2);
       SHA256_Update(&ctx, &sym.fragref.addend, sizeof(sym.fragref.addend));
-      update(&ctx, frag->data);
+      update_string(&ctx, frag->data);
     } else if (!sym.input_section) {
       update_byte(&ctx, 3);
       SHA256_Update(&ctx, &sym.value, sizeof(sym.value));
