@@ -63,6 +63,8 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
     } else if (!sym.input_section) {
       update_i64(ctx, 3);
       update_i64(ctx, sym.value);
+    } else {
+      update_i64(ctx, 4);
     }
   }
 
