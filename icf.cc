@@ -150,18 +150,19 @@ static void gather_sections(std::vector<InputSection *> &sections,
                      });
 
   // Initialize sections and digests
-  sections.resize(entries.size());
+  sections.resize(num_eligibles.combine(std::plus()));
   digests.resize(entries.size());
 
-  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+  tbb::parallel_for((i64)0, (i64)entries.size(), [&](i64 i) {
     Entry &ent = entries[i];
     ent.isec->icf_idx = i;
-    sections[i] = ent.isec;
     digests[i] = std::move(ent.digest);
+    if (i < sections.size())
+      sections[i] = ent.isec;
   });
 
   // Initialize edges and edge_indices
-  std::vector<i64> num_edges(num_eligibles.combine(std::plus()));
+  std::vector<i64> num_edges(sections.size());
 
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
     assert(entries[i].is_eligible);
@@ -265,7 +266,7 @@ void icf_sections() {
   std::vector<std::pair<InputSection *, Digest>> entries;
   entries.reserve(num_eligibles);
 
-  for (i64 i = 0; i < num_eligibles; i++)
+  for (i64 i = 0; i < sections.size(); i++)
     entries.push_back({sections[i], std::move(digests[slot][i])});
 
   tbb::parallel_sort(entries.begin(), entries.end(),
