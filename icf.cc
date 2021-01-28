@@ -292,8 +292,10 @@ void icf_sections() {
     if (i == 0 || entries[i - 1].digest != entries[i].digest) {
       InputSection *leader = entries[i].isec;
       leader->leader = leader;
-      for (i64 j = i + 1; entries[i].digest == entries[j].digest; j++)
-        entries[j].isec = leader;
+
+      i64 j = i + 1;
+      while (j < entries.size() && entries[i].digest == entries[j].digest)
+        entries[j++].isec = leader;
     }
   });
 }
