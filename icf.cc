@@ -11,6 +11,8 @@
 
 static constexpr i64 HASH_SIZE = 16;
 
+typedef std::array<u8, HASH_SIZE> Digest;
+
 static bool is_eligible(InputSection &isec) {
   return (isec.shdr.sh_flags & SHF_ALLOC) &&
          (isec.shdr.sh_type != SHT_NOBITS) &&
@@ -19,16 +21,16 @@ static bool is_eligible(InputSection &isec) {
          !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
 }
 
-static std::array<u8, HASH_SIZE> digest_final(SHA256_CTX &ctx) {
+static Digest digest_final(SHA256_CTX &ctx) {
   u8 digest[SHA256_SIZE];
   assert(SHA256_Final(digest, &ctx) == 1);
 
-  std::array<u8, HASH_SIZE> arr;
+  Digest arr;
   memcpy(arr.data(), digest, HASH_SIZE);
   return arr;
 }
 
-static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
+static Digest compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
@@ -93,8 +95,8 @@ static std::array<u8, HASH_SIZE> compute_digest(InputSection &isec) {
   return digest_final(ctx);
 }
 
-static std::array<u8, HASH_SIZE> get_random_bytes() {
-  std::array<u8, HASH_SIZE> arr;
+static Digest get_random_bytes() {
+  Digest arr;
   assert(RAND_bytes(arr.data(), HASH_SIZE) == 1);
   return arr;
 }
@@ -102,11 +104,11 @@ static std::array<u8, HASH_SIZE> get_random_bytes() {
 struct Entry {
   InputSection *isec;
   bool is_eligible;
-  std::array<u8, HASH_SIZE> digest;
+  Digest digest;
 };
 
 static void gather_sections(std::vector<InputSection *> &sections,
-                            std::vector<std::array<u8, HASH_SIZE>> &digests,
+                            std::vector<Digest> &digests,
                             std::vector<u32> &edges,
                             std::vector<u32> &edge_indices) {
   Timer t("gather");
@@ -204,15 +206,16 @@ static void gather_sections(std::vector<InputSection *> &sections,
 void icf_sections() {
   Timer t("icf");
 
+  // Prepare for the propagation rounds.
   std::vector<InputSection *> sections;
-  std::vector<std::array<u8, HASH_SIZE>> digests0;
+  std::vector<Digest> digests0;
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
 
   gather_sections(sections, digests0, edges, edge_indices);
 
   Timer t2("propagate");
-  std::vector<std::vector<std::array<u8, HASH_SIZE>>> digests(2);
+  std::vector<std::vector<Digest>> digests(2);
   digests[0] = std::move(digests0);
   digests[1] = digests[0];
 
@@ -232,6 +235,7 @@ void icf_sections() {
   SyncOut() << "num_classes=" << num_classes;
   static Counter round("icf_round");
 
+  // Execute the propagation rounds until convergence is obtained.
   for (;;) {
     round.inc();
 
@@ -256,4 +260,21 @@ void icf_sections() {
       break;
     num_classes = n;
   }
+
+  // Merge sections.
+  std::vector<std::pair<InputSection *, Digest>> entries;
+  entries.reserve(num_eligibles);
+
+  for (i64 i = 0; i < num_eligibles; i++)
+    entries.push_back({sections[i], std::move(digests[slot][i])});
+
+  tbb::parallel_sort(entries.begin(), entries.end(),
+                     [](auto &a, auto &b) { return a.second < b.second; });
+
+  tbb::enumerable_thread_specific<i64> counter;
+  tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
+    if (entries[i].second != entries[i + 1].second)
+      counter.local() += 1;
+  });
+  SyncOut() << counter.combine(std::plus());
 }
