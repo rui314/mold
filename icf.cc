@@ -13,14 +13,15 @@ typedef std::array<u8, HASH_SIZE> Digest;
 
 static bool is_eligible(InputSection &isec) {
   bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
+  bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
   bool is_writable = (isec.shdr.sh_flags & SHF_WRITE);
   bool is_bss = (isec.shdr.sh_type == SHT_NOBITS);
   bool is_init = (isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
   bool is_fini = (isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
   bool is_enumerable = is_c_identifier(isec.name);
 
-  return is_alloc && !is_writable && !is_bss && !is_init && !is_fini &&
-         !is_enumerable;
+  return is_alloc && is_executable && !is_writable && !is_bss &&
+         !is_init && !is_fini && !is_enumerable;
 }
 
 static Digest digest_final(SHA256_CTX &ctx) {
@@ -137,14 +138,17 @@ static void gather_sections(std::vector<Digest> &digests,
   // Fill `entries` contents.
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
-    for (InputSection *isec : out::objs[i]->sections) {
+
+    for (i64 j = 0; j < out::objs[i]->sections.size(); j++) {
+      InputSection *isec = out::objs[i]->sections[j];
       if (!isec)
         continue;
 
       Entry &ent = entries[idx++];
       ent.isec = isec;
       ent.is_eligible = is_eligible(*isec);
-      ent.digest = ent.is_eligible ? compute_digest(*isec) : pack_number(i);
+      ent.digest =
+        ent.is_eligible ? compute_digest(*isec) : pack_number((i << 32) | j);
       if (ent.is_eligible)
         num_eligibles.local() += 1;
     }
@@ -295,11 +299,17 @@ void icf_sections() {
   });
 
   tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
+//    if (i > 44159)
+//      return;
+
     if (i == 0 || entries[i - 1].digest != entries[i].digest) {
       InputSection *leader = entries[i].isec;
       i64 j = i + 1;
-      while (j < entries.size() && entries[i].digest == entries[j].digest)
+      while (j < entries.size() && entries[i].digest == entries[j].digest) {
+//        if (i == 44158)
+//          SyncOut() << "isec=" << *leader << "\nisec=" << *entries[j].isec << "\n";
         entries[j++].isec->leader = leader;
+      }
     }
   });
 
