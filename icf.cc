@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <array>
-#include <mutex>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <tbb/enumerable_thread_specific.h>
