@@ -63,10 +63,13 @@ static Digest compute_digest(InputSection &isec) {
   hash_i64(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
-    hash_string(fde.contents);
+    // Bytes 4 to 8 contain an offset to CIE
+    hash_string(fde.contents.substr(0, 4));
+    hash_string(fde.contents.substr(8));
+
     hash_i64(fde.rels.size());
 
-    for (EhReloc &rel : fde.rels) {
+    for (EhReloc &rel : std::span(fde.rels).subspan(1)) {
       hash_symbol(rel.sym);
       hash_i64(rel.type);
       hash_i64(rel.offset);
