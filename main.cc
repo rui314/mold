@@ -950,6 +950,8 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.quick_exit = false;
     } else if (read_arg(args, arg, "thread-count")) {
       conf.thread_count = parse_number("thread-count", arg);
+    } else if (read_flag(args, "no-threads")) {
+      conf.thread_count = 1;
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
       conf.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
