@@ -130,15 +130,15 @@ static void gather_sections(std::vector<Digest> &digests,
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
     for (InputSection *isec : out::objs[i]->sections) {
-      if (isec) {
-        Entry &ent = entries[idx++];
-        ent.isec = isec;
-        ent.is_eligible = is_eligible(*isec);
-        ent.digest = ent.is_eligible ? compute_digest(*isec) : get_random_bytes();
+      if (!isec)
+        continue;
 
-        if (ent.is_eligible)
-          num_eligibles.local() += 1;
-      }
+      Entry &ent = entries[idx++];
+      ent.isec = isec;
+      ent.is_eligible = is_eligible(*isec);
+      ent.digest = ent.is_eligible ? compute_digest(*isec) : get_random_bytes();
+      if (ent.is_eligible)
+        num_eligibles.local() += 1;
     }
   });
 
