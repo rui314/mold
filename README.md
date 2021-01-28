@@ -400,8 +400,8 @@ parallel for-loop which iterates over a list of input files.
 
 Overall, even though mold is highly scalable, it succeeded to avoid
 complexties you often find in complex parallel programs. From high
-level, mold just serially executes each linker pass. Each pass is
-parallelized using parallel for-loops.
+level, mold just serially executes linker's internal passes one by
+one. Each pass is parallelized using parallel for-loops.
 
 ## Rejected ideas
 
