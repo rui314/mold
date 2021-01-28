@@ -299,17 +299,11 @@ void icf_sections() {
   });
 
   tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
-//    if (i > 44159)
-//      return;
-
     if (i == 0 || entries[i - 1].digest != entries[i].digest) {
       InputSection *leader = entries[i].isec;
       i64 j = i + 1;
-      while (j < entries.size() && entries[i].digest == entries[j].digest) {
-//        if (i == 44158)
-//          SyncOut() << "isec=" << *leader << "\nisec=" << *entries[j].isec << "\n";
+      while (j < entries.size() && entries[i].digest == entries[j].digest)
         entries[j++].isec->leader = leader;
-      }
     }
   });
 
@@ -321,16 +315,28 @@ void icf_sections() {
     }
   });
 
-  tbb::enumerable_thread_specific<i64> saved_bytes;
-
   tbb::parallel_for_each(entries, [&](Entry &ent) {
     InputSection &isec = *ent.isec;
-    if (isec.leader) {
-      // SyncOut() << "Merge " << *isec.leader << " with " << isec;
+    if (isec.leader)
       isec.file->kill(isec.get_section_idx());
-      saved_bytes.local() += isec.get_contents().size();
-    }
   });
 
-  SyncOut() << "saved_bytes=" << saved_bytes.combine(std::plus());
+  if (config.print_icf_sections) {
+    i64 saved_bytes = 0;
+
+    for (i64 i = 0; i < entries.size(); i++) {
+      i64 j = i + 1;
+      while (j < entries.size() && entries[i].isec == entries[j].isec->leader)
+        j++;
+
+      if (j != i + 1) {
+        SyncOut() << "selected section " << *entries[i].isec;
+        for (int k = i + 1; k < j; k++)
+          SyncOut() << "  removing identical section " << *entries[k].isec;
+        saved_bytes += entries[i].isec->get_contents().size() * (j - i - 1);
+      }
+    }
+
+    SyncOut() << "ICF saved " << saved_bytes << " bytes";
+  }
 }

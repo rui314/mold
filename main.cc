@@ -944,6 +944,10 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.icf = true;
     } else if (read_flag(args, "no-icf")) {
       conf.icf = false;
+    } else if (read_flag(args, "print-icf-sections")) {
+      conf.print_icf_sections = true;
+    } else if (read_flag(args, "no-print-icf-sections")) {
+      conf.print_icf_sections = false;
     } else if (read_flag(args, "quick-exit")) {
       conf.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {

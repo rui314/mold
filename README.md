@@ -220,6 +220,20 @@ tool.
   cores, a build-id for a 2 GiB executable can be computed in 60 to 70
   milliseconds.
 
+- BFD, gold, and lld support section garbage collection. That is, a
+  linker runs a mark-sweep garbage collection on an input graph, where
+  sections are vertices and relocations are edges, to discard all
+  sections that are not reachable from the entry point symbol
+  (i.e. `_start`) or a few other root sections. In mold, we are using
+  multiple threads to mark sections concurrently.
+
+- Similarly, BFD, gold an lld support Identical Comdat Folding (ICF)
+  as a yet another size optimization. ICF merges two or more read-only
+  sections that happen to have the same contents and relocations.
+  To do that, we have to find isomorphic subgraphs from larger graphs.
+  I implemented a new algorithm for mold, which is 5x faster than lld
+  to do ICF for Chromium (from 5 seconds to 1 second).
+
 - [Intel Threading Building
   Blocks](https://github.com/oneapi-src/oneTBB) (TBB) is a good
   library for parallel execution and has several concurrent

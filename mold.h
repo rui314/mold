@@ -69,6 +69,7 @@ struct Config {
   bool pie = false;
   bool preload = false;
   bool print_gc_sections = false;
+  bool print_icf_sections = false;
   bool print_map = false;
   bool quick_exit = true;
   bool relax = true;
