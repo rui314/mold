@@ -265,12 +265,13 @@ void icf_sections() {
     num_classes = n;
   }
 
-  // Merge sections.
+  // Group sections by SHA1 digest.
   std::vector<std::pair<InputSection *, Digest>> entries;
-  entries.reserve(sections.size());
+  entries.resize(sections.size());
 
-  for (i64 i = 0; i < sections.size(); i++)
-    entries.push_back({sections[i], digests[slot][i]});
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    entries[i] = {sections[i], digests[slot][i]};
+  });
 
   tbb::parallel_sort(entries.begin(), entries.end(),
                      [](auto &a, auto &b) { return a.second < b.second; });
