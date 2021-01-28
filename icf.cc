@@ -234,7 +234,7 @@ void icf_sections() {
   };
 
   i64 num_classes = count_num_classes();
-  SyncOut() << "num_classes=" << num_classes;
+  // SyncOut() << "num_classes=" << num_classes;
 
   Timer t2("propagate");
   static Counter round("icf_round");
@@ -259,7 +259,7 @@ void icf_sections() {
     slot ^= 1;
 
     i64 n = count_num_classes();
-    SyncOut() << "num_classes=" << n;
+    // SyncOut() << "num_classes=" << n;
     if (n == num_classes)
       break;
     num_classes = n;
@@ -293,7 +293,7 @@ void icf_sections() {
       InputSection *leader = entries[i].isec;
       i64 j = i + 1;
       while (j < entries.size() && entries[i].digest == entries[j].digest)
-        entries[j++].isec = leader;
+        entries[j++].isec->leader = leader;
     }
   });
 
@@ -307,6 +307,9 @@ void icf_sections() {
 
   tbb::parallel_for_each(entries, [](Entry &ent) {
     InputSection &isec = *ent.isec;
-    isec.file->kill(isec.get_section_idx());
+    if (isec.leader) {
+      SyncOut() << "Merge " << *isec.leader << " with " << isec;
+      isec.file->kill(isec.get_section_idx());
+    }
   });
 }
