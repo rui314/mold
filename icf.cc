@@ -112,6 +112,8 @@ static void gather_sections(std::vector<Digest> &digests,
                             std::vector<u32> &edges,
                             std::vector<u32> &edge_indices) {
   Timer t("gather");
+
+  // Count the number of input sections for each input file.
   std::vector<i64> num_sections(out::objs.size());
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
@@ -120,6 +122,7 @@ static void gather_sections(std::vector<Digest> &digests,
         num_sections[i]++;
   });
 
+  // Assign each object file a unique index in `entries`.
   std::vector<i64> section_indices(out::objs.size());
   for (i64 i = 0; i < out::objs.size() - 1; i++)
     section_indices[i + 1] = section_indices[i] + num_sections[i];
@@ -127,6 +130,7 @@ static void gather_sections(std::vector<Digest> &digests,
   std::vector<Entry> entries(section_indices.back() + num_sections.back());
   tbb::enumerable_thread_specific<i64> num_eligibles;
 
+  // Fill `entries` contents.
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
     for (InputSection *isec : out::objs[i]->sections) {
@@ -142,6 +146,8 @@ static void gather_sections(std::vector<Digest> &digests,
     }
   });
 
+  // Sort `entries` so that all eligible sections precede non-eligible sections.
+  // Eligible sections are sorted by SHA hash.
   tbb::parallel_sort(entries.begin(), entries.end(),
                      [](const Entry &a, const Entry &b) {
                        if (!a.is_eligible || !b.is_eligible)
@@ -149,7 +155,7 @@ static void gather_sections(std::vector<Digest> &digests,
                        return a.digest < b.digest;
                      });
 
-  // Initialize sections and digests
+  // Copy contents from `entries` to `sections` and `digests`.
   sections.resize(num_eligibles.combine(std::plus()));
   digests.resize(entries.size());
 
@@ -161,7 +167,7 @@ static void gather_sections(std::vector<Digest> &digests,
       sections[i] = ent.isec;
   });
 
-  // Initialize edges and edge_indices
+  // Count the number of outgoing edges for each eligible section.
   std::vector<i64> num_edges(sections.size());
 
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
@@ -178,12 +184,14 @@ static void gather_sections(std::vector<Digest> &digests,
     }
   });
 
+  // Assign each eligible section a unique index in `edges`.
   edge_indices.resize(num_edges.size());
   for (i64 i = 0; i < num_edges.size() - 1; i++)
     edge_indices[i + 1] = edge_indices[i] + num_edges[i];
 
   edges.resize(edge_indices.back() + num_edges.back());
 
+  // Fill `edges` contents.
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
     InputSection &isec = *sections[i];
     i64 idx = edge_indices[i];
