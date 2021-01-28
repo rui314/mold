@@ -247,10 +247,18 @@ void icf_sections() {
   auto precise_count_num_classes = [&]() {
     Timer t("precise_count");
     std::vector<Digest> vec(digests[slot].begin(),
-                            digests[slot].begin() + std::min<i64>(40000, sections.size()));
-    tbb::parallel_sort(vec);
+                            digests[slot].begin() + sections.size());
 
-#if 0
+#if 1
+    tbb::parallel_sort(vec);
+#else
+    SyncOut() << "i=" << ((i64)vec.size() / 100 - 1);
+    tbb::parallel_for((i64)0, (i64)vec.size() / 100 - 1, [&](i64 i) {
+      std::sort(vec.begin() + i * 100, vec.begin() + (i + 1) * 100);
+    });
+#endif
+
+#if 1
     tbb::enumerable_thread_specific<i64> num_classes;
     tbb::parallel_for((i64)0, (i64)vec.size() - 1, [&](i64 i) {
       if (vec[i] != vec[i + 1])
