@@ -11,6 +11,12 @@ std::string_view InputChunk::get_contents() const {
   return file->get_string(shdr);
 }
 
+i64 InputChunk::get_section_idx() const {
+  assert(&file->elf_sections.front() <= &shdr &&
+         &shdr < &file->elf_sections.back());
+  return &shdr - &file->elf_sections.front();
+}
+
 static std::string rel_to_string(u64 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";

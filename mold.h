@@ -300,6 +300,7 @@ public:
   virtual void copy_buf() {}
   inline u64 get_addr() const;
   std::string_view get_contents() const;
+  i64 get_section_idx() const;
 
   ObjectFile *file;
   const ElfShdr &shdr;

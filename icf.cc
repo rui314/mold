@@ -264,8 +264,11 @@ void icf_sections() {
       break;
     num_classes = n;
   }
+  t2.stop();
+
 
   // Group sections by SHA1 digest.
+  Timer t3("merge");
   std::vector<std::pair<InputSection *, Digest>> entries;
   entries.resize(sections.size());
 
@@ -273,8 +276,13 @@ void icf_sections() {
     entries[i] = {sections[i], digests[slot][i]};
   });
 
-  tbb::parallel_sort(entries.begin(), entries.end(),
-                     [](auto &a, auto &b) { return a.second < b.second; });
+  tbb::parallel_sort(entries.begin(), entries.end(), [](auto &a, auto &b) {
+    if (a.second != b.second)
+      return a.second < b.second;
+    if (a.first->file->priority != b.first->file->priority)
+      return a.first->file->priority < b.first->file->priority;
+    return a.first->get_section_idx() < b.first->get_section_idx();
+  });
 
   tbb::enumerable_thread_specific<i64> counter;
   tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
