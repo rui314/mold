@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <array>
-#include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
@@ -56,6 +55,7 @@ static Digest compute_digest(InputSection &isec) {
       hash_i64(sym.value);
     } else {
       hash_i64(4);
+      hash_i64(sym.value);
     }
   };
 
@@ -97,9 +97,10 @@ static Digest compute_digest(InputSection &isec) {
   return digest_final(ctx);
 }
 
-static Digest get_random_bytes() {
+static Digest pack_number(i64 val) {
   Digest arr;
-  assert(RAND_bytes(arr.data(), HASH_SIZE) == 1);
+  memset(arr.data(), 0, HASH_SIZE);
+  memcpy(arr.data(), &val, 8);
   return arr;
 }
 
@@ -142,7 +143,7 @@ static void gather_sections(std::vector<Digest> &digests,
       Entry &ent = entries[idx++];
       ent.isec = isec;
       ent.is_eligible = is_eligible(*isec);
-      ent.digest = ent.is_eligible ? compute_digest(*isec) : get_random_bytes();
+      ent.digest = ent.is_eligible ? compute_digest(*isec) : pack_number(i);
       if (ent.is_eligible)
         num_eligibles.local() += 1;
     }
