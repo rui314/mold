@@ -99,17 +99,17 @@ static Digest get_random_bytes() {
   return arr;
 }
 
-struct Entry {
-  InputSection *isec;
-  bool is_eligible;
-  Digest digest;
-};
-
 static void gather_sections(std::vector<Digest> &digests,
                             std::vector<InputSection *> &sections,
                             std::vector<u32> &edge_indices,
                             std::vector<u32> &edges) {
   Timer t("gather");
+
+  struct Entry {
+    InputSection *isec;
+    Digest digest;
+    bool is_eligible;
+  };
 
   // Count the number of input sections for each input file.
   std::vector<i64> num_sections(out::objs.size());
@@ -269,7 +269,13 @@ void icf_sections() {
 
   // Group sections by SHA1 digest.
   Timer t3("merge");
-  std::vector<std::pair<InputSection *, Digest>> entries;
+
+  struct Entry {
+    InputSection *isec;
+    Digest digest;
+  };
+
+  std::vector<Entry> entries;
   entries.resize(sections.size());
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
@@ -277,15 +283,17 @@ void icf_sections() {
   });
 
   tbb::parallel_sort(entries.begin(), entries.end(), [](auto &a, auto &b) {
-    if (a.second != b.second)
-      return a.second < b.second;
-    return a.first->get_priority() < b.first->get_priority();
+    if (a.digest != b.digest)
+      return a.digest < b.digest;
+    return a.isec->get_priority() < b.isec->get_priority();
   });
 
-  tbb::enumerable_thread_specific<i64> counter;
   tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
-    if (entries[i].second != entries[i + 1].second)
-      counter.local()++;
+    if (i == 0 || entries[i - 1].digest != entries[i].digest) {
+      InputSection *leader = entries[i].isec;
+      leader->leader = leader;
+      for (i64 j = i + 1; entries[i].digest == entries[j].digest; j++)
+        entries[j].isec = leader;
+    }
   });
-  SyncOut() << counter.combine(std::plus());
 }
