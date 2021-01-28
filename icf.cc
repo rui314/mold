@@ -34,14 +34,13 @@ static Digest compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  auto hash_string = [&](std::string_view str) {
-    u64 size = str.size();
-    SHA256_Update(&ctx, &size, 8);
-    SHA256_Update(&ctx, str.data(), str.size());
-  };
-
   auto hash_i64 = [&](i64 val) {
     SHA256_Update(&ctx, &val, 8);
+  };
+
+  auto hash_string = [&](std::string_view str) {
+    hash_i64(str.size());
+    SHA256_Update(&ctx, str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol &sym) {
