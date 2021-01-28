@@ -120,11 +120,11 @@ static void gather_sections(std::vector<Digest> &digests,
         num_sections[i]++;
   });
 
-  std::vector<i64> section_indices(out::objs.size() + 1);
-  for (i64 i = 0; i < out::objs.size(); i++)
+  std::vector<i64> section_indices(out::objs.size());
+  for (i64 i = 0; i < out::objs.size() - 1; i++)
     section_indices[i + 1] = section_indices[i] + num_sections[i];
 
-  std::vector<Entry> entries(section_indices.back());
+  std::vector<Entry> entries(section_indices.back() + num_sections.back());
   tbb::enumerable_thread_specific<i64> num_eligibles;
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
