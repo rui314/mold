@@ -46,8 +46,8 @@ static void visit(InputSection *isec,
 
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.
-    if (sym.fragref.frag) {
-      sym.fragref.frag->is_alive = true;
+    if (sym.frag) {
+      sym.frag->is_alive = true;
       continue;
     }
 

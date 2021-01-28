@@ -264,7 +264,6 @@ public:
   const ElfSym *esym = nullptr;
   InputSection *input_section = nullptr;
   SectionFragment *frag = nullptr;
-  SectionFragmentRef fragref;
 
   u64 value = -1;
   u32 got_idx = -1;
@@ -1194,8 +1193,8 @@ inline u64 next_power_of_two(u64 val) {
 }
 
 inline bool Symbol::is_alive() const {
-  if (fragref.frag)
-    return fragref.frag->is_alive;
+  if (frag)
+    return frag->is_alive;
   if (input_section)
     return input_section->is_alive;
   return true;
@@ -1206,9 +1205,9 @@ inline bool Symbol::is_absolute() const {
 }
 
 inline u64 Symbol::get_addr() const {
-  if (fragref.frag) {
-    if (fragref.frag->is_alive)
-      return fragref.frag->get_addr() + fragref.addend;
+  if (frag) {
+    if (frag->is_alive)
+      return frag->get_addr() + value;
     return 0; // todo: do not return 0
   }
 
