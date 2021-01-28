@@ -156,7 +156,7 @@ static void gather_sections(std::vector<Digest> &digests,
   tbb::parallel_for((i64)0, (i64)entries.size(), [&](i64 i) {
     Entry &ent = entries[i];
     ent.isec->icf_idx = i;
-    digests[i] = std::move(ent.digest);
+    digests[i] = ent.digest;
     if (i < sections.size())
       sections[i] = ent.isec;
   });
@@ -267,7 +267,7 @@ void icf_sections() {
   entries.reserve(num_eligibles);
 
   for (i64 i = 0; i < sections.size(); i++)
-    entries.push_back({sections[i], std::move(digests[slot][i])});
+    entries.push_back({sections[i], digests[slot][i]});
 
   tbb::parallel_sort(entries.begin(), entries.end(),
                      [](auto &a, auto &b) { return a.second < b.second; });
