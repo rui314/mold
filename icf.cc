@@ -310,11 +310,16 @@ void icf_sections() {
     }
   });
 
-  tbb::parallel_for_each(entries, [](Entry &ent) {
+  tbb::enumerable_thread_specific<i64> saved_bytes;
+
+  tbb::parallel_for_each(entries, [&](Entry &ent) {
     InputSection &isec = *ent.isec;
     if (isec.leader) {
       // SyncOut() << "Merge " << *isec.leader << " with " << isec;
       isec.file->kill(isec.get_section_idx());
+      saved_bytes.local() += isec.get_contents().size();
     }
   });
+
+  SyncOut() << "saved_bytes=" << saved_bytes.combine(std::plus());
 }
