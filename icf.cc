@@ -107,8 +107,8 @@ struct Entry {
   Digest digest;
 };
 
-static void gather_sections(std::vector<InputSection *> &sections,
-                            std::vector<Digest> &digests,
+static void gather_sections(std::vector<Digest> &digests,
+                            std::vector<InputSection *> &sections,
                             std::vector<u32> &edges,
                             std::vector<u32> &edge_indices) {
   Timer t("gather");
@@ -208,12 +208,12 @@ void icf_sections() {
   Timer t("icf");
 
   // Prepare for the propagation rounds.
-  std::vector<InputSection *> sections;
   std::vector<Digest> digests0;
+  std::vector<InputSection *> sections;
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
 
-  gather_sections(sections, digests0, edges, edge_indices);
+  gather_sections(digests0, sections, edges, edge_indices);
 
   Timer t2("propagate");
   std::vector<std::vector<Digest>> digests(2);
