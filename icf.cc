@@ -169,13 +169,12 @@ static void gather_sections(std::vector<Digest> &digests,
     InputSection &isec = *sections[i];
 
     for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (isec.has_fragments[j])
-        continue;
-
-      ElfRela &rel = isec.rels[j];
-      Symbol &sym = *isec.file->symbols[rel.r_sym];
-      if (!sym.fragref.frag && sym.input_section)
-        num_edges[i]++;
+      if (!isec.has_fragments[j]) {
+        ElfRela &rel = isec.rels[j];
+        Symbol &sym = *isec.file->symbols[rel.r_sym];
+        if (!sym.fragref.frag && sym.input_section)
+          num_edges[i]++;
+      }
     }
   });
 
@@ -190,15 +189,14 @@ static void gather_sections(std::vector<Digest> &digests,
     i64 idx = edge_indices[i];
 
     for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (isec.has_fragments[j])
-        continue;
+      if (!isec.has_fragments[j]) {
+        ElfRela &rel = isec.rels[j];
+        Symbol &sym = *isec.file->symbols[rel.r_sym];
 
-      ElfRela &rel = isec.rels[j];
-      Symbol &sym = *isec.file->symbols[rel.r_sym];
-
-      if (!sym.fragref.frag && sym.input_section) {
-        assert(sym.input_section->icf_idx != -1);
-        edges[idx++] = sym.input_section->icf_idx;
+        if (!sym.fragref.frag && sym.input_section) {
+          assert(sym.input_section->icf_idx != -1);
+          edges[idx++] = sym.input_section->icf_idx;
+        }
       }
     }
   });
