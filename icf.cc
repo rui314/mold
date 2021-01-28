@@ -279,9 +279,7 @@ void icf_sections() {
   tbb::parallel_sort(entries.begin(), entries.end(), [](auto &a, auto &b) {
     if (a.second != b.second)
       return a.second < b.second;
-    if (a.first->file->priority != b.first->file->priority)
-      return a.first->file->priority < b.first->file->priority;
-    return a.first->get_section_idx() < b.first->get_section_idx();
+    return a.first->get_priority() < b.first->get_priority();
   });
 
   tbb::enumerable_thread_specific<i64> counter;

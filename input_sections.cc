@@ -17,6 +17,10 @@ i64 InputChunk::get_section_idx() const {
   return &shdr - &file->elf_sections.front();
 }
 
+i64 InputChunk::get_priority() const {
+  return ((i64)file->priority << 32) | get_section_idx();
+}
+
 static std::string rel_to_string(u64 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
