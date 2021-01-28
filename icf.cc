@@ -107,8 +107,8 @@ struct Entry {
 
 static void gather_sections(std::vector<Digest> &digests,
                             std::vector<InputSection *> &sections,
-                            std::vector<u32> &edges,
-                            std::vector<u32> &edge_indices) {
+                            std::vector<u32> &edge_indices,
+                            std::vector<u32> &edges) {
   Timer t("gather");
 
   // Count the number of input sections for each input file.
@@ -213,22 +213,20 @@ void icf_sections() {
   // Prepare for the propagation rounds.
   std::vector<Digest> digests0;
   std::vector<InputSection *> sections;
-  std::vector<u32> edges;
   std::vector<u32> edge_indices;
+  std::vector<u32> edges;
 
-  gather_sections(digests0, sections, edges, edge_indices);
+  gather_sections(digests0, sections, edge_indices, edges);
 
-  Timer t2("propagate");
   std::vector<std::vector<Digest>> digests(2);
   digests[0] = std::move(digests0);
   digests[1] = digests[0];
 
   i64 slot = 0;
-  i64 num_eligibles = edge_indices.size();
 
   auto count_num_classes = [&]() {
     tbb::enumerable_thread_specific<i64> num_classes;
-    tbb::parallel_for((i64)0, num_eligibles - 1, [&](i64 i) {
+    tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
       if (digests[slot][i] != digests[slot][i + 1])
         num_classes.local() += 1;
     });
@@ -237,19 +235,21 @@ void icf_sections() {
 
   i64 num_classes = count_num_classes();
   SyncOut() << "num_classes=" << num_classes;
+
+  Timer t2("propagate");
   static Counter round("icf_round");
 
   // Execute the propagation rounds until convergence is obtained.
   for (;;) {
     round.inc();
 
-    tbb::parallel_for((i64)0, num_eligibles, [&](i64 i) {
+    tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       SHA256_CTX ctx;
       SHA256_Init(&ctx);
       SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
 
       i64 begin = edge_indices[i];
-      i64 end = (i + 1 == num_eligibles) ? edges.size() : edge_indices[i + 1];
+      i64 end = (i + 1 == sections.size()) ? edges.size() : edge_indices[i + 1];
       for (i64 j = begin; j < end; j++)
         SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
@@ -267,7 +267,7 @@ void icf_sections() {
 
   // Merge sections.
   std::vector<std::pair<InputSection *, Digest>> entries;
-  entries.reserve(num_eligibles);
+  entries.reserve(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++)
     entries.push_back({sections[i], digests[slot][i]});
