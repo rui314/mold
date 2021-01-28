@@ -13,11 +13,15 @@ static constexpr i64 HASH_SIZE = 16;
 typedef std::array<u8, HASH_SIZE> Digest;
 
 static bool is_eligible(InputSection &isec) {
-  return (isec.shdr.sh_flags & SHF_ALLOC) &&
-         (isec.shdr.sh_type != SHT_NOBITS) &&
-         !(isec.shdr.sh_flags & SHF_WRITE) &&
-         !(isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init") &&
-         !(isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
+  bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
+  bool is_writable = (isec.shdr.sh_flags & SHF_WRITE);
+  bool is_bss = (isec.shdr.sh_type == SHT_NOBITS);
+  bool is_init = (isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
+  bool is_fini = (isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
+  bool is_enumerable = is_c_identifier(isec.name);
+
+  return is_alloc && !is_writable && !is_bss && !is_init && !is_fini &&
+         !is_enumerable;
 }
 
 static Digest digest_final(SHA256_CTX &ctx) {
@@ -308,7 +312,7 @@ void icf_sections() {
   tbb::parallel_for_each(entries, [](Entry &ent) {
     InputSection &isec = *ent.isec;
     if (isec.leader) {
-      SyncOut() << "Merge " << *isec.leader << " with " << isec;
+      // SyncOut() << "Merge " << *isec.leader << " with " << isec;
       isec.file->kill(isec.get_section_idx());
     }
   });
