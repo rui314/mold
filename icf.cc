@@ -228,7 +228,7 @@ void icf_sections() {
     tbb::enumerable_thread_specific<i64> num_classes;
     tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
       if (digests[slot][i] != digests[slot][i + 1])
-        num_classes.local() += 1;
+        num_classes.local()++;
     });
     return num_classes.combine(std::plus());
   };
@@ -278,7 +278,7 @@ void icf_sections() {
   tbb::enumerable_thread_specific<i64> counter;
   tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
     if (entries[i].second != entries[i + 1].second)
-      counter.local() += 1;
+      counter.local()++;
   });
   SyncOut() << counter.combine(std::plus());
 }
