@@ -225,7 +225,7 @@ static std::vector<u32> get_sorted_indices(std::span<Digest> digests) {
 static void propagate(std::span<std::vector<Digest>> digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
-  Timer t("propagate");
+  // Timer t("propagate");
 
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     SHA256_CTX ctx;
@@ -243,7 +243,7 @@ static void propagate(std::span<std::vector<Digest>> digests,
 
 static void sort_section_indices(std::span<std::vector<Digest>> digests,
                                  std::span<u32> indices, i64 slot) {
-  Timer t("sort_section_indices");
+  // Timer t("sort_section_indices");
 
   i64 num_shards = 256;
   i64 shard_size = (indices.size() + num_shards - 1) / num_shards;
@@ -272,40 +272,14 @@ static void sort_section_indices(std::span<std::vector<Digest>> digests,
 }
 
 static i64 count_num_classes(std::span<Digest> digests, std::span<u32> indices) {
-  Timer t("count");
+  // Timer t("count_num_classes");
 
-#if 0
   tbb::enumerable_thread_specific<i64> num_classes;
   tbb::parallel_for((i64)0, (i64)indices.size() - 1, [&](i64 i) {
     if (digests[indices[i]] != digests[indices[i + 1]])
       num_classes.local()++;
   });
   return num_classes.combine(std::plus());
-#else
-  i64 num_shards = 256;
-  i64 shard_size = (indices.size() + num_shards - 1) / num_shards;
-  tbb::enumerable_thread_specific<i64> num_classes;
-
-  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-    i *= shard_size;
-    i64 end = std::min<i64>(indices.size(), i + shard_size);
-
-    if (i != 0)
-      while (i < end && digests[indices[i - 1]] != digests[indices[i]])
-        i++;
-
-    while (i < end) {
-      num_classes.local() += 1;
-
-      i64 j = i + 1;
-      while (j < end && digests[indices[i]] == digests[indices[j]])
-        j++;
-      i = j;
-    }    
-  });
-
-  return num_classes.combine(std::plus());
-#endif
 }
 
 void icf_sections() {
@@ -332,7 +306,7 @@ void icf_sections() {
 
   // Execute the propagation rounds until convergence is obtained.
   for (;;) {
-    Timer t("round");
+    // Timer t("round");
     round.inc();
 
     propagate(digests, edges, edge_indices, slot);
