@@ -85,20 +85,31 @@ struct LeafEq {
 static void merge_leaf_nodes() {
   Timer t("leaf");
 
+  static Counter eligible("icf_eligibles");
+  static Counter non_eligible("icf_non_eligibles");
+  static Counter leaf("icf_leaf_nodes");
+
   tbb::concurrent_unordered_map<InputSection *, InputSection *,
                                 LeafHasher, LeafEq> map;
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     for (InputSection *isec : out::objs[i]->sections) {
-      if (!isec || !is_eligible(*isec))
+      if (!isec)
         continue;
 
+      if (!is_eligible(*isec)) {
+        non_eligible.inc();
+        continue;
+      }
+
       if (is_leaf(*isec)) {
+        leaf.inc();
         isec->icf_leaf = true;
         auto [it, inserted] = map.insert({isec, isec});
         if (!inserted && isec->get_priority() < it->second->get_priority())
           it->second = isec;
       } else {
+        eligible.inc();
         isec->icf_eligible = true;
       }
     }
