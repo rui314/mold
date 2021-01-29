@@ -210,18 +210,6 @@ static void gather_edges(std::span<InputSection *> sections,
   });
 }
 
-static std::vector<u32> get_sorted_indices(std::span<Digest> digests) {
-  Timer t("get_sorted_indices");
-  std::vector<u32> vec(digests.size());
-
-  tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) { vec[i] = i; });
-
-  tbb::parallel_sort(vec.begin(), vec.end(), [&](u32 a, u32 b) {
-    return digests[a] < digests[b];
-  });
-  return vec;
-}
-
 static void propagate(std::span<std::vector<Digest>> digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
@@ -241,49 +229,8 @@ static void propagate(std::span<std::vector<Digest>> digests,
   });
 }
 
-static void sort_section_indices(std::span<std::vector<Digest>> digests,
-                                 std::span<u32> indices, i64 slot) {
-  // Timer t("sort_section_indices");
-
-  i64 num_shards = 256;
-  i64 shard_size = (indices.size() + num_shards - 1) / num_shards;
-
-  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-    i *= shard_size;
-    i64 end = std::min<i64>(indices.size(), i + shard_size);
-
-    if (i != 0)
-      while (i < end && digests[slot][indices[i - 1]] != digests[slot][indices[i]])
-        i++;
-
-    while (i < end) {
-      i64 j = i + 1;
-      while (j < end && digests[slot][indices[i]] == digests[slot][indices[j]])
-        j++;
-
-      if (j - i > 2) {
-        std::sort(indices.begin() + i, indices.begin() + j, [&](u32 a, u32 b) {
-          return digests[slot ^ 1][a] < digests[slot ^ 1][b];
-        });
-      }
-      i = j;
-    }
-  });
-}
-
-static i64 count_num_classes(std::span<Digest> digests, std::span<u32> indices) {
+static i64 count_num_classes(std::span<Digest> digests) {
   // Timer t("count_num_classes");
-
-  tbb::enumerable_thread_specific<i64> num_classes;
-  tbb::parallel_for((i64)0, (i64)indices.size() - 1, [&](i64 i) {
-    if (digests[indices[i]] != digests[indices[i + 1]])
-      num_classes.local()++;
-  });
-  return num_classes.combine(std::plus());
-}
-
-static i64 count_num_classes2(std::span<Digest> digests) {
-  Timer t("count_num_classes2");
 
   std::vector<Digest> vec(digests.begin(), digests.end());
   tbb::parallel_sort(vec);
@@ -310,28 +257,25 @@ void icf_sections() {
   std::vector<u32> edge_indices;
   gather_edges(sections, edges, edge_indices);
 
-  std::vector<u32> section_indices = get_sorted_indices(digests[0]);
-
   Timer t2("propagate");
   static Counter round("icf_round");
 
   i64 slot = 0;
-  i64 num_classes = count_num_classes(digests[0], section_indices);
+  i64 num_classes = -1;
 
   // Execute the propagation rounds until convergence is obtained.
-  for (;;) {
+  for (i64 i = 0;; i++) {
     SyncOut() << "num_classes=" << num_classes;
     round.inc();
-
     propagate(digests, edges, edge_indices, slot);
-    sort_section_indices(digests, section_indices, slot);
     slot ^= 1;
 
-    i64 n = count_num_classes(digests[slot], section_indices);
-    if (n == num_classes)
-      break;
-    num_classes = n;
-    count_num_classes2(digests[slot]);
+    if (i && i % 10 == 0) {
+      i64 n = count_num_classes(digests[slot]);
+      if (n == num_classes)
+        break;
+      num_classes = n;
+    }
   }
   t2.stop();
 
