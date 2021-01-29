@@ -260,9 +260,12 @@ static void sort_section_indices(std::span<std::vector<Digest>> digests,
       i64 j = i + 1;
       while (j < end && digests[slot][indices[i]] == digests[slot][indices[j]])
         j++;
-      std::sort(indices.begin() + i, indices.begin() + j, [&](u32 a, u32 b) {
-        return digests[slot ^ 1][a] < digests[slot ^ 1][b];
-      });
+
+      if (j - i > 2) {
+        std::sort(indices.begin() + i, indices.begin() + j, [&](u32 a, u32 b) {
+          return digests[slot ^ 1][a] < digests[slot ^ 1][b];
+        });
+      }
       i = j;
     }
   });
