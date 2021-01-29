@@ -264,100 +264,49 @@ void icf_sections() {
   std::vector<u32> edge_indices;
   gather_edges(sections, edges, edge_indices);
 
-  Timer t2("propagate");
-
   i64 slot = 0;
   i64 num_classes = -1;
 
   // Execute the propagation rounds until convergence is obtained.
-  for (i64 i = 0;; i++) {
-    round.inc();
-    propagate(digests, edges, edge_indices, slot);
-    slot ^= 1;
+  {
+    Timer t2("propagate");
+    for (i64 i = 0;; i++) {
+      round.inc();
+      propagate(digests, edges, edge_indices, slot);
+      slot ^= 1;
 
-    if (i % 10 == 9) {
-      i64 n = count_num_classes(digests[slot]);
-      if (n == num_classes)
-        break;
-      num_classes = n;
+      if (i % 10 == 9) {
+        i64 n = count_num_classes(digests[slot]);
+        if (n == num_classes)
+          break;
+        num_classes = n;
+      }
     }
   }
-  t2.stop();
-
-#if 0
-  std::vector<std::vector<Digest>> digests(2);
-  digests[0] = std::move(digests0);
-  digests[1] = digests[0];
-
-  i64 slot = 0;
-
-  auto count_num_classes = [&]() {
-  };
-
-  i64 num_classes = count_num_classes();
-  // SyncOut() << "num_classes=" << num_classes;
-
-  Timer t2("propagate");
-  static Counter round("icf_round");
-
-  // Execute the propagation rounds until convergence is obtained.
-  for (;;) {
-    Timer t("round");
-    round.inc();
-
-    tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-      SHA256_CTX ctx;
-      SHA256_Init(&ctx);
-      SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
-
-      i64 begin = edge_indices[i];
-      i64 end = (i + 1 == sections.size()) ? edges.size() : edge_indices[i + 1];
-      for (i64 j = begin; j < end; j++)
-        SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
-
-      digests[slot ^ 1][i] = digest_final(ctx);
-    });
-
-    slot ^= 1;
-
-    i64 n = count_num_classes();
-    if (n == num_classes)
-      break;
-    num_classes = n;
-  }
-  t2.stop();
-
 
   // Group sections by SHA1 digest.
   Timer t3("merge");
 
-  struct Entry {
-    InputSection *isec;
-    Digest digest;
+  auto get_digest = [&](InputSection *isec) {
+    return digests[slot][isec->icf_idx];
   };
-
-  std::vector<Entry> entries;
-  entries.resize(sections.size());
-
-  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    entries[i] = {sections[i], digests[slot][i]};
-  });
 
   {
     Timer t("sort");
-    tbb::parallel_sort(entries.begin(), entries.end(), [](auto &a, auto &b) {
-      if (a.digest != b.digest)
-        return a.digest < b.digest;
-      return a.isec->get_priority() < b.isec->get_priority();
+    tbb::parallel_sort(sections.begin(), sections.end(), 
+                       [&](InputSection *a, InputSection *b) {
+      if (get_digest(a) != get_digest(b))
+        return get_digest(a) < get_digest(b);
+      return a->get_priority() < b->get_priority();
     });
   }
 
-  tbb::parallel_for((i64)0, (i64)entries.size() - 1, [&](i64 i) {
-    if (i == 0 || entries[i - 1].digest != entries[i].digest) {
-      InputSection *leader = entries[i].isec;
+  tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
+    if (i == 0 || get_digest(sections[i - 1]) != get_digest(sections[i])) {
       i64 j = i + 1;
-      while (j < entries.size() && entries[i].digest == entries[j].digest)
-        entries[j++].isec->leader = leader;
+      while (j < sections.size() &&
+             get_digest(sections[i]) != get_digest(sections[j]))
+        sections[j++]->leader = sections[i];
     }
   });
 
@@ -369,29 +318,27 @@ void icf_sections() {
     }
   });
 
-  tbb::parallel_for_each(entries, [&](Entry &ent) {
-    InputSection &isec = *ent.isec;
-    if (isec.leader)
-      isec.kill();
+  tbb::parallel_for_each(sections, [&](InputSection *isec) {
+    if (isec->leader)
+      isec->kill();
   });
 
   if (config.print_icf_sections) {
     i64 saved_bytes = 0;
 
-    for (i64 i = 0; i < entries.size(); i++) {
+    for (i64 i = 0; i < sections.size(); i++) {
       i64 j = i + 1;
-      while (j < entries.size() && entries[i].isec == entries[j].isec->leader)
+      while (j < sections.size() && sections[i] == sections[j]->leader)
         j++;
 
       if (j != i + 1) {
-        SyncOut() << "selected section " << *entries[i].isec;
+        SyncOut() << "selected section " << *sections[i];
         for (int k = i + 1; k < j; k++)
-          SyncOut() << "  removing identical section " << *entries[k].isec;
-        saved_bytes += entries[i].isec->get_contents().size() * (j - i - 1);
+          SyncOut() << "  removing identical section " << *sections[k];
+        saved_bytes += sections[i]->get_contents().size() * (j - i - 1);
       }
     }
 
     SyncOut() << "ICF saved " << saved_bytes << " bytes";
   }
-#endif
 }
