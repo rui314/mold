@@ -63,8 +63,9 @@ static void visit(InputSection *isec,
   }
 }
 
-static void collect_root_set(tbb::concurrent_vector<InputSection *> &roots) {
+static tbb::concurrent_vector<InputSection *> collect_root_set() {
   Timer t("collect_root_set");
+  tbb::concurrent_vector<InputSection *> roots;
 
   auto enqueue = [&](InputSection *isec) {
     if (mark_section(isec))
@@ -100,6 +101,7 @@ static void collect_root_set(tbb::concurrent_vector<InputSection *> &roots) {
       for (EhReloc &rel : cie.rels)
         enqueue(rel.sym.input_section);
   });
+  return roots;
 }
 
 // Mark all reachable sections
@@ -131,10 +133,9 @@ static void sweep() {
 }
 
 void gc_sections() {
-  Timer t("gc_sections");
-  tbb::concurrent_vector<InputSection *> roots;
+  Timer t("gc");
 
-  collect_root_set(roots);
+  tbb::concurrent_vector<InputSection *> roots = collect_root_set();
   mark(roots);
   sweep();
 }
