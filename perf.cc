@@ -11,9 +11,6 @@ i64 Counter::get_value() {
 }
 
 void Counter::print() {
-  if (!enabled)
-    return;
-
   sort(instances, [](Counter *a, Counter *b) {
     return a->get_value() > b->get_value();
   });

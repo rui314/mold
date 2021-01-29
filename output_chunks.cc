@@ -288,7 +288,7 @@ void SymtabSection::update_shdr() {
   shdr.sh_link = out::strtab->shndx;
 
   static Counter counter("symtab");
-  counter.inc(shdr.sh_size / sizeof(ElfSym));
+  counter += shdr.sh_size / sizeof(ElfSym);
 }
 
 void SymtabSection::copy_buf() {
@@ -808,7 +808,7 @@ void MergedSection::copy_buf() {
   });
 
   static Counter merged_strings("merged_strings");
-  merged_strings.inc(map.size());
+  merged_strings += map.size();
 }
 
 void EhFrameSection::construct() {

@@ -98,18 +98,18 @@ static void merge_leaf_nodes() {
         continue;
 
       if (!is_eligible(*isec)) {
-        non_eligible.inc();
+        non_eligible++;
         continue;
       }
 
       if (is_leaf(*isec)) {
-        leaf.inc();
+        leaf++;
         isec->icf_leaf = true;
         auto [it, inserted] = map.insert({isec, isec});
         if (!inserted && isec->get_priority() < it->second->get_priority())
           it->second = isec;
       } else {
-        eligible.inc();
+        eligible++;
         isec->icf_eligible = true;
       }
     }
@@ -383,7 +383,7 @@ void icf_sections() {
       for (i64 j = 0; j < 10; j++) {
         propagate(digests, edges, edge_indices, slot, ap);
         slot ^= 1;
-        round.inc();
+        round++;
       }
 
       i64 n = count_num_classes(digests[slot]);

@@ -273,7 +273,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
 // scan_relocations.
 void InputSection::apply_reloc_nonalloc(u8 *base) {
   static Counter counter("reloc_nonalloc");
-  counter.inc(rels.size());
+  counter += rels.size();
 
   i64 ref_idx = 0;
 
@@ -343,7 +343,7 @@ void InputSection::scan_relocations() {
     return;
 
   static Counter counter("reloc_alloc");
-  counter.inc(rels.size());
+  counter += rels.size();
 
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   this->rel_types.resize(rels.size());
@@ -552,5 +552,5 @@ MergeableSection::MergeableSection(InputSection *isec)
   }
 
   static Counter counter("string_fragments");
-  counter.inc(fragments.size());
+  counter += fragments.size();
 }

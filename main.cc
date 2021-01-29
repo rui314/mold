@@ -1032,15 +1032,15 @@ static void read_input_files(std::span<std::string_view> args) {
 static void show_stats() {
   for (ObjectFile *obj : out::objs) {
     static Counter defined("defined_syms");
-    defined.inc(obj->first_global - 1);
+    defined += obj->first_global - 1;
 
     static Counter undefined("undefined_syms");
-    undefined.inc(obj->symbols.size() - obj->first_global);
+    undefined += obj->symbols.size() - obj->first_global;
   }
 
   Counter num_input_sections("input_sections");
   for (ObjectFile *file : out::objs)
-    num_input_sections.inc(file->sections.size());
+    num_input_sections += file->sections.size();
 
   Counter num_output_chunks("output_out::chunks", out::chunks.size());
   Counter num_objs("num_objs", out::objs.size());
@@ -1083,8 +1083,6 @@ int main(int argc, char **argv) {
     on_complete = fork_child();
   }
 
-  if (config.stat)
-    Counter::enabled = true;
   if (config.pie)
     config.image_base = 0;
 
@@ -1385,7 +1383,7 @@ int main(int argc, char **argv) {
     print_map();
 
   // Show stats numbers
-  if (Counter::enabled)
+  if (config.stat)
     show_stats();
 
   if (config.perf)

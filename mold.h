@@ -1036,13 +1036,17 @@ public:
     instances.push_back(this);
   }
 
-  void inc(i64 delta = 1) {
-    if (enabled)
-      values.local() += delta;
+  Counter &operator++(int) {
+    values.local()++;
+    return *this;
+  }
+
+  Counter &operator+=(int delta) {
+    values.local() += delta;
+    return *this;
   }
 
   static void print();
-  static inline bool enabled = false;
 
 private:
   i64 get_value();

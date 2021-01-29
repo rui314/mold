@@ -138,7 +138,7 @@ void ObjectFile::initialize_sections() {
       comdat_groups.push_back({group, entries});
 
       static Counter counter("comdats");
-      counter.inc();
+      counter++;
       break;
     }
     case SHT_SYMTAB_SHNDX:
@@ -152,7 +152,7 @@ void ObjectFile::initialize_sections() {
       break;
     default: {
       static Counter counter("regular_sections");
-      counter.inc();
+      counter++;
 
       std::string_view name = shstrtab.data() + shdr.sh_name;
       this->sections[i] = new InputSection(this, shdr, name, i);
@@ -342,7 +342,7 @@ void ObjectFile::initialize_symbols() {
     return;
 
   static Counter counter("all_syms");
-  counter.inc(elf_syms.size());
+  counter += elf_syms.size();
 
   // Initialize local symbols
   Symbol *locals = new Symbol[first_global];
@@ -657,7 +657,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
         sections[i]->kill();
 
     static Counter counter("removed_comdat_mem");
-    counter.inc(entries.size());
+    counter += entries.size();
   }
 }
 
@@ -913,7 +913,7 @@ void SharedFile::parse() {
   }
 
   static Counter counter("dso_syms");
-  counter.inc(elf_syms.size());
+  counter += elf_syms.size();
 }
 
 std::vector<std::string_view> SharedFile::read_verdef() {
