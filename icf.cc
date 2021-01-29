@@ -266,8 +266,7 @@ static void print_icf_sections() {
   tbb::concurrent_unordered_multimap<InputSection *, InputSection *> map;
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (Symbol *sym : file->symbols) {
-      InputSection *isec = sym->input_section;
+    for (InputSection *isec : file->sections) {
       if (isec && isec->leader) {
         if (isec == isec->leader) {
           leaders.push_back(isec);
