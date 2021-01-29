@@ -297,7 +297,6 @@ void icf_sections() {
     });
   }
 
-#if 0
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
 
@@ -350,7 +349,6 @@ void icf_sections() {
         sections[j++]->leader = sections[i];
     }
   });
-#endif
 
   // Re-assign input sections to symbols.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
