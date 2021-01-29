@@ -130,12 +130,12 @@ static Digest compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
 
-  auto hash_i64 = [&](i64 val) {
-    SHA256_Update(&ctx, &val, 8);
+  auto hash = [&](auto val) {
+    SHA256_Update(&ctx, &val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
-    hash_i64(str.size());
+    hash(str.size());
     SHA256_Update(&ctx, str.data(), str.size());
   };
 
@@ -143,39 +143,39 @@ static Digest compute_digest(InputSection &isec) {
     InputSection *isec = sym.input_section;
 
     if (SectionFragment *frag = sym.frag) {
-      hash_i64(2);
+      hash('2');
       hash_string(frag->data);
     } else if (!isec) {
-      hash_i64(3);
+      hash('3');
     } else if (isec->leader) {
-      hash_i64(4);
-      hash_i64(isec->leader->get_priority());
+      hash('4');
+      hash(isec->leader->get_priority());
     } else if (isec->icf_eligible) {
-      hash_i64(5);
+      hash('5');
     } else {
-      hash_i64(6);
-      hash_i64(isec->get_priority());
+      hash('6');
+      hash(isec->get_priority());
     }
-    hash_i64(sym.value);
+    hash(sym.value);
   };
 
   hash_string(isec.get_contents());
-  hash_i64(isec.shdr.sh_flags);
-  hash_i64(isec.fdes.size());
-  hash_i64(isec.rels.size());
+  hash(isec.shdr.sh_flags);
+  hash(isec.fdes.size());
+  hash(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
-    // Bytes 0 to 4 contains the length of this record, and
+    // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
     hash_string(fde.contents.substr(8));
 
-    hash_i64(fde.rels.size());
+    hash(fde.rels.size());
 
     for (EhReloc &rel : std::span(fde.rels).subspan(1)) {
       hash_symbol(rel.sym);
-      hash_i64(rel.type);
-      hash_i64(rel.offset);
-      hash_i64(rel.addend);
+      hash(rel.type);
+      hash(rel.offset);
+      hash(rel.addend);
     }
   }
 
@@ -183,14 +183,14 @@ static Digest compute_digest(InputSection &isec) {
 
   for (i64 i = 0; i < isec.rels.size(); i++) {
     ElfRela &rel = isec.rels[i];
-    hash_i64(rel.r_offset);
-    hash_i64(rel.r_type);
-    hash_i64(rel.r_addend);
+    hash(rel.r_offset);
+    hash(rel.r_type);
+    hash(rel.r_addend);
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
-      hash_i64(1);
-      hash_i64(ref.addend);
+      hash('1');
+      hash(ref.addend);
       hash_string(ref.frag->data);
     } else {
       hash_symbol(*isec.file->symbols[rel.r_sym]);
