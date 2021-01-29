@@ -300,15 +300,13 @@ public:
   virtual void copy_buf() {}
   inline u64 get_addr() const;
   std::string_view get_contents() const;
-  i64 get_section_idx() const;
-  i64 get_priority() const;
 
   ObjectFile *file;
   const ElfShdr &shdr;
   OutputSection *output_section = nullptr;
 
   std::string_view name;
-  u32 offset;
+  u32 offset = -1;
 
 protected:
   InputChunk(ObjectFile *file, const ElfShdr &shdr, std::string_view name);
@@ -382,14 +380,16 @@ struct CieRecord {
 
 class InputSection : public InputChunk {
 public:
-  InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name)
-    : InputChunk(file, shdr, name) {}
+  InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name,
+               i64 section_idx)
+    : InputChunk(file, shdr, name), section_idx(section_idx) {}
 
   void copy_buf() override;
   void scan_relocations();
   void report_undefined_symbols();
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
+  i64 get_priority() const;
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
@@ -397,6 +397,7 @@ public:
   std::vector<RelType> rel_types;
   std::span<FdeRecord> fdes;
   u64 reldyn_offset = 0;
+  u32 section_idx = -1;
   bool is_comdat_member = false;
   bool is_ehframe = false;
 
