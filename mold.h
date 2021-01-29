@@ -390,7 +390,7 @@ public:
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
   void kill();
-  i64 get_priority() const;
+  inline i64 get_priority() const;
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
@@ -409,6 +409,7 @@ public:
   std::atomic_bool is_visited = false;
 
   // For ICF
+  bool icf_eligible = false;
   InputSection *leader = nullptr;
   u32 icf_idx = -1;
 };
@@ -1273,6 +1274,10 @@ inline u64 SectionFragment::get_addr() const {
 
 inline u64 InputChunk::get_addr() const {
   return output_section->shdr.sh_addr + offset;
+}
+
+inline i64 InputSection::get_priority() const {
+  return ((i64)file->priority << 32) | section_idx;
 }
 
 inline u32 elf_hash(std::string_view name) {

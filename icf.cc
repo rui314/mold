@@ -52,8 +52,11 @@ static Digest compute_digest(InputSection &isec) {
       hash_string(frag->data);
     } else if (!sym.input_section) {
       hash_i64(3);
-    } else {
+    } else if (!sym.input_section->icf_eligible) {
       hash_i64(4);
+      hash_i64(sym.input_section->icf_idx);
+    } else {
+      hash_i64(5);
     }
     hash_i64(sym.value);
   };
@@ -106,17 +109,8 @@ static Digest pack_number(i64 val) {
   return arr;
 }
 
-static void gather_sections(std::vector<Digest> &digests,
-                            std::vector<InputSection *> &sections,
-                            std::vector<u32> &edge_indices,
-                            std::vector<u32> &edges) {
+static std::vector<InputSection *> gather_sections() {
   Timer t("gather");
-
-  struct Entry {
-    InputSection *isec;
-    Digest digest;
-    bool is_eligible;
-  };
 
   // Count the number of input sections for each input file.
   std::vector<i64> num_sections(out::objs.size());
@@ -127,106 +121,66 @@ static void gather_sections(std::vector<Digest> &digests,
         num_sections[i]++;
   });
 
-  // Assign each object file a unique index in `entries`.
   std::vector<i64> section_indices(out::objs.size());
   for (i64 i = 0; i < out::objs.size() - 1; i++)
     section_indices[i + 1] = section_indices[i] + num_sections[i];
 
-  std::vector<Entry> entries(section_indices.back() + num_sections.back());
-  tbb::enumerable_thread_specific<i64> num_eligibles;
+  std::vector<InputSection *> sections(section_indices.back() + num_sections.back());
 
-  // Fill `entries` contents.
+  // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
-
-    for (i64 j = 0; j < out::objs[i]->sections.size(); j++) {
-      InputSection *isec = out::objs[i]->sections[j];
-      if (!isec)
-        continue;
-
-      Entry &ent = entries[idx++];
-      ent.isec = isec;
-      ent.is_eligible = is_eligible(*isec);
-      ent.digest =
-        ent.is_eligible ? compute_digest(*isec) : pack_number((i << 32) | j);
-      if (ent.is_eligible)
-        num_eligibles.local() += 1;
-    }
+    for (i64 j = 0; j < out::objs[i]->sections.size(); j++)
+      if (InputSection *isec = out::objs[i]->sections[j])
+        sections[idx++] = isec;
   });
 
-  // Sort `entries` so that all eligible sections precede non-eligible sections.
-  // Eligible sections are sorted by SHA hash.
-  tbb::parallel_sort(entries.begin(), entries.end(),
-                     [](const Entry &a, const Entry &b) {
-                       if (!a.is_eligible || !b.is_eligible)
-                         return a.is_eligible && !b.is_eligible;
-                       return a.digest < b.digest;
+  tbb::parallel_for_each(sections.begin(), sections.end(), [&](InputSection *isec) {
+    isec->icf_eligible = is_eligible(*isec);
+  });
+
+  tbb::parallel_sort(sections.begin(), sections.end(),
+                     [](InputSection *a, InputSection *b) {
+                       if (a->icf_eligible ^ b->icf_eligible)
+                         return a->icf_eligible && !b->icf_eligible;
+                       return a->get_priority() < b->get_priority();
                      });
 
-  // Copy contents from `entries` to `sections` and `digests`.
-  sections.resize(num_eligibles.combine(std::plus()));
-  digests.resize(entries.size());
-
-  tbb::parallel_for((i64)0, (i64)entries.size(), [&](i64 i) {
-    Entry &ent = entries[i];
-    ent.isec->icf_idx = i;
-    digests[i] = ent.digest;
-    if (i < sections.size())
-      sections[i] = ent.isec;
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    sections[i]->icf_idx = i;
   });
 
-  // Count the number of outgoing edges for each eligible section.
-  std::vector<i64> num_edges(sections.size());
+  return sections;
+}
 
-  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
-    assert(entries[i].is_eligible);
-    InputSection &isec = *sections[i];
+static std::vector<Digest> compute_digests(std::span<InputSection *> sections) {
+  Timer t("compute_digests");
 
-    for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (!isec.has_fragments[j]) {
-        ElfRela &rel = isec.rels[j];
-        Symbol &sym = *isec.file->symbols[rel.r_sym];
-        if (!sym.frag && sym.input_section)
-          num_edges[i]++;
-      }
-    }
+  auto bound = std::partition_point(
+    sections.begin(), sections.end(),
+    [](InputSection *isec) { return isec->icf_eligible; });
+
+  i64 num_eligibles = bound - sections.begin();
+  std::vector<Digest> digests(num_eligibles);
+
+  tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) {
+    digests[i] = compute_digest(*sections[i]);
   });
 
-  // Assign each eligible section a unique index in `edges`.
-  edge_indices.resize(num_edges.size());
-  for (i64 i = 0; i < num_edges.size() - 1; i++)
-    edge_indices[i + 1] = edge_indices[i] + num_edges[i];
-
-  edges.resize(edge_indices.back() + num_edges.back());
-
-  // Fill `edges` contents.
-  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
-    InputSection &isec = *sections[i];
-    i64 idx = edge_indices[i];
-
-    for (i64 j = 0; j < isec.rels.size(); j++) {
-      if (!isec.has_fragments[j]) {
-        ElfRela &rel = isec.rels[j];
-        Symbol &sym = *isec.file->symbols[rel.r_sym];
-        if (!sym.frag && sym.input_section) {
-          assert(sym.input_section->icf_idx != -1);
-          edges[idx++] = sym.input_section->icf_idx;
-        }
-      }
-    }
-  });
+  return digests;
 }
 
 void icf_sections() {
   Timer t("icf");
 
   // Prepare for the propagation rounds.
-  std::vector<Digest> digests0;
-  std::vector<InputSection *> sections;
   std::vector<u32> edge_indices;
   std::vector<u32> edges;
 
-  gather_sections(digests0, sections, edge_indices, edges);
+  std::vector<InputSection *> sections = gather_sections();
+  std::vector<Digest> digests0 = compute_digests(sections);
+
+  return;
 
   std::vector<std::vector<Digest>> digests(2);
   digests[0] = std::move(digests0);

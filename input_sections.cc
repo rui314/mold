@@ -476,10 +476,6 @@ void InputSection::scan_relocations() {
   }
 }
 
-i64 InputSection::get_priority() const {
-  return ((i64)file->priority << 32) | section_idx;
-}
-
 void InputSection::kill() {
   is_alive = false;
   for (FdeRecord &fde : fdes)
