@@ -357,8 +357,6 @@ static void print_icf_sections() {
 
 void icf_sections() {
   Timer t("icf");
-  static Counter round("icf_round");
-
   merge_leaf_nodes();
 
   // Prepare for the propagation rounds.
@@ -373,24 +371,25 @@ void icf_sections() {
   gather_edges(sections, edges, edge_indices);
 
   i64 slot = 0;
-  i64 num_classes = -1;
 
   // Execute the propagation rounds until convergence is obtained.
   {
     Timer t("propagate");
+    static Counter round("icf_round");
     tbb::affinity_partitioner ap;
+    i64 num_classes = -1;
 
-    for (i64 i = 0;; i++) {
-      round.inc();
-      propagate(digests, edges, edge_indices, slot, ap);
-      slot ^= 1;
-
-      if (i % 10 == 9) {
-        i64 n = count_num_classes(digests[slot]);
-        if (n == num_classes)
-          break;
-        num_classes = n;
+    for (;;) {
+      for (i64 j = 0; j < 10; j++) {
+        propagate(digests, edges, edge_indices, slot, ap);
+        slot ^= 1;
       }
+
+      round.inc(10);
+      i64 n = count_num_classes(digests[slot]);
+      if (n == num_classes)
+        break;
+      num_classes = n;
     }
   }
 
