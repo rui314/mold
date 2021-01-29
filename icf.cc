@@ -152,7 +152,7 @@ static std::vector<InputSection *> gather_sections() {
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     for (InputSection *isec : out::objs[i]->sections)
-      if (isec)
+      if (isec && isec->icf_eligible)
         num_sections[i]++;
   });
 
@@ -165,32 +165,15 @@ static std::vector<InputSection *> gather_sections() {
   // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
-    for (i64 j = 0; j < out::objs[i]->sections.size(); j++)
-      if (InputSection *isec = out::objs[i]->sections[j])
+    for (InputSection *isec : out::objs[i]->sections)
+      if (isec && isec->icf_eligible)
         sections[idx++] = isec;
   });
-
-  tbb::enumerable_thread_specific<i64> num_eligibles;
-
-  tbb::parallel_for_each(sections.begin(), sections.end(), [&](InputSection *isec) {
-    if (is_eligible(*isec)) {
-      isec->icf_eligible = true;
-      num_eligibles.local() += 1;
-    }
-  });
-
-  tbb::parallel_sort(sections.begin(), sections.end(),
-                     [](InputSection *a, InputSection *b) {
-                       if (a->icf_eligible ^ b->icf_eligible)
-                         return a->icf_eligible && !b->icf_eligible;
-                       return a->get_priority() < b->get_priority();
-                     });
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     sections[i]->icf_idx = i;
   });
 
-  sections.resize(num_eligibles.combine(std::plus()));
   return sections;
 }
 
@@ -319,6 +302,7 @@ void icf_sections() {
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
+SyncOut() << "sections=" << sections.size();
 
   std::vector<std::vector<Digest>> digests(2);
   digests[0] = compute_digests(sections);
