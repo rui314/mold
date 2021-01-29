@@ -172,6 +172,43 @@ static std::vector<Digest> compute_digests(std::span<InputSection *> sections) {
 static void gather_edges(std::span<InputSection *> sections,
                          std::vector<u32> &edges, std::vector<u32> &edge_indices) {
   Timer t("gather_edges");
+
+  std::vector<i64> num_edges(sections.size());
+
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    InputSection &isec = *sections[i];
+    assert(isec.icf_eligible);
+
+    for (i64 j = 0; j < isec.rels.size(); j++) {
+      if (!isec.has_fragments[j]) {
+        ElfRela &rel = isec.rels[j];
+        Symbol &sym = *isec.file->symbols[rel.r_sym];
+        if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
+          num_edges[i]++;
+      }
+    }
+  });
+
+  edge_indices.resize(num_edges.size());
+
+  for (i64 i = 0; i < num_edges.size() - 1; i++)
+    edge_indices[i + 1] = edge_indices[i] + num_edges[i];
+
+  edges.resize(edge_indices.back() + num_edges.back());
+
+  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
+    InputSection &isec = *sections[i];
+    i64 idx = edge_indices[i];
+
+    for (i64 j = 0; j < isec.rels.size(); j++) {
+      if (!isec.has_fragments[j]) {
+        ElfRela &rel = isec.rels[j];
+        Symbol &sym = *isec.file->symbols[rel.r_sym];
+        if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
+          edges[idx++] = sym.input_section->icf_idx;
+      }
+    }
+  });
 }
 
 void icf_sections() {
