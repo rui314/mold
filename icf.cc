@@ -117,12 +117,11 @@ static void merge_leaf_nodes() {
 
   tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
     for (InputSection *isec : out::objs[i]->sections) {
-      if (!isec || !isec->icf_leaf)
-        continue;
-
-      auto it = map.find(isec);
-      assert(it != map.end());
-      isec->leader = it->second;
+      if (isec && isec->icf_leaf) {
+        auto it = map.find(isec);
+        assert(it != map.end());
+        isec->leader = it->second;
+      }
     }
   });
 }
