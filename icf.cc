@@ -3,6 +3,7 @@
 #include <array>
 #include <openssl/sha.h>
 #include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
@@ -260,6 +261,48 @@ static i64 count_num_classes(std::span<Digest> digests) {
   return num_classes.combine(std::plus());
 }
 
+static void print_icf_sections() {
+  tbb::concurrent_vector<InputSection *> leaders;
+  tbb::concurrent_unordered_multimap<InputSection *, InputSection *> map;
+
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : file->symbols) {
+      InputSection *isec = sym->input_section;
+      if (isec && isec->leader) {
+        if (isec == isec->leader) {
+          leaders.push_back(isec);
+        } else {
+          map.insert({isec->leader, isec});
+        }
+      }
+    }
+  });
+
+  tbb::parallel_sort(leaders.begin(), leaders.end(),
+                     [&](InputSection *a, InputSection *b) {
+                       return a->get_priority() < b->get_priority();
+                     });
+
+  i64 saved_bytes = 0;
+
+  for (InputSection *leader : leaders) {
+    auto [begin, end] = map.equal_range(leader);
+    if (begin == end)
+      continue;
+
+    SyncOut() << "selected section " << *leader;
+
+    i64 n = 0;
+    for (auto it = begin; it != end; it++) {
+      SyncOut() << "  removing identical section " << *it->second;
+      n++;
+    }
+    saved_bytes += leader->get_contents().size() * n;
+  }
+
+  SyncOut() << "ICF saved " << saved_bytes << " bytes";
+}
+
 void icf_sections() {
   Timer t("icf");
   static Counter round("icf_round");
@@ -350,6 +393,9 @@ void icf_sections() {
     }
   });
 
+  if (config.print_icf_sections)
+    print_icf_sections();
+
   // Re-assign input sections to symbols.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
@@ -360,25 +406,4 @@ void icf_sections() {
       }
     }
   });
-
-#if 0
-  if (config.print_icf_sections) {
-    i64 saved_bytes = 0;
-
-    for (i64 i = 0; i < sections.size(); i++) {
-      i64 j = i + 1;
-      while (j < sections.size() && sections[i] == sections[j]->leader)
-        j++;
-
-      if (j != i + 1) {
-        SyncOut() << "selected section " << *sections[i];
-        for (int k = i + 1; k < j; k++)
-          SyncOut() << "  removing identical section " << *sections[k];
-        saved_bytes += sections[i]->get_contents().size() * (j - i - 1);
-      }
-    }
-
-    SyncOut() << "ICF saved " << saved_bytes << " bytes";
-  }
-#endif
 }
