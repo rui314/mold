@@ -102,13 +102,6 @@ static Digest compute_digest(InputSection &isec) {
   return digest_final(ctx);
 }
 
-static Digest pack_number(i64 val) {
-  Digest arr;
-  memset(arr.data(), 0, HASH_SIZE);
-  memcpy(arr.data(), &val, 8);
-  return arr;
-}
-
 static std::vector<InputSection *> gather_sections() {
   Timer t("gather_sections");
 
