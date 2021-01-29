@@ -135,8 +135,13 @@ static std::vector<InputSection *> gather_sections() {
         sections[idx++] = isec;
   });
 
+  tbb::enumerable_thread_specific<i64> num_eligibles;
+
   tbb::parallel_for_each(sections.begin(), sections.end(), [&](InputSection *isec) {
-    isec->icf_eligible = is_eligible(*isec);
+    if (is_eligible(*isec)) {
+      isec->icf_eligible = true;
+      num_eligibles.local() += 1;
+    }
   });
 
   tbb::parallel_sort(sections.begin(), sections.end(),
@@ -150,23 +155,17 @@ static std::vector<InputSection *> gather_sections() {
     sections[i]->icf_idx = i;
   });
 
+  sections.resize(num_eligibles.combine(std::plus()));
   return sections;
 }
 
 static std::vector<Digest> compute_digests(std::span<InputSection *> sections) {
   Timer t("compute_digests");
 
-  auto bound = std::partition_point(
-    sections.begin(), sections.end(),
-    [](InputSection *isec) { return isec->icf_eligible; });
-
-  i64 num_eligibles = bound - sections.begin();
-  std::vector<Digest> digests(num_eligibles);
-
-  tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) {
+  std::vector<Digest> digests(sections.size());
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     digests[i] = compute_digest(*sections[i]);
   });
-
   return digests;
 }
 
