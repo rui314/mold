@@ -282,6 +282,20 @@ static i64 count_num_classes(std::span<Digest> digests, std::span<u32> indices) 
   return num_classes.combine(std::plus());
 }
 
+static i64 count_num_classes2(std::span<Digest> digests) {
+  Timer t("count_num_classes2");
+
+  std::vector<Digest> vec(digests.begin(), digests.end());
+  tbb::parallel_sort(vec);
+
+  tbb::enumerable_thread_specific<i64> num_classes;
+  tbb::parallel_for((i64)0, (i64)vec.size() - 1, [&](i64 i) {
+    if (vec[i] != vec[i + 1])
+      num_classes.local()++;
+  });
+  return num_classes.combine(std::plus());
+}
+
 void icf_sections() {
   Timer t("icf");
 
@@ -306,7 +320,7 @@ void icf_sections() {
 
   // Execute the propagation rounds until convergence is obtained.
   for (;;) {
-    // Timer t("round");
+    SyncOut() << "num_classes=" << num_classes;
     round.inc();
 
     propagate(digests, edges, edge_indices, slot);
@@ -317,6 +331,7 @@ void icf_sections() {
     if (n == num_classes)
       break;
     num_classes = n;
+    count_num_classes2(digests[slot]);
   }
   t2.stop();
 
