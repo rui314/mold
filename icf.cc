@@ -203,7 +203,7 @@ static void gather_edges(std::span<InputSection *> sections,
   });
 }
 
-static void propagate(std::span<std::vector<Digest>> digests,
+static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
   // Timer t("propagate");
