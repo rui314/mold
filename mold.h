@@ -410,6 +410,7 @@ public:
 
   // For ICF
   bool icf_eligible = false;
+  bool icf_leaf = false;
   InputSection *leader = nullptr;
   u32 icf_idx = -1;
 };

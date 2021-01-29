@@ -33,6 +33,44 @@ static Digest digest_final(SHA256_CTX &ctx) {
   return arr;
 }
 
+static bool is_leaf(InputSection &isec) {
+  if (!isec.rels.empty())
+    return false;
+
+  for (FdeRecord &fde : isec.fdes)
+    if (fde.rels.size() > 1)
+      return false;
+
+  return true;
+}
+
+struct LeafHasher {
+  size_t operator()(const InputSection &isec) {
+    size_t h = std::hash<std::string_view>()(isec.get_contents());
+    for (FdeRecord &fde : isec.fdes) {
+      size_t h2 = std::hash<std::string_view>()(fde.contents.substr(8));
+      h ^= h2 + 0x9e3779b9 + (h << 6) + (h >> 2);
+    }
+    return h;
+  }
+};
+
+struct LeafEqual {
+  bool operator()(const InputSection &a, const InputSection &b) {
+    if (a.get_contents() != b.get_contents())
+      return false;
+    if (a.fdes.size() != b.fdes.size())
+      return false;
+    for (i64 i = 0; i < a.fdes.size(); i++) {
+      if (a.fdes[i].contents.size() != b.fdes[i].contents.size())
+        return false;
+      if (a.fdes[i].contents.substr(8) != b.fdes[i].contents.substr(8))
+        return false;
+    }
+    return true;
+  }
+};
+
 static Digest compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
@@ -67,8 +105,8 @@ static Digest compute_digest(InputSection &isec) {
   hash_i64(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
-    // Bytes 4 to 8 contain an offset to CIE
-    hash_string(fde.contents.substr(0, 4));
+    // Bytes 0 to 4 contains the length of this record, and
+    // bytes 4 to 8 contain an offset to CIE.
     hash_string(fde.contents.substr(8));
 
     hash_i64(fde.rels.size());
@@ -206,12 +244,15 @@ static void gather_edges(std::span<InputSection *> sections,
 static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
+  std::atomic_int64_t count = 0;
+
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
 
     if (begin == end) {
       digests[slot ^ 1][i] = digests[slot][i];
+      count++;
       return;
     }
 
@@ -224,6 +265,7 @@ static void propagate(std::vector<std::vector<Digest>> &digests,
 
     digests[slot ^ 1][i] = digest_final(ctx);
   });
+  SyncOut() << "count=" << count;
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
@@ -241,6 +283,22 @@ static i64 count_num_classes(std::span<Digest> digests) {
 void icf_sections() {
   Timer t("icf");
   static Counter round("icf_round");
+
+  {
+    std::atomic_int64_t count = 0;
+
+    Timer t("leaf");
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      for (InputSection *isec : out::objs[i]->sections)
+        if (isec && is_eligible(*isec)) {
+          isec->icf_eligible = true;
+          isec->icf_leaf = is_leaf(*isec);
+          if (isec->icf_leaf)
+            count++;
+        }
+    });
+    SyncOut() << "leaves=" << count;
+  }
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
@@ -277,7 +335,7 @@ void icf_sections() {
   Timer t3("merge");
   std::span<Digest> digest = digests[slot];
 
-  tbb::parallel_sort(sections.begin(), sections.end(), 
+  tbb::parallel_sort(sections.begin(), sections.end(),
                      [&](InputSection *a, InputSection *b) {
     if (digest[a->icf_idx] != digest[b->icf_idx])
       return digest[a->icf_idx] < digest[b->icf_idx];
