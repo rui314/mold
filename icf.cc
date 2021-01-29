@@ -286,6 +286,8 @@ void icf_sections() {
 
   tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
     if (i == 0 || digest[sections[i - 1]->icf_idx] != digest[sections[i]->icf_idx]) {
+      sections[i]->leader = sections[i];
+
       i64 j = i + 1;
       while (j < sections.size() &&
              digest[sections[i]->icf_idx] == digest[sections[j]->icf_idx])
@@ -296,8 +298,9 @@ void icf_sections() {
   // Re-assign input sections to symbols.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
-      if (sym->input_section && sym->input_section->leader)
-        sym->input_section = sym->input_section->leader;
+      if (InputSection *isec = sym->input_section)
+        if (InputSection *leader = isec->leader)
+          sym->input_section = leader;
     }
   });
 
