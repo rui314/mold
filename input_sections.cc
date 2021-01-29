@@ -480,6 +480,13 @@ i64 InputSection::get_priority() const {
   return ((i64)file->priority << 32) | section_idx;
 }
 
+void InputSection::kill() {
+  is_alive = false;
+  for (FdeRecord &fde : fdes)
+    fde.is_alive = false;
+  file->sections[section_idx] = nullptr;
+}
+
 static size_t find_null(std::string_view data, u64 entsize) {
   if (entsize == 1)
     return data.find('\0');

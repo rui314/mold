@@ -119,7 +119,7 @@ void gc_sections() {
       if (isec && isec->is_alive && !isec->is_visited) {
         if (config.print_gc_sections)
           SyncOut() << "removing unused section " << *isec;
-        file->kill(i);
+        isec->kill();
         counter.inc();
       }
     }

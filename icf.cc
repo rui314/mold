@@ -322,7 +322,7 @@ void icf_sections() {
   tbb::parallel_for_each(entries, [&](Entry &ent) {
     InputSection &isec = *ent.isec;
     if (isec.leader)
-      isec.file->kill(isec.section_idx);
+      isec.kill();
   });
 
   if (config.print_icf_sections) {

@@ -389,6 +389,7 @@ public:
   void report_undefined_symbols();
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
+  void kill();
   i64 get_priority() const;
 
   std::span<ElfRela> rels;
@@ -920,7 +921,6 @@ public:
   void convert_common_symbols();
   void compute_symtab();
   void write_symtab();
-  void kill(i64 shndx);
 
   static ObjectFile *create_internal_file();
 
