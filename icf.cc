@@ -384,8 +384,8 @@ void icf_sections() {
         propagate(digests, edges, edge_indices, slot, ap);
         slot ^= 1;
       }
-
       round.inc(10);
+
       i64 n = count_num_classes(digests[slot]);
       if (n == num_classes)
         break;
@@ -393,7 +393,7 @@ void icf_sections() {
     }
   }
 
-  // Group sections by SHA1 digest.
+  // Group sections by SHA digest.
   Timer t_merge("merge");
 
   tbb::concurrent_unordered_map<Digest, InputSection *> map;
