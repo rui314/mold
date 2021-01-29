@@ -169,15 +169,21 @@ static std::vector<Digest> compute_digests(std::span<InputSection *> sections) {
   return digests;
 }
 
+static void gather_edges(std::span<InputSection *> sections,
+                         std::vector<u32> &edges, std::vector<u32> &edge_indices) {
+  Timer t("gather_edges");
+}
+
 void icf_sections() {
   Timer t("icf");
 
   // Prepare for the propagation rounds.
-  std::vector<u32> edge_indices;
-  std::vector<u32> edges;
-
   std::vector<InputSection *> sections = gather_sections();
   std::vector<Digest> digests0 = compute_digests(sections);
+
+  std::vector<u32> edge_indices;
+  std::vector<u32> edges;
+  gather_edges(sections, edges, edge_indices);
 
   return;
 
