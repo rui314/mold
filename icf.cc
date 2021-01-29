@@ -213,7 +213,7 @@ static void gather_edges(std::span<InputSection *> sections,
 static void propagate(std::span<std::vector<Digest>> digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
-  Timer t("propagate");
+  // Timer t("propagate");
 
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     i64 begin = edge_indices[i];
@@ -236,7 +236,7 @@ static void propagate(std::span<std::vector<Digest>> digests,
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
-  Timer t("count_num_classes");
+  // Timer t("count_num_classes");
 
   std::vector<Digest> vec(digests.begin(), digests.end());
   tbb::parallel_sort(vec);
@@ -286,26 +286,20 @@ void icf_sections() {
 
   // Group sections by SHA1 digest.
   Timer t3("merge");
+  std::span<Digest> digest = digests[slot];
 
-  auto get_digest = [&](InputSection *isec) {
-    return digests[slot][isec->icf_idx];
-  };
-
-  {
-    Timer t("sort");
-    tbb::parallel_sort(sections.begin(), sections.end(), 
-                       [&](InputSection *a, InputSection *b) {
-      if (get_digest(a) != get_digest(b))
-        return get_digest(a) < get_digest(b);
-      return a->get_priority() < b->get_priority();
-    });
-  }
+  tbb::parallel_sort(sections.begin(), sections.end(), 
+                     [&](InputSection *a, InputSection *b) {
+    if (digest[a->icf_idx] != digest[b->icf_idx])
+      return digest[a->icf_idx] < digest[b->icf_idx];
+    return a->get_priority() < b->get_priority();
+  });
 
   tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
-    if (i == 0 || get_digest(sections[i - 1]) != get_digest(sections[i])) {
+    if (i == 0 || digest[sections[i - 1]->icf_idx] != digest[sections[i]->icf_idx]) {
       i64 j = i + 1;
       while (j < sections.size() &&
-             get_digest(sections[i]) != get_digest(sections[j]))
+             digest[sections[i]->icf_idx] == digest[sections[j]->icf_idx])
         sections[j++]->leader = sections[i];
     }
   });
