@@ -206,8 +206,6 @@ static void gather_edges(std::span<InputSection *> sections,
 static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
-  // Timer t("propagate");
-
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
@@ -229,8 +227,6 @@ static void propagate(std::vector<std::vector<Digest>> &digests,
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
-  // Timer t("count_num_classes");
-
   std::vector<Digest> vec(digests.begin(), digests.end());
   tbb::parallel_sort(vec);
 
