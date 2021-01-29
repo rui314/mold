@@ -110,7 +110,7 @@ static Digest pack_number(i64 val) {
 }
 
 static std::vector<InputSection *> gather_sections() {
-  Timer t("gather");
+  Timer t("gather_sections");
 
   // Count the number of input sections for each input file.
   std::vector<i64> num_sections(out::objs.size());
