@@ -383,8 +383,8 @@ void icf_sections() {
       for (i64 j = 0; j < 10; j++) {
         propagate(digests, edges, edge_indices, slot, ap);
         slot ^= 1;
+        round.inc();
       }
-      round.inc(10);
 
       i64 n = count_num_classes(digests[slot]);
       if (n == num_classes)
