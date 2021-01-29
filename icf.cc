@@ -244,62 +244,16 @@ void icf_sections() {
     return num_classes.combine(std::plus());
   };
 
-  auto precise_count_num_classes = [&]() {
-    Timer t("precise_count");
-    std::vector<Digest> vec(digests[slot].begin(),
-                            digests[slot].begin() + sections.size());
-
-#if 1
-    tbb::parallel_sort(vec);
-#else
-    SyncOut() << "i=" << ((i64)vec.size() / 100 - 1);
-    tbb::parallel_for((i64)0, (i64)vec.size() / 100 - 1, [&](i64 i) {
-      std::sort(vec.begin() + i * 100, vec.begin() + (i + 1) * 100);
-    });
-#endif
-
-#if 1
-    tbb::enumerable_thread_specific<i64> num_classes;
-    tbb::parallel_for((i64)0, (i64)vec.size() - 1, [&](i64 i) {
-      if (vec[i] != vec[i + 1])
-        num_classes.local()++;
-    });
-    return num_classes.combine(std::plus());
-#else
-    i64 count = 0;
-    for (i64 i = 0; i < vec.size() - 1; i++)
-      if (vec[i] != vec[i + 1])
-        count++;
-    return count;
-#endif
-  };
-
   i64 num_classes = count_num_classes();
   // SyncOut() << "num_classes=" << num_classes;
 
   Timer t2("propagate");
   static Counter round("icf_round");
 
-  auto find_longest = [&]() {
-    i64 longest = 0;
-
-    for (i64 i = 0; i < sections.size();) {
-      i64 j = i + 1;
-      while (j < digests[slot].size() && digests[slot][i] == digests[slot][j])
-        j++;
-      if (!sections[i]->rels.empty())
-        longest = std::max(longest, j - i);
-      i = j;
-    }
-
-    SyncOut() << "longest=" << longest;
-  };
-
   // Execute the propagation rounds until convergence is obtained.
   for (;;) {
     Timer t("round");
     round.inc();
-    // find_longest();
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       SHA256_CTX ctx;
@@ -317,8 +271,6 @@ void icf_sections() {
     slot ^= 1;
 
     i64 n = count_num_classes();
-    SyncOut() << "        num_classes=" << n;
-    SyncOut() << "precise_num_classes=" << precise_count_num_classes();
     if (n == num_classes)
       break;
     num_classes = n;
