@@ -286,7 +286,7 @@ static void gather_edges(std::span<InputSection *> sections,
 
 static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
-                      i64 slot, tbb::affinity_partitioner &ap) {
+                      bool slot, tbb::affinity_partitioner &ap) {
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -298,7 +298,7 @@ static void propagate(std::vector<std::vector<Digest>> &digests,
     for (i64 j = begin; j < end; j++)
       SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
-    digests[slot ^ 1][i] = digest_final(ctx);
+    digests[!slot][i] = digest_final(ctx);
   }, ap);
 }
 
@@ -369,7 +369,7 @@ void icf_sections() {
   std::vector<u32> edge_indices;
   gather_edges(sections, edges, edge_indices);
 
-  i64 slot = 0;
+  bool slot = 0;
 
   // Execute the propagation rounds until convergence is obtained.
   {
@@ -381,7 +381,7 @@ void icf_sections() {
     for (;;) {
       for (i64 j = 0; j < 10; j++) {
         propagate(digests, edges, edge_indices, slot, ap);
-        slot ^= 1;
+        slot = !slot;
         round++;
       }
 
