@@ -86,19 +86,21 @@ static Digest compute_digest(InputSection &isec) {
   };
 
   auto hash_symbol = [&](Symbol &sym) {
+    InputSection *isec = sym.input_section;
+
     if (SectionFragment *frag = sym.frag) {
       hash_i64(2);
       hash_string(frag->data);
-    } else if (!sym.input_section) {
+    } else if (!isec) {
       hash_i64(3);
-    } else if (sym.input_section->leader) {
+    } else if (isec->leader) {
       hash_i64(4);
-      hash_i64(sym.input_section->leader->icf_idx);
-    } else if (!sym.input_section->icf_eligible) {
+      hash_i64(isec->leader->get_priority());
+    } else if (isec->icf_eligible) {
       hash_i64(5);
-      hash_i64(sym.input_section->icf_idx);
     } else {
       hash_i64(6);
+      hash_i64(isec->get_priority());
     }
     hash_i64(sym.value);
   };
@@ -302,7 +304,6 @@ void icf_sections() {
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
-SyncOut() << "sections=" << sections.size();
 
   std::vector<std::vector<Digest>> digests(2);
   digests[0] = compute_digests(sections);
