@@ -91,11 +91,14 @@ static Digest compute_digest(InputSection &isec) {
       hash_string(frag->data);
     } else if (!sym.input_section) {
       hash_i64(3);
-    } else if (!sym.input_section->icf_eligible) {
+    } else if (sym.input_section->leader) {
       hash_i64(4);
+      hash_i64(sym.input_section->leader->icf_idx);
+    } else if (!sym.input_section->icf_eligible) {
+      hash_i64(5);
       hash_i64(sym.input_section->icf_idx);
     } else {
-      hash_i64(5);
+      hash_i64(6);
     }
     hash_i64(sym.value);
   };
@@ -288,25 +291,28 @@ void icf_sections() {
     Timer t("leaf");
     tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
       for (InputSection *isec : out::objs[i]->sections) {
-        if (isec && is_eligible(*isec)) {
+        if (!isec || !is_eligible(*isec))
+          continue;
+
+        if (is_leaf(*isec)) {
+          isec->icf_leaf = true;
+          auto [it, inserted] = map.insert({isec, isec});
+          if (!inserted && isec->get_priority() < it->second->get_priority())
+            it->second = isec;
+        } else {
           isec->icf_eligible = true;
-          isec->icf_leaf = is_leaf(*isec);
-          if (isec->icf_leaf) {
-            auto [it, inserted] = map.insert({isec, isec});
-            if (!inserted && isec->get_priority() < it->second->get_priority())
-              it->second = isec;
-          }
         }
       }
     });
 
     tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
       for (InputSection *isec : out::objs[i]->sections) {
-        if (isec && isec->icf_leaf) {
-          auto it = map.find(isec);
-          assert(it != map.end());
-          isec->leader = it->second;
-        }
+        if (!isec || !isec->icf_leaf)
+          continue;
+
+        auto it = map.find(isec);
+        assert(it != map.end());
+        isec->leader = it->second;
       }
     });
   }
