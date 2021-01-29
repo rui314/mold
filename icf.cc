@@ -237,11 +237,6 @@ static void propagate(std::vector<std::vector<Digest>> &digests,
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
 
-    if (begin == end) {
-      digests[slot ^ 1][i] = digests[slot][i];
-      return;
-    }
-
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
