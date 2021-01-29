@@ -321,11 +321,10 @@ static void print_icf_sections() {
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections) {
       if (isec && isec->leader) {
-        if (isec == isec->leader) {
+        if (isec == isec->leader)
           leaders.push_back(isec);
-        } else {
+        else
           map.insert({isec->leader, isec});
-        }
       }
     }
   });
