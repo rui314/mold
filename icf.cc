@@ -36,12 +36,12 @@ static bool is_eligible(InputSection &isec) {
 }
 
 static Digest digest_final(SHA256_CTX &ctx) {
-  u8 digest[SHA256_SIZE];
-  assert(SHA256_Final(digest, &ctx) == 1);
+  u8 arr[SHA256_SIZE];
+  assert(SHA256_Final(arr, &ctx) == 1);
 
-  Digest arr;
-  memcpy(arr.data(), digest, HASH_SIZE);
-  return arr;
+  Digest digest;
+  memcpy(digest.data(), arr, HASH_SIZE);
+  return digest;
 }
 
 static bool is_leaf(InputSection &isec) {
