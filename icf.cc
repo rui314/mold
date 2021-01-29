@@ -210,19 +210,114 @@ static void gather_edges(std::span<InputSection *> sections,
   });
 }
 
+static std::vector<u32> get_sorted_indices(std::span<Digest> digests) {
+  Timer t("get_sorted_indices");
+  std::vector<u32> vec(digests.size());
+
+  tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) { vec[i] = i; });
+
+  tbb::parallel_sort(vec.begin(), vec.end(), [&](u32 a, u32 b) {
+    return digests[a] < digests[b];
+  });
+  return vec;
+}
+
+static void propagate(std::span<std::vector<Digest>> digests,
+                      std::span<u32> edges, std::span<u32> edge_indices,
+                      i64 slot) {
+  Timer t("propagate");
+
+  tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
+
+    i64 begin = edge_indices[i];
+    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
+    for (i64 j = begin; j < end; j++)
+      SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
+
+    digests[slot ^ 1][i] = digest_final(ctx);
+  });
+}
+
+static void sort_section_indices(std::span<std::vector<Digest>> digests,
+                                 std::span<u32> indices, i64 slot) {
+  Timer t("sort_section_indices");
+
+  i64 num_shards = 256;
+  i64 shard_size = (indices.size() + num_shards - 1) / num_shards;
+
+  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
+    i *= shard_size;
+    i64 end = std::min<i64>(indices.size(), i + shard_size);
+
+    if (i != 0)
+      while (i < end && digests[slot][indices[i - 1]] != digests[slot][indices[i]])
+        i++;
+
+    while (i < end) {
+      i64 j = i + 1;
+      while (j < end && digests[slot][indices[i]] == digests[slot][indices[j]])
+        j++;
+      std::sort(indices.begin() + i, indices.begin() + j, [&](u32 a, u32 b) {
+        return digests[slot ^ 1][a] < digests[slot ^ 1][b];
+      });
+      i = j;
+    }
+  });
+}
+
+static i64 count_num_classes(std::span<Digest> digests, std::span<u32> indices) {
+  Timer t("count");
+
+  tbb::enumerable_thread_specific<i64> num_classes;
+  tbb::parallel_for((i64)0, (i64)indices.size() - 1, [&](i64 i) {
+    if (digests[indices[i]] != digests[indices[i + 1]])
+      num_classes.local()++;
+  });
+  return num_classes.combine(std::plus());
+}
+
 void icf_sections() {
   Timer t("icf");
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
-  std::vector<Digest> digests0 = compute_digests(sections);
 
-  std::vector<u32> edge_indices;
+  std::vector<std::vector<Digest>> digests(2);
+  digests[0] = compute_digests(sections);
+  digests[1].resize(digests[0].size());
+
   std::vector<u32> edges;
+  std::vector<u32> edge_indices;
   gather_edges(sections, edges, edge_indices);
 
-  return;
+  std::vector<u32> section_indices = get_sorted_indices(digests[0]);
 
+  Timer t2("propagate");
+  static Counter round("icf_round");
+
+  i64 slot = 0;
+  i64 num_classes = count_num_classes(digests[0], section_indices);
+
+  // Execute the propagation rounds until convergence is obtained.
+  for (;;) {
+    Timer t("round");
+    round.inc();
+
+    propagate(digests, edges, edge_indices, slot);
+    sort_section_indices(digests, section_indices, slot);
+    slot ^= 1;
+
+    i64 n = count_num_classes(digests[slot], section_indices);
+    if (n == num_classes)
+      break;
+    num_classes = n;
+  }
+  t2.stop();
+
+#if 0
   std::vector<std::vector<Digest>> digests(2);
   digests[0] = std::move(digests0);
   digests[1] = digests[0];
@@ -230,13 +325,6 @@ void icf_sections() {
   i64 slot = 0;
 
   auto count_num_classes = [&]() {
-    Timer t("count");
-    tbb::enumerable_thread_specific<i64> num_classes;
-    tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
-      if (digests[slot][i] != digests[slot][i + 1])
-        num_classes.local()++;
-    });
-    return num_classes.combine(std::plus());
   };
 
   i64 num_classes = count_num_classes();
@@ -338,4 +426,5 @@ void icf_sections() {
 
     SyncOut() << "ICF saved " << saved_bytes << " bytes";
   }
+#endif
 }
