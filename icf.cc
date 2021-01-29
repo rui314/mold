@@ -268,20 +268,20 @@ static void gather_edges(std::span<InputSection *> sections,
 
 static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
-                      i64 slot) {
+                      i64 slot, tbb::affinity_partitioner &ap) {
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
-    i64 begin = edge_indices[i];
-    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
-
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
+
+    i64 begin = edge_indices[i];
+    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j = begin; j < end; j++)
       SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
     digests[slot ^ 1][i] = digest_final(ctx);
-  });
+  }, ap);
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
@@ -359,10 +359,12 @@ void icf_sections() {
 
   // Execute the propagation rounds until convergence is obtained.
   {
-    Timer t2("propagate");
+    Timer t("propagate");
+    tbb::affinity_partitioner ap;
+
     for (i64 i = 0;; i++) {
       round.inc();
-      propagate(digests, edges, edge_indices, slot);
+      propagate(digests, edges, edge_indices, slot, ap);
       slot ^= 1;
 
       if (i % 10 == 9) {
@@ -375,7 +377,7 @@ void icf_sections() {
   }
 
   // Group sections by SHA1 digest.
-  Timer t3("merge");
+  Timer t_merge("merge");
   std::span<Digest> digest = digests[slot];
 
   tbb::parallel_sort(sections.begin(), sections.end(),
