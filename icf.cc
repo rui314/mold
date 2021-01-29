@@ -13,6 +13,14 @@ static constexpr i64 HASH_SIZE = 16;
 
 typedef std::array<u8, HASH_SIZE> Digest;
 
+namespace tbb {
+template<> struct tbb_hash<Digest> {
+  size_t operator()(const Digest &k) const {
+    return *(i64 *)&k[0];
+  }
+};
+}
+
 static bool is_eligible(InputSection &isec) {
   bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
   bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
@@ -378,27 +386,21 @@ void icf_sections() {
 
   // Group sections by SHA1 digest.
   Timer t_merge("merge");
+
+  tbb::concurrent_unordered_map<Digest, InputSection *> map;
   std::span<Digest> digest = digests[slot];
 
-  Timer t_sort("sort");
-  tbb::parallel_sort(sections.begin(), sections.end(),
-                     [&](InputSection *a, InputSection *b) {
-    auto cmp = (digest[a->icf_idx] <=> digest[b->icf_idx]);
-    if (cmp != 0)
-      return cmp < 0;
-    return a->get_priority() < b->get_priority();
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    InputSection *isec = sections[i];
+    auto [it, inserted] = map.insert({digest[i], isec});
+    if (!inserted && isec->get_priority() < it->second->get_priority())
+      it->second = isec;
   });
-  t_sort.stop();
 
-  tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
-    if (i == 0 || digest[sections[i - 1]->icf_idx] != digest[sections[i]->icf_idx]) {
-      sections[i]->leader = sections[i];
-
-      i64 j = i + 1;
-      while (j < sections.size() &&
-             digest[sections[i]->icf_idx] == digest[sections[j]->icf_idx])
-        sections[j++]->leader = sections[i];
-    }
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+    auto it = map.find(digest[i]);
+    assert(it != map.end());
+    sections[i]->leader = it->second;
   });
 
   if (config.print_icf_sections)
