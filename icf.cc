@@ -174,6 +174,7 @@ static void gather_edges(std::span<InputSection *> sections,
   Timer t("gather_edges");
 
   std::vector<i64> num_edges(sections.size());
+  edge_indices.resize(sections.size());
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection &isec = *sections[i];
@@ -188,8 +189,6 @@ static void gather_edges(std::span<InputSection *> sections,
       }
     }
   });
-
-  edge_indices.resize(num_edges.size());
 
   for (i64 i = 0; i < num_edges.size() - 1; i++)
     edge_indices[i + 1] = edge_indices[i] + num_edges[i];
