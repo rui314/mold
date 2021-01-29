@@ -18,12 +18,13 @@ static bool is_eligible(InputSection &isec) {
   bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
   bool is_writable = (isec.shdr.sh_flags & SHF_WRITE);
   bool is_bss = (isec.shdr.sh_type == SHT_NOBITS);
+  bool is_empty = (isec.shdr.sh_size == 0);
   bool is_init = (isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
   bool is_fini = (isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
   bool is_enumerable = is_c_identifier(isec.name);
 
   return is_alloc && is_executable && !is_writable && !is_bss &&
-         !is_init && !is_fini && !is_enumerable;
+         !is_empty && !is_init && !is_fini && !is_enumerable;
 }
 
 static Digest digest_final(SHA256_CTX &ctx) {
