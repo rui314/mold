@@ -74,6 +74,40 @@ struct LeafEq {
   }
 };
 
+static void merge_leaf_nodes() {
+  Timer t("leaf");
+
+  tbb::concurrent_unordered_map<InputSection *, InputSection *,
+                                LeafHasher, LeafEq> map;
+
+  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+    for (InputSection *isec : out::objs[i]->sections) {
+      if (!isec || !is_eligible(*isec))
+        continue;
+
+      if (is_leaf(*isec)) {
+        isec->icf_leaf = true;
+        auto [it, inserted] = map.insert({isec, isec});
+        if (!inserted && isec->get_priority() < it->second->get_priority())
+          it->second = isec;
+      } else {
+        isec->icf_eligible = true;
+      }
+    }
+  });
+
+  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+    for (InputSection *isec : out::objs[i]->sections) {
+      if (!isec || !isec->icf_leaf)
+        continue;
+
+      auto it = map.find(isec);
+      assert(it != map.end());
+      isec->leader = it->second;
+    }
+  });
+}
+
 static Digest compute_digest(InputSection &isec) {
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
@@ -307,38 +341,7 @@ void icf_sections() {
   Timer t("icf");
   static Counter round("icf_round");
 
-  {
-    tbb::concurrent_unordered_map<InputSection *, InputSection *,
-                                  LeafHasher, LeafEq> map;
-
-    Timer t("leaf");
-    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-      for (InputSection *isec : out::objs[i]->sections) {
-        if (!isec || !is_eligible(*isec))
-          continue;
-
-        if (is_leaf(*isec)) {
-          isec->icf_leaf = true;
-          auto [it, inserted] = map.insert({isec, isec});
-          if (!inserted && isec->get_priority() < it->second->get_priority())
-            it->second = isec;
-        } else {
-          isec->icf_eligible = true;
-        }
-      }
-    });
-
-    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-      for (InputSection *isec : out::objs[i]->sections) {
-        if (!isec || !isec->icf_leaf)
-          continue;
-
-        auto it = map.find(isec);
-        assert(it != map.end());
-        isec->leader = it->second;
-      }
-    });
-  }
+  merge_leaf_nodes();
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
