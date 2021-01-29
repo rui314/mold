@@ -297,6 +297,7 @@ void icf_sections() {
     });
   }
 
+#if 0
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
 
@@ -349,21 +350,20 @@ void icf_sections() {
         sections[j++]->leader = sections[i];
     }
   });
+#endif
 
   // Re-assign input sections to symbols.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
-      if (InputSection *isec = sym->input_section)
-        if (InputSection *leader = isec->leader)
-          sym->input_section = leader;
+      InputSection *isec = sym->input_section;
+      if (isec && isec->leader && isec->leader != isec) {
+        sym->input_section = isec->leader;
+        sym->input_section->kill();
+      }
     }
   });
 
-  tbb::parallel_for_each(sections, [&](InputSection *isec) {
-    if (isec->leader)
-      isec->kill();
-  });
-
+#if 0
   if (config.print_icf_sections) {
     i64 saved_bytes = 0;
 
@@ -382,4 +382,5 @@ void icf_sections() {
 
     SyncOut() << "ICF saved " << saved_bytes << " bytes";
   }
+#endif
 }
