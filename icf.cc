@@ -24,7 +24,9 @@ template<> struct tbb_hash<Digest> {
 static bool is_eligible(InputSection &isec) {
   bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
   bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
-  bool is_writable = (isec.shdr.sh_flags & SHF_WRITE);
+  bool is_relro = (isec.name == ".data.rel.ro" ||
+                   isec.name.starts_with(".data.rel.ro."));
+  bool is_writable = (isec.shdr.sh_flags & SHF_WRITE) && !is_relro;
   bool is_bss = (isec.shdr.sh_type == SHT_NOBITS);
   bool is_empty = (isec.shdr.sh_size == 0);
   bool is_init = (isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
@@ -83,7 +85,7 @@ struct LeafEq {
 };
 
 static void merge_leaf_nodes() {
-  Timer t("leaf");
+  Timer t("merge_leaf_nodes");
 
   static Counter eligible("icf_eligibles");
   static Counter non_eligible("icf_non_eligibles");
@@ -393,35 +395,42 @@ void icf_sections() {
   }
 
   // Group sections by SHA digest.
-  Timer t_merge("merge");
+  {
+    Timer t("group");
 
-  tbb::concurrent_unordered_map<Digest, InputSection *> map;
-  std::span<Digest> digest = digests[slot];
+    tbb::concurrent_unordered_map<Digest, InputSection *> map;
+    std::span<Digest> digest = digests[slot];
 
-  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    InputSection *isec = sections[i];
-    auto [it, inserted] = map.insert({digest[i], isec});
-    if (!inserted && isec->get_priority() < it->second->get_priority())
-      it->second = isec;
-  });
+    tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+      InputSection *isec = sections[i];
+      auto [it, inserted] = map.insert({digest[i], isec});
+      if (!inserted && isec->get_priority() < it->second->get_priority())
+        it->second = isec;
+    });
 
-  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    auto it = map.find(digest[i]);
-    assert(it != map.end());
-    sections[i]->leader = it->second;
-  });
+    tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
+      auto it = map.find(digest[i]);
+      assert(it != map.end());
+      sections[i]->leader = it->second;
+    });
+  }
 
   if (config.print_icf_sections)
     print_icf_sections();
 
   // Re-assign input sections to symbols.
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (Symbol *sym : file->symbols) {
-      InputSection *isec = sym->input_section;
-      if (isec && isec->leader && isec->leader != isec) {
-        sym->input_section = isec->leader;
-        isec->kill();
+  {
+    Timer t("reassign");
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      for (Symbol *sym : file->symbols) {
+        if (sym->file != file)
+          continue;
+        InputSection *isec = sym->input_section;
+        if (isec && isec->leader && isec->leader != isec) {
+          sym->input_section = isec->leader;
+          isec->kill();
+        }
       }
-    }
-  });
+    });
+  }
 }
