@@ -2,6 +2,7 @@
 
 #include <array>
 #include <openssl/sha.h>
+#include <tbb/concurrent_unordered_map.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
@@ -45,9 +46,9 @@ static bool is_leaf(InputSection &isec) {
 }
 
 struct LeafHasher {
-  size_t operator()(const InputSection &isec) {
-    size_t h = std::hash<std::string_view>()(isec.get_contents());
-    for (FdeRecord &fde : isec.fdes) {
+  size_t operator()(const InputSection *isec) const {
+    size_t h = std::hash<std::string_view>()(isec->get_contents());
+    for (FdeRecord &fde : isec->fdes) {
       size_t h2 = std::hash<std::string_view>()(fde.contents.substr(8));
       h ^= h2 + 0x9e3779b9 + (h << 6) + (h >> 2);
     }
@@ -55,16 +56,16 @@ struct LeafHasher {
   }
 };
 
-struct LeafEqual {
-  bool operator()(const InputSection &a, const InputSection &b) {
-    if (a.get_contents() != b.get_contents())
+struct LeafEq {
+  bool operator()(const InputSection *a, const InputSection *b) const {
+    if (a->get_contents() != b->get_contents())
       return false;
-    if (a.fdes.size() != b.fdes.size())
+    if (a->fdes.size() != b->fdes.size())
       return false;
-    for (i64 i = 0; i < a.fdes.size(); i++) {
-      if (a.fdes[i].contents.size() != b.fdes[i].contents.size())
+    for (i64 i = 0; i < a->fdes.size(); i++) {
+      if (a->fdes[i].contents.size() != b->fdes[i].contents.size())
         return false;
-      if (a.fdes[i].contents.substr(8) != b.fdes[i].contents.substr(8))
+      if (a->fdes[i].contents.substr(8) != b->fdes[i].contents.substr(8))
         return false;
     }
     return true;
@@ -244,15 +245,12 @@ static void gather_edges(std::span<InputSection *> sections,
 static void propagate(std::vector<std::vector<Digest>> &digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
-  std::atomic_int64_t count = 0;
-
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
 
     if (begin == end) {
       digests[slot ^ 1][i] = digests[slot][i];
-      count++;
       return;
     }
 
@@ -265,7 +263,6 @@ static void propagate(std::vector<std::vector<Digest>> &digests,
 
     digests[slot ^ 1][i] = digest_final(ctx);
   });
-  SyncOut() << "count=" << count;
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
@@ -285,19 +282,33 @@ void icf_sections() {
   static Counter round("icf_round");
 
   {
-    std::atomic_int64_t count = 0;
+    tbb::concurrent_unordered_map<InputSection *, InputSection *,
+                                  LeafHasher, LeafEq> map;
 
     Timer t("leaf");
     tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-      for (InputSection *isec : out::objs[i]->sections)
+      for (InputSection *isec : out::objs[i]->sections) {
         if (isec && is_eligible(*isec)) {
           isec->icf_eligible = true;
           isec->icf_leaf = is_leaf(*isec);
-          if (isec->icf_leaf)
-            count++;
+          if (isec->icf_leaf) {
+            auto [it, inserted] = map.insert({isec, isec});
+            if (!inserted && isec->get_priority() < it->second->get_priority())
+              it->second = isec;
+          }
         }
+      }
     });
-    SyncOut() << "leaves=" << count;
+
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      for (InputSection *isec : out::objs[i]->sections) {
+        if (isec && isec->icf_leaf) {
+          auto it = map.find(isec);
+          assert(it != map.end());
+          isec->leader = it->second;
+        }
+      }
+    });
   }
 
   // Prepare for the propagation rounds.
