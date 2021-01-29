@@ -380,12 +380,15 @@ void icf_sections() {
   Timer t_merge("merge");
   std::span<Digest> digest = digests[slot];
 
+  Timer t_sort("sort");
   tbb::parallel_sort(sections.begin(), sections.end(),
                      [&](InputSection *a, InputSection *b) {
-    if (digest[a->icf_idx] != digest[b->icf_idx])
-      return digest[a->icf_idx] < digest[b->icf_idx];
+    auto cmp = (digest[a->icf_idx] <=> digest[b->icf_idx]);
+    if (cmp != 0)
+      return cmp < 0;
     return a->get_priority() < b->get_priority();
   });
+  t_sort.stop();
 
   tbb::parallel_for((i64)0, (i64)sections.size() - 1, [&](i64 i) {
     if (i == 0 || digest[sections[i - 1]->icf_idx] != digest[sections[i]->icf_idx]) {
