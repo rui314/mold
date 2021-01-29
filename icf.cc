@@ -213,7 +213,7 @@ static void gather_edges(std::span<InputSection *> sections,
 static void propagate(std::span<std::vector<Digest>> digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       i64 slot) {
-  // Timer t("propagate");
+  Timer t("propagate");
 
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
     SHA256_CTX ctx;
@@ -230,7 +230,7 @@ static void propagate(std::span<std::vector<Digest>> digests,
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
-  // Timer t("count_num_classes");
+  Timer t("count_num_classes");
 
   std::vector<Digest> vec(digests.begin(), digests.end());
   tbb::parallel_sort(vec);
@@ -245,6 +245,7 @@ static i64 count_num_classes(std::span<Digest> digests) {
 
 void icf_sections() {
   Timer t("icf");
+  static Counter round("icf_round");
 
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
@@ -258,19 +259,17 @@ void icf_sections() {
   gather_edges(sections, edges, edge_indices);
 
   Timer t2("propagate");
-  static Counter round("icf_round");
 
   i64 slot = 0;
   i64 num_classes = -1;
 
   // Execute the propagation rounds until convergence is obtained.
   for (i64 i = 0;; i++) {
-    SyncOut() << "num_classes=" << num_classes;
     round.inc();
     propagate(digests, edges, edge_indices, slot);
     slot ^= 1;
 
-    if (i && i % 10 == 0) {
+    if (i % 10 == 9) {
       i64 n = count_num_classes(digests[slot]);
       if (n == num_classes)
         break;
