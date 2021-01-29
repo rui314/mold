@@ -216,12 +216,13 @@ static void propagate(std::span<std::vector<Digest>> digests,
   Timer t("propagate");
 
   tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
+    i64 begin = edge_indices[i];
+    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
+
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
 
-    i64 begin = edge_indices[i];
-    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
     for (i64 j = begin; j < end; j++)
       SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
