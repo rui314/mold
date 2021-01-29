@@ -358,7 +358,7 @@ void icf_sections() {
       InputSection *isec = sym->input_section;
       if (isec && isec->leader && isec->leader != isec) {
         sym->input_section = isec->leader;
-        sym->input_section->kill();
+        isec->kill();
       }
     }
   });
