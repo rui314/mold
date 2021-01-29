@@ -63,9 +63,8 @@ static void visit(InputSection *isec,
   }
 }
 
-void gc_sections() {
-  Timer t("gc_sections");
-  tbb::concurrent_vector<InputSection *> roots;
+static void collect_root_set(tbb::concurrent_vector<InputSection *> &roots) {
+  Timer t("collect_root_set");
 
   auto enqueue = [&](InputSection *isec) {
     if (mark_section(isec))
@@ -101,17 +100,22 @@ void gc_sections() {
       for (EhReloc &rel : cie.rels)
         enqueue(rel.sym.input_section);
   });
+}
 
-  // Mark all reachable sections
-  tbb::parallel_do(roots,
-                   [&](InputSection *isec,
-                       tbb::parallel_do_feeder<InputSection *> &feeder) {
-                     visit(isec, feeder, 0);
-                   });
+// Mark all reachable sections
+static void mark(tbb::concurrent_vector<InputSection *> roots) {
+  Timer t("mark");
+  tbb::parallel_do(roots, [&](InputSection *isec,
+                              tbb::parallel_do_feeder<InputSection *> &feeder) {
+    visit(isec, feeder, 0);
+  });
+}
 
+// Remove unreachable sections
+static void sweep() {
+  Timer t3("sweep");
   static Counter counter("garbage_sections");
 
-  // Remove unreachable sections
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
       InputSection *isec = file->sections[i];
@@ -124,4 +128,13 @@ void gc_sections() {
       }
     }
   });
+}
+
+void gc_sections() {
+  Timer t("gc_sections");
+  tbb::concurrent_vector<InputSection *> roots;
+
+  collect_root_set(roots);
+  mark(roots);
+  sweep();
 }
