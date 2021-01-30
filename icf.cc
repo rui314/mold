@@ -418,19 +418,19 @@ void icf_sections() {
   {
     Timer t("group");
 
-    tbb::concurrent_unordered_map<Digest, InputSection *> map;
+    auto *map = new tbb::concurrent_unordered_map<Digest, InputSection *>;
     std::span<Digest> digest = digests[slot];
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       InputSection *isec = sections[i];
-      auto [it, inserted] = map.insert({digest[i], isec});
+      auto [it, inserted] = map->insert({digest[i], isec});
       if (!inserted && isec->get_priority() < it->second->get_priority())
         it->second = isec;
     });
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-      auto it = map.find(digest[i]);
-      assert(it != map.end());
+      auto it = map->find(digest[i]);
+      assert(it != map->end());
       sections[i]->leader = it->second;
     });
   }
