@@ -286,22 +286,36 @@ static void gather_edges(std::span<InputSection *> sections,
   });
 }
 
-static void propagate(std::vector<std::vector<Digest>> &digests,
-                      std::span<u32> edges, std::span<u32> edge_indices,
-                      bool slot, tbb::affinity_partitioner &ap) {
-  tbb::parallel_for((i64)0, (i64)digests[0].size(), [&](i64 i) {
+static i64 propagate(std::vector<std::vector<Digest>> &digests,
+                     std::span<u32> edges, std::span<u32> edge_indices,
+                     bool slot, tbb::affinity_partitioner &ap) {
+  static Counter round("icf_round");
+  round++;
+
+  i64 num_digests = digests[0].size();
+  tbb::enumerable_thread_specific<i64> changed;
+
+  tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
+    if (digests[slot][i] == digests[!slot][i])
+      return;
+
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, digests[slot][i].data(), HASH_SIZE);
+    SHA256_Update(&ctx, digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
-    i64 end = (i + 1 == digests[0].size()) ? edges.size() : edge_indices[i + 1];
+    i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j = begin; j < end; j++)
       SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
     digests[!slot][i] = digest_final(ctx);
+
+    if (digests[slot][i] != digests[!slot][i])
+      changed.local()++;
   }, ap);
+
+  return changed.combine(std::plus());
 }
 
 static i64 count_num_classes(std::span<Digest> digests) {
@@ -363,9 +377,10 @@ void icf_sections() {
   // Prepare for the propagation rounds.
   std::vector<InputSection *> sections = gather_sections();
 
-  std::vector<std::vector<Digest>> digests(2);
+  std::vector<std::vector<Digest>> digests(3);
   digests[0] = compute_digests(sections);
   digests[1].resize(digests[0].size());
+  digests[2] = digests[0];
 
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
@@ -376,15 +391,23 @@ void icf_sections() {
   // Execute the propagation rounds until convergence is obtained.
   {
     Timer t("propagate");
-    static Counter round("icf_round");
     tbb::affinity_partitioner ap;
-    i64 num_classes = -1;
 
+    i64 num_changed = -1;
     for (;;) {
-      for (i64 j = 0; j < 10; j++) {
+      i64 n = propagate(digests, edges, edge_indices, slot, ap);
+      slot = !slot;
+
+      if (n == num_changed)
+        break;
+      num_changed = n;
+    }
+
+    i64 num_classes = -1;
+    for (;;) {
+      for (i64 i = 0; i < 10; i++) {
         propagate(digests, edges, edge_indices, slot, ap);
         slot = !slot;
-        round++;
       }
 
       i64 n = count_num_classes(digests[slot]);
