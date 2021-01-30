@@ -376,6 +376,9 @@ struct CieRecord {
   // For .eh_frame_hdr
   u32 num_fdes = 0;
   u32 fde_idx = -1;
+
+  // For ICF
+  u32 icf_idx = -1;
 };
 
 class InputSection : public InputChunk {

@@ -21,6 +21,35 @@ template<> struct tbb_hash<Digest> {
 };
 }
 
+static bool cie_equal(CieRecord &a, CieRecord &b) {
+  if (a.contents != b.contents)
+    return false;
+  if (a.rels.size() != b.rels.size())
+    return false;
+  for (i64 i = 0; i < a.rels.size(); i++)
+    if (a.rels[i] != b.rels[i])
+      return false;
+  return true;
+}
+
+static void uniquify_cies() {
+  Timer t("uniquify_cies");
+  std::vector<CieRecord *> cies;
+
+  for (ObjectFile *file : out::objs) {
+    for (CieRecord &cie : file->cies) {
+      for (i64 i = 0; i < cies.size(); i++) {
+        if (cie_equal(cie, *cies[i])) {
+          cie.icf_idx = i;
+          goto found;
+        }
+      }
+      cies.push_back(&cie);
+    found:;
+    }
+  }
+}
+
 static bool is_eligible(InputSection &isec) {
   bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
   bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
@@ -167,6 +196,8 @@ static Digest compute_digest(InputSection &isec) {
   hash(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
+    hash(isec.file->cies[fde.cie_idx].icf_idx);
+
     // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
     hash_string(fde.contents.substr(8));
@@ -373,6 +404,8 @@ static void print_icf_sections() {
 
 void icf_sections() {
   Timer t("icf");
+
+  uniquify_cies();
   merge_leaf_nodes();
 
   // Prepare for the propagation rounds.
