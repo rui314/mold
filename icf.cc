@@ -61,11 +61,11 @@ static bool is_eligible(InputSection &isec) {
 }
 
 static Digest digest_final(SHA256_CTX &ctx) {
-  u8 arr[SHA256_SIZE];
-  assert(SHA256_Final(arr, &ctx) == 1);
+  u8 buf[SHA256_SIZE];
+  assert(SHA256_Final(buf, &ctx) == 1);
 
   Digest digest;
-  memcpy(digest.data(), arr, HASH_SIZE);
+  memcpy(digest.data(), buf, HASH_SIZE);
   return digest;
 }
 
@@ -80,12 +80,16 @@ static bool is_leaf(InputSection &isec) {
   return true;
 }
 
+static size_t combine_hash(size_t a, size_t b) {
+  return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+}
+
 struct LeafHasher {
   size_t operator()(const InputSection *isec) const {
     size_t h = std::hash<std::string_view>()(isec->get_contents());
     for (FdeRecord &fde : isec->fdes) {
       size_t h2 = std::hash<std::string_view>()(fde.contents.substr(8));
-      h ^= h2 + 0x9e3779b9 + (h << 6) + (h >> 2);
+      h = combine_hash(h, h2);
     }
     return h;
   }
@@ -344,7 +348,8 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
   return changed.combine(std::plus());
 }
 
-static i64 count_num_classes(std::span<Digest> digests) {
+static i64 count_num_classes(std::span<Digest> digests,
+                             tbb::affinity_partitioner &ap) {
   std::vector<Digest> vec(digests.begin(), digests.end());
   tbb::parallel_sort(vec);
 
@@ -352,7 +357,7 @@ static i64 count_num_classes(std::span<Digest> digests) {
   tbb::parallel_for((i64)0, (i64)vec.size() - 1, [&](i64 i) {
     if (vec[i] != vec[i + 1])
       num_classes.local()++;
-  });
+  }, ap);
   return num_classes.combine(std::plus());
 }
 
@@ -434,7 +439,7 @@ void icf_sections() {
       for (i64 i = 0; i < 10; i++)
         propagate(digests, edges, edge_indices, slot, ap);
 
-      i64 n = count_num_classes(digests[slot]);
+      i64 n = count_num_classes(digests[slot], ap);
       if (n == num_classes)
         break;
       num_classes = n;
