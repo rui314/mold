@@ -21,15 +21,8 @@ template<> struct tbb_hash<Digest> {
 };
 }
 
-static bool cie_equal(CieRecord &a, CieRecord &b) {
-  if (a.contents != b.contents)
-    return false;
-  if (a.rels.size() != b.rels.size())
-    return false;
-  for (i64 i = 0; i < a.rels.size(); i++)
-    if (a.rels[i] != b.rels[i])
-      return false;
-  return true;
+static bool cie_equal(const CieRecord &a, const CieRecord &b) {
+  return a.contents == b.contents && a.rels == b.rels;
 }
 
 static void uniquify_cies() {
@@ -44,6 +37,7 @@ static void uniquify_cies() {
           goto found;
         }
       }
+      cie.icf_idx = cies.size();
       cies.push_back(&cie);
     found:;
     }
