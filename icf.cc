@@ -286,7 +286,7 @@ static void gather_edges(std::span<InputSection *> sections,
   });
 }
 
-static i64 propagate(std::vector<std::vector<Digest>> &digests,
+static i64 propagate(std::span<std::vector<Digest>> digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
                      bool &slot, tbb::affinity_partitioner &ap) {
   static Counter round("icf_round");
