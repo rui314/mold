@@ -1,7 +1,8 @@
 // This file implements the Identical Comdat Folding feature which can
 // reduce the output file size of a typical program by a few percent.
-// ICF identifies read-only input sections that happen to be identical.
-// It then leaves one of them and discards the others.
+// ICF identifies read-only input sections that happen to be identical
+// and thus can be used interchangeably. ICF leaves one of them and discards
+// the others.
 //
 // Two sections are considered identical by ICF if they have the exact
 // same contents, metadata such as section flags, exception handling
@@ -9,15 +10,16 @@
 // relocations are considered identical if they point to the _same_
 // section in terms of ICF. To see what that means, consider two sections,
 // A and B, which are identical except one pair of relocations. Say, A has
-// a relocation to section C, and B has a relocation to D. In this case, A
-// and B are considered identical if C and D are considered identical.
+// a relocation to section C, and B has a relocation to D. In this case,
+// A and B are considered identical if C and D are considered identical.
 // C and D can either be really the same section or two different sections
 // that are considered identical by ICF.
 //
 // This problem boils down to one in graph theory. Input to ICF can be
 // considered as a directed graph in which vertices are sections and edges
-// are relocations. We want to find as many isomorphic subgraphs as
-// possible.
+// are relocations. Vertices have labels (section contents, etc.), and so
+// are edges (relocation offsets, etc.). Given this formulation, we want to
+// find as many isomorphic subgraphs as possible.
 //
 // Solving such problem is computationally intensive task, but mold is quite
 // fast. For Chromium, mold's ICF finishes in less than 1 second with 20
@@ -25,10 +27,11 @@
 // seconds to run ICF under the same condition, respectively.
 //
 // mold's ICF is faster because we are using a better algorithm.
-// Our algorithm requires less overall computation, so it is faster than
-// the others with a single thread. It's also highly parallelizable and
-// its working set is small, so it scales pretty well with number of
-// available cores.
+// It's actually me who developed and implemented the lld's ICF algorithm,
+// and I can say that mold's algorithm is better than that in all aspects.
+// It scales better for number of available cores, require less overall
+// computation, and has a smaller working set. So, it's better with a single
+// thread and even better with multiple threads.
 
 #include "mold.h"
 
