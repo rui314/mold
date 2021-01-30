@@ -288,7 +288,7 @@ static void gather_edges(std::span<InputSection *> sections,
 
 static i64 propagate(std::vector<std::vector<Digest>> &digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
-                     bool slot, tbb::affinity_partitioner &ap) {
+                     bool &slot, tbb::affinity_partitioner &ap) {
   static Counter round("icf_round");
   round++;
 
@@ -315,6 +315,7 @@ static i64 propagate(std::vector<std::vector<Digest>> &digests,
       changed.local()++;
   }, ap);
 
+  slot = !slot;
   return changed.combine(std::plus());
 }
 
@@ -396,8 +397,6 @@ void icf_sections() {
     i64 num_changed = -1;
     for (;;) {
       i64 n = propagate(digests, edges, edge_indices, slot, ap);
-      slot = !slot;
-
       if (n == num_changed)
         break;
       num_changed = n;
@@ -405,10 +404,8 @@ void icf_sections() {
 
     i64 num_classes = -1;
     for (;;) {
-      for (i64 i = 0; i < 10; i++) {
+      for (i64 i = 0; i < 10; i++)
         propagate(digests, edges, edge_indices, slot, ap);
-        slot = !slot;
-      }
 
       i64 n = count_num_classes(digests[slot]);
       if (n == num_classes)
