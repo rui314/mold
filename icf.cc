@@ -1,3 +1,35 @@
+// This file implements the Identical Comdat Folding feature which can
+// reduce the output file size of a typical program by a few percent.
+// ICF identifies read-only input sections that happen to be identical.
+// It then leaves one of them and discards the others.
+//
+// Two sections are considered identical by ICF if they have the exact
+// same contents, metadata such as section flags, exception handling
+// records, and relocations. The last one is interesting because two
+// relocations are considered identical if they point to the _same_
+// section in terms of ICF. To see what that means, consider two sections,
+// A and B, which are identical except one pair of relocations. Say, A has
+// a relocation to section C, and B has a relocation to D. In this case, A
+// and B are considered identical if C and D are considered identical.
+// C and D can either be really the same section or two different sections
+// that are considered identical by ICF.
+//
+// This problem boils down to one in graph theory. Input to ICF can be
+// considered as a directed graph in which vertices are sections and edges
+// are relocations. We want to find as many isomorphic subgraphs as
+// possible.
+//
+// Solving such problem is computationally intensive task, but mold is quite
+// fast. For Chromium, mold's ICF finishes in less than 1 second with 20
+// threads. This is contrary to lld and gold, which take about 5 and 50
+// seconds to run ICF under the same condition, respectively.
+//
+// mold's ICF is faster because we are using a better algorithm.
+// Our algorithm requires less overall computation, so it is faster than
+// the others with a single thread. It's also highly parallelizable and
+// its working set is small, so it scales pretty well with number of
+// available cores.
+
 #include "mold.h"
 
 #include <array>
