@@ -883,8 +883,8 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.entry = arg;
     } else if (read_flag(args, "print-map")) {
       conf.print_map = true;
-    } else if (read_flag(args, "stat")) {
-      conf.stat = true;
+    } else if (read_flag(args, "stats")) {
+      conf.stats = true;
     } else if (read_flag(args, "static")) {
       conf.is_static = true;
     } else if (read_arg(args, arg, "y") || read_arg(args, arg, "trace-symbol")) {
@@ -1383,7 +1383,7 @@ int main(int argc, char **argv) {
     print_map();
 
   // Show stats numbers
-  if (config.stat)
+  if (config.stats)
     show_stats();
 
   if (config.perf)
