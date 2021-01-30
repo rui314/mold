@@ -391,23 +391,6 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
-static i64 binary_search(std::span<u32> span, i64 val) {
-  if (val < span[0])
-    return -1;
-
-  i64 ret = 0;
-  while (span.size() > 1) {
-    i64 mid = span.size() / 2;
-    if (val < span[mid]) {
-      span = span.subspan(0, mid);
-    } else {
-      span = span.subspan(mid);
-      ret += mid;
-    }
-  }
-  return ret;
-}
-
 void ObjectFile::initialize_mergeable_sections() {
   mergeable_sections.resize(sections.size());
 
@@ -436,11 +419,14 @@ void ObjectFile::initialize_mergeable_sections() {
         continue;
 
       i64 offset = esym.st_value + rel.r_addend;
-      i64 idx = binary_search(m->frag_offsets, offset);
-      if (idx == -1)
-        Fatal() << *this << ": bad relocation at " << rel.r_sym;
+      std::span<u32> offsets = m->frag_offsets;
 
-      SectionFragmentRef ref{m->fragments[idx], (i32)(offset - m->frag_offsets[idx])};
+      auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
+      if (it == offsets.begin())
+        Fatal() << *this << ": bad relocation at " << rel.r_sym;
+      i64 idx = it - 1 - offsets.begin();
+
+      SectionFragmentRef ref{m->fragments[idx], (i32)(offset - offsets[idx])};
       isec->rel_fragments.push_back(ref);
       isec->has_fragments[i] = true;
     }
@@ -456,16 +442,19 @@ void ObjectFile::initialize_mergeable_sections() {
     if (!m)
       continue;
 
-    i64 idx = binary_search(m->frag_offsets, esym.st_value);
-    if (idx == -1)
-      Fatal() << *this << ": bad symbol value";
+    std::span<u32> offsets = m->frag_offsets;
+
+    auto it = std::upper_bound(offsets.begin(), offsets.end(), esym.st_value);
+    if (it == offsets.begin())
+      Fatal() << *this << ": bad symbol value: " << esym.st_value;
+    i64 idx = it - 1 - offsets.begin();
 
     if (i < first_global) {
       symbols[i]->frag = m->fragments[idx];
-      symbols[i]->value = esym.st_value - m->frag_offsets[idx];
+      symbols[i]->value = esym.st_value - offsets[idx];
     } else {
       sym_fragments[i - first_global].frag = m->fragments[idx];
-      sym_fragments[i - first_global].addend = esym.st_value - m->frag_offsets[idx];
+      sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
     }
   }
 
