@@ -4,16 +4,33 @@
 // and thus can be used interchangeably. ICF leaves one of them and discards
 // the others.
 //
+// ICF is usually used in combination with -ffunction-sections and
+// -fdata-sections compiler options, so that object files have one section
+// for each function or variable instead of having one large .text or .data.
+// The unit of ICF merging is section.
+//
 // Two sections are considered identical by ICF if they have the exact
 // same contents, metadata such as section flags, exception handling
 // records, and relocations. The last one is interesting because two
 // relocations are considered identical if they point to the _same_
-// section in terms of ICF. To see what that means, consider two sections,
-// A and B, which are identical except one pair of relocations. Say, A has
-// a relocation to section C, and B has a relocation to D. In this case,
-// A and B are considered identical if C and D are considered identical.
-// C and D can either be really the same section or two different sections
-// that are considered identical by ICF.
+// section in terms of ICF.
+//
+// To see what that means, consider two sections, A and B, which are
+// identical except for one pair of relocations. Say, A has a relocation to
+// section C, and B has a relocation to D. In this case, A and B are
+// considered identical if C and D are considered identical. C and D can be
+// either really the same section or two different sections that are
+// considered identical by ICF. Below is an example of such inputs, A, B, C
+// and D:
+//
+//   void A() { C(); }
+//   void B() { D(); }
+//   void C() { A(); }
+//   void D() { B(); }
+//
+// If we assume A and B are mergeable, we can merge C and D, which makes A
+// and B mergeable. There's no contradiction in our assumption, so we can
+// conclude that A and B as well as C and D are mergeable.
 //
 // This problem boils down to one in graph theory. Input to ICF can be
 // considered as a directed graph in which vertices are sections and edges
@@ -21,10 +38,10 @@
 // are edges (relocation offsets, etc.). Given this formulation, we want to
 // find as many isomorphic subgraphs as possible.
 //
-// Solving such problem is computationally intensive task, but mold is quite
-// fast. For Chromium, mold's ICF finishes in less than 1 second with 20
-// threads. This is contrary to lld and gold, which take about 5 and 50
-// seconds to run ICF under the same condition, respectively.
+// Solving such problem is computationally intensive, but mold is quite fast.
+// For Chromium, mold's ICF finishes in less than 1 second with 20 threads.
+// This is contrary to lld and gold, which take about 5 and 50 seconds to
+// run ICF under the same condition, respectively.
 //
 // mold's ICF is faster because we are using a better algorithm.
 // It's actually me who developed and implemented the lld's ICF algorithm,
