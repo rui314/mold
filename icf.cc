@@ -1,4 +1,4 @@
-// This file implements the Identical Comdat Folding feature which can
+// This file implements the Identical Code Folding feature which can
 // reduce the output file size of a typical program by a few percent.
 // ICF identifies read-only input sections that happen to be identical
 // and thus can be used interchangeably. ICF leaves one of them and discards
