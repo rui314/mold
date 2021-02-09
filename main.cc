@@ -1001,7 +1001,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       remaining.push_back(arg);
     } else {
       if (args[0][0] == '-')
-        Fatal() << "unknown command line option: " << args[0];
+        Fatal() << "mold: unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
     }
