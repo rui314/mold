@@ -101,9 +101,9 @@ ElfShdr *InputFile::find_section(i64 type) {
   return nullptr;
 }
 
-ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name)
-  : InputFile(mb), archive_name(archive_name),
-    is_in_archive(archive_name != "") {
+ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name,
+                       bool is_in_lib)
+  : InputFile(mb), archive_name(archive_name), is_in_lib(is_in_lib) {
   is_alive = (archive_name == "");
 }
 
@@ -548,7 +548,7 @@ void ObjectFile::resolve_symbols() {
 
     Symbol &sym = *symbols[i];
 
-    if (is_in_archive) {
+    if (is_in_lib) {
       std::lock_guard lock(sym.mu);
       bool is_new = !sym.file;
       bool tie_but_higher_priority =
@@ -576,7 +576,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
     Symbol &sym = *symbols[i];
 
     if (esym.is_defined()) {
-      if (is_in_archive)
+      if (is_in_lib)
         maybe_override_symbol(sym, i);
       continue;
     }

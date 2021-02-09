@@ -913,7 +913,7 @@ protected:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryMappedFile *mb, std::string archive_name);
+  ObjectFile(MemoryMappedFile *mb, std::string archive_name, bool is_in_lib);
   ObjectFile();
 
   void parse();
@@ -933,7 +933,7 @@ public:
   std::vector<InputSection *> sections;
   std::span<ElfSym> elf_syms;
   i64 first_global = 0;
-  const bool is_in_archive = false;
+  const bool is_in_lib = false;
   std::vector<CieRecord> cies;
 
   u64 num_dynrel = 0;
@@ -1005,7 +1005,12 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 // linker_script.cc
 //
 
-void parse_linker_script(MemoryMappedFile *mb, bool as_needed);
+struct ReadContext {
+  bool as_needed = false;
+  bool whole_archive = false;
+};
+
+void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx);
 void parse_version_script(std::string path);
 
 //
@@ -1124,7 +1129,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 //
 
 MemoryMappedFile *find_library(std::string path, std::span<std::string_view> lib_paths);
-void read_file(MemoryMappedFile *mb, bool as_needed);
+void read_file(MemoryMappedFile *mb, ReadContext &ctx);
 
 //
 // Inline objects and functions
