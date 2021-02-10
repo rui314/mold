@@ -44,7 +44,8 @@ static FileType get_file_type(MemoryMappedFile *mb) {
 static ObjectFile *new_object_file(MemoryMappedFile *mb,
                                    std::string archive_name,
                                    ReadContext &ctx) {
-  ObjectFile *file = new ObjectFile(mb, archive_name, !ctx.whole_archive);
+  bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
+  ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
   parser_tg.run([=]() { file->parse(); });
   return file;
 }

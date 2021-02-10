@@ -104,7 +104,7 @@ ElfShdr *InputFile::find_section(i64 type) {
 ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name,
                        bool is_in_lib)
   : InputFile(mb), archive_name(archive_name), is_in_lib(is_in_lib) {
-  is_alive = (archive_name == "");
+  is_alive = !is_in_lib;
 }
 
 void ObjectFile::initialize_sections() {
