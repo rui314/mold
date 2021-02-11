@@ -584,14 +584,14 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
 
 static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   auto start = [](Symbol *sym, OutputChunk *chunk) {
-    if (sym) {
+    if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
   auto stop = [](Symbol *sym, OutputChunk *chunk) {
-    if (sym) {
+    if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
     }
@@ -648,16 +648,13 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   }
 
   // _DYNAMIC
-  if (out::dynamic)
-    start(out::_DYNAMIC, out::dynamic);
+  start(out::_DYNAMIC, out::dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
-  if (out::gotplt)
-    start(out::_GLOBAL_OFFSET_TABLE_, out::gotplt);
+  start(out::_GLOBAL_OFFSET_TABLE_, out::gotplt);
 
   // __GNU_EH_FRAME_HDR
-  if (out::eh_frame_hdr)
-    start(out::__GNU_EH_FRAME_HDR, out::eh_frame_hdr);
+  start(out::__GNU_EH_FRAME_HDR, out::eh_frame_hdr);
 
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
