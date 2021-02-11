@@ -655,6 +655,10 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   if (out::gotplt)
     start(out::_GLOBAL_OFFSET_TABLE_, out::gotplt);
 
+  // __GNU_EH_FRAME_HDR
+  if (out::eh_frame_hdr)
+    start(out::__GNU_EH_FRAME_HDR, out::eh_frame_hdr);
+
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
     if (is_c_identifier(chunk->name)) {

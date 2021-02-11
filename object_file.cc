@@ -815,6 +815,9 @@ ObjectFile::ObjectFile() {
   out::_etext = add("_etext", STV_HIDDEN);
   out::_edata = add("_edata", STV_HIDDEN);
 
+  if (config.eh_frame_hdr)
+    out::__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
+
   for (OutputChunk *chunk : out::chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
