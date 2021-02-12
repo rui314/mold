@@ -66,6 +66,7 @@ struct Config {
   bool icf = false;
   bool is_static = false;
   bool perf = false;
+  bool pic = false;
   bool pie = false;
   bool preload = false;
   bool print_gc_sections = false;

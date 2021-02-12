@@ -14,7 +14,7 @@ void OutputEhdr::copy_buf() {
   hdr.e_ident[EI_CLASS] = ELFCLASS64;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
-  hdr.e_type = config.pie ? ET_DYN : ET_EXEC;
+  hdr.e_type = config.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
   hdr.e_entry = Symbol::intern(config.entry)->get_addr();
@@ -177,7 +177,7 @@ void RelDynSection::update_shdr() {
 
   i64 n = 0;
   for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported || (config.pie && sym->is_relative()))
+    if (sym->is_imported || (config.pic && sym->is_relative()))
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
@@ -200,7 +200,7 @@ void RelDynSection::copy_buf() {
   for (Symbol *sym : out::got->got_syms) {
     if (sym->is_imported)
       *rel++ = {sym->get_got_addr(), R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
-    else if (config.pie && sym->is_relative())
+    else if (config.pic && sym->is_relative())
       *rel++ = {sym->get_got_addr(), R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
   }
 

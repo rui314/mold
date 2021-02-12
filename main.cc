@@ -920,9 +920,11 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.eh_frame_hdr = true;
     } else if (read_flag(args, "no-eh-frame-hdr")) {
       conf.eh_frame_hdr = false;
-    } else if (read_flag(args, "pie")) {
+    } else if (read_flag(args, "pie") || read_flag(args, "pic-executable")) {
+      conf.pic = true;
       conf.pie = true;
-    } else if (read_flag(args, "no-pie")) {
+    } else if (read_flag(args, "no-pie") || read_flag(args, "no-pic-executable")) {
+      conf.pic = false;
       conf.pie = false;
     } else if (read_flag(args, "relax")) {
       conf.relax = true;
@@ -1095,7 +1097,7 @@ int main(int argc, char **argv) {
     on_complete = fork_child();
   }
 
-  if (config.pie)
+  if (config.pic)
     config.image_base = 0;
 
   for (std::string_view arg : config.trace_symbol)
