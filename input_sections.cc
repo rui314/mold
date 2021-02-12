@@ -346,8 +346,6 @@ void InputSection::scan_relocations() {
   counter += rels.size();
 
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
-  this->rel_types.resize(rels.size());
-
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
