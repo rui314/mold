@@ -348,11 +348,12 @@ void InputSection::scan_relocations() {
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   this->rel_types.resize(rels.size());
 
+  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
-    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
     bool is_code = (sym.st_type == STT_FUNC);
 
     if (!sym.file || sym.is_placeholder) {
