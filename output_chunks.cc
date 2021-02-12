@@ -606,7 +606,7 @@ void DynsymSection::sort_symbols() {
 
     i64 num_defined = symbols.end() - first_defined;
     out::gnu_hash->num_buckets = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
-    out::gnu_hash->symoffset = first_defined - symbols.begin();
+    out::gnu_hash->symoffset = first_global - symbols.begin();
 
     std::stable_sort(first_defined, symbols.end(), [&](Symbol *a, Symbol *b) {
       i64 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
