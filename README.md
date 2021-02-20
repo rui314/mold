@@ -28,7 +28,7 @@ it's more than 50x.
 It looks like mold has achieved the goal. It can link Chromium in 2
 seconds with 8-cores/16-threads, and if I enable the preloading
 feature (I'll explain it later), the latency of the linker for an
-interactive use is less than 900 milliseconds. It is actualy faster
+interactive use is less than 900 milliseconds. It is actually faster
 than `cat`.
 
 Note that even though mold can create a runnable Chrome executable,
@@ -48,14 +48,14 @@ just a toy linker, and this is still just my pet project.
   take the advantage of that because they don't scale well for more
   cores. I have a 64-core/128-thread machine, so my goal is to create
   a linker that uses the CPU nicely. mold should be much faster than
-  other linkers on 4 or 8-core machines too, though.
+  other linkers on 4 or 8-core machines to though.
 
 - It looks to me that the designs of the existing linkers are somewhat
   similar, and I believe there are a lot of drastically different
   designs that haven't been explored yet. Develoeprs generally don't
-  care about linkers as long as they work correctly, and they don't
+  care about linkers as long as they work correctly, they don't
   even think about creating a new one. So there may be lots of low
-  hanging fruits there in this area.
+  hanging fruits present in this area.
 
 ## Basic design
 
@@ -166,7 +166,7 @@ following features instead of the entire linker script langauge:
   sections, and
 
 - a method to set addresses to output sections, so that relocations
-  are applied based on desired adddresses.
+  are applied based on desired addresses.
 
 I believe everything else can be done with a post-link binary editing
 tool.
@@ -201,7 +201,7 @@ tool.
   memory management. It is because most objects that are allocated
   during an execution of mold are needed until the very end of the
   program. I'm sure this is an odd memory management scheme (or the
-  lack thereof), but this is what LLVM lld does too.
+  lack thereof), but this is what LLVM lld does to.
 
 - The output from the linker should be deterministic for the sake of
   [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
@@ -213,7 +213,7 @@ tool.
   an output file. This is a slow step, but we can speed it up by
   splitting a file into small chunks, computing SHA-1 for each chunk,
   and then computing SHA-1 of the concatenated SHA-1 hashes
-  (i.e. constructing a [Markle
+  (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
   can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
@@ -227,7 +227,7 @@ tool.
   (i.e. `_start`) or a few other root sections. In mold, we are using
   multiple threads to mark sections concurrently.
 
-- Similarly, BFD, gold an lld support Identical Comdat Folding (ICF)
+- Similarly, BFD, gold and lld support Identical Comdat Folding (ICF)
   as a yet another size optimization. ICF merges two or more read-only
   sections that happen to have the same contents and relocations.
   To do that, we have to find isomorphic subgraphs from larger graphs.
@@ -309,7 +309,7 @@ first place.
    Individual object files are inevitably incomplete as a program,
    because when a compiler created them, it only see a part of an
    entire program. For example, if an object file contains a function
-   call that refers other object file, the `call` instruction in the
+   call that refers another object file, the `call` instruction in the
    object cannot be complete, as the compiler has no idea as to what
    is the called function's address. To deal with this, the compiler
    emits a placeholder value (typically just zero) instead of a real
@@ -318,7 +318,7 @@ first place.
    "relocation". Relocations are typically processed by the linker.
 
    It is easy for a linker to apply relocations for the original Unix
-   because a program is always loaded to a fixed address. It exactly
+   because a program is always loaded to a fixed address. It precisely
    knows the addresses of all functions and data when linking a
    program.
 
@@ -327,7 +327,7 @@ first place.
    To understand what it is, imagine that you are trying to compile
    a program for the early Unix. You don't want to waste time to
    compile libc functions every time you compile your program (the
-   computers of the era was incredibly slow), so you have already
+   computers of the era were incredibly slow), so you have already
    placed each libc function into a separate source file and compiled
    them individually. That means, you have object files for each libc
    function, e.g., printf.o, scanf.o, atoi.o, write.o, etc.
@@ -338,7 +338,7 @@ first place.
    program. But, keeping the linker command line in sync with the
    libc functions you are using in your program is bothersome. You can
    be conservative; you can specify all libc object files to the
-   command line, but that leads to program bloat because the linker
+   command line, but that leads to program bloat because the linker will
    unconditionally link all object files given to it no matter whether
    they are used or not. So, a new feature was added to the linker to
    fix the problem. That is the static library, which is also called
@@ -356,7 +356,7 @@ first place.
    wrapped in an archive are not linked to an output by default.
    An archive works as supplements to complete your program.
 
-   Even today, you can still find a libc archive file. Run `ar t
+   Even today, you can still find a libc archive file. Running `ar t
    /usr/lib/x86_64-linux-gnu/libc.a` on Linux should give you a list
    of object files in the libc archive.
 
@@ -371,7 +371,7 @@ In this section, I'll explain the high level concurrency strategy of
 mold.
 
 In most places, mold adopts data parallelism. That is, we have a huge
-number of piece of data of the same kind, and we process each of them
+number of pieces of data of the same kind, and we process each of them
 individually using parallel for-loop. For example, after identifying
 the exact set of input object files, we need to scan all relocation
 tables to determine the sizes of .got and .plt sections. We do that
@@ -393,7 +393,7 @@ symbol. Symbol is a shared resource, and writing to them from multiple
 threads without synchronization is unsafe. To deal with it, we made
 the flag an atomic variable.
 
-The other common pattern you can find in mold which is build on top of
+The other common pattern you can find in mold which is built on top of
 the parallel for-loop is the map-reduce pattern. That is, we run a
 parallel for-loop on a large data set to produce a small data set and
 process the small data set with a single thread. Let me take a
@@ -404,7 +404,7 @@ of 1 MiB blocks and compute a SHA-1 hash for each block in parallel.
 Then, we concatenate the SHA-1 hashes and compute a SHA-1 hash on the
 hashes to get a final build-id.
 
-Finally, we use concurrent hashmap at a few places in mold. Concurrent
+Finally, we use concurrent hashmaps at a few places in mold. Concurrent
 hashmap is a hashmap to which multiple threads can safely insert items
 in parallel. We use it in the symbol resolution stage, for example.
 To resolve symbols, we basically have to throw in all defined symbols
@@ -494,7 +494,7 @@ not plan to implement and why I turned them down.
   efficiently fix up a binary for this case.
 
   This is a hard problem, so existing linkers don't try too hard to
-  solve it. For example, IIRC, gold falls back to full link if any
+  solve it. For example, IIRC and gold fall back to full link if any
   function is removed from a previous build. If you want to not annoy
   users in the fallback case, you need to make full link fast anyway.
 
@@ -541,7 +541,7 @@ not plan to implement and why I turned them down.
   Reason for rejection: Just like the maximum number of files you can
   simultaneously open, the maximum number of files you can watch using
   inotify(2) isn't that large. Maybe just a single instance of mold is
-  fine with inotify(2), but it may fail if you run multiple of it.
+  fine with inotify(2), but it may fail if you run multiple instances of it.
 
   The other reason for not doing it is because mold is quite fast
   without it anyway. Invoking stat(2) on each file for file update
