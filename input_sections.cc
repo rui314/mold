@@ -192,11 +192,11 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_ABS:
       write(S + A);
       break;
-    case R_ABS_DYN:
+    case R_DYN_ABS:
       write(S + A);
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       break;
-    case R_DYN:
+    case R_DYN_REL:
       *dynrel++ = {P, R_X86_64_64, sym.dynsym_idx, A};
       break;
     case R_PC:
@@ -385,12 +385,12 @@ void InputSection::scan_relocations() {
           if (is_readonly)
             report_error();
           sym.flags |= NEEDS_DYNSYM;
-          rel_types[i] = R_DYN;
+          rel_types[i] = R_DYN_REL;
           file->num_dynrel++;
         } else if (sym.is_relative()) {
           if (is_readonly)
             report_error();
-          rel_types[i] = R_ABS_DYN;
+          rel_types[i] = R_DYN_ABS;
           file->num_dynrel++;
         } else {
           rel_types[i] = R_ABS;
