@@ -373,28 +373,30 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      if (config.pic && sym.is_relative())
-        report_error();
-      if (sym.is_imported)
-        sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
-      rel_types[i] = R_ABS;
+      if (sym.is_absolute()) {
+        rel_types[i] = R_ABS;
+      } else {
+        if (config.pic)
+          report_error();
+        if (sym.is_imported)
+          sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
+        rel_types[i] = R_ABS;
+      }
       break;
     case R_X86_64_64:
-      if (config.pic) {
+      if (sym.is_absolute()) {
+        rel_types[i] = R_ABS;
+      } else if (config.pic) {
+        if (is_readonly)
+          report_error();
+
         if (sym.is_imported) {
-          if (is_readonly)
-            report_error();
           sym.flags |= NEEDS_DYNSYM;
           rel_types[i] = R_DYN_REL;
-          file->num_dynrel++;
-        } else if (sym.is_relative()) {
-          if (is_readonly)
-            report_error();
-          rel_types[i] = R_DYN_ABS;
-          file->num_dynrel++;
         } else {
-          rel_types[i] = R_ABS;
+          rel_types[i] = R_DYN_ABS;
         }
+        file->num_dynrel++;
       } else {
         if (sym.is_imported)
           sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;

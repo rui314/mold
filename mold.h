@@ -1219,7 +1219,11 @@ inline bool Symbol::is_alive() const {
 }
 
 inline bool Symbol::is_absolute() const {
-  return input_section == nullptr && file != out::internal_file;
+  if (file == out::internal_file)
+    return false;
+  if (file->is_dso)
+    return esym->is_abs();
+  return input_section == nullptr;
 }
 
 inline u64 Symbol::get_addr() const {
