@@ -398,8 +398,6 @@ static void scan_rels() {
       assert(sym->file->is_dso);
 
       for (Symbol *alias : ((SharedFile *)sym->file)->find_aliases(sym)) {
-        if (sym == alias)
-          continue;
         alias->has_copyrel = true;
         alias->value = sym->value;
         out::dynsym->add_symbol(alias);

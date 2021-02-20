@@ -973,7 +973,7 @@ public:
 
   void parse();
   void resolve_symbols();
-  std::span<Symbol *> find_aliases(Symbol *sym);
+  std::vector<Symbol *> find_aliases(Symbol *sym);
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;

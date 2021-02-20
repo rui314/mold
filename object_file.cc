@@ -873,36 +873,15 @@ void SharedFile::parse() {
   if (ElfShdr *sec = find_section(SHT_GNU_VERSYM))
     vers = get_data<u16>(*sec);
 
-  std::vector<std::pair<const ElfSym *, u16>> pairs;
-
   for (i64 i = first_global; i < esyms.size(); i++) {
     if (!esyms[i].is_defined())
       continue;
     if (!vers.empty() && (vers[i] >> 15) == 1)
       continue;
 
-    if (vers.empty())
-      pairs.push_back({&esyms[i], 1});
-    else
-      pairs.push_back({&esyms[i], vers[i]});
-  }
-
-  // Sort symbols by value for find_aliases(), as find_aliases() does
-  // binary search on symbols.
-  sort(pairs, [](const std::pair<const ElfSym *, u16> &a,
-                 const std::pair<const ElfSym *, u16> &b) {
-    return a.first->st_value < b.first->st_value;
-  });
-
-  elf_syms.reserve(pairs.size());
-  versyms.reserve(pairs.size());
-  symbols.reserve(pairs.size());
-
-  for (std::pair<const ElfSym *, u16> &x : pairs) {
-    elf_syms.push_back(x.first);
-    versyms.push_back(x.second);
-
-    std::string_view name = symbol_strtab.data() + x.first->st_name;
+    std::string_view name = symbol_strtab.data() + esyms[i].st_name;
+    elf_syms.push_back(&esyms[i]);
+    versyms.push_back(vers.empty() ? 1 : vers[i]);
     symbols.push_back(Symbol::intern(name));
   }
 
@@ -965,10 +944,11 @@ void SharedFile::resolve_symbols() {
   }
 }
 
-std::span<Symbol *> SharedFile::find_aliases(Symbol *sym) {
+std::vector<Symbol *> SharedFile::find_aliases(Symbol *sym) {
   assert(sym->file == this);
-  auto [begin, end] = std::equal_range(
-    symbols.begin(), symbols.end(), sym,
-    [&](Symbol *a, Symbol *b) { return a->value < b->value; });
-  return {begin, end};
+  std::vector<Symbol *> vec;
+  for (Symbol *sym2 : symbols)
+    if (sym != sym2 && sym->value == sym2->value)
+      vec.push_back(sym2);
+  return vec;
 }
