@@ -409,9 +409,9 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S: {
       std::function<void()> table[][4] = {
-        // Absolute  Relative  Imported data  Imported code
-        {  none,     none,     copyrel,       plt },        // PDE
-        {  none,     error,    error,         error },      // PIE
+        // Absolute  Local  Imported data  Imported code
+        {  none,     none,  copyrel,       plt },        // PDE
+        {  none,     error, error,         error },      // PIE
       };
 
       rel_types[i] = R_ABS;
@@ -420,9 +420,9 @@ void InputSection::scan_relocations() {
     }
     case R_X86_64_64: {
       std::function<void()> table[][4] = {
-        // Absolute  Relative  Imported data  Imported code
-        {  none,     none,     copyrel,       plt },        // PDE
-        {  none,     baserel,  dynrel,        dynrel },     // PIE
+        // Absolute  Local    Imported data  Imported code
+        {  none,     none,    copyrel,       plt },        // PDE
+        {  none,     baserel, dynrel,        dynrel },     // PIE
       };
 
       rel_types[i] = R_ABS;
@@ -432,11 +432,17 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
-    case R_X86_64_PC64:
-      if (sym.is_imported)
-        sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
+    case R_X86_64_PC64: {
+      std::function<void()> table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  none,     none,  copyrel,       plt },        // PDE
+        {  error,    none,  copyrel,       plt },        // PIE
+      };
+
       rel_types[i] = R_PC;
+      table[config.pic][get_sym_type(sym)]();
       break;
+    }
     case R_X86_64_GOT32:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOT;
