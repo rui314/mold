@@ -357,6 +357,7 @@ void InputSection::scan_relocations() {
 
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+  i64 output_type = config.pie ? 1 : 0;
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -415,7 +416,7 @@ void InputSection::scan_relocations() {
       };
 
       rel_types[i] = R_ABS;
-      table[config.pic][get_sym_type(sym)]();
+      table[output_type][get_sym_type(sym)]();
       break;
     }
     case R_X86_64_64: {
@@ -426,7 +427,7 @@ void InputSection::scan_relocations() {
       };
 
       rel_types[i] = R_ABS;
-      table[config.pic][get_sym_type(sym)]();
+      table[output_type][get_sym_type(sym)]();
       break;
     }
     case R_X86_64_PC8:
