@@ -333,6 +333,16 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   }
 }
 
+static int get_sym_type(Symbol &sym) {
+  if (sym.is_absolute())
+    return 0;
+  if (!sym.is_imported)
+    return 1;
+  if (sym.st_type != STT_FUNC)
+    return 2;
+  return 3;
+}
+
 // Linker has to create data structures in an output file to apply
 // some type of relocations. For example, if a relocation refers a GOT
 // or a PLT entry of a symbol, linker has to create an entry in .got
@@ -359,10 +369,29 @@ void InputSection::scan_relocations() {
       continue;
     }
 
-    auto report_error = [&]() {
+    auto none = []() {};
+    auto copy = [&]() { sym.flags = NEEDS_COPYREL; };
+    auto plt = [&]() { sym.flags = NEEDS_PLT; };
+
+    auto error = [&]() {
       Error() << *this << ": " << rel_to_string(rel.r_type)
               << " relocation against symbol `" << sym.name
               << "' can not be used; recompile with -fPIE";
+    };
+
+    auto dynrel = [&]() {
+      if (is_readonly)
+        error();
+      sym.flags |= NEEDS_DYNSYM;
+      rel_types[i] = R_DYN_REL;
+      file->num_dynrel++;
+    };
+
+    auto baserel = [&]() {
+      if (is_readonly)
+        error();
+      rel_types[i] = R_DYN_ABS;
+      file->num_dynrel++;
     };
 
     switch (rel.r_type) {
@@ -372,37 +401,28 @@ void InputSection::scan_relocations() {
     case R_X86_64_8:
     case R_X86_64_16:
     case R_X86_64_32:
-    case R_X86_64_32S:
-      if (sym.is_absolute()) {
-        rel_types[i] = R_ABS;
-      } else {
-        if (config.pic)
-          report_error();
-        if (sym.is_imported)
-          sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
-        rel_types[i] = R_ABS;
-      }
-      break;
-    case R_X86_64_64:
-      if (sym.is_absolute()) {
-        rel_types[i] = R_ABS;
-      } else if (config.pic) {
-        if (is_readonly)
-          report_error();
+    case R_X86_64_32S: {
+      std::function<void()> table[][4] = {
+        // ABS  Local  Imported (data)  Imported (code)
+        none,   none,  copy,            plt,   // PDE
+        none,   error, error,           error, // PIE
+      };
 
-        if (sym.is_imported) {
-          sym.flags |= NEEDS_DYNSYM;
-          rel_types[i] = R_DYN_REL;
-        } else {
-          rel_types[i] = R_DYN_ABS;
-        }
-        file->num_dynrel++;
-      } else {
-        if (sym.is_imported)
-          sym.flags |= is_code ? NEEDS_PLT : NEEDS_COPYREL;
-        rel_types[i] = R_ABS;
-      }
+      rel_types[i] = R_ABS;
+      table[config.pic][get_sym_type(sym)]();
       break;
+    }
+    case R_X86_64_64: {
+      std::function<void()> table[][4] = {
+        // ABS  Local    Imported (data)  Imported (code)
+        none,   none,    copy,            plt,    // PDE
+        none,   baserel, dynrel,          dynrel, // PIE
+      };
+
+      rel_types[i] = R_ABS;
+      table[config.pic][get_sym_type(sym)]();
+      break;
+    }
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
