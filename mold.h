@@ -316,8 +316,8 @@ protected:
 enum RelType : u8 {
   R_NONE = 1,
   R_ABS,
-  R_DYN_ABS,
-  R_DYN_REL,
+  R_DYN,
+  R_BASEREL,
   R_PC,
   R_GOT,
   R_GOTPC,

@@ -192,11 +192,11 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_ABS:
       write(S + A);
       break;
-    case R_DYN_ABS:
+    case R_BASEREL:
       write(S + A);
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       break;
-    case R_DYN_REL:
+    case R_DYN:
       *dynrel++ = {P, R_X86_64_64, sym.dynsym_idx, A};
       break;
     case R_PC:
@@ -370,8 +370,6 @@ void InputSection::scan_relocations() {
     }
 
     auto none = []() {};
-    auto copy = [&]() { sym.flags = NEEDS_COPYREL; };
-    auto plt = [&]() { sym.flags = NEEDS_PLT; };
 
     auto error = [&]() {
       Error() << *this << ": " << rel_to_string(rel.r_type)
@@ -379,18 +377,26 @@ void InputSection::scan_relocations() {
               << "' can not be used; recompile with -fPIE";
     };
 
+    auto copyrel = [&]() {
+      sym.flags = NEEDS_COPYREL;
+    };
+
+    auto plt = [&]() {
+      sym.flags = NEEDS_PLT;
+    };
+
     auto dynrel = [&]() {
       if (is_readonly)
         error();
       sym.flags |= NEEDS_DYNSYM;
-      rel_types[i] = R_DYN_REL;
+      rel_types[i] = R_DYN;
       file->num_dynrel++;
     };
 
     auto baserel = [&]() {
       if (is_readonly)
         error();
-      rel_types[i] = R_DYN_ABS;
+      rel_types[i] = R_BASEREL;
       file->num_dynrel++;
     };
 
@@ -403,9 +409,9 @@ void InputSection::scan_relocations() {
     case R_X86_64_32:
     case R_X86_64_32S: {
       std::function<void()> table[][4] = {
-        // ABS  Local  Imported (data)  Imported (code)
-        none,   none,  copy,            plt,   // PDE
-        none,   error, error,           error, // PIE
+        // Absolute  Relative  Imported data  Imported code
+        {  none,     none,     copyrel,       plt },        // PDE
+        {  none,     error,    error,         error },      // PIE
       };
 
       rel_types[i] = R_ABS;
@@ -414,9 +420,9 @@ void InputSection::scan_relocations() {
     }
     case R_X86_64_64: {
       std::function<void()> table[][4] = {
-        // ABS  Local    Imported (data)  Imported (code)
-        none,   none,    copy,            plt,    // PDE
-        none,   baserel, dynrel,          dynrel, // PIE
+        // Absolute  Relative  Imported data  Imported code
+        {  none,     none,     copyrel,       plt },        // PDE
+        {  none,     baserel,  dynrel,        dynrel },     // PIE
       };
 
       rel_types[i] = R_ABS;
