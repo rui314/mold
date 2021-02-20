@@ -874,15 +874,18 @@ void SharedFile::parse() {
     vers = get_data<u16>(*sec);
 
   for (i64 i = first_global; i < esyms.size(); i++) {
-    if (!esyms[i].is_defined())
-      continue;
     if (!vers.empty() && (vers[i] >> 15) == 1)
       continue;
 
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
-    elf_syms.push_back(&esyms[i]);
-    versyms.push_back(vers.empty() ? 1 : vers[i]);
-    symbols.push_back(Symbol::intern(name));
+
+    if (esyms[i].is_defined()) {
+      elf_syms.push_back(&esyms[i]);
+      versyms.push_back(vers.empty() ? 1 : vers[i]);
+      symbols.push_back(Symbol::intern(name));
+    } else {
+      undefs.push_back(Symbol::intern(name));
+    }
   }
 
   static Counter counter("dso_syms");

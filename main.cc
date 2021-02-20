@@ -360,6 +360,13 @@ static void scan_rels() {
   // Exit if there was a relocation that refers an undefined symbol.
   Error::checkpoint();
 
+  // Export symbols referenced by DSOs.
+  tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
+    for (Symbol *sym : file->undefs)
+      if (sym->file && !sym->file->is_dso)
+        sym->flags |= NEEDS_DYNSYM;
+  });
+
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
   append(files, out::objs);

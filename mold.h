@@ -977,6 +977,7 @@ public:
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;
+  std::vector<Symbol *> undefs;
 
 private:
   std::string_view get_soname();

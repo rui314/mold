@@ -18,5 +18,6 @@ x:
 EOF
 
 ../mold -o $t/exe $t/a.o $t/b.so
+readelf --dyn-syms $t/exe | grep -q expfn
 
 echo OK
