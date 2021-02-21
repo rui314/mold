@@ -74,6 +74,7 @@ struct Config {
   bool print_map = false;
   bool quick_exit = true;
   bool relax = true;
+  bool shared = false;
   bool stats = false;
   bool strip_all = false;
   bool trace = false;
