@@ -178,6 +178,11 @@ static void resolve_symbols() {
     if (file->is_alive)
       roots.push_back(file);
 
+  for (std::string_view name : config.undefined)
+    if (InputFile *file = Symbol::intern(name)->file)
+      if (!file->is_alive.exchange(true) && !file->is_dso)
+        roots.push_back((ObjectFile *)file);
+
   tbb::parallel_do(roots,
                    [&](ObjectFile *file,
                        tbb::parallel_do_feeder<ObjectFile *> &feeder) {
@@ -907,6 +912,8 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.library_paths.push_back(arg);
     } else if (read_arg(args, arg, "sysroot")) {
       conf.sysroot = arg;
+    } else if (read_arg(args, arg, "u") || read_arg(args, arg, "undefined")) {
+      conf.undefined.push_back(arg);
     } else if (read_arg(args, arg, "hash-style")) {
       if (arg == "sysv") {
         conf.hash_style_sysv = true;

@@ -89,6 +89,7 @@ struct Config {
   std::vector<std::string> globals;
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
+  std::vector<std::string_view> undefined;
   std::vector<std::string_view> version_script;
   u64 image_base = 0x200000;
 };
