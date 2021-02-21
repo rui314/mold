@@ -878,13 +878,14 @@ void SharedFile::parse() {
       continue;
 
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
+    Symbol *sym = Symbol::intern(name);
 
     if (esyms[i].is_defined()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(vers.empty() ? 1 : vers[i]);
-      symbols.push_back(Symbol::intern(name));
+      symbols.push_back(sym);
     } else {
-      undefs.push_back(Symbol::intern(name));
+      undefs.push_back(sym);
     }
   }
 
