@@ -645,6 +645,7 @@ void DynsymSection::copy_buf() {
       esym.st_value = sym.get_addr();
     } else if (sym.is_imported || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
+      esym.st_size = 0;
     } else if (!sym.input_section) {
       esym.st_shndx = SHN_ABS;
       esym.st_value = sym.get_addr();

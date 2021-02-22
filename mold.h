@@ -973,6 +973,8 @@ public:
     is_alive = !as_needed;
   }
 
+  SharedFile() {}
+
   void parse();
   void resolve_symbols();
   std::vector<Symbol *> find_aliases(Symbol *sym);
@@ -1146,6 +1148,7 @@ inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 
 inline ObjectFile *internal_obj;
+inline SharedFile *internal_dso;
 
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;

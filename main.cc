@@ -421,12 +421,14 @@ static void scan_rels() {
 static void export_dynamic() {
   Timer t("export_dynamic");
 
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    ObjectFile *file = out::objs[i];
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-      if (sym->file == file && config.export_dynamic)
-        sym->ver_idx = VER_NDX_GLOBAL;
-  });
+  if (config.export_dynamic || config.shared) {
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      ObjectFile *file = out::objs[i];
+      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
+        if (sym->file == file && sym->esym->st_visibility == STV_DEFAULT)
+          sym->ver_idx = VER_NDX_GLOBAL;
+    });
+  }
 
   for (std::string_view name : config.globals)
     Symbol::intern(name)->ver_idx = VER_NDX_GLOBAL;
@@ -1031,6 +1033,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       args = args.subspan(1);
     }
   }
+
   return conf;
 }
 
@@ -1275,6 +1278,8 @@ int main(int argc, char **argv) {
   out::internal_obj = new ObjectFile;
   out::internal_obj->resolve_symbols();
   out::objs.push_back(out::internal_obj);
+
+  out::internal_dso = new SharedFile;
 
   // Convert weak symbols to absolute symbols with value 0.
   {
