@@ -533,7 +533,6 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.esym = &esym;
     sym.is_placeholder = false;
     sym.is_weak = (esym.st_bind == STB_WEAK);
-    sym.is_imported = false;
 
     if (sym.traced)
       SyncOut() << "trace: " << *sym.file
@@ -616,7 +615,6 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.esym = &esym;
         sym.is_placeholder = false;
         sym.is_undef_weak = true;
-        sym.is_imported = false;
 
         if (sym.traced)
           SyncOut() << "trace: " << *this << ": unresolved weak symbol "
@@ -661,7 +659,7 @@ void ObjectFile::scan_relocations() {
   // Scan relocations against exception frames
   for (CieRecord &cie : cies) {
     for (EhReloc &rel : cie.rels) {
-      if (!rel.sym.is_imported)
+      if (!rel.sym.is_imported())
         continue;
       if (rel.sym.st_type != STT_FUNC)
         Fatal() << *this << ": " << rel.sym.name
@@ -938,7 +936,6 @@ void SharedFile::resolve_symbols() {
       sym.esym = &esym;
       sym.is_placeholder = false;
       sym.is_weak = (esym.st_bind == STB_WEAK);
-      sym.is_imported = true;
 
       if (sym.traced)
         SyncOut() << "trace: " << *sym.file

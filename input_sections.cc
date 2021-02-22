@@ -336,7 +336,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
 static int get_sym_type(Symbol &sym) {
   if (sym.is_absolute())
     return 0;
-  if (!sym.is_imported)
+  if (!sym.is_imported())
     return 1;
   if (sym.st_type != STT_FUNC)
     return 2;
@@ -459,7 +459,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_GOTPCREL;
       break;
     case R_X86_64_PLT32:
-      if (sym.is_imported || sym.st_type == STT_GNU_IFUNC)
+      if (sym.is_imported() || sym.st_type == STT_GNU_IFUNC)
         sym.flags |= NEEDS_PLT;
       rel_types[i] = R_PC;
       break;
@@ -467,7 +467,7 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSGD reloc not followed by PLT32";
 
-      if (config.relax && !sym.is_imported) {
+      if (config.relax && !sym.is_imported()) {
         rel_types[i] = R_TLSGD_RELAX_LE;
         i++;
       } else {
@@ -479,7 +479,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
-      if (sym.is_imported)
+      if (sym.is_imported())
         Error() << *this << ": TLSLD reloc refers external symbol " << sym.name;
 
       if (config.relax) {
@@ -492,7 +492,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
-      if (sym.is_imported)
+      if (sym.is_imported())
         Error() << *this << ": DTPOFF reloc refers external symbol " << sym.name;
       rel_types[i] = config.relax ? R_TPOFF : R_DTPOFF;
       break;

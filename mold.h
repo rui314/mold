@@ -262,6 +262,7 @@ public:
   inline bool is_alive() const;
   inline bool is_absolute() const;
   inline bool is_relative() const { return !is_absolute(); }
+  inline bool is_imported() const;
 
   std::string_view name;
   InputFile *file = nullptr;
@@ -285,7 +286,6 @@ public:
   tbb::spin_mutex mu;
 
   u8 is_placeholder : 1 = false;
-  u8 is_imported : 1 = false;
   u8 is_weak : 1 = false;
   u8 is_undef_weak : 1 = false;
   u8 write_symtab : 1 = false;
@@ -1229,6 +1229,10 @@ inline bool Symbol::is_absolute() const {
   return input_section == nullptr;
 }
 
+inline bool Symbol::is_imported() const {
+  return file->is_dso;
+}
+
 inline u64 Symbol::get_addr() const {
   if (frag) {
     if (frag->is_alive)
@@ -1255,7 +1259,7 @@ inline u64 Symbol::get_addr() const {
     return input_section->get_addr() + value;
   }
 
-  if (file && file->is_dso)
+  if (plt_idx != -1)
     return get_plt_addr();
 
   return value;
