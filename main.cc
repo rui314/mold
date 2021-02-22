@@ -1272,9 +1272,9 @@ int main(int argc, char **argv) {
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  out::internal_file = new ObjectFile;
-  out::internal_file->resolve_symbols();
-  out::objs.push_back(out::internal_file);
+  out::internal_obj = new ObjectFile;
+  out::internal_obj->resolve_symbols();
+  out::objs.push_back(out::internal_obj);
 
   // Convert weak symbols to absolute symbols with value 0.
   {

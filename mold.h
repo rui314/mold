@@ -930,7 +930,7 @@ public:
   void compute_symtab();
   void write_symtab();
 
-  static ObjectFile *create_internal_file();
+  static ObjectFile *create_internal_obj();
 
   std::string archive_name;
   std::vector<InputSection *> sections;
@@ -1145,7 +1145,7 @@ inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
 inline u8 *buf;
 
-inline ObjectFile *internal_file;
+inline ObjectFile *internal_obj;
 
 inline OutputEhdr *ehdr;
 inline OutputShdr *shdr;
@@ -1222,7 +1222,7 @@ inline bool Symbol::is_alive() const {
 }
 
 inline bool Symbol::is_absolute() const {
-  if (file == out::internal_file)
+  if (file == out::internal_obj)
     return false;
   if (file->is_dso)
     return esym->is_abs();
