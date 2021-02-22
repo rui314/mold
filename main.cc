@@ -1279,8 +1279,6 @@ int main(int argc, char **argv) {
   out::internal_obj->resolve_symbols();
   out::objs.push_back(out::internal_obj);
 
-  out::internal_dso = new SharedFile;
-
   // Convert weak symbols to absolute symbols with value 0.
   {
     Timer t("undef_weak");

@@ -4,13 +4,15 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | clang -fuse-ld=`pwd`/../mold -o $t/a.so -shared -x assembler -
-.globl fn1
+cat <<EOF | clang -fPIC -c -o $t/a.o -x assembler -
+.globl fn1, fn2
 fn1:
-  nop
+  call fn2
 EOF
 
-readelf --dyn-syms $t/a.so | grep -q "
+clang -shared  -fuse-ld=`pwd`/../mold -o $t/b.so $t/a.o
+
+readelf --dyn-syms $t/b.so | grep -q "
 Symbol table '.dynsym' contains 5 entries:
    Num:    Value          Size Type    Bind   Vis      Ndx Name
      0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND

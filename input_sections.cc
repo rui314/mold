@@ -379,11 +379,11 @@ void InputSection::scan_relocations() {
     };
 
     auto copyrel = [&]() {
-      sym.flags = NEEDS_COPYREL;
+      sym.flags |= NEEDS_COPYREL;
     };
 
     auto plt = [&]() {
-      sym.flags = NEEDS_PLT;
+      sym.flags |= NEEDS_PLT;
     };
 
     auto dynrel = [&]() {
