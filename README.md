@@ -28,7 +28,7 @@ it's more than 50x.
 It looks like mold has achieved the goal. It can link Chromium in 2
 seconds with 8-cores/16-threads, and if I enable the preloading
 feature (I'll explain it later), the latency of the linker for an
-interactive use is less than 900 milliseconds. It is actualy faster
+interactive use is less than 900 milliseconds. It is actually faster
 than `cat`.
 
 Note that even though mold can create a runnable Chrome executable,
