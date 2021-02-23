@@ -14,12 +14,12 @@ but it's not entirely impossible because of the following two reasons:
    one as a file copy command. My linker can use multiple threads to
    copy file contents more efficiently to save time to do extra work.
 
-2. Copying file contents is I/O-bounded, and many CPU cores should be
+2. Copying file contents is I/O-bound, and many CPU cores should be
    available during file copy. We can use them to do extra work while
    copying file contents.
 
 Concretely speaking, I wanted to use the linker to link a Chromium
-executable with full debug info (~2 GiB in size) just in 1 second.
+executable with full debug info (~2 GiB in size) in just 1 second.
 LLVM's lld, the fastest open-source linker which I originally created
 a few years ago, takes about 12 seconds to link Chromium on my machine.
 So the goal is 12x performance bump over lld. Compared to GNU gold,
@@ -39,32 +39,32 @@ just a toy linker, and this is still just my pet project.
 
 - Even though lld has significantly improved the situation, linking is
   still one of the slowest steps in a build. It is especially
-  annoying when I changed one line of code and had to wait for a few
+  annoying when I change one line of code and have to wait for a few
   seconds or even more for a linker to complete. It should be
   instantaneous. There's a need for a faster linker.
 
 - The number of cores on a PC has increased a lot lately, and this
   trend is expected to continue. However, the existing linkers can't
-  take the advantage of that because they don't scale well for more
+  take advantage of that because they don't scale well for more
   cores. I have a 64-core/128-thread machine, so my goal is to create
   a linker that uses the CPU nicely. mold should be much faster than
-  other linkers on 4 or 8-core machines too, though.
+  other linkers on 4 or 8-core machines, too, though.
 
 - It looks to me that the designs of the existing linkers are somewhat
   similar, and I believe there are a lot of drastically different
-  designs that haven't been explored yet. Develoeprs generally don't
+  designs that haven't been explored yet. Developers generally don't
   care about linkers as long as they work correctly, and they don't
   even think about creating a new one. So there may be lots of low
-  hanging fruits there in this area.
+  hanging fruit in this area.
 
 ## Basic design
 
-- In order to achieve a `cat`-like performance, the most important
+- In order to achieve `cat`-like performance, the most important
   thing is to fix the layout of an output file as quickly as possible, so
   that we can start copying actual data from input object files to an
   output file as soon as possible.
 
-- Copying data from input files to an output file is I/O-bounded, so
+- Copying data from input files to an output file is I/O-bound, so
   there should be room for doing computationally-intensive tasks while
   copying data from one file to another.
 
@@ -265,8 +265,7 @@ total. The data contains the following items:
 | Relocations              | 62,024,719
 
 ¹ Sections that have to be copied from input object files to an
-output file. Sections that contain relocations or symbols are for
-example excluded.
+output file. Sections that contain relocations or symbols, for example, are excluded.
 
 ## Internals
 
