@@ -146,8 +146,8 @@ set for this purpose is very limited, and it is okay to implement them
 to mold.
 
 Besides that, we really don't want to implement the linker script
-langauge. But at the same time, we want to satisfy the user needs that
-are currently satisfied with the linker script langauge. So, what
+language. But at the same time, we want to satisfy the user needs that
+are currently satisfied with the linker script language. So, what
 should we do? Here is my observation:
 
 - Linker script allows to do a lot of tricky stuff, such as specifying
@@ -160,7 +160,7 @@ should we do? Here is my observation:
   sections, and (b) applying relocations.
 
 From the above observation, I believe we need to provide only the
-following features instead of the entire linker script langauge:
+following features instead of the entire linker script language:
 
 - A method to specify how input sections are mapped to output
   sections, and
