@@ -357,7 +357,7 @@ void InputSection::scan_relocations() {
 
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-  i64 output_type = config.pie ? 1 : 0;
+  i64 output_type = config.shared ? 2 : (config.pie ? 1 : 0);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -413,6 +413,7 @@ void InputSection::scan_relocations() {
         // Absolute  Local  Imported data  Imported code
         {  none,     none,  copyrel,       plt },        // PDE
         {  none,     error, error,         error },      // PIE
+        {  none,     error, error,         error },      // DSO
       };
 
       rel_types[i] = R_ABS;
@@ -424,6 +425,7 @@ void InputSection::scan_relocations() {
         // Absolute  Local    Imported data  Imported code
         {  none,     none,    copyrel,       plt },        // PDE
         {  none,     baserel, dynrel,        dynrel },     // PIE
+        {  none,     baserel, dynrel,        dynrel },     // DSO
       };
 
       rel_types[i] = R_ABS;
@@ -438,10 +440,11 @@ void InputSection::scan_relocations() {
         // Absolute  Local  Imported data  Imported code
         {  none,     none,  copyrel,       plt },        // PDE
         {  error,    none,  copyrel,       plt },        // PIE
+        {  error,    none,  error,         error },      // DSO
       };
 
       rel_types[i] = R_PC;
-      table[config.pic][get_sym_type(sym)]();
+      table[output_type][get_sym_type(sym)]();
       break;
     }
     case R_X86_64_GOT32:

@@ -7,7 +7,8 @@ mkdir -p $t
 cat <<EOF | clang -fPIC -c -o $t/a.o -x assembler -
 .globl fn1, fn2
 fn1:
-  jmp fn2
+  call fn2@PLT
+  ret
 EOF
 
 clang -shared -fuse-ld=`pwd`/../mold -o $t/b.so $t/a.o
@@ -18,17 +19,21 @@ grep -q '0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND fn2' $t/log
 grep -q '000000000000111c     0 NOTYPE  GLOBAL DEFAULT   16 fn1' $t/log
 
 cat <<EOF | clang -fPIC -c -o $t/c.o -xc -
+#include <stdio.h>
+
 int fn1();
 
-int fn2() {
-  return 3;
+void fn2() {
+  printf("hello\n");
 }
 
 int main() {
-  return fn1();
+  fn1();
+  return 0;
 }
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/b.so
+$t/exe | grep -q hello
 
 echo OK

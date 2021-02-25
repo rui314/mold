@@ -17,7 +17,8 @@ void OutputEhdr::copy_buf() {
   hdr.e_type = config.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
-  hdr.e_entry = Symbol::intern(config.entry)->get_addr();
+  if (!config.shared)
+    hdr.e_entry = Symbol::intern(config.entry)->get_addr();
   hdr.e_phoff = out::phdr->shdr.sh_offset;
   hdr.e_shoff = out::shdr->shdr.sh_offset;
   hdr.e_ehsize = sizeof(ElfEhdr);
