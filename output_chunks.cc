@@ -309,7 +309,9 @@ static std::vector<u64> create_dynamic_section() {
   for (SharedFile *file : out::dsos)
     define(DT_NEEDED, out::dynstr->find_string(file->soname));
 
-  define(DT_RUNPATH, out::dynstr->find_string(config.rpaths));
+  if (!config.rpaths.empty())
+    define(DT_RUNPATH, out::dynstr->find_string(config.rpaths));
+
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
   define(DT_RELAENT, sizeof(ElfRela));
