@@ -925,6 +925,7 @@ public:
   void handle_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
+  void claim_unresolved_symbols();
   void scan_relocations();
   void convert_common_symbols();
   void compute_symtab();
@@ -1230,7 +1231,7 @@ inline bool Symbol::is_absolute() const {
 }
 
 inline bool Symbol::is_imported() const {
-  return file->is_dso;
+  return file->is_dso || (esym && esym->is_undef() && esym->st_bind != STB_WEAK);
 }
 
 inline u64 Symbol::get_addr() const {

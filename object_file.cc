@@ -650,6 +650,24 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
   }
 }
 
+void ObjectFile::claim_unresolved_symbols() {
+  if (!is_alive)
+    return;
+
+  for (i64 i = first_global; i < symbols.size(); i++) {
+    const ElfSym &esym = elf_syms[i];
+    Symbol &sym = *symbols[i];
+    std::lock_guard lock(sym.mu);
+
+    if (esym.is_undef() && (!sym.esym || sym.esym->is_undef())) {
+      if (sym.file && sym.file->priority < this->priority)
+        continue;
+      sym.file = this;
+      sym.esym = &esym;
+    }
+  }
+}
+
 void ObjectFile::scan_relocations() {
   // Scan relocations against seciton contents
   for (InputSection *isec : sections)
