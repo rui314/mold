@@ -610,15 +610,11 @@ void DynsymSection::sort_symbols() {
   // If we have .gnu.hash section, it imposes more constraints
   // on the order of symbols.
   if (out::gnu_hash) {
-    auto first_defined = std::stable_partition(
-      first_global, symbols.end(),
-      [](Symbol *sym) { return sym->is_imported() || sym->esym->is_undef(); });
-
-    i64 num_defined = symbols.end() - first_defined;
-    out::gnu_hash->num_buckets = num_defined / out::gnu_hash->LOAD_FACTOR + 1;
+    i64 num_globals = symbols.end() - first_global;
+    out::gnu_hash->num_buckets = num_globals / out::gnu_hash->LOAD_FACTOR + 1;
     out::gnu_hash->symoffset = first_global - symbols.begin();
 
-    std::stable_sort(first_defined, symbols.end(), [&](Symbol *a, Symbol *b) {
+    std::stable_sort(first_global, symbols.end(), [&](Symbol *a, Symbol *b) {
       i64 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
       i64 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
       return x < y;
