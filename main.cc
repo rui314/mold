@@ -675,8 +675,8 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
     if (is_c_identifier(chunk->name)) {
-      start(Symbol::intern("__start_" + std::string(chunk->name)), chunk);
-      stop(Symbol::intern("__stop_" + std::string(chunk->name)), chunk);
+      start(Symbol::intern_alloc("__start_" + std::string(chunk->name)), chunk);
+      stop(Symbol::intern_alloc("__stop_" + std::string(chunk->name)), chunk);
     }
   }
 }

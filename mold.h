@@ -253,6 +253,10 @@ public:
     return map.insert(name, {name});
   }
 
+  static Symbol *intern_alloc(std::string name) {
+    return intern(*new std::string(name));
+  }
+
   inline u64 get_addr() const;
   inline u64 get_got_addr() const;
   inline u64 get_gotplt_addr() const;

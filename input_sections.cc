@@ -434,13 +434,24 @@ void InputSection::scan_relocations() {
     }
     case R_X86_64_PC8:
     case R_X86_64_PC16:
-    case R_X86_64_PC32:
-    case R_X86_64_PC64: {
+    case R_X86_64_PC32: {
       std::function<void()> table[][4] = {
         // Absolute  Local  Imported data  Imported code
         {  none,     none,  copyrel,       plt },        // PDE
         {  error,    none,  copyrel,       plt },        // PIE
         {  error,    none,  error,         error },      // DSO
+      };
+
+      rel_types[i] = R_PC;
+      table[output_type][get_sym_type(sym)]();
+      break;
+    }
+    case R_X86_64_PC64: {
+      std::function<void()> table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  none,     none,  copyrel,       plt },        // PDE
+        {  baserel,  none,  copyrel,       plt },        // PIE
+        {  baserel,  none,  error,         error },      // DSO
       };
 
       rel_types[i] = R_PC;
