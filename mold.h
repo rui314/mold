@@ -27,6 +27,7 @@ static constexpr i64 SECTOR_SIZE = 512;
 static constexpr i64 PAGE_SIZE = 4096;
 static constexpr i64 GOT_SIZE = 8;
 static constexpr i64 PLT_SIZE = 16;
+static constexpr i64 PLT_GOT_SIZE = 8;
 static constexpr i64 SHA256_SIZE = 32;
 
 typedef uint8_t u8;
@@ -568,6 +569,21 @@ public:
     shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     shdr.sh_addralign = 8;
     shdr.sh_size = PLT_SIZE;
+  }
+
+  void add_symbol(Symbol *sym);
+  void copy_buf() override;
+
+  std::vector<Symbol *> symbols;
+};
+
+class PltGotSection : public OutputChunk {
+public:
+  PltGotSection() : OutputChunk(SYNTHETIC) {
+    name = ".plt.got";
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    shdr.sh_addralign = 8;
   }
 
   void add_symbol(Symbol *sym);
@@ -1163,6 +1179,7 @@ inline HashSection *hash;
 inline GnuHashSection *gnu_hash;
 inline ShstrtabSection *shstrtab;
 inline PltSection *plt;
+inline PltGotSection *pltgot;
 inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
 inline EhFrameSection *eh_frame;
@@ -1296,7 +1313,10 @@ inline u64 Symbol::get_tlsgd_addr() const {
 
 inline u64 Symbol::get_plt_addr() const {
   assert(plt_idx != -1);
-  return out::plt->shdr.sh_addr + plt_idx * PLT_SIZE;
+
+  if (got_idx == -1)
+    return out::plt->shdr.sh_addr + plt_idx * PLT_SIZE;
+  return out::pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
 }
 
 inline u64 SectionFragment::get_addr() const {

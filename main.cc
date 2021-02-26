@@ -393,8 +393,12 @@ static void scan_rels() {
     if (sym->flags & NEEDS_GOT)
       out::got->add_got_symbol(sym);
 
-    if (sym->flags & NEEDS_PLT)
-      out::plt->add_symbol(sym);
+    if (sym->flags & NEEDS_PLT) {
+      if (sym->flags & NEEDS_GOT)
+        out::pltgot->add_symbol(sym);
+      else
+        out::plt->add_symbol(sym);
+    }
 
     if (sym->flags & NEEDS_GOTTPOFF)
       out::got->add_gottpoff_symbol(sym);
@@ -1157,6 +1161,7 @@ int main(int argc, char **argv) {
   out::strtab = new StrtabSection;
   out::shstrtab = new ShstrtabSection;
   out::plt = new PltSection;
+  out::pltgot = new PltGotSection;
   if (!config.strip_all)
     out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
@@ -1184,6 +1189,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::got);
   out::chunks.push_back(out::plt);
   out::chunks.push_back(out::gotplt);
+  out::chunks.push_back(out::pltgot);
   out::chunks.push_back(out::relplt);
   out::chunks.push_back(out::reldyn);
   out::chunks.push_back(out::dynamic);
