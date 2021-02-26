@@ -263,6 +263,8 @@ public:
   inline bool is_absolute() const;
   inline bool is_relative() const { return !is_absolute(); }
   inline bool is_imported() const;
+  inline bool is_undef() const;
+  inline bool is_undef_weak() const;
 
   std::string_view name;
   InputFile *file = nullptr;
@@ -287,7 +289,6 @@ public:
 
   u8 is_placeholder : 1 = false;
   u8 is_weak : 1 = false;
-  u8 is_undef_weak : 1 = false;
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_relplt : 1 = false;
@@ -1231,7 +1232,15 @@ inline bool Symbol::is_absolute() const {
 }
 
 inline bool Symbol::is_imported() const {
-  return file->is_dso || (esym && esym->is_undef() && esym->st_bind != STB_WEAK);
+  return file->is_dso || is_undef();
+}
+
+inline bool Symbol::is_undef() const {
+  return esym->is_undef() && esym->st_bind != STB_WEAK;
+}
+
+inline bool Symbol::is_undef_weak() const {
+  return esym->is_undef() && esym->st_bind == STB_WEAK;
 }
 
 inline u64 Symbol::get_addr() const {

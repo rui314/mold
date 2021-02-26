@@ -606,7 +606,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
 
       bool is_new = !sym.file || sym.is_placeholder;
       bool tie_but_higher_priority =
-        !is_new && sym.is_undef_weak && this->priority < sym.file->priority;
+        !is_new && sym.is_undef_weak() && this->priority < sym.file->priority;
 
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
@@ -614,7 +614,6 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.value = 0;
         sym.esym = &esym;
         sym.is_placeholder = false;
-        sym.is_undef_weak = true;
 
         if (sym.traced)
           SyncOut() << "trace: " << *this << ": unresolved weak symbol "
