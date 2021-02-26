@@ -1,0 +1,32 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Install clang11
+      shell: bash
+      run: |
+        sudo apt-get install clang-11
+        sudo apt-get install libstdc++6
+        sudo ln -sf clang-11 /usr/bin/clang
+        sudo ln -sf clang++-11 /usr/bin/clang++
+
+    - name: Show versions
+      shell: bash
+      run: |
+        clang --version
+        clang++ --version
+
+    - run: make submodules
+    - run: make -j4
