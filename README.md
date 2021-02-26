@@ -51,8 +51,8 @@ just a toy linker, and this is still just my pet project.
   other linkers on 4 or 8-core machines too, though.
 
 - It looks to me that the designs of the existing linkers are somewhat
-  similar, and I believe there are a lot of drastically different
-  designs that haven't been explored yet. Develoeprs generally don't
+  too similar, and I believe there are a lot of drastically different
+  designs that haven't been explored yet. Developers generally don't
   care about linkers as long as they work correctly, and they don't
   even think about creating a new one. So there may be lots of low
   hanging fruits there in this area.
