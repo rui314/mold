@@ -288,7 +288,6 @@ public:
   tbb::spin_mutex mu;
 
   u8 is_placeholder : 1 = false;
-  u8 is_weak : 1 = false;
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_relplt : 1 = false;

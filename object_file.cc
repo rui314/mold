@@ -532,12 +532,13 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_weak = (esym.st_bind == STB_WEAK);
 
-    if (sym.traced)
+    if (sym.traced) {
+      bool is_weak = (esym.st_bind == STB_WEAK);
       SyncOut() << "trace: " << *sym.file
-                << (sym.is_weak ? ": weak definition of " : ": definition of ")
+                << (is_weak ? ": weak definition of " : ": definition of ")
                 << sym.name;
+    }
   }
 }
 
@@ -952,12 +953,13 @@ void SharedFile::resolve_symbols() {
       sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
       sym.esym = &esym;
       sym.is_placeholder = false;
-      sym.is_weak = (esym.st_bind == STB_WEAK);
 
-      if (sym.traced)
+      if (sym.traced) {
+        bool is_weak = (esym.st_bind == STB_WEAK);
         SyncOut() << "trace: " << *sym.file
-                  << (sym.is_weak ? ": weak definition of " : ": definition of ")
+                  << (is_weak ? ": weak definition of " : ": definition of ")
                   << sym.name;
+      }
     }
   }
 }
