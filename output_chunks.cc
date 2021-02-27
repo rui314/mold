@@ -1033,30 +1033,17 @@ void VerneedSection::copy_buf() {
   write_vector(out::buf + shdr.sh_offset, contents);
 }
 
-static i64 get_buildid_size() {
-  switch (config.build_id) {
-  case BuildIdKind::UUID:
-  case BuildIdKind::MD5:
-    return 16;
-  case BuildIdKind::SHA1:
-    return 20;
-  case BuildIdKind::SHA256:
-    return 32;
-  }
-  unreachable();
-}
-
 void BuildIdSection::update_shdr() {
-  shdr.sh_size = HEADER_SIZE + get_buildid_size();
+  shdr.sh_size = HEADER_SIZE + config.build_id_size;
 }
 
 void BuildIdSection::copy_buf() {
   u32 *base = (u32 *)(out::buf + shdr.sh_offset);
   memset(base, 0, shdr.sh_size);
-  base[0] = 4;                  // Name size
-  base[1] = get_buildid_size(); // Hash size
-  base[2] = NT_GNU_BUILD_ID;    // Type
-  memcpy(base + 3, "GNU", 4);   // Name string
+  base[0] = 4;                    // Name size
+  base[1] = config.build_id_size; // Hash size
+  base[2] = NT_GNU_BUILD_ID;      // Type
+  memcpy(base + 3, "GNU", 4);     // Name string
 }
 
 static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
@@ -1075,7 +1062,8 @@ static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
 
 void BuildIdSection::write_buildid(i64 filesize) {
   if (config.build_id == BuildIdKind::UUID) {
-    if (!RAND_bytes(out::buf + shdr.sh_offset + HEADER_SIZE, 16))
+    if (!RAND_bytes(out::buf + shdr.sh_offset + HEADER_SIZE,
+                    config.build_id_size))
       Fatal() << "RAND_bytes failed";
     return;
   }
@@ -1085,6 +1073,7 @@ void BuildIdSection::write_buildid(i64 filesize) {
   // So, we always compute SHA256 and truncate it if smaller digest was
   // requested.
   u8 digest[SHA256_SIZE];
+  assert(config.build_id_size <= SHA256_SIZE);
   compute_sha256(out::buf, filesize, digest);
-  memcpy(out::buf + shdr.sh_offset + HEADER_SIZE, digest, get_buildid_size());
+  memcpy(out::buf + shdr.sh_offset + HEADER_SIZE, digest, config.build_id_size);
 }

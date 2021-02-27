@@ -999,20 +999,26 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_arg(args, arg, "version-script")) {
       conf.version_script.push_back(arg);
     } else if (read_flag(args, "build-id")) {
-      conf.build_id = BuildIdKind::SHA256;
+      conf.build_id = BuildIdKind::HASH;
+      conf.build_id_size = 20;
     } else if (read_arg(args, arg, "build-id")) {
-      if (arg == "none")
+      if (arg == "none") {
         conf.build_id = BuildIdKind::NONE;
-      else if (arg == "sha1")
-        conf.build_id = BuildIdKind::SHA1;
-      else if (arg == "md5")
-        conf.build_id = BuildIdKind::MD5;
-      else if (arg == "uuid")
+      } else if (arg == "uuid") {
         conf.build_id = BuildIdKind::UUID;
-      else if (arg == "sha256")
-        conf.build_id = BuildIdKind::SHA256;
-      else
+        conf.build_id_size = 16;
+      } else if (arg == "md5") {
+        conf.build_id = BuildIdKind::HASH;
+        conf.build_id_size = 16;
+      } else if (arg == "sha1") {
+        conf.build_id = BuildIdKind::HASH;
+        conf.build_id_size = 20;
+      } else if (arg == "sha256") {
+        conf.build_id = BuildIdKind::HASH;
+        conf.build_id_size = 32;
+      } else {
         Fatal() << "invalid --build-id argument: " << arg;
+      }
     } else if (read_flag(args, "preload")) {
       conf.preload = true;
     } else if (read_arg(args, arg, "z")) {

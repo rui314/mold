@@ -51,7 +51,7 @@ class OutputSection;
 class SharedFile;
 class Symbol;
 
-enum class BuildIdKind : u8 { NONE, MD5, SHA1, SHA256, UUID };
+enum class BuildIdKind : u8 { NONE, HASH, UUID };
 
 struct Config {
   BuildIdKind build_id = BuildIdKind::NONE;
@@ -81,6 +81,7 @@ struct Config {
   bool strip_all = false;
   bool trace = false;
   bool z_now = false;
+  i64 build_id_size = 0;
   i64 filler = -1;
   i64 thread_count = -1;
   std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
