@@ -44,33 +44,28 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << val << " is not in [0, 255]";
+      Error() << *sec << ": relocation R_X86_64_8 against " << sym.name
+              << " out of range: " << val << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << (i64)val << " is not in [-128, 127]";
+      Error() << *sec << ": relocation R_X86_64_PC8 against " << sym.name
+              << " out of range: " << (i64)val << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << val << " is not in [0, 65535]";
+      Error() << *sec << ": relocation R_X86_64_16 against " << sym.name
+              << " out of range: " << val << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << (i64)val << " is not in [-32768, 32767]";
+      Error() << *sec << ": relocation R_X86_64_PC16 against " << sym.name
+              << " out of range: " << (i64)val << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << val << " is not in [0, 4294967296]";
+      Error() << *sec << ": relocation R_X86_64_32 against " << sym.name
+              << " out of range: " << val << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
