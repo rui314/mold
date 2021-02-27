@@ -537,7 +537,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
       bool is_weak = (esym.st_bind == STB_WEAK);
       SyncOut() << "trace: " << *sym.file
                 << (is_weak ? ": weak definition of " : ": definition of ")
-                << sym.name;
+                << sym;
     }
   }
 }
@@ -561,8 +561,7 @@ void ObjectFile::resolve_symbols() {
         sym.is_placeholder = true;
 
         if (sym.traced)
-          SyncOut() << "trace: " << *sym.file
-                    << ": lazy definition of " << sym.name;
+          SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
       }
     } else {
       maybe_override_symbol(sym, i);
@@ -584,7 +583,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
     }
 
     if (sym.traced)
-      SyncOut() << "trace: " <<  *this << ": reference to " << sym.name;
+      SyncOut() << "trace: " <<  *this << ": reference to " << sym;
 
     if (esym.st_bind != STB_WEAK && sym.file && !sym.file->is_alive.exchange(true)) {
       if (!sym.file->is_dso)
@@ -592,7 +591,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
 
       if (sym.traced)
         SyncOut() << "trace: " << *this << " keeps " << *sym.file
-                  << " for " << sym.name;
+                  << " for " << sym;
     }
   }
 }
@@ -617,8 +616,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_placeholder = false;
 
         if (sym.traced)
-          SyncOut() << "trace: " << *this << ": unresolved weak symbol "
-                    << sym.name;
+          SyncOut() << "trace: " << *this << ": unresolved weak symbol " << sym;
       }
     }
   }
@@ -958,7 +956,7 @@ void SharedFile::resolve_symbols() {
         bool is_weak = (esym.st_bind == STB_WEAK);
         SyncOut() << "trace: " << *sym.file
                   << (is_weak ? ": weak definition of " : ": definition of ")
-                  << sym.name;
+                  << sym;
       }
     }
   }

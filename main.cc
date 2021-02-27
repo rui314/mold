@@ -305,7 +305,7 @@ static void check_duplicate_symbols() {
 
       if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file)
         Error() << "duplicate symbol: " << *file << ": " << *sym.file
-                << ": " << sym.name;
+                << ": " << sym;
     }
   });
 

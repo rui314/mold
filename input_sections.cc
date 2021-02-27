@@ -44,27 +44,27 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      Error() << *sec << ": relocation R_X86_64_8 against " << sym.name
+      Error() << *sec << ": relocation R_X86_64_8 against " << sym
               << " out of range: " << val << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      Error() << *sec << ": relocation R_X86_64_PC8 against " << sym.name
+      Error() << *sec << ": relocation R_X86_64_PC8 against " << sym
               << " out of range: " << (i64)val << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      Error() << *sec << ": relocation R_X86_64_16 against " << sym.name
+      Error() << *sec << ": relocation R_X86_64_16 against " << sym
               << " out of range: " << val << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      Error() << *sec << ": relocation R_X86_64_PC16 against " << sym.name
+      Error() << *sec << ": relocation R_X86_64_PC16 against " << sym
               << " out of range: " << (i64)val << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      Error() << *sec << ": relocation R_X86_64_32 against " << sym.name
+      Error() << *sec << ": relocation R_X86_64_32 against " << sym
               << " out of range: " << val << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
@@ -82,8 +82,8 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_GOTTPOFF:
     if (val != (i32)val)
       Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym.name << " out of range: "
-              << (i64)val << " is not in [-2147483648, 2147483647]";
+              << " against " << sym << " out of range: " << (i64)val
+              << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
@@ -277,7 +277,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     Symbol &sym = *file->symbols[rel.r_sym];
 
     if (!sym.file || sym.is_placeholder) {
-      Error() << "undefined symbol: " << *file << ": " << sym.name;
+      Error() << "undefined symbol: " << *file << ": " << sym;
       continue;
     }
 
@@ -361,7 +361,7 @@ void InputSection::scan_relocations() {
     bool is_code = (sym.st_type == STT_FUNC);
 
     if (!sym.file || sym.is_placeholder) {
-      Error() << "undefined symbol: " << *file << ": " << sym.name;
+      Error() << "undefined symbol: " << *file << ": " << sym;
       continue;
     }
 
@@ -369,7 +369,7 @@ void InputSection::scan_relocations() {
 
     auto error = [&]() {
       Error() << *this << ": " << rel_to_string(rel.r_type)
-              << " relocation against symbol `" << sym.name
+              << " relocation against symbol `" << sym
               << "' can not be used; recompile with -fPIE";
     };
 
@@ -489,7 +489,7 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
       if (sym.is_imported())
-        Error() << *this << ": TLSLD reloc refers external symbol " << sym.name;
+        Error() << *this << ": TLSLD reloc refers external symbol " << sym;
 
       if (config.relax) {
         rel_types[i] = R_TLSLD_RELAX_LE;
@@ -502,7 +502,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       if (sym.is_imported())
-        Error() << *this << ": DTPOFF reloc refers external symbol " << sym.name;
+        Error() << *this << ": DTPOFF reloc refers external symbol " << sym;
       rel_types[i] = config.relax ? R_TPOFF : R_DTPOFF;
       break;
     case R_X86_64_TPOFF32:

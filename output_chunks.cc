@@ -999,7 +999,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
     }
   }
 
-  Fatal() << file << ": .eh_frame has bad symbol: " << sym.name;
+  Fatal() << file << ": .eh_frame has bad symbol: " << sym;
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

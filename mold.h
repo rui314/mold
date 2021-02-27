@@ -299,6 +299,11 @@ public:
   u8 has_copyrel : 1 = false;
 };
 
+inline std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
+  out << sym.name;
+  return out;
+}
+
 //
 // input_sections.cc
 //
