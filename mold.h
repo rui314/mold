@@ -1125,12 +1125,6 @@ private:
 void gc_sections();
 
 //
-// icf_sections.cc
-//
-
-void icf_sections();
-
-//
 // icf.cc
 //
 
