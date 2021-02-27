@@ -909,6 +909,10 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.is_static = true;
     } else if (read_flag(args, "shared")) {
       conf.shared = true;
+    } else if (read_flag(args, "demangle")) {
+      conf.demangle = true;
+    } else if (read_flag(args, "no-demangle")) {
+      conf.demangle = false;
     } else if (read_arg(args, arg, "y") || read_arg(args, arg, "trace-symbol")) {
       conf.trace_symbol.push_back(arg);
     } else if (read_arg(args, arg, "filler")) {

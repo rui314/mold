@@ -56,6 +56,7 @@ enum class BuildIdKind : u8 { NONE, MD5, SHA1, SHA256, UUID };
 struct Config {
   BuildIdKind build_id = BuildIdKind::NONE;
   bool allow_multiple_definition = false;
+  bool demangle = false;
   bool discard_all = false;
   bool discard_locals = false;
   bool eh_frame_hdr = true;
@@ -299,10 +300,7 @@ public:
   u8 has_copyrel : 1 = false;
 };
 
-inline std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
-  out << sym.name;
-  return out;
-}
+std::ostream &operator<<(std::ostream &out, const Symbol &sym);
 
 //
 // input_sections.cc
