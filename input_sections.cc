@@ -32,15 +32,10 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr *shdr,
   if (name.starts_with(".zdebug")) {
     // Old-style compressed section
     std::string_view data = file->get_string(*shdr);
-    if (!data.starts_with("ZLIB"))
-      Fatal() << *this << ": corrupted compressed section header";
-    data = data.substr(4);
-    if (data.size() < 8)
-      Fatal() << *this << ": corrupted compressed section header";
-
-    u64 size = read64be((u8 *)&data[0]);
-    data = data.substr(8);
-    contents = do_uncompress(data, size);
+    if (!data.starts_with("ZLIB") || data.size() <= 12)
+      Fatal() << *this << ": corrupted compressed section";
+    u64 size = read64be((u8 *)&data[4]);
+    contents = do_uncompress(data.substr(12), size);
 
     // Rename .zdebug -> .debug
     name = *new std::string("." + std::string(name.substr(2)));
@@ -51,10 +46,9 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr *shdr,
       Fatal() << *this << ": corrupted compressed section";
 
     ElfChdr &hdr = *(ElfChdr *)&data[0];
-    data = data.substr(sizeof(ElfChdr));
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
       Fatal() << *this << ": unsupported compression type";
-    contents = do_uncompress(data, hdr.ch_size);
+    contents = do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
   } else if (shdr->sh_type != SHT_NOBITS) {
     contents = file->get_string(*shdr);
   }
