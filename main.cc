@@ -907,7 +907,7 @@ static Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.stats = true;
     } else if (read_flag(args, "static")) {
       conf.is_static = true;
-    } else if (read_flag(args, "shared")) {
+    } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
       conf.shared = true;
     } else if (read_flag(args, "demangle")) {
       conf.demangle = true;
