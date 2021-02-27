@@ -243,13 +243,13 @@ static void handle_mergeable_strings() {
   for (ObjectFile *file : out::objs) {
     for (MergeableSection *isec : file->mergeable_sections) {
       i64 offset = isec->parent.shdr.sh_size;
-      i64 alignment = isec->shdr.sh_addralign;
+      i64 alignment = isec->shdr->sh_addralign;
       isec->padding = align_to(offset, alignment) - offset;
       isec->offset = offset + isec->padding;
       isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
 
       isec->parent.shdr.sh_addralign =
-        std::max(isec->parent.shdr.sh_addralign, isec->shdr.sh_addralign);
+        std::max(isec->parent.shdr.sh_addralign, isec->shdr->sh_addralign);
     }
   }
 }
@@ -328,10 +328,10 @@ static void set_isec_offsets() {
       i64 align = 1;
 
       for (InputChunk *isec : slices[i]) {
-        off = align_to(off, isec->shdr.sh_addralign);
+        off = align_to(off, isec->shdr->sh_addralign);
         isec->offset = off;
-        off += isec->shdr.sh_size;
-        align = std::max<i64>(align, isec->shdr.sh_addralign);
+        off += isec->shdr->sh_size;
+        align = std::max<i64>(align, isec->shdr->sh_addralign);
       }
 
       size[i] = off;

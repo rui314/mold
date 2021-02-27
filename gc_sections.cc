@@ -8,9 +8,9 @@
 #include <tbb/parallel_for_each.h>
 
 static bool is_init_fini(const InputSection &isec) {
-  return isec.shdr.sh_type == SHT_INIT_ARRAY ||
-         isec.shdr.sh_type == SHT_FINI_ARRAY ||
-         isec.shdr.sh_type == SHT_PREINIT_ARRAY ||
+  return isec.shdr->sh_type == SHT_INIT_ARRAY ||
+         isec.shdr->sh_type == SHT_FINI_ARRAY ||
+         isec.shdr->sh_type == SHT_PREINIT_ARRAY ||
          isec.name.starts_with(".ctors") ||
          isec.name.starts_with(".dtors") ||
          isec.name.starts_with(".init") ||
@@ -82,10 +82,10 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
       // reduce the amount of non-memory-mapped segments, you should
       // use `strip` command, compile without debug info or use
       // -strip-all linker option.
-      if (!(isec->shdr.sh_flags & SHF_ALLOC))
+      if (!(isec->shdr->sh_flags & SHF_ALLOC))
         isec->is_visited = true;
 
-      if (is_init_fini(*isec) || isec->shdr.sh_type == SHT_NOTE)
+      if (is_init_fini(*isec) || isec->shdr->sh_type == SHT_NOTE)
         enqueue(isec);
     }
   });

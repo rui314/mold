@@ -163,6 +163,8 @@ static constexpr u32 DF_1_PIE = 0x08000000;
 
 static constexpr u32 NT_GNU_BUILD_ID = 3;
 
+static constexpr u32 ELFCOMPRESS_ZLIB = 1;
+
 static constexpr u32 R_X86_64_NONE = 0;
 static constexpr u32 R_X86_64_64 = 1;
 static constexpr u32 R_X86_64_PC32 = 2;
@@ -318,4 +320,11 @@ struct ElfVerdef {
 struct ElfVerdaux {
   u32 vda_name;
   u32 vda_next;
+};
+
+struct ElfChdr {
+  u32 ch_type;
+  u32 ch_reserved;
+  u64 ch_size;
+  u64 ch_addralign;
 };

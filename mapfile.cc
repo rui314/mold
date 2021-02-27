@@ -29,8 +29,8 @@ void print_map() {
 
     for (InputChunk *mem : ((OutputSection *)osec)->members) {
       std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-                << std::setw(9) << (u64)mem->shdr.sh_size
-                << std::setw(6) << (u64)mem->shdr.sh_addralign
+                << std::setw(9) << (u64)mem->shdr->sh_size
+                << std::setw(6) << (u64)mem->shdr->sh_addralign
                 << "         " << *mem << "\n";
 
       auto it = map.find(mem);

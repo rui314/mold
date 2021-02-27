@@ -310,17 +310,17 @@ class InputChunk {
 public:
   virtual void copy_buf() {}
   inline u64 get_addr() const;
-  std::string_view get_contents() const;
 
   ObjectFile *file;
-  const ElfShdr &shdr;
+  const ElfShdr *shdr;
   OutputSection *output_section = nullptr;
 
   std::string_view name;
+  std::string_view contents;
   u32 offset = -1;
 
 protected:
-  InputChunk(ObjectFile *file, const ElfShdr &shdr, std::string_view name);
+  InputChunk(ObjectFile *file, const ElfShdr *shdr, std::string_view name);
 };
 
 enum RelType : u8 {
@@ -394,7 +394,7 @@ struct CieRecord {
 
 class InputSection : public InputChunk {
 public:
-  InputSection(ObjectFile *file, const ElfShdr &shdr, std::string_view name,
+  InputSection(ObjectFile *file, const ElfShdr *shdr, std::string_view name,
                i64 section_idx)
     : InputChunk(file, shdr, name), section_idx(section_idx) {}
 
@@ -423,10 +423,10 @@ public:
   std::atomic_bool is_visited = false;
 
   // For ICF
-  bool icf_eligible = false;
-  bool icf_leaf = false;
   InputSection *leader = nullptr;
   u32 icf_idx = -1;
+  bool icf_eligible = false;
+  bool icf_leaf = false;
 };
 
 class MergeableSection : public InputChunk {

@@ -97,15 +97,16 @@ static void uniquify_cies() {
 }
 
 static bool is_eligible(InputSection &isec) {
-  bool is_alloc = (isec.shdr.sh_flags & SHF_ALLOC);
-  bool is_executable = (isec.shdr.sh_flags & SHF_EXECINSTR);
+  const ElfShdr &shdr = *isec.shdr;
+  bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
+  bool is_executable = (shdr.sh_flags & SHF_EXECINSTR);
   bool is_relro = (isec.name == ".data.rel.ro" ||
                    isec.name.starts_with(".data.rel.ro."));
-  bool is_readonly = !(isec.shdr.sh_flags & SHF_WRITE) || is_relro;
-  bool is_bss = (isec.shdr.sh_type == SHT_NOBITS);
-  bool is_empty = (isec.shdr.sh_size == 0);
-  bool is_init = (isec.shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
-  bool is_fini = (isec.shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
+  bool is_readonly = !(shdr.sh_flags & SHF_WRITE) || is_relro;
+  bool is_bss = (shdr.sh_type == SHT_NOBITS);
+  bool is_empty = (shdr.sh_size == 0);
+  bool is_init = (shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
+  bool is_fini = (shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
   bool is_enumerable = is_c_identifier(isec.name);
 
   return is_alloc && is_executable && is_readonly && !is_bss &&
@@ -138,7 +139,7 @@ static size_t combine_hash(size_t a, size_t b) {
 
 struct LeafHasher {
   size_t operator()(const InputSection *isec) const {
-    size_t h = std::hash<std::string_view>()(isec->get_contents());
+    size_t h = std::hash<std::string_view>()(isec->contents);
     for (FdeRecord &fde : isec->fdes) {
       size_t h2 = std::hash<std::string_view>()(fde.contents.substr(8));
       h = combine_hash(h, h2);
@@ -149,7 +150,7 @@ struct LeafHasher {
 
 struct LeafEq {
   bool operator()(const InputSection *a, const InputSection *b) const {
-    if (a->get_contents() != b->get_contents())
+    if (a->contents != b->contents)
       return false;
     if (a->fdes.size() != b->fdes.size())
       return false;
@@ -240,8 +241,8 @@ static Digest compute_digest(InputSection &isec) {
     hash(sym.value);
   };
 
-  hash_string(isec.get_contents());
-  hash(isec.shdr.sh_flags);
+  hash_string(isec.contents);
+  hash(isec.shdr->sh_flags);
   hash(isec.fdes.size());
   hash(isec.rels.size());
 
@@ -447,7 +448,7 @@ static void print_icf_sections() {
       SyncOut() << "  removing identical section " << *it->second;
       n++;
     }
-    saved_bytes += leader->get_contents().size() * n;
+    saved_bytes += leader->contents.size() * n;
   }
 
   SyncOut() << "ICF saved " << saved_bytes << " bytes";

@@ -1,14 +1,63 @@
 #include "mold.h"
 
 #include <limits>
+#include <zlib.h>
 
-InputChunk::InputChunk(ObjectFile *file, const ElfShdr &shdr,
+static u64 read64be(u8 *buf) {
+  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
+         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
+         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
+         ((u64)buf[6] << 8)  | (u64)buf[7];
+}
+
+InputChunk::InputChunk(ObjectFile *file, const ElfShdr *shdr,
                        std::string_view name)
   : file(file), shdr(shdr), name(name),
-    output_section(OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags)) {}
+    output_section(OutputSection::get_instance(name, shdr->sh_type, shdr->sh_flags)) {
+  auto do_uncompress = [&](std::string_view data, u64 size) {
+    u8 *buf = new u8[size];
+    unsigned long size2 = size;
+    if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
+      Fatal() << *this << ": uncompress failed";
+    if (size != size2)
+      Fatal() << *this << ": uncompress: invalid size";
 
-std::string_view InputChunk::get_contents() const {
-  return file->get_string(shdr);
+    ElfShdr *shdr2 = new ElfShdr;
+    *shdr2 = *shdr;
+    shdr2->sh_size = size;
+    shdr = shdr2;
+    return std::string_view((char *)buf, size);
+  };
+
+  if (name.starts_with(".zdebug")) {
+    // Old-style compressed section
+    std::string_view data = file->get_string(*shdr);
+    if (!data.starts_with("ZLIB"))
+      Fatal() << *this << ": corrupted compressed section header";
+    data = data.substr(4);
+    if (data.size() < 8)
+      Fatal() << *this << ": corrupted compressed section header";
+
+    u64 size = read64be((u8 *)&data[0]);
+    data = data.substr(8);
+    contents = do_uncompress(data, size);
+
+    // Rename .zdebug -> .debug
+    name = *new std::string("." + std::string(name.substr(2)));
+  } else if (shdr->sh_flags & SHF_COMPRESSED) {
+    // New-style compressed section
+    std::string_view data = file->get_string(*shdr);
+    if (data.size() < sizeof(ElfChdr))
+      Fatal() << *this << ": corrupted compressed section";
+
+    ElfChdr &hdr = *(ElfChdr *)&data[0];
+    data = data.substr(sizeof(ElfChdr));
+    if (hdr.ch_type != ELFCOMPRESS_ZLIB)
+      Fatal() << *this << ": unsupported compression type";
+    contents = do_uncompress(data, hdr.ch_size);
+  } else if (shdr->sh_type != SHT_NOBITS) {
+    contents = file->get_string(*shdr);
+  }
 }
 
 static std::string rel_to_string(u64 r_type) {
@@ -134,16 +183,15 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
 }
 
 void InputSection::copy_buf() {
-  if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
+  if (shdr->sh_type == SHT_NOBITS || shdr->sh_size == 0)
     return;
 
   // Copy data
   u8 *base = out::buf + output_section->shdr.sh_offset + offset;
-  std::string_view contents = get_contents();
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
-  if (shdr.sh_flags & SHF_ALLOC)
+  if (shdr->sh_flags & SHF_ALLOC)
     apply_reloc_alloc(base);
   else
     apply_reloc_nonalloc(base);
@@ -344,14 +392,14 @@ static int get_sym_type(Symbol &sym) {
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
 void InputSection::scan_relocations() {
-  if (!(shdr.sh_flags & SHF_ALLOC))
+  if (!(shdr->sh_flags & SHF_ALLOC))
     return;
 
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
   this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
-  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+  bool is_readonly = !(shdr->sh_flags & SHF_WRITE);
   i64 output_type = config.shared ? 2 : (config.pie ? 1 : 0);
 
   // Scan relocations
@@ -557,17 +605,17 @@ static size_t find_null(std::string_view data, u64 entsize) {
 // We do not support mergeable sections that have relocations.
 MergeableSection::MergeableSection(InputSection *isec)
   : InputChunk(isec->file, isec->shdr, isec->name),
-    parent(*MergedSection::get_instance(isec->name, isec->shdr.sh_type,
-                                        isec->shdr.sh_flags)) {
-  std::string_view data = isec->get_contents();
+    parent(*MergedSection::get_instance(isec->name, isec->shdr->sh_type,
+                                        isec->shdr->sh_flags)) {
+  std::string_view data = isec->contents;
   const char *begin = data.data();
-  u64 entsize = isec->shdr.sh_entsize;
+  u64 entsize = isec->shdr->sh_entsize;
 
   static_assert(sizeof(SectionFragment::alignment) == 2);
-  if (isec->shdr.sh_addralign >= (1 << 16))
+  if (isec->shdr->sh_addralign >= (1 << 16))
     Fatal() << *isec << ": alignment too large";
 
-  if (isec->shdr.sh_flags & SHF_STRINGS) {
+  if (isec->shdr->sh_flags & SHF_STRINGS) {
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
       if (end == std::string_view::npos)
@@ -576,7 +624,7 @@ MergeableSection::MergeableSection(InputSection *isec)
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);
 
-      SectionFragment *frag = parent.insert(substr, isec->shdr.sh_addralign);
+      SectionFragment *frag = parent.insert(substr, isec->shdr->sh_addralign);
       fragments.push_back(frag);
       frag_offsets.push_back(substr.data() - begin);
     }
@@ -588,7 +636,7 @@ MergeableSection::MergeableSection(InputSection *isec)
       std::string_view substr = data.substr(0, entsize);
       data = data.substr(entsize);
 
-      SectionFragment *frag = parent.insert(substr, isec->shdr.sh_addralign);
+      SectionFragment *frag = parent.insert(substr, isec->shdr->sh_addralign);
       fragments.push_back(frag);
       frag_offsets.push_back(substr.data() - begin);
     }
