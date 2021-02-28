@@ -57,11 +57,13 @@ std::vector<std::string_view> expand_response_files(char **argv) {
 }
 
 static std::vector<std::string> add_dashes(std::string name) {
-  std::vector<std::string> opts;
-  opts.push_back("-" + name);
-  if (!name.starts_with("o"))
-    opts.push_back("--" + name);
-  return opts;
+  // Linker options can be preceded by either a single dash or double
+  // dashes except "-o" which allows only a single dash. For example,
+  // "-omagic" is interpreted as "-o magic". If you really want to
+  // specify the "omagic" option, you have to pass "--omagic".
+  if (name[0] == 'o')
+    return {"-" + name};
+  return {"-" + name, "--" + name};
 }
 
 bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
