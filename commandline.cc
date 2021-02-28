@@ -342,6 +342,8 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_arg(args, arg, "l")) {
       remaining.push_back("-l");
       remaining.push_back(arg);
+    } else if (read_arg(args, arg, "script") || read_arg(args, arg, "T")) {
+      remaining.push_back(arg);
     } else {
       if (args[0][0] == '-')
         Fatal() << "mold: unknown command line option: " << args[0];
