@@ -25,6 +25,7 @@ InputChunk::InputChunk(ObjectFile *file, const ElfShdr *shdr,
     ElfShdr *shdr2 = new ElfShdr;
     *shdr2 = *shdr;
     shdr2->sh_size = size;
+    shdr2->sh_flags &= ~(u64)SHF_COMPRESSED;
     shdr = shdr2;
     return std::string_view((char *)buf, size);
   };
