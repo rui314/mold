@@ -1148,6 +1148,19 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
 //
+// commandline.cc
+//
+
+std::vector<std::string_view> expand_response_files(char **argv);
+bool read_flag(std::span<std::string_view> &args, std::string name);
+
+bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
+              std::string name);
+
+Config parse_nonpositional_args(std::span<std::string_view> args,
+                                std::vector<std::string_view> &remaining);
+
+//
 // main.cc
 //
 
