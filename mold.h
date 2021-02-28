@@ -56,7 +56,7 @@ enum class BuildIdKind : u8 { NONE, HASH, UUID };
 struct Config {
   BuildIdKind build_id = BuildIdKind::NONE;
   bool allow_multiple_definition = false;
-  bool demangle = false;
+  bool demangle = true;
   bool discard_all = false;
   bool discard_locals = false;
   bool eh_frame_hdr = true;
