@@ -329,6 +329,8 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
+    } else if (read_flag(args, "(")) {
+    } else if (read_flag(args, ")")) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
     } else if (read_flag(args, "as-needed")) {
