@@ -183,6 +183,7 @@ void RelDynSection::update_shdr() {
 
   n += out::got->tlsgd_syms.size() * 2;
   n += out::copyrel->symbols.size();
+  n += out::copyrel_relro->symbols.size();
 
   if (out::got->tlsld_idx != -1)
     n++;
@@ -218,6 +219,9 @@ void RelDynSection::copy_buf() {
       *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym->dynsym_idx, 0};
 
   for (Symbol *sym : out::copyrel->symbols)
+    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
+
+  for (Symbol *sym : out::copyrel_relro->symbols)
     *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
 }
 
@@ -647,7 +651,8 @@ void DynsymSection::copy_buf() {
     esym.st_size = sym.esym->st_size;
 
     if (sym.has_copyrel) {
-      esym.st_shndx = out::copyrel->shndx;
+      esym.st_shndx =
+        sym.is_readonly ? out::copyrel_relro->shndx : out::copyrel->shndx;
       esym.st_value = sym.get_addr();
     } else if (sym.is_imported() || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;

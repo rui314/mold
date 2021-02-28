@@ -410,12 +410,19 @@ static void scan_rels() {
       out::got->add_tlsld();
 
     if (sym->flags & NEEDS_COPYREL) {
-      out::copyrel->add_symbol(sym);
       assert(sym->file->is_dso);
+      SharedFile *file = (SharedFile *)sym->file;
+      sym->is_readonly = file->is_readonly(sym);
 
-      for (Symbol *alias : ((SharedFile *)sym->file)->find_aliases(sym)) {
+      if (sym->is_readonly)
+        out::copyrel_relro->add_symbol(sym);
+      else
+        out::copyrel->add_symbol(sym);
+
+      for (Symbol *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;
         alias->value = sym->value;
+        alias->is_readonly = sym->is_readonly;
         out::dynsym->add_symbol(alias);
       }
     }
@@ -829,7 +836,8 @@ int main(int argc, char **argv) {
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
   out::eh_frame = new EhFrameSection;
-  out::copyrel = new CopyrelSection;
+  out::copyrel = new CopyrelSection(".bss");
+  out::copyrel_relro = new CopyrelSection(".bss.rel.ro");
 
   if (config.build_id != BuildIdKind::NONE)
     out::buildid = new BuildIdSection;
@@ -865,6 +873,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::eh_frame_hdr);
   out::chunks.push_back(out::eh_frame);
   out::chunks.push_back(out::copyrel);
+  out::chunks.push_back(out::copyrel_relro);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);
   out::chunks.push_back(out::buildid);

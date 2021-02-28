@@ -299,6 +299,7 @@ public:
   u8 traced : 1 = false;
   u8 has_relplt : 1 = false;
   u8 has_copyrel : 1 = false;
+  u8 is_readonly : 1 = false;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);
@@ -809,8 +810,8 @@ public:
 
 class CopyrelSection : public OutputChunk {
 public:
-  CopyrelSection() : OutputChunk(SYNTHETIC) {
-    name = ".bss";
+  CopyrelSection(std::string name) : OutputChunk(SYNTHETIC) {
+    this->name = name;
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = 32;
@@ -1001,6 +1002,7 @@ public:
   void parse();
   void resolve_symbols();
   std::vector<Symbol *> find_aliases(Symbol *sym);
+  bool is_readonly(Symbol *sym);
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;
@@ -1200,6 +1202,7 @@ inline DynsymSection *dynsym;
 inline EhFrameSection *eh_frame;
 inline EhFrameHdrSection *eh_frame_hdr;
 inline CopyrelSection *copyrel;
+inline CopyrelSection *copyrel_relro;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
 inline BuildIdSection *buildid;
@@ -1281,8 +1284,11 @@ inline u64 Symbol::get_addr() const {
     return 0; // todo: do not return 0
   }
 
-  if (has_copyrel)
-    return out::copyrel->shdr.sh_addr + value;
+  if (has_copyrel) {
+    return is_readonly
+      ? out::copyrel_relro->shdr.sh_addr + value
+      : out::copyrel->shdr.sh_addr + value;
+  }
 
   if (input_section) {
     if (input_section->is_ehframe)

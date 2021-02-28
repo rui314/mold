@@ -966,7 +966,19 @@ std::vector<Symbol *> SharedFile::find_aliases(Symbol *sym) {
   assert(sym->file == this);
   std::vector<Symbol *> vec;
   for (Symbol *sym2 : symbols)
-    if (sym != sym2 && sym->value == sym2->value)
+    if (sym != sym2 && sym->esym->st_value == sym2->esym->st_value)
       vec.push_back(sym2);
   return vec;
+}
+
+bool SharedFile::is_readonly(Symbol *sym) {
+  ElfEhdr *ehdr = (ElfEhdr *)mb->data();
+  ElfPhdr *phdr = (ElfPhdr *)(mb->data() + ehdr->e_phoff);
+  u64 val = sym->esym->st_value;
+
+  for (i64 i = 0; i < ehdr->e_phnum; i++)
+    if (phdr[i].p_type == PT_LOAD && !(phdr[i].p_flags & PF_W) &&
+        phdr[i].p_vaddr <= val && val < phdr[i].p_vaddr + phdr[i].p_memsz)
+      return true;
+  return false;
 }
