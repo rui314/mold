@@ -349,10 +349,10 @@ static std::vector<u64> create_dynamic_section() {
     return nullptr;
   };
 
-  if (OutputChunk *chunk = find(".init"))
-    define(DT_INIT, chunk->shdr.sh_addr);
-  if (OutputChunk *chunk = find(".fini"))
-    define(DT_FINI, chunk->shdr.sh_addr);
+  if (Symbol *sym = Symbol::intern("_init"); sym->file)
+    define(DT_INIT, sym->get_addr());
+  if (Symbol *sym = Symbol::intern("_fini"); sym->file)
+    define(DT_FINI, sym->get_addr());
 
   i64 flags = 0;
   i64 flags1 = 0;
