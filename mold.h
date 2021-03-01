@@ -23,13 +23,6 @@
 #include <tbb/spin_mutex.h>
 #include <vector>
 
-static constexpr i64 SECTOR_SIZE = 512;
-static constexpr i64 PAGE_SIZE = 4096;
-static constexpr i64 GOT_SIZE = 8;
-static constexpr i64 PLT_SIZE = 16;
-static constexpr i64 PLT_GOT_SIZE = 8;
-static constexpr i64 SHA256_SIZE = 32;
-
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -39,6 +32,13 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+static constexpr i64 SECTOR_SIZE = 512;
+static constexpr i64 PAGE_SIZE = 4096;
+static constexpr i64 GOT_SIZE = 8;
+static constexpr i64 PLT_SIZE = 16;
+static constexpr i64 PLT_GOT_SIZE = 8;
+static constexpr i64 SHA256_SIZE = 32;
 
 class InputChunk;
 class InputFile;
