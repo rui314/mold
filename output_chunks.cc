@@ -337,22 +337,15 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
   define(DT_DEBUG, 0);
 
+  if (Symbol *sym = Symbol::intern(config.init); sym->file)
+    define(DT_INIT, sym->get_addr());
+  if (Symbol *sym = Symbol::intern(config.fini); sym->file)
+    define(DT_FINI, sym->get_addr());
+
   if (out::hash)
     define(DT_HASH, out::hash->shdr.sh_addr);
   if (out::gnu_hash)
     define(DT_GNU_HASH, out::gnu_hash->shdr.sh_addr);
-
-  auto find = [](std::string_view name) -> OutputChunk * {
-    for (OutputChunk *chunk : out::chunks)
-      if (chunk->name == name)
-        return chunk;
-    return nullptr;
-  };
-
-  if (Symbol *sym = Symbol::intern("_init"); sym->file)
-    define(DT_INIT, sym->get_addr());
-  if (Symbol *sym = Symbol::intern("_fini"); sym->file)
-    define(DT_FINI, sym->get_addr());
 
   i64 flags = 0;
   i64 flags1 = 0;

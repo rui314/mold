@@ -86,6 +86,8 @@ struct Config {
   i64 thread_count = -1;
   std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
   std::string entry = "_start";
+  std::string fini = "_fini";
+  std::string init = "_init";
   std::string output;
   std::string rpaths;
   std::string sysroot;

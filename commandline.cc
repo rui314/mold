@@ -222,6 +222,10 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.sysroot = arg;
     } else if (read_arg(args, arg, "u") || read_arg(args, arg, "undefined")) {
       conf.undefined.push_back(arg);
+    } else if (read_arg(args, arg, "init")) {
+      conf.init = arg;
+    } else if (read_arg(args, arg, "fini")) {
+      conf.fini = arg;
     } else if (read_arg(args, arg, "hash-style")) {
       if (arg == "sysv") {
         conf.hash_style_sysv = true;
