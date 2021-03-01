@@ -354,6 +354,19 @@ static void set_isec_offsets() {
   });
 }
 
+static void export_dynamic() {
+  if (config.export_dynamic || config.shared) {
+    Timer t("export_dynamic");
+
+    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+      ObjectFile *file = out::objs[i];
+      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
+        if (sym->file == file && sym->esym->st_visibility == STV_DEFAULT)
+          sym->flags |= NEEDS_DYNSYM;
+    });
+  }
+}
+
 static void scan_rels() {
   Timer t("scan_rels");
 
@@ -427,34 +440,6 @@ static void scan_rels() {
       }
     }
   }
-}
-
-static void export_dynamic() {
-  Timer t("export_dynamic");
-
-  if (config.export_dynamic || config.shared) {
-    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-      ObjectFile *file = out::objs[i];
-      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-        if (sym->file == file && sym->esym->st_visibility == STV_DEFAULT)
-          sym->ver_idx = VER_NDX_GLOBAL;
-    });
-  }
-
-  for (std::string_view name : config.globals)
-    Symbol::intern(name)->ver_idx = VER_NDX_GLOBAL;
-
-  std::vector<std::vector<Symbol *>> vec(out::objs.size());
-
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    ObjectFile *file = out::objs[i];
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-      if (sym->file == file && sym->ver_idx != VER_NDX_LOCAL)
-        vec[i].push_back(sym);
-  });
-
-  for (Symbol *sym : flatten(vec))
-    out::dynsym->add_symbol(sym);
 }
 
 static void fill_symbol_versions() {
@@ -1003,12 +988,12 @@ int main(int argc, char **argv) {
     out::chunks.insert(out::chunks.begin() + 2, out::interp);
   out::chunks.push_back(out::shdr);
 
+  // Put symbols to .dynsym.
+  export_dynamic();
+
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels();
-
-  // Put symbols to .dynsym.
-  export_dynamic();
 
   // Sort .dynsym contents. Beyond this point, no symbol should be
   // added to .dynsym.
