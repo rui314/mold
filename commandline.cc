@@ -231,7 +231,7 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.init = arg;
     } else if (read_arg(args, arg, "fini")) {
       conf.fini = arg;
-    } else if (read_arg(args, arg, "soname")) {
+    } else if (read_arg(args, arg, "soname") || read_arg(args, arg, "h")) {
       conf.soname = arg;
     } else if (read_arg(args, arg, "hash-style")) {
       if (arg == "sysv") {
