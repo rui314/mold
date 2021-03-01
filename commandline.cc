@@ -207,8 +207,6 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.entry = arg;
     } else if (read_flag(args, "print-map")) {
       conf.print_map = true;
-    } else if (read_flag(args, "stats")) {
-      conf.stats = true;
     } else if (read_flag(args, "static")) {
       conf.is_static = true;
     } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
@@ -264,8 +262,10 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.relax = true;
     } else if (read_flag(args, "no-relax")) {
       conf.relax = false;
-    } else if (read_flag(args, "perf")) {
-      conf.perf = true;
+    } else if (read_flag(args, "print-perf")) {
+      conf.print_perf = true;
+    } else if (read_flag(args, "print-stats")) {
+      conf.print_stats = true;
     } else if (read_z_flag(args, "now")) {
       conf.z_now = true;
     } else if (read_flag(args, "fork")) {
