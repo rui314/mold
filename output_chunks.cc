@@ -653,6 +653,10 @@ void DynsymSection::copy_buf() {
     } else if (sym.is_imported() || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
+      if (!config.shared && sym.plt_idx != -1) {
+        // Emit an address for a canonical PLT
+        esym.st_value = sym.get_plt_addr();
+      }
     } else if (!sym.input_section) {
       esym.st_shndx = SHN_ABS;
       esym.st_value = sym.get_addr();
