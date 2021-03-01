@@ -192,6 +192,11 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
   while (!args.empty()) {
     std::string_view arg;
 
+    if (read_flag(args, "v") || read_flag(args, "version")) {
+      SyncOut() << "mold (compatible with GNU linkers)";
+      exit(0);
+    }
+
     if (read_arg(args, arg, "o")) {
       conf.output = arg;
     } else if (read_arg(args, arg, "dynamic-linker")) {
