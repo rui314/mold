@@ -58,6 +58,11 @@ InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
 
   u8 *sh_begin = mb->data() + ehdr.e_shoff;
   u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
+  if (ehdr.e_shnum == 0) {
+    // If the number of sections is >= SHN_LORESERVE,
+    // the size of the null section is the number of sections.
+    sh_end = sh_begin + ((ElfShdr *)sh_begin)->sh_size * sizeof(ElfShdr);
+  }
   if (mb->data() + mb->size() < sh_end)
     Fatal() << *this << ": e_shoff or e_shnum corrupted: "
             << mb->size() << " " << ehdr.e_shnum;
@@ -75,7 +80,8 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) {
 
 std::string_view InputFile::get_string(i64 idx) {
   if (elf_sections.size() <= idx)
-    Fatal() << *this << ": invalid section index";
+    Fatal() << *this << ": invalid section index "
+            << idx << "/" << elf_sections.size();
   return get_string(elf_sections[idx]);
 }
 
@@ -90,7 +96,8 @@ std::span<T> InputFile::get_data(const ElfShdr &shdr) {
 template<typename T>
 std::span<T> InputFile::get_data(i64 idx) {
   if (elf_sections.size() <= idx)
-    Fatal() << *this << ": invalid section index";
+    Fatal() << *this << ": invalid section index "
+            << idx << "/" << elf_sections.size();
   return get_data<T>(elf_sections[idx]);
 }
 
