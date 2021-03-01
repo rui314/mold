@@ -439,6 +439,9 @@ void InputSection::scan_relocations() {
       file->num_dynrel++;
     };
 
+    if (sym.st_type == STT_GNU_IFUNC)
+      sym.flags |= NEEDS_PLT;
+
     switch (rel.r_type) {
     case R_X86_64_NONE:
       rel_types[i] = R_NONE;
@@ -511,7 +514,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_GOTPCREL;
       break;
     case R_X86_64_PLT32:
-      if (sym.is_imported() || sym.st_type == STT_GNU_IFUNC)
+      if (sym.is_imported())
         sym.flags |= NEEDS_PLT;
       rel_types[i] = R_PC;
       break;
