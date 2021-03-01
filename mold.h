@@ -90,6 +90,7 @@ struct Config {
   std::string init = "_init";
   std::string output;
   std::string rpaths;
+  std::string soname;
   std::string sysroot;
   std::vector<std::string> globals;
   std::vector<std::string_view> library_paths;

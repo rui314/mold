@@ -317,6 +317,9 @@ static std::vector<u64> create_dynamic_section() {
   if (!config.rpaths.empty())
     define(DT_RUNPATH, out::dynstr->find_string(config.rpaths));
 
+  if (!config.soname.empty())
+    define(DT_SONAME, out::dynstr->find_string(config.soname));
+
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
   define(DT_RELAENT, sizeof(ElfRela));

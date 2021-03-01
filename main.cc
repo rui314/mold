@@ -988,8 +988,12 @@ int main(int argc, char **argv) {
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
 
-  // Copy DT_RUNPATH strings to .dynstr.
+  // Copy DT_RUNPATH string to .dynstr.
   out::dynstr->add_string(config.rpaths);
+
+  // Copy DT_SONAME string to .dynstr.
+  if (!config.soname.empty())
+    out::dynstr->add_string(config.soname);
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
