@@ -26,7 +26,7 @@ submodules:
 	$(MAKE) -C mimalloc/out/release
 
 test: mold
-	(cd test; for i in *.sh; do ./$$i || exit 1; done)
+	for i in test/*.sh; do $$i || exit 1; done
 
 clean:
 	rm -f *.o *~ mold
