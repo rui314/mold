@@ -178,7 +178,8 @@ void RelDynSection::update_shdr() {
 
   i64 n = 0;
   for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported() || (config.pic && sym->is_relative()))
+    if (sym->is_imported() || sym->is_interposable ||
+        (config.pic && sym->is_relative()))
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
@@ -200,7 +201,7 @@ void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
   for (Symbol *sym : out::got->got_syms) {
-    if (sym->is_imported())
+    if (sym->is_imported() || sym->is_interposable)
       *rel++ = {sym->get_got_addr(), R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
     else if (config.pic && sym->is_relative())
       *rel++ = {sym->get_got_addr(), R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};

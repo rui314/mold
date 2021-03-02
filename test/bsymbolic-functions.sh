@@ -5,7 +5,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -shared -fPIC -o $t/a.so -xc - -Wl,-Bsymbolic-functions
+cat <<EOF | cc -c -o $t/a.o -fPIC -xc -
 int foo = 4;
 
 int get_foo() {
@@ -17,7 +17,9 @@ void *bar() {
 }
 EOF
 
-cat <<EOF | cc -c -o $t/b.o -xc - -fno-PIE
+clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-Bsymbolic-functions
+
+cat <<EOF | cc -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 extern int foo;
@@ -30,7 +32,7 @@ int main() {
 }
 EOF
 
-cc -fuse-ld=gold -no-pie -o $t/exe $t/b.o $t/a.so
+clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/c.o $t/b.so
 $t/exe | grep -q '3 3 0'
 
 echo OK
