@@ -2,30 +2,11 @@
 
 #include <cstring>
 #include <fcntl.h>
-#include <memory>
 #include <regex>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-class Trace {
-public:
-  Trace() {
-    if (config.trace) {
-      out = std::make_unique<SyncOut>(std::cout);
-      *out << "trace: ";
-    }
-  }
-
-  template <class T> Trace &operator<<(T &&val) {
-    if (out)
-      *out << std::forward<T>(val);
-    return *this;
-  }
-
-  std::unique_ptr<SyncOut> out;
-};
 
 MemoryMappedFile *MemoryMappedFile::open(std::string path) {
   struct stat st;
@@ -554,10 +535,12 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.is_interposable = (config.shared && !config.Bsymbolic &&
                            esym.st_visibility == STV_DEFAULT);
 
-    bool is_weak = (esym.st_bind == STB_WEAK);
-    Trace() << *sym.file
-            << (is_weak ? ": weak definition of " : ": definition of ")
-            << sym;
+    if (sym.traced) {
+      bool is_weak = (esym.st_bind == STB_WEAK);
+      SyncOut() << "trace: " << *sym.file
+                << (is_weak ? ": weak definition of " : ": definition of ")
+                << sym;
+    }
   }
 }
 
@@ -578,7 +561,9 @@ void ObjectFile::resolve_symbols() {
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
         sym.is_placeholder = true;
-        Trace() << *sym.file << ": lazy definition of " << sym;
+
+        if (sym.traced)
+          SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
       }
     } else {
       maybe_override_symbol(sym, i);
@@ -599,19 +584,16 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
       continue;
     }
 
-    Trace() << *this << ": reference to " << sym;
-    if (!sym.file)
-      continue;
+    if (sym.traced)
+      SyncOut() << "trace: " <<  *this << ": reference to " << sym;
 
-    if (sym.file->is_dso) {
-      if (!sym.file->is_alive.exchange(true))
-        Trace() << *this << " keeps " << *sym.file << " for " << sym;
-      continue;
-    }
+    if (esym.st_bind != STB_WEAK && sym.file && !sym.file->is_alive.exchange(true)) {
+      if (!sym.file->is_dso)
+        feeder((ObjectFile *)sym.file);
 
-    if (esym.st_bind != STB_WEAK && !sym.file->is_alive.exchange(true)) {
-      feeder((ObjectFile *)sym.file);
-      Trace() << *this << " keeps " << *sym.file << " for " << sym;
+      if (sym.traced)
+        SyncOut() << "trace: " << *this << " keeps " << *sym.file
+                  << " for " << sym;
     }
   }
 }
@@ -634,7 +616,9 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.value = 0;
         sym.esym = &esym;
         sym.is_placeholder = false;
-        Trace() << *this << ": unresolved weak symbol " << sym;
+
+        if (sym.traced)
+          SyncOut() << "trace: " << *this << ": unresolved weak symbol " << sym;
       }
     }
   }
@@ -975,10 +959,12 @@ void SharedFile::resolve_symbols() {
       sym.is_placeholder = false;
       sym.is_interposable = true;
 
-      bool is_weak = (esym.st_bind == STB_WEAK);
-      Trace() << *sym.file
-              << (is_weak ? ": weak definition of " : ": definition of ")
-              << sym;
+      if (sym.traced) {
+        bool is_weak = (esym.st_bind == STB_WEAK);
+        SyncOut() << "trace: " << *sym.file
+                  << (is_weak ? ": weak definition of " : ": definition of ")
+                  << sym;
+      }
     }
   }
 }
