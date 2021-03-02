@@ -374,7 +374,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
 static int get_sym_type(Symbol &sym) {
   if (sym.is_absolute())
     return 0;
-  if (!sym.is_imported())
+  if (!sym.is_interposable)
     return 1;
   if (sym.st_type != STT_FUNC)
     return 2;
