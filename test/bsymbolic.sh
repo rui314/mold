@@ -6,31 +6,31 @@ t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
 cat <<EOF | cc -shared -fPIC -o $t/a.so -xc - -Wl,-Bsymbolic
-void *foo() {
+int foo = 4;
+
+int get_foo() {
   return foo;
 }
-EOF
-
-cat <<EOF | cc -fuse-ld=gold -shared -fPIC -o $t/b.so -xc -
-void *bar() __attribute__((visibility("protected")));
 
 void *bar() {
   return bar;
 }
 EOF
 
-cat <<EOF | cc -c -o $t/c.o -xc - -fno-PIE
+cat <<EOF | cc -c -o $t/b.o -xc - -fno-PIE
 #include <stdio.h>
 
-void *foo();
+extern int foo;
+int get_foo();
 void *bar();
 
 int main() {
-  printf("%p %p %p %p\n", foo, foo(), bar, bar());
+  foo = 3;
+  printf("%d %d %d\n", foo, get_foo(), bar == bar());
 }
 EOF
 
-cc -fuse-ld=gold -no-pie -o $t/exe $t/c.o $t/a.so $t/b.so
-$t/exe
+cc -fuse-ld=gold -no-pie -o $t/exe $t/b.o $t/a.so
+$t/exe | grep -q '3 4 0'
 
 echo OK
