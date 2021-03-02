@@ -304,6 +304,7 @@ public:
   u8 has_relplt : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 is_readonly : 1 = false;
+  u8 is_interposable : 1 = false;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);

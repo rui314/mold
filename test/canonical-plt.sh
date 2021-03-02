@@ -22,6 +22,6 @@ int main() {
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o
-$t/exe | grep 1
+$t/exe | grep -q 1
 
 echo OK
