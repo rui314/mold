@@ -205,6 +205,8 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.export_dynamic = true;
     } else if (read_flag(args, "Bsymbolic")) {
       conf.Bsymbolic = true;
+    } else if (read_flag(args, "Bsymbolic-functions")) {
+      conf.Bsymbolic_functions = true;
     } else if (read_flag(args, "no-export-dynamic")) {
       conf.export_dynamic = false;
     } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {

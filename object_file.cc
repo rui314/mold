@@ -532,8 +532,10 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_interposable = (config.shared && !config.Bsymbolic &&
-                           esym.st_visibility == STV_DEFAULT);
+    sym.is_interposable =
+      config.shared && !config.Bsymbolic &&
+      !(config.Bsymbolic_functions && esym.st_type == STT_FUNC) &&
+      esym.st_visibility == STV_DEFAULT;
 
     if (sym.traced) {
       bool is_weak = (esym.st_bind == STB_WEAK);
