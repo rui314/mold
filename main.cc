@@ -751,6 +751,9 @@ int main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   config = parse_nonpositional_args(arg_vector, file_args);
 
+  if (config.output == "")
+    Fatal() << "-o option is missing";
+
   if (!config.preload)
     if (i64 code; resume_daemon(argv, &code))
       exit(code);
@@ -773,10 +776,6 @@ int main(int argc, char **argv) {
   } else if (config.fork) {
     on_complete = fork_child();
   }
-
-  if (config.output == "")
-    Fatal() << "-o option is missing";
-  OutputFile *output_file = OutputFile::open(config.output);
 
   if (config.pic)
     config.image_base = 0;
@@ -1063,10 +1062,8 @@ int main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  out::buf = output_file->get_buffer(filesize);
-
-  if (config.filler != -1)
-    memset(out::buf, config.filler, filesize);
+  OutputFile *file = OutputFile::open(config.output, filesize);
+  out::buf = file->buf;
 
   Timer t_copy("copy");
 
@@ -1088,7 +1085,7 @@ int main(int argc, char **argv) {
     out::buildid->write_buildid(filesize);
   }
 
-  std::function<void()> closer = output_file->close();
+  file->close();
 
   t_copy.stop();
   t_total.stop();
@@ -1109,7 +1106,6 @@ int main(int argc, char **argv) {
   if (on_complete)
     on_complete();
 
-  closer();
   if (config.quick_exit)
     std::quick_exit(0);
   return 0;

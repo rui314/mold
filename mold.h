@@ -1056,21 +1056,17 @@ void parse_version_script(std::string path);
 
 class OutputFile {
 public:
-  static OutputFile *open(std::string path);
+  static OutputFile *open(std::string path, u64 filesize);
+  virtual void close() = 0;
 
-  virtual u8 *get_buffer(u64 filesize) = 0;
-  virtual std::function<void()> close() = 0;
-
+  u8 *buf;
   static inline char *tmpfile;
 
 protected:
-  OutputFile(std::string path) : path(path) {}
+  OutputFile(std::string path, u64 filesize) : path(path), filesize(filesize) {}
 
   std::string path;
-  int fd = -1;
-  u64 filesize = -1;
-  u64 populate_size = -1;
-  u8 *buf = nullptr;
+  u64 filesize;
 };
 
 //
