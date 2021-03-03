@@ -354,6 +354,7 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, ")")) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
+    } else if (read_flag(args, "rpath-link")) {
     } else if (read_flag(args, "as-needed")) {
       remaining.push_back("-as-needed");
     } else if (read_flag(args, "no-as-needed")) {
