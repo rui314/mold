@@ -145,9 +145,9 @@ static i64 parse_number(std::string opt, std::string_view value) {
 
 static std::vector<std::string_view> get_input_files(std::span<std::string_view> args) {
   static std::unordered_set<std::string_view> needs_arg({
-    "o", "dynamic-linker", "export-dynamic", "e", "entry", "y",
-    "trace-symbol", "filler", "sysroot", "thread-count", "z",
-    "hash-style", "m", "rpath", "version-script",
+    "o", "dynamic-linker", "e", "entry", "y", "trace-symbol",
+    "filler", "sysroot", "thread-count", "z", "hash-style", "m",
+    "rpath", "version-script",
   });
 
   std::vector<std::string_view> vec;
@@ -203,12 +203,12 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
       conf.dynamic_linker = arg;
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       conf.export_dynamic = true;
+    } else if (read_flag(args, "no-export-dynamic")) {
+      conf.export_dynamic = false;
     } else if (read_flag(args, "Bsymbolic")) {
       conf.Bsymbolic = true;
     } else if (read_flag(args, "Bsymbolic-functions")) {
       conf.Bsymbolic_functions = true;
-    } else if (read_flag(args, "no-export-dynamic")) {
-      conf.export_dynamic = false;
     } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
       conf.entry = arg;
     } else if (read_flag(args, "print-map")) {
