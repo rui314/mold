@@ -514,7 +514,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_GOTPCREL;
       break;
     case R_X86_64_PLT32:
-      if (sym.is_imported())
+      if (sym.is_interposable)
         sym.flags |= NEEDS_PLT;
       rel_types[i] = R_PC;
       break;
@@ -522,7 +522,7 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSGD reloc not followed by PLT32";
 
-      if (config.relax && !sym.is_imported()) {
+      if (config.relax && !config.shared && !sym.is_interposable) {
         rel_types[i] = R_TLSGD_RELAX_LE;
         i++;
       } else {
@@ -534,7 +534,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
         Error() << *this << ": TLSLD reloc not followed by PLT32";
-      if (sym.is_imported())
+      if (sym.is_interposable)
         Error() << *this << ": TLSLD reloc refers external symbol " << sym;
 
       if (config.relax) {
@@ -547,7 +547,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
-      if (sym.is_imported())
+      if (sym.is_interposable)
         Error() << *this << ": DTPOFF reloc refers external symbol " << sym;
       rel_types[i] = config.relax ? R_TPOFF : R_DTPOFF;
       break;

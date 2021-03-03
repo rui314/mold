@@ -274,7 +274,6 @@ public:
   inline bool is_alive() const;
   inline bool is_absolute() const;
   inline bool is_relative() const { return !is_absolute(); }
-  inline bool is_imported() const;
   inline bool is_undef() const;
   inline bool is_undef_weak() const;
 
@@ -1269,10 +1268,6 @@ inline bool Symbol::is_absolute() const {
   if (file->is_dso)
     return esym->is_abs();
   return input_section == nullptr;
-}
-
-inline bool Symbol::is_imported() const {
-  return file->is_dso || is_undef();
 }
 
 inline bool Symbol::is_undef() const {

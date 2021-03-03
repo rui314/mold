@@ -178,8 +178,7 @@ void RelDynSection::update_shdr() {
 
   i64 n = 0;
   for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported() || sym->is_interposable ||
-        (config.pic && sym->is_relative()))
+    if (sym->is_interposable || (config.pic && sym->is_relative()))
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
@@ -201,7 +200,7 @@ void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
   for (Symbol *sym : out::got->got_syms) {
-    if (sym->is_imported() || sym->is_interposable)
+    if (sym->is_interposable)
       *rel++ = {sym->get_got_addr(), R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
     else if (config.pic && sym->is_relative())
       *rel++ = {sym->get_got_addr(), R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
@@ -216,7 +215,7 @@ void RelDynSection::copy_buf() {
     *rel++ = {out::got->get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
 
   for (Symbol *sym : out::got->gottpoff_syms)
-    if (sym->is_imported())
+    if (sym->is_interposable)
       *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym->dynsym_idx, 0};
 
   for (Symbol *sym : out::copyrel->symbols)
@@ -478,11 +477,11 @@ void GotSection::copy_buf() {
   memset(buf, 0, shdr.sh_size);
 
   for (Symbol *sym : got_syms)
-    if (!sym->is_imported())
+    if (!sym->is_interposable)
       buf[sym->got_idx] = sym->get_addr();
 
   for (Symbol *sym : gottpoff_syms)
-    if (!sym->is_imported())
+    if (!sym->is_interposable)
       buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
 }
 
@@ -651,7 +650,7 @@ void DynsymSection::copy_buf() {
       esym.st_shndx =
         sym.is_readonly ? out::copyrel_relro->shndx : out::copyrel->shndx;
       esym.st_value = sym.get_addr();
-    } else if (sym.is_imported() || sym.esym->is_undef()) {
+    } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
       if (!config.shared && sym.plt_idx != -1 && sym.got_idx == -1) {
@@ -1009,7 +1008,9 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
-  assert(sym->is_imported());
+  assert(!config.shared);
+  assert(sym->is_interposable);
+
   if (sym->has_copyrel)
     return;
 

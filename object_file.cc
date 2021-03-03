@@ -683,13 +683,13 @@ void ObjectFile::scan_relocations() {
   // Scan relocations against exception frames
   for (CieRecord &cie : cies) {
     for (EhReloc &rel : cie.rels) {
-      if (!rel.sym.is_imported())
-        continue;
-      if (rel.sym.st_type != STT_FUNC)
-        Fatal() << *this << ": " << rel.sym.name
-                << ": .eh_frame CIE record with an external data reference"
-                << " is not supported";
-      rel.sym.flags |= NEEDS_PLT;
+      if (rel.sym.is_interposable) {
+        if (rel.sym.st_type != STT_FUNC)
+          Fatal() << *this << ": " << rel.sym.name
+                  << ": .eh_frame CIE record with an external data reference"
+                  << " is not supported";
+        rel.sym.flags |= NEEDS_PLT;
+      }
     }
   }
 }
