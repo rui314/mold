@@ -6,6 +6,7 @@
 #include "mold.h"
 
 static thread_local std::string script_dir;
+static thread_local std::string current_file;
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
   std::vector<std::string_view> vec;
@@ -18,7 +19,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input.starts_with("/*")) {
       i64 pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
-        Fatal() << "unclosed comment";
+        Fatal() << current_file << ": unclosed comment";
       input = input.substr(pos + 2);
       continue;
     }
@@ -34,7 +35,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input[0] == '"') {
       i64 pos = input.find('"', 1);
       if (pos == std::string_view::npos)
-        Fatal() << "unclosed string literal";
+        Fatal() << current_file << ": unclosed string literal";
       vec.push_back(input.substr(0, pos));
       input = input.substr(pos);
       continue;
@@ -55,7 +56,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
 static std::span<std::string_view>
 skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
-    Fatal() << "expected '" << str << "'";
+    Fatal() << current_file << ": expected '" << str << "'";
   return tok.subspan(1);
 }
 
@@ -64,7 +65,7 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Fatal() << "expected ')'";
+    Fatal() << current_file << ": expected ')'";
   return tok.subspan(1);
 }
 
@@ -82,7 +83,7 @@ static MemoryMappedFile *resolve_path(std::string str) {
     if (MemoryMappedFile *mb = MemoryMappedFile::open(root + std::string(dir) + "/" + str))
       return mb;
   }
-  Fatal() << "library not found: " << str;
+  Fatal() << current_file << ": library not found: " << str;
 }
 
 static std::span<std::string_view>
@@ -102,11 +103,12 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
   }
 
   if (tok.empty())
-    Fatal() << "expected ')'";
+    Fatal() << current_file << ": expected ')'";
   return tok.subspan(1);
 }
 
 void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
+  current_file = mb->name;
   script_dir = mb->name.substr(0, mb->name.find_last_of('/'));
 
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
@@ -118,11 +120,12 @@ void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1), ctx);
     else
-      Fatal() << mb->name << ": unknown token: " << tok[0];
+      Fatal() << current_file << ": unknown token: " << tok[0];
   }
 }
 
 void parse_version_script(std::string path) {
+  current_file = path;
   script_dir = path.substr(0, path.find_last_of('/'));
 
   MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
@@ -167,10 +170,10 @@ void parse_version_script(std::string path) {
   tok = skip(tok, ";");
 
   if (!tok.empty())
-    Fatal() << path << ": trailing garbage token: " << tok[0];
+    Fatal() << current_file << ": trailing garbage token: " << tok[0];
 
   if (locals.size() != 1 || locals[0] != "*")
-    Fatal() << path << ": unsupported version script";
+    Fatal() << current_file << ": unsupported version script";
   config.export_dynamic = false;
   config.globals = globals;
 }
