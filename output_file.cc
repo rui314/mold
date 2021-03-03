@@ -20,30 +20,30 @@ public:
     tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
     i64 fd = mkstemp(tmpfile);
     if (fd == -1)
-      Error() << "cannot open " << tmpfile <<  ": " << strerror(errno);
+      Fatal() << "cannot open " << tmpfile <<  ": " << strerror(errno);
 
     if (rename(config.output.c_str(), tmpfile) == 0) {
       ::close(fd);
       fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
       if (fd == -1) {
         if (errno != ETXTBSY)
-          Error() << "cannot open " << config.output << ": " << strerror(errno);
+          Fatal() << "cannot open " << config.output << ": " << strerror(errno);
         unlink(tmpfile);
         fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
         if (fd == -1)
-          Error() << "cannot open " << config.output << ": " << strerror(errno);
+          Fatal() << "cannot open " << config.output << ": " << strerror(errno);
       }
     }
 
     if (ftruncate(fd, filesize))
-      Error() << "ftruncate failed";
+      Fatal() << "ftruncate failed";
 
     if (fchmod(fd, (0777 & ~get_umask())) == -1)
-      Error() << "fchmod failed";
+      Fatal() << "fchmod failed";
 
     buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (buf == MAP_FAILED)
-      Error() << config.output << ": mmap failed: " << strerror(errno);
+      Fatal() << config.output << ": mmap failed: " << strerror(errno);
     ::close(fd);
   }
 
@@ -51,7 +51,7 @@ public:
     Timer t("munmap");
     munmap(buf, filesize);
     if (rename(tmpfile, config.output.c_str()) == -1)
-      Error() << config.output << ": rename filed: " << strerror(errno);
+      Fatal() << config.output << ": rename filed: " << strerror(errno);
     tmpfile = nullptr;
   }
 };
@@ -63,14 +63,14 @@ public:
     buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (buf == MAP_FAILED)
-      Error() << "mmap failed: " << strerror(errno);
+      Fatal() << "mmap failed: " << strerror(errno);
   }
 
   void close() override {
     Timer t("munmap");
     i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
-      Error() << "cannot open " << config.output << ": " << strerror(errno);
+      Fatal() << "cannot open " << config.output << ": " << strerror(errno);
 
     FILE *fp = fdopen(fd, "w");
     fwrite(buf, filesize, 1, fp);
