@@ -178,7 +178,7 @@ void RelDynSection::update_shdr() {
 
   i64 n = 0;
   for (Symbol *sym : out::got->got_syms)
-    if (sym->is_interposable || (config.pic && sym->is_relative()))
+    if (sym->is_imported || (config.pic && sym->is_relative()))
       n++;
 
   n += out::got->tlsgd_syms.size() * 2;
@@ -200,7 +200,7 @@ void RelDynSection::copy_buf() {
   ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
 
   for (Symbol *sym : out::got->got_syms) {
-    if (sym->is_interposable)
+    if (sym->is_imported)
       *rel++ = {sym->get_got_addr(), R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
     else if (config.pic && sym->is_relative())
       *rel++ = {sym->get_got_addr(), R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
@@ -215,7 +215,7 @@ void RelDynSection::copy_buf() {
     *rel++ = {out::got->get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
 
   for (Symbol *sym : out::got->gottpoff_syms)
-    if (sym->is_interposable)
+    if (sym->is_imported)
       *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym->dynsym_idx, 0};
 
   for (Symbol *sym : out::copyrel->symbols)
@@ -449,6 +449,7 @@ void GotSection::add_got_symbol(Symbol *sym) {
   sym->got_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
+  out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_gottpoff_symbol(Symbol *sym) {
@@ -477,11 +478,11 @@ void GotSection::copy_buf() {
   memset(buf, 0, shdr.sh_size);
 
   for (Symbol *sym : got_syms)
-    if (!sym->is_interposable)
+    if (!sym->is_imported)
       buf[sym->got_idx] = sym->get_addr();
 
   for (Symbol *sym : gottpoff_syms)
-    if (!sym->is_interposable)
+    if (!sym->is_imported)
       buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
 }
 
@@ -1009,7 +1010,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 
 void CopyrelSection::add_symbol(Symbol *sym) {
   assert(!config.shared);
-  assert(sym->is_interposable);
+  assert(sym->file->is_dso);
 
   if (sym->has_copyrel)
     return;

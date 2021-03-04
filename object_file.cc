@@ -532,10 +532,22 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_interposable =
-      config.shared && !config.Bsymbolic &&
-      !(config.Bsymbolic_functions && esym.st_type == STT_FUNC) &&
-      esym.st_visibility == STV_DEFAULT;
+    sym.is_imported = false;
+    sym.is_exported = false;
+
+    if (config.shared && !config.Bsymbolic &&
+        !(config.Bsymbolic_functions && esym.st_type == STT_FUNC)) {
+      switch (esym.st_visibility) {
+      case STV_DEFAULT:
+        sym.is_imported = true;
+        sym.is_exported = true;
+        break;
+      case STV_PROTECTED:
+        sym.is_imported = false;
+        sym.is_exported = true;
+        break;
+      }
+    }
 
     if (sym.traced) {
       bool is_weak = (esym.st_bind == STB_WEAK);
@@ -669,7 +681,8 @@ void ObjectFile::claim_unresolved_symbols() {
         continue;
       sym.file = this;
       sym.esym = &esym;
-      sym.is_interposable = true;
+      sym.is_imported = true;
+      sym.is_exported = false;
     }
   }
 }
@@ -683,7 +696,7 @@ void ObjectFile::scan_relocations() {
   // Scan relocations against exception frames
   for (CieRecord &cie : cies) {
     for (EhReloc &rel : cie.rels) {
-      if (rel.sym.is_interposable) {
+      if (rel.sym.is_imported) {
         if (rel.sym.st_type != STT_FUNC)
           Fatal() << *this << ": " << rel.sym.name
                   << ": .eh_frame CIE record with an external data reference"
@@ -959,7 +972,8 @@ void SharedFile::resolve_symbols() {
       sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
       sym.esym = &esym;
       sym.is_placeholder = false;
-      sym.is_interposable = true;
+      sym.is_imported = true;
+      sym.is_exported = false;
 
       if (sym.traced) {
         bool is_weak = (esym.st_bind == STB_WEAK);

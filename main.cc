@@ -385,6 +385,12 @@ static void scan_rels() {
         sym->flags |= NEEDS_DYNSYM;
   });
 
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
+      if (sym->file == file && sym->is_exported)
+        sym->flags |= NEEDS_DYNSYM;
+  });
+
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
   append(files, out::objs);
@@ -400,7 +406,7 @@ static void scan_rels() {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
-    if (sym->is_interposable || (sym->flags & NEEDS_DYNSYM))
+    if (sym->flags & NEEDS_DYNSYM)
       out::dynsym->add_symbol(sym);
 
     if (sym->flags & NEEDS_GOT)

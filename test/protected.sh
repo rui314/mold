@@ -5,7 +5,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | clang -shared -fPIC -o $t/a.so -xc -
+cat <<EOF | clang -fPIC -c -o $t/a.o -xc -
 int foo() __attribute__((visibility("protected")));
 int bar() __attribute__((visibility("protected")));
 void *baz() __attribute__((visibility("protected")));
@@ -23,7 +23,9 @@ void *baz() {
 }
 EOF
 
-cat <<EOF | cc -c -o $t/b.o -xc - -fno-PIE
+clang -fuse-ld=`pwd`/../mold -o $t/b.so -shared $t/a.o
+
+cat <<EOF | cc -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 int foo() {
@@ -38,7 +40,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/b.o $t/a.so
+clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/c.o $t/b.so
 $t/exe | grep -q '3 4 0'
 
 echo OK

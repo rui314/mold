@@ -24,7 +24,7 @@ readelf -a $t/exe > $t/log
 
 fgrep -q '[24] .bss' $t/log
 fgrep -q '[25] .bss.rel.ro' $t/log
-fgrep -q '4: 0000000000202200   100 OBJECT  GLOBAL DEFAULT   24 readwrite' $t/log
-fgrep -q '5: 0000000000202280   100 OBJECT  GLOBAL DEFAULT   25 readonly' $t/log
+fgrep -q '0000000000202200   100 OBJECT  GLOBAL DEFAULT   24 readwrite' $t/log
+fgrep -q '0000000000202280   100 OBJECT  GLOBAL DEFAULT   25 readonly' $t/log
 
 echo OK
