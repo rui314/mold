@@ -83,6 +83,9 @@ struct Config {
   bool strip_all = false;
   bool trace = false;
   bool z_now = false;
+  i16 default_version = VER_NDX_GLOBAL;
+  std::vector<std::pair<std::string_view, i16>> version_definitions;
+  std::vector<std::pair<std::string_view, i16>> version_patterns;
   i64 build_id_size = 0;
   i64 filler = -1;
   i64 thread_count = -1;
@@ -94,7 +97,6 @@ struct Config {
   std::string rpaths;
   std::string soname;
   std::string sysroot;
-  std::vector<std::string> globals;
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;

@@ -36,8 +36,8 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
       i64 pos = input.find('"', 1);
       if (pos == std::string_view::npos)
         Fatal() << current_file << ": unclosed string literal";
-      vec.push_back(input.substr(0, pos));
-      input = input.substr(pos);
+      vec.push_back(input.substr(0, pos + 1));
+      input = input.substr(pos + 1);
       continue;
     }
 
@@ -58,6 +58,14 @@ skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty() || tok[0] != str)
     Fatal() << current_file << ": expected '" << str << "'";
   return tok.subspan(1);
+}
+
+static std::string_view unquote(std::string_view s) {
+  if (s.size() > 0 && s[0] == '"') {
+    assert(s[s.size() - 1] == '"');
+    return s.substr(1, s.size() - 2);
+  }
+  return s;
 }
 
 static std::span<std::string_view> read_output_format(std::span<std::string_view> tok) {
@@ -98,7 +106,7 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
       continue;
     }
 
-    read_file(resolve_path(std::string(tok[0])), ctx);
+    read_file(resolve_path(std::string(unquote(tok[0]))), ctx);
     tok = tok.subspan(1);
   }
 
@@ -131,49 +139,55 @@ void parse_version_script(std::string path) {
   MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
-  tok = skip(tok, "{");
+  i16 next_ver = 2;
 
-  std::vector<std::string> locals;
-  std::vector<std::string> globals;
-  std::vector<std::string> *cur = &locals;
-
-  while (!tok.empty() && tok[0] != "}") {
-    if (tok[0] == "local:") {
-      cur = &locals;
+  while (!tok.empty()) {
+    i16 ver = VER_NDX_GLOBAL;
+    if (tok[0] != "{") {
+      ver = next_ver++;
+      config.version_definitions.push_back({tok[0], ver});
       tok = tok.subspan(1);
-      continue;
     }
 
-    if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
-      cur = &locals;
-      tok = tok.subspan(2);
-      continue;
+    tok = skip(tok, "{");
+    bool is_global = true;
+
+    while (!tok.empty() && tok[0] != "}") {
+      if (tok[0] == "global:") {
+        is_global = true;
+        tok = tok.subspan(1);
+        continue;
+      }
+
+      if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
+        is_global = true;
+        tok = tok.subspan(2);
+        continue;
+      }
+
+      if (tok[0] == "local:") {
+        is_global = false;
+        tok = tok.subspan(1);
+        continue;
+      }
+
+      if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
+        is_global = false;
+        tok = tok.subspan(2);
+        continue;
+      }
+
+      if (tok[0] == "*")
+        config.default_version = (is_global ? ver : VER_NDX_LOCAL);
+      else
+        config.version_patterns.push_back({tok[0], ver});
+      tok = skip(tok.subspan(1), ";");
     }
 
-    if (tok[0] == "global:") {
-      cur = &globals;
-      tok = tok.subspan(1);
-      continue;
-    }
-
-    if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
-      cur = &globals;
-      tok = tok.subspan(2);
-      continue;
-    }
-
-    cur->push_back(std::string(tok[0]));
-    tok = skip(tok.subspan(1), ";");
+    tok = skip(tok, "}");
+    tok = skip(tok, ";");
   }
-
-  tok = skip(tok, "}");
-  tok = skip(tok, ";");
 
   if (!tok.empty())
     Fatal() << current_file << ": trailing garbage token: " << tok[0];
-
-  if (locals.size() != 1 || locals[0] != "*")
-    Fatal() << current_file << ": unsupported version script";
-  config.export_dynamic = false;
-  config.globals = globals;
 }

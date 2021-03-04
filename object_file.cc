@@ -536,7 +536,8 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.is_exported = false;
 
     if (config.shared && !config.Bsymbolic &&
-        !(config.Bsymbolic_functions && esym.st_type == STT_FUNC)) {
+        !(config.Bsymbolic_functions && esym.st_type == STT_FUNC) &&
+        config.default_version != VER_NDX_LOCAL) {
       switch (esym.st_visibility) {
       case STV_DEFAULT:
         sym.is_imported = true;
