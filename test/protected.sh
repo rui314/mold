@@ -5,7 +5,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | clang -fuse-ld=gold -shared -fPIC -o $t/a.so -xc -
+cat <<EOF | clang -shared -fPIC -o $t/a.so -xc -
 int foo() __attribute__((visibility("protected")));
 int bar() __attribute__((visibility("protected")));
 void *baz() __attribute__((visibility("protected")));
