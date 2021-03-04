@@ -382,7 +382,7 @@ static void scan_rels() {
   tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
     for (Symbol *sym : file->undefs)
       if (sym->file && !sym->file->is_dso)
-        sym->flags |= NEEDS_DYNSYM;
+        sym->is_exported = true;
   });
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
