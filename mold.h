@@ -964,7 +964,8 @@ public:
   void compute_symtab();
   void write_symtab();
 
-  static ObjectFile *create_internal_obj();
+  i64 get_shndx(const ElfSym &esym);
+  InputSection *get_section(const ElfSym &esym);
 
   std::string archive_name;
   std::vector<InputSection *> sections;
@@ -999,6 +1000,7 @@ private:
 
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
+  std::span<u32> symtab_shndx_sec;
 };
 
 class SharedFile : public InputFile {

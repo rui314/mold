@@ -301,7 +301,7 @@ static void check_duplicate_symbols() {
       Symbol &sym = *file->symbols[i];
       bool is_weak = (esym.st_bind == STB_WEAK);
       bool is_eliminated =
-        !esym.is_abs() && !esym.is_common() && !file->sections[esym.st_shndx];
+        !esym.is_abs() && !esym.is_common() && !file->get_section(esym);
 
       if (esym.is_defined() && !is_weak && !is_eliminated && sym.file != file)
         Error() << "duplicate symbol: " << *file << ": " << *sym.file

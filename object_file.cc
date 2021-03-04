@@ -56,12 +56,13 @@ InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
   ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
   is_dso = (ehdr.e_type == ET_DYN);
 
-  u8 *sh_begin = mb->data() + ehdr.e_shoff;
-  u8 *sh_end = sh_begin + ehdr.e_shnum * sizeof(ElfShdr);
-  if (mb->data() + mb->size() < sh_end)
+  ElfShdr *sh_begin = (ElfShdr *)(mb->data() + ehdr.e_shoff);
+  i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
+
+  if (mb->data() + mb->size() < (u8 *)(sh_begin + num_sections))
     Fatal() << *this << ": e_shoff or e_shnum corrupted: "
-            << mb->size() << " " << ehdr.e_shnum;
-  elf_sections = {(ElfShdr *)sh_begin, (ElfShdr *)sh_end};
+            << mb->size() << " " << num_sections;
+  elf_sections = {sh_begin, sh_begin + num_sections};
   shstrtab = get_string(ehdr.e_shstrndx);
 }
 
@@ -142,7 +143,7 @@ void ObjectFile::initialize_sections() {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      Fatal() << *this << ": SHT_SYMTAB_SHNDX section is not supported";
+      symtab_shndx_sec = get_data<u32>(shdr);
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -362,7 +363,7 @@ void ObjectFile::initialize_symbols() {
     if (!esym.is_abs()) {
       if (esym.is_common())
         Fatal() << *this << ": common local symbol?";
-      sym.input_section = sections[esym.st_shndx];
+      sym.input_section = get_section(esym);
     }
 
     if (should_write_symtab(sym)) {
@@ -416,7 +417,7 @@ void ObjectFile::initialize_mergeable_sections() {
       if (esym.st_type != STT_SECTION)
         continue;
 
-      MergeableSection *m = mergeable_sections[esym.st_shndx];
+      MergeableSection *m = mergeable_sections[get_shndx(esym)];
       if (!m)
         continue;
 
@@ -440,7 +441,7 @@ void ObjectFile::initialize_mergeable_sections() {
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    MergeableSection *m = mergeable_sections[esym.st_shndx];
+    MergeableSection *m = mergeable_sections[get_shndx(esym)];
     if (!m)
       continue;
 
@@ -512,7 +513,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
   InputSection *isec = nullptr;
   const ElfSym &esym = elf_syms[symidx];
   if (!esym.is_abs() && !esym.is_common())
-    isec = sections[esym.st_shndx];
+    isec = get_section(esym);
 
   u64 new_rank = get_rank(this, esym, isec);
 
@@ -809,6 +810,16 @@ void ObjectFile::write_symtab() {
   for (i64 i = first_global; i < elf_syms.size(); i++)
     if (symbols[i]->file == this && should_write_global_symtab(*symbols[i]))
       write_sym(i);
+}
+
+i64 ObjectFile::get_shndx(const ElfSym &esym) {
+  if (esym.st_shndx == SHN_XINDEX)
+    return symtab_shndx_sec[&esym - &elf_syms[0]];
+  return esym.st_shndx;
+}
+
+InputSection *ObjectFile::get_section(const ElfSym &esym) {
+  return sections[get_shndx(esym)];
 }
 
 bool is_c_identifier(std::string_view name) {

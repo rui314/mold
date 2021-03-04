@@ -147,7 +147,7 @@ static std::vector<std::string_view> get_input_files(std::span<std::string_view>
   static std::unordered_set<std::string_view> needs_arg({
     "o", "dynamic-linker", "e", "entry", "y", "trace-symbol",
     "filler", "sysroot", "thread-count", "z", "hash-style", "m",
-    "rpath", "version-script",
+    "rpath", "rpath-link", "version-script",
   });
 
   std::vector<std::string_view> vec;
@@ -354,7 +354,7 @@ Config parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, ")")) {
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "disable-new-dtags")) {
-    } else if (read_flag(args, "rpath-link")) {
+    } else if (read_arg(args, arg, "rpath-link")) {
     } else if (read_flag(args, "as-needed")) {
       remaining.push_back("-as-needed");
     } else if (read_flag(args, "no-as-needed")) {
