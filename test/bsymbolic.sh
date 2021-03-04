@@ -30,7 +30,7 @@ int main() {
 }
 EOF
 
-cc -fuse-ld=gold -no-pie -o $t/exe $t/b.o $t/a.so
+clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/b.o $t/a.so
 $t/exe | grep -q '3 4 0'
 
 echo OK
