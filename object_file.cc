@@ -521,7 +521,6 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
   u64 existing_rank = get_rank(sym);
 
   if (new_rank < existing_rank) {
-    sym.file = this;
     sym.input_section = isec;
     if (SectionFragmentRef &ref = sym_fragments[symidx - first_global]; ref.frag) {
       sym.frag = ref.frag;
@@ -533,23 +532,34 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
-    sym.is_imported = false;
-    sym.is_exported = false;
+
+    bool is_imported = false;
+    bool is_exported = false;
 
     if (config.shared && !config.Bsymbolic &&
         !(config.Bsymbolic_functions && esym.st_type == STT_FUNC) &&
         config.default_version != VER_NDX_LOCAL) {
       switch (esym.st_visibility) {
       case STV_DEFAULT:
-        sym.is_imported = true;
-        sym.is_exported = true;
+        is_imported = true;
+        is_exported = true;
         break;
       case STV_PROTECTED:
-        sym.is_imported = false;
-        sym.is_exported = true;
+        is_imported = false;
+        is_exported = true;
         break;
       }
     }
+
+    if (sym.file) {
+      sym.is_imported &= is_imported;
+      sym.is_exported &= is_exported;
+    } else {
+      sym.is_imported = is_imported;
+      sym.is_exported = is_exported;
+    }
+
+    sym.file = this;
 
     if (sym.traced) {
       bool is_weak = (esym.st_bind == STB_WEAK);
