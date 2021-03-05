@@ -312,6 +312,43 @@ static void check_duplicate_symbols() {
   Error::checkpoint();
 }
 
+static void compute_visibility() {
+  Timer t("compute_visibility");
+
+  if (config.shared) {
+    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+        if (sym->file != file)
+          continue;
+
+        u8 visibility = sym->visibility;
+        bool bsymbolic = config.Bsymbolic ||
+          (config.Bsymbolic_functions && sym->get_type() == STT_FUNC);
+
+        if (visibility == STV_DEFAULT && bsymbolic)
+          visibility = STV_PROTECTED;
+
+        switch (visibility) {
+        case STV_DEFAULT:
+          sym->is_imported = true;
+          sym->is_exported = true;
+          break;
+        case STV_PROTECTED:
+          sym->is_imported = false;
+          sym->is_exported = true;
+          break;
+        case STV_HIDDEN:
+          sym->is_imported = false;
+          sym->is_exported = false;
+          break;
+        default:
+          unreachable();
+        }
+      }
+    });
+  }
+}
+
 static void set_isec_offsets() {
   Timer t("isec_offsets");
 
@@ -974,6 +1011,8 @@ int main(int argc, char **argv) {
   // Make sure that all symbols have been resolved.
   if (!config.allow_multiple_definition)
     check_duplicate_symbols();
+
+  compute_visibility();
 
   // Copy shared object name strings to .dynstr.
   for (SharedFile *file : out::dsos)
