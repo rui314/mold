@@ -100,7 +100,6 @@ struct Config {
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;
-  std::vector<std::string_view> version_script;
   u64 image_base = 0x200000;
 };
 
@@ -1170,8 +1169,8 @@ bool read_flag(std::span<std::string_view> &args, std::string name);
 bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
               std::string name);
 
-Config parse_nonpositional_args(std::span<std::string_view> args,
-                                std::vector<std::string_view> &remaining);
+void parse_nonpositional_args(std::span<std::string_view> args,
+                              std::vector<std::string_view> &remaining);
 
 //
 // main.cc

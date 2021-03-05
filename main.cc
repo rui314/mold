@@ -793,7 +793,7 @@ int main(int argc, char **argv) {
   // Parse non-positional command line options
   std::vector<std::string_view> arg_vector = expand_response_files(argv + 1);
   std::vector<std::string_view> file_args;
-  config = parse_nonpositional_args(arg_vector, file_args);
+  parse_nonpositional_args(arg_vector, file_args);
 
   if (config.output == "")
     Fatal() << "-o option is missing";
@@ -826,9 +826,6 @@ int main(int argc, char **argv) {
 
   for (std::string_view arg : config.trace_symbol)
     Symbol::intern(arg)->traced = true;
-
-  for (std::string_view arg : config.version_script)
-    parse_version_script(std::string(arg));
 
   // Parse input files
   {
