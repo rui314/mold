@@ -407,38 +407,48 @@ void InputSection::scan_relocations() {
       continue;
     }
 
-    auto none = []() {};
-
     auto error = [&]() {
       Error() << *this << ": " << rel_to_string(rel.r_type)
               << " relocation against symbol `" << sym
               << "' can not be used; recompile with -fPIE";
     };
 
-    auto copyrel = [&]() {
-      sym.flags |= NEEDS_COPYREL;
-    };
+    typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
 
-    auto plt = [&]() {
-      sym.flags |= NEEDS_PLT;
-    };
-
-    auto dynrel = [&]() {
-      if (is_readonly)
+    auto dispatch = [&](Action action, RelType rel_type) {
+      switch (action) {
+      case NONE:
+        rel_types[i] = rel_type;
+        return;
+      case ERROR:
         error();
-      sym.flags |= NEEDS_DYNSYM;
-      rel_types[i] = R_DYN;
-      file->num_dynrel++;
+        return;
+      case COPYREL:
+        sym.flags |= NEEDS_COPYREL;
+        rel_types[i] = rel_type;
+        return;
+      case PLT:
+        sym.flags |= NEEDS_PLT;
+        rel_types[i] = rel_type;
+        return;
+      case DYNREL:
+        if (is_readonly)
+          error();
+        sym.flags |= NEEDS_DYNSYM;
+        rel_types[i] = R_DYN;
+        file->num_dynrel++;
+        return;
+      case BASEREL:
+        if (is_readonly)
+          error();
+        rel_types[i] = R_BASEREL;
+        file->num_dynrel++;
+        return;
+      }
+      unreachable();
     };
 
-    auto baserel = [&]() {
-      if (is_readonly)
-        error();
-      rel_types[i] = R_BASEREL;
-      file->num_dynrel++;
-    };
-
-    if (sym.get_type() == STT_GNU_IFUNC)
+    if (sym.esym->st_type == STT_GNU_IFUNC)
       sym.flags |= NEEDS_PLT;
 
     switch (rel.r_type) {
@@ -449,53 +459,49 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S: {
-      std::function<void()> table[][4] = {
+      Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  none,     none,  copyrel,       plt },        // PDE
-        {  none,     error, error,         error },      // PIE
-        {  none,     error, error,         error },      // DSO
+        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
+        {  NONE,     ERROR, ERROR,         ERROR },      // PIE
+        {  NONE,     ERROR, ERROR,         ERROR },      // DSO
       };
 
-      rel_types[i] = R_ABS;
-      table[output_type][get_sym_type(sym)]();
+      dispatch(table[output_type][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_64: {
-      std::function<void()> table[][4] = {
+      Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
-        {  none,     none,    copyrel,       plt },        // PDE
-        {  none,     baserel, dynrel,        dynrel },     // PIE
-        {  none,     baserel, dynrel,        dynrel },     // DSO
+        {  NONE,     NONE,    COPYREL,       PLT },        // PDE
+        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
+        {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
       };
 
-      rel_types[i] = R_ABS;
-      table[output_type][get_sym_type(sym)]();
+      dispatch(table[output_type][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32: {
-      std::function<void()> table[][4] = {
+      Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  none,     none,  copyrel,       plt },        // PDE
-        {  error,    none,  copyrel,       plt },        // PIE
-        {  error,    none,  error,         error },      // DSO
+        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
+        {  ERROR,    NONE,  COPYREL,       PLT },        // PIE
+        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
       };
 
-      rel_types[i] = R_PC;
-      table[output_type][get_sym_type(sym)]();
+      dispatch(table[output_type][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_PC64: {
-      std::function<void()> table[][4] = {
+      Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  none,     none,  copyrel,       plt },        // PDE
-        {  baserel,  none,  copyrel,       plt },        // PIE
-        {  baserel,  none,  error,         error },      // DSO
+        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
+        {  BASEREL,  NONE,  COPYREL,       PLT },        // PIE
+        {  BASEREL,  NONE,  ERROR,         ERROR },      // DSO
       };
 
-      rel_types[i] = R_PC;
-      table[output_type][get_sym_type(sym)]();
+      dispatch(table[output_type][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_GOT32:

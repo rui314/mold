@@ -313,40 +313,41 @@ static void check_duplicate_symbols() {
 }
 
 static void compute_visibility() {
+  if (!config.shared)
+    return;
+
   Timer t("compute_visibility");
 
-  if (config.shared) {
-    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
-        if (sym->file != file)
-          continue;
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+      if (sym->file != file)
+        continue;
 
-        u8 visibility = sym->visibility;
-        bool bsymbolic = config.Bsymbolic ||
-          (config.Bsymbolic_functions && sym->get_type() == STT_FUNC);
+      u8 visibility = sym->visibility;
+      bool bsymbolic = config.Bsymbolic ||
+        (config.Bsymbolic_functions && sym->get_type() == STT_FUNC);
 
-        if (visibility == STV_DEFAULT && bsymbolic)
-          visibility = STV_PROTECTED;
+      if (visibility == STV_DEFAULT && bsymbolic)
+        visibility = STV_PROTECTED;
 
-        switch (visibility) {
-        case STV_DEFAULT:
-          sym->is_imported = true;
-          sym->is_exported = true;
-          break;
-        case STV_PROTECTED:
-          sym->is_imported = false;
-          sym->is_exported = true;
-          break;
-        case STV_HIDDEN:
-          sym->is_imported = false;
-          sym->is_exported = false;
-          break;
-        default:
-          unreachable();
-        }
+      switch (visibility) {
+      case STV_DEFAULT:
+        sym->is_imported = true;
+        sym->is_exported = true;
+        break;
+      case STV_PROTECTED:
+        sym->is_imported = false;
+        sym->is_exported = true;
+        break;
+      case STV_HIDDEN:
+        sym->is_imported = false;
+        sym->is_exported = false;
+        break;
+      default:
+        unreachable();
       }
-    });
-  }
+    }
+  });
 }
 
 static void set_isec_offsets() {
