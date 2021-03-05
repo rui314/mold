@@ -376,7 +376,7 @@ static int get_sym_type(Symbol &sym) {
     return 0;
   if (!sym.is_imported)
     return 1;
-  if (sym.st_type != STT_FUNC)
+  if (sym.get_type() != STT_FUNC)
     return 2;
   return 3;
 }
@@ -401,7 +401,6 @@ void InputSection::scan_relocations() {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
-    bool is_code = (sym.st_type == STT_FUNC);
 
     if (!sym.file || sym.is_placeholder) {
       Error() << "undefined symbol: " << *file << ": " << sym;
@@ -439,7 +438,7 @@ void InputSection::scan_relocations() {
       file->num_dynrel++;
     };
 
-    if (sym.st_type == STT_GNU_IFUNC)
+    if (sym.get_type() == STT_GNU_IFUNC)
       sym.flags |= NEEDS_PLT;
 
     switch (rel.r_type) {

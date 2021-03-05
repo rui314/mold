@@ -582,7 +582,7 @@ void RelPltSection::copy_buf() {
     rel.r_sym = sym->dynsym_idx;
     rel.r_offset = sym->get_gotplt_addr();
 
-    if (sym->st_type == STT_GNU_IFUNC) {
+    if (sym->get_type() == STT_GNU_IFUNC) {
       rel.r_type = R_X86_64_IRELATIVE;
       rel.r_addend = sym->get_addr();
     } else {
@@ -643,7 +643,7 @@ void DynsymSection::copy_buf() {
     ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_name = name_indices[i];
-    esym.st_type = sym.st_type;
+    esym.st_type = sym.esym->st_type;
     esym.st_bind = sym.esym->st_bind;
     esym.st_size = sym.esym->st_size;
 
@@ -661,7 +661,7 @@ void DynsymSection::copy_buf() {
     } else if (!sym.input_section) {
       esym.st_shndx = SHN_ABS;
       esym.st_value = sym.get_addr();
-    } else if (sym.st_type == STT_TLS) {
+    } else if (sym.get_type() == STT_TLS) {
       esym.st_shndx = sym.input_section->output_section->shndx;
       esym.st_value = sym.get_addr() - out::tls_begin;
     } else {

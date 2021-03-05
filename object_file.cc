@@ -319,7 +319,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
 static bool should_write_symtab(Symbol &sym) {
   if (config.discard_all || config.strip_all)
     return false;
-  if (sym.esym->st_type == STT_SECTION)
+  if (sym.get_type() == STT_SECTION)
     return false;
 
   // Local symbols are discarded if --discard-local is given or they
@@ -356,7 +356,6 @@ void ObjectFile::initialize_symbols() {
 
     sym.name = symbol_strtab.data() + esym.st_name;
     sym.file = this;
-    sym.st_type = esym.st_type;
     sym.value = esym.st_value;
     sym.esym = &esym;
 
@@ -529,7 +528,6 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
       sym.value = esym.st_value;
     }
     sym.ver_idx = 0;
-    sym.st_type = esym.st_type;
     sym.esym = &esym;
     sym.is_placeholder = false;
 
@@ -709,7 +707,7 @@ void ObjectFile::scan_relocations() {
   for (CieRecord &cie : cies) {
     for (EhReloc &rel : cie.rels) {
       if (rel.sym.is_imported) {
-        if (rel.sym.st_type != STT_FUNC)
+        if (rel.sym.get_type() != STT_FUNC)
           Fatal() << *this << ": " << rel.sym.name
                   << ": .eh_frame CIE record with an external data reference"
                   << " is not supported";
@@ -751,7 +749,7 @@ void ObjectFile::convert_common_symbols() {
 }
 
 static bool should_write_global_symtab(Symbol &sym) {
-  return sym.esym->st_type != STT_SECTION && sym.is_alive();
+  return sym.get_type() != STT_SECTION && sym.is_alive();
 }
 
 void ObjectFile::compute_symtab() {
@@ -795,7 +793,7 @@ void ObjectFile::write_symtab() {
     esym = elf_syms[i];
     esym.st_name = strtab_off;
 
-    if (sym.st_type == STT_TLS)
+    if (sym.get_type() == STT_TLS)
       esym.st_value = sym.get_addr() - out::tls_begin;
     else
       esym.st_value = sym.get_addr();
@@ -991,7 +989,6 @@ void SharedFile::resolve_symbols() {
       sym.frag = nullptr;
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
-      sym.st_type = (esym.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym.st_type;
       sym.esym = &esym;
       sym.is_placeholder = false;
       sym.is_imported = true;

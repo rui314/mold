@@ -278,6 +278,7 @@ public:
   inline bool is_relative() const { return !is_absolute(); }
   inline bool is_undef() const;
   inline bool is_undef_weak() const;
+  inline u32 get_type() const;
 
   std::string_view name;
   InputFile *file = nullptr;
@@ -295,10 +296,8 @@ public:
   u16 shndx = 0;
   u16 ver_idx = 0;
 
-  std::atomic_uint8_t flags = 0;
-  u8 st_type = STT_NOTYPE;
-
   tbb::spin_mutex mu;
+  std::atomic_uint8_t flags = 0;
 
   u8 is_placeholder : 1 = false;
   u8 write_symtab : 1 = false;
@@ -1281,6 +1280,12 @@ inline bool Symbol::is_undef() const {
 
 inline bool Symbol::is_undef_weak() const {
   return esym->is_undef() && esym->st_bind == STB_WEAK;
+}
+
+inline u32 Symbol::get_type() const {
+  if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
+    return STT_FUNC;
+  return esym->st_type;
 }
 
 inline u64 Symbol::get_addr() const {
