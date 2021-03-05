@@ -877,7 +877,8 @@ int main(int argc, char **argv) {
     out::gnu_hash = new GnuHashSection;
 
   if (!config.is_static) {
-    out::interp = new InterpSection;
+    if (!config.shared)
+      out::interp = new InterpSection;
     out::dynamic = new DynamicSection;
     out::reldyn = new RelDynSection;
     out::versym = new VersymSection;
