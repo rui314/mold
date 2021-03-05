@@ -841,16 +841,6 @@ void ObjectFile::write_symtab() {
       write_sym(i);
 }
 
-i64 ObjectFile::get_shndx(const ElfSym &esym) {
-  if (esym.st_shndx == SHN_XINDEX)
-    return symtab_shndx_sec[&esym - &elf_syms[0]];
-  return esym.st_shndx;
-}
-
-InputSection *ObjectFile::get_section(const ElfSym &esym) {
-  return sections[get_shndx(esym)];
-}
-
 bool is_c_identifier(std::string_view name) {
   static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*");
   return std::regex_match(name.begin(), name.end(), re);

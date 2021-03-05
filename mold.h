@@ -964,8 +964,8 @@ public:
   void compute_symtab();
   void write_symtab();
 
-  i64 get_shndx(const ElfSym &esym);
-  InputSection *get_section(const ElfSym &esym);
+  inline i64 get_shndx(const ElfSym &esym);
+  inline InputSection *get_section(const ElfSym &esym);
 
   std::string archive_name;
   std::vector<InputSection *> sections;
@@ -1367,6 +1367,16 @@ inline u64 InputChunk::get_addr() const {
 
 inline i64 InputSection::get_priority() const {
   return ((i64)file->priority << 32) | section_idx;
+}
+
+inline i64 ObjectFile::get_shndx(const ElfSym &esym) {
+  if (esym.st_shndx == SHN_XINDEX)
+    return symtab_shndx_sec[&esym - &elf_syms[0]];
+  return esym.st_shndx;
+}
+
+inline InputSection *ObjectFile::get_section(const ElfSym &esym) {
+  return sections[get_shndx(esym)];
 }
 
 inline u32 elf_hash(std::string_view name) {
