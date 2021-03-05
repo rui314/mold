@@ -568,13 +568,34 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
   }
 }
 
+void ObjectFile::merge_visibility(Symbol &sym, const ElfSym &esym) {
+  auto priority = [&](u8 visibility) {
+    switch (visibility) {
+    case STV_HIDDEN:
+      return 1;
+    case STV_PROTECTED:
+      return 2;
+    case STV_DEFAULT:
+      return 3;
+    }
+    Fatal() << *this << ": unknown symbol visibility: " << sym;
+  };
+
+  u8 visibility = sym.visibility;
+
+  while (priority(esym.st_visibility) < priority(visibility))
+    if (sym.visibility.compare_exchange_strong(visibility, esym.st_visibility))
+      break;
+}
+
 void ObjectFile::resolve_symbols() {
   for (i64 i = first_global; i < symbols.size(); i++) {
+    Symbol &sym = *symbols[i];
     const ElfSym &esym = elf_syms[i];
+    merge_visibility(sym, esym);
+
     if (!esym.is_defined())
       continue;
-
-    Symbol &sym = *symbols[i];
 
     if (is_in_lib) {
       std::lock_guard lock(sym.mu);

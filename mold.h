@@ -297,6 +297,7 @@ public:
   u16 ver_idx = 0;
 
   tbb::spin_mutex mu;
+  std::atomic_uint8_t visibility = STV_DEFAULT;
   std::atomic_uint8_t flags = 0;
 
   u8 is_placeholder : 1 = false;
@@ -992,6 +993,7 @@ private:
   void initialize_ehframe_sections();
   void read_ehframe(InputSection &isec);
   void maybe_override_symbol(Symbol &sym, i64 symidx);
+  void merge_visibility(Symbol &sym, const ElfSym &esym);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   std::vector<SectionFragmentRef> sym_fragments;
