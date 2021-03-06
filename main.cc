@@ -486,15 +486,15 @@ static void scan_rels() {
   }
 }
 
-static void fill_symbol_versions() {
-  Timer t("fill_symbol_versions");
+static void fill_verneed() {
+  Timer t("fill_verneed");
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms(out::dynsym->symbols.begin() + 1,
                              out::dynsym->symbols.end());
 
   erase(syms, [](Symbol *sym) {
-    return sym->get_version().empty();
+    return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
   });
 
   if (syms.empty())
@@ -505,67 +505,61 @@ static void fill_symbol_versions() {
            std::tuple(((SharedFile *)b->file)->soname, b->ver_idx);
   });
 
-  // Compute sizes of .gnu.version and .gnu.version_r sections.
+  // Resize of .gnu.version
   out::versym->contents.resize(out::dynsym->symbols.size(), 1);
   out::versym->contents[0] = 0;
 
-  i64 sz = sizeof(ElfVerneed) + sizeof(ElfVernaux);
-  for (i64 i = 1; i < syms.size(); i++) {
-    if (syms[i - 1]->file != syms[i]->file)
-      sz += sizeof(ElfVerneed) + sizeof(ElfVernaux);
-    else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
-      sz += sizeof(ElfVernaux);
-  }
-  out::verneed->contents.resize(sz);
+  // Allocate a large enough buffer to .gnu.version_r.
+  out::verneed->contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) *
+                                syms.size());
 
   // Fill .gnu.versoin_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
-  u16 version = 1;
+  u8 *ptr = buf;
+  u16 veridx = VER_NDX_LAST_RESERVED;
   ElfVerneed *verneed = nullptr;
   ElfVernaux *aux = nullptr;
 
-  auto add_aux = [&](Symbol *sym) {
-    SharedFile *file = (SharedFile *)sym->file;
-    std::string_view verstr = file->version_strings[sym->ver_idx];
+  auto start_group = [&](InputFile *file) {
+    out::verneed->shdr.sh_info++;
+    if (verneed)
+      verneed->vn_next = ptr - (u8 *)verneed;
 
+    verneed = (ElfVerneed *)ptr;
+    ptr += sizeof(*verneed);
+    verneed->vn_version = 1;
+    verneed->vn_file = out::dynstr->find_string(((SharedFile *)file)->soname);
+    verneed->vn_aux = sizeof(ElfVerneed);
+    aux = nullptr;
+  };
+
+  auto add_entry = [&](Symbol *sym) {
     verneed->vn_cnt++;
+
     if (aux)
       aux->vna_next = sizeof(ElfVernaux);
+    aux = (ElfVernaux *)ptr;
+    ptr += sizeof(*aux);
 
-    aux = (ElfVernaux *)buf;
-    buf += sizeof(*aux);
+    std::string_view verstr = sym->get_version();
     aux->vna_hash = elf_hash(verstr);
-    aux->vna_other = ++version;
+    aux->vna_other = ++veridx;
     aux->vna_name = out::dynstr->add_string(verstr);
   };
 
-  auto add_verneed = [&](Symbol *sym) {
-    SharedFile *file = (SharedFile *)sym->file;
+  for (i64 i = 0; i < syms.size(); i++) {
+    if (i == 0 || syms[i - 1]->file != syms[i]->file) {
+      start_group(syms[i]->file);
+      add_entry(syms[i]);
+    } else if (syms[i - 1]->ver_idx != syms[i]->ver_idx) {
+      add_entry(syms[i]);
+    }
 
-    out::verneed->shdr.sh_info++;
-    if (verneed)
-      verneed->vn_next = buf - (u8 *)verneed;
-
-    verneed = (ElfVerneed *)buf;
-    buf += sizeof(*verneed);
-    verneed->vn_version = 1;
-    verneed->vn_file = out::dynstr->find_string(file->soname);
-    verneed->vn_aux = sizeof(ElfVerneed);
-
-    aux = nullptr;
-    add_aux(sym);
-  };
-
-  add_verneed(syms[0]);
-  out::versym->contents[syms[0]->dynsym_idx] = version;
-
-  for (i64 i = 1; i < syms.size(); i++) {
-    if (syms[i - 1]->file != syms[i]->file)
-      add_verneed(syms[i]);
-    else if (syms[i - 1]->ver_idx != syms[i]->ver_idx)
-      add_aux(syms[i]);
-    out::versym->contents[syms[i]->dynsym_idx] = version;
+    out::versym->contents[syms[i]->dynsym_idx] = veridx;
   }
+
+  // Resize .gnu.version_r to fit to its contents.
+  out::verneed->contents.resize(ptr - buf);
 }
 
 static void clear_padding(i64 filesize) {
@@ -1046,8 +1040,8 @@ int main(int argc, char **argv) {
   // added to .dynsym.
   out::dynsym->sort_symbols();
 
-  // Fill .gnu.version and .gnu.version_r section contents.
-  fill_symbol_versions();
+  // Fill .gnu.version_r section contents.
+  fill_verneed();
 
   // Compute .symtab and .strtab sizes for each file.
   {
