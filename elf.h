@@ -75,6 +75,7 @@ static constexpr u32 STV_PROTECTED = 3;
 
 static constexpr u32 VER_NDX_LOCAL = 0;
 static constexpr u32 VER_NDX_GLOBAL = 1;
+static constexpr u32 VER_NDX_LAST_RESERVED = 1;
 
 static constexpr u32 PT_NULL = 0;
 static constexpr u32 PT_LOAD = 1;

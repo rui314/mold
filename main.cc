@@ -492,7 +492,10 @@ static void fill_symbol_versions() {
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms(out::dynsym->symbols.begin() + 1,
                              out::dynsym->symbols.end());
-  erase(syms, [](Symbol *sym){ return sym->ver_idx < 2; });
+
+  erase(syms, [](Symbol *sym) {
+    return sym->ver_idx <= VER_NDX_LAST_RESERVED;
+  });
 
   if (syms.empty())
     return;

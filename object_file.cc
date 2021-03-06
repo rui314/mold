@@ -923,7 +923,7 @@ void SharedFile::parse() {
 
     if (esyms[i].is_defined()) {
       elf_syms.push_back(&esyms[i]);
-      versyms.push_back(vers.empty() ? 1 : vers[i]);
+      versyms.push_back(vers.empty() ? VER_NDX_GLOBAL : vers[i]);
       symbols.push_back(sym);
     } else {
       undefs.push_back(sym);
@@ -942,7 +942,7 @@ std::vector<std::string_view> SharedFile::read_verdef() {
   std::string_view verdef = get_string(*verdef_sec);
   std::string_view strtab = get_string(verdef_sec->sh_link);
 
-  std::vector<std::string_view> ret(2);
+  std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
   auto *ver = (ElfVerdef *)verdef.data();
 
   for (;;) {
