@@ -935,15 +935,16 @@ void SharedFile::parse() {
 }
 
 std::vector<std::string_view> SharedFile::read_verdef() {
+  std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
+
   ElfShdr *verdef_sec = find_section(SHT_GNU_VERDEF);
   if (!verdef_sec)
-    return {};
+    return ret;
 
   std::string_view verdef = get_string(*verdef_sec);
   std::string_view strtab = get_string(verdef_sec->sh_link);
 
-  std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
-  auto *ver = (ElfVerdef *)verdef.data();
+  ElfVerdef *ver = (ElfVerdef *)verdef.data();
 
   for (;;) {
     if (ret.size() <= ver->vd_ndx)

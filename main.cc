@@ -494,7 +494,7 @@ static void fill_symbol_versions() {
                              out::dynsym->symbols.end());
 
   erase(syms, [](Symbol *sym) {
-    return sym->ver_idx <= VER_NDX_LAST_RESERVED;
+    return sym->get_version().empty();
   });
 
   if (syms.empty())

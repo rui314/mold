@@ -278,6 +278,7 @@ public:
   inline bool is_undef() const;
   inline bool is_undef_weak() const;
   inline u32 get_type() const;
+  inline std::string_view get_version() const;
 
   std::string_view name;
   InputFile *file = nullptr;
@@ -1287,6 +1288,12 @@ inline u32 Symbol::get_type() const {
   if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
     return STT_FUNC;
   return esym->st_type;
+}
+
+inline std::string_view Symbol::get_version() const {
+  if (file->is_dso)
+    return ((SharedFile *)file)->version_strings[ver_idx];
+  return "";
 }
 
 inline u64 Symbol::get_addr() const {
