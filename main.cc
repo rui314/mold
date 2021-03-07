@@ -486,11 +486,24 @@ static void scan_rels() {
   }
 }
 
-static void apply_version_script() {
-  Timer t("apply_version_script");
+static void set_import_export() {
+  Timer t("set_import_export");
 
-  if (config.version_definitions.empty())
-    return;
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
+      if (sym->file == file)
+        sym->is_exported = true;
+  });
+
+  for (std::pair<std::string_view, i16> pair : config.version_patterns) {
+    std::string_view pattern = pair.first;
+    i16 veridx = pair.second;
+
+    if (pattern.find('*') == pattern.npos)
+      Symbol::intern(pattern)->ver_idx = veridx;
+    else
+      Fatal() << "not supported: " << pattern;
+  }
 }
 
 static void fill_verdef() {
@@ -1103,7 +1116,7 @@ int main(int argc, char **argv) {
   out::dynsym->sort_symbols();
 
   // Apply version scripts
-  apply_version_script();
+  set_import_export();
 
   // Fill .gnu.version_d section contents.
   fill_verdef();
