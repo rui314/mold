@@ -115,7 +115,7 @@ static void mark(tbb::concurrent_vector<InputSection *> roots) {
 
 // Remove unreachable sections
 static void sweep() {
-  Timer t3("sweep");
+  Timer t("sweep");
   static Counter counter("garbage_sections");
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
