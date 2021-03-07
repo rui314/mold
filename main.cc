@@ -1207,9 +1207,10 @@ int main(int argc, char **argv) {
     out::buildid->write_buildid(filesize);
   }
 
+  t_copy.stop();
+
   file->close();
 
-  t_copy.stop();
   t_total.stop();
   t_all.stop();
 

@@ -903,10 +903,9 @@ std::vector<ElfPhdr> create_phdr();
 struct ComdatGroup {
   ComdatGroup() = default;
   ComdatGroup(const ComdatGroup &other)
-    : owner(other.owner.load()), section_idx(other.section_idx) {}
+    : owner(other.owner.load()) {}
 
   std::atomic<ObjectFile *> owner = nullptr;
-  u32 section_idx = -1;
 };
 
 class MemoryMappedFile {
