@@ -84,7 +84,7 @@ struct Config {
   bool trace = false;
   bool z_now = false;
   i16 default_version = VER_NDX_GLOBAL;
-  std::vector<std::pair<std::string_view, i16>> version_definitions;
+  std::vector<std::string_view> version_definitions;
   std::vector<std::pair<std::string_view, i16>> version_patterns;
   i64 build_id_size = 0;
   i64 filler = -1;
@@ -861,6 +861,21 @@ public:
   std::vector<u8> contents;
 };
 
+class VerdefSection : public OutputChunk {
+public:
+  VerdefSection() : OutputChunk(SYNTHETIC) {
+    name = ".gnu.version_d";
+    shdr.sh_type = SHT_GNU_VERDEF;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 8;
+  }
+
+  void update_shdr() override;
+  void copy_buf() override;
+
+  std::vector<u8> contents;
+};
+
 class BuildIdSection : public OutputChunk {
 public:
   BuildIdSection() : OutputChunk(SYNTHETIC) {
@@ -1216,6 +1231,7 @@ inline CopyrelSection *copyrel;
 inline CopyrelSection *copyrel_relro;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
+inline VerdefSection *verdef;
 inline BuildIdSection *buildid;
 
 inline u64 tls_begin;

@@ -139,13 +139,13 @@ void parse_version_script(std::string path) {
   MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
-  i16 next_ver = 2;
+  i16 next_ver = VER_NDX_LAST_RESERVED + 1;
 
   while (!tok.empty()) {
     i16 ver = VER_NDX_GLOBAL;
     if (tok[0] != "{") {
       ver = next_ver++;
-      config.version_definitions.push_back({tok[0], ver});
+      config.version_definitions.push_back(tok[0]);
       tok = tok.subspan(1);
     }
 

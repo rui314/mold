@@ -530,7 +530,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     } else {
       sym.value = esym.st_value;
     }
-    sym.ver_idx = 0;
+    sym.ver_idx = config.default_version;
     sym.esym = &esym;
     sym.is_placeholder = false;
 
@@ -634,6 +634,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.file = this;
         sym.input_section = nullptr;
         sym.value = 0;
+        sym.ver_idx = config.default_version;
         sym.esym = &esym;
         sym.is_placeholder = false;
 

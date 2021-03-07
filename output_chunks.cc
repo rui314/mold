@@ -338,6 +338,10 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERSYM, out::versym->shdr.sh_addr);
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
+  if (out::verdef) {
+    define(DT_VERDEF, out::verdef->shdr.sh_addr);
+    define(DT_VERDEFNUM, out::verdef->shdr.sh_info);
+  }
   define(DT_DEBUG, 0);
 
   if (Symbol *sym = Symbol::intern(config.init); sym->file)
@@ -1033,11 +1037,20 @@ void VersymSection::copy_buf() {
 }
 
 void VerneedSection::update_shdr() {
-  shdr.sh_size = contents.size() * sizeof(contents[0]);
+  shdr.sh_size = contents.size();
   shdr.sh_link = out::dynstr->shndx;
 }
 
 void VerneedSection::copy_buf() {
+  write_vector(out::buf + shdr.sh_offset, contents);
+}
+
+void VerdefSection::update_shdr() {
+  shdr.sh_size = contents.size();
+  shdr.sh_link = out::dynstr->shndx;
+}
+
+void VerdefSection::copy_buf() {
   write_vector(out::buf + shdr.sh_offset, contents);
 }
 

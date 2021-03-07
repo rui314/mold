@@ -77,6 +77,10 @@ static constexpr u32 VER_NDX_LOCAL = 0;
 static constexpr u32 VER_NDX_GLOBAL = 1;
 static constexpr u32 VER_NDX_LAST_RESERVED = 1;
 
+static constexpr u32 VER_FLG_BASE = 1;
+static constexpr u32 VER_FLG_WEAK = 2;
+static constexpr u32 VER_FLG_INFO = 4;
+
 static constexpr u32 PT_NULL = 0;
 static constexpr u32 PT_LOAD = 1;
 static constexpr u32 PT_DYNAMIC = 2;

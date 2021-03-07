@@ -486,6 +486,63 @@ static void scan_rels() {
   }
 }
 
+static void apply_version_script() {
+  Timer t("apply_version_script");
+
+  if (config.version_definitions.empty())
+    return;
+}
+
+static void fill_verdef() {
+  Timer t("fill_verdef");
+
+  if (config.version_definitions.empty())
+    return;
+
+  // Resize of .gnu.version
+  out::versym->contents.resize(out::dynsym->symbols.size(), 1);
+  out::versym->contents[0] = 0;
+
+  // Allocate a buffer for .gnu.version_d.
+  out::verdef->contents.resize((sizeof(ElfVerdef) + sizeof(ElfVerdaux)) *
+                               (config.version_definitions.size() + 1));
+
+  u8 *buf = (u8 *)&out::verdef->contents[0];
+  u8 *ptr = buf;
+  ElfVerdef *verdef = nullptr;
+
+  auto write = [&](std::string_view verstr, i64 idx, i64 flags) {
+    out::verdef->shdr.sh_info++;
+    if (verdef)
+      verdef->vd_next = ptr - (u8 *)verdef;
+
+    verdef = (ElfVerdef *)ptr;
+    ptr += sizeof(ElfVerdef);
+
+    verdef->vd_version = 1;
+    verdef->vd_flags = flags;
+    verdef->vd_ndx = idx;
+    verdef->vd_cnt = 1;
+    verdef->vd_hash = elf_hash(verstr);
+    verdef->vd_aux = sizeof(ElfVerdef);
+
+    ElfVerdaux *aux = (ElfVerdaux *)ptr;
+    ptr += sizeof(ElfVerdaux);
+    aux->vda_name = out::dynstr->add_string(verstr);
+  };
+
+  std::string_view basename = config.soname.empty() ?
+    config.output : config.soname;
+  write(basename, 1, VER_FLG_BASE);
+
+  i64 idx = 2;
+  for (std::string_view verstr : config.version_definitions)
+    write(verstr, idx++, 0);
+
+  for (Symbol *sym : std::span(out::dynsym->symbols).subspan(1))
+    out::versym->contents[sym->dynsym_idx] = sym->ver_idx;
+}
+
 static void fill_verneed() {
   Timer t("fill_verneed");
 
@@ -509,16 +566,17 @@ static void fill_verneed() {
   out::versym->contents.resize(out::dynsym->symbols.size(), 1);
   out::versym->contents[0] = 0;
 
-  // Allocate a large enough buffer to .gnu.version_r.
+  // Allocate a large enough buffer for .gnu.version_r.
   out::verneed->contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) *
                                 syms.size());
 
   // Fill .gnu.versoin_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
   u8 *ptr = buf;
-  u16 veridx = VER_NDX_LAST_RESERVED;
   ElfVerneed *verneed = nullptr;
   ElfVernaux *aux = nullptr;
+
+  u16 veridx = VER_NDX_LAST_RESERVED + config.version_definitions.size();
 
   auto start_group = [&](InputFile *file) {
     out::verneed->shdr.sh_info++;
@@ -880,6 +938,9 @@ int main(int argc, char **argv) {
     out::verneed = new VerneedSection;
   }
 
+  if (!config.version_definitions.empty())
+    out::verdef = new VerdefSection;
+
   out::chunks.push_back(out::got);
   out::chunks.push_back(out::plt);
   out::chunks.push_back(out::gotplt);
@@ -900,6 +961,7 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::copyrel_relro);
   out::chunks.push_back(out::versym);
   out::chunks.push_back(out::verneed);
+  out::chunks.push_back(out::verdef);
   out::chunks.push_back(out::buildid);
 
   // Set priorities to files. File priority 1 is reserved for the internal file.
@@ -1039,6 +1101,12 @@ int main(int argc, char **argv) {
   // Sort .dynsym contents. Beyond this point, no symbol should be
   // added to .dynsym.
   out::dynsym->sort_symbols();
+
+  // Apply version scripts
+  apply_version_script();
+
+  // Fill .gnu.version_d section contents.
+  fill_verdef();
 
   // Fill .gnu.version_r section contents.
   fill_verneed();
