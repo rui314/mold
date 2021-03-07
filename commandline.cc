@@ -339,5 +339,7 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     config.pic = true;
     config.dynamic_linker = "";
   }
-}
 
+  if (config.pic)
+    config.image_base = 0;
+}
