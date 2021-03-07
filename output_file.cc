@@ -48,7 +48,7 @@ public:
   }
 
   void close() override {
-    Timer t("munmap");
+    Timer t("close_file");
     munmap(buf, filesize);
     if (rename(tmpfile, config.output.c_str()) == -1)
       Fatal() << config.output << ": rename filed: " << strerror(errno);
@@ -67,7 +67,7 @@ public:
   }
 
   void close() override {
-    Timer t("munmap");
+    Timer t("close_file");
     i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Fatal() << "cannot open " << config.output << ": " << strerror(errno);
