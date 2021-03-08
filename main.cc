@@ -472,25 +472,25 @@ static void apply_version_script() {
 static void compute_import_export() {
   Timer t("compute_import_export");
 
-  if (!config.shared && !config.export_dynamic)
-    return;
+  if (config.shared || config.export_dynamic) {
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      std::span<Symbol *> syms = file->symbols;
+      for (Symbol *sym : syms.subspan(file->first_global)) {
+        if (sym->file != file)
+          continue;
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
-      if (sym->file != file)
-        continue;
+        if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
+          continue;
 
-      if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
-        continue;
+        sym->is_exported = true;
 
-      sym->is_exported = true;
-
-      if (sym->visibility != STV_PROTECTED &&
-          !config.Bsymbolic &&
-          !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
-        sym->is_imported = true;
-    }
-  });
+        if (sym->visibility != STV_PROTECTED &&
+            !config.Bsymbolic &&
+            !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+          sym->is_imported = true;
+      }
+    });
+  }
 }
 
 static void fill_verdef() {
