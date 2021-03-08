@@ -533,6 +533,8 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     sym.ver_idx = config.default_version;
     sym.esym = &esym;
     sym.is_placeholder = false;
+    sym.is_imported = false;
+    sym.is_exported = false;
 
     if (sym.traced) {
       bool is_weak = (esym.st_bind == STB_WEAK);
