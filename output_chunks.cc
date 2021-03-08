@@ -742,7 +742,7 @@ void GnuHashSection::copy_buf() {
 
   // Write hash bucket indices
   u32 *buckets = (u32 *)(bloom + num_bloom);
-  for (i64 i = 1; i < hashes.size(); i++) {
+  for (i64 i = 0; i < hashes.size(); i++) {
     i64 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
       buckets[idx] = i + symoffset;
