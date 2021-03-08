@@ -389,8 +389,9 @@ static void scan_rels() {
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-      if (sym->file == file && sym->is_exported)
-        sym->flags |= NEEDS_DYNSYM;
+      if (sym->file == file)
+        if (sym->is_imported || sym->is_exported)
+          sym->flags |= NEEDS_DYNSYM;
   });
 
   // Aggregate dynamic symbols to a single vector.
