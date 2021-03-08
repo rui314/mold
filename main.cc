@@ -12,6 +12,18 @@
 static tbb::task_group parser_tg;
 static bool preloading;
 
+i64 BuildId::size() const {
+  switch (kind) {
+  case HEX:
+    return value.size();
+  case HASH:
+    return hash_size;
+  case UUID:
+    return 16;
+  }
+  unreachable();
+}
+
 static bool is_text_file(MemoryMappedFile *mb) {
   return mb->size() >= 4 &&
          isprint(mb->data()[0]) &&
@@ -926,7 +938,7 @@ int main(int argc, char **argv) {
   out::copyrel = new CopyrelSection(".bss");
   out::copyrel_relro = new CopyrelSection(".bss.rel.ro");
 
-  if (config.build_id != BuildIdKind::NONE)
+  if (config.build_id.kind != BuildId::NONE)
     out::buildid = new BuildIdSection;
   if (config.eh_frame_hdr)
     out::eh_frame_hdr = new EhFrameHdrSection;

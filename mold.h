@@ -49,10 +49,16 @@ class OutputSection;
 class SharedFile;
 class Symbol;
 
-enum class BuildIdKind : u8 { NONE, HASH, UUID };
+struct BuildId {
+  i64 size() const;
+
+  enum { NONE, HEX, HASH, UUID } kind = NONE;
+  std::vector<u8> value;
+  i64 hash_size = 0;
+};
 
 struct Config {
-  BuildIdKind build_id = BuildIdKind::NONE;
+  BuildId build_id;
   bool Bsymbolic = false;
   bool Bsymbolic_functions = false;
   bool allow_multiple_definition = false;
@@ -84,7 +90,6 @@ struct Config {
   i16 default_version = VER_NDX_GLOBAL;
   std::vector<std::string_view> version_definitions;
   std::vector<std::pair<std::string_view, i16>> version_patterns;
-  i64 build_id_size = 0;
   i64 filler = -1;
   i64 thread_count = -1;
   std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
@@ -99,6 +104,7 @@ struct Config {
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;
+  std::vector<u8> build_id_value;
   u64 image_base = 0x200000;
 };
 

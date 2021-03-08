@@ -140,7 +140,32 @@ static i64 parse_hex(std::string opt, std::string_view value) {
 static i64 parse_number(std::string opt, std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
     Fatal() << "option -" << opt << ": not a number";
-  return std::stol(std::string(value));
+  return std::stol(std::string(value), nullptr, 16);
+}
+
+static std::vector<u8> parse_hex_build_id(std::string_view arg) {
+  assert(arg.starts_with("0x") || arg.starts_with("0X"));
+
+  if (arg.size() % 2)
+    Fatal() << "invalid build-id: " << arg;
+  if (arg.substr(2).find_first_not_of("0123456789abcdefABCDEF") != arg.npos)
+    Fatal() << "invalid build-id: " << arg;
+
+  arg = arg.substr(2);
+
+  auto fn = [](char c) {
+    if ('0' <= c && c <= '9')
+      return c - '0';
+    if ('a' <= c && c <= 'f')
+      return c - 'a' + 10;
+    assert('A' <= c && c <= 'F');
+    return c - 'A' + 10;
+  };
+
+  std::vector<u8> vec(arg.size() / 2);
+  for (i64 i = 0; i < vec.size(); i++)
+    vec[i] = (fn(arg[i * 2]) << 4) | fn(arg[i * 2 + 1]);
+  return vec;
 }
 
 static std::vector<std::string_view>
@@ -294,28 +319,30 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_arg(args, arg, "version-script")) {
       parse_version_script(std::string(arg));
     } else if (read_flag(args, "build-id")) {
-      config.build_id = BuildIdKind::HASH;
-      config.build_id_size = 20;
+      config.build_id.kind = BuildId::HASH;
+      config.build_id.hash_size = 20;
     } else if (read_arg(args, arg, "build-id")) {
       if (arg == "none") {
-        config.build_id = BuildIdKind::NONE;
+        config.build_id.kind = BuildId::NONE;
       } else if (arg == "uuid") {
-        config.build_id = BuildIdKind::UUID;
-        config.build_id_size = 16;
+        config.build_id.kind = BuildId::UUID;
       } else if (arg == "md5") {
-        config.build_id = BuildIdKind::HASH;
-        config.build_id_size = 16;
+        config.build_id.kind = BuildId::HASH;
+        config.build_id.hash_size = 16;
       } else if (arg == "sha1") {
-        config.build_id = BuildIdKind::HASH;
-        config.build_id_size = 20;
+        config.build_id.kind = BuildId::HASH;
+        config.build_id.hash_size = 20;
       } else if (arg == "sha256") {
-        config.build_id = BuildIdKind::HASH;
-        config.build_id_size = 32;
+        config.build_id.kind = BuildId::HASH;
+        config.build_id.hash_size = 32;
+      } else if (arg.starts_with("0x") || arg.starts_with("0X")) {
+        config.build_id.kind = BuildId::HEX;
+        config.build_id.value = parse_hex_build_id(arg);
       } else {
         Fatal() << "invalid --build-id argument: " << arg;
       }
     } else if (read_flag(args, "no-build-id")) {
-      config.build_id = BuildIdKind::NONE;
+      config.build_id.kind = BuildId::NONE;
     } else if (read_arg(args, arg, "exclude-libs")) {
       config.exclude_libs = split(arg, ",");
     } else if (read_flag(args, "preload")) {
