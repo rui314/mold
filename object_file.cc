@@ -972,10 +972,10 @@ void SharedFile::resolve_symbols() {
     Symbol &sym = *symbols[i];
     const ElfSym &esym = *elf_syms[i];
 
-    u64 existing_rank = get_rank(sym);
+    u64 new_rank = get_rank(this, esym, nullptr);
 
     std::lock_guard lock(sym.mu);
-    u64 new_rank = get_rank(this, esym, nullptr);
+    u64 existing_rank = get_rank(sym);
 
     if (new_rank < existing_rank) {
       sym.file = this;
