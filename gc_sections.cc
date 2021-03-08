@@ -90,6 +90,15 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
     }
   });
 
+  // Add sections containing exported symbols
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : file->symbols)
+      if (sym->file == file)
+        if (InputSection *sec = sym->input_section)
+          if (sec->shdr->sh_flags & SHF_ALLOC)
+            enqueue(sec);
+  });
+
   // Add sections referenced by root symbols.
   enqueue(Symbol::intern(config.entry)->input_section);
 
@@ -101,6 +110,7 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
       for (EhReloc &rel : cie.rels)
         enqueue(rel.sym.input_section);
   });
+
   return roots;
 }
 
