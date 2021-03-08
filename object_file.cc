@@ -607,13 +607,19 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
     if (sym.traced)
       SyncOut() << "trace: " <<  *this << ": reference to " << sym;
 
-    if (esym.st_bind != STB_WEAK && sym.file && !sym.file->is_alive.exchange(true)) {
-      if (!sym.file->is_dso)
-        feeder((ObjectFile *)sym.file);
+    if (sym.file) {
+      if (sym.file->is_dso) {
+        sym.file->is_alive = true;
+        continue;
+      }
 
-      if (sym.traced)
-        SyncOut() << "trace: " << *this << " keeps " << *sym.file
-                  << " for " << sym;
+      ObjectFile *obj = (ObjectFile *)sym.file;
+      if (esym.st_bind != STB_WEAK && !obj->is_alive.exchange(true)) {
+        feeder(obj);
+        if (sym.traced)
+          SyncOut() << "trace: " << *this << " keeps " << *obj
+                    << " for " << sym;
+      }
     }
   }
 }

@@ -380,13 +380,16 @@ static void scan_rels() {
   // Exit if there was a relocation that refers an undefined symbol.
   Error::checkpoint();
 
-  // Export symbols referenced by DSOs.
-  tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
-    for (Symbol *sym : file->undefs)
-      if (sym->file && !sym->file->is_dso)
-        sym->is_exported = true;
-  });
+  if (!config.shared) {
+    // Export symbols referenced by DSOs.
+    tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
+      for (Symbol *sym : file->undefs)
+        if (sym->file && !sym->file->is_dso)
+          sym->is_exported = true;
+    });
+  }
 
+  // Add imported or exported symbols to .dynsym.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
       if (sym->file == file)
