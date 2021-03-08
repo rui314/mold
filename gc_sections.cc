@@ -102,6 +102,10 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   // Add sections referenced by root symbols.
   enqueue(Symbol::intern(config.entry)->input_section);
 
+  for (std::string_view name : config.undefined)
+    if (InputSection *sec = Symbol::intern(config.entry)->input_section)
+      enqueue(sec);
+
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
   // We just keep all CIEs and everything that are referenced by them.
