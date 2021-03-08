@@ -20,6 +20,7 @@ cat <<EOF | cc -o $t/c.o -c -x assembler -
 bar:
 EOF
 
+rm -f $t/d.a
 ar cr $t/d.a $t/b.o $t/c.o
 
 ../mold -static -o $t/exe $t/a.o $t/d.a

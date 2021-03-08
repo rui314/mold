@@ -143,6 +143,22 @@ static i64 parse_number(std::string opt, std::string_view value) {
   return std::stol(std::string(value));
 }
 
+static std::vector<std::string_view>
+split(std::string_view str, std::string_view sep) {
+  std::vector<std::string_view> vec;
+
+  for (;;) {
+    i64 pos = str.find(sep);
+    if (pos == str.npos) {
+      vec.push_back(str);
+      break;
+    }
+    vec.push_back(str.substr(0, pos));
+    str = str.substr(pos);
+  }
+  return vec;
+}
+
 void parse_nonpositional_args(std::span<std::string_view> args,
                               std::vector<std::string_view> &remaining) {
   config.thread_count =
@@ -300,6 +316,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       }
     } else if (read_flag(args, "no-build-id")) {
       config.build_id = BuildIdKind::NONE;
+    } else if (read_arg(args, arg, "exclude-libs")) {
+      config.exclude_libs = split(arg, ",");
     } else if (read_flag(args, "preload")) {
       config.preload = true;
     } else if (read_arg(args, arg, "z")) {

@@ -14,7 +14,6 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) 
   u8 *data = mb->data() + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
-  std::string basedir = mb->name.substr(0, mb->name.find_last_of('/'));
 
   while (data < mb->data() + mb->size()) {
     ArHdr &hdr = *(ArHdr *)data;
@@ -37,8 +36,8 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) 
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name(start, strstr(start, "/\n"));
-
-    vec.push_back(MemoryMappedFile::must_open(basedir + "/" + name));
+    std::string path = path_dirname(mb->name) + "/" + name;
+    vec.push_back(MemoryMappedFile::must_open(path));
     data = body;
   }
   return vec;

@@ -11,9 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
-#include <map>
 #include <mutex>
-#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -97,6 +95,7 @@ struct Config {
   std::string rpaths;
   std::string soname;
   std::string sysroot;
+  std::vector<std::string_view> exclude_libs;
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;
@@ -987,6 +986,7 @@ public:
   i64 first_global = 0;
   const bool is_in_lib = false;
   std::vector<CieRecord> cies;
+  bool exclude_libs = false;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -1007,7 +1007,7 @@ private:
   void initialize_ehframe_sections();
   void read_ehframe(InputSection &isec);
   void maybe_override_symbol(Symbol &sym, i64 symidx);
-  void merge_visibility(Symbol &sym, const ElfSym &esym);
+  void merge_visibility(Symbol &sym, u8 visibility);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   std::vector<SectionFragmentRef> sym_fragments;
@@ -1087,6 +1087,13 @@ protected:
   std::string path;
   u64 filesize;
 };
+
+//
+// filepath.cc
+//
+
+std::string path_dirname(std::string_view path);
+std::string path_basename(std::string_view path);
 
 //
 // perf.cc

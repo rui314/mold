@@ -5,7 +5,6 @@
 
 #include "mold.h"
 
-static thread_local std::string script_dir;
 static thread_local std::string current_file;
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
@@ -80,17 +79,24 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
 static MemoryMappedFile *resolve_path(std::string str) {
   if (str.starts_with("/"))
     return MemoryMappedFile::must_open(config.sysroot + str);
+
   if (str.starts_with("-l"))
     return find_library(str.substr(2), config.library_paths);
-  if (MemoryMappedFile *mb = MemoryMappedFile::open(script_dir + "/" + str))
+
+  if (std::string path = path_dirname(current_file) + "/";
+      MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
     return mb;
+
   if (MemoryMappedFile *mb = MemoryMappedFile::open(str))
     return mb;
+
   for (std::string_view dir : config.library_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
-    if (MemoryMappedFile *mb = MemoryMappedFile::open(root + std::string(dir) + "/" + str))
+    std::string path = root + std::string(dir) + "/" + str;
+    if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
       return mb;
   }
+
   Fatal() << current_file << ": library not found: " << str;
 }
 
@@ -117,7 +123,6 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
 
 void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
   current_file = mb->name;
-  script_dir = mb->name.substr(0, mb->name.find_last_of('/'));
 
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
@@ -134,7 +139,6 @@ void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
 
 void parse_version_script(std::string path) {
   current_file = path;
-  script_dir = path.substr(0, path.find_last_of('/'));
 
   MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(mb->get_contents());

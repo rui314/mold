@@ -159,6 +159,21 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
+static void apply_exclude_libs() {
+  Timer t("apply_exclude_libs");
+
+  if (config.exclude_libs.empty())
+    return;
+
+  std::unordered_set<std::string_view> set(config.exclude_libs.begin(),
+                                           config.exclude_libs.end());
+
+  for (ObjectFile *file : out::objs)
+    if (!file->archive_name.empty())
+      if (set.contains("ALL") || set.contains(file->archive_name))
+        file->exclude_libs = true;
+}
+
 static void resolve_symbols() {
   Timer t("resolve_symbols");
 
@@ -879,6 +894,9 @@ int main(int argc, char **argv) {
         vec.push_back(file);
     out::dsos = vec;
   }
+
+  // Apply -exclude-libs
+  apply_exclude_libs();
 
   Timer t_total("total");
   Timer t_before_copy("before_copy");
