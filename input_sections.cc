@@ -319,7 +319,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
 
-    if (!sym.file || sym.is_placeholder) {
+    if (!sym.file || sym.is_lazy) {
       Error() << "undefined symbol: " << *file << ": " << sym;
       continue;
     }
@@ -402,7 +402,7 @@ void InputSection::scan_relocations() {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file->symbols[rel.r_sym];
 
-    if (!sym.file || sym.is_placeholder) {
+    if (!sym.file || sym.is_lazy) {
       Error() << "undefined symbol: " << *file << ": " << sym;
       continue;
     }

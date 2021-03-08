@@ -366,7 +366,7 @@ void ObjectFile::initialize_symbols() {
     }
 
     if (should_write_symtab(sym)) {
-      sym.write_symtab = true;
+      sym.write_to_symtab = true;
       strtab_size += sym.name.size() + 1;
       num_local_symtab++;
     }
@@ -503,7 +503,7 @@ static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
 static u64 get_rank(const Symbol &sym) {
   if (!sym.file)
     return (u64)4 << 32;
-  if (sym.is_placeholder)
+  if (sym.is_lazy)
     return ((u64)3 << 32) + sym.file->priority;
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
@@ -532,7 +532,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     }
     sym.ver_idx = config.default_version;
     sym.esym = &esym;
-    sym.is_placeholder = false;
+    sym.is_lazy = false;
     sym.is_imported = false;
     sym.is_exported = false;
 
@@ -578,11 +578,11 @@ void ObjectFile::resolve_symbols() {
       std::lock_guard lock(sym.mu);
       bool is_new = !sym.file;
       bool tie_but_higher_priority =
-        sym.is_placeholder && this->priority < sym.file->priority;
+        sym.is_lazy && this->priority < sym.file->priority;
 
       if (is_new || tie_but_higher_priority) {
         sym.file = this;
-        sym.is_placeholder = true;
+        sym.is_lazy = true;
 
         if (sym.traced)
           SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
@@ -634,7 +634,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
       Symbol &sym = *symbols[i];
       std::lock_guard lock(sym.mu);
 
-      bool is_new = !sym.file || sym.is_placeholder;
+      bool is_new = !sym.file || sym.is_lazy;
       bool tie_but_higher_priority =
         !is_new && sym.is_undef_weak() && this->priority < sym.file->priority;
 
@@ -644,7 +644,7 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.value = 0;
         sym.ver_idx = config.default_version;
         sym.esym = &esym;
-        sym.is_placeholder = false;
+        sym.is_lazy = false;
 
         if (sym.traced)
           SyncOut() << "trace: " << *this << ": unresolved weak symbol " << sym;
@@ -766,10 +766,10 @@ void ObjectFile::compute_symtab() {
     // to remove them from symtab.
     for (i64 i = 1; i < first_global; i++) {
       Symbol &sym = *symbols[i];
-      if (sym.write_symtab && !sym.is_alive()) {
+      if (sym.write_to_symtab && !sym.is_alive()) {
         strtab_size -= sym.name.size() + 1;
         num_local_symtab--;
-        sym.write_symtab = false;
+        sym.write_to_symtab = false;
       }
     }
   }
@@ -816,7 +816,7 @@ void ObjectFile::write_symtab() {
 
   symtab_off = local_symtab_offset;
   for (i64 i = 1; i < first_global; i++)
-    if (symbols[i]->write_symtab)
+    if (symbols[i]->write_to_symtab)
       write_sym(i);
 
   symtab_off = global_symtab_offset;
@@ -987,7 +987,7 @@ void SharedFile::resolve_symbols() {
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
       sym.esym = &esym;
-      sym.is_placeholder = false;
+      sym.is_lazy = false;
       sym.is_imported = true;
       sym.is_exported = false;
 
