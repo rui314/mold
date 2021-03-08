@@ -367,8 +367,6 @@ inline bool operator==(const EhReloc &a, const EhReloc &b) {
          std::tuple(&b.sym, b.type, b.offset, b.addend);
 }
 
-struct CieRecord;
-
 struct FdeRecord {
   FdeRecord(std::string_view contents, std::vector<EhReloc> &&rels,
             u32 cie_idx)
