@@ -712,11 +712,14 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
     }
   }
 
-  // __ehdr_start
+  // __ehdr_start and __executable_start
   for (OutputChunk *chunk : chunks) {
     if (chunk->shndx == 1) {
       out::__ehdr_start->shndx = 1;
       out::__ehdr_start->value = out::ehdr->shdr.sh_addr;
+
+      out::__executable_start->shndx = 1;
+      out::__executable_start->value = out::ehdr->shdr.sh_addr;
       break;
     }
   }
@@ -739,7 +742,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
     }
   }
 
-  // _end, end, _etext, etext, _edata and edata
+  // _end, _etext, _edata and the like
   for (OutputChunk *chunk : chunks) {
     if (chunk->kind == OutputChunk::HEADER)
       continue;

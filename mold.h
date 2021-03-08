@@ -1263,6 +1263,7 @@ inline Symbol *__GNU_EH_FRAME_HDR;
 inline Symbol *_end;
 inline Symbol *_etext;
 inline Symbol *_edata;
+inline Symbol *__executable_start;
 }
 
 inline u64 align_to(u64 val, u64 align) {

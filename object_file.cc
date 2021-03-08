@@ -866,6 +866,7 @@ ObjectFile::ObjectFile() {
   out::_end = add("_end", STV_HIDDEN);
   out::_etext = add("_etext", STV_HIDDEN);
   out::_edata = add("_edata", STV_HIDDEN);
+  out::__executable_start = add("__executable_start", STV_HIDDEN);
 
   if (config.eh_frame_hdr)
     out::__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
