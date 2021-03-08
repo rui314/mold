@@ -235,8 +235,6 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.init = arg;
     } else if (read_arg(args, arg, "fini")) {
       config.fini = arg;
-    } else if (read_arg(args, arg, "soname") || read_arg(args, arg, "h")) {
-      config.soname = arg;
     } else if (read_arg(args, arg, "hash-style")) {
       if (arg == "sysv") {
         config.hash_style_sysv = true;
@@ -250,6 +248,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       } else {
         Fatal() << "invalid --hash-style argument: " << arg;
       }
+    } else if (read_arg(args, arg, "soname") || read_arg(args, arg, "h")) {
+      config.soname = arg;
     } else if (read_flag(args, "allow-multiple-definition")) {
       config.allow_multiple_definition = true;
     } else if (read_flag(args, "trace")) {
@@ -318,6 +318,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.rpaths += arg;
     } else if (read_arg(args, arg, "version-script")) {
       parse_version_script(std::string(arg));
+    } else if (read_arg(args, arg, "dynamic-list")) {
+      parse_dynamic_list(std::string(arg));
     } else if (read_flag(args, "build-id")) {
       config.build_id.kind = BuildId::HASH;
       config.build_id.hash_size = 20;
