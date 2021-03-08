@@ -308,7 +308,6 @@ public:
   u8 is_placeholder : 1 = false;
   u8 write_symtab : 1 = false;
   u8 traced : 1 = false;
-  u8 has_relplt : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 is_readonly : 1 = false;
   u8 is_imported : 1 = false;
