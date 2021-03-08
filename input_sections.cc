@@ -407,12 +407,6 @@ void InputSection::scan_relocations() {
       continue;
     }
 
-    auto error = [&]() {
-      Error() << *this << ": " << rel_to_string(rel.r_type)
-              << " relocation against symbol `" << sym
-              << "' can not be used; recompile with -fPIE";
-    };
-
     typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
 
     auto dispatch = [&](Action action, RelType rel_type) {
@@ -421,8 +415,7 @@ void InputSection::scan_relocations() {
         rel_types[i] = rel_type;
         return;
       case ERROR:
-        error();
-        return;
+        break;
       case COPYREL:
         sym.flags |= NEEDS_COPYREL;
         rel_types[i] = rel_type;
@@ -433,19 +426,24 @@ void InputSection::scan_relocations() {
         return;
       case DYNREL:
         if (is_readonly)
-          error();
+          break;
         sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_DYN;
         file->num_dynrel++;
         return;
       case BASEREL:
         if (is_readonly)
-          error();
+          break;
         rel_types[i] = R_BASEREL;
         file->num_dynrel++;
         return;
+      default:
+        unreachable();
       }
-      unreachable();
+
+      Error() << *this << ": " << rel_to_string(rel.r_type)
+              << " relocation against symbol `" << sym
+              << "' can not be used; recompile with -fPIE";
     };
 
     if (sym.esym->st_type == STT_GNU_IFUNC)
