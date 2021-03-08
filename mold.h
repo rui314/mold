@@ -1074,6 +1074,7 @@ struct ReadContext {
 
 void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx);
 void parse_version_script(std::string path);
+void parse_dynamic_list(std::string path);
 
 //
 // output_file.cc

@@ -137,6 +137,20 @@ void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
   }
 }
 
+static bool read_label(std::span<std::string_view> &tok,
+                       std::string label) {
+  if (tok.size() >= 1 && tok[0] == label + ":") {
+    tok = tok.subspan(1);
+    return true;
+  }
+
+  if (tok.size() >= 2 && tok[0] == label && tok[1] == ":") {
+    tok = tok.subspan(2);
+    return true;
+  }
+  return false;
+}
+
 void parse_version_script(std::string path) {
   current_file = path;
 
@@ -157,27 +171,13 @@ void parse_version_script(std::string path) {
     bool is_global = true;
 
     while (!tok.empty() && tok[0] != "}") {
-      if (tok[0] == "global:") {
+      if (read_label(tok, "global")) {
         is_global = true;
-        tok = tok.subspan(1);
         continue;
       }
 
-      if (tok.size() >= 2 && tok[0] == "global" && tok[1] == ":") {
-        is_global = true;
-        tok = tok.subspan(2);
-        continue;
-      }
-
-      if (tok[0] == "local:") {
+      if (read_label(tok, "local")) {
         is_global = false;
-        tok = tok.subspan(1);
-        continue;
-      }
-
-      if (tok.size() >= 2 && tok[0] == "local" && tok[1] == ":") {
-        is_global = false;
-        tok = tok.subspan(2);
         continue;
       }
 
@@ -191,6 +191,41 @@ void parse_version_script(std::string path) {
     tok = skip(tok, "}");
     tok = skip(tok, ";");
   }
+
+  if (!tok.empty())
+    Fatal() << current_file << ": trailing garbage token: " << tok[0];
+}
+
+void parse_dynamic_list(std::string path) {
+  current_file = path;
+
+  MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
+  std::vector<std::string_view> vec = tokenize(mb->get_contents());
+  std::span<std::string_view> tok = vec;
+
+  tok = skip(tok, "{");
+  i64 ver = VER_NDX_GLOBAL;
+
+  while (!tok.empty() && tok[0] != "}") {
+    if (read_label(tok, "global")) {
+      ver = VER_NDX_GLOBAL;
+      continue;
+    }
+
+    if (read_label(tok, "local")) {
+      ver = VER_NDX_LOCAL;
+      continue;
+    }
+
+    if (tok[0] == "*")
+      config.default_version = ver;
+    else
+      config.version_patterns.push_back({tok[0], ver});
+    tok = skip(tok.subspan(1), ";");
+  }
+
+  tok = skip(tok, "}");
+  tok = skip(tok, ";");
 
   if (!tok.empty())
     Fatal() << current_file << ": trailing garbage token: " << tok[0];
