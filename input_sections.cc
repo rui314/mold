@@ -528,8 +528,7 @@ void InputSection::scan_relocations() {
         Error() << *this << ": TLSGD reloc not followed by PLT32";
 
       if (config.relax && !config.shared && !sym.is_imported) {
-        rel_types[i] = R_TLSGD_RELAX_LE;
-        i++;
+        rel_types[i++] = R_TLSGD_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSGD;
         sym.flags |= NEEDS_DYNSYM;
@@ -543,8 +542,7 @@ void InputSection::scan_relocations() {
         Error() << *this << ": TLSLD reloc refers external symbol " << sym;
 
       if (config.relax && !config.shared) {
-        rel_types[i] = R_TLSLD_RELAX_LE;
-        i++;
+        rel_types[i++] = R_TLSLD_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSLD;
         rel_types[i] = R_TLSLD;
