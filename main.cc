@@ -312,44 +312,6 @@ static void check_duplicate_symbols() {
   Error::checkpoint();
 }
 
-static void compute_visibility() {
-  if (!config.shared)
-    return;
-
-  Timer t("compute_visibility");
-
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
-      if (sym->file != file)
-        continue;
-
-      u8 visibility = sym->visibility;
-      bool bsymbolic = config.Bsymbolic ||
-        (config.Bsymbolic_functions && sym->get_type() == STT_FUNC);
-
-      if (visibility == STV_DEFAULT && bsymbolic)
-        visibility = STV_PROTECTED;
-
-      switch (visibility) {
-      case STV_DEFAULT:
-        sym->is_imported = true;
-        sym->is_exported = true;
-        break;
-      case STV_PROTECTED:
-        sym->is_imported = false;
-        sym->is_exported = true;
-        break;
-      case STV_HIDDEN:
-        sym->is_imported = false;
-        sym->is_exported = false;
-        break;
-      default:
-        unreachable();
-      }
-    }
-  });
-}
-
 static void set_isec_offsets() {
   Timer t("isec_offsets");
 
@@ -390,19 +352,6 @@ static void set_isec_offsets() {
     osec->shdr.sh_size = start.back() + size.back();
     osec->shdr.sh_addralign = align;
   });
-}
-
-static void export_dynamic() {
-  if (config.export_dynamic || config.shared) {
-    Timer t("export_dynamic");
-
-    tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-      ObjectFile *file = out::objs[i];
-      for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-        if (sym->file == file && sym->esym->st_visibility == STV_DEFAULT)
-          sym->flags |= NEEDS_DYNSYM;
-    });
-  }
 }
 
 static void scan_rels() {
@@ -486,24 +435,43 @@ static void scan_rels() {
   }
 }
 
-static void set_import_export() {
-  Timer t("set_import_export");
-
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
-      if (sym->file == file)
-        sym->is_exported = true;
-  });
+static void apply_version_script() {
+  Timer t("apply_version_script");
 
   for (std::pair<std::string_view, i16> pair : config.version_patterns) {
     std::string_view pattern = pair.first;
     i16 veridx = pair.second;
+    assert(pattern != "*");
 
     if (pattern.find('*') == pattern.npos)
       Symbol::intern(pattern)->ver_idx = veridx;
     else
       Fatal() << "not supported: " << pattern;
   }
+}
+
+static void compute_import_export() {
+  Timer t("compute_import_export");
+
+  if (!config.shared && !config.export_dynamic)
+    return;
+
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+      if (sym->file != file)
+        continue;
+
+      if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
+        continue;
+
+      sym->is_exported = true;
+
+      if (sym->visibility != STV_PROTECTED &&
+          !config.Bsymbolic &&
+          !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+        sym->is_imported = true;
+    }
+  });
 }
 
 static void fill_verdef() {
@@ -1083,8 +1051,6 @@ int main(int argc, char **argv) {
   if (!config.allow_multiple_definition)
     check_duplicate_symbols();
 
-  compute_visibility();
-
   // Copy shared object name strings to .dynstr.
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
@@ -1104,8 +1070,11 @@ int main(int argc, char **argv) {
     out::chunks.insert(out::chunks.begin() + 2, out::interp);
   out::chunks.push_back(out::shdr);
 
-  // Put symbols to .dynsym.
-  export_dynamic();
+  // Apply version scripts.
+  apply_version_script();
+
+  // Set is_import and is_export bits for each symbol.
+  compute_import_export();
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
@@ -1114,9 +1083,6 @@ int main(int argc, char **argv) {
   // Sort .dynsym contents. Beyond this point, no symbol should be
   // added to .dynsym.
   out::dynsym->sort_symbols();
-
-  // Apply version scripts
-  set_import_export();
 
   // Fill .gnu.version_d section contents.
   fill_verdef();
