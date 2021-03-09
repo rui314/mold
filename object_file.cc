@@ -952,11 +952,12 @@ void SharedFile::parse() {
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
       std::string verstr(version_strings[ver]);
-      std::string mangled = std::string(name) + "@" + verstr;
+      std::string_view mangled =
+        *new std::string(std::string(name) + "@" + verstr);
 
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(ver);
-      symbols.push_back(Symbol::intern_alloc(mangled));
+      symbols.push_back(Symbol::intern(mangled, name));
 
       if (!(vers[i] & VERSYM_HIDDEN)) {
         elf_syms.push_back(&esyms[i]);
