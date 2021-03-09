@@ -384,11 +384,10 @@ void ObjectFile::initialize_symbols() {
   // Initialize global symbols
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
-    std::string_view name = symbol_strtab.data() + esym.st_name;
-    std::string_view key = name;
+    std::string_view key = symbol_strtab.data() + esym.st_name;
+    std::string_view name = key;
 
-    i64 pos = name.find('@');
-    if (pos != name.npos) {
+    if (i64 pos = name.find('@'); pos != name.npos) {
       std::string_view ver = name.substr(pos + 1);
       name = name.substr(0, pos);
       if (ver.starts_with('@'))
