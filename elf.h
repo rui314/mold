@@ -81,6 +81,8 @@ static constexpr u32 VER_FLG_BASE = 1;
 static constexpr u32 VER_FLG_WEAK = 2;
 static constexpr u32 VER_FLG_INFO = 4;
 
+static constexpr u32 VERSYM_HIDDEN = 0x8000;
+
 static constexpr u32 PT_NULL = 0;
 static constexpr u32 PT_LOAD = 1;
 static constexpr u32 PT_DYNAMIC = 2;

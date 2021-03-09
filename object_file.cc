@@ -925,7 +925,7 @@ void SharedFile::parse() {
     vers = get_data<u16>(*sec);
 
   for (i64 i = first_global; i < esyms.size(); i++) {
-    if (!vers.empty() && (vers[i] >> 15) == 1)
+    if (!vers.empty() && (vers[i] & VERSYM_HIDDEN))
       continue;
 
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
