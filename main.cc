@@ -481,28 +481,67 @@ static void apply_version_script() {
   }
 }
 
+static void apply_symbol_version() {
+  Timer t("apply_symbol_version");
+
+  std::unordered_map<std::string_view, u16> verdefs;
+  for (i64 i = 0; i < config.version_definitions.size(); i++)
+    verdefs[config.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
+
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+      if (sym->file != file)
+        continue;
+
+      i64 pos = sym->name.find('@');
+      if (pos == sym->name.npos)
+        continue;
+
+      std::string_view ver = sym->name.substr(pos + 1);
+      sym->name = sym->name.substr(0, pos);
+
+      bool is_default = false;
+      if (ver.starts_with('@')) {
+        is_default = true;
+        ver = ver.substr(1);
+      }
+
+      auto it = verdefs.find(ver);
+      if (it == verdefs.end()) {
+        Error() << *file << ": symbol " << *sym <<  " has undefined version "
+                << ver;
+        continue;
+      }
+
+      sym->ver_idx = it->second;
+      if (!is_default)
+        sym->ver_idx |= VERSYM_HIDDEN;
+    }
+  });
+}
+
 static void compute_import_export() {
   Timer t("compute_import_export");
 
-  if (config.shared || config.export_dynamic) {
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-      std::span<Symbol *> syms = file->symbols;
-      for (Symbol *sym : syms.subspan(file->first_global)) {
-        if (sym->file != file)
-          continue;
+  if (!config.shared && !config.export_dynamic)
+    return;
 
-        if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
-          continue;
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+      if (sym->file != file)
+        continue;
 
-        sym->is_exported = true;
+      if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
+        continue;
 
-        if (sym->visibility != STV_PROTECTED &&
-            !config.Bsymbolic &&
-            !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
-          sym->is_imported = true;
-      }
-    });
-  }
+      sym->is_exported = true;
+
+      if (sym->visibility != STV_PROTECTED &&
+          !config.Bsymbolic &&
+          !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+        sym->is_imported = true;
+    }
+  });
 }
 
 static void fill_verdef() {
@@ -1109,6 +1148,9 @@ int main(int argc, char **argv) {
 
   // Apply version scripts.
   apply_version_script();
+
+  // Parse symbol version suffixes (e.g. "foo@ver1").
+  apply_symbol_version();
 
   // Set is_import and is_export bits for each symbol.
   compute_import_export();
