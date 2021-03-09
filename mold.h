@@ -1278,7 +1278,7 @@ inline u64 align_to(u64 val, u64 align) {
 }
 
 inline u64 next_power_of_two(u64 val) {
-  if (!val)
+  if (val == 0)
     return 1;
 
   val--;
