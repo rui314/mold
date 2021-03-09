@@ -376,6 +376,7 @@ void ObjectFile::initialize_symbols() {
 
   i64 num_globals = elf_syms.size() - first_global;
   sym_fragments.resize(num_globals);
+  symvers.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
     symbols[i] = &locals[i];
@@ -386,17 +387,17 @@ void ObjectFile::initialize_symbols() {
     std::string_view name = symbol_strtab.data() + esym.st_name;
     std::string_view key = name;
 
-    i64 pos = key.find('@');
-    if (pos != key.npos && pos + 1 < key.size() && key[pos + 1] == '@')
-      key = key.substr(0, pos);
-
-    Symbol *sym = Symbol::intern(key, name);
-    if (pos != key.npos) {
-      std::lock_guard lock(sym->mu);
-      sym->has_atsign = true;
+    i64 pos = name.find('@');
+    if (pos != name.npos) {
+      std::string_view ver = name.substr(pos + 1);
+      name = name.substr(0, pos);
+      if (ver.starts_with('@'))
+        key = name;
+      if (esym.is_defined())
+        symvers[i - first_global] = ver.data();
     }
 
-    symbols[i] = sym;
+    symbols[i] = Symbol::intern(key, name);
 
     if (esym.is_common())
       has_common_symbol = true;
@@ -892,7 +893,10 @@ ObjectFile::ObjectFile() {
   }
 
   elf_syms = *esyms;
-  sym_fragments.resize(elf_syms.size() - first_global);
+
+  i64 num_globals = elf_syms.size() - first_global;
+  sym_fragments.resize(num_globals);
+  symvers.resize(num_globals);
 }
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file) {

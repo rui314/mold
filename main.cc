@@ -489,15 +489,15 @@ static void apply_symbol_version() {
     verdefs[config.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
-      if (sym->file != file || !sym->has_atsign)
+    for (i64 i = 0; i < file->symbols.size() - file->first_global; i++) {
+      if (!file->symvers[i])
         continue;
 
-      i64 pos = sym->name.find('@');
-      assert(pos != sym->name.npos);
+      Symbol *sym = file->symbols[i + file->first_global];
+      if (sym->file != file)
+        continue;
 
-      std::string_view ver = sym->name.substr(pos + 1);
-      sym->name = sym->name.substr(0, pos);
+      std::string_view ver = file->symvers[i];
 
       bool is_default = false;
       if (ver.starts_with('@')) {

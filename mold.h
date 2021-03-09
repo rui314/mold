@@ -310,7 +310,6 @@ public:
   std::atomic_uint8_t flags = 0;
 
   u8 is_lazy : 1 = false;
-  u8 has_atsign : 1 = false;
   u8 write_to_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_copyrel : 1 = false;
@@ -994,6 +993,7 @@ public:
   i64 first_global = 0;
   const bool is_in_lib = false;
   std::vector<CieRecord> cies;
+  std::vector<const char *> symvers;
   bool exclude_libs = false;
 
   u64 num_dynrel = 0;
