@@ -261,9 +261,13 @@ public:
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
 
-  static Symbol *intern(std::string_view name) {
+  static Symbol *intern(std::string_view key, std::string_view name) {
     static ConcurrentMap<Symbol> map;
-    return map.insert(name, {name});
+    return map.insert(key, {name});
+  }
+
+  static Symbol *intern(std::string_view name) {
+    return intern(name, name);
   }
 
   static Symbol *intern_alloc(std::string name) {

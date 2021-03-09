@@ -382,11 +382,13 @@ void ObjectFile::initialize_symbols() {
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     std::string_view name = symbol_strtab.data() + esym.st_name;
-    i64 pos = name.find('@');
-    if (pos != std::string_view::npos)
-      name = name.substr(0, pos);
+    std::string_view key = name;
 
-    symbols[i] = Symbol::intern(name);
+    i64 pos = key.find('@');
+    if (pos != key.npos && pos + 1 < key.size() && key[pos + 1] == '@')
+      key = key.substr(0, pos);
+
+    symbols[i] = Symbol::intern(key, name);
 
     if (esym.is_common())
       has_common_symbol = true;
