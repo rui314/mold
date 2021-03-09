@@ -373,7 +373,9 @@ void ObjectFile::initialize_symbols() {
   }
 
   symbols.resize(elf_syms.size());
-  sym_fragments.resize(elf_syms.size() - first_global);
+
+  i64 num_globals = elf_syms.size() - first_global;
+  sym_fragments.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
     symbols[i] = &locals[i];
@@ -388,7 +390,13 @@ void ObjectFile::initialize_symbols() {
     if (pos != key.npos && pos + 1 < key.size() && key[pos + 1] == '@')
       key = key.substr(0, pos);
 
-    symbols[i] = Symbol::intern(key, name);
+    Symbol *sym = Symbol::intern(key, name);
+    if (pos != key.npos) {
+      std::lock_guard lock(sym->mu);
+      sym->has_atsign = true;
+    }
+
+    symbols[i] = sym;
 
     if (esym.is_common())
       has_common_symbol = true;

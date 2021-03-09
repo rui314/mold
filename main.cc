@@ -490,12 +490,11 @@ static void apply_symbol_version() {
 
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
-      if (sym->file != file)
+      if (sym->file != file || !sym->has_atsign)
         continue;
 
       i64 pos = sym->name.find('@');
-      if (pos == sym->name.npos)
-        continue;
+      assert(pos != sym->name.npos);
 
       std::string_view ver = sym->name.substr(pos + 1);
       sym->name = sym->name.substr(0, pos);
