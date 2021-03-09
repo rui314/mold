@@ -945,15 +945,15 @@ void SharedFile::parse() {
       continue;
     }
 
-    if (!vers.empty() && vers[i] == VER_NDX_LOCAL)
-      continue;
-
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(VER_NDX_GLOBAL);
       symbols.push_back(Symbol::intern(name));
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
+      if (ver == VER_NDX_LOCAL)
+        continue;
+
       std::string verstr(version_strings[ver]);
       std::string_view mangled =
         *new std::string(std::string(name) + "@" + verstr);
