@@ -925,18 +925,34 @@ void SharedFile::parse() {
     vers = get_data<u16>(*sec);
 
   for (i64 i = first_global; i < esyms.size(); i++) {
-    if (!vers.empty() && (vers[i] & VERSYM_HIDDEN))
+    std::string_view name = symbol_strtab.data() + esyms[i].st_name;
+
+    if (!esyms[i].is_defined()) {
+      undefs.push_back(Symbol::intern(name));
+      continue;
+    }
+
+    if (!vers.empty() && vers[i] == VER_NDX_LOCAL)
       continue;
 
-    std::string_view name = symbol_strtab.data() + esyms[i].st_name;
-    Symbol *sym = Symbol::intern(name);
-
-    if (esyms[i].is_defined()) {
+    if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
-      versyms.push_back(vers.empty() ? VER_NDX_GLOBAL : vers[i]);
-      symbols.push_back(sym);
+      versyms.push_back(VER_NDX_GLOBAL);
+      symbols.push_back(Symbol::intern(name));
     } else {
-      undefs.push_back(sym);
+      u16 ver = vers[i] & ~VERSYM_HIDDEN;
+      std::string verstr(version_strings[ver]);
+      std::string mangled = std::string(name) + "@" + verstr;
+
+      elf_syms.push_back(&esyms[i]);
+      versyms.push_back(ver);
+      symbols.push_back(Symbol::intern_alloc(mangled));
+
+      if (!(vers[i] & VERSYM_HIDDEN)) {
+        elf_syms.push_back(&esyms[i]);
+        versyms.push_back(ver);
+        symbols.push_back(Symbol::intern(name));
+      }
     }
   }
 
