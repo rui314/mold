@@ -579,31 +579,41 @@ void ObjectFile::merge_visibility(Symbol &sym, u8 visibility) {
       break;
 }
 
-void ObjectFile::resolve_symbols() {
+void ObjectFile::resolve_lazy_symbols() {
+  assert(is_in_lib);
+
+  for (i64 i = first_global; i < symbols.size(); i++) {
+    Symbol &sym = *symbols[i];
+    const ElfSym &esym = elf_syms[i];
+
+    if (!esym.is_defined())
+      continue;
+
+    std::lock_guard lock(sym.mu);
+    bool is_new = !sym.file;
+    bool tie_but_higher_priority =
+      sym.is_lazy && this->priority < sym.file->priority;
+
+    if (is_new || tie_but_higher_priority) {
+      sym.file = this;
+      sym.is_lazy = true;
+
+      if (sym.traced)
+        SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
+    }
+  }
+}
+
+void ObjectFile::resolve_regular_symbols() {
+  assert(!is_in_lib);
+
   for (i64 i = first_global; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
     const ElfSym &esym = elf_syms[i];
     merge_visibility(sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
-    if (!esym.is_defined())
-      continue;
-
-    if (is_in_lib) {
-      std::lock_guard lock(sym.mu);
-      bool is_new = !sym.file;
-      bool tie_but_higher_priority =
-        sym.is_lazy && this->priority < sym.file->priority;
-
-      if (is_new || tie_but_higher_priority) {
-        sym.file = this;
-        sym.is_lazy = true;
-
-        if (sym.traced)
-          SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
-      }
-    } else {
+    if (esym.is_defined())
       maybe_override_symbol(sym, i);
-    }
   }
 }
 
@@ -613,6 +623,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
   for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
     Symbol &sym = *symbols[i];
+    merge_visibility(sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
     if (esym.is_defined()) {
       if (is_in_lib)

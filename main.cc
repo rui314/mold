@@ -189,9 +189,16 @@ static void apply_exclude_libs() {
 static void resolve_symbols() {
   Timer t("resolve_symbols");
 
+  // Register archive symbols
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    if (file->is_in_lib)
+      file->resolve_lazy_symbols();
+  });
+
   // Register defined symbols
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    file->resolve_symbols();
+    if (!file->is_in_lib)
+      file->resolve_regular_symbols();
   });
 
   tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
@@ -1115,7 +1122,7 @@ int main(int argc, char **argv) {
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
   out::internal_obj = new ObjectFile;
-  out::internal_obj->resolve_symbols();
+  out::internal_obj->resolve_regular_symbols();
   out::objs.push_back(out::internal_obj);
 
   // Convert weak symbols to absolute symbols with value 0.
