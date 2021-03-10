@@ -310,6 +310,7 @@ public:
   std::atomic_uint8_t flags = 0;
 
   u8 is_lazy : 1 = false;
+  u8 is_weak : 1 = false;
   u8 write_to_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_copyrel : 1 = false;

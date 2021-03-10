@@ -186,8 +186,8 @@ static void apply_exclude_libs() {
         file->exclude_libs = true;
 }
 
-static void resolve_symbols() {
-  Timer t("resolve_symbols");
+static void resolve_obj_symbols() {
+  Timer t("resolve_obj_symbols");
 
   // Register archive symbols
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
@@ -201,11 +201,7 @@ static void resolve_symbols() {
       file->resolve_regular_symbols();
   });
 
-  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
-    file->resolve_symbols();
-  });
-
-  // Mark reachable objects and DSOs to decide which files to include
+  // Mark reachable objects to decide which files to include
   // into an output.
   std::vector<ObjectFile *> roots;
   for (ObjectFile *file : out::objs)
@@ -224,19 +220,50 @@ static void resolve_symbols() {
                        [&](ObjectFile *obj) { feeder.add(obj); });
                    });
 
-  // Eliminate unused archive members and as-needed DSOs.
+  // Eliminate unused archive members.
   erase(out::objs, [](InputFile *file) { return !file->is_alive; });
-  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
 
-  // Remove dead lazy symbols.
+  // Remove symbols of eliminated objects.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     if (!file->is_alive)
       for (Symbol *sym : file->get_global_syms())
         if (sym->file == file)
           sym = {};
   });
+}
 
-  // Remove dead DSO symbols.
+static void resolve_dso_symbols() {
+  Timer t("resolve_dso_symbols");
+
+  // Register DSO symbols
+  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+    file->resolve_symbols();
+  });
+
+  // Mark live DSOs
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      const ElfSym &esym = file->elf_syms[i];
+      if (esym.is_defined())
+        continue;
+
+      Symbol &sym = *file->symbols[i];
+      if (!sym.file || !sym.file->is_dso)
+        continue;
+
+      sym.file->is_alive = true;
+
+      if (esym.st_bind != STB_WEAK) {
+        std::lock_guard lock(sym.mu);
+        sym.is_weak = false;
+      }
+    }
+  });
+
+  // Remove unreferenced DSOs
+  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
+
+  // Remove symbols of unreferenced DSOs.
   tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
     if (!file->is_alive)
       for (Symbol *sym : file->symbols)
@@ -1056,7 +1083,7 @@ int main(int argc, char **argv) {
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
-  resolve_symbols();
+  resolve_obj_symbols();
 
   if (config.trace) {
     for (ObjectFile *file : out::objs)
@@ -1124,6 +1151,8 @@ int main(int argc, char **argv) {
   out::internal_obj = new ObjectFile;
   out::internal_obj->resolve_regular_symbols();
   out::objs.push_back(out::internal_obj);
+
+  resolve_dso_symbols();
 
   // Convert weak symbols to absolute symbols with value 0.
   {

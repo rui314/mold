@@ -494,21 +494,11 @@ void ObjectFile::parse() {
 //
 //  1. Strong defined symbol
 //  2. Weak defined symbol
-//  3. Weak undefined symbol
-//  4. Defined symbol in an archive member
-//  5. Defined symbol in a shared object file
-//  6. Unclaimed (nonexistent) symbol
+//  3. Strong or weak defined symbol in an archive member
+//  4. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
-  if (file->is_dso)
-    return (5 << 24) + file->priority;
-  if (isec && isec->is_comdat_member)
-    return (1 << 24) + file->priority;
-  if (esym.is_undef()) {
-    assert(esym.st_bind == STB_WEAK);
-    return (3 << 24) + file->priority;
-  }
   if (esym.st_bind == STB_WEAK)
     return (2 << 24) + file->priority;
   return (1 << 24) + file->priority;
@@ -516,9 +506,9 @@ static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
 
 static u64 get_rank(const Symbol &sym) {
   if (!sym.file)
-    return 6 << 24;
+    return 4 << 24;
   if (sym.is_lazy)
-    return (4 << 24) + sym.file->priority;
+    return (3 << 24) + sym.file->priority;
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
@@ -631,22 +621,19 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
       continue;
     }
 
-    if (sym.traced)
-      SyncOut() << "trace: " <<  *this << ": reference to " << sym;
+    bool is_weak = (esym.st_bind == STB_WEAK);
 
-    if (sym.file) {
-      if (sym.file->is_dso) {
-        sym.file->is_alive = true;
-        continue;
-      }
+    if (sym.traced) {
+      SyncOut() << "trace: " <<  *this
+                << (is_weak ? ": reference to " : ": weak reference to ")
+                << sym;
+    }
 
-      ObjectFile *obj = (ObjectFile *)sym.file;
-      if (esym.st_bind != STB_WEAK && !obj->is_alive.exchange(true)) {
-        feeder(obj);
-        if (sym.traced)
-          SyncOut() << "trace: " << *this << " keeps " << *obj
-                    << " for " << sym;
-      }
+    if (!is_weak && sym.file && !sym.file->is_alive.exchange(true)) {
+      feeder((ObjectFile *)sym.file);
+      if (sym.traced)
+        SyncOut() << "trace: " << *this << " keeps " << *sym.file
+                  << " for " << sym;
     }
   }
 }
@@ -1020,28 +1007,25 @@ void SharedFile::resolve_symbols() {
     Symbol &sym = *symbols[i];
     const ElfSym &esym = *elf_syms[i];
 
-    u64 new_rank = get_rank(this, esym, nullptr);
-
     std::lock_guard lock(sym.mu);
-    u64 existing_rank = get_rank(sym);
 
-    if (new_rank < existing_rank) {
+    bool is_new = !sym.file;
+    bool tie_but_higher_priority =
+      !is_new && sym.file->is_dso && this->priority < sym.file->priority;
+
+    if (is_new || tie_but_higher_priority) {
       sym.file = this;
       sym.input_section = nullptr;
       sym.frag = nullptr;
       sym.value = esym.st_value;
       sym.ver_idx = versyms[i];
       sym.esym = &esym;
-      sym.is_lazy = false;
+      sym.is_weak = true;
       sym.is_imported = true;
       sym.is_exported = false;
 
-      if (sym.traced) {
-        bool is_weak = (esym.st_bind == STB_WEAK);
-        SyncOut() << "trace: " << *sym.file
-                  << (is_weak ? ": weak definition of " : ": definition of ")
-                  << sym;
-      }
+      if (sym.traced)
+        SyncOut() << "trace: " << *sym.file << ": definition of " << sym;
     }
   }
 }
