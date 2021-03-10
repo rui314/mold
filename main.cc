@@ -1070,7 +1070,8 @@ int main(int argc, char **argv) {
   out::chunks.push_back(out::verdef);
   out::chunks.push_back(out::buildid);
 
-  // Set priorities to files. File priority 1 is reserved for the internal file.
+  // Set priorities to files.
+  // File priority 1 is reserved for the internal file.
   i64 priority = 2;
   for (ObjectFile *file : out::objs)
     if (!file->is_in_lib)
@@ -1121,7 +1122,8 @@ int main(int argc, char **argv) {
   set_isec_offsets();
 
   // Sections are added to the section lists in an arbitrary order because
-  // they are created in parallel. Sort them to to make the output deterministic.
+  // they are created in parallel.
+  // Sort them to to make the output deterministic.
   auto section_compare = [](OutputChunk *x, OutputChunk *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
@@ -1229,14 +1231,15 @@ int main(int argc, char **argv) {
   }
 
   // .eh_frame is a special section from the linker's point of view,
-  // as it's contents are parsed, consumed and reconstructed by the
-  // linker, unlike other sections that consist of just opaque bytes.
+  // as its contents are parsed and reconstructed by the linker,
+  // unlike other sections that are regarded as opaque bytes.
   // Here, we transplant .eh_frame sections from a regular output
   // section to the special EHFrameSection.
   {
     Timer t("eh_frame");
     erase(out::chunks, [](OutputChunk *chunk) {
-      return chunk->kind == OutputChunk::REGULAR && chunk->name == ".eh_frame";
+      return chunk->kind == OutputChunk::REGULAR &&
+             chunk->name == ".eh_frame";
     });
     out::eh_frame->construct();
   }
@@ -1297,7 +1300,6 @@ int main(int argc, char **argv) {
   // Zero-clear paddings between sections
   clear_padding(filesize);
 
-  // Commit
   if (out::buildid) {
     Timer t("build_id");
     out::buildid->write_buildid(filesize);
@@ -1305,6 +1307,7 @@ int main(int argc, char **argv) {
 
   t_copy.stop();
 
+  // Commit
   file->close();
 
   t_total.stop();
