@@ -648,7 +648,7 @@ void DynsymSection::copy_buf() {
     memset(&esym, 0, sizeof(esym));
     esym.st_name = name_indices[i];
     esym.st_type = sym.esym->st_type;
-    esym.st_bind = sym.esym->st_bind;
+    esym.st_bind = (sym.is_weak ? STB_WEAK : sym.esym->st_bind);
     esym.st_size = sym.esym->st_size;
 
     if (sym.has_copyrel) {
