@@ -430,7 +430,6 @@ public:
   std::span<FdeRecord> fdes;
   u64 reldyn_offset = 0;
   u32 section_idx = -1;
-  bool is_comdat_member = false;
   bool is_ehframe = false;
 
   // For COMDAT de-duplication and garbage collection

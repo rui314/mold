@@ -178,14 +178,6 @@ void ObjectFile::initialize_sections() {
         target->rel_types.resize(target->rels.size());
     }
   }
-
-  // Set is_comdat_member bits.
-  for (auto &pair : comdat_groups) {
-    std::span<u32> entries = pair.second;
-    for (i64 i : entries)
-      if (this->sections[i])
-        this->sections[i]->is_comdat_member = true;
-  }
 }
 
 void ObjectFile::initialize_ehframe_sections() {
