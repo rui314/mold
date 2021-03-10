@@ -494,27 +494,31 @@ void ObjectFile::parse() {
 //
 //  1. Strong defined symbol
 //  2. Weak defined symbol
-//  3. Defined symbol in an archive member
-//  4. Unclaimed (nonexistent) symbol
+//  3. Weak undefined symbol
+//  4. Defined symbol in an archive member
+//  5. Defined symbol in a shared object file
+//  6. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
+  if (file->is_dso)
+    return (5 << 24) + file->priority;
   if (isec && isec->is_comdat_member)
-    return file->priority;
+    return (1 << 24) + file->priority;
   if (esym.is_undef()) {
     assert(esym.st_bind == STB_WEAK);
-    return ((u64)2 << 32) + file->priority;
+    return (3 << 24) + file->priority;
   }
   if (esym.st_bind == STB_WEAK)
-    return ((u64)1 << 32) + file->priority;
-  return file->priority;
+    return (2 << 24) + file->priority;
+  return (1 << 24) + file->priority;
 }
 
 static u64 get_rank(const Symbol &sym) {
   if (!sym.file)
-    return (u64)4 << 32;
+    return 6 << 24;
   if (sym.is_lazy)
-    return ((u64)3 << 32) + sym.file->priority;
+    return (4 << 24) + sym.file->priority;
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
