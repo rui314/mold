@@ -186,6 +186,70 @@ static void apply_exclude_libs() {
         file->exclude_libs = true;
 }
 
+static void create_synthetic_sections() {
+  out::ehdr = new OutputEhdr;
+  out::shdr = new OutputShdr;
+  out::phdr = new OutputPhdr;
+  out::got = new GotSection;
+  out::gotplt = new GotPltSection;
+  out::relplt = new RelPltSection;
+  out::strtab = new StrtabSection;
+  out::shstrtab = new ShstrtabSection;
+  out::plt = new PltSection;
+  out::pltgot = new PltGotSection;
+  if (!config.strip_all)
+    out::symtab = new SymtabSection;
+  out::dynsym = new DynsymSection;
+  out::dynstr = new DynstrSection;
+  out::eh_frame = new EhFrameSection;
+  out::copyrel = new CopyrelSection(".bss");
+  out::copyrel_relro = new CopyrelSection(".bss.rel.ro");
+
+  if (config.build_id.kind != BuildId::NONE)
+    out::buildid = new BuildIdSection;
+  if (config.eh_frame_hdr)
+    out::eh_frame_hdr = new EhFrameHdrSection;
+  if (config.hash_style_sysv)
+    out::hash = new HashSection;
+  if (config.hash_style_gnu)
+    out::gnu_hash = new GnuHashSection;
+
+  if (!config.is_static) {
+    if (!config.shared)
+      out::interp = new InterpSection;
+    out::dynamic = new DynamicSection;
+    out::reldyn = new RelDynSection;
+    out::versym = new VersymSection;
+    out::verneed = new VerneedSection;
+  }
+
+  if (!config.version_definitions.empty())
+    out::verdef = new VerdefSection;
+
+  out::chunks.push_back(out::got);
+  out::chunks.push_back(out::plt);
+  out::chunks.push_back(out::gotplt);
+  out::chunks.push_back(out::pltgot);
+  out::chunks.push_back(out::relplt);
+  out::chunks.push_back(out::reldyn);
+  out::chunks.push_back(out::dynamic);
+  out::chunks.push_back(out::dynsym);
+  out::chunks.push_back(out::dynstr);
+  out::chunks.push_back(out::shstrtab);
+  out::chunks.push_back(out::symtab);
+  out::chunks.push_back(out::strtab);
+  out::chunks.push_back(out::hash);
+  out::chunks.push_back(out::gnu_hash);
+  out::chunks.push_back(out::eh_frame_hdr);
+  out::chunks.push_back(out::eh_frame);
+  out::chunks.push_back(out::copyrel);
+  out::chunks.push_back(out::copyrel_relro);
+  out::chunks.push_back(out::versym);
+  out::chunks.push_back(out::verneed);
+  out::chunks.push_back(out::verdef);
+  out::chunks.push_back(out::buildid);
+}
+
 static void resolve_obj_symbols() {
   Timer t("resolve_obj_symbols");
 
@@ -1008,67 +1072,9 @@ int main(int argc, char **argv) {
   Timer t_total("total");
   Timer t_before_copy("before_copy");
 
-  out::ehdr = new OutputEhdr;
-  out::shdr = new OutputShdr;
-  out::phdr = new OutputPhdr;
-  out::got = new GotSection;
-  out::gotplt = new GotPltSection;
-  out::relplt = new RelPltSection;
-  out::strtab = new StrtabSection;
-  out::shstrtab = new ShstrtabSection;
-  out::plt = new PltSection;
-  out::pltgot = new PltGotSection;
-  if (!config.strip_all)
-    out::symtab = new SymtabSection;
-  out::dynsym = new DynsymSection;
-  out::dynstr = new DynstrSection;
-  out::eh_frame = new EhFrameSection;
-  out::copyrel = new CopyrelSection(".bss");
-  out::copyrel_relro = new CopyrelSection(".bss.rel.ro");
-
-  if (config.build_id.kind != BuildId::NONE)
-    out::buildid = new BuildIdSection;
-  if (config.eh_frame_hdr)
-    out::eh_frame_hdr = new EhFrameHdrSection;
-  if (config.hash_style_sysv)
-    out::hash = new HashSection;
-  if (config.hash_style_gnu)
-    out::gnu_hash = new GnuHashSection;
-
-  if (!config.is_static) {
-    if (!config.shared)
-      out::interp = new InterpSection;
-    out::dynamic = new DynamicSection;
-    out::reldyn = new RelDynSection;
-    out::versym = new VersymSection;
-    out::verneed = new VerneedSection;
-  }
-
-  if (!config.version_definitions.empty())
-    out::verdef = new VerdefSection;
-
-  out::chunks.push_back(out::got);
-  out::chunks.push_back(out::plt);
-  out::chunks.push_back(out::gotplt);
-  out::chunks.push_back(out::pltgot);
-  out::chunks.push_back(out::relplt);
-  out::chunks.push_back(out::reldyn);
-  out::chunks.push_back(out::dynamic);
-  out::chunks.push_back(out::dynsym);
-  out::chunks.push_back(out::dynstr);
-  out::chunks.push_back(out::shstrtab);
-  out::chunks.push_back(out::symtab);
-  out::chunks.push_back(out::strtab);
-  out::chunks.push_back(out::hash);
-  out::chunks.push_back(out::gnu_hash);
-  out::chunks.push_back(out::eh_frame_hdr);
-  out::chunks.push_back(out::eh_frame);
-  out::chunks.push_back(out::copyrel);
-  out::chunks.push_back(out::copyrel_relro);
-  out::chunks.push_back(out::versym);
-  out::chunks.push_back(out::verneed);
-  out::chunks.push_back(out::verdef);
-  out::chunks.push_back(out::buildid);
+  // Create instances of  linker-synthesized sections such as
+  // .got or .plt.
+  create_synthetic_sections();
 
   // Set priorities to files.
   // File priority 1 is reserved for the internal file.

@@ -824,7 +824,7 @@ public:
 
 class CopyrelSection : public OutputChunk {
 public:
-  CopyrelSection(std::string name) : OutputChunk(SYNTHETIC) {
+  CopyrelSection(std::string_view name) : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
