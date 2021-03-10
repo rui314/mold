@@ -220,6 +220,22 @@ static void resolve_symbols() {
   // Eliminate unused archive members and as-needed DSOs.
   erase(out::objs, [](InputFile *file) { return !file->is_alive; });
   erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
+
+  // Remove dead lazy symbols.
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    if (!file->is_alive)
+      for (Symbol *sym : file->get_global_syms())
+        if (sym->file == file)
+          sym = {};
+  });
+
+  // Remove dead DSO symbols.
+  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+    if (!file->is_alive)
+      for (Symbol *sym : file->symbols)
+        if (sym->file == file)
+          sym = {};
+  });
 }
 
 static void eliminate_comdats() {
