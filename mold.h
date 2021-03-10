@@ -986,6 +986,7 @@ public:
 
   inline i64 get_shndx(const ElfSym &esym);
   inline InputSection *get_section(const ElfSym &esym);
+  inline std::span<Symbol *> get_global_syms();
 
   std::string archive_name;
   std::vector<InputSection *> sections;
@@ -1419,6 +1420,10 @@ inline i64 ObjectFile::get_shndx(const ElfSym &esym) {
 
 inline InputSection *ObjectFile::get_section(const ElfSym &esym) {
   return sections[get_shndx(esym)];
+}
+
+std::span<Symbol *> ObjectFile::get_global_syms() {
+  return std::span(symbols).subspan(first_global);
 }
 
 inline u32 elf_hash(std::string_view name) {

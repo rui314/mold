@@ -403,7 +403,7 @@ static void scan_rels() {
 
   // Add imported or exported symbols to .dynsym.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global))
+    for (Symbol *sym : file->get_global_syms())
       if (sym->file == file)
         if (sym->is_imported || sym->is_exported)
           sym->flags |= NEEDS_DYNSYM;
@@ -526,7 +526,7 @@ static void compute_import_export() {
     return;
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (Symbol *sym : std::span(file->symbols).subspan(file->first_global)) {
+    for (Symbol *sym : file->get_global_syms()) {
       if (sym->file != file)
         continue;
 
