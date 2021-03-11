@@ -351,6 +351,12 @@ static void eliminate_comdats() {
 static void handle_mergeable_strings() {
   Timer t("handle_mergeable_strings");
 
+  // Add an identification string to .comment.
+  const char *verstr = "mold linker";
+  MergedSection *sec =
+    MergedSection::get_instance(".comment", SHT_PROGBITS, 0);
+  sec->insert(std::string_view(verstr, strlen(verstr) + 1), 1);
+
   tbb::parallel_for_each(MergedSection::instances, [](MergedSection *sec) {
     sec->assign_offsets();
   });

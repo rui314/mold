@@ -840,11 +840,9 @@ void MergedSection::assign_offsets() {
     offset = align_to(offset, frag->alignment);
     frag->offset = offset;
     offset += frag->data.size();
+    shdr.sh_addralign = std::max<i64>(shdr.sh_addralign, frag->alignment);
   }
   shdr.sh_size = offset;
-
-  for (SectionFragment *frag : fragments)
-    shdr.sh_addralign = std::max<i64>(shdr.sh_addralign, frag->alignment);
 }
 
 void MergedSection::copy_buf() {
