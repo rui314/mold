@@ -1256,17 +1256,10 @@ inline u64 align_to(u64 val, u64 align) {
 }
 
 inline u64 next_power_of_two(u64 val) {
-  if (val == 0)
+  assert(val >> 63 == 0);
+  if (val == 0 || val == 1)
     return 1;
-
-  val--;
-  val |= val >> 1;
-  val |= val >> 2;
-  val |= val >> 4;
-  val |= val >> 8;
-  val |= val >> 16;
-  val |= val >> 32;
-  return val + 1;
+  return (u64)1 << (64 - __builtin_clzl(val - 1));
 }
 
 inline bool Symbol::is_alive() const {
