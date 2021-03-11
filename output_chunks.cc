@@ -824,6 +824,7 @@ void MergedSection::assign_offsets() {
       if (SectionFragment &frag = it->second; frag.is_alive)
         vec[i].push_back(&frag);
 
+    // Sort section fragments to make an output deterministic.
     std::sort(vec[i].begin(), vec[i].end(),
               [&](SectionFragment *a, SectionFragment *b) {
                 if (a->data.size() != b->data.size())
