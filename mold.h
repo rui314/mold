@@ -209,14 +209,17 @@ public:
 //
 
 struct SectionFragment {
-  SectionFragment(std::string_view data) : data(data) {}
+  SectionFragment(MergedSection *sec, std::string_view data)
+    : output_section(*sec), data(data) {}
 
   SectionFragment(const SectionFragment &other)
-    : isec(other.isec.load()), data(other.data), offset(other.offset) {}
+    : output_section(other.output_section), data(other.data),
+      offset(other.offset), alignment(other.alignment.load()),
+      is_alive(other.is_alive.load()) {}
 
   inline u64 get_addr() const;
 
-  std::atomic<MergeableSection *> isec = nullptr;
+  MergedSection &output_section;
   std::string_view data;
   u32 offset = -1;
   std::atomic_uint16_t alignment = 1;
@@ -435,7 +438,6 @@ public:
   MergedSection &parent;
   std::vector<SectionFragment *> fragments;
   std::vector<u32> frag_offsets;
-  u32 alignment = 1;
   u32 size = 0;
   u32 padding = 0;
 };
@@ -752,27 +754,19 @@ public:
 
 class MergedSection : public OutputChunk {
 public:
-  static MergedSection *get_instance(std::string_view name, u64 type, u64 flags);
+  static MergedSection *
+  get_instance(std::string_view name, u64 type, u64 flags);
+
+  SectionFragment *insert(std::string_view data, i64 alignment);
+  void assign_offsets();
+  void copy_buf() override;
 
   static inline std::vector<MergedSection *> instances;
 
-  SectionFragment *insert(std::string_view data, i64 alignment) {
-    assert(alignment < UINT16_MAX);
-
-    typename decltype(map)::const_accessor acc;
-    map.insert(acc, std::pair(data, SectionFragment(data)));
-    SectionFragment *frag = const_cast<SectionFragment *>(&acc->second);
-
-    u16 cur = frag->alignment;
-    while (cur < alignment)
-      if (frag->alignment.compare_exchange_strong(cur, alignment))
-        break;
-    return frag;
-  }
-
-  void copy_buf() override;
-
 private:
+  typedef tbb::concurrent_hash_map<std::string_view, SectionFragment> MapTy;
+  static constexpr i64 NUM_SHARDS = 32;
+
   MergedSection(std::string_view name, u64 flags, u32 type)
     : OutputChunk(SYNTHETIC) {
     this->name = name;
@@ -780,7 +774,8 @@ private:
     shdr.sh_type = type;
   }
 
-  tbb::concurrent_hash_map<std::string_view, SectionFragment> map;
+  MapTy maps[NUM_SHARDS];
+  std::vector<SectionFragment *> fragments;
 };
 
 class EhFrameSection : public OutputChunk {
@@ -1391,9 +1386,7 @@ inline u64 Symbol::get_plt_addr() const {
 inline u64 SectionFragment::get_addr() const {
   if (!is_alive)
     return 0; // todo: remove
-
-  MergeableSection *is = isec.load();
-  return is->parent.shdr.sh_addr + is->offset + offset;
+  return output_section.shdr.sh_addr + offset;
 }
 
 inline u64 InputChunk::get_addr() const {

@@ -794,38 +794,71 @@ MergedSection::get_instance(std::string_view name, u64 type, u64 flags) {
   return osec;
 }
 
-void MergedSection::copy_buf() {
-  u8 *base = out::buf + shdr.sh_offset;
+SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
+  assert(alignment < UINT16_MAX);
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      if (&isec->parent != this)
-        continue;
+  std::string_view suffix = data;
+  if (suffix.size() > 32)
+    suffix = suffix.substr(suffix.size() - 32);
+  i64 shard = std::hash<std::string_view>()(suffix) % NUM_SHARDS;
 
-      // Clear padding between input sections
-      if (isec->padding)
-        memset(base + isec->offset - isec->padding, 0, isec->padding);
+  MapTy::const_accessor acc;
+  bool inserted =
+    maps[shard].insert(acc, std::pair(data, SectionFragment(this, data)));
+  SectionFragment *frag = const_cast<SectionFragment *>(&acc->second);
 
-      i64 offset = 0;
-      for (SectionFragment *frag : isec->fragments) {
-        if (frag->isec != isec || !frag->is_alive || frag->offset < offset)
-          continue;
+  u16 cur = frag->alignment;
+  while (cur < alignment)
+    if (frag->alignment.compare_exchange_strong(cur, alignment))
+      break;
+  return frag;
+}
 
-        // Clear padding between section fragments
-        if (offset < frag->offset) {
-          memset(base + isec->offset + offset, 0, frag->offset - offset);
-          offset = frag->offset;
-        }
+void MergedSection::assign_offsets() {
+  // Collect live section fragments.
+  std::vector<std::vector<SectionFragment *>> vec(NUM_SHARDS);
 
-        memcpy(base + isec->offset + frag->offset,
-               frag->data.data(), frag->data.size());
-        offset += frag->data.size();
-      }
-    }
+  tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
+    MapTy &map = maps[i];
+    for (auto it = map.begin(); it != map.end(); it++)
+      if (SectionFragment &frag = it->second; frag.is_alive)
+        vec[i].push_back(&frag);
+
+    std::sort(vec[i].begin(), vec[i].end(),
+              [&](SectionFragment *a, SectionFragment *b) {
+                if (a->data.size() != b->data.size())
+                  return a->data.size() < b->data.size();
+                return a->data < b->data;
+              });
   });
 
+  fragments = flatten(vec);
+
+  // Assign offsets.
+  i64 offset = 0;
+  for (SectionFragment *frag : fragments) {
+    offset = align_to(offset, frag->alignment);
+    frag->offset = offset;
+    offset += frag->data.size();
+  }
+  shdr.sh_size = offset;
+
+  for (SectionFragment *frag : fragments)
+    shdr.sh_addralign = std::max<i64>(shdr.sh_addralign, frag->alignment);
+}
+
+void MergedSection::copy_buf() {
+  u8 *base = out::buf + shdr.sh_offset;
+  i64 n = 0;
+
+  for (SectionFragment *frag : fragments) {
+    memset(base + n, 0, frag->offset - n);
+    memcpy(base + frag->offset, frag->data.data(), frag->data.size());
+    n = frag->offset + frag->data.size();
+  }
+
   static Counter merged_strings("merged_strings");
-  merged_strings += map.size();
+  merged_strings += fragments.size();
 }
 
 void EhFrameSection::construct() {

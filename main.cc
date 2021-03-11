@@ -351,48 +351,9 @@ static void eliminate_comdats() {
 static void handle_mergeable_strings() {
   Timer t("handle_mergeable_strings");
 
-  // Resolve mergeable string fragments
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      for (SectionFragment *frag : isec->fragments) {
-        if (!frag->is_alive)
-          continue;
-        MergeableSection *cur = frag->isec;
-        while (!cur || cur->file->priority > isec->file->priority)
-          if (frag->isec.compare_exchange_weak(cur, isec))
-            break;
-      }
-    }
+  tbb::parallel_for_each(MergedSection::instances, [](MergedSection *sec) {
+    sec->assign_offsets();
   });
-
-  // Calculate the total bytes of mergeable strings for each input section.
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      i64 offset = 0;
-      for (SectionFragment *frag : isec->fragments) {
-        if (frag->isec == isec && frag->offset == -1) {
-          offset = align_to(offset, frag->alignment);
-          frag->offset = offset;
-          offset += frag->data.size();
-          isec->alignment = std::max<u32>(isec->alignment, frag->alignment);
-        }
-      }
-      isec->size = offset;
-    }
-  });
-
-  // Assign each mergeable input section a unique index.
-  for (ObjectFile *file : out::objs) {
-    for (MergeableSection *isec : file->mergeable_sections) {
-      i64 offset = isec->parent.shdr.sh_size;
-      isec->padding = align_to(offset, isec->alignment) - offset;
-      isec->offset = offset + isec->padding;
-      isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
-
-      isec->parent.shdr.sh_addralign =
-        std::max(isec->parent.shdr.sh_addralign, isec->shdr->sh_addralign);
-    }
-  }
 }
 
 // So far, each input section has a pointer to its corresponding
