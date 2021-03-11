@@ -349,7 +349,7 @@ static void eliminate_comdats() {
 }
 
 static void handle_mergeable_strings() {
-  Timer t("resolve_strings");
+  Timer t("handle_mergeable_strings");
 
   // Resolve mergeable string fragments
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
@@ -374,6 +374,7 @@ static void handle_mergeable_strings() {
           offset = align_to(offset, frag->alignment);
           frag->offset = offset;
           offset += frag->data.size();
+          isec->alignment = std::max<u32>(isec->alignment, frag->alignment);
         }
       }
       isec->size = offset;
@@ -384,8 +385,7 @@ static void handle_mergeable_strings() {
   for (ObjectFile *file : out::objs) {
     for (MergeableSection *isec : file->mergeable_sections) {
       i64 offset = isec->parent.shdr.sh_size;
-      i64 alignment = isec->shdr->sh_addralign;
-      isec->padding = align_to(offset, alignment) - offset;
+      isec->padding = align_to(offset, isec->alignment) - offset;
       isec->offset = offset + isec->padding;
       isec->parent.shdr.sh_size = offset + isec->padding + isec->size;
 

@@ -611,7 +611,7 @@ MergeableSection::MergeableSection(InputSection *isec)
   u64 entsize = isec->shdr->sh_entsize;
 
   static_assert(sizeof(SectionFragment::alignment) == 2);
-  if (isec->shdr->sh_addralign >= (1 << 16))
+  if (isec->shdr->sh_addralign >= UINT16_MAX)
     Fatal() << *isec << ": alignment too large";
 
   if (isec->shdr->sh_flags & SHF_STRINGS) {

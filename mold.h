@@ -219,7 +219,7 @@ struct SectionFragment {
   std::atomic<MergeableSection *> isec = nullptr;
   std::string_view data;
   u32 offset = -1;
-  u16 alignment = 1;
+  std::atomic_uint16_t alignment = 1;
   std::atomic_bool is_alive = !config.gc_sections;
 };
 
@@ -227,23 +227,6 @@ struct SectionFragmentRef {
   SectionFragment *frag = nullptr;
   i32 addend = 0;
 };
-
-struct SectionFragmentKey {
-  std::string_view data;
-  u32 alignment;
-};
-
-namespace tbb {
-template<> struct tbb_hash_compare<SectionFragmentKey> {
-  static size_t hash(const SectionFragmentKey &k) {
-    return std::hash<std::string_view>()(k.data) ^ std::hash<u32>()(k.alignment);
-  }
-
-  static bool equal(const SectionFragmentKey &k1, const SectionFragmentKey &k2) {
-    return k1.data == k2.data && k1.alignment == k2.alignment;
-  }
-};
-}
 
 enum {
   NEEDS_GOT      = 1 << 0,
@@ -452,6 +435,7 @@ public:
   MergedSection &parent;
   std::vector<SectionFragment *> fragments;
   std::vector<u32> frag_offsets;
+  u32 alignment = 1;
   u32 size = 0;
   u32 padding = 0;
 };
@@ -772,11 +756,18 @@ public:
 
   static inline std::vector<MergedSection *> instances;
 
-  SectionFragment *insert(std::string_view data, u32 alignment) {
+  SectionFragment *insert(std::string_view data, i64 alignment) {
+    assert(alignment < UINT16_MAX);
+
     typename decltype(map)::const_accessor acc;
-    map.insert(acc, std::pair(SectionFragmentKey{data, alignment},
-                              SectionFragment(data)));
-    return const_cast<SectionFragment *>(&acc->second);
+    map.insert(acc, std::pair(data, SectionFragment(data)));
+    SectionFragment *frag = const_cast<SectionFragment *>(&acc->second);
+
+    u16 cur = frag->alignment;
+    while (cur < alignment)
+      if (frag->alignment.compare_exchange_strong(cur, alignment))
+        break;
+    return frag;
   }
 
   void copy_buf() override;
@@ -789,7 +780,7 @@ private:
     shdr.sh_type = type;
   }
 
-  tbb::concurrent_hash_map<SectionFragmentKey, SectionFragment> map;
+  tbb::concurrent_hash_map<std::string_view, SectionFragment> map;
 };
 
 class EhFrameSection : public OutputChunk {
