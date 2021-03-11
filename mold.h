@@ -991,8 +991,6 @@ public:
   u64 strtab_offset = 0;
   u64 strtab_size = 0;
 
-  std::vector<MergeableSection *> mergeable_sections;
-
 private:
   void initialize_sections();
   void initialize_symbols();

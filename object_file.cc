@@ -396,7 +396,7 @@ void ObjectFile::initialize_symbols() {
 }
 
 void ObjectFile::initialize_mergeable_sections() {
-  mergeable_sections.resize(sections.size());
+  std::vector<MergeableSection *> mergeable_sections(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
     if (InputSection *isec = sections[i]) {
@@ -461,8 +461,6 @@ void ObjectFile::initialize_mergeable_sections() {
       sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
     }
   }
-
-  erase(mergeable_sections, [](MergeableSection *m) { return !m; });
 }
 
 void ObjectFile::parse() {
