@@ -1182,7 +1182,9 @@ void parse_nonpositional_args(std::span<std::string_view> args,
 // main.cc
 //
 
-MemoryMappedFile *find_library(std::string path, std::span<std::string_view> lib_paths);
+MemoryMappedFile *find_library(std::string path,
+                               std::span<std::string_view> lib_paths);
+
 void read_file(MemoryMappedFile *mb, ReadContext &ctx);
 
 //

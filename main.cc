@@ -630,7 +630,7 @@ static void fill_verdef() {
   if (config.version_definitions.empty())
     return;
 
-  // Resize of .gnu.version
+  // Resize .gnu.version
   out::versym->contents.resize(out::dynsym->symbols.size(), 1);
   out::versym->contents[0] = 0;
 
