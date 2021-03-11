@@ -10,7 +10,7 @@ static u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
-InputSection::InputSection(ObjectFile *file, const ElfShdr *shdr,
+InputSection::InputSection(ObjectFile &file, const ElfShdr *shdr,
                            std::string_view name, i64 section_idx)
   : file(file), shdr(shdr), name(name),
     output_section(OutputSection::get_instance(name, shdr->sh_type,
@@ -34,7 +34,7 @@ InputSection::InputSection(ObjectFile *file, const ElfShdr *shdr,
 
   if (name.starts_with(".zdebug")) {
     // Old-style compressed section
-    std::string_view data = file->get_string(*shdr);
+    std::string_view data = file.get_string(*shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
       Fatal() << *this << ": corrupted compressed section";
     u64 size = read64be((u8 *)&data[4]);
@@ -44,7 +44,7 @@ InputSection::InputSection(ObjectFile *file, const ElfShdr *shdr,
     name = *new std::string("." + std::string(name.substr(2)));
   } else if (shdr->sh_flags & SHF_COMPRESSED) {
     // New-style compressed section
-    std::string_view data = file->get_string(*shdr);
+    std::string_view data = file.get_string(*shdr);
     if (data.size() < sizeof(ElfChdr))
       Fatal() << *this << ": corrupted compressed section";
 
@@ -53,7 +53,7 @@ InputSection::InputSection(ObjectFile *file, const ElfShdr *shdr,
       Fatal() << *this << ": unsupported compression type";
     contents = do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
   } else if (shdr->sh_type != SHT_NOBITS) {
-    contents = file->get_string(*shdr);
+    contents = file.get_string(*shdr);
   }
 }
 
@@ -203,11 +203,11 @@ void InputSection::apply_reloc_alloc(u8 *base) {
 
   if (out::reldyn)
     dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
-                         file->reldyn_offset + reldyn_offset);
+                         file.reldyn_offset + reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file->symbols[rel.r_sym];
+    Symbol &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     const SectionFragmentRef *ref = nullptr;
@@ -319,10 +319,10 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file->symbols[rel.r_sym];
+    Symbol &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
-      Error() << "undefined symbol: " << *file << ": " << sym;
+      Error() << "undefined symbol: " << file << ": " << sym;
       continue;
     }
 
@@ -395,17 +395,17 @@ void InputSection::scan_relocations() {
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
-  this->reldyn_offset = file->num_dynrel * sizeof(ElfRela);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRela);
   bool is_readonly = !(shdr->sh_flags & SHF_WRITE);
   i64 output_type = config.shared ? 2 : (config.pie ? 1 : 0);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file->symbols[rel.r_sym];
+    Symbol &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
-      Error() << "undefined symbol: " << *file << ": " << sym;
+      Error() << "undefined symbol: " << file << ": " << sym;
       continue;
     }
 
@@ -431,13 +431,13 @@ void InputSection::scan_relocations() {
           break;
         sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_DYN;
-        file->num_dynrel++;
+        file.num_dynrel++;
         return;
       case BASEREL:
         if (is_readonly)
           break;
         rel_types[i] = R_BASEREL;
-        file->num_dynrel++;
+        file.num_dynrel++;
         return;
       default:
         unreachable();
@@ -572,5 +572,5 @@ void InputSection::kill() {
   is_alive = false;
   for (FdeRecord &fde : fdes)
     fde.is_alive = false;
-  file->sections[section_idx] = nullptr;
+  file.sections[section_idx] = nullptr;
 }

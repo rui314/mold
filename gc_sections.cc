@@ -42,7 +42,7 @@ static void visit(InputSection *isec,
           feeder.add(isec);
 
   for (ElfRela &rel : isec->rels) {
-    Symbol &sym = *isec->file->symbols[rel.r_sym];
+    Symbol &sym = *isec->file.symbols[rel.r_sym];
 
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.

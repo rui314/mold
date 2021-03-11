@@ -156,7 +156,7 @@ void ObjectFile::initialize_sections() {
       counter++;
 
       std::string_view name = shstrtab.data() + shdr.sh_name;
-      this->sections[i] = new InputSection(this, &shdr, name, i);
+      this->sections[i] = new InputSection(*this, &shdr, name, i);
       break;
     }
     }
@@ -827,7 +827,7 @@ void ObjectFile::convert_common_symbols() {
     shdr->sh_size = elf_syms[i].st_size;
     shdr->sh_addralign = 1;
 
-    auto *isec = new InputSection(this, shdr, ".bss", sections.size());
+    auto *isec = new InputSection(*this, shdr, ".bss", sections.size());
     isec->output_section = bss;
     sections.push_back(isec);
 

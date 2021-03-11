@@ -378,7 +378,7 @@ struct CieRecord {
 
 class InputSection {
 public:
-  InputSection(ObjectFile *file, const ElfShdr *shdr, std::string_view name,
+  InputSection(ObjectFile &file, const ElfShdr *shdr, std::string_view name,
                i64 section_idx);
 
   void scan_relocations();
@@ -391,7 +391,7 @@ public:
   inline i64 get_priority() const;
   inline u64 get_addr() const;
 
-  ObjectFile *file;
+  ObjectFile &file;
   const ElfShdr *shdr;
   OutputSection *output_section = nullptr;
 
@@ -1018,7 +1018,7 @@ private:
 };
 
 inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
-  out << *isec.file << ":(" << isec.name << ")";
+  out << isec.file << ":(" << isec.name << ")";
   return out;
 }
 
@@ -1369,7 +1369,7 @@ inline u64 InputSection::get_addr() const {
 }
 
 inline i64 InputSection::get_priority() const {
-  return ((i64)file->priority << 32) | section_idx;
+  return ((i64)file.priority << 32) | section_idx;
 }
 
 inline i64 ObjectFile::get_shndx(const ElfSym &esym) {

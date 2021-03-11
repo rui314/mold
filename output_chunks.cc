@@ -1007,7 +1007,6 @@ void EhFrameSection::copy_buf() {
 
 u64 EhFrameSection::get_addr(const Symbol &sym) {
   InputSection &isec = *sym.input_section;
-  ObjectFile &file = *isec.file;
   const char *section_begin = isec.contents.data();
 
   auto contains = [](std::string_view str, const char *ptr) {
@@ -1016,7 +1015,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
     return (begin == ptr) || (begin < ptr && ptr < end);
   };
 
-  for (CieRecord &cie : file.cies) {
+  for (CieRecord &cie : isec.file.cies) {
     u64 offset = 0;
 
     if (cie.offset == cie.leader_offset) {
@@ -1041,7 +1040,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
     }
   }
 
-  Fatal() << file << ": .eh_frame has bad symbol: " << sym;
+  Fatal() << isec.file << ": .eh_frame has bad symbol: " << sym;
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {

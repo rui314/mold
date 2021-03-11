@@ -247,7 +247,7 @@ static Digest compute_digest(InputSection &isec) {
   hash(isec.rels.size());
 
   for (FdeRecord &fde : isec.fdes) {
-    hash(isec.file->cies[fde.cie_idx].icf_idx);
+    hash(isec.file.cies[fde.cie_idx].icf_idx);
 
     // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
@@ -277,7 +277,7 @@ static Digest compute_digest(InputSection &isec) {
       hash(ref.addend);
       hash_string(ref.frag->data);
     } else {
-      hash_symbol(*isec.file->symbols[rel.r_sym]);
+      hash_symbol(*isec.file.symbols[rel.r_sym]);
     }
   }
 
@@ -341,7 +341,7 @@ static void gather_edges(std::span<InputSection *> sections,
     for (i64 j = 0; j < isec.rels.size(); j++) {
       if (!isec.has_fragments[j]) {
         ElfRela &rel = isec.rels[j];
-        Symbol &sym = *isec.file->symbols[rel.r_sym];
+        Symbol &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
           num_edges[i]++;
       }
@@ -360,7 +360,7 @@ static void gather_edges(std::span<InputSection *> sections,
     for (i64 j = 0; j < isec.rels.size(); j++) {
       if (!isec.has_fragments[j]) {
         ElfRela &rel = isec.rels[j];
-        Symbol &sym = *isec.file->symbols[rel.r_sym];
+        Symbol &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
           edges[idx++] = sym.input_section->icf_idx;
       }
