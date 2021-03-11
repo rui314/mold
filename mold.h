@@ -41,7 +41,6 @@ static constexpr i64 SHA256_SIZE = 32;
 class InputChunk;
 class InputFile;
 class InputSection;
-class MergeableSection;
 class MergedSection;
 class ObjectFile;
 class OutputChunk;
@@ -429,14 +428,6 @@ public:
   u32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
-};
-
-class MergeableSection : public InputChunk {
-public:
-  MergeableSection(InputSection *isec);
-
-  std::vector<SectionFragment *> fragments;
-  std::vector<u32> frag_offsets;
 };
 
 //

@@ -395,13 +395,94 @@ void ObjectFile::initialize_symbols() {
   }
 }
 
+struct MergeableSection {
+  std::vector<SectionFragment *> fragments;
+  std::vector<u32> frag_offsets;
+};
+
+static size_t find_null(std::string_view data, u64 entsize) {
+  if (entsize == 1)
+    return data.find('\0');
+
+  for (i64 i = 0; i <= data.size() - entsize; i += entsize)
+    if (data.substr(i, i + entsize).find_first_not_of('\0') == data.npos)
+      return i;
+
+  return data.npos;
+}
+
+// Mergeable sections (sections with SHF_MERGE bit) typically contain
+// string literals. Linker is expected to split the section contents
+// into null-terminated strings, merge them with mergeable strings
+// from other object files, and emit uniquified strings to an output
+// file.
+//
+// This mechanism reduces the size of an output file. If two source
+// files happen to contain the same string literal, the output will
+// contain only a single copy of it.
+//
+// It is less common than string literals, but mergeable sections can
+// contain fixed-sized read-only records too.
+//
+// This function splits the section contents into small pieces that we
+// call "section fragments". Section fragment is a unit of merging.
+//
+// We do not support mergeable sections that have relocations.
+static MergeableSection split_section(InputSection &sec) {
+  MergeableSection rec;
+
+  MergedSection *parent =
+    MergedSection::get_instance(sec.name, sec.shdr->sh_type,
+                                sec.shdr->sh_flags);
+
+  std::string_view data = sec.contents;
+  const char *begin = data.data();
+  u64 entsize = sec.shdr->sh_entsize;
+
+  static_assert(sizeof(SectionFragment::alignment) == 2);
+  if (sec.shdr->sh_addralign >= UINT16_MAX)
+    Fatal() << sec << ": alignment too large";
+
+  if (sec.shdr->sh_flags & SHF_STRINGS) {
+    while (!data.empty()) {
+      size_t end = find_null(data, entsize);
+      if (end == std::string_view::npos)
+        Error() << sec << ": string is not null terminated";
+
+      std::string_view substr = data.substr(0, end + entsize);
+      data = data.substr(end + entsize);
+
+      SectionFragment *frag = parent->insert(substr, sec.shdr->sh_addralign);
+      rec.fragments.push_back(frag);
+      rec.frag_offsets.push_back(substr.data() - begin);
+    }
+  } else {
+    if (data.size() % entsize)
+      Fatal() << sec << ": section size is not multiple of sh_entsize";
+
+    while (!data.empty()) {
+      std::string_view substr = data.substr(0, entsize);
+      data = data.substr(entsize);
+
+      SectionFragment *frag = parent->insert(substr, sec.shdr->sh_addralign);
+      rec.fragments.push_back(frag);
+      rec.frag_offsets.push_back(substr.data() - begin);
+    }
+  }
+
+  static Counter counter("string_fragments");
+  counter += rec.fragments.size();
+
+  return rec;
+}
+
 void ObjectFile::initialize_mergeable_sections() {
-  std::vector<MergeableSection *> mergeable_sections(sections.size());
+  std::vector<MergeableSection> mergeable_sections(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
     if (InputSection *isec = sections[i]) {
       if (isec->shdr->sh_flags & SHF_MERGE) {
-        mergeable_sections[i] = new MergeableSection(isec);
+        mergeable_sections[i] = split_section(*isec);
         sections[i] = nullptr;
       }
     }
@@ -418,19 +499,19 @@ void ObjectFile::initialize_mergeable_sections() {
       if (esym.st_type != STT_SECTION)
         continue;
 
-      MergeableSection *m = mergeable_sections[get_shndx(esym)];
-      if (!m)
+      MergeableSection &m = mergeable_sections[get_shndx(esym)];
+      if (m.fragments.empty())
         continue;
 
       i64 offset = esym.st_value + rel.r_addend;
-      std::span<u32> offsets = m->frag_offsets;
+      std::span<u32> offsets = m.frag_offsets;
 
       auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
       if (it == offsets.begin())
         Fatal() << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      SectionFragmentRef ref{m->fragments[idx], (i32)(offset - offsets[idx])};
+      SectionFragmentRef ref{m.fragments[idx], (i32)(offset - offsets[idx])};
       isec->rel_fragments.push_back(ref);
       isec->has_fragments[i] = true;
     }
@@ -442,11 +523,11 @@ void ObjectFile::initialize_mergeable_sections() {
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    MergeableSection *m = mergeable_sections[get_shndx(esym)];
-    if (!m)
+    MergeableSection &m = mergeable_sections[get_shndx(esym)];
+    if (m.fragments.empty())
       continue;
 
-    std::span<u32> offsets = m->frag_offsets;
+    std::span<u32> offsets = m.frag_offsets;
 
     auto it = std::upper_bound(offsets.begin(), offsets.end(), esym.st_value);
     if (it == offsets.begin())
@@ -454,10 +535,10 @@ void ObjectFile::initialize_mergeable_sections() {
     i64 idx = it - 1 - offsets.begin();
 
     if (i < first_global) {
-      symbols[i]->frag = m->fragments[idx];
+      symbols[i]->frag = m.fragments[idx];
       symbols[i]->value = esym.st_value - offsets[idx];
     } else {
-      sym_fragments[i - first_global].frag = m->fragments[idx];
+      sym_fragments[i - first_global].frag = m.fragments[idx];
       sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
     }
   }
