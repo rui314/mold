@@ -156,7 +156,7 @@ void ObjectFile::initialize_sections() {
       counter++;
 
       std::string_view name = shstrtab.data() + shdr.sh_name;
-      this->sections[i] = new InputSection(*this, &shdr, name, i);
+      this->sections[i] = InputSection::create(*this, &shdr, name, i);
       break;
     }
     }
@@ -174,7 +174,7 @@ void ObjectFile::initialize_sections() {
     if (InputSection *target = sections[shdr.sh_info]) {
       target->rels = get_data<ElfRela>(shdr);
       target->has_fragments.resize(target->rels.size());
-      if (target->shdr->sh_flags & SHF_ALLOC)
+      if (target->shdr.sh_flags & SHF_ALLOC)
         target->rel_types.resize(target->rels.size());
     }
   }
@@ -222,7 +222,7 @@ void ObjectFile::initialize_ehframe_sections() {
 // This function parses an input .eh_frame section.
 void ObjectFile::read_ehframe(InputSection &isec) {
   std::span<ElfRela> rels = isec.rels;
-  std::string_view data = get_string(*isec.shdr);
+  std::string_view data = get_string(isec.shdr);
   const char *begin = data.data();
 
   if (data.empty()) {
@@ -325,7 +325,7 @@ static bool should_write_symtab(Symbol &sym) {
       return false;
 
     if (InputSection *isec = sym.input_section)
-      if (isec->shdr->sh_flags & SHF_MERGE)
+      if (isec->shdr.sh_flags & SHF_MERGE)
         return false;
   }
 
@@ -432,18 +432,18 @@ static MergeableSection split_section(InputSection &sec) {
   MergeableSection rec;
 
   MergedSection *parent =
-    MergedSection::get_instance(sec.name, sec.shdr->sh_type,
-                                sec.shdr->sh_flags);
+    MergedSection::get_instance(sec.name, sec.shdr.sh_type,
+                                sec.shdr.sh_flags);
 
   std::string_view data = sec.contents;
   const char *begin = data.data();
-  u64 entsize = sec.shdr->sh_entsize;
+  u64 entsize = sec.shdr.sh_entsize;
 
   static_assert(sizeof(SectionFragment::alignment) == 2);
-  if (sec.shdr->sh_addralign >= UINT16_MAX)
+  if (sec.shdr.sh_addralign >= UINT16_MAX)
     Fatal() << sec << ": alignment too large";
 
-  if (sec.shdr->sh_flags & SHF_STRINGS) {
+  if (sec.shdr.sh_flags & SHF_STRINGS) {
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
       if (end == std::string_view::npos)
@@ -452,7 +452,7 @@ static MergeableSection split_section(InputSection &sec) {
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);
 
-      SectionFragment *frag = parent->insert(substr, sec.shdr->sh_addralign);
+      SectionFragment *frag = parent->insert(substr, sec.shdr.sh_addralign);
       rec.fragments.push_back(frag);
       rec.frag_offsets.push_back(substr.data() - begin);
     }
@@ -464,7 +464,7 @@ static MergeableSection split_section(InputSection &sec) {
       std::string_view substr = data.substr(0, entsize);
       data = data.substr(entsize);
 
-      SectionFragment *frag = parent->insert(substr, sec.shdr->sh_addralign);
+      SectionFragment *frag = parent->insert(substr, sec.shdr.sh_addralign);
       rec.fragments.push_back(frag);
       rec.frag_offsets.push_back(substr.data() - begin);
     }
@@ -481,7 +481,7 @@ void ObjectFile::initialize_mergeable_sections() {
 
   for (i64 i = 0; i < sections.size(); i++) {
     if (InputSection *isec = sections[i]) {
-      if (isec->shdr->sh_flags & SHF_MERGE) {
+      if (isec->shdr.sh_flags & SHF_MERGE) {
         mergeable_sections[i] = split_section(*isec);
         sections[i] = nullptr;
       }
@@ -827,7 +827,8 @@ void ObjectFile::convert_common_symbols() {
     shdr->sh_size = elf_syms[i].st_size;
     shdr->sh_addralign = 1;
 
-    auto *isec = new InputSection(*this, shdr, ".bss", sections.size());
+    InputSection *isec =
+      InputSection::create(*this, shdr, ".bss", sections.size());
     isec->output_section = bss;
     sections.push_back(isec);
 

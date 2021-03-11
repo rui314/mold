@@ -97,17 +97,19 @@ static void uniquify_cies() {
 }
 
 static bool is_eligible(InputSection &isec) {
-  const ElfShdr &shdr = *isec.shdr;
+  const ElfShdr &shdr = isec.shdr;
+  std::string_view name = isec.name;
+
   bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
   bool is_executable = (shdr.sh_flags & SHF_EXECINSTR);
-  bool is_relro = (isec.name == ".data.rel.ro" ||
-                   isec.name.starts_with(".data.rel.ro."));
+  bool is_relro = (name == ".data.rel.ro" ||
+                   name.starts_with(".data.rel.ro."));
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE) || is_relro;
   bool is_bss = (shdr.sh_type == SHT_NOBITS);
   bool is_empty = (shdr.sh_size == 0);
-  bool is_init = (shdr.sh_type == SHT_INIT_ARRAY || isec.name == ".init");
-  bool is_fini = (shdr.sh_type == SHT_FINI_ARRAY || isec.name == ".fini");
-  bool is_enumerable = is_c_identifier(isec.name);
+  bool is_init = (shdr.sh_type == SHT_INIT_ARRAY || name == ".init");
+  bool is_fini = (shdr.sh_type == SHT_FINI_ARRAY || name == ".fini");
+  bool is_enumerable = is_c_identifier(name);
 
   return is_alloc && is_executable && is_readonly && !is_bss &&
          !is_empty && !is_init && !is_fini && !is_enumerable;
@@ -242,7 +244,7 @@ static Digest compute_digest(InputSection &isec) {
   };
 
   hash_string(isec.contents);
-  hash(isec.shdr->sh_flags);
+  hash(isec.shdr.sh_flags);
   hash(isec.fdes.size());
   hash(isec.rels.size());
 

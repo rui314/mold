@@ -436,10 +436,10 @@ static void set_isec_offsets() {
       i64 align = 1;
 
       for (InputSection *isec : slices[i]) {
-        off = align_to(off, isec->shdr->sh_addralign);
+        off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
-        off += isec->shdr->sh_size;
-        align = std::max<i64>(align, isec->shdr->sh_addralign);
+        off += isec->shdr.sh_size;
+        align = std::max<i64>(align, isec->shdr.sh_addralign);
       }
 
       size[i] = off;

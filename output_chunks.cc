@@ -434,14 +434,14 @@ void OutputSection::copy_buf() {
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](u64 i) {
     InputSection &isec = *members[i];
-    if (isec.shdr->sh_type == SHT_NOBITS)
+    if (isec.shdr.sh_type == SHT_NOBITS)
       return;
 
     // Copy section contents to an output file
     isec.copy_buf();
 
     // Zero-clear trailing padding
-    u64 this_end = isec.offset + isec.shdr->sh_size;
+    u64 this_end = isec.offset + isec.shdr.sh_size;
     u64 next_start = (i == members.size() - 1) ?
       shdr.sh_size : members[i + 1]->offset;
     memset(out::buf + shdr.sh_offset + this_end, 0, next_start - this_end);

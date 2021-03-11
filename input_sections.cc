@@ -10,35 +10,39 @@ static u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
-InputSection::InputSection(ObjectFile &file, const ElfShdr *shdr,
-                           std::string_view name, i64 section_idx)
-  : file(file), shdr(shdr), name(name),
-    output_section(OutputSection::get_instance(name, shdr->sh_type,
-                                               shdr->sh_flags)),
-    section_idx(section_idx) {
+InputSection::InputSection(ObjectFile &file, const ElfShdr &shdr,
+                           std::string_view name, i64 section_idx,
+                           std::string_view contents,
+                           OutputSection *osec)
+  : file(file), shdr(shdr), name(name), section_idx(section_idx),
+    contents(contents), output_section(osec) {}
+
+InputSection *InputSection::create(ObjectFile &file, const ElfShdr *shdr,
+                                   std::string_view name, i64 section_idx) {
+  std::string_view contents;
+
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
     unsigned long size2 = size;
     if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
-      Fatal() << *this << ": uncompress failed";
+      Fatal() << name << ": uncompress failed";
     if (size != size2)
-      Fatal() << *this << ": uncompress: invalid size";
+      Fatal() << name << ": uncompress: invalid size";
+    contents = {(char *)buf, size};
 
     ElfShdr *shdr2 = new ElfShdr;
     *shdr2 = *shdr;
     shdr2->sh_size = size;
     shdr2->sh_flags &= ~(u64)SHF_COMPRESSED;
     shdr = shdr2;
-    return std::string_view((char *)buf, size);
   };
 
   if (name.starts_with(".zdebug")) {
     // Old-style compressed section
     std::string_view data = file.get_string(*shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
-      Fatal() << *this << ": corrupted compressed section";
+      Fatal() << name << ": corrupted compressed section";
     u64 size = read64be((u8 *)&data[4]);
-    contents = do_uncompress(data.substr(12), size);
 
     // Rename .zdebug -> .debug
     name = *new std::string("." + std::string(name.substr(2)));
@@ -46,15 +50,19 @@ InputSection::InputSection(ObjectFile &file, const ElfShdr *shdr,
     // New-style compressed section
     std::string_view data = file.get_string(*shdr);
     if (data.size() < sizeof(ElfChdr))
-      Fatal() << *this << ": corrupted compressed section";
+      Fatal() << name << ": corrupted compressed section";
 
     ElfChdr &hdr = *(ElfChdr *)&data[0];
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-      Fatal() << *this << ": unsupported compression type";
-    contents = do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
+      Fatal() << name << ": unsupported compression type";
+    do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
   } else if (shdr->sh_type != SHT_NOBITS) {
     contents = file.get_string(*shdr);
   }
+
+  OutputSection *osec =
+    OutputSection::get_instance(name, shdr->sh_type, shdr->sh_flags);
+  return new InputSection(file, *shdr, name, section_idx, contents, osec);
 }
 
 static std::string rel_to_string(u64 r_type) {
@@ -180,7 +188,7 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
 }
 
 void InputSection::copy_buf() {
-  if (shdr->sh_type == SHT_NOBITS || shdr->sh_size == 0)
+  if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
   // Copy data
@@ -188,7 +196,7 @@ void InputSection::copy_buf() {
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
-  if (shdr->sh_flags & SHF_ALLOC)
+  if (shdr.sh_flags & SHF_ALLOC)
     apply_reloc_alloc(base);
   else
     apply_reloc_nonalloc(base);
@@ -389,14 +397,14 @@ static int get_sym_type(Symbol &sym) {
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
 void InputSection::scan_relocations() {
-  if (!(shdr->sh_flags & SHF_ALLOC))
+  if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRela);
-  bool is_readonly = !(shdr->sh_flags & SHF_WRITE);
+  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
   i64 output_type = config.shared ? 2 : (config.pie ? 1 : 0);
 
   // Scan relocations
