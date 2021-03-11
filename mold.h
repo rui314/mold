@@ -435,11 +435,8 @@ class MergeableSection : public InputChunk {
 public:
   MergeableSection(InputSection *isec);
 
-  MergedSection &parent;
   std::vector<SectionFragment *> fragments;
   std::vector<u32> frag_offsets;
-  u32 size = 0;
-  u32 padding = 0;
 };
 
 //

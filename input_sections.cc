@@ -603,9 +603,11 @@ static size_t find_null(std::string_view data, u64 entsize) {
 //
 // We do not support mergeable sections that have relocations.
 MergeableSection::MergeableSection(InputSection *isec)
-  : InputChunk(isec->file, isec->shdr, isec->name),
-    parent(*MergedSection::get_instance(isec->name, isec->shdr->sh_type,
-                                        isec->shdr->sh_flags)) {
+  : InputChunk(isec->file, isec->shdr, isec->name) {
+  MergedSection *parent =
+    MergedSection::get_instance(isec->name, isec->shdr->sh_type,
+                                isec->shdr->sh_flags);
+
   std::string_view data = isec->contents;
   const char *begin = data.data();
   u64 entsize = isec->shdr->sh_entsize;
@@ -623,7 +625,7 @@ MergeableSection::MergeableSection(InputSection *isec)
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);
 
-      SectionFragment *frag = parent.insert(substr, isec->shdr->sh_addralign);
+      SectionFragment *frag = parent->insert(substr, isec->shdr->sh_addralign);
       fragments.push_back(frag);
       frag_offsets.push_back(substr.data() - begin);
     }
@@ -635,7 +637,7 @@ MergeableSection::MergeableSection(InputSection *isec)
       std::string_view substr = data.substr(0, entsize);
       data = data.substr(entsize);
 
-      SectionFragment *frag = parent.insert(substr, isec->shdr->sh_addralign);
+      SectionFragment *frag = parent->insert(substr, isec->shdr->sh_addralign);
       fragments.push_back(frag);
       frag_offsets.push_back(substr.data() - begin);
     }
