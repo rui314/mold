@@ -6,7 +6,7 @@
 
 void print_map() {
   // Construct a section-to-symbol map.
-  std::unordered_map<InputChunk *, std::vector<Symbol *>> map;
+  std::unordered_map<InputSection *, std::vector<Symbol *>> map;
   for (ObjectFile *file : out::objs)
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->input_section)
@@ -27,7 +27,7 @@ void print_map() {
     if (osec->kind != OutputChunk::REGULAR)
       continue;
 
-    for (InputChunk *mem : ((OutputSection *)osec)->members) {
+    for (InputSection *mem : ((OutputSection *)osec)->members) {
       std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
                 << std::setw(9) << (u64)mem->shdr->sh_size
                 << std::setw(6) << (u64)mem->shdr->sh_addralign

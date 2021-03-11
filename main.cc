@@ -435,7 +435,7 @@ static void set_isec_offsets() {
       i64 off = 0;
       i64 align = 1;
 
-      for (InputChunk *isec : slices[i]) {
+      for (InputSection *isec : slices[i]) {
         off = align_to(off, isec->shdr->sh_addralign);
         isec->offset = off;
         off += isec->shdr->sh_size;
@@ -453,7 +453,7 @@ static void set_isec_offsets() {
       start[i] = align_to(start[i - 1] + size[i - 1], align);
 
     tbb::parallel_for((i64)1, (i64)slices.size(), [&](i64 i) {
-      for (InputChunk *isec : slices[i])
+      for (InputSection *isec : slices[i])
         isec->offset += start[i];
     });
 

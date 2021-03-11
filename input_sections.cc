@@ -10,10 +10,12 @@ static u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
-InputChunk::InputChunk(ObjectFile *file, const ElfShdr *shdr,
-                       std::string_view name)
+InputSection::InputSection(ObjectFile *file, const ElfShdr *shdr,
+                           std::string_view name, i64 section_idx)
   : file(file), shdr(shdr), name(name),
-    output_section(OutputSection::get_instance(name, shdr->sh_type, shdr->sh_flags)) {
+    output_section(OutputSection::get_instance(name, shdr->sh_type,
+                                               shdr->sh_flags)),
+    section_idx(section_idx) {
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
     unsigned long size2 = size;

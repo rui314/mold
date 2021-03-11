@@ -38,7 +38,6 @@ static constexpr i64 PLT_SIZE = 16;
 static constexpr i64 PLT_GOT_SIZE = 8;
 static constexpr i64 SHA256_SIZE = 32;
 
-class InputChunk;
 class InputFile;
 class InputSection;
 class MergedSection;
@@ -310,23 +309,6 @@ std::ostream &operator<<(std::ostream &out, const Symbol &sym);
 // input_sections.cc
 //
 
-class InputChunk {
-public:
-  virtual void copy_buf() {}
-  inline u64 get_addr() const;
-
-  ObjectFile *file;
-  const ElfShdr *shdr;
-  OutputSection *output_section = nullptr;
-
-  std::string_view name;
-  std::string_view contents;
-  u32 offset = -1;
-
-protected:
-  InputChunk(ObjectFile *file, const ElfShdr *shdr, std::string_view name);
-};
-
 enum RelType : u8 {
   R_NONE = 1,
   R_ABS,
@@ -394,19 +376,28 @@ struct CieRecord {
   u32 icf_idx = -1;
 };
 
-class InputSection : public InputChunk {
+class InputSection {
 public:
   InputSection(ObjectFile *file, const ElfShdr *shdr, std::string_view name,
-               i64 section_idx)
-    : InputChunk(file, shdr, name), section_idx(section_idx) {}
+               i64 section_idx);
 
-  void copy_buf() override;
   void scan_relocations();
   void report_undefined_symbols();
+  void copy_buf();
   void apply_reloc_alloc(u8 *base);
   void apply_reloc_nonalloc(u8 *base);
   void kill();
+
   inline i64 get_priority() const;
+  inline u64 get_addr() const;
+
+  ObjectFile *file;
+  const ElfShdr *shdr;
+  OutputSection *output_section = nullptr;
+
+  std::string_view name;
+  std::string_view contents;
+  u32 offset = -1;
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
@@ -1026,7 +1017,7 @@ private:
   const ElfShdr *symtab_sec;
 };
 
-inline std::ostream &operator<<(std::ostream &out, const InputChunk &isec) {
+inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
   out << *isec.file << ":(" << isec.name << ")";
   return out;
 }
@@ -1375,7 +1366,7 @@ inline u64 SectionFragment::get_addr() const {
   return output_section.shdr.sh_addr + offset;
 }
 
-inline u64 InputChunk::get_addr() const {
+inline u64 InputSection::get_addr() const {
   return output_section->shdr.sh_addr + offset;
 }
 
