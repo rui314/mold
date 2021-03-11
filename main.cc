@@ -477,7 +477,7 @@ static void scan_rels() {
     // Export symbols referenced by DSOs.
     tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
       for (Symbol *sym : file->undefs)
-        if (sym->file && !sym->file->is_dso)
+        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
           sym->is_exported = true;
     });
   }
