@@ -1361,8 +1361,6 @@ inline u64 Symbol::get_plt_addr() const {
 }
 
 inline u64 SectionFragment::get_addr() const {
-  if (!is_alive)
-    return 0; // todo: remove
   return output_section.shdr.sh_addr + offset;
 }
 
