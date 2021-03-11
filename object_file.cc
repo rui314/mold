@@ -41,7 +41,8 @@ u8 *MemoryMappedFile::data() {
   return data_;
 }
 
-MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start, u64 size) {
+MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start,
+                                          u64 size) {
   MemoryMappedFile *mb = new MemoryMappedFile(name, data_ + start, size);
   mb->parent = this;
   return mb;
@@ -730,7 +731,8 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_lazy = false;
 
         if (sym.traced)
-          SyncOut() << "trace: " << *this << ": unresolved weak symbol " << sym;
+          SyncOut() << "trace: " << *this << ": unresolved weak symbol "
+                    << sym;
       }
     }
   }
