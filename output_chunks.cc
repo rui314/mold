@@ -453,7 +453,9 @@ void GotSection::add_got_symbol(Symbol *sym) {
   sym->got_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
-  out::dynsym->add_symbol(sym);
+
+  if (sym->is_imported)
+    out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_gottpoff_symbol(Symbol *sym) {
