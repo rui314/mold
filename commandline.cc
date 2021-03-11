@@ -186,8 +186,11 @@ split(std::string_view str, std::string_view sep) {
 
 void parse_nonpositional_args(std::span<std::string_view> args,
                               std::vector<std::string_view> &remaining) {
-  config.thread_count =
-    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+  // mold doesn't scale above 32 threads.
+  config.thread_count = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  if (config.thread_count > 32)
+    config.thread_count = 32;
 
   while (!args.empty()) {
     std::string_view arg;
