@@ -473,15 +473,6 @@ static void scan_rels() {
   // Exit if there was a relocation that refers an undefined symbol.
   Error::checkpoint();
 
-  if (!config.shared) {
-    // Export symbols referenced by DSOs.
-    tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
-      for (Symbol *sym : file->undefs)
-        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
-          sym->is_exported = true;
-    });
-  }
-
   // Add imported or exported symbols to .dynsym.
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->get_global_syms())
@@ -603,25 +594,34 @@ static void apply_symbol_version() {
 static void compute_import_export() {
   Timer t("compute_import_export");
 
-  if (!config.shared && !config.export_dynamic)
-    return;
+  // Export symbols referenced by DSOs.
+  if (!config.shared) {
+    tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
+      for (Symbol *sym : file->undefs)
+        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
+          sym->is_exported = true;
+    });
+  }
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-    for (Symbol *sym : file->get_global_syms()) {
-      if (sym->file != file)
-        continue;
+  // By default, global symbols are exported from DSO.
+  if (config.shared || config.export_dynamic) {
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      for (Symbol *sym : file->get_global_syms()) {
+        if (sym->file != file)
+          continue;
 
-      if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
-        continue;
+        if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
+          continue;
 
-      sym->is_exported = true;
+        sym->is_exported = true;
 
-      if (sym->visibility != STV_PROTECTED &&
-          !config.Bsymbolic &&
-          !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
-        sym->is_imported = true;
-    }
-  });
+        if (sym->visibility != STV_PROTECTED &&
+            !config.Bsymbolic &&
+            !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+          sym->is_imported = true;
+      }
+    });
+  }
 }
 
 static void fill_verdef() {
