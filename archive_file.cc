@@ -10,7 +10,8 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) {
+std::vector<MemoryMappedFile *>
+read_thin_archive_members(MemoryMappedFile *mb) {
   u8 *data = mb->data() + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
@@ -43,7 +44,8 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb) 
   return vec;
 }
 
-std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
+std::vector<MemoryMappedFile *>
+read_fat_archive_members(MemoryMappedFile *mb) {
   u8 *data = mb->data() + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
@@ -59,7 +61,8 @@ std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb) {
       continue;
     }
 
-    if (!memcmp(hdr.ar_name, "/ ", 2) || !memcmp(hdr.ar_name, "__.SYMDEF/", 10))
+    if (!memcmp(hdr.ar_name, "/ ", 2) ||
+        !memcmp(hdr.ar_name, "__.SYMDEF/", 10))
       continue;
 
     std::string name;

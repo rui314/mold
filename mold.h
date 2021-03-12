@@ -498,7 +498,8 @@ public:
 // Sections
 class OutputSection : public OutputChunk {
 public:
-  static OutputSection *get_instance(std::string_view name, u64 type, u64 flags);
+  static OutputSection *
+  get_instance(std::string_view name, u64 type, u64 flags);
 
   OutputSection(std::string_view name, u32 type, u64 flags)
     : OutputChunk(REGULAR) {

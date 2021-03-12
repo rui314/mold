@@ -41,7 +41,7 @@ void print_map() {
       for (Symbol *sym : syms)
         std::cout << std::setw(16) << sym->get_addr()
                   << "        0     0                 "
-                  << sym->name << "\n";
+                  << sym << "\n";
     }
   }
 }

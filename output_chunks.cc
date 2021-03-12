@@ -59,12 +59,12 @@ static i64 to_phdr_flags(OutputChunk *chunk) {
 std::vector<ElfPhdr> create_phdr() {
   std::vector<ElfPhdr> vec;
 
-  auto define = [&](u64 type, u64 flags, i64 align, OutputChunk *chunk) {
+  auto define = [&](u64 type, u64 flags, i64 min_align, OutputChunk *chunk) {
     vec.push_back({});
     ElfPhdr &phdr = vec.back();
     phdr.p_type = type;
     phdr.p_flags = flags;
-    phdr.p_align = std::max<u64>(align, chunk->shdr.sh_addralign);
+    phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
     phdr.p_offset = chunk->shdr.sh_offset;
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
@@ -144,12 +144,11 @@ std::vector<ElfPhdr> create_phdr() {
 
   // Add PT_DYNAMIC
   if (out::dynamic)
-    define(PT_DYNAMIC, PF_R | PF_W, out::dynamic->shdr.sh_addralign, out::dynamic);
+    define(PT_DYNAMIC, PF_R | PF_W, 1, out::dynamic);
 
   // Add PT_GNU_EH_FRAME
   if (out::eh_frame_hdr)
-    define(PT_GNU_EH_FRAME, PF_R, out::eh_frame_hdr->shdr.sh_addralign,
-           out::eh_frame_hdr);
+    define(PT_GNU_EH_FRAME, PF_R, 1, out::eh_frame_hdr);
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. If exists, the runtime turn on the No Exeecute
@@ -207,8 +206,9 @@ void RelDynSection::copy_buf() {
   }
 
   for (Symbol *sym : out::got->tlsgd_syms) {
-    *rel++ = {sym->get_tlsgd_addr(), R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
-    *rel++ = {sym->get_tlsgd_addr() + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
+    u64 addr = sym->get_tlsgd_addr();
+    *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
+    *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
   }
 
   if (out::got->tlsld_idx != -1)
@@ -332,9 +332,11 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
   define(DT_INIT_ARRAY, out::__init_array_start->value);
-  define(DT_INIT_ARRAYSZ, out::__init_array_end->value - out::__init_array_start->value);
+  define(DT_INIT_ARRAYSZ,
+         out::__init_array_end->value - out::__init_array_start->value);
   define(DT_FINI_ARRAY, out::__fini_array_start->value);
-  define(DT_FINI_ARRAYSZ, out::__fini_array_end->value - out::__fini_array_start->value);
+  define(DT_FINI_ARRAYSZ,
+         out::__fini_array_end->value - out::__fini_array_start->value);
   define(DT_VERSYM, out::versym->shdr.sh_addr);
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
@@ -413,8 +415,9 @@ OutputSection::get_instance(std::string_view name, u64 type, u64 flags) {
     return nullptr;
   };
 
-  // Search for an exiting output section.
   static std::shared_mutex mu;
+
+  // Search for an exiting output section.
   {
     std::shared_lock lock(mu);
     if (OutputSection *osec = find())
@@ -729,7 +732,9 @@ void GnuHashSection::copy_buf() {
   *(u32 *)(base + 8) = num_bloom;
   *(u32 *)(base + 12) = BLOOM_SHIFT;
 
-  std::span<Symbol *> symbols = std::span(out::dynsym->symbols).subspan(symoffset);
+  std::span<Symbol *> symbols =
+    std::span(out::dynsym->symbols).subspan(symoffset);
+
   std::vector<u32> hashes(symbols.size());
   for (i64 i = 0; i < symbols.size(); i++)
     hashes[i] = gnu_hash(symbols[i]->name);
@@ -761,7 +766,7 @@ void GnuHashSection::copy_buf() {
     if (is_last)
       table[i] = hashes[i] | 1;
     else
-      table[i] = hashes[i] & ~(u32)1;
+      table[i] = hashes[i] & ~1;
   }
 }
 
@@ -947,7 +952,8 @@ void EhFrameSection::copy_buf() {
 
     Entry *entry = nullptr;
     if (out::eh_frame_hdr)
-      entry = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE) + cie->fde_idx;
+      entry = (Entry *)(hdr_base + out::eh_frame_hdr->HEADER_SIZE) +
+              cie->fde_idx;
 
     // Copy a CIE.
     if (cie->offset == cie->leader_offset) {
@@ -980,7 +986,8 @@ void EhFrameSection::copy_buf() {
         if (out::eh_frame_hdr && i == 0) {
           assert(rel.offset == 8);
           entry->init_addr = val - out::eh_frame_hdr->shdr.sh_addr;
-          entry->fde_addr = shdr.sh_addr + fde_off - out::eh_frame_hdr->shdr.sh_addr;
+          entry->fde_addr =
+            shdr.sh_addr + fde_off - out::eh_frame_hdr->shdr.sh_addr;
           entry++;
         }
       }
@@ -994,7 +1001,8 @@ void EhFrameSection::copy_buf() {
     hdr_base[2] = DW_EH_PE_udata4;
     hdr_base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
 
-    *(u32 *)(hdr_base + 4) = shdr.sh_addr - out::eh_frame_hdr->shdr.sh_addr - 4;
+    *(u32 *)(hdr_base + 4) =
+      shdr.sh_addr - out::eh_frame_hdr->shdr.sh_addr - 4;
     *(u32 *)(hdr_base + 8) = num_fdes;
 
     // Sort .eh_frame_hdr contents
