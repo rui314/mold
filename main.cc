@@ -55,12 +55,16 @@ static ObjectFile *new_object_file(MemoryMappedFile *mb,
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
   ctx.tg.run([=]() { file->parse(); });
+  if (config.trace)
+    SyncOut() << "trace: " << *file;
   return file;
 }
 
 static SharedFile *new_shared_file(MemoryMappedFile *mb, ReadContext &ctx) {
   SharedFile *file = new SharedFile(mb, ctx.as_needed);
   ctx.tg.run([=]() { file->parse(); });
+  if (config.trace)
+    SyncOut() << "trace: " << *file;
   return file;
 }
 
@@ -1056,13 +1060,6 @@ int main(int argc, char **argv) {
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_obj_symbols();
-
-  if (config.trace) {
-    for (ObjectFile *file : out::objs)
-      SyncOut() << *file;
-    for (SharedFile *file : out::dsos)
-      SyncOut() << *file;
-  }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats();

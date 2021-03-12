@@ -614,7 +614,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
 
     if (sym.traced) {
       bool is_weak = (esym.st_bind == STB_WEAK);
-      SyncOut() << "trace: " << *sym.file
+      SyncOut() << "trace-symbol: " << *sym.file
                 << (is_weak ? ": weak definition of " : ": definition of ")
                 << sym;
     }
@@ -661,7 +661,8 @@ void ObjectFile::resolve_lazy_symbols() {
       sym.is_lazy = true;
 
       if (sym.traced)
-        SyncOut() << "trace: " << *sym.file << ": lazy definition of " << sym;
+        SyncOut() << "trace-symbol: " << *sym.file
+                  << ": lazy definition of " << sym;
     }
   }
 }
@@ -696,7 +697,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
     bool is_weak = (esym.st_bind == STB_WEAK);
 
     if (sym.traced) {
-      SyncOut() << "trace: " <<  *this
+      SyncOut() << "trace-symbol: " << *this
                 << (is_weak ? ": reference to " : ": weak reference to ")
                 << sym;
     }
@@ -704,7 +705,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
     if (!is_weak && sym.file && !sym.file->is_alive.exchange(true)) {
       feeder((ObjectFile *)sym.file);
       if (sym.traced)
-        SyncOut() << "trace: " << *this << " keeps " << *sym.file
+        SyncOut() << "trace-symbol: " << *this << " keeps " << *sym.file
                   << " for " << sym;
     }
   }
@@ -731,8 +732,8 @@ void ObjectFile::handle_undefined_weak_symbols() {
         sym.is_lazy = false;
 
         if (sym.traced)
-          SyncOut() << "trace: " << *this << ": unresolved weak symbol "
-                    << sym;
+          SyncOut() << "trace-symbol: " << *this
+                    << ": unresolved weak symbol " << sym;
       }
     }
   }
@@ -1099,7 +1100,8 @@ void SharedFile::resolve_symbols() {
       sym.is_exported = false;
 
       if (sym.traced)
-        SyncOut() << "trace: " << *sym.file << ": definition of " << sym;
+        SyncOut() << "trace-symbol: " << *sym.file << ": definition of "
+                  << sym;
     }
   }
 }
