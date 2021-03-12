@@ -92,7 +92,7 @@ struct Config {
   std::vector<std::pair<std::string_view, i16>> version_patterns;
   i64 filler = -1;
   i64 thread_count = -1;
-  std::string dynamic_linker = "/lib64/ld-linux-x86-64.so.2";
+  std::string dynamic_linker;
   std::string entry = "_start";
   std::string fini = "_fini";
   std::string init = "_init";

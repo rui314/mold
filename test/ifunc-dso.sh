@@ -43,19 +43,7 @@ resolve_foobar:
   .string "Hello world\n"
 EOF
 
-../mold -o $t/exe /usr/lib/x86_64-linux-gnu/crt1.o \
-  /usr/lib/x86_64-linux-gnu/crti.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
-  $t/a.o \
-  $t/b.so \
-  /usr/lib/gcc/x86_64-linux-gnu/9/libgcc.a \
-  /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
-  /lib/x86_64-linux-gnu/libc.so.6 \
-  /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
-  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o
-
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.so
 $t/exe | grep -q 'Hello world'
 
 echo OK

@@ -20,7 +20,9 @@ msg:
   .string "Hello world\n"
 EOF
 
-../mold -o $t/exe /usr/lib/x86_64-linux-gnu/crt1.o \
+../mold -o $t/exe \
+  -dynamic-linker=/lib64/ld-linux-x86-64.so.2 \
+  /usr/lib/x86_64-linux-gnu/crt1.o \
   /usr/lib/x86_64-linux-gnu/crti.o \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
   $t/a.o \

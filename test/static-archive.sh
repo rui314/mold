@@ -27,17 +27,7 @@ EOF
 rm -f $t/d.a
 (cd $t; ar rcs d.a long-long-long-filename.o b.o)
 
-../mold --trace -o $t/exe /usr/lib/x86_64-linux-gnu/crt1.o \
-  /usr/lib/x86_64-linux-gnu/crti.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
-  $t/c.o $t/d.a \
-  /usr/lib/gcc/x86_64-linux-gnu/9/libgcc.a \
-  /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
-  /lib/x86_64-linux-gnu/libc.so.6 \
-  /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
-  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o > $t/log
+clang -fuse-ld=`pwd`/../mold -Wl,--trace -o $t/exe $t/c.o $t/d.a > $t/log
 
 fgrep -q 'static-archive/d.a(long-long-long-filename.o)' $t/log
 fgrep -q 'static-archive/d.a(b.o)' $t/log
