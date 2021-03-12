@@ -593,7 +593,7 @@ void RelPltSection::copy_buf() {
 
     if (sym->get_type() == STT_GNU_IFUNC) {
       rel.r_type = R_X86_64_IRELATIVE;
-      rel.r_addend = sym->get_addr();
+      rel.r_addend = sym->input_section->get_addr() + sym->value;
     } else {
       rel.r_type = R_X86_64_JUMP_SLOT;
     }

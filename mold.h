@@ -1321,6 +1321,9 @@ inline u64 Symbol::get_addr() const {
       : out::copyrel->shdr.sh_addr + value;
   }
 
+  if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
+    return get_plt_addr();
+
   if (input_section) {
     if (input_section->is_ehframe)
       return out::eh_frame->get_addr(*this);
@@ -1339,7 +1342,6 @@ inline u64 Symbol::get_addr() const {
 
   if (plt_idx != -1)
     return get_plt_addr();
-
   return value;
 }
 

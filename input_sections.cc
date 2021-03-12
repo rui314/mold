@@ -227,8 +227,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       write_val(rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->frag->get_addr() \
-             : (sym.plt_idx == -1 ? sym.get_addr() : sym.get_plt_addr()))
+#define S   (ref ? ref->frag->get_addr() : sym.get_addr())
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
