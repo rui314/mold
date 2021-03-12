@@ -214,7 +214,7 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.Bsymbolic_functions = true;
     } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
       config.entry = arg;
-    } else if (read_flag(args, "print-map")) {
+    } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
       config.print_map = true;
     } else if (read_flag(args, "static")) {
       config.is_static = true;
