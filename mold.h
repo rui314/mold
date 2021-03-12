@@ -19,6 +19,7 @@
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/task_group.h>
 #include <vector>
 
 typedef uint8_t u8;
@@ -44,6 +45,7 @@ class MergedSection;
 class ObjectFile;
 class OutputChunk;
 class OutputSection;
+class ReadContext;
 class SharedFile;
 class Symbol;
 
@@ -918,6 +920,9 @@ public:
   InputFile(MemoryMappedFile *mb);
   InputFile() : name("<internal>") {}
 
+  std::string_view get_string(const ElfShdr &shdr);
+  std::string_view get_string(i64 idx);
+
   MemoryMappedFile *mb;
   std::span<ElfShdr> elf_sections;
   std::vector<Symbol *> symbols;
@@ -926,9 +931,6 @@ public:
   bool is_dso = false;
   u32 priority;
   std::atomic_bool is_alive = false;
-
-  std::string_view get_string(const ElfShdr &shdr);
-  std::string_view get_string(i64 idx);
 
 protected:
   template<typename T> std::span<T> get_data(const ElfShdr &shdr);
@@ -1039,11 +1041,6 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 //
 // linker_script.cc
 //
-
-struct ReadContext {
-  bool as_needed = false;
-  bool whole_archive = false;
-};
 
 void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx);
 void parse_version_script(std::string path);
@@ -1181,6 +1178,18 @@ void parse_nonpositional_args(std::span<std::string_view> args,
 //
 // main.cc
 //
+
+class ReadContext {
+public:
+  ReadContext(bool x) : is_preloading(x) {}
+
+  std::function<void(InputFile *)> parse;
+
+  bool as_needed = false;
+  bool whole_archive = false;
+  bool is_preloading = false;
+  tbb::task_group tg;
+};
 
 MemoryMappedFile *find_library(std::string path,
                                std::span<std::string_view> lib_paths);

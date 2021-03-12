@@ -106,9 +106,10 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
-      ReadContext ctx2 = ctx;
-      ctx2.as_needed = true;
-      tok = read_group(tok.subspan(1), ctx2);
+      bool orig = ctx.as_needed;
+      ctx.as_needed = true;
+      tok = read_group(tok.subspan(1), ctx);
+      ctx.as_needed = orig;
       continue;
     }
 

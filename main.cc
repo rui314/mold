@@ -6,11 +6,7 @@
 #include <tbb/global_control.h>
 #include <tbb/parallel_do.h>
 #include <tbb/parallel_for_each.h>
-#include <tbb/task_group.h>
 #include <unordered_set>
-
-static tbb::task_group parser_tg;
-static bool preloading;
 
 i64 BuildId::size() const {
   switch (kind) {
@@ -58,13 +54,13 @@ static ObjectFile *new_object_file(MemoryMappedFile *mb,
                                    ReadContext &ctx) {
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
-  parser_tg.run([=]() { file->parse(); });
+  ctx.tg.run([=]() { file->parse(); });
   return file;
 }
 
-static SharedFile *new_shared_file(MemoryMappedFile *mb, bool as_needed) {
-  SharedFile *file = new SharedFile(mb, as_needed);
-  parser_tg.run([=]() { file->parse(); });
+static SharedFile *new_shared_file(MemoryMappedFile *mb, ReadContext &ctx) {
+  SharedFile *file = new SharedFile(mb, ctx.as_needed);
+  ctx.tg.run([=]() { file->parse(); });
   return file;
 }
 
@@ -97,13 +93,13 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
   static FileCache<ObjectFile> obj_cache;
   static FileCache<SharedFile> dso_cache;
 
-  if (preloading) {
+  if (ctx.is_preloading) {
     switch (get_file_type(mb)) {
     case FileType::OBJ:
       obj_cache.store(mb, new_object_file(mb, "", ctx));
       return;
     case FileType::DSO:
-      dso_cache.store(mb, new_shared_file(mb, ctx.as_needed));
+      dso_cache.store(mb, new_shared_file(mb, ctx));
       return;
     case FileType::AR:
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
@@ -131,7 +127,7 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
     if (SharedFile *obj = dso_cache.get_one(mb))
       out::dsos.push_back(obj);
     else
-      out::dsos.push_back(new_shared_file(mb, ctx.as_needed));
+      out::dsos.push_back(new_shared_file(mb, ctx));
     return;
   case FileType::AR:
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
@@ -932,9 +928,8 @@ MemoryMappedFile *find_library(std::string name,
   Fatal() << "library not found: " << name;
 }
 
-static void read_input_files(std::span<std::string_view> args) {
-  ReadContext ctx;
-
+static void read_input_files(std::span<std::string_view> args,
+                             ReadContext &ctx) {
   while (!args.empty()) {
     std::string_view arg;
 
@@ -953,7 +948,6 @@ static void read_input_files(std::span<std::string_view> args) {
       args = args.subspan(1);
     }
   }
-  parser_tg.wait();
 }
 
 static void show_stats() {
@@ -1003,8 +997,11 @@ int main(int argc, char **argv) {
   if (config.preload) {
     std::function<void()> wait_for_client;
     daemonize(argv, &wait_for_client, &on_complete);
-    preloading = true;
-    read_input_files(file_args);
+
+    ReadContext ctx(true);
+    read_input_files(file_args, ctx);
+    ctx.tg.wait();
+
     wait_for_client();
   } else if (config.fork) {
     on_complete = fork_child();
@@ -1019,8 +1016,9 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     Timer t("parse");
-    preloading = false;
-    read_input_files(file_args);
+    ReadContext ctx(false);
+    read_input_files(file_args, ctx);
+    ctx.tg.wait();
   }
 
   // Uniquify shared object files with soname
