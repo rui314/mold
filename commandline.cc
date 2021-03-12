@@ -202,8 +202,11 @@ void parse_nonpositional_args(std::span<std::string_view> args,
 
     if (read_arg(args, arg, "o")) {
       config.output = arg;
-    } else if (read_arg(args, arg, "dynamic-linker")) {
+    } else if (read_arg(args, arg, "dynamic-linker") ||
+               read_arg(args, arg, "I")) {
       config.dynamic_linker = arg;
+    } else if (read_arg(args, arg, "no-dynamic-linker")) {
+      config.dynamic_linker = "";
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       config.export_dynamic = true;
     } else if (read_flag(args, "no-export-dynamic")) {
