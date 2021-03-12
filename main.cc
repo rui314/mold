@@ -198,8 +198,8 @@ static void create_synthetic_sections() {
   out::dynsym = new DynsymSection;
   out::dynstr = new DynstrSection;
   out::eh_frame = new EhFrameSection;
-  out::copyrel = new CopyrelSection(".bss");
-  out::copyrel_relro = new CopyrelSection(".bss.rel.ro");
+  out::copyrel = new CopyrelSection(".dynbss");
+  out::copyrel_relro = new CopyrelSection(".dynbss.rel.ro");
 
   if (config.build_id.kind != BuildId::NONE)
     out::buildid = new BuildIdSection;

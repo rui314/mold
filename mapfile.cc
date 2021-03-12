@@ -9,7 +9,8 @@ void print_map() {
   std::unordered_map<InputSection *, std::vector<Symbol *>> map;
   for (ObjectFile *file : out::objs)
     for (Symbol *sym : file->symbols)
-      if (sym->file == file && sym->input_section)
+      if (sym->file == file && sym->input_section &&
+          sym->get_type() != STT_SECTION)
         map[sym->input_section].push_back(sym);
 
   for (auto &pair : map) {
@@ -41,7 +42,7 @@ void print_map() {
       for (Symbol *sym : syms)
         std::cout << std::setw(16) << sym->get_addr()
                   << "        0     0                 "
-                  << sym << "\n";
+                  << *sym << "\n";
     }
   }
 }
