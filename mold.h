@@ -300,7 +300,7 @@ public:
   u8 write_to_symtab : 1 = false;
   u8 traced : 1 = false;
   u8 has_copyrel : 1 = false;
-  u8 is_readonly : 1 = false;
+  u8 copyrel_readonly : 1 = false;
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 };
@@ -1316,7 +1316,7 @@ inline u64 Symbol::get_addr() const {
   }
 
   if (has_copyrel) {
-    return is_readonly
+    return copyrel_readonly
       ? out::copyrel_relro->shdr.sh_addr + value
       : out::copyrel->shdr.sh_addr + value;
   }

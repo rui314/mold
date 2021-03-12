@@ -526,9 +526,9 @@ static void scan_rels() {
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
       SharedFile *file = (SharedFile *)sym->file;
-      sym->is_readonly = file->is_readonly(sym);
+      sym->copyrel_readonly = file->is_readonly(sym);
 
-      if (sym->is_readonly)
+      if (sym->copyrel_readonly)
         out::copyrel_relro->add_symbol(sym);
       else
         out::copyrel->add_symbol(sym);
@@ -536,7 +536,7 @@ static void scan_rels() {
       for (Symbol *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;
         alias->value = sym->value;
-        alias->is_readonly = sym->is_readonly;
+        alias->copyrel_readonly = sym->copyrel_readonly;
         out::dynsym->add_symbol(alias);
       }
     }

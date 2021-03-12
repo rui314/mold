@@ -657,8 +657,8 @@ void DynsymSection::copy_buf() {
     esym.st_size = sym.esym->st_size;
 
     if (sym.has_copyrel) {
-      esym.st_shndx =
-        sym.is_readonly ? out::copyrel_relro->shndx : out::copyrel->shndx;
+      esym.st_shndx = sym.copyrel_readonly
+        ? out::copyrel_relro->shndx : out::copyrel->shndx;
       esym.st_value = sym.get_addr();
     } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
