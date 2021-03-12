@@ -86,6 +86,7 @@ struct Config {
   bool shared = false;
   bool strip_all = false;
   bool trace = false;
+  bool z_execstack = false;
   bool z_now = false;
   i16 default_version = VER_NDX_GLOBAL;
   std::vector<std::string_view> version_definitions;

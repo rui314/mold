@@ -151,11 +151,13 @@ std::vector<ElfPhdr> create_phdr() {
     define(PT_GNU_EH_FRAME, PF_R, 1, out::eh_frame_hdr);
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
-  // contain any segments. If exists, the runtime turn on the No Exeecute
-  // bit for stack pages.
+  // contain any segments. It controls executable bit of stack area.
   vec.push_back({});
   vec.back().p_type = PT_GNU_STACK;
-  vec.back().p_flags = PF_R | PF_W;
+  if (config.z_execstack)
+    vec.back().p_flags = PF_R | PF_W | PF_X;
+  else
+    vec.back().p_flags = PF_R | PF_W;
 
   return vec;
 }
