@@ -282,6 +282,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.z_execstack = true;
     } else if (read_z_flag(args, "noexecstack")) {
       config.z_execstack = false;
+    } else if (read_z_flag(args, "relro")) {
+      config.z_relro = true;
+    } else if (read_z_flag(args, "norelro")) {
+      config.z_relro = false;
     } else if (read_flag(args, "fork")) {
       config.fork = true;
     } else if (read_flag(args, "no-fork")) {

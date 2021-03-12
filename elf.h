@@ -93,6 +93,7 @@ static constexpr u32 PT_PHDR = 6;
 static constexpr u32 PT_TLS = 7;
 static constexpr u32 PT_GNU_EH_FRAME = 0x6474e550;
 static constexpr u32 PT_GNU_STACK = 0x6474e551;
+static constexpr u32 PT_GNU_RELRO = 0x6474e552;
 
 static constexpr u32 PF_X = 1;
 static constexpr u32 PF_W = 2;

@@ -773,18 +773,22 @@ static void clear_padding(i64 filesize) {
 // alloc readonly code
 // alloc writable tdata
 // alloc writable tbss
-// alloc writable data
+// alloc writable data (RELRO)
+// alloc writable data (non-RELRO)
 // alloc writable bss
 // nonalloc
-static i64 get_section_rank(const ElfShdr &shdr) {
-  bool note = shdr.sh_type == SHT_NOTE;
-  bool alloc = shdr.sh_flags & SHF_ALLOC;
-  bool writable = shdr.sh_flags & SHF_WRITE;
-  bool exec = shdr.sh_flags & SHF_EXECINSTR;
-  bool tls = shdr.sh_flags & SHF_TLS;
-  bool nobits = shdr.sh_type == SHT_NOBITS;
-  return (!note << 6) | (!alloc << 5) | (writable << 4) |
-         (exec << 3) | (!tls << 2) | nobits;
+static i64 get_section_rank(OutputChunk *chunk) {
+  const ElfShdr &shdr = chunk->shdr;
+  bool note = (shdr.sh_type == SHT_NOTE);
+  bool alloc = (shdr.sh_flags & SHF_ALLOC);
+  bool writable = (shdr.sh_flags & SHF_WRITE);
+  bool exec = (shdr.sh_flags & SHF_EXECINSTR);
+  bool tls = (shdr.sh_flags & SHF_TLS);
+  bool relro = is_relro(chunk);
+  bool nobits = (shdr.sh_type == SHT_NOBITS);
+
+  return (!note << 7) | (!alloc << 6) | (writable << 5) |
+         (exec << 4) | (!tls << 3) | (!relro << 2) | nobits;
 }
 
 static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
@@ -1122,7 +1126,7 @@ int main(int argc, char **argv) {
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
   sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
-    return get_section_rank(a->shdr) < get_section_rank(b->shdr);
+    return get_section_rank(a) < get_section_rank(b);
   });
 
   // Create a dummy file containing linker-synthesized symbols

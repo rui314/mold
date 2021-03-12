@@ -56,6 +56,18 @@ static i64 to_phdr_flags(OutputChunk *chunk) {
   return ret;
 }
 
+bool is_relro(OutputChunk *chunk) {
+  u64 flags = chunk->shdr.sh_flags;
+  u64 type = chunk->shdr.sh_type;
+  std::string_view name = chunk->name;
+
+  bool match = (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
+               type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
+               name.ends_with(".rel.ro") || name == ".got";
+
+  return (flags & SHF_WRITE) && match;
+}
+
 std::vector<ElfPhdr> create_phdr() {
   std::vector<ElfPhdr> vec;
 
@@ -140,6 +152,19 @@ std::vector<ElfPhdr> create_phdr() {
     i++;
     while (i < out::chunks.size() && (out::chunks[i]->shdr.sh_flags & SHF_TLS))
       append(out::chunks[i++]);
+  }
+
+  // Create a PT_GNU_RELRO.
+  if (config.z_relro) {
+    for (i64 i = 0; i < out::chunks.size(); i++) {
+      if (!is_relro(out::chunks[i]))
+        continue;
+
+      define(PT_GNU_RELRO, PF_R, 1, out::chunks[i]);
+      i++;
+      while (i < out::chunks.size() && is_relro(out::chunks[i]))
+        append(out::chunks[i++]);
+    }
   }
 
   // Add PT_DYNAMIC
