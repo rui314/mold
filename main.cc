@@ -934,6 +934,8 @@ MemoryMappedFile *find_library(std::string name,
 
 static void read_input_files(std::span<std::string_view> args,
                              ReadContext &ctx) {
+  std::vector<std::tuple<bool, bool>> state;
+
   while (!args.empty()) {
     std::string_view arg;
 
@@ -945,6 +947,13 @@ static void read_input_files(std::span<std::string_view> args,
       ctx.whole_archive = true;
     } else if (read_flag(args, "no-whole-archive")) {
       ctx.whole_archive = false;
+    } else if (read_flag(args, "push-state")) {
+      state.push_back({ctx.as_needed, ctx.whole_archive});
+    } else if (read_flag(args, "pop-state")) {
+      if (state.empty())
+        Fatal() << "no state pushed before popping";
+      std::tie(ctx.as_needed, ctx.whole_archive) = state.back();
+      state.pop_back();
     } else if (read_arg(args, arg, "l")) {
       read_file(find_library(std::string(arg), config.library_paths), ctx);
     } else {
