@@ -264,7 +264,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "pie") || read_flag(args, "pic-executable")) {
       config.pic = true;
       config.pie = true;
-    } else if (read_flag(args, "no-pie") || read_flag(args, "no-pic-executable")) {
+    } else if (read_flag(args, "no-pie") ||
+               read_flag(args, "no-pic-executable")) {
       config.pic = false;
       config.pie = false;
     } else if (read_flag(args, "relax")) {
