@@ -823,12 +823,14 @@ void ObjectFile::convert_common_symbols() {
     if (sym->file != this)
       continue;
 
+    assert(sym->esym->st_value);
+
     auto *shdr = new ElfShdr;
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
     shdr->sh_size = elf_syms[i].st_size;
-    shdr->sh_addralign = 1;
+    shdr->sh_addralign = sym->esym->st_value;
 
     InputSection *isec =
       InputSection::create(*this, shdr, ".bss", sections.size());

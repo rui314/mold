@@ -7,6 +7,8 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
+typedef tbb::parallel_do_feeder<InputSection *> Feeder;
+
 static bool is_init_fini(const InputSection &isec) {
   return isec.shdr.sh_type == SHT_INIT_ARRAY ||
          isec.shdr.sh_type == SHT_FINI_ARRAY ||
@@ -21,9 +23,7 @@ static bool mark_section(InputSection *isec) {
   return isec && isec->is_alive && !isec->is_visited.exchange(true);
 }
 
-static void visit(InputSection *isec,
-                  tbb::parallel_do_feeder<InputSection *> &feeder,
-                  i64 depth) {
+static void visit(InputSection *isec, Feeder &feeder, i64 depth) {
   assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
@@ -121,8 +121,8 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
 // Mark all reachable sections
 static void mark(tbb::concurrent_vector<InputSection *> roots) {
   Timer t("mark");
-  tbb::parallel_do(roots, [&](InputSection *isec,
-                              tbb::parallel_do_feeder<InputSection *> &feeder) {
+
+  tbb::parallel_do(roots, [&](InputSection *isec, Feeder &feeder) {
     visit(isec, feeder, 0);
   });
 }

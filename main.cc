@@ -350,8 +350,8 @@ static void convert_common_symbols() {
   });
 }
 
-static void handle_mergeable_strings() {
-  Timer t("handle_mergeable_strings");
+static void compute_merged_section_sizes() {
+  Timer t("compute_merged_section_sizes");
 
   // Add an identification string to .comment.
   const char *verstr = "mold linker";
@@ -1128,8 +1128,8 @@ int main(int argc, char **argv) {
   if (config.icf)
     icf_sections();
 
-  // Merge string constants in SHF_MERGE sections.
-  handle_mergeable_strings();
+  // Compute sizes of sections containing mergeable strings.
+  compute_merged_section_sizes();
 
   // Bin input sections into output sections
   bin_sections();
