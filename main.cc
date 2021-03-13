@@ -190,13 +190,18 @@ static void create_synthetic_sections() {
   out::ehdr = new OutputEhdr;
   out::shdr = new OutputShdr;
   out::phdr = new OutputPhdr;
-  out::got = new GotSection;
-  out::gotplt = new GotPltSection;
-  out::relplt = new RelPltSection;
-  out::strtab = new StrtabSection;
-  out::shstrtab = new ShstrtabSection;
-  out::plt = new PltSection;
-  out::pltgot = new PltGotSection;
+
+  auto add = [](OutputChunk *chunk) {
+    out::chunks.push_back(chunk);
+  };
+
+  add(out::got = new GotSection);
+  add(out::gotplt = new GotPltSection);
+  add(out::relplt = new RelPltSection);
+  add(out::strtab = new StrtabSection);
+  add(out::shstrtab = new ShstrtabSection);
+  add(out::plt = new PltSection);
+  add(out::pltgot = new PltGotSection);
   if (!config.strip_all)
     out::symtab = new SymtabSection;
   out::dynsym = new DynsymSection;
@@ -226,33 +231,26 @@ static void create_synthetic_sections() {
   if (!config.version_definitions.empty())
     out::verdef = new VerdefSection;
 
-  auto add = [](OutputChunk *chunk) {
+  auto add2 = [](OutputChunk *chunk) {
     if (chunk)
       out::chunks.push_back(chunk);
   };
 
-  add(out::got);
-  add(out::plt);
-  add(out::gotplt);
-  add(out::pltgot);
-  add(out::relplt);
-  add(out::reldyn);
-  add(out::dynamic);
-  add(out::dynsym);
-  add(out::dynstr);
-  add(out::shstrtab);
-  add(out::symtab);
-  add(out::strtab);
-  add(out::hash);
-  add(out::gnu_hash);
-  add(out::eh_frame_hdr);
-  add(out::eh_frame);
-  add(out::copyrel);
-  add(out::copyrel_relro);
-  add(out::versym);
-  add(out::verneed);
-  add(out::verdef);
-  add(out::buildid);
+  add2(out::reldyn);
+  add2(out::dynamic);
+  add2(out::dynsym);
+  add2(out::dynstr);
+  add2(out::symtab);
+  add2(out::hash);
+  add2(out::gnu_hash);
+  add2(out::eh_frame_hdr);
+  add2(out::eh_frame);
+  add2(out::copyrel);
+  add2(out::copyrel_relro);
+  add2(out::versym);
+  add2(out::verneed);
+  add2(out::verdef);
+  add2(out::buildid);
 }
 
 static void set_file_priority() {
