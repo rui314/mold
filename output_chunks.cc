@@ -79,7 +79,8 @@ std::vector<ElfPhdr> create_phdr() {
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
     phdr.p_offset = chunk->shdr.sh_offset;
-    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
+    phdr.p_filesz =
+      (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_paddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
@@ -98,7 +99,8 @@ std::vector<ElfPhdr> create_phdr() {
   };
 
   auto is_bss = [](OutputChunk *chunk) {
-    return chunk->shdr.sh_type == SHT_NOBITS && !(chunk->shdr.sh_flags & SHF_TLS);
+    return chunk->shdr.sh_type == SHT_NOBITS &&
+           !(chunk->shdr.sh_flags & SHF_TLS);
   };
 
   // Create a PT_PHDR for the program header itself.
@@ -328,7 +330,9 @@ void SymtabSection::copy_buf() {
   memset(out::buf + shdr.sh_offset, 0, sizeof(ElfSym));
   out::buf[out::strtab->shdr.sh_offset] = '\0';
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) { file->write_symtab(); });
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    file->write_symtab();
+  });
 }
 
 static std::vector<u64> create_dynamic_section() {
