@@ -187,10 +187,6 @@ static void apply_exclude_libs() {
 }
 
 static void create_synthetic_sections() {
-  out::ehdr = new OutputEhdr;
-  out::shdr = new OutputShdr;
-  out::phdr = new OutputPhdr;
-
   auto add = [](OutputChunk *chunk) {
     out::chunks.push_back(chunk);
   };
@@ -203,54 +199,30 @@ static void create_synthetic_sections() {
   add(out::plt = new PltSection);
   add(out::pltgot = new PltGotSection);
   if (!config.strip_all)
-    out::symtab = new SymtabSection;
-  out::dynsym = new DynsymSection;
-  out::dynstr = new DynstrSection;
-  out::eh_frame = new EhFrameSection;
-  out::copyrel = new CopyrelSection(".dynbss");
-  out::copyrel_relro = new CopyrelSection(".dynbss.rel.ro");
+    add(out::symtab = new SymtabSection);
+  add(out::dynsym = new DynsymSection);
+  add(out::dynstr = new DynstrSection);
+  add(out::eh_frame = new EhFrameSection);
+  add(out::copyrel = new CopyrelSection(".dynbss"));
+  add(out::copyrel_relro = new CopyrelSection(".dynbss.rel.ro"));
 
   if (config.build_id.kind != BuildId::NONE)
-    out::buildid = new BuildIdSection;
+    add(out::buildid = new BuildIdSection);
   if (config.eh_frame_hdr)
-    out::eh_frame_hdr = new EhFrameHdrSection;
+    add(out::eh_frame_hdr = new EhFrameHdrSection);
   if (config.hash_style_sysv)
-    out::hash = new HashSection;
+    add(out::hash = new HashSection);
   if (config.hash_style_gnu)
-    out::gnu_hash = new GnuHashSection;
+    add(out::gnu_hash = new GnuHashSection);
+  if (!config.version_definitions.empty())
+    add(out::verdef = new VerdefSection);
 
   if (!config.is_static) {
-    if (!config.shared)
-      out::interp = new InterpSection;
-    out::dynamic = new DynamicSection;
-    out::reldyn = new RelDynSection;
-    out::versym = new VersymSection;
-    out::verneed = new VerneedSection;
+    add(out::dynamic = new DynamicSection);
+    add(out::reldyn = new RelDynSection);
+    add(out::versym = new VersymSection);
+    add(out::verneed = new VerneedSection);
   }
-
-  if (!config.version_definitions.empty())
-    out::verdef = new VerdefSection;
-
-  auto add2 = [](OutputChunk *chunk) {
-    if (chunk)
-      out::chunks.push_back(chunk);
-  };
-
-  add2(out::reldyn);
-  add2(out::dynamic);
-  add2(out::dynsym);
-  add2(out::dynstr);
-  add2(out::symtab);
-  add2(out::hash);
-  add2(out::gnu_hash);
-  add2(out::eh_frame_hdr);
-  add2(out::eh_frame);
-  add2(out::copyrel);
-  add2(out::copyrel_relro);
-  add2(out::versym);
-  add2(out::verneed);
-  add2(out::verdef);
-  add2(out::buildid);
 }
 
 static void set_file_priority() {
@@ -1194,11 +1166,14 @@ int main(int argc, char **argv) {
 
   // Add headers and sections that have to be at the beginning
   // or the ending of a file.
-  out::chunks.insert(out::chunks.begin(), out::ehdr);
-  out::chunks.insert(out::chunks.begin() + 1, out::phdr);
-  if (out::interp)
-    out::chunks.insert(out::chunks.begin() + 2, out::interp);
-  out::chunks.push_back(out::shdr);
+  out::chunks.insert(out::chunks.begin(), out::ehdr = new OutputEhdr);
+  out::chunks.insert(out::chunks.begin() + 1, out::phdr = new OutputPhdr);
+
+  if (!config.dynamic_linker.empty())
+    out::chunks.insert(out::chunks.begin() + 2,
+                       out::interp = new InterpSection);
+
+  out::chunks.push_back(out::shdr = new OutputShdr);
 
   // Apply version scripts.
   apply_version_script();
