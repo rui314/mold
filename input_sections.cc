@@ -576,8 +576,10 @@ void InputSection::scan_relocations() {
 }
 
 void InputSection::kill() {
-  is_alive = false;
-  for (FdeRecord &fde : fdes)
-    fde.is_alive = false;
-  file.sections[section_idx] = nullptr;
+  if (is_alive.exchange(false)) {
+    is_alive = false;
+    for (FdeRecord &fde : fdes)
+      fde.is_alive = false;
+    file.sections[section_idx] = nullptr;
+  }
 }

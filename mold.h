@@ -413,7 +413,7 @@ public:
   bool is_ehframe = false;
 
   // For COMDAT de-duplication and garbage collection
-  bool is_alive = true;
+  std::atomic_bool is_alive = true;
 
   // For garbage collection
   std::atomic_bool is_visited = false;
