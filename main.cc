@@ -226,30 +226,33 @@ static void create_synthetic_sections() {
   if (!config.version_definitions.empty())
     out::verdef = new VerdefSection;
 
-  out::chunks.push_back(out::got);
-  out::chunks.push_back(out::plt);
-  out::chunks.push_back(out::gotplt);
-  out::chunks.push_back(out::pltgot);
-  out::chunks.push_back(out::relplt);
-  out::chunks.push_back(out::reldyn);
-  out::chunks.push_back(out::dynamic);
-  out::chunks.push_back(out::dynsym);
-  out::chunks.push_back(out::dynstr);
-  out::chunks.push_back(out::shstrtab);
-  out::chunks.push_back(out::symtab);
-  out::chunks.push_back(out::strtab);
-  out::chunks.push_back(out::hash);
-  out::chunks.push_back(out::gnu_hash);
-  out::chunks.push_back(out::eh_frame_hdr);
-  out::chunks.push_back(out::eh_frame);
-  out::chunks.push_back(out::copyrel);
-  out::chunks.push_back(out::copyrel_relro);
-  out::chunks.push_back(out::versym);
-  out::chunks.push_back(out::verneed);
-  out::chunks.push_back(out::verdef);
-  out::chunks.push_back(out::buildid);
+  auto add = [](OutputChunk *chunk) {
+    if (chunk)
+      out::chunks.push_back(chunk);
+  };
 
-  erase(out::chunks, [](OutputChunk *c) { return !c; });
+  add(out::got);
+  add(out::plt);
+  add(out::gotplt);
+  add(out::pltgot);
+  add(out::relplt);
+  add(out::reldyn);
+  add(out::dynamic);
+  add(out::dynsym);
+  add(out::dynstr);
+  add(out::shstrtab);
+  add(out::symtab);
+  add(out::strtab);
+  add(out::hash);
+  add(out::gnu_hash);
+  add(out::eh_frame_hdr);
+  add(out::eh_frame);
+  add(out::copyrel);
+  add(out::copyrel_relro);
+  add(out::versym);
+  add(out::verneed);
+  add(out::verdef);
+  add(out::buildid);
 }
 
 static void set_file_priority() {
