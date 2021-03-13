@@ -290,7 +290,7 @@ static void resolve_obj_symbols() {
     if (!file->is_alive)
       for (Symbol *sym : file->get_global_syms())
         if (sym->file == file)
-          memcpy(sym, &null_sym, sizeof(*sym));
+          sym->clear();
   });
 
   // Eliminate unused archive members.
@@ -331,7 +331,7 @@ static void resolve_dso_symbols() {
     if (!file->is_alive)
       for (Symbol *sym : file->symbols)
         if (sym->file == file)
-          memcpy(sym, &null_sym, sizeof(*sym));
+          sym->clear();
   });
 
   // Remove unreferenced DSOs

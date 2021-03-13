@@ -279,6 +279,8 @@ public:
   inline u32 get_type() const;
   inline std::string_view get_version() const;
 
+  inline void clear();
+
   std::string_view name;
   InputFile *file = nullptr;
   const ElfSym *esym = nullptr;
@@ -1314,6 +1316,11 @@ inline std::string_view Symbol::get_version() const {
   if (file->is_dso)
     return ((SharedFile *)file)->version_strings[ver_idx];
   return "";
+}
+
+inline void Symbol::clear() {
+  Symbol null;
+  memcpy((char *)this, &null, sizeof(null));
 }
 
 inline u64 Symbol::get_addr() const {
