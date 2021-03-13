@@ -119,7 +119,7 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
 }
 
 // Mark all reachable sections
-static void mark(tbb::concurrent_vector<InputSection *> roots) {
+static void mark(tbb::concurrent_vector<InputSection *> &roots) {
   Timer t("mark");
 
   tbb::parallel_do(roots, [&](InputSection *isec, Feeder &feeder) {
