@@ -226,19 +226,22 @@ static Digest compute_digest(InputSection &isec) {
   auto hash_symbol = [&](Symbol &sym) {
     InputSection *isec = sym.input_section;
 
-    if (SectionFragment *frag = sym.frag) {
+    if (!sym.file) {
       hash('2');
+      hash((u64)&sym);
+    } else if (SectionFragment *frag = sym.frag) {
+      hash('3');
       hash_string(frag->data);
     } else if (!isec) {
-      hash('3');
-    } else if (isec->leader) {
       hash('4');
-      hash(isec->leader->get_priority());
-    } else if (isec->icf_eligible) {
+    } else if (isec->leader) {
       hash('5');
-    } else {
+      hash((u64)isec->leader);
+    } else if (isec->icf_eligible) {
       hash('6');
-      hash(isec->get_priority());
+    } else {
+      hash('7');
+      hash((u64)isec);
     }
     hash(sym.value);
   };
