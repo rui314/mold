@@ -227,20 +227,20 @@ static Digest compute_digest(InputSection &isec) {
     InputSection *isec = sym.input_section;
 
     if (!sym.file) {
-      hash('2');
+      hash('1');
       hash((u64)&sym);
     } else if (SectionFragment *frag = sym.frag) {
-      hash('3');
+      hash('2');
       hash_string(frag->data);
     } else if (!isec) {
-      hash('4');
+      hash('3');
     } else if (isec->leader) {
-      hash('5');
+      hash('4');
       hash((u64)isec->leader);
     } else if (isec->icf_eligible) {
-      hash('6');
+      hash('5');
     } else {
-      hash('7');
+      hash('6');
       hash((u64)isec);
     }
     hash(sym.value);
@@ -278,7 +278,7 @@ static Digest compute_digest(InputSection &isec) {
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef &ref = isec.rel_fragments[ref_idx++];
-      hash('1');
+      hash('a');
       hash(ref.addend);
       hash_string(ref.frag->data);
     } else {
