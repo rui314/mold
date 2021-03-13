@@ -93,7 +93,7 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   // Add sections containing exported symbols
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols)
-      if (sym->file == file)
+      if (sym->file == file && sym->is_imported)
         if (InputSection *sec = sym->input_section)
           if (sec->shdr.sh_flags & SHF_ALLOC)
             enqueue(sec);

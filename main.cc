@@ -1114,6 +1114,15 @@ int main(int argc, char **argv) {
   // Create .bss sections for common symbols.
   convert_common_symbols();
 
+  // Apply version scripts.
+  apply_version_script();
+
+  // Parse symbol version suffixes (e.g. "foo@ver1").
+  apply_symbol_version();
+
+  // Set is_import and is_export bits for each symbol.
+  compute_import_export();
+
   // Garbage-collect unreachable sections.
   if (config.gc_sections)
     gc_sections();
@@ -1187,15 +1196,6 @@ int main(int argc, char **argv) {
   // Copy DT_SONAME string to .dynstr.
   if (!config.soname.empty())
     out::dynstr->add_string(config.soname);
-
-  // Apply version scripts.
-  apply_version_script();
-
-  // Parse symbol version suffixes (e.g. "foo@ver1").
-  apply_symbol_version();
-
-  // Set is_import and is_export bits for each symbol.
-  compute_import_export();
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
