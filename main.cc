@@ -1173,7 +1173,7 @@ int main(int argc, char **argv) {
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
-  if (config.shared) {
+  if (config.shared && !config.z_defs) {
     Timer t("claim_unresolved_symbols");
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
       file->claim_unresolved_symbols();
