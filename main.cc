@@ -94,6 +94,9 @@ private:
 };
 
 void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
+  if (ctx.visited.contains(mb->name))
+    return;
+
   static FileCache<ObjectFile> obj_cache;
   static FileCache<SharedFile> dso_cache;
 
@@ -132,6 +135,7 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
       out::dsos.push_back(obj);
     else
       out::dsos.push_back(new_shared_file(mb, ctx));
+    ctx.visited.insert(mb->name);
     return;
   case FileType::AR:
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
@@ -140,6 +144,7 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
       for (MemoryMappedFile *child : read_archive_members(mb))
         out::objs.push_back(new_object_file(child, mb->name, ctx));
     }
+    ctx.visited.insert(mb->name);
     return;
   case FileType::THIN_AR:
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
@@ -148,6 +153,7 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
       else
         out::objs.push_back(new_object_file(child, mb->name, ctx));
     }
+    ctx.visited.insert(mb->name);
     return;
   case FileType::TEXT:
     parse_linker_script(mb, ctx);

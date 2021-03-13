@@ -20,6 +20,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
+#include <unordered_set>
 #include <vector>
 
 typedef uint8_t u8;
@@ -1195,6 +1196,7 @@ public:
   bool as_needed = false;
   bool whole_archive = false;
   bool is_preloading = false;
+  std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 };
 
