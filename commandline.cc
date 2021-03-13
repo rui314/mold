@@ -275,10 +275,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.relax = true;
     } else if (read_flag(args, "no-relax")) {
       config.relax = false;
-    } else if (read_flag(args, "print-perf")) {
-      config.print_perf = true;
-    } else if (read_flag(args, "print-stats")) {
-      config.print_stats = true;
+    } else if (read_flag(args, "perf")) {
+      config.perf = true;
+    } else if (read_flag(args, "stats")) {
+      config.stats = true;
       Counter::enabled = true;
     } else if (read_z_flag(args, "now")) {
       config.z_now = true;

@@ -1306,10 +1306,10 @@ int main(int argc, char **argv) {
     print_map();
 
   // Show stats numbers
-  if (config.print_stats)
+  if (config.stats)
     show_stats();
 
-  if (config.print_perf)
+  if (config.perf)
     Timer::print();
 
   std::cout << std::flush;
