@@ -444,6 +444,26 @@ static void check_duplicate_symbols() {
   Error::checkpoint();
 }
 
+std::vector<OutputChunk *> collect_output_sections() {
+  std::vector<OutputChunk *> vec;
+
+  for (OutputSection *osec : OutputSection::instances)
+    if (osec->shdr.sh_size)
+      vec.push_back(osec);
+  for (MergedSection *osec : MergedSection::instances)
+    if (osec->shdr.sh_size)
+      vec.push_back(osec);
+
+  // Sections are added to the section lists in an arbitrary order because
+  // they are created in parallel.
+  // Sort them to to make the output deterministic.
+  sort(vec, [](OutputChunk *x, OutputChunk *y) {
+    return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
+           std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
+  });
+  return vec;
+}
+
 static void set_isec_offsets() {
   Timer t("isec_offsets");
 
@@ -1109,32 +1129,11 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
-  // Now we've got a complete list of input files.
-  // Beyond this point, no new files would added to out::objs or out::dsos.
-
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
 
-  // Sections are added to the section lists in an arbitrary order because
-  // they are created in parallel.
-  // Sort them to to make the output deterministic.
-  {
-    auto section_compare = [](OutputChunk *x, OutputChunk *y) {
-      return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
-             std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
-    };
-
-    sort(OutputSection::instances, section_compare);
-    sort(MergedSection::instances, section_compare);
-  }
-
-  // Add sections to the section lists
-  for (OutputSection *osec : OutputSection::instances)
-    if (osec->shdr.sh_size)
-      out::chunks.push_back(osec);
-  for (MergedSection *osec : MergedSection::instances)
-    if (osec->shdr.sh_size)
-      out::chunks.push_back(osec);
+  // Get a list of output sections.
+  append(out::chunks, collect_output_sections());
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
@@ -1144,6 +1143,9 @@ int main(int argc, char **argv) {
 
   // Add symbols from shared object files.
   resolve_dso_symbols();
+
+  // Now we've got a complete list of input files.
+  // Beyond this point, no new files would added to out::objs or out::dsos.
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
