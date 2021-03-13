@@ -284,16 +284,17 @@ static void resolve_obj_symbols() {
                        [&](ObjectFile *obj) { feeder.add(obj); });
                    });
 
-  // Eliminate unused archive members.
-  erase(out::objs, [](InputFile *file) { return !file->is_alive; });
-
   // Remove symbols of eliminated objects.
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    Symbol null_sym;
     if (!file->is_alive)
       for (Symbol *sym : file->get_global_syms())
         if (sym->file == file)
-          sym = {};
+          memcpy(sym, &null_sym, sizeof(*sym));
   });
+
+  // Eliminate unused archive members.
+  erase(out::objs, [](InputFile *file) { return !file->is_alive; });
 }
 
 static void resolve_dso_symbols() {
@@ -324,16 +325,17 @@ static void resolve_dso_symbols() {
     }
   });
 
-  // Remove unreferenced DSOs
-  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
-
   // Remove symbols of unreferenced DSOs.
   tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+    Symbol null_sym;
     if (!file->is_alive)
       for (Symbol *sym : file->symbols)
         if (sym->file == file)
-          sym = {};
+          memcpy(sym, &null_sym, sizeof(*sym));
   });
+
+  // Remove unreferenced DSOs
+  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
 }
 
 static void eliminate_comdats() {

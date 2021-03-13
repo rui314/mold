@@ -722,7 +722,7 @@ void ObjectFile::convert_undefined_weak_symbols() {
       Symbol &sym = *symbols[i];
       std::lock_guard lock(sym.mu);
 
-      bool is_new = !sym.file || sym.is_lazy;
+      bool is_new = !sym.file;
       bool tie_but_higher_priority =
         !is_new && sym.is_undef_weak() && this->priority < sym.file->priority;
 
