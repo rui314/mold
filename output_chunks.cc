@@ -63,7 +63,8 @@ bool is_relro(OutputChunk *chunk) {
 
   bool match = (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
                type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-               name.ends_with(".rel.ro") || name == ".got";
+               chunk == out::got || chunk == out::dynamic ||
+               name.ends_with(".rel.ro");
 
   return (flags & SHF_WRITE) && match;
 }
