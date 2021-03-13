@@ -647,7 +647,7 @@ static void compute_import_export() {
 
         sym->is_exported = true;
 
-        if (sym->visibility != STV_PROTECTED &&
+        if (config.shared && sym->visibility != STV_PROTECTED &&
             !config.Bsymbolic &&
             !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
           sym->is_imported = true;
