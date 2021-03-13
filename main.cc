@@ -191,6 +191,9 @@ static void create_synthetic_sections() {
     out::chunks.push_back(chunk);
   };
 
+  add(out::ehdr = new OutputEhdr);
+  add(out::phdr = new OutputPhdr);
+  add(out::shdr = new OutputShdr);
   add(out::got = new GotSection);
   add(out::gotplt = new GotPltSection);
   add(out::relplt = new RelPltSection);
@@ -206,6 +209,8 @@ static void create_synthetic_sections() {
   add(out::copyrel = new CopyrelSection(".dynbss"));
   add(out::copyrel_relro = new CopyrelSection(".dynbss.rel.ro"));
 
+  if (!config.dynamic_linker.empty())
+    add(out::interp = new InterpSection);
   if (config.build_id.kind != BuildId::NONE)
     add(out::buildid = new BuildIdSection);
   if (config.eh_frame_hdr)
@@ -785,29 +790,48 @@ static void clear_padding(i64 filesize) {
   zero(out::chunks.back(), filesize);
 }
 
-// We want to sort output sections in the following order.
+// We want to sort output chunks in the following order.
 //
-// note
-// alloc readonly data
-// alloc readonly code
-// alloc writable tdata
-// alloc writable tbss
-// alloc writable data (RELRO)
-// alloc writable data (non-RELRO)
-// alloc writable bss
-// nonalloc
+//   ELF header
+//   program header
+//   .interp
+//   note
+//   alloc readonly data
+//   alloc readonly code
+//   alloc writable tdata
+//   alloc writable tbss
+//   alloc writable RELRO data
+//   alloc writable RELRO bss
+//   alloc writable non-RELRO data
+//   alloc writable non-RELRO bss
+//   nonalloc
+//   section header
 static i64 get_section_rank(OutputChunk *chunk) {
-  const ElfShdr &shdr = chunk->shdr;
-  bool note = (shdr.sh_type == SHT_NOTE);
-  bool alloc = (shdr.sh_flags & SHF_ALLOC);
-  bool writable = (shdr.sh_flags & SHF_WRITE);
-  bool exec = (shdr.sh_flags & SHF_EXECINSTR);
-  bool tls = (shdr.sh_flags & SHF_TLS);
-  bool relro = is_relro(chunk);
-  bool nobits = (shdr.sh_type == SHT_NOBITS);
+  if (chunk == out::ehdr)
+    return 0;
+  if (chunk == out::phdr)
+    return 1;
+  if (chunk == out::interp)
+    return 2;
+  if (chunk == out::shdr)
+    return 1 << 20;
 
-  return (!note << 7) | (!alloc << 6) | (writable << 5) |
-         (exec << 4) | (!tls << 3) | (!relro << 2) | nobits;
+  u64 type = chunk->shdr.sh_type;
+  u64 flags = chunk->shdr.sh_flags;
+
+  if (type == SHT_NOTE)
+    return 3;
+  if (!(flags & SHF_ALLOC))
+    return (1 << 20) - 1;
+
+  bool reaodnly = !(flags & SHF_WRITE);
+  bool exec = (flags & SHF_EXECINSTR);
+  bool tls = (flags & SHF_TLS);
+  bool relro = is_relro(chunk);
+  bool hasbits = !(type == SHT_NOBITS);
+
+  return ((!reaodnly << 9) | (exec << 8) | (!tls << 7) |
+          (!relro << 6) | (!hasbits << 5)) + 4;
 }
 
 static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
@@ -1116,15 +1140,15 @@ int main(int argc, char **argv) {
   // Add symbols from shared object files.
   resolve_dso_symbols();
 
-  // Now we've got a complete list of input files.
-  // Beyond this point, no new files would added to out::objs or out::dsos.
+  // Beyond this point, no new files will be added to out::objs
+  // or out::dsos.
 
   // Compute sizes of output sections while assigning offsets
   //within an output section to input sections.
   compute_section_sizes();
 
-  // Sort the sections by section flags so that we'll have to create
-  // as few segments as possible.
+  // Sort sections by section attributes so that we'll have to
+  // create as few segments as possible.
   sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
     return get_section_rank(a) < get_section_rank(b);
   });
@@ -1163,17 +1187,6 @@ int main(int argc, char **argv) {
   // Copy DT_SONAME string to .dynstr.
   if (!config.soname.empty())
     out::dynstr->add_string(config.soname);
-
-  // Add headers and sections that have to be at the beginning
-  // or the ending of a file.
-  out::chunks.insert(out::chunks.begin(), out::ehdr = new OutputEhdr);
-  out::chunks.insert(out::chunks.begin() + 1, out::phdr = new OutputPhdr);
-
-  if (!config.dynamic_linker.empty())
-    out::chunks.insert(out::chunks.begin() + 2,
-                       out::interp = new InterpSection);
-
-  out::chunks.push_back(out::shdr = new OutputShdr);
 
   // Apply version scripts.
   apply_version_script();
