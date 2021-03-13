@@ -1109,6 +1109,9 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
+  // Now we've got a complete list of input files.
+  // Beyond this point, no new files would added to out::objs or out::dsos.
+
   // Assign offsets within an output section to input sections.
   set_isec_offsets();
 
@@ -1133,12 +1136,6 @@ int main(int argc, char **argv) {
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
 
-  // Sort the sections by section flags so that we'll have to create
-  // as few segments as possible.
-  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
-    return get_section_rank(a) < get_section_rank(b);
-  });
-
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
   out::internal_obj = new ObjectFile;
@@ -1148,8 +1145,11 @@ int main(int argc, char **argv) {
   // Add symbols from shared object files.
   resolve_dso_symbols();
 
-  // Now we've got a complete list of input files.
-  // Beyond this point, no new files would added to out::objs or out::dsos.
+  // Sort the sections by section flags so that we'll have to create
+  // as few segments as possible.
+  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
+    return get_section_rank(a) < get_section_rank(b);
+  });
 
   // Convert weak symbols to absolute symbols with value 0.
   {
