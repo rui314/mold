@@ -250,6 +250,20 @@ static void create_synthetic_sections() {
   out::chunks.push_back(out::buildid);
 }
 
+static void set_file_priority() {
+  // File priority 1 is reserved for the internal file.
+  i64 priority = 2;
+
+  for (ObjectFile *file : out::objs)
+    if (!file->is_in_lib)
+      file->priority = priority++;
+  for (ObjectFile *file : out::objs)
+    if (file->is_in_lib)
+      file->priority = priority++;
+  for (SharedFile *file : out::dsos)
+    file->priority = priority++;
+}
+
 static void resolve_obj_symbols() {
   Timer t("resolve_obj_symbols");
 
@@ -345,6 +359,14 @@ static void eliminate_comdats() {
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->eliminate_duplicate_comdat_groups();
+  });
+}
+
+static void convert_common_symbols() {
+  Timer t("convert_common_symbols");
+
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    file->convert_common_symbols();
   });
 }
 
@@ -1054,21 +1076,12 @@ int main(int argc, char **argv) {
   Timer t_total("total");
   Timer t_before_copy("before_copy");
 
-  // Create instances of  linker-synthesized sections such as
+  // Create instances of linker-synthesized sections such as
   // .got or .plt.
   create_synthetic_sections();
 
   // Set priorities to files.
-  // File priority 1 is reserved for the internal file.
-  i64 priority = 2;
-  for (ObjectFile *file : out::objs)
-    if (!file->is_in_lib)
-      file->priority = priority++;
-  for (ObjectFile *file : out::objs)
-    if (file->is_in_lib)
-      file->priority = priority++;
-  for (SharedFile *file : out::dsos)
-    file->priority = priority++;
+  set_file_priority();
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
@@ -1078,12 +1091,7 @@ int main(int argc, char **argv) {
   eliminate_comdats();
 
   // Create .bss sections for common symbols.
-  {
-    Timer t("common");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-      file->convert_common_symbols();
-    });
-  }
+  convert_common_symbols();
 
   // Garbage-collect unreachable sections.
   if (config.gc_sections)
@@ -1105,13 +1113,15 @@ int main(int argc, char **argv) {
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel.
   // Sort them to to make the output deterministic.
-  auto section_compare = [](OutputChunk *x, OutputChunk *y) {
-    return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
-           std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
-  };
+  {
+    auto section_compare = [](OutputChunk *x, OutputChunk *y) {
+      return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
+             std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
+    };
 
-  sort(OutputSection::instances, section_compare);
-  sort(MergedSection::instances, section_compare);
+    sort(OutputSection::instances, section_compare);
+    sort(MergedSection::instances, section_compare);
+  }
 
   // Add sections to the section lists
   for (OutputSection *osec : OutputSection::instances)
@@ -1135,7 +1145,11 @@ int main(int argc, char **argv) {
   out::internal_obj->resolve_regular_symbols();
   out::objs.push_back(out::internal_obj);
 
+  // Add symbols from shared object files.
   resolve_dso_symbols();
+
+  // Now we've got a complete list of input files.
+  // Beyond this point, no new files would added to out::objs or out::dsos.
 
   // Convert weak symbols to absolute symbols with value 0.
   {

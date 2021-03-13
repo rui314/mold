@@ -854,6 +854,7 @@ void MergedSection::assign_offsets() {
 
   tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
     MapTy &map = maps[i];
+
     for (auto it = map.begin(); it != map.end(); it++)
       if (SectionFragment &frag = it->second; frag.is_alive)
         vec[i].push_back(&frag);
@@ -861,6 +862,8 @@ void MergedSection::assign_offsets() {
     // Sort section fragments to make an output deterministic.
     std::sort(vec[i].begin(), vec[i].end(),
               [&](SectionFragment *a, SectionFragment *b) {
+                if (a->alignment != b->alignment)
+                  return a->alignment > b->alignment;
                 if (a->data.size() != b->data.size())
                   return a->data.size() < b->data.size();
                 return a->data < b->data;
