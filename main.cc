@@ -248,6 +248,8 @@ static void create_synthetic_sections() {
   out::chunks.push_back(out::verneed);
   out::chunks.push_back(out::verdef);
   out::chunks.push_back(out::buildid);
+
+  erase(out::chunks, [](OutputChunk *c) { return !c; });
 }
 
 static void set_file_priority() {
@@ -1130,8 +1132,6 @@ int main(int argc, char **argv) {
   for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
       out::chunks.push_back(osec);
-
-  erase(out::chunks, [](OutputChunk *c) { return !c; });
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
