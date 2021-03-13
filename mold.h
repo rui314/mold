@@ -758,7 +758,7 @@ public:
 
 private:
   typedef tbb::concurrent_hash_map<std::string_view, SectionFragment> MapTy;
-  static constexpr i64 NUM_SHARDS = 32;
+  static constexpr i64 NUM_SHARDS = 64;
 
   MergedSection(std::string_view name, u64 flags, u32 type)
     : OutputChunk(SYNTHETIC) {
@@ -768,7 +768,7 @@ private:
   }
 
   MapTy maps[NUM_SHARDS];
-  std::vector<SectionFragment *> fragments;
+  i64 shard_offsets[NUM_SHARDS + 1] = {};
   std::atomic_uint16_t max_alignment;
 };
 

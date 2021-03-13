@@ -859,18 +859,17 @@ SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
 }
 
 void MergedSection::assign_offsets() {
-  // Collect live section fragments.
-  std::vector<std::vector<SectionFragment *>> vec(NUM_SHARDS);
+  i64 sizes[NUM_SHARDS] = {};
 
   tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
-    MapTy &map = maps[i];
+    std::vector<SectionFragment *> vec;
 
-    for (auto it = map.begin(); it != map.end(); it++)
+    for (auto it = maps[i].begin(); it != maps[i].end(); it++)
       if (SectionFragment &frag = it->second; frag.is_alive)
-        vec[i].push_back(&frag);
+        vec.push_back(&frag);
 
     // Sort section fragments to make an output deterministic.
-    std::sort(vec[i].begin(), vec[i].end(),
+    std::sort(vec.begin(), vec.end(),
               [&](SectionFragment *a, SectionFragment *b) {
                 if (a->alignment != b->alignment)
                   return a->alignment > b->alignment;
@@ -878,35 +877,44 @@ void MergedSection::assign_offsets() {
                   return a->data.size() < b->data.size();
                 return a->data < b->data;
               });
+
+    i64 offset = 0;
+    for (SectionFragment *frag : vec) {
+      offset = align_to(offset, frag->alignment);
+      frag->offset = offset;
+      offset += frag->data.size();
+    }
+
+    sizes[i] = offset;
+
+    static Counter merged_strings("merged_strings");
+    merged_strings += vec.size();
   });
 
-  fragments = flatten(vec);
+  for (i64 i = 1; i < NUM_SHARDS + 1; i++)
+    shard_offsets[i] =
+      align_to(shard_offsets[i - 1] + sizes[i - 1], max_alignment);
 
-  // Assign offsets.
-  i64 offset = 0;
-  for (SectionFragment *frag : fragments) {
-    offset = align_to(offset, frag->alignment);
-    frag->offset = offset;
-    offset += frag->data.size();
-    shdr.sh_addralign = std::max<i64>(shdr.sh_addralign, frag->alignment);
-  }
-  shdr.sh_size = offset;
+  tbb::parallel_for((i64)1, NUM_SHARDS, [&](i64 i) {
+    for (auto it = maps[i].begin(); it != maps[i].end(); it++)
+      if (SectionFragment &frag = it->second; frag.is_alive)
+        frag.offset += shard_offsets[i];
+  });
 
+  shdr.sh_size = shard_offsets[NUM_SHARDS];
   shdr.sh_addralign = max_alignment;
 }
 
 void MergedSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
-  i64 n = 0;
 
-  for (SectionFragment *frag : fragments) {
-    memset(base + n, 0, frag->offset - n);
-    memcpy(base + frag->offset, frag->data.data(), frag->data.size());
-    n = frag->offset + frag->data.size();
-  }
+  tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
+    memset(base + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
-  static Counter merged_strings("merged_strings");
-  merged_strings += fragments.size();
+    for (auto it = maps[i].begin(); it != maps[i].end(); it++)
+      if (SectionFragment &frag = it->second; frag.is_alive)
+        memcpy(base + frag.offset, frag.data.data(), frag.data.size());
+  });
 }
 
 void EhFrameSection::construct() {
