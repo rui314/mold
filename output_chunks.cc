@@ -833,6 +833,13 @@ MergedSection::get_instance(std::string_view name, u64 type, u64 flags) {
   return osec;
 }
 
+static void update_atomic_max(std::atomic_uint16_t &atom, i16 val) {
+  u16 cur = atom;
+  while (cur < val)
+    if (atom.compare_exchange_strong(cur, val))
+      break;
+}
+
 SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
   assert(alignment < UINT16_MAX);
 
@@ -846,10 +853,8 @@ SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
     maps[shard].insert(acc, std::pair(data, SectionFragment(this, data)));
   SectionFragment *frag = const_cast<SectionFragment *>(&acc->second);
 
-  u16 cur = frag->alignment;
-  while (cur < alignment)
-    if (frag->alignment.compare_exchange_strong(cur, alignment))
-      break;
+  update_atomic_max(frag->alignment, alignment);
+  update_atomic_max(max_alignment, alignment);
   return frag;
 }
 
@@ -886,6 +891,8 @@ void MergedSection::assign_offsets() {
     shdr.sh_addralign = std::max<i64>(shdr.sh_addralign, frag->alignment);
   }
   shdr.sh_size = offset;
+
+  shdr.sh_addralign = max_alignment;
 }
 
 void MergedSection::copy_buf() {

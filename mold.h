@@ -769,6 +769,7 @@ private:
 
   MapTy maps[NUM_SHARDS];
   std::vector<SectionFragment *> fragments;
+  std::atomic_uint16_t max_alignment;
 };
 
 class EhFrameSection : public OutputChunk {
