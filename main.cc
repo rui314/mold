@@ -1067,9 +1067,6 @@ int main(int argc, char **argv) {
     on_complete = fork_child();
   }
 
-  if (config.print_stats)
-    Counter::enabled = true;
-
   for (std::string_view arg : config.trace_symbol)
     Symbol::intern(arg)->traced = true;
 
