@@ -153,11 +153,14 @@ void ObjectFile::initialize_sections() {
     case SHT_NULL:
       break;
     default: {
+      std::string_view name = shstrtab.data() + shdr.sh_name;
+      if (name == ".note.gnu.property")
+        continue;
+
+      this->sections[i] = InputSection::create(*this, &shdr, name, i);
+
       static Counter counter("regular_sections");
       counter++;
-
-      std::string_view name = shstrtab.data() + shdr.sh_name;
-      this->sections[i] = InputSection::create(*this, &shdr, name, i);
       break;
     }
     }
@@ -711,7 +714,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
   }
 }
 
-void ObjectFile::handle_undefined_weak_symbols() {
+void ObjectFile::convert_undefined_weak_symbols() {
   for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
 

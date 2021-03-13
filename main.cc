@@ -486,6 +486,14 @@ static void compute_section_sizes() {
   });
 }
 
+static void convert_undefined_weak_symbols() {
+  Timer t("undef_weak");
+
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    file->convert_undefined_weak_symbols();
+  });
+}
+
 static void scan_rels() {
   Timer t("scan_rels");
 
@@ -1160,12 +1168,7 @@ int main(int argc, char **argv) {
   });
 
   // Convert weak symbols to absolute symbols with value 0.
-  {
-    Timer t("undef_weak");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
-      file->handle_undefined_weak_symbols();
-    });
-  }
+  convert_undefined_weak_symbols();
 
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they

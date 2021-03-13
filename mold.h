@@ -954,7 +954,7 @@ public:
   void resolve_lazy_symbols();
   void resolve_regular_symbols();
   void mark_live_objects(std::function<void(ObjectFile *)> feeder);
-  void handle_undefined_weak_symbols();
+  void convert_undefined_weak_symbols();
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
   void claim_unresolved_symbols();
