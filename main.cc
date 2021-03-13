@@ -448,7 +448,7 @@ std::vector<OutputChunk *> collect_output_sections() {
   std::vector<OutputChunk *> vec;
 
   for (OutputSection *osec : OutputSection::instances)
-    if (osec->shdr.sh_size)
+    if (!osec->members.empty())
       vec.push_back(osec);
   for (MergedSection *osec : MergedSection::instances)
     if (osec->shdr.sh_size)
@@ -464,14 +464,16 @@ std::vector<OutputChunk *> collect_output_sections() {
   return vec;
 }
 
-static void set_isec_offsets() {
+static void compute_section_sizes() {
   Timer t("isec_offsets");
 
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->members.empty())
       return;
 
-    std::vector<std::span<InputSection *>> slices = split(osec->members, 10000);
+    std::vector<std::span<InputSection *>> slices =
+      split(osec->members, 10000);
+
     std::vector<i64> size(slices.size());
     std::vector<i64> alignments(slices.size());
 
@@ -1129,9 +1131,6 @@ int main(int argc, char **argv) {
   // Bin input sections into output sections
   bin_sections();
 
-  // Assign offsets within an output section to input sections.
-  set_isec_offsets();
-
   // Get a list of output sections.
   append(out::chunks, collect_output_sections());
 
@@ -1146,6 +1145,10 @@ int main(int argc, char **argv) {
 
   // Now we've got a complete list of input files.
   // Beyond this point, no new files would added to out::objs or out::dsos.
+
+  // Compute sizes of output sections while assigning offsets
+  //within an output section to input sections.
+  compute_section_sizes();
 
   // Sort the sections by section flags so that we'll have to create
   // as few segments as possible.
