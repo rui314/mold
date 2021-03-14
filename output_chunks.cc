@@ -651,8 +651,21 @@ void DynsymSection::add_symbol(Symbol *sym) {
 void DynsymSection::sort_symbols() {
   Timer t("sort_dynsyms");
 
+  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
+    symbols[i]->dynsym_idx = i;
+  });
+
   // In any ELF file, local symbols should precede global symbols.
-  auto first_global = std::stable_partition(
+  tbb::parallel_sort(symbols.begin() + 1, symbols.end(),
+                     [](Symbol *a, Symbol *b) {
+    bool x = (a->esym->st_bind == STB_LOCAL);
+    bool y = (b->esym->st_bind == STB_LOCAL);
+    if (x == y)
+      return a->dynsym_idx < b->dynsym_idx;
+    return x;
+  });
+
+  auto first_global = std::partition_point(
     symbols.begin() + 1, symbols.end(),
     [](Symbol *sym) { return sym->esym->st_bind == STB_LOCAL; });
 
@@ -667,9 +680,11 @@ void DynsymSection::sort_symbols() {
     out::gnu_hash->num_buckets = num_globals / out::gnu_hash->LOAD_FACTOR + 1;
     out::gnu_hash->symoffset = first_global - symbols.begin();
 
-    std::stable_sort(first_global, symbols.end(), [&](Symbol *a, Symbol *b) {
+    tbb::parallel_sort(first_global, symbols.end(), [&](Symbol *a, Symbol *b) {
       i64 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
       i64 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
+      if (x == y)
+        return a->dynsym_idx < b->dynsym_idx;
       return x < y;
     });
   }
