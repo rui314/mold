@@ -649,6 +649,8 @@ void DynsymSection::add_symbol(Symbol *sym) {
 }
 
 void DynsymSection::sort_symbols() {
+  Timer t("sort_dynsyms");
+
   // In any ELF file, local symbols should precede global symbols.
   auto first_global = std::stable_partition(
     symbols.begin() + 1, symbols.end(),
