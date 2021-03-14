@@ -159,7 +159,7 @@ void ObjectFile::initialize_sections() {
       break;
     default: {
       std::string_view name = shstrtab.data() + shdr.sh_name;
-      if (name == ".note.gnu.property")
+      if (name == ".note.GNU-stack" || name == ".note.gnu.property")
         continue;
       if (config.strip_all && is_debug_section(shdr, name))
         continue;

@@ -509,21 +509,15 @@ public:
   static OutputSection *
   get_instance(std::string_view name, u64 type, u64 flags);
 
-  OutputSection(std::string_view name, u32 type, u64 flags)
-    : OutputChunk(REGULAR) {
-    this->name = name;
-    shdr.sh_type = type;
-    shdr.sh_flags = flags;
-    idx = instances.size();
-    instances.push_back(this);
-  }
-
   void copy_buf() override;
 
   static inline std::vector<OutputSection *> instances;
 
   std::vector<InputSection *> members;
   u32 idx;
+
+private:
+  OutputSection(std::string_view name, u32 type, u64 flags);
 };
 
 class GotSection : public OutputChunk {

@@ -1248,8 +1248,6 @@ int main(int argc, char **argv) {
   for (OutputChunk *chunk : out::chunks)
     chunk->update_shdr();
 
-  erase(out::chunks, [](OutputChunk *c) { return c->shdr.sh_size == 0; });
-
   // Set section indices.
   for (i64 i = 0, shndx = 1; i < out::chunks.size(); i++)
     if (out::chunks[i]->kind != OutputChunk::HEADER)
