@@ -701,7 +701,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
 
     if (sym.traced) {
       SyncOut() << "trace-symbol: " << *this
-                << (is_weak ? ": reference to " : ": weak reference to ")
+                << (is_weak ? ": weak reference to " : ": reference to ")
                 << sym;
     }
 
