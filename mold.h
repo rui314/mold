@@ -1290,6 +1290,8 @@ inline bool Symbol::is_absolute() const {
     return false;
   if (file->is_dso)
     return esym->is_abs();
+  if (is_imported)
+    return false;
   return input_section == nullptr;
 }
 

@@ -168,6 +168,7 @@ static constexpr u32 DF_BIND_NOW = 0x08;
 static constexpr u32 DF_STATIC_TLS = 0x10;
 
 static constexpr u32 DF_1_NOW = 0x00000001;
+static constexpr u32 DF_1_NODELETE = 0x00000008;
 static constexpr u32 DF_1_PIE = 0x08000000;
 
 static constexpr u32 NT_GNU_BUILD_ID = 3;

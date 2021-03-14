@@ -211,7 +211,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
 
   if (out::reldyn)
     dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
-                         file.reldyn_offset + reldyn_offset);
+                         file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
