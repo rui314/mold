@@ -86,6 +86,7 @@ struct Config {
   bool shared = false;
   bool stats = false;
   bool strip_all = false;
+  bool strip_debug = false;
   bool trace = false;
   bool z_defs = false;
   bool z_execstack = false;

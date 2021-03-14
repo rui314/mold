@@ -334,6 +334,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.discard_locals = true;
     } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
       config.strip_all = true;
+    } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
+      config.strip_debug = true;
     } else if (read_arg(args, arg, "rpath")) {
       if (!config.rpaths.empty())
         config.rpaths += ":";

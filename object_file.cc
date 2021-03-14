@@ -161,7 +161,9 @@ void ObjectFile::initialize_sections() {
       std::string_view name = shstrtab.data() + shdr.sh_name;
       if (name == ".note.GNU-stack" || name == ".note.gnu.property")
         continue;
-      if (config.strip_all && is_debug_section(shdr, name))
+
+      if ((config.strip_all || config.strip_debug) &&
+          is_debug_section(shdr, name))
         continue;
 
       this->sections[i] = InputSection::create(*this, &shdr, name, i);
