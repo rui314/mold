@@ -784,6 +784,7 @@ void ObjectFile::claim_unresolved_symbols() {
       if (sym.file && sym.file->priority < this->priority)
         continue;
       sym.file = this;
+      sym.value = 0;
       sym.esym = &esym;
       sym.is_imported = true;
       sym.is_exported = false;
@@ -899,6 +900,8 @@ void ObjectFile::write_symtab() {
       esym.st_shndx = sym.input_section->output_section->shndx;
     else if (sym.shndx)
       esym.st_shndx = sym.shndx;
+    else if (esym.is_undef())
+      esym.st_shndx = SHN_UNDEF;
     else
       esym.st_shndx = SHN_ABS;
 
