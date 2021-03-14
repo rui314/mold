@@ -109,6 +109,11 @@ ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name,
   is_alive = !is_in_lib;
 }
 
+static bool is_debug_section(const ElfShdr &shdr, std::string_view name) {
+  return !(shdr.sh_flags & SHF_ALLOC) &&
+         (name.starts_with(".debug") || name.starts_with(".zdebug"));
+}
+
 void ObjectFile::initialize_sections() {
   // Read sections
   for (i64 i = 0; i < elf_sections.size(); i++) {
@@ -155,6 +160,8 @@ void ObjectFile::initialize_sections() {
     default: {
       std::string_view name = shstrtab.data() + shdr.sh_name;
       if (name == ".note.gnu.property")
+        continue;
+      if (config.strip_all && is_debug_section(shdr, name))
         continue;
 
       this->sections[i] = InputSection::create(*this, &shdr, name, i);

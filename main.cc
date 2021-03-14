@@ -203,7 +203,8 @@ static void create_synthetic_sections() {
   add(out::got = new GotSection);
   add(out::gotplt = new GotPltSection);
   add(out::relplt = new RelPltSection);
-  add(out::strtab = new StrtabSection);
+  if (!config.strip_all)
+    add(out::strtab = new StrtabSection);
   add(out::shstrtab = new ShstrtabSection);
   add(out::plt = new PltSection);
   add(out::pltgot = new PltGotSection);
