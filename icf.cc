@@ -141,9 +141,9 @@ static size_t combine_hash(size_t a, size_t b) {
 
 struct LeafHasher {
   size_t operator()(const InputSection *isec) const {
-    size_t h = std::hash<std::string_view>()(isec->contents);
+    size_t h = hash_string(isec->contents);
     for (FdeRecord &fde : isec->fdes) {
-      size_t h2 = std::hash<std::string_view>()(fde.contents.substr(8));
+      size_t h2 = hash_string(fde.contents.substr(8));
       h = combine_hash(h, h2);
     }
     return h;

@@ -5,6 +5,7 @@
 #endif
 
 #include "elf.h"
+#include "xxHash/xxhash.h"
 
 #include <atomic>
 #include <cassert>
@@ -186,10 +187,14 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file);
 // Interned string
 //
 
+inline u64 hash_string(std::string_view str) {
+  return XXH3_64bits(str.data(), str.size());
+}
+
 namespace tbb {
 template<> struct tbb_hash_compare<std::string_view> {
   static size_t hash(const std::string_view &k) {
-    return std::hash<std::string_view>()(k);
+    return hash_string(k);
   }
 
   static bool equal(const std::string_view &k1, const std::string_view &k2) {

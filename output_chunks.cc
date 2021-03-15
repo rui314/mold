@@ -896,7 +896,7 @@ SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
   std::string_view suffix = data;
   if (suffix.size() > 32)
     suffix = suffix.substr(suffix.size() - 32);
-  i64 shard = std::hash<std::string_view>()(suffix) % NUM_SHARDS;
+  i64 shard = hash_string(suffix) % NUM_SHARDS;
 
   MapTy::const_accessor acc;
   bool inserted =
