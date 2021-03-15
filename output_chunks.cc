@@ -909,17 +909,16 @@ SectionFragment *MergedSection::insert(std::string_view data, i64 alignment) {
 }
 
 void MergedSection::assign_offsets() {
+  std::vector<SectionFragment *> fragments[NUM_SHARDS];
   i64 sizes[NUM_SHARDS] = {};
 
   tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
-    std::vector<SectionFragment *> vec;
-
     for (auto it = maps[i].begin(); it != maps[i].end(); it++)
       if (SectionFragment &frag = it->second; frag.is_alive)
-        vec.push_back(&frag);
+        fragments[i].push_back(&frag);
 
     // Sort section fragments to make an output deterministic.
-    std::sort(vec.begin(), vec.end(),
+    std::sort(fragments[i].begin(), fragments[i].end(),
               [&](SectionFragment *a, SectionFragment *b) {
                 if (a->alignment != b->alignment)
                   return a->alignment > b->alignment;
@@ -929,16 +928,13 @@ void MergedSection::assign_offsets() {
               });
 
     i64 offset = 0;
-    for (SectionFragment *frag : vec) {
+    for (SectionFragment *frag : fragments[i]) {
       offset = align_to(offset, frag->alignment);
       frag->offset = offset;
       offset += frag->data.size();
     }
 
     sizes[i] = offset;
-
-    static Counter merged_strings("merged_strings");
-    merged_strings += vec.size();
   });
 
   for (i64 i = 1; i < NUM_SHARDS + 1; i++)
@@ -946,13 +942,16 @@ void MergedSection::assign_offsets() {
       align_to(shard_offsets[i - 1] + sizes[i - 1], max_alignment);
 
   tbb::parallel_for((i64)1, NUM_SHARDS, [&](i64 i) {
-    for (auto it = maps[i].begin(); it != maps[i].end(); it++)
-      if (SectionFragment &frag = it->second; frag.is_alive)
-        frag.offset += shard_offsets[i];
+    for (SectionFragment *frag : fragments[i])
+      frag->offset += shard_offsets[i];
   });
 
   shdr.sh_size = shard_offsets[NUM_SHARDS];
   shdr.sh_addralign = max_alignment;
+
+  static Counter merged_strings("merged_strings");
+  for (std::span<SectionFragment *> span : fragments)
+    merged_strings += span.size();
 }
 
 void MergedSection::copy_buf() {
