@@ -94,6 +94,7 @@ static std::string rel_to_string(u64 r_type) {
   unreachable();
 }
 
+__attribute__((always_inline))
 static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
@@ -149,6 +150,7 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   unreachable();
 }
 
+__attribute__((always_inline))
 static void write_val(u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
@@ -331,6 +333,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file.symbols[rel.r_sym];
+    u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       Error() << "undefined symbol: " << file << ": " << sym;
@@ -340,8 +343,6 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     const SectionFragmentRef *ref = nullptr;
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
-
-    u8 *loc = base + rel.r_offset;
 
     switch (rel.r_type) {
     case R_X86_64_NONE:
@@ -375,11 +376,11 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_GOTTPOFF:
-      Error() << *this << ": invalid relocation for non-allocated sections: "
+      Fatal() << *this << ": invalid relocation for non-allocated sections: "
               << rel.r_type;
       break;
     default:
-      Error() << *this << ": unknown relocation: " << rel.r_type;
+      Fatal() << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }
@@ -559,7 +560,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSGD:
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << *this << ": TLSGD reloc not followed by PLT32";
+        Fatal() << *this << ": TLSGD reloc not followed by PLT32";
 
       if (config.relax && !config.shared && !sym.is_imported) {
         rel_types[i++] = R_TLSGD_RELAX_LE;
@@ -571,9 +572,9 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
-        Error() << *this << ": TLSLD reloc not followed by PLT32";
+        Fatal() << *this << ": TLSLD reloc not followed by PLT32";
       if (sym.is_imported)
-        Error() << *this << ": TLSLD reloc refers external symbol " << sym;
+        Fatal() << *this << ": TLSLD reloc refers external symbol " << sym;
 
       if (config.relax && !config.shared) {
         rel_types[i++] = R_TLSLD_RELAX_LE;
@@ -585,7 +586,7 @@ void InputSection::scan_relocations() {
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       if (sym.is_imported)
-        Error() << *this << ": DTPOFF reloc refers external symbol " << sym;
+        Fatal() << *this << ": DTPOFF reloc refers external symbol " << sym;
       rel_types[i] = (config.relax && !config.shared) ? R_TPOFF : R_DTPOFF;
       break;
     case R_X86_64_TPOFF32:
@@ -597,7 +598,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_GOTTPOFF;
       break;
     default:
-      Error() << *this << ": unknown relocation: " << rel.r_type;
+      Fatal() << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }
