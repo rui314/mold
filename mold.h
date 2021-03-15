@@ -106,7 +106,9 @@ struct Config {
   std::string rpaths;
   std::string soname;
   std::string sysroot;
+  std::vector<std::string_view> auxiliary;
   std::vector<std::string_view> exclude_libs;
+  std::vector<std::string_view> filter;
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;

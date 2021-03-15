@@ -1198,14 +1198,15 @@ int main(int argc, char **argv) {
   if (!config.allow_multiple_definition)
     check_duplicate_symbols();
 
-  // Copy shared object name strings to .dynstr.
+  // Copy string referred by .dynamic to .dynstr.
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
-
-  // Copy DT_RUNPATH string to .dynstr.
-  out::dynstr->add_string(config.rpaths);
-
-  // Copy DT_SONAME string to .dynstr.
+  for (std::string_view str : config.auxiliary)
+    out::dynstr->add_string(str);
+  for (std::string_view str : config.filter)
+    out::dynstr->add_string(str);
+  if (!config.rpaths.empty())
+    out::dynstr->add_string(config.rpaths);
   if (!config.soname.empty())
     out::dynstr->add_string(config.soname);
 

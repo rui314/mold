@@ -369,6 +369,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       }
     } else if (read_flag(args, "no-build-id")) {
       config.build_id.kind = BuildId::NONE;
+    } else if (read_arg(args, arg, "auxiliary") || read_arg(args, arg, "f")) {
+      config.auxiliary.push_back(arg);
+    } else if (read_arg(args, arg, "filter") || read_arg(args, arg, "F")) {
+      config.filter.push_back(arg);
     } else if (read_arg(args, arg, "exclude-libs")) {
       config.exclude_libs = split(arg, ",");
     } else if (read_flag(args, "preload")) {

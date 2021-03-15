@@ -358,6 +358,12 @@ static std::vector<u64> create_dynamic_section() {
   if (!config.soname.empty())
     define(DT_SONAME, out::dynstr->find_string(config.soname));
 
+  for (std::string_view str : config.auxiliary)
+    define(DT_AUXILIARY, out::dynstr->find_string(str));
+
+  for (std::string_view str : config.filter)
+    define(DT_FILTER, out::dynstr->find_string(str));
+
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
   define(DT_RELAENT, sizeof(ElfRela));

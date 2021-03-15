@@ -160,6 +160,8 @@ static constexpr u32 DT_VERDEF = 0x6ffffffc;
 static constexpr u32 DT_VERDEFNUM = 0x6ffffffd;
 static constexpr u32 DT_VERNEED = 0x6ffffffe;
 static constexpr u32 DT_VERNEEDNUM = 0x6fffffff;
+static constexpr u32 DT_AUXILIARY = 0x7ffffffd;
+static constexpr u32 DT_FILTER = 0x7fffffff;
 
 static constexpr u32 DF_ORIGIN = 0x01;
 static constexpr u32 DF_SYMBOLIC = 0x02;
