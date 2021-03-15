@@ -258,6 +258,10 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_GOTPCREL:
       write(G + GOT + A - P);
       break;
+    case R_GOTPCREL_RELAX_REX_MOV:
+      loc[-2] = 0x8d;    // rewrite mov insn to lea insn
+      write(S + A - P);
+      break;
     case R_TLSGD:
       write(sym.get_tlsgd_addr() + A - P);
       break;
@@ -388,6 +392,21 @@ static int get_sym_type(Symbol &sym) {
   if (sym.get_type() != STT_FUNC)
     return 2;
   return 3;
+}
+
+// Returns true if the instruction is `MOV foo(%rip),%r64`.
+static bool is_mov_insn(std::string_view contents, i64 offset) {
+  u8 *insn = (u8 *)(contents.data() + offset - 3);
+
+  switch ((insn[0] << 16) | (insn[1] << 8) | insn[2]) {
+  case 0x488b05: case 0x488b0d: case 0x488b15: case 0x488b1d:
+  case 0x488b25: case 0x488b2d: case 0x488b35: case 0x488b3d:
+  case 0x4c8b05: case 0x4c8b0d: case 0x4c8b15: case 0x4c8b1d:
+  case 0x4c8b25: case 0x4c8b2d: case 0x4c8b35: case 0x4c8b3d:
+    return true;
+  default:
+    return false;
+  }
 }
 
 // Linker has to create data structures in an output file to apply
@@ -521,9 +540,17 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPCREL;
+      break;
+    case R_X86_64_REX_GOTPCRELX:
+      if (config.relax && sym.is_relative() && !sym.is_imported &&
+          is_mov_insn(contents, rel.r_offset)) {
+        rel_types[i] = R_GOTPCREL_RELAX_REX_MOV;
+      } else {
+        sym.flags |= NEEDS_GOT;
+        rel_types[i] = R_GOTPCREL;
+      }
       break;
     case R_X86_64_PLT32:
       if (sym.is_imported)

@@ -332,6 +332,7 @@ enum RelType : u8 {
   R_GOT,
   R_GOTPC,
   R_GOTPCREL,
+  R_GOTPCREL_RELAX_REX_MOV,
   R_TLSGD,
   R_TLSGD_RELAX_LE,
   R_TLSLD,
