@@ -459,8 +459,8 @@ static MergeableSection split_section(InputSection &sec) {
   if (sec.shdr.sh_flags & SHF_STRINGS) {
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
-      if (end == std::string_view::npos)
-        Error() << sec << ": string is not null terminated";
+      if (end == data.npos)
+        Fatal() << sec << ": string is not null terminated";
 
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);

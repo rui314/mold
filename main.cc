@@ -340,7 +340,7 @@ static void resolve_dso_symbols() {
 }
 
 static void eliminate_comdats() {
-  Timer t("comdat");
+  Timer t("eliminate_comdats");
 
   tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
     file->resolve_comdat_groups();
@@ -1040,7 +1040,7 @@ static void show_stats() {
   for (ObjectFile *file : out::objs)
     num_input_sections += file->sections.size();
 
-  Counter num_output_chunks("output_out::chunks", out::chunks.size());
+  Counter num_output_chunks("output_chunks", out::chunks.size());
   Counter num_objs("num_objs", out::objs.size());
   Counter num_dsos("num_dsos", out::dsos.size());
 
