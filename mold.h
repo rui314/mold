@@ -655,6 +655,8 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
   i64 find_string(std::string_view str);
   void copy_buf() override;
 
+  i64 dynsym_offset = -1;
+
 private:
   std::unordered_map<std::string_view, i64> strings;
 };
@@ -704,7 +706,6 @@ public:
   void copy_buf() override;
 
   std::vector<Symbol *> symbols = {nullptr};
-  std::vector<u32> name_indices = {(u32)-1};
 };
 
 class HashSection : public OutputChunk {

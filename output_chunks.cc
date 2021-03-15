@@ -302,8 +302,15 @@ i64 DynstrSection::find_string(std::string_view str) {
 void DynstrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
+
   for (std::pair<std::string_view, i64> pair : strings)
     write_string(base + pair.second, pair.first);
+
+  i64 offset = dynsym_offset;
+  for (Symbol *sym : std::span(out::dynsym->symbols).subspan(1)) {
+    write_string(base + offset, sym->name);
+    offset += sym->name.size() + 1;
+  }
 }
 
 void SymtabSection::update_shdr() {
@@ -700,10 +707,12 @@ void DynsymSection::sort_symbols() {
     });
   }
 
+  out::dynstr->dynsym_offset = out::dynstr->shdr.sh_size;
+
   for (i64 i = 1; i < symbols.size(); i++) {
     symbols[i] = vec[i].sym;
     symbols[i]->dynsym_idx = i;
-    name_indices.push_back(out::dynstr->add_string(symbols[i]->name));
+    out::dynstr->shdr.sh_size += symbols[i]->name.size() + 1;
   }
 }
 
@@ -715,16 +724,19 @@ void DynsymSection::update_shdr() {
 void DynsymSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
+  i64 name_offset = out::dynstr->dynsym_offset;
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
 
     ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
-    esym.st_name = name_indices[i];
     esym.st_type = sym.get_type();
     esym.st_bind = (sym.is_weak ? STB_WEAK : sym.esym->st_bind);
     esym.st_size = sym.esym->st_size;
+
+    esym.st_name = name_offset;
+    name_offset += sym.name.size() + 1;
 
     if (sym.has_copyrel) {
       esym.st_shndx = sym.copyrel_readonly
