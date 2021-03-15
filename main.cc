@@ -452,7 +452,7 @@ std::vector<OutputChunk *> collect_output_sections() {
 }
 
 static void compute_section_sizes() {
-  Timer t("isec_offsets");
+  Timer t("compute_section_sizes");
 
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
     if (osec->members.empty())
