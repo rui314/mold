@@ -545,7 +545,7 @@ void InputSection::scan_relocations() {
       break;
     case R_X86_64_REX_GOTPCRELX:
       if (config.relax && sym.is_relative() && !sym.is_imported &&
-          is_mov_insn(contents, rel.r_offset)) {
+          rel.r_addend == -4 && is_mov_insn(contents, rel.r_offset)) {
         rel_types[i] = R_GOTPCREL_RELAX_REX_MOV;
       } else {
         sym.flags |= NEEDS_GOT;
