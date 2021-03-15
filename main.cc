@@ -1072,13 +1072,16 @@ int main(int argc, char **argv) {
   std::function<void()> on_complete;
 
   if (config.preload) {
+    Timer t("preload");
     std::function<void()> wait_for_client;
     daemonize(argv, &wait_for_client, &on_complete);
 
     ReadContext ctx(true);
     read_input_files(file_args, ctx);
     ctx.tg.wait();
+    t.stop();
 
+    Timer t2("wait_for_client");
     wait_for_client();
   } else if (config.fork) {
     on_complete = fork_child();
