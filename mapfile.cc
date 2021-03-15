@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iomanip>
 #include <ios>
+#include <tbb/parallel_for_each.h>
 #include <unordered_map>
 
 static std::ofstream *open_output_file(std::string path) {
@@ -14,6 +15,8 @@ static std::ofstream *open_output_file(std::string path) {
 }
 
 void print_map() {
+  typedef tbb::concurrent_hash_map<InputSection *, std::vector<Symbol *>> MapTy;
+
   std::ostream *out = &std::cout;
   std::ofstream *file = nullptr;
 
@@ -21,22 +24,33 @@ void print_map() {
     out = file = open_output_file(config.Map);
 
   // Construct a section-to-symbol map.
-  std::unordered_map<InputSection *, std::vector<Symbol *>> map;
-  for (ObjectFile *file : out::objs)
-    for (Symbol *sym : file->symbols)
+  MapTy map;
+
+  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    for (Symbol *sym : file->symbols) {
       if (sym->file == file && sym->input_section &&
-          sym->get_type() != STT_SECTION)
-        map[sym->input_section].push_back(sym);
+          sym->get_type() != STT_SECTION) {
+        assert(file == &sym->input_section->file);
 
-  for (auto &pair : map) {
-    std::vector<Symbol *> &vec = pair.second;
-    sort(vec, [](Symbol *a, Symbol *b) { return a->value < b->value; });
-  }
+        MapTy::accessor acc;
+        map.insert(acc, {sym->input_section, {}});
+        acc->second.push_back(sym);
+      }
+    }
+  });
 
-  *out << "             VMA     Size Align Out     In      Symbol\n";
+  tbb::parallel_for(map.range(), [](const MapTy::range_type &range) {
+    for (auto it = range.begin(); it != range.end(); it++) {
+      std::vector<Symbol *> &vec = it->second;
+      sort(vec, [](Symbol *a, Symbol *b) { return a->value < b->value; });
+    }
+  });
+
+  *out << "             VMA       Size Align Out     In      Symbol\n";
+
   for (OutputChunk *osec : out::chunks) {
     *out << std::setw(16) << (u64)osec->shdr.sh_addr
-         << std::setw(9) << (u64)osec->shdr.sh_size
+         << std::setw(11) << (u64)osec->shdr.sh_size
          << std::setw(6) << (u64)osec->shdr.sh_addralign
          << " " << osec->name << "\n";
 
@@ -45,18 +59,18 @@ void print_map() {
 
     for (InputSection *mem : ((OutputSection *)osec)->members) {
       *out << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-           << std::setw(9) << (u64)mem->shdr.sh_size
+           << std::setw(11) << (u64)mem->shdr.sh_size
            << std::setw(6) << (u64)mem->shdr.sh_addralign
            << "         " << *mem << "\n";
 
-      auto it = map.find(mem);
-      if (it == map.end())
+      MapTy::const_accessor acc;
+      if (!map.find(acc, mem))
         continue;
 
-      std::vector<Symbol *> syms = it->second;
+      std::vector<Symbol *> syms = acc->second;
       for (Symbol *sym : syms)
         *out << std::setw(16) << sym->get_addr()
-             << "        0     0                 "
+             << "          0     0                 "
              << *sym << "\n";
     }
   }
