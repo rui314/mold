@@ -482,12 +482,9 @@ void OutputSection::copy_buf() {
   if (shdr.sh_type == SHT_NOBITS)
     return;
 
-  tbb::parallel_for((i64)0, (i64)members.size(), [&](u64 i) {
-    InputSection &isec = *members[i];
-    if (isec.shdr.sh_type == SHT_NOBITS)
-      return;
-
+  tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     // Copy section contents to an output file
+    InputSection &isec = *members[i];
     isec.copy_buf();
 
     // Zero-clear trailing padding
