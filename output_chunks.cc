@@ -651,47 +651,59 @@ void DynsymSection::add_symbol(Symbol *sym) {
 void DynsymSection::sort_symbols() {
   Timer t("sort_dynsyms");
 
-  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
-    symbols[i]->dynsym_idx = i;
-  });
+  struct T {
+    Symbol *sym;
+    i32 idx;
+    u32 hash;
+
+    bool is_local() const {
+      return sym->esym->st_bind == STB_LOCAL;
+    }
+  };
+
+  std::vector<T> vec(symbols.size());
+
+  for (i32 i = 1; i < symbols.size(); i++)
+    vec[i] = {symbols[i], i, 0};
 
   // In any ELF file, local symbols should precede global symbols.
-  tbb::parallel_sort(symbols.begin() + 1, symbols.end(),
-                     [](Symbol *a, Symbol *b) {
-    bool x = (a->esym->st_bind == STB_LOCAL);
-    bool y = (b->esym->st_bind == STB_LOCAL);
-    if (x == y)
-      return a->dynsym_idx < b->dynsym_idx;
-    return x;
+  tbb::parallel_sort(vec.begin() + 1, vec.end(), [](const T &a, const T &b) {
+    if (a.is_local() == b.is_local())
+      return a.idx < b.idx;
+    return a.is_local();
   });
 
-  auto first_global = std::partition_point(
-    symbols.begin() + 1, symbols.end(),
-    [](Symbol *sym) { return sym->esym->st_bind == STB_LOCAL; });
+  auto first_global = std::partition_point(vec.begin() + 1, vec.end(),
+                                           [](const T &x) {
+    return x.is_local();
+  });
 
   // In any ELF file, the index of the first global symbols can be
   // found in the symtab's sh_info field.
-  shdr.sh_info = first_global - symbols.begin();
+  shdr.sh_info = first_global - vec.begin();
 
   // If we have .gnu.hash section, it imposes more constraints
   // on the order of symbols.
   if (out::gnu_hash) {
-    i64 num_globals = symbols.end() - first_global;
+    i64 num_globals = vec.end() - first_global;
     out::gnu_hash->num_buckets = num_globals / out::gnu_hash->LOAD_FACTOR + 1;
-    out::gnu_hash->symoffset = first_global - symbols.begin();
+    out::gnu_hash->symoffset = first_global - vec.begin();
 
-    tbb::parallel_sort(first_global, symbols.end(), [&](Symbol *a, Symbol *b) {
-      i64 x = gnu_hash(a->name) % out::gnu_hash->num_buckets;
-      i64 y = gnu_hash(b->name) % out::gnu_hash->num_buckets;
-      if (x == y)
-        return a->dynsym_idx < b->dynsym_idx;
-      return x < y;
+    tbb::parallel_for_each(first_global, vec.end(), [](T &x) {
+      x.hash = gnu_hash(x.sym->name) % out::gnu_hash->num_buckets;
+    });
+
+    tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
+      if (a.hash == b.hash)
+        return a.idx < b.idx;
+      return a.hash < b.hash;
     });
   }
 
   for (i64 i = 1; i < symbols.size(); i++) {
-    name_indices.push_back(out::dynstr->add_string(symbols[i]->name));
+    symbols[i] = vec[i].sym;
     symbols[i]->dynsym_idx = i;
+    name_indices.push_back(out::dynstr->add_string(symbols[i]->name));
   }
 }
 
