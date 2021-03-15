@@ -1,10 +1,25 @@
 #include "mold.h"
 
+#include <fstream>
 #include <iomanip>
 #include <ios>
 #include <unordered_map>
 
+static std::ofstream *open_output_file(std::string path) {
+  std::ofstream *file = new std::ofstream;
+  file->open(path.c_str());
+  if (!file->is_open())
+    Fatal() << "cannot open " << config.Map << ": " << strerror(errno);
+  return file;
+}
+
 void print_map() {
+  std::ostream *out = &std::cout;
+  std::ofstream *file = nullptr;
+
+  if (!config.Map.empty())
+    out = file = open_output_file(config.Map);
+
   // Construct a section-to-symbol map.
   std::unordered_map<InputSection *, std::vector<Symbol *>> map;
   for (ObjectFile *file : out::objs)
@@ -18,21 +33,21 @@ void print_map() {
     sort(vec, [](Symbol *a, Symbol *b) { return a->value < b->value; });
   }
 
-  std::cout << "             VMA     Size Align Out     In      Symbol\n";
+  *out << "             VMA     Size Align Out     In      Symbol\n";
   for (OutputChunk *osec : out::chunks) {
-    std::cout << std::setw(16) << (u64)osec->shdr.sh_addr
-              << std::setw(9) << (u64)osec->shdr.sh_size
-              << std::setw(6) << (u64)osec->shdr.sh_addralign
-              << " " << osec->name << "\n";
+    *out << std::setw(16) << (u64)osec->shdr.sh_addr
+         << std::setw(9) << (u64)osec->shdr.sh_size
+         << std::setw(6) << (u64)osec->shdr.sh_addralign
+         << " " << osec->name << "\n";
 
     if (osec->kind != OutputChunk::REGULAR)
       continue;
 
     for (InputSection *mem : ((OutputSection *)osec)->members) {
-      std::cout << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-                << std::setw(9) << (u64)mem->shdr.sh_size
-                << std::setw(6) << (u64)mem->shdr.sh_addralign
-                << "         " << *mem << "\n";
+      *out << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
+           << std::setw(9) << (u64)mem->shdr.sh_size
+           << std::setw(6) << (u64)mem->shdr.sh_addralign
+           << "         " << *mem << "\n";
 
       auto it = map.find(mem);
       if (it == map.end())
@@ -40,9 +55,12 @@ void print_map() {
 
       std::vector<Symbol *> syms = it->second;
       for (Symbol *sym : syms)
-        std::cout << std::setw(16) << sym->get_addr()
-                  << "        0     0                 "
-                  << *sym << "\n";
+        *out << std::setw(16) << sym->get_addr()
+             << "        0     0                 "
+             << *sym << "\n";
     }
   }
+
+  if (file)
+    file->close();
 }
