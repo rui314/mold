@@ -994,15 +994,15 @@ ObjectFile::ObjectFile() {
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   if (file.is_dso) {
-    out << file.name;
+    out << path_clean(file.name);
     return out;
   }
 
   ObjectFile *obj = (ObjectFile *)&file;
   if (obj->archive_name == "")
-    out << obj->name;
+    out << path_clean(obj->name);
   else
-    out << obj->archive_name << "(" << obj->name + ")";
+    out << path_clean(obj->archive_name) << "(" << obj->name + ")";
   return out;
 }
 

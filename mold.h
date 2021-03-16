@@ -1092,6 +1092,7 @@ protected:
 
 std::string path_dirname(std::string_view path);
 std::string path_basename(std::string_view path);
+std::string path_clean(std::string_view path);
 
 //
 // perf.cc
