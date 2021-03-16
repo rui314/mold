@@ -345,6 +345,7 @@ enum RelType : u8 {
   R_DTPOFF,
   R_TPOFF,
   R_GOTTPOFF,
+  R_GOTTPOFF_RELAX_MOV,
 };
 
 struct EhReloc {

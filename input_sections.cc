@@ -204,6 +204,30 @@ void InputSection::copy_buf() {
     apply_reloc_nonalloc(base);
 }
 
+static u32 get_gottpoff_relaxed_insn(u8 *insn) {
+  // We want to rewrite `mov x@gottpoff(%rip),%r64` to `mov x@tpoff,%r64`.
+  switch ((insn[0] << 16) | (insn[1] << 8) | insn[2]) {
+  case 0x488b05: return 0x48c7c0; // mov x@gottpoff(%rip), %rax
+  case 0x488b0d: return 0x48c7c1; // mov x@gottpoff(%rip), %rcx
+  case 0x488b15: return 0x48c7c2; // mov x@gottpoff(%rip), %rdx
+  case 0x488b1d: return 0x48c7c3; // mov x@gottpoff(%rip), %rbx
+  case 0x488b25: return 0x48c7c4; // mov x@gottpoff(%rip), %rsp
+  case 0x488b2d: return 0x48c7c5; // mov x@gottpoff(%rip), %rbp
+  case 0x488b35: return 0x48c7c6; // mov x@gottpoff(%rip), %rsi
+  case 0x488b3d: return 0x48c7c7; // mov x@gottpoff(%rip), %rdi
+  case 0x4c8b05: return 0x49c7c0; // mov x@gottpoff(%rip), %r8
+  case 0x4c8b0d: return 0x49c7c1; // mov x@gottpoff(%rip), %r9
+  case 0x4c8b15: return 0x49c7c2; // mov x@gottpoff(%rip), %r10
+  case 0x4c8b1d: return 0x49c7c3; // mov x@gottpoff(%rip), %r11
+  case 0x4c8b25: return 0x49c7c4; // mov x@gottpoff(%rip), %r12
+  case 0x4c8b2d: return 0x49c7c5; // mov x@gottpoff(%rip), %r13
+  case 0x4c8b35: return 0x49c7c6; // mov x@gottpoff(%rip), %r14
+  case 0x4c8b3d: return 0x49c7c7; // mov x@gottpoff(%rip), %r15
+  default:
+    unreachable();
+  }
+}
+
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
@@ -313,6 +337,14 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_GOTTPOFF:
       write(sym.get_gottpoff_addr() + A - P);
       break;
+    case R_GOTTPOFF_RELAX_MOV: {
+      u32 insn = get_gottpoff_relaxed_insn(loc - 3);
+      loc[-3] = insn >> 16;
+      loc[-2] = insn >> 8;
+      loc[-1] = insn;
+      write(S + A - out::tls_end + 4);
+      break;
+    }
     default:
       unreachable();
     }
@@ -628,8 +660,13 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      sym.flags |= NEEDS_GOTTPOFF;
-      rel_types[i] = R_GOTTPOFF;
+      if (config.relax && !config.shared &&
+          is_mov_insn(contents, rel.r_offset)) {
+        rel_types[i] = R_GOTTPOFF_RELAX_MOV;
+      } else {
+        sym.flags |= NEEDS_GOTTPOFF;
+        rel_types[i] = R_GOTTPOFF;
+      }
       break;
     default:
       Fatal() << *this << ": unknown relocation: " << rel.r_type;
