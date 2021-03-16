@@ -1338,9 +1338,8 @@ inline void Symbol::clear() {
 
 inline u64 Symbol::get_addr() const {
   if (frag) {
-    if (frag->is_alive)
-      return frag->get_addr() + value;
-    return 0; // todo: do not return 0
+    assert(frag->is_alive);
+    return frag->get_addr() + value;
   }
 
   if (has_copyrel) {
