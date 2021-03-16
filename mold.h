@@ -419,15 +419,17 @@ public:
 
   std::string_view name;
   std::string_view contents;
-  u32 offset = -1;
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
   std::vector<SectionFragmentRef> rel_fragments;
   std::vector<RelType> rel_types;
   std::span<FdeRecord> fdes;
-  u64 reldyn_offset = 0;
+
+  u32 offset = -1;
   u32 section_idx = -1;
+  u32 reldyn_offset = 0;
+
   bool is_ehframe = false;
 
   // For COMDAT de-duplication and garbage collection
