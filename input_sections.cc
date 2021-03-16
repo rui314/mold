@@ -260,8 +260,21 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_GOTPCREL:
       write(G + GOT + A - P);
       break;
-    case R_GOTPCREL_RELAX_REX_MOV:
-      loc[-2] = 0x8d;    // rewrite mov insn to lea insn
+    case R_GOTPCREL_RELAX_CALL:
+      // Rewrite indirect call to direct call.
+      loc[-2] = 0x90;
+      loc[-1] = 0xe8;
+      write(S + A - P);
+      break;
+    case R_GOTPCREL_RELAX_JMP:
+      // Rewrite indirect jmp to direct jmp.
+      loc[-2] = 0x90;
+      loc[-1] = 0xe9;
+      write(S + A - P);
+      break;
+    case R_GOTPCREL_RELAX_MOV:
+      // Rewrite mov to lea.
+      loc[-2] = 0x8d;
       write(S + A - P);
       break;
     case R_TLSGD:
@@ -540,14 +553,36 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_GOTPC;
       break;
     case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPCREL;
       break;
+    case R_X86_64_GOTPCRELX: {
+      if (rel.r_addend != -4)
+        Fatal() << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
+
+      if (config.relax && !sym.is_imported && sym.is_relative()) {
+        u8 *insn = (u8 *)(contents.data() + rel.r_offset - 2);
+        if (insn[0] == 0xff && insn[1] == 0x15) {
+          rel_types[i] = R_GOTPCREL_RELAX_CALL;
+          break;
+        }
+        if (insn[0] == 0xff && insn[1] == 0x25) {
+          rel_types[i] = R_GOTPCREL_RELAX_JMP;
+          break;
+        }
+      }
+
+      sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOTPCREL;
+      break;
+    }
     case R_X86_64_REX_GOTPCRELX:
-      if (config.relax && sym.is_relative() && !sym.is_imported &&
-          rel.r_addend == -4 && is_mov_insn(contents, rel.r_offset)) {
-        rel_types[i] = R_GOTPCREL_RELAX_REX_MOV;
+      if (rel.r_addend != -4)
+        Fatal() << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
+
+      if (config.relax && !sym.is_imported && sym.is_relative() &&
+          is_mov_insn(contents, rel.r_offset)) {
+        rel_types[i] = R_GOTPCREL_RELAX_MOV;
       } else {
         sym.flags |= NEEDS_GOT;
         rel_types[i] = R_GOTPCREL;
