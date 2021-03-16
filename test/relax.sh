@@ -57,4 +57,25 @@ grep -Pq 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
 grep -Pq 'callq.*<foo>' $t/log
 grep -Pq 'jmpq.*<foo>' $t/log
 
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
+objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
+
+grep -Pq 'mov \s*0x.+\(%rip\),%rax' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rcx' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rdx' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rbx' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rbp' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rsi' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%rdi' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r8 ' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r9 ' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r10' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r11' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r12' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r13' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r14' $t/log
+grep -Pq 'mov \s*0x.+\(%rip\),%r15' $t/log
+grep -Pq 'callq.*\(%rip\)' $t/log
+grep -Pq 'jmpq.*\(%rip\)' $t/log
+
 echo OK
