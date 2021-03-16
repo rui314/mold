@@ -905,7 +905,7 @@ struct ComdatGroup {
   ComdatGroup(const ComdatGroup &other)
     : owner(other.owner.load()) {}
 
-  std::atomic<ObjectFile *> owner = nullptr;
+  std::atomic_uint32_t owner = -1;
 };
 
 class MemoryMappedFile {

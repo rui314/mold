@@ -754,9 +754,9 @@ void ObjectFile::convert_undefined_weak_symbols() {
 void ObjectFile::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    ObjectFile *cur = group->owner;
-    while (!cur || cur->priority > this->priority)
-      if (group->owner.compare_exchange_weak(cur, this))
+    u32 cur = group->owner;
+    while (cur == -1 || cur > this->priority)
+      if (group->owner.compare_exchange_weak(cur, this->priority))
         break;
   }
 }
@@ -764,7 +764,7 @@ void ObjectFile::resolve_comdat_groups() {
 void ObjectFile::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    if (group->owner == this)
+    if (group->owner == this->priority)
       continue;
 
     std::span<u32> entries = pair.second;
