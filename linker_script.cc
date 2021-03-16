@@ -76,12 +76,12 @@ static std::span<std::string_view> read_output_format(std::span<std::string_view
   return tok.subspan(1);
 }
 
-static MemoryMappedFile *resolve_path(std::string str) {
+static MemoryMappedFile *resolve_path(std::string str, ReadContext &ctx) {
   if (str.starts_with("/"))
     return MemoryMappedFile::must_open(config.sysroot + str);
 
   if (str.starts_with("-l"))
-    return find_library(str.substr(2), config.library_paths);
+    return find_library(str.substr(2), config.library_paths, ctx);
 
   if (std::string path = path_dirname(current_file) + "/";
       MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
@@ -113,7 +113,8 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
       continue;
     }
 
-    read_file(resolve_path(std::string(unquote(tok[0]))), ctx);
+    MemoryMappedFile *mb = resolve_path(std::string(unquote(tok[0])), ctx);
+    read_file(mb, ctx);
     tok = tok.subspan(1);
   }
 

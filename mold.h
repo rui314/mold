@@ -1207,12 +1207,14 @@ public:
   bool as_needed = false;
   bool whole_archive = false;
   bool is_preloading = false;
+  bool is_static = config.is_static;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 };
 
 MemoryMappedFile *find_library(std::string path,
-                               std::span<std::string_view> lib_paths);
+                               std::span<std::string_view> lib_paths,
+                               ReadContext &ctx);
 
 void read_file(MemoryMappedFile *mb, ReadContext &ctx);
 

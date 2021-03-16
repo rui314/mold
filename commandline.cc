@@ -222,8 +222,12 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.print_map = true;
     } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
       config.print_map = true;
-    } else if (read_flag(args, "static")) {
+    } else if (read_flag(args, "static") || read_flag(args, "Bstatic")) {
       config.is_static = true;
+      remaining.push_back("-Bstatic");
+    } else if (read_flag(args, "Bdynamic")) {
+      config.is_static = false;
+      remaining.push_back("-Bdynamic");
     } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
       config.shared = true;
     } else if (read_flag(args, "demangle")) {

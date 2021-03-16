@@ -983,11 +983,12 @@ static void signal_handler(int) {
 }
 
 MemoryMappedFile *find_library(std::string name,
-                               std::span<std::string_view> lib_paths) {
+                               std::span<std::string_view> lib_paths,
+                               ReadContext &ctx) {
   for (std::string_view dir : lib_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
-    if (!config.is_static)
+    if (!ctx.is_static)
       if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".so"))
         return mb;
     if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
@@ -998,7 +999,7 @@ MemoryMappedFile *find_library(std::string name,
 
 static void read_input_files(std::span<std::string_view> args,
                              ReadContext &ctx) {
-  std::vector<std::tuple<bool, bool>> state;
+  std::vector<std::tuple<bool, bool, bool>> state;
 
   while (!args.empty()) {
     std::string_view arg;
@@ -1011,15 +1012,21 @@ static void read_input_files(std::span<std::string_view> args,
       ctx.whole_archive = true;
     } else if (read_flag(args, "no-whole-archive")) {
       ctx.whole_archive = false;
+    } else if (read_flag(args, "Bstatic")) {
+      ctx.is_static = true;
+    } else if (read_flag(args, "Bdynamic")) {
+      ctx.is_static = false;
     } else if (read_flag(args, "push-state")) {
-      state.push_back({ctx.as_needed, ctx.whole_archive});
+      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static});
     } else if (read_flag(args, "pop-state")) {
       if (state.empty())
         Fatal() << "no state pushed before popping";
-      std::tie(ctx.as_needed, ctx.whole_archive) = state.back();
+      std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
     } else if (read_arg(args, arg, "l")) {
-      read_file(find_library(std::string(arg), config.library_paths), ctx);
+      MemoryMappedFile *mb =
+        find_library(std::string(arg), config.library_paths, ctx);
+      read_file(mb, ctx);
     } else {
       read_file(MemoryMappedFile::must_open(std::string(args[0])), ctx);
       args = args.subspan(1);
