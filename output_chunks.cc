@@ -204,54 +204,14 @@ void InterpSection::copy_buf() {
 void RelDynSection::update_shdr() {
   shdr.sh_link = out::dynsym->shndx;
 
-  i64 n = 0;
-  for (Symbol *sym : out::got->got_syms)
-    if (sym->is_imported || (config.pic && sym->is_relative()))
-      n++;
-
-  n += out::got->tlsgd_syms.size() * 2;
-  n += out::copyrel->symbols.size();
-  n += out::copyrel_relro->symbols.size();
-
-  if (out::got->tlsld_idx != -1)
-    n++;
-
+  // .rel.dyn contents are filled by GotSection::copy_buf() and
+  // InputSection::apply_reloc_alloc().
+  i64 offset = out::got->get_reldyn_size();
   for (ObjectFile *file : out::objs) {
-    file->reldyn_offset = n * sizeof(ElfRela);
-    n += file->num_dynrel;
+    file->reldyn_offset = offset;
+    offset += file->num_dynrel * sizeof(ElfRela);
   }
-
-  shdr.sh_size = n * sizeof(ElfRela);
-}
-
-void RelDynSection::copy_buf() {
-  ElfRela *rel = (ElfRela *)(out::buf + shdr.sh_offset);
-
-  for (Symbol *sym : out::got->got_syms) {
-    if (sym->is_imported)
-      *rel++ = {sym->get_got_addr(), R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
-    else if (config.pic && sym->is_relative())
-      *rel++ = {sym->get_got_addr(), R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
-  }
-
-  for (Symbol *sym : out::got->tlsgd_syms) {
-    u64 addr = sym->get_tlsgd_addr();
-    *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
-    *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
-  }
-
-  if (out::got->tlsld_idx != -1)
-    *rel++ = {out::got->get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
-
-  for (Symbol *sym : out::got->gottpoff_syms)
-    if (sym->is_imported)
-      *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym->dynsym_idx, 0};
-
-  for (Symbol *sym : out::copyrel->symbols)
-    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
-
-  for (Symbol *sym : out::copyrel_relro->symbols)
-    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
+  shdr.sh_size = offset;
 }
 
 void StrtabSection::update_shdr() {
@@ -532,17 +492,68 @@ void GotSection::add_tlsld() {
   shdr.sh_size += GOT_SIZE * 2;
 }
 
+i64 GotSection::get_reldyn_size() const {
+  i64 n = 0;
+  for (Symbol *sym : got_syms)
+    if (sym->is_imported || (config.pic && sym->is_relative()))
+      n++;
+
+  n += tlsgd_syms.size() * 2;
+
+  for (Symbol *sym : gottpoff_syms)
+    if (sym->is_imported)
+      n++;
+
+  if (tlsld_idx != -1)
+    n++;
+
+  n += out::copyrel->symbols.size();
+  n += out::copyrel_relro->symbols.size();
+
+  return n * sizeof(ElfRela);
+}
+
+// Fill .got and .rel.dyn.
 void GotSection::copy_buf() {
   u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
-  for (Symbol *sym : got_syms)
-    if (!sym->is_imported)
-      buf[sym->got_idx] = sym->get_addr();
+  ElfRela *rel = nullptr;
+  if (out::reldyn)
+    rel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset);
 
-  for (Symbol *sym : gottpoff_syms)
-    if (!sym->is_imported)
+  for (Symbol *sym : got_syms) {
+    u64 addr = sym->get_got_addr();
+    if (sym->is_imported) {
+      *rel++ = {addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
+    } else {
+      buf[sym->got_idx] = sym->get_addr();
+      if (config.pic && sym->is_relative())
+        *rel++ = {addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
+    }
+  }
+
+  for (Symbol *sym : tlsgd_syms) {
+    u64 addr = sym->get_tlsgd_addr();
+    *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
+    *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
+  }
+
+  for (Symbol *sym : gottpoff_syms) {
+    if (sym->is_imported)
+      *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF32, sym->dynsym_idx, 0};
+    else
       buf[sym->gottpoff_idx] = sym->get_addr() - out::tls_end;
+  }
+
+  if (tlsld_idx != -1)
+    *rel++ = {get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
+
+  for (Symbol *sym : out::copyrel->symbols)
+    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
+
+  for (Symbol *sym : out::copyrel_relro->symbols)
+    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
 }
 
 void GotPltSection::copy_buf() {

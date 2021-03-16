@@ -551,6 +551,7 @@ public:
     return shdr.sh_addr + tlsld_idx * GOT_SIZE;
   }
 
+  i64 get_reldyn_size() const;
   void copy_buf() override;
 
   std::vector<Symbol *> got_syms;
@@ -628,7 +629,6 @@ public:
   }
 
   void update_shdr() override;
-  void copy_buf() override;
 };
 
 class StrtabSection : public OutputChunk {
