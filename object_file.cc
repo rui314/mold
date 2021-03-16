@@ -142,7 +142,7 @@ void ObjectFile::initialize_sections() {
 
       static ConcurrentMap<ComdatGroup> map;
       ComdatGroup *group = map.insert(signature, ComdatGroup());
-      comdat_groups.push_back({group, entries});
+      comdat_groups.push_back({group, entries.subspan(1)});
 
       static Counter counter("comdats");
       counter++;
@@ -768,7 +768,7 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
       continue;
 
     std::span<u32> entries = pair.second;
-    for (i64 i : entries)
+    for (u32 i : entries)
       if (sections[i])
         sections[i]->kill();
 
