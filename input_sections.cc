@@ -601,7 +601,6 @@ void InputSection::scan_relocations() {
         rel_types[i++] = R_TLSGD_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSGD;
-        sym.flags |= NEEDS_DYNSYM;
         rel_types[i] = R_TLSGD;
       }
       break;

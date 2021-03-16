@@ -483,6 +483,7 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
   sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsgd_syms.push_back(sym);
+  out::dynsym->add_symbol(sym);
 }
 
 void GotSection::add_tlsld() {
