@@ -35,6 +35,24 @@ Note that even though mold can create a runnable Chrome executable,
 it is far from complete and not usable for production. mold is still
 just a toy linker, and this is still just my pet project.
 
+## How to build
+
+mold is written in C++20, so you need a very recent version of GCC or
+Clang. I'm using Ubuntu 20.04 as a development platform. In that
+environment, you can build mold by the following commands.
+
+```
+$ sudo apt-get install libstdc++-10-dev clang-10 libssl-dev zlib1g-dev
+$ git clone --recursive https://github.com/rui314/mold.git
+$ cd mold
+$ make submodules
+$ make
+```
+
+To use mold, add `-fuse-ld=<absolute-path-to-mold-executable>` to a
+linker command line. Since GCC doesn't support that option,
+I recommend using clang.
+
 ## Background
 
 - Even though lld has significantly improved the situation, linking is
