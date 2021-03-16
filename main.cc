@@ -1055,9 +1055,6 @@ int main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(arg_vector, file_args);
 
-  if (config.output == "")
-    Fatal() << "-o option is missing";
-
   if (!config.preload)
     if (i64 code; resume_daemon(argv, &code))
       exit(code);
