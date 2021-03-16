@@ -308,7 +308,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       // Relax GD to LE
       static const u8 insn[] = {
         0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff, %rax
+        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff(%rax), %rax
       };
       memcpy(loc - 4, insn, sizeof(insn));
       *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
