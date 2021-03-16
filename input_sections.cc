@@ -266,7 +266,6 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       write(S + A);
       break;
     case R_BASEREL:
-      write(S + A);
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       break;
     case R_DYN:
