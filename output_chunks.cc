@@ -381,7 +381,7 @@ static std::vector<u64> create_dynamic_section() {
     flags1 |= DF_1_NOW;
   }
 
-  if (config.df_static_tls)
+  if (out::df_static_tls)
     flags |= DF_STATIC_TLS;
 
   if (flags)

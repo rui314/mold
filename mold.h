@@ -98,7 +98,6 @@ struct Config {
   std::vector<std::pair<std::string_view, i16>> version_patterns;
   i64 filler = -1;
   i64 thread_count = -1;
-  std::atomic_bool df_static_tls = false;
   std::string Map;
   std::string dynamic_linker;
   std::string entry = "_start";
@@ -114,7 +113,6 @@ struct Config {
   std::vector<std::string_view> library_paths;
   std::vector<std::string_view> trace_symbol;
   std::vector<std::string_view> undefined;
-  std::vector<u8> build_id_value;
   u64 image_base = 0x200000;
 };
 
@@ -1243,11 +1241,12 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx);
 //
 
 namespace out {
+inline u8 *buf;
+
 inline std::vector<ObjectFile *> objs;
 inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
-inline u8 *buf;
-
+inline std::atomic_bool df_static_tls = false;
 inline ObjectFile *internal_obj;
 
 inline OutputEhdr *ehdr;

@@ -659,7 +659,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      config.df_static_tls = true;
+      out::df_static_tls = true;
 
       if (config.relax && !config.shared &&
           is_mov_insn(contents, rel.r_offset)) {
