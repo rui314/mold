@@ -17,7 +17,7 @@ void OutputEhdr::copy_buf() {
   hdr.e_type = config.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
-  if (!config.shared)
+  if (!config.entry.empty())
     hdr.e_entry = Symbol::intern(config.entry)->get_addr();
   hdr.e_phoff = out::phdr->shdr.sh_offset;
   hdr.e_shoff = out::shdr->shdr.sh_offset;
@@ -164,12 +164,10 @@ std::vector<ElfPhdr> create_phdr() {
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
-  vec.push_back({});
-  vec.back().p_type = PT_GNU_STACK;
-  if (config.z_execstack)
-    vec.back().p_flags = PF_R | PF_W | PF_X;
-  else
-    vec.back().p_flags = PF_R | PF_W;
+  vec.push_back({
+    .p_type = PT_GNU_STACK,
+    .p_flags = config.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
+  });
 
   // Create a PT_GNU_RELRO.
   if (config.z_relro) {
@@ -692,9 +690,7 @@ void DynsymSection::sort_symbols() {
 
   // In any ELF file, local symbols should precede global symbols.
   tbb::parallel_sort(vec.begin() + 1, vec.end(), [](const T &a, const T &b) {
-    if (a.is_local() == b.is_local())
-      return a.idx < b.idx;
-    return a.is_local();
+    return std::tuple(a.is_local(), a.idx) < std::tuple(b.is_local(), b.idx);
   });
 
   auto first_global = std::partition_point(vec.begin() + 1, vec.end(),
@@ -718,9 +714,7 @@ void DynsymSection::sort_symbols() {
     });
 
     tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
-      if (a.hash == b.hash)
-        return a.idx < b.idx;
-      return a.hash < b.hash;
+      return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
     });
   }
 
@@ -998,7 +992,6 @@ void EhFrameSection::construct() {
         fde.offset = offset;
         offset += fde.contents.size();
         cie.num_fdes++;
-
       }
       cie.fde_size = offset;
     }
@@ -1010,7 +1003,7 @@ void EhFrameSection::construct() {
     for (CieRecord &cie : file->cies)
       cies.push_back(&cie);
 
-  // Record the total number of FDes for .eh_frame_hdr.
+  // Record the total number of FDEs for .eh_frame_hdr.
   for (CieRecord *cie : cies) {
     cie->fde_idx = num_fdes;
     num_fdes += cie->num_fdes;
@@ -1131,6 +1124,10 @@ void EhFrameSection::copy_buf() {
   }
 }
 
+// Compiler-generated object files don't usually contain symbols
+// referring a .eh_frame section, but crtend.o contains such symbol
+// (i.e. "__FRAME_END__"). So we need to handle such symbol.
+// This function is slow, but it's okay because they are rare.
 u64 EhFrameSection::get_addr(const Symbol &sym) {
   InputSection &isec = *sym.input_section;
   const char *section_begin = isec.contents.data();
@@ -1170,11 +1167,11 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
 }
 
 void CopyrelSection::add_symbol(Symbol *sym) {
-  assert(!config.shared);
-  assert(sym->file->is_dso);
-
   if (sym->has_copyrel)
     return;
+
+  assert(!config.shared);
+  assert(sym->file->is_dso);
 
   shdr.sh_size = align_to(shdr.sh_size, shdr.sh_addralign);
   sym->value = shdr.sh_size;
