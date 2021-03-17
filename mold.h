@@ -327,7 +327,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol &sym);
 // input_sections.cc
 //
 
-enum RelType : u8 {
+enum RelType : u16 {
   R_NONE = 1,
   R_ABS,
   R_DYN,
