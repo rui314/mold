@@ -212,6 +212,18 @@ void RelDynSection::update_shdr() {
   shdr.sh_size = offset;
 }
 
+void RelDynSection::sort() {
+  Timer t("sort_dynamic_relocs");
+
+  ElfRela *begin = (ElfRela *)(out::buf + shdr.sh_offset);
+  ElfRela *end = (ElfRela *)(out::buf + shdr.sh_offset + shdr.sh_size);
+
+  tbb::parallel_sort(begin, end, [](const ElfRela &a, const ElfRela &b) {
+    return std::tuple(a.r_sym, a.r_offset) <
+           std::tuple(b.r_sym, b.r_offset);
+  });
+}
+
 void StrtabSection::update_shdr() {
   shdr.sh_size = 1;
   for (ObjectFile *file : out::objs) {

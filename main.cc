@@ -1320,6 +1320,11 @@ int main(int argc, char **argv) {
     Error::checkpoint();
   }
 
+  // Dynamic linker works better with sorted .rela.dyn section,
+  // so we sort them.
+  if (out::reldyn)
+    out::reldyn->sort();
+
   // Zero-clear paddings between sections
   clear_padding(filesize);
 
