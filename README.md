@@ -42,7 +42,7 @@ Clang. I'm using Ubuntu 20.04 as a development platform. In that
 environment, you can build mold by the following commands.
 
 ```
-$ sudo apt-get install libstdc++-10-dev clang-10 libssl-dev zlib1g-dev
+$ sudo apt-get install build-essential libstdc++-10-dev clang-10 libssl-dev zlib1g-dev cmake
 $ git clone --recursive https://github.com/rui314/mold.git
 $ cd mold
 $ make submodules
