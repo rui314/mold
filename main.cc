@@ -861,7 +861,7 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   i64 vaddr = config.image_base;
 
   for (OutputChunk *chunk : chunks) {
-    if (chunk->starts_new_ptload)
+    if (chunk->new_page)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
     if (vaddr % PAGE_SIZE > fileoff % PAGE_SIZE)
@@ -883,6 +883,9 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
     bool is_tbss = is_bss && (chunk->shdr.sh_flags & SHF_TLS);
     if (!is_tbss)
       vaddr += chunk->shdr.sh_size;
+
+    if (chunk->new_page_end)
+      vaddr = align_to(vaddr, PAGE_SIZE);
   }
   return fileoff;
 }

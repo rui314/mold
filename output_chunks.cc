@@ -83,9 +83,6 @@ std::vector<ElfPhdr> create_phdr() {
       (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
-
-    if (type == PT_LOAD)
-      chunk->starts_new_ptload = true;
   };
 
   auto append = [&](OutputChunk *chunk) {
@@ -134,6 +131,7 @@ std::vector<ElfPhdr> create_phdr() {
 
     i64 flags = to_phdr_flags(first);
     define(PT_LOAD, flags, PAGE_SIZE, first);
+    first->new_page = true;
 
     if (!is_bss(first))
       while (i < end && !is_bss(out::chunks[i]) &&
@@ -156,19 +154,6 @@ std::vector<ElfPhdr> create_phdr() {
       append(out::chunks[i++]);
   }
 
-  // Create a PT_GNU_RELRO.
-  if (config.z_relro) {
-    for (i64 i = 0; i < out::chunks.size(); i++) {
-      if (!is_relro(out::chunks[i]))
-        continue;
-
-      define(PT_GNU_RELRO, PF_R, 1, out::chunks[i]);
-      i++;
-      while (i < out::chunks.size() && is_relro(out::chunks[i]))
-        append(out::chunks[i++]);
-    }
-  }
-
   // Add PT_DYNAMIC
   if (out::dynamic)
     define(PT_DYNAMIC, PF_R | PF_W, 1, out::dynamic);
@@ -185,6 +170,21 @@ std::vector<ElfPhdr> create_phdr() {
     vec.back().p_flags = PF_R | PF_W | PF_X;
   else
     vec.back().p_flags = PF_R | PF_W;
+
+  // Create a PT_GNU_RELRO.
+  if (config.z_relro) {
+    for (i64 i = 0; i < out::chunks.size(); i++) {
+      if (!is_relro(out::chunks[i]))
+        continue;
+
+      define(PT_GNU_RELRO, PF_R, 1, out::chunks[i]);
+      out::chunks[i]->new_page = true;
+      i++;
+      while (i < out::chunks.size() && is_relro(out::chunks[i]))
+        append(out::chunks[i++]);
+      out::chunks[i - 1]->new_page_end = true;
+    }
+  }
 
   return vec;
 }

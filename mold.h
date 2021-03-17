@@ -467,7 +467,8 @@ public:
   std::string_view name;
   i64 shndx = 0;
   Kind kind;
-  bool starts_new_ptload = false;
+  bool new_page = false;
+  bool new_page_end = false;
   ElfShdr shdr = { .sh_addralign = 1 };
 
 protected:
