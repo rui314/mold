@@ -52,6 +52,9 @@ static FileType get_file_type(MemoryMappedFile *mb) {
 static ObjectFile *new_object_file(MemoryMappedFile *mb,
                                    std::string archive_name,
                                    ReadContext &ctx) {
+  static Counter count("parsed_objs");
+  count++;
+
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
   ctx.tg.run([=]() { file->parse(); });
