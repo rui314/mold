@@ -584,7 +584,7 @@ public:
     name = ".plt";
     shdr.sh_type = SHT_PROGBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    shdr.sh_addralign = 8;
+    shdr.sh_addralign = 16;
     shdr.sh_size = PLT_SIZE;
   }
 
