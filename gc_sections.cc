@@ -152,8 +152,22 @@ static void sweep() {
   });
 }
 
+// Non-alloc section fragments are not subject of garbage collection.
+// This function marks such fragments.
+static void mark_nonalloc_fragments() {
+  Timer t("mark_nonalloc_fragments");
+
+  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    for (SectionFragment *frag : file->fragments)
+      if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
+        frag->is_alive = true;
+  });
+}
+
 void gc_sections() {
   Timer t("gc");
+
+  mark_nonalloc_fragments();
 
   tbb::concurrent_vector<InputSection *> roots = collect_root_set();
   mark(roots);
