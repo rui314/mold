@@ -1096,6 +1096,20 @@ std::string path_basename(std::string_view path);
 std::string path_clean(std::string_view path);
 
 //
+// glob.cc
+//
+
+class GlobPattern {
+public:
+  GlobPattern(std::string_view pat);
+  bool match(std::string_view str) const;
+
+private:
+  enum { EXACT, PREFIX, SUFFIX, GENERIC } kind;
+  std::string pat;
+};
+
+//
 // perf.cc
 //
 

@@ -590,10 +590,18 @@ static void apply_version_script() {
     i16 veridx = pair.second;
     assert(pattern != "*");
 
-    if (pattern.find('*') == pattern.npos)
+    if (pattern.find('*') == pattern.npos) {
       Symbol::intern(pattern)->ver_idx = veridx;
-    else
-      Fatal() << "not supported: " << pattern;
+      continue;
+    }
+
+    GlobPattern glob(pattern);
+
+    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+      for (Symbol *sym : file->get_global_syms())
+        if (sym->file == file && glob.match(sym->name))
+          sym->ver_idx = veridx;
+    });
   }
 }
 
