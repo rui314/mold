@@ -555,6 +555,9 @@ void ObjectFile::initialize_mergeable_sections() {
       sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
     }
   }
+
+  for (MergeableSection &m : mergeable_sections)
+    fragments.insert(fragments.end(), m.fragments.begin(), m.fragments.end());
 }
 
 void ObjectFile::parse() {

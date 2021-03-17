@@ -365,6 +365,14 @@ static void convert_common_symbols() {
 static void compute_merged_section_sizes() {
   Timer t("compute_merged_section_sizes");
 
+  // Mark section fragments referenced by live objects.
+  if (!config.gc_sections) {
+    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+      for (SectionFragment *frag : file->fragments)
+        frag->is_alive = true;
+    });
+  }
+
   // Add an identification string to .comment.
   const char *verstr = "mold linker";
   MergedSection *sec =

@@ -67,9 +67,18 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   Timer t("collect_root_set");
   tbb::concurrent_vector<InputSection *> roots;
 
-  auto enqueue = [&](InputSection *isec) {
+  auto enqueue_section = [&](InputSection *isec) {
     if (mark_section(isec))
       roots.push_back(isec);
+  };
+
+  auto enqueue_symbol = [&](Symbol *sym) {
+    if (sym) {
+      if (sym->frag)
+        sym->frag->is_alive = true;
+      else
+        enqueue_section(sym->input_section);
+    }
   };
 
   // Add sections that are not subject to garbage collection.
@@ -86,25 +95,22 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
         isec->is_visited = true;
 
       if (is_init_fini(*isec) || isec->shdr.sh_type == SHT_NOTE)
-        enqueue(isec);
+        enqueue_section(isec);
     }
   });
 
   // Add sections containing exported symbols
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols)
-      if (sym->file == file && sym->is_imported)
-        if (InputSection *sec = sym->input_section)
-          if (sec->shdr.sh_flags & SHF_ALLOC)
-            enqueue(sec);
+      if (sym->file == file && sym->is_exported)
+        enqueue_symbol(sym);
   });
 
   // Add sections referenced by root symbols.
-  enqueue(Symbol::intern(config.entry)->input_section);
+  enqueue_symbol(Symbol::intern(config.entry));
 
   for (std::string_view name : config.undefined)
-    if (InputSection *sec = Symbol::intern(config.entry)->input_section)
-      enqueue(sec);
+    enqueue_symbol(Symbol::intern(name));
 
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
@@ -112,7 +118,7 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
     for (CieRecord &cie : file->cies)
       for (EhReloc &rel : cie.rels)
-        enqueue(rel.sym.input_section);
+        enqueue_section(rel.sym.input_section);
   });
 
   return roots;

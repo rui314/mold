@@ -237,7 +237,7 @@ struct SectionFragment {
   std::string_view data;
   u32 offset = -1;
   std::atomic_uint16_t alignment = 1;
-  std::atomic_bool is_alive = !config.gc_sections;
+  std::atomic_bool is_alive = false;
 };
 
 struct SectionFragmentRef {
@@ -992,6 +992,7 @@ public:
   const bool is_in_lib = false;
   std::vector<CieRecord> cies;
   std::vector<const char *> symvers;
+  std::vector<SectionFragment *> fragments;
   bool exclude_libs = false;
 
   u64 num_dynrel = 0;
