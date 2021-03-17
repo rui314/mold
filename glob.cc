@@ -1,19 +1,17 @@
 #include "mold.h"
 
-GlobPattern::GlobPattern(std::string_view pat) {
+GlobPattern::GlobPattern(std::string_view pattern) : pat(pattern) {
   if (pat.find('*') == pat.npos) {
     kind = EXACT;
-    this->pat = pat;
   } else if (pat.ends_with('*') &&
              pat.substr(0, pat.size() - 1).find('*') == pat.npos) {
     kind = PREFIX;
-    this->pat = pat.substr(0, pat.size() - 1);
+    pat.remove_suffix(1);
   } else if (pat.starts_with('*') && pat.substr(1).find('*') == pat.npos) {
     kind = SUFFIX;
-    this->pat = pat.substr(1);
+    pat.remove_prefix(1);
   } else {
     kind = GENERIC;
-    this->pat = pat;
   }
 }
 

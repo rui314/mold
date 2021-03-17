@@ -1106,7 +1106,7 @@ public:
 
 private:
   enum { EXACT, PREFIX, SUFFIX, GENERIC } kind;
-  std::string pat;
+  std::string_view pat;
 };
 
 //
