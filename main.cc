@@ -597,8 +597,8 @@ static void apply_version_script() {
   }
 }
 
-static void apply_symbol_version() {
-  Timer t("apply_symbol_version");
+static void parse_symbol_version() {
+  Timer t("parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
   for (i64 i = 0; i < config.version_definitions.size(); i++)
@@ -647,7 +647,7 @@ static void compute_import_export() {
     });
   }
 
-  // By default, global symbols are exported from DSO.
+  // Global symbols are exported from DSO by default.
   if (config.shared || config.export_dynamic) {
     tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
       for (Symbol *sym : file->get_global_syms()) {
@@ -1145,7 +1145,7 @@ int main(int argc, char **argv) {
   apply_version_script();
 
   // Parse symbol version suffixes (e.g. "foo@ver1").
-  apply_symbol_version();
+  parse_symbol_version();
 
   // Set is_import and is_export bits for each symbol.
   compute_import_export();
