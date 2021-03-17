@@ -6,4 +6,4 @@
 	url = https://github.com/microsoft/mimalloc.git
 [submodule "xxHash"]
 	path = xxHash
-	url = git@github.com:Cyan4973/xxHash.git
+	url = https://github.com/Cyan4973/xxHash.git
