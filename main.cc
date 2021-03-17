@@ -1135,17 +1135,17 @@ int main(int argc, char **argv) {
     out::dsos = vec;
   }
 
-  // Apply -exclude-libs
-  apply_exclude_libs();
-
   Timer t_total("total");
   Timer t_before_copy("before_copy");
+
+  // Apply -exclude-libs
+  apply_exclude_libs();
 
   // Create instances of linker-synthesized sections such as
   // .got or .plt.
   create_synthetic_sections();
 
-  // Set priorities to files.
+  // Set unique indices to files.
   set_file_priority();
 
   // Resolve symbols and fix the set of object files that are
@@ -1196,16 +1196,6 @@ int main(int argc, char **argv) {
   // Beyond this point, no new files will be added to out::objs
   // or out::dsos.
 
-  // Compute sizes of output sections while assigning offsets
-  //within an output section to input sections.
-  compute_section_sizes();
-
-  // Sort sections by section attributes so that we'll have to
-  // create as few segments as possible.
-  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
-    return get_section_rank(a) < get_section_rank(b);
-  });
-
   // Convert weak symbols to absolute symbols with value 0.
   convert_undefined_weak_symbols();
 
@@ -1225,6 +1215,16 @@ int main(int argc, char **argv) {
   if (!config.allow_multiple_definition)
     check_duplicate_symbols();
 
+  // Compute sizes of output sections while assigning offsets
+  // within an output section to input sections.
+  compute_section_sizes();
+
+  // Sort sections by section attributes so that we'll have to
+  // create as few segments as possible.
+  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
+    return get_section_rank(a) < get_section_rank(b);
+  });
+
   // Copy string referred by .dynamic to .dynstr.
   for (SharedFile *file : out::dsos)
     out::dynstr->add_string(file->soname);
@@ -1241,7 +1241,7 @@ int main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels();
 
-  // Sort .dynsym contents. Beyond this point, no symbol should be
+  // Sort .dynsym contents. Beyond this point, no symbol will be
   // added to .dynsym.
   out::dynsym->sort_symbols();
 
@@ -1295,12 +1295,13 @@ int main(int argc, char **argv) {
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(out::chunks);
 
-  // At this point, file layout is fixed. Beyond this, you can assume
-  // that symbol addresses including their GOT/PLT/etc addresses have
-  // a correct final value.
+  // At this point, file layout is fixed.
 
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(out::chunks);
+
+  // Beyond this, you can assume that symbol addresses including their
+  // GOT or PLT addresses have a correct final value.
 
   // Some types of relocations for TLS symbols need the TLS segment
   // address. Find it out now.
