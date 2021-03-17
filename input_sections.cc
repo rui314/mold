@@ -624,9 +624,9 @@ void InputSection::scan_relocations() {
         sym.flags |= NEEDS_PLT;
       rel_types[i] = R_PC;
       break;
-    case R_X86_64_TLSGD:
-      if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
-        Fatal() << *this << ": TLSGD reloc not followed by PLT32";
+    case R_X86_64_TLSGD: {
+      if (i + 1 == rels.size())
+        Fatal() << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
 
       if (config.relax && !config.shared && !sym.is_imported) {
         rel_types[i++] = R_TLSGD_RELAX_LE;
@@ -635,9 +635,10 @@ void InputSection::scan_relocations() {
         rel_types[i] = R_TLSGD;
       }
       break;
+    }
     case R_X86_64_TLSLD:
-      if (i + 1 == rels.size() || rels[i + 1].r_type != R_X86_64_PLT32)
-        Fatal() << *this << ": TLSLD reloc not followed by PLT32";
+      if (i + 1 == rels.size())
+        Fatal() << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
       if (sym.is_imported)
         Fatal() << *this << ": TLSLD reloc refers external symbol " << sym;
 
