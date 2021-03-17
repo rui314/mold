@@ -573,6 +573,9 @@ void GotSection::copy_buf() {
 void GotPltSection::copy_buf() {
   u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
 
+  // The first slot of .got.plt points to _DYNAMIC, as requested by
+  // the x86-64 psABI. The second and the third slots are reserved by
+  // the psABI.
   buf[0] = out::dynamic ? out::dynamic->shdr.sh_addr : 0;
   buf[1] = 0;
   buf[2] = 0;
