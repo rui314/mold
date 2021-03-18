@@ -504,6 +504,14 @@ void GotSection::add_tlsgd_symbol(Symbol *sym) {
   out::dynsym->add_symbol(sym);
 }
 
+void GotSection::add_tlsdesc_symbol(Symbol *sym) {
+  assert(sym->tlsdesc_idx == -1);
+  sym->tlsdesc_idx = shdr.sh_size / GOT_SIZE;
+  shdr.sh_size += GOT_SIZE * 2;
+  tlsdesc_syms.push_back(sym);
+  out::dynsym->add_symbol(sym);
+}
+
 void GotSection::add_tlsld() {
   if (tlsld_idx != -1)
     return;
@@ -518,6 +526,7 @@ i64 GotSection::get_reldyn_size() const {
       n++;
 
   n += tlsgd_syms.size() * 2;
+  n += tlsdesc_syms.size() * 2;
 
   for (Symbol *sym : gottpoff_syms)
     if (sym->is_imported)
@@ -557,6 +566,9 @@ void GotSection::copy_buf() {
     *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
     *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
   }
+
+  for (Symbol *sym : tlsdesc_syms)
+    *rel++ = {sym->get_tlsdesc_addr(), R_X86_64_TLSDESC, sym->dynsym_idx, 0};
 
   for (Symbol *sym : gottpoff_syms) {
     if (sym->is_imported)

@@ -568,6 +568,9 @@ static void scan_rels() {
     if (sym->flags & NEEDS_TLSGD)
       out::got->add_tlsgd_symbol(sym);
 
+    if (sym->flags & NEEDS_TLSDESC)
+      out::got->add_tlsdesc_symbol(sym);
+
     if (sym->flags & NEEDS_TLSLD)
       out::got->add_tlsld();
 

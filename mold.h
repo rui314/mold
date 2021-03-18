@@ -253,6 +253,7 @@ enum {
   NEEDS_TLSLD    = 1 << 4,
   NEEDS_COPYREL  = 1 << 5,
   NEEDS_DYNSYM   = 1 << 6,
+  NEEDS_TLSDESC  = 1 << 7,
 };
 
 class Symbol {
@@ -279,6 +280,7 @@ public:
   inline u64 get_gotplt_addr() const;
   inline u64 get_gottpoff_addr() const;
   inline u64 get_tlsgd_addr() const;
+  inline u64 get_tlsdesc_addr() const;
   inline u64 get_plt_addr() const;
 
   inline bool is_alive() const;
@@ -302,6 +304,7 @@ public:
   u32 gotplt_idx = -1;
   u32 gottpoff_idx = -1;
   u32 tlsgd_idx = -1;
+  u32 tlsdesc_idx = -1;
   u32 plt_idx = -1;
   u32 dynsym_idx = -1;
   u16 shndx = 0;
@@ -347,6 +350,9 @@ enum RelType : u16 {
   R_TPOFF,
   R_GOTTPOFF,
   R_GOTTPOFF_RELAX_MOV,
+  R_GOTPC_TLSDESC,
+  R_GOTPC_TLSDESC_RELAX_LE,
+  R_TLSDESC_CALL_RELAX,
 };
 
 struct EhReloc {
@@ -549,6 +555,7 @@ public:
   void add_got_symbol(Symbol *sym);
   void add_gottpoff_symbol(Symbol *sym);
   void add_tlsgd_symbol(Symbol *sym);
+  void add_tlsdesc_symbol(Symbol *sym);
   void add_tlsld();
 
   u64 get_tlsld_addr() const {
@@ -562,6 +569,7 @@ public:
   std::vector<Symbol *> got_syms;
   std::vector<Symbol *> gottpoff_syms;
   std::vector<Symbol *> tlsgd_syms;
+  std::vector<Symbol *> tlsdesc_syms;
   u32 tlsld_idx = -1;
 };
 
@@ -1411,6 +1419,11 @@ inline u64 Symbol::get_gottpoff_addr() const {
 inline u64 Symbol::get_tlsgd_addr() const {
   assert(tlsgd_idx != -1);
   return out::got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
+}
+
+inline u64 Symbol::get_tlsdesc_addr() const {
+  assert(tlsdesc_idx != -1);
+  return out::got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_plt_addr() const {

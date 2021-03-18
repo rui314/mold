@@ -135,6 +135,8 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_TPOFF32:
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
+  case R_X86_64_GOTPC32_TLSDESC:
+  case R_X86_64_TLSDESC_CALL:
     if (val != (i32)val)
       Error() << *sec << ": relocation " << rel_to_string(r_type)
               << " against " << sym << " out of range: " << (i64)val
@@ -177,6 +179,8 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
   case R_X86_64_TPOFF32:
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
+  case R_X86_64_GOTPC32_TLSDESC:
+  case R_X86_64_TLSDESC_CALL:
     *(u32 *)loc = val;
     return;
   case R_X86_64_64:
@@ -344,6 +348,22 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       write(S + A - out::tls_end + 4);
       break;
     }
+    case R_GOTPC_TLSDESC:
+      write(sym.get_tlsdesc_addr() + A - P);
+      break;
+    case R_GOTPC_TLSDESC_RELAX_LE: {
+      static const u8 insn[] = {
+        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
+      };
+      memcpy(loc - 3, insn, sizeof(insn));
+      write(S + A - out::tls_end + 4);
+      break;
+    }
+    case R_TLSDESC_CALL_RELAX:
+      // Rewrite indirect call to nop.
+      loc[0] = 0x66;
+      loc[1] = 0x90;
+      break;
     default:
       unreachable();
     }
@@ -440,10 +460,8 @@ static int get_sym_type(Symbol &sym) {
 }
 
 // Returns true if the instruction is `MOV foo(%rip),%r64`.
-static bool is_mov_insn(std::string_view contents, i64 offset) {
-  u8 *insn = (u8 *)(contents.data() + offset - 3);
-
-  switch ((insn[0] << 16) | (insn[1] << 8) | insn[2]) {
+static bool is_mov_insn(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
   case 0x488b05: case 0x488b0d: case 0x488b15: case 0x488b1d:
   case 0x488b25: case 0x488b2d: case 0x488b35: case 0x488b3d:
   case 0x4c8b05: case 0x4c8b0d: case 0x4c8b15: case 0x4c8b1d:
@@ -474,6 +492,7 @@ void InputSection::scan_relocations() {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
     Symbol &sym = *file.symbols[rel.r_sym];
+    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       Error() << "undefined symbol: " << file << ": " << sym;
@@ -597,12 +616,11 @@ void InputSection::scan_relocations() {
         Fatal() << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
       if (config.relax && !sym.is_imported && sym.is_relative()) {
-        u8 *insn = (u8 *)(contents.data() + rel.r_offset - 2);
-        if (insn[0] == 0xff && insn[1] == 0x15) {
+        if (loc[-2] == 0xff && loc[-1] == 0x15) {
           rel_types[i] = R_GOTPCREL_RELAX_CALL;
           break;
         }
-        if (insn[0] == 0xff && insn[1] == 0x25) {
+        if (loc[-2] == 0xff && loc[-1] == 0x25) {
           rel_types[i] = R_GOTPCREL_RELAX_JMP;
           break;
         }
@@ -617,7 +635,7 @@ void InputSection::scan_relocations() {
         Fatal() << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
       if (config.relax && !sym.is_imported && sym.is_relative() &&
-          is_mov_insn(contents, rel.r_offset)) {
+          is_mov_insn(loc - 3)) {
         rel_types[i] = R_GOTPCREL_RELAX_MOV;
       } else {
         sym.flags |= NEEDS_GOT;
@@ -667,13 +685,30 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTTPOFF:
       out::df_static_tls = true;
 
-      if (config.relax && !config.shared &&
-          is_mov_insn(contents, rel.r_offset)) {
+      if (config.relax && !config.shared && is_mov_insn(loc - 3)) {
         rel_types[i] = R_GOTTPOFF_RELAX_MOV;
       } else {
         sym.flags |= NEEDS_GOTTPOFF;
         rel_types[i] = R_GOTTPOFF;
       }
+      break;
+    case R_X86_64_GOTPC32_TLSDESC:
+      if (memcmp(loc - 3, "\x48\x8d\x05", 3))
+        Fatal() << *this << ": GOTPC32_TLSDESC relocation is used"
+                << " against an invalid code sequence";
+
+      if (config.relax && !config.shared) {
+        rel_types[i] = R_GOTPC_TLSDESC_RELAX_LE;
+      } else {
+        sym.flags |= NEEDS_TLSDESC;
+        rel_types[i] = R_GOTPC_TLSDESC;
+      }
+      break;
+    case R_X86_64_TLSDESC_CALL:
+      if (config.relax && !config.shared)
+        rel_types[i] = R_TLSDESC_CALL_RELAX;
+      else
+        rel_types[i] = R_NONE;
       break;
     default:
       Fatal() << *this << ": unknown relocation: " << rel.r_type;
