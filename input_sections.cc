@@ -530,6 +530,9 @@ void InputSection::scan_relocations() {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S: {
+      // Dynamic linker does not support 8, 16 or 32-bit dynamic
+      // relocations for these types of relocations. We report an
+      // error if we cannot relocate them even at load-time.
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
         {  NONE,     NONE,  COPYREL,       PLT },        // PDE
@@ -541,6 +544,8 @@ void InputSection::scan_relocations() {
       break;
     }
     case R_X86_64_64: {
+      // Unlike the above, we can use R_X86_64_RELATIVE and R_86_64_64
+      // relocations.
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     NONE,    COPYREL,       PLT },        // PDE
