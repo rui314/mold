@@ -208,28 +208,56 @@ void InputSection::copy_buf() {
     apply_reloc_nonalloc(base);
 }
 
-static u32 get_gottpoff_relaxed_insn(u8 *insn) {
-  // We want to rewrite `mov x@gottpoff(%rip),%r64` to `mov x@tpoff,%r64`.
-  switch ((insn[0] << 16) | (insn[1] << 8) | insn[2]) {
-  case 0x488b05: return 0x48c7c0; // mov x@gottpoff(%rip), %rax
-  case 0x488b0d: return 0x48c7c1; // mov x@gottpoff(%rip), %rcx
-  case 0x488b15: return 0x48c7c2; // mov x@gottpoff(%rip), %rdx
-  case 0x488b1d: return 0x48c7c3; // mov x@gottpoff(%rip), %rbx
-  case 0x488b25: return 0x48c7c4; // mov x@gottpoff(%rip), %rsp
-  case 0x488b2d: return 0x48c7c5; // mov x@gottpoff(%rip), %rbp
-  case 0x488b35: return 0x48c7c6; // mov x@gottpoff(%rip), %rsi
-  case 0x488b3d: return 0x48c7c7; // mov x@gottpoff(%rip), %rdi
-  case 0x4c8b05: return 0x49c7c0; // mov x@gottpoff(%rip), %r8
-  case 0x4c8b0d: return 0x49c7c1; // mov x@gottpoff(%rip), %r9
-  case 0x4c8b15: return 0x49c7c2; // mov x@gottpoff(%rip), %r10
-  case 0x4c8b1d: return 0x49c7c3; // mov x@gottpoff(%rip), %r11
-  case 0x4c8b25: return 0x49c7c4; // mov x@gottpoff(%rip), %r12
-  case 0x4c8b2d: return 0x49c7c5; // mov x@gottpoff(%rip), %r13
-  case 0x4c8b35: return 0x49c7c6; // mov x@gottpoff(%rip), %r14
-  case 0x4c8b3d: return 0x49c7c7; // mov x@gottpoff(%rip), %r15
-  default:
-    unreachable();
+static u32 relax_gotpcrelx(u8 *loc) {
+  switch ((loc[0] << 8) | loc[1]) {
+  case 0xff15: return 0x90e8; // call *0(%rip) -> call 0
+  case 0xff25: return 0x90e9; // jmp  *0(%rip) -> jmp  0
   }
+  return 0;
+}
+
+static u32 relax_rex_gotpcrelx(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488b05: return 0x488d05; // mov 0(%rip), %rax -> lea 0(%rip), %rax
+  case 0x488b0d: return 0x488d0d; // mov 0(%rip), %rcx -> lea 0(%rip), %rcx
+  case 0x488b15: return 0x488d15; // mov 0(%rip), %rdx -> lea 0(%rip), %rdx
+  case 0x488b1d: return 0x488d1d; // mov 0(%rip), %rbx -> lea 0(%rip), %rbx
+  case 0x488b25: return 0x488d25; // mov 0(%rip), %rsp -> lea 0(%rip), %rsp
+  case 0x488b2d: return 0x488d2d; // mov 0(%rip), %rbp -> lea 0(%rip), %rbp
+  case 0x488b35: return 0x488d35; // mov 0(%rip), %rsi -> lea 0(%rip), %rsi
+  case 0x488b3d: return 0x488d3d; // mov 0(%rip), %rdi -> lea 0(%rip), %rdi
+  case 0x4c8b05: return 0x4c8d05; // mov 0(%rip), %r8  -> lea 0(%rip), %r8
+  case 0x4c8b0d: return 0x4c8d0d; // mov 0(%rip), %r9  -> lea 0(%rip), %r9
+  case 0x4c8b15: return 0x4c8d15; // mov 0(%rip), %r10 -> lea 0(%rip), %r10
+  case 0x4c8b1d: return 0x4c8d1d; // mov 0(%rip), %r11 -> lea 0(%rip), %r11
+  case 0x4c8b25: return 0x4c8d25; // mov 0(%rip), %r12 -> lea 0(%rip), %r12
+  case 0x4c8b2d: return 0x4c8d2d; // mov 0(%rip), %r13 -> lea 0(%rip), %r13
+  case 0x4c8b35: return 0x4c8d35; // mov 0(%rip), %r14 -> lea 0(%rip), %r14
+  case 0x4c8b3d: return 0x4c8d3d; // mov 0(%rip), %r15 -> lea 0(%rip), %r15
+  }
+  return 0;
+}
+
+static u32 relax_gottpoff(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488b05: return 0x48c7c0; // mov 0(%rip), %rax -> mov $0, %rax
+  case 0x488b0d: return 0x48c7c1; // mov 0(%rip), %rcx -> mov $0, %rcx
+  case 0x488b15: return 0x48c7c2; // mov 0(%rip), %rdx -> mov $0, %rdx
+  case 0x488b1d: return 0x48c7c3; // mov 0(%rip), %rbx -> mov $0, %rbx
+  case 0x488b25: return 0x48c7c4; // mov 0(%rip), %rsp -> mov $0, %rsp
+  case 0x488b2d: return 0x48c7c5; // mov 0(%rip), %rbp -> mov $0, %rbp
+  case 0x488b35: return 0x48c7c6; // mov 0(%rip), %rsi -> mov $0, %rsi
+  case 0x488b3d: return 0x48c7c7; // mov 0(%rip), %rdi -> mov $0, %rdi
+  case 0x4c8b05: return 0x49c7c0; // mov 0(%rip), %r8  -> mov $0, %r8
+  case 0x4c8b0d: return 0x49c7c1; // mov 0(%rip), %r9  -> mov $0, %r9
+  case 0x4c8b15: return 0x49c7c2; // mov 0(%rip), %r10 -> mov $0, %r10
+  case 0x4c8b1d: return 0x49c7c3; // mov 0(%rip), %r11 -> mov $0, %r11
+  case 0x4c8b25: return 0x49c7c4; // mov 0(%rip), %r12 -> mov $0, %r12
+  case 0x4c8b2d: return 0x49c7c5; // mov 0(%rip), %r13 -> mov $0, %r13
+  case 0x4c8b35: return 0x49c7c6; // mov 0(%rip), %r14 -> mov $0, %r14
+  case 0x4c8b3d: return 0x49c7c7; // mov 0(%rip), %r15 -> mov $0, %r15
+  }
+  return 0;
 }
 
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
@@ -287,23 +315,21 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_GOTPCREL:
       write(G + GOT + A - P);
       break;
-    case R_GOTPCREL_RELAX_CALL:
-      // Rewrite indirect call to direct call.
-      loc[-2] = 0x90;
-      loc[-1] = 0xe8;
+    case R_GOTPCRELX_RELAX: {
+      u32 insn = relax_gotpcrelx(loc - 2);
+      loc[-2] = insn >> 8;
+      loc[-1] = insn;
       write(S + A - P);
       break;
-    case R_GOTPCREL_RELAX_JMP:
-      // Rewrite indirect jmp to direct jmp.
-      loc[-2] = 0x90;
-      loc[-1] = 0xe9;
+    }
+    case R_REX_GOTPCRELX_RELAX: {
+      u32 insn = relax_rex_gotpcrelx(loc - 3);
+      loc[-3] = insn >> 16;
+      loc[-2] = insn >> 8;
+      loc[-1] = insn;
       write(S + A - P);
       break;
-    case R_GOTPCREL_RELAX_MOV:
-      // Rewrite mov to lea.
-      loc[-2] = 0x8d;
-      write(S + A - P);
-      break;
+    }
     case R_TLSGD:
       write(sym.get_tlsgd_addr() + A - P);
       break;
@@ -311,7 +337,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       // Relax GD to LE
       static const u8 insn[] = {
         0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea x@tpoff(%rax), %rax
+        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
       };
       memcpy(loc - 4, insn, sizeof(insn));
       *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
@@ -324,8 +350,8 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
       static const u8 insn[] = {
-        // mov %fs:0, %rax
-        0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0,
+        0x66, 0x66, 0x66,                         // (padding)
+        0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
       };
       memcpy(loc - 3, insn, sizeof(insn));
       i++;
@@ -340,8 +366,8 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_GOTTPOFF:
       write(sym.get_gottpoff_addr() + A - P);
       break;
-    case R_GOTTPOFF_RELAX_MOV: {
-      u32 insn = get_gottpoff_relaxed_insn(loc - 3);
+    case R_GOTTPOFF_RELAX: {
+      u32 insn = relax_gottpoff(loc - 3);
       loc[-3] = insn >> 16;
       loc[-2] = insn >> 8;
       loc[-1] = insn;
@@ -353,14 +379,14 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       break;
     case R_GOTPC_TLSDESC_RELAX_LE: {
       static const u8 insn[] = {
-        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov x@tpoff(%rax), %rax
+        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
       };
       memcpy(loc - 3, insn, sizeof(insn));
       write(S + A - out::tls_end + 4);
       break;
     }
     case R_TLSDESC_CALL_RELAX:
-      // Rewrite indirect call to nop.
+      // call *(%rax) -> nop
       loc[0] = 0x66;
       loc[1] = 0x90;
       break;
@@ -457,19 +483,6 @@ static int get_sym_type(Symbol &sym) {
   if (sym.get_type() != STT_FUNC)
     return 2;
   return 3;
-}
-
-// Returns true if the instruction is `MOV foo(%rip),%r64`.
-static bool is_mov_insn(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488b05: case 0x488b0d: case 0x488b15: case 0x488b1d:
-  case 0x488b25: case 0x488b2d: case 0x488b35: case 0x488b3d:
-  case 0x4c8b05: case 0x4c8b0d: case 0x4c8b15: case 0x4c8b1d:
-  case 0x4c8b25: case 0x4c8b2d: case 0x4c8b35: case 0x4c8b3d:
-    return true;
-  default:
-    return false;
-  }
 }
 
 // Linker has to create data structures in an output file to apply
@@ -617,19 +630,13 @@ void InputSection::scan_relocations() {
       if (rel.r_addend != -4)
         Fatal() << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      if (config.relax && !sym.is_imported && sym.is_relative()) {
-        if (loc[-2] == 0xff && loc[-1] == 0x15) {
-          rel_types[i] = R_GOTPCREL_RELAX_CALL;
-          break;
-        }
-        if (loc[-2] == 0xff && loc[-1] == 0x25) {
-          rel_types[i] = R_GOTPCREL_RELAX_JMP;
-          break;
-        }
+      if (config.relax && !sym.is_imported && sym.is_relative() &&
+          relax_gotpcrelx(loc - 2)) {
+        rel_types[i] = R_GOTPCRELX_RELAX;
+      } else {
+        sym.flags |= NEEDS_GOT;
+        rel_types[i] = R_GOTPCREL;
       }
-
-      sym.flags |= NEEDS_GOT;
-      rel_types[i] = R_GOTPCREL;
       break;
     }
     case R_X86_64_REX_GOTPCRELX:
@@ -637,8 +644,8 @@ void InputSection::scan_relocations() {
         Fatal() << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
       if (config.relax && !sym.is_imported && sym.is_relative() &&
-          is_mov_insn(loc - 3)) {
-        rel_types[i] = R_GOTPCREL_RELAX_MOV;
+          relax_rex_gotpcrelx(loc - 3)) {
+        rel_types[i] = R_REX_GOTPCRELX_RELAX;
       } else {
         sym.flags |= NEEDS_GOT;
         rel_types[i] = R_GOTPCREL;
@@ -687,8 +694,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTTPOFF:
       out::has_gottpoff = true;
 
-      if (config.relax && !config.shared && is_mov_insn(loc - 3)) {
-        rel_types[i] = R_GOTTPOFF_RELAX_MOV;
+      if (config.relax && !config.shared && relax_gottpoff(loc - 3)) {
+        rel_types[i] = R_GOTTPOFF_RELAX;
       } else {
         sym.flags |= NEEDS_GOTTPOFF;
         rel_types[i] = R_GOTTPOFF;
