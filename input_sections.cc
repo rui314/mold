@@ -25,9 +25,9 @@ InputSection *InputSection::create(ObjectFile &file, const ElfShdr *shdr,
     u8 *buf = new u8[size];
     unsigned long size2 = size;
     if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
-      Fatal() << name << ": uncompress failed";
+      Fatal() << file << ": " << name << ": uncompress failed";
     if (size != size2)
-      Fatal() << name << ": uncompress: invalid size";
+      Fatal() << file << ": " << name << ": uncompress: invalid size";
     contents = {(char *)buf, size};
 
     ElfShdr *shdr2 = new ElfShdr;
@@ -41,7 +41,7 @@ InputSection *InputSection::create(ObjectFile &file, const ElfShdr *shdr,
     // Old-style compressed section
     std::string_view data = file.get_string(*shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
-      Fatal() << name << ": corrupted compressed section";
+      Fatal() << file << ": " << name << ": corrupted compressed section";
     u64 size = read64be((u8 *)&data[4]);
 
     // Rename .zdebug -> .debug
@@ -50,11 +50,11 @@ InputSection *InputSection::create(ObjectFile &file, const ElfShdr *shdr,
     // New-style compressed section
     std::string_view data = file.get_string(*shdr);
     if (data.size() < sizeof(ElfChdr))
-      Fatal() << name << ": corrupted compressed section";
+      Fatal() << file << ": " << name << ": corrupted compressed section";
 
     ElfChdr &hdr = *(ElfChdr *)&data[0];
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-      Fatal() << name << ": unsupported compression type";
+      Fatal() << file << ": " << name << ": unsupported compression type";
     do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
   } else if (shdr->sh_type != SHT_NOBITS) {
     contents = file.get_string(*shdr);
