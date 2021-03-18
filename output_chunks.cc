@@ -386,7 +386,7 @@ static std::vector<u64> create_dynamic_section() {
   if (!config.z_delete)
     flags1 |= DF_1_NODELETE;
 
-  if (out::df_static_tls)
+  if (out::has_gottpoff)
     flags |= DF_STATIC_TLS;
 
   if (flags)

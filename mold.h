@@ -1257,7 +1257,7 @@ inline u8 *buf;
 inline std::vector<ObjectFile *> objs;
 inline std::vector<SharedFile *> dsos;
 inline std::vector<OutputChunk *> chunks;
-inline std::atomic_bool df_static_tls = false;
+inline std::atomic_bool has_gottpoff = false;
 inline std::atomic_bool has_textrel = false;
 inline ObjectFile *internal_obj;
 

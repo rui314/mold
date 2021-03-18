@@ -353,7 +353,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       break;
     case R_GOTPC_TLSDESC_RELAX_LE: {
       static const u8 insn[] = {
-        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
+        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov x@tpoff(%rax), %rax
       };
       memcpy(loc - 3, insn, sizeof(insn));
       write(S + A - out::tls_end + 4);
@@ -685,7 +685,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      out::df_static_tls = true;
+      out::has_gottpoff = true;
 
       if (config.relax && !config.shared && is_mov_insn(loc - 3)) {
         rel_types[i] = R_GOTTPOFF_RELAX_MOV;
