@@ -360,6 +360,9 @@ void InputSection::apply_reloc_alloc(u8 *base) {
     case R_DTPOFF:
       write(S + A - out::tls_begin);
       break;
+    case R_DTPOFF_RELAX:
+      write(S + A - out::tls_end);
+      break;
     case R_TPOFF:
       write(S + A - out::tls_end);
       break;
@@ -687,7 +690,7 @@ void InputSection::scan_relocations() {
         Fatal() << *this << ": DTPOFF reloc refers external symbol " << sym;
 
       if (config.relax && !config.shared)
-        rel_types[i] = R_TPOFF;
+        rel_types[i] = R_DTPOFF_RELAX;
       else
         rel_types[i] = R_DTPOFF;
       break;
