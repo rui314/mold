@@ -5,12 +5,14 @@
 
 #include "mold.h"
 
+#include <cctype>
+
 static thread_local std::string current_file;
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
   std::vector<std::string_view> vec;
   while (!input.empty()) {
-    if (input[0] == ' ' || input[0] == '\t' || input[0] == '\n') {
+    if (isspace(input[0])) {
       input = input.substr(1);
       continue;
     }
