@@ -301,6 +301,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.z_defs = true;
     } else if (read_z_flag(args, "nodefs")) {
       config.z_defs = false;
+    } else if (read_z_flag(args, "nodlopen")) {
+      config.z_dlopen = false;
+    } else if (read_z_flag(args, "nodelete")) {
+      config.z_delete = false;
     } else if (read_flag(args, "no-undefined")) {
       config.z_defs = true;
     } else if (read_flag(args, "fork")) {

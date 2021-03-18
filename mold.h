@@ -90,6 +90,8 @@ struct Config {
   bool strip_debug = false;
   bool trace = false;
   bool z_defs = false;
+  bool z_delete = true;
+  bool z_dlopen = true;
   bool z_execstack = false;
   bool z_now = false;
   bool z_relro = true;

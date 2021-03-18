@@ -381,6 +381,11 @@ static std::vector<u64> create_dynamic_section() {
     flags1 |= DF_1_NOW;
   }
 
+  if (!config.z_dlopen)
+    flags1 |= DF_1_NOOPEN;
+  if (!config.z_delete)
+    flags1 |= DF_1_NODELETE;
+
   if (out::df_static_tls)
     flags |= DF_STATIC_TLS;
 
