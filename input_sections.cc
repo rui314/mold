@@ -509,6 +509,8 @@ void InputSection::scan_relocations() {
       case ERROR:
         break;
       case COPYREL:
+        if (!config.z_copyreloc)
+          break;
         sym.flags |= NEEDS_COPYREL;
         rel_types[i] = rel_type;
         return;
