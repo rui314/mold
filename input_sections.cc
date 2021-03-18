@@ -685,7 +685,11 @@ void InputSection::scan_relocations() {
     case R_X86_64_DTPOFF64:
       if (sym.is_imported)
         Fatal() << *this << ": DTPOFF reloc refers external symbol " << sym;
-      rel_types[i] = (config.relax && !config.shared) ? R_TPOFF : R_DTPOFF;
+
+      if (config.relax && !config.shared)
+        rel_types[i] = R_TPOFF;
+      else
+        rel_types[i] = R_DTPOFF;
       break;
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
