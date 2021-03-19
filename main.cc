@@ -874,6 +874,10 @@ static i64 get_section_rank(OutputChunk *chunk) {
           (!relro << 6) | (!hasbits << 5)) + 4;
 }
 
+inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
+  return align_to(val + align - skew, align) - align + skew;
+}
+
 static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   Timer t("osec_offset");
 
@@ -884,19 +888,14 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
     if (chunk->new_page)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
-    if (vaddr % PAGE_SIZE > fileoff % PAGE_SIZE)
-      fileoff += vaddr % PAGE_SIZE - fileoff % PAGE_SIZE;
-    else if (vaddr % PAGE_SIZE < fileoff % PAGE_SIZE)
-      fileoff = align_to(fileoff, PAGE_SIZE) + vaddr % PAGE_SIZE;
-
-    fileoff = align_to(fileoff, chunk->shdr.sh_addralign);
     vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
+    fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
 
     chunk->shdr.sh_offset = fileoff;
     if (chunk->shdr.sh_flags & SHF_ALLOC)
       chunk->shdr.sh_addr = vaddr;
 
-    bool is_bss = chunk->shdr.sh_type == SHT_NOBITS;
+    bool is_bss = (chunk->shdr.sh_type == SHT_NOBITS);
     if (!is_bss)
       fileoff += chunk->shdr.sh_size;
 
