@@ -478,7 +478,15 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   }
 }
 
-static int get_sym_type(Symbol &sym) {
+static i64 get_output_type() {
+  if (config.shared)
+    return 0;
+  if (config.pie)
+    return 1;
+  return 2;
+}
+
+static i64 get_sym_type(Symbol &sym) {
   if (sym.is_absolute())
     return 0;
   if (!sym.is_imported)
@@ -502,7 +510,6 @@ void InputSection::scan_relocations() {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRela);
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-  i64 output_type = config.shared ? 2 : (config.pie ? 1 : 0);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -572,12 +579,12 @@ void InputSection::scan_relocations() {
       // error if we cannot relocate them even at load-time.
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
-        {  NONE,     ERROR, ERROR,         ERROR },      // PIE
         {  NONE,     ERROR, ERROR,         ERROR },      // DSO
+        {  NONE,     ERROR, ERROR,         ERROR },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[output_type][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type()][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_64: {
@@ -585,12 +592,12 @@ void InputSection::scan_relocations() {
       // relocations.
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
-        {  NONE,     NONE,    COPYREL,       PLT },        // PDE
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
+        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
+        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
 
-      dispatch(table[output_type][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type()][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_PC8:
@@ -598,23 +605,23 @@ void InputSection::scan_relocations() {
     case R_X86_64_PC32: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
-        {  ERROR,    NONE,  COPYREL,       PLT },        // PIE
         {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[output_type][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type()][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_PC64: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  NONE,     NONE,  COPYREL,       PLT },        // PDE
-        {  BASEREL,  NONE,  COPYREL,       PLT },        // PIE
         {  BASEREL,  NONE,  ERROR,         ERROR },      // DSO
+        {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[output_type][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type()][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_GOT32:
