@@ -765,7 +765,7 @@ static void fill_verneed() {
   out::verneed->contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) *
                                 syms.size());
 
-  // Fill .gnu.versoin_r.
+  // Fill .gnu.version_r.
   u8 *buf = (u8 *)&out::verneed->contents[0];
   u8 *ptr = buf;
   ElfVerneed *verneed = nullptr;
