@@ -444,6 +444,11 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
+    auto write = [&](u64 val) {
+      overflow_check(this, sym, rel.r_type, val);
+      write_val(rel.r_type, loc, val);
+    };
+
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
@@ -451,14 +456,15 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-    case R_X86_64_64: {
-      u64 val = ref ? ref->frag->get_addr() : sym.get_addr();
-      overflow_check(this, sym, rel.r_type, val);
-      write_val(rel.r_type, loc, val);
+    case R_X86_64_64:
+      write((ref ? ref->frag->get_addr() : sym.get_addr()));
       break;
-    }
     case R_X86_64_DTPOFF64:
-      write_val(rel.r_type, loc, sym.get_addr() + rel.r_addend - out::tls_begin);
+      write(sym.get_addr() - out::tls_begin + rel.r_addend);
+      break;
+    case R_X86_64_SIZE32:
+    case R_X86_64_SIZE64:
+      write(sym.esym->st_size + rel.r_addend);
       break;
     case R_X86_64_PC8:
     case R_X86_64_PC16:
@@ -476,6 +482,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_GOTTPOFF:
+    case R_X86_64_GOTPC32_TLSDESC:
       Fatal() << *this << ": invalid relocation for non-allocated sections: "
               << rel.r_type;
       break;
