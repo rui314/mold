@@ -136,6 +136,7 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
   case R_X86_64_GOTPC32_TLSDESC:
+  case R_X86_64_SIZE32:
   case R_X86_64_TLSDESC_CALL:
     if (val != (i32)val)
       Error() << *sec << ": relocation " << rel_to_string(r_type)
@@ -147,6 +148,7 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
+  case R_X86_64_SIZE64:
     return;
   }
   unreachable();
@@ -180,6 +182,7 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
   case R_X86_64_DTPOFF32:
   case R_X86_64_GOTTPOFF:
   case R_X86_64_GOTPC32_TLSDESC:
+  case R_X86_64_SIZE32:
   case R_X86_64_TLSDESC_CALL:
     *(u32 *)loc = val;
     return;
@@ -187,6 +190,7 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
+  case R_X86_64_SIZE64:
     *(u64 *)loc = val;
     return;
   }
@@ -388,6 +392,9 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       write(S + A - out::tls_end + 4);
       break;
     }
+    case R_SIZE:
+      write(sym.esym->st_size + A);
+      break;
     case R_TLSDESC_CALL_RELAX:
       // call *(%rax) -> nop
       loc[0] = 0x66;
@@ -726,6 +733,10 @@ void InputSection::scan_relocations() {
         sym.flags |= NEEDS_TLSDESC;
         rel_types[i] = R_GOTPC_TLSDESC;
       }
+      break;
+    case R_X86_64_SIZE32:
+    case R_X86_64_SIZE64:
+      rel_types[i] = R_SIZE;
       break;
     case R_X86_64_TLSDESC_CALL:
       if (config.relax && !config.shared)

@@ -874,6 +874,8 @@ static i64 get_section_rank(OutputChunk *chunk) {
           (!relro << 6) | (!hasbits << 5)) + 4;
 }
 
+// Returns the smallest number n such that
+// n >= val and n % align == skew.
 inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
   return align_to(val + align - skew, align) - align + skew;
 }

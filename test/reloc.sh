@@ -21,6 +21,11 @@ int print(int x) {
   printf("%d\n", x);
   return 0;
 }
+
+int print64(long x) {
+  printf("%ld\n", x);
+  return 0;
+}
 EOF
 
 cc -shared -o $t/c.so $t/a.o $t/b.o
@@ -118,5 +123,41 @@ clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s -no-pie
 $t/exe | grep -q 76
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s -pie
 $t/exe | grep -q 76
+
+# SIZE32
+cat <<'EOF' > $t/d.s
+.globl main
+main:
+  mov $foo+2@SIZE, %edi
+  call print@PLT
+  ret
+
+.data
+.globl foo
+.type foo, %object
+.size foo, 24
+foo:
+EOF
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s
+$t/exe | grep -q 26
+
+# SIZE64
+cat <<'EOF' > $t/d.s
+.globl main
+main:
+  movabs $foo+5@SIZE, %rdi
+  call print64@PLT
+  ret
+
+.data
+.globl foo
+.type foo, %object
+.size foo, 56
+foo:
+EOF
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s
+$t/exe | grep -q 61
 
 echo OK
