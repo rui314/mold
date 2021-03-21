@@ -35,6 +35,17 @@ Note that even though mold can create a runnable Chrome executable,
 it is far from complete and not usable for production. mold is still
 just a toy linker, and this is still just my pet project.
 
+## Performance visualization
+
+Here is a side-by-side comparison of per-core CPU usage of lld (left)
+and mold (right). They are linking the same program, Chromium
+executable, which is ~2GB with debug info. As you can see, mold is
+much faster than lld. Throughout its execution, mold uses all
+available cores, which is artificially capped to 16 cores in this
+demo.
+
+![](htop.gif)
+
 ## How to build
 
 mold is written in C++20, so you need a very recent version of GCC or
