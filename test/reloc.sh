@@ -160,4 +160,18 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s
 $t/exe | grep -q 61
 
+# GOTPCREL64
+cat <<'EOF' > $t/e.c
+extern long ext_var;
+void print64(long);
+
+int main() {
+  print64(ext_var);
+}
+EOF
+
+clang -c -o $t/e.o $t/e.c -mcmodel=large -fPIC
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/e.o
+$t/exe | grep -q 56
+
 echo OK

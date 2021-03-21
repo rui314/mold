@@ -28,4 +28,7 @@ $t/exe
 clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static -Wl,--gc-sections
 $t/exe
 
+clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static -mcmodel=large
+$t/exe
+
 echo OK

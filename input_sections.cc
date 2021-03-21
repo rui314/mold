@@ -79,6 +79,9 @@ static std::string rel_to_string(u64 r_type) {
   case R_X86_64_PC64: return "R_X86_64_PC64";
   case R_X86_64_GOT32: return "R_X86_64_GOT32";
   case R_X86_64_GOTPC32: return "R_X86_64_GOTPC32";
+  case R_X86_64_GOT64: return "R_X86_64_GOT64";
+  case R_X86_64_GOTPCREL64: return "R_X86_64_GOTPCREL64";
+  case R_X86_64_GOTPC64: return "R_X86_64_GOTPC64";
   case R_X86_64_GOTPCREL: return "R_X86_64_GOTPCREL";
   case R_X86_64_GOTPCRELX: return "R_X86_64_GOTPCRELX";
   case R_X86_64_REX_GOTPCRELX: return "R_X86_64_REX_GOTPCRELX";
@@ -148,6 +151,9 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
+  case R_X86_64_GOT64:
+  case R_X86_64_GOTPCREL64:
+  case R_X86_64_GOTPC64:
   case R_X86_64_SIZE64:
     return;
   }
@@ -190,6 +196,9 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
   case R_X86_64_PC64:
   case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
+  case R_X86_64_GOT64:
+  case R_X86_64_GOTPCREL64:
+  case R_X86_64_GOTPC64:
   case R_X86_64_SIZE64:
     *(u64 *)loc = val;
     return;
@@ -496,6 +505,9 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_GOTTPOFF:
+    case R_X86_64_GOT64:
+    case R_X86_64_GOTPCREL64:
+    case R_X86_64_GOTPC64:
     case R_X86_64_GOTPC32_TLSDESC:
       Fatal() << *this << ": invalid relocation for non-allocated sections: "
               << rel.r_type;
@@ -653,14 +665,17 @@ void InputSection::scan_relocations() {
       break;
     }
     case R_X86_64_GOT32:
+    case R_X86_64_GOT64:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOT;
       break;
     case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC64:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPC;
       break;
     case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCREL64:
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPCREL;
       break;

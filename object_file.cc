@@ -248,7 +248,8 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   i64 cur_cie_offset = -1;
 
   for (ElfRela rel : rels)
-    if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_PC32)
+    if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_64 &&
+        rel.r_type != R_X86_64_PC32 && rel.r_type != R_X86_64_PC64)
       Fatal() << isec << ": unsupported relocation type: " << rel.r_type;
 
   while (!data.empty()) {

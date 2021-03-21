@@ -1074,12 +1074,21 @@ void EhFrameSection::copy_buf() {
     hdr_base = out::buf + out::eh_frame_hdr->shdr.sh_offset;
 
   auto apply_reloc = [&](EhReloc &rel, u64 loc, u64 val) {
-    if (rel.type == R_X86_64_32)
+    switch (rel.type) {
+    case R_X86_64_32:
       *(u32 *)(base + loc) = val;
-    else if (rel.type == R_X86_64_PC32)
+      return;
+    case R_X86_64_64:
+      *(u64 *)(base + loc) = val;
+      return;
+    case R_X86_64_PC32:
       *(u32 *)(base + loc) = val - shdr.sh_addr - loc;
-    else
-      unreachable();
+      return;
+    case R_X86_64_PC64:
+      *(u64 *)(base + loc) = val - shdr.sh_addr - loc;
+      return;
+    }
+    unreachable();
   };
 
   struct Entry {
