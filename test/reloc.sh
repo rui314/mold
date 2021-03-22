@@ -174,4 +174,28 @@ clang -c -o $t/e.o $t/e.c -mcmodel=large -fPIC
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/e.o
 $t/exe | grep -q 56
 
+# R_X86_64_32 against non-alloc section
+cat <<'EOF' > $t/f.s
+.globl main
+main:
+  ret
+
+.section .foo, "", @progbits
+.zero 16
+foo:
+.quad bar
+
+.section .bar, "", @progbits
+.zero 24
+bar:
+.quad foo
+EOF
+
+clang -c -o $t/f.o $t/f.s
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/f.o
+readelf -x .foo -x .bar $t/exe > $t/log
+
+fgrep -q '0x00000010 00000000 00000000 10000000 00000000' $t/log
+fgrep -q '0x00000010 18000000 00000000' $t/log
+
 echo OK

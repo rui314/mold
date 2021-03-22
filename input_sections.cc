@@ -458,17 +458,6 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
       write_val(rel.r_type, loc, val);
     };
 
-    // Debug info section may have relocations pointing to
-    // non-alloc sections. Such relocations are not valid.
-    // We treat them as if they were pointing to address 0.
-    bool is_valid = (!sym.input_section ||
-                     (sym.input_section->shdr.sh_flags & SHF_ALLOC));
-
-    if (!is_valid) {
-      write(0);
-      continue;
-    }
-
     switch (rel.r_type) {
     case R_X86_64_NONE:
       break;
