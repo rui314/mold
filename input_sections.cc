@@ -81,7 +81,6 @@ static std::string rel_to_string(u64 r_type) {
   unreachable();
 }
 
-__attribute__((always_inline))
 static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
@@ -144,7 +143,6 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   unreachable();
 }
 
-__attribute__((always_inline))
 static void write_val(u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:

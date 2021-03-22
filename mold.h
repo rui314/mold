@@ -1444,6 +1444,9 @@ inline i64 InputSection::get_priority() const {
 }
 
 inline i64 ObjectFile::get_shndx(const ElfSym &esym) {
+  assert(&elf_syms[0] <= &esym);
+  assert(&esym < &elf_syms[elf_syms.size()]);
+
   if (esym.st_shndx == SHN_XINDEX)
     return symtab_shndx_sec[&esym - &elf_syms[0]];
   return esym.st_shndx;
