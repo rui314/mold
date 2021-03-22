@@ -166,7 +166,7 @@ void ObjectFile::initialize_sections() {
           is_debug_section(shdr, name))
         continue;
 
-      this->sections[i] = InputSection::create(*this, &shdr, name, i);
+      this->sections[i] = new InputSection(*this, shdr, name, i);
 
       static Counter counter("regular_sections");
       counter++;
@@ -855,7 +855,7 @@ void ObjectFile::convert_common_symbols() {
     shdr->sh_addralign = sym->esym->st_value;
 
     InputSection *isec =
-      InputSection::create(*this, shdr, ".bss", sections.size());
+      new InputSection(*this, *shdr, ".bss", sections.size());
     isec->output_section = bss;
     sections.push_back(isec);
 

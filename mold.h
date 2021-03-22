@@ -408,8 +408,8 @@ struct CieRecord {
 
 class InputSection {
 public:
-  static InputSection *create(ObjectFile &file, const ElfShdr *shdr,
-                              std::string_view name, i64 section_idx);
+  InputSection(ObjectFile &file, const ElfShdr &shdr,
+               std::string_view name, i64 section_idx);
 
   void scan_relocations();
   void report_undefined_symbols();
@@ -451,12 +451,6 @@ public:
   u32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
-
-private:
-  InputSection(ObjectFile &file, const ElfShdr &shdr,
-               std::string_view name, i64 section_idx,
-               std::string_view contents,
-               OutputSection *osec);
 };
 
 //

@@ -408,16 +408,22 @@ void DynamicSection::copy_buf() {
 }
 
 static std::string_view get_output_name(std::string_view name) {
-  static std::string_view common_names[] = {
+  static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
     ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
   };
 
-  for (std::string_view s1 : common_names) {
-    std::string_view s2 = s1.substr(0, s1.size() - 1);
-    if (name.starts_with(s1) || name == s2)
-      return s2;
-  }
+  for (std::string_view prefix : prefixes)
+    if (name.starts_with(prefix))
+      return prefix.substr(0, prefix.size() - 1);
+
+  if (name == ".zdebug_info")
+    return ".debug_info";
+  if (name == ".zdebug_aranges")
+    return ".debug_aranges";
+  if (name == ".zdebug_str")
+    return ".debug_str";
+
   return name;
 }
 
@@ -436,12 +442,12 @@ OutputSection::get_instance(std::string_view name, u64 type, u64 flags) {
     type = SHT_PROGBITS;
 
   name = get_output_name(name);
-  flags = flags & ~(u64)SHF_GROUP;
+  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
   auto find = [&]() -> OutputSection * {
     for (OutputSection *osec : OutputSection::instances)
       if (name == osec->name && type == osec->shdr.sh_type &&
-          flags == (osec->shdr.sh_flags & ~SHF_GROUP))
+          flags == osec->shdr.sh_flags)
         return osec;
     return nullptr;
   };
