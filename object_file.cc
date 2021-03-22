@@ -361,6 +361,11 @@ void ObjectFile::initialize_symbols() {
     Symbol &sym = locals[i];
 
     sym.name = symbol_strtab.data() + esym.st_name;
+
+    if (sym.name.empty() && esym.st_type == STT_SECTION)
+      if (InputSection *sec =  get_section(esym))
+        sym.name = sec->name;
+
     sym.file = this;
     sym.value = esym.st_value;
     sym.esym = &esym;
