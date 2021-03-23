@@ -576,7 +576,6 @@ public:
     shdr.sh_type = SHT_PROGBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = GOT_SIZE;
-    shdr.sh_size = GOT_SIZE * 3;
   }
 
   void copy_buf() override;
@@ -589,7 +588,6 @@ public:
     shdr.sh_type = SHT_PROGBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     shdr.sh_addralign = 16;
-    shdr.sh_size = PLT_SIZE;
   }
 
   void add_symbol(Symbol *sym);

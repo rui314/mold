@@ -22,9 +22,9 @@ EOF
 clang -fuse-ld=`pwd`/../mold $t/a.o $t/b.so -o $t/exe
 readelf -a $t/exe > $t/log
 
-fgrep -q '[21] .dynbss.rel.ro' $t/log
-fgrep -q '[25] .dynbss' $t/log
-fgrep -q '100 OBJECT  GLOBAL DEFAULT   21 readonly' $t/log
-fgrep -q '100 OBJECT  GLOBAL DEFAULT   25 readwrite' $t/log
+fgrep -q '[20] .dynbss.rel.ro' $t/log
+fgrep -q '[23] .dynbss' $t/log
+fgrep -q '100 OBJECT  GLOBAL DEFAULT   20 readonly' $t/log
+fgrep -q '100 OBJECT  GLOBAL DEFAULT   23 readwrite' $t/log
 
 echo OK

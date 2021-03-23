@@ -15,10 +15,10 @@ EOF
 
 ../mold -e foo -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
-grep -q 'Entry point address:.*0x201010' $t/log
+grep -q 'Entry point address:.*0x201000' $t/log
 
 ../mold -e bar -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
-grep -q 'Entry point address:.*0x201018' $t/log
+grep -q 'Entry point address:.*0x201008' $t/log
 
 echo OK

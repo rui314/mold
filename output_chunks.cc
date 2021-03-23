@@ -337,10 +337,16 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_RELA, out::reldyn->shdr.sh_addr);
   define(DT_RELASZ, out::reldyn->shdr.sh_size);
   define(DT_RELAENT, sizeof(ElfRela));
-  define(DT_JMPREL, out::relplt->shdr.sh_addr);
-  define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
-  define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
-  define(DT_PLTREL, DT_RELA);
+
+  if (out::relplt->shdr.sh_size) {
+    define(DT_JMPREL, out::relplt->shdr.sh_addr);
+    define(DT_PLTRELSZ, out::relplt->shdr.sh_size);
+    define(DT_PLTREL, DT_RELA);
+  }
+
+  if (out::gotplt->shdr.sh_size)
+    define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
+
   define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
   define(DT_SYMENT, sizeof(ElfSym));
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
@@ -354,10 +360,12 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_VERSYM, out::versym->shdr.sh_addr);
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
+
   if (out::verdef) {
     define(DT_VERDEF, out::verdef->shdr.sh_addr);
     define(DT_VERDEFNUM, out::verdef->shdr.sh_info);
   }
+
   define(DT_DEBUG, 0);
 
   if (Symbol *sym = Symbol::intern(config.init); sym->file)
@@ -611,6 +619,11 @@ void GotPltSection::copy_buf() {
 void PltSection::add_symbol(Symbol *sym) {
   assert(sym->plt_idx == -1);
   assert(sym->got_idx == -1);
+
+  if (shdr.sh_size == 0) {
+    shdr.sh_size = PLT_SIZE;
+    out::gotplt->shdr.sh_size = GOT_SIZE * 3;
+  }
 
   sym->plt_idx = shdr.sh_size / PLT_SIZE;
   shdr.sh_size += PLT_SIZE;
