@@ -438,6 +438,13 @@ void parse_nonpositional_args(std::span<std::string_view> args,
   if (config.pic)
     config.image_base = 0;
 
+  if (!config.shared) {
+    if (!config.filter.empty())
+      Fatal() << "-filter may not be used without -shared";
+    if (!config.auxiliary.empty())
+      Fatal() << "-auxiliary may not be used without -shared";
+  }
+
   if (config.output == "")
     Fatal() << "-o option is missing";
 }
