@@ -184,13 +184,16 @@ split(std::string_view str, std::string_view sep) {
   return vec;
 }
 
+static i64 get_default_thread_count() {
+  // mold doesn't scale above 32 threads.
+  int n = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  return std::min(n, 32);
+}
+
 void parse_nonpositional_args(std::span<std::string_view> args,
                               std::vector<std::string_view> &remaining) {
-  // mold doesn't scale above 32 threads.
-  config.thread_count = tbb::global_control::active_value(
-    tbb::global_control::max_allowed_parallelism);
-  if (config.thread_count > 32)
-    config.thread_count = 32;
+  config.thread_count = get_default_thread_count();
 
   while (!args.empty()) {
     std::string_view arg;
@@ -339,6 +342,8 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.quick_exit = false;
     } else if (read_arg(args, arg, "thread-count")) {
       config.thread_count = parse_number("thread-count", arg);
+    } else if (read_flag(args, "threads")) {
+      config.thread_count = get_default_thread_count();
     } else if (read_flag(args, "no-threads")) {
       config.thread_count = 1;
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
