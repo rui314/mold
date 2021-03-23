@@ -316,6 +316,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       config.z_copyreloc = false;
     } else if (read_flag(args, "no-undefined")) {
       config.z_defs = true;
+    } else if (read_flag(args, "fatal-warnings")) {
+      config.fatal_warnings = true;
+    } else if (read_flag(args, "no-fatal-warnings")) {
+      config.fatal_warnings = false;
     } else if (read_flag(args, "fork")) {
       config.fork = true;
     } else if (read_flag(args, "no-fork")) {

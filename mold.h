@@ -69,6 +69,7 @@ struct Config {
   bool discard_locals = false;
   bool eh_frame_hdr = true;
   bool export_dynamic = false;
+  bool fatal_warnings = false;
   bool fork = true;
   bool gc_sections = false;
   bool hash_style_gnu = false;
@@ -144,9 +145,15 @@ private:
   std::stringstream ss;
 };
 
-class Warn {
+class Fatal {
 public:
-  template <class T> Warn &operator<<(T &&val) {
+  [[noreturn]] ~Fatal() {
+    out.~SyncOut();
+    cleanup();
+    _exit(1);
+  }
+
+  template <class T> Fatal &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
@@ -173,20 +180,20 @@ public:
     _exit(1);
   }
 
-private:
   static inline std::atomic_bool has_error = false;
+
+private:
   SyncOut out{std::cerr};
 };
 
-class Fatal {
+class Warn {
 public:
-  [[noreturn]] ~Fatal() {
-    out.~SyncOut();
-    cleanup();
-    _exit(1);
+  Warn() {
+    if (config.fatal_warnings)
+      Error::has_error = true;
   }
 
-  template <class T> Fatal &operator<<(T &&val) {
+  template <class T> Warn &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
