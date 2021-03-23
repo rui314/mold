@@ -586,22 +586,25 @@ void ObjectFile::parse() {
 // Here is the list of priorities, from the highest to the lowest.
 //
 //  1. Strong defined symbol
-//  2. Weak defined symbol
-//  3. Strong or weak defined symbol in an archive member
-//  4. Unclaimed (nonexistent) symbol
+//  2. Common symbol
+//  3. Weak defined symbol
+//  4. Strong or weak defined symbol in an archive member
+//  5. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
   if (esym.st_bind == STB_WEAK)
+    return (3 << 24) + file->priority;
+  if (esym.is_common())
     return (2 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
 
 static u64 get_rank(const Symbol &sym) {
   if (!sym.file)
-    return 4 << 24;
+    return 5 << 24;
   if (sym.is_lazy)
-    return (3 << 24) + sym.file->priority;
+    return (4 << 24) + sym.file->priority;
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
