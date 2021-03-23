@@ -89,6 +89,7 @@ struct Config {
   bool strip_all = false;
   bool strip_debug = false;
   bool trace = false;
+  bool warn_common = false;
   bool z_copyreloc = true;
   bool z_defs = false;
   bool z_delete = true;

@@ -290,6 +290,10 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "stats")) {
       config.stats = true;
       Counter::enabled = true;
+    } else if (read_flag(args, "warn-common")) {
+      config.warn_common = true;
+    } else if (read_flag(args, "no-warn-common")) {
+      config.warn_common = false;
     } else if (read_z_flag(args, "now")) {
       config.z_now = true;
     } else if (read_z_flag(args, "execstack")) {
