@@ -12,9 +12,9 @@ _start:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o -auxiliary foo -f bar
+../mold -o $t/b.so $t/a.o -auxiliary foo -f bar -shared
 
-readelf --dynamic $t/exe > $t/log
+readelf --dynamic $t/b.so > $t/log
 fgrep -q 'Auxiliary library: [foo]' $t/log
 fgrep -q 'Auxiliary library: [bar]' $t/log
 

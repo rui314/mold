@@ -12,9 +12,9 @@ _start:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o --filter foo -F bar
+../mold -o $t/b.so $t/a.o --filter foo -F bar -shared
 
-readelf --dynamic $t/exe > $t/log
+readelf --dynamic $t/b.so > $t/log
 fgrep -q 'Filter library: [foo]' $t/log
 fgrep -q 'Filter library: [bar]' $t/log
 

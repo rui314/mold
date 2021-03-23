@@ -667,11 +667,11 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
     name = ".dynstr";
     shdr.sh_type = SHT_STRTAB;
     shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_size = 1;
   }
 
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
+  void update_shdr() override;
   void copy_buf() override;
 
   i64 dynsym_offset = -1;
@@ -722,7 +722,7 @@ public:
   void update_shdr() override;
   void copy_buf() override;
 
-  std::vector<Symbol *> symbols = {nullptr};
+  std::vector<Symbol *> symbols;
 };
 
 class HashSection : public OutputChunk {

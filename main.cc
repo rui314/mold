@@ -233,12 +233,9 @@ static void create_synthetic_sections() {
     add(out::verdef = new VerdefSection);
 
   add(out::reldyn = new RelDynSection);
-
-  if (!config.is_static) {
-    add(out::dynamic = new DynamicSection);
-    add(out::versym = new VersymSection);
-    add(out::verneed = new VerneedSection);
-  }
+  add(out::dynamic = new DynamicSection);
+  add(out::versym = new VersymSection);
+  add(out::verneed = new VerneedSection);
 }
 
 static void set_file_priority() {
@@ -741,6 +738,9 @@ static void fill_verdef() {
 
 static void fill_verneed() {
   Timer t("fill_verneed");
+
+  if (out::dynsym->symbols.empty())
+    return;
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol *> syms(out::dynsym->symbols.begin() + 1,

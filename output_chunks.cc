@@ -155,7 +155,7 @@ std::vector<ElfPhdr> create_phdr() {
   }
 
   // Add PT_DYNAMIC
-  if (out::dynamic)
+  if (out::dynamic->shdr.sh_size)
     define(PT_DYNAMIC, PF_R | PF_W, 1, out::dynamic);
 
   // Add PT_GNU_EH_FRAME
@@ -256,6 +256,9 @@ void ShstrtabSection::copy_buf() {
 }
 
 i64 DynstrSection::add_string(std::string_view str) {
+  if (strings.empty())
+    shdr.sh_size = 1;
+
   auto [it, inserted] = strings.insert({str, shdr.sh_size});
   if (inserted)
     shdr.sh_size += str.size() + 1;
@@ -268,6 +271,11 @@ i64 DynstrSection::find_string(std::string_view str) {
   return it->second;
 }
 
+void DynstrSection::update_shdr() {
+  if (shdr.sh_size == 1)
+    shdr.sh_size = 0;
+}
+
 void DynstrSection::copy_buf() {
   u8 *base = out::buf + shdr.sh_offset;
   base[0] = '\0';
@@ -275,10 +283,12 @@ void DynstrSection::copy_buf() {
   for (std::pair<std::string_view, i64> pair : strings)
     write_string(base + pair.second, pair.first);
 
-  i64 offset = dynsym_offset;
-  for (Symbol *sym : std::span(out::dynsym->symbols).subspan(1)) {
-    write_string(base + offset, sym->name);
-    offset += sym->name.size() + 1;
+  if (!out::dynsym->symbols.empty()) {
+    i64 offset = dynsym_offset;
+    for (Symbol *sym : std::span(out::dynsym->symbols).subspan(1)) {
+      write_string(base + offset, sym->name);
+      offset += sym->name.size() + 1;
+    }
   }
 }
 
@@ -371,8 +381,10 @@ static std::vector<u64> create_dynamic_section() {
     define(DT_SYMENT, sizeof(ElfSym));
   }
 
-  define(DT_STRTAB, out::dynstr->shdr.sh_addr);
-  define(DT_STRSZ, out::dynstr->shdr.sh_size);
+  if (out::dynstr->shdr.sh_size) {
+    define(DT_STRTAB, out::dynstr->shdr.sh_addr);
+    define(DT_STRSZ, out::dynstr->shdr.sh_size);
+  }
 
   if (has_init_array()) {
     define(DT_INIT_ARRAY, out::__init_array_start->value);
@@ -386,16 +398,18 @@ static std::vector<u64> create_dynamic_section() {
            out::__fini_array_end->value - out::__fini_array_start->value);
   }
 
-  define(DT_VERSYM, out::versym->shdr.sh_addr);
-  define(DT_VERNEED, out::verneed->shdr.sh_addr);
-  define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
+  if (out::versym->shdr.sh_size)
+    define(DT_VERSYM, out::versym->shdr.sh_addr);
+
+  if (out::verneed->shdr.sh_size) {
+    define(DT_VERNEED, out::verneed->shdr.sh_addr);
+    define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
+  }
 
   if (out::verdef) {
     define(DT_VERDEF, out::verdef->shdr.sh_addr);
     define(DT_VERDEFNUM, out::verdef->shdr.sh_info);
   }
-
-  define(DT_DEBUG, 0);
 
   if (Symbol *sym = Symbol::intern(config.init); sym->file)
     define(DT_INIT, sym->get_addr());
@@ -431,11 +445,17 @@ static std::vector<u64> create_dynamic_section() {
   if (flags1)
     define(DT_FLAGS_1, flags1);
 
+  define(DT_DEBUG, 0);
   define(DT_NULL, 0);
   return vec;
 }
 
 void DynamicSection::update_shdr() {
+  if (config.is_static)
+    return;
+  if (!config.shared && out::dsos.empty())
+    return;
+
   shdr.sh_size = create_dynamic_section().size() * 8;
   shdr.sh_link = out::dynstr->shndx;
 }
@@ -744,8 +764,8 @@ void RelPltSection::copy_buf() {
 }
 
 void DynsymSection::add_symbol(Symbol *sym) {
-  if (shdr.sh_size == 0)
-    shdr.sh_size = sizeof(ElfSym);
+  if (symbols.empty())
+    symbols.push_back({});
 
   if (sym->dynsym_idx != -1)
     return;
@@ -857,6 +877,9 @@ void DynsymSection::copy_buf() {
 }
 
 void HashSection::update_shdr() {
+  if (out::dynsym->symbols.empty())
+    return;
+
   i64 header_size = 8;
   i64 num_slots = out::dynsym->symbols.size();
   shdr.sh_size = header_size + num_slots * 8;
@@ -883,6 +906,9 @@ void HashSection::copy_buf() {
 }
 
 void GnuHashSection::update_shdr() {
+  if (out::dynsym->symbols.empty())
+    return;
+
   shdr.sh_link = out::dynsym->shndx;
 
   if (i64 num_symbols = out::dynsym->symbols.size() - symoffset) {
