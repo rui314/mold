@@ -20,7 +20,7 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
 ! fgrep -q 'multiple common symbols' $t/log
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-warn-common >& $t/log
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-warn-common 2> $t/log
 fgrep -q 'multiple common symbols' $t/log
 
 echo OK

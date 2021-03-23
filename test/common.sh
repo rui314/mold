@@ -24,6 +24,6 @@ int main() {
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep '0 5 42'
+$t/exe | grep -q '0 5 42'
 
 echo OK

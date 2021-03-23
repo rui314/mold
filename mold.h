@@ -144,6 +144,17 @@ private:
   std::stringstream ss;
 };
 
+class Warn {
+public:
+  template <class T> Warn &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut out{std::cerr};
+};
+
 class Error {
 public:
   Error() {

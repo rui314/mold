@@ -850,7 +850,7 @@ void ObjectFile::convert_common_symbols() {
     Symbol *sym = symbols[i];
     if (sym->file != this) {
       if (config.warn_common)
-        SyncOut() << *this << ": " << "multiple common symbols: " << *sym;
+        Warn() << *this << ": " << "multiple common symbols: " << *sym;
       continue;
     }
 
