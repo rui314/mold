@@ -50,7 +50,7 @@ read_fat_archive_members(MemoryMappedFile *mb) {
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
 
-  while (data < mb->data() + mb->size()) {
+  while (mb->data() + mb->size() - data >= 2) {
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
