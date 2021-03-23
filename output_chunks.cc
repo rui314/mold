@@ -311,6 +311,20 @@ void SymtabSection::copy_buf() {
   });
 }
 
+static bool has_init_array() {
+  for (OutputChunk *chunk : out::chunks)
+    if (chunk->shdr.sh_type == SHT_INIT_ARRAY)
+      return true;
+  return false;
+}
+
+static bool has_fini_array() {
+  for (OutputChunk *chunk : out::chunks)
+    if (chunk->shdr.sh_type == SHT_FINI_ARRAY)
+      return true;
+  return false;
+}
+
 static std::vector<u64> create_dynamic_section() {
   std::vector<u64> vec;
 
@@ -353,12 +367,19 @@ static std::vector<u64> create_dynamic_section() {
   define(DT_SYMENT, sizeof(ElfSym));
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
-  define(DT_INIT_ARRAY, out::__init_array_start->value);
-  define(DT_INIT_ARRAYSZ,
-         out::__init_array_end->value - out::__init_array_start->value);
-  define(DT_FINI_ARRAY, out::__fini_array_start->value);
-  define(DT_FINI_ARRAYSZ,
-         out::__fini_array_end->value - out::__fini_array_start->value);
+
+  if (has_init_array()) {
+    define(DT_INIT_ARRAY, out::__init_array_start->value);
+    define(DT_INIT_ARRAYSZ,
+           out::__init_array_end->value - out::__init_array_start->value);
+  }
+
+  if (has_fini_array()) {
+    define(DT_FINI_ARRAY, out::__fini_array_start->value);
+    define(DT_FINI_ARRAYSZ,
+           out::__fini_array_end->value - out::__fini_array_start->value);
+  }
+
   define(DT_VERSYM, out::versym->shdr.sh_addr);
   define(DT_VERNEED, out::verneed->shdr.sh_addr);
   define(DT_VERNEEDNUM, out::verneed->shdr.sh_info);
@@ -414,7 +435,9 @@ void DynamicSection::update_shdr() {
 }
 
 void DynamicSection::copy_buf() {
-  write_vector(out::buf + shdr.sh_offset, create_dynamic_section());
+  std::vector<u64> contents = create_dynamic_section();
+  assert(shdr.sh_size == contents.size() * sizeof(contents[0]));
+  write_vector(out::buf + shdr.sh_offset, contents);
 }
 
 static std::string_view get_output_name(std::string_view name) {
