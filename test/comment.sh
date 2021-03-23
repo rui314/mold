@@ -10,6 +10,6 @@ int main() {}
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
-readelf -p .comment $t/exe | grep -q 'mold linker'
+readelf -p .comment $t/exe | grep -q 'mold'
 
 echo OK
