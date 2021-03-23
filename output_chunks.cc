@@ -298,6 +298,9 @@ void SymtabSection::update_shdr() {
   shdr.sh_info = out::objs[0]->global_symtab_offset / sizeof(ElfSym);
   shdr.sh_link = out::strtab->shndx;
 
+  if (shdr.sh_size == sizeof(ElfSym))
+    shdr.sh_size = 0;
+
   static Counter counter("symtab");
   counter += shdr.sh_size / sizeof(ElfSym);
 }
@@ -363,8 +366,11 @@ static std::vector<u64> create_dynamic_section() {
   if (out::gotplt->shdr.sh_size)
     define(DT_PLTGOT, out::gotplt->shdr.sh_addr);
 
-  define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
-  define(DT_SYMENT, sizeof(ElfSym));
+  if (out::dynsym->shdr.sh_size) {
+    define(DT_SYMTAB, out::dynsym->shdr.sh_addr);
+    define(DT_SYMENT, sizeof(ElfSym));
+  }
+
   define(DT_STRTAB, out::dynstr->shdr.sh_addr);
   define(DT_STRSZ, out::dynstr->shdr.sh_size);
 
@@ -738,6 +744,9 @@ void RelPltSection::copy_buf() {
 }
 
 void DynsymSection::add_symbol(Symbol *sym) {
+  if (shdr.sh_size == 0)
+    shdr.sh_size = sizeof(ElfSym);
+
   if (sym->dynsym_idx != -1)
     return;
   sym->dynsym_idx = -2;

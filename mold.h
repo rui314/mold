@@ -701,7 +701,6 @@ public:
     shdr.sh_type = SHT_SYMTAB;
     shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
-    shdr.sh_size = sizeof(ElfSym);
   }
 
   void update_shdr() override;
@@ -716,7 +715,6 @@ public:
     shdr.sh_flags = SHF_ALLOC;
     shdr.sh_entsize = sizeof(ElfSym);
     shdr.sh_addralign = 8;
-    shdr.sh_size = sizeof(ElfSym);
   }
 
   void add_symbol(Symbol *sym);
