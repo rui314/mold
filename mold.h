@@ -1058,7 +1058,6 @@ inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
 // archive_file.cc
 //
 
-std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb);
 std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb);
 std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 
@@ -1329,6 +1328,8 @@ inline bool Symbol::is_absolute() const {
   if (file->is_dso)
     return esym->is_abs();
   if (is_imported)
+    return false;
+  if (frag)
     return false;
   return input_section == nullptr;
 }

@@ -113,11 +113,13 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
       return;
     case FileType::AR:
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
-        obj_cache.store(mb, new_object_file(child, mb->name, ctx));
+        if (get_file_type(child) == FileType::OBJ)
+          obj_cache.store(mb, new_object_file(child, mb->name, ctx));
       return;
     case FileType::THIN_AR:
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
-        obj_cache.store(child, new_object_file(child, mb->name, ctx));
+        if (get_file_type(child) == FileType::OBJ)
+          obj_cache.store(child, new_object_file(child, mb->name, ctx));
       return;
     case FileType::TEXT:
       parse_linker_script(mb, ctx);
@@ -144,8 +146,9 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
       append(out::objs, objs);
     } else {
-      for (MemoryMappedFile *child : read_archive_members(mb))
-        out::objs.push_back(new_object_file(child, mb->name, ctx));
+      for (MemoryMappedFile *child : read_fat_archive_members(mb))
+        if (get_file_type(child) == FileType::OBJ)
+          out::objs.push_back(new_object_file(child, mb->name, ctx));
     }
     ctx.visited.insert(mb->name);
     return;
@@ -153,7 +156,7 @@ void read_file(MemoryMappedFile *mb, ReadContext &ctx) {
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
       if (ObjectFile *obj = obj_cache.get_one(child))
         out::objs.push_back(obj);
-      else
+      else if (get_file_type(child) == FileType::OBJ)
         out::objs.push_back(new_object_file(child, mb->name, ctx));
     }
     ctx.visited.insert(mb->name);

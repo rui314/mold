@@ -78,15 +78,3 @@ read_fat_archive_members(MemoryMappedFile *mb) {
   }
   return vec;
 }
-
-std::vector<MemoryMappedFile *> read_archive_members(MemoryMappedFile *mb) {
-  if (mb->size() < 8)
-    Fatal() << mb->name << ": not an archive file";
-  if (memcmp(mb->data(), "!<arch>\n", 8) && memcmp(mb->data(), "!<thin>\n", 8))
-    Fatal() << mb->name << ": not an archive file";
-
-  bool is_thin = !memcmp(mb->data(), "!<thin>\n", 8);
-  if (is_thin)
-    return read_thin_archive_members(mb);
-  return read_fat_archive_members(mb);
-}
