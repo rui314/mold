@@ -232,9 +232,10 @@ static void create_synthetic_sections() {
   if (!config.version_definitions.empty())
     add(out::verdef = new VerdefSection);
 
+  add(out::reldyn = new RelDynSection);
+
   if (!config.is_static) {
     add(out::dynamic = new DynamicSection);
-    add(out::reldyn = new RelDynSection);
     add(out::versym = new VersymSection);
     add(out::verneed = new VerneedSection);
   }
@@ -1336,8 +1337,7 @@ int main(int argc, char **argv) {
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
-  if (out::reldyn)
-    out::reldyn->sort();
+  out::reldyn->sort();
 
   // Zero-clear paddings between sections
   clear_padding(filesize);

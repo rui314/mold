@@ -334,9 +334,11 @@ static std::vector<u64> create_dynamic_section() {
   for (std::string_view str : config.filter)
     define(DT_FILTER, out::dynstr->find_string(str));
 
-  define(DT_RELA, out::reldyn->shdr.sh_addr);
-  define(DT_RELASZ, out::reldyn->shdr.sh_size);
-  define(DT_RELAENT, sizeof(ElfRela));
+  if (out::reldyn->shdr.sh_size) {
+    define(DT_RELA, out::reldyn->shdr.sh_addr);
+    define(DT_RELASZ, out::reldyn->shdr.sh_size);
+    define(DT_RELAENT, sizeof(ElfRela));
+  }
 
   if (out::relplt->shdr.sh_size) {
     define(DT_JMPREL, out::relplt->shdr.sh_addr);
@@ -560,9 +562,7 @@ void GotSection::copy_buf() {
   u64 *buf = (u64 *)(out::buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
-  ElfRela *rel = nullptr;
-  if (out::reldyn)
-    rel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset);
+  ElfRela *rel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset);
 
   for (Symbol *sym : got_syms) {
     u64 addr = sym->get_got_addr();
