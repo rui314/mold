@@ -752,6 +752,9 @@ void ObjectFile::convert_undefined_weak_symbols() {
         sym.esym = &esym;
         sym.is_lazy = false;
 
+        if (config.shared)
+          sym.is_imported = true;
+
         if (sym.traced)
           SyncOut() << "trace-symbol: " << *this
                     << ": unresolved weak symbol " << sym;
@@ -798,7 +801,7 @@ void ObjectFile::claim_unresolved_symbols() {
       continue;
 
     std::lock_guard lock(sym.mu);
-    if (!sym.esym || sym.esym->is_undef()) {
+    if (!sym.esym || sym.is_undef()) {
       if (sym.file && sym.file->priority < this->priority)
         continue;
       sym.file = this;
