@@ -545,6 +545,10 @@ void InputSection::scan_relocations() {
       case COPYREL:
         if (!config.z_copyreloc)
           break;
+        if (sym.esym->st_visibility == STV_PROTECTED)
+          Error() << *this << ": cannot make copy relocation for "
+                  << " protected symbol '" << sym << "', defined in "
+                  << *sym.file;
         sym.flags |= NEEDS_COPYREL;
         rel_types[i] = rel_type;
         return;
