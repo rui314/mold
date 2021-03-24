@@ -322,7 +322,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   }
 }
 
-static bool should_write_symtab(Symbol &sym) {
+static bool should_write_to_local_symtab(Symbol &sym) {
   if (config.discard_all || config.strip_all)
     return false;
   if (sym.get_type() == STT_SECTION)
@@ -376,7 +376,7 @@ void ObjectFile::initialize_symbols() {
       sym.input_section = get_section(esym);
     }
 
-    if (should_write_symtab(sym)) {
+    if (should_write_to_local_symtab(sym)) {
       sym.write_to_symtab = true;
       strtab_size += sym.name.size() + 1;
       num_local_symtab++;
@@ -873,7 +873,7 @@ void ObjectFile::convert_common_symbols() {
   }
 }
 
-static bool should_write_global_symtab(Symbol &sym) {
+static bool should_write_to_global_symtab(Symbol &sym) {
   return sym.get_type() != STT_SECTION && sym.is_alive();
 }
 
@@ -883,9 +883,10 @@ void ObjectFile::compute_symtab() {
 
   if (config.gc_sections && !config.discard_all) {
     // Detect symbols pointing to sections discarded by -gc-sections
-    // to remove them from symtab.
+    // to not copy them to symtab.
     for (i64 i = 1; i < first_global; i++) {
       Symbol &sym = *symbols[i];
+
       if (sym.write_to_symtab && !sym.is_alive()) {
         strtab_size -= sym.name.size() + 1;
         num_local_symtab--;
@@ -895,11 +896,13 @@ void ObjectFile::compute_symtab() {
   }
 
   // Compute the size of global symbols.
-  for (i64 i = first_global; i < elf_syms.size(); i++) {
+  for (i64 i = first_global; i < symbols.size(); i++) {
     Symbol &sym = *symbols[i];
-    if (sym.file == this && should_write_global_symtab(sym)) {
+
+    if (sym.file == this && should_write_to_global_symtab(sym)) {
       strtab_size += sym.name.size() + 1;
       num_global_symtab++;
+      sym.write_to_symtab = true;
     }
   }
 }
@@ -943,7 +946,7 @@ void ObjectFile::write_symtab() {
 
   symtab_off = global_symtab_offset;
   for (i64 i = first_global; i < elf_syms.size(); i++)
-    if (symbols[i]->file == this && should_write_global_symtab(*symbols[i]))
+    if (symbols[i]->file == this && symbols[i]->write_to_symtab)
       write_sym(i);
 }
 
