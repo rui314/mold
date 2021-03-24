@@ -241,6 +241,8 @@ void parse_version_script(std::string path) {
     }
 
     tok = skip(tok, "}");
+    if (!tok.empty() && tok[0] != ";")
+      tok = tok.subspan(1);
     tok = skip(tok, ";");
   }
 
