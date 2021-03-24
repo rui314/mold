@@ -846,8 +846,14 @@ void DynsymSection::copy_buf() {
     ElfSym &esym = *(ElfSym *)(base + sym.dynsym_idx * sizeof(ElfSym));
     memset(&esym, 0, sizeof(esym));
     esym.st_type = sym.get_type();
-    esym.st_bind = (sym.is_weak ? STB_WEAK : sym.esym->st_bind);
     esym.st_size = sym.esym->st_size;
+
+    if (sym.is_weak)
+      esym.st_bind = STB_WEAK;
+    else if (sym.file->is_dso)
+      esym.st_bind = STB_GLOBAL;
+    else
+      esym.st_bind = sym.esym->st_bind;
 
     esym.st_name = name_offset;
     name_offset += sym.name.size() + 1;
