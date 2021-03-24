@@ -18,6 +18,7 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
 
 mold: $(OBJS)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	ln -sf mold ld
 
 $(OBJS): mold.h elf.h Makefile
 
@@ -32,6 +33,6 @@ test: mold
 	for i in test/*.sh; do $$i || exit 1; done
 
 clean:
-	rm -f *.o *~ mold
+	rm -f *.o *~ mold ld
 
 .PHONY: intel_tbb test clean

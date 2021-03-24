@@ -1145,7 +1145,8 @@ std::vector<Symbol *> SharedFile::find_aliases(Symbol *sym) {
   assert(sym->file == this);
   std::vector<Symbol *> vec;
   for (Symbol *sym2 : symbols)
-    if (sym != sym2 && sym->esym->st_value == sym2->esym->st_value)
+    if (sym2->file == this && sym != sym2 &&
+        sym->esym->st_value == sym2->esym->st_value)
       vec.push_back(sym2);
   return vec;
 }

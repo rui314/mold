@@ -60,9 +60,32 @@ $ make submodules
 $ make
 ```
 
-To use mold, add `-fuse-ld=<absolute-path-to-mold-executable>` to a
-linker command line. Since GCC doesn't support that option,
+The last `make` command creates `mold` executable. It also creates a
+symbolic link `ld` to `mold` in the build directory.
+
+To use mold, run a build command with the mold build directory at the
+beginning of `PATH`. E.g.
+
+```
+$ PATH=/path/to/mold/build/dir:$PATH make
+```
+
+Alternatively, you can pass `-fuse-ld=<absolute-path-to-mold-executable>`
+to a linker command line. Since GCC doesn't support that option,
 I recommend using clang.
+
+mold leaves its identification string in `.comment` section in an output
+file. You can print it out to verify that you are actually using mold.
+
+```
+$ readelf -p .comment <executable-file>
+
+String dump of section '.comment':
+  [     0]  GCC: (Ubuntu 10.2.0-5ubuntu1~20.04) 10.2.0
+  [    2b]  mold 9a1679b47d9b22012ec7dfbda97c8983956716f7
+```
+
+If `mold` is in `.comment`, the file is created by mold.
 
 ## Background
 
