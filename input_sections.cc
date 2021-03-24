@@ -453,6 +453,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
       else
         write(sym.get_addr() + rel.r_addend);
       break;
+    case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       write(sym.get_addr() + rel.r_addend - out::tls_begin);
       break;
@@ -472,7 +473,6 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
     case R_X86_64_PLT32:
     case R_X86_64_TLSGD:
     case R_X86_64_TLSLD:
-    case R_X86_64_DTPOFF32:
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_GOTTPOFF:
