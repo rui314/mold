@@ -7,7 +7,52 @@
 
 #include <cctype>
 
-static thread_local std::string current_file;
+static thread_local MemoryMappedFile *current_file;
+
+static std::string_view get_line(std::string_view input, const char *pos) {
+  assert(input.data() <= pos);
+  assert(pos < input.data() + input.size());
+
+  i64 start = input.rfind('\n', pos - input.data());
+  if (start == input.npos)
+    start = 0;
+  else
+    start++;
+
+  i64 end = input.find('\n', pos - input.data());
+  if (end == input.npos)
+    end = input.size();
+
+  return input.substr(start, end - start);
+}
+
+class SyntaxError {
+public:
+  SyntaxError(std::string_view errpos) {
+    std::string_view contents = current_file->get_contents();
+    std::string_view line = get_line(contents, errpos.data());
+
+    i64 lineno = 1;
+    for (i64 i = 0; contents.data() + i < line.data(); i++)
+      if (contents[i] == '\n')
+        lineno++;
+
+    i64 column = errpos.data() - line.data();
+
+    std::stringstream ss;
+    ss << current_file->name << ":" << lineno << ": ";
+    i64 indent = ss.tellp();
+    ss << line << "\n" << std::string(indent + column, ' ') << "^ ";
+    out << ss.str();
+  }
+
+  template <class T> SyntaxError &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+  Fatal out;
+};
 
 static std::vector<std::string_view> tokenize(std::string_view input) {
   std::vector<std::string_view> vec;
@@ -20,7 +65,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input.starts_with("/*")) {
       i64 pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
-        Fatal() << current_file << ": unclosed comment";
+        SyntaxError(input) << "unclosed comment";
       input = input.substr(pos + 2);
       continue;
     }
@@ -36,7 +81,7 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
     if (input[0] == '"') {
       i64 pos = input.find('"', 1);
       if (pos == std::string_view::npos)
-        Fatal() << current_file << ": unclosed string literal";
+        SyntaxError(input) << "unclosed string literal";
       vec.push_back(input.substr(0, pos + 1));
       input = input.substr(pos + 1);
       continue;
@@ -56,8 +101,10 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
 
 static std::span<std::string_view>
 skip(std::span<std::string_view> tok, std::string_view str) {
-  if (tok.empty() || tok[0] != str)
-    Fatal() << current_file << ": expected '" << str << "'";
+  if (tok.empty())
+    Fatal() << current_file->name << ": expected '" << str << "', but got EOF";
+  if (tok[0] != str)
+    SyntaxError(tok[0]) << "expected '" << str << "'";
   return tok.subspan(1);
 }
 
@@ -69,23 +116,26 @@ static std::string_view unquote(std::string_view s) {
   return s;
 }
 
-static std::span<std::string_view> read_output_format(std::span<std::string_view> tok) {
+static std::span<std::string_view>
+read_output_format(std::span<std::string_view> tok) {
   tok = skip(tok, "(");
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Fatal() << current_file << ": expected ')'";
+    Fatal() << current_file->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
-static MemoryMappedFile *resolve_path(std::string str, ReadContext &ctx) {
+static MemoryMappedFile *resolve_path(std::string_view tok, ReadContext &ctx) {
+  std::string str(unquote(tok));
+
   if (str.starts_with("/"))
     return MemoryMappedFile::must_open(config.sysroot + str);
 
   if (str.starts_with("-l"))
     return find_library(str.substr(2), config.library_paths, ctx);
 
-  if (std::string path = path_dirname(current_file) + "/";
+  if (std::string path = path_dirname(current_file->name) + "/";
       MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
     return mb;
 
@@ -99,7 +149,7 @@ static MemoryMappedFile *resolve_path(std::string str, ReadContext &ctx) {
       return mb;
   }
 
-  Fatal() << current_file << ": library not found: " << str;
+  SyntaxError(tok) << "library not found: " << str;
 }
 
 static std::span<std::string_view>
@@ -115,18 +165,18 @@ read_group(std::span<std::string_view> tok, ReadContext &ctx) {
       continue;
     }
 
-    MemoryMappedFile *mb = resolve_path(std::string(unquote(tok[0])), ctx);
+    MemoryMappedFile *mb = resolve_path(tok[0], ctx);
     read_file(mb, ctx);
     tok = tok.subspan(1);
   }
 
   if (tok.empty())
-    Fatal() << current_file << ": expected ')'";
+    Fatal() << current_file->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
 void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
-  current_file = mb->name;
+  current_file = mb;
 
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
   std::span<std::string_view> tok = vec;
@@ -137,7 +187,7 @@ void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx) {
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
       tok = read_group(tok.subspan(1), ctx);
     else
-      Fatal() << current_file << ": unknown token: " << tok[0];
+      SyntaxError(tok[0]) << "unknown token";
   }
 }
 
@@ -156,10 +206,8 @@ static bool read_label(std::span<std::string_view> &tok,
 }
 
 void parse_version_script(std::string path) {
-  current_file = path;
-
-  MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
-  std::vector<std::string_view> vec = tokenize(mb->get_contents());
+  current_file = MemoryMappedFile::must_open(path);
+  std::vector<std::string_view> vec = tokenize(current_file->get_contents());
   std::span<std::string_view> tok = vec;
   i16 next_ver = VER_NDX_LAST_RESERVED + 1;
 
@@ -197,14 +245,12 @@ void parse_version_script(std::string path) {
   }
 
   if (!tok.empty())
-    Fatal() << current_file << ": trailing garbage token: " << tok[0];
+    SyntaxError(tok[0]) << "trailing garbage token";
 }
 
 void parse_dynamic_list(std::string path) {
-  current_file = path;
-
-  MemoryMappedFile *mb = MemoryMappedFile::must_open(path);
-  std::vector<std::string_view> vec = tokenize(mb->get_contents());
+  current_file = MemoryMappedFile::must_open(path);
+  std::vector<std::string_view> vec = tokenize(current_file->get_contents());
   std::span<std::string_view> tok = vec;
 
   tok = skip(tok, "{");
@@ -232,5 +278,5 @@ void parse_dynamic_list(std::string path) {
   tok = skip(tok, ";");
 
   if (!tok.empty())
-    Fatal() << current_file << ": trailing garbage token: " << tok[0];
+    SyntaxError(tok[0]) << "trailing garbage token";
 }
