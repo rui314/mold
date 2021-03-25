@@ -1,4 +1,5 @@
 *.o
+*.so
 *~
 /mold
 /test/tmp

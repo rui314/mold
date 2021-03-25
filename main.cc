@@ -1088,6 +1088,11 @@ static void show_stats() {
 }
 
 int main(int argc, char **argv) {
+  // Process -wrap option first. process_wrap() does not return.
+  if (argc >= 2)
+    if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
+      process_wrap(argc, argv);
+
   Timer t_all("all");
 
   // Parse non-positional command line options
