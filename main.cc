@@ -217,8 +217,8 @@ static void create_synthetic_sections() {
   add(out::dynsym = new DynsymSection);
   add(out::dynstr = new DynstrSection);
   add(out::eh_frame = new EhFrameSection);
-  add(out::copyrel = new CopyrelSection(".dynbss"));
-  add(out::copyrel_relro = new CopyrelSection(".dynbss.rel.ro"));
+  add(out::dynbss = new DynbssSection(".dynbss"));
+  add(out::dynbss_relro = new DynbssSection(".dynbss.rel.ro"));
 
   if (!config.dynamic_linker.empty())
     add(out::interp = new InterpSection);
@@ -581,9 +581,9 @@ static void scan_rels() {
       sym->copyrel_readonly = file->is_readonly(sym);
 
       if (sym->copyrel_readonly)
-        out::copyrel_relro->add_symbol(sym);
+        out::dynbss_relro->add_symbol(sym);
       else
-        out::copyrel->add_symbol(sym);
+        out::dynbss->add_symbol(sym);
 
       for (Symbol *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;

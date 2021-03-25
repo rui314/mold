@@ -600,8 +600,8 @@ i64 GotSection::get_reldyn_size() const {
   if (tlsld_idx != -1)
     n++;
 
-  n += out::copyrel->symbols.size();
-  n += out::copyrel_relro->symbols.size();
+  n += out::dynbss->symbols.size();
+  n += out::dynbss_relro->symbols.size();
 
   return n * sizeof(ElfRela);
 }
@@ -643,10 +643,10 @@ void GotSection::copy_buf() {
   if (tlsld_idx != -1)
     *rel++ = {get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
 
-  for (Symbol *sym : out::copyrel->symbols)
+  for (Symbol *sym : out::dynbss->symbols)
     *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
 
-  for (Symbol *sym : out::copyrel_relro->symbols)
+  for (Symbol *sym : out::dynbss_relro->symbols)
     *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
 }
 
@@ -860,7 +860,7 @@ void DynsymSection::copy_buf() {
 
     if (sym.has_copyrel) {
       esym.st_shndx = sym.copyrel_readonly
-        ? out::copyrel_relro->shndx : out::copyrel->shndx;
+        ? out::dynbss_relro->shndx : out::dynbss->shndx;
       esym.st_value = sym.get_addr();
     } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
@@ -1290,7 +1290,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   Fatal() << isec.file << ": .eh_frame has bad symbol: " << sym;
 }
 
-void CopyrelSection::add_symbol(Symbol *sym) {
+void DynbssSection::add_symbol(Symbol *sym) {
   if (sym->has_copyrel)
     return;
 

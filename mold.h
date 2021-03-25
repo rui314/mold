@@ -837,13 +837,13 @@ public:
   static constexpr i64 HEADER_SIZE = 12;
 };
 
-class CopyrelSection : public OutputChunk {
+class DynbssSection : public OutputChunk {
 public:
-  CopyrelSection(std::string_view name) : OutputChunk(SYNTHETIC) {
+  DynbssSection(std::string_view name) : OutputChunk(SYNTHETIC) {
     this->name = name;
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    shdr.sh_addralign = 32;
+    shdr.sh_addralign = 64;
   }
 
   void add_symbol(Symbol *sym);
@@ -1291,8 +1291,8 @@ inline SymtabSection *symtab;
 inline DynsymSection *dynsym;
 inline EhFrameSection *eh_frame;
 inline EhFrameHdrSection *eh_frame_hdr;
-inline CopyrelSection *copyrel;
-inline CopyrelSection *copyrel_relro;
+inline DynbssSection *dynbss;
+inline DynbssSection *dynbss_relro;
 inline VersymSection *versym;
 inline VerneedSection *verneed;
 inline VerdefSection *verdef;
@@ -1387,8 +1387,8 @@ inline u64 Symbol::get_addr() const {
 
   if (has_copyrel) {
     return copyrel_readonly
-      ? out::copyrel_relro->shdr.sh_addr + value
-      : out::copyrel->shdr.sh_addr + value;
+      ? out::dynbss_relro->shdr.sh_addr + value
+      : out::dynbss->shdr.sh_addr + value;
   }
 
   if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
