@@ -209,13 +209,11 @@ static void create_synthetic_sections() {
   add(out::got = new GotSection);
   add(out::gotplt = new GotPltSection);
   add(out::relplt = new RelPltSection);
-  if (!config.strip_all)
-    add(out::strtab = new StrtabSection);
+  add(out::strtab = new StrtabSection);
   add(out::shstrtab = new ShstrtabSection);
   add(out::plt = new PltSection);
   add(out::pltgot = new PltGotSection);
-  if (!config.strip_all)
-    add(out::symtab = new SymtabSection);
+  add(out::symtab = new SymtabSection);
   add(out::dynsym = new DynsymSection);
   add(out::dynstr = new DynstrSection);
   add(out::eh_frame = new EhFrameSection);

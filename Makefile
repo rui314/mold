@@ -6,7 +6,7 @@ TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
 MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
 
 CPPFLAGS=-g -IoneTBB/include -IxxHash -pthread -std=c++20 \
-         -Wno-deprecated-volatile -Wno-switch -O0 \
+         -Wno-deprecated-volatile -Wno-switch -O2 \
          -DGIT_HASH=\"$(shell git rev-parse HEAD)\"
 LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
         -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
