@@ -877,12 +877,6 @@ static bool should_write_to_global_symtab(Symbol &sym) {
   return sym.get_type() != STT_SECTION && sym.is_alive();
 }
 
-static u32 get_binding(Symbol &sym) {
-  if (sym.ver_idx == VER_NDX_LOCAL)
-    return STB_LOCAL;
-  return sym.esym->st_bind;
-}
-
 void ObjectFile::compute_symtab() {
   if (config.strip_all)
     return;
@@ -908,11 +902,7 @@ void ObjectFile::compute_symtab() {
     if (sym.file == this && should_write_to_global_symtab(sym)) {
       strtab_size += sym.name.size() + 1;
       sym.write_to_symtab = true;
-
-      if (get_binding(sym) == STB_LOCAL)
-        num_local_symtab++;
-      else
-        num_global_symtab++;
+      num_global_symtab++;
     }
   }
 }
@@ -921,11 +911,12 @@ void ObjectFile::write_symtab() {
   u8 *symtab_base = out::buf + out::symtab->shdr.sh_offset;
   u8 *strtab_base = out::buf + out::strtab->shdr.sh_offset;
   i64 strtab_off = strtab_offset;
+  i64 symtab_off;
 
-  auto write_sym = [&](i64 i, u32 binding, i64 &offset) {
+  auto write_sym = [&](i64 i) {
     Symbol &sym = *symbols[i];
-    ElfSym &esym = *(ElfSym *)(symtab_base + offset);
-    offset += sizeof(ElfSym);
+    ElfSym &esym = *(ElfSym *)(symtab_base + symtab_off);
+    symtab_off += sizeof(ElfSym);
 
     esym = elf_syms[i];
     esym.st_name = strtab_off;
@@ -948,22 +939,15 @@ void ObjectFile::write_symtab() {
     strtab_off += sym.name.size() + 1;
   };
 
-  i64 local_offset = local_symtab_offset;
-  i64 global_offset = global_symtab_offset;
-
+  symtab_off = local_symtab_offset;
   for (i64 i = 1; i < first_global; i++)
     if (symbols[i]->write_to_symtab)
-      write_sym(i, STB_LOCAL, local_offset);
+      write_sym(i);
 
-  for (i64 i = first_global; i < elf_syms.size(); i++) {
-    if (symbols[i]->file == this && symbols[i]->write_to_symtab) {
-      u32 binding = get_binding(*symbols[i]);
-      if (binding == STB_LOCAL)
-        write_sym(i, binding, local_offset);
-      else
-        write_sym(i, binding, global_offset);
-    }
-  }
+  symtab_off = global_symtab_offset;
+  for (i64 i = first_global; i < elf_syms.size(); i++)
+    if (symbols[i]->file == this && symbols[i]->write_to_symtab)
+      write_sym(i);
 }
 
 bool is_c_identifier(std::string_view name) {
