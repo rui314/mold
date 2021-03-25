@@ -840,8 +840,8 @@ void ObjectFile::convert_common_symbols() {
   if (!has_common_symbol)
     return;
 
-  static OutputSection *bss =
-    OutputSection::get_instance(".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
+  static OutputSection *osec =
+    OutputSection::get_instance(".common", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
 
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     if (!elf_syms[i].is_common())
@@ -864,8 +864,8 @@ void ObjectFile::convert_common_symbols() {
     shdr->sh_addralign = sym->esym->st_value;
 
     InputSection *isec =
-      new InputSection(*this, *shdr, ".bss", sections.size());
-    isec->output_section = bss;
+      new InputSection(*this, *shdr, ".common", sections.size());
+    isec->output_section = osec;
     sections.push_back(isec);
 
     sym->input_section = isec;

@@ -26,4 +26,7 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q '0 5 42'
 
+readelf --sections $t/exe > $t/log
+grep -q '.common .*NOBITS' $t/log
+
 echo OK
