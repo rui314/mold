@@ -217,8 +217,8 @@ static void create_synthetic_sections() {
   add(out::dynsym = new DynsymSection);
   add(out::dynstr = new DynstrSection);
   add(out::eh_frame = new EhFrameSection);
-  add(out::dynbss = new DynbssSection(".dynbss"));
-  add(out::dynbss_relro = new DynbssSection(".dynbss.rel.ro"));
+  add(out::dynbss = new DynbssSection(false));
+  add(out::dynbss_relro = new DynbssSection(true));
 
   if (!config.dynamic_linker.empty())
     add(out::interp = new InterpSection);

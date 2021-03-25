@@ -839,8 +839,8 @@ public:
 
 class DynbssSection : public OutputChunk {
 public:
-  DynbssSection(std::string_view name) : OutputChunk(SYNTHETIC) {
-    this->name = name;
+  DynbssSection(bool is_relro) : OutputChunk(SYNTHETIC) {
+    name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     shdr.sh_addralign = 64;
