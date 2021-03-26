@@ -222,7 +222,7 @@ static std::string get_self_path() {
   char buf[4096];
   i64 n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
-    Fatal() << "readlink(\"/proc/self/exe\" failed: " << strerror(errno);
+    Fatal() << "readlink(\"/proc/self/exe\") failed: " << strerror(errno);
   if (n == sizeof(buf))
     Fatal() << "readlink: path too long";
   return buf;
