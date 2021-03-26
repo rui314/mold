@@ -229,7 +229,7 @@ static std::string get_self_path() {
 }
 
 [[noreturn]]
-void process_wrap(int argc, char **argv) {
+void process_run_subcommand(int argc, char **argv) {
   std::string_view arg1 = argv[1];
   assert(arg1 == "-run" || arg1 == "--run");
 
@@ -239,7 +239,7 @@ void process_wrap(int argc, char **argv) {
   std::string self = get_self_path();
   std::string env = "LD_PRELOAD=" + path_dirname(self) + "/mold-wrapper.so";
   putenv(strdup(env.c_str()));
-  putenv(strdup(("REAL_MOLD_PATH=" + self).c_str()));
+  putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
   execvp(argv[2], argv + 2);
   Fatal() << "execvp failed: " << strerror(errno);

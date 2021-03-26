@@ -1219,7 +1219,7 @@ bool resume_daemon(char **argv, i64 *code);
 void daemonize(char **argv, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
-[[noreturn]] void process_wrap(int argc, char **argv);
+[[noreturn]] void process_run_subcommand(int argc, char **argv);
 
 // commandline.cc
 //

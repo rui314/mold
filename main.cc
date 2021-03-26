@@ -1089,7 +1089,7 @@ int main(int argc, char **argv) {
   // Process -wrap option first. process_wrap() does not return.
   if (argc >= 2)
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
-      process_wrap(argc, argv);
+      process_run_subcommand(argc, argv);
 
   Timer t_all("all");
 
