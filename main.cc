@@ -1086,7 +1086,7 @@ static void show_stats() {
 }
 
 int main(int argc, char **argv) {
-  // Process -wrap option first. process_wrap() does not return.
+  // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
       process_run_subcommand(argc, argv);
