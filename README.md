@@ -60,15 +60,28 @@ $ make submodules
 $ make
 ```
 
-The last `make` command creates `mold` executable. It also creates a
-symbolic link `ld` to `mold` in the build directory.
+The last `make` command creates `mold` executable.
 
-To use mold, run a build command with the mold build directory at the
-beginning of `PATH`. E.g.
+## How to use
+
+On Unix, the linker command (which is usually `/usr/bin/ld`) is
+invoked indirectly by `cc` (or `gcc` or `clang`), which is typically
+in turn indirectly invoked by `make` or some other build system
+command. It is sometimes very hard to pass an appropriate command line
+option to `cc` to specify an alternative linker.
+
+To deal with the situation, mold has a feature to intercept all
+invocations of `/usr/bin/ld` and redirect it to itself. To use the
+feature, run `make` (or other build command) as follows:
 
 ```
-$ PATH=/path/to/mold/build/dir:$PATH make
+$ path/to/mold -run make <make-options-if-any>
 ```
+
+Internally, mold invokes a given command with `LD_PRELOAD` environment
+variable set to its companion shared object file. The shared object
+file intercepts all function calls to exec-family functions and
+`posix_spawn` and replaces `argv[0]` with `mold` if it is `/usr/bin/ld`.
 
 Alternatively, you can pass `-fuse-ld=<absolute-path-to-mold-executable>`
 to a linker command line. Since GCC doesn't support that option,
