@@ -12,11 +12,22 @@ extern char **environ;
 
 static char *get_mold_path() {
   char *path = getenv("REAL_MOLD_PATH");
-  if (!path) {
-    fprintf(stderr, "REAL_MOLD_PATH is not set\n");
-    exit(1);
-  }
-  return path;
+  if (path)
+    return path;
+  fprintf(stderr, "REAL_MOLD_PATH is not set\n");
+  exit(1);
+}
+
+static void debug_print(char *fmt, ...) {
+  if (!getenv("MOLD_WRAPPER_DEBUG"))
+    return;
+
+  va_list ap;
+  va_start(ap, fmt);
+  fprintf(stderr, "mold-wrapper.so: ");
+  vfprintf(stderr, fmt, ap);
+  fflush(stderr);
+  va_end(ap);
 }
 
 static void get_args(va_list ap, int argc, char **argv) {
@@ -29,18 +40,14 @@ static void get_args(va_list ap, int argc, char **argv) {
 }
 
 int execve(const char *path, char *const *argv, char *const *envp) {
-  if (getenv("MOLD_WRAPPER_DEBUG")) {
-    fprintf(stderr, "mold-wrapper: execve %s\n", path);
-    fflush(stderr);
-  }
+  debug_print("execve %s\n", path);
 
   if (!strcmp(path, "/usr/bin/ld")) {
     path = get_mold_path();
     ((const char **)argv)[0] = path;
   }
 
-  typedef int T(const char *, char *const *, char *const *);
-  T *real = dlsym(RTLD_NEXT, "execve");
+  typeof(execve) *real = dlsym(RTLD_NEXT, "execve");
   return real(path, argv, envp);
 }
 
@@ -78,18 +85,14 @@ int execvp(const char *file, char *const *argv) {
 }
 
 int execvpe(const char *file, char *const *argv, char *const *envp) {
-  if (getenv("MOLD_WRAPPER_DEBUG")) {
-    fprintf(stderr, "mold: execvpe %s\n", file);
-    fflush(stderr);
-  }
+  debug_print("execvpe %s\n", file);
 
   if (!strcmp(file, "ld") || !strcmp(file, "/usr/bin/ld")) {
     file = get_mold_path();
     ((const char **)argv)[0] = file;
   }
 
-  typedef int T(const char *, char *const *, char *const *);
-  T *real = dlsym(RTLD_NEXT, "execvpe");
+  typeof(execvpe) *real = dlsym(RTLD_NEXT, "execvpe");
   return real(file, argv, environ);
 }
 
@@ -97,21 +100,13 @@ int posix_spawn(pid_t *pid, const char *path,
                 const posix_spawn_file_actions_t *file_actions,
                 const posix_spawnattr_t *attrp,
                 char *const *argv, char *const *envp) {
-  if (getenv("MOLD_WRAPPER_DEBUG")) {
-    fprintf(stderr, "mold: posix_spawn %s\n", path);
-    fflush(stderr);
-  }
+  debug_print("posix_spawn %s\n", path);
 
   if (!strcmp(path, "/usr/bin/ld")) {
     path = get_mold_path();
     ((const char **)argv)[0] = path;
   }
 
-  typedef int T(pid_t *, const char *,
-                const posix_spawn_file_actions_t *,
-                const posix_spawnattr_t *,
-                char *const *, char *const *);
-
-  T *real = dlsym(RTLD_NEXT, "posix_spawn");
+  typeof(posix_spawn) *real = dlsym(RTLD_NEXT, "posix_spawn");
   return real(pid, path, file_actions, attrp, argv, envp);
 }

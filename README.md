@@ -72,7 +72,8 @@ option to `cc` to specify an alternative linker.
 
 To deal with the situation, mold has a feature to intercept all
 invocations of `/usr/bin/ld` and redirect it to itself. To use the
-feature, run `make` (or other build command) as follows:
+feature, run `make` (or other build command) as a subprocess of mold
+as follows:
 
 ```
 $ path/to/mold -run make <make-options-if-any>
