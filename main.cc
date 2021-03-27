@@ -1020,6 +1020,16 @@ static void signal_handler(int) {
 MemoryMappedFile *find_library(std::string name,
                                std::span<std::string_view> lib_paths,
                                ReadContext &ctx) {
+  if (name.starts_with(':')) {
+    for (std::string_view dir : lib_paths) {
+      std::string root = dir.starts_with("/") ? config.sysroot : "";
+      std::string path = root + std::string(dir) + "/" + name.substr(1);
+      if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
+        return mb;
+    }
+    Fatal() << "library not found: " << name;
+  }
+
   for (std::string_view dir : lib_paths) {
     std::string root = dir.starts_with("/") ? config.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
