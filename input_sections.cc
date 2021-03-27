@@ -726,7 +726,8 @@ void InputSection::scan_relocations() {
     case R_X86_64_GOTTPOFF:
       out::has_gottpoff = true;
 
-      if (config.relax && !config.shared && relax_gottpoff(loc - 3)) {
+      if (config.relax && !config.shared && !sym.is_imported &&
+          relax_gottpoff(loc - 3)) {
         rel_types[i] = R_GOTTPOFF_RELAX;
       } else {
         sym.flags |= NEEDS_GOTTPOFF;
