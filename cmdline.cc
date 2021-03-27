@@ -411,6 +411,7 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_arg(args, arg, "plugin")) {
     } else if (read_arg(args, arg, "plugin-opt")) {
     } else if (read_flag(args, "color-diagnostics")) {
+    } else if (read_flag(args, "gdb-index")) {
     } else if (read_arg(args, arg, "m")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
