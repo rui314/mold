@@ -58,13 +58,24 @@ InputFile::InputFile(MemoryMappedFile *mb) : mb(mb), name(mb->name) {
   is_dso = (ehdr.e_type == ET_DYN);
 
   ElfShdr *sh_begin = (ElfShdr *)(mb->data() + ehdr.e_shoff);
+
+  // e_shnum contains the total number of sections in an object file.
+  // Since it is a 16-bit integer field, it's not large enough to
+  // represent >65535 sections. If an object file contains more than 65535
+  // sections, the actual number is stored to sh_size field.
   i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
 
   if (mb->data() + mb->size() < (u8 *)(sh_begin + num_sections))
     Fatal() << *this << ": e_shoff or e_shnum corrupted: "
             << mb->size() << " " << num_sections;
   elf_sections = {sh_begin, sh_begin + num_sections};
-  shstrtab = get_string(ehdr.e_shstrndx);
+
+  // e_shstrndx is a 16-bit field. If .shstrtab's section index is
+  // too large, the actual number is stored to sh_link field.
+  i64 shstrtab_idx = (ehdr.e_shstrndx == SHN_XINDEX)
+    ? sh_begin->sh_link : ehdr.e_shstrndx;
+
+  shstrtab = get_string(shstrtab_idx);
 }
 
 std::string_view InputFile::get_string(const ElfShdr &shdr) {
@@ -76,8 +87,10 @@ std::string_view InputFile::get_string(const ElfShdr &shdr) {
 }
 
 std::string_view InputFile::get_string(i64 idx) {
+  assert(idx < elf_sections.size());
+
   if (elf_sections.size() <= idx)
-    Fatal() << *this << ": invalid section index";
+    Fatal() << *this << ": invalid section index: " << idx;
   return get_string(elf_sections[idx]);
 }
 
