@@ -464,6 +464,6 @@ void parse_nonpositional_args(std::span<std::string_view> args,
       Fatal() << "-auxiliary may not be used without -shared";
   }
 
-  if (config.output == "")
-    Fatal() << "-o option is missing";
+  if (config.output.empty())
+    config.output = "a.out";
 }
