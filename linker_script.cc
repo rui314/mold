@@ -6,6 +6,7 @@
 #include "mold.h"
 
 #include <cctype>
+#include <iomanip>
 
 static thread_local MemoryMappedFile *current_file;
 
@@ -42,7 +43,7 @@ public:
     std::stringstream ss;
     ss << current_file->name << ":" << lineno << ": ";
     i64 indent = ss.tellp();
-    ss << line << "\n" << std::string(indent + column, ' ') << "^ ";
+    ss << line << "\n" << std::setw(indent + column) << " " << "^ ";
     out << ss.str();
   }
 
@@ -93,6 +94,9 @@ static std::vector<std::string_view> tokenize(std::string_view input) {
 
     if (pos == 0)
       pos = 1;
+    else if (pos == input.npos)
+      pos = input.size();
+
     vec.push_back(input.substr(0, pos));
     input = input.substr(pos);
   }
