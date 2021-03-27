@@ -199,7 +199,7 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     std::string_view arg;
 
     if (read_flag(args, "v") || read_flag(args, "version")) {
-      SyncOut() << "mold " GIT_HASH " (compatible with GNU linkers)";
+      SyncOut() << "mold " GIT_HASH " (compatible with GNU ld)";
       exit(0);
     }
 
