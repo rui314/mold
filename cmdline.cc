@@ -419,6 +419,7 @@ void parse_nonpositional_args(std::span<std::string_view> args,
     } else if (read_flag(args, "(")) {
     } else if (read_flag(args, ")")) {
     } else if (read_flag(args, "fatal-warnings")) {
+    } else if (read_flag(args, "enable-new-dtags")) {
     } else if (read_flag(args, "disable-new-dtags")) {
     } else if (read_arg(args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
