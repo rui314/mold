@@ -106,7 +106,7 @@ static void send_fd(i64 conn, i64 fd) {
   *(int *)CMSG_DATA(cmsg) = fd;
 
   if (sendmsg(conn, &msg, 0) == -1)
-    Error() << "sendmsg failed: " << strerror(errno);
+    Fatal() << "sendmsg failed: " << strerror(errno);
 }
 
 static i64 recv_fd(i64 conn) {
@@ -125,7 +125,7 @@ static i64 recv_fd(i64 conn) {
 
   i64 len = recvmsg(conn, &msg, 0);
   if (len <= 0)
-    Error() << "recvmsg failed: " << strerror(errno);
+    Fatal() << "recvmsg failed: " << strerror(errno);
 
   struct cmsghdr *cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
@@ -135,7 +135,7 @@ static i64 recv_fd(i64 conn) {
 bool resume_daemon(char **argv, i64 *code) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
-    Error() << "socket failed: " << strerror(errno);
+    Fatal() << "socket failed: " << strerror(errno);
 
   std::string path = "/tmp/mold-" + compute_sha256(argv);
 
@@ -158,11 +158,11 @@ bool resume_daemon(char **argv, i64 *code) {
 void daemonize(char **argv, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
   if (daemon(1, 0) == -1)
-    Error() << "daemon failed: " << strerror(errno);
+    Fatal() << "daemon failed: " << strerror(errno);
 
   i64 sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock == -1)
-    Error() << "socket failed: " << strerror(errno);
+    Fatal() << "socket failed: " << strerror(errno);
 
   socket_tmpfile = strdup(("/tmp/mold-" + compute_sha256(argv)).c_str());
 
@@ -174,17 +174,17 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
-      Error() << "bind failed: " << strerror(errno);
+      Fatal() << "bind failed: " << strerror(errno);
 
     unlink(socket_tmpfile);
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
-      Error() << "bind failed: " << strerror(errno);
+      Fatal() << "bind failed: " << strerror(errno);
   }
 
   umask(orig_mask);
 
   if (listen(sock, 0) == -1)
-    Error() << "listen failed: " << strerror(errno);
+    Fatal() << "listen failed: " << strerror(errno);
 
   static i64 conn = -1;
 
@@ -199,7 +199,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
     i64 res = select(sock + 1, &rfds, NULL, NULL, &tv);
     if (res == -1)
-      Error() << "select failed: " << strerror(errno);
+      Fatal() << "select failed: " << strerror(errno);
 
     if (res == 0) {
       std::cout << "timeout\n";
@@ -208,7 +208,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
     conn = accept(sock, NULL, NULL);
     if (conn == -1)
-      Error() << "accept failed: " << strerror(errno);
+      Fatal() << "accept failed: " << strerror(errno);
     unlink(socket_tmpfile);
 
     dup2(recv_fd(conn), STDOUT_FILENO);
