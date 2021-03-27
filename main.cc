@@ -598,22 +598,26 @@ static void scan_rels() {
 static void apply_version_script() {
   Timer t("apply_version_script");
 
-  for (std::pair<std::string_view, i16> pair : config.version_patterns) {
-    std::string_view pattern = pair.first;
-    i16 veridx = pair.second;
-    assert(pattern != "*");
+  for (VersionPattern &elem : config.version_patterns) {
+    assert(elem.pattern != "*");
 
-    if (pattern.find('*') == pattern.npos) {
-      Symbol::intern(pattern)->ver_idx = veridx;
+    if (!elem.is_extern_cpp &&
+        elem.pattern.find('*') == elem.pattern.npos) {
+      Symbol::intern(elem.pattern)->ver_idx = elem.ver_idx;
       continue;
     }
 
-    GlobPattern glob(pattern);
+    GlobPattern glob(elem.pattern);
 
     tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
-      for (Symbol *sym : file->get_global_syms())
-        if (sym->file == file && glob.match(sym->name))
-          sym->ver_idx = veridx;
+      for (Symbol *sym : file->get_global_syms()) {
+        if (sym->file == file) {
+          std::string_view name = elem.is_extern_cpp
+            ? sym->get_demangled_name() : sym->name;
+          if (glob.match(name))
+            sym->ver_idx = elem.ver_idx;
+        }
+      }
     });
   }
 }

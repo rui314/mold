@@ -59,6 +59,12 @@ struct BuildId {
   i64 hash_size = 0;
 };
 
+struct VersionPattern {
+  std::string_view pattern;
+  i16 ver_idx;
+  bool is_extern_cpp;
+};
+
 struct Config {
   BuildId build_id;
   bool Bsymbolic = false;
@@ -100,7 +106,7 @@ struct Config {
   bool z_relro = true;
   i16 default_version = VER_NDX_GLOBAL;
   std::vector<std::string_view> version_definitions;
-  std::vector<std::pair<std::string_view, i16>> version_patterns;
+  std::vector<VersionPattern> version_patterns;
   i64 filler = -1;
   i64 thread_count = -1;
   std::string Map;
@@ -310,6 +316,7 @@ public:
   inline bool is_undef_weak() const;
   inline u32 get_type() const;
   inline std::string_view get_version() const;
+  std::string_view get_demangled_name() const;
 
   inline void clear();
 

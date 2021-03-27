@@ -209,6 +209,39 @@ static bool read_label(std::span<std::string_view> &tok,
   return false;
 }
 
+static void parse_version_script_commands(std::span<std::string_view> &tok,
+                                          i16 &ver, bool is_extern_cpp) {
+  bool is_global = true;
+
+  while (!tok.empty() && tok[0] != "}") {
+    if (read_label(tok, "global")) {
+      is_global = true;
+      continue;
+    }
+
+    if (read_label(tok, "local")) {
+      is_global = false;
+      continue;
+    }
+
+    if (tok[0] == "extern") {
+      tok = tok.subspan(1);
+      tok = skip(tok, "\"C++\"");
+      tok = skip(tok, "{");
+      parse_version_script_commands(tok, ver, true);
+      tok = skip(tok, "}");
+      tok = skip(tok, ";");
+      continue;
+    }
+
+    if (tok[0] == "*")
+      config.default_version = (is_global ? ver : VER_NDX_LOCAL);
+    else
+      config.version_patterns.push_back({tok[0], ver, is_extern_cpp});
+    tok = skip(tok.subspan(1), ";");
+  }
+}
+
 void parse_version_script(std::string path) {
   current_file = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(current_file->get_contents());
@@ -224,26 +257,7 @@ void parse_version_script(std::string path) {
     }
 
     tok = skip(tok, "{");
-    bool is_global = true;
-
-    while (!tok.empty() && tok[0] != "}") {
-      if (read_label(tok, "global")) {
-        is_global = true;
-        continue;
-      }
-
-      if (read_label(tok, "local")) {
-        is_global = false;
-        continue;
-      }
-
-      if (tok[0] == "*")
-        config.default_version = (is_global ? ver : VER_NDX_LOCAL);
-      else
-        config.version_patterns.push_back({tok[0], ver});
-      tok = skip(tok.subspan(1), ";");
-    }
-
+    parse_version_script_commands(tok, ver, false);
     tok = skip(tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
@@ -260,7 +274,7 @@ void parse_dynamic_list(std::string path) {
   std::span<std::string_view> tok = vec;
 
   tok = skip(tok, "{");
-  i64 ver = VER_NDX_GLOBAL;
+  i16 ver = VER_NDX_GLOBAL;
 
   while (!tok.empty() && tok[0] != "}") {
     if (read_label(tok, "global")) {
@@ -276,7 +290,7 @@ void parse_dynamic_list(std::string path) {
     if (tok[0] == "*")
       config.default_version = ver;
     else
-      config.version_patterns.push_back({tok[0], ver});
+      config.version_patterns.push_back({tok[0], ver, false});
     tok = skip(tok.subspan(1), ";");
   }
 
