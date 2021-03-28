@@ -20,7 +20,7 @@ msg:
   .string "Hello world\n"
 EOF
 
-../mold -static --filler 0xfe -o $t/exe1 \
+../mold -static --filler 0xfe -o $t/exe \
   /usr/lib/x86_64-linux-gnu/crt1.o \
   /usr/lib/x86_64-linux-gnu/crti.o \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginT.o \
@@ -31,7 +31,10 @@ EOF
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
   /usr/lib/x86_64-linux-gnu/crtn.o
 
-../mold -static --filler 0x0 -o $t/exe2 \
+sed -i -e 's/--filler 0xfe/--filler 0x00/' $t/exe
+hexdump -C $t/exe > $t/txt1
+
+../mold -static --filler 0x00 -o $t/exe \
   /usr/lib/x86_64-linux-gnu/crt1.o \
   /usr/lib/x86_64-linux-gnu/crti.o \
   /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginT.o \
@@ -42,8 +45,7 @@ EOF
   /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
   /usr/lib/x86_64-linux-gnu/crtn.o
 
-hexdump -C $t/exe1 > $t/txt1
-hexdump -C $t/exe2 > $t/txt2
+hexdump -C $t/exe > $t/txt2
 
 diff -q $t/txt1 $t/txt2
 

@@ -8,6 +8,8 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
+static std::vector<std::string_view> cmdline_args;
+
 i64 BuildId::size() const {
   switch (kind) {
   case HEX:
@@ -361,6 +363,22 @@ static void convert_common_symbols() {
   });
 }
 
+static std::string get_cmdline_args() {
+  std::stringstream ss;
+  ss << cmdline_args[0];
+  for (std::string_view arg : std::span(cmdline_args).subspan(1))
+    ss << " " << arg;
+  return ss.str();
+}
+
+static void add_comment_string(std::string str) {
+  char *buf = strdup(str.c_str());
+  MergedSection *sec =
+    MergedSection::get_instance(".comment", SHT_PROGBITS, 0);
+  SectionFragment *frag = sec->insert({buf, strlen(buf) + 1}, 1);
+  frag->is_alive = true;
+}
+
 static void compute_merged_section_sizes() {
   Timer t("compute_merged_section_sizes");
 
@@ -373,11 +391,10 @@ static void compute_merged_section_sizes() {
   }
 
   // Add an identification string to .comment.
-  static const char verstr[] = "mold " GIT_HASH;
-  MergedSection *sec =
-    MergedSection::get_instance(".comment", SHT_PROGBITS, 0);
-  SectionFragment *frag = sec->insert({verstr, sizeof(verstr)}, 1);
-  frag->is_alive = true;
+  add_comment_string("mold " GIT_HASH);
+
+  // Also embed command line arguments for now for debugging.
+  add_comment_string("mold command line: " + get_cmdline_args());
 
   tbb::parallel_for_each(MergedSection::instances, [](MergedSection *sec) {
     sec->assign_offsets();
@@ -1108,9 +1125,9 @@ int main(int argc, char **argv) {
   Timer t_all("all");
 
   // Parse non-positional command line options
-  std::vector<std::string_view> arg_vector = expand_response_files(argv + 1);
+  cmdline_args = expand_response_files(argv + 1);
   std::vector<std::string_view> file_args;
-  parse_nonpositional_args(arg_vector, file_args);
+  parse_nonpositional_args(cmdline_args, file_args);
 
   if (!config.preload)
     if (i64 code; resume_daemon(argv, &code))
