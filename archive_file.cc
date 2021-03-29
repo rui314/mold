@@ -10,10 +10,11 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-std::vector<MemoryMappedFile *>
-read_thin_archive_members(Context &ctx, MemoryMappedFile *mb) {
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   u8 *data = mb->data(ctx) + 8;
-  std::vector<MemoryMappedFile *> vec;
+  std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
   while (data < mb->data(ctx) + mb->size()) {
@@ -38,16 +39,17 @@ read_thin_archive_members(Context &ctx, MemoryMappedFile *mb) {
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name(start, strstr(start, "/\n"));
     std::string path = path_dirname(mb->name) + "/" + name;
-    vec.push_back(MemoryMappedFile::must_open(ctx, path));
+    vec.push_back(MemoryMappedFile<E>::must_open(ctx, path));
     data = body;
   }
   return vec;
 }
 
-std::vector<MemoryMappedFile *>
-read_fat_archive_members(Context &ctx, MemoryMappedFile *mb) {
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   u8 *data = mb->data(ctx) + 8;
-  std::vector<MemoryMappedFile *> vec;
+  std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
   while (mb->data(ctx) + mb->size() - data >= 2) {
@@ -78,3 +80,11 @@ read_fat_archive_members(Context &ctx, MemoryMappedFile *mb) {
   }
   return vec;
 }
+
+template
+std::vector<MemoryMappedFile<ELF64LE> *>
+read_fat_archive_members(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+
+template
+std::vector<MemoryMappedFile<ELF64LE> *>
+read_thin_archive_members(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);

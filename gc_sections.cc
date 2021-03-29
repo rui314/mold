@@ -7,9 +7,11 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
-typedef tbb::parallel_do_feeder<InputSection *> Feeder;
+template <typename E>
+using Feeder = tbb::parallel_do_feeder<InputSection<E> *>;
 
-static bool is_init_fini(const InputSection &isec) {
+template <typename E>
+static bool is_init_fini(const InputSection<E> &isec) {
   return isec.shdr.sh_type == SHT_INIT_ARRAY ||
          isec.shdr.sh_type == SHT_FINI_ARRAY ||
          isec.shdr.sh_type == SHT_PREINIT_ARRAY ||
@@ -19,30 +21,32 @@ static bool is_init_fini(const InputSection &isec) {
          isec.name.starts_with(".fini");
 }
 
-static bool mark_section(InputSection *isec) {
+template <typename E>
+static bool mark_section(InputSection<E> *isec) {
   return isec && isec->is_alive && !isec->is_visited.exchange(true);
 }
 
-static void visit(InputSection *isec, Feeder &feeder, i64 depth) {
+template <typename E>
+static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
   assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all
   // section fragments as alive.
-  for (SectionFragmentRef &ref : isec->rel_fragments)
+  for (SectionFragmentRef<E> &ref : isec->rel_fragments)
     ref.frag->is_alive = true;
 
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
-  for (FdeRecord &fde : isec->fdes)
-    for (EhReloc &rel : std::span(fde.rels).subspan(1))
-      if (InputSection *isec = rel.sym.input_section)
+  for (FdeRecord<E> &fde : isec->fdes)
+    for (EhReloc<E> &rel : std::span<EhReloc<E>>(fde.rels).subspan(1))
+      if (InputSection<E> *isec = rel.sym.input_section)
         if (mark_section(isec))
           feeder.add(isec);
 
   for (ElfRela &rel : isec->rels) {
-    Symbol &sym = *isec->file.symbols[rel.r_sym];
+    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.
@@ -63,16 +67,18 @@ static void visit(InputSection *isec, Feeder &feeder, i64 depth) {
   }
 }
 
-static tbb::concurrent_vector<InputSection *> collect_root_set(Context &ctx) {
+template <typename E>
+static tbb::concurrent_vector<InputSection<E> *>
+collect_root_set(Context<E> &ctx) {
   Timer t("collect_root_set");
-  tbb::concurrent_vector<InputSection *> roots;
+  tbb::concurrent_vector<InputSection<E> *> roots;
 
-  auto enqueue_section = [&](InputSection *isec) {
+  auto enqueue_section = [&](InputSection<E> *isec) {
     if (mark_section(isec))
       roots.push_back(isec);
   };
 
-  auto enqueue_symbol = [&](Symbol *sym) {
+  auto enqueue_symbol = [&](Symbol<E> *sym) {
     if (sym) {
       if (sym->frag)
         sym->frag->is_alive = true;
@@ -82,8 +88,8 @@ static tbb::concurrent_vector<InputSection *> collect_root_set(Context &ctx) {
   };
 
   // Add sections that are not subject to garbage collection.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-    for (InputSection *isec : file->sections) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (InputSection<E> *isec : file->sections) {
       if (!isec)
         continue;
 
@@ -100,24 +106,24 @@ static tbb::concurrent_vector<InputSection *> collect_root_set(Context &ctx) {
   });
 
   // Add sections containing exported symbols
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-    for (Symbol *sym : file->symbols)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->symbols)
       if (sym->file == file && sym->is_exported)
         enqueue_symbol(sym);
   });
 
   // Add sections referenced by root symbols.
-  enqueue_symbol(Symbol::intern(ctx.arg.entry));
+  enqueue_symbol(Symbol<E>::intern(ctx.arg.entry));
 
   for (std::string_view name : ctx.arg.undefined)
-    enqueue_symbol(Symbol::intern(name));
+    enqueue_symbol(Symbol<E>::intern(name));
 
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
   // We just keep all CIEs and everything that are referenced by them.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-    for (CieRecord &cie : file->cies)
-      for (EhReloc &rel : cie.rels)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (CieRecord<E> &cie : file->cies)
+      for (EhReloc<E> &rel : cie.rels)
         enqueue_section(rel.sym.input_section);
   });
 
@@ -125,22 +131,24 @@ static tbb::concurrent_vector<InputSection *> collect_root_set(Context &ctx) {
 }
 
 // Mark all reachable sections
-static void mark(tbb::concurrent_vector<InputSection *> &roots) {
+template <typename E>
+static void mark(tbb::concurrent_vector<InputSection<E> *> &roots) {
   Timer t("mark");
 
-  tbb::parallel_do(roots, [&](InputSection *isec, Feeder &feeder) {
+  tbb::parallel_do(roots, [&](InputSection<E> *isec, Feeder<E> &feeder) {
     visit(isec, feeder, 0);
   });
 }
 
 // Remove unreachable sections
-static void sweep(Context &ctx) {
+template <typename E>
+static void sweep(Context<E> &ctx) {
   Timer t("sweep");
   static Counter counter("garbage_sections");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
-      InputSection *isec = file->sections[i];
+      InputSection<E> *isec = file->sections[i];
 
       if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)
@@ -154,22 +162,26 @@ static void sweep(Context &ctx) {
 
 // Non-alloc section fragments are not subject of garbage collection.
 // This function marks such fragments.
-static void mark_nonalloc_fragments(Context &ctx) {
+template <typename E>
+static void mark_nonalloc_fragments(Context<E> &ctx) {
   Timer t("mark_nonalloc_fragments");
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-    for (SectionFragment *frag : file->fragments)
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    for (SectionFragment<E> *frag : file->fragments)
       if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
         frag->is_alive = true;
   });
 }
 
-void gc_sections(Context &ctx) {
+template <typename E>
+void gc_sections(Context<E> &ctx) {
   Timer t("gc");
 
   mark_nonalloc_fragments(ctx);
 
-  tbb::concurrent_vector<InputSection *> roots = collect_root_set(ctx);
+  tbb::concurrent_vector<InputSection<E> *> roots = collect_root_set(ctx);
   mark(roots);
   sweep(ctx);
 }
+
+template void gc_sections(Context<ELF64LE> &ctx);

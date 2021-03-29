@@ -85,7 +85,8 @@ static std::string compute_sha256(char **argv) {
   return base64(digest, SHA256_SIZE);
 }
 
-static void send_fd(Context &ctx, i64 conn, i64 fd) {
+template <typename E>
+static void send_fd(Context<E> &ctx, i64 conn, i64 fd) {
   struct iovec iov;
   char dummy = '1';
   iov.iov_base = &dummy;
@@ -109,7 +110,8 @@ static void send_fd(Context &ctx, i64 conn, i64 fd) {
     Fatal(ctx) << "sendmsg failed: " << strerror(errno);
 }
 
-static i64 recv_fd(Context &ctx, i64 conn) {
+template <typename E>
+static i64 recv_fd(Context<E> &ctx, i64 conn) {
   struct iovec iov;
   char buf[1];
   iov.iov_base = buf;
@@ -132,7 +134,8 @@ static i64 recv_fd(Context &ctx, i64 conn) {
   return *(int *)CMSG_DATA(cmsg);
 }
 
-bool resume_daemon(Context &ctx, char **argv, i64 *code) {
+template <typename E>
+bool resume_daemon(Context<E> &ctx, char **argv, i64 *code) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
     Fatal(ctx) << "socket failed: " << strerror(errno);
@@ -155,7 +158,8 @@ bool resume_daemon(Context &ctx, char **argv, i64 *code) {
   return true;
 }
 
-void daemonize(Context &ctx, char **argv,
+template <typename E>
+void daemonize(Context<E> &ctx, char **argv,
                std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
   if (daemon(1, 0) == -1)
@@ -219,7 +223,8 @@ void daemonize(Context &ctx, char **argv,
   *on_complete = [=]() { write(conn, (char []){1}, 1); };
 }
 
-static std::string get_self_path(Context &ctx) {
+template <typename E>
+static std::string get_self_path(Context<E> &ctx) {
   char buf[4096];
   i64 n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
@@ -229,8 +234,9 @@ static std::string get_self_path(Context &ctx) {
   return buf;
 }
 
+template <typename E>
 [[noreturn]]
-void process_run_subcommand(Context &ctx, int argc, char **argv) {
+void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   std::string_view arg1 = argv[1];
   assert(arg1 == "-run" || arg1 == "--run");
 
@@ -245,3 +251,14 @@ void process_run_subcommand(Context &ctx, int argc, char **argv) {
   execvp(argv[2], argv + 2);
   Fatal(ctx) << "execvp failed: " << strerror(errno);
 }
+
+template
+bool resume_daemon(Context<ELF64LE> &ctx, char **argv, i64 *code);
+
+template
+void daemonize(Context<ELF64LE> &ctx, char **argv,
+               std::function<void()> *wait_for_client,
+               std::function<void()> *on_complete);
+
+template
+void process_run_subcommand(Context<ELF64LE> &ctx, int argc, char **argv);

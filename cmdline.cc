@@ -3,10 +3,12 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
+template <typename E>
 static std::vector<std::string_view>
-read_response_file(Context &ctx, std::string_view path) {
+read_response_file(Context<E> &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
-  MemoryMappedFile *mb = MemoryMappedFile::must_open(ctx, std::string(path));
+  MemoryMappedFile<E> *mb =
+    MemoryMappedFile<E>::must_open(ctx, std::string(path));
   u8 *data = mb->data(ctx);
 
   auto read_quoted = [&](i64 i, char quote) {
@@ -46,8 +48,9 @@ read_response_file(Context &ctx, std::string_view path) {
   return vec;
 }
 
+template <typename E>
 std::vector<std::string_view>
-expand_response_files(Context &ctx, char **argv) {
+expand_response_files(Context<E> &ctx, char **argv) {
   std::vector<std::string_view> vec;
 
   for (i64 i = 0; argv[i]; i++) {
@@ -70,7 +73,8 @@ static std::vector<std::string> add_dashes(std::string name) {
   return {"-" + name, "--" + name};
 }
 
-bool read_arg(Context &ctx, std::span<std::string_view> &args,
+template <typename E>
+bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
               std::string_view &arg, std::string name) {
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
@@ -131,22 +135,26 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   return false;
 }
 
-static i64 parse_hex(Context &ctx, std::string opt, std::string_view value) {
+template <typename E>
+static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   value = value.substr(2);
-  if (value.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
+  if (value.find_first_not_of("0123456789abcdefABCDEF") != value.npos)
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
-static i64 parse_number(Context &ctx, std::string opt, std::string_view value) {
+template <typename E>
+static i64 parse_number(Context<E> &ctx, std::string opt,
+                        std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
     Fatal(ctx) << "option -" << opt << ": not a number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
-static std::vector<u8> parse_hex_build_id(Context &ctx, std::string_view arg) {
+template <typename E>
+static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg) {
   assert(arg.starts_with("0x") || arg.starts_with("0X"));
 
   if (arg.size() % 2)
@@ -194,7 +202,8 @@ static i64 get_default_thread_count() {
   return std::min(n, 32);
 }
 
-void parse_nonpositional_args(Context &ctx,
+template <typename E>
+void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
   ctx.arg.thread_count = get_default_thread_count();
@@ -479,3 +488,16 @@ void parse_nonpositional_args(Context &ctx,
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
 }
+
+template
+std::vector<std::string_view>
+expand_response_files(Context<ELF64LE> &ctx, char **argv);
+
+template
+bool read_arg(Context<ELF64LE> &ctx, std::span<std::string_view> &args,
+              std::string_view &arg,
+              std::string name);
+
+template
+void parse_nonpositional_args(Context<ELF64LE> &ctx,
+                              std::vector<std::string_view> &remaining);

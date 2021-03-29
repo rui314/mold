@@ -236,7 +236,13 @@ static constexpr u32 DW_EH_PE_datarel = 0x30;
 static constexpr u32 DW_EH_PE_funcrel = 0x40;
 static constexpr u32 DW_EH_PE_aligned = 0x50;
 
-struct ElfSym {
+struct ELF64LE {};
+
+template <typename E>
+struct ElfSym;
+
+template <>
+struct ElfSym<ELF64LE> {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }

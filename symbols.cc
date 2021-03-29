@@ -10,7 +10,8 @@ static bool is_mangled_name(std::string_view name) {
   return name.starts_with("_Z");
 }
 
-std::string_view Symbol::get_demangled_name() const {
+template <typename E>
+std::string_view Symbol<E>::get_demangled_name() const {
   if (is_mangled_name(name)) {
     assert(name[name.size()] == '\0');
     size_t len = sizeof(demangle_buf);
@@ -24,10 +25,16 @@ std::string_view Symbol::get_demangled_name() const {
   return name;
 }
 
-std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   if (opt_demangle)
     out << sym.get_demangled_name();
   else
     out << sym.name;
   return out;
 }
+
+template class Symbol<ELF64LE>;
+
+template
+std::ostream &operator<<(std::ostream &out, const Symbol<ELF64LE> &sym);

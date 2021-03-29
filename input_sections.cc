@@ -10,8 +10,10 @@ static u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
-InputSection::InputSection(Context &ctx, ObjectFile &file, const ElfShdr &shdr,
-                           std::string_view name, i64 section_idx)
+template <typename E>
+InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
+                              const ElfShdr &shdr,
+                              std::string_view name, i64 section_idx)
   : file(file), shdr(shdr), name(name), section_idx(section_idx) {
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
@@ -46,10 +48,11 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const ElfShdr &shdr,
   }
 
   output_section =
-    OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags);
+    OutputSection<E>::get_instance(name, shdr.sh_type, shdr.sh_flags);
 }
 
-static std::string rel_to_string(Context &ctx, u64 r_type) {
+template <typename E>
+static std::string rel_to_string(Context<E> &ctx, u64 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
   case R_X86_64_8: return "R_X86_64_8";
@@ -81,8 +84,9 @@ static std::string rel_to_string(Context &ctx, u64 r_type) {
   unreachable();
 }
 
-static void overflow_check(Context &ctx, InputSection *sec,
-                           Symbol &sym, u64 r_type, u64 val) {
+template <typename E>
+static void overflow_check(Context<E> &ctx, InputSection<E> *sec,
+                           Symbol<E> &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
@@ -144,7 +148,8 @@ static void overflow_check(Context &ctx, InputSection *sec,
   unreachable();
 }
 
-static void write_val(Context &ctx, u64 r_type, u8 *loc, u64 val) {
+template <typename E>
+static void write_val(Context<E> &ctx, u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
     return;
@@ -189,7 +194,8 @@ static void write_val(Context &ctx, u64 r_type, u8 *loc, u64 val) {
   unreachable();
 }
 
-void InputSection::copy_buf(Context &ctx) {
+template <typename E>
+void InputSection<E>::copy_buf(Context<E> &ctx) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
@@ -259,7 +265,8 @@ static u32 relax_gottpoff(u8 *loc) {
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
-void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
+template <typename E>
+void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   i64 ref_idx = 0;
   ElfRela *dynrel = nullptr;
 
@@ -269,10 +276,10 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef *ref = nullptr;
+    const SectionFragmentRef<E> *ref = nullptr;
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
@@ -416,7 +423,8 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
 //
 // Relocations against non-SHF_ALLOC sections are not scanned by
 // scan_relocations.
-void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
+template <typename E>
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter += rels.size();
 
@@ -424,7 +432,7 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
@@ -432,7 +440,7 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
       continue;
     }
 
-    const SectionFragmentRef *ref = nullptr;
+    const SectionFragmentRef<E> *ref = nullptr;
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
@@ -490,7 +498,8 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
   }
 }
 
-static i64 get_output_type(Context &ctx) {
+template <typename E>
+static i64 get_output_type(Context<E> &ctx) {
   if (ctx.arg.shared)
     return 0;
   if (ctx.arg.pie)
@@ -498,7 +507,8 @@ static i64 get_output_type(Context &ctx) {
   return 2;
 }
 
-static i64 get_sym_type(Context &ctx, Symbol &sym) {
+template <typename E>
+static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.is_absolute(ctx))
     return 0;
   if (!sym.is_imported)
@@ -513,7 +523,8 @@ static i64 get_sym_type(Context &ctx, Symbol &sym) {
 // or a PLT entry of a symbol, linker has to create an entry in .got
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
-void InputSection::scan_relocations(Context &ctx) {
+template <typename E>
+void InputSection<E>::scan_relocations(Context<E> &ctx) {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
@@ -526,7 +537,7 @@ void InputSection::scan_relocations(Context &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRela &rel = rels[i];
-    Symbol &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
@@ -763,11 +774,14 @@ void InputSection::scan_relocations(Context &ctx) {
   }
 }
 
-void InputSection::kill() {
+template <typename E>
+void InputSection<E>::kill() {
   if (is_alive.exchange(false)) {
     is_alive = false;
-    for (FdeRecord &fde : fdes)
+    for (FdeRecord<E> &fde : fdes)
       fde.is_alive = false;
     file.sections[section_idx] = nullptr;
   }
 }
+
+template class InputSection<ELF64LE>;

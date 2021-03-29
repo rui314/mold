@@ -8,19 +8,8 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
-i64 BuildId::size(Context &ctx) const {
-  switch (kind) {
-  case HEX:
-    return value.size();
-  case HASH:
-    return hash_size;
-  case UUID:
-    return 16;
-  }
-  unreachable();
-}
-
-static bool is_text_file(Context &ctx, MemoryMappedFile *mb) {
+template <typename E>
+static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   u8 *data = mb->data(ctx);
   return mb->size() >= 4 &&
          isprint(data[0]) &&
@@ -31,7 +20,8 @@ static bool is_text_file(Context &ctx, MemoryMappedFile *mb) {
 
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
-static FileType get_file_type(Context &ctx, MemoryMappedFile *mb) {
+template <typename E>
+static FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   u8 *data = mb->data(ctx);
 
   if (mb->size() >= 20 && memcmp(data, "\177ELF", 4) == 0) {
@@ -52,43 +42,45 @@ static FileType get_file_type(Context &ctx, MemoryMappedFile *mb) {
   return FileType::UNKNOWN;
 }
 
-static ObjectFile *new_object_file(Context &ctx, MemoryMappedFile *mb,
-                                   std::string archive_name) {
+template <typename E>
+static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
+                                      std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
 
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
-  ObjectFile *file = new ObjectFile(ctx, mb, archive_name, in_lib);
+  ObjectFile<E> *file = new ObjectFile<E>(ctx, mb, archive_name, in_lib);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
   return file;
 }
 
-static SharedFile *new_shared_file(Context &ctx, MemoryMappedFile *mb) {
-  SharedFile *file = new SharedFile(ctx, mb);
+template <typename E>
+static SharedFile<E> *new_shared_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  SharedFile<E> *file = new SharedFile<E>(ctx, mb);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
   return file;
 }
 
-template <typename T>
+template <typename E, typename T>
 class FileCache {
 public:
-  void store(MemoryMappedFile *mb, T *obj) {
+  void store(MemoryMappedFile<E> *mb, T *obj) {
     Key k(mb->name, mb->size(), mb->mtime);
     cache[k].push_back(obj);
   }
 
-  std::vector<T *> get(MemoryMappedFile *mb) {
+  std::vector<T *> get(MemoryMappedFile<E> *mb) {
     Key k(mb->name, mb->size(), mb->mtime);
     std::vector<T *> objs = cache[k];
     cache[k].clear();
     return objs;
   }
 
-  T *get_one(MemoryMappedFile *mb) {
+  T *get_one(MemoryMappedFile<E> *mb) {
     std::vector<T *> objs = get(mb);
     return objs.empty() ? nullptr : objs[0];
   }
@@ -98,12 +90,13 @@ private:
   std::map<Key, std::vector<T *>> cache;
 };
 
-void read_file(Context &ctx, MemoryMappedFile *mb) {
+template <typename E>
+void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   if (ctx.visited.contains(mb->name))
     return;
 
-  static FileCache<ObjectFile> obj_cache;
-  static FileCache<SharedFile> dso_cache;
+  static FileCache<E, ObjectFile<E>> obj_cache;
+  static FileCache<E, SharedFile<E>> dso_cache;
 
   if (ctx.is_preloading) {
     switch (get_file_type(ctx, mb)) {
@@ -114,12 +107,12 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
       dso_cache.store(mb, new_shared_file(ctx, mb));
       return;
     case FileType::AR:
-      for (MemoryMappedFile *child : read_fat_archive_members(ctx, mb))
+      for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
         if (get_file_type(ctx, child) == FileType::OBJ)
           obj_cache.store(mb, new_object_file(ctx, child, mb->name));
       return;
     case FileType::THIN_AR:
-      for (MemoryMappedFile *child : read_thin_archive_members(ctx, mb))
+      for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb))
         if (get_file_type(ctx, child) == FileType::OBJ)
           obj_cache.store(child, new_object_file(ctx, child, mb->name));
       return;
@@ -132,31 +125,31 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
 
   switch (get_file_type(ctx, mb)) {
   case FileType::OBJ:
-    if (ObjectFile *obj = obj_cache.get_one(mb))
+    if (ObjectFile<E> *obj = obj_cache.get_one(mb))
       ctx.objs.push_back(obj);
     else
       ctx.objs.push_back(new_object_file(ctx, mb, ""));
     return;
   case FileType::DSO:
-    if (SharedFile *obj = dso_cache.get_one(mb))
+    if (SharedFile<E> *obj = dso_cache.get_one(mb))
       ctx.dsos.push_back(obj);
     else
       ctx.dsos.push_back(new_shared_file(ctx, mb));
     ctx.visited.insert(mb->name);
     return;
   case FileType::AR:
-    if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
+    if (std::vector<ObjectFile<E> *> objs = obj_cache.get(mb); !objs.empty()) {
       append(ctx.objs, objs);
     } else {
-      for (MemoryMappedFile *child : read_fat_archive_members(ctx, mb))
+      for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
         if (get_file_type(ctx, child) == FileType::OBJ)
           ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     }
     ctx.visited.insert(mb->name);
     return;
   case FileType::THIN_AR:
-    for (MemoryMappedFile *child : read_thin_archive_members(ctx, mb)) {
-      if (ObjectFile *obj = obj_cache.get_one(child))
+    for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb)) {
+      if (ObjectFile<E> *obj = obj_cache.get_one(child))
         ctx.objs.push_back(obj);
       else if (get_file_type(ctx, child) == FileType::OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mb->name));
@@ -185,7 +178,8 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
-static void apply_exclude_libs(Context &ctx) {
+template <typename E>
+static void apply_exclude_libs(Context<E> &ctx) {
   Timer t("apply_exclude_libs");
 
   if (ctx.arg.exclude_libs.empty())
@@ -194,131 +188,135 @@ static void apply_exclude_libs(Context &ctx) {
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     if (!file->archive_name.empty())
       if (set.contains("ALL") || set.contains(file->archive_name))
         file->exclude_libs = true;
 }
 
-static void create_synthetic_sections(Context &ctx) {
-  auto add = [&](OutputChunk *chunk) {
+template <typename E>
+static void create_synthetic_sections(Context<E> &ctx) {
+  auto add = [&](OutputChunk<E> *chunk) {
     ctx.chunks.push_back(chunk);
   };
 
-  add(ctx.ehdr = new OutputEhdr);
-  add(ctx.phdr = new OutputPhdr);
-  add(ctx.shdr = new OutputShdr);
-  add(ctx.got = new GotSection);
-  add(ctx.gotplt = new GotPltSection);
-  add(ctx.relplt = new RelPltSection);
-  add(ctx.strtab = new StrtabSection);
-  add(ctx.shstrtab = new ShstrtabSection);
-  add(ctx.plt = new PltSection);
-  add(ctx.pltgot = new PltGotSection);
-  add(ctx.symtab = new SymtabSection);
-  add(ctx.dynsym = new DynsymSection);
-  add(ctx.dynstr = new DynstrSection);
-  add(ctx.eh_frame = new EhFrameSection);
-  add(ctx.dynbss = new DynbssSection(false));
-  add(ctx.dynbss_relro = new DynbssSection(true));
+  add(ctx.ehdr = new OutputEhdr<E>);
+  add(ctx.phdr = new OutputPhdr<E>);
+  add(ctx.shdr = new OutputShdr<E>);
+  add(ctx.got = new GotSection<E>);
+  add(ctx.gotplt = new GotPltSection<E>);
+  add(ctx.relplt = new RelPltSection<E>);
+  add(ctx.strtab = new StrtabSection<E>);
+  add(ctx.shstrtab = new ShstrtabSection<E>);
+  add(ctx.plt = new PltSection<E>);
+  add(ctx.pltgot = new PltGotSection<E>);
+  add(ctx.symtab = new SymtabSection<E>);
+  add(ctx.dynsym = new DynsymSection<E>);
+  add(ctx.dynstr = new DynstrSection<E>);
+  add(ctx.eh_frame = new EhFrameSection<E>);
+  add(ctx.dynbss = new DynbssSection<E>(false));
+  add(ctx.dynbss_relro = new DynbssSection<E>(true));
 
   if (!ctx.arg.dynamic_linker.empty())
-    add(ctx.interp = new InterpSection);
+    add(ctx.interp = new InterpSection<E>);
   if (ctx.arg.build_id.kind != BuildId::NONE)
-    add(ctx.buildid = new BuildIdSection);
+    add(ctx.buildid = new BuildIdSection<E>);
   if (ctx.arg.eh_frame_hdr)
-    add(ctx.eh_frame_hdr = new EhFrameHdrSection);
+    add(ctx.eh_frame_hdr = new EhFrameHdrSection<E>);
   if (ctx.arg.hash_style_sysv)
-    add(ctx.hash = new HashSection);
+    add(ctx.hash = new HashSection<E>);
   if (ctx.arg.hash_style_gnu)
-    add(ctx.gnu_hash = new GnuHashSection);
+    add(ctx.gnu_hash = new GnuHashSection<E>);
   if (!ctx.arg.version_definitions.empty())
-    add(ctx.verdef = new VerdefSection);
+    add(ctx.verdef = new VerdefSection<E>);
 
-  add(ctx.reldyn = new RelDynSection);
-  add(ctx.dynamic = new DynamicSection);
-  add(ctx.versym = new VersymSection);
-  add(ctx.verneed = new VerneedSection);
+  add(ctx.reldyn = new RelDynSection<E>);
+  add(ctx.dynamic = new DynamicSection<E>);
+  add(ctx.versym = new VersymSection<E>);
+  add(ctx.verneed = new VerneedSection<E>);
 }
 
-static void set_file_priority(Context &ctx) {
+template <typename E>
+static void set_file_priority(Context<E> &ctx) {
   // File priority 1 is reserved for the internal file.
   i64 priority = 2;
 
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     if (!file->is_in_lib)
       file->priority = priority++;
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     if (file->is_in_lib)
       file->priority = priority++;
-  for (SharedFile *file : ctx.dsos)
+  for (SharedFile<E> *file : ctx.dsos)
     file->priority = priority++;
 }
 
-static void resolve_obj_symbols(Context &ctx) {
+template <typename E>
+static void resolve_obj_symbols(Context<E> &ctx) {
   Timer t("resolve_obj_symbols");
 
   // Register archive symbols
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_in_lib)
       file->resolve_lazy_symbols(ctx);
   });
 
   // Register defined symbols
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (!file->is_in_lib)
       file->resolve_regular_symbols(ctx);
   });
 
   // Mark reachable objects to decide which files to include
   // into an output.
-  std::vector<ObjectFile *> roots;
-  for (ObjectFile *file : ctx.objs)
+  std::vector<ObjectFile<E> *> roots;
+  for (ObjectFile<E> *file : ctx.objs)
     if (file->is_alive)
       roots.push_back(file);
 
   for (std::string_view name : ctx.arg.undefined)
-    if (InputFile *file = Symbol::intern(name)->file)
+    if (InputFile<E> *file = Symbol<E>::intern(name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
-        roots.push_back((ObjectFile *)file);
+        roots.push_back((ObjectFile<E> *)file);
 
   tbb::parallel_do(roots,
-                   [&](ObjectFile *file,
-                       tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-                     file->mark_live_objects(ctx, [&](ObjectFile *obj) {
+                   [&](ObjectFile<E> *file,
+                       tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
+                     file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) {
                        feeder.add(obj);
                      });
                    });
 
   // Remove symbols of eliminated objects.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-    Symbol null_sym;
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    Symbol<E> null_sym;
     if (!file->is_alive)
-      for (Symbol *sym : file->get_global_syms())
+      for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
           sym->clear();
   });
 
   // Eliminate unused archive members.
-  erase(ctx.objs, [](InputFile *file) { return !file->is_alive; });
+  erase(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
 }
 
-static void resolve_dso_symbols(Context &ctx) {
+template <typename E>
+static void resolve_dso_symbols(Context<E> &ctx) {
   Timer t("resolve_dso_symbols");
 
   // Register DSO symbols
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile *file) {
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     file->resolve_symbols(ctx);
   });
 
   // Mark live DSOs
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ElfSym &esym = file->elf_syms[i];
+      const ElfSym<E> &esym = file->elf_syms[i];
       if (esym.is_defined())
         continue;
 
-      Symbol &sym = *file->symbols[i];
+      Symbol<E> &sym = *file->symbols[i];
       if (!sym.file || !sym.file->is_dso)
         continue;
 
@@ -332,72 +330,79 @@ static void resolve_dso_symbols(Context &ctx) {
   });
 
   // Remove symbols of unreferenced DSOs.
-  tbb::parallel_for_each(ctx.dsos, [](SharedFile *file) {
-    Symbol null_sym;
+  tbb::parallel_for_each(ctx.dsos, [](SharedFile<E> *file) {
+    Symbol<E> null_sym;
     if (!file->is_alive)
-      for (Symbol *sym : file->symbols)
+      for (Symbol<E> *sym : file->symbols)
         if (sym->file == file)
           sym->clear();
   });
 
   // Remove unreferenced DSOs
-  erase(ctx.dsos, [](InputFile *file) { return !file->is_alive; });
+  erase(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 }
 
-static void eliminate_comdats(Context &ctx) {
+template <typename E>
+static void eliminate_comdats(Context<E> &ctx) {
   Timer t("eliminate_comdats");
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     file->resolve_comdat_groups();
   });
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     file->eliminate_duplicate_comdat_groups();
   });
 }
 
-static void convert_common_symbols(Context &ctx) {
+template <typename E>
+static void convert_common_symbols(Context<E> &ctx) {
   Timer t("convert_common_symbols");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_common_symbols(ctx);
   });
 }
 
-static std::string get_cmdline_args(Context &ctx) {
+template <typename E>
+static std::string get_cmdline_args(Context<E> &ctx) {
   std::stringstream ss;
   ss << ctx.cmdline_args[0];
-  for (std::string_view arg : std::span(ctx.cmdline_args).subspan(1))
+  for (std::string_view arg :
+         std::span<std::string_view>(ctx.cmdline_args).subspan(1))
     ss << " " << arg;
   return ss.str();
 }
 
-static void add_comment_string(std::string str) {
+template <typename E>
+static void add_comment_string(Context<E> &ctx, std::string str) {
   char *buf = strdup(str.c_str());
-  MergedSection *sec =
-    MergedSection::get_instance(".comment", SHT_PROGBITS, 0);
-  SectionFragment *frag = sec->insert({buf, strlen(buf) + 1}, 1);
+  MergedSection<E> *sec =
+    MergedSection<E>::get_instance(".comment", SHT_PROGBITS, 0);
+  SectionFragment<E> *frag = sec->insert({buf, strlen(buf) + 1}, 1);
   frag->is_alive = true;
 }
 
-static void compute_merged_section_sizes(Context &ctx) {
+template <typename E>
+static void compute_merged_section_sizes(Context<E> &ctx) {
   Timer t("compute_merged_section_sizes");
 
   // Mark section fragments referenced by live objects.
   if (!ctx.arg.gc_sections) {
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-      for (SectionFragment *frag : file->fragments)
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      for (SectionFragment<E> *frag : file->fragments)
         frag->is_alive = true;
     });
   }
 
   // Add an identification string to .comment.
-  add_comment_string("mold " GIT_HASH);
+  add_comment_string(ctx, "mold " GIT_HASH);
 
   // Also embed command line arguments for now for debugging.
-  add_comment_string("mold command line: " + get_cmdline_args(ctx));
+  add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
-  tbb::parallel_for_each(MergedSection::instances, [](MergedSection *sec) {
+  tbb::parallel_for_each(MergedSection<E>::instances,
+                         [](MergedSection<E> *sec) {
     sec->assign_offsets();
   });
 }
@@ -408,45 +413,47 @@ static void compute_merged_section_sizes(Context &ctx) {
 //
 // An output section may contain millions of input sections.
 // So, we append input sections to output sections in parallel.
-static void bin_sections(Context &ctx) {
+template <typename E>
+static void bin_sections(Context<E> &ctx) {
   Timer t("bin_sections");
 
   i64 unit = (ctx.objs.size() + 127) / 128;
-  std::vector<std::span<ObjectFile *>> slices = split(ctx.objs, unit);
+  std::vector<std::span<ObjectFile<E> *>> slices = split(ctx.objs, unit);
 
-  i64 num_osec = OutputSection::instances.size();
+  i64 num_osec = OutputSection<E>::instances.size();
 
-  std::vector<std::vector<std::vector<InputSection *>>> groups(slices.size());
+  std::vector<std::vector<std::vector<InputSection<E> *>>> groups(slices.size());
   for (i64 i = 0; i < groups.size(); i++)
     groups[i].resize(num_osec);
 
   tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
-    for (ObjectFile *file : slices[i])
-      for (InputSection *isec : file->sections)
+    for (ObjectFile<E> *file : slices[i])
+      for (InputSection<E> *isec : file->sections)
         if (isec)
           groups[i][isec->output_section->idx].push_back(isec);
   });
 
   std::vector<i64> sizes(num_osec);
 
-  for (std::span<std::vector<InputSection *>> group : groups)
+  for (std::span<std::vector<InputSection<E> *>> group : groups)
     for (i64 i = 0; i < group.size(); i++)
       sizes[i] += group[i].size();
 
   tbb::parallel_for((i64)0, num_osec, [&](i64 j) {
-    OutputSection::instances[j]->members.reserve(sizes[j]);
+    OutputSection<E>::instances[j]->members.reserve(sizes[j]);
     for (i64 i = 0; i < groups.size(); i++)
-      append(OutputSection::instances[j]->members, groups[i][j]);
+      append(OutputSection<E>::instances[j]->members, groups[i][j]);
   });
 }
 
-static void check_duplicate_symbols(Context &ctx) {
+template <typename E>
+static void check_duplicate_symbols(Context<E> &ctx) {
   Timer t("check_dup_syms");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ElfSym &esym = file->elf_syms[i];
-      Symbol &sym = *file->symbols[i];
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
       bool is_common = esym.is_common();
       bool is_weak = (esym.st_bind == STB_WEAK);
       bool is_eliminated =
@@ -459,37 +466,40 @@ static void check_duplicate_symbols(Context &ctx) {
     }
   });
 
-  Error::checkpoint(ctx);
+  Error<E>::checkpoint(ctx);
 }
 
-std::vector<OutputChunk *> collect_output_sections() {
-  std::vector<OutputChunk *> vec;
+template <typename E>
+std::vector<OutputChunk<E> *> collect_output_sections(Context<E> &ctx) {
+  std::vector<OutputChunk<E> *> vec;
 
-  for (OutputSection *osec : OutputSection::instances)
+  for (OutputSection<E> *osec : OutputSection<E>::instances)
     if (!osec->members.empty())
       vec.push_back(osec);
-  for (MergedSection *osec : MergedSection::instances)
+  for (MergedSection<E> *osec : MergedSection<E>::instances)
     if (osec->shdr.sh_size)
       vec.push_back(osec);
 
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel.
   // Sort them to to make the output deterministic.
-  sort(vec, [](OutputChunk *x, OutputChunk *y) {
+  sort(vec, [](OutputChunk<E> *x, OutputChunk<E> *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
   return vec;
 }
 
-static void compute_section_sizes(Context &ctx) {
+template <typename E>
+static void compute_section_sizes(Context<E> &ctx) {
   Timer t("compute_section_sizes");
 
-  tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
+  tbb::parallel_for_each(OutputSection<E>::instances,
+                         [&](OutputSection<E> *osec) {
     if (osec->members.empty())
       return;
 
-    std::vector<std::span<InputSection *>> slices =
+    std::vector<std::span<InputSection<E> *>> slices =
       split(osec->members, 10000);
 
     std::vector<i64> size(slices.size());
@@ -499,7 +509,7 @@ static void compute_section_sizes(Context &ctx) {
       i64 off = 0;
       i64 align = 1;
 
-      for (InputSection *isec : slices[i]) {
+      for (InputSection<E> *isec : slices[i]) {
         off = align_to(off, isec->shdr.sh_addralign);
         isec->offset = off;
         off += isec->shdr.sh_size;
@@ -517,7 +527,7 @@ static void compute_section_sizes(Context &ctx) {
       start[i] = align_to(start[i - 1] + size[i - 1], align);
 
     tbb::parallel_for((i64)1, (i64)slices.size(), [&](i64 i) {
-      for (InputSection *isec : slices[i])
+      for (InputSection<E> *isec : slices[i])
         isec->offset += start[i];
     });
 
@@ -526,48 +536,50 @@ static void compute_section_sizes(Context &ctx) {
   });
 }
 
-static void convert_undefined_weak_symbols(Context &ctx) {
+template <typename E>
+static void convert_undefined_weak_symbols(Context<E> &ctx) {
   Timer t("undef_weak");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_undefined_weak_symbols(ctx);
   });
 }
 
-static void scan_rels(Context &ctx) {
+template <typename E>
+static void scan_rels(Context<E> &ctx) {
   Timer t("scan_rels");
 
   // Scan relocations to find dynamic symbols.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->scan_relocations(ctx);
   });
 
   // Exit if there was a relocation that refers an undefined symbol.
-  Error::checkpoint(ctx);
+  Error<E>::checkpoint(ctx);
 
   // Add imported or exported symbols to .dynsym.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-    for (Symbol *sym : file->get_global_syms())
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms())
       if (sym->file == file)
         if (sym->is_imported || sym->is_exported)
           sym->flags |= NEEDS_DYNSYM;
   });
 
   // Aggregate dynamic symbols to a single vector.
-  std::vector<InputFile *> files;
+  std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
   append(files, ctx.dsos);
 
-  std::vector<std::vector<Symbol *>> vec(files.size());
+  std::vector<std::vector<Symbol<E> *>> vec(files.size());
 
   tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
-    for (Symbol *sym : files[i]->symbols)
+    for (Symbol<E> *sym : files[i]->symbols)
       if (sym->flags && sym->file == files[i])
         vec[i].push_back(sym);
   });
 
   // Assign offsets in additional tables for each dynamic symbol.
-  for (Symbol *sym : flatten(vec)) {
+  for (Symbol<E> *sym : flatten(vec)) {
     if (sym->flags & NEEDS_DYNSYM)
       ctx.dynsym->add_symbol(ctx, sym);
 
@@ -595,7 +607,7 @@ static void scan_rels(Context &ctx) {
 
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
-      SharedFile *file = (SharedFile *)sym->file;
+      SharedFile<E> *file = (SharedFile<E> *)sym->file;
       sym->copyrel_readonly = file->is_readonly(ctx, sym);
 
       if (sym->copyrel_readonly)
@@ -603,7 +615,7 @@ static void scan_rels(Context &ctx) {
       else
         ctx.dynbss->add_symbol(ctx, sym);
 
-      for (Symbol *alias : file->find_aliases(sym)) {
+      for (Symbol<E> *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;
         alias->value = sym->value;
         alias->copyrel_readonly = sym->copyrel_readonly;
@@ -613,7 +625,8 @@ static void scan_rels(Context &ctx) {
   }
 }
 
-static void apply_version_script(Context &ctx) {
+template <typename E>
+static void apply_version_script(Context<E> &ctx) {
   Timer t("apply_version_script");
 
   for (VersionPattern &elem : ctx.arg.version_patterns) {
@@ -621,14 +634,14 @@ static void apply_version_script(Context &ctx) {
 
     if (!elem.is_extern_cpp &&
         elem.pattern.find('*') == elem.pattern.npos) {
-      Symbol::intern(elem.pattern)->ver_idx = elem.ver_idx;
+      Symbol<E>::intern(elem.pattern)->ver_idx = elem.ver_idx;
       continue;
     }
 
     GlobPattern glob(elem.pattern);
 
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-      for (Symbol *sym : file->get_global_syms()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
             ? sym->get_demangled_name() : sym->name;
@@ -640,19 +653,20 @@ static void apply_version_script(Context &ctx) {
   }
 }
 
-static void parse_symbol_version(Context &ctx) {
+template <typename E>
+static void parse_symbol_version(Context<E> &ctx) {
   Timer t("parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
   for (i64 i = 0; i < ctx.arg.version_definitions.size(); i++)
     verdefs[ctx.arg.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->symbols.size() - file->first_global; i++) {
       if (!file->symvers[i])
         continue;
 
-      Symbol *sym = file->symbols[i + file->first_global];
+      Symbol<E> *sym = file->symbols[i + file->first_global];
       if (sym->file != file)
         continue;
 
@@ -678,13 +692,14 @@ static void parse_symbol_version(Context &ctx) {
   });
 }
 
-static void compute_import_export(Context &ctx) {
+template <typename E>
+static void compute_import_export(Context<E> &ctx) {
   Timer t("compute_import_export");
 
   // Export symbols referenced by DSOs.
   if (!ctx.arg.shared) {
-    tbb::parallel_for_each(ctx.dsos, [&](SharedFile *file) {
-      for (Symbol *sym : file->undefs)
+    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+      for (Symbol<E> *sym : file->undefs)
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
           sym->is_exported = true;
     });
@@ -692,8 +707,8 @@ static void compute_import_export(Context &ctx) {
 
   // Global symbols are exported from DSO by default.
   if (ctx.arg.shared || ctx.arg.export_dynamic) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-      for (Symbol *sym : file->get_global_syms()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file != file)
           continue;
 
@@ -711,7 +726,8 @@ static void compute_import_export(Context &ctx) {
   }
 }
 
-static void fill_verdef(Context &ctx) {
+template <typename E>
+static void fill_verdef(Context<E> &ctx) {
   Timer t("fill_verdef");
 
   if (ctx.arg.version_definitions.empty())
@@ -757,30 +773,31 @@ static void fill_verdef(Context &ctx) {
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
-  for (Symbol *sym : std::span(ctx.dynsym->symbols).subspan(1))
+  for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1))
     ctx.versym->contents[sym->dynsym_idx] = sym->ver_idx;
 }
 
-static void fill_verneed(Context &ctx) {
+template <typename E>
+static void fill_verneed(Context<E> &ctx) {
   Timer t("fill_verneed");
 
   if (ctx.dynsym->symbols.empty())
     return;
 
   // Create a list of versioned symbols and sort by file and version.
-  std::vector<Symbol *> syms(ctx.dynsym->symbols.begin() + 1,
+  std::vector<Symbol<E> *> syms(ctx.dynsym->symbols.begin() + 1,
                              ctx.dynsym->symbols.end());
 
-  erase(syms, [](Symbol *sym) {
+  erase(syms, [](Symbol<E> *sym) {
     return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
   });
 
   if (syms.empty())
     return;
 
-  sort(syms, [](Symbol *a, Symbol *b) {
-    return std::tuple(((SharedFile *)a->file)->soname, a->ver_idx) <
-           std::tuple(((SharedFile *)b->file)->soname, b->ver_idx);
+  sort(syms, [](Symbol<E> *a, Symbol<E> *b) {
+    return std::tuple(((SharedFile<E> *)a->file)->soname, a->ver_idx) <
+           std::tuple(((SharedFile<E> *)b->file)->soname, b->ver_idx);
   });
 
   // Resize of .gnu.version
@@ -799,7 +816,7 @@ static void fill_verneed(Context &ctx) {
 
   u16 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
 
-  auto start_group = [&](InputFile *file) {
+  auto start_group = [&](InputFile<E> *file) {
     ctx.verneed->shdr.sh_info++;
     if (verneed)
       verneed->vn_next = ptr - (u8 *)verneed;
@@ -807,12 +824,12 @@ static void fill_verneed(Context &ctx) {
     verneed = (ElfVerneed *)ptr;
     ptr += sizeof(*verneed);
     verneed->vn_version = 1;
-    verneed->vn_file = ctx.dynstr->find_string(((SharedFile *)file)->soname);
+    verneed->vn_file = ctx.dynstr->find_string(((SharedFile<E> *)file)->soname);
     verneed->vn_aux = sizeof(ElfVerneed);
     aux = nullptr;
   };
 
-  auto add_entry = [&](Symbol *sym) {
+  auto add_entry = [&](Symbol<E> *sym) {
     verneed->vn_cnt++;
 
     if (aux)
@@ -841,10 +858,11 @@ static void fill_verneed(Context &ctx) {
   ctx.verneed->contents.resize(ptr - buf);
 }
 
-static void clear_padding(Context &ctx, i64 filesize) {
+template <typename E>
+static void clear_padding(Context<E> &ctx, i64 filesize) {
   Timer t("clear_padding");
 
-  auto zero = [&](OutputChunk *chunk, i64 next_start) {
+  auto zero = [&](OutputChunk<E> *chunk, i64 next_start) {
     i64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
@@ -872,7 +890,8 @@ static void clear_padding(Context &ctx, i64 filesize) {
 //   alloc writable non-RELRO bss
 //   nonalloc
 //   section header
-static i64 get_section_rank(Context &ctx, OutputChunk *chunk) {
+template <typename E>
+static i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
   if (chunk == ctx.ehdr)
     return 0;
   if (chunk == ctx.phdr)
@@ -906,13 +925,14 @@ inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
   return align_to(val + align - skew, align) - align + skew;
 }
 
-static i64 set_osec_offsets(Context &ctx) {
+template <typename E>
+static i64 set_osec_offsets(Context<E> &ctx) {
   Timer t("osec_offset");
 
   i64 fileoff = 0;
   i64 vaddr = ctx.arg.image_base;
 
-  for (OutputChunk *chunk : ctx.chunks) {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
     if (chunk->new_page)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
@@ -937,15 +957,16 @@ static i64 set_osec_offsets(Context &ctx) {
   return fileoff;
 }
 
-static void fix_synthetic_symbols(Context &ctx) {
-  auto start = [](Symbol *sym, OutputChunk *chunk) {
+template <typename E>
+static void fix_synthetic_symbols(Context<E> &ctx) {
+  auto start = [](Symbol<E> *sym, OutputChunk<E> *chunk) {
     if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
-  auto stop = [](Symbol *sym, OutputChunk *chunk) {
+  auto stop = [](Symbol<E> *sym, OutputChunk<E> *chunk) {
     if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
@@ -953,15 +974,15 @@ static void fix_synthetic_symbols(Context &ctx) {
   };
 
   // __bss_start
-  for (OutputChunk *chunk : ctx.chunks) {
-    if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
+    if (chunk->kind == OutputChunk<E>::REGULAR && chunk->name == ".bss") {
       start(ctx.__bss_start, chunk);
       break;
     }
   }
 
   // __ehdr_start and __executable_start
-  for (OutputChunk *chunk : ctx.chunks) {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
     if (chunk->shndx == 1) {
       ctx.__ehdr_start->shndx = 1;
       ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
@@ -977,7 +998,7 @@ static void fix_synthetic_symbols(Context &ctx) {
   stop(ctx.__rela_iplt_end, ctx.relplt);
 
   // __{init,fini}_array_{start,end}
-  for (OutputChunk *chunk : ctx.chunks) {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
@@ -991,8 +1012,8 @@ static void fix_synthetic_symbols(Context &ctx) {
   }
 
   // _end, _etext, _edata and the like
-  for (OutputChunk *chunk : ctx.chunks) {
-    if (chunk->kind == OutputChunk::HEADER)
+  for (OutputChunk<E> *chunk : ctx.chunks) {
+    if (chunk->kind == OutputChunk<E>::HEADER)
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC)
@@ -1015,32 +1036,35 @@ static void fix_synthetic_symbols(Context &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // __start_ and __stop_ symbols
-  for (OutputChunk *chunk : ctx.chunks) {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
-      start(Symbol::intern_alloc("__start_" + std::string(chunk->name)), chunk);
-      stop(Symbol::intern_alloc("__stop_" + std::string(chunk->name)), chunk);
+      start(Symbol<E>::intern_alloc("__start_" + std::string(chunk->name)), chunk);
+      stop(Symbol<E>::intern_alloc("__stop_" + std::string(chunk->name)), chunk);
     }
   }
 }
 
+template <typename E>
 void cleanup() {
-  if (OutputFile::tmpfile)
-    unlink(OutputFile::tmpfile);
+  if (OutputFile<E>::tmpfile)
+    unlink(OutputFile<E>::tmpfile);
   if (socket_tmpfile)
     unlink(socket_tmpfile);
 }
 
+template <typename E>
 static void signal_handler(int) {
-  cleanup();
+  cleanup<E>();
   _exit(1);
 }
 
-MemoryMappedFile *find_library(Context &ctx, std::string name) {
+template <typename E>
+MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
       std::string path = root + std::string(dir) + "/" + name.substr(1);
-      if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
+      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path))
         return mb;
     }
     Fatal(ctx) << "library not found: " << name;
@@ -1050,15 +1074,16 @@ MemoryMappedFile *find_library(Context &ctx, std::string name) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".so"))
+      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(stem + ".so"))
         return mb;
-    if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
+    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(stem + ".a"))
       return mb;
   }
   Fatal(ctx) << "library not found: " << name;
 }
 
-static void read_input_files(Context &ctx, std::span<std::string_view> args) {
+template <typename E>
+static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) {
   std::vector<std::tuple<bool, bool, bool>> state;
 
   while (!args.empty()) {
@@ -1084,17 +1109,18 @@ static void read_input_files(Context &ctx, std::span<std::string_view> args) {
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
     } else if (read_arg(ctx, args, arg, "l")) {
-      MemoryMappedFile *mb = find_library(ctx, std::string(arg));
+      MemoryMappedFile<E> *mb = find_library(ctx, std::string(arg));
       read_file(ctx, mb);
     } else {
-      read_file(ctx, MemoryMappedFile::must_open(ctx, std::string(args[0])));
+      read_file(ctx, MemoryMappedFile<E>::must_open(ctx, std::string(args[0])));
       args = args.subspan(1);
     }
   }
 }
 
-static void show_stats(Context &ctx) {
-  for (ObjectFile *obj : ctx.objs) {
+template <typename E>
+static void show_stats(Context<E> &ctx) {
+  for (ObjectFile<E> *obj : ctx.objs) {
     static Counter defined("defined_syms");
     defined += obj->first_global - 1;
 
@@ -1103,7 +1129,7 @@ static void show_stats(Context &ctx) {
   }
 
   Counter num_input_sections("input_sections");
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     num_input_sections += file->sections.size();
 
   Counter num_output_chunks("output_chunks", ctx.chunks.size());
@@ -1113,8 +1139,9 @@ static void show_stats(Context &ctx) {
   Counter::print();
 }
 
-int main(int argc, char **argv) {
-  Context ctx;
+template <typename E>
+int do_main(int argc, char **argv) {
+  Context<E> ctx;
 
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)
@@ -1135,8 +1162,8 @@ int main(int argc, char **argv) {
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
 
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
+  signal(SIGINT, signal_handler<E>);
+  signal(SIGTERM, signal_handler<E>);
 
   // Preload input files
   std::function<void()> on_complete;
@@ -1158,7 +1185,7 @@ int main(int argc, char **argv) {
   }
 
   for (std::string_view arg : ctx.arg.trace_symbol)
-    Symbol::intern(arg)->traced = true;
+    Symbol<E>::intern(arg)->traced = true;
 
   // Parse input files
   {
@@ -1170,9 +1197,9 @@ int main(int argc, char **argv) {
 
   // Uniquify shared object files with soname
   {
-    std::vector<SharedFile *> vec;
+    std::vector<SharedFile<E> *> vec;
     std::unordered_set<std::string_view> seen;
-    for (SharedFile *file : ctx.dsos)
+    for (SharedFile<E> *file : ctx.dsos)
       if (seen.insert(file->soname).second)
         vec.push_back(file);
     ctx.dsos = vec;
@@ -1225,11 +1252,11 @@ int main(int argc, char **argv) {
   bin_sections(ctx);
 
   // Get a list of output sections.
-  append(ctx.chunks, collect_output_sections());
+  append(ctx.chunks, collect_output_sections(ctx));
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ctx.internal_obj = new ObjectFile(ctx);
+  ctx.internal_obj = new ObjectFile<E>(ctx);
   ctx.internal_obj->resolve_regular_symbols(ctx);
   ctx.objs.push_back(ctx.internal_obj);
 
@@ -1247,7 +1274,7 @@ int main(int argc, char **argv) {
   // were imported symbols.
   if (ctx.arg.shared && !ctx.arg.z_defs) {
     Timer t("claim_unresolved_symbols");
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
       file->claim_unresolved_symbols();
     });
   }
@@ -1264,12 +1291,12 @@ int main(int argc, char **argv) {
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
-  sort(ctx.chunks, [&](OutputChunk *a, OutputChunk *b) {
+  sort(ctx.chunks, [&](OutputChunk<E> *a, OutputChunk<E> *b) {
     return get_section_rank(ctx, a) < get_section_rank(ctx, b);
   });
 
   // Copy string referred by .dynamic to .dynstr.
-  for (SharedFile *file : ctx.dsos)
+  for (SharedFile<E> *file : ctx.dsos)
     ctx.dynstr->add_string(file->soname);
   for (std::string_view str : ctx.arg.auxiliary)
     ctx.dynstr->add_string(str);
@@ -1297,7 +1324,7 @@ int main(int argc, char **argv) {
   // Compute .symtab and .strtab sizes for each file.
   {
     Timer t("compute_symtab");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       file->compute_symtab(ctx);
     });
   }
@@ -1309,8 +1336,8 @@ int main(int argc, char **argv) {
   // section to the special EHFrameSection.
   {
     Timer t("eh_frame");
-    erase(ctx.chunks, [](OutputChunk *chunk) {
-      return chunk->kind == OutputChunk::REGULAR &&
+    erase(ctx.chunks, [](OutputChunk<E> *chunk) {
+      return chunk->kind == OutputChunk<E>::REGULAR &&
              chunk->name == ".eh_frame";
     });
     ctx.eh_frame->construct(ctx);
@@ -1319,20 +1346,20 @@ int main(int argc, char **argv) {
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
   // for all output sections.
-  for (OutputChunk *chunk : ctx.chunks)
+  for (OutputChunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
-  erase(ctx.chunks, [](OutputChunk *chunk) {
-    return chunk->kind == OutputChunk::SYNTHETIC &&
+  erase(ctx.chunks, [](OutputChunk<E> *chunk) {
+    return chunk->kind == OutputChunk<E>::SYNTHETIC &&
            chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
   for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
-    if (ctx.chunks[i]->kind != OutputChunk::HEADER)
+    if (ctx.chunks[i]->kind != OutputChunk<E>::HEADER)
       ctx.chunks[i]->shndx = shndx++;
 
-  for (OutputChunk *chunk : ctx.chunks)
+  for (OutputChunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
   // Assign offsets to output sections
@@ -1359,7 +1386,7 @@ int main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  OutputFile *file = OutputFile::open(ctx, ctx.arg.output, filesize);
+  OutputFile<E> *file = OutputFile<E>::open(ctx, ctx.arg.output, filesize);
   ctx.buf = file->buf;
 
   Timer t_copy("copy");
@@ -1367,10 +1394,10 @@ int main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     Timer t("copy_buf");
-    tbb::parallel_for_each(ctx.chunks, [&](OutputChunk *chunk) {
+    tbb::parallel_for_each(ctx.chunks, [&](OutputChunk<E> *chunk) {
       chunk->copy_buf(ctx);
     });
-    Error::checkpoint(ctx);
+    Error<E>::checkpoint(ctx);
   }
 
   // Dynamic linker works better with sorted .rela.dyn section,
@@ -1412,3 +1439,9 @@ int main(int argc, char **argv) {
     std::quick_exit(0);
   return 0;
 }
+
+int main(int argc, char **argv) {
+  return do_main<ELF64LE>(argc, argv);
+}
+
+template void read_file(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);

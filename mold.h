@@ -41,19 +41,18 @@ static constexpr i64 PLT_SIZE = 16;
 static constexpr i64 PLT_GOT_SIZE = 8;
 static constexpr i64 SHA256_SIZE = 32;
 
-class InputFile;
-class InputSection;
-class MergedSection;
-class ObjectFile;
-class OutputChunk;
-class OutputSection;
-class ReadContext;
-class SharedFile;
-class Symbol;
+template <typename E> class InputFile;
+template <typename E> class InputSection;
+template <typename E> class MergedSection;
+template <typename E> class ObjectFile;
+template <typename E> class OutputChunk;
+template <typename E> class OutputSection;
+template <typename E> class SharedFile;
+template <typename E> class Symbol;
 
-struct Context;
+template <typename E> struct Context;
 
-void cleanup();
+template <typename E> void cleanup();
 
 //
 // Interned string
@@ -90,8 +89,9 @@ public:
 // Symbol
 //
 
+template <typename E>
 struct SectionFragment {
-  SectionFragment(MergedSection *sec, std::string_view data)
+  SectionFragment(MergedSection<E> *sec, std::string_view data)
     : output_section(*sec), data(data) {}
 
   SectionFragment(const SectionFragment &other)
@@ -99,17 +99,18 @@ struct SectionFragment {
       offset(other.offset), alignment(other.alignment.load()),
       is_alive(other.is_alive.load()) {}
 
-  inline u64 get_addr(Context &ctx) const;
+  inline u64 get_addr(Context<E> &ctx) const;
 
-  MergedSection &output_section;
+  MergedSection<E> &output_section;
   std::string_view data;
   u32 offset = -1;
   std::atomic_uint16_t alignment = 1;
   std::atomic_bool is_alive = false;
 };
 
+template <typename E>
 struct SectionFragmentRef {
-  SectionFragment *frag = nullptr;
+  SectionFragment<E> *frag = nullptr;
   i32 addend = 0;
 };
 
@@ -124,36 +125,37 @@ enum {
   NEEDS_TLSDESC  = 1 << 7,
 };
 
+template <typename E>
 class Symbol {
 public:
   Symbol() = default;
   Symbol(std::string_view name) : name(name) {}
-  Symbol(const Symbol &other) : name(other.name) {}
+  Symbol(const Symbol<E> &other) : name(other.name) {}
 
-  static Symbol *intern(std::string_view key, std::string_view name) {
+  static Symbol<E> *intern(std::string_view key, std::string_view name) {
     static ConcurrentMap<Symbol> map;
     return map.insert(key, {name});
   }
 
-  static Symbol *intern(std::string_view name) {
+  static Symbol<E> *intern(std::string_view name) {
     return intern(name, name);
   }
 
-  static Symbol *intern_alloc(std::string name) {
+  static Symbol<E> *intern_alloc(std::string name) {
     return intern(*new std::string(name));
   }
 
-  inline u64 get_addr(Context &ctx) const;
-  inline u64 get_got_addr(Context &ctx) const;
-  inline u64 get_gotplt_addr(Context &ctx) const;
-  inline u64 get_gottpoff_addr(Context &ctx) const;
-  inline u64 get_tlsgd_addr(Context &ctx) const;
-  inline u64 get_tlsdesc_addr(Context &ctx) const;
-  inline u64 get_plt_addr(Context &ctx) const;
+  inline u64 get_addr(Context<E> &ctx) const;
+  inline u64 get_got_addr(Context<E> &ctx) const;
+  inline u64 get_gotplt_addr(Context<E> &ctx) const;
+  inline u64 get_gottpoff_addr(Context<E> &ctx) const;
+  inline u64 get_tlsgd_addr(Context<E> &ctx) const;
+  inline u64 get_tlsdesc_addr(Context<E> &ctx) const;
+  inline u64 get_plt_addr(Context<E> &ctx) const;
 
   inline bool is_alive() const;
-  inline bool is_absolute(Context &ctx) const;
-  inline bool is_relative(Context &ctx) const;
+  inline bool is_absolute(Context<E> &ctx) const;
+  inline bool is_relative(Context<E> &ctx) const;
   inline bool is_undef() const;
   inline bool is_undef_weak() const;
   inline u32 get_type() const;
@@ -163,10 +165,10 @@ public:
   inline void clear();
 
   std::string_view name;
-  InputFile *file = nullptr;
-  const ElfSym *esym = nullptr;
-  InputSection *input_section = nullptr;
-  SectionFragment *frag = nullptr;
+  InputFile<E> *file = nullptr;
+  const ElfSym<E> *esym = nullptr;
+  InputSection<E> *input_section = nullptr;
+  SectionFragment<E> *frag = nullptr;
 
   u64 value = -1;
   u32 got_idx = -1;
@@ -193,7 +195,8 @@ public:
   u8 is_exported : 1 = false;
 };
 
-std::ostream &operator<<(std::ostream &out, const Symbol &sym);
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 //
 // input_sections.cc
@@ -225,20 +228,23 @@ enum RelType : u16 {
   R_TLSDESC_CALL_RELAX,
 };
 
+template <typename E>
 struct EhReloc {
-  Symbol &sym;
+  Symbol<E> &sym;
   u32 type;
   u32 offset;
   i64 addend;
 };
 
-inline bool operator==(const EhReloc &a, const EhReloc &b) {
+template <typename E>
+inline bool operator==(const EhReloc<E> &a, const EhReloc<E> &b) {
   return std::tuple(&a.sym, a.type, a.offset, a.addend) ==
          std::tuple(&b.sym, b.type, b.offset, b.addend);
 }
 
+template <typename E>
 struct FdeRecord {
-  FdeRecord(std::string_view contents, std::vector<EhReloc> &&rels,
+  FdeRecord(std::string_view contents, std::vector<EhReloc<E>> &&rels,
             u32 cie_idx)
     : contents(contents), rels(std::move(rels)), cie_idx(cie_idx) {}
 
@@ -248,18 +254,19 @@ struct FdeRecord {
       is_alive(other.is_alive.load()) {}
 
   std::string_view contents;
-  std::vector<EhReloc> rels;
+  std::vector<EhReloc<E>> rels;
   u32 cie_idx = -1;
   u32 offset = -1;
   std::atomic_bool is_alive = true;
 };
 
+template <typename E>
 struct CieRecord {
   bool should_merge(const CieRecord &other) const;
 
   std::string_view contents;
-  std::vector<EhReloc> rels;
-  std::vector<FdeRecord> fdes;
+  std::vector<EhReloc<E>> rels;
+  std::vector<FdeRecord<E>> fdes;
 
   // For .eh_frame
   u32 offset = -1;
@@ -274,33 +281,34 @@ struct CieRecord {
   u32 icf_idx = -1;
 };
 
+template <typename E>
 class InputSection {
 public:
-  InputSection(Context &ctx, ObjectFile &file, const ElfShdr &shdr,
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr &shdr,
                std::string_view name, i64 section_idx);
 
-  void scan_relocations(Context &ctx);
+  void scan_relocations(Context<E> &ctx);
   void report_undefined_symbols();
-  void copy_buf(Context &ctx);
-  void apply_reloc_alloc(Context &ctx, u8 *base);
-  void apply_reloc_nonalloc(Context &ctx, u8 *base);
+  void copy_buf(Context<E> &ctx);
+  void apply_reloc_alloc(Context<E> &ctx, u8 *base);
+  void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   void kill();
 
   inline i64 get_priority() const;
   inline u64 get_addr() const;
 
-  ObjectFile &file;
+  ObjectFile<E> &file;
   const ElfShdr &shdr;
-  OutputSection *output_section = nullptr;
+  OutputSection<E> *output_section = nullptr;
 
   std::string_view name;
   std::string_view contents;
 
   std::span<ElfRela> rels;
   std::vector<bool> has_fragments;
-  std::vector<SectionFragmentRef> rel_fragments;
+  std::vector<SectionFragmentRef<E>> rel_fragments;
   std::vector<RelType> rel_types;
-  std::span<FdeRecord> fdes;
+  std::span<FdeRecord<E>> fdes;
 
   u32 offset = -1;
   u32 section_idx = -1;
@@ -325,14 +333,16 @@ public:
 // output_chunks.cc
 //
 
-bool is_relro(Context &ctx, OutputChunk *chunk);
+template <typename E>
+bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk);
 
+template <typename E>
 class OutputChunk {
 public:
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
-  virtual void copy_buf(Context &ctx) {}
-  virtual void update_shdr(Context &ctx) {}
+  virtual void copy_buf(Context<E> &ctx) {}
+  virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
   i64 shndx = 0;
@@ -346,201 +356,215 @@ protected:
 };
 
 // ELF header
-class OutputEhdr : public OutputChunk {
+template <typename E>
+class OutputEhdr : public OutputChunk<E> {
 public:
-  OutputEhdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_size = sizeof(ElfEhdr);
+  OutputEhdr() : OutputChunk<E>(this->HEADER) {
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_size = sizeof(ElfEhdr);
   }
 
-  void copy_buf(Context &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
 // Section header
-class OutputShdr : public OutputChunk {
+template <typename E>
+class OutputShdr : public OutputChunk<E> {
 public:
-  OutputShdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = SHF_ALLOC;
+  OutputShdr() : OutputChunk<E>(this->HEADER) {
+    this->shdr.sh_flags = SHF_ALLOC;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
 // Program header
-class OutputPhdr : public OutputChunk {
+template <typename E>
+class OutputPhdr : public OutputChunk<E> {
 public:
-  OutputPhdr() : OutputChunk(HEADER) {
-    shdr.sh_flags = SHF_ALLOC;
+  OutputPhdr() : OutputChunk<E>(this->HEADER) {
+    this->shdr.sh_flags = SHF_ALLOC;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class InterpSection : public OutputChunk {
+template <typename E>
+class InterpSection : public OutputChunk<E> {
 public:
-  InterpSection() : OutputChunk(SYNTHETIC) {
-    name = ".interp";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC;
+  InterpSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".interp";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
 // Sections
-class OutputSection : public OutputChunk {
+template <typename E>
+class OutputSection : public OutputChunk<E> {
 public:
   static OutputSection *
   get_instance(std::string_view name, u64 type, u64 flags);
 
-  void copy_buf(Context &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   static inline std::vector<OutputSection *> instances;
 
-  std::vector<InputSection *> members;
+  std::vector<InputSection<E> *> members;
   u32 idx;
 
 private:
   OutputSection(std::string_view name, u32 type, u64 flags);
 };
 
-class GotSection : public OutputChunk {
+template <typename E>
+class GotSection : public OutputChunk<E> {
 public:
-  GotSection() : OutputChunk(SYNTHETIC) {
-    name = ".got";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    shdr.sh_addralign = GOT_SIZE;
+  GotSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".got";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = GOT_SIZE;
   }
 
-  void add_got_symbol(Context &ctx, Symbol *sym);
-  void add_gottpoff_symbol(Context &ctx, Symbol *sym);
-  void add_tlsgd_symbol(Context &ctx, Symbol *sym);
-  void add_tlsdesc_symbol(Context &ctx, Symbol *sym);
-  void add_tlsld(Context &ctx);
+  void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_gottpoff_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_tlsld(Context<E> &ctx);
 
-  u64 get_tlsld_addr(Context &ctx) const {
+  u64 get_tlsld_addr(Context<E> &ctx) const {
     assert(tlsld_idx != -1);
-    return shdr.sh_addr + tlsld_idx * GOT_SIZE;
+    return this->shdr.sh_addr + tlsld_idx * GOT_SIZE;
   }
 
-  i64 get_reldyn_size(Context &ctx) const;
-  void copy_buf(Context &ctx) override;
+  i64 get_reldyn_size(Context<E> &ctx) const;
+  void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol *> got_syms;
-  std::vector<Symbol *> gottpoff_syms;
-  std::vector<Symbol *> tlsgd_syms;
-  std::vector<Symbol *> tlsdesc_syms;
+  std::vector<Symbol<E> *> got_syms;
+  std::vector<Symbol<E> *> gottpoff_syms;
+  std::vector<Symbol<E> *> tlsgd_syms;
+  std::vector<Symbol<E> *> tlsdesc_syms;
   u32 tlsld_idx = -1;
 };
 
-class GotPltSection : public OutputChunk {
+template <typename E>
+class GotPltSection : public OutputChunk<E> {
 public:
-  GotPltSection() : OutputChunk(SYNTHETIC) {
-    name = ".got.plt";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    shdr.sh_addralign = GOT_SIZE;
+  GotPltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".got.plt";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = GOT_SIZE;
   }
 
-  void copy_buf(Context &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class PltSection : public OutputChunk {
+template <typename E>
+class PltSection : public OutputChunk<E> {
 public:
-  PltSection() : OutputChunk(SYNTHETIC) {
-    name = ".plt";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    shdr.sh_addralign = 16;
+  PltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".plt";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 16;
   }
 
-  void add_symbol(Context &ctx, Symbol *sym);
-  void copy_buf(Context &ctx) override;
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol *> symbols;
+  std::vector<Symbol<E> *> symbols;
 };
 
-class PltGotSection : public OutputChunk {
+template <typename E>
+class PltGotSection : public OutputChunk<E> {
 public:
-  PltGotSection() : OutputChunk(SYNTHETIC) {
-    name = ".plt.got";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    shdr.sh_addralign = 8;
+  PltGotSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".plt.got";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 8;
   }
 
-  void add_symbol(Context &ctx, Symbol *sym);
-  void copy_buf(Context &ctx) override;
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol *> symbols;
+  std::vector<Symbol<E> *> symbols;
 };
 
-class RelPltSection : public OutputChunk {
+template <typename E>
+class RelPltSection : public OutputChunk<E> {
 public:
-  RelPltSection() : OutputChunk(SYNTHETIC) {
-    name = ".rela.plt";
-    shdr.sh_type = SHT_RELA;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ElfRela);
-    shdr.sh_addralign = 8;
+  RelPltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".rela.plt";
+    this->shdr.sh_type = SHT_RELA;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = sizeof(ElfRela);
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class RelDynSection : public OutputChunk {
+template <typename E>
+class RelDynSection : public OutputChunk<E> {
 public:
-  RelDynSection() : OutputChunk(SYNTHETIC) {
-    name = ".rela.dyn";
-    shdr.sh_type = SHT_RELA;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ElfRela);
-    shdr.sh_addralign = 8;
+  RelDynSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".rela.dyn";
+    this->shdr.sh_type = SHT_RELA;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = sizeof(ElfRela);
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void sort(Context &ctx);
+  void update_shdr(Context<E> &ctx) override;
+  void sort(Context<E> &ctx);
 };
 
-class StrtabSection : public OutputChunk {
+template <typename E>
+class StrtabSection : public OutputChunk<E> {
 public:
-  StrtabSection() : OutputChunk(SYNTHETIC) {
-    name = ".strtab";
-    shdr.sh_type = SHT_STRTAB;
-    shdr.sh_size = 1;
+  StrtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".strtab";
+    this->shdr.sh_type = SHT_STRTAB;
+    this->shdr.sh_size = 1;
   }
 
-  void update_shdr(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
 };
 
-class ShstrtabSection : public OutputChunk {
+template <typename E>
+class ShstrtabSection : public OutputChunk<E> {
 public:
-  ShstrtabSection() : OutputChunk(SYNTHETIC) {
-    name = ".shstrtab";
-    shdr.sh_type = SHT_STRTAB;
+  ShstrtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".shstrtab";
+    this->shdr.sh_type = SHT_STRTAB;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class DynstrSection : public OutputChunk {
+template <typename E>
+class DynstrSection : public OutputChunk<E> {
 public:
-DynstrSection() : OutputChunk(SYNTHETIC) {
-    name = ".dynstr";
-    shdr.sh_type = SHT_STRTAB;
-    shdr.sh_flags = SHF_ALLOC;
+DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".dynstr";
+    this->shdr.sh_type = SHT_STRTAB;
+    this->shdr.sh_flags = SHF_ALLOC;
   }
 
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   i64 dynsym_offset = -1;
 
@@ -548,76 +572,81 @@ private:
   std::unordered_map<std::string_view, i64> strings;
 };
 
-class DynamicSection : public OutputChunk {
+template <typename E>
+class DynamicSection : public OutputChunk<E> {
 public:
-  DynamicSection() : OutputChunk(SYNTHETIC) {
-    name = ".dynamic";
-    shdr.sh_type = SHT_DYNAMIC;
-    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    shdr.sh_addralign = 8;
-    shdr.sh_entsize = sizeof(ElfDyn);
+  DynamicSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".dynamic";
+    this->shdr.sh_type = SHT_DYNAMIC;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 8;
+    this->shdr.sh_entsize = sizeof(ElfDyn);
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class SymtabSection : public OutputChunk {
+template <typename E>
+class SymtabSection : public OutputChunk<E> {
 public:
-  SymtabSection() : OutputChunk(SYNTHETIC) {
-    name = ".symtab";
-    shdr.sh_type = SHT_SYMTAB;
-    shdr.sh_entsize = sizeof(ElfSym);
-    shdr.sh_addralign = 8;
+  SymtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".symtab";
+    this->shdr.sh_type = SHT_SYMTAB;
+    this->shdr.sh_entsize = sizeof(ElfSym<E>);
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class DynsymSection : public OutputChunk {
+template <typename E>
+class DynsymSection : public OutputChunk<E> {
 public:
-  DynsymSection() : OutputChunk(SYNTHETIC) {
-    name = ".dynsym";
-    shdr.sh_type = SHT_DYNSYM;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_entsize = sizeof(ElfSym);
-    shdr.sh_addralign = 8;
+  DynsymSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".dynsym";
+    this->shdr.sh_type = SHT_DYNSYM;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = sizeof(ElfSym<E>);
+    this->shdr.sh_addralign = 8;
   }
 
-  void add_symbol(Context &ctx, Symbol *sym);
-  void sort_symbols(Context &ctx);
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void sort_symbols(Context<E> &ctx);
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol *> symbols;
+  std::vector<Symbol<E> *> symbols;
 };
 
-class HashSection : public OutputChunk {
+template <typename E>
+class HashSection : public OutputChunk<E> {
 public:
-  HashSection() : OutputChunk(SYNTHETIC) {
-    name = ".hash";
-    shdr.sh_type = SHT_HASH;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_entsize = 4;
-    shdr.sh_addralign = 4;
+  HashSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".hash";
+    this->shdr.sh_type = SHT_HASH;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = 4;
+    this->shdr.sh_addralign = 4;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
-class GnuHashSection : public OutputChunk {
+template <typename E>
+class GnuHashSection : public OutputChunk<E> {
 public:
-  GnuHashSection() : OutputChunk(SYNTHETIC) {
-    name = ".gnu.hash";
-    shdr.sh_type = SHT_GNU_HASH;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 8;
+  GnuHashSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".gnu.hash";
+    this->shdr.sh_type = SHT_GNU_HASH;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
@@ -629,26 +658,27 @@ public:
   u32 num_bloom = 1;
 };
 
-class MergedSection : public OutputChunk {
+template <typename E>
+class MergedSection : public OutputChunk<E> {
 public:
-  static MergedSection *
+  static MergedSection<E> *
   get_instance(std::string_view name, u64 type, u64 flags);
 
-  SectionFragment *insert(std::string_view data, i64 alignment);
+  SectionFragment<E> *insert(std::string_view data, i64 alignment);
   void assign_offsets();
-  void copy_buf(Context &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
-  static inline std::vector<MergedSection *> instances;
+  static inline std::vector<MergedSection<E> *> instances;
 
 private:
-  typedef tbb::concurrent_hash_map<std::string_view, SectionFragment> MapTy;
+  typedef tbb::concurrent_hash_map<std::string_view, SectionFragment<E>> MapTy;
   static constexpr i64 NUM_SHARDS = 64;
 
   MergedSection(std::string_view name, u64 flags, u32 type)
-    : OutputChunk(SYNTHETIC) {
+    : OutputChunk<E>(this->SYNTHETIC) {
     this->name = name;
-    shdr.sh_flags = flags;
-    shdr.sh_type = type;
+    this->shdr.sh_flags = flags;
+    this->shdr.sh_type = type;
   }
 
   MapTy maps[NUM_SHARDS];
@@ -656,115 +686,124 @@ private:
   std::atomic_uint16_t max_alignment;
 };
 
-class EhFrameSection : public OutputChunk {
+template <typename E>
+class EhFrameSection : public OutputChunk<E> {
 public:
-  EhFrameSection() : OutputChunk(SYNTHETIC) {
-    name = ".eh_frame";
-    shdr.sh_type = SHT_X86_64_UNWIND;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 8;
+  EhFrameSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".eh_frame";
+    this->shdr.sh_type = SHT_X86_64_UNWIND;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
   }
 
-  void construct(Context &ctx);
-  void copy_buf(Context &ctx) override;
-  u64 get_addr(Context &ctx, const Symbol &sym);
+  void construct(Context<E> &ctx);
+  void copy_buf(Context<E> &ctx) override;
+  u64 get_addr(Context<E> &ctx, const Symbol<E> &sym);
 
-  std::vector<CieRecord *> cies;
+  std::vector<CieRecord<E> *> cies;
   u32 num_fdes = 0;
 };
 
-class EhFrameHdrSection : public OutputChunk {
+template <typename E>
+class EhFrameHdrSection : public OutputChunk<E> {
 public:
-  EhFrameHdrSection() : OutputChunk(SYNTHETIC) {
-    name = ".eh_frame_hdr";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 4;
-    shdr.sh_size = HEADER_SIZE;
+  EhFrameHdrSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".eh_frame_hdr";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = HEADER_SIZE;
   }
 
   static constexpr i64 HEADER_SIZE = 12;
 };
 
-class DynbssSection : public OutputChunk {
+template <typename E>
+class DynbssSection : public OutputChunk<E> {
 public:
-  DynbssSection(bool is_relro) : OutputChunk(SYNTHETIC) {
-    name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
-    shdr.sh_type = SHT_NOBITS;
-    shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    shdr.sh_addralign = 64;
+  DynbssSection(bool is_relro) : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
+    this->shdr.sh_type = SHT_NOBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 64;
   }
 
-  void add_symbol(Context &ctx, Symbol *sym);
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
 
-  std::vector<Symbol *> symbols;
+  std::vector<Symbol<E> *> symbols;
 };
 
-class VersymSection : public OutputChunk {
+template <typename E>
+class VersymSection : public OutputChunk<E> {
 public:
-  VersymSection() : OutputChunk(SYNTHETIC) {
-    name = ".gnu.version";
-    shdr.sh_type = SHT_GNU_VERSYM;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_entsize = 2;
-    shdr.sh_addralign = 2;
+  VersymSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".gnu.version";
+    this->shdr.sh_type = SHT_GNU_VERSYM;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = 2;
+    this->shdr.sh_addralign = 2;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   std::vector<u16> contents;
 };
 
-class VerneedSection : public OutputChunk {
+template <typename E>
+class VerneedSection : public OutputChunk<E> {
 public:
-  VerneedSection() : OutputChunk(SYNTHETIC) {
-    name = ".gnu.version_r";
-    shdr.sh_type = SHT_GNU_VERNEED;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 8;
+  VerneedSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".gnu.version_r";
+    this->shdr.sh_type = SHT_GNU_VERNEED;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   std::vector<u8> contents;
 };
 
-class VerdefSection : public OutputChunk {
+template <typename E>
+class VerdefSection : public OutputChunk<E> {
 public:
-  VerdefSection() : OutputChunk(SYNTHETIC) {
-    name = ".gnu.version_d";
-    shdr.sh_type = SHT_GNU_VERDEF;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 8;
+  VerdefSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".gnu.version_d";
+    this->shdr.sh_type = SHT_GNU_VERDEF;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
   std::vector<u8> contents;
 };
 
-class BuildIdSection : public OutputChunk {
+template <typename E>
+class BuildIdSection : public OutputChunk<E> {
 public:
-  BuildIdSection() : OutputChunk(SYNTHETIC) {
-    name = ".note.gnu.build-id";
-    shdr.sh_type = SHT_NOTE;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_addralign = 4;
-    shdr.sh_size = 1;
+  BuildIdSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".note.gnu.build-id";
+    this->shdr.sh_type = SHT_NOTE;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = 1;
   }
 
-  void update_shdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
-  void write_buildid(Context &ctx, i64 filesize);
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+  void write_buildid(Context<E> &ctx, i64 filesize);
 
   static constexpr i64 HEADER_SIZE = 16;
 };
 
 bool is_c_identifier(std::string_view name);
-std::vector<ElfPhdr> create_phdr(Context &ctx);
+
+template <typename E>
+std::vector<ElfPhdr> create_phdr(Context<E> &ctx);
 
 //
 // object_file.cc
@@ -778,10 +817,11 @@ struct ComdatGroup {
   std::atomic_uint32_t owner = -1;
 };
 
+template <typename E>
 class MemoryMappedFile {
 public:
   static MemoryMappedFile *open(std::string path);
-  static MemoryMappedFile *must_open(Context &ctx, std::string path);
+  static MemoryMappedFile *must_open(Context<E> &ctx, std::string path);
 
   MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
     : name(name), data_(data), size_(size), mtime(mtime) {}
@@ -789,10 +829,10 @@ public:
 
   MemoryMappedFile *slice(std::string name, u64 start, u64 size);
 
-  u8 *data(Context &ctx);
+  u8 *data(Context<E> &ctx);
   i64 size() const { return size_; }
 
-  std::string_view get_contents(Context &ctx) {
+  std::string_view get_contents(Context<E> &ctx) {
     return std::string_view((char *)data(ctx), size());
   }
 
@@ -806,17 +846,18 @@ private:
   i64 size_ = 0;
 };
 
+template <typename E>
 class InputFile {
 public:
-  InputFile(Context &ctx, MemoryMappedFile *mb);
+  InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
   InputFile() : name("<internal>") {}
 
-  std::string_view get_string(Context &ctx, const ElfShdr &shdr);
-  std::string_view get_string(Context &ctx, i64 idx);
+  std::string_view get_string(Context<E> &ctx, const ElfShdr &shdr);
+  std::string_view get_string(Context<E> &ctx, i64 idx);
 
-  MemoryMappedFile *mb;
+  MemoryMappedFile<E> *mb;
   std::span<ElfShdr> elf_sections;
-  std::vector<Symbol *> symbols;
+  std::vector<Symbol<E> *> symbols;
 
   std::string name;
   bool is_dso = false;
@@ -824,45 +865,47 @@ public:
   std::atomic_bool is_alive = false;
 
 protected:
-  template<typename T> std::span<T> get_data(Context &ctx, const ElfShdr &shdr);
-  template<typename T> std::span<T> get_data(Context &ctx, i64 idx);
+  template<typename T> std::span<T> get_data(Context<E> &ctx, const ElfShdr &shdr);
+  template<typename T> std::span<T> get_data(Context<E> &ctx, i64 idx);
   ElfShdr *find_section(i64 type);
 
   std::string_view shstrtab;
 };
 
-class ObjectFile : public InputFile {
+template <typename E>
+class ObjectFile : public InputFile<E> {
 public:
-  ObjectFile(Context &ctx, MemoryMappedFile *mb,
+  ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
              std::string archive_name, bool is_in_lib);
 
-  ObjectFile(Context &ctx);
+  ObjectFile(Context<E> &ctx);
 
-  void parse(Context &ctx);
-  void resolve_lazy_symbols(Context &ctx);
-  void resolve_regular_symbols(Context &ctx);
-  void mark_live_objects(Context &ctx, std::function<void(ObjectFile *)> feeder);
-  void convert_undefined_weak_symbols(Context &ctx);
+  void parse(Context<E> &ctx);
+  void resolve_lazy_symbols(Context<E> &ctx);
+  void resolve_regular_symbols(Context<E> &ctx);
+  void mark_live_objects(Context<E> &ctx,
+                         std::function<void(ObjectFile<E> *)> feeder);
+  void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
   void claim_unresolved_symbols();
-  void scan_relocations(Context &ctx);
-  void convert_common_symbols(Context &ctx);
-  void compute_symtab(Context &ctx);
-  void write_symtab(Context &ctx);
+  void scan_relocations(Context<E> &ctx);
+  void convert_common_symbols(Context<E> &ctx);
+  void compute_symtab(Context<E> &ctx);
+  void write_symtab(Context<E> &ctx);
 
-  inline i64 get_shndx(const ElfSym &esym);
-  inline InputSection *get_section(const ElfSym &esym);
-  inline std::span<Symbol *> get_global_syms();
+  inline i64 get_shndx(const ElfSym<E> &esym);
+  inline InputSection<E> *get_section(const ElfSym<E> &esym);
+  inline std::span<Symbol<E> *> get_global_syms();
 
   std::string archive_name;
-  std::vector<InputSection *> sections;
-  std::span<ElfSym> elf_syms;
+  std::vector<InputSection<E> *> sections;
+  std::span<ElfSym<E>> elf_syms;
   i64 first_global = 0;
   const bool is_in_lib = false;
-  std::vector<CieRecord> cies;
+  std::vector<CieRecord<E>> cies;
   std::vector<const char *> symvers;
-  std::vector<SectionFragment *> fragments;
+  std::vector<SectionFragment<E> *> fragments;
   bool exclude_libs = false;
 
   u64 num_dynrel = 0;
@@ -876,16 +919,16 @@ public:
   u64 strtab_size = 0;
 
 private:
-  void initialize_sections(Context &ctx);
-  void initialize_symbols(Context &ctx);
-  void initialize_mergeable_sections(Context &ctx);
-  void initialize_ehframe_sections(Context &ctx);
-  void read_ehframe(Context &ctx, InputSection &isec);
-  void maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx);
-  void merge_visibility(Context &ctx, Symbol &sym, u8 visibility);
+  void initialize_sections(Context<E> &ctx);
+  void initialize_symbols(Context<E> &ctx);
+  void initialize_mergeable_sections(Context<E> &ctx);
+  void initialize_ehframe_sections(Context<E> &ctx);
+  void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
+  void maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym, i64 symidx);
+  void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
-  std::vector<SectionFragmentRef> sym_fragments;
+  std::vector<SectionFragmentRef<E>> sym_fragments;
   bool has_common_symbol;
 
   std::string_view symbol_strtab;
@@ -893,24 +936,25 @@ private:
   std::span<u32> symtab_shndx_sec;
 };
 
-class SharedFile : public InputFile {
+template <typename E>
+class SharedFile : public InputFile<E> {
 public:
-  SharedFile(Context &ctx, MemoryMappedFile *mb);
-  void parse(Context &ctx);
-  void resolve_symbols(Context &ctx);
-  std::vector<Symbol *> find_aliases(Symbol *sym);
-  bool is_readonly(Context &ctx, Symbol *sym);
+  SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
+  void parse(Context<E> &ctx);
+  void resolve_symbols(Context<E> &ctx);
+  std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
+  bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;
-  std::vector<Symbol *> undefs;
+  std::vector<Symbol<E> *> undefs;
 
 private:
-  std::string_view get_soname(Context &ctx);
-  void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
-  std::vector<std::string_view> read_verdef(Context &ctx);
+  std::string_view get_soname(Context<E> &ctx);
+  void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
+  std::vector<std::string_view> read_verdef(Context<E> &ctx);
 
-  std::vector<const ElfSym *> elf_syms;
+  std::vector<const ElfSym<E> *> elf_syms;
   std::vector<u16> versyms;
   std::string_view symbol_strtab;
   const ElfShdr *symtab_sec;
@@ -920,28 +964,36 @@ private:
 // archive_file.cc
 //
 
-std::vector<MemoryMappedFile *>
-read_fat_archive_members(Context &ctx, MemoryMappedFile *mb);
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
-std::vector<MemoryMappedFile *>
-read_thin_archive_members(Context &ctx, MemoryMappedFile *mb);
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
 // linker_script.cc
 //
 
-void parse_linker_script(Context &ctx, MemoryMappedFile *mb);
-void parse_version_script(Context &ctx, std::string path);
-void parse_dynamic_list(Context &ctx, std::string path);
+template <typename E>
+void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
+template <typename E>
+void parse_version_script(Context<E> &ctx, std::string path);
+
+template <typename E>
+void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
 // output_file.cc
 //
 
+template <typename E>
 class OutputFile {
 public:
-  static OutputFile *open(Context &ctx, std::string path, u64 filesize);
-  virtual void close(Context &ctx) = 0;
+  static OutputFile *open(Context<E> &ctx, std::string path, u64 filesize);
+  virtual void close(Context<E> &ctx) = 0;
 
   u8 *buf;
   static inline char *tmpfile;
@@ -1041,19 +1093,22 @@ private:
 // gc_sections.cc
 //
 
-void gc_sections(Context &ctx);
+template <typename E>
+void gc_sections(Context<E> &ctx);
 
 //
 // icf.cc
 //
 
-void icf_sections(Context &ctx);
+template <typename E>
+void icf_sections(Context<E> &ctx);
 
 //
 // mapfile.cc
 //
 
-void print_map(Context &ctx);
+template <typename E>
+void print_map(Context<E> &ctx);
 
 //
 // subprocess.cc
@@ -1062,24 +1117,35 @@ void print_map(Context &ctx);
 inline char *socket_tmpfile;
 
 std::function<void()> fork_child();
-bool resume_daemon(Context &ctx, char **argv, i64 *code);
-void daemonize(Context &ctx, char **argv,
+
+template <typename E>
+bool resume_daemon(Context<E> &ctx, char **argv, i64 *code);
+
+template <typename E>
+void daemonize(Context<E> &ctx, char **argv,
                std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
-[[noreturn]] void process_run_subcommand(Context &ctx, int argc, char **argv);
+template <typename E>
+[[noreturn]]
+void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 
 // commandline.cc
 //
 
-std::vector<std::string_view> expand_response_files(Context &ctx, char **argv);
+template <typename E>
+std::vector<std::string_view>
+expand_response_files(Context<E> &ctx, char **argv);
+
 bool read_flag(std::span<std::string_view> &args, std::string name);
 
-bool read_arg(Context &ctx, std::span<std::string_view> &args,
+template <typename E>
+bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
               std::string_view &arg,
               std::string name);
 
-void parse_nonpositional_args(Context &ctx,
+template <typename E>
+void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
 
 //
@@ -1087,7 +1153,8 @@ void parse_nonpositional_args(Context &ctx,
 //
 
 struct BuildId {
-  i64 size(Context &ctx) const;
+  template <typename E>
+  i64 size(Context<E> &ctx) const;
 
   enum { NONE, HEX, HASH, UUID } kind = NONE;
   std::vector<u8> value;
@@ -1100,9 +1167,10 @@ struct VersionPattern {
   bool is_extern_cpp;
 };
 
+template <typename E>
 struct Context {
   Context() = default;
-  Context(const Context &) = delete;
+  Context(const Context<E> &) = delete;
 
   // Command-line arguments
   struct {
@@ -1189,71 +1257,73 @@ struct Context {
   std::vector<std::string_view> cmdline_args;
 
   // Input files
-  std::vector<ObjectFile *> objs;
-  std::vector<SharedFile *> dsos;
-  ObjectFile *internal_obj = nullptr;
+  std::vector<ObjectFile<E> *> objs;
+  std::vector<SharedFile<E> *> dsos;
+  ObjectFile<E> *internal_obj = nullptr;
 
   // Output buffer
   u8 *buf;
 
-  std::vector<OutputChunk *> chunks;
+  std::vector<OutputChunk<E> *> chunks;
   std::atomic_bool has_gottpoff = false;
   std::atomic_bool has_textrel = false;
 
   // Output chunks
-  OutputEhdr *ehdr = nullptr;
-  OutputShdr *shdr = nullptr;
-  OutputPhdr *phdr = nullptr;
-  InterpSection *interp = nullptr;
-  GotSection *got = nullptr;
-  GotPltSection *gotplt = nullptr;
-  RelPltSection *relplt = nullptr;
-  RelDynSection *reldyn = nullptr;
-  DynamicSection *dynamic = nullptr;
-  StrtabSection *strtab = nullptr;
-  DynstrSection *dynstr = nullptr;
-  HashSection *hash = nullptr;
-  GnuHashSection *gnu_hash = nullptr;
-  ShstrtabSection *shstrtab = nullptr;
-  PltSection *plt = nullptr;
-  PltGotSection *pltgot = nullptr;
-  SymtabSection *symtab = nullptr;
-  DynsymSection *dynsym = nullptr;
-  EhFrameSection *eh_frame = nullptr;
-  EhFrameHdrSection *eh_frame_hdr = nullptr;
-  DynbssSection *dynbss = nullptr;
-  DynbssSection *dynbss_relro = nullptr;
-  VersymSection *versym = nullptr;
-  VerneedSection *verneed = nullptr;
-  VerdefSection *verdef = nullptr;
-  BuildIdSection *buildid = nullptr;
+  OutputEhdr<E> *ehdr = nullptr;
+  OutputShdr<E> *shdr = nullptr;
+  OutputPhdr<E> *phdr = nullptr;
+  InterpSection<E> *interp = nullptr;
+  GotSection<E> *got = nullptr;
+  GotPltSection<E> *gotplt = nullptr;
+  RelPltSection<E> *relplt = nullptr;
+  RelDynSection<E> *reldyn = nullptr;
+  DynamicSection<E> *dynamic = nullptr;
+  StrtabSection<E> *strtab = nullptr;
+  DynstrSection<E> *dynstr = nullptr;
+  HashSection<E> *hash = nullptr;
+  GnuHashSection<E> *gnu_hash = nullptr;
+  ShstrtabSection<E> *shstrtab = nullptr;
+  PltSection<E> *plt = nullptr;
+  PltGotSection<E> *pltgot = nullptr;
+  SymtabSection<E> *symtab = nullptr;
+  DynsymSection<E> *dynsym = nullptr;
+  EhFrameSection<E> *eh_frame = nullptr;
+  EhFrameHdrSection<E> *eh_frame_hdr = nullptr;
+  DynbssSection<E> *dynbss = nullptr;
+  DynbssSection<E> *dynbss_relro = nullptr;
+  VersymSection<E> *versym = nullptr;
+  VerneedSection<E> *verneed = nullptr;
+  VerdefSection<E> *verdef = nullptr;
+  BuildIdSection<E> *buildid = nullptr;
 
   u64 tls_begin = -1;
   u64 tls_end = -1;
 
   // Linker-synthesized symbols
-  Symbol *__bss_start = nullptr;
-  Symbol *__ehdr_start = nullptr;
-  Symbol *__rela_iplt_start = nullptr;
-  Symbol *__rela_iplt_end = nullptr;
-  Symbol *__init_array_start = nullptr;
-  Symbol *__init_array_end = nullptr;
-  Symbol *__fini_array_start = nullptr;
-  Symbol *__fini_array_end = nullptr;
-  Symbol *__preinit_array_start = nullptr;
-  Symbol *__preinit_array_end = nullptr;
-  Symbol *_DYNAMIC = nullptr;
-  Symbol *_GLOBAL_OFFSET_TABLE_ = nullptr;
-  Symbol *__GNU_EH_FRAME_HDR = nullptr;
-  Symbol *_end = nullptr;
-  Symbol *_etext = nullptr;
-  Symbol *_edata = nullptr;
-  Symbol *__executable_start = nullptr;
+  Symbol<E> *__bss_start = nullptr;
+  Symbol<E> *__ehdr_start = nullptr;
+  Symbol<E> *__rela_iplt_start = nullptr;
+  Symbol<E> *__rela_iplt_end = nullptr;
+  Symbol<E> *__init_array_start = nullptr;
+  Symbol<E> *__init_array_end = nullptr;
+  Symbol<E> *__fini_array_start = nullptr;
+  Symbol<E> *__fini_array_end = nullptr;
+  Symbol<E> *__preinit_array_start = nullptr;
+  Symbol<E> *__preinit_array_end = nullptr;
+  Symbol<E> *_DYNAMIC = nullptr;
+  Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
+  Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
+  Symbol<E> *_end = nullptr;
+  Symbol<E> *_etext = nullptr;
+  Symbol<E> *_edata = nullptr;
+  Symbol<E> *__executable_start = nullptr;
 };
 
-MemoryMappedFile *find_library(Context &ctx, std::string path);
+template <typename E>
+MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string path);
 
-void read_file(Context &ctx, MemoryMappedFile *mb);
+template <typename E>
+void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
 // Error output
@@ -1261,9 +1331,10 @@ void read_file(Context &ctx, MemoryMappedFile *mb);
 
 inline thread_local bool opt_demangle = false;
 
+template <typename E>
 class SyncOut {
 public:
-  SyncOut(Context &ctx, std::ostream &out = std::cout) : out(out) {
+  SyncOut(Context<E> &ctx, std::ostream &out = std::cout) : out(out) {
     opt_demangle = ctx.arg.demangle;
   }
 
@@ -1284,13 +1355,14 @@ private:
   std::stringstream ss;
 };
 
+template <typename E>
 class Fatal {
 public:
-  Fatal(Context &ctx) : out(ctx, std::cerr) {}
+  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {}
 
   [[noreturn]] ~Fatal() {
     out.~SyncOut();
-    cleanup();
+    cleanup<E>();
     _exit(1);
   }
 
@@ -1300,12 +1372,13 @@ public:
   }
 
 private:
-  SyncOut out;
+  SyncOut<E> out;
 };
 
+template <typename E>
 class Error {
 public:
-  Error(Context &ctx) : out(ctx, std::cerr) {
+  Error(Context<E> &ctx) : out(ctx, std::cerr) {
     ctx.has_error = true;
   }
 
@@ -1314,20 +1387,21 @@ public:
     return *this;
   }
 
-  static void checkpoint(Context &ctx) {
+  static void checkpoint(Context<E> &ctx) {
     if (!ctx.has_error)
       return;
-    cleanup();
+    cleanup<E>();
     _exit(1);
   }
 
 private:
-  SyncOut out;
+  SyncOut<E> out;
 };
 
+template <typename E>
 class Warn {
 public:
-  Warn(Context &ctx) : out(ctx, std::cerr) {
+  Warn(Context<E> &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.fatal_warnings)
       ctx.has_error = true;
   }
@@ -1338,7 +1412,7 @@ public:
   }
 
 private:
-  SyncOut out;
+  SyncOut<E> out;
 };
 
 [[noreturn]]
@@ -1347,13 +1421,16 @@ void handle_unreachable(const char *file, i64 line);
 #define unreachable() \
   handle_unreachable(__FILE__, __LINE__)
 
-std::ostream &operator<<(std::ostream &out, const InputFile &file);
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 
 //
 // Inline objects and functions
 //
 
-inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
+template <typename E>
+inline std::ostream &
+operator<<(std::ostream &out, const InputSection<E> &isec) {
   out << isec.file << ":(" << isec.name << ")";
   return out;
 }
@@ -1372,7 +1449,8 @@ inline u64 next_power_of_two(u64 val) {
   return (u64)1 << (64 - __builtin_clzl(val - 1));
 }
 
-inline bool Symbol::is_alive() const {
+template <typename E>
+inline bool Symbol<E>::is_alive() const {
   if (frag)
     return frag->is_alive;
   if (input_section)
@@ -1380,7 +1458,8 @@ inline bool Symbol::is_alive() const {
   return true;
 }
 
-inline bool Symbol::is_absolute(Context &ctx) const {
+template <typename E>
+inline bool Symbol<E>::is_absolute(Context<E> &ctx) const {
   if (file == ctx.internal_obj)
     return false;
   if (file->is_dso)
@@ -1392,36 +1471,43 @@ inline bool Symbol::is_absolute(Context &ctx) const {
   return input_section == nullptr;
 }
 
-inline bool Symbol::is_relative(Context &ctx) const {
+template <typename E>
+inline bool Symbol<E>::is_relative(Context<E> &ctx) const {
   return !is_absolute(ctx);
 }
 
-inline bool Symbol::is_undef() const {
+template <typename E>
+inline bool Symbol<E>::is_undef() const {
   return esym->is_undef() && esym->st_bind != STB_WEAK;
 }
 
-inline bool Symbol::is_undef_weak() const {
+template <typename E>
+inline bool Symbol<E>::is_undef_weak() const {
   return esym->is_undef() && esym->st_bind == STB_WEAK;
 }
 
-inline u32 Symbol::get_type() const {
+template <typename E>
+inline u32 Symbol<E>::get_type() const {
   if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
     return STT_FUNC;
   return esym->st_type;
 }
 
-inline std::string_view Symbol::get_version() const {
+template <typename E>
+inline std::string_view Symbol<E>::get_version() const {
   if (file->is_dso)
-    return ((SharedFile *)file)->version_strings[ver_idx];
+    return ((SharedFile<E> *)file)->version_strings[ver_idx];
   return "";
 }
 
-inline void Symbol::clear() {
-  Symbol null;
+template <typename E>
+inline void Symbol<E>::clear() {
+  Symbol<E> null;
   memcpy((char *)this, &null, sizeof(null));
 }
 
-inline u64 Symbol::get_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_addr(Context<E> &ctx) const {
   if (frag) {
     assert(frag->is_alive);
     return frag->get_addr(ctx) + value;
@@ -1457,32 +1543,38 @@ inline u64 Symbol::get_addr(Context &ctx) const {
   return value;
 }
 
-inline u64 Symbol::get_got_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
   assert(got_idx != -1);
   return ctx.got->shdr.sh_addr + got_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gotplt_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
   assert(gotplt_idx != -1);
   return ctx.gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gottpoff_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_gottpoff_addr(Context<E> &ctx) const {
   assert(gottpoff_idx != -1);
   return ctx.got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_tlsgd_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_tlsgd_addr(Context<E> &ctx) const {
   assert(tlsgd_idx != -1);
   return ctx.got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_tlsdesc_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
   assert(tlsdesc_idx != -1);
   return ctx.got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_plt_addr(Context &ctx) const {
+template <typename E>
+inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
   assert(plt_idx != -1);
 
   if (got_idx == -1)
@@ -1490,19 +1582,23 @@ inline u64 Symbol::get_plt_addr(Context &ctx) const {
   return ctx.pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
 }
 
-inline u64 SectionFragment::get_addr(Context &ctx) const {
+template <typename E>
+inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
   return output_section.shdr.sh_addr + offset;
 }
 
-inline u64 InputSection::get_addr() const {
+template <typename E>
+inline u64 InputSection<E>::get_addr() const {
   return output_section->shdr.sh_addr + offset;
 }
 
-inline i64 InputSection::get_priority() const {
+template <typename E>
+inline i64 InputSection<E>::get_priority() const {
   return ((i64)file.priority << 32) | section_idx;
 }
 
-inline i64 ObjectFile::get_shndx(const ElfSym &esym) {
+template <typename E>
+inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
   assert(&elf_syms[0] <= &esym);
   assert(&esym < &elf_syms[elf_syms.size()]);
 
@@ -1511,12 +1607,14 @@ inline i64 ObjectFile::get_shndx(const ElfSym &esym) {
   return esym.st_shndx;
 }
 
-inline InputSection *ObjectFile::get_section(const ElfSym &esym) {
+template <typename E>
+inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)];
 }
 
-std::span<Symbol *> ObjectFile::get_global_syms() {
-  return std::span(symbols).subspan(first_global);
+template <typename E>
+std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
+  return std::span<Symbol<E> *>(this->symbols).subspan(first_global);
 }
 
 inline u32 elf_hash(std::string_view name) {

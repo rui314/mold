@@ -8,7 +8,8 @@
 #include <cctype>
 #include <iomanip>
 
-static thread_local MemoryMappedFile *current_file;
+template <typename E>
+static thread_local MemoryMappedFile<E> *current_file;
 
 static std::string_view get_line(std::string_view input, const char *pos) {
   assert(input.data() <= pos);
@@ -27,10 +28,11 @@ static std::string_view get_line(std::string_view input, const char *pos) {
   return input.substr(start, end - start);
 }
 
+template <typename E>
 class SyntaxError {
 public:
-  SyntaxError(Context &ctx, std::string_view errpos) : out(ctx) {
-    std::string_view contents = current_file->get_contents(ctx);
+  SyntaxError(Context<E> &ctx, std::string_view errpos) : out(ctx) {
+    std::string_view contents = current_file<E>->get_contents(ctx);
     std::string_view line = get_line(contents, errpos.data());
 
     i64 lineno = 1;
@@ -41,7 +43,7 @@ public:
     i64 column = errpos.data() - line.data();
 
     std::stringstream ss;
-    ss << current_file->name << ":" << lineno << ": ";
+    ss << current_file<E>->name << ":" << lineno << ": ";
     i64 indent = ss.tellp();
     ss << line << "\n" << std::setw(indent + column) << " " << "^ ";
     out << ss.str();
@@ -52,11 +54,12 @@ public:
     return *this;
   }
 
-  Fatal out;
+  Fatal<E> out;
 };
 
+template <typename E>
 static std::vector<std::string_view>
-tokenize(Context &ctx, std::string_view input) {
+tokenize(Context<E> &ctx, std::string_view input) {
   std::vector<std::string_view> vec;
   while (!input.empty()) {
     if (isspace(input[0])) {
@@ -104,10 +107,11 @@ tokenize(Context &ctx, std::string_view input) {
   return vec;
 }
 
+template <typename E>
 static std::span<std::string_view>
-skip(Context &ctx, std::span<std::string_view> tok, std::string_view str) {
+skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty())
-    Fatal(ctx) << current_file->name << ": expected '" << str << "', but got EOF";
+    Fatal(ctx) << current_file<E>->name << ": expected '" << str << "', but got EOF";
   if (tok[0] != str)
     SyntaxError(ctx, tok[0]) << "expected '" << str << "'";
   return tok.subspan(1);
@@ -121,44 +125,47 @@ static std::string_view unquote(std::string_view s) {
   return s;
 }
 
+template <typename E>
 static std::span<std::string_view>
-read_output_format(Context &ctx, std::span<std::string_view> tok) {
+read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
   tok = skip(ctx, tok, "(");
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Fatal(ctx) << current_file->name << ": expected ')', but got EOF";
+    Fatal(ctx) << current_file<E>->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
-static MemoryMappedFile *resolve_path(Context &ctx, std::string_view tok) {
+template <typename E>
+static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
   if (str.starts_with("/"))
-    return MemoryMappedFile::must_open(ctx, ctx.arg.sysroot + str);
+    return MemoryMappedFile<E>::must_open(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (std::string path = path_dirname(current_file->name) + "/";
-      MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
+  if (std::string path = path_dirname(current_file<E>->name) + "/";
+      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path + str))
     return mb;
 
-  if (MemoryMappedFile *mb = MemoryMappedFile::open(str))
+  if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(str))
     return mb;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string path = root + std::string(dir) + "/" + str;
-    if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
+    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path))
       return mb;
   }
 
   SyntaxError(ctx, tok) << "library not found: " << str;
 }
 
+template <typename E>
 static std::span<std::string_view>
-read_group(Context &ctx, std::span<std::string_view> tok) {
+read_group(Context<E> &ctx, std::span<std::string_view> tok) {
   tok = skip(ctx, tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
@@ -170,18 +177,19 @@ read_group(Context &ctx, std::span<std::string_view> tok) {
       continue;
     }
 
-    MemoryMappedFile *mb = resolve_path(ctx, tok[0]);
+    MemoryMappedFile<E> *mb = resolve_path(ctx, tok[0]);
     read_file(ctx, mb);
     tok = tok.subspan(1);
   }
 
   if (tok.empty())
-    Fatal(ctx) << current_file->name << ": expected ')', but got EOF";
+    Fatal(ctx) << current_file<E>->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
-void parse_linker_script(Context &ctx, MemoryMappedFile *mb) {
-  current_file = mb;
+template <typename E>
+void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  current_file<E> = mb;
 
   std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents(ctx));
   std::span<std::string_view> tok = vec;
@@ -210,7 +218,8 @@ static bool read_label(std::span<std::string_view> &tok,
   return false;
 }
 
-static void parse_version_script_commands(Context &ctx,
+template <typename E>
+static void parse_version_script_commands(Context<E> &ctx,
                                           std::span<std::string_view> &tok,
                                           i16 &ver, bool is_extern_cpp) {
   bool is_global = true;
@@ -244,10 +253,11 @@ static void parse_version_script_commands(Context &ctx,
   }
 }
 
-void parse_version_script(Context &ctx, std::string path) {
-  current_file = MemoryMappedFile::must_open(ctx, path);
+template <typename E>
+void parse_version_script(Context<E> &ctx, std::string path) {
+  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
   std::vector<std::string_view> vec =
-    tokenize(ctx, current_file->get_contents(ctx));
+    tokenize(ctx, current_file<E>->get_contents(ctx));
 
   std::span<std::string_view> tok = vec;
   i16 next_ver = VER_NDX_LAST_RESERVED + 1;
@@ -272,10 +282,11 @@ void parse_version_script(Context &ctx, std::string path) {
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
 }
 
-void parse_dynamic_list(Context &ctx, std::string path) {
-  current_file = MemoryMappedFile::must_open(ctx, path);
+template <typename E>
+void parse_dynamic_list(Context<E> &ctx, std::string path) {
+  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
   std::vector<std::string_view> vec =
-    tokenize(ctx, current_file->get_contents(ctx));
+    tokenize(ctx, current_file<E>->get_contents(ctx));
 
   std::span<std::string_view> tok = vec;
 
@@ -306,3 +317,12 @@ void parse_dynamic_list(Context &ctx, std::string path) {
   if (!tok.empty())
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
 }
+
+template
+void parse_linker_script(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+
+template
+void parse_version_script(Context<ELF64LE> &ctx, std::string path);
+
+template
+void parse_dynamic_list(Context<ELF64LE> &ctx, std::string path);

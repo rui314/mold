@@ -12,26 +12,29 @@ static u32 get_umask() {
   return orig_umask;
 }
 
-class MemoryMappedOutputFile : public OutputFile {
+template <typename E>
+class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize)
-    : OutputFile(path, filesize) {
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
+    : OutputFile<E>(path, filesize) {
     std::string dir = dirname(strdup(ctx.arg.output.c_str()));
-    tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
-    i64 fd = mkstemp(tmpfile);
+    this->tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
+    i64 fd = mkstemp(this->tmpfile);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << tmpfile <<  ": " << strerror(errno);
+      Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << strerror(errno);
 
-    if (rename(ctx.arg.output.c_str(), tmpfile) == 0) {
+    if (rename(ctx.arg.output.c_str(), this->tmpfile) == 0) {
       ::close(fd);
-      fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
+      fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
       if (fd == -1) {
         if (errno != ETXTBSY)
-          Fatal(ctx) << "cannot open " << ctx.arg.output << ": " << strerror(errno);
-        unlink(tmpfile);
-        fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
+          Fatal(ctx) << "cannot open " << ctx.arg.output << ": "
+                     << strerror(errno);
+        unlink(this->tmpfile);
+        fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
         if (fd == -1)
-          Fatal(ctx) << "cannot open " << ctx.arg.output << ": " << strerror(errno);
+          Fatal(ctx) << "cannot open " << ctx.arg.output << ": "
+                     << strerror(errno);
       }
     }
 
@@ -41,44 +44,48 @@ public:
     if (fchmod(fd, (0777 & ~get_umask())) == -1)
       Fatal(ctx) << "fchmod failed";
 
-    buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (buf == MAP_FAILED)
+    this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, fd, 0);
+    if (this->buf == MAP_FAILED)
       Fatal(ctx) << ctx.arg.output << ": mmap failed: " << strerror(errno);
     ::close(fd);
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t("close_file");
-    munmap(buf, filesize);
-    if (rename(tmpfile, ctx.arg.output.c_str()) == -1)
+    munmap(this->buf, this->filesize);
+    if (rename(this->tmpfile, ctx.arg.output.c_str()) == -1)
       Fatal(ctx) << ctx.arg.output << ": rename filed: " << strerror(errno);
-    tmpfile = nullptr;
+    this->tmpfile = nullptr;
   }
 };
 
-class MallocOutputFile : public OutputFile {
+template <typename E>
+class MallocOutputFile : public OutputFile<E> {
 public:
-  MallocOutputFile(Context &ctx, std::string path, u64 filesize)
-    : OutputFile(path, filesize) {
-    buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (buf == MAP_FAILED)
+  MallocOutputFile(Context<E> &ctx, std::string path, u64 filesize)
+    : OutputFile<E>(path, filesize) {
+    this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (this->buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << strerror(errno);
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t("close_file");
-    i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
+    i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << ctx.arg.output << ": " << strerror(errno);
 
     FILE *fp = fdopen(fd, "w");
-    fwrite(buf, filesize, 1, fp);
+    fwrite(this->buf, this->filesize, 1, fp);
     fclose(fp);
   }
 };
 
-OutputFile *OutputFile::open(Context &ctx, std::string path, u64 filesize) {
+template <typename E>
+OutputFile<E> *
+OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
   Timer t("open_file");
 
   bool is_special = false;
@@ -86,13 +93,17 @@ OutputFile *OutputFile::open(Context &ctx, std::string path, u64 filesize) {
   if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFMT) != S_IFREG)
     is_special = true;
 
-  OutputFile *file;
+  OutputFile<E> *file;
   if (is_special)
-    file = new MallocOutputFile(ctx, path, filesize);
+    file = new MallocOutputFile<E>(ctx, path, filesize);
   else
-    file = new MemoryMappedOutputFile(ctx, path, filesize);
+    file = new MemoryMappedOutputFile<E>(ctx, path, filesize);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
   return file;
 }
+
+template
+OutputFile<ELF64LE> *
+OutputFile<ELF64LE>::open(Context<ELF64LE> &ctx, std::string path, u64 filesize);

@@ -8,7 +8,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-MemoryMappedFile *MemoryMappedFile::open(std::string path) {
+template <typename E>
+MemoryMappedFile<E> *MemoryMappedFile<E>::open(std::string path) {
   struct stat st;
   if (stat(path.c_str(), &st) == -1)
     return nullptr;
@@ -16,13 +17,16 @@ MemoryMappedFile *MemoryMappedFile::open(std::string path) {
   return new MemoryMappedFile(path, nullptr, st.st_size, mtime);
 }
 
-MemoryMappedFile *MemoryMappedFile::must_open(Context &ctx, std::string path) {
+template <typename E>
+MemoryMappedFile<E> *
+MemoryMappedFile<E>::must_open(Context<E> &ctx, std::string path) {
   if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
     return mb;
   Fatal(ctx) << "cannot open " << path;
 }
 
-u8 *MemoryMappedFile::data(Context &ctx) {
+template <typename E>
+u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
   if (data_)
     return data_;
 
@@ -41,14 +45,16 @@ u8 *MemoryMappedFile::data(Context &ctx) {
   return data_;
 }
 
-MemoryMappedFile *MemoryMappedFile::slice(std::string name, u64 start,
-                                          u64 size) {
+template <typename E>
+MemoryMappedFile<E> *
+MemoryMappedFile<E>::slice(std::string name, u64 start, u64 size) {
   MemoryMappedFile *mb = new MemoryMappedFile(name, data_ + start, size);
   mb->parent = this;
   return mb;
 }
 
-InputFile::InputFile(Context &ctx, MemoryMappedFile *mb)
+template <typename E>
+InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   : mb(mb), name(mb->name) {
   if (mb->size() < sizeof(ElfEhdr))
     Fatal(ctx) << *this << ": file too small";
@@ -76,10 +82,11 @@ InputFile::InputFile(Context &ctx, MemoryMappedFile *mb)
   i64 shstrtab_idx = (ehdr.e_shstrndx == SHN_XINDEX)
     ? sh_begin->sh_link : ehdr.e_shstrndx;
 
-  shstrtab = get_string(ctx, shstrtab_idx);
+  shstrtab = this->get_string(ctx, shstrtab_idx);
 }
 
-std::string_view InputFile::get_string(Context &ctx, const ElfShdr &shdr) {
+template <typename E>
+std::string_view InputFile<E>::get_string(Context<E> &ctx, const ElfShdr &shdr) {
   u8 *begin = mb->data(ctx) + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb->data(ctx) + mb->size() < end)
@@ -87,40 +94,45 @@ std::string_view InputFile::get_string(Context &ctx, const ElfShdr &shdr) {
   return {(char *)begin, (char *)end};
 }
 
-std::string_view InputFile::get_string(Context &ctx, i64 idx) {
+template <typename E>
+std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
   assert(idx < elf_sections.size());
 
   if (elf_sections.size() <= idx)
     Fatal(ctx) << *this << ": invalid section index: " << idx;
-  return get_string(ctx, elf_sections[idx]);
+  return this->get_string(ctx, elf_sections[idx]);
 }
 
-template<typename T>
-std::span<T> InputFile::get_data(Context &ctx, const ElfShdr &shdr) {
-  std::string_view view = get_string(ctx, shdr);
+template <typename E>
+template <typename T>
+std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr &shdr) {
+  std::string_view view = this->get_string(ctx, shdr);
   if (view.size() % sizeof(T))
     Fatal(ctx) << *this << ": corrupted section";
   return {(T *)view.data(), view.size() / sizeof(T)};
 }
 
-template<typename T>
-std::span<T> InputFile::get_data(Context &ctx, i64 idx) {
+template <typename E>
+template <typename T>
+std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
   if (elf_sections.size() <= idx)
     Fatal(ctx) << *this << ": invalid section index";
-  return get_data<T>(elf_sections[idx]);
+  return this->template get_data<T>(elf_sections[idx]);
 }
 
-ElfShdr *InputFile::find_section(i64 type) {
+template <typename E>
+ElfShdr *InputFile<E>::find_section(i64 type) {
   for (ElfShdr &sec : elf_sections)
     if (sec.sh_type == type)
       return &sec;
   return nullptr;
 }
 
-ObjectFile::ObjectFile(Context &ctx, MemoryMappedFile *mb,
-                       std::string archive_name, bool is_in_lib)
-  : InputFile(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {
-  is_alive = !is_in_lib;
+template <typename E>
+ObjectFile<E>::ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
+                          std::string archive_name, bool is_in_lib)
+  : InputFile<E>(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {
+  this->is_alive = !is_in_lib;
 }
 
 static bool is_debug_section(const ElfShdr &shdr, std::string_view name) {
@@ -128,10 +140,11 @@ static bool is_debug_section(const ElfShdr &shdr, std::string_view name) {
          (name.starts_with(".debug") || name.starts_with(".zdebug"));
 }
 
-void ObjectFile::initialize_sections(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
-  for (i64 i = 0; i < elf_sections.size(); i++) {
-    const ElfShdr &shdr = elf_sections[i];
+  for (i64 i = 0; i < this->elf_sections.size(); i++) {
+    const ElfShdr &shdr = this->elf_sections[i];
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC))
       continue;
@@ -141,11 +154,11 @@ void ObjectFile::initialize_sections(Context &ctx) {
       // Get the signature of this section group.
       if (shdr.sh_info >= elf_syms.size())
         Fatal(ctx) << *this << ": invalid symbol index";
-      const ElfSym &sym = elf_syms[shdr.sh_info];
+      const ElfSym<E> &sym = elf_syms[shdr.sh_info];
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
       // Get comdat group members.
-      std::span<u32> entries = get_data<u32>(ctx, shdr);
+      std::span<u32> entries = this->template get_data<u32>(ctx, shdr);
 
       if (entries.empty())
         Fatal(ctx) << *this << ": empty SHT_GROUP";
@@ -163,7 +176,7 @@ void ObjectFile::initialize_sections(Context &ctx) {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      symtab_shndx_sec = get_data<u32>(ctx, shdr);
+      symtab_shndx_sec = this->template get_data<u32>(ctx, shdr);
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -172,7 +185,7 @@ void ObjectFile::initialize_sections(Context &ctx) {
     case SHT_NULL:
       break;
     default: {
-      std::string_view name = shstrtab.data() + shdr.sh_name;
+      std::string_view name = this->shstrtab.data() + shdr.sh_name;
       if (name == ".note.GNU-stack" || name == ".note.gnu.property")
         continue;
 
@@ -190,7 +203,7 @@ void ObjectFile::initialize_sections(Context &ctx) {
   }
 
   // Attach relocation sections to their target sections.
-  for (const ElfShdr &shdr : elf_sections) {
+  for (const ElfShdr &shdr : this->elf_sections) {
     if (shdr.sh_type != SHT_RELA)
       continue;
 
@@ -198,8 +211,8 @@ void ObjectFile::initialize_sections(Context &ctx) {
       Fatal(ctx) << *this << ": invalid relocated section index: "
               << (u32)shdr.sh_info;
 
-    if (InputSection *target = sections[shdr.sh_info]) {
-      target->rels = get_data<ElfRela>(ctx, shdr);
+    if (InputSection<E> *target = sections[shdr.sh_info]) {
+      target->rels = this->template get_data<ElfRela>(ctx, shdr);
       target->has_fragments.resize(target->rels.size());
       if (target->shdr.sh_flags & SHF_ALLOC)
         target->rel_types.resize(target->rels.size());
@@ -207,9 +220,10 @@ void ObjectFile::initialize_sections(Context &ctx) {
   }
 }
 
-void ObjectFile::initialize_ehframe_sections(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
-    InputSection *isec = sections[i];
+    InputSection<E> *isec = sections[i];
     if (isec && isec->name == ".eh_frame") {
       read_ehframe(ctx, *isec);
       isec->is_ehframe = true;
@@ -247,13 +261,14 @@ void ObjectFile::initialize_ehframe_sections(Context &ctx) {
 //   In order to create .eh_frame_hdr, linker has to read .eh_frame.
 //
 // This function parses an input .eh_frame section.
-void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
+template <typename E>
+void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   std::span<ElfRela> rels = isec.rels;
-  std::string_view data = get_string(ctx, isec.shdr);
+  std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
   if (data.empty()) {
-    cies.push_back(CieRecord{data});
+    cies.push_back(CieRecord<E>{data});
     return;
   }
 
@@ -271,7 +286,7 @@ void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
     if (size == 0) {
       if (data.size() != 4)
         Fatal(ctx) << isec << ": garbage at end of section";
-      cies.push_back(CieRecord{data});
+      cies.push_back(CieRecord<E>{data});
       return;
     }
 
@@ -285,15 +300,15 @@ void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
     data = data.substr(size + 4);
     i64 id = *(u32 *)(contents.data() + 4);
 
-    std::vector<EhReloc> eh_rels;
+    std::vector<EhReloc<E>> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       if (id && first_global <= rels[0].r_sym)
         Fatal(ctx) << isec << ": FDE with non-local relocations is not supported";
 
-      Symbol &sym = *symbols[rels[0].r_sym];
-      eh_rels.push_back(EhReloc{sym, rels[0].r_type,
-                                (u32)(rels[0].r_offset - begin_offset),
-                                rels[0].r_addend});
+      Symbol<E> &sym = *this->symbols[rels[0].r_sym];
+      eh_rels.push_back(EhReloc<E>{sym, rels[0].r_type,
+                                   (u32)(rels[0].r_offset - begin_offset),
+                                   rels[0].r_addend});
       rels = rels.subspan(1);
     }
 
@@ -301,7 +316,7 @@ void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
       // CIE
       cur_cie = cies.size();
       offset_to_cie[begin_offset] = cies.size();
-      cies.push_back(CieRecord{contents, std::move(eh_rels)});
+      cies.push_back(CieRecord<E>{contents, std::move(eh_rels)});
     } else {
       // FDE
       i64 cie_offset = begin_offset + 4 - id;
@@ -323,10 +338,10 @@ void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
     }
   }
 
-  for (CieRecord &cie : cies) {
-    std::span<FdeRecord> fdes = cie.fdes;
+  for (CieRecord<E> &cie : cies) {
+    std::span<FdeRecord<E>> fdes = cie.fdes;
     while (!fdes.empty()) {
-      InputSection *isec = fdes[0].rels[0].sym.input_section;
+      InputSection<E> *isec = fdes[0].rels[0].sym.input_section;
       i64 i = 1;
       while (i < fdes.size() && isec == fdes[i].rels[0].sym.input_section)
         i++;
@@ -336,7 +351,8 @@ void ObjectFile::read_ehframe(Context &ctx, InputSection &isec) {
   }
 }
 
-static bool should_write_to_local_symtab(Context &ctx, Symbol &sym) {
+template <typename E>
+static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
   if (ctx.arg.discard_all || ctx.arg.strip_all)
     return false;
   if (sym.get_type() == STT_SECTION)
@@ -352,7 +368,7 @@ static bool should_write_to_local_symtab(Context &ctx, Symbol &sym) {
     if (ctx.arg.discard_locals)
       return false;
 
-    if (InputSection *isec = sym.input_section)
+    if (InputSection<E> *isec = sym.input_section)
       if (isec->shdr.sh_flags & SHF_MERGE)
         return false;
   }
@@ -360,7 +376,8 @@ static bool should_write_to_local_symtab(Context &ctx, Symbol &sym) {
   return true;
 }
 
-void ObjectFile::initialize_symbols(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   if (!symtab_sec)
     return;
 
@@ -368,16 +385,16 @@ void ObjectFile::initialize_symbols(Context &ctx) {
   counter += elf_syms.size();
 
   // Initialize local symbols
-  Symbol *locals = new Symbol[first_global];
+  Symbol<E> *locals = new Symbol<E>[first_global];
 
   for (i64 i = 1; i < first_global; i++) {
-    const ElfSym &esym = elf_syms[i];
-    Symbol &sym = locals[i];
+    const ElfSym<E> &esym = elf_syms[i];
+    Symbol<E> &sym = locals[i];
 
     sym.name = symbol_strtab.data() + esym.st_name;
 
     if (sym.name.empty() && esym.st_type == STT_SECTION)
-      if (InputSection *sec =  get_section(esym))
+      if (InputSection<E> *sec =  get_section(esym))
         sym.name = sec->name;
 
     sym.file = this;
@@ -397,18 +414,18 @@ void ObjectFile::initialize_symbols(Context &ctx) {
     }
   }
 
-  symbols.resize(elf_syms.size());
+  this->symbols.resize(elf_syms.size());
 
   i64 num_globals = elf_syms.size() - first_global;
   sym_fragments.resize(num_globals);
   symvers.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
-    symbols[i] = &locals[i];
+    this->symbols[i] = &locals[i];
 
   // Initialize global symbols
   for (i64 i = first_global; i < elf_syms.size(); i++) {
-    const ElfSym &esym = elf_syms[i];
+    const ElfSym<E> &esym = elf_syms[i];
     std::string_view key = symbol_strtab.data() + esym.st_name;
     std::string_view name = key;
 
@@ -421,15 +438,16 @@ void ObjectFile::initialize_symbols(Context &ctx) {
         symvers[i - first_global] = ver.data();
     }
 
-    symbols[i] = Symbol::intern(key, name);
+    this->symbols[i] = Symbol<E>::intern(key, name);
 
     if (esym.is_common())
       has_common_symbol = true;
   }
 }
 
+template <typename E>
 struct MergeableSection {
-  std::vector<SectionFragment *> fragments;
+  std::vector<SectionFragment<E> *> fragments;
   std::vector<u32> frag_offsets;
 };
 
@@ -461,18 +479,19 @@ static size_t find_null(std::string_view data, u64 entsize) {
 // call "section fragments". Section fragment is a unit of merging.
 //
 // We do not support mergeable sections that have relocations.
-static MergeableSection split_section(Context &ctx, InputSection &sec) {
-  MergeableSection rec;
+template <typename E>
+static MergeableSection<E> split_section(Context<E> &ctx, InputSection<E> &sec) {
+  MergeableSection<E> rec;
 
-  MergedSection *parent =
-    MergedSection::get_instance(sec.name, sec.shdr.sh_type,
-                                sec.shdr.sh_flags);
+  MergedSection<E> *parent =
+    MergedSection<E>::get_instance(sec.name, sec.shdr.sh_type,
+                                   sec.shdr.sh_flags);
 
   std::string_view data = sec.contents;
   const char *begin = data.data();
   u64 entsize = sec.shdr.sh_entsize;
 
-  static_assert(sizeof(SectionFragment::alignment) == 2);
+  static_assert(sizeof(SectionFragment<E>::alignment) == 2);
   if (sec.shdr.sh_addralign >= UINT16_MAX)
     Fatal(ctx) << sec << ": alignment too large";
 
@@ -485,7 +504,7 @@ static MergeableSection split_section(Context &ctx, InputSection &sec) {
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);
 
-      SectionFragment *frag = parent->insert(substr, sec.shdr.sh_addralign);
+      SectionFragment<E> *frag = parent->insert(substr, sec.shdr.sh_addralign);
       rec.fragments.push_back(frag);
       rec.frag_offsets.push_back(substr.data() - begin);
     }
@@ -497,7 +516,7 @@ static MergeableSection split_section(Context &ctx, InputSection &sec) {
       std::string_view substr = data.substr(0, entsize);
       data = data.substr(entsize);
 
-      SectionFragment *frag = parent->insert(substr, sec.shdr.sh_addralign);
+      SectionFragment<E> *frag = parent->insert(substr, sec.shdr.sh_addralign);
       rec.fragments.push_back(frag);
       rec.frag_offsets.push_back(substr.data() - begin);
     }
@@ -509,11 +528,12 @@ static MergeableSection split_section(Context &ctx, InputSection &sec) {
   return rec;
 }
 
-void ObjectFile::initialize_mergeable_sections(Context &ctx) {
-  std::vector<MergeableSection> mergeable_sections(sections.size());
+template <typename E>
+void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
+  std::vector<MergeableSection<E>> mergeable_sections(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
-    if (InputSection *isec = sections[i]) {
+    if (InputSection<E> *isec = sections[i]) {
       if (isec->shdr.sh_flags & SHF_MERGE) {
         mergeable_sections[i] = split_section(ctx, *isec);
         sections[i] = nullptr;
@@ -522,17 +542,17 @@ void ObjectFile::initialize_mergeable_sections(Context &ctx) {
   }
 
   // Initialize rel_fragments
-  for (InputSection *isec : sections) {
+  for (InputSection<E> *isec : sections) {
     if (!isec || isec->rels.empty())
       continue;
 
     for (i64 i = 0; i < isec->rels.size(); i++) {
       const ElfRela &rel = isec->rels[i];
-      const ElfSym &esym = elf_syms[rel.r_sym];
+      const ElfSym<E> &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;
 
-      MergeableSection &m = mergeable_sections[get_shndx(esym)];
+      MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
       if (m.fragments.empty())
         continue;
 
@@ -544,7 +564,7 @@ void ObjectFile::initialize_mergeable_sections(Context &ctx) {
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      SectionFragmentRef ref{m.fragments[idx], (i32)(offset - offsets[idx])};
+      SectionFragmentRef<E> ref{m.fragments[idx], (i32)(offset - offsets[idx])};
       isec->rel_fragments.push_back(ref);
       isec->has_fragments[i] = true;
     }
@@ -552,11 +572,11 @@ void ObjectFile::initialize_mergeable_sections(Context &ctx) {
 
   // Initialize sym_fragments
   for (i64 i = 0; i < elf_syms.size(); i++) {
-    const ElfSym &esym = elf_syms[i];
+    const ElfSym<E> &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    MergeableSection &m = mergeable_sections[get_shndx(esym)];
+    MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
     if (m.fragments.empty())
       continue;
 
@@ -568,26 +588,27 @@ void ObjectFile::initialize_mergeable_sections(Context &ctx) {
     i64 idx = it - 1 - offsets.begin();
 
     if (i < first_global) {
-      symbols[i]->frag = m.fragments[idx];
-      symbols[i]->value = esym.st_value - offsets[idx];
+      this->symbols[i]->frag = m.fragments[idx];
+      this->symbols[i]->value = esym.st_value - offsets[idx];
     } else {
       sym_fragments[i - first_global].frag = m.fragments[idx];
       sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
     }
   }
 
-  for (MergeableSection &m : mergeable_sections)
+  for (MergeableSection<E> &m : mergeable_sections)
     fragments.insert(fragments.end(), m.fragments.begin(), m.fragments.end());
 }
 
-void ObjectFile::parse(Context &ctx) {
-  sections.resize(elf_sections.size());
-  symtab_sec = find_section(SHT_SYMTAB);
+template <typename E>
+void ObjectFile<E>::parse(Context<E> &ctx) {
+  sections.resize(this->elf_sections.size());
+  symtab_sec = this->find_section(SHT_SYMTAB);
 
   if (symtab_sec) {
     first_global = symtab_sec->sh_info;
-    elf_syms = get_data<ElfSym>(ctx, *symtab_sec);
-    symbol_strtab = get_string(ctx, symtab_sec->sh_link);
+    elf_syms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
+    symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   }
 
   initialize_sections(ctx);
@@ -606,7 +627,9 @@ void ObjectFile::parse(Context &ctx) {
 //  5. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
-static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
+template <typename E>
+static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym,
+                    InputSection<E> *isec) {
   if (esym.st_bind == STB_WEAK)
     return (3 << 24) + file->priority;
   if (esym.is_common())
@@ -614,7 +637,8 @@ static u64 get_rank(InputFile *file, const ElfSym &esym, InputSection *isec) {
   return (1 << 24) + file->priority;
 }
 
-static u64 get_rank(const Symbol &sym) {
+template <typename E>
+static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
     return 5 << 24;
   if (sym.is_lazy)
@@ -622,9 +646,11 @@ static u64 get_rank(const Symbol &sym) {
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
-void ObjectFile::maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx) {
-  InputSection *isec = nullptr;
-  const ElfSym &esym = elf_syms[symidx];
+template <typename E>
+void ObjectFile<E>::maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym,
+                                          i64 symidx) {
+  InputSection<E> *isec = nullptr;
+  const ElfSym<E> &esym = elf_syms[symidx];
   if (!esym.is_abs() && !esym.is_common())
     isec = get_section(esym);
 
@@ -634,7 +660,7 @@ void ObjectFile::maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx) {
   u64 existing_rank = get_rank(sym);
 
   if (new_rank < existing_rank) {
-    SectionFragmentRef &ref = sym_fragments[symidx - first_global];
+    SectionFragmentRef<E> &ref = sym_fragments[symidx - first_global];
 
     sym.file = this;
     sym.input_section = isec;
@@ -659,7 +685,9 @@ void ObjectFile::maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx) {
   }
 }
 
-void ObjectFile::merge_visibility(Context &ctx, Symbol &sym, u8 visibility) {
+template <typename E>
+void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
+                                     u8 visibility) {
   auto priority = [&](u8 visibility) {
     switch (visibility) {
     case STV_HIDDEN:
@@ -679,12 +707,13 @@ void ObjectFile::merge_visibility(Context &ctx, Symbol &sym, u8 visibility) {
       break;
 }
 
-void ObjectFile::resolve_lazy_symbols(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
   assert(is_in_lib);
 
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ElfSym &esym = elf_syms[i];
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    const ElfSym<E> &esym = elf_syms[i];
 
     if (!esym.is_defined())
       continue;
@@ -705,12 +734,13 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
   }
 }
 
-void ObjectFile::resolve_regular_symbols(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
   assert(!is_in_lib);
 
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ElfSym &esym = elf_syms[i];
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    const ElfSym<E> &esym = elf_syms[i];
     merge_visibility(ctx, sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
     if (esym.is_defined())
@@ -718,13 +748,14 @@ void ObjectFile::resolve_regular_symbols(Context &ctx) {
   }
 }
 
-void ObjectFile::mark_live_objects(Context &ctx,
-                                   std::function<void(ObjectFile *)> feeder) {
-  assert(is_alive);
+template <typename E>
+void ObjectFile<E>::mark_live_objects(Context<E> &ctx,
+                                      std::function<void(ObjectFile<E> *)> feeder) {
+  assert(this->is_alive);
 
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    const ElfSym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i];
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    const ElfSym<E> &esym = elf_syms[i];
+    Symbol<E> &sym = *this->symbols[i];
     merge_visibility(ctx, sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
     if (esym.is_defined()) {
@@ -742,7 +773,7 @@ void ObjectFile::mark_live_objects(Context &ctx,
     }
 
     if (!is_weak && sym.file && !sym.file->is_alive.exchange(true)) {
-      feeder((ObjectFile *)sym.file);
+      feeder((ObjectFile<E> *)sym.file);
       if (sym.traced)
         SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
                   << " for " << sym;
@@ -750,12 +781,13 @@ void ObjectFile::mark_live_objects(Context &ctx,
   }
 }
 
-void ObjectFile::convert_undefined_weak_symbols(Context &ctx) {
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    const ElfSym &esym = elf_syms[i];
+template <typename E>
+void ObjectFile<E>::convert_undefined_weak_symbols(Context<E> &ctx) {
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    const ElfSym<E> &esym = elf_syms[i];
 
     if (esym.is_undef() && esym.st_bind == STB_WEAK) {
-      Symbol &sym = *symbols[i];
+      Symbol<E> &sym = *this->symbols[i];
       std::lock_guard lock(sym.mu);
 
       bool is_new = !sym.file;
@@ -781,7 +813,8 @@ void ObjectFile::convert_undefined_weak_symbols(Context &ctx) {
   }
 }
 
-void ObjectFile::resolve_comdat_groups() {
+template <typename E>
+void ObjectFile<E>::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     u32 cur = group->owner;
@@ -791,7 +824,8 @@ void ObjectFile::resolve_comdat_groups() {
   }
 }
 
-void ObjectFile::eliminate_duplicate_comdat_groups() {
+template <typename E>
+void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
     if (group->owner == this->priority)
@@ -807,13 +841,14 @@ void ObjectFile::eliminate_duplicate_comdat_groups() {
   }
 }
 
-void ObjectFile::claim_unresolved_symbols() {
-  if (!is_alive)
+template <typename E>
+void ObjectFile<E>::claim_unresolved_symbols() {
+  if (!this->is_alive)
     return;
 
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    const ElfSym &esym = elf_syms[i];
-    Symbol &sym = *symbols[i];
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    const ElfSym<E> &esym = elf_syms[i];
+    Symbol<E> &sym = *this->symbols[i];
 
     if (esym.is_defined())
       continue;
@@ -831,15 +866,16 @@ void ObjectFile::claim_unresolved_symbols() {
   }
 }
 
-void ObjectFile::scan_relocations(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
-  for (InputSection *isec : sections)
+  for (InputSection<E> *isec : sections)
     if (isec)
       isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames
-  for (CieRecord &cie : cies) {
-    for (EhReloc &rel : cie.rels) {
+  for (CieRecord<E> &cie : cies) {
+    for (EhReloc<E> &rel : cie.rels) {
       if (rel.sym.is_imported) {
         if (rel.sym.get_type() != STT_FUNC)
           Fatal(ctx) << *this << ": " << rel.sym.name
@@ -851,18 +887,19 @@ void ObjectFile::scan_relocations(Context &ctx) {
   }
 }
 
-void ObjectFile::convert_common_symbols(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
   if (!has_common_symbol)
     return;
 
-  static OutputSection *osec =
-    OutputSection::get_instance(".common", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
+  static OutputSection<E> *osec =
+    OutputSection<E>::get_instance(".common", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
 
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     if (!elf_syms[i].is_common())
       continue;
 
-    Symbol *sym = symbols[i];
+    Symbol<E> *sym = this->symbols[i];
     if (sym->file != this) {
       if (ctx.arg.warn_common)
         Warn(ctx) << *this << ": " << "multiple common symbols: " << *sym;
@@ -878,7 +915,7 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
     shdr->sh_size = elf_syms[i].st_size;
     shdr->sh_addralign = sym->esym->st_value;
 
-    InputSection *isec =
+    InputSection<E> *isec =
       new InputSection(ctx, *this, *shdr, ".common", sections.size());
     isec->output_section = osec;
     sections.push_back(isec);
@@ -888,11 +925,13 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
   }
 }
 
-static bool should_write_to_global_symtab(Symbol &sym) {
+template <typename E>
+static bool should_write_to_global_symtab(Symbol<E> &sym) {
   return sym.get_type() != STT_SECTION && sym.is_alive();
 }
 
-void ObjectFile::compute_symtab(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
   if (ctx.arg.strip_all)
     return;
 
@@ -900,7 +939,7 @@ void ObjectFile::compute_symtab(Context &ctx) {
     // Detect symbols pointing to sections discarded by -gc-sections
     // to not copy them to symtab.
     for (i64 i = 1; i < first_global; i++) {
-      Symbol &sym = *symbols[i];
+      Symbol<E> &sym = *this->symbols[i];
 
       if (sym.write_to_symtab && !sym.is_alive()) {
         strtab_size -= sym.name.size() + 1;
@@ -911,8 +950,8 @@ void ObjectFile::compute_symtab(Context &ctx) {
   }
 
   // Compute the size of global symbols.
-  for (i64 i = first_global; i < symbols.size(); i++) {
-    Symbol &sym = *symbols[i];
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
 
     if (sym.file == this && should_write_to_global_symtab(sym)) {
       strtab_size += sym.name.size() + 1;
@@ -922,16 +961,17 @@ void ObjectFile::compute_symtab(Context &ctx) {
   }
 }
 
-void ObjectFile::write_symtab(Context &ctx) {
+template <typename E>
+void ObjectFile<E>::write_symtab(Context<E> &ctx) {
   u8 *symtab_base = ctx.buf + ctx.symtab->shdr.sh_offset;
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = strtab_offset;
   i64 symtab_off;
 
   auto write_sym = [&](i64 i) {
-    Symbol &sym = *symbols[i];
-    ElfSym &esym = *(ElfSym *)(symtab_base + symtab_off);
-    symtab_off += sizeof(ElfSym);
+    Symbol<E> &sym = *this->symbols[i];
+    ElfSym<E> &esym = *(ElfSym<E> *)(symtab_base + symtab_off);
+    symtab_off += sizeof(ElfSym<E>);
 
     esym = elf_syms[i];
     esym.st_name = strtab_off;
@@ -956,12 +996,12 @@ void ObjectFile::write_symtab(Context &ctx) {
 
   symtab_off = local_symtab_offset;
   for (i64 i = 1; i < first_global; i++)
-    if (symbols[i]->write_to_symtab)
+    if (this->symbols[i]->write_to_symtab)
       write_sym(i);
 
   symtab_off = global_symtab_offset;
   for (i64 i = first_global; i < elf_syms.size(); i++)
-    if (symbols[i]->file == this && symbols[i]->write_to_symtab)
+    if (this->symbols[i]->file == this && this->symbols[i]->write_to_symtab)
       write_sym(i);
 }
 
@@ -970,24 +1010,25 @@ bool is_c_identifier(std::string_view name) {
   return std::regex_match(name.begin(), name.end(), re);
 }
 
-ObjectFile::ObjectFile(Context &ctx) {
+template <typename E>
+ObjectFile<E>::ObjectFile(Context<E> &ctx) {
   // Create linker-synthesized symbols.
-  auto *esyms = new std::vector<ElfSym>(1);
-  symbols.push_back(new Symbol);
-  first_global = 1;
-  is_alive = true;
-  priority = 1;
+  auto *esyms = new std::vector<ElfSym<E>>(1);
+  this->symbols.push_back(new Symbol<E>);
+  this->first_global = 1;
+  this->is_alive = true;
+  this->priority = 1;
 
   auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
-    ElfSym esym = {};
+    ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = visibility;
     esyms->push_back(esym);
 
-    Symbol *sym = Symbol::intern(name);
-    symbols.push_back(sym);
+    Symbol<E> *sym = Symbol<E>::intern(name);
+    this->symbols.push_back(sym);
     return sym;
   };
 
@@ -1011,7 +1052,7 @@ ObjectFile::ObjectFile(Context &ctx) {
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
 
-  for (OutputChunk *chunk : ctx.chunks) {
+  for (OutputChunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
 
@@ -1028,13 +1069,14 @@ ObjectFile::ObjectFile(Context &ctx) {
   symvers.resize(num_globals);
 }
 
-std::ostream &operator<<(std::ostream &out, const InputFile &file) {
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
   if (file.is_dso) {
     out << path_clean(file.name);
     return out;
   }
 
-  ObjectFile *obj = (ObjectFile *)&file;
+  ObjectFile<E> *obj = (ObjectFile<E> *)&file;
   if (obj->archive_name == "")
     out << path_clean(obj->name);
   else
@@ -1042,48 +1084,51 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   return out;
 }
 
-SharedFile::SharedFile(Context &ctx, MemoryMappedFile *mb)
-  : InputFile(ctx, mb) {
-  is_alive = !ctx.as_needed;
+template <typename E>
+SharedFile<E>::SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
+  : InputFile<E>(ctx, mb) {
+  this->is_alive = !ctx.as_needed;
 }
 
-std::string_view SharedFile::get_soname(Context &ctx) {
-  if (ElfShdr *sec = find_section(SHT_DYNAMIC))
-    for (ElfDyn &dyn : get_data<ElfDyn>(ctx, *sec))
+template <typename E>
+std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
+  if (ElfShdr *sec = this->find_section(SHT_DYNAMIC))
+    for (ElfDyn &dyn : this->template get_data<ElfDyn>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
-  return name;
+  return this->name;
 }
 
-void SharedFile::parse(Context &ctx) {
-  symtab_sec = find_section(SHT_DYNSYM);
+template <typename E>
+void SharedFile<E>::parse(Context<E> &ctx) {
+  symtab_sec = this->find_section(SHT_DYNSYM);
   if (!symtab_sec)
     return;
 
-  symbol_strtab = get_string(ctx, symtab_sec->sh_link);
+  symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   soname = get_soname(ctx);
   version_strings = read_verdef(ctx);
 
   // Read a symbol table.
   i64 first_global = symtab_sec->sh_info;
-  std::span<ElfSym> esyms = get_data<ElfSym>(ctx, *symtab_sec);
+  std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
 
   std::span<u16> vers;
-  if (ElfShdr *sec = find_section(SHT_GNU_VERSYM))
-    vers = get_data<u16>(ctx, *sec);
+  if (ElfShdr *sec = this->find_section(SHT_GNU_VERSYM))
+    vers = this->template get_data<u16>(ctx, *sec);
 
   for (i64 i = first_global; i < esyms.size(); i++) {
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
 
     if (!esyms[i].is_defined()) {
-      undefs.push_back(Symbol::intern(name));
+      undefs.push_back(Symbol<E>::intern(name));
       continue;
     }
 
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(VER_NDX_GLOBAL);
-      symbols.push_back(Symbol::intern(name));
+      this->symbols.push_back(Symbol<E>::intern(name));
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
       if (ver == VER_NDX_LOCAL)
@@ -1095,12 +1140,12 @@ void SharedFile::parse(Context &ctx) {
 
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(ver);
-      symbols.push_back(Symbol::intern(mangled, name));
+      this->symbols.push_back(Symbol<E>::intern(mangled, name));
 
       if (!(vers[i] & VERSYM_HIDDEN)) {
         elf_syms.push_back(&esyms[i]);
         versyms.push_back(ver);
-        symbols.push_back(Symbol::intern(name));
+        this->symbols.push_back(Symbol<E>::intern(name));
       }
     }
   }
@@ -1109,15 +1154,16 @@ void SharedFile::parse(Context &ctx) {
   counter += elf_syms.size();
 }
 
-std::vector<std::string_view> SharedFile::read_verdef(Context &ctx) {
+template <typename E>
+std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
 
-  ElfShdr *verdef_sec = find_section(SHT_GNU_VERDEF);
+  ElfShdr *verdef_sec = this->find_section(SHT_GNU_VERDEF);
   if (!verdef_sec)
     return ret;
 
-  std::string_view verdef = get_string(ctx, *verdef_sec);
-  std::string_view strtab = get_string(ctx, verdef_sec->sh_link);
+  std::string_view verdef = this->get_string(ctx, *verdef_sec);
+  std::string_view strtab = this->get_string(ctx, verdef_sec->sh_link);
 
   ElfVerdef *ver = (ElfVerdef *)verdef.data();
 
@@ -1135,10 +1181,11 @@ std::vector<std::string_view> SharedFile::read_verdef(Context &ctx) {
   return ret;
 }
 
-void SharedFile::resolve_symbols(Context &ctx) {
-  for (i64 i = 0; i < symbols.size(); i++) {
-    Symbol &sym = *symbols[i];
-    const ElfSym &esym = *elf_syms[i];
+template <typename E>
+void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
+  for (i64 i = 0; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    const ElfSym<E> &esym = *elf_syms[i];
 
     std::lock_guard lock(sym.mu);
 
@@ -1164,19 +1211,21 @@ void SharedFile::resolve_symbols(Context &ctx) {
   }
 }
 
-std::vector<Symbol *> SharedFile::find_aliases(Symbol *sym) {
+template <typename E>
+std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
   assert(sym->file == this);
-  std::vector<Symbol *> vec;
-  for (Symbol *sym2 : symbols)
+  std::vector<Symbol<E> *> vec;
+  for (Symbol<E> *sym2 : this->symbols)
     if (sym2->file == this && sym != sym2 &&
         sym->esym->st_value == sym2->esym->st_value)
       vec.push_back(sym2);
   return vec;
 }
 
-bool SharedFile::is_readonly(Context &ctx, Symbol *sym) {
-  ElfEhdr *ehdr = (ElfEhdr *)mb->data(ctx);
-  ElfPhdr *phdr = (ElfPhdr *)(mb->data(ctx) + ehdr->e_phoff);
+template <typename E>
+bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
+  ElfEhdr *ehdr = (ElfEhdr *)this->mb->data(ctx);
+  ElfPhdr *phdr = (ElfPhdr *)(this->mb->data(ctx) + ehdr->e_phoff);
   u64 val = sym->esym->st_value;
 
   for (i64 i = 0; i < ehdr->e_phnum; i++)
@@ -1185,3 +1234,10 @@ bool SharedFile::is_readonly(Context &ctx, Symbol *sym) {
       return true;
   return false;
 }
+
+template class MemoryMappedFile<ELF64LE>;
+template class ObjectFile<ELF64LE>;
+template class SharedFile<ELF64LE>;
+
+template
+std::ostream &operator<<(std::ostream &out, const InputFile<ELF64LE> &file);
