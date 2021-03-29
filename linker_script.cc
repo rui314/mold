@@ -209,7 +209,8 @@ static bool read_label(std::span<std::string_view> &tok,
   return false;
 }
 
-static void parse_version_script_commands(std::span<std::string_view> &tok,
+static void parse_version_script_commands(Context &ctx,
+                                          std::span<std::string_view> &tok,
                                           i16 &ver, bool is_extern_cpp) {
   bool is_global = true;
 
@@ -228,7 +229,7 @@ static void parse_version_script_commands(std::span<std::string_view> &tok,
       tok = tok.subspan(1);
       tok = skip(tok, "\"C++\"");
       tok = skip(tok, "{");
-      parse_version_script_commands(tok, ver, true);
+      parse_version_script_commands(ctx, tok, ver, true);
       tok = skip(tok, "}");
       tok = skip(tok, ";");
       continue;
@@ -242,7 +243,7 @@ static void parse_version_script_commands(std::span<std::string_view> &tok,
   }
 }
 
-void parse_version_script(std::string path) {
+void parse_version_script(Context &ctx, std::string path) {
   current_file = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(current_file->get_contents());
   std::span<std::string_view> tok = vec;
@@ -257,7 +258,7 @@ void parse_version_script(std::string path) {
     }
 
     tok = skip(tok, "{");
-    parse_version_script_commands(tok, ver, false);
+    parse_version_script_commands(ctx, tok, ver, false);
     tok = skip(tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
@@ -268,7 +269,7 @@ void parse_version_script(std::string path) {
     SyntaxError(tok[0]) << "trailing garbage token";
 }
 
-void parse_dynamic_list(std::string path) {
+void parse_dynamic_list(Context &ctx, std::string path) {
   current_file = MemoryMappedFile::must_open(path);
   std::vector<std::string_view> vec = tokenize(current_file->get_contents());
   std::span<std::string_view> tok = vec;

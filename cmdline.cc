@@ -368,9 +368,9 @@ void parse_nonpositional_args(Context &ctx,
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;
     } else if (read_arg(args, arg, "version-script")) {
-      parse_version_script(std::string(arg));
+      parse_version_script(ctx, std::string(arg));
     } else if (read_arg(args, arg, "dynamic-list")) {
-      parse_dynamic_list(std::string(arg));
+      parse_dynamic_list(ctx, std::string(arg));
     } else if (read_flag(args, "build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;

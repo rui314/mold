@@ -923,8 +923,8 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 //
 
 void parse_linker_script(Context &ctx, MemoryMappedFile *mb);
-void parse_version_script(std::string path);
-void parse_dynamic_list(std::string path);
+void parse_version_script(Context &ctx, std::string path);
+void parse_dynamic_list(Context &ctx, std::string path);
 
 //
 // output_file.cc
