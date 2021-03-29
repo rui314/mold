@@ -284,7 +284,7 @@ struct CieRecord {
 template <typename E>
 class InputSection {
 public:
-  InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr &shdr,
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
                std::string_view name, i64 section_idx);
 
   void scan_relocations(Context<E> &ctx);
@@ -298,7 +298,7 @@ public:
   inline u64 get_addr() const;
 
   ObjectFile<E> &file;
-  const ElfShdr &shdr;
+  const ElfShdr<E> &shdr;
   OutputSection<E> *output_section = nullptr;
 
   std::string_view name;
@@ -349,7 +349,7 @@ public:
   Kind kind;
   bool new_page = false;
   bool new_page_end = false;
-  ElfShdr shdr = { .sh_addralign = 1 };
+  ElfShdr<E> shdr = { .sh_addralign = 1 };
 
 protected:
   OutputChunk(Kind kind) : kind(kind) {}
@@ -852,11 +852,11 @@ public:
   InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
   InputFile() : name("<internal>") {}
 
-  std::string_view get_string(Context<E> &ctx, const ElfShdr &shdr);
+  std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   std::string_view get_string(Context<E> &ctx, i64 idx);
 
   MemoryMappedFile<E> *mb;
-  std::span<ElfShdr> elf_sections;
+  std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
 
   std::string name;
@@ -865,9 +865,9 @@ public:
   std::atomic_bool is_alive = false;
 
 protected:
-  template<typename T> std::span<T> get_data(Context<E> &ctx, const ElfShdr &shdr);
+  template<typename T> std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
   template<typename T> std::span<T> get_data(Context<E> &ctx, i64 idx);
-  ElfShdr *find_section(i64 type);
+  ElfShdr<E> *find_section(i64 type);
 
   std::string_view shstrtab;
 };
@@ -932,7 +932,7 @@ private:
   bool has_common_symbol;
 
   std::string_view symbol_strtab;
-  const ElfShdr *symtab_sec;
+  const ElfShdr<E> *symtab_sec;
   std::span<u32> symtab_shndx_sec;
 };
 
@@ -957,7 +957,7 @@ private:
   std::vector<const ElfSym<E> *> elf_syms;
   std::vector<u16> versyms;
   std::string_view symbol_strtab;
-  const ElfShdr *symtab_sec;
+  const ElfShdr<E> *symtab_sec;
 };
 
 //

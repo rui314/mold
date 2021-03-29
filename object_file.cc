@@ -64,7 +64,7 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb->data(ctx);
   is_dso = (ehdr.e_type == ET_DYN);
 
-  ElfShdr *sh_begin = (ElfShdr *)(mb->data(ctx) + ehdr.e_shoff);
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb->data(ctx) + ehdr.e_shoff);
 
   // e_shnum contains the total number of sections in an object file.
   // Since it is a 16-bit integer field, it's not large enough to
@@ -86,7 +86,7 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 }
 
 template <typename E>
-std::string_view InputFile<E>::get_string(Context<E> &ctx, const ElfShdr &shdr) {
+std::string_view InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
   u8 *begin = mb->data(ctx) + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb->data(ctx) + mb->size() < end)
@@ -105,7 +105,7 @@ std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 
 template <typename E>
 template <typename T>
-std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr &shdr) {
+std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
   std::string_view view = this->get_string(ctx, shdr);
   if (view.size() % sizeof(T))
     Fatal(ctx) << *this << ": corrupted section";
@@ -121,8 +121,8 @@ std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
 }
 
 template <typename E>
-ElfShdr *InputFile<E>::find_section(i64 type) {
-  for (ElfShdr &sec : elf_sections)
+ElfShdr<E> *InputFile<E>::find_section(i64 type) {
+  for (ElfShdr<E> &sec : elf_sections)
     if (sec.sh_type == type)
       return &sec;
   return nullptr;
@@ -135,7 +135,8 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
   this->is_alive = !is_in_lib;
 }
 
-static bool is_debug_section(const ElfShdr &shdr, std::string_view name) {
+template <typename E>
+static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
   return !(shdr.sh_flags & SHF_ALLOC) &&
          (name.starts_with(".debug") || name.starts_with(".zdebug"));
 }
@@ -144,7 +145,7 @@ template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
-    const ElfShdr &shdr = this->elf_sections[i];
+    const ElfShdr<E> &shdr = this->elf_sections[i];
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC))
       continue;
@@ -203,7 +204,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   }
 
   // Attach relocation sections to their target sections.
-  for (const ElfShdr &shdr : this->elf_sections) {
+  for (const ElfShdr<E> &shdr : this->elf_sections) {
     if (shdr.sh_type != SHT_RELA)
       continue;
 
@@ -908,7 +909,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
     assert(sym->esym->st_value);
 
-    auto *shdr = new ElfShdr;
+    auto *shdr = new ElfShdr<E>;
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
@@ -1092,7 +1093,7 @@ SharedFile<E>::SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 
 template <typename E>
 std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
-  if (ElfShdr *sec = this->find_section(SHT_DYNAMIC))
+  if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
     for (ElfDyn &dyn : this->template get_data<ElfDyn>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
@@ -1114,7 +1115,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
 
   std::span<u16> vers;
-  if (ElfShdr *sec = this->find_section(SHT_GNU_VERSYM))
+  if (ElfShdr<E> *sec = this->find_section(SHT_GNU_VERSYM))
     vers = this->template get_data<u16>(ctx, *sec);
 
   for (i64 i = first_global; i < esyms.size(); i++) {
@@ -1158,7 +1159,7 @@ template <typename E>
 std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
 
-  ElfShdr *verdef_sec = this->find_section(SHT_GNU_VERDEF);
+  ElfShdr<E> *verdef_sec = this->find_section(SHT_GNU_VERDEF);
   if (!verdef_sec)
     return ret;
 

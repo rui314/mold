@@ -12,7 +12,7 @@ static u64 read64be(u8 *buf) {
 
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
-                              const ElfShdr &shdr,
+                              const ElfShdr<E> &shdr,
                               std::string_view name, i64 section_idx)
   : file(file), shdr(shdr), name(name), section_idx(section_idx) {
   auto do_uncompress = [&](std::string_view data, u64 size) {

@@ -38,8 +38,8 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
   hdr.e_phentsize = sizeof(ElfPhdr);
   hdr.e_phnum = ctx.phdr->shdr.sh_size / sizeof(ElfPhdr);
-  hdr.e_shentsize = sizeof(ElfShdr);
-  hdr.e_shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr);
+  hdr.e_shentsize = sizeof(ElfShdr<E>);
+  hdr.e_shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
   hdr.e_shstrndx = ctx.shstrtab->shndx;
 }
 
@@ -49,12 +49,12 @@ void OutputShdr<E>::update_shdr(Context<E> &ctx) {
   for (OutputChunk<E> *chunk : ctx.chunks)
     if (chunk->kind != OutputChunk<E>::HEADER)
       n++;
-  this->shdr.sh_size = n * sizeof(ElfShdr);
+  this->shdr.sh_size = n * sizeof(ElfShdr<E>);
 }
 
 template <typename E>
 void OutputShdr<E>::copy_buf(Context<E> &ctx) {
-  ElfShdr *hdr = (ElfShdr *)(ctx.buf + this->shdr.sh_offset);
+  ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->shdr.sh_offset);
   hdr[0] = {};
 
   i64 i = 1;

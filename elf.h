@@ -238,8 +238,7 @@ static constexpr u32 DW_EH_PE_aligned = 0x50;
 
 struct ELF64LE {};
 
-template <typename E>
-struct ElfSym;
+template <typename E> struct ElfSym;
 
 template <>
 struct ElfSym<ELF64LE> {
@@ -257,7 +256,10 @@ struct ElfSym<ELF64LE> {
   u64 st_size;
 };
 
-struct ElfShdr {
+template <typename E> struct ElfShdr;
+
+template<>
+struct ElfShdr<ELF64LE> {
   u32 sh_name;
   u32 sh_type;
   u64 sh_flags;
@@ -270,8 +272,7 @@ struct ElfShdr {
   u64 sh_entsize;
 };
 
-template <typename E>
-struct ElfEhdr;
+template <typename E> struct ElfEhdr;
 
 template <>
 struct ElfEhdr<ELF64LE> {
