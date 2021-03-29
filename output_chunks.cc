@@ -6,7 +6,7 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 
-void OutputEhdr::copy_buf() {
+void OutputEhdr::copy_buf(Context &ctx) {
   ElfEhdr &hdr = *(ElfEhdr *)(ctx.buf + shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
 
@@ -29,7 +29,7 @@ void OutputEhdr::copy_buf() {
   hdr.e_shstrndx = ctx.shstrtab->shndx;
 }
 
-void OutputShdr::update_shdr() {
+void OutputShdr::update_shdr(Context &ctx) {
   i64 n = 1;
   for (OutputChunk *chunk : ctx.chunks)
     if (chunk->kind != OutputChunk::HEADER)
@@ -37,7 +37,7 @@ void OutputShdr::update_shdr() {
   shdr.sh_size = n * sizeof(ElfShdr);
 }
 
-void OutputShdr::copy_buf() {
+void OutputShdr::copy_buf(Context &ctx) {
   ElfShdr *hdr = (ElfShdr *)(ctx.buf + shdr.sh_offset);
   hdr[0] = {};
 
@@ -56,7 +56,7 @@ static i64 to_phdr_flags(OutputChunk *chunk) {
   return ret;
 }
 
-bool is_relro(OutputChunk *chunk) {
+bool is_relro(Context &ctx, OutputChunk *chunk) {
   u64 flags = chunk->shdr.sh_flags;
   u64 type = chunk->shdr.sh_type;
   std::string_view name = chunk->name;
@@ -69,7 +69,7 @@ bool is_relro(OutputChunk *chunk) {
   return (flags & SHF_WRITE) && match;
 }
 
-std::vector<ElfPhdr> create_phdr() {
+std::vector<ElfPhdr> create_phdr(Context &ctx) {
   std::vector<ElfPhdr> vec;
 
   auto define = [&](u64 type, u64 flags, i64 min_align, OutputChunk *chunk) {
@@ -172,13 +172,13 @@ std::vector<ElfPhdr> create_phdr() {
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {
     for (i64 i = 0; i < ctx.chunks.size(); i++) {
-      if (!is_relro(ctx.chunks[i]))
+      if (!is_relro(ctx, ctx.chunks[i]))
         continue;
 
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i]);
       ctx.chunks[i]->new_page = true;
       i++;
-      while (i < ctx.chunks.size() && is_relro(ctx.chunks[i]))
+      while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
       ctx.chunks[i - 1]->new_page_end = true;
     }
@@ -187,12 +187,12 @@ std::vector<ElfPhdr> create_phdr() {
   return vec;
 }
 
-void OutputPhdr::update_shdr() {
-  shdr.sh_size = create_phdr().size() * sizeof(ElfPhdr);
+void OutputPhdr::update_shdr(Context &ctx) {
+  shdr.sh_size = create_phdr(ctx).size() * sizeof(ElfPhdr);
 }
 
-void OutputPhdr::copy_buf() {
-  write_vector(ctx.buf + shdr.sh_offset, create_phdr());
+void OutputPhdr::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + shdr.sh_offset, create_phdr(ctx));
 }
 
 InterpSection::InterpSection() : OutputChunk(SYNTHETIC) {
@@ -202,14 +202,14 @@ InterpSection::InterpSection() : OutputChunk(SYNTHETIC) {
   shdr.sh_size = ctx.arg.dynamic_linker.size() + 1;
 }
 
-void InterpSection::copy_buf() {
+void InterpSection::copy_buf(Context &ctx) {
   write_string(ctx.buf + shdr.sh_offset, ctx.arg.dynamic_linker);
 }
 
-void RelDynSection::update_shdr() {
+void RelDynSection::update_shdr(Context &ctx) {
   shdr.sh_link = ctx.dynsym->shndx;
 
-  // .rel.dyn contents are filled by GotSection::copy_buf() and
+  // .rel.dyn contents are filled by GotSection::copy_buf(Context &ctx) and
   // InputSection::apply_reloc_alloc().
   i64 offset = ctx.got->get_reldyn_size();
   for (ObjectFile *file : ctx.objs) {
@@ -231,7 +231,7 @@ void RelDynSection::sort() {
   });
 }
 
-void StrtabSection::update_shdr() {
+void StrtabSection::update_shdr(Context &ctx) {
   shdr.sh_size = 1;
   for (ObjectFile *file : ctx.objs) {
     file->strtab_offset = shdr.sh_size;
@@ -239,7 +239,7 @@ void StrtabSection::update_shdr() {
   }
 }
 
-void ShstrtabSection::update_shdr() {
+void ShstrtabSection::update_shdr(Context &ctx) {
   shdr.sh_size = 1;
   for (OutputChunk *chunk : ctx.chunks) {
     if (!chunk->name.empty()) {
@@ -249,7 +249,7 @@ void ShstrtabSection::update_shdr() {
   }
 }
 
-void ShstrtabSection::copy_buf() {
+void ShstrtabSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
   base[0] = '\0';
 
@@ -278,12 +278,12 @@ i64 DynstrSection::find_string(std::string_view str) {
   return it->second;
 }
 
-void DynstrSection::update_shdr() {
+void DynstrSection::update_shdr(Context &ctx) {
   if (shdr.sh_size == 1)
     shdr.sh_size = 0;
 }
 
-void DynstrSection::copy_buf() {
+void DynstrSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
   base[0] = '\0';
 
@@ -299,7 +299,7 @@ void DynstrSection::copy_buf() {
   }
 }
 
-void SymtabSection::update_shdr() {
+void SymtabSection::update_shdr(Context &ctx) {
   shdr.sh_size = sizeof(ElfSym);
 
   for (ObjectFile *file : ctx.objs) {
@@ -322,11 +322,11 @@ void SymtabSection::update_shdr() {
   counter += shdr.sh_size / sizeof(ElfSym);
 }
 
-void SymtabSection::copy_buf() {
+void SymtabSection::copy_buf(Context &ctx) {
   memset(ctx.buf + shdr.sh_offset, 0, sizeof(ElfSym));
   ctx.buf[ctx.strtab->shdr.sh_offset] = '\0';
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     file->write_symtab(ctx);
   });
 }
@@ -457,7 +457,7 @@ static std::vector<u64> create_dynamic_section() {
   return vec;
 }
 
-void DynamicSection::update_shdr() {
+void DynamicSection::update_shdr(Context &ctx) {
   if (ctx.arg.is_static)
     return;
   if (!ctx.arg.shared && ctx.dsos.empty())
@@ -467,7 +467,7 @@ void DynamicSection::update_shdr() {
   shdr.sh_link = ctx.dynstr->shndx;
 }
 
-void DynamicSection::copy_buf() {
+void DynamicSection::copy_buf(Context &ctx) {
   std::vector<u64> contents = create_dynamic_section();
   assert(shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + shdr.sh_offset, contents);
@@ -534,14 +534,14 @@ OutputSection::get_instance(std::string_view name, u64 type, u64 flags) {
   return new OutputSection(name, type, flags);
 }
 
-void OutputSection::copy_buf() {
+void OutputSection::copy_buf(Context &ctx) {
   if (shdr.sh_type == SHT_NOBITS)
     return;
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     // Copy section contents to an output file
     InputSection &isec = *members[i];
-    isec.copy_buf();
+    isec.copy_buf(ctx);
 
     // Zero-clear trailing padding
     u64 this_end = isec.offset + isec.shdr.sh_size;
@@ -617,7 +617,7 @@ i64 GotSection::get_reldyn_size() const {
 }
 
 // Fill .got and .rel.dyn.
-void GotSection::copy_buf() {
+void GotSection::copy_buf(Context &ctx) {
   u64 *buf = (u64 *)(ctx.buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
@@ -660,7 +660,7 @@ void GotSection::copy_buf() {
     *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
 }
 
-void GotPltSection::copy_buf() {
+void GotPltSection::copy_buf(Context &ctx) {
   u64 *buf = (u64 *)(ctx.buf + shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -694,7 +694,7 @@ void PltSection::add_symbol(Symbol *sym) {
   ctx.dynsym->add_symbol(sym);
 }
 
-void PltSection::copy_buf() {
+void PltSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + shdr.sh_offset;
 
   static const u8 plt0[] = {
@@ -733,7 +733,7 @@ void PltGotSection::add_symbol(Symbol *sym) {
   symbols.push_back(sym);
 }
 
-void PltGotSection::copy_buf() {
+void PltGotSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + shdr.sh_offset;
 
   static const u8 data[] = {
@@ -748,11 +748,11 @@ void PltGotSection::copy_buf() {
   }
 }
 
-void RelPltSection::update_shdr() {
+void RelPltSection::update_shdr(Context &ctx) {
   shdr.sh_link = ctx.dynsym->shndx;
 }
 
-void RelPltSection::copy_buf() {
+void RelPltSection::copy_buf(Context &ctx) {
   ElfRela *buf = (ElfRela *)(ctx.buf + shdr.sh_offset);
   memset(buf, 0, shdr.sh_size);
 
@@ -840,12 +840,12 @@ void DynsymSection::sort_symbols() {
   }
 }
 
-void DynsymSection::update_shdr() {
+void DynsymSection::update_shdr(Context &ctx) {
   shdr.sh_link = ctx.dynstr->shndx;
   shdr.sh_size = sizeof(ElfSym) * symbols.size();
 }
 
-void DynsymSection::copy_buf() {
+void DynsymSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
   memset(base, 0, sizeof(ElfSym));
   i64 name_offset = ctx.dynstr->dynsym_offset;
@@ -892,7 +892,7 @@ void DynsymSection::copy_buf() {
   }
 }
 
-void HashSection::update_shdr() {
+void HashSection::update_shdr(Context &ctx) {
   if (ctx.dynsym->symbols.empty())
     return;
 
@@ -902,7 +902,7 @@ void HashSection::update_shdr() {
   shdr.sh_link = ctx.dynsym->shndx;
 }
 
-void HashSection::copy_buf() {
+void HashSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
@@ -921,7 +921,7 @@ void HashSection::copy_buf() {
   }
 }
 
-void GnuHashSection::update_shdr() {
+void GnuHashSection::update_shdr(Context &ctx) {
   if (ctx.dynsym->symbols.empty())
     return;
 
@@ -941,7 +941,7 @@ void GnuHashSection::update_shdr() {
   shdr.sh_size += num_symbols * 4;               // Hash values
 }
 
-void GnuHashSection::copy_buf() {
+void GnuHashSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
   memset(base, 0, shdr.sh_size);
 
@@ -1090,7 +1090,7 @@ void MergedSection::assign_offsets() {
     merged_strings += span.size();
 }
 
-void MergedSection::copy_buf() {
+void MergedSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
 
   tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
@@ -1159,7 +1159,7 @@ void EhFrameSection::construct() {
       ctx.eh_frame_hdr->HEADER_SIZE + num_fdes * 8;
 }
 
-void EhFrameSection::copy_buf() {
+void EhFrameSection::copy_buf(Context &ctx) {
   u8 *base = ctx.buf + shdr.sh_offset;
 
   u8 *hdr_base = nullptr;
@@ -1300,7 +1300,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
   Fatal() << isec.file << ": .eh_frame has bad symbol: " << sym;
 }
 
-void DynbssSection::add_symbol(Symbol *sym) {
+void DynbssSection::add_symbol(Context &ctx, Symbol *sym) {
   if (sym->has_copyrel)
     return;
 
@@ -1315,38 +1315,38 @@ void DynbssSection::add_symbol(Symbol *sym) {
   ctx.dynsym->add_symbol(sym);
 }
 
-void VersymSection::update_shdr() {
+void VersymSection::update_shdr(Context &ctx) {
   shdr.sh_size = contents.size() * sizeof(contents[0]);
   shdr.sh_link = ctx.dynsym->shndx;
 }
 
-void VersymSection::copy_buf() {
+void VersymSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + shdr.sh_offset, contents);
 }
 
-void VerneedSection::update_shdr() {
+void VerneedSection::update_shdr(Context &ctx) {
   shdr.sh_size = contents.size();
   shdr.sh_link = ctx.dynstr->shndx;
 }
 
-void VerneedSection::copy_buf() {
+void VerneedSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + shdr.sh_offset, contents);
 }
 
-void VerdefSection::update_shdr() {
+void VerdefSection::update_shdr(Context &ctx) {
   shdr.sh_size = contents.size();
   shdr.sh_link = ctx.dynstr->shndx;
 }
 
-void VerdefSection::copy_buf() {
+void VerdefSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + shdr.sh_offset, contents);
 }
 
-void BuildIdSection::update_shdr() {
+void BuildIdSection::update_shdr(Context &ctx) {
   shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size();
 }
 
-void BuildIdSection::copy_buf() {
+void BuildIdSection::copy_buf(Context &ctx) {
   u32 *base = (u32 *)(ctx.buf + shdr.sh_offset);
   memset(base, 0, shdr.sh_size);
   base[0] = 4;                      // Name size
@@ -1369,7 +1369,7 @@ static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
   SHA256(shards.data(), shards.size(), digest);
 }
 
-void BuildIdSection::write_buildid(i64 filesize) {
+void BuildIdSection::write_buildid(Context &ctx, i64 filesize) {
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
     write_vector(ctx.buf + shdr.sh_offset + HEADER_SIZE,

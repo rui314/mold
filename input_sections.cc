@@ -188,7 +188,7 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
   unreachable();
 }
 
-void InputSection::copy_buf() {
+void InputSection::copy_buf(Context &ctx) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
@@ -198,9 +198,9 @@ void InputSection::copy_buf() {
 
   // Apply relocations
   if (shdr.sh_flags & SHF_ALLOC)
-    apply_reloc_alloc(base);
+    apply_reloc_alloc(ctx, base);
   else
-    apply_reloc_nonalloc(base);
+    apply_reloc_nonalloc(ctx, base);
 }
 
 static u32 relax_gotpcrelx(u8 *loc) {
@@ -258,7 +258,7 @@ static u32 relax_gottpoff(u8 *loc) {
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
-void InputSection::apply_reloc_alloc(u8 *base) {
+void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
   i64 ref_idx = 0;
   ElfRela *dynrel = nullptr;
 
@@ -415,7 +415,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
 //
 // Relocations against non-SHF_ALLOC sections are not scanned by
 // scan_relocations.
-void InputSection::apply_reloc_nonalloc(u8 *base) {
+void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter += rels.size();
 
@@ -489,7 +489,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
   }
 }
 
-static i64 get_output_type() {
+static i64 get_output_type(Context &ctx) {
   if (ctx.arg.shared)
     return 0;
   if (ctx.arg.pie)
@@ -512,7 +512,7 @@ static i64 get_sym_type(Symbol &sym) {
 // or a PLT entry of a symbol, linker has to create an entry in .got
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
-void InputSection::scan_relocations() {
+void InputSection::scan_relocations(Context &ctx) {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
@@ -599,7 +599,7 @@ void InputSection::scan_relocations() {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type()][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_64: {
@@ -612,7 +612,7 @@ void InputSection::scan_relocations() {
         {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
 
-      dispatch(table[get_output_type()][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_ABS);
       break;
     }
     case R_X86_64_PC8:
@@ -625,7 +625,7 @@ void InputSection::scan_relocations() {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type()][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_PC64: {
@@ -636,7 +636,7 @@ void InputSection::scan_relocations() {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type()][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_PC);
       break;
     }
     case R_X86_64_GOT32:

@@ -538,7 +538,7 @@ static void scan_rels() {
 
   // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
-    file->scan_relocations();
+    file->scan_relocations(ctx);
   });
 
   // Exit if there was a relocation that refers an undefined symbol.
@@ -598,9 +598,9 @@ static void scan_rels() {
       sym->copyrel_readonly = file->is_readonly(sym);
 
       if (sym->copyrel_readonly)
-        ctx.dynbss_relro->add_symbol(sym);
+        ctx.dynbss_relro->add_symbol(ctx, sym);
       else
-        ctx.dynbss->add_symbol(sym);
+        ctx.dynbss->add_symbol(ctx, sym);
 
       for (Symbol *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;
@@ -892,7 +892,7 @@ static i64 get_section_rank(OutputChunk *chunk) {
   bool reaodnly = !(flags & SHF_WRITE);
   bool exec = (flags & SHF_EXECINSTR);
   bool tls = (flags & SHF_TLS);
-  bool relro = is_relro(chunk);
+  bool relro = is_relro(ctx, chunk);
   bool hasbits = !(type == SHT_NOBITS);
 
   return ((!reaodnly << 9) | (exec << 8) | (!tls << 7) |
@@ -1317,7 +1317,7 @@ int main(int argc, char **argv) {
   // section indices to them, so we can fix section header contents
   // for all output sections.
   for (OutputChunk *chunk : ctx.chunks)
-    chunk->update_shdr();
+    chunk->update_shdr(ctx);
 
   erase(ctx.chunks, [](OutputChunk *chunk) {
     return chunk->kind == OutputChunk::SYNTHETIC &&
@@ -1330,7 +1330,7 @@ int main(int argc, char **argv) {
       ctx.chunks[i]->shndx = shndx++;
 
   for (OutputChunk *chunk : ctx.chunks)
-    chunk->update_shdr();
+    chunk->update_shdr(ctx);
 
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx.chunks);
@@ -1345,7 +1345,7 @@ int main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the TLS segment
   // address. Find it out now.
-  for (ElfPhdr phdr : create_phdr()) {
+  for (ElfPhdr phdr : create_phdr(ctx)) {
     if (phdr.p_type == PT_TLS) {
       ctx.tls_begin = phdr.p_vaddr;
       ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
@@ -1365,7 +1365,7 @@ int main(int argc, char **argv) {
   {
     Timer t("copy_buf");
     tbb::parallel_for_each(ctx.chunks, [&](OutputChunk *chunk) {
-      chunk->copy_buf();
+      chunk->copy_buf(ctx);
     });
     Error::checkpoint();
   }
@@ -1379,7 +1379,7 @@ int main(int argc, char **argv) {
 
   if (ctx.buildid) {
     Timer t("build_id");
-    ctx.buildid->write_buildid(filesize);
+    ctx.buildid->write_buildid(ctx, filesize);
   }
 
   t_copy.stop();

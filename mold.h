@@ -279,11 +279,11 @@ public:
   InputSection(ObjectFile &file, const ElfShdr &shdr,
                std::string_view name, i64 section_idx);
 
-  void scan_relocations();
+  void scan_relocations(Context &ctx);
   void report_undefined_symbols();
-  void copy_buf();
-  void apply_reloc_alloc(u8 *base);
-  void apply_reloc_nonalloc(u8 *base);
+  void copy_buf(Context &ctx);
+  void apply_reloc_alloc(Context &ctx, u8 *base);
+  void apply_reloc_nonalloc(Context &ctx, u8 *base);
   void kill();
 
   inline i64 get_priority() const;
@@ -325,14 +325,14 @@ public:
 // output_chunks.cc
 //
 
-bool is_relro(OutputChunk *chunk);
+bool is_relro(Context &ctx, OutputChunk *chunk);
 
 class OutputChunk {
 public:
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
-  virtual void copy_buf() {}
-  virtual void update_shdr() {}
+  virtual void copy_buf(Context &ctx) {}
+  virtual void update_shdr(Context &ctx) {}
 
   std::string_view name;
   i64 shndx = 0;
@@ -353,7 +353,7 @@ public:
     shdr.sh_size = sizeof(ElfEhdr);
   }
 
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 };
 
 // Section header
@@ -363,8 +363,8 @@ public:
     shdr.sh_flags = SHF_ALLOC;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 // Program header
@@ -374,14 +374,14 @@ public:
     shdr.sh_flags = SHF_ALLOC;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class InterpSection : public OutputChunk {
 public:
   InterpSection();
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 };
 
 // Sections
@@ -390,7 +390,7 @@ public:
   static OutputSection *
   get_instance(std::string_view name, u64 type, u64 flags);
 
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 
   static inline std::vector<OutputSection *> instances;
 
@@ -422,7 +422,7 @@ public:
   }
 
   i64 get_reldyn_size() const;
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> got_syms;
   std::vector<Symbol *> gottpoff_syms;
@@ -440,7 +440,7 @@ public:
     shdr.sh_addralign = GOT_SIZE;
   }
 
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 };
 
 class PltSection : public OutputChunk {
@@ -453,7 +453,7 @@ public:
   }
 
   void add_symbol(Symbol *sym);
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> symbols;
 };
@@ -468,7 +468,7 @@ public:
   }
 
   void add_symbol(Symbol *sym);
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> symbols;
 };
@@ -483,8 +483,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class RelDynSection : public OutputChunk {
@@ -497,7 +497,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
+  void update_shdr(Context &ctx) override;
   void sort();
 };
 
@@ -509,7 +509,7 @@ public:
     shdr.sh_size = 1;
   }
 
-  void update_shdr() override;
+  void update_shdr(Context &ctx) override;
 };
 
 class ShstrtabSection : public OutputChunk {
@@ -519,8 +519,8 @@ public:
     shdr.sh_type = SHT_STRTAB;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class DynstrSection : public OutputChunk {
@@ -533,8 +533,8 @@ DynstrSection() : OutputChunk(SYNTHETIC) {
 
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   i64 dynsym_offset = -1;
 
@@ -552,8 +552,8 @@ public:
     shdr.sh_entsize = sizeof(ElfDyn);
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class SymtabSection : public OutputChunk {
@@ -565,8 +565,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class DynsymSection : public OutputChunk {
@@ -581,8 +581,8 @@ public:
 
   void add_symbol(Symbol *sym);
   void sort_symbols();
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> symbols;
 };
@@ -597,8 +597,8 @@ public:
     shdr.sh_addralign = 4;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 };
 
 class GnuHashSection : public OutputChunk {
@@ -610,8 +610,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
@@ -630,7 +630,7 @@ public:
 
   SectionFragment *insert(std::string_view data, i64 alignment);
   void assign_offsets();
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
 
   static inline std::vector<MergedSection *> instances;
 
@@ -660,7 +660,7 @@ public:
   }
 
   void construct();
-  void copy_buf() override;
+  void copy_buf(Context &ctx) override;
   u64 get_addr(const Symbol &sym);
 
   std::vector<CieRecord *> cies;
@@ -689,7 +689,7 @@ public:
     shdr.sh_addralign = 64;
   }
 
-  void add_symbol(Symbol *sym);
+  void add_symbol(Context &ctx, Symbol *sym);
 
   std::vector<Symbol *> symbols;
 };
@@ -704,8 +704,8 @@ public:
     shdr.sh_addralign = 2;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<u16> contents;
 };
@@ -719,8 +719,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
 };
@@ -734,8 +734,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
 };
@@ -750,15 +750,15 @@ public:
     shdr.sh_size = 1;
   }
 
-  void update_shdr() override;
-  void copy_buf() override;
-  void write_buildid(i64 filesize);
+  void update_shdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+  void write_buildid(Context &ctx, i64 filesize);
 
   static constexpr i64 HEADER_SIZE = 16;
 };
 
 bool is_c_identifier(std::string_view name);
-std::vector<ElfPhdr> create_phdr();
+std::vector<ElfPhdr> create_phdr(Context &ctx);
 
 //
 // object_file.cc
@@ -840,7 +840,7 @@ public:
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
   void claim_unresolved_symbols();
-  void scan_relocations();
+  void scan_relocations(Context &ctx);
   void convert_common_symbols(Context &ctx);
   void compute_symtab(Context &ctx);
   void write_symtab(Context &ctx);

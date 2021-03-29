@@ -830,11 +830,11 @@ void ObjectFile::claim_unresolved_symbols() {
   }
 }
 
-void ObjectFile::scan_relocations() {
+void ObjectFile::scan_relocations(Context &ctx) {
   // Scan relocations against seciton contents
   for (InputSection *isec : sections)
     if (isec)
-      isec->scan_relocations();
+      isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames
   for (CieRecord &cie : cies) {
