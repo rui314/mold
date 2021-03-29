@@ -16,7 +16,7 @@ i64 BuildId::size(Context<E> &ctx) const {
   case UUID:
     return 16;
   }
-  unreachable();
+  unreachable(ctx);
 }
 
 template <typename E>
@@ -1251,7 +1251,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
       return;
     }
-    unreachable();
+    unreachable(ctx);
   };
 
   struct Entry {
@@ -1475,7 +1475,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
     return;
   }
 
-  unreachable();
+  unreachable(ctx);
 }
 
 template class OutputChunk<ELF64LE>;

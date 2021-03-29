@@ -46,5 +46,4 @@ bool GlobPattern::match(std::string_view str) const {
   case GENERIC:
     return generic_match(pat, str);
   }
-  unreachable();
 }

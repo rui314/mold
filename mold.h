@@ -1415,11 +1415,10 @@ private:
   SyncOut<E> out;
 };
 
-[[noreturn]]
-void handle_unreachable(const char *file, i64 line);
-
-#define unreachable() \
-  handle_unreachable(__FILE__, __LINE__)
+#define unreachable(ctx)                                               \
+  do {                                                                 \
+    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
+  } while (0)
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
