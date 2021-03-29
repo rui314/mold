@@ -112,6 +112,7 @@ static constexpr u32 ELFCLASS64 = 2;
 
 static constexpr u32 EV_CURRENT = 1;
 
+static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_X86_64 = 62;
 
 static constexpr u32 EI_CLASS = 4;
@@ -218,6 +219,48 @@ static constexpr u32 R_X86_64_TLSDESC = 36;
 static constexpr u32 R_X86_64_IRELATIVE = 37;
 static constexpr u32 R_X86_64_GOTPCRELX = 41;
 static constexpr u32 R_X86_64_REX_GOTPCRELX = 42;
+
+static constexpr u32 R_386_NONE = 0;
+static constexpr u32 R_386_32 = 1;
+static constexpr u32 R_386_PC32 = 2;
+static constexpr u32 R_386_GOT32 = 3;
+static constexpr u32 R_386_PLT32 = 4;
+static constexpr u32 R_386_COPY = 5;
+static constexpr u32 R_386_GLOB_DAT = 6;
+static constexpr u32 R_386_JUMP_SLOT = 7;
+static constexpr u32 R_386_RELATIVE = 8;
+static constexpr u32 R_386_GOTOFF = 9;
+static constexpr u32 R_386_GOTPC = 10;
+static constexpr u32 R_386_32PLT = 11;
+static constexpr u32 R_386_TLS_TPOFF = 14;
+static constexpr u32 R_386_TLS_IE = 15;
+static constexpr u32 R_386_TLS_GOTIE = 16;
+static constexpr u32 R_386_TLS_LE = 17;
+static constexpr u32 R_386_TLS_GD = 18;
+static constexpr u32 R_386_TLS_LDM = 19;
+static constexpr u32 R_386_16 = 20;
+static constexpr u32 R_386_PC16 = 21;
+static constexpr u32 R_386_8 = 22;
+static constexpr u32 R_386_PC8 = 23;
+static constexpr u32 R_386_TLS_GD_32 = 24;
+static constexpr u32 R_386_TLS_GD_PUSH = 25;
+static constexpr u32 R_386_TLS_GD_CALL = 26;
+static constexpr u32 R_386_TLS_GD_POP = 27;
+static constexpr u32 R_386_TLS_LDM_32 = 28;
+static constexpr u32 R_386_TLS_LDM_PUSH = 29;
+static constexpr u32 R_386_TLS_LDM_CALL = 30;
+static constexpr u32 R_386_TLS_LDM_POP = 31;
+static constexpr u32 R_386_TLS_LDO_32 = 32;
+static constexpr u32 R_386_TLS_IE_32 = 33;
+static constexpr u32 R_386_TLS_LE_32 = 34;
+static constexpr u32 R_386_TLS_DTPMOD32 = 35;
+static constexpr u32 R_386_TLS_DTPOFF32 = 36;
+static constexpr u32 R_386_TLS_TPOFF32 = 37;
+static constexpr u32 R_386_TLS_GOTDESC = 39;
+static constexpr u32 R_386_TLS_DESC_CALL = 40;
+static constexpr u32 R_386_TLS_DESC = 41;
+static constexpr u32 R_386_IRELATIVE = 42;
+static constexpr u32 R_386_GOT32X = 43;
 
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
