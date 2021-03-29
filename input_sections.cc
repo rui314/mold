@@ -490,7 +490,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPC32_TLSDESC:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
-              << rel.r_type;
+                 << rel.r_type;
       break;
     default:
       Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
@@ -698,7 +698,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_X86_64_TLSGD: {
       if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+        Fatal(ctx) << *this
+                   << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
 
       if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported) {
         rel_types[i++] = R_TLSGD_RELAX_LE;
@@ -710,7 +711,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+        Fatal(ctx) << *this
+                   << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
       if (sym.is_imported)
         Fatal(ctx) << *this << ": TLSLD reloc refers external symbol " << sym;
 
