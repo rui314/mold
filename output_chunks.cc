@@ -327,7 +327,7 @@ void SymtabSection::copy_buf() {
   ctx.buf[ctx.strtab->shdr.sh_offset] = '\0';
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-    file->write_symtab();
+    file->write_symtab(ctx);
   });
 }
 

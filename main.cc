@@ -57,16 +57,16 @@ static ObjectFile *new_object_file(Context &ctx, MemoryMappedFile *mb,
   count++;
 
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
-  ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
-  ctx.tg.run([=]() { file->parse(); });
+  ObjectFile *file = new ObjectFile(ctx, mb, archive_name, in_lib);
+  ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
 }
 
 static SharedFile *new_shared_file(Context &ctx, MemoryMappedFile *mb) {
-  SharedFile *file = new SharedFile(mb, ctx.as_needed);
-  ctx.tg.run([=]() { file->parse(); });
+  SharedFile *file = new SharedFile(ctx, mb);
+  ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
@@ -258,15 +258,15 @@ static void resolve_obj_symbols() {
   Timer t("resolve_obj_symbols");
 
   // Register archive symbols
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     if (file->is_in_lib)
-      file->resolve_lazy_symbols();
+      file->resolve_lazy_symbols(ctx);
   });
 
   // Register defined symbols
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     if (!file->is_in_lib)
-      file->resolve_regular_symbols();
+      file->resolve_regular_symbols(ctx);
   });
 
   // Mark reachable objects to decide which files to include
@@ -284,8 +284,9 @@ static void resolve_obj_symbols() {
   tbb::parallel_do(roots,
                    [&](ObjectFile *file,
                        tbb::parallel_do_feeder<ObjectFile *> &feeder) {
-                     file->mark_live_objects(
-                       [&](ObjectFile *obj) { feeder.add(obj); });
+                     file->mark_live_objects(ctx, [&](ObjectFile *obj) {
+                       feeder.add(obj);
+                     });
                    });
 
   // Remove symbols of eliminated objects.
@@ -358,7 +359,7 @@ static void convert_common_symbols() {
   Timer t("convert_common_symbols");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-    file->convert_common_symbols();
+    file->convert_common_symbols(ctx);
   });
 }
 
@@ -528,7 +529,7 @@ static void convert_undefined_weak_symbols() {
   Timer t("undef_weak");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-    file->convert_undefined_weak_symbols();
+    file->convert_undefined_weak_symbols(ctx);
   });
 }
 
@@ -1225,8 +1226,8 @@ int main(int argc, char **argv) {
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ctx.internal_obj = new ObjectFile;
-  ctx.internal_obj->resolve_regular_symbols();
+  ctx.internal_obj = new ObjectFile(ctx);
+  ctx.internal_obj->resolve_regular_symbols(ctx);
   ctx.objs.push_back(ctx.internal_obj);
 
   // Add symbols from shared object files.
@@ -1293,8 +1294,8 @@ int main(int argc, char **argv) {
   // Compute .symtab and .strtab sizes for each file.
   {
     Timer t("compute_symtab");
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
-      file->compute_symtab();
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
+      file->compute_symtab(ctx);
     });
   }
 

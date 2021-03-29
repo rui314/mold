@@ -827,21 +827,23 @@ protected:
 
 class ObjectFile : public InputFile {
 public:
-  ObjectFile(MemoryMappedFile *mb, std::string archive_name, bool is_in_lib);
-  ObjectFile();
+  ObjectFile(Context &ctx, MemoryMappedFile *mb,
+             std::string archive_name, bool is_in_lib);
 
-  void parse();
-  void resolve_lazy_symbols();
-  void resolve_regular_symbols();
-  void mark_live_objects(std::function<void(ObjectFile *)> feeder);
-  void convert_undefined_weak_symbols();
+  ObjectFile(Context &ctx);
+
+  void parse(Context &ctx);
+  void resolve_lazy_symbols(Context &ctx);
+  void resolve_regular_symbols(Context &ctx);
+  void mark_live_objects(Context &ctx, std::function<void(ObjectFile *)> feeder);
+  void convert_undefined_weak_symbols(Context &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
   void claim_unresolved_symbols();
   void scan_relocations();
-  void convert_common_symbols();
-  void compute_symtab();
-  void write_symtab();
+  void convert_common_symbols(Context &ctx);
+  void compute_symtab(Context &ctx);
+  void write_symtab(Context &ctx);
 
   inline i64 get_shndx(const ElfSym &esym);
   inline InputSection *get_section(const ElfSym &esym);
@@ -868,12 +870,12 @@ public:
   u64 strtab_size = 0;
 
 private:
-  void initialize_sections();
-  void initialize_symbols();
+  void initialize_sections(Context &ctx);
+  void initialize_symbols(Context &ctx);
   void initialize_mergeable_sections();
   void initialize_ehframe_sections();
   void read_ehframe(InputSection &isec);
-  void maybe_override_symbol(Symbol &sym, i64 symidx);
+  void maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx);
   void merge_visibility(Symbol &sym, u8 visibility);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
@@ -887,11 +889,8 @@ private:
 
 class SharedFile : public InputFile {
 public:
-  SharedFile(MemoryMappedFile *mb, bool as_needed) : InputFile(mb) {
-    is_alive = !as_needed;
-  }
-
-  void parse();
+  SharedFile(Context &ctx, MemoryMappedFile *mb);
+  void parse(Context &ctx);
   void resolve_symbols();
   std::vector<Symbol *> find_aliases(Symbol *sym);
   bool is_readonly(Symbol *sym);

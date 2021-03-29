@@ -116,8 +116,8 @@ ElfShdr *InputFile::find_section(i64 type) {
   return nullptr;
 }
 
-ObjectFile::ObjectFile(MemoryMappedFile *mb, std::string archive_name,
-                       bool is_in_lib)
+ObjectFile::ObjectFile(Context &ctx, MemoryMappedFile *mb,
+                       std::string archive_name, bool is_in_lib)
   : InputFile(mb), archive_name(archive_name), is_in_lib(is_in_lib) {
   is_alive = !is_in_lib;
 }
@@ -127,7 +127,7 @@ static bool is_debug_section(const ElfShdr &shdr, std::string_view name) {
          (name.starts_with(".debug") || name.starts_with(".zdebug"));
 }
 
-void ObjectFile::initialize_sections() {
+void ObjectFile::initialize_sections(Context &ctx) {
   // Read sections
   for (i64 i = 0; i < elf_sections.size(); i++) {
     const ElfShdr &shdr = elf_sections[i];
@@ -335,7 +335,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
   }
 }
 
-static bool should_write_to_local_symtab(Symbol &sym) {
+static bool should_write_to_local_symtab(Context &ctx, Symbol &sym) {
   if (ctx.arg.discard_all || ctx.arg.strip_all)
     return false;
   if (sym.get_type() == STT_SECTION)
@@ -359,7 +359,7 @@ static bool should_write_to_local_symtab(Symbol &sym) {
   return true;
 }
 
-void ObjectFile::initialize_symbols() {
+void ObjectFile::initialize_symbols(Context &ctx) {
   if (!symtab_sec)
     return;
 
@@ -389,7 +389,7 @@ void ObjectFile::initialize_symbols() {
       sym.input_section = get_section(esym);
     }
 
-    if (should_write_to_local_symtab(sym)) {
+    if (should_write_to_local_symtab(ctx, sym)) {
       sym.write_to_symtab = true;
       strtab_size += sym.name.size() + 1;
       num_local_symtab++;
@@ -579,7 +579,7 @@ void ObjectFile::initialize_mergeable_sections() {
     fragments.insert(fragments.end(), m.fragments.begin(), m.fragments.end());
 }
 
-void ObjectFile::parse() {
+void ObjectFile::parse(Context &ctx) {
   sections.resize(elf_sections.size());
   symtab_sec = find_section(SHT_SYMTAB);
 
@@ -589,8 +589,8 @@ void ObjectFile::parse() {
     symbol_strtab = get_string(symtab_sec->sh_link);
   }
 
-  initialize_sections();
-  initialize_symbols();
+  initialize_sections(ctx);
+  initialize_symbols(ctx);
   initialize_mergeable_sections();
   initialize_ehframe_sections();
 }
@@ -621,7 +621,7 @@ static u64 get_rank(const Symbol &sym) {
   return get_rank(sym.file, *sym.esym, sym.input_section);
 }
 
-void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
+void ObjectFile::maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx) {
   InputSection *isec = nullptr;
   const ElfSym &esym = elf_syms[symidx];
   if (!esym.is_abs() && !esym.is_common())
@@ -678,7 +678,7 @@ void ObjectFile::merge_visibility(Symbol &sym, u8 visibility) {
       break;
 }
 
-void ObjectFile::resolve_lazy_symbols() {
+void ObjectFile::resolve_lazy_symbols(Context &ctx) {
   assert(is_in_lib);
 
   for (i64 i = first_global; i < symbols.size(); i++) {
@@ -704,7 +704,7 @@ void ObjectFile::resolve_lazy_symbols() {
   }
 }
 
-void ObjectFile::resolve_regular_symbols() {
+void ObjectFile::resolve_regular_symbols(Context &ctx) {
   assert(!is_in_lib);
 
   for (i64 i = first_global; i < symbols.size(); i++) {
@@ -713,11 +713,12 @@ void ObjectFile::resolve_regular_symbols() {
     merge_visibility(sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
     if (esym.is_defined())
-      maybe_override_symbol(sym, i);
+      maybe_override_symbol(ctx, sym, i);
   }
 }
 
-void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
+void ObjectFile::mark_live_objects(Context &ctx,
+                                   std::function<void(ObjectFile *)> feeder) {
   assert(is_alive);
 
   for (i64 i = first_global; i < symbols.size(); i++) {
@@ -727,7 +728,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
 
     if (esym.is_defined()) {
       if (is_in_lib)
-        maybe_override_symbol(sym, i);
+        maybe_override_symbol(ctx, sym, i);
       continue;
     }
 
@@ -748,7 +749,7 @@ void ObjectFile::mark_live_objects(std::function<void(ObjectFile *)> feeder) {
   }
 }
 
-void ObjectFile::convert_undefined_weak_symbols() {
+void ObjectFile::convert_undefined_weak_symbols(Context &ctx) {
   for (i64 i = first_global; i < symbols.size(); i++) {
     const ElfSym &esym = elf_syms[i];
 
@@ -849,7 +850,7 @@ void ObjectFile::scan_relocations() {
   }
 }
 
-void ObjectFile::convert_common_symbols() {
+void ObjectFile::convert_common_symbols(Context &ctx) {
   if (!has_common_symbol)
     return;
 
@@ -890,7 +891,7 @@ static bool should_write_to_global_symtab(Symbol &sym) {
   return sym.get_type() != STT_SECTION && sym.is_alive();
 }
 
-void ObjectFile::compute_symtab() {
+void ObjectFile::compute_symtab(Context &ctx) {
   if (ctx.arg.strip_all)
     return;
 
@@ -920,7 +921,7 @@ void ObjectFile::compute_symtab() {
   }
 }
 
-void ObjectFile::write_symtab() {
+void ObjectFile::write_symtab(Context &ctx) {
   u8 *symtab_base = ctx.buf + ctx.symtab->shdr.sh_offset;
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = strtab_offset;
@@ -968,7 +969,7 @@ bool is_c_identifier(std::string_view name) {
   return std::regex_match(name.begin(), name.end(), re);
 }
 
-ObjectFile::ObjectFile() {
+ObjectFile::ObjectFile(Context &ctx) {
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym>(1);
   symbols.push_back(new Symbol);
@@ -1040,6 +1041,10 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   return out;
 }
 
+SharedFile::SharedFile(Context &ctx, MemoryMappedFile *mb) : InputFile(mb) {
+  is_alive = !ctx.as_needed;
+}
+
 std::string_view SharedFile::get_soname() {
   if (ElfShdr *sec = find_section(SHT_DYNAMIC))
     for (ElfDyn &dyn : get_data<ElfDyn>(*sec))
@@ -1048,7 +1053,7 @@ std::string_view SharedFile::get_soname() {
   return name;
 }
 
-void SharedFile::parse() {
+void SharedFile::parse(Context &ctx) {
   symtab_sec = find_section(SHT_DYNSYM);
   if (!symtab_sec)
     return;
