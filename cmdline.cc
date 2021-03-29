@@ -3,40 +3,42 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
-static std::vector<std::string_view> read_response_file(std::string_view path) {
+static std::vector<std::string_view>
+read_response_file(Context &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
-  MemoryMappedFile *mb = MemoryMappedFile::must_open(std::string(path));
+  MemoryMappedFile *mb = MemoryMappedFile::must_open(ctx, std::string(path));
+  u8 *data = mb->data(ctx);
 
   auto read_quoted = [&](i64 i, char quote) {
     std::string *buf = new std::string;
-    while (i < mb->size() && mb->data()[i] != quote) {
-      if (mb->data()[i] == '\\') {
-        buf->append(1, mb->data()[i + 1]);
+    while (i < mb->size() && data[i] != quote) {
+      if (data[i] == '\\') {
+        buf->append(1, data[i + 1]);
         i += 2;
       } else {
-        buf->append(1, mb->data()[i++]);
+        buf->append(1, data[i++]);
       }
     }
     if (i >= mb->size())
-      Fatal() << path << ": premature end of input";
+      Fatal(ctx) << path << ": premature end of input";
     vec.push_back(std::string_view(*buf));
     return i + 1;
   };
 
   auto read_unquoted = [&](i64 i) {
     std::string *buf = new std::string;
-    while (i < mb->size() && !isspace(mb->data()[i]))
-      buf->append(1, mb->data()[i++]);
+    while (i < mb->size() && !isspace(data[i]))
+      buf->append(1, data[i++]);
     vec.push_back(std::string_view(*buf));
     return i;
   };
 
   for (i64 i = 0; i < mb->size();) {
-    if (isspace(mb->data()[i]))
+    if (isspace(data[i]))
       i++;
-    else if (mb->data()[i] == '\'')
+    else if (data[i] == '\'')
       i = read_quoted(i + 1, '\'');
-    else if (mb->data()[i] == '\"')
+    else if (data[i] == '\"')
       i = read_quoted(i + 1, '\"');
     else
       i = read_unquoted(i);
@@ -44,12 +46,13 @@ static std::vector<std::string_view> read_response_file(std::string_view path) {
   return vec;
 }
 
-std::vector<std::string_view> expand_response_files(char **argv) {
+std::vector<std::string_view>
+expand_response_files(Context &ctx, char **argv) {
   std::vector<std::string_view> vec;
 
   for (i64 i = 0; argv[i]; i++) {
     if (argv[i][0] == '@')
-      append(vec, read_response_file(argv[i] + 1));
+      append(vec, read_response_file(ctx, argv[i] + 1));
     else
       vec.push_back(argv[i]);
   }
@@ -67,12 +70,12 @@ static std::vector<std::string> add_dashes(std::string name) {
   return {"-" + name, "--" + name};
 }
 
-bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
-              std::string name) {
+bool read_arg(Context &ctx, std::span<std::string_view> &args,
+              std::string_view &arg, std::string name) {
   if (name.size() == 1) {
     if (args[0] == "-" + name) {
       if (args.size() == 1)
-        Fatal() << "option -" << name << ": argument missing";
+        Fatal(ctx) << "option -" << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -89,7 +92,7 @@ bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
-        Fatal() << "option " << name << ": argument missing";
+        Fatal(ctx) << "option " << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -128,28 +131,28 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   return false;
 }
 
-static i64 parse_hex(std::string opt, std::string_view value) {
+static i64 parse_hex(Context &ctx, std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
-    Fatal() << "option -" << opt << ": not a hexadecimal number";
+    Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   value = value.substr(2);
   if (value.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
-    Fatal() << "option -" << opt << ": not a hexadecimal number";
+    Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
-static i64 parse_number(std::string opt, std::string_view value) {
+static i64 parse_number(Context &ctx, std::string opt, std::string_view value) {
   if (value.find_first_not_of("0123456789") != std::string_view::npos)
-    Fatal() << "option -" << opt << ": not a number";
+    Fatal(ctx) << "option -" << opt << ": not a number";
   return std::stol(std::string(value), nullptr, 16);
 }
 
-static std::vector<u8> parse_hex_build_id(std::string_view arg) {
+static std::vector<u8> parse_hex_build_id(Context &ctx, std::string_view arg) {
   assert(arg.starts_with("0x") || arg.starts_with("0X"));
 
   if (arg.size() % 2)
-    Fatal() << "invalid build-id: " << arg;
+    Fatal(ctx) << "invalid build-id: " << arg;
   if (arg.substr(2).find_first_not_of("0123456789abcdefABCDEF") != arg.npos)
-    Fatal() << "invalid build-id: " << arg;
+    Fatal(ctx) << "invalid build-id: " << arg;
 
   arg = arg.substr(2);
 
@@ -200,16 +203,16 @@ void parse_nonpositional_args(Context &ctx,
     std::string_view arg;
 
     if (read_flag(args, "v") || read_flag(args, "version")) {
-      SyncOut() << "mold " GIT_HASH " (compatible with GNU ld)";
+      SyncOut(ctx) << "mold " GIT_HASH " (compatible with GNU ld)";
       exit(0);
     }
 
-    if (read_arg(args, arg, "o")) {
+    if (read_arg(ctx, args, arg, "o")) {
       ctx.arg.output = arg;
-    } else if (read_arg(args, arg, "dynamic-linker") ||
-               read_arg(args, arg, "I")) {
+    } else if (read_arg(ctx, args, arg, "dynamic-linker") ||
+               read_arg(ctx, args, arg, "I")) {
       ctx.arg.dynamic_linker = arg;
-    } else if (read_arg(args, arg, "no-dynamic-linker")) {
+    } else if (read_arg(ctx, args, arg, "no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       ctx.arg.export_dynamic = true;
@@ -219,9 +222,10 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.Bsymbolic = true;
     } else if (read_flag(args, "Bsymbolic-functions")) {
       ctx.arg.Bsymbolic_functions = true;
-    } else if (read_arg(args, arg, "e") || read_arg(args, arg, "entry")) {
+    } else if (read_arg(ctx, args, arg, "e") ||
+               read_arg(ctx, args, arg, "entry")) {
       ctx.arg.entry = arg;
-    } else if (read_arg(args, arg, "Map")) {
+    } else if (read_arg(ctx, args, arg, "Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
     } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
@@ -238,21 +242,24 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {
       ctx.arg.demangle = false;
-    } else if (read_arg(args, arg, "y") || read_arg(args, arg, "trace-symbol")) {
+    } else if (read_arg(ctx, args, arg, "y") ||
+               read_arg(ctx, args, arg, "trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);
-    } else if (read_arg(args, arg, "filler")) {
-      ctx.arg.filler = parse_hex("filler", arg);
-    } else if (read_arg(args, arg, "L") || read_arg(args, arg, "library-path")) {
+    } else if (read_arg(ctx, args, arg, "filler")) {
+      ctx.arg.filler = parse_hex(ctx, "filler", arg);
+    } else if (read_arg(ctx, args, arg, "L") ||
+               read_arg(ctx, args, arg, "library-path")) {
       ctx.arg.library_paths.push_back(arg);
-    } else if (read_arg(args, arg, "sysroot")) {
+    } else if (read_arg(ctx, args, arg, "sysroot")) {
       ctx.arg.sysroot = arg;
-    } else if (read_arg(args, arg, "u") || read_arg(args, arg, "undefined")) {
+    } else if (read_arg(ctx, args, arg, "u") ||
+               read_arg(ctx, args, arg, "undefined")) {
       ctx.arg.undefined.push_back(arg);
-    } else if (read_arg(args, arg, "init")) {
+    } else if (read_arg(ctx, args, arg, "init")) {
       ctx.arg.init = arg;
-    } else if (read_arg(args, arg, "fini")) {
+    } else if (read_arg(ctx, args, arg, "fini")) {
       ctx.arg.fini = arg;
-    } else if (read_arg(args, arg, "hash-style")) {
+    } else if (read_arg(ctx, args, arg, "hash-style")) {
       if (arg == "sysv") {
         ctx.arg.hash_style_sysv = true;
         ctx.arg.hash_style_gnu = false;
@@ -263,9 +270,10 @@ void parse_nonpositional_args(Context &ctx,
         ctx.arg.hash_style_sysv = true;
         ctx.arg.hash_style_gnu = true;
       } else {
-        Fatal() << "invalid --hash-style argument: " << arg;
+        Fatal(ctx) << "invalid --hash-style argument: " << arg;
       }
-    } else if (read_arg(args, arg, "soname") || read_arg(args, arg, "h")) {
+    } else if (read_arg(ctx, args, arg, "soname") ||
+               read_arg(ctx, args, arg, "h")) {
       ctx.arg.soname = arg;
     } else if (read_flag(args, "allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;
@@ -349,8 +357,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {
       ctx.arg.quick_exit = false;
-    } else if (read_arg(args, arg, "thread-count")) {
-      ctx.arg.thread_count = parse_number("thread-count", arg);
+    } else if (read_arg(ctx, args, arg, "thread-count")) {
+      ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
     } else if (read_flag(args, "threads")) {
       ctx.arg.thread_count = get_default_thread_count();
     } else if (read_flag(args, "no-threads")) {
@@ -363,18 +371,18 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.strip_all = true;
     } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
       ctx.arg.strip_debug = true;
-    } else if (read_arg(args, arg, "rpath")) {
+    } else if (read_arg(ctx, args, arg, "rpath")) {
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;
-    } else if (read_arg(args, arg, "version-script")) {
+    } else if (read_arg(ctx, args, arg, "version-script")) {
       parse_version_script(ctx, std::string(arg));
-    } else if (read_arg(args, arg, "dynamic-list")) {
+    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
       parse_dynamic_list(ctx, std::string(arg));
     } else if (read_flag(args, "build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;
-    } else if (read_arg(args, arg, "build-id")) {
+    } else if (read_arg(ctx, args, arg, "build-id")) {
       if (arg == "none") {
         ctx.arg.build_id.kind = BuildId::NONE;
       } else if (arg == "uuid") {
@@ -390,30 +398,32 @@ void parse_nonpositional_args(Context &ctx,
         ctx.arg.build_id.hash_size = 32;
       } else if (arg.starts_with("0x") || arg.starts_with("0X")) {
         ctx.arg.build_id.kind = BuildId::HEX;
-        ctx.arg.build_id.value = parse_hex_build_id(arg);
+        ctx.arg.build_id.value = parse_hex_build_id(ctx, arg);
       } else {
-        Fatal() << "invalid --build-id argument: " << arg;
+        Fatal(ctx) << "invalid --build-id argument: " << arg;
       }
     } else if (read_flag(args, "no-build-id")) {
       ctx.arg.build_id.kind = BuildId::NONE;
-    } else if (read_arg(args, arg, "auxiliary") || read_arg(args, arg, "f")) {
+    } else if (read_arg(ctx, args, arg, "auxiliary") ||
+               read_arg(ctx, args, arg, "f")) {
       ctx.arg.auxiliary.push_back(arg);
-    } else if (read_arg(args, arg, "filter") || read_arg(args, arg, "F")) {
+    } else if (read_arg(ctx, args, arg, "filter") ||
+               read_arg(ctx, args, arg, "F")) {
       ctx.arg.filter.push_back(arg);
-    } else if (read_arg(args, arg, "exclude-libs")) {
+    } else if (read_arg(ctx, args, arg, "exclude-libs")) {
       ctx.arg.exclude_libs = split(arg, ",");
     } else if (read_flag(args, "preload")) {
       ctx.arg.preload = true;
-    } else if (read_arg(args, arg, "z")) {
-    } else if (read_arg(args, arg, "O")) {
+    } else if (read_arg(ctx, args, arg, "z")) {
+    } else if (read_arg(ctx, args, arg, "O")) {
     } else if (read_flag(args, "O0")) {
     } else if (read_flag(args, "O1")) {
     } else if (read_flag(args, "O2")) {
-    } else if (read_arg(args, arg, "plugin")) {
-    } else if (read_arg(args, arg, "plugin-opt")) {
+    } else if (read_arg(ctx, args, arg, "plugin")) {
+    } else if (read_arg(ctx, args, arg, "plugin-opt")) {
     } else if (read_flag(args, "color-diagnostics")) {
     } else if (read_flag(args, "gdb-index")) {
-    } else if (read_arg(args, arg, "m")) {
+    } else if (read_arg(ctx, args, arg, "m")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {
@@ -422,9 +432,9 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "enable-new-dtags")) {
     } else if (read_flag(args, "disable-new-dtags")) {
-    } else if (read_arg(args, arg, "sort-section")) {
+    } else if (read_arg(ctx, args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
-    } else if (read_arg(args, arg, "rpath-link")) {
+    } else if (read_arg(ctx, args, arg, "rpath-link")) {
     } else if (read_flag(args, "as-needed")) {
       remaining.push_back("-as-needed");
     } else if (read_flag(args, "no-as-needed")) {
@@ -433,10 +443,11 @@ void parse_nonpositional_args(Context &ctx,
       remaining.push_back("-whole-archive");
     } else if (read_flag(args, "no-whole-archive")) {
       remaining.push_back("-no-whole-archive");
-    } else if (read_arg(args, arg, "l")) {
+    } else if (read_arg(ctx, args, arg, "l")) {
       remaining.push_back("-l");
       remaining.push_back(arg);
-    } else if (read_arg(args, arg, "script") || read_arg(args, arg, "T")) {
+    } else if (read_arg(ctx, args, arg, "script") ||
+               read_arg(ctx, args, arg, "T")) {
       remaining.push_back(arg);
     } else if (read_flag(args, "push-state")) {
       remaining.push_back("-push-state");
@@ -444,7 +455,7 @@ void parse_nonpositional_args(Context &ctx,
       remaining.push_back("-pop-state");
     } else {
       if (args[0][0] == '-')
-        Fatal() << "mold: unknown command line option: " << args[0];
+        Fatal(ctx) << "mold: unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
     }
@@ -460,9 +471,9 @@ void parse_nonpositional_args(Context &ctx,
 
   if (!ctx.arg.shared) {
     if (!ctx.arg.filter.empty())
-      Fatal() << "-filter may not be used without -shared";
+      Fatal(ctx) << "-filter may not be used without -shared";
     if (!ctx.arg.auxiliary.empty())
-      Fatal() << "-auxiliary may not be used without -shared";
+      Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
   if (ctx.arg.output.empty())

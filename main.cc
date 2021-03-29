@@ -8,9 +8,7 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
-Context ctx;
-
-i64 BuildId::size() const {
+i64 BuildId::size(Context &ctx) const {
   switch (kind) {
   case HEX:
     return value.size();
@@ -19,22 +17,25 @@ i64 BuildId::size() const {
   case UUID:
     return 16;
   }
-  unreachable();
+  unreachable(ctx);
 }
 
-static bool is_text_file(MemoryMappedFile *mb) {
+static bool is_text_file(Context &ctx, MemoryMappedFile *mb) {
+  u8 *data = mb->data(ctx);
   return mb->size() >= 4 &&
-         isprint(mb->data()[0]) &&
-         isprint(mb->data()[1]) &&
-         isprint(mb->data()[2]) &&
-         isprint(mb->data()[3]);
+         isprint(data[0]) &&
+         isprint(data[1]) &&
+         isprint(data[2]) &&
+         isprint(data[3]);
 }
 
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
-static FileType get_file_type(MemoryMappedFile *mb) {
-  if (mb->size() >= 20 && memcmp(mb->data(), "\177ELF", 4) == 0) {
-    ElfEhdr &ehdr = *(ElfEhdr *)mb->data();
+static FileType get_file_type(Context &ctx, MemoryMappedFile *mb) {
+  u8 *data = mb->data(ctx);
+
+  if (mb->size() >= 20 && memcmp(data, "\177ELF", 4) == 0) {
+    ElfEhdr &ehdr = *(ElfEhdr *)data;
     if (ehdr.e_type == ET_REL)
       return FileType::OBJ;
     if (ehdr.e_type == ET_DYN)
@@ -42,11 +43,11 @@ static FileType get_file_type(MemoryMappedFile *mb) {
     return FileType::UNKNOWN;
   }
 
-  if (mb->size() >= 8 && memcmp(mb->data(), "!<arch>\n", 8) == 0)
+  if (mb->size() >= 8 && memcmp(data, "!<arch>\n", 8) == 0)
     return FileType::AR;
-  if (mb->size() >= 8 && memcmp(mb->data(), "!<thin>\n", 8) == 0)
+  if (mb->size() >= 8 && memcmp(data, "!<thin>\n", 8) == 0)
     return FileType::THIN_AR;
-  if (is_text_file(mb))
+  if (is_text_file(ctx, mb))
     return FileType::TEXT;
   return FileType::UNKNOWN;
 }
@@ -60,7 +61,7 @@ static ObjectFile *new_object_file(Context &ctx, MemoryMappedFile *mb,
   ObjectFile *file = new ObjectFile(ctx, mb, archive_name, in_lib);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
-    SyncOut() << "trace: " << *file;
+    SyncOut(ctx) << "trace: " << *file;
   return file;
 }
 
@@ -68,7 +69,7 @@ static SharedFile *new_shared_file(Context &ctx, MemoryMappedFile *mb) {
   SharedFile *file = new SharedFile(ctx, mb);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
-    SyncOut() << "trace: " << *file;
+    SyncOut(ctx) << "trace: " << *file;
   return file;
 }
 
@@ -105,7 +106,7 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
   static FileCache<SharedFile> dso_cache;
 
   if (ctx.is_preloading) {
-    switch (get_file_type(mb)) {
+    switch (get_file_type(ctx, mb)) {
     case FileType::OBJ:
       obj_cache.store(mb, new_object_file(ctx, mb, ""));
       return;
@@ -113,23 +114,23 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
       dso_cache.store(mb, new_shared_file(ctx, mb));
       return;
     case FileType::AR:
-      for (MemoryMappedFile *child : read_fat_archive_members(mb))
-        if (get_file_type(child) == FileType::OBJ)
+      for (MemoryMappedFile *child : read_fat_archive_members(ctx, mb))
+        if (get_file_type(ctx, child) == FileType::OBJ)
           obj_cache.store(mb, new_object_file(ctx, child, mb->name));
       return;
     case FileType::THIN_AR:
-      for (MemoryMappedFile *child : read_thin_archive_members(mb))
-        if (get_file_type(child) == FileType::OBJ)
+      for (MemoryMappedFile *child : read_thin_archive_members(ctx, mb))
+        if (get_file_type(ctx, child) == FileType::OBJ)
           obj_cache.store(child, new_object_file(ctx, child, mb->name));
       return;
     case FileType::TEXT:
       parse_linker_script(ctx, mb);
       return;
     }
-    Fatal() << mb->name << ": unknown file type";
+    Fatal(ctx) << mb->name << ": unknown file type";
   }
 
-  switch (get_file_type(mb)) {
+  switch (get_file_type(ctx, mb)) {
   case FileType::OBJ:
     if (ObjectFile *obj = obj_cache.get_one(mb))
       ctx.objs.push_back(obj);
@@ -147,17 +148,17 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
       append(ctx.objs, objs);
     } else {
-      for (MemoryMappedFile *child : read_fat_archive_members(mb))
-        if (get_file_type(child) == FileType::OBJ)
+      for (MemoryMappedFile *child : read_fat_archive_members(ctx, mb))
+        if (get_file_type(ctx, child) == FileType::OBJ)
           ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     }
     ctx.visited.insert(mb->name);
     return;
   case FileType::THIN_AR:
-    for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
+    for (MemoryMappedFile *child : read_thin_archive_members(ctx, mb)) {
       if (ObjectFile *obj = obj_cache.get_one(child))
         ctx.objs.push_back(obj);
-      else if (get_file_type(child) == FileType::OBJ)
+      else if (get_file_type(ctx, child) == FileType::OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     }
     ctx.visited.insert(mb->name);
@@ -166,7 +167,7 @@ void read_file(Context &ctx, MemoryMappedFile *mb) {
     parse_linker_script(ctx, mb);
     return;
   }
-  Fatal() << mb->name << ": unknown file type";
+  Fatal(ctx) << mb->name << ": unknown file type";
 }
 
 template <typename T>
@@ -306,8 +307,8 @@ static void resolve_dso_symbols(Context &ctx) {
   Timer t("resolve_dso_symbols");
 
   // Register DSO symbols
-  tbb::parallel_for_each(ctx.dsos, [](SharedFile *file) {
-    file->resolve_symbols();
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile *file) {
+    file->resolve_symbols(ctx);
   });
 
   // Mark live DSOs
@@ -453,8 +454,8 @@ static void check_duplicate_symbols(Context &ctx) {
 
       if (sym.file != file && esym.is_defined() && !is_common &&
           !is_weak && !is_eliminated)
-        Error() << "duplicate symbol: " << *file << ": " << *sym.file
-                << ": " << sym;
+        Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
+                   << ": " << sym;
     }
   });
 
@@ -595,7 +596,7 @@ static void scan_rels(Context &ctx) {
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
       SharedFile *file = (SharedFile *)sym->file;
-      sym->copyrel_readonly = file->is_readonly(sym);
+      sym->copyrel_readonly = file->is_readonly(ctx, sym);
 
       if (sym->copyrel_readonly)
         ctx.dynbss_relro->add_symbol(ctx, sym);
@@ -631,7 +632,7 @@ static void apply_version_script(Context &ctx) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
             ? sym->get_demangled_name() : sym->name;
-          if (glob.match(name))
+          if (glob.match(ctx, name))
             sym->ver_idx = elem.ver_idx;
         }
       }
@@ -665,8 +666,8 @@ static void parse_symbol_version(Context &ctx) {
 
       auto it = verdefs.find(ver);
       if (it == verdefs.end()) {
-        Error() << *file << ": symbol " << *sym <<  " has undefined version "
-                << ver;
+        Error(ctx) << *file << ": symbol " << *sym <<  " has undefined version "
+                   << ver;
         continue;
       }
 
@@ -1042,7 +1043,7 @@ MemoryMappedFile *find_library(Context &ctx, std::string name) {
       if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
         return mb;
     }
-    Fatal() << "library not found: " << name;
+    Fatal(ctx) << "library not found: " << name;
   }
 
   for (std::string_view dir : ctx.arg.library_paths) {
@@ -1054,7 +1055,7 @@ MemoryMappedFile *find_library(Context &ctx, std::string name) {
     if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
       return mb;
   }
-  Fatal() << "library not found: " << name;
+  Fatal(ctx) << "library not found: " << name;
 }
 
 static void read_input_files(Context &ctx, std::span<std::string_view> args) {
@@ -1079,14 +1080,14 @@ static void read_input_files(Context &ctx, std::span<std::string_view> args) {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static});
     } else if (read_flag(args, "pop-state")) {
       if (state.empty())
-        Fatal() << "no state pushed before popping";
+        Fatal(ctx) << "no state pushed before popping";
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
-    } else if (read_arg(args, arg, "l")) {
+    } else if (read_arg(ctx, args, arg, "l")) {
       MemoryMappedFile *mb = find_library(ctx, std::string(arg));
       read_file(ctx, mb);
     } else {
-      read_file(ctx, MemoryMappedFile::must_open(std::string(args[0])));
+      read_file(ctx, MemoryMappedFile::must_open(ctx, std::string(args[0])));
       args = args.subspan(1);
     }
   }
@@ -1113,20 +1114,22 @@ static void show_stats(Context &ctx) {
 }
 
 int main(int argc, char **argv) {
+  Context ctx;
+
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
-      process_run_subcommand(argc, argv);
+      process_run_subcommand(ctx, argc, argv);
 
   Timer t_all("all");
 
   // Parse non-positional command line options
-  ctx.cmdline_args = expand_response_files(argv + 1);
+  ctx.cmdline_args = expand_response_files(ctx, argv + 1);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
 
   if (!ctx.arg.preload)
-    if (i64 code; resume_daemon(argv, &code))
+    if (i64 code; resume_daemon(ctx, argv, &code))
       exit(code);
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
@@ -1141,7 +1144,7 @@ int main(int argc, char **argv) {
   if (ctx.arg.preload) {
     Timer t("preload");
     std::function<void()> wait_for_client;
-    daemonize(argv, &wait_for_client, &on_complete);
+    daemonize(ctx, argv, &wait_for_client, &on_complete);
 
     ctx.reset_reader_context(true);
     read_input_files(ctx, file_args);
@@ -1356,7 +1359,7 @@ int main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  OutputFile *file = OutputFile::open(ctx.arg.output, filesize);
+  OutputFile *file = OutputFile::open(ctx, ctx.arg.output, filesize);
   ctx.buf = file->buf;
 
   Timer t_copy("copy");
@@ -1385,13 +1388,13 @@ int main(int argc, char **argv) {
   t_copy.stop();
 
   // Commit
-  file->close();
+  file->close(ctx);
 
   t_total.stop();
   t_all.stop();
 
   if (ctx.arg.print_map)
-    print_map();
+    print_map(ctx);
 
   // Show stats numbers
   if (ctx.arg.stats)

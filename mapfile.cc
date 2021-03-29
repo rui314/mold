@@ -6,22 +6,22 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_map>
 
-static std::ofstream *open_output_file(std::string path) {
+static std::ofstream *open_output_file(Context &ctx) {
   std::ofstream *file = new std::ofstream;
-  file->open(path.c_str());
+  file->open(ctx.arg.Map.c_str());
   if (!file->is_open())
-    Fatal() << "cannot open " << ctx.arg.Map << ": " << strerror(errno);
+    Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << strerror(errno);
   return file;
 }
 
-void print_map() {
+void print_map(Context &ctx) {
   typedef tbb::concurrent_hash_map<InputSection *, std::vector<Symbol *>> MapTy;
 
   std::ostream *out = &std::cout;
   std::ofstream *file = nullptr;
 
   if (!ctx.arg.Map.empty())
-    out = file = open_output_file(ctx.arg.Map);
+    out = file = open_output_file(ctx);
 
   // Construct a section-to-symbol map.
   MapTy map;

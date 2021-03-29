@@ -11,12 +11,12 @@ struct ArHdr {
 };
 
 std::vector<MemoryMappedFile *>
-read_thin_archive_members(MemoryMappedFile *mb) {
-  u8 *data = mb->data() + 8;
+read_thin_archive_members(Context &ctx, MemoryMappedFile *mb) {
+  u8 *data = mb->data(ctx) + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
 
-  while (data < mb->data() + mb->size()) {
+  while (data < mb->data(ctx) + mb->size()) {
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -33,24 +33,24 @@ read_thin_archive_members(MemoryMappedFile *mb) {
     }
 
     if (hdr.ar_name[0] != '/')
-      Fatal() << mb->name << ": filename is not stored as a long filename";
+      Fatal(ctx) << mb->name << ": filename is not stored as a long filename";
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name(start, strstr(start, "/\n"));
     std::string path = path_dirname(mb->name) + "/" + name;
-    vec.push_back(MemoryMappedFile::must_open(path));
+    vec.push_back(MemoryMappedFile::must_open(ctx, path));
     data = body;
   }
   return vec;
 }
 
 std::vector<MemoryMappedFile *>
-read_fat_archive_members(MemoryMappedFile *mb) {
-  u8 *data = mb->data() + 8;
+read_fat_archive_members(Context &ctx, MemoryMappedFile *mb) {
+  u8 *data = mb->data(ctx) + 8;
   std::vector<MemoryMappedFile *> vec;
   std::string_view strtab;
 
-  while (mb->data() + mb->size() - data >= 2) {
+  while (mb->data(ctx) + mb->size() - data >= 2) {
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -74,7 +74,7 @@ read_fat_archive_members(MemoryMappedFile *mb) {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back(mb->slice(name, body - mb->data(), size));
+    vec.push_back(mb->slice(name, body - mb->data(ctx), size));
   }
   return vec;
 }

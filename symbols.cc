@@ -25,7 +25,7 @@ std::string_view Symbol::get_demangled_name() const {
 }
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
-  if (ctx.arg.demangle)
+  if (opt_demangle)
     out << sym.get_demangled_name();
   else
     out << sym.name;

@@ -73,19 +73,19 @@ static std::string base64(u8 *data, u64 size) {
 }
 
 static std::string compute_sha256(char **argv) {
-  SHA256_CTX ctx;
-  SHA256_Init(&ctx);
+  SHA256_CTX sha_ctx;
+  SHA256_Init(&sha_ctx);
 
   for (i64 i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      SHA256_Update(&ctx, argv[i], strlen(argv[i]) + 1);
+      SHA256_Update(&sha_ctx, argv[i], strlen(argv[i]) + 1);
 
   u8 digest[SHA256_SIZE];
-  SHA256_Final(digest, &ctx);
+  SHA256_Final(digest, &sha_ctx);
   return base64(digest, SHA256_SIZE);
 }
 
-static void send_fd(i64 conn, i64 fd) {
+static void send_fd(Context &ctx, i64 conn, i64 fd) {
   struct iovec iov;
   char dummy = '1';
   iov.iov_base = &dummy;
@@ -106,10 +106,10 @@ static void send_fd(i64 conn, i64 fd) {
   *(int *)CMSG_DATA(cmsg) = fd;
 
   if (sendmsg(conn, &msg, 0) == -1)
-    Fatal() << "sendmsg failed: " << strerror(errno);
+    Fatal(ctx) << "sendmsg failed: " << strerror(errno);
 }
 
-static i64 recv_fd(i64 conn) {
+static i64 recv_fd(Context &ctx, i64 conn) {
   struct iovec iov;
   char buf[1];
   iov.iov_base = buf;
@@ -125,17 +125,17 @@ static i64 recv_fd(i64 conn) {
 
   i64 len = recvmsg(conn, &msg, 0);
   if (len <= 0)
-    Fatal() << "recvmsg failed: " << strerror(errno);
+    Fatal(ctx) << "recvmsg failed: " << strerror(errno);
 
   struct cmsghdr *cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
   return *(int *)CMSG_DATA(cmsg);
 }
 
-bool resume_daemon(char **argv, i64 *code) {
+bool resume_daemon(Context &ctx, char **argv, i64 *code) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
-    Fatal() << "socket failed: " << strerror(errno);
+    Fatal(ctx) << "socket failed: " << strerror(errno);
 
   std::string path = "/tmp/mold-" + compute_sha256(argv);
 
@@ -148,21 +148,22 @@ bool resume_daemon(char **argv, i64 *code) {
     return false;
   }
 
-  send_fd(conn, STDOUT_FILENO);
-  send_fd(conn, STDERR_FILENO);
+  send_fd(ctx, conn, STDOUT_FILENO);
+  send_fd(ctx, conn, STDERR_FILENO);
   i64 r = read(conn, (char[1]){}, 1);
   *code = (r != 1);
   return true;
 }
 
-void daemonize(char **argv, std::function<void()> *wait_for_client,
+void daemonize(Context &ctx, char **argv,
+               std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
   if (daemon(1, 0) == -1)
-    Fatal() << "daemon failed: " << strerror(errno);
+    Fatal(ctx) << "daemon failed: " << strerror(errno);
 
   i64 sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock == -1)
-    Fatal() << "socket failed: " << strerror(errno);
+    Fatal(ctx) << "socket failed: " << strerror(errno);
 
   socket_tmpfile = strdup(("/tmp/mold-" + compute_sha256(argv)).c_str());
 
@@ -174,21 +175,21 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
-      Fatal() << "bind failed: " << strerror(errno);
+      Fatal(ctx) << "bind failed: " << strerror(errno);
 
     unlink(socket_tmpfile);
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
-      Fatal() << "bind failed: " << strerror(errno);
+      Fatal(ctx) << "bind failed: " << strerror(errno);
   }
 
   umask(orig_mask);
 
   if (listen(sock, 0) == -1)
-    Fatal() << "listen failed: " << strerror(errno);
+    Fatal(ctx) << "listen failed: " << strerror(errno);
 
   static i64 conn = -1;
 
-  *wait_for_client = [=]() {
+  *wait_for_client = [=, &ctx]() {
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(sock, &rfds);
@@ -199,7 +200,7 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
     i64 res = select(sock + 1, &rfds, NULL, NULL, &tv);
     if (res == -1)
-      Fatal() << "select failed: " << strerror(errno);
+      Fatal(ctx) << "select failed: " << strerror(errno);
 
     if (res == 0) {
       std::cout << "timeout\n";
@@ -208,39 +209,39 @@ void daemonize(char **argv, std::function<void()> *wait_for_client,
 
     conn = accept(sock, NULL, NULL);
     if (conn == -1)
-      Fatal() << "accept failed: " << strerror(errno);
+      Fatal(ctx) << "accept failed: " << strerror(errno);
     unlink(socket_tmpfile);
 
-    dup2(recv_fd(conn), STDOUT_FILENO);
-    dup2(recv_fd(conn), STDERR_FILENO);
+    dup2(recv_fd(ctx, conn), STDOUT_FILENO);
+    dup2(recv_fd(ctx, conn), STDERR_FILENO);
   };
 
   *on_complete = [=]() { write(conn, (char []){1}, 1); };
 }
 
-static std::string get_self_path() {
+static std::string get_self_path(Context &ctx) {
   char buf[4096];
   i64 n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
-    Fatal() << "readlink(\"/proc/self/exe\") failed: " << strerror(errno);
+    Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << strerror(errno);
   if (n == sizeof(buf))
-    Fatal() << "readlink: path too long";
+    Fatal(ctx) << "readlink: path too long";
   return buf;
 }
 
 [[noreturn]]
-void process_run_subcommand(int argc, char **argv) {
+void process_run_subcommand(Context &ctx, int argc, char **argv) {
   std::string_view arg1 = argv[1];
   assert(arg1 == "-run" || arg1 == "--run");
 
   if (!argv[2])
-    Fatal() << "-run: argument missing";
+    Fatal(ctx) << "-run: argument missing";
 
-  std::string self = get_self_path();
+  std::string self = get_self_path(ctx);
   std::string env = "LD_PRELOAD=" + path_dirname(self) + "/mold-wrapper.so";
   putenv(strdup(env.c_str()));
   putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
   execvp(argv[2], argv + 2);
-  Fatal() << "execvp failed: " << strerror(errno);
+  Fatal(ctx) << "execvp failed: " << strerror(errno);
 }

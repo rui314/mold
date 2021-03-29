@@ -144,7 +144,7 @@ static void sweep(Context &ctx) {
 
       if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)
-          SyncOut() << "removing unused section " << *isec;
+          SyncOut(ctx) << "removing unused section " << *isec;
         isec->kill();
         counter++;
       }

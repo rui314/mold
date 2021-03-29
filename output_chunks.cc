@@ -195,10 +195,7 @@ void OutputPhdr::copy_buf(Context &ctx) {
   write_vector(ctx.buf + shdr.sh_offset, create_phdr(ctx));
 }
 
-InterpSection::InterpSection() : OutputChunk(SYNTHETIC) {
-  name = ".interp";
-  shdr.sh_type = SHT_PROGBITS;
-  shdr.sh_flags = SHF_ALLOC;
+void InterpSection::update_shdr(Context &ctx) {
   shdr.sh_size = ctx.arg.dynamic_linker.size() + 1;
 }
 
@@ -597,7 +594,7 @@ void GotSection::add_tlsld(Context &ctx) {
 i64 GotSection::get_reldyn_size(Context &ctx) const {
   i64 n = 0;
   for (Symbol *sym : got_syms)
-    if (sym->is_imported || (ctx.arg.pic && sym->is_relative()))
+    if (sym->is_imported || (ctx.arg.pic && sym->is_relative(ctx)))
       n++;
 
   n += tlsgd_syms.size() * 2;
@@ -629,7 +626,7 @@ void GotSection::copy_buf(Context &ctx) {
       *rel++ = {addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
     } else {
       buf[sym->got_idx] = sym->get_addr(ctx);
-      if (ctx.arg.pic && sym->is_relative())
+      if (ctx.arg.pic && sym->is_relative(ctx))
         *rel++ = {addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr(ctx)};
     }
   }
@@ -1182,7 +1179,7 @@ void EhFrameSection::copy_buf(Context &ctx) {
       *(u64 *)(base + loc) = val - shdr.sh_addr - loc;
       return;
     }
-    unreachable();
+    unreachable(ctx);
   };
 
   struct Entry {
@@ -1263,7 +1260,7 @@ void EhFrameSection::copy_buf(Context &ctx) {
 // referring a .eh_frame section, but crtend.o contains such symbol
 // (i.e. "__FRAME_END__"). So we need to handle such symbol.
 // This function is slow, but it's okay because they are rare.
-u64 EhFrameSection::get_addr(const Symbol &sym) {
+u64 EhFrameSection::get_addr(Context &ctx, const Symbol &sym) {
   InputSection &isec = *sym.input_section;
   const char *section_begin = isec.contents.data();
 
@@ -1298,7 +1295,7 @@ u64 EhFrameSection::get_addr(const Symbol &sym) {
     }
   }
 
-  Fatal() << isec.file << ": .eh_frame has bad symbol: " << sym;
+  Fatal(ctx) << isec.file << ": .eh_frame has bad symbol: " << sym;
 }
 
 void DynbssSection::add_symbol(Context &ctx, Symbol *sym) {
@@ -1344,16 +1341,16 @@ void VerdefSection::copy_buf(Context &ctx) {
 }
 
 void BuildIdSection::update_shdr(Context &ctx) {
-  shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size();
+  shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size(ctx);
 }
 
 void BuildIdSection::copy_buf(Context &ctx) {
   u32 *base = (u32 *)(ctx.buf + shdr.sh_offset);
   memset(base, 0, shdr.sh_size);
-  base[0] = 4;                      // Name size
-  base[1] = ctx.arg.build_id.size(); // Hash size
-  base[2] = NT_GNU_BUILD_ID;        // Type
-  memcpy(base + 3, "GNU", 4);       // Name string
+  base[0] = 4;                          // Name size
+  base[1] = ctx.arg.build_id.size(ctx); // Hash size
+  base[2] = NT_GNU_BUILD_ID;            // Type
+  memcpy(base + 3, "GNU", 4);           // Name string
 }
 
 static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
@@ -1382,18 +1379,18 @@ void BuildIdSection::write_buildid(Context &ctx, i64 filesize) {
     // So, we always compute SHA256 and truncate it if smaller digest was
     // requested.
     u8 digest[SHA256_SIZE];
-    assert(ctx.arg.build_id.size() <= SHA256_SIZE);
+    assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
     compute_sha256(ctx.buf, filesize, digest);
     memcpy(ctx.buf + shdr.sh_offset + HEADER_SIZE, digest,
-           ctx.arg.build_id.size());
+           ctx.arg.build_id.size(ctx));
     return;
   }
   case BuildId::UUID:
     if (!RAND_bytes(ctx.buf + shdr.sh_offset + HEADER_SIZE,
-                    ctx.arg.build_id.size()))
-      Fatal() << "RAND_bytes failed";
+                    ctx.arg.build_id.size(ctx)))
+      Fatal(ctx) << "RAND_bytes failed";
     return;
   }
 
-  unreachable();
+  unreachable(ctx);
 }

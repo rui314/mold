@@ -152,8 +152,8 @@ public:
   inline u64 get_plt_addr(Context &ctx) const;
 
   inline bool is_alive() const;
-  inline bool is_absolute() const;
-  inline bool is_relative() const { return !is_absolute(); }
+  inline bool is_absolute(Context &ctx) const;
+  inline bool is_relative(Context &ctx) const;
   inline bool is_undef() const;
   inline bool is_undef_weak() const;
   inline u32 get_type() const;
@@ -276,7 +276,7 @@ struct CieRecord {
 
 class InputSection {
 public:
-  InputSection(ObjectFile &file, const ElfShdr &shdr,
+  InputSection(Context &ctx, ObjectFile &file, const ElfShdr &shdr,
                std::string_view name, i64 section_idx);
 
   void scan_relocations(Context &ctx);
@@ -380,7 +380,13 @@ public:
 
 class InterpSection : public OutputChunk {
 public:
-  InterpSection();
+  InterpSection() : OutputChunk(SYNTHETIC) {
+    name = ".interp";
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC;
+  }
+
+  void update_shdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 };
 
@@ -661,7 +667,7 @@ public:
 
   void construct(Context &ctx);
   void copy_buf(Context &ctx) override;
-  u64 get_addr(const Symbol &sym);
+  u64 get_addr(Context &ctx, const Symbol &sym);
 
   std::vector<CieRecord *> cies;
   u32 num_fdes = 0;
@@ -775,7 +781,7 @@ struct ComdatGroup {
 class MemoryMappedFile {
 public:
   static MemoryMappedFile *open(std::string path);
-  static MemoryMappedFile *must_open(std::string path);
+  static MemoryMappedFile *must_open(Context &ctx, std::string path);
 
   MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
     : name(name), data_(data), size_(size), mtime(mtime) {}
@@ -783,11 +789,11 @@ public:
 
   MemoryMappedFile *slice(std::string name, u64 start, u64 size);
 
-  u8 *data();
+  u8 *data(Context &ctx);
   i64 size() const { return size_; }
 
-  std::string_view get_contents() {
-    return std::string_view((char *)data(), size());
+  std::string_view get_contents(Context &ctx) {
+    return std::string_view((char *)data(ctx), size());
   }
 
   std::string name;
@@ -802,11 +808,11 @@ private:
 
 class InputFile {
 public:
-  InputFile(MemoryMappedFile *mb);
+  InputFile(Context &ctx, MemoryMappedFile *mb);
   InputFile() : name("<internal>") {}
 
-  std::string_view get_string(const ElfShdr &shdr);
-  std::string_view get_string(i64 idx);
+  std::string_view get_string(Context &ctx, const ElfShdr &shdr);
+  std::string_view get_string(Context &ctx, i64 idx);
 
   MemoryMappedFile *mb;
   std::span<ElfShdr> elf_sections;
@@ -818,8 +824,8 @@ public:
   std::atomic_bool is_alive = false;
 
 protected:
-  template<typename T> std::span<T> get_data(const ElfShdr &shdr);
-  template<typename T> std::span<T> get_data(i64 idx);
+  template<typename T> std::span<T> get_data(Context &ctx, const ElfShdr &shdr);
+  template<typename T> std::span<T> get_data(Context &ctx, i64 idx);
   ElfShdr *find_section(i64 type);
 
   std::string_view shstrtab;
@@ -872,11 +878,11 @@ public:
 private:
   void initialize_sections(Context &ctx);
   void initialize_symbols(Context &ctx);
-  void initialize_mergeable_sections();
-  void initialize_ehframe_sections();
-  void read_ehframe(InputSection &isec);
+  void initialize_mergeable_sections(Context &ctx);
+  void initialize_ehframe_sections(Context &ctx);
+  void read_ehframe(Context &ctx, InputSection &isec);
   void maybe_override_symbol(Context &ctx, Symbol &sym, i64 symidx);
-  void merge_visibility(Symbol &sym, u8 visibility);
+  void merge_visibility(Context &ctx, Symbol &sym, u8 visibility);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   std::vector<SectionFragmentRef> sym_fragments;
@@ -891,18 +897,18 @@ class SharedFile : public InputFile {
 public:
   SharedFile(Context &ctx, MemoryMappedFile *mb);
   void parse(Context &ctx);
-  void resolve_symbols();
+  void resolve_symbols(Context &ctx);
   std::vector<Symbol *> find_aliases(Symbol *sym);
-  bool is_readonly(Symbol *sym);
+  bool is_readonly(Context &ctx, Symbol *sym);
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;
   std::vector<Symbol *> undefs;
 
 private:
-  std::string_view get_soname();
+  std::string_view get_soname(Context &ctx);
   void maybe_override_symbol(Symbol &sym, const ElfSym &esym);
-  std::vector<std::string_view> read_verdef();
+  std::vector<std::string_view> read_verdef(Context &ctx);
 
   std::vector<const ElfSym *> elf_syms;
   std::vector<u16> versyms;
@@ -914,8 +920,11 @@ private:
 // archive_file.cc
 //
 
-std::vector<MemoryMappedFile *> read_fat_archive_members(MemoryMappedFile *mb);
-std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
+std::vector<MemoryMappedFile *>
+read_fat_archive_members(Context &ctx, MemoryMappedFile *mb);
+
+std::vector<MemoryMappedFile *>
+read_thin_archive_members(Context &ctx, MemoryMappedFile *mb);
 
 //
 // linker_script.cc
@@ -931,14 +940,15 @@ void parse_dynamic_list(Context &ctx, std::string path);
 
 class OutputFile {
 public:
-  static OutputFile *open(std::string path, u64 filesize);
-  virtual void close() = 0;
+  static OutputFile *open(Context &ctx, std::string path, u64 filesize);
+  virtual void close(Context &ctx) = 0;
 
   u8 *buf;
   static inline char *tmpfile;
 
 protected:
-  OutputFile(std::string path, u64 filesize) : path(path), filesize(filesize) {}
+  OutputFile(std::string path, u64 filesize)
+    : path(path), filesize(filesize) {}
 
   std::string path;
   u64 filesize;
@@ -959,7 +969,7 @@ std::string path_clean(std::string_view path);
 class GlobPattern {
 public:
   GlobPattern(std::string_view pat);
-  bool match(std::string_view str) const;
+  bool match(Context &ctx, std::string_view str) const;
 
 private:
   enum { EXACT, PREFIX, SUFFIX, GENERIC } kind;
@@ -1043,7 +1053,7 @@ void icf_sections(Context &ctx);
 // mapfile.cc
 //
 
-void print_map();
+void print_map(Context &ctx);
 
 //
 // subprocess.cc
@@ -1052,19 +1062,21 @@ void print_map();
 inline char *socket_tmpfile;
 
 std::function<void()> fork_child();
-bool resume_daemon(char **argv, i64 *code);
-void daemonize(char **argv, std::function<void()> *wait_for_client,
+bool resume_daemon(Context &ctx, char **argv, i64 *code);
+void daemonize(Context &ctx, char **argv,
+               std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
-[[noreturn]] void process_run_subcommand(int argc, char **argv);
+[[noreturn]] void process_run_subcommand(Context &ctx, int argc, char **argv);
 
 // commandline.cc
 //
 
-std::vector<std::string_view> expand_response_files(char **argv);
+std::vector<std::string_view> expand_response_files(Context &ctx, char **argv);
 bool read_flag(std::span<std::string_view> &args, std::string name);
 
-bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
+bool read_arg(Context &ctx, std::span<std::string_view> &args,
+              std::string_view &arg,
               std::string name);
 
 void parse_nonpositional_args(Context &ctx,
@@ -1075,7 +1087,7 @@ void parse_nonpositional_args(Context &ctx,
 //
 
 struct BuildId {
-  i64 size() const;
+  i64 size(Context &ctx) const;
 
   enum { NONE, HEX, HASH, UUID } kind = NONE;
   std::vector<u8> value;
@@ -1089,6 +1101,9 @@ struct VersionPattern {
 };
 
 struct Context {
+  Context() = default;
+  Context(const Context &) = delete;
+
   // Command-line arguments
   struct {
     BuildId build_id;
@@ -1234,8 +1249,6 @@ struct Context {
   Symbol *__executable_start = nullptr;
 };
 
-extern struct Context ctx;
-
 MemoryMappedFile *find_library(Context &ctx, std::string path);
 
 void read_file(Context &ctx, MemoryMappedFile *mb);
@@ -1244,9 +1257,13 @@ void read_file(Context &ctx, MemoryMappedFile *mb);
 // Error output
 //
 
+inline thread_local bool opt_demangle = false;
+
 class SyncOut {
 public:
-  SyncOut(std::ostream &out = std::cout) : out(out) {}
+  SyncOut(Context &ctx, std::ostream &out = std::cout) : out(out) {
+    opt_demangle = ctx.arg.demangle;
+  }
 
   ~SyncOut() {
     static std::mutex mu;
@@ -1266,6 +1283,8 @@ private:
 
 class Fatal {
 public:
+  Fatal(Context &ctx) : out(ctx, std::cerr) {}
+
   [[noreturn]] ~Fatal() {
     out.~SyncOut();
     cleanup();
@@ -1278,12 +1297,12 @@ public:
   }
 
 private:
-  SyncOut out{std::cerr};
+  SyncOut out;
 };
 
 class Error {
 public:
-  Error() {
+  Error(Context &ctx) : out(ctx, std::cerr) {
     has_error = true;
   }
 
@@ -1302,12 +1321,12 @@ public:
   static inline std::atomic_bool has_error = false;
 
 private:
-  SyncOut out{std::cerr};
+  SyncOut out;
 };
 
 class Warn {
 public:
-  Warn() {
+  Warn(Context &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.fatal_warnings)
       Error::has_error = true;
   }
@@ -1318,11 +1337,13 @@ public:
   }
 
 private:
-  SyncOut out{std::cerr};
+  SyncOut out;
 };
 
-#define unreachable() \
-  do { Fatal() << "internal error at " << __FILE__ << ":" << __LINE__; } while (0)
+#define unreachable(ctx)                                               \
+  do {                                                                 \
+    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
+  } while (0)
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
@@ -1357,7 +1378,7 @@ inline bool Symbol::is_alive() const {
   return true;
 }
 
-inline bool Symbol::is_absolute() const {
+inline bool Symbol::is_absolute(Context &ctx) const {
   if (file == ctx.internal_obj)
     return false;
   if (file->is_dso)
@@ -1367,6 +1388,10 @@ inline bool Symbol::is_absolute() const {
   if (frag)
     return false;
   return input_section == nullptr;
+}
+
+inline bool Symbol::is_relative(Context &ctx) const {
+  return !is_absolute(ctx);
 }
 
 inline bool Symbol::is_undef() const {
@@ -1411,7 +1436,7 @@ inline u64 Symbol::get_addr(Context &ctx) const {
 
   if (input_section) {
     if (input_section->is_ehframe)
-      return ctx.eh_frame->get_addr(*this);
+      return ctx.eh_frame->get_addr(ctx, *this);
 
     if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers

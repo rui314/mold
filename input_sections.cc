@@ -10,46 +10,46 @@ static u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
-InputSection::InputSection(ObjectFile &file, const ElfShdr &shdr,
+InputSection::InputSection(Context &ctx, ObjectFile &file, const ElfShdr &shdr,
                            std::string_view name, i64 section_idx)
   : file(file), shdr(shdr), name(name), section_idx(section_idx) {
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
     unsigned long size2 = size;
     if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
-      Fatal() << file << ": " << name << ": uncompress failed";
+      Fatal(ctx) << file << ": " << name << ": uncompress failed";
     if (size != size2)
-      Fatal() << file << ": " << name << ": uncompress: invalid size";
+      Fatal(ctx) << file << ": " << name << ": uncompress: invalid size";
     contents = {(char *)buf, size};
   };
 
   if (name.starts_with(".zdebug")) {
     // Old-style compressed section
-    std::string_view data = file.get_string(shdr);
+    std::string_view data = file.get_string(ctx, shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
-      Fatal() << file << ": " << name << ": corrupted compressed section";
+      Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
 
     u64 size = read64be((u8 *)&data[4]);
     do_uncompress(data.substr(12), size);
   } else if (shdr.sh_flags & SHF_COMPRESSED) {
     // New-style compressed section
-    std::string_view data = file.get_string(shdr);
+    std::string_view data = file.get_string(ctx, shdr);
     if (data.size() < sizeof(ElfChdr))
-      Fatal() << file << ": " << name << ": corrupted compressed section";
+      Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
 
     ElfChdr &hdr = *(ElfChdr *)&data[0];
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-      Fatal() << file << ": " << name << ": unsupported compression type";
+      Fatal(ctx) << file << ": " << name << ": unsupported compression type";
     do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
   } else if (shdr.sh_type != SHT_NOBITS) {
-    contents = file.get_string(shdr);
+    contents = file.get_string(ctx, shdr);
   }
 
   output_section =
     OutputSection::get_instance(name, shdr.sh_type, shdr.sh_flags);
 }
 
-static std::string rel_to_string(u64 r_type) {
+static std::string rel_to_string(Context &ctx, u64 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
   case R_X86_64_8: return "R_X86_64_8";
@@ -78,35 +78,36 @@ static std::string rel_to_string(u64 r_type) {
   case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
   case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
   }
-  unreachable();
+  unreachable(ctx);
 }
 
-static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) {
+static void overflow_check(Context &ctx, InputSection *sec,
+                           Symbol &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)
-      Error() << *sec << ": relocation R_X86_64_8 against " << sym
-              << " out of range: " << val << " is not in [0, 255]";
+      Error(ctx) << *sec << ": relocation R_X86_64_8 against " << sym
+                 << " out of range: " << val << " is not in [0, 255]";
     return;
   case R_X86_64_PC8:
     if (val != (i8)val)
-      Error() << *sec << ": relocation R_X86_64_PC8 against " << sym
-              << " out of range: " << (i64)val << " is not in [-128, 127]";
+      Error(ctx) << *sec << ": relocation R_X86_64_PC8 against " << sym
+                 << " out of range: " << (i64)val << " is not in [-128, 127]";
     return;
   case R_X86_64_16:
     if (val != (u16)val)
-      Error() << *sec << ": relocation R_X86_64_16 against " << sym
-              << " out of range: " << val << " is not in [0, 65535]";
+      Error(ctx) << *sec << ": relocation R_X86_64_16 against " << sym
+                 << " out of range: " << val << " is not in [0, 65535]";
     return;
   case R_X86_64_PC16:
     if (val != (i16)val)
-      Error() << *sec << ": relocation R_X86_64_PC16 against " << sym
-              << " out of range: " << (i64)val << " is not in [-32768, 32767]";
+      Error(ctx) << *sec << ": relocation R_X86_64_PC16 against " << sym
+                 << " out of range: " << (i64)val << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)
-      Error() << *sec << ": relocation R_X86_64_32 against " << sym
-              << " out of range: " << val << " is not in [0, 4294967296]";
+      Error(ctx) << *sec << ": relocation R_X86_64_32 against " << sym
+                 << " out of range: " << val << " is not in [0, 4294967296]";
     return;
   case R_X86_64_32S:
   case R_X86_64_PC32:
@@ -125,9 +126,9 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_SIZE32:
   case R_X86_64_TLSDESC_CALL:
     if (val != (i32)val)
-      Error() << *sec << ": relocation " << rel_to_string(r_type)
-              << " against " << sym << " out of range: " << (i64)val
-              << " is not in [-2147483648, 2147483647]";
+      Error(ctx) << *sec << ": relocation " << rel_to_string(ctx, r_type)
+                 << " against " << sym << " out of range: " << (i64)val
+                 << " is not in [-2147483648, 2147483647]";
     return;
   case R_X86_64_NONE:
   case R_X86_64_64:
@@ -140,10 +141,10 @@ static void overflow_check(InputSection *sec, Symbol &sym, u64 r_type, u64 val) 
   case R_X86_64_SIZE64:
     return;
   }
-  unreachable();
+  unreachable(ctx);
 }
 
-static void write_val(u64 r_type, u8 *loc, u64 val) {
+static void write_val(Context &ctx, u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
     return;
@@ -185,7 +186,7 @@ static void write_val(u64 r_type, u8 *loc, u64 val) {
     *(u64 *)loc = val;
     return;
   }
-  unreachable();
+  unreachable(ctx);
 }
 
 void InputSection::copy_buf(Context &ctx) {
@@ -276,8 +277,8 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       ref = &rel_fragments[ref_idx++];
 
     auto write = [&](u64 val) {
-      overflow_check(this, sym, rel.r_type, val);
-      write_val(rel.r_type, loc, val);
+      overflow_check(ctx, this, sym, rel.r_type, val);
+      write_val(ctx, rel.r_type, loc, val);
     };
 
 #define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
@@ -392,7 +393,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       loc[1] = 0x90;
       break;
     default:
-      unreachable();
+      unreachable(ctx);
     }
 
 #undef S
@@ -427,7 +428,7 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
-      Error() << "undefined symbol: " << file << ": " << sym;
+      Error(ctx) << "undefined symbol: " << file << ": " << sym;
       continue;
     }
 
@@ -436,8 +437,8 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
       ref = &rel_fragments[ref_idx++];
 
     auto write = [&](u64 val) {
-      overflow_check(this, sym, rel.r_type, val);
-      write_val(rel.r_type, loc, val);
+      overflow_check(ctx, this, sym, rel.r_type, val);
+      write_val(ctx, rel.r_type, loc, val);
     };
 
     switch (rel.r_type) {
@@ -480,11 +481,11 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
     case R_X86_64_GOTPCREL64:
     case R_X86_64_GOTPC64:
     case R_X86_64_GOTPC32_TLSDESC:
-      Fatal() << *this << ": invalid relocation for non-allocated sections: "
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
               << rel.r_type;
       break;
     default:
-      Fatal() << *this << ": unknown relocation: " << rel.r_type;
+      Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }
@@ -497,8 +498,8 @@ static i64 get_output_type(Context &ctx) {
   return 2;
 }
 
-static i64 get_sym_type(Symbol &sym) {
-  if (sym.is_absolute())
+static i64 get_sym_type(Context &ctx, Symbol &sym) {
+  if (sym.is_absolute(ctx))
     return 0;
   if (!sym.is_imported)
     return 1;
@@ -529,7 +530,7 @@ void InputSection::scan_relocations(Context &ctx) {
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
-      Error() << "undefined symbol: " << file << ": " << sym;
+      Error(ctx) << "undefined symbol: " << file << ": " << sym;
       continue;
     }
 
@@ -546,9 +547,9 @@ void InputSection::scan_relocations(Context &ctx) {
         if (!ctx.arg.z_copyreloc)
           break;
         if (sym.esym->st_visibility == STV_PROTECTED)
-          Error() << *this << ": cannot make copy relocation for "
-                  << " protected symbol '" << sym << "', defined in "
-                  << *sym.file;
+          Error(ctx) << *this << ": cannot make copy relocation for "
+                     << " protected symbol '" << sym << "', defined in "
+                     << *sym.file;
         sym.flags |= NEEDS_COPYREL;
         rel_types[i] = rel_type;
         return;
@@ -570,12 +571,12 @@ void InputSection::scan_relocations(Context &ctx) {
         file.num_dynrel++;
         return;
       default:
-        unreachable();
+        unreachable(ctx);
       }
 
-      Error() << *this << ": " << rel_to_string(rel.r_type)
-              << " relocation against symbol `" << sym
-              << "' can not be used; recompile with -fPIE";
+      Error(ctx) << *this << ": " << rel_to_string(ctx, rel.r_type)
+                 << " relocation against symbol `" << sym
+                 << "' can not be used; recompile with -fPIE";
     };
 
     if (sym.esym->st_type == STT_GNU_IFUNC)
@@ -599,7 +600,7 @@ void InputSection::scan_relocations(Context &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_ABS);
       break;
     }
     case R_X86_64_64: {
@@ -612,7 +613,7 @@ void InputSection::scan_relocations(Context &ctx) {
         {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_ABS);
+      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_ABS);
       break;
     }
     case R_X86_64_PC8:
@@ -625,7 +626,7 @@ void InputSection::scan_relocations(Context &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_PC);
       break;
     }
     case R_X86_64_PC64: {
@@ -636,7 +637,7 @@ void InputSection::scan_relocations(Context &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(sym)], R_PC);
+      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_PC);
       break;
     }
     case R_X86_64_GOT32:
@@ -656,9 +657,9 @@ void InputSection::scan_relocations(Context &ctx) {
       break;
     case R_X86_64_GOTPCRELX: {
       if (rel.r_addend != -4)
-        Fatal() << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      if (ctx.arg.relax && !sym.is_imported && sym.is_relative() &&
+      if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
           relax_gotpcrelx(loc - 2)) {
         rel_types[i] = R_GOTPCRELX_RELAX;
       } else {
@@ -669,9 +670,9 @@ void InputSection::scan_relocations(Context &ctx) {
     }
     case R_X86_64_REX_GOTPCRELX:
       if (rel.r_addend != -4)
-        Fatal() << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
-      if (ctx.arg.relax && !sym.is_imported && sym.is_relative() &&
+      if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
           relax_rex_gotpcrelx(loc - 3)) {
         rel_types[i] = R_REX_GOTPCRELX_RELAX;
       } else {
@@ -686,7 +687,7 @@ void InputSection::scan_relocations(Context &ctx) {
       break;
     case R_X86_64_TLSGD: {
       if (i + 1 == rels.size())
-        Fatal() << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
 
       if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported) {
         rel_types[i++] = R_TLSGD_RELAX_LE;
@@ -698,9 +699,9 @@ void InputSection::scan_relocations(Context &ctx) {
     }
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size())
-        Fatal() << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
       if (sym.is_imported)
-        Fatal() << *this << ": TLSLD reloc refers external symbol " << sym;
+        Fatal(ctx) << *this << ": TLSLD reloc refers external symbol " << sym;
 
       if (ctx.arg.relax && !ctx.arg.shared) {
         rel_types[i++] = R_TLSLD_RELAX_LE;
@@ -712,7 +713,7 @@ void InputSection::scan_relocations(Context &ctx) {
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       if (sym.is_imported)
-        Fatal() << *this << ": DTPOFF reloc refers external symbol " << sym;
+        Fatal(ctx) << *this << ": DTPOFF reloc refers external symbol " << sym;
 
       if (ctx.arg.relax && !ctx.arg.shared)
         rel_types[i] = R_DTPOFF_RELAX;
@@ -736,7 +737,7 @@ void InputSection::scan_relocations(Context &ctx) {
       break;
     case R_X86_64_GOTPC32_TLSDESC:
       if (memcmp(loc - 3, "\x48\x8d\x05", 3))
-        Fatal() << *this << ": GOTPC32_TLSDESC relocation is used"
+        Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                 << " against an invalid code sequence";
 
       if (ctx.arg.relax && !ctx.arg.shared) {
@@ -757,7 +758,7 @@ void InputSection::scan_relocations(Context &ctx) {
         rel_types[i] = R_NONE;
       break;
     default:
-      Fatal() << *this << ": unknown relocation: " << rel.r_type;
+      Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
     }
   }
 }

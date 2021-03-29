@@ -35,7 +35,7 @@ static bool generic_match(std::string_view pat, std::string_view str) {
   }
 }
 
-bool GlobPattern::match(std::string_view str) const {
+bool GlobPattern::match(Context &ctx, std::string_view str) const {
   switch (kind) {
   case EXACT:
     return str == pat;
@@ -46,5 +46,5 @@ bool GlobPattern::match(std::string_view str) const {
   case GENERIC:
     return generic_match(pat, str);
   }
-  unreachable();
+  unreachable(ctx);
 }
