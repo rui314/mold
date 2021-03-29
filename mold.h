@@ -361,7 +361,7 @@ class OutputEhdr : public OutputChunk<E> {
 public:
   OutputEhdr() : OutputChunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_size = sizeof(ElfEhdr);
+    this->shdr.sh_size = sizeof(ElfEhdr<E>);
   }
 
   void copy_buf(Context<E> &ctx) override;

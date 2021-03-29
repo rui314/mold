@@ -270,7 +270,11 @@ struct ElfShdr {
   u64 sh_entsize;
 };
 
-struct ElfEhdr {
+template <typename E>
+struct ElfEhdr;
+
+template <>
+struct ElfEhdr<ELF64LE> {
   u8 e_ident[16];
   u16 e_type;
   u16 e_machine;

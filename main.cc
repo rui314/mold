@@ -25,7 +25,7 @@ static FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   u8 *data = mb->data(ctx);
 
   if (mb->size() >= 20 && memcmp(data, "\177ELF", 4) == 0) {
-    ElfEhdr &ehdr = *(ElfEhdr *)data;
+    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
     if (ehdr.e_type == ET_REL)
       return FileType::OBJ;
     if (ehdr.e_type == ET_DYN)

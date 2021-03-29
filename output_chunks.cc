@@ -21,7 +21,7 @@ i64 BuildId::size(Context<E> &ctx) const {
 
 template <typename E>
 void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
-  ElfEhdr &hdr = *(ElfEhdr *)(ctx.buf + this->shdr.sh_offset);
+  ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
@@ -35,7 +35,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
     hdr.e_entry = Symbol<E>::intern(ctx.arg.entry)->get_addr(ctx);
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
-  hdr.e_ehsize = sizeof(ElfEhdr);
+  hdr.e_ehsize = sizeof(ElfEhdr<E>);
   hdr.e_phentsize = sizeof(ElfPhdr);
   hdr.e_phnum = ctx.phdr->shdr.sh_size / sizeof(ElfPhdr);
   hdr.e_shentsize = sizeof(ElfShdr);

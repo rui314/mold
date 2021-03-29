@@ -56,12 +56,12 @@ MemoryMappedFile<E>::slice(std::string name, u64 start, u64 size) {
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   : mb(mb), name(mb->name) {
-  if (mb->size() < sizeof(ElfEhdr))
+  if (mb->size() < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
   if (memcmp(mb->data(ctx), "\177ELF", 4))
     Fatal(ctx) << *this << ": not an ELF file";
 
-  ElfEhdr &ehdr = *(ElfEhdr *)mb->data(ctx);
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb->data(ctx);
   is_dso = (ehdr.e_type == ET_DYN);
 
   ElfShdr *sh_begin = (ElfShdr *)(mb->data(ctx) + ehdr.e_shoff);
@@ -1224,7 +1224,7 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
-  ElfEhdr *ehdr = (ElfEhdr *)this->mb->data(ctx);
+  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data(ctx);
   ElfPhdr *phdr = (ElfPhdr *)(this->mb->data(ctx) + ehdr->e_phoff);
   u64 val = sym->esym->st_value;
 
