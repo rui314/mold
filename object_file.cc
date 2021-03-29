@@ -213,7 +213,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
               << (u32)shdr.sh_info;
 
     if (InputSection<E> *target = sections[shdr.sh_info]) {
-      target->rels = this->template get_data<ElfRela>(ctx, shdr);
+      target->rels = this->template get_data<ElfRela<E>>(ctx, shdr);
       target->has_fragments.resize(target->rels.size());
       if (target->shdr.sh_flags & SHF_ALLOC)
         target->rel_types.resize(target->rels.size());
@@ -264,7 +264,7 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRela> rels = isec.rels;
+  std::span<ElfRela<E>> rels = isec.rels;
   std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
@@ -277,7 +277,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 cur_cie = -1;
   i64 cur_cie_offset = -1;
 
-  for (ElfRela rel : rels)
+  for (ElfRela<E> rel : rels)
     if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_64 &&
         rel.r_type != R_X86_64_PC32 && rel.r_type != R_X86_64_PC64)
       Fatal(ctx) << isec << ": unsupported relocation type: " << rel.r_type;
@@ -548,7 +548,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
       continue;
 
     for (i64 i = 0; i < isec->rels.size(); i++) {
-      const ElfRela &rel = isec->rels[i];
+      const ElfRela<E> &rel = isec->rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;
@@ -1094,7 +1094,7 @@ SharedFile<E>::SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 template <typename E>
 std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
-    for (ElfDyn &dyn : this->template get_data<ElfDyn>(ctx, *sec))
+    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
   return this->name;
@@ -1166,18 +1166,18 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   std::string_view verdef = this->get_string(ctx, *verdef_sec);
   std::string_view strtab = this->get_string(ctx, verdef_sec->sh_link);
 
-  ElfVerdef *ver = (ElfVerdef *)verdef.data();
+  ElfVerdef<E> *ver = (ElfVerdef<E> *)verdef.data();
 
   for (;;) {
     if (ret.size() <= ver->vd_ndx)
       ret.resize(ver->vd_ndx + 1);
 
-    ElfVerdaux *aux = (ElfVerdaux *)((u8 *)ver + ver->vd_aux);
+    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)((u8 *)ver + ver->vd_aux);
     ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
     if (!ver->vd_next)
       break;
 
-    ver = (ElfVerdef *)((u8 *)ver + ver->vd_next);
+    ver = (ElfVerdef<E> *)((u8 *)ver + ver->vd_next);
   }
   return ret;
 }

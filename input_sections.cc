@@ -36,13 +36,13 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   } else if (shdr.sh_flags & SHF_COMPRESSED) {
     // New-style compressed section
     std::string_view data = file.get_string(ctx, shdr);
-    if (data.size() < sizeof(ElfChdr))
+    if (data.size() < sizeof(ElfChdr<E>))
       Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
 
-    ElfChdr &hdr = *(ElfChdr *)&data[0];
+    ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
       Fatal(ctx) << file << ": " << name << ": unsupported compression type";
-    do_uncompress(data.substr(sizeof(ElfChdr)), hdr.ch_size);
+    do_uncompress(data.substr(sizeof(ElfChdr<E>)), hdr.ch_size);
   } else if (shdr.sh_type != SHT_NOBITS) {
     contents = file.get_string(ctx, shdr);
   }
@@ -268,14 +268,14 @@ static u32 relax_gottpoff(u8 *loc) {
 template <typename E>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   i64 ref_idx = 0;
-  ElfRela *dynrel = nullptr;
+  ElfRela<E> *dynrel = nullptr;
 
   if (ctx.reldyn)
-    dynrel = (ElfRela *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRela<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                          file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela &rel = rels[i];
+    const ElfRela<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -431,7 +431,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela &rel = rels[i];
+    const ElfRela<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -531,12 +531,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRela);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRela<E>);
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela &rel = rels[i];
+    const ElfRela<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 

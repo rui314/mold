@@ -306,19 +306,28 @@ struct ElfPhdr<ELF64LE> {
   u64 p_align;
 };
 
-struct ElfRela {
+template <typename E> struct ElfRela;
+
+template <>
+struct ElfRela<ELF64LE> {
   u64 r_offset;
   u32 r_type;
   u32 r_sym;
   i64 r_addend;
 };
 
-struct ElfDyn {
+template <typename E> struct ElfDyn;
+
+template <>
+struct ElfDyn<ELF64LE> {
   u64 d_tag;
   u64 d_val;
 };
 
-struct ElfVerneed {
+template <typename E> struct ElfVerneed;
+
+template <>
+struct ElfVerneed<ELF64LE> {
   u16 vn_version;
   u16 vn_cnt;
   u32 vn_file;
@@ -326,7 +335,10 @@ struct ElfVerneed {
   u32 vn_next;
 };
 
-struct ElfVernaux {
+template <typename E> struct ElfVernaux;
+
+template <>
+struct ElfVernaux<ELF64LE> {
   u32 vna_hash;
   u16 vna_flags;
   u16 vna_other;
@@ -334,7 +346,10 @@ struct ElfVernaux {
   u32 vna_next;
 };
 
-struct ElfVerdef {
+template <typename E> struct ElfVerdef;
+
+template <>
+struct ElfVerdef<ELF64LE> {
   u16 vd_version;
   u16 vd_flags;
   u16 vd_ndx;
@@ -344,12 +359,18 @@ struct ElfVerdef {
   u32 vd_next;
 };
 
-struct ElfVerdaux {
+template <typename E> struct ElfVerdaux;
+
+template <>
+struct ElfVerdaux<ELF64LE> {
   u32 vda_name;
   u32 vda_next;
 };
 
-struct ElfChdr {
+template <typename E> struct ElfChdr;
+
+template <>
+struct ElfChdr<ELF64LE> {
   u32 ch_type;
   u32 ch_reserved;
   u64 ch_size;
