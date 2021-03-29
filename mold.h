@@ -1245,7 +1245,7 @@ struct Context {
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 
-  bool has_error;
+  bool has_error = false;
 
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
@@ -1256,7 +1256,7 @@ struct Context {
   ObjectFile<E> *internal_obj = nullptr;
 
   // Output buffer
-  u8 *buf;
+  u8 *buf = nullptr;
 
   std::vector<OutputChunk<E> *> chunks;
   std::atomic_bool has_gottpoff = false;
