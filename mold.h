@@ -1248,8 +1248,6 @@ class ReadContext {
 public:
   ReadContext(bool x) : is_preloading(x) {}
 
-  std::function<void(InputFile *)> parse;
-
   bool as_needed = false;
   bool whole_archive = false;
   bool is_preloading = false;
