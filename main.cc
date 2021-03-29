@@ -1213,7 +1213,7 @@ int main(int argc, char **argv) {
 
   // Merge identical read-only sections.
   if (ctx.arg.icf)
-    icf_sections();
+    icf_sections(ctx);
 
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);

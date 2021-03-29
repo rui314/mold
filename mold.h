@@ -1037,7 +1037,7 @@ void gc_sections();
 // icf.cc
 //
 
-void icf_sections();
+void icf_sections(Context &ctx);
 
 //
 // mapfile.cc

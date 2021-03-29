@@ -77,7 +77,7 @@ static bool cie_equal(const CieRecord &a, const CieRecord &b) {
   return a.contents == b.contents && a.rels == b.rels;
 }
 
-static void uniquify_cies() {
+static void uniquify_cies(Context &ctx) {
   Timer t("uniquify_cies");
   std::vector<CieRecord *> cies;
 
@@ -115,9 +115,9 @@ static bool is_eligible(InputSection &isec) {
          !is_empty && !is_init && !is_fini && !is_enumerable;
 }
 
-static Digest digest_final(SHA256_CTX &ctx) {
+static Digest digest_final(SHA256_CTX &sha_ctx) {
   u8 buf[SHA256_SIZE];
-  assert(SHA256_Final(buf, &ctx) == 1);
+  assert(SHA256_Final(buf, &sha_ctx) == 1);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);
@@ -166,7 +166,7 @@ struct LeafEq {
   }
 };
 
-static void merge_leaf_nodes() {
+static void merge_leaf_nodes(Context &ctx) {
   Timer t("merge_leaf_nodes");
 
   static Counter eligible("icf_eligibles");
@@ -211,16 +211,16 @@ static void merge_leaf_nodes() {
 }
 
 static Digest compute_digest(InputSection &isec) {
-  SHA256_CTX ctx;
-  SHA256_Init(&ctx);
+  SHA256_CTX sha_ctx;
+  SHA256_Init(&sha_ctx);
 
   auto hash = [&](auto val) {
-    SHA256_Update(&ctx, &val, sizeof(val));
+    SHA256_Update(&sha_ctx, &val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
     hash(str.size());
-    SHA256_Update(&ctx, str.data(), str.size());
+    SHA256_Update(&sha_ctx, str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol &sym) {
@@ -286,10 +286,10 @@ static Digest compute_digest(InputSection &isec) {
     }
   }
 
-  return digest_final(ctx);
+  return digest_final(sha_ctx);
 }
 
-static std::vector<InputSection *> gather_sections() {
+static std::vector<InputSection *> gather_sections(Context &ctx) {
   Timer t("gather_sections");
 
   // Count the number of input sections for each input file.
@@ -386,17 +386,17 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (digests[slot][i] == digests[!slot][i])
       return;
 
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, digests[2][i].data(), HASH_SIZE);
+    SHA256_CTX sha_ctx;
+    SHA256_Init(&sha_ctx);
+    SHA256_Update(&sha_ctx, digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j = begin; j < end; j++)
-      SHA256_Update(&ctx, digests[slot][edges[j]].data(), HASH_SIZE);
+      SHA256_Update(&sha_ctx, digests[slot][edges[j]].data(), HASH_SIZE);
 
-    digests[!slot][i] = digest_final(ctx);
+    digests[!slot][i] = digest_final(sha_ctx);
 
     if (digests[slot][i] != digests[!slot][i])
       changed.local()++;
@@ -419,7 +419,7 @@ static i64 count_num_classes(std::span<Digest> digests,
   return num_classes.combine(std::plus());
 }
 
-static void print_icf_sections() {
+static void print_icf_sections(Context &ctx) {
   tbb::concurrent_vector<InputSection *> leaders;
   tbb::concurrent_unordered_multimap<InputSection *, InputSection *> map;
 
@@ -459,14 +459,14 @@ static void print_icf_sections() {
   SyncOut() << "ICF saved " << saved_bytes << " bytes";
 }
 
-void icf_sections() {
+void icf_sections(Context &ctx) {
   Timer t("icf");
 
-  uniquify_cies();
-  merge_leaf_nodes();
+  uniquify_cies(ctx);
+  merge_leaf_nodes(ctx);
 
   // Prepare for the propagation rounds.
-  std::vector<InputSection *> sections = gather_sections();
+  std::vector<InputSection *> sections = gather_sections(ctx);
 
   std::vector<std::vector<Digest>> digests(3);
   digests[0] = compute_digests(sections);
@@ -526,7 +526,7 @@ void icf_sections() {
   }
 
   if (ctx.arg.print_icf_sections)
-    print_icf_sections();
+    print_icf_sections(ctx);
 
   // Re-assign input sections to symbols.
   {
