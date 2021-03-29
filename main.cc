@@ -1372,7 +1372,7 @@ int main(int argc, char **argv) {
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
-  ctx.reldyn->sort();
+  ctx.reldyn->sort(ctx);
 
   // Zero-clear paddings between sections
   clear_padding(filesize);

@@ -280,7 +280,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       write_val(rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->frag->get_addr() : sym.get_addr())
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr())
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr() - ctx.got->shdr.sh_addr)
@@ -449,7 +449,7 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
     case R_X86_64_32S:
     case R_X86_64_64:
       if (ref)
-        write(ref->frag->get_addr() + ref->addend);
+        write(ref->frag->get_addr(ctx) + ref->addend);
       else
         write(sym.get_addr() + rel.r_addend);
       break;

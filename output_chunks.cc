@@ -219,7 +219,7 @@ void RelDynSection::update_shdr(Context &ctx) {
   shdr.sh_size = offset;
 }
 
-void RelDynSection::sort() {
+void RelDynSection::sort(Context &ctx) {
   Timer t("sort_dynamic_relocs");
 
   ElfRela *begin = (ElfRela *)(ctx.buf + shdr.sh_offset);

@@ -99,7 +99,7 @@ struct SectionFragment {
       offset(other.offset), alignment(other.alignment.load()),
       is_alive(other.is_alive.load()) {}
 
-  inline u64 get_addr() const;
+  inline u64 get_addr(Context &ctx) const;
 
   MergedSection &output_section;
   std::string_view data;
@@ -498,7 +498,7 @@ public:
   }
 
   void update_shdr(Context &ctx) override;
-  void sort();
+  void sort(Context &ctx);
 };
 
 class StrtabSection : public OutputChunk {
@@ -1397,7 +1397,7 @@ inline void Symbol::clear() {
 inline u64 Symbol::get_addr() const {
   if (frag) {
     assert(frag->is_alive);
-    return frag->get_addr() + value;
+    return frag->get_addr(ctx) + value;
   }
 
   if (has_copyrel) {
@@ -1463,7 +1463,7 @@ inline u64 Symbol::get_plt_addr() const {
   return ctx.pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
 }
 
-inline u64 SectionFragment::get_addr() const {
+inline u64 SectionFragment::get_addr(Context &ctx) const {
   return output_section.shdr.sh_addr + offset;
 }
 
