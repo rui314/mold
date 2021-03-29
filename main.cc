@@ -275,7 +275,7 @@ static void resolve_obj_symbols(Context<E> &ctx) {
       roots.push_back(file);
 
   for (std::string_view name : ctx.arg.undefined)
-    if (InputFile<E> *file = Symbol<E>::intern(name)->file)
+    if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
         roots.push_back((ObjectFile<E> *)file);
 
@@ -634,7 +634,7 @@ static void apply_version_script(Context<E> &ctx) {
 
     if (!elem.is_extern_cpp &&
         elem.pattern.find('*') == elem.pattern.npos) {
-      Symbol<E>::intern(elem.pattern)->ver_idx = elem.ver_idx;
+      Symbol<E>::intern(ctx, elem.pattern)->ver_idx = elem.ver_idx;
       continue;
     }
 
@@ -1038,8 +1038,10 @@ static void fix_synthetic_symbols(Context<E> &ctx) {
   // __start_ and __stop_ symbols
   for (OutputChunk<E> *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
-      start(Symbol<E>::intern_alloc("__start_" + std::string(chunk->name)), chunk);
-      stop(Symbol<E>::intern_alloc("__stop_" + std::string(chunk->name)), chunk);
+      std::string *sym1 = new std::string("__start_" + std::string(chunk->name));
+      std::string *sym2 = new std::string("__stop_" + std::string(chunk->name));
+      start(Symbol<E>::intern(ctx, *sym1), chunk);
+      stop(Symbol<E>::intern(ctx, *sym2), chunk);
     }
   }
 }
@@ -1185,7 +1187,7 @@ int do_main(int argc, char **argv) {
   }
 
   for (std::string_view arg : ctx.arg.trace_symbol)
-    Symbol<E>::intern(arg)->traced = true;
+    Symbol<E>::intern(ctx, arg)->traced = true;
 
   // Parse input files
   {

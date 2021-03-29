@@ -32,7 +32,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
   if (!ctx.arg.entry.empty())
-    hdr.e_entry = Symbol<E>::intern(ctx.arg.entry)->get_addr(ctx);
+    hdr.e_entry = Symbol<E>::intern(ctx, ctx.arg.entry)->get_addr(ctx);
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
@@ -453,9 +453,9 @@ static std::vector<u64> create_dynamic_section(Context<E> &ctx) {
     define(DT_VERDEFNUM, ctx.verdef->shdr.sh_info);
   }
 
-  if (Symbol<E> *sym = Symbol<E>::intern(ctx.arg.init); sym->file)
+  if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.init); sym->file)
     define(DT_INIT, sym->get_addr(ctx));
-  if (Symbol<E> *sym = Symbol<E>::intern(ctx.arg.fini); sym->file)
+  if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.fini); sym->file)
     define(DT_FINI, sym->get_addr(ctx));
 
   if (ctx.hash)

@@ -132,17 +132,11 @@ public:
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol<E> &other) : name(other.name) {}
 
-  static Symbol<E> *intern(std::string_view key, std::string_view name) {
-    static ConcurrentMap<Symbol> map;
-    return map.insert(key, {name});
-  }
+  static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
+                           std::string_view name);
 
-  static Symbol<E> *intern(std::string_view name) {
-    return intern(name, name);
-  }
-
-  static Symbol<E> *intern_alloc(std::string name) {
-    return intern(*new std::string(name));
+  static Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
+    return intern(ctx, name, name);
   }
 
   inline u64 get_addr(Context<E> &ctx) const;
@@ -1446,6 +1440,14 @@ inline u64 next_power_of_two(u64 val) {
   if (val == 0 || val == 1)
     return 1;
   return (u64)1 << (64 - __builtin_clzl(val - 1));
+}
+
+
+template <typename E>
+Symbol<E> *Symbol<E>::intern(Context<E> &ctx, std::string_view key,
+                             std::string_view name) {
+  static ConcurrentMap<Symbol> map;
+  return map.insert(key, {name});
 }
 
 template <typename E>

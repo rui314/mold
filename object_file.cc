@@ -439,7 +439,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
         symvers[i - first_global] = ver.data();
     }
 
-    this->symbols[i] = Symbol<E>::intern(key, name);
+    this->symbols[i] = Symbol<E>::intern(ctx, key, name);
 
     if (esym.is_common())
       has_common_symbol = true;
@@ -1028,7 +1028,7 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
     esym.st_visibility = visibility;
     esyms->push_back(esym);
 
-    Symbol<E> *sym = Symbol<E>::intern(name);
+    Symbol<E> *sym = Symbol<E>::intern(ctx, name);
     this->symbols.push_back(sym);
     return sym;
   };
@@ -1122,14 +1122,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
 
     if (!esyms[i].is_defined()) {
-      undefs.push_back(Symbol<E>::intern(name));
+      undefs.push_back(Symbol<E>::intern(ctx, name));
       continue;
     }
 
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(VER_NDX_GLOBAL);
-      this->symbols.push_back(Symbol<E>::intern(name));
+      this->symbols.push_back(Symbol<E>::intern(ctx, name));
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
       if (ver == VER_NDX_LOCAL)
@@ -1141,12 +1141,12 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(ver);
-      this->symbols.push_back(Symbol<E>::intern(mangled, name));
+      this->symbols.push_back(Symbol<E>::intern(ctx, mangled, name));
 
       if (!(vers[i] & VERSYM_HIDDEN)) {
         elf_syms.push_back(&esyms[i]);
         versyms.push_back(ver);
-        this->symbols.push_back(Symbol<E>::intern(name));
+        this->symbols.push_back(Symbol<E>::intern(ctx, name));
       }
     }
   }

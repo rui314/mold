@@ -113,10 +113,10 @@ collect_root_set(Context<E> &ctx) {
   });
 
   // Add sections referenced by root symbols.
-  enqueue_symbol(Symbol<E>::intern(ctx.arg.entry));
+  enqueue_symbol(Symbol<E>::intern(ctx, ctx.arg.entry));
 
   for (std::string_view name : ctx.arg.undefined)
-    enqueue_symbol(Symbol<E>::intern(name));
+    enqueue_symbol(Symbol<E>::intern(ctx, name));
 
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
