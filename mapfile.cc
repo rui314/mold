@@ -69,7 +69,7 @@ void print_map() {
 
       std::vector<Symbol *> syms = acc->second;
       for (Symbol *sym : syms)
-        *out << std::setw(16) << sym->get_addr()
+        *out << std::setw(16) << sym->get_addr(ctx)
              << "          0     0                 "
              << *sym << "\n";
     }

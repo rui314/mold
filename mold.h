@@ -143,13 +143,13 @@ public:
     return intern(*new std::string(name));
   }
 
-  inline u64 get_addr() const;
-  inline u64 get_got_addr() const;
-  inline u64 get_gotplt_addr() const;
-  inline u64 get_gottpoff_addr() const;
-  inline u64 get_tlsgd_addr() const;
-  inline u64 get_tlsdesc_addr() const;
-  inline u64 get_plt_addr() const;
+  inline u64 get_addr(Context &ctx) const;
+  inline u64 get_got_addr(Context &ctx) const;
+  inline u64 get_gotplt_addr(Context &ctx) const;
+  inline u64 get_gottpoff_addr(Context &ctx) const;
+  inline u64 get_tlsgd_addr(Context &ctx) const;
+  inline u64 get_tlsdesc_addr(Context &ctx) const;
+  inline u64 get_plt_addr(Context &ctx) const;
 
   inline bool is_alive() const;
   inline bool is_absolute() const;
@@ -1394,7 +1394,7 @@ inline void Symbol::clear() {
   memcpy((char *)this, &null, sizeof(null));
 }
 
-inline u64 Symbol::get_addr() const {
+inline u64 Symbol::get_addr(Context &ctx) const {
   if (frag) {
     assert(frag->is_alive);
     return frag->get_addr(ctx) + value;
@@ -1407,7 +1407,7 @@ inline u64 Symbol::get_addr() const {
   }
 
   if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
-    return get_plt_addr();
+    return get_plt_addr(ctx);
 
   if (input_section) {
     if (input_section->is_ehframe)
@@ -1426,36 +1426,36 @@ inline u64 Symbol::get_addr() const {
   }
 
   if (plt_idx != -1)
-    return get_plt_addr();
+    return get_plt_addr(ctx);
   return value;
 }
 
-inline u64 Symbol::get_got_addr() const {
+inline u64 Symbol::get_got_addr(Context &ctx) const {
   assert(got_idx != -1);
   return ctx.got->shdr.sh_addr + got_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gotplt_addr() const {
+inline u64 Symbol::get_gotplt_addr(Context &ctx) const {
   assert(gotplt_idx != -1);
   return ctx.gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_gottpoff_addr() const {
+inline u64 Symbol::get_gottpoff_addr(Context &ctx) const {
   assert(gottpoff_idx != -1);
   return ctx.got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_tlsgd_addr() const {
+inline u64 Symbol::get_tlsgd_addr(Context &ctx) const {
   assert(tlsgd_idx != -1);
   return ctx.got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_tlsdesc_addr() const {
+inline u64 Symbol::get_tlsdesc_addr(Context &ctx) const {
   assert(tlsdesc_idx != -1);
   return ctx.got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
 }
 
-inline u64 Symbol::get_plt_addr() const {
+inline u64 Symbol::get_plt_addr(Context &ctx) const {
   assert(plt_idx != -1);
 
   if (got_idx == -1)

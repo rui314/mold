@@ -280,10 +280,10 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       write_val(rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr())
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define G   (sym.get_got_addr() - ctx.got->shdr.sh_addr)
+#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel_types[i]) {
@@ -326,7 +326,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       break;
     }
     case R_TLSGD:
-      write(sym.get_tlsgd_addr() + A - P);
+      write(sym.get_tlsgd_addr(ctx) + A - P);
       break;
     case R_TLSGD_RELAX_LE: {
       // Relax GD to LE
@@ -362,7 +362,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       write(S + A - ctx.tls_end);
       break;
     case R_GOTTPOFF:
-      write(sym.get_gottpoff_addr() + A - P);
+      write(sym.get_gottpoff_addr(ctx) + A - P);
       break;
     case R_GOTTPOFF_RELAX: {
       u32 insn = relax_gottpoff(loc - 3);
@@ -373,7 +373,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       break;
     }
     case R_GOTPC_TLSDESC:
-      write(sym.get_tlsdesc_addr() + A - P);
+      write(sym.get_tlsdesc_addr(ctx) + A - P);
       break;
     case R_GOTPC_TLSDESC_RELAX_LE: {
       static const u8 insn[] = {
@@ -451,11 +451,11 @@ void InputSection::apply_reloc_nonalloc(Context &ctx, u8 *base) {
       if (ref)
         write(ref->frag->get_addr(ctx) + ref->addend);
       else
-        write(sym.get_addr() + rel.r_addend);
+        write(sym.get_addr(ctx) + rel.r_addend);
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
-      write(sym.get_addr() + rel.r_addend - ctx.tls_begin);
+      write(sym.get_addr(ctx) + rel.r_addend - ctx.tls_begin);
       break;
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:

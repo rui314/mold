@@ -18,7 +18,7 @@ void OutputEhdr::copy_buf(Context &ctx) {
   hdr.e_machine = EM_X86_64;
   hdr.e_version = EV_CURRENT;
   if (!ctx.arg.entry.empty())
-    hdr.e_entry = Symbol::intern(ctx.arg.entry)->get_addr();
+    hdr.e_entry = Symbol::intern(ctx.arg.entry)->get_addr(ctx);
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
   hdr.e_ehsize = sizeof(ElfEhdr);
@@ -419,9 +419,9 @@ static std::vector<u64> create_dynamic_section(Context &ctx) {
   }
 
   if (Symbol *sym = Symbol::intern(ctx.arg.init); sym->file)
-    define(DT_INIT, sym->get_addr());
+    define(DT_INIT, sym->get_addr(ctx));
   if (Symbol *sym = Symbol::intern(ctx.arg.fini); sym->file)
-    define(DT_FINI, sym->get_addr());
+    define(DT_FINI, sym->get_addr(ctx));
 
   if (ctx.hash)
     define(DT_HASH, ctx.hash->shdr.sh_addr);
@@ -624,40 +624,41 @@ void GotSection::copy_buf(Context &ctx) {
   ElfRela *rel = (ElfRela *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
   for (Symbol *sym : got_syms) {
-    u64 addr = sym->get_got_addr();
+    u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
       *rel++ = {addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
     } else {
-      buf[sym->got_idx] = sym->get_addr();
+      buf[sym->got_idx] = sym->get_addr(ctx);
       if (ctx.arg.pic && sym->is_relative())
-        *rel++ = {addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr()};
+        *rel++ = {addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr(ctx)};
     }
   }
 
   for (Symbol *sym : tlsgd_syms) {
-    u64 addr = sym->get_tlsgd_addr();
+    u64 addr = sym->get_tlsgd_addr(ctx);
     *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
     *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
   }
 
   for (Symbol *sym : tlsdesc_syms)
-    *rel++ = {sym->get_tlsdesc_addr(), R_X86_64_TLSDESC, sym->dynsym_idx, 0};
+    *rel++ = {sym->get_tlsdesc_addr(ctx), R_X86_64_TLSDESC, sym->dynsym_idx, 0};
 
   for (Symbol *sym : gottpoff_syms) {
     if (sym->is_imported)
-      *rel++ = {sym->get_gottpoff_addr(), R_X86_64_TPOFF64, sym->dynsym_idx, 0};
+      *rel++ =
+        {sym->get_gottpoff_addr(ctx), R_X86_64_TPOFF64, sym->dynsym_idx, 0};
     else
-      buf[sym->gottpoff_idx] = sym->get_addr() - ctx.tls_end;
+      buf[sym->gottpoff_idx] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
     *rel++ = {get_tlsld_addr(ctx), R_X86_64_DTPMOD64, 0, 0};
 
   for (Symbol *sym : ctx.dynbss->symbols)
-    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
+    *rel++ = {sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0};
 
   for (Symbol *sym : ctx.dynbss_relro->symbols)
-    *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
+    *rel++ = {sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0};
 }
 
 void GotPltSection::copy_buf(Context &ctx) {
@@ -672,7 +673,7 @@ void GotPltSection::copy_buf(Context &ctx) {
 
   for (Symbol *sym : ctx.plt->symbols)
     if (sym->gotplt_idx != -1)
-      buf[sym->gotplt_idx] = sym->get_plt_addr() + 6;
+      buf[sym->gotplt_idx] = sym->get_plt_addr(ctx) + 6;
 }
 
 void PltSection::add_symbol(Context &ctx, Symbol *sym) {
@@ -718,9 +719,9 @@ void PltSection::copy_buf(Context &ctx) {
   for (Symbol *sym : symbols) {
     u8 *ent = buf + sym->plt_idx * PLT_SIZE;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_gotplt_addr() - sym->get_plt_addr() - 6;
+    *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
     *(u32 *)(ent + 7) = relplt_idx++;
-    *(u32 *)(ent + 12) = shdr.sh_addr - sym->get_plt_addr() - 16;
+    *(u32 *)(ent + 12) = shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
   }
 }
 
@@ -744,7 +745,7 @@ void PltGotSection::copy_buf(Context &ctx) {
   for (Symbol *sym : symbols) {
     u8 *ent = buf + sym->plt_idx * PLT_GOT_SIZE;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_got_addr() - sym->get_plt_addr() - 6;
+    *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
 }
 
@@ -762,7 +763,7 @@ void RelPltSection::copy_buf(Context &ctx) {
     ElfRela &rel = buf[relplt_idx++];
     memset(&rel, 0, sizeof(rel));
     rel.r_sym = sym->dynsym_idx;
-    rel.r_offset = sym->get_gotplt_addr();
+    rel.r_offset = sym->get_gotplt_addr(ctx);
 
     if (sym->get_type() == STT_GNU_IFUNC) {
       rel.r_type = R_X86_64_IRELATIVE;
@@ -871,23 +872,23 @@ void DynsymSection::copy_buf(Context &ctx) {
     if (sym.has_copyrel) {
       esym.st_shndx = sym.copyrel_readonly
         ? ctx.dynbss_relro->shndx : ctx.dynbss->shndx;
-      esym.st_value = sym.get_addr();
+      esym.st_value = sym.get_addr(ctx);
     } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
       if (!ctx.arg.shared && sym.plt_idx != -1 && sym.got_idx == -1) {
         // Emit an address for a canonical PLT
-        esym.st_value = sym.get_plt_addr();
+        esym.st_value = sym.get_plt_addr(ctx);
       }
     } else if (!sym.input_section) {
       esym.st_shndx = SHN_ABS;
-      esym.st_value = sym.get_addr();
+      esym.st_value = sym.get_addr(ctx);
     } else if (sym.get_type() == STT_TLS) {
       esym.st_shndx = sym.input_section->output_section->shndx;
-      esym.st_value = sym.get_addr() - ctx.tls_begin;
+      esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     } else {
       esym.st_shndx = sym.input_section->output_section->shndx;
-      esym.st_value = sym.get_addr();
+      esym.st_value = sym.get_addr(ctx);
     }
   }
 }
@@ -1205,7 +1206,7 @@ void EhFrameSection::copy_buf(Context &ctx) {
 
       for (EhReloc &rel : cie->rels) {
         u64 loc = cie->offset + rel.offset;
-        u64 val = rel.sym.get_addr() + rel.addend;
+        u64 val = rel.sym.get_addr(ctx) + rel.addend;
         apply_reloc(rel, loc, val);
       }
     }
@@ -1222,7 +1223,7 @@ void EhFrameSection::copy_buf(Context &ctx) {
       for (i64 i = 0; i < fde.rels.size(); i++) {
         EhReloc &rel = fde.rels[i];
         u64 loc = fde_off + rel.offset;
-        u64 val = rel.sym.get_addr() + rel.addend;
+        u64 val = rel.sym.get_addr(ctx) + rel.addend;
         apply_reloc(rel, loc, val);
 
         // Write to .eh_frame_hdr

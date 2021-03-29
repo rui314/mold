@@ -936,9 +936,9 @@ void ObjectFile::write_symtab(Context &ctx) {
     esym.st_name = strtab_off;
 
     if (sym.get_type() == STT_TLS)
-      esym.st_value = sym.get_addr() - ctx.tls_begin;
+      esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     else
-      esym.st_value = sym.get_addr();
+      esym.st_value = sym.get_addr(ctx);
 
     if (sym.input_section)
       esym.st_shndx = sym.input_section->output_section->shndx;
