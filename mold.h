@@ -1247,6 +1247,9 @@ struct Context {
 
   bool has_error = false;
 
+  // Symbol table
+  ConcurrentMap<Symbol<E>> symbol_map;
+
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
 
@@ -1446,8 +1449,7 @@ inline u64 next_power_of_two(u64 val) {
 template <typename E>
 Symbol<E> *Symbol<E>::intern(Context<E> &ctx, std::string_view key,
                              std::string_view name) {
-  static ConcurrentMap<Symbol> map;
-  return map.insert(key, {name});
+  return ctx.symbol_map.insert(key, {name});
 }
 
 template <typename E>
