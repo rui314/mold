@@ -568,29 +568,29 @@ static void scan_rels() {
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
     if (sym->flags & NEEDS_DYNSYM)
-      ctx.dynsym->add_symbol(sym);
+      ctx.dynsym->add_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_GOT)
-      ctx.got->add_got_symbol(sym);
+      ctx.got->add_got_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_PLT) {
       if (sym->flags & NEEDS_GOT)
-        ctx.pltgot->add_symbol(sym);
+        ctx.pltgot->add_symbol(ctx, sym);
       else
-        ctx.plt->add_symbol(sym);
+        ctx.plt->add_symbol(ctx, sym);
     }
 
     if (sym->flags & NEEDS_GOTTPOFF)
-      ctx.got->add_gottpoff_symbol(sym);
+      ctx.got->add_gottpoff_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_TLSGD)
-      ctx.got->add_tlsgd_symbol(sym);
+      ctx.got->add_tlsgd_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_TLSDESC)
-      ctx.got->add_tlsdesc_symbol(sym);
+      ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_TLSLD)
-      ctx.got->add_tlsld();
+      ctx.got->add_tlsld(ctx);
 
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
@@ -606,7 +606,7 @@ static void scan_rels() {
         alias->has_copyrel = true;
         alias->value = sym->value;
         alias->copyrel_readonly = sym->copyrel_readonly;
-        ctx.dynsym->add_symbol(alias);
+        ctx.dynsym->add_symbol(ctx, alias);
       }
     }
   }
@@ -1283,7 +1283,7 @@ int main(int argc, char **argv) {
 
   // Sort .dynsym contents. Beyond this point, no symbol will be
   // added to .dynsym.
-  ctx.dynsym->sort_symbols();
+  ctx.dynsym->sort_symbols(ctx);
 
   // Fill .gnu.version_d section contents.
   fill_verdef();
@@ -1310,7 +1310,7 @@ int main(int argc, char **argv) {
       return chunk->kind == OutputChunk::REGULAR &&
              chunk->name == ".eh_frame";
     });
-    ctx.eh_frame->construct();
+    ctx.eh_frame->construct(ctx);
   }
 
   // Now that we have computed sizes for all sections and assigned

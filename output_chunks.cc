@@ -211,7 +211,7 @@ void RelDynSection::update_shdr(Context &ctx) {
 
   // .rel.dyn contents are filled by GotSection::copy_buf(Context &ctx) and
   // InputSection::apply_reloc_alloc().
-  i64 offset = ctx.got->get_reldyn_size();
+  i64 offset = ctx.got->get_reldyn_size(ctx);
   for (ObjectFile *file : ctx.objs) {
     file->reldyn_offset = offset;
     offset += file->num_dynrel * sizeof(ElfRela);
@@ -331,21 +331,21 @@ void SymtabSection::copy_buf(Context &ctx) {
   });
 }
 
-static bool has_init_array() {
+static bool has_init_array(Context &ctx) {
   for (OutputChunk *chunk : ctx.chunks)
     if (chunk->shdr.sh_type == SHT_INIT_ARRAY)
       return true;
   return false;
 }
 
-static bool has_fini_array() {
+static bool has_fini_array(Context &ctx) {
   for (OutputChunk *chunk : ctx.chunks)
     if (chunk->shdr.sh_type == SHT_FINI_ARRAY)
       return true;
   return false;
 }
 
-static std::vector<u64> create_dynamic_section() {
+static std::vector<u64> create_dynamic_section(Context &ctx) {
   std::vector<u64> vec;
 
   auto define = [&](u64 tag, u64 val) {
@@ -393,13 +393,13 @@ static std::vector<u64> create_dynamic_section() {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (has_init_array()) {
+  if (has_init_array(ctx)) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (has_fini_array()) {
+  if (has_fini_array(ctx)) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
@@ -463,12 +463,12 @@ void DynamicSection::update_shdr(Context &ctx) {
   if (!ctx.arg.shared && ctx.dsos.empty())
     return;
 
-  shdr.sh_size = create_dynamic_section().size() * 8;
+  shdr.sh_size = create_dynamic_section(ctx).size() * 8;
   shdr.sh_link = ctx.dynstr->shndx;
 }
 
 void DynamicSection::copy_buf(Context &ctx) {
-  std::vector<u64> contents = create_dynamic_section();
+  std::vector<u64> contents = create_dynamic_section(ctx);
   assert(shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + shdr.sh_offset, contents);
 }
@@ -551,50 +551,50 @@ void OutputSection::copy_buf(Context &ctx) {
   });
 }
 
-void GotSection::add_got_symbol(Symbol *sym) {
+void GotSection::add_got_symbol(Context &ctx, Symbol *sym) {
   assert(sym->got_idx == -1);
   sym->got_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   got_syms.push_back(sym);
 
   if (sym->is_imported)
-    ctx.dynsym->add_symbol(sym);
+    ctx.dynsym->add_symbol(ctx, sym);
 }
 
-void GotSection::add_gottpoff_symbol(Symbol *sym) {
+void GotSection::add_gottpoff_symbol(Context &ctx, Symbol *sym) {
   assert(sym->gottpoff_idx == -1);
   sym->gottpoff_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE;
   gottpoff_syms.push_back(sym);
 
   if (sym->is_imported)
-    ctx.dynsym->add_symbol(sym);
+    ctx.dynsym->add_symbol(ctx, sym);
 }
 
-void GotSection::add_tlsgd_symbol(Symbol *sym) {
+void GotSection::add_tlsgd_symbol(Context &ctx, Symbol *sym) {
   assert(sym->tlsgd_idx == -1);
   sym->tlsgd_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsgd_syms.push_back(sym);
-  ctx.dynsym->add_symbol(sym);
+  ctx.dynsym->add_symbol(ctx, sym);
 }
 
-void GotSection::add_tlsdesc_symbol(Symbol *sym) {
+void GotSection::add_tlsdesc_symbol(Context &ctx, Symbol *sym) {
   assert(sym->tlsdesc_idx == -1);
   sym->tlsdesc_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
   tlsdesc_syms.push_back(sym);
-  ctx.dynsym->add_symbol(sym);
+  ctx.dynsym->add_symbol(ctx, sym);
 }
 
-void GotSection::add_tlsld() {
+void GotSection::add_tlsld(Context &ctx) {
   if (tlsld_idx != -1)
     return;
   tlsld_idx = shdr.sh_size / GOT_SIZE;
   shdr.sh_size += GOT_SIZE * 2;
 }
 
-i64 GotSection::get_reldyn_size() const {
+i64 GotSection::get_reldyn_size(Context &ctx) const {
   i64 n = 0;
   for (Symbol *sym : got_syms)
     if (sym->is_imported || (ctx.arg.pic && sym->is_relative()))
@@ -651,7 +651,7 @@ void GotSection::copy_buf(Context &ctx) {
   }
 
   if (tlsld_idx != -1)
-    *rel++ = {get_tlsld_addr(), R_X86_64_DTPMOD64, 0, 0};
+    *rel++ = {get_tlsld_addr(ctx), R_X86_64_DTPMOD64, 0, 0};
 
   for (Symbol *sym : ctx.dynbss->symbols)
     *rel++ = {sym->get_addr(), R_X86_64_COPY, sym->dynsym_idx, 0};
@@ -675,7 +675,7 @@ void GotPltSection::copy_buf(Context &ctx) {
       buf[sym->gotplt_idx] = sym->get_plt_addr() + 6;
 }
 
-void PltSection::add_symbol(Symbol *sym) {
+void PltSection::add_symbol(Context &ctx, Symbol *sym) {
   assert(sym->plt_idx == -1);
   assert(sym->got_idx == -1);
 
@@ -691,7 +691,7 @@ void PltSection::add_symbol(Symbol *sym) {
   sym->gotplt_idx = ctx.gotplt->shdr.sh_size / GOT_SIZE;
   ctx.gotplt->shdr.sh_size += GOT_SIZE;
   ctx.relplt->shdr.sh_size += sizeof(ElfRela);
-  ctx.dynsym->add_symbol(sym);
+  ctx.dynsym->add_symbol(ctx, sym);
 }
 
 void PltSection::copy_buf(Context &ctx) {
@@ -724,7 +724,7 @@ void PltSection::copy_buf(Context &ctx) {
   }
 }
 
-void PltGotSection::add_symbol(Symbol *sym) {
+void PltGotSection::add_symbol(Context &ctx, Symbol *sym) {
   assert(sym->plt_idx == -1);
   assert(sym->got_idx != -1);
 
@@ -773,7 +773,7 @@ void RelPltSection::copy_buf(Context &ctx) {
   }
 }
 
-void DynsymSection::add_symbol(Symbol *sym) {
+void DynsymSection::add_symbol(Context &ctx, Symbol *sym) {
   if (symbols.empty())
     symbols.push_back({});
 
@@ -783,7 +783,7 @@ void DynsymSection::add_symbol(Symbol *sym) {
   symbols.push_back(sym);
 }
 
-void DynsymSection::sort_symbols() {
+void DynsymSection::sort_symbols(Context &ctx) {
   Timer t("sort_dynsyms");
 
   struct T {
@@ -822,7 +822,7 @@ void DynsymSection::sort_symbols() {
     ctx.gnu_hash->num_buckets = num_globals / ctx.gnu_hash->LOAD_FACTOR + 1;
     ctx.gnu_hash->symoffset = first_global - vec.begin();
 
-    tbb::parallel_for_each(first_global, vec.end(), [](T &x) {
+    tbb::parallel_for_each(first_global, vec.end(), [&](T &x) {
       x.hash = gnu_hash(x.sym->name) % ctx.gnu_hash->num_buckets;
     });
 
@@ -1102,7 +1102,7 @@ void MergedSection::copy_buf(Context &ctx) {
   });
 }
 
-void EhFrameSection::construct() {
+void EhFrameSection::construct(Context &ctx) {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
@@ -1312,7 +1312,7 @@ void DynbssSection::add_symbol(Context &ctx, Symbol *sym) {
   sym->has_copyrel = true;
   shdr.sh_size += sym->esym->st_size;
   symbols.push_back(sym);
-  ctx.dynsym->add_symbol(sym);
+  ctx.dynsym->add_symbol(ctx, sym);
 }
 
 void VersymSection::update_shdr(Context &ctx) {

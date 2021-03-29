@@ -410,18 +410,18 @@ public:
     shdr.sh_addralign = GOT_SIZE;
   }
 
-  void add_got_symbol(Symbol *sym);
-  void add_gottpoff_symbol(Symbol *sym);
-  void add_tlsgd_symbol(Symbol *sym);
-  void add_tlsdesc_symbol(Symbol *sym);
-  void add_tlsld();
+  void add_got_symbol(Context &ctx, Symbol *sym);
+  void add_gottpoff_symbol(Context &ctx, Symbol *sym);
+  void add_tlsgd_symbol(Context &ctx, Symbol *sym);
+  void add_tlsdesc_symbol(Context &ctx, Symbol *sym);
+  void add_tlsld(Context &ctx);
 
-  u64 get_tlsld_addr() const {
+  u64 get_tlsld_addr(Context &ctx) const {
     assert(tlsld_idx != -1);
     return shdr.sh_addr + tlsld_idx * GOT_SIZE;
   }
 
-  i64 get_reldyn_size() const;
+  i64 get_reldyn_size(Context &ctx) const;
   void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> got_syms;
@@ -452,7 +452,7 @@ public:
     shdr.sh_addralign = 16;
   }
 
-  void add_symbol(Symbol *sym);
+  void add_symbol(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> symbols;
@@ -467,7 +467,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void add_symbol(Symbol *sym);
+  void add_symbol(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> symbols;
@@ -579,8 +579,8 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void add_symbol(Symbol *sym);
-  void sort_symbols();
+  void add_symbol(Context &ctx, Symbol *sym);
+  void sort_symbols(Context &ctx);
   void update_shdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -659,7 +659,7 @@ public:
     shdr.sh_addralign = 8;
   }
 
-  void construct();
+  void construct(Context &ctx);
   void copy_buf(Context &ctx) override;
   u64 get_addr(const Symbol &sym);
 

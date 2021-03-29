@@ -340,7 +340,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       break;
     }
     case R_TLSLD:
-      write(ctx.got->get_tlsld_addr() + A - P);
+      write(ctx.got->get_tlsld_addr(ctx) + A - P);
       break;
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
