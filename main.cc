@@ -17,7 +17,7 @@ i64 BuildId::size(Context &ctx) const {
   case UUID:
     return 16;
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 static bool is_text_file(Context &ctx, MemoryMappedFile *mb) {
@@ -632,7 +632,7 @@ static void apply_version_script(Context &ctx) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
             ? sym->get_demangled_name() : sym->name;
-          if (glob.match(ctx, name))
+          if (glob.match(name))
             sym->ver_idx = elem.ver_idx;
         }
       }

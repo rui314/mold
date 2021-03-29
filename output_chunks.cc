@@ -1179,7 +1179,7 @@ void EhFrameSection::copy_buf(Context &ctx) {
       *(u64 *)(base + loc) = val - shdr.sh_addr - loc;
       return;
     }
-    unreachable(ctx);
+    unreachable();
   };
 
   struct Entry {
@@ -1392,5 +1392,5 @@ void BuildIdSection::write_buildid(Context &ctx, i64 filesize) {
     return;
   }
 
-  unreachable(ctx);
+  unreachable();
 }

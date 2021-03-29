@@ -78,7 +78,7 @@ static std::string rel_to_string(Context &ctx, u64 r_type) {
   case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
   case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 static void overflow_check(Context &ctx, InputSection *sec,
@@ -141,7 +141,7 @@ static void overflow_check(Context &ctx, InputSection *sec,
   case R_X86_64_SIZE64:
     return;
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 static void write_val(Context &ctx, u64 r_type, u8 *loc, u64 val) {
@@ -186,7 +186,7 @@ static void write_val(Context &ctx, u64 r_type, u8 *loc, u64 val) {
     *(u64 *)loc = val;
     return;
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 void InputSection::copy_buf(Context &ctx) {
@@ -393,7 +393,7 @@ void InputSection::apply_reloc_alloc(Context &ctx, u8 *base) {
       loc[1] = 0x90;
       break;
     default:
-      unreachable(ctx);
+      unreachable();
     }
 
 #undef S
@@ -571,7 +571,7 @@ void InputSection::scan_relocations(Context &ctx) {
         file.num_dynrel++;
         return;
       default:
-        unreachable(ctx);
+        unreachable();
       }
 
       Error(ctx) << *this << ": " << rel_to_string(ctx, rel.r_type)

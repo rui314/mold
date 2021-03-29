@@ -969,7 +969,7 @@ std::string path_clean(std::string_view path);
 class GlobPattern {
 public:
   GlobPattern(std::string_view pat);
-  bool match(Context &ctx, std::string_view str) const;
+  bool match(std::string_view str) const;
 
 private:
   enum { EXACT, PREFIX, SUFFIX, GENERIC } kind;
@@ -1268,7 +1268,6 @@ public:
   }
 
   ~SyncOut() {
-    static std::mutex mu;
     std::lock_guard lock(mu);
     out << ss.str() << "\n";
   }
@@ -1277,6 +1276,8 @@ public:
     ss << std::forward<T>(val);
     return *this;
   }
+
+  static inline std::mutex mu;
 
 private:
   std::ostream &out;
@@ -1340,10 +1341,11 @@ private:
   SyncOut out;
 };
 
-#define unreachable(ctx)                                               \
-  do {                                                                 \
-    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
-  } while (0)
+[[noreturn]]
+void handle_unreachable(const char *file, i64 line);
+
+#define unreachable() \
+  handle_unreachable(__FILE__, __LINE__)
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
