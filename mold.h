@@ -665,7 +665,9 @@ public:
   static inline std::vector<MergedSection<E> *> instances;
 
 private:
-  typedef tbb::concurrent_hash_map<std::string_view, SectionFragment<E>> MapTy;
+  using MapTy =
+    tbb::concurrent_hash_map<std::string_view, SectionFragment<E>>;
+
   static constexpr i64 NUM_SHARDS = 64;
 
   MergedSection(std::string_view name, u64 flags, u32 type)
