@@ -73,15 +73,15 @@ static std::string base64(u8 *data, u64 size) {
 }
 
 static std::string compute_sha256(char **argv) {
-  SHA256_CTX sha_ctx;
-  SHA256_Init(&sha_ctx);
+  SHA256_CTX sha;
+  SHA256_Init(&sha);
 
   for (i64 i = 0; argv[i]; i++)
     if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      SHA256_Update(&sha_ctx, argv[i], strlen(argv[i]) + 1);
+      SHA256_Update(&sha, argv[i], strlen(argv[i]) + 1);
 
   u8 digest[SHA256_SIZE];
-  SHA256_Final(digest, &sha_ctx);
+  SHA256_Final(digest, &sha);
   return base64(digest, SHA256_SIZE);
 }
 

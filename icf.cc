@@ -118,9 +118,9 @@ static bool is_eligible(InputSection<E> &isec) {
          !is_empty && !is_init && !is_fini && !is_enumerable;
 }
 
-static Digest digest_final(SHA256_CTX &sha_ctx) {
+static Digest digest_final(SHA256_CTX &sha) {
   u8 buf[SHA256_SIZE];
-  assert(SHA256_Final(buf, &sha_ctx) == 1);
+  assert(SHA256_Final(buf, &sha) == 1);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);
@@ -219,16 +219,16 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
 template <typename E>
 static Digest compute_digest(InputSection<E> &isec) {
-  SHA256_CTX sha_ctx;
-  SHA256_Init(&sha_ctx);
+  SHA256_CTX sha;
+  SHA256_Init(&sha);
 
   auto hash = [&](auto val) {
-    SHA256_Update(&sha_ctx, &val, sizeof(val));
+    SHA256_Update(&sha, &val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
     hash(str.size());
-    SHA256_Update(&sha_ctx, str.data(), str.size());
+    SHA256_Update(&sha, str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol<E> &sym) {
@@ -294,7 +294,7 @@ static Digest compute_digest(InputSection<E> &isec) {
     }
   }
 
-  return digest_final(sha_ctx);
+  return digest_final(sha);
 }
 
 template <typename E>
@@ -401,17 +401,17 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (digests[slot][i] == digests[!slot][i])
       return;
 
-    SHA256_CTX sha_ctx;
-    SHA256_Init(&sha_ctx);
-    SHA256_Update(&sha_ctx, digests[2][i].data(), HASH_SIZE);
+    SHA256_CTX sha;
+    SHA256_Init(&sha);
+    SHA256_Update(&sha, digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j = begin; j < end; j++)
-      SHA256_Update(&sha_ctx, digests[slot][edges[j]].data(), HASH_SIZE);
+      SHA256_Update(&sha, digests[slot][edges[j]].data(), HASH_SIZE);
 
-    digests[!slot][i] = digest_final(sha_ctx);
+    digests[!slot][i] = digest_final(sha);
 
     if (digests[slot][i] != digests[!slot][i])
       changed.local()++;
