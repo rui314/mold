@@ -51,6 +51,8 @@ class ReadContext;
 class SharedFile;
 class Symbol;
 
+struct Context;
+
 void cleanup();
 
 //
@@ -1066,7 +1068,7 @@ bool read_flag(std::span<std::string_view> &args, std::string name);
 bool read_arg(std::span<std::string_view> &args, std::string_view &arg,
               std::string name);
 
-void parse_nonpositional_args(std::span<std::string_view> args,
+void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string_view> &remaining);
 
 //
@@ -1150,6 +1152,8 @@ struct Context {
     std::vector<std::string_view> undefined;
     u64 image_base = 0x200000;
   } arg;
+
+  std::vector<std::string_view> cmdline_args;
 
   // Input files
   std::vector<ObjectFile *> objs;

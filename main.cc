@@ -8,7 +8,6 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
-static std::vector<std::string_view> cmdline_args;
 Context ctx;
 
 i64 BuildId::size() const {
@@ -366,8 +365,8 @@ static void convert_common_symbols() {
 
 static std::string get_cmdline_args() {
   std::stringstream ss;
-  ss << cmdline_args[0];
-  for (std::string_view arg : std::span(cmdline_args).subspan(1))
+  ss << ctx.cmdline_args[0];
+  for (std::string_view arg : std::span(ctx.cmdline_args).subspan(1))
     ss << " " << arg;
   return ss.str();
 }
@@ -1126,9 +1125,9 @@ int main(int argc, char **argv) {
   Timer t_all("all");
 
   // Parse non-positional command line options
-  cmdline_args = expand_response_files(argv + 1);
+  ctx.cmdline_args = expand_response_files(argv + 1);
   std::vector<std::string_view> file_args;
-  parse_nonpositional_args(cmdline_args, file_args);
+  parse_nonpositional_args(ctx, file_args);
 
   if (!ctx.arg.preload)
     if (i64 code; resume_daemon(argv, &code))

@@ -191,8 +191,9 @@ static i64 get_default_thread_count() {
   return std::min(n, 32);
 }
 
-void parse_nonpositional_args(std::span<std::string_view> args,
+void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string_view> &remaining) {
+  std::span<std::string_view> args = ctx.cmdline_args;
   ctx.arg.thread_count = get_default_thread_count();
 
   while (!args.empty()) {
