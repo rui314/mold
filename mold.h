@@ -922,7 +922,7 @@ std::vector<MemoryMappedFile *> read_thin_archive_members(MemoryMappedFile *mb);
 // linker_script.cc
 //
 
-void parse_linker_script(MemoryMappedFile *mb, ReadContext &ctx);
+void parse_linker_script(Context &ctx, MemoryMappedFile *mb);
 void parse_version_script(std::string path);
 void parse_dynamic_list(std::string path);
 
@@ -1153,6 +1153,23 @@ struct Context {
     u64 image_base = 0x200000;
   } arg;
 
+  // Reader context
+  void reset_reader_context(bool is_preloading) {
+    as_needed = false;
+    whole_archive = false;
+    this->is_preloading = is_preloading;
+    is_static = arg.is_static;
+    visited.clear();
+  }
+
+  bool as_needed;
+  bool whole_archive;
+  bool is_preloading;
+  bool is_static;
+  std::unordered_set<std::string_view> visited;
+  tbb::task_group tg;
+
+  // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
 
   // Input files
@@ -1220,23 +1237,9 @@ struct Context {
 
 extern struct Context ctx;
 
-class ReadContext {
-public:
-  ReadContext(bool x) : is_preloading(x) {}
+MemoryMappedFile *find_library(Context &ctx, std::string path);
 
-  bool as_needed = false;
-  bool whole_archive = false;
-  bool is_preloading = false;
-  bool is_static = ctx.arg.is_static;
-  std::unordered_set<std::string_view> visited;
-  tbb::task_group tg;
-};
-
-MemoryMappedFile *find_library(std::string path,
-                               std::span<std::string_view> lib_paths,
-                               ReadContext &ctx);
-
-void read_file(MemoryMappedFile *mb, ReadContext &ctx);
+void read_file(Context &ctx, MemoryMappedFile *mb);
 
 //
 // Error output

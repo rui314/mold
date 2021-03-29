@@ -130,14 +130,14 @@ read_output_format(std::span<std::string_view> tok) {
   return tok.subspan(1);
 }
 
-static MemoryMappedFile *resolve_path(std::string_view tok, ReadContext &rctx) {
+static MemoryMappedFile *resolve_path(Context &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
   if (str.starts_with("/"))
     return MemoryMappedFile::must_open(ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
-    return find_library(str.substr(2), ctx.arg.library_paths, rctx);
+    return find_library(ctx, str.substr(2));
 
   if (std::string path = path_dirname(current_file->name) + "/";
       MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
@@ -157,20 +157,20 @@ static MemoryMappedFile *resolve_path(std::string_view tok, ReadContext &rctx) {
 }
 
 static std::span<std::string_view>
-read_group(std::span<std::string_view> tok, ReadContext &rctx) {
+read_group(Context &ctx, std::span<std::string_view> tok) {
   tok = skip(tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
-      bool orig = rctx.as_needed;
-      rctx.as_needed = true;
-      tok = read_group(tok.subspan(1), rctx);
-      rctx.as_needed = orig;
+      bool orig = ctx.as_needed;
+      ctx.as_needed = true;
+      tok = read_group(ctx, tok.subspan(1));
+      ctx.as_needed = orig;
       continue;
     }
 
-    MemoryMappedFile *mb = resolve_path(tok[0], rctx);
-    read_file(mb, rctx);
+    MemoryMappedFile *mb = resolve_path(ctx, tok[0]);
+    read_file(ctx, mb);
     tok = tok.subspan(1);
   }
 
@@ -179,7 +179,7 @@ read_group(std::span<std::string_view> tok, ReadContext &rctx) {
   return tok.subspan(1);
 }
 
-void parse_linker_script(MemoryMappedFile *mb, ReadContext &rctx) {
+void parse_linker_script(Context &ctx, MemoryMappedFile *mb) {
   current_file = mb;
 
   std::vector<std::string_view> vec = tokenize(mb->get_contents());
@@ -189,7 +189,7 @@ void parse_linker_script(MemoryMappedFile *mb, ReadContext &rctx) {
     if (tok[0] == "OUTPUT_FORMAT")
       tok = read_output_format(tok.subspan(1));
     else if (tok[0] == "INPUT" || tok[0] == "GROUP")
-      tok = read_group(tok.subspan(1), rctx);
+      tok = read_group(ctx, tok.subspan(1));
     else
       SyntaxError(tok[0]) << "unknown token";
   }

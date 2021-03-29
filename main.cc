@@ -51,23 +51,22 @@ static FileType get_file_type(MemoryMappedFile *mb) {
   return FileType::UNKNOWN;
 }
 
-static ObjectFile *new_object_file(MemoryMappedFile *mb,
-                                   std::string archive_name,
-                                   ReadContext &rctx) {
+static ObjectFile *new_object_file(Context &ctx, MemoryMappedFile *mb,
+                                   std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
 
-  bool in_lib = (!archive_name.empty() && !rctx.whole_archive);
+  bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
-  rctx.tg.run([=]() { file->parse(); });
+  ctx.tg.run([=]() { file->parse(); });
   if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
 }
 
-static SharedFile *new_shared_file(MemoryMappedFile *mb, ReadContext &rctx) {
-  SharedFile *file = new SharedFile(mb, rctx.as_needed);
-  rctx.tg.run([=]() { file->parse(); });
+static SharedFile *new_shared_file(Context &ctx, MemoryMappedFile *mb) {
+  SharedFile *file = new SharedFile(mb, ctx.as_needed);
+  ctx.tg.run([=]() { file->parse(); });
   if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
@@ -98,33 +97,33 @@ private:
   std::map<Key, std::vector<T *>> cache;
 };
 
-void read_file(MemoryMappedFile *mb, ReadContext &rctx) {
-  if (rctx.visited.contains(mb->name))
+void read_file(Context &ctx, MemoryMappedFile *mb) {
+  if (ctx.visited.contains(mb->name))
     return;
 
   static FileCache<ObjectFile> obj_cache;
   static FileCache<SharedFile> dso_cache;
 
-  if (rctx.is_preloading) {
+  if (ctx.is_preloading) {
     switch (get_file_type(mb)) {
     case FileType::OBJ:
-      obj_cache.store(mb, new_object_file(mb, "", rctx));
+      obj_cache.store(mb, new_object_file(ctx, mb, ""));
       return;
     case FileType::DSO:
-      dso_cache.store(mb, new_shared_file(mb, rctx));
+      dso_cache.store(mb, new_shared_file(ctx, mb));
       return;
     case FileType::AR:
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         if (get_file_type(child) == FileType::OBJ)
-          obj_cache.store(mb, new_object_file(child, mb->name, rctx));
+          obj_cache.store(mb, new_object_file(ctx, child, mb->name));
       return;
     case FileType::THIN_AR:
       for (MemoryMappedFile *child : read_thin_archive_members(mb))
         if (get_file_type(child) == FileType::OBJ)
-          obj_cache.store(child, new_object_file(child, mb->name, rctx));
+          obj_cache.store(child, new_object_file(ctx, child, mb->name));
       return;
     case FileType::TEXT:
-      parse_linker_script(mb, rctx);
+      parse_linker_script(ctx, mb);
       return;
     }
     Fatal() << mb->name << ": unknown file type";
@@ -135,14 +134,14 @@ void read_file(MemoryMappedFile *mb, ReadContext &rctx) {
     if (ObjectFile *obj = obj_cache.get_one(mb))
       ctx.objs.push_back(obj);
     else
-      ctx.objs.push_back(new_object_file(mb, "", rctx));
+      ctx.objs.push_back(new_object_file(ctx, mb, ""));
     return;
   case FileType::DSO:
     if (SharedFile *obj = dso_cache.get_one(mb))
       ctx.dsos.push_back(obj);
     else
-      ctx.dsos.push_back(new_shared_file(mb, rctx));
-    rctx.visited.insert(mb->name);
+      ctx.dsos.push_back(new_shared_file(ctx, mb));
+    ctx.visited.insert(mb->name);
     return;
   case FileType::AR:
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
@@ -150,21 +149,21 @@ void read_file(MemoryMappedFile *mb, ReadContext &rctx) {
     } else {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         if (get_file_type(child) == FileType::OBJ)
-          ctx.objs.push_back(new_object_file(child, mb->name, rctx));
+          ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     }
-    rctx.visited.insert(mb->name);
+    ctx.visited.insert(mb->name);
     return;
   case FileType::THIN_AR:
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
       if (ObjectFile *obj = obj_cache.get_one(child))
         ctx.objs.push_back(obj);
       else if (get_file_type(child) == FileType::OBJ)
-        ctx.objs.push_back(new_object_file(child, mb->name, rctx));
+        ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     }
-    rctx.visited.insert(mb->name);
+    ctx.visited.insert(mb->name);
     return;
   case FileType::TEXT:
-    parse_linker_script(mb, rctx);
+    parse_linker_script(ctx, mb);
     return;
   }
   Fatal() << mb->name << ": unknown file type";
@@ -1034,11 +1033,9 @@ static void signal_handler(int) {
   _exit(1);
 }
 
-MemoryMappedFile *find_library(std::string name,
-                               std::span<std::string_view> lib_paths,
-                               ReadContext &rctx) {
+MemoryMappedFile *find_library(Context &ctx, std::string name) {
   if (name.starts_with(':')) {
-    for (std::string_view dir : lib_paths) {
+    for (std::string_view dir : ctx.arg.library_paths) {
       std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
       std::string path = root + std::string(dir) + "/" + name.substr(1);
       if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
@@ -1047,10 +1044,10 @@ MemoryMappedFile *find_library(std::string name,
     Fatal() << "library not found: " << name;
   }
 
-  for (std::string_view dir : lib_paths) {
+  for (std::string_view dir : ctx.arg.library_paths) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
-    if (!rctx.is_static)
+    if (!ctx.is_static)
       if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".so"))
         return mb;
     if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".a"))
@@ -1059,38 +1056,36 @@ MemoryMappedFile *find_library(std::string name,
   Fatal() << "library not found: " << name;
 }
 
-static void read_input_files(std::span<std::string_view> args,
-                             ReadContext &rctx) {
+static void read_input_files(Context &ctx, std::span<std::string_view> args) {
   std::vector<std::tuple<bool, bool, bool>> state;
 
   while (!args.empty()) {
     std::string_view arg;
 
     if (read_flag(args, "as-needed")) {
-      rctx.as_needed = true;
+      ctx.as_needed = true;
     } else if (read_flag(args, "no-as-needed")) {
-      rctx.as_needed = false;
+      ctx.as_needed = false;
     } else if (read_flag(args, "whole-archive")) {
-      rctx.whole_archive = true;
+      ctx.whole_archive = true;
     } else if (read_flag(args, "no-whole-archive")) {
-      rctx.whole_archive = false;
+      ctx.whole_archive = false;
     } else if (read_flag(args, "Bstatic")) {
-      rctx.is_static = true;
+      ctx.is_static = true;
     } else if (read_flag(args, "Bdynamic")) {
-      rctx.is_static = false;
+      ctx.is_static = false;
     } else if (read_flag(args, "push-state")) {
-      state.push_back({rctx.as_needed, rctx.whole_archive, rctx.is_static});
+      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static});
     } else if (read_flag(args, "pop-state")) {
       if (state.empty())
         Fatal() << "no state pushed before popping";
-      std::tie(rctx.as_needed, rctx.whole_archive, rctx.is_static) = state.back();
+      std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
     } else if (read_arg(args, arg, "l")) {
-      MemoryMappedFile *mb =
-        find_library(std::string(arg), ctx.arg.library_paths, rctx);
-      read_file(mb, rctx);
+      MemoryMappedFile *mb = find_library(ctx, std::string(arg));
+      read_file(ctx, mb);
     } else {
-      read_file(MemoryMappedFile::must_open(std::string(args[0])), rctx);
+      read_file(ctx, MemoryMappedFile::must_open(std::string(args[0])));
       args = args.subspan(1);
     }
   }
@@ -1147,9 +1142,9 @@ int main(int argc, char **argv) {
     std::function<void()> wait_for_client;
     daemonize(argv, &wait_for_client, &on_complete);
 
-    ReadContext rctx(true);
-    read_input_files(file_args, rctx);
-    rctx.tg.wait();
+    ctx.reset_reader_context(true);
+    read_input_files(ctx, file_args);
+    ctx.tg.wait();
     t.stop();
 
     Timer t2("wait_for_client");
@@ -1164,9 +1159,9 @@ int main(int argc, char **argv) {
   // Parse input files
   {
     Timer t("parse");
-    ReadContext rctx(false);
-    read_input_files(file_args, rctx);
-    rctx.tg.wait();
+    ctx.reset_reader_context(false);
+    read_input_files(ctx, file_args);
+    ctx.tg.wait();
   }
 
   // Uniquify shared object files with soname
