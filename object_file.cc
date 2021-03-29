@@ -86,7 +86,8 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 }
 
 template <typename E>
-std::string_view InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
+std::string_view
+InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
   u8 *begin = mb->data(ctx) + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mb->data(ctx) + mb->size() < end)
@@ -304,7 +305,8 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     std::vector<EhReloc<E>> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       if (id && first_global <= rels[0].r_sym)
-        Fatal(ctx) << isec << ": FDE with non-local relocations is not supported";
+        Fatal(ctx) << isec
+                   << ": FDE with non-local relocations is not supported";
 
       Symbol<E> &sym = *this->symbols[rels[0].r_sym];
       eh_rels.push_back(EhReloc<E>{sym, rels[0].r_type,
@@ -481,7 +483,8 @@ static size_t find_null(std::string_view data, u64 entsize) {
 //
 // We do not support mergeable sections that have relocations.
 template <typename E>
-static MergeableSection<E> split_section(Context<E> &ctx, InputSection<E> &sec) {
+static MergeableSection<E>
+split_section(Context<E> &ctx, InputSection<E> &sec) {
   MergeableSection<E> rec;
 
   MergedSection<E> *parent =
@@ -750,8 +753,9 @@ void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::mark_live_objects(Context<E> &ctx,
-                                      std::function<void(ObjectFile<E> *)> feeder) {
+void
+ObjectFile<E>::mark_live_objects(Context<E> &ctx,
+                                 std::function<void(ObjectFile<E> *)> feeder) {
   assert(this->is_alive);
 
   for (i64 i = first_global; i < this->symbols.size(); i++) {
@@ -972,7 +976,7 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
   auto write_sym = [&](i64 i) {
     Symbol<E> &sym = *this->symbols[i];
     ElfSym<E> &esym = *(ElfSym<E> *)(symtab_base + symtab_off);
-    symtab_off += sizeof(ElfSym<E>);
+    symtab_off += sizeof(esym);
 
     esym = elf_syms[i];
     esym.st_name = strtab_off;
@@ -1112,7 +1116,8 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   // Read a symbol table.
   i64 first_global = symtab_sec->sh_info;
-  std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
+  std::span<ElfSym<E>> esyms =
+    this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
 
   std::span<u16> vers;
   if (ElfShdr<E> *sec = this->find_section(SHT_GNU_VERSYM))

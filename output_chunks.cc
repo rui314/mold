@@ -245,7 +245,8 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   Timer t("sort_dynamic_relocs");
 
   ElfRela<E> *begin = (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset);
-  ElfRela<E> *end = (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset + this->shdr.sh_size);
+  ElfRela<E> *end =
+    (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset + this->shdr.sh_size);
 
   tbb::parallel_sort(begin, end, [](const ElfRela<E> &a, const ElfRela<E> &b) {
     return std::tuple(a.r_sym, a.r_offset) <
