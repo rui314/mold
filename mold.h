@@ -1167,7 +1167,6 @@ struct Context {
     u64 image_base = 0x200000;
   } arg;
 
-  // Reader context
   void reset_reader_context(bool is_preloading) {
     as_needed = false;
     whole_archive = false;
@@ -1176,12 +1175,15 @@ struct Context {
     visited.clear();
   }
 
+  // Reader context
   bool as_needed;
   bool whole_archive;
   bool is_preloading;
   bool is_static;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
+
+  bool has_error;
 
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
@@ -1303,7 +1305,7 @@ private:
 class Error {
 public:
   Error(Context &ctx) : out(ctx, std::cerr) {
-    has_error = true;
+    ctx.has_error = true;
   }
 
   template <class T> Error &operator<<(T &&val) {
@@ -1311,14 +1313,12 @@ public:
     return *this;
   }
 
-  static void checkpoint() {
-    if (!has_error)
+  static void checkpoint(Context &ctx) {
+    if (!ctx.has_error)
       return;
     cleanup();
     _exit(1);
   }
-
-  static inline std::atomic_bool has_error = false;
 
 private:
   SyncOut out;
@@ -1328,7 +1328,7 @@ class Warn {
 public:
   Warn(Context &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.fatal_warnings)
-      Error::has_error = true;
+      ctx.has_error = true;
   }
 
   template <class T> Warn &operator<<(T &&val) {

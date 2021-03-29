@@ -459,7 +459,7 @@ static void check_duplicate_symbols(Context &ctx) {
     }
   });
 
-  Error::checkpoint();
+  Error::checkpoint(ctx);
 }
 
 std::vector<OutputChunk *> collect_output_sections() {
@@ -543,7 +543,7 @@ static void scan_rels(Context &ctx) {
   });
 
   // Exit if there was a relocation that refers an undefined symbol.
-  Error::checkpoint();
+  Error::checkpoint(ctx);
 
   // Add imported or exported symbols to .dynsym.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
@@ -1370,7 +1370,7 @@ int main(int argc, char **argv) {
     tbb::parallel_for_each(ctx.chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf(ctx);
     });
-    Error::checkpoint();
+    Error::checkpoint(ctx);
   }
 
   // Dynamic linker works better with sorted .rela.dyn section,
