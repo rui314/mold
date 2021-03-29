@@ -51,167 +51,7 @@ class ReadContext;
 class SharedFile;
 class Symbol;
 
-struct BuildId {
-  i64 size() const;
-
-  enum { NONE, HEX, HASH, UUID } kind = NONE;
-  std::vector<u8> value;
-  i64 hash_size = 0;
-};
-
-struct VersionPattern {
-  std::string_view pattern;
-  i16 ver_idx;
-  bool is_extern_cpp;
-};
-
-struct Config {
-  BuildId build_id;
-  bool Bsymbolic = false;
-  bool Bsymbolic_functions = false;
-  bool allow_multiple_definition = false;
-  bool demangle = true;
-  bool discard_all = false;
-  bool discard_locals = false;
-  bool eh_frame_hdr = true;
-  bool export_dynamic = false;
-  bool fatal_warnings = false;
-  bool fork = true;
-  bool gc_sections = false;
-  bool hash_style_gnu = false;
-  bool hash_style_sysv = true;
-  bool icf = false;
-  bool is_static = false;
-  bool perf = false;
-  bool pic = false;
-  bool pie = false;
-  bool preload = false;
-  bool print_gc_sections = false;
-  bool print_icf_sections = false;
-  bool print_map = false;
-  bool quick_exit = true;
-  bool relax = true;
-  bool shared = false;
-  bool stats = false;
-  bool strip_all = false;
-  bool strip_debug = false;
-  bool trace = false;
-  bool warn_common = false;
-  bool z_copyreloc = true;
-  bool z_defs = false;
-  bool z_delete = true;
-  bool z_dlopen = true;
-  bool z_execstack = false;
-  bool z_now = false;
-  bool z_relro = true;
-  i16 default_version = VER_NDX_GLOBAL;
-  std::vector<std::string_view> version_definitions;
-  std::vector<VersionPattern> version_patterns;
-  i64 filler = -1;
-  i64 thread_count = -1;
-  std::string Map;
-  std::string dynamic_linker;
-  std::string entry = "_start";
-  std::string fini = "_fini";
-  std::string init = "_init";
-  std::string output;
-  std::string rpaths;
-  std::string soname;
-  std::string sysroot;
-  std::vector<std::string_view> auxiliary;
-  std::vector<std::string_view> exclude_libs;
-  std::vector<std::string_view> filter;
-  std::vector<std::string_view> library_paths;
-  std::vector<std::string_view> trace_symbol;
-  std::vector<std::string_view> undefined;
-  u64 image_base = 0x200000;
-};
-
-inline Config config;
-
 void cleanup();
-
-class SyncOut {
-public:
-  SyncOut(std::ostream &out = std::cout) : out(out) {}
-
-  ~SyncOut() {
-    static std::mutex mu;
-    std::lock_guard lock(mu);
-    out << ss.str() << "\n";
-  }
-
-  template <class T> SyncOut &operator<<(T &&val) {
-    ss << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  std::ostream &out;
-  std::stringstream ss;
-};
-
-class Fatal {
-public:
-  [[noreturn]] ~Fatal() {
-    out.~SyncOut();
-    cleanup();
-    _exit(1);
-  }
-
-  template <class T> Fatal &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut out{std::cerr};
-};
-
-class Error {
-public:
-  Error() {
-    has_error = true;
-  }
-
-  template <class T> Error &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-  static void checkpoint() {
-    if (!has_error)
-      return;
-    cleanup();
-    _exit(1);
-  }
-
-  static inline std::atomic_bool has_error = false;
-
-private:
-  SyncOut out{std::cerr};
-};
-
-class Warn {
-public:
-  Warn() {
-    if (config.fatal_warnings)
-      Error::has_error = true;
-  }
-
-  template <class T> Warn &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut out{std::cerr};
-};
-
-#define unreachable() \
-  do { Fatal() << "internal error at " << __FILE__ << ":" << __LINE__; } while (0)
-
-std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
 //
 // Interned string
@@ -538,13 +378,7 @@ public:
 
 class InterpSection : public OutputChunk {
 public:
-  InterpSection() : OutputChunk(SYNTHETIC) {
-    name = ".interp";
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_ALLOC;
-    shdr.sh_size = config.dynamic_linker.size() + 1;
-  }
-
+  InterpSection();
   void copy_buf() override;
 };
 
@@ -1075,11 +909,6 @@ private:
   const ElfShdr *symtab_sec;
 };
 
-inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
-  out << isec.file << ":(" << isec.name << ")";
-  return out;
-}
-
 //
 // archive_file.cc
 //
@@ -1244,6 +1073,149 @@ void parse_nonpositional_args(std::span<std::string_view> args,
 // main.cc
 //
 
+struct BuildId {
+  i64 size() const;
+
+  enum { NONE, HEX, HASH, UUID } kind = NONE;
+  std::vector<u8> value;
+  i64 hash_size = 0;
+};
+
+struct VersionPattern {
+  std::string_view pattern;
+  i16 ver_idx;
+  bool is_extern_cpp;
+};
+
+struct Context {
+  // Command-line arguments
+  struct {
+    BuildId build_id;
+    bool Bsymbolic = false;
+    bool Bsymbolic_functions = false;
+    bool allow_multiple_definition = false;
+    bool demangle = true;
+    bool discard_all = false;
+    bool discard_locals = false;
+    bool eh_frame_hdr = true;
+    bool export_dynamic = false;
+    bool fatal_warnings = false;
+    bool fork = true;
+    bool gc_sections = false;
+    bool hash_style_gnu = false;
+    bool hash_style_sysv = true;
+    bool icf = false;
+    bool is_static = false;
+    bool perf = false;
+    bool pic = false;
+    bool pie = false;
+    bool preload = false;
+    bool print_gc_sections = false;
+    bool print_icf_sections = false;
+    bool print_map = false;
+    bool quick_exit = true;
+    bool relax = true;
+    bool shared = false;
+    bool stats = false;
+    bool strip_all = false;
+    bool strip_debug = false;
+    bool trace = false;
+    bool warn_common = false;
+    bool z_copyreloc = true;
+    bool z_defs = false;
+    bool z_delete = true;
+    bool z_dlopen = true;
+    bool z_execstack = false;
+    bool z_now = false;
+    bool z_relro = true;
+    i16 default_version = VER_NDX_GLOBAL;
+    std::vector<std::string_view> version_definitions;
+    std::vector<VersionPattern> version_patterns;
+    i64 filler = -1;
+    i64 thread_count = -1;
+    std::string Map;
+    std::string dynamic_linker;
+    std::string entry = "_start";
+    std::string fini = "_fini";
+    std::string init = "_init";
+    std::string output;
+    std::string rpaths;
+    std::string soname;
+    std::string sysroot;
+    std::vector<std::string_view> auxiliary;
+    std::vector<std::string_view> exclude_libs;
+    std::vector<std::string_view> filter;
+    std::vector<std::string_view> library_paths;
+    std::vector<std::string_view> trace_symbol;
+    std::vector<std::string_view> undefined;
+    u64 image_base = 0x200000;
+  } arg;
+
+  // Input files
+  std::vector<ObjectFile *> objs;
+  std::vector<SharedFile *> dsos;
+  ObjectFile *internal_obj = nullptr;
+
+  // Output buffer
+  u8 *buf;
+
+  std::vector<OutputChunk *> chunks;
+  std::atomic_bool has_gottpoff = false;
+  std::atomic_bool has_textrel = false;
+
+  // Output chunks
+  OutputEhdr *ehdr = nullptr;
+  OutputShdr *shdr = nullptr;
+  OutputPhdr *phdr = nullptr;
+  InterpSection *interp = nullptr;
+  GotSection *got = nullptr;
+  GotPltSection *gotplt = nullptr;
+  RelPltSection *relplt = nullptr;
+  RelDynSection *reldyn = nullptr;
+  DynamicSection *dynamic = nullptr;
+  StrtabSection *strtab = nullptr;
+  DynstrSection *dynstr = nullptr;
+  HashSection *hash = nullptr;
+  GnuHashSection *gnu_hash = nullptr;
+  ShstrtabSection *shstrtab = nullptr;
+  PltSection *plt = nullptr;
+  PltGotSection *pltgot = nullptr;
+  SymtabSection *symtab = nullptr;
+  DynsymSection *dynsym = nullptr;
+  EhFrameSection *eh_frame = nullptr;
+  EhFrameHdrSection *eh_frame_hdr = nullptr;
+  DynbssSection *dynbss = nullptr;
+  DynbssSection *dynbss_relro = nullptr;
+  VersymSection *versym = nullptr;
+  VerneedSection *verneed = nullptr;
+  VerdefSection *verdef = nullptr;
+  BuildIdSection *buildid = nullptr;
+
+  u64 tls_begin = -1;
+  u64 tls_end = -1;
+
+  // Linker-synthesized symbols
+  Symbol *__bss_start = nullptr;
+  Symbol *__ehdr_start = nullptr;
+  Symbol *__rela_iplt_start = nullptr;
+  Symbol *__rela_iplt_end = nullptr;
+  Symbol *__init_array_start = nullptr;
+  Symbol *__init_array_end = nullptr;
+  Symbol *__fini_array_start = nullptr;
+  Symbol *__fini_array_end = nullptr;
+  Symbol *__preinit_array_start = nullptr;
+  Symbol *__preinit_array_end = nullptr;
+  Symbol *_DYNAMIC = nullptr;
+  Symbol *_GLOBAL_OFFSET_TABLE_ = nullptr;
+  Symbol *__GNU_EH_FRAME_HDR = nullptr;
+  Symbol *_end = nullptr;
+  Symbol *_etext = nullptr;
+  Symbol *_edata = nullptr;
+  Symbol *__executable_start = nullptr;
+};
+
+extern struct Context ctx;
+
 class ReadContext {
 public:
   ReadContext(bool x) : is_preloading(x) {}
@@ -1251,7 +1223,7 @@ public:
   bool as_needed = false;
   bool whole_archive = false;
   bool is_preloading = false;
-  bool is_static = config.is_static;
+  bool is_static = ctx.arg.is_static;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 };
@@ -1263,66 +1235,98 @@ MemoryMappedFile *find_library(std::string path,
 void read_file(MemoryMappedFile *mb, ReadContext &ctx);
 
 //
+// Error output
+//
+
+class SyncOut {
+public:
+  SyncOut(std::ostream &out = std::cout) : out(out) {}
+
+  ~SyncOut() {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    out << ss.str() << "\n";
+  }
+
+  template <class T> SyncOut &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+};
+
+class Fatal {
+public:
+  [[noreturn]] ~Fatal() {
+    out.~SyncOut();
+    cleanup();
+    _exit(1);
+  }
+
+  template <class T> Fatal &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut out{std::cerr};
+};
+
+class Error {
+public:
+  Error() {
+    has_error = true;
+  }
+
+  template <class T> Error &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+  static void checkpoint() {
+    if (!has_error)
+      return;
+    cleanup();
+    _exit(1);
+  }
+
+  static inline std::atomic_bool has_error = false;
+
+private:
+  SyncOut out{std::cerr};
+};
+
+class Warn {
+public:
+  Warn() {
+    if (ctx.arg.fatal_warnings)
+      Error::has_error = true;
+  }
+
+  template <class T> Warn &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut out{std::cerr};
+};
+
+#define unreachable() \
+  do { Fatal() << "internal error at " << __FILE__ << ":" << __LINE__; } while (0)
+
+std::ostream &operator<<(std::ostream &out, const InputFile &file);
+
+//
 // Inline objects and functions
 //
 
-namespace out {
-inline u8 *buf;
-
-inline std::vector<ObjectFile *> objs;
-inline std::vector<SharedFile *> dsos;
-inline std::vector<OutputChunk *> chunks;
-inline std::atomic_bool has_gottpoff = false;
-inline std::atomic_bool has_textrel = false;
-inline ObjectFile *internal_obj;
-
-inline OutputEhdr *ehdr;
-inline OutputShdr *shdr;
-inline OutputPhdr *phdr;
-inline InterpSection *interp;
-inline GotSection *got;
-inline GotPltSection *gotplt;
-inline RelPltSection *relplt;
-inline RelDynSection *reldyn;
-inline DynamicSection *dynamic;
-inline StrtabSection *strtab;
-inline DynstrSection *dynstr;
-inline HashSection *hash;
-inline GnuHashSection *gnu_hash;
-inline ShstrtabSection *shstrtab;
-inline PltSection *plt;
-inline PltGotSection *pltgot;
-inline SymtabSection *symtab;
-inline DynsymSection *dynsym;
-inline EhFrameSection *eh_frame;
-inline EhFrameHdrSection *eh_frame_hdr;
-inline DynbssSection *dynbss;
-inline DynbssSection *dynbss_relro;
-inline VersymSection *versym;
-inline VerneedSection *verneed;
-inline VerdefSection *verdef;
-inline BuildIdSection *buildid;
-
-inline u64 tls_begin;
-inline u64 tls_end;
-
-inline Symbol *__bss_start;
-inline Symbol *__ehdr_start;
-inline Symbol *__rela_iplt_start;
-inline Symbol *__rela_iplt_end;
-inline Symbol *__init_array_start;
-inline Symbol *__init_array_end;
-inline Symbol *__fini_array_start;
-inline Symbol *__fini_array_end;
-inline Symbol *__preinit_array_start;
-inline Symbol *__preinit_array_end;
-inline Symbol *_DYNAMIC;
-inline Symbol *_GLOBAL_OFFSET_TABLE_;
-inline Symbol *__GNU_EH_FRAME_HDR;
-inline Symbol *_end;
-inline Symbol *_etext;
-inline Symbol *_edata;
-inline Symbol *__executable_start;
+inline std::ostream &operator<<(std::ostream &out, const InputSection &isec) {
+  out << isec.file << ":(" << isec.name << ")";
+  return out;
 }
 
 inline u64 align_to(u64 val, u64 align) {
@@ -1348,7 +1352,7 @@ inline bool Symbol::is_alive() const {
 }
 
 inline bool Symbol::is_absolute() const {
-  if (file == out::internal_obj)
+  if (file == ctx.internal_obj)
     return false;
   if (file->is_dso)
     return esym->is_abs();
@@ -1392,8 +1396,8 @@ inline u64 Symbol::get_addr() const {
 
   if (has_copyrel) {
     return copyrel_readonly
-      ? out::dynbss_relro->shdr.sh_addr + value
-      : out::dynbss->shdr.sh_addr + value;
+      ? ctx.dynbss_relro->shdr.sh_addr + value
+      : ctx.dynbss->shdr.sh_addr + value;
   }
 
   if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
@@ -1401,7 +1405,7 @@ inline u64 Symbol::get_addr() const {
 
   if (input_section) {
     if (input_section->is_ehframe)
-      return out::eh_frame->get_addr(*this);
+      return ctx.eh_frame->get_addr(*this);
 
     if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers
@@ -1422,35 +1426,35 @@ inline u64 Symbol::get_addr() const {
 
 inline u64 Symbol::get_got_addr() const {
   assert(got_idx != -1);
-  return out::got->shdr.sh_addr + got_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + got_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gotplt_addr() const {
   assert(gotplt_idx != -1);
-  return out::gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
+  return ctx.gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_gottpoff_addr() const {
   assert(gottpoff_idx != -1);
-  return out::got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_tlsgd_addr() const {
   assert(tlsgd_idx != -1);
-  return out::got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_tlsdesc_addr() const {
   assert(tlsdesc_idx != -1);
-  return out::got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
 }
 
 inline u64 Symbol::get_plt_addr() const {
   assert(plt_idx != -1);
 
   if (got_idx == -1)
-    return out::plt->shdr.sh_addr + plt_idx * PLT_SIZE;
-  return out::pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
+    return ctx.plt->shdr.sh_addr + plt_idx * PLT_SIZE;
+  return ctx.pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
 }
 
 inline u64 SectionFragment::get_addr() const {

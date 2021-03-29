@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 static std::vector<std::string_view> cmdline_args;
+Context ctx;
 
 i64 BuildId::size() const {
   switch (kind) {
@@ -60,7 +61,7 @@ static ObjectFile *new_object_file(MemoryMappedFile *mb,
   bool in_lib = (!archive_name.empty() && !rctx.whole_archive);
   ObjectFile *file = new ObjectFile(mb, archive_name, in_lib);
   rctx.tg.run([=]() { file->parse(); });
-  if (config.trace)
+  if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
 }
@@ -68,7 +69,7 @@ static ObjectFile *new_object_file(MemoryMappedFile *mb,
 static SharedFile *new_shared_file(MemoryMappedFile *mb, ReadContext &rctx) {
   SharedFile *file = new SharedFile(mb, rctx.as_needed);
   rctx.tg.run([=]() { file->parse(); });
-  if (config.trace)
+  if (ctx.arg.trace)
     SyncOut() << "trace: " << *file;
   return file;
 }
@@ -133,33 +134,33 @@ void read_file(MemoryMappedFile *mb, ReadContext &rctx) {
   switch (get_file_type(mb)) {
   case FileType::OBJ:
     if (ObjectFile *obj = obj_cache.get_one(mb))
-      out::objs.push_back(obj);
+      ctx.objs.push_back(obj);
     else
-      out::objs.push_back(new_object_file(mb, "", rctx));
+      ctx.objs.push_back(new_object_file(mb, "", rctx));
     return;
   case FileType::DSO:
     if (SharedFile *obj = dso_cache.get_one(mb))
-      out::dsos.push_back(obj);
+      ctx.dsos.push_back(obj);
     else
-      out::dsos.push_back(new_shared_file(mb, rctx));
+      ctx.dsos.push_back(new_shared_file(mb, rctx));
     rctx.visited.insert(mb->name);
     return;
   case FileType::AR:
     if (std::vector<ObjectFile *> objs = obj_cache.get(mb); !objs.empty()) {
-      append(out::objs, objs);
+      append(ctx.objs, objs);
     } else {
       for (MemoryMappedFile *child : read_fat_archive_members(mb))
         if (get_file_type(child) == FileType::OBJ)
-          out::objs.push_back(new_object_file(child, mb->name, rctx));
+          ctx.objs.push_back(new_object_file(child, mb->name, rctx));
     }
     rctx.visited.insert(mb->name);
     return;
   case FileType::THIN_AR:
     for (MemoryMappedFile *child : read_thin_archive_members(mb)) {
       if (ObjectFile *obj = obj_cache.get_one(child))
-        out::objs.push_back(obj);
+        ctx.objs.push_back(obj);
       else if (get_file_type(child) == FileType::OBJ)
-        out::objs.push_back(new_object_file(child, mb->name, rctx));
+        ctx.objs.push_back(new_object_file(child, mb->name, rctx));
     }
     rctx.visited.insert(mb->name);
     return;
@@ -188,13 +189,13 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
 static void apply_exclude_libs() {
   Timer t("apply_exclude_libs");
 
-  if (config.exclude_libs.empty())
+  if (ctx.arg.exclude_libs.empty())
     return;
 
-  std::unordered_set<std::string_view> set(config.exclude_libs.begin(),
-                                           config.exclude_libs.end());
+  std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
+                                           ctx.arg.exclude_libs.end());
 
-  for (ObjectFile *file : out::objs)
+  for (ObjectFile *file : ctx.objs)
     if (!file->archive_name.empty())
       if (set.contains("ALL") || set.contains(file->archive_name))
         file->exclude_libs = true;
@@ -202,56 +203,56 @@ static void apply_exclude_libs() {
 
 static void create_synthetic_sections() {
   auto add = [](OutputChunk *chunk) {
-    out::chunks.push_back(chunk);
+    ctx.chunks.push_back(chunk);
   };
 
-  add(out::ehdr = new OutputEhdr);
-  add(out::phdr = new OutputPhdr);
-  add(out::shdr = new OutputShdr);
-  add(out::got = new GotSection);
-  add(out::gotplt = new GotPltSection);
-  add(out::relplt = new RelPltSection);
-  add(out::strtab = new StrtabSection);
-  add(out::shstrtab = new ShstrtabSection);
-  add(out::plt = new PltSection);
-  add(out::pltgot = new PltGotSection);
-  add(out::symtab = new SymtabSection);
-  add(out::dynsym = new DynsymSection);
-  add(out::dynstr = new DynstrSection);
-  add(out::eh_frame = new EhFrameSection);
-  add(out::dynbss = new DynbssSection(false));
-  add(out::dynbss_relro = new DynbssSection(true));
+  add(ctx.ehdr = new OutputEhdr);
+  add(ctx.phdr = new OutputPhdr);
+  add(ctx.shdr = new OutputShdr);
+  add(ctx.got = new GotSection);
+  add(ctx.gotplt = new GotPltSection);
+  add(ctx.relplt = new RelPltSection);
+  add(ctx.strtab = new StrtabSection);
+  add(ctx.shstrtab = new ShstrtabSection);
+  add(ctx.plt = new PltSection);
+  add(ctx.pltgot = new PltGotSection);
+  add(ctx.symtab = new SymtabSection);
+  add(ctx.dynsym = new DynsymSection);
+  add(ctx.dynstr = new DynstrSection);
+  add(ctx.eh_frame = new EhFrameSection);
+  add(ctx.dynbss = new DynbssSection(false));
+  add(ctx.dynbss_relro = new DynbssSection(true));
 
-  if (!config.dynamic_linker.empty())
-    add(out::interp = new InterpSection);
-  if (config.build_id.kind != BuildId::NONE)
-    add(out::buildid = new BuildIdSection);
-  if (config.eh_frame_hdr)
-    add(out::eh_frame_hdr = new EhFrameHdrSection);
-  if (config.hash_style_sysv)
-    add(out::hash = new HashSection);
-  if (config.hash_style_gnu)
-    add(out::gnu_hash = new GnuHashSection);
-  if (!config.version_definitions.empty())
-    add(out::verdef = new VerdefSection);
+  if (!ctx.arg.dynamic_linker.empty())
+    add(ctx.interp = new InterpSection);
+  if (ctx.arg.build_id.kind != BuildId::NONE)
+    add(ctx.buildid = new BuildIdSection);
+  if (ctx.arg.eh_frame_hdr)
+    add(ctx.eh_frame_hdr = new EhFrameHdrSection);
+  if (ctx.arg.hash_style_sysv)
+    add(ctx.hash = new HashSection);
+  if (ctx.arg.hash_style_gnu)
+    add(ctx.gnu_hash = new GnuHashSection);
+  if (!ctx.arg.version_definitions.empty())
+    add(ctx.verdef = new VerdefSection);
 
-  add(out::reldyn = new RelDynSection);
-  add(out::dynamic = new DynamicSection);
-  add(out::versym = new VersymSection);
-  add(out::verneed = new VerneedSection);
+  add(ctx.reldyn = new RelDynSection);
+  add(ctx.dynamic = new DynamicSection);
+  add(ctx.versym = new VersymSection);
+  add(ctx.verneed = new VerneedSection);
 }
 
 static void set_file_priority() {
   // File priority 1 is reserved for the internal file.
   i64 priority = 2;
 
-  for (ObjectFile *file : out::objs)
+  for (ObjectFile *file : ctx.objs)
     if (!file->is_in_lib)
       file->priority = priority++;
-  for (ObjectFile *file : out::objs)
+  for (ObjectFile *file : ctx.objs)
     if (file->is_in_lib)
       file->priority = priority++;
-  for (SharedFile *file : out::dsos)
+  for (SharedFile *file : ctx.dsos)
     file->priority = priority++;
 }
 
@@ -259,13 +260,13 @@ static void resolve_obj_symbols() {
   Timer t("resolve_obj_symbols");
 
   // Register archive symbols
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     if (file->is_in_lib)
       file->resolve_lazy_symbols();
   });
 
   // Register defined symbols
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     if (!file->is_in_lib)
       file->resolve_regular_symbols();
   });
@@ -273,11 +274,11 @@ static void resolve_obj_symbols() {
   // Mark reachable objects to decide which files to include
   // into an output.
   std::vector<ObjectFile *> roots;
-  for (ObjectFile *file : out::objs)
+  for (ObjectFile *file : ctx.objs)
     if (file->is_alive)
       roots.push_back(file);
 
-  for (std::string_view name : config.undefined)
+  for (std::string_view name : ctx.arg.undefined)
     if (InputFile *file = Symbol::intern(name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
         roots.push_back((ObjectFile *)file);
@@ -290,7 +291,7 @@ static void resolve_obj_symbols() {
                    });
 
   // Remove symbols of eliminated objects.
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     Symbol null_sym;
     if (!file->is_alive)
       for (Symbol *sym : file->get_global_syms())
@@ -299,19 +300,19 @@ static void resolve_obj_symbols() {
   });
 
   // Eliminate unused archive members.
-  erase(out::objs, [](InputFile *file) { return !file->is_alive; });
+  erase(ctx.objs, [](InputFile *file) { return !file->is_alive; });
 }
 
 static void resolve_dso_symbols() {
   Timer t("resolve_dso_symbols");
 
   // Register DSO symbols
-  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+  tbb::parallel_for_each(ctx.dsos, [](SharedFile *file) {
     file->resolve_symbols();
   });
 
   // Mark live DSOs
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym &esym = file->elf_syms[i];
       if (esym.is_defined())
@@ -331,7 +332,7 @@ static void resolve_dso_symbols() {
   });
 
   // Remove symbols of unreferenced DSOs.
-  tbb::parallel_for_each(out::dsos, [](SharedFile *file) {
+  tbb::parallel_for_each(ctx.dsos, [](SharedFile *file) {
     Symbol null_sym;
     if (!file->is_alive)
       for (Symbol *sym : file->symbols)
@@ -340,17 +341,17 @@ static void resolve_dso_symbols() {
   });
 
   // Remove unreferenced DSOs
-  erase(out::dsos, [](InputFile *file) { return !file->is_alive; });
+  erase(ctx.dsos, [](InputFile *file) { return !file->is_alive; });
 }
 
 static void eliminate_comdats() {
   Timer t("eliminate_comdats");
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     file->resolve_comdat_groups();
   });
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     file->eliminate_duplicate_comdat_groups();
   });
 }
@@ -358,7 +359,7 @@ static void eliminate_comdats() {
 static void convert_common_symbols() {
   Timer t("convert_common_symbols");
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     file->convert_common_symbols();
   });
 }
@@ -383,8 +384,8 @@ static void compute_merged_section_sizes() {
   Timer t("compute_merged_section_sizes");
 
   // Mark section fragments referenced by live objects.
-  if (!config.gc_sections) {
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  if (!ctx.arg.gc_sections) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
       for (SectionFragment *frag : file->fragments)
         frag->is_alive = true;
     });
@@ -410,8 +411,8 @@ static void compute_merged_section_sizes() {
 static void bin_sections() {
   Timer t("bin_sections");
 
-  i64 unit = (out::objs.size() + 127) / 128;
-  std::vector<std::span<ObjectFile *>> slices = split(out::objs, unit);
+  i64 unit = (ctx.objs.size() + 127) / 128;
+  std::vector<std::span<ObjectFile *>> slices = split(ctx.objs, unit);
 
   i64 num_osec = OutputSection::instances.size();
 
@@ -442,7 +443,7 @@ static void bin_sections() {
 static void check_duplicate_symbols() {
   Timer t("check_dup_syms");
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym &esym = file->elf_syms[i];
       Symbol &sym = *file->symbols[i];
@@ -528,7 +529,7 @@ static void compute_section_sizes() {
 static void convert_undefined_weak_symbols() {
   Timer t("undef_weak");
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     file->convert_undefined_weak_symbols();
   });
 }
@@ -537,7 +538,7 @@ static void scan_rels() {
   Timer t("scan_rels");
 
   // Scan relocations to find dynamic symbols.
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     file->scan_relocations();
   });
 
@@ -545,7 +546,7 @@ static void scan_rels() {
   Error::checkpoint();
 
   // Add imported or exported symbols to .dynsym.
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->get_global_syms())
       if (sym->file == file)
         if (sym->is_imported || sym->is_exported)
@@ -554,8 +555,8 @@ static void scan_rels() {
 
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile *> files;
-  append(files, out::objs);
-  append(files, out::dsos);
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
   std::vector<std::vector<Symbol *>> vec(files.size());
 
@@ -568,29 +569,29 @@ static void scan_rels() {
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol *sym : flatten(vec)) {
     if (sym->flags & NEEDS_DYNSYM)
-      out::dynsym->add_symbol(sym);
+      ctx.dynsym->add_symbol(sym);
 
     if (sym->flags & NEEDS_GOT)
-      out::got->add_got_symbol(sym);
+      ctx.got->add_got_symbol(sym);
 
     if (sym->flags & NEEDS_PLT) {
       if (sym->flags & NEEDS_GOT)
-        out::pltgot->add_symbol(sym);
+        ctx.pltgot->add_symbol(sym);
       else
-        out::plt->add_symbol(sym);
+        ctx.plt->add_symbol(sym);
     }
 
     if (sym->flags & NEEDS_GOTTPOFF)
-      out::got->add_gottpoff_symbol(sym);
+      ctx.got->add_gottpoff_symbol(sym);
 
     if (sym->flags & NEEDS_TLSGD)
-      out::got->add_tlsgd_symbol(sym);
+      ctx.got->add_tlsgd_symbol(sym);
 
     if (sym->flags & NEEDS_TLSDESC)
-      out::got->add_tlsdesc_symbol(sym);
+      ctx.got->add_tlsdesc_symbol(sym);
 
     if (sym->flags & NEEDS_TLSLD)
-      out::got->add_tlsld();
+      ctx.got->add_tlsld();
 
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
@@ -598,15 +599,15 @@ static void scan_rels() {
       sym->copyrel_readonly = file->is_readonly(sym);
 
       if (sym->copyrel_readonly)
-        out::dynbss_relro->add_symbol(sym);
+        ctx.dynbss_relro->add_symbol(sym);
       else
-        out::dynbss->add_symbol(sym);
+        ctx.dynbss->add_symbol(sym);
 
       for (Symbol *alias : file->find_aliases(sym)) {
         alias->has_copyrel = true;
         alias->value = sym->value;
         alias->copyrel_readonly = sym->copyrel_readonly;
-        out::dynsym->add_symbol(alias);
+        ctx.dynsym->add_symbol(alias);
       }
     }
   }
@@ -615,7 +616,7 @@ static void scan_rels() {
 static void apply_version_script() {
   Timer t("apply_version_script");
 
-  for (VersionPattern &elem : config.version_patterns) {
+  for (VersionPattern &elem : ctx.arg.version_patterns) {
     assert(elem.pattern != "*");
 
     if (!elem.is_extern_cpp &&
@@ -626,7 +627,7 @@ static void apply_version_script() {
 
     GlobPattern glob(elem.pattern);
 
-    tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
       for (Symbol *sym : file->get_global_syms()) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
@@ -643,10 +644,10 @@ static void parse_symbol_version() {
   Timer t("parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
-  for (i64 i = 0; i < config.version_definitions.size(); i++)
-    verdefs[config.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
+  for (i64 i = 0; i < ctx.arg.version_definitions.size(); i++)
+    verdefs[ctx.arg.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (i64 i = 0; i < file->symbols.size() - file->first_global; i++) {
       if (!file->symvers[i])
         continue;
@@ -681,8 +682,8 @@ static void compute_import_export() {
   Timer t("compute_import_export");
 
   // Export symbols referenced by DSOs.
-  if (!config.shared) {
-    tbb::parallel_for_each(out::dsos, [&](SharedFile *file) {
+  if (!ctx.arg.shared) {
+    tbb::parallel_for_each(ctx.dsos, [&](SharedFile *file) {
       for (Symbol *sym : file->undefs)
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
           sym->is_exported = true;
@@ -690,8 +691,8 @@ static void compute_import_export() {
   }
 
   // Global symbols are exported from DSO by default.
-  if (config.shared || config.export_dynamic) {
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  if (ctx.arg.shared || ctx.arg.export_dynamic) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
       for (Symbol *sym : file->get_global_syms()) {
         if (sym->file != file)
           continue;
@@ -701,9 +702,9 @@ static void compute_import_export() {
 
         sym->is_exported = true;
 
-        if (config.shared && sym->visibility != STV_PROTECTED &&
-            !config.Bsymbolic &&
-            !(config.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+        if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
+            !ctx.arg.Bsymbolic &&
+            !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
           sym->is_imported = true;
       }
     });
@@ -713,23 +714,23 @@ static void compute_import_export() {
 static void fill_verdef() {
   Timer t("fill_verdef");
 
-  if (config.version_definitions.empty())
+  if (ctx.arg.version_definitions.empty())
     return;
 
   // Resize .gnu.version
-  out::versym->contents.resize(out::dynsym->symbols.size(), 1);
-  out::versym->contents[0] = 0;
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
+  ctx.versym->contents[0] = 0;
 
   // Allocate a buffer for .gnu.version_d.
-  out::verdef->contents.resize((sizeof(ElfVerdef) + sizeof(ElfVerdaux)) *
-                               (config.version_definitions.size() + 1));
+  ctx.verdef->contents.resize((sizeof(ElfVerdef) + sizeof(ElfVerdaux)) *
+                               (ctx.arg.version_definitions.size() + 1));
 
-  u8 *buf = (u8 *)&out::verdef->contents[0];
+  u8 *buf = (u8 *)&ctx.verdef->contents[0];
   u8 *ptr = buf;
   ElfVerdef *verdef = nullptr;
 
   auto write = [&](std::string_view verstr, i64 idx, i64 flags) {
-    out::verdef->shdr.sh_info++;
+    ctx.verdef->shdr.sh_info++;
     if (verdef)
       verdef->vd_next = ptr - (u8 *)verdef;
 
@@ -745,30 +746,30 @@ static void fill_verdef() {
 
     ElfVerdaux *aux = (ElfVerdaux *)ptr;
     ptr += sizeof(ElfVerdaux);
-    aux->vda_name = out::dynstr->add_string(verstr);
+    aux->vda_name = ctx.dynstr->add_string(verstr);
   };
 
-  std::string_view basename = config.soname.empty() ?
-    config.output : config.soname;
+  std::string_view basename = ctx.arg.soname.empty() ?
+    ctx.arg.output : ctx.arg.soname;
   write(basename, 1, VER_FLG_BASE);
 
   i64 idx = 2;
-  for (std::string_view verstr : config.version_definitions)
+  for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
-  for (Symbol *sym : std::span(out::dynsym->symbols).subspan(1))
-    out::versym->contents[sym->dynsym_idx] = sym->ver_idx;
+  for (Symbol *sym : std::span(ctx.dynsym->symbols).subspan(1))
+    ctx.versym->contents[sym->dynsym_idx] = sym->ver_idx;
 }
 
 static void fill_verneed() {
   Timer t("fill_verneed");
 
-  if (out::dynsym->symbols.empty())
+  if (ctx.dynsym->symbols.empty())
     return;
 
   // Create a list of versioned symbols and sort by file and version.
-  std::vector<Symbol *> syms(out::dynsym->symbols.begin() + 1,
-                             out::dynsym->symbols.end());
+  std::vector<Symbol *> syms(ctx.dynsym->symbols.begin() + 1,
+                             ctx.dynsym->symbols.end());
 
   erase(syms, [](Symbol *sym) {
     return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
@@ -783,30 +784,30 @@ static void fill_verneed() {
   });
 
   // Resize of .gnu.version
-  out::versym->contents.resize(out::dynsym->symbols.size(), 1);
-  out::versym->contents[0] = 0;
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
+  ctx.versym->contents[0] = 0;
 
   // Allocate a large enough buffer for .gnu.version_r.
-  out::verneed->contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) *
+  ctx.verneed->contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) *
                                 syms.size());
 
   // Fill .gnu.version_r.
-  u8 *buf = (u8 *)&out::verneed->contents[0];
+  u8 *buf = (u8 *)&ctx.verneed->contents[0];
   u8 *ptr = buf;
   ElfVerneed *verneed = nullptr;
   ElfVernaux *aux = nullptr;
 
-  u16 veridx = VER_NDX_LAST_RESERVED + config.version_definitions.size();
+  u16 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
 
   auto start_group = [&](InputFile *file) {
-    out::verneed->shdr.sh_info++;
+    ctx.verneed->shdr.sh_info++;
     if (verneed)
       verneed->vn_next = ptr - (u8 *)verneed;
 
     verneed = (ElfVerneed *)ptr;
     ptr += sizeof(*verneed);
     verneed->vn_version = 1;
-    verneed->vn_file = out::dynstr->find_string(((SharedFile *)file)->soname);
+    verneed->vn_file = ctx.dynstr->find_string(((SharedFile *)file)->soname);
     verneed->vn_aux = sizeof(ElfVerneed);
     aux = nullptr;
   };
@@ -822,7 +823,7 @@ static void fill_verneed() {
     std::string_view verstr = sym->get_version();
     aux->vna_hash = elf_hash(verstr);
     aux->vna_other = ++veridx;
-    aux->vna_name = out::dynstr->add_string(verstr);
+    aux->vna_name = ctx.dynstr->add_string(verstr);
   };
 
   for (i64 i = 0; i < syms.size(); i++) {
@@ -833,11 +834,11 @@ static void fill_verneed() {
       add_entry(syms[i]);
     }
 
-    out::versym->contents[syms[i]->dynsym_idx] = veridx;
+    ctx.versym->contents[syms[i]->dynsym_idx] = veridx;
   }
 
   // Resize .gnu.version_r to fit to its contents.
-  out::verneed->contents.resize(ptr - buf);
+  ctx.verneed->contents.resize(ptr - buf);
 }
 
 static void clear_padding(i64 filesize) {
@@ -847,12 +848,12 @@ static void clear_padding(i64 filesize) {
     i64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
-    memset(out::buf + pos, 0, next_start - pos);
+    memset(ctx.buf + pos, 0, next_start - pos);
   };
 
-  for (i64 i = 1; i < out::chunks.size(); i++)
-    zero(out::chunks[i - 1], out::chunks[i]->shdr.sh_offset);
-  zero(out::chunks.back(), filesize);
+  for (i64 i = 1; i < ctx.chunks.size(); i++)
+    zero(ctx.chunks[i - 1], ctx.chunks[i]->shdr.sh_offset);
+  zero(ctx.chunks.back(), filesize);
 }
 
 // We want to sort output chunks in the following order.
@@ -872,13 +873,13 @@ static void clear_padding(i64 filesize) {
 //   nonalloc
 //   section header
 static i64 get_section_rank(OutputChunk *chunk) {
-  if (chunk == out::ehdr)
+  if (chunk == ctx.ehdr)
     return 0;
-  if (chunk == out::phdr)
+  if (chunk == ctx.phdr)
     return 1;
-  if (chunk == out::interp)
+  if (chunk == ctx.interp)
     return 2;
-  if (chunk == out::shdr)
+  if (chunk == ctx.shdr)
     return 1 << 20;
 
   u64 type = chunk->shdr.sh_type;
@@ -909,7 +910,7 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   Timer t("osec_offset");
 
   i64 fileoff = 0;
-  i64 vaddr = config.image_base;
+  i64 vaddr = ctx.arg.image_base;
 
   for (OutputChunk *chunk : chunks) {
     if (chunk->new_page)
@@ -954,7 +955,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   // __bss_start
   for (OutputChunk *chunk : chunks) {
     if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
-      start(out::__bss_start, chunk);
+      start(ctx.__bss_start, chunk);
       break;
     }
   }
@@ -962,29 +963,29 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   // __ehdr_start and __executable_start
   for (OutputChunk *chunk : chunks) {
     if (chunk->shndx == 1) {
-      out::__ehdr_start->shndx = 1;
-      out::__ehdr_start->value = out::ehdr->shdr.sh_addr;
+      ctx.__ehdr_start->shndx = 1;
+      ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
 
-      out::__executable_start->shndx = 1;
-      out::__executable_start->value = out::ehdr->shdr.sh_addr;
+      ctx.__executable_start->shndx = 1;
+      ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
       break;
     }
   }
 
   // __rela_iplt_start and __rela_iplt_end
-  start(out::__rela_iplt_start, out::relplt);
-  stop(out::__rela_iplt_end, out::relplt);
+  start(ctx.__rela_iplt_start, ctx.relplt);
+  stop(ctx.__rela_iplt_end, ctx.relplt);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk *chunk : chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
-      start(out::__init_array_start, chunk);
-      stop(out::__init_array_end, chunk);
+      start(ctx.__init_array_start, chunk);
+      stop(ctx.__init_array_end, chunk);
       break;
     case SHT_FINI_ARRAY:
-      start(out::__fini_array_start, chunk);
-      stop(out::__fini_array_end, chunk);
+      start(ctx.__fini_array_start, chunk);
+      stop(ctx.__fini_array_end, chunk);
       break;
     }
   }
@@ -995,23 +996,23 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC)
-      stop(out::_end, chunk);
+      stop(ctx._end, chunk);
 
     if (chunk->shdr.sh_flags & SHF_EXECINSTR)
-      stop(out::_etext, chunk);
+      stop(ctx._etext, chunk);
 
     if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC)
-      stop(out::_edata, chunk);
+      stop(ctx._edata, chunk);
   }
 
   // _DYNAMIC
-  start(out::_DYNAMIC, out::dynamic);
+  start(ctx._DYNAMIC, ctx.dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
-  start(out::_GLOBAL_OFFSET_TABLE_, out::gotplt);
+  start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
 
   // __GNU_EH_FRAME_HDR
-  start(out::__GNU_EH_FRAME_HDR, out::eh_frame_hdr);
+  start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // __start_ and __stop_ symbols
   for (OutputChunk *chunk : chunks) {
@@ -1039,7 +1040,7 @@ MemoryMappedFile *find_library(std::string name,
                                ReadContext &rctx) {
   if (name.starts_with(':')) {
     for (std::string_view dir : lib_paths) {
-      std::string root = dir.starts_with("/") ? config.sysroot : "";
+      std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
       std::string path = root + std::string(dir) + "/" + name.substr(1);
       if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
         return mb;
@@ -1048,7 +1049,7 @@ MemoryMappedFile *find_library(std::string name,
   }
 
   for (std::string_view dir : lib_paths) {
-    std::string root = dir.starts_with("/") ? config.sysroot : "";
+    std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!rctx.is_static)
       if (MemoryMappedFile *mb = MemoryMappedFile::open(stem + ".so"))
@@ -1087,7 +1088,7 @@ static void read_input_files(std::span<std::string_view> args,
       state.pop_back();
     } else if (read_arg(args, arg, "l")) {
       MemoryMappedFile *mb =
-        find_library(std::string(arg), config.library_paths, rctx);
+        find_library(std::string(arg), ctx.arg.library_paths, rctx);
       read_file(mb, rctx);
     } else {
       read_file(MemoryMappedFile::must_open(std::string(args[0])), rctx);
@@ -1097,7 +1098,7 @@ static void read_input_files(std::span<std::string_view> args,
 }
 
 static void show_stats() {
-  for (ObjectFile *obj : out::objs) {
+  for (ObjectFile *obj : ctx.objs) {
     static Counter defined("defined_syms");
     defined += obj->first_global - 1;
 
@@ -1106,12 +1107,12 @@ static void show_stats() {
   }
 
   Counter num_input_sections("input_sections");
-  for (ObjectFile *file : out::objs)
+  for (ObjectFile *file : ctx.objs)
     num_input_sections += file->sections.size();
 
-  Counter num_output_chunks("output_chunks", out::chunks.size());
-  Counter num_objs("num_objs", out::objs.size());
-  Counter num_dsos("num_dsos", out::dsos.size());
+  Counter num_output_chunks("output_chunks", ctx.chunks.size());
+  Counter num_objs("num_objs", ctx.objs.size());
+  Counter num_dsos("num_dsos", ctx.dsos.size());
 
   Counter::print();
 }
@@ -1129,12 +1130,12 @@ int main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(cmdline_args, file_args);
 
-  if (!config.preload)
+  if (!ctx.arg.preload)
     if (i64 code; resume_daemon(argv, &code))
       exit(code);
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               config.thread_count);
+                               ctx.arg.thread_count);
 
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
@@ -1142,7 +1143,7 @@ int main(int argc, char **argv) {
   // Preload input files
   std::function<void()> on_complete;
 
-  if (config.preload) {
+  if (ctx.arg.preload) {
     Timer t("preload");
     std::function<void()> wait_for_client;
     daemonize(argv, &wait_for_client, &on_complete);
@@ -1154,11 +1155,11 @@ int main(int argc, char **argv) {
 
     Timer t2("wait_for_client");
     wait_for_client();
-  } else if (config.fork) {
+  } else if (ctx.arg.fork) {
     on_complete = fork_child();
   }
 
-  for (std::string_view arg : config.trace_symbol)
+  for (std::string_view arg : ctx.arg.trace_symbol)
     Symbol::intern(arg)->traced = true;
 
   // Parse input files
@@ -1173,10 +1174,10 @@ int main(int argc, char **argv) {
   {
     std::vector<SharedFile *> vec;
     std::unordered_set<std::string_view> seen;
-    for (SharedFile *file : out::dsos)
+    for (SharedFile *file : ctx.dsos)
       if (seen.insert(file->soname).second)
         vec.push_back(file);
-    out::dsos = vec;
+    ctx.dsos = vec;
   }
 
   Timer t_total("total");
@@ -1212,11 +1213,11 @@ int main(int argc, char **argv) {
   compute_import_export();
 
   // Garbage-collect unreachable sections.
-  if (config.gc_sections)
+  if (ctx.arg.gc_sections)
     gc_sections();
 
   // Merge identical read-only sections.
-  if (config.icf)
+  if (ctx.arg.icf)
     icf_sections();
 
   // Compute sizes of sections containing mergeable strings.
@@ -1226,19 +1227,19 @@ int main(int argc, char **argv) {
   bin_sections();
 
   // Get a list of output sections.
-  append(out::chunks, collect_output_sections());
+  append(ctx.chunks, collect_output_sections());
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  out::internal_obj = new ObjectFile;
-  out::internal_obj->resolve_regular_symbols();
-  out::objs.push_back(out::internal_obj);
+  ctx.internal_obj = new ObjectFile;
+  ctx.internal_obj->resolve_regular_symbols();
+  ctx.objs.push_back(ctx.internal_obj);
 
   // Add symbols from shared object files.
   resolve_dso_symbols();
 
-  // Beyond this point, no new files will be added to out::objs
-  // or out::dsos.
+  // Beyond this point, no new files will be added to ctx.objs
+  // or ctx.dsos.
 
   // Convert weak symbols to absolute symbols with value 0.
   convert_undefined_weak_symbols();
@@ -1246,9 +1247,9 @@ int main(int argc, char **argv) {
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
-  if (config.shared && !config.z_defs) {
+  if (ctx.arg.shared && !ctx.arg.z_defs) {
     Timer t("claim_unresolved_symbols");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
       file->claim_unresolved_symbols();
     });
   }
@@ -1256,7 +1257,7 @@ int main(int argc, char **argv) {
   // Beyond this point, no new symbols will be added to the result.
 
   // Make sure that all symbols have been resolved.
-  if (!config.allow_multiple_definition)
+  if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols();
 
   // Compute sizes of output sections while assigning offsets
@@ -1265,21 +1266,21 @@ int main(int argc, char **argv) {
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
-  sort(out::chunks, [](OutputChunk *a, OutputChunk *b) {
+  sort(ctx.chunks, [](OutputChunk *a, OutputChunk *b) {
     return get_section_rank(a) < get_section_rank(b);
   });
 
   // Copy string referred by .dynamic to .dynstr.
-  for (SharedFile *file : out::dsos)
-    out::dynstr->add_string(file->soname);
-  for (std::string_view str : config.auxiliary)
-    out::dynstr->add_string(str);
-  for (std::string_view str : config.filter)
-    out::dynstr->add_string(str);
-  if (!config.rpaths.empty())
-    out::dynstr->add_string(config.rpaths);
-  if (!config.soname.empty())
-    out::dynstr->add_string(config.soname);
+  for (SharedFile *file : ctx.dsos)
+    ctx.dynstr->add_string(file->soname);
+  for (std::string_view str : ctx.arg.auxiliary)
+    ctx.dynstr->add_string(str);
+  for (std::string_view str : ctx.arg.filter)
+    ctx.dynstr->add_string(str);
+  if (!ctx.arg.rpaths.empty())
+    ctx.dynstr->add_string(ctx.arg.rpaths);
+  if (!ctx.arg.soname.empty())
+    ctx.dynstr->add_string(ctx.arg.soname);
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
@@ -1287,7 +1288,7 @@ int main(int argc, char **argv) {
 
   // Sort .dynsym contents. Beyond this point, no symbol will be
   // added to .dynsym.
-  out::dynsym->sort_symbols();
+  ctx.dynsym->sort_symbols();
 
   // Fill .gnu.version_d section contents.
   fill_verdef();
@@ -1298,7 +1299,7 @@ int main(int argc, char **argv) {
   // Compute .symtab and .strtab sizes for each file.
   {
     Timer t("compute_symtab");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
       file->compute_symtab();
     });
   }
@@ -1310,39 +1311,39 @@ int main(int argc, char **argv) {
   // section to the special EHFrameSection.
   {
     Timer t("eh_frame");
-    erase(out::chunks, [](OutputChunk *chunk) {
+    erase(ctx.chunks, [](OutputChunk *chunk) {
       return chunk->kind == OutputChunk::REGULAR &&
              chunk->name == ".eh_frame";
     });
-    out::eh_frame->construct();
+    ctx.eh_frame->construct();
   }
 
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
   // for all output sections.
-  for (OutputChunk *chunk : out::chunks)
+  for (OutputChunk *chunk : ctx.chunks)
     chunk->update_shdr();
 
-  erase(out::chunks, [](OutputChunk *chunk) {
+  erase(ctx.chunks, [](OutputChunk *chunk) {
     return chunk->kind == OutputChunk::SYNTHETIC &&
            chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
-  for (i64 i = 0, shndx = 1; i < out::chunks.size(); i++)
-    if (out::chunks[i]->kind != OutputChunk::HEADER)
-      out::chunks[i]->shndx = shndx++;
+  for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
+    if (ctx.chunks[i]->kind != OutputChunk::HEADER)
+      ctx.chunks[i]->shndx = shndx++;
 
-  for (OutputChunk *chunk : out::chunks)
+  for (OutputChunk *chunk : ctx.chunks)
     chunk->update_shdr();
 
   // Assign offsets to output sections
-  i64 filesize = set_osec_offsets(out::chunks);
+  i64 filesize = set_osec_offsets(ctx.chunks);
 
   // At this point, file layout is fixed.
 
   // Fix linker-synthesized symbol addresses.
-  fix_synthetic_symbols(out::chunks);
+  fix_synthetic_symbols(ctx.chunks);
 
   // Beyond this, you can assume that symbol addresses including their
   // GOT or PLT addresses have a correct final value.
@@ -1351,8 +1352,8 @@ int main(int argc, char **argv) {
   // address. Find it out now.
   for (ElfPhdr phdr : create_phdr()) {
     if (phdr.p_type == PT_TLS) {
-      out::tls_begin = phdr.p_vaddr;
-      out::tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+      ctx.tls_begin = phdr.p_vaddr;
+      ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
       break;
     }
   }
@@ -1360,15 +1361,15 @@ int main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  OutputFile *file = OutputFile::open(config.output, filesize);
-  out::buf = file->buf;
+  OutputFile *file = OutputFile::open(ctx.arg.output, filesize);
+  ctx.buf = file->buf;
 
   Timer t_copy("copy");
 
   // Copy input sections to the output file
   {
     Timer t("copy_buf");
-    tbb::parallel_for_each(out::chunks, [&](OutputChunk *chunk) {
+    tbb::parallel_for_each(ctx.chunks, [&](OutputChunk *chunk) {
       chunk->copy_buf();
     });
     Error::checkpoint();
@@ -1376,14 +1377,14 @@ int main(int argc, char **argv) {
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
-  out::reldyn->sort();
+  ctx.reldyn->sort();
 
   // Zero-clear paddings between sections
   clear_padding(filesize);
 
-  if (out::buildid) {
+  if (ctx.buildid) {
     Timer t("build_id");
-    out::buildid->write_buildid(filesize);
+    ctx.buildid->write_buildid(filesize);
   }
 
   t_copy.stop();
@@ -1394,14 +1395,14 @@ int main(int argc, char **argv) {
   t_total.stop();
   t_all.stop();
 
-  if (config.print_map)
+  if (ctx.arg.print_map)
     print_map();
 
   // Show stats numbers
-  if (config.stats)
+  if (ctx.arg.stats)
     show_stats();
 
-  if (config.perf)
+  if (ctx.arg.perf)
     Timer::print();
 
   std::cout << std::flush;
@@ -1409,7 +1410,7 @@ int main(int argc, char **argv) {
   if (on_complete)
     on_complete();
 
-  if (config.quick_exit)
+  if (ctx.arg.quick_exit)
     std::quick_exit(0);
   return 0;
 }

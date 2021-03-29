@@ -193,7 +193,7 @@ void InputSection::copy_buf() {
     return;
 
   // Copy data
-  u8 *base = out::buf + output_section->shdr.sh_offset + offset;
+  u8 *base = ctx.buf + output_section->shdr.sh_offset + offset;
   memcpy(base, contents.data(), contents.size());
 
   // Apply relocations
@@ -262,8 +262,8 @@ void InputSection::apply_reloc_alloc(u8 *base) {
   i64 ref_idx = 0;
   ElfRela *dynrel = nullptr;
 
-  if (out::reldyn)
-    dynrel = (ElfRela *)(out::buf + out::reldyn->shdr.sh_offset +
+  if (ctx.reldyn)
+    dynrel = (ElfRela *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                          file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -283,8 +283,8 @@ void InputSection::apply_reloc_alloc(u8 *base) {
 #define S   (ref ? ref->frag->get_addr() : sym.get_addr())
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define G   (sym.get_got_addr() - out::got->shdr.sh_addr)
-#define GOT out::got->shdr.sh_addr
+#define G   (sym.get_got_addr() - ctx.got->shdr.sh_addr)
+#define GOT ctx.got->shdr.sh_addr
 
     switch (rel_types[i]) {
     case R_NONE:
@@ -335,12 +335,12 @@ void InputSection::apply_reloc_alloc(u8 *base) {
         0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
       };
       memcpy(loc - 4, insn, sizeof(insn));
-      *(u32 *)(loc + 8) = S - out::tls_end + A + 4;
+      *(u32 *)(loc + 8) = S - ctx.tls_end + A + 4;
       i++;
       break;
     }
     case R_TLSLD:
-      write(out::got->get_tlsld_addr() + A - P);
+      write(ctx.got->get_tlsld_addr() + A - P);
       break;
     case R_TLSLD_RELAX_LE: {
       // Relax LD to LE
@@ -353,13 +353,13 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       break;
     }
     case R_DTPOFF:
-      write(S + A - out::tls_begin);
+      write(S + A - ctx.tls_begin);
       break;
     case R_DTPOFF_RELAX:
-      write(S + A - out::tls_end);
+      write(S + A - ctx.tls_end);
       break;
     case R_TPOFF:
-      write(S + A - out::tls_end);
+      write(S + A - ctx.tls_end);
       break;
     case R_GOTTPOFF:
       write(sym.get_gottpoff_addr() + A - P);
@@ -369,7 +369,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
       loc[-3] = insn >> 16;
       loc[-2] = insn >> 8;
       loc[-1] = insn;
-      write(S + A - out::tls_end + 4);
+      write(S + A - ctx.tls_end + 4);
       break;
     }
     case R_GOTPC_TLSDESC:
@@ -380,7 +380,7 @@ void InputSection::apply_reloc_alloc(u8 *base) {
         0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
       };
       memcpy(loc - 3, insn, sizeof(insn));
-      write(S + A - out::tls_end + 4);
+      write(S + A - ctx.tls_end + 4);
       break;
     }
     case R_SIZE:
@@ -455,7 +455,7 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
-      write(sym.get_addr() + rel.r_addend - out::tls_begin);
+      write(sym.get_addr() + rel.r_addend - ctx.tls_begin);
       break;
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:
@@ -490,9 +490,9 @@ void InputSection::apply_reloc_nonalloc(u8 *base) {
 }
 
 static i64 get_output_type() {
-  if (config.shared)
+  if (ctx.arg.shared)
     return 0;
-  if (config.pie)
+  if (ctx.arg.pie)
     return 1;
   return 2;
 }
@@ -543,7 +543,7 @@ void InputSection::scan_relocations() {
       case ERROR:
         break;
       case COPYREL:
-        if (!config.z_copyreloc)
+        if (!ctx.arg.z_copyreloc)
           break;
         if (sym.esym->st_visibility == STV_PROTECTED)
           Error() << *this << ": cannot make copy relocation for "
@@ -658,7 +658,7 @@ void InputSection::scan_relocations() {
       if (rel.r_addend != -4)
         Fatal() << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      if (config.relax && !sym.is_imported && sym.is_relative() &&
+      if (ctx.arg.relax && !sym.is_imported && sym.is_relative() &&
           relax_gotpcrelx(loc - 2)) {
         rel_types[i] = R_GOTPCRELX_RELAX;
       } else {
@@ -671,7 +671,7 @@ void InputSection::scan_relocations() {
       if (rel.r_addend != -4)
         Fatal() << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
-      if (config.relax && !sym.is_imported && sym.is_relative() &&
+      if (ctx.arg.relax && !sym.is_imported && sym.is_relative() &&
           relax_rex_gotpcrelx(loc - 3)) {
         rel_types[i] = R_REX_GOTPCRELX_RELAX;
       } else {
@@ -688,7 +688,7 @@ void InputSection::scan_relocations() {
       if (i + 1 == rels.size())
         Fatal() << *this << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
 
-      if (config.relax && !config.shared && !sym.is_imported) {
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported) {
         rel_types[i++] = R_TLSGD_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSGD;
@@ -702,7 +702,7 @@ void InputSection::scan_relocations() {
       if (sym.is_imported)
         Fatal() << *this << ": TLSLD reloc refers external symbol " << sym;
 
-      if (config.relax && !config.shared) {
+      if (ctx.arg.relax && !ctx.arg.shared) {
         rel_types[i++] = R_TLSLD_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSLD;
@@ -714,7 +714,7 @@ void InputSection::scan_relocations() {
       if (sym.is_imported)
         Fatal() << *this << ": DTPOFF reloc refers external symbol " << sym;
 
-      if (config.relax && !config.shared)
+      if (ctx.arg.relax && !ctx.arg.shared)
         rel_types[i] = R_DTPOFF_RELAX;
       else
         rel_types[i] = R_DTPOFF;
@@ -724,9 +724,9 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      out::has_gottpoff = true;
+      ctx.has_gottpoff = true;
 
-      if (config.relax && !config.shared && !sym.is_imported &&
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported &&
           relax_gottpoff(loc - 3)) {
         rel_types[i] = R_GOTTPOFF_RELAX;
       } else {
@@ -739,7 +739,7 @@ void InputSection::scan_relocations() {
         Fatal() << *this << ": GOTPC32_TLSDESC relocation is used"
                 << " against an invalid code sequence";
 
-      if (config.relax && !config.shared) {
+      if (ctx.arg.relax && !ctx.arg.shared) {
         rel_types[i] = R_GOTPC_TLSDESC_RELAX_LE;
       } else {
         sym.flags |= NEEDS_TLSDESC;
@@ -751,7 +751,7 @@ void InputSection::scan_relocations() {
       rel_types[i] = R_SIZE;
       break;
     case R_X86_64_TLSDESC_CALL:
-      if (config.relax && !config.shared)
+      if (ctx.arg.relax && !ctx.arg.shared)
         rel_types[i] = R_TLSDESC_CALL_RELAX;
       else
         rel_types[i] = R_NONE;

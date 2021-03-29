@@ -82,7 +82,7 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   };
 
   // Add sections that are not subject to garbage collection.
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections) {
       if (!isec)
         continue;
@@ -100,22 +100,22 @@ static tbb::concurrent_vector<InputSection *> collect_root_set() {
   });
 
   // Add sections containing exported symbols
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols)
       if (sym->file == file && sym->is_exported)
         enqueue_symbol(sym);
   });
 
   // Add sections referenced by root symbols.
-  enqueue_symbol(Symbol::intern(config.entry));
+  enqueue_symbol(Symbol::intern(ctx.arg.entry));
 
-  for (std::string_view name : config.undefined)
+  for (std::string_view name : ctx.arg.undefined)
     enqueue_symbol(Symbol::intern(name));
 
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
   // We just keep all CIEs and everything that are referenced by them.
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (CieRecord &cie : file->cies)
       for (EhReloc &rel : cie.rels)
         enqueue_section(rel.sym.input_section);
@@ -138,12 +138,12 @@ static void sweep() {
   Timer t("sweep");
   static Counter counter("garbage_sections");
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
       InputSection *isec = file->sections[i];
 
       if (isec && isec->is_alive && !isec->is_visited) {
-        if (config.print_gc_sections)
+        if (ctx.arg.print_gc_sections)
           SyncOut() << "removing unused section " << *isec;
         isec->kill();
         counter++;
@@ -157,7 +157,7 @@ static void sweep() {
 static void mark_nonalloc_fragments() {
   Timer t("mark_nonalloc_fragments");
 
-  tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
     for (SectionFragment *frag : file->fragments)
       if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
         frag->is_alive = true;

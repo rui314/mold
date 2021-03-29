@@ -10,7 +10,7 @@ static std::ofstream *open_output_file(std::string path) {
   std::ofstream *file = new std::ofstream;
   file->open(path.c_str());
   if (!file->is_open())
-    Fatal() << "cannot open " << config.Map << ": " << strerror(errno);
+    Fatal() << "cannot open " << ctx.arg.Map << ": " << strerror(errno);
   return file;
 }
 
@@ -20,13 +20,13 @@ void print_map() {
   std::ostream *out = &std::cout;
   std::ofstream *file = nullptr;
 
-  if (!config.Map.empty())
-    out = file = open_output_file(config.Map);
+  if (!ctx.arg.Map.empty())
+    out = file = open_output_file(ctx.arg.Map);
 
   // Construct a section-to-symbol map.
   MapTy map;
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (Symbol *sym : file->symbols) {
       if (sym->file == file && sym->input_section &&
           sym->get_type() != STT_SECTION) {
@@ -48,7 +48,7 @@ void print_map() {
 
   *out << "             VMA       Size Align Out     In      Symbol\n";
 
-  for (OutputChunk *osec : out::chunks) {
+  for (OutputChunk *osec : ctx.chunks) {
     *out << std::setw(16) << (u64)osec->shdr.sh_addr
          << std::setw(11) << (u64)osec->shdr.sh_size
          << std::setw(6) << (u64)osec->shdr.sh_addralign

@@ -175,7 +175,7 @@ void ObjectFile::initialize_sections() {
       if (name == ".note.GNU-stack" || name == ".note.gnu.property")
         continue;
 
-      if ((config.strip_all || config.strip_debug) &&
+      if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))
         continue;
 
@@ -336,7 +336,7 @@ void ObjectFile::read_ehframe(InputSection &isec) {
 }
 
 static bool should_write_to_local_symtab(Symbol &sym) {
-  if (config.discard_all || config.strip_all)
+  if (ctx.arg.discard_all || ctx.arg.strip_all)
     return false;
   if (sym.get_type() == STT_SECTION)
     return false;
@@ -348,7 +348,7 @@ static bool should_write_to_local_symtab(Symbol &sym) {
   // know the rationale. Anyway, this is the behavior of the
   // traditional linkers.
   if (sym.name.starts_with(".L")) {
-    if (config.discard_locals)
+    if (ctx.arg.discard_locals)
       return false;
 
     if (InputSection *isec = sym.input_section)
@@ -643,7 +643,7 @@ void ObjectFile::maybe_override_symbol(Symbol &sym, i64 symidx) {
     } else {
       sym.value = esym.st_value;
     }
-    sym.ver_idx = config.default_version;
+    sym.ver_idx = ctx.arg.default_version;
     sym.esym = &esym;
     sym.is_lazy = false;
     sym.is_imported = false;
@@ -764,11 +764,11 @@ void ObjectFile::convert_undefined_weak_symbols() {
         sym.file = this;
         sym.input_section = nullptr;
         sym.value = 0;
-        sym.ver_idx = config.default_version;
+        sym.ver_idx = ctx.arg.default_version;
         sym.esym = &esym;
         sym.is_lazy = false;
 
-        if (config.shared)
+        if (ctx.arg.shared)
           sym.is_imported = true;
 
         if (sym.traced)
@@ -862,7 +862,7 @@ void ObjectFile::convert_common_symbols() {
 
     Symbol *sym = symbols[i];
     if (sym->file != this) {
-      if (config.warn_common)
+      if (ctx.arg.warn_common)
         Warn() << *this << ": " << "multiple common symbols: " << *sym;
       continue;
     }
@@ -891,10 +891,10 @@ static bool should_write_to_global_symtab(Symbol &sym) {
 }
 
 void ObjectFile::compute_symtab() {
-  if (config.strip_all)
+  if (ctx.arg.strip_all)
     return;
 
-  if (config.gc_sections && !config.discard_all) {
+  if (ctx.arg.gc_sections && !ctx.arg.discard_all) {
     // Detect symbols pointing to sections discarded by -gc-sections
     // to not copy them to symtab.
     for (i64 i = 1; i < first_global; i++) {
@@ -921,8 +921,8 @@ void ObjectFile::compute_symtab() {
 }
 
 void ObjectFile::write_symtab() {
-  u8 *symtab_base = out::buf + out::symtab->shdr.sh_offset;
-  u8 *strtab_base = out::buf + out::strtab->shdr.sh_offset;
+  u8 *symtab_base = ctx.buf + ctx.symtab->shdr.sh_offset;
+  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = strtab_offset;
   i64 symtab_off;
 
@@ -935,7 +935,7 @@ void ObjectFile::write_symtab() {
     esym.st_name = strtab_off;
 
     if (sym.get_type() == STT_TLS)
-      esym.st_value = sym.get_addr() - out::tls_begin;
+      esym.st_value = sym.get_addr() - ctx.tls_begin;
     else
       esym.st_value = sym.get_addr();
 
@@ -989,27 +989,27 @@ ObjectFile::ObjectFile() {
     return sym;
   };
 
-  out::__ehdr_start = add("__ehdr_start", STV_HIDDEN);
-  out::__rela_iplt_start = add("__rela_iplt_start", STV_HIDDEN);
-  out::__rela_iplt_end = add("__rela_iplt_end", STV_HIDDEN);
-  out::__init_array_start = add("__init_array_start", STV_HIDDEN);
-  out::__init_array_end = add("__init_array_end", STV_HIDDEN);
-  out::__fini_array_start = add("__fini_array_start", STV_HIDDEN);
-  out::__fini_array_end = add("__fini_array_end", STV_HIDDEN);
-  out::__preinit_array_start = add("__preinit_array_start", STV_HIDDEN);
-  out::__preinit_array_end = add("__preinit_array_end", STV_HIDDEN);
-  out::_DYNAMIC = add("_DYNAMIC", STV_HIDDEN);
-  out::_GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STV_HIDDEN);
-  out::__bss_start = add("__bss_start", STV_HIDDEN);
-  out::_end = add("_end", STV_HIDDEN);
-  out::_etext = add("_etext", STV_HIDDEN);
-  out::_edata = add("_edata", STV_HIDDEN);
-  out::__executable_start = add("__executable_start", STV_HIDDEN);
+  ctx.__ehdr_start = add("__ehdr_start", STV_HIDDEN);
+  ctx.__rela_iplt_start = add("__rela_iplt_start", STV_HIDDEN);
+  ctx.__rela_iplt_end = add("__rela_iplt_end", STV_HIDDEN);
+  ctx.__init_array_start = add("__init_array_start", STV_HIDDEN);
+  ctx.__init_array_end = add("__init_array_end", STV_HIDDEN);
+  ctx.__fini_array_start = add("__fini_array_start", STV_HIDDEN);
+  ctx.__fini_array_end = add("__fini_array_end", STV_HIDDEN);
+  ctx.__preinit_array_start = add("__preinit_array_start", STV_HIDDEN);
+  ctx.__preinit_array_end = add("__preinit_array_end", STV_HIDDEN);
+  ctx._DYNAMIC = add("_DYNAMIC", STV_HIDDEN);
+  ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STV_HIDDEN);
+  ctx.__bss_start = add("__bss_start", STV_HIDDEN);
+  ctx._end = add("_end", STV_HIDDEN);
+  ctx._etext = add("_etext", STV_HIDDEN);
+  ctx._edata = add("_edata", STV_HIDDEN);
+  ctx.__executable_start = add("__executable_start", STV_HIDDEN);
 
-  if (config.eh_frame_hdr)
-    out::__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
+  if (ctx.arg.eh_frame_hdr)
+    ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
 
-  for (OutputChunk *chunk : out::chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
 

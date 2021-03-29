@@ -81,7 +81,7 @@ static void uniquify_cies() {
   Timer t("uniquify_cies");
   std::vector<CieRecord *> cies;
 
-  for (ObjectFile *file : out::objs) {
+  for (ObjectFile *file : ctx.objs) {
     for (CieRecord &cie : file->cies) {
       for (i64 i = 0; i < cies.size(); i++) {
         if (cie_equal(cie, *cies[i])) {
@@ -176,8 +176,8 @@ static void merge_leaf_nodes() {
   tbb::concurrent_unordered_map<InputSection *, InputSection *,
                                 LeafHasher, LeafEq> map;
 
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    for (InputSection *isec : out::objs[i]->sections) {
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (InputSection *isec : ctx.objs[i]->sections) {
       if (!isec)
         continue;
 
@@ -199,8 +199,8 @@ static void merge_leaf_nodes() {
     }
   });
 
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    for (InputSection *isec : out::objs[i]->sections) {
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (InputSection *isec : ctx.objs[i]->sections) {
       if (isec && isec->icf_leaf) {
         auto it = map.find(isec);
         assert(it != map.end());
@@ -293,24 +293,24 @@ static std::vector<InputSection *> gather_sections() {
   Timer t("gather_sections");
 
   // Count the number of input sections for each input file.
-  std::vector<i64> num_sections(out::objs.size());
+  std::vector<i64> num_sections(ctx.objs.size());
 
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
-    for (InputSection *isec : out::objs[i]->sections)
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (InputSection *isec : ctx.objs[i]->sections)
       if (isec && isec->icf_eligible)
         num_sections[i]++;
   });
 
-  std::vector<i64> section_indices(out::objs.size());
-  for (i64 i = 0; i < out::objs.size() - 1; i++)
+  std::vector<i64> section_indices(ctx.objs.size());
+  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
     section_indices[i + 1] = section_indices[i] + num_sections[i];
 
   std::vector<InputSection *> sections(section_indices.back() + num_sections.back());
 
   // Fill `sections` contents.
-  tbb::parallel_for((i64)0, (i64)out::objs.size(), [&](i64 i) {
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
-    for (InputSection *isec : out::objs[i]->sections)
+    for (InputSection *isec : ctx.objs[i]->sections)
       if (isec && isec->icf_eligible)
         sections[idx++] = isec;
   });
@@ -423,7 +423,7 @@ static void print_icf_sections() {
   tbb::concurrent_vector<InputSection *> leaders;
   tbb::concurrent_unordered_multimap<InputSection *, InputSection *> map;
 
-  tbb::parallel_for_each(out::objs, [&](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     for (InputSection *isec : file->sections) {
       if (isec && isec->leader) {
         if (isec == isec->leader)
@@ -525,13 +525,13 @@ void icf_sections() {
     });
   }
 
-  if (config.print_icf_sections)
+  if (ctx.arg.print_icf_sections)
     print_icf_sections();
 
   // Re-assign input sections to symbols.
   {
     Timer t("reassign");
-    tbb::parallel_for_each(out::objs, [](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
       for (Symbol *sym : file->symbols) {
         if (sym->file != file)
           continue;

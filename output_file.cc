@@ -16,22 +16,22 @@ class MemoryMappedOutputFile : public OutputFile {
 public:
   MemoryMappedOutputFile(std::string path, i64 filesize)
     : OutputFile(path, filesize) {
-    std::string dir = dirname(strdup(config.output.c_str()));
+    std::string dir = dirname(strdup(ctx.arg.output.c_str()));
     tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
     i64 fd = mkstemp(tmpfile);
     if (fd == -1)
       Fatal() << "cannot open " << tmpfile <<  ": " << strerror(errno);
 
-    if (rename(config.output.c_str(), tmpfile) == 0) {
+    if (rename(ctx.arg.output.c_str(), tmpfile) == 0) {
       ::close(fd);
       fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
       if (fd == -1) {
         if (errno != ETXTBSY)
-          Fatal() << "cannot open " << config.output << ": " << strerror(errno);
+          Fatal() << "cannot open " << ctx.arg.output << ": " << strerror(errno);
         unlink(tmpfile);
         fd = ::open(tmpfile, O_RDWR | O_CREAT, 0777);
         if (fd == -1)
-          Fatal() << "cannot open " << config.output << ": " << strerror(errno);
+          Fatal() << "cannot open " << ctx.arg.output << ": " << strerror(errno);
       }
     }
 
@@ -43,15 +43,15 @@ public:
 
     buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (buf == MAP_FAILED)
-      Fatal() << config.output << ": mmap failed: " << strerror(errno);
+      Fatal() << ctx.arg.output << ": mmap failed: " << strerror(errno);
     ::close(fd);
   }
 
   void close() override {
     Timer t("close_file");
     munmap(buf, filesize);
-    if (rename(tmpfile, config.output.c_str()) == -1)
-      Fatal() << config.output << ": rename filed: " << strerror(errno);
+    if (rename(tmpfile, ctx.arg.output.c_str()) == -1)
+      Fatal() << ctx.arg.output << ": rename filed: " << strerror(errno);
     tmpfile = nullptr;
   }
 };
@@ -70,7 +70,7 @@ public:
     Timer t("close_file");
     i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
-      Fatal() << "cannot open " << config.output << ": " << strerror(errno);
+      Fatal() << "cannot open " << ctx.arg.output << ": " << strerror(errno);
 
     FILE *fp = fdopen(fd, "w");
     fwrite(buf, filesize, 1, fp);
@@ -92,7 +92,7 @@ OutputFile *OutputFile::open(std::string path, u64 filesize) {
   else
     file = new MemoryMappedOutputFile(path, filesize);
 
-  if (config.filler != -1)
-    memset(file->buf, config.filler, filesize);
+  if (ctx.arg.filler != -1)
+    memset(file->buf, ctx.arg.filler, filesize);
   return file;
 }

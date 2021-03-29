@@ -134,10 +134,10 @@ static MemoryMappedFile *resolve_path(std::string_view tok, ReadContext &rctx) {
   std::string str(unquote(tok));
 
   if (str.starts_with("/"))
-    return MemoryMappedFile::must_open(config.sysroot + str);
+    return MemoryMappedFile::must_open(ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
-    return find_library(str.substr(2), config.library_paths, rctx);
+    return find_library(str.substr(2), ctx.arg.library_paths, rctx);
 
   if (std::string path = path_dirname(current_file->name) + "/";
       MemoryMappedFile *mb = MemoryMappedFile::open(path + str))
@@ -146,8 +146,8 @@ static MemoryMappedFile *resolve_path(std::string_view tok, ReadContext &rctx) {
   if (MemoryMappedFile *mb = MemoryMappedFile::open(str))
     return mb;
 
-  for (std::string_view dir : config.library_paths) {
-    std::string root = dir.starts_with("/") ? config.sysroot : "";
+  for (std::string_view dir : ctx.arg.library_paths) {
+    std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string path = root + std::string(dir) + "/" + str;
     if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
       return mb;
@@ -235,9 +235,9 @@ static void parse_version_script_commands(std::span<std::string_view> &tok,
     }
 
     if (tok[0] == "*")
-      config.default_version = (is_global ? ver : VER_NDX_LOCAL);
+      ctx.arg.default_version = (is_global ? ver : VER_NDX_LOCAL);
     else
-      config.version_patterns.push_back({tok[0], ver, is_extern_cpp});
+      ctx.arg.version_patterns.push_back({tok[0], ver, is_extern_cpp});
     tok = skip(tok.subspan(1), ";");
   }
 }
@@ -252,7 +252,7 @@ void parse_version_script(std::string path) {
     i16 ver = VER_NDX_GLOBAL;
     if (tok[0] != "{") {
       ver = next_ver++;
-      config.version_definitions.push_back(tok[0]);
+      ctx.arg.version_definitions.push_back(tok[0]);
       tok = tok.subspan(1);
     }
 
@@ -288,9 +288,9 @@ void parse_dynamic_list(std::string path) {
     }
 
     if (tok[0] == "*")
-      config.default_version = ver;
+      ctx.arg.default_version = ver;
     else
-      config.version_patterns.push_back({tok[0], ver, false});
+      ctx.arg.version_patterns.push_back({tok[0], ver, false});
     tok = skip(tok.subspan(1), ";");
   }
 
