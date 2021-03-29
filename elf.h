@@ -292,7 +292,10 @@ struct ElfEhdr<ELF64LE> {
   u16 e_shstrndx;
 };
 
-struct ElfPhdr {
+template <typename E> struct ElfPhdr;
+
+template <>
+struct ElfPhdr<ELF64LE> {
   u32 p_type;
   u32 p_flags;
   u64 p_offset;

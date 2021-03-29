@@ -1226,7 +1226,7 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data(ctx);
-  ElfPhdr *phdr = (ElfPhdr *)(this->mb->data(ctx) + ehdr->e_phoff);
+  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mb->data(ctx) + ehdr->e_phoff);
   u64 val = sym->esym->st_value;
 
   for (i64 i = 0; i < ehdr->e_phnum; i++)

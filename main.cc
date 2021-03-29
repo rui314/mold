@@ -1375,7 +1375,7 @@ int do_main(int argc, char **argv) {
 
   // Some types of relocations for TLS symbols need the TLS segment
   // address. Find it out now.
-  for (ElfPhdr phdr : create_phdr(ctx)) {
+  for (ElfPhdr<E> phdr : create_phdr(ctx)) {
     if (phdr.p_type == PT_TLS) {
       ctx.tls_begin = phdr.p_vaddr;
       ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);

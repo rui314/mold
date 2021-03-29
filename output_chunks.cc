@@ -36,8 +36,8 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
-  hdr.e_phentsize = sizeof(ElfPhdr);
-  hdr.e_phnum = ctx.phdr->shdr.sh_size / sizeof(ElfPhdr);
+  hdr.e_phentsize = sizeof(ElfPhdr<E>);
+  hdr.e_phnum = ctx.phdr->shdr.sh_size / sizeof(ElfPhdr<E>);
   hdr.e_shentsize = sizeof(ElfShdr<E>);
   hdr.e_shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
   hdr.e_shstrndx = ctx.shstrtab->shndx;
@@ -88,12 +88,12 @@ bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
 }
 
 template <typename E>
-std::vector<ElfPhdr> create_phdr(Context<E> &ctx) {
-  std::vector<ElfPhdr> vec;
+std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
+  std::vector<ElfPhdr<E>> vec;
 
   auto define = [&](u64 type, u64 flags, i64 min_align, OutputChunk<E> *chunk) {
     vec.push_back({});
-    ElfPhdr &phdr = vec.back();
+    ElfPhdr<E> &phdr = vec.back();
     phdr.p_type = type;
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
@@ -105,7 +105,7 @@ std::vector<ElfPhdr> create_phdr(Context<E> &ctx) {
   };
 
   auto append = [&](OutputChunk<E> *chunk) {
-    ElfPhdr &phdr = vec.back();
+    ElfPhdr<E> &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
       ? chunk->shdr.sh_offset - phdr.p_offset
@@ -208,7 +208,7 @@ std::vector<ElfPhdr> create_phdr(Context<E> &ctx) {
 
 template <typename E>
 void OutputPhdr<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = create_phdr(ctx).size() * sizeof(ElfPhdr);
+  this->shdr.sh_size = create_phdr(ctx).size() * sizeof(ElfPhdr<E>);
 }
 
 template <typename E>
@@ -1509,4 +1509,4 @@ template class BuildIdSection<ELF64LE>;
 
 template i64 BuildId::size(Context<ELF64LE> &ctx) const;
 template bool is_relro(Context<ELF64LE> &ctx, OutputChunk<ELF64LE> *chunk);
-template std::vector<ElfPhdr> create_phdr<ELF64LE>(Context<ELF64LE> &ctx);
+template std::vector<ElfPhdr<ELF64LE>> create_phdr<ELF64LE>(Context<ELF64LE> &ctx);

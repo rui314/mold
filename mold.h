@@ -803,7 +803,7 @@ public:
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
-std::vector<ElfPhdr> create_phdr(Context<E> &ctx);
+std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx);
 
 //
 // object_file.cc
