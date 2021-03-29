@@ -184,7 +184,7 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
-static void apply_exclude_libs() {
+static void apply_exclude_libs(Context &ctx) {
   Timer t("apply_exclude_libs");
 
   if (ctx.arg.exclude_libs.empty())
@@ -199,8 +199,8 @@ static void apply_exclude_libs() {
         file->exclude_libs = true;
 }
 
-static void create_synthetic_sections() {
-  auto add = [](OutputChunk *chunk) {
+static void create_synthetic_sections(Context &ctx) {
+  auto add = [&](OutputChunk *chunk) {
     ctx.chunks.push_back(chunk);
   };
 
@@ -240,7 +240,7 @@ static void create_synthetic_sections() {
   add(ctx.verneed = new VerneedSection);
 }
 
-static void set_file_priority() {
+static void set_file_priority(Context &ctx) {
   // File priority 1 is reserved for the internal file.
   i64 priority = 2;
 
@@ -254,7 +254,7 @@ static void set_file_priority() {
     file->priority = priority++;
 }
 
-static void resolve_obj_symbols() {
+static void resolve_obj_symbols(Context &ctx) {
   Timer t("resolve_obj_symbols");
 
   // Register archive symbols
@@ -302,7 +302,7 @@ static void resolve_obj_symbols() {
   erase(ctx.objs, [](InputFile *file) { return !file->is_alive; });
 }
 
-static void resolve_dso_symbols() {
+static void resolve_dso_symbols(Context &ctx) {
   Timer t("resolve_dso_symbols");
 
   // Register DSO symbols
@@ -343,7 +343,7 @@ static void resolve_dso_symbols() {
   erase(ctx.dsos, [](InputFile *file) { return !file->is_alive; });
 }
 
-static void eliminate_comdats() {
+static void eliminate_comdats(Context &ctx) {
   Timer t("eliminate_comdats");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
@@ -355,15 +355,15 @@ static void eliminate_comdats() {
   });
 }
 
-static void convert_common_symbols() {
+static void convert_common_symbols(Context &ctx) {
   Timer t("convert_common_symbols");
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     file->convert_common_symbols(ctx);
   });
 }
 
-static std::string get_cmdline_args() {
+static std::string get_cmdline_args(Context &ctx) {
   std::stringstream ss;
   ss << ctx.cmdline_args[0];
   for (std::string_view arg : std::span(ctx.cmdline_args).subspan(1))
@@ -379,7 +379,7 @@ static void add_comment_string(std::string str) {
   frag->is_alive = true;
 }
 
-static void compute_merged_section_sizes() {
+static void compute_merged_section_sizes(Context &ctx) {
   Timer t("compute_merged_section_sizes");
 
   // Mark section fragments referenced by live objects.
@@ -394,7 +394,7 @@ static void compute_merged_section_sizes() {
   add_comment_string("mold " GIT_HASH);
 
   // Also embed command line arguments for now for debugging.
-  add_comment_string("mold command line: " + get_cmdline_args());
+  add_comment_string("mold command line: " + get_cmdline_args(ctx));
 
   tbb::parallel_for_each(MergedSection::instances, [](MergedSection *sec) {
     sec->assign_offsets();
@@ -407,7 +407,7 @@ static void compute_merged_section_sizes() {
 //
 // An output section may contain millions of input sections.
 // So, we append input sections to output sections in parallel.
-static void bin_sections() {
+static void bin_sections(Context &ctx) {
   Timer t("bin_sections");
 
   i64 unit = (ctx.objs.size() + 127) / 128;
@@ -439,7 +439,7 @@ static void bin_sections() {
   });
 }
 
-static void check_duplicate_symbols() {
+static void check_duplicate_symbols(Context &ctx) {
   Timer t("check_dup_syms");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
@@ -481,7 +481,7 @@ std::vector<OutputChunk *> collect_output_sections() {
   return vec;
 }
 
-static void compute_section_sizes() {
+static void compute_section_sizes(Context &ctx) {
   Timer t("compute_section_sizes");
 
   tbb::parallel_for_each(OutputSection::instances, [&](OutputSection *osec) {
@@ -525,15 +525,15 @@ static void compute_section_sizes() {
   });
 }
 
-static void convert_undefined_weak_symbols() {
+static void convert_undefined_weak_symbols(Context &ctx) {
   Timer t("undef_weak");
 
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
     file->convert_undefined_weak_symbols(ctx);
   });
 }
 
-static void scan_rels() {
+static void scan_rels(Context &ctx) {
   Timer t("scan_rels");
 
   // Scan relocations to find dynamic symbols.
@@ -612,7 +612,7 @@ static void scan_rels() {
   }
 }
 
-static void apply_version_script() {
+static void apply_version_script(Context &ctx) {
   Timer t("apply_version_script");
 
   for (VersionPattern &elem : ctx.arg.version_patterns) {
@@ -639,7 +639,7 @@ static void apply_version_script() {
   }
 }
 
-static void parse_symbol_version() {
+static void parse_symbol_version(Context &ctx) {
   Timer t("parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
@@ -677,7 +677,7 @@ static void parse_symbol_version() {
   });
 }
 
-static void compute_import_export() {
+static void compute_import_export(Context &ctx) {
   Timer t("compute_import_export");
 
   // Export symbols referenced by DSOs.
@@ -691,7 +691,7 @@ static void compute_import_export() {
 
   // Global symbols are exported from DSO by default.
   if (ctx.arg.shared || ctx.arg.export_dynamic) {
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile *file) {
       for (Symbol *sym : file->get_global_syms()) {
         if (sym->file != file)
           continue;
@@ -710,7 +710,7 @@ static void compute_import_export() {
   }
 }
 
-static void fill_verdef() {
+static void fill_verdef(Context &ctx) {
   Timer t("fill_verdef");
 
   if (ctx.arg.version_definitions.empty())
@@ -760,7 +760,7 @@ static void fill_verdef() {
     ctx.versym->contents[sym->dynsym_idx] = sym->ver_idx;
 }
 
-static void fill_verneed() {
+static void fill_verneed(Context &ctx) {
   Timer t("fill_verneed");
 
   if (ctx.dynsym->symbols.empty())
@@ -840,10 +840,10 @@ static void fill_verneed() {
   ctx.verneed->contents.resize(ptr - buf);
 }
 
-static void clear_padding(i64 filesize) {
+static void clear_padding(Context &ctx, i64 filesize) {
   Timer t("clear_padding");
 
-  auto zero = [](OutputChunk *chunk, i64 next_start) {
+  auto zero = [&](OutputChunk *chunk, i64 next_start) {
     i64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
@@ -871,7 +871,7 @@ static void clear_padding(i64 filesize) {
 //   alloc writable non-RELRO bss
 //   nonalloc
 //   section header
-static i64 get_section_rank(OutputChunk *chunk) {
+static i64 get_section_rank(Context &ctx, OutputChunk *chunk) {
   if (chunk == ctx.ehdr)
     return 0;
   if (chunk == ctx.phdr)
@@ -905,13 +905,13 @@ inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
   return align_to(val + align - skew, align) - align + skew;
 }
 
-static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
+static i64 set_osec_offsets(Context &ctx) {
   Timer t("osec_offset");
 
   i64 fileoff = 0;
   i64 vaddr = ctx.arg.image_base;
 
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (chunk->new_page)
       vaddr = align_to(vaddr, PAGE_SIZE);
 
@@ -936,7 +936,7 @@ static i64 set_osec_offsets(std::span<OutputChunk *> chunks) {
   return fileoff;
 }
 
-static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
+static void fix_synthetic_symbols(Context &ctx) {
   auto start = [](Symbol *sym, OutputChunk *chunk) {
     if (sym && chunk) {
       sym->shndx = chunk->shndx;
@@ -952,7 +952,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   };
 
   // __bss_start
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (chunk->kind == OutputChunk::REGULAR && chunk->name == ".bss") {
       start(ctx.__bss_start, chunk);
       break;
@@ -960,7 +960,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   }
 
   // __ehdr_start and __executable_start
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (chunk->shndx == 1) {
       ctx.__ehdr_start->shndx = 1;
       ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
@@ -976,7 +976,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   stop(ctx.__rela_iplt_end, ctx.relplt);
 
   // __{init,fini}_array_{start,end}
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
@@ -990,7 +990,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   }
 
   // _end, _etext, _edata and the like
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (chunk->kind == OutputChunk::HEADER)
       continue;
 
@@ -1014,7 +1014,7 @@ static void fix_synthetic_symbols(std::span<OutputChunk *> chunks) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // __start_ and __stop_ symbols
-  for (OutputChunk *chunk : chunks) {
+  for (OutputChunk *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
       start(Symbol::intern_alloc("__start_" + std::string(chunk->name)), chunk);
       stop(Symbol::intern_alloc("__stop_" + std::string(chunk->name)), chunk);
@@ -1092,7 +1092,7 @@ static void read_input_files(Context &ctx, std::span<std::string_view> args) {
   }
 }
 
-static void show_stats() {
+static void show_stats(Context &ctx) {
   for (ObjectFile *obj : ctx.objs) {
     static Counter defined("defined_syms");
     defined += obj->first_global - 1;
@@ -1179,33 +1179,33 @@ int main(int argc, char **argv) {
   Timer t_before_copy("before_copy");
 
   // Apply -exclude-libs
-  apply_exclude_libs();
+  apply_exclude_libs(ctx);
 
   // Create instances of linker-synthesized sections such as
   // .got or .plt.
-  create_synthetic_sections();
+  create_synthetic_sections(ctx);
 
   // Set unique indices to files.
-  set_file_priority();
+  set_file_priority(ctx);
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
-  resolve_obj_symbols();
+  resolve_obj_symbols(ctx);
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
-  eliminate_comdats();
+  eliminate_comdats(ctx);
 
   // Create .bss sections for common symbols.
-  convert_common_symbols();
+  convert_common_symbols(ctx);
 
   // Apply version scripts.
-  apply_version_script();
+  apply_version_script(ctx);
 
   // Parse symbol version suffixes (e.g. "foo@ver1").
-  parse_symbol_version();
+  parse_symbol_version(ctx);
 
   // Set is_import and is_export bits for each symbol.
-  compute_import_export();
+  compute_import_export(ctx);
 
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
@@ -1216,10 +1216,10 @@ int main(int argc, char **argv) {
     icf_sections();
 
   // Compute sizes of sections containing mergeable strings.
-  compute_merged_section_sizes();
+  compute_merged_section_sizes(ctx);
 
-  // Bin input sections into output sections
-  bin_sections();
+  // ctx input sections into output sections
+  bin_sections(ctx);
 
   // Get a list of output sections.
   append(ctx.chunks, collect_output_sections());
@@ -1231,13 +1231,13 @@ int main(int argc, char **argv) {
   ctx.objs.push_back(ctx.internal_obj);
 
   // Add symbols from shared object files.
-  resolve_dso_symbols();
+  resolve_dso_symbols(ctx);
 
   // Beyond this point, no new files will be added to ctx.objs
   // or ctx.dsos.
 
   // Convert weak symbols to absolute symbols with value 0.
-  convert_undefined_weak_symbols();
+  convert_undefined_weak_symbols(ctx);
 
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
@@ -1253,16 +1253,16 @@ int main(int argc, char **argv) {
 
   // Make sure that all symbols have been resolved.
   if (!ctx.arg.allow_multiple_definition)
-    check_duplicate_symbols();
+    check_duplicate_symbols(ctx);
 
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.
-  compute_section_sizes();
+  compute_section_sizes(ctx);
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
-  sort(ctx.chunks, [](OutputChunk *a, OutputChunk *b) {
-    return get_section_rank(a) < get_section_rank(b);
+  sort(ctx.chunks, [&](OutputChunk *a, OutputChunk *b) {
+    return get_section_rank(ctx, a) < get_section_rank(ctx, b);
   });
 
   // Copy string referred by .dynamic to .dynstr.
@@ -1279,17 +1279,17 @@ int main(int argc, char **argv) {
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
-  scan_rels();
+  scan_rels(ctx);
 
   // Sort .dynsym contents. Beyond this point, no symbol will be
   // added to .dynsym.
   ctx.dynsym->sort_symbols(ctx);
 
   // Fill .gnu.version_d section contents.
-  fill_verdef();
+  fill_verdef(ctx);
 
   // Fill .gnu.version_r section contents.
-  fill_verneed();
+  fill_verneed(ctx);
 
   // Compute .symtab and .strtab sizes for each file.
   {
@@ -1333,12 +1333,12 @@ int main(int argc, char **argv) {
     chunk->update_shdr(ctx);
 
   // Assign offsets to output sections
-  i64 filesize = set_osec_offsets(ctx.chunks);
+  i64 filesize = set_osec_offsets(ctx);
 
   // At this point, file layout is fixed.
 
   // Fix linker-synthesized symbol addresses.
-  fix_synthetic_symbols(ctx.chunks);
+  fix_synthetic_symbols(ctx);
 
   // Beyond this, you can assume that symbol addresses including their
   // GOT or PLT addresses have a correct final value.
@@ -1375,7 +1375,7 @@ int main(int argc, char **argv) {
   ctx.reldyn->sort(ctx);
 
   // Zero-clear paddings between sections
-  clear_padding(filesize);
+  clear_padding(ctx, filesize);
 
   if (ctx.buildid) {
     Timer t("build_id");
@@ -1395,7 +1395,7 @@ int main(int argc, char **argv) {
 
   // Show stats numbers
   if (ctx.arg.stats)
-    show_stats();
+    show_stats(ctx);
 
   if (ctx.arg.perf)
     Timer::print();
