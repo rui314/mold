@@ -1209,7 +1209,7 @@ int main(int argc, char **argv) {
 
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
-    gc_sections();
+    gc_sections(ctx);
 
   // Merge identical read-only sections.
   if (ctx.arg.icf)

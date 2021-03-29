@@ -63,7 +63,7 @@ static void visit(InputSection *isec, Feeder &feeder, i64 depth) {
   }
 }
 
-static tbb::concurrent_vector<InputSection *> collect_root_set() {
+static tbb::concurrent_vector<InputSection *> collect_root_set(Context &ctx) {
   Timer t("collect_root_set");
   tbb::concurrent_vector<InputSection *> roots;
 
@@ -134,7 +134,7 @@ static void mark(tbb::concurrent_vector<InputSection *> &roots) {
 }
 
 // Remove unreachable sections
-static void sweep() {
+static void sweep(Context &ctx) {
   Timer t("sweep");
   static Counter counter("garbage_sections");
 
@@ -154,7 +154,7 @@ static void sweep() {
 
 // Non-alloc section fragments are not subject of garbage collection.
 // This function marks such fragments.
-static void mark_nonalloc_fragments() {
+static void mark_nonalloc_fragments(Context &ctx) {
   Timer t("mark_nonalloc_fragments");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile *file) {
@@ -164,12 +164,12 @@ static void mark_nonalloc_fragments() {
   });
 }
 
-void gc_sections() {
+void gc_sections(Context &ctx) {
   Timer t("gc");
 
-  mark_nonalloc_fragments();
+  mark_nonalloc_fragments(ctx);
 
-  tbb::concurrent_vector<InputSection *> roots = collect_root_set();
+  tbb::concurrent_vector<InputSection *> roots = collect_root_set(ctx);
   mark(roots);
-  sweep();
+  sweep(ctx);
 }

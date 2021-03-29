@@ -1031,7 +1031,7 @@ private:
 // gc_sections.cc
 //
 
-void gc_sections();
+void gc_sections(Context &ctx);
 
 //
 // icf.cc
