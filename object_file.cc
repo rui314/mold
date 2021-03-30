@@ -206,7 +206,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
   // Attach relocation sections to their target sections.
   for (const ElfShdr<E> &shdr : this->elf_sections) {
-    if (shdr.sh_type != SHT_RELA)
+    if (shdr.sh_type != E::rel_type)
       continue;
 
     if (shdr.sh_info >= sections.size())

@@ -485,7 +485,7 @@ template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
 
 struct X86_64 {
-  static constexpr bool is_rela = true;
+  static constexpr bool rel_type = SHT_RELA;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr u32 e_machine = EM_X86_64;
@@ -504,7 +504,7 @@ template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
-  static constexpr bool is_rela = false;
+  static constexpr bool rel_type = SHT_REL;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr u32 e_machine = EM_386;

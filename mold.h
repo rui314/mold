@@ -505,8 +505,8 @@ template <typename E>
 class RelPltSection : public OutputChunk<E> {
 public:
   RelPltSection() : OutputChunk<E>(this->SYNTHETIC) {
-    this->name = E::is_rela ? ".rela.plt" : ".rel.plt";
-    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
+    this->name = (E::rel_type == SHT_REL) ? ".rel.plt" : ".rela.plt";
+    this->shdr.sh_type = E::rel_type;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = 8;
@@ -520,8 +520,8 @@ template <typename E>
 class RelDynSection : public OutputChunk<E> {
 public:
   RelDynSection() : OutputChunk<E>(this->SYNTHETIC) {
-    this->name = E::is_rela ? ".rela.dyn" : ".rel.dyn";
-    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
+    this->name = (E::rel_type == SHT_REL) ? ".rel.dyn" : ".rela.dyn";
+    this->shdr.sh_type = E::rel_type;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = 8;
