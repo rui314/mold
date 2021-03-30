@@ -1671,6 +1671,9 @@ std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
   return std::span<Symbol<E> *>(this->symbols).subspan(first_global);
 }
 
+template <typename E>
+std::string rel_to_string(Context<E> &ctx, u32 r_type);
+
 inline u32 elf_hash(std::string_view name) {
   u32 h = 0;
   for (u8 c : name) {
