@@ -381,8 +381,8 @@ static bool has_fini_array(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::vector<u64> create_dynamic_section(Context<E> &ctx) {
-  std::vector<u64> vec;
+static std::vector<typename E::word> create_dynamic_section(Context<E> &ctx) {
+  std::vector<typename E::word> vec;
 
   auto define = [&](u64 tag, u64 val) {
     vec.push_back(tag);
@@ -501,13 +501,13 @@ void DynamicSection<E>::update_shdr(Context<E> &ctx) {
   if (!ctx.arg.shared && ctx.dsos.empty())
     return;
 
-  this->shdr.sh_size = create_dynamic_section(ctx).size() * 8;
+  this->shdr.sh_size = create_dynamic_section(ctx).size() * E::wordsize;
   this->shdr.sh_link = ctx.dynstr->shndx;
 }
 
 template <typename E>
 void DynamicSection<E>::copy_buf(Context<E> &ctx) {
-  std::vector<u64> contents = create_dynamic_section(ctx);
+  std::vector<typename E::word> contents = create_dynamic_section(ctx);
   assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }

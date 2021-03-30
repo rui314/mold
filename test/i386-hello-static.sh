@@ -15,6 +15,7 @@ int main() {
 EOF
 
 clang -fuse-ld=`pwd`/../mold -m32 -o $t/exe $t/a.o
+# clang -m32 -o $t/exe $t/a.o
 $t/exe | grep -q 'Hello world'
 
 echo OK

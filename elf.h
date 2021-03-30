@@ -485,6 +485,9 @@ template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
 
 struct X86_64 {
+  typedef u64 word;
+
+  static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
@@ -504,6 +507,9 @@ template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
+  typedef u32 word;
+
+  static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
