@@ -357,9 +357,6 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 // scan_relocations.
 template <>
 void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
-  static Counter counter("reloc_nonalloc");
-  counter += rels.size();
-
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -437,12 +434,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
 // need to scan relocations.
 template <>
 void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
-  if (!(shdr.sh_flags & SHF_ALLOC))
-    return;
-
-  static Counter counter("reloc_alloc");
-  counter += rels.size();
-
+  assert(shdr.sh_flags & SHF_ALLOC);
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
 
   // Scan relocations

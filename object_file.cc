@@ -876,7 +876,7 @@ template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
   for (InputSection<E> *isec : sections)
-    if (isec)
+    if (isec && (isec->shdr.sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames

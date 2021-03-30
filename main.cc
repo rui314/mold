@@ -244,6 +244,19 @@ static void show_stats(Context<E> &ctx) {
 
     static Counter undefined("undefined_syms");
     undefined += obj->symbols.size() - obj->first_global;
+
+    for (InputSection<E> *sec : obj->sections) {
+      if (!sec)
+        continue;
+
+      static Counter alloc("reloc_alloc");
+      static Counter nonalloc("reloc_nonalloc");
+
+      if (sec->shdr.sh_flags & SHF_ALLOC)
+        alloc += sec->rels.size();
+      else
+        nonalloc += sec->rels.size();
+    }
   }
 
   Counter num_input_sections("input_sections");
