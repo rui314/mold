@@ -97,8 +97,7 @@ static void overflow_check(Context<E> &ctx, InputSection<E> *sec,
   unreachable(ctx);
 }
 
-template <typename E>
-static void write_val(Context<E> &ctx, u64 r_type, u8 *loc, u64 val) {
+static void write_val(Context<X86_64> &ctx, u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_X86_64_NONE:
     return;
