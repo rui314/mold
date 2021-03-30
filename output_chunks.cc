@@ -688,40 +688,40 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
-      *rel++ = reloc<E>(addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0);
+      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->dynsym_idx, 0);
     } else {
       buf[sym->got_idx] = sym->get_addr(ctx);
       if (ctx.arg.pic && sym->is_relative(ctx))
-        *rel++ = reloc<E>(addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr(ctx));
+        *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
     }
   }
 
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
-    *rel++ = reloc<E>(addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0);
-    *rel++ = reloc<E>(addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(addr, E::R_DTPMOD, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(addr + GOT_SIZE, E::R_DTPOFF, sym->dynsym_idx, 0);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
-    *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), R_X86_64_TLSDESC,
+    *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
                       sym->dynsym_idx, 0);
 
   for (Symbol<E> *sym : gottpoff_syms) {
     if (sym->is_imported)
-      *rel++ = reloc<E>(sym->get_gottpoff_addr(ctx), R_X86_64_TPOFF64,
+      *rel++ = reloc<E>(sym->get_gottpoff_addr(ctx), E::R_TPOFF,
                         sym->dynsym_idx, 0);
     else
       buf[sym->gottpoff_idx] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
-    *rel++ = reloc<E>(get_tlsld_addr(ctx), R_X86_64_DTPMOD64, 0, 0);
+    *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0, 0);
 
   for (Symbol<E> *sym : ctx.dynbss->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->dynsym_idx, 0);
 
   for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->dynsym_idx, 0);
 }
 
 template <typename E>

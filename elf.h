@@ -487,8 +487,15 @@ template <typename E> struct ElfChdr;
 struct X86_64 {
   typedef u64 word;
 
+  static constexpr u32 R_COPY = R_X86_64_COPY;
+  static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
+  static constexpr u32 R_RELATIVE = R_X86_64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_X86_64_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_X86_64_DTPOFF64;
+  static constexpr u32 R_TPOFF = R_X86_64_TPOFF64;
+  static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
@@ -512,8 +519,15 @@ template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 struct I386 {
   typedef u32 word;
 
+  static constexpr u32 R_COPY = R_386_COPY;
+  static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
+  static constexpr u32 R_RELATIVE = R_386_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_386_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_386_TLS_DTPOFF32;
+  static constexpr u32 R_TPOFF = R_386_TLS_TPOFF;
+  static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
+  static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
