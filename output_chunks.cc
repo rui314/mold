@@ -703,12 +703,12 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : tlsdesc_syms)
     *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), R_X86_64_TLSDESC,
-                   sym->dynsym_idx, 0);
+                      sym->dynsym_idx, 0);
 
   for (Symbol<E> *sym : gottpoff_syms) {
     if (sym->is_imported)
       *rel++ = reloc<E>(sym->get_gottpoff_addr(ctx), R_X86_64_TPOFF64,
-                     sym->dynsym_idx, 0);
+                        sym->dynsym_idx, 0);
     else
       buf[sym->gottpoff_idx] = sym->get_addr(ctx) - ctx.tls_end;
   }
@@ -821,46 +821,28 @@ void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
-template <>
-void RelPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
-  ElfRel<X86_64> *buf = (ElfRel<X86_64> *)(ctx.buf + this->shdr.sh_offset);
+template <typename E>
+void RelPltSection<E>::copy_buf(Context<E> &ctx) {
+  ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   i64 relplt_idx = 0;
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
-    ElfRel<X86_64> &rel = buf[relplt_idx++];
-    memset(&rel, 0, sizeof(rel));
-    rel.r_sym = sym->dynsym_idx;
-    rel.r_offset = sym->get_gotplt_addr(ctx);
+  for (Symbol<E> *sym : ctx.plt->symbols) {
+    u64 r_offset = sym->get_gotplt_addr(ctx);
+    u64 r_sym = sym->dynsym_idx;
+    u32 r_type = 0;
+    u32 r_addend = 0;
 
     if (sym->get_type() == STT_GNU_IFUNC) {
-      rel.r_type = R_X86_64_IRELATIVE;
-      rel.r_addend = sym->input_section->get_addr() + sym->value;
+      r_type = R_X86_64_IRELATIVE;
+      r_addend = sym->input_section->get_addr() + sym->value;
     } else {
-      rel.r_type = R_X86_64_JUMP_SLOT;
+      r_type = R_X86_64_JUMP_SLOT;
     }
-  }
-}
 
-template <>
-void RelPltSection<I386>::copy_buf(Context<I386> &ctx) {
-  ElfRel<I386> *buf = (ElfRel<I386> *)(ctx.buf + this->shdr.sh_offset);
-  memset(buf, 0, this->shdr.sh_size);
-
-  i64 relplt_idx = 0;
-
-  for (Symbol<I386> *sym : ctx.plt->symbols) {
-    ElfRel<I386> &rel = buf[relplt_idx++];
-    memset(&rel, 0, sizeof(rel));
-    rel.r_sym = sym->dynsym_idx;
-    rel.r_offset = sym->get_gotplt_addr(ctx);
-
-    if (sym->get_type() == STT_GNU_IFUNC) {
-      rel.r_type = R_386_IRELATIVE;
-    } else {
-      rel.r_type = R_386_JUMP_SLOT;
-    }
+    ElfRel<E> *rel = buf + relplt_idx++;
+    *rel = reloc<E>(r_offset, r_type, r_sym, r_addend);
   }
 }
 
