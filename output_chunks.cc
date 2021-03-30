@@ -405,15 +405,16 @@ static std::vector<u64> create_dynamic_section(Context<E> &ctx) {
     define(DT_FILTER, ctx.dynstr->find_string(str));
 
   if (ctx.reldyn->shdr.sh_size) {
-    define(DT_RELA, ctx.reldyn->shdr.sh_addr);
-    define(DT_RELASZ, ctx.reldyn->shdr.sh_size);
-    define(DT_RELAENT, sizeof(ElfRel<E>));
+    bool is_rel = (E::rel_type == SHT_REL);
+    define(is_rel ? DT_REL : DT_RELA, ctx.reldyn->shdr.sh_addr);
+    define(is_rel ? DT_RELSZ : DT_RELASZ, ctx.reldyn->shdr.sh_size);
+    define(is_rel ? DT_RELENT : DT_RELAENT, sizeof(ElfRel<E>));
   }
 
   if (ctx.relplt->shdr.sh_size) {
     define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
     define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
-    define(DT_PLTREL, DT_RELA);
+    define(DT_PLTREL, (E::rel_type == SHT_REL) ? DT_REL : DT_RELA);
   }
 
   if (ctx.gotplt->shdr.sh_size)
