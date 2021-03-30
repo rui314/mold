@@ -1241,9 +1241,9 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   return false;
 }
 
-template class MemoryMappedFile<ELF64LE>;
-template class ObjectFile<ELF64LE>;
-template class SharedFile<ELF64LE>;
+template class MemoryMappedFile<X86_64>;
+template class ObjectFile<X86_64>;
+template class SharedFile<X86_64>;
 
 template
-std::ostream &operator<<(std::ostream &out, const InputFile<ELF64LE> &file);
+std::ostream &operator<<(std::ostream &out, const InputFile<X86_64> &file);

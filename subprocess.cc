@@ -253,12 +253,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 }
 
 template
-bool resume_daemon(Context<ELF64LE> &ctx, char **argv, i64 *code);
+bool resume_daemon(Context<X86_64> &ctx, char **argv, i64 *code);
 
 template
-void daemonize(Context<ELF64LE> &ctx, char **argv,
+void daemonize(Context<X86_64> &ctx, char **argv,
                std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
 template
-void process_run_subcommand(Context<ELF64LE> &ctx, int argc, char **argv);
+void process_run_subcommand(Context<X86_64> &ctx, int argc, char **argv);

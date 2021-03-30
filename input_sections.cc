@@ -790,4 +790,4 @@ void InputSection<E>::kill() {
   }
 }
 
-template class InputSection<ELF64LE>;
+template class InputSection<X86_64>;

@@ -105,5 +105,5 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
 }
 
 template
-OutputFile<ELF64LE> *
-OutputFile<ELF64LE>::open(Context<ELF64LE> &ctx, std::string path, u64 filesize);
+OutputFile<X86_64> *
+OutputFile<X86_64>::open(Context<X86_64> &ctx, std::string path, u64 filesize);

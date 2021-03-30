@@ -184,4 +184,4 @@ void gc_sections(Context<E> &ctx) {
   sweep(ctx);
 }
 
-template void gc_sections(Context<ELF64LE> &ctx);
+template void gc_sections(Context<X86_64> &ctx);

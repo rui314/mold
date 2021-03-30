@@ -83,4 +83,4 @@ void print_map(Context<E> &ctx) {
     file->close();
 }
 
-template void print_map(Context<ELF64LE> &ctx);
+template void print_map(Context<X86_64> &ctx);

@@ -319,10 +319,10 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 }
 
 template
-void parse_linker_script(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+void parse_linker_script(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
 
 template
-void parse_version_script(Context<ELF64LE> &ctx, std::string path);
+void parse_version_script(Context<X86_64> &ctx, std::string path);
 
 template
-void parse_dynamic_list(Context<ELF64LE> &ctx, std::string path);
+void parse_dynamic_list(Context<X86_64> &ctx, std::string path);

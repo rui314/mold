@@ -1443,7 +1443,7 @@ int do_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  return do_main<ELF64LE>(argc, argv);
+  return do_main<X86_64>(argc, argv);
 }
 
-template void read_file(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+template void read_file(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);

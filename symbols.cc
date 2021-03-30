@@ -34,7 +34,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   return out;
 }
 
-template class Symbol<ELF64LE>;
+template class Symbol<X86_64>;
 
 template
-std::ostream &operator<<(std::ostream &out, const Symbol<ELF64LE> &sym);
+std::ostream &operator<<(std::ostream &out, const Symbol<X86_64> &sym);

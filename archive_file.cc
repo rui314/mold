@@ -82,9 +82,9 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 template
-std::vector<MemoryMappedFile<ELF64LE> *>
-read_fat_archive_members(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+std::vector<MemoryMappedFile<X86_64> *>
+read_fat_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
 
 template
-std::vector<MemoryMappedFile<ELF64LE> *>
-read_thin_archive_members(Context<ELF64LE> &ctx, MemoryMappedFile<ELF64LE> *mb);
+std::vector<MemoryMappedFile<X86_64> *>
+read_thin_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);

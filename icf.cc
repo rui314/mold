@@ -563,4 +563,4 @@ void icf_sections(Context<E> &ctx) {
   }
 }
 
-template void icf_sections(Context<ELF64LE> &ctx);
+template void icf_sections(Context<X86_64> &ctx);
