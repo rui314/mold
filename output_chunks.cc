@@ -1510,4 +1510,4 @@ template class BuildIdSection<X86_64>;
 
 template i64 BuildId::size(Context<X86_64> &ctx) const;
 template bool is_relro(Context<X86_64> &ctx, OutputChunk<X86_64> *chunk);
-template std::vector<ElfPhdr<X86_64>> create_phdr<X86_64>(Context<X86_64> &ctx);
+template std::vector<ElfPhdr<X86_64>> create_phdr(Context<X86_64> &ctx);

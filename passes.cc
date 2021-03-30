@@ -889,28 +889,28 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 }
 
-template void apply_exclude_libs<X86_64>(Context<X86_64> &ctx);
-template void create_synthetic_sections<X86_64>(Context<X86_64> &ctx);
-template void set_file_priority<X86_64>(Context<X86_64> &ctx);
-template void resolve_obj_symbols<X86_64>(Context<X86_64> &ctx);
-template void resolve_dso_symbols<X86_64>(Context<X86_64> &ctx);
-template void eliminate_comdats<X86_64>(Context<X86_64> &ctx);
-template void convert_common_symbols<X86_64>(Context<X86_64> &ctx);
-template void add_comment_string<X86_64>(Context<X86_64> &ctx, std::string str);
-template void compute_merged_section_sizes<X86_64>(Context<X86_64> &ctx);
-template void bin_sections<X86_64>(Context<X86_64> &ctx);
-template void check_duplicate_symbols<X86_64>(Context<X86_64> &ctx);
+template void apply_exclude_libs(Context<X86_64> &ctx);
+template void create_synthetic_sections(Context<X86_64> &ctx);
+template void set_file_priority(Context<X86_64> &ctx);
+template void resolve_obj_symbols(Context<X86_64> &ctx);
+template void resolve_dso_symbols(Context<X86_64> &ctx);
+template void eliminate_comdats(Context<X86_64> &ctx);
+template void convert_common_symbols(Context<X86_64> &ctx);
+template void add_comment_string(Context<X86_64> &ctx, std::string str);
+template void compute_merged_section_sizes(Context<X86_64> &ctx);
+template void bin_sections(Context<X86_64> &ctx);
+template void check_duplicate_symbols(Context<X86_64> &ctx);
 template std::vector<OutputChunk<X86_64> *>
 collect_output_sections(Context<X86_64> &ctx);
-template void compute_section_sizes<X86_64>(Context<X86_64> &ctx);
-template void convert_undefined_weak_symbols<X86_64>(Context<X86_64> &ctx);
-template void scan_rels<X86_64>(Context<X86_64> &ctx);
-template void apply_version_script<X86_64>(Context<X86_64> &ctx);
-template void parse_symbol_version<X86_64>(Context<X86_64> &ctx);
-template void compute_import_export<X86_64>(Context<X86_64> &ctx);
-template void fill_verdef<X86_64>(Context<X86_64> &ctx);
-template void fill_verneed<X86_64>(Context<X86_64> &ctx);
-template void clear_padding<X86_64>(Context<X86_64> &ctx, i64 filesize);
+template void compute_section_sizes(Context<X86_64> &ctx);
+template void convert_undefined_weak_symbols(Context<X86_64> &ctx);
+template void scan_rels(Context<X86_64> &ctx);
+template void apply_version_script(Context<X86_64> &ctx);
+template void parse_symbol_version(Context<X86_64> &ctx);
+template void compute_import_export(Context<X86_64> &ctx);
+template void fill_verdef(Context<X86_64> &ctx);
+template void fill_verneed(Context<X86_64> &ctx);
+template void clear_padding(Context<X86_64> &ctx, i64 filesize);
 template i64 get_section_rank(Context<X86_64> &ctx, OutputChunk<X86_64> *chunk);
-template i64 set_osec_offsets<X86_64>(Context<X86_64> &ctx);
-template void fix_synthetic_symbols<X86_64>(Context<X86_64> &ctx);
+template i64 set_osec_offsets(Context<X86_64> &ctx);
+template void fix_synthetic_symbols(Context<X86_64> &ctx);
