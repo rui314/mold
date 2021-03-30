@@ -489,9 +489,9 @@ struct X86_64 {
 
   static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
+  static constexpr u32 e_machine = EM_X86_64;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr u32 e_machine = EM_X86_64;
 };
 
 template <> struct ElfSym<X86_64> : public Elf64Sym {};
@@ -511,9 +511,9 @@ struct I386 {
 
   static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
+  static constexpr u32 e_machine = EM_386;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
-  static constexpr u32 e_machine = EM_386;
 };
 
 template <> struct ElfSym<I386> : public Elf32Sym {};
