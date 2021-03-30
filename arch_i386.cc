@@ -48,24 +48,17 @@ std::string rel_to_string<I386>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
-static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val,
-                      bool overwrite) {
+static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_386_NONE:
     return;
   case R_386_8:
   case R_386_PC8:
-    if (overwrite)
-      *loc = val;
-    else
-      *loc += val;
+    *loc += val;
     return;
   case R_386_16:
   case R_386_PC16:
-    if (overwrite)
-      *(u16 *)loc = val;
-    else
-      *(u16 *)loc += val;
+    *(u16 *)loc += val;
     return;
   case R_386_32:
   case R_386_PC32:
@@ -75,10 +68,7 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val,
   case R_386_GOTOFF:
   case R_386_GOTPC:
   case R_386_SIZE32:
-    if (overwrite)
-      *(u32 *)loc = val;
-    else
-      *(u32 *)loc += val;
+    *(u32 *)loc += val;
     return;
   }
   unreachable(ctx);
@@ -86,6 +76,74 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val,
 
 template <>
 void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
+  i64 ref_idx = 0;
+  ElfRel<I386> *dynrel = nullptr;
+
+  if (ctx.reldyn)
+    dynrel = (ElfRel<I386> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                              file.reldyn_offset + this->reldyn_offset);
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<I386> &rel = rels[i];
+    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = base + rel.r_offset;
+
+    const SectionFragmentRef<I386> *ref = nullptr;
+    if (has_fragments[i])
+      ref = &rel_fragments[ref_idx++];
+
+    auto write = [&](u64 val) {
+      write_val(ctx, rel.r_type, loc, val);
+    };
+
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A   (ref ? ref->addend : 0)
+#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
+#define GOT ctx.got->shdr.sh_addr
+
+    switch (rel_types[i]) {
+    case R_NONE:
+      break;
+    case R_ABS:
+      write(S + A);
+      break;
+    case R_BASEREL:
+      *dynrel++ = {P, R_386_RELATIVE, 0};
+      *(u32 *)loc += S + A;
+      break;
+    case R_DYN:
+      *dynrel++ = {P, R_386_32, sym.dynsym_idx};
+      *(u32 *)loc += A;
+      break;
+    case R_PC:
+      write(S + A - P);
+      break;
+    case R_GOT:
+      write(G + A);
+      break;
+    case R_GOTOFF:
+      write(S + A - GOT);
+      break;
+    case R_GOTPC:
+      write(GOT + A - P);
+      break;
+    case R_GOTPCREL:
+      write(G + GOT + A - P);
+      break;
+    case R_SIZE:
+      write(sym.esym->st_size + A);
+      break;
+    default:
+      unreachable(ctx);
+    }
+
+#undef S
+#undef A
+#undef P
+#undef G
+#undef GOT
+  }
 }
 
 template <>
@@ -106,8 +164,8 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
-    auto write = [&](u64 val, bool overwrite) {
-      write_val(ctx, rel.r_type, loc, val, overwrite);
+    auto write = [&](u64 val) {
+      write_val(ctx, rel.r_type, loc, val);
     };
 
     switch (rel.r_type) {
@@ -120,12 +178,12 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     case R_386_PC16:
     case R_386_PC32:
       if (ref)
-        write(ref->frag->get_addr(ctx) + ref->addend, true);
+        write(ref->frag->get_addr(ctx) + ref->addend);
       else
-        write(sym.get_addr(ctx), false);
+        write(sym.get_addr(ctx));
       break;
     case R_386_SIZE32:
-      write(sym.esym->st_size, false);
+      write(sym.esym->st_size);
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "

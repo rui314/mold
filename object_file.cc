@@ -234,6 +234,20 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
   }
 }
 
+template <typename E>
+static bool is_valid_ehframe_reloc(u32 type);
+
+template <>
+bool is_valid_ehframe_reloc<X86_64>(u32 type) {
+  return type == R_X86_64_32   || type == R_X86_64_64 ||
+         type == R_X86_64_PC32 || type == R_X86_64_PC64;
+}
+
+template <>
+bool is_valid_ehframe_reloc<I386>(u32 type) {
+  return type == R_386_32 || type == R_386_PC32;
+}
+
 // .eh_frame contains data records explaining how to handle exceptions.
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
@@ -279,10 +293,9 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 cur_cie_offset = -1;
 
   for (ElfRel<E> rel : rels)
-    if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_64 &&
-        rel.r_type != R_X86_64_PC32 && rel.r_type != R_X86_64_PC64)
+    if (!is_valid_ehframe_reloc<E>(rel.r_type))
       Fatal(ctx) << isec << ": unsupported relocation type: "
-                 << (int)rel.r_type;
+                 << rel_to_string<E>(rel.r_type);
 
   while (!data.empty()) {
     i64 size = *(u32 *)data.data();

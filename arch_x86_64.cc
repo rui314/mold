@@ -204,7 +204,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 
   if (ctx.reldyn)
     dynrel = (ElfRel<X86_64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                         file.reldyn_offset + this->reldyn_offset);
+                                file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
