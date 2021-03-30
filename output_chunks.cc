@@ -836,10 +836,10 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
     u32 r_addend = 0;
 
     if (sym->get_type() == STT_GNU_IFUNC) {
-      r_type = R_X86_64_IRELATIVE;
+      r_type = E::R_IRELATIVE;
       r_addend = sym->input_section->get_addr() + sym->value;
     } else {
-      r_type = R_X86_64_JUMP_SLOT;
+      r_type = E::R_JUMP_SLOT;
     }
 
     ElfRel<E> *rel = buf + relplt_idx++;

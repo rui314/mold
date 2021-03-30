@@ -487,6 +487,9 @@ template <typename E> struct ElfChdr;
 struct X86_64 {
   typedef u64 word;
 
+  static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
+  static constexpr u32 R_IRELATIVE = R_X86_64_IRELATIVE;
+
   static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
   static constexpr u32 e_machine = EM_X86_64;
@@ -508,6 +511,9 @@ template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
   typedef u32 word;
+
+  static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
+  static constexpr u32 R_IRELATIVE = R_386_IRELATIVE;
 
   static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
