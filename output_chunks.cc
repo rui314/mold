@@ -183,10 +183,10 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
-  vec.push_back({
-    .p_type = PT_GNU_STACK,
-    .p_flags = ctx.arg.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
-  });
+  ElfPhdr<E> phdr = {};
+  phdr.p_type = PT_GNU_STACK,
+  phdr.p_flags = ctx.arg.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
+  vec.push_back(phdr);
 
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {

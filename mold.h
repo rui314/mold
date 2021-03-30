@@ -348,10 +348,12 @@ public:
   Kind kind;
   bool new_page = false;
   bool new_page_end = false;
-  ElfShdr<E> shdr = { .sh_addralign = 1 };
+  ElfShdr<E> shdr = {};
 
 protected:
-  OutputChunk(Kind kind) : kind(kind) {}
+  OutputChunk(Kind kind) : kind(kind) {
+    shdr.sh_addralign = 1;
+  }
 };
 
 // ELF header

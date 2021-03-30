@@ -410,6 +410,22 @@ struct ElfPhdr<ELF32LE> {
   u32 p_align;
 };
 
+template <typename E> struct ElfRel;
+
+template <>
+struct ElfRel<ELF64LE> {
+  u64 r_offset;
+  u32 r_type;
+  u32 r_sym;
+};
+
+template <>
+struct ElfRel<ELF32LE> {
+  u32 r_offset;
+  u32 r_type : 8;
+  u32 r_sym : 24;
+};
+
 template <typename E> struct ElfRela;
 
 template <>
@@ -423,7 +439,8 @@ struct ElfRela<ELF64LE> {
 template <>
 struct ElfRela<ELF32LE> {
   u32 r_offset;
-  u32 r_info;
+  u32 r_type : 8;
+  u32 r_sym : 24;
   i32 r_addend;
 };
 
