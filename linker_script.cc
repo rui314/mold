@@ -326,3 +326,12 @@ void parse_version_script(Context<X86_64> &ctx, std::string path);
 
 template
 void parse_dynamic_list(Context<X86_64> &ctx, std::string path);
+
+template
+void parse_linker_script(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
+
+template
+void parse_version_script(Context<I386> &ctx, std::string path);
+
+template
+void parse_dynamic_list(Context<I386> &ctx, std::string path);

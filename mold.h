@@ -34,12 +34,12 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-static constexpr i64 SECTOR_SIZE = 512;
-static constexpr i64 PAGE_SIZE = 4096;
-static constexpr i64 GOT_SIZE = 8;
-static constexpr i64 PLT_SIZE = 16;
-static constexpr i64 PLT_GOT_SIZE = 8;
-static constexpr i64 SHA256_SIZE = 32;
+static constexpr i32 SECTOR_SIZE = 512;
+static constexpr i32 PAGE_SIZE = 4096;
+static constexpr i32 GOT_SIZE = 8;
+static constexpr i32 PLT_SIZE = 16;
+static constexpr i32 PLT_GOT_SIZE = 8;
+static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;
 template <typename E> class InputSection;
@@ -290,6 +290,7 @@ public:
 
   inline i64 get_priority() const;
   inline u64 get_addr() const;
+  inline i64 get_addend(const ElfRel<E> &rel) const;
 
   ObjectFile<E> &file;
   const ElfShdr<E> &shdr;
@@ -1637,6 +1638,17 @@ inline u64 InputSection<E>::get_addr() const {
 template <typename E>
 inline i64 InputSection<E>::get_priority() const {
   return ((i64)file.priority << 32) | section_idx;
+}
+
+template <>
+inline i64 InputSection<X86_64>::get_addend(const ElfRel<X86_64> &rel) const {
+  return rel.r_addend;
+}
+
+template <>
+inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
+  u8 *buf = (u8 *)contents.data();
+  return *(i32 *)(buf + rel.r_offset);
 }
 
 template <typename E>

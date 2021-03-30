@@ -38,3 +38,8 @@ template class Symbol<X86_64>;
 
 template
 std::ostream &operator<<(std::ostream &out, const Symbol<X86_64> &sym);
+
+template class Symbol<I386>;
+
+template
+std::ostream &operator<<(std::ostream &out, const Symbol<I386> &sym);

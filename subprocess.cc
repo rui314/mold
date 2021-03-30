@@ -262,3 +262,14 @@ void daemonize(Context<X86_64> &ctx, char **argv,
 
 template
 void process_run_subcommand(Context<X86_64> &ctx, int argc, char **argv);
+
+template
+bool resume_daemon(Context<I386> &ctx, char **argv, i64 *code);
+
+template
+void daemonize(Context<I386> &ctx, char **argv,
+               std::function<void()> *wait_for_client,
+               std::function<void()> *on_complete);
+
+template
+void process_run_subcommand(Context<I386> &ctx, int argc, char **argv);

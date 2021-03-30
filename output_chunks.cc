@@ -663,6 +663,19 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   return n * sizeof(ElfRel<E>);
 }
 
+template <typename E>
+static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend);
+
+template <>
+ElfRel<X86_64> reloc<X86_64>(u64 offset, u32 type, u32 sym, i64 addend) {
+  return {offset, type, sym, addend};
+}
+
+template <>
+ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
+  return {(u32)offset, type, sym};
+}
+
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
@@ -674,39 +687,40 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
-      *rel++ = {addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0};
+      *rel++ = reloc<E>(addr, R_X86_64_GLOB_DAT, sym->dynsym_idx, 0);
     } else {
       buf[sym->got_idx] = sym->get_addr(ctx);
       if (ctx.arg.pic && sym->is_relative(ctx))
-        *rel++ = {addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr(ctx)};
+        *rel++ = reloc<E>(addr, R_X86_64_RELATIVE, 0, (i64)sym->get_addr(ctx));
     }
   }
 
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
-    *rel++ = {addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0};
-    *rel++ = {addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0};
+    *rel++ = reloc<E>(addr, R_X86_64_DTPMOD64, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(addr + GOT_SIZE, R_X86_64_DTPOFF64, sym->dynsym_idx, 0);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
-    *rel++ = {sym->get_tlsdesc_addr(ctx), R_X86_64_TLSDESC, sym->dynsym_idx, 0};
+    *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), R_X86_64_TLSDESC,
+                   sym->dynsym_idx, 0);
 
   for (Symbol<E> *sym : gottpoff_syms) {
     if (sym->is_imported)
-      *rel++ =
-        {sym->get_gottpoff_addr(ctx), R_X86_64_TPOFF64, sym->dynsym_idx, 0};
+      *rel++ = reloc<E>(sym->get_gottpoff_addr(ctx), R_X86_64_TPOFF64,
+                     sym->dynsym_idx, 0);
     else
       buf[sym->gottpoff_idx] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
-    *rel++ = {get_tlsld_addr(ctx), R_X86_64_DTPMOD64, 0, 0};
+    *rel++ = reloc<E>(get_tlsld_addr(ctx), R_X86_64_DTPMOD64, 0, 0);
 
   for (Symbol<E> *sym : ctx.dynbss->symbols)
-    *rel++ = {sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0};
+    *rel++ = reloc<E>(sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0);
 
   for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
-    *rel++ = {sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0};
+    *rel++ = reloc<E>(sym->get_addr(ctx), R_X86_64_COPY, sym->dynsym_idx, 0);
 }
 
 template <typename E>
@@ -807,15 +821,15 @@ void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
-template <typename E>
-void RelPltSection<E>::copy_buf(Context<E> &ctx) {
-  ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
+template <>
+void RelPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  ElfRel<X86_64> *buf = (ElfRel<X86_64> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   i64 relplt_idx = 0;
 
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    ElfRel<E> &rel = buf[relplt_idx++];
+  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+    ElfRel<X86_64> &rel = buf[relplt_idx++];
     memset(&rel, 0, sizeof(rel));
     rel.r_sym = sym->dynsym_idx;
     rel.r_offset = sym->get_gotplt_addr(ctx);
@@ -825,6 +839,27 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
       rel.r_addend = sym->input_section->get_addr() + sym->value;
     } else {
       rel.r_type = R_X86_64_JUMP_SLOT;
+    }
+  }
+}
+
+template <>
+void RelPltSection<I386>::copy_buf(Context<I386> &ctx) {
+  ElfRel<I386> *buf = (ElfRel<I386> *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, this->shdr.sh_size);
+
+  i64 relplt_idx = 0;
+
+  for (Symbol<I386> *sym : ctx.plt->symbols) {
+    ElfRel<I386> &rel = buf[relplt_idx++];
+    memset(&rel, 0, sizeof(rel));
+    rel.r_sym = sym->dynsym_idx;
+    rel.r_offset = sym->get_gotplt_addr(ctx);
+
+    if (sym->get_type() == STT_GNU_IFUNC) {
+      rel.r_type = R_386_IRELATIVE;
+    } else {
+      rel.r_type = R_386_JUMP_SLOT;
     }
   }
 }
@@ -1511,3 +1546,36 @@ template class BuildIdSection<X86_64>;
 template i64 BuildId::size(Context<X86_64> &ctx) const;
 template bool is_relro(Context<X86_64> &ctx, OutputChunk<X86_64> *chunk);
 template std::vector<ElfPhdr<X86_64>> create_phdr(Context<X86_64> &ctx);
+
+template class OutputChunk<I386>;
+template class OutputEhdr<I386>;
+template class OutputShdr<I386>;
+template class OutputPhdr<I386>;
+template class InterpSection<I386>;
+template class OutputSection<I386>;
+template class GotSection<I386>;
+template class GotPltSection<I386>;
+template class PltSection<I386>;
+template class PltGotSection<I386>;
+template class RelPltSection<I386>;
+template class RelDynSection<I386>;
+template class StrtabSection<I386>;
+template class ShstrtabSection<I386>;
+template class DynstrSection<I386>;
+template class DynamicSection<I386>;
+template class SymtabSection<I386>;
+template class DynsymSection<I386>;
+template class HashSection<I386>;
+template class GnuHashSection<I386>;
+template class MergedSection<I386>;
+template class EhFrameSection<I386>;
+template class EhFrameHdrSection<I386>;
+template class DynbssSection<I386>;
+template class VersymSection<I386>;
+template class VerneedSection<I386>;
+template class VerdefSection<I386>;
+template class BuildIdSection<I386>;
+
+template i64 BuildId::size(Context<I386> &ctx) const;
+template bool is_relro(Context<I386> &ctx, OutputChunk<I386> *chunk);
+template std::vector<ElfPhdr<I386>> create_phdr(Context<I386> &ctx);

@@ -265,21 +265,21 @@ static u32 relax_gottpoff(u8 *loc) {
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
-template <typename E>
-void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
+template <>
+void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
   i64 ref_idx = 0;
-  ElfRel<E> *dynrel = nullptr;
+  ElfRel<X86_64> *dynrel = nullptr;
 
   if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRel<X86_64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                          file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    const ElfRel<X86_64> &rel = rels[i];
+    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<E> *ref = nullptr;
+    const SectionFragmentRef<X86_64> *ref = nullptr;
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
@@ -411,6 +411,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   }
 }
 
+template <>
+void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
+}
+
 // This function is responsible for applying relocations against
 // non-SHF_ALLOC sections (i.e. sections that are not mapped to memory
 // at runtime).
@@ -423,16 +427,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 //
 // Relocations against non-SHF_ALLOC sections are not scanned by
 // scan_relocations.
-template <typename E>
-void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+template <>
+void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
   static Counter counter("reloc_nonalloc");
   counter += rels.size();
 
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    const ElfRel<X86_64> &rel = rels[i];
+    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
@@ -440,7 +444,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
     }
 
-    const SectionFragmentRef<E> *ref = nullptr;
+    const SectionFragmentRef<X86_64> *ref = nullptr;
     if (has_fragments[i])
       ref = &rel_fragments[ref_idx++];
 
@@ -496,6 +500,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
     }
   }
+}
+
+template <>
+void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 }
 
 template <typename E>
@@ -573,20 +581,20 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
 // or a PLT entry of a symbol, linker has to create an entry in .got
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
-template <typename E>
-void InputSection<E>::scan_relocations(Context<E> &ctx) {
+template <>
+void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
   if (!(shdr.sh_flags & SHF_ALLOC))
     return;
 
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    const ElfRel<X86_64> &rel = rels[i];
+    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
@@ -780,6 +788,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
+template <>
+void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
+}
+
 template <typename E>
 void InputSection<E>::kill() {
   if (is_alive.exchange(false)) {
@@ -791,3 +803,4 @@ void InputSection<E>::kill() {
 }
 
 template class InputSection<X86_64>;
+template class InputSection<I386>;

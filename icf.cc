@@ -222,6 +222,8 @@ static Digest compute_digest(InputSection<E> &isec) {
   SHA256_CTX sha;
   SHA256_Init(&sha);
 
+  u8 *buf = (u8 *)isec.contents.data();
+
   auto hash = [&](auto val) {
     SHA256_Update(&sha, &val, sizeof(val));
   };
@@ -282,12 +284,12 @@ static Digest compute_digest(InputSection<E> &isec) {
     ElfRel<E> &rel = isec.rels[i];
     hash(rel.r_offset);
     hash(rel.r_type);
-    hash(rel.r_addend);
+    hash(isec.get_addend(rel));
 
     if (isec.has_fragments[i]) {
       SectionFragmentRef<E> &ref = isec.rel_fragments[ref_idx++];
       hash('a');
-      hash(ref.addend);
+      isec.get_addend(rel);
       hash_string(ref.frag->data);
     } else {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
@@ -564,3 +566,4 @@ void icf_sections(Context<E> &ctx) {
 }
 
 template void icf_sections(Context<X86_64> &ctx);
+template void icf_sections(Context<I386> &ctx);

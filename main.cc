@@ -558,8 +558,36 @@ int do_main(int argc, char **argv) {
   return 0;
 }
 
+enum class MachineType { X86_64, I386 };
+
+static MachineType get_machine_type(int argc, char **argv) {
+  for (i64 i = 1; i < argc; i++) {
+    if (std::string_view(argv[i]) == "-m") {
+      if (i + 1 == argc)
+        break;
+      i++;
+
+      std::string_view val(argv[i]);
+      if (val == "elf_x86_64")
+        return MachineType::X86_64;
+      if (val == "elf_i386")
+        return MachineType::I386;
+      std::cerr << "unknown -m argument: " << val;
+      exit(1);
+    }
+  }
+  return MachineType::X86_64;
+  //  std::cerr << "-m is missing";
+  //  exit(1);
+}
+
 int main(int argc, char **argv) {
-  return do_main<X86_64>(argc, argv);
+  switch (get_machine_type(argc, argv)) {
+  case MachineType::X86_64:
+    return do_main<X86_64>(argc, argv);
+  case MachineType::I386:
+    return do_main<I386>(argc, argv);
+  }
 }
 
 template void read_file(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);

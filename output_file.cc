@@ -107,3 +107,7 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
 template
 OutputFile<X86_64> *
 OutputFile<X86_64>::open(Context<X86_64> &ctx, std::string path, u64 filesize);
+
+template
+OutputFile<I386> *
+OutputFile<I386>::open(Context<I386> &ctx, std::string path, u64 filesize);

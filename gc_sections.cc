@@ -185,3 +185,4 @@ void gc_sections(Context<E> &ctx) {
 }
 
 template void gc_sections(Context<X86_64> &ctx);
+template void gc_sections(Context<I386> &ctx);

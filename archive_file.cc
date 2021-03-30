@@ -88,3 +88,11 @@ read_fat_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
 template
 std::vector<MemoryMappedFile<X86_64> *>
 read_thin_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
+
+template
+std::vector<MemoryMappedFile<I386> *>
+read_fat_archive_members(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
+
+template
+std::vector<MemoryMappedFile<I386> *>
+read_thin_archive_members(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
