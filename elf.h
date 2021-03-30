@@ -256,6 +256,7 @@ static constexpr u32 R_386_TLS_LE_32 = 34;
 static constexpr u32 R_386_TLS_DTPMOD32 = 35;
 static constexpr u32 R_386_TLS_DTPOFF32 = 36;
 static constexpr u32 R_386_TLS_TPOFF32 = 37;
+static constexpr u32 R_386_SIZE32 = 38;
 static constexpr u32 R_386_TLS_GOTDESC = 39;
 static constexpr u32 R_386_TLS_DESC_CALL = 40;
 static constexpr u32 R_386_TLS_DESC = 41;

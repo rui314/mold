@@ -203,6 +203,7 @@ enum RelType : u16 {
   R_BASEREL,
   R_PC,
   R_GOT,
+  R_GOTOFF,
   R_GOTPC,
   R_GOTPCREL,
   R_GOTPCRELX_RELAX,
@@ -1672,7 +1673,7 @@ std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
 }
 
 template <typename E>
-std::string rel_to_string(Context<E> &ctx, u32 r_type);
+std::string rel_to_string(u32 r_type);
 
 inline u32 elf_hash(std::string_view name) {
   u32 h = 0;

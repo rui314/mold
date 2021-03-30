@@ -132,7 +132,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
     unreachable(ctx);
   }
 
-  Error(ctx) << *this << ": " << rel_to_string(ctx, rel.r_type)
+  Error(ctx) << *this << ": " << rel_to_string<E>(rel.r_type)
              << " relocation against symbol `" << sym
              << "' can not be used; recompile with -fPIE";
 }

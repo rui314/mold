@@ -1,7 +1,7 @@
 #include "mold.h"
 
 template <>
-std::string rel_to_string(Context<X86_64> &ctx, u32 r_type) {
+std::string rel_to_string<X86_64>(u32 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
   case R_X86_64_8: return "R_X86_64_8";
@@ -30,7 +30,7 @@ std::string rel_to_string(Context<X86_64> &ctx, u32 r_type) {
   case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
   case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
   }
-  unreachable(ctx);
+  return "unknown (" + std::to_string(r_type) + ")";
 }
 
 template <typename E>
@@ -79,7 +79,7 @@ static void overflow_check(Context<E> &ctx, InputSection<E> *sec,
   case R_X86_64_SIZE32:
   case R_X86_64_TLSDESC_CALL:
     if (val != (i32)val)
-      Error(ctx) << *sec << ": relocation " << rel_to_string(ctx, r_type)
+      Error(ctx) << *sec << ": relocation " << rel_to_string<X86_64>(r_type)
                  << " against " << sym << " out of range: " << (i64)val
                  << " is not in [-2147483648, 2147483647]";
     return;
@@ -399,30 +399,10 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     case R_X86_64_SIZE64:
       write(sym.esym->st_size + rel.r_addend);
       break;
-    case R_X86_64_PC8:
-    case R_X86_64_PC16:
-    case R_X86_64_PC32:
-    case R_X86_64_PC64:
-    case R_X86_64_GOT32:
-    case R_X86_64_GOTPC32:
-    case R_X86_64_GOTPCREL:
-    case R_X86_64_GOTPCRELX:
-    case R_X86_64_REX_GOTPCRELX:
-    case R_X86_64_PLT32:
-    case R_X86_64_TLSGD:
-    case R_X86_64_TLSLD:
-    case R_X86_64_TPOFF32:
-    case R_X86_64_TPOFF64:
-    case R_X86_64_GOTTPOFF:
-    case R_X86_64_GOT64:
-    case R_X86_64_GOTPCREL64:
-    case R_X86_64_GOTPC64:
-    case R_X86_64_GOTPC32_TLSDESC:
-      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
-                 << rel.r_type;
-      break;
     default:
-      Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel_to_string<X86_64>(rel.r_type);
+      break;
     }
   }
 }

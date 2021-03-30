@@ -1,7 +1,7 @@
 #include "mold.h"
 
 template <>
-std::string rel_to_string(Context<I386> &ctx, u32 r_type) {
+std::string rel_to_string<I386>(u32 r_type) {
   switch (r_type) {
   case R_386_NONE: return "R_386_NONE";
   case R_386_32: return "R_386_32";
@@ -45,7 +45,7 @@ std::string rel_to_string(Context<I386> &ctx, u32 r_type) {
   case R_386_IRELATIVE: return "R_386_IRELATIVE";
   case R_386_GOT32X: return "R_386_GOT32X";
   }
-  unreachable(ctx);
+  return "unknown (" + std::to_string(r_type) + ")";
 }
 
 template <>
@@ -58,4 +58,118 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 
 template <>
 void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
+  assert(shdr.sh_flags & SHF_ALLOC);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<I386>);
+
+  // Scan relocations
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<I386> &rel = rels[i];
+    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
+
+    if (!sym.file) {
+      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      continue;
+    }
+
+    if (sym.esym->st_type == STT_GNU_IFUNC)
+      sym.flags |= NEEDS_PLT;
+
+    switch (rel.r_type) {
+    case R_386_NONE:
+      rel_types[i] = R_NONE;
+      break;
+    case R_386_8:
+    case R_386_16: {
+      Action table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  NONE,     ERROR, ERROR,         ERROR },      // DSO
+        {  NONE,     ERROR, ERROR,         ERROR },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
+      };
+
+      dispatch(ctx, table, R_ABS, i);
+      break;
+    }
+    case R_386_32: {
+      Action table[][4] = {
+        // Absolute  Local    Imported data  Imported code
+        {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
+        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
+        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
+      };
+
+      dispatch(ctx, table, R_ABS, i);
+      break;
+    }
+    case R_386_PC8:
+    case R_386_PC16: {
+      Action table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
+      };
+
+      dispatch(ctx, table, R_PC, i);
+      break;
+    }
+    case R_386_PC32: {
+      Action table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  BASEREL,  NONE,  ERROR,         ERROR },      // DSO
+        {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
+      };
+
+      dispatch(ctx, table, R_PC, i);
+      break;
+    }
+    case R_386_GOT32:
+    case R_386_GOT32X:
+      sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOT;
+      break;
+    case R_386_PLT32:
+      if (sym.is_imported)
+        sym.flags |= NEEDS_PLT;
+      rel_types[i] = R_PC;
+      break;
+    case R_386_GOTOFF:
+      rel_types[i] = R_GOTOFF;
+      break;
+    case R_386_GOTPC:
+      sym.flags |= NEEDS_GOT;
+      rel_types[i] = R_GOTPC;
+      break;
+    case R_386_TLS_TPOFF:
+    case R_386_TLS_IE:
+    case R_386_TLS_GOTIE:
+    case R_386_TLS_LE:
+    case R_386_TLS_GD:
+    case R_386_TLS_LDM:
+    case R_386_TLS_GD_32:
+    case R_386_TLS_GD_PUSH:
+    case R_386_TLS_GD_CALL:
+    case R_386_TLS_GD_POP:
+    case R_386_TLS_LDM_32:
+    case R_386_TLS_LDM_PUSH:
+    case R_386_TLS_LDM_CALL:
+    case R_386_TLS_LDM_POP:
+    case R_386_TLS_LDO_32:
+    case R_386_TLS_IE_32:
+    case R_386_TLS_LE_32:
+    case R_386_TLS_DTPMOD32:
+    case R_386_TLS_DTPOFF32:
+    case R_386_TLS_TPOFF32:
+      Fatal(ctx) << "TLS reloc is not supported yet";
+    case R_386_SIZE32:
+      rel_types[i] = R_SIZE;
+      break;
+    case R_386_TLS_GOTDESC:
+    case R_386_TLS_DESC_CALL:
+    case R_386_TLS_DESC:
+      Fatal(ctx) << "TLS reloc is not supported yet";
+    }
+  }
 }
