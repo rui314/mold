@@ -214,7 +214,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
               << (u32)shdr.sh_info;
 
     if (InputSection<E> *target = sections[shdr.sh_info]) {
-      target->rels = this->template get_data<ElfRela<E>>(ctx, shdr);
+      target->rels = this->template get_data<ElfRel<E>>(ctx, shdr);
       target->has_fragments.resize(target->rels.size());
       if (target->shdr.sh_flags & SHF_ALLOC)
         target->rel_types.resize(target->rels.size());
@@ -265,7 +265,7 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRela<E>> rels = isec.rels;
+  std::span<ElfRel<E>> rels = isec.rels;
   std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
@@ -278,7 +278,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 cur_cie = -1;
   i64 cur_cie_offset = -1;
 
-  for (ElfRela<E> rel : rels)
+  for (ElfRel<E> rel : rels)
     if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_64 &&
         rel.r_type != R_X86_64_PC32 && rel.r_type != R_X86_64_PC64)
       Fatal(ctx) << isec << ": unsupported relocation type: " << rel.r_type;
@@ -551,7 +551,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
       continue;
 
     for (i64 i = 0; i < isec->rels.size(); i++) {
-      const ElfRela<E> &rel = isec->rels[i];
+      const ElfRel<E> &rel = isec->rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;

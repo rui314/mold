@@ -45,7 +45,7 @@ static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
         if (mark_section(isec))
           feeder.add(isec);
 
-  for (ElfRela<E> &rel : isec->rels) {
+  for (ElfRel<E> &rel : isec->rels) {
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
     // Symbol can refer either a section fragment or an input section.

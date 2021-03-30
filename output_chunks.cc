@@ -235,7 +235,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = ctx.got->get_reldyn_size(ctx);
   for (ObjectFile<E> *file : ctx.objs) {
     file->reldyn_offset = offset;
-    offset += file->num_dynrel * sizeof(ElfRela<E>);
+    offset += file->num_dynrel * sizeof(ElfRel<E>);
   }
   this->shdr.sh_size = offset;
 }
@@ -244,11 +244,11 @@ template <typename E>
 void RelDynSection<E>::sort(Context<E> &ctx) {
   Timer t("sort_dynamic_relocs");
 
-  ElfRela<E> *begin = (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset);
-  ElfRela<E> *end =
-    (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset + this->shdr.sh_size);
+  ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
+  ElfRel<E> *end =
+    (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset + this->shdr.sh_size);
 
-  tbb::parallel_sort(begin, end, [](const ElfRela<E> &a, const ElfRela<E> &b) {
+  tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
     return std::tuple(a.r_sym, a.r_offset) <
            std::tuple(b.r_sym, b.r_offset);
   });
@@ -407,7 +407,7 @@ static std::vector<u64> create_dynamic_section(Context<E> &ctx) {
   if (ctx.reldyn->shdr.sh_size) {
     define(DT_RELA, ctx.reldyn->shdr.sh_addr);
     define(DT_RELASZ, ctx.reldyn->shdr.sh_size);
-    define(DT_RELAENT, sizeof(ElfRela<E>));
+    define(DT_RELAENT, sizeof(ElfRel<E>));
   }
 
   if (ctx.relplt->shdr.sh_size) {
@@ -660,7 +660,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   n += ctx.dynbss->symbols.size();
   n += ctx.dynbss_relro->symbols.size();
 
-  return n * sizeof(ElfRela<E>);
+  return n * sizeof(ElfRel<E>);
 }
 
 // Fill .got and .rel.dyn.
@@ -669,7 +669,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  ElfRela<E> *rel = (ElfRela<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
+  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
@@ -741,7 +741,7 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
   sym->gotplt_idx = ctx.gotplt->shdr.sh_size / GOT_SIZE;
   ctx.gotplt->shdr.sh_size += GOT_SIZE;
-  ctx.relplt->shdr.sh_size += sizeof(ElfRela<E>);
+  ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
 }
 
@@ -809,13 +809,13 @@ void RelPltSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void RelPltSection<E>::copy_buf(Context<E> &ctx) {
-  ElfRela<E> *buf = (ElfRela<E> *)(ctx.buf + this->shdr.sh_offset);
+  ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   i64 relplt_idx = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
-    ElfRela<E> &rel = buf[relplt_idx++];
+    ElfRel<E> &rel = buf[relplt_idx++];
     memset(&rel, 0, sizeof(rel));
     rel.r_sym = sym->dynsym_idx;
     rel.r_offset = sym->get_gotplt_addr(ctx);

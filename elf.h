@@ -476,7 +476,6 @@ template <typename E> struct ElfShdr;
 template <typename E> struct ElfEhdr;
 template <typename E> struct ElfPhdr;
 template <typename E> struct ElfRel;
-template <typename E> struct ElfRela;
 template <typename E> struct ElfDyn;
 template <typename E> struct ElfVerneed;
 template <typename E> struct ElfVernaux;
@@ -484,13 +483,15 @@ template <typename E> struct ElfVerdef;
 template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
 
-struct X86_64 {};
+struct X86_64 {
+  static constexpr bool is_rela = true;
+};
 
 template <> struct ElfSym<X86_64> : public Elf64Sym {};
 template <> struct ElfShdr<X86_64> : public Elf64Shdr {};
 template <> struct ElfEhdr<X86_64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<X86_64> : public Elf64Phdr {};
-template <> struct ElfRela<X86_64> : public Elf64Rela {};
+template <> struct ElfRel<X86_64> : public Elf64Rela {};
 template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
 template <> struct ElfVerneed<X86_64> : public Elf64Verneed {};
 template <> struct ElfVernaux<X86_64> : public Elf64Vernaux {};

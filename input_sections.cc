@@ -268,14 +268,14 @@ static u32 relax_gottpoff(u8 *loc) {
 template <typename E>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   i64 ref_idx = 0;
-  ElfRela<E> *dynrel = nullptr;
+  ElfRel<E> *dynrel = nullptr;
 
   if (ctx.reldyn)
-    dynrel = (ElfRela<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                          file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela<E> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -431,7 +431,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela<E> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -521,7 +521,7 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
                                RelType rel_type, i64 i) {
-  const ElfRela<E> &rel = rels[i];
+  const ElfRel<E> &rel = rels[i];
   Symbol<E> &sym = *file.symbols[rel.r_sym];
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
   Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
@@ -581,11 +581,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   static Counter counter("reloc_alloc");
   counter += rels.size();
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRela<E>);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRela<E> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 

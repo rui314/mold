@@ -298,7 +298,7 @@ public:
   std::string_view name;
   std::string_view contents;
 
-  std::span<ElfRela<E>> rels;
+  std::span<ElfRel<E>> rels;
   std::vector<bool> has_fragments;
   std::vector<SectionFragmentRef<E>> rel_fragments;
   std::vector<RelType> rel_types;
@@ -503,10 +503,10 @@ template <typename E>
 class RelPltSection : public OutputChunk<E> {
 public:
   RelPltSection() : OutputChunk<E>(this->SYNTHETIC) {
-    this->name = ".rela.plt";
-    this->shdr.sh_type = SHT_RELA;
+    this->name = E::is_rela ? ".rela.plt" : ".rel.plt";
+    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_entsize = sizeof(ElfRela<E>);
+    this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = 8;
   }
 
@@ -518,10 +518,10 @@ template <typename E>
 class RelDynSection : public OutputChunk<E> {
 public:
   RelDynSection() : OutputChunk<E>(this->SYNTHETIC) {
-    this->name = ".rela.dyn";
-    this->shdr.sh_type = SHT_RELA;
+    this->name = E::is_rela ? ".rela.dyn" : ".rel.dyn";
+    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_entsize = sizeof(ElfRela<E>);
+    this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = 8;
   }
 
