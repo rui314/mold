@@ -25,11 +25,11 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   memset(&hdr, 0, sizeof(hdr));
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
-  hdr.e_ident[EI_CLASS] = ELFCLASS64;
-  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
+  hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
-  hdr.e_machine = EM_X86_64;
+  hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
   if (!ctx.arg.entry.empty())
     hdr.e_entry = Symbol<E>::intern(ctx, ctx.arg.entry)->get_addr(ctx);

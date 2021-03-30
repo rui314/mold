@@ -485,6 +485,9 @@ template <typename E> struct ElfChdr;
 
 struct X86_64 {
   static constexpr bool is_rela = true;
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
+  static constexpr u32 e_machine = EM_X86_64;
 };
 
 template <> struct ElfSym<X86_64> : public Elf64Sym {};
@@ -498,3 +501,22 @@ template <> struct ElfVernaux<X86_64> : public Elf64Vernaux {};
 template <> struct ElfVerdef<X86_64> : public Elf64Verdef {};
 template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
+
+struct I386 {
+  static constexpr bool is_rela = false;
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
+  static constexpr u32 e_machine = EM_386;
+};
+
+template <> struct ElfSym<I386> : public Elf32Sym {};
+template <> struct ElfShdr<I386> : public Elf32Shdr {};
+template <> struct ElfEhdr<I386> : public Elf32Ehdr {};
+template <> struct ElfPhdr<I386> : public Elf32Phdr {};
+template <> struct ElfRel<I386> : public Elf32Rel {};
+template <> struct ElfDyn<I386> : public Elf32Dyn {};
+template <> struct ElfVerneed<I386> : public Elf64Verneed {};
+template <> struct ElfVernaux<I386> : public Elf64Vernaux {};
+template <> struct ElfVerdef<I386> : public Elf64Verdef {};
+template <> struct ElfVerdaux<I386> : public Elf64Verdaux {};
+template <> struct ElfChdr<I386> : public Elf32Chdr {};
