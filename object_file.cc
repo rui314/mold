@@ -263,15 +263,14 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 //   In order to create .eh_frame_hdr, linker has to read .eh_frame.
 //
 // This function parses an input .eh_frame section.
-template <>
-void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
-                                      InputSection<X86_64> &isec) {
-  std::span<ElfRel<X86_64>> rels = isec.rels;
+template <typename E>
+void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
+  std::span<ElfRel<E>> rels = isec.rels;
   std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
   if (data.empty()) {
-    cies.push_back(CieRecord<X86_64>{data});
+    cies.push_back(CieRecord<E>{data});
     return;
   }
 
@@ -279,7 +278,7 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
   i64 cur_cie = -1;
   i64 cur_cie_offset = -1;
 
-  for (ElfRel<X86_64> rel : rels)
+  for (ElfRel<E> rel : rels)
     if (rel.r_type != R_X86_64_32 && rel.r_type != R_X86_64_64 &&
         rel.r_type != R_X86_64_PC32 && rel.r_type != R_X86_64_PC64)
       Fatal(ctx) << isec << ": unsupported relocation type: "
@@ -290,7 +289,7 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
     if (size == 0) {
       if (data.size() != 4)
         Fatal(ctx) << isec << ": garbage at end of section";
-      cies.push_back(CieRecord<X86_64>{data});
+      cies.push_back(CieRecord<E>{data});
       return;
     }
 
@@ -304,16 +303,16 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
     data = data.substr(size + 4);
     i64 id = *(u32 *)(contents.data() + 4);
 
-    std::vector<EhReloc<X86_64>> eh_rels;
+    std::vector<EhReloc<E>> eh_rels;
     while (!rels.empty() && rels[0].r_offset < end_offset) {
       if (id && first_global <= rels[0].r_sym)
         Fatal(ctx) << isec
                    << ": FDE with non-local relocations is not supported";
 
-      Symbol<X86_64> &sym = *this->symbols[rels[0].r_sym];
-      eh_rels.push_back(EhReloc<X86_64>{sym, rels[0].r_type,
+      Symbol<E> &sym = *this->symbols[rels[0].r_sym];
+      eh_rels.push_back(EhReloc<E>{sym, rels[0].r_type,
                                    (u32)(rels[0].r_offset - begin_offset),
-                                   rels[0].r_addend});
+                                   isec.get_addend(rels[0])});
       rels = rels.subspan(1);
     }
 
@@ -321,7 +320,7 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
       // CIE
       cur_cie = cies.size();
       offset_to_cie[begin_offset] = cies.size();
-      cies.push_back(CieRecord<X86_64>{contents, std::move(eh_rels)});
+      cies.push_back(CieRecord<E>{contents, std::move(eh_rels)});
     } else {
       // FDE
       i64 cie_offset = begin_offset + 4 - id;
@@ -343,10 +342,10 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
     }
   }
 
-  for (CieRecord<X86_64> &cie : cies) {
-    std::span<FdeRecord<X86_64>> fdes = cie.fdes;
+  for (CieRecord<E> &cie : cies) {
+    std::span<FdeRecord<E>> fdes = cie.fdes;
     while (!fdes.empty()) {
-      InputSection<X86_64> *isec = fdes[0].rels[0].sym.input_section;
+      InputSection<E> *isec = fdes[0].rels[0].sym.input_section;
       i64 i = 1;
       while (i < fdes.size() && isec == fdes[i].rels[0].sym.input_section)
         i++;
@@ -354,10 +353,6 @@ void ObjectFile<X86_64>::read_ehframe(Context<X86_64> &ctx,
       fdes = fdes.subspan(i);
     }
   }
-}
-
-template <>
-void ObjectFile<I386>::read_ehframe(Context<I386> &ctx, InputSection<I386> &isec) {
 }
 
 template <typename E>
@@ -538,12 +533,12 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   return rec;
 }
 
-template <>
-void ObjectFile<X86_64>::initialize_mergeable_sections(Context<X86_64> &ctx) {
-  std::vector<MergeableSection<X86_64>> mergeable_sections(sections.size());
+template <typename E>
+void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
+  std::vector<MergeableSection<E>> mergeable_sections(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
-    if (InputSection<X86_64> *isec = sections[i]) {
+    if (InputSection<E> *isec = sections[i]) {
       if (isec->shdr.sh_flags & SHF_MERGE) {
         mergeable_sections[i] = split_section(ctx, *isec);
         sections[i] = nullptr;
@@ -552,21 +547,21 @@ void ObjectFile<X86_64>::initialize_mergeable_sections(Context<X86_64> &ctx) {
   }
 
   // Initialize rel_fragments
-  for (InputSection<X86_64> *isec : sections) {
+  for (InputSection<E> *isec : sections) {
     if (!isec || isec->rels.empty())
       continue;
 
     for (i64 i = 0; i < isec->rels.size(); i++) {
-      const ElfRel<X86_64> &rel = isec->rels[i];
-      const ElfSym<X86_64> &esym = elf_syms[rel.r_sym];
+      const ElfRel<E> &rel = isec->rels[i];
+      const ElfSym<E> &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;
 
-      MergeableSection<X86_64> &m = mergeable_sections[get_shndx(esym)];
+      MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
       if (m.fragments.empty())
         continue;
 
-      i64 offset = esym.st_value + rel.r_addend;
+      i64 offset = esym.st_value + isec->get_addend(rel);
       std::span<u32> offsets = m.frag_offsets;
 
       auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
@@ -574,8 +569,7 @@ void ObjectFile<X86_64>::initialize_mergeable_sections(Context<X86_64> &ctx) {
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      SectionFragmentRef<X86_64> ref{m.fragments[idx],
-                                     (i32)(offset - offsets[idx])};
+      SectionFragmentRef<E> ref{m.fragments[idx], (i32)(offset - offsets[idx])};
       isec->rel_fragments.push_back(ref);
       isec->has_fragments[i] = true;
     }
@@ -583,11 +577,11 @@ void ObjectFile<X86_64>::initialize_mergeable_sections(Context<X86_64> &ctx) {
 
   // Initialize sym_fragments
   for (i64 i = 0; i < elf_syms.size(); i++) {
-    const ElfSym<X86_64> &esym = elf_syms[i];
+    const ElfSym<E> &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    MergeableSection<X86_64> &m = mergeable_sections[get_shndx(esym)];
+    MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
     if (m.fragments.empty())
       continue;
 
@@ -607,12 +601,8 @@ void ObjectFile<X86_64>::initialize_mergeable_sections(Context<X86_64> &ctx) {
     }
   }
 
-  for (MergeableSection<X86_64> &m : mergeable_sections)
+  for (MergeableSection<E> &m : mergeable_sections)
     fragments.insert(fragments.end(), m.fragments.begin(), m.fragments.end());
-}
-
-template <>
-void ObjectFile<I386>::initialize_mergeable_sections(Context<I386> &ctx) {
 }
 
 template <typename E>
@@ -1252,16 +1242,11 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   return false;
 }
 
-template class MemoryMappedFile<X86_64>;
-template class ObjectFile<X86_64>;
-template class SharedFile<X86_64>;
+#define INSTANTIATE(E)                                                  \
+  template class MemoryMappedFile<E>;                                   \
+  template class ObjectFile<E>;                                         \
+  template class SharedFile<E>;                                         \
+  template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
-template
-std::ostream &operator<<(std::ostream &out, const InputFile<X86_64> &file);
-
-template class MemoryMappedFile<I386>;
-template class ObjectFile<I386>;
-template class SharedFile<I386>;
-
-template
-std::ostream &operator<<(std::ostream &out, const InputFile<I386> &file);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);

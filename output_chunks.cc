@@ -1496,68 +1496,38 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   unreachable(ctx);
 }
 
-template class OutputChunk<X86_64>;
-template class OutputEhdr<X86_64>;
-template class OutputShdr<X86_64>;
-template class OutputPhdr<X86_64>;
-template class InterpSection<X86_64>;
-template class OutputSection<X86_64>;
-template class GotSection<X86_64>;
-template class GotPltSection<X86_64>;
-template class PltSection<X86_64>;
-template class PltGotSection<X86_64>;
-template class RelPltSection<X86_64>;
-template class RelDynSection<X86_64>;
-template class StrtabSection<X86_64>;
-template class ShstrtabSection<X86_64>;
-template class DynstrSection<X86_64>;
-template class DynamicSection<X86_64>;
-template class SymtabSection<X86_64>;
-template class DynsymSection<X86_64>;
-template class HashSection<X86_64>;
-template class GnuHashSection<X86_64>;
-template class MergedSection<X86_64>;
-template class EhFrameSection<X86_64>;
-template class EhFrameHdrSection<X86_64>;
-template class DynbssSection<X86_64>;
-template class VersymSection<X86_64>;
-template class VerneedSection<X86_64>;
-template class VerdefSection<X86_64>;
-template class BuildIdSection<X86_64>;
+#define INSTANTIATE(E)                                          \
+  template class OutputChunk<E>;                                \
+  template class OutputEhdr<E>;                                 \
+  template class OutputShdr<E>;                                 \
+  template class OutputPhdr<E>;                                 \
+  template class InterpSection<E>;                              \
+  template class OutputSection<E>;                              \
+  template class GotSection<E>;                                 \
+  template class GotPltSection<E>;                              \
+  template class PltSection<E>;                                 \
+  template class PltGotSection<E>;                              \
+  template class RelPltSection<E>;                              \
+  template class RelDynSection<E>;                              \
+  template class StrtabSection<E>;                              \
+  template class ShstrtabSection<E>;                            \
+  template class DynstrSection<E>;                              \
+  template class DynamicSection<E>;                             \
+  template class SymtabSection<E>;                              \
+  template class DynsymSection<E>;                              \
+  template class HashSection<E>;                                \
+  template class GnuHashSection<E>;                             \
+  template class MergedSection<E>;                              \
+  template class EhFrameSection<E>;                             \
+  template class EhFrameHdrSection<E>;                          \
+  template class DynbssSection<E>;                              \
+  template class VersymSection<E>;                              \
+  template class VerneedSection<E>;                             \
+  template class VerdefSection<E>;                              \
+  template class BuildIdSection<E>;                             \
+  template i64 BuildId::size(Context<E> &) const;               \
+  template bool is_relro(Context<E> &, OutputChunk<E> *);       \
+  template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)
 
-template i64 BuildId::size(Context<X86_64> &ctx) const;
-template bool is_relro(Context<X86_64> &ctx, OutputChunk<X86_64> *chunk);
-template std::vector<ElfPhdr<X86_64>> create_phdr(Context<X86_64> &ctx);
-
-template class OutputChunk<I386>;
-template class OutputEhdr<I386>;
-template class OutputShdr<I386>;
-template class OutputPhdr<I386>;
-template class InterpSection<I386>;
-template class OutputSection<I386>;
-template class GotSection<I386>;
-template class GotPltSection<I386>;
-template class PltSection<I386>;
-template class PltGotSection<I386>;
-template class RelPltSection<I386>;
-template class RelDynSection<I386>;
-template class StrtabSection<I386>;
-template class ShstrtabSection<I386>;
-template class DynstrSection<I386>;
-template class DynamicSection<I386>;
-template class SymtabSection<I386>;
-template class DynsymSection<I386>;
-template class HashSection<I386>;
-template class GnuHashSection<I386>;
-template class MergedSection<I386>;
-template class EhFrameSection<I386>;
-template class EhFrameHdrSection<I386>;
-template class DynbssSection<I386>;
-template class VersymSection<I386>;
-template class VerneedSection<I386>;
-template class VerdefSection<I386>;
-template class BuildIdSection<I386>;
-
-template i64 BuildId::size(Context<I386> &ctx) const;
-template bool is_relro(Context<I386> &ctx, OutputChunk<I386> *chunk);
-template std::vector<ElfPhdr<I386>> create_phdr(Context<I386> &ctx);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
