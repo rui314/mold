@@ -518,6 +518,56 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
   return 3;
 }
 
+template <typename E>
+void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
+                               RelType rel_type, i64 i) {
+  const ElfRela<E> &rel = rels[i];
+  Symbol<E> &sym = *file.symbols[rel.r_sym];
+  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+  Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
+
+  switch (action) {
+  case NONE:
+    rel_types[i] = rel_type;
+    return;
+  case ERROR:
+    break;
+  case COPYREL:
+    if (!ctx.arg.z_copyreloc)
+      break;
+    if (sym.esym->st_visibility == STV_PROTECTED)
+      Error(ctx) << *this << ": cannot make copy relocation for "
+                 << " protected symbol '" << sym << "', defined in "
+                 << *sym.file;
+    sym.flags |= NEEDS_COPYREL;
+    rel_types[i] = rel_type;
+    return;
+  case PLT:
+    sym.flags |= NEEDS_PLT;
+    rel_types[i] = rel_type;
+    return;
+  case DYNREL:
+    if (is_readonly)
+      break;
+    sym.flags |= NEEDS_DYNSYM;
+    rel_types[i] = R_DYN;
+    file.num_dynrel++;
+    return;
+  case BASEREL:
+    if (is_readonly)
+      break;
+    rel_types[i] = R_BASEREL;
+    file.num_dynrel++;
+    return;
+  default:
+    unreachable(ctx);
+  }
+
+  Error(ctx) << *this << ": " << rel_to_string(ctx, rel.r_type)
+             << " relocation against symbol `" << sym
+             << "' can not be used; recompile with -fPIE";
+}
+
 // Linker has to create data structures in an output file to apply
 // some type of relocations. For example, if a relocation refers a GOT
 // or a PLT entry of a symbol, linker has to create an entry in .got
@@ -532,7 +582,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   counter += rels.size();
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRela<E>);
-  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -544,51 +593,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << "undefined symbol: " << file << ": " << sym;
       continue;
     }
-
-    typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
-
-    auto dispatch = [&](Action action, RelType rel_type) {
-      switch (action) {
-      case NONE:
-        rel_types[i] = rel_type;
-        return;
-      case ERROR:
-        break;
-      case COPYREL:
-        if (!ctx.arg.z_copyreloc)
-          break;
-        if (sym.esym->st_visibility == STV_PROTECTED)
-          Error(ctx) << *this << ": cannot make copy relocation for "
-                     << " protected symbol '" << sym << "', defined in "
-                     << *sym.file;
-        sym.flags |= NEEDS_COPYREL;
-        rel_types[i] = rel_type;
-        return;
-      case PLT:
-        sym.flags |= NEEDS_PLT;
-        rel_types[i] = rel_type;
-        return;
-      case DYNREL:
-        if (is_readonly)
-          break;
-        sym.flags |= NEEDS_DYNSYM;
-        rel_types[i] = R_DYN;
-        file.num_dynrel++;
-        return;
-      case BASEREL:
-        if (is_readonly)
-          break;
-        rel_types[i] = R_BASEREL;
-        file.num_dynrel++;
-        return;
-      default:
-        unreachable(ctx);
-      }
-
-      Error(ctx) << *this << ": " << rel_to_string(ctx, rel.r_type)
-                 << " relocation against symbol `" << sym
-                 << "' can not be used; recompile with -fPIE";
-    };
 
     if (sym.esym->st_type == STT_GNU_IFUNC)
       sym.flags |= NEEDS_PLT;
@@ -611,7 +615,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_ABS);
+      dispatch(ctx, table, R_ABS, i);
       break;
     }
     case R_X86_64_64: {
@@ -624,7 +628,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_ABS);
+      dispatch(ctx, table, R_ABS, i);
       break;
     }
     case R_X86_64_PC8:
@@ -637,7 +641,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_PC);
+      dispatch(ctx, table, R_PC, i);
       break;
     }
     case R_X86_64_PC64: {
@@ -648,7 +652,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
 
-      dispatch(table[get_output_type(ctx)][get_sym_type(ctx, sym)], R_PC);
+      dispatch(ctx, table, R_PC, i);
       break;
     }
     case R_X86_64_GOT32:

@@ -321,6 +321,11 @@ public:
   u32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
+
+private:
+  typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
+
+  void dispatch(Context<E> &ctx, Action table[3][4], RelType rel_type, i64 i);
 };
 
 //
