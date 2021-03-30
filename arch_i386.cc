@@ -48,12 +48,91 @@ std::string rel_to_string<I386>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val,
+                      bool overwrite) {
+  switch (r_type) {
+  case R_386_NONE:
+    return;
+  case R_386_8:
+  case R_386_PC8:
+    if (overwrite)
+      *loc = val;
+    else
+      *loc += val;
+    return;
+  case R_386_16:
+  case R_386_PC16:
+    if (overwrite)
+      *(u16 *)loc = val;
+    else
+      *(u16 *)loc += val;
+    return;
+  case R_386_32:
+  case R_386_PC32:
+  case R_386_GOT32:
+  case R_386_GOT32X:
+  case R_386_PLT32:
+  case R_386_GOTOFF:
+  case R_386_GOTPC:
+  case R_386_SIZE32:
+    if (overwrite)
+      *(u32 *)loc = val;
+    else
+      *(u32 *)loc += val;
+    return;
+  }
+  unreachable(ctx);
+}
+
 template <>
 void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 }
 
 template <>
 void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
+  i64 ref_idx = 0;
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<I386> &rel = rels[i];
+    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = base + rel.r_offset;
+
+    if (!sym.file) {
+      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      continue;
+    }
+
+    const SectionFragmentRef<I386> *ref = nullptr;
+    if (has_fragments[i])
+      ref = &rel_fragments[ref_idx++];
+
+    auto write = [&](u64 val, bool overwrite) {
+      write_val(ctx, rel.r_type, loc, val, overwrite);
+    };
+
+    switch (rel.r_type) {
+    case R_386_NONE:
+      return;
+    case R_386_8:
+    case R_386_16:
+    case R_386_32:
+    case R_386_PC8:
+    case R_386_PC16:
+    case R_386_PC32:
+      if (ref)
+        write(ref->frag->get_addr(ctx) + ref->addend, true);
+      else
+        write(sym.get_addr(ctx), false);
+      break;
+    case R_386_SIZE32:
+      write(sym.esym->st_size, false);
+      break;
+    default:
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel_to_string<I386>(rel.r_type);
+      break;
+    }
+  }
 }
 
 template <>
