@@ -9,7 +9,7 @@ cat <<EOF | cc -m32 -o $t/a.o -c -xc -
 #include <stdio.h>
 
 int main() {
-  printf("Hello\n");
+  printf("Hello world\n");
   return 0;
 }
 EOF
