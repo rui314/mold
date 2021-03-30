@@ -6,7 +6,7 @@ TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
 MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
 
 CPPFLAGS=-g -IoneTBB/include -IxxHash -pthread -std=c++20 \
-         -Wno-deprecated-volatile -Wno-switch -O2 \
+         -Wno-deprecated-volatile -Wno-switch \
          -DGIT_HASH=\"$(shell git rev-parse HEAD)\"
 LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
         -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
@@ -16,6 +16,13 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
      linker_script.o archive_file.o output_file.o subprocess.o gc_sections.o \
      icf.o symbols.o cmdline.o filepath.o glob.o passes.o arch_x86_64.o \
      arch_i386.o
+
+DEBUG ?= 0
+ifeq ($(DEBUG), 1)
+  CPPFLAGS += -O0
+else
+  CPPFLAGS += -O2
+endif
 
 all: mold mold-wrapper.so
 
