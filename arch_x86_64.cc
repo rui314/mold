@@ -33,39 +33,6 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   }
 }
 
-template <>
-std::string rel_to_string<X86_64>(u32 r_type) {
-  switch (r_type) {
-  case R_X86_64_NONE: return "R_X86_64_NONE";
-  case R_X86_64_8: return "R_X86_64_8";
-  case R_X86_64_16: return "R_X86_64_16";
-  case R_X86_64_32: return "R_X86_64_32";
-  case R_X86_64_32S: return "R_X86_64_32S";
-  case R_X86_64_64: return "R_X86_64_64";
-  case R_X86_64_PC8: return "R_X86_64_PC8";
-  case R_X86_64_PC16: return "R_X86_64_PC16";
-  case R_X86_64_PC32: return "R_X86_64_PC32";
-  case R_X86_64_PC64: return "R_X86_64_PC64";
-  case R_X86_64_GOT32: return "R_X86_64_GOT32";
-  case R_X86_64_GOTPC32: return "R_X86_64_GOTPC32";
-  case R_X86_64_GOT64: return "R_X86_64_GOT64";
-  case R_X86_64_GOTPCREL64: return "R_X86_64_GOTPCREL64";
-  case R_X86_64_GOTPC64: return "R_X86_64_GOTPC64";
-  case R_X86_64_GOTPCREL: return "R_X86_64_GOTPCREL";
-  case R_X86_64_GOTPCRELX: return "R_X86_64_GOTPCRELX";
-  case R_X86_64_REX_GOTPCRELX: return "R_X86_64_REX_GOTPCRELX";
-  case R_X86_64_PLT32: return "R_X86_64_PLT32";
-  case R_X86_64_TLSGD: return "R_X86_64_TLSGD";
-  case R_X86_64_TLSLD: return "R_X86_64_TLSLD";
-  case R_X86_64_TPOFF32: return "R_X86_64_TPOFF32";
-  case R_X86_64_DTPOFF32: return "R_X86_64_DTPOFF32";
-  case R_X86_64_TPOFF64: return "R_X86_64_TPOFF64";
-  case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
-  case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
-  }
-  return "unknown (" + std::to_string(r_type) + ")";
-}
-
 static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
                            Symbol<X86_64> &sym, u64 r_type, u64 val) {
   switch (r_type) {

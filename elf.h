@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -11,6 +12,12 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+template <typename E>
+static std::string rel_to_string(u32 r_type);
+
+struct X86_64;
+struct I386;
 
 static constexpr u32 SHN_UNDEF = 0;
 static constexpr u32 SHN_ABS = 0xfff1;
@@ -220,6 +227,52 @@ static constexpr u32 R_X86_64_IRELATIVE = 37;
 static constexpr u32 R_X86_64_GOTPCRELX = 41;
 static constexpr u32 R_X86_64_REX_GOTPCRELX = 42;
 
+template <>
+inline std::string rel_to_string<X86_64>(u32 r_type) {
+  switch (r_type) {
+  case R_X86_64_NONE: return "R_X86_64_NONE";
+  case R_X86_64_64: return "R_X86_64_64";
+  case R_X86_64_PC32: return "R_X86_64_PC32";
+  case R_X86_64_GOT32: return "R_X86_64_GOT32";
+  case R_X86_64_PLT32: return "R_X86_64_PLT32";
+  case R_X86_64_COPY: return "R_X86_64_COPY";
+  case R_X86_64_GLOB_DAT: return "R_X86_64_GLOB_DAT";
+  case R_X86_64_JUMP_SLOT: return "R_X86_64_JUMP_SLOT";
+  case R_X86_64_RELATIVE: return "R_X86_64_RELATIVE";
+  case R_X86_64_GOTPCREL: return "R_X86_64_GOTPCREL";
+  case R_X86_64_32: return "R_X86_64_32";
+  case R_X86_64_32S: return "R_X86_64_32S";
+  case R_X86_64_16: return "R_X86_64_16";
+  case R_X86_64_PC16: return "R_X86_64_PC16";
+  case R_X86_64_8: return "R_X86_64_8";
+  case R_X86_64_PC8: return "R_X86_64_PC8";
+  case R_X86_64_DTPMOD64: return "R_X86_64_DTPMOD64";
+  case R_X86_64_DTPOFF64: return "R_X86_64_DTPOFF64";
+  case R_X86_64_TPOFF64: return "R_X86_64_TPOFF64";
+  case R_X86_64_TLSGD: return "R_X86_64_TLSGD";
+  case R_X86_64_TLSLD: return "R_X86_64_TLSLD";
+  case R_X86_64_DTPOFF32: return "R_X86_64_DTPOFF32";
+  case R_X86_64_GOTTPOFF: return "R_X86_64_GOTTPOFF";
+  case R_X86_64_TPOFF32: return "R_X86_64_TPOFF32";
+  case R_X86_64_PC64: return "R_X86_64_PC64";
+  case R_X86_64_GOTOFF64: return "R_X86_64_GOTOFF64";
+  case R_X86_64_GOTPC32: return "R_X86_64_GOTPC32";
+  case R_X86_64_GOT64: return "R_X86_64_GOT64";
+  case R_X86_64_GOTPCREL64: return "R_X86_64_GOTPCREL64";
+  case R_X86_64_GOTPC64: return "R_X86_64_GOTPC64";
+  case R_X86_64_GOTPLT64: return "R_X86_64_GOTPLT64";
+  case R_X86_64_PLTOFF64: return "R_X86_64_PLTOFF64";
+  case R_X86_64_SIZE32: return "R_X86_64_SIZE32";
+  case R_X86_64_SIZE64: return "R_X86_64_SIZE64";
+  case R_X86_64_GOTPC32_TLSDESC: return "R_X86_64_GOTPC32_TLSDESC";
+  case R_X86_64_TLSDESC_CALL: return "R_X86_64_TLSDESC_CALL";
+  case R_X86_64_TLSDESC: return "R_X86_64_TLSDESC";
+  case R_X86_64_IRELATIVE: return "R_X86_64_IRELATIVE";
+  case R_X86_64_GOTPCRELX: return "R_X86_64_GOTPCRELX";
+  case R_X86_64_REX_GOTPCRELX: return "R_X86_64_REX_GOTPCRELX";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
 static constexpr u32 R_386_NONE = 0;
 static constexpr u32 R_386_32 = 1;
 static constexpr u32 R_386_PC32 = 2;
@@ -262,6 +315,55 @@ static constexpr u32 R_386_TLS_DESC_CALL = 40;
 static constexpr u32 R_386_TLS_DESC = 41;
 static constexpr u32 R_386_IRELATIVE = 42;
 static constexpr u32 R_386_GOT32X = 43;
+
+template <>
+std::string rel_to_string<I386>(u32 r_type) {
+  switch (r_type) {
+  case R_386_NONE: return "R_386_NONE";
+  case R_386_32: return "R_386_32";
+  case R_386_PC32: return "R_386_PC32";
+  case R_386_GOT32: return "R_386_GOT32";
+  case R_386_PLT32: return "R_386_PLT32";
+  case R_386_COPY: return "R_386_COPY";
+  case R_386_GLOB_DAT: return "R_386_GLOB_DAT";
+  case R_386_JUMP_SLOT: return "R_386_JUMP_SLOT";
+  case R_386_RELATIVE: return "R_386_RELATIVE";
+  case R_386_GOTOFF: return "R_386_GOTOFF";
+  case R_386_GOTPC: return "R_386_GOTPC";
+  case R_386_32PLT: return "R_386_32PLT";
+  case R_386_TLS_TPOFF: return "R_386_TLS_TPOFF";
+  case R_386_TLS_IE: return "R_386_TLS_IE";
+  case R_386_TLS_GOTIE: return "R_386_TLS_GOTIE";
+  case R_386_TLS_LE: return "R_386_TLS_LE";
+  case R_386_TLS_GD: return "R_386_TLS_GD";
+  case R_386_TLS_LDM: return "R_386_TLS_LDM";
+  case R_386_16: return "R_386_16";
+  case R_386_PC16: return "R_386_PC16";
+  case R_386_8: return "R_386_8";
+  case R_386_PC8: return "R_386_PC8";
+  case R_386_TLS_GD_32: return "R_386_TLS_GD_32";
+  case R_386_TLS_GD_PUSH: return "R_386_TLS_GD_PUSH";
+  case R_386_TLS_GD_CALL: return "R_386_TLS_GD_CALL";
+  case R_386_TLS_GD_POP: return "R_386_TLS_GD_POP";
+  case R_386_TLS_LDM_32: return "R_386_TLS_LDM_32";
+  case R_386_TLS_LDM_PUSH: return "R_386_TLS_LDM_PUSH";
+  case R_386_TLS_LDM_CALL: return "R_386_TLS_LDM_CALL";
+  case R_386_TLS_LDM_POP: return "R_386_TLS_LDM_POP";
+  case R_386_TLS_LDO_32: return "R_386_TLS_LDO_32";
+  case R_386_TLS_IE_32: return "R_386_TLS_IE_32";
+  case R_386_TLS_LE_32: return "R_386_TLS_LE_32";
+  case R_386_TLS_DTPMOD32: return "R_386_TLS_DTPMOD32";
+  case R_386_TLS_DTPOFF32: return "R_386_TLS_DTPOFF32";
+  case R_386_TLS_TPOFF32: return "R_386_TLS_TPOFF32";
+  case R_386_SIZE32: return "R_386_SIZE32";
+  case R_386_TLS_GOTDESC: return "R_386_TLS_GOTDESC";
+  case R_386_TLS_DESC_CALL: return "R_386_TLS_DESC_CALL";
+  case R_386_TLS_DESC: return "R_386_TLS_DESC";
+  case R_386_IRELATIVE: return "R_386_IRELATIVE";
+  case R_386_GOT32X: return "R_386_GOT32X";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
 
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
