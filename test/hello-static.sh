@@ -20,16 +20,8 @@ msg:
   .string "Hello world\n"
 EOF
 
-../mold -static -o $t/exe /usr/lib/x86_64-linux-gnu/crt1.o \
-  /usr/lib/x86_64-linux-gnu/crti.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginT.o \
-  $t/a.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/libgcc.a \
-  /usr/lib/gcc/x86_64-linux-gnu/9/libgcc_eh.a \
-  /usr/lib/x86_64-linux-gnu/libc.a \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o
-
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -static
+clang -fuse-ld=gold -o $t/exe $t/a.o -static
 $t/exe | grep -q 'Hello world'
 
 echo OK

@@ -41,7 +41,7 @@ submodules:
 	$(MAKE) -C mimalloc/out/release
 	$(MAKE) -C xxHash
 
-test: mold
+test: all
 	for i in test/*.sh; do $$i || exit 1; done
 
 clean:
