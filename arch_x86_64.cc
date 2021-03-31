@@ -249,14 +249,14 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     case R_GOTPCREL:
       write(G + GOT + A - P);
       break;
-    case R_GOTPCRELX_RELAX: {
+    case R_X86_64_GOTPCRELX_RELAX: {
       u32 insn = relax_gotpcrelx(loc - 2);
       loc[-2] = insn >> 8;
       loc[-1] = insn;
       write(S + A - P);
       break;
     }
-    case R_REX_GOTPCRELX_RELAX: {
+    case R_X86_64_REX_GOTPCRELX_RELAX: {
       u32 insn = relax_rex_gotpcrelx(loc - 3);
       loc[-3] = insn >> 16;
       loc[-2] = insn >> 8;
@@ -509,7 +509,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 
       if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
           relax_gotpcrelx(loc - 2)) {
-        rel_types[i] = R_GOTPCRELX_RELAX;
+        rel_types[i] = R_X86_64_GOTPCRELX_RELAX;
       } else {
         sym.flags |= NEEDS_GOT;
         rel_types[i] = R_GOTPCREL;
@@ -522,7 +522,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 
       if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
           relax_rex_gotpcrelx(loc - 3)) {
-        rel_types[i] = R_REX_GOTPCRELX_RELAX;
+        rel_types[i] = R_X86_64_REX_GOTPCRELX_RELAX;
       } else {
         sym.flags |= NEEDS_GOT;
         rel_types[i] = R_GOTPCREL;
