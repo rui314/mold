@@ -30,7 +30,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
     u8 *ent = buf + sym->plt_idx * I386::plt_size;
 
     if (ctx.arg.pic) {
-      static const uint8_t data[] = {
+      static const u8 data[] = {
         0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
         0x68, 0,    0, 0, 0,    // pushl $reloc_offset
         0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
@@ -38,7 +38,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
       memcpy(ent, data, sizeof(data));
       *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx);
     } else {
-      static const uint8_t data[] = {
+      static const u8 data[] = {
         0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
         0x68, 0,    0, 0, 0,    // pushl $reloc_offset
         0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
