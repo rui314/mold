@@ -138,10 +138,10 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write(G + GOT + A - P);
       break;
     case R_GOTTP:
-      write(sym.get_gottpoff_addr(ctx) + A);
+      write(sym.get_gottp_addr(ctx) + A);
       break;
     case R_NTPOFF:
-      write(sym.get_gottpoff_addr(ctx) + A - GOT);
+      write(sym.get_gottp_addr(ctx) + A - GOT);
       break;
     case R_SIZE:
       write(sym.esym->st_size + A);
@@ -295,11 +295,11 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       Error(ctx) << "TLS reloc is not supported yet: "
                  << rel_to_string<I386>(rel.r_type);
     case R_386_TLS_GOTIE:
-      sym.flags |= NEEDS_GOTTPOFF;
+      sym.flags |= NEEDS_GOTTP;
       rel_types[i] = R_GOTTP;
       break;
     case R_386_TLS_LE:
-      sym.flags |= NEEDS_GOTTPOFF;
+      sym.flags |= NEEDS_GOTTP;
       rel_types[i] = R_NTPOFF;
       break;
     case R_386_TLS_GD:

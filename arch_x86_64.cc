@@ -301,7 +301,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       write(S + A - ctx.tls_end);
       break;
     case R_GOTTPOFF:
-      write(sym.get_gottpoff_addr(ctx) + A - P);
+      write(sym.get_gottp_addr(ctx) + A - P);
       break;
     case R_GOTTPOFF_RELAX: {
       u32 insn = relax_gottpoff(loc - 3);
@@ -575,13 +575,13 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
       rel_types[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
-      ctx.has_gottpoff = true;
+      ctx.has_gottp_rel = true;
 
       if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported &&
           relax_gottpoff(loc - 3)) {
         rel_types[i] = R_GOTTPOFF_RELAX;
       } else {
-        sym.flags |= NEEDS_GOTTPOFF;
+        sym.flags |= NEEDS_GOTTP;
         rel_types[i] = R_GOTTPOFF;
       }
       break;

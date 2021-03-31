@@ -436,8 +436,8 @@ void scan_rels(Context<E> &ctx) {
         ctx.plt->add_symbol(ctx, sym);
     }
 
-    if (sym->flags & NEEDS_GOTTPOFF)
-      ctx.got->add_gottpoff_symbol(ctx, sym);
+    if (sym->flags & NEEDS_GOTTP)
+      ctx.got->add_gottp_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_TLSGD)
       ctx.got->add_tlsgd_symbol(ctx, sym);

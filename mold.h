@@ -114,7 +114,7 @@ struct SectionFragmentRef {
 enum {
   NEEDS_GOT      = 1 << 0,
   NEEDS_PLT      = 1 << 1,
-  NEEDS_GOTTPOFF = 1 << 2,
+  NEEDS_GOTTP = 1 << 2,
   NEEDS_TLSGD    = 1 << 3,
   NEEDS_TLSLD    = 1 << 4,
   NEEDS_COPYREL  = 1 << 5,
@@ -139,7 +139,7 @@ public:
   inline u64 get_addr(Context<E> &ctx) const;
   inline u64 get_got_addr(Context<E> &ctx) const;
   inline u64 get_gotplt_addr(Context<E> &ctx) const;
-  inline u64 get_gottpoff_addr(Context<E> &ctx) const;
+  inline u64 get_gottp_addr(Context<E> &ctx) const;
   inline u64 get_tlsgd_addr(Context<E> &ctx) const;
   inline u64 get_tlsdesc_addr(Context<E> &ctx) const;
   inline u64 get_plt_addr(Context<E> &ctx) const;
@@ -164,7 +164,7 @@ public:
   u64 value = -1;
   u32 got_idx = -1;
   u32 gotplt_idx = -1;
-  u32 gottpoff_idx = -1;
+  u32 gottp_idx = -1;
   u32 tlsgd_idx = -1;
   u32 tlsdesc_idx = -1;
   u32 plt_idx = -1;
@@ -435,7 +435,7 @@ public:
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
-  void add_gottpoff_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsld(Context<E> &ctx);
@@ -449,7 +449,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> got_syms;
-  std::vector<Symbol<E> *> gottpoff_syms;
+  std::vector<Symbol<E> *> gottp_syms;
   std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> tlsdesc_syms;
   u32 tlsld_idx = -1;
@@ -1302,7 +1302,7 @@ struct Context {
   u8 *buf = nullptr;
 
   std::vector<OutputChunk<E> *> chunks;
-  std::atomic_bool has_gottpoff = false;
+  std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
   // Output chunks
@@ -1599,9 +1599,9 @@ inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-inline u64 Symbol<E>::get_gottpoff_addr(Context<E> &ctx) const {
-  assert(gottpoff_idx != -1);
-  return ctx.got->shdr.sh_addr + gottpoff_idx * E::got_size;
+inline u64 Symbol<E>::get_gottp_addr(Context<E> &ctx) const {
+  assert(gottp_idx != -1);
+  return ctx.got->shdr.sh_addr + gottp_idx * E::got_size;
 }
 
 template <typename E>

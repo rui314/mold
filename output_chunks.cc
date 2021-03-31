@@ -481,7 +481,7 @@ static std::vector<typename E::word> create_dynamic_section(Context<E> &ctx) {
   if (!ctx.arg.z_delete)
     flags1 |= DF_1_NODELETE;
 
-  if (ctx.has_gottpoff)
+  if (ctx.has_gottp_rel)
     flags |= DF_STATIC_TLS;
 
   if (flags)
@@ -605,11 +605,11 @@ void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void GotSection<E>::add_gottpoff_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->gottpoff_idx == -1);
-  sym->gottpoff_idx = this->shdr.sh_size / E::got_size;
+void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(sym->gottp_idx == -1);
+  sym->gottp_idx = this->shdr.sh_size / E::got_size;
   this->shdr.sh_size += E::got_size;
-  gottpoff_syms.push_back(sym);
+  gottp_syms.push_back(sym);
 
   if (sym->is_imported)
     ctx.dynsym->add_symbol(ctx, sym);
@@ -651,7 +651,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   n += tlsgd_syms.size() * 2;
   n += tlsdesc_syms.size() * 2;
 
-  for (Symbol<E> *sym : gottpoff_syms)
+  for (Symbol<E> *sym : gottp_syms)
     if (sym->is_imported)
       n++;
 
@@ -706,12 +706,12 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
                       sym->dynsym_idx, 0);
 
-  for (Symbol<E> *sym : gottpoff_syms) {
+  for (Symbol<E> *sym : gottp_syms) {
     if (sym->is_imported)
-      *rel++ = reloc<E>(sym->get_gottpoff_addr(ctx), E::R_TPOFF,
+      *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
                         sym->dynsym_idx, 0);
     else
-      buf[sym->gottpoff_idx] = sym->get_addr(ctx) - ctx.tls_end;
+      buf[sym->gottp_idx] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
