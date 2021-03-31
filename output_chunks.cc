@@ -728,16 +728,22 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, this->shdr.sh_size);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the x86-64 psABI. The second and the third slots are reserved by
   // the psABI.
   buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
-  buf[1] = 0;
-  buf[2] = 0;
 
-  for (Symbol<E> *sym : ctx.plt->symbols)
+  for (Symbol<E> *sym : ctx.plt->symbols) {
+    if (sym->get_type() == STT_GNU_IFUNC) {
+      if (E::rel_type == SHT_REL)
+        buf[sym->gotplt_idx] = sym->input_section->get_addr() + sym->value;
+      continue;
+    }
+
     buf[sym->gotplt_idx] = sym->get_plt_addr(ctx) + 6;
+  }
 }
 
 template <typename E>
@@ -801,8 +807,8 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
     u64 r_offset = sym->get_gotplt_addr(ctx);
-    u64 r_sym = sym->dynsym_idx;
     u32 r_type = 0;
+    u64 r_sym = 0;
     u32 r_addend = 0;
 
     if (sym->get_type() == STT_GNU_IFUNC) {
@@ -810,6 +816,7 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
       r_addend = sym->input_section->get_addr() + sym->value;
     } else {
       r_type = E::R_JUMP_SLOT;
+      r_sym = sym->dynsym_idx;
     }
 
     ElfRel<E> *rel = buf + relplt_idx++;
