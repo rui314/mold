@@ -36,9 +36,6 @@ typedef int64_t i64;
 
 static constexpr i32 SECTOR_SIZE = 512;
 static constexpr i32 PAGE_SIZE = 4096;
-static constexpr i32 GOT_SIZE = 8;
-static constexpr i32 PLT_SIZE = 16;
-static constexpr i32 PLT_GOT_SIZE = 8;
 static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;
@@ -432,7 +429,7 @@ public:
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = GOT_SIZE;
+    this->shdr.sh_addralign = E::got_size;
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -443,7 +440,7 @@ public:
 
   u64 get_tlsld_addr(Context<E> &ctx) const {
     assert(tlsld_idx != -1);
-    return this->shdr.sh_addr + tlsld_idx * GOT_SIZE;
+    return this->shdr.sh_addr + tlsld_idx * E::got_size;
   }
 
   i64 get_reldyn_size(Context<E> &ctx) const;
@@ -463,7 +460,7 @@ public:
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = GOT_SIZE;
+    this->shdr.sh_addralign = E::got_size;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -1590,31 +1587,31 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx) const {
 template <typename E>
 inline u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
   assert(got_idx != -1);
-  return ctx.got->shdr.sh_addr + got_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + got_idx * E::got_size;
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
   assert(gotplt_idx != -1);
-  return ctx.gotplt->shdr.sh_addr + gotplt_idx * GOT_SIZE;
+  return ctx.gotplt->shdr.sh_addr + gotplt_idx * E::got_size;
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_gottpoff_addr(Context<E> &ctx) const {
   assert(gottpoff_idx != -1);
-  return ctx.got->shdr.sh_addr + gottpoff_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + gottpoff_idx * E::got_size;
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_tlsgd_addr(Context<E> &ctx) const {
   assert(tlsgd_idx != -1);
-  return ctx.got->shdr.sh_addr + tlsgd_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + tlsgd_idx * E::got_size;
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
   assert(tlsdesc_idx != -1);
-  return ctx.got->shdr.sh_addr + tlsdesc_idx * GOT_SIZE;
+  return ctx.got->shdr.sh_addr + tlsdesc_idx * E::got_size;
 }
 
 template <typename E>
@@ -1622,8 +1619,8 @@ inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
   assert(plt_idx != -1);
 
   if (got_idx == -1)
-    return ctx.plt->shdr.sh_addr + plt_idx * PLT_SIZE;
-  return ctx.pltgot->shdr.sh_addr + plt_idx * PLT_GOT_SIZE;
+    return ctx.plt->shdr.sh_addr + plt_idx * E::plt_size;
+  return ctx.pltgot->shdr.sh_addr + plt_idx * E::plt_got_size;
 }
 
 template <typename E>

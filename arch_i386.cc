@@ -1,6 +1,10 @@
 #include "mold.h"
 
 template <>
+void PltSection<I386>::copy_buf(Context<I386> &ctx) {
+}
+
+template <>
 std::string rel_to_string<I386>(u32 r_type) {
   switch (r_type) {
   case R_386_NONE: return "R_386_NONE";

@@ -1,6 +1,37 @@
 #include "mold.h"
 
 template <>
+void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  static const u8 plt0[] = {
+    0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
+    0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
+    0x0f, 0x1f, 0x40, 0x00, // nop
+  };
+
+  memcpy(buf, plt0, sizeof(plt0));
+  *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 2;
+  *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 4;
+
+  i64 relplt_idx = 0;
+
+  static const u8 data[] = {
+    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
+    0x68, 0,    0, 0, 0,    // push  $index_in_relplt
+    0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
+  };
+
+  for (Symbol<X86_64> *sym : symbols) {
+    u8 *ent = buf + sym->plt_idx * X86_64::plt_size;
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(u32 *)(ent + 7) = relplt_idx++;
+    *(u32 *)(ent + 12) = this->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
+  }
+}
+
+template <>
 std::string rel_to_string<X86_64>(u32 r_type) {
   switch (r_type) {
   case R_X86_64_NONE: return "R_X86_64_NONE";
@@ -33,9 +64,8 @@ std::string rel_to_string<X86_64>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
-template <typename E>
-static void overflow_check(Context<E> &ctx, InputSection<E> *sec,
-                           Symbol<E> &sym, u64 r_type, u64 val) {
+static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
+                           Symbol<X86_64> &sym, u64 r_type, u64 val) {
   switch (r_type) {
   case R_X86_64_8:
     if (val != (u8)val)

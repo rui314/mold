@@ -354,7 +354,7 @@ struct Elf64Ehdr {
 };
 
 struct Elf32Ehdr {
-  u8 e_ident[16]; 
+  u8 e_ident[16];
   u16 e_type;
   u16 e_machine;
   u32 e_version;
@@ -500,6 +500,9 @@ struct X86_64 {
   static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
   static constexpr u32 e_machine = EM_X86_64;
+  static constexpr i32 got_size = 8;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 plt_got_size = 8;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
 };
@@ -532,6 +535,9 @@ struct I386 {
   static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
   static constexpr u32 e_machine = EM_386;
+  static constexpr i32 got_size = 4;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 plt_got_size = 8;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
 };
