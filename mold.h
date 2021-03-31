@@ -579,7 +579,7 @@ public:
     this->name = ".dynamic";
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
     this->shdr.sh_entsize = sizeof(ElfDyn<E>);
   }
 
@@ -594,7 +594,7 @@ public:
     this->name = ".symtab";
     this->shdr.sh_type = SHT_SYMTAB;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -759,7 +759,7 @@ public:
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;

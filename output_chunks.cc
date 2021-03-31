@@ -119,7 +119,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   };
 
   // Create a PT_PHDR for the program header itself.
-  define(PT_PHDR, PF_R, 8, ctx.phdr);
+  define(PT_PHDR, PF_R, E::wordsize, ctx.phdr);
 
   // Create a PT_INTERP.
   if (ctx.interp)
@@ -545,7 +545,7 @@ OutputSection<E>::OutputSection(std::string_view name, u32 type, u64 flags)
 template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
-  if (name == ".eh_frame" && type == SHT_X86_64_UNWIND)
+  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
     type = SHT_PROGBITS;
 
   name = get_output_name(name);
@@ -789,6 +789,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
+  this->shdr.sh_info = ctx.gotplt->shndx;
 }
 
 template <typename E>
