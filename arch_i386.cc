@@ -1,5 +1,10 @@
 #include "mold.h"
 
+enum {
+  R_TLS_GOTIE = R_END + 1,
+  R_TLS_LE,
+};
+
 template <>
 void PltSection<I386>::copy_buf(Context<I386> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -137,10 +142,10 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     case R_GOTPCREL:
       write(G + GOT + A - P);
       break;
-    case R_GOTTP:
+    case R_TLS_GOTIE:
       write(sym.get_gottp_addr(ctx) + A);
       break;
-    case R_NTPOFF:
+    case R_TLS_LE:
       write(sym.get_gottp_addr(ctx) + A - GOT);
       break;
     case R_SIZE:
@@ -296,11 +301,11 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
                  << rel_to_string<I386>(rel.r_type);
     case R_386_TLS_GOTIE:
       sym.flags |= NEEDS_GOTTP;
-      rel_types[i] = R_GOTTP;
+      rel_types[i] = R_TLS_GOTIE;
       break;
     case R_386_TLS_LE:
       sym.flags |= NEEDS_GOTTP;
-      rel_types[i] = R_NTPOFF;
+      rel_types[i] = R_TLS_LE;
       break;
     case R_386_TLS_GD:
     case R_386_TLS_LDM:

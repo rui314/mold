@@ -89,7 +89,7 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
 
 template <typename E>
 void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
-                               RelType rel_type, i64 i) {
+                               u16 rel_type, i64 i) {
   const ElfRel<E> &rel = rels[i];
   Symbol<E> &sym = *file.symbols[rel.r_sym];
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);

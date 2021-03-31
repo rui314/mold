@@ -193,7 +193,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 // input_sections.cc
 //
 
-enum RelType : u16 {
+enum {
   R_NONE = 1,
   R_ABS,
   R_DYN,
@@ -203,8 +203,6 @@ enum RelType : u16 {
   R_GOTOFF,
   R_GOTPC,
   R_GOTPCREL,
-  R_X86_64_GOTPCRELX_RELAX,
-  R_X86_64_REX_GOTPCRELX_RELAX,
   R_TLSGD,
   R_TLSGD_RELAX_LE,
   R_TLSLD,
@@ -212,14 +210,13 @@ enum RelType : u16 {
   R_DTPOFF,
   R_DTPOFF_RELAX,
   R_TPOFF,
-  R_GOTTP,
   R_GOTTPOFF,
   R_GOTTPOFF_RELAX,
-  R_NTPOFF,
   R_GOTPC_TLSDESC,
   R_GOTPC_TLSDESC_RELAX_LE,
   R_SIZE,
   R_TLSDESC_CALL_RELAX,
+  R_END,
 };
 
 template <typename E>
@@ -302,7 +299,7 @@ public:
   std::span<ElfRel<E>> rels;
   std::vector<bool> has_fragments;
   std::vector<SectionFragmentRef<E>> rel_fragments;
-  std::vector<RelType> rel_types;
+  std::vector<u16> rel_types;
   std::span<FdeRecord<E>> fdes;
 
   u32 offset = -1;
@@ -326,7 +323,7 @@ public:
 private:
   typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
 
-  void dispatch(Context<E> &ctx, Action table[3][4], RelType rel_type, i64 i);
+  void dispatch(Context<E> &ctx, Action table[3][4], u16 rel_type, i64 i);
 };
 
 //
@@ -561,6 +558,7 @@ DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_size = 1;
   }
 
   i64 add_string(std::string_view str);
