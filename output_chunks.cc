@@ -868,7 +868,7 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
     ctx.gnu_hash->symoffset = first_global - vec.begin();
 
     tbb::parallel_for_each(first_global, vec.end(), [&](T &x) {
-      x.hash = gnu_hash(x.sym->name) % ctx.gnu_hash->num_buckets;
+      x.hash = djb_hash(x.sym->name) % ctx.gnu_hash->num_buckets;
     });
 
     tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
@@ -1006,12 +1006,12 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   std::vector<u32> hashes(symbols.size());
   for (i64 i = 0; i < symbols.size(); i++)
-    hashes[i] = gnu_hash(symbols[i]->name);
+    hashes[i] = djb_hash(symbols[i]->name);
 
   // Write a bloom filter
-  u64 *bloom = (u64 *)(base + HEADER_SIZE);
+  typename E::word *bloom = (typename E::word *)(base + HEADER_SIZE);
   for (i64 hash : hashes) {
-    i64 idx = (hash / 64) % num_bloom;
+    i64 idx = (hash / ELFCLASS_BITS) % num_bloom;
     bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
     bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % ELFCLASS_BITS);
   }

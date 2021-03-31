@@ -1684,7 +1684,7 @@ inline u32 elf_hash(std::string_view name) {
   return h;
 }
 
-inline u32 gnu_hash(std::string_view name) {
+inline u32 djb_hash(std::string_view name) {
   u32 h = 5381;
   for (u8 c : name)
     h = (h << 5) + h + c;
