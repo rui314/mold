@@ -737,8 +737,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols)
-    if (sym->gotplt_idx != -1)
-      buf[sym->gotplt_idx] = sym->get_plt_addr(ctx) + 6;
+    buf[sym->gotplt_idx] = sym->get_plt_addr(ctx) + 6;
 }
 
 template <typename E>
