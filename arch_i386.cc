@@ -47,7 +47,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
       *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx);
     }
 
-    *(u32 *)(ent + 7) = relplt_idx++;
+    *(u32 *)(ent + 7) = relplt_idx++ * sizeof(ElfRel<I386>);
     *(u32 *)(ent + 12) = this->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
   }
 }
