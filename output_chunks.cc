@@ -985,10 +985,10 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
 
   i64 num_symbols = ctx.dynsym->symbols.size() - symoffset;
 
-  this->shdr.sh_size = HEADER_SIZE;                    // Header
-  this->shdr.sh_size += num_bloom * ELFCLASS_BITS / 8; // Bloom filter
-  this->shdr.sh_size += num_buckets * 4;               // Hash buckets
-  this->shdr.sh_size += num_symbols * 4;               // Hash values
+  this->shdr.sh_size = HEADER_SIZE;              // Header
+  this->shdr.sh_size += num_bloom * E::wordsize; // Bloom filter
+  this->shdr.sh_size += num_buckets * 4;         // Hash buckets
+  this->shdr.sh_size += num_symbols * 4;         // Hash values
 }
 
 template <typename E>

@@ -506,7 +506,7 @@ public:
     this->shdr.sh_type = E::rel_type;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -521,7 +521,7 @@ public:
     this->shdr.sh_type = E::rel_type;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -609,7 +609,7 @@ public:
     this->shdr.sh_type = SHT_DYNSYM;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -642,7 +642,7 @@ public:
     this->name = ".gnu.hash";
     this->shdr.sh_type = SHT_GNU_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -651,7 +651,7 @@ public:
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
   static constexpr i64 BLOOM_SHIFT = 26;
-  static constexpr i64 ELFCLASS_BITS = 64;
+  static constexpr i64 ELFCLASS_BITS = E::wordsize * 8;
 
   u32 num_buckets = -1;
   u32 symoffset = -1;
@@ -695,7 +695,7 @@ public:
     this->name = ".eh_frame";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void construct(Context<E> &ctx);
