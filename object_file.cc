@@ -1038,12 +1038,12 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
   this->is_alive = true;
   this->priority = 1;
 
-  auto add = [&](std::string_view name, u8 visibility = STV_DEFAULT) {
+  auto add = [&](std::string_view name) {
     ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = visibility;
+    esym.st_visibility = STV_HIDDEN;
     esyms->push_back(esym);
 
     Symbol<E> *sym = Symbol<E>::intern(ctx, name);
@@ -1051,29 +1051,27 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
     return sym;
   };
 
-  ctx.__ehdr_start = add("__ehdr_start", STV_HIDDEN);
-  ctx.__init_array_start = add("__init_array_start", STV_HIDDEN);
-  ctx.__init_array_end = add("__init_array_end", STV_HIDDEN);
-  ctx.__fini_array_start = add("__fini_array_start", STV_HIDDEN);
-  ctx.__fini_array_end = add("__fini_array_end", STV_HIDDEN);
-  ctx.__preinit_array_start = add("__preinit_array_start", STV_HIDDEN);
-  ctx.__preinit_array_end = add("__preinit_array_end", STV_HIDDEN);
-  ctx._DYNAMIC = add("_DYNAMIC", STV_HIDDEN);
-  ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_", STV_HIDDEN);
-  ctx.__bss_start = add("__bss_start", STV_HIDDEN);
-  ctx._end = add("_end", STV_HIDDEN);
-  ctx._etext = add("_etext", STV_HIDDEN);
-  ctx._edata = add("_edata", STV_HIDDEN);
-  ctx.__executable_start = add("__executable_start", STV_HIDDEN);
+  ctx.__ehdr_start = add("__ehdr_start");
+  ctx.__init_array_start = add("__init_array_start");
+  ctx.__init_array_end = add("__init_array_end");
+  ctx.__fini_array_start = add("__fini_array_start");
+  ctx.__fini_array_end = add("__fini_array_end");
+  ctx.__preinit_array_start = add("__preinit_array_start");
+  ctx.__preinit_array_end = add("__preinit_array_end");
+  ctx._DYNAMIC = add("_DYNAMIC");
+  ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
+  ctx.__bss_start = add("__bss_start");
+  ctx._end = add("_end");
+  ctx._etext = add("_etext");
+  ctx._edata = add("_edata");
+  ctx.__executable_start = add("__executable_start");
 
   bool is_rel = (E::rel_type == SHT_REL);
-  ctx.__rel_iplt_start = add(
-    is_rel ? "__rel_iplt_start" : "__rela_iplt_start", STV_HIDDEN);
-  ctx.__rel_iplt_end = add(
-    is_rel ? "__rel_iplt_end" : "__rela_iplt_end", STV_HIDDEN);
+  ctx.__rel_iplt_start = add(is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
+  ctx.__rel_iplt_end = add(is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
 
   if (ctx.arg.eh_frame_hdr)
-    ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);
+    ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
 
   for (OutputChunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
@@ -1081,8 +1079,8 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
 
     auto *start = new std::string("__start_" + std::string(chunk->name));
     auto *stop = new std::string("__stop_" + std::string(chunk->name));
-    add(*start, STV_HIDDEN);
-    add(*stop, STV_HIDDEN);
+    add(*start);
+    add(*stop);
   }
 
   elf_syms = *esyms;
