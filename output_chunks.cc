@@ -726,7 +726,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
+  typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the x86-64 psABI. The second and the third slots are reserved by

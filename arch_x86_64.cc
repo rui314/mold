@@ -4,6 +4,7 @@ template <>
 void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
+  // Write PLT header
   static const u8 plt0[] = {
     0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
@@ -14,6 +15,7 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 2;
   *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 4;
 
+  // Write PLT entries
   i64 relplt_idx = 0;
 
   static const u8 data[] = {

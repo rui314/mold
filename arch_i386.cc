@@ -2,6 +2,54 @@
 
 template <>
 void PltSection<I386>::copy_buf(Context<I386> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  // Write PLT header
+  if (ctx.arg.pic) {
+    static const u8 plt0[] = {
+      0xff, 0xb3, 0x04, 0, 0, 0, // pushl 4(%ebx)
+      0xff, 0xa3, 0x08, 0, 0, 0, // jmp *8(%ebx)
+      0x90, 0x90, 0x90, 0x90,    // nop
+    };
+    memcpy(buf, plt0, sizeof(plt0));
+  } else {
+    static const u8 plt0[] = {
+      0xff, 0x35, 0, 0, 0, 0, // pushl (GOTPLT+4)
+      0xff, 0x25, 0, 0, 0, 0, // jmp *(GOTPLT+8)
+      0x90, 0x90, 0x90, 0x90, // nop
+    };
+    memcpy(buf, plt0, sizeof(plt0));
+    *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 4;
+    *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 8;
+  }
+
+  // Write PLT entries
+  i64 relplt_idx = 0;
+
+  for (Symbol<I386> *sym : symbols) {
+    u8 *ent = buf + sym->plt_idx * I386::plt_size;
+
+    if (ctx.arg.pic) {
+      static const uint8_t data[] = {
+        0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
+        0x68, 0,    0, 0, 0,    // pushl $reloc_offset
+        0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+      };
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx);
+    } else {
+      static const uint8_t data[] = {
+        0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+        0x68, 0,    0, 0, 0,    // pushl $reloc_offset
+        0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+      };
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx);
+    }
+
+    *(u32 *)(ent + 7) = relplt_idx++;
+    *(u32 *)(ent + 12) = this->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
+  }
 }
 
 template <>
