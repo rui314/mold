@@ -19,8 +19,8 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
       0x90, 0x90, 0x90, 0x90, // nop
     };
     memcpy(buf, plt0, sizeof(plt0));
-    *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 4;
-    *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 8;
+    *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr + 4;
+    *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr + 8;
   }
 
   // Write PLT entries

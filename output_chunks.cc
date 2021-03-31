@@ -680,7 +680,7 @@ ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
-  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
+  typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
