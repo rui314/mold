@@ -71,6 +71,8 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   case R_386_PLT32:
   case R_386_GOTOFF:
   case R_386_GOTPC:
+  case R_386_TLS_GOTIE:
+  case R_386_TLS_LE:
   case R_386_SIZE32:
     *(u32 *)loc += val;
     return;
@@ -134,6 +136,12 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       break;
     case R_GOTPCREL:
       write(G + GOT + A - P);
+      break;
+    case R_GOTTP:
+      write(sym.get_gottpoff_addr(ctx) + A);
+      break;
+    case R_NTPOFF:
+      write(sym.get_gottpoff_addr(ctx) + A - GOT);
       break;
     case R_SIZE:
       write(sym.esym->st_size + A);
@@ -283,34 +291,31 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPC;
       break;
-    case R_386_TLS_TPOFF:
     case R_386_TLS_IE:
+      Error(ctx) << "TLS reloc is not supported yet: "
+                 << rel_to_string<I386>(rel.r_type);
     case R_386_TLS_GOTIE:
+      sym.flags |= NEEDS_GOTTPOFF;
+      rel_types[i] = R_GOTTP;
+      break;
     case R_386_TLS_LE:
+      sym.flags |= NEEDS_GOTTPOFF;
+      rel_types[i] = R_NTPOFF;
+      break;
     case R_386_TLS_GD:
     case R_386_TLS_LDM:
-    case R_386_TLS_GD_32:
-    case R_386_TLS_GD_PUSH:
-    case R_386_TLS_GD_CALL:
-    case R_386_TLS_GD_POP:
-    case R_386_TLS_LDM_32:
-    case R_386_TLS_LDM_PUSH:
-    case R_386_TLS_LDM_CALL:
-    case R_386_TLS_LDM_POP:
     case R_386_TLS_LDO_32:
-    case R_386_TLS_IE_32:
     case R_386_TLS_LE_32:
-    case R_386_TLS_DTPMOD32:
-    case R_386_TLS_DTPOFF32:
-    case R_386_TLS_TPOFF32:
-      Fatal(ctx) << "TLS reloc is not supported yet";
+      Error(ctx) << "TLS reloc is not supported yet: "
+                 << rel_to_string<I386>(rel.r_type);
     case R_386_SIZE32:
       rel_types[i] = R_SIZE;
       break;
     case R_386_TLS_GOTDESC:
     case R_386_TLS_DESC_CALL:
     case R_386_TLS_DESC:
-      Fatal(ctx) << "TLS reloc is not supported yet";
+      Error(ctx) << "tlsdesc reloc is not supported yet: "
+                 << rel_to_string<I386>(rel.r_type);
     }
   }
 }
