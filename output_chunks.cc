@@ -747,6 +747,11 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+void GotIpltSection<E>::copy_buf(Context<E> &ctx) {
+  // TODO
+}
+
+template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->plt_idx == -1);
   assert(sym->got_idx == -1);
@@ -764,6 +769,16 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   ctx.gotplt->shdr.sh_size += E::got_size;
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
+}
+
+template <typename E>
+void IpltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  // TODO
+}
+
+template <typename E>
+void IpltSection<E>::copy_buf(Context<E> &ctx) {
+  // TODO
 }
 
 template <typename E>
@@ -822,6 +837,16 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
     ElfRel<E> *rel = buf + relplt_idx++;
     *rel = reloc<E>(r_offset, r_type, r_sym, r_addend);
   }
+}
+
+template <typename E>
+void RelIpltSection<E>::update_shdr(Context<E> &ctx) {
+  // TODO
+}
+
+template <typename E>
+void RelIpltSection<E>::copy_buf(Context<E> &ctx) {
+  // TODO
 }
 
 template <typename E>
@@ -1483,9 +1508,12 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   template class OutputSection<E>;                              \
   template class GotSection<E>;                                 \
   template class GotPltSection<E>;                              \
+  template class GotIpltSection<E>;                             \
   template class PltSection<E>;                                 \
+  template class IpltSection<E>;                                \
   template class PltGotSection<E>;                              \
   template class RelPltSection<E>;                              \
+  template class RelIpltSection<E>;                             \
   template class RelDynSection<E>;                              \
   template class StrtabSection<E>;                              \
   template class ShstrtabSection<E>;                            \

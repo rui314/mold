@@ -114,12 +114,13 @@ struct SectionFragmentRef {
 enum {
   NEEDS_GOT      = 1 << 0,
   NEEDS_PLT      = 1 << 1,
-  NEEDS_GOTTP = 1 << 2,
-  NEEDS_TLSGD    = 1 << 3,
-  NEEDS_TLSLD    = 1 << 4,
-  NEEDS_COPYREL  = 1 << 5,
-  NEEDS_DYNSYM   = 1 << 6,
-  NEEDS_TLSDESC  = 1 << 7,
+  NEEDS_IPLT     = 1 << 2,
+  NEEDS_GOTTP    = 1 << 3,
+  NEEDS_TLSGD    = 1 << 4,
+  NEEDS_TLSLD    = 1 << 5,
+  NEEDS_COPYREL  = 1 << 6,
+  NEEDS_DYNSYM   = 1 << 7,
+  NEEDS_TLSDESC  = 1 << 8,
 };
 
 template <typename E>
@@ -173,8 +174,8 @@ public:
   u16 ver_idx = 0;
 
   tbb::spin_mutex mu;
+  std::atomic_uint16_t flags = 0;
   std::atomic_uint8_t visibility = STV_DEFAULT;
-  std::atomic_uint8_t flags = 0;
 
   u8 is_lazy : 1 = false;
   u8 is_weak : 1 = false;
@@ -466,10 +467,39 @@ public:
 };
 
 template <typename E>
+class GotIpltSection : public OutputChunk<E> {
+public:
+  GotIpltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".got.iplt";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = E::got_size;
+  }
+
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
 class PltSection : public OutputChunk<E> {
 public:
   PltSection() : OutputChunk<E>(this->SYNTHETIC) {
     this->name = ".plt";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 16;
+  }
+
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void copy_buf(Context<E> &ctx) override;
+
+  std::vector<Symbol<E> *> symbols;
+};
+
+template <typename E>
+class IpltSection : public OutputChunk<E> {
+public:
+  IpltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".iplt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     this->shdr.sh_addralign = 16;
@@ -525,6 +555,21 @@ public:
 
   void update_shdr(Context<E> &ctx) override;
   void sort(Context<E> &ctx);
+};
+
+template <typename E>
+class RelIpltSection : public OutputChunk<E> {
+public:
+  RelIpltSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = (E::rel_type == SHT_REL) ? ".rel.iplt" : ".rela.iplt";
+    this->shdr.sh_type = E::rel_type;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = sizeof(ElfRel<E>);
+    this->shdr.sh_addralign = E::wordsize;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
 template <typename E>
@@ -1310,7 +1355,9 @@ struct Context {
   InterpSection<E> *interp = nullptr;
   GotSection<E> *got = nullptr;
   GotPltSection<E> *gotplt = nullptr;
+  GotIpltSection<E> *gotiplt = nullptr;
   RelPltSection<E> *relplt = nullptr;
+  RelIpltSection<E> *reliplt = nullptr;
   RelDynSection<E> *reldyn = nullptr;
   DynamicSection<E> *dynamic = nullptr;
   StrtabSection<E> *strtab = nullptr;
@@ -1319,6 +1366,7 @@ struct Context {
   GnuHashSection<E> *gnu_hash = nullptr;
   ShstrtabSection<E> *shstrtab = nullptr;
   PltSection<E> *plt = nullptr;
+  IpltSection<E> *iplt = nullptr;
   PltGotSection<E> *pltgot = nullptr;
   SymtabSection<E> *symtab = nullptr;
   DynsymSection<E> *dynsym = nullptr;

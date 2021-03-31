@@ -33,10 +33,13 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.shdr = new OutputShdr<E>);
   add(ctx.got = new GotSection<E>);
   add(ctx.gotplt = new GotPltSection<E>);
+  add(ctx.gotiplt = new GotIpltSection<E>);
   add(ctx.relplt = new RelPltSection<E>);
+  add(ctx.reliplt = new RelIpltSection<E>);
   add(ctx.strtab = new StrtabSection<E>);
   add(ctx.shstrtab = new ShstrtabSection<E>);
   add(ctx.plt = new PltSection<E>);
+  add(ctx.iplt = new IpltSection<E>);
   add(ctx.pltgot = new PltGotSection<E>);
   add(ctx.symtab = new SymtabSection<E>);
   add(ctx.dynsym = new DynsymSection<E>);
