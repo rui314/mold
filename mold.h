@@ -1337,8 +1337,8 @@ struct Context {
   // Linker-synthesized symbols
   Symbol<E> *__bss_start = nullptr;
   Symbol<E> *__ehdr_start = nullptr;
-  Symbol<E> *__rela_iplt_start = nullptr;
-  Symbol<E> *__rela_iplt_end = nullptr;
+  Symbol<E> *__rel_iplt_start = nullptr;
+  Symbol<E> *__rel_iplt_end = nullptr;
   Symbol<E> *__init_array_start = nullptr;
   Symbol<E> *__init_array_end = nullptr;
   Symbol<E> *__fini_array_start = nullptr;

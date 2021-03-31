@@ -1052,8 +1052,6 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
   };
 
   ctx.__ehdr_start = add("__ehdr_start", STV_HIDDEN);
-  ctx.__rela_iplt_start = add("__rela_iplt_start", STV_HIDDEN);
-  ctx.__rela_iplt_end = add("__rela_iplt_end", STV_HIDDEN);
   ctx.__init_array_start = add("__init_array_start", STV_HIDDEN);
   ctx.__init_array_end = add("__init_array_end", STV_HIDDEN);
   ctx.__fini_array_start = add("__fini_array_start", STV_HIDDEN);
@@ -1067,6 +1065,12 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
   ctx._etext = add("_etext", STV_HIDDEN);
   ctx._edata = add("_edata", STV_HIDDEN);
   ctx.__executable_start = add("__executable_start", STV_HIDDEN);
+
+  bool is_rel = (E::rel_type == SHT_REL);
+  ctx.__rel_iplt_start = add(
+    is_rel ? "__rel_iplt_start" : "__rela_iplt_start", STV_HIDDEN);
+  ctx.__rel_iplt_end = add(
+    is_rel ? "__rel_iplt_end" : "__rela_iplt_end", STV_HIDDEN);
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR", STV_HIDDEN);

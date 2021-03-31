@@ -143,10 +143,10 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write(G + GOT + A - P);
       break;
     case R_TLS_GOTIE:
-      write(sym.get_gottp_addr(ctx) + A);
+      write(sym.get_gottp_addr(ctx) + A - GOT);
       break;
     case R_TLS_LE:
-      write(sym.get_gottp_addr(ctx) + A - GOT);
+      write(S + A - ctx.tls_end);
       break;
     case R_SIZE:
       write(sym.esym->st_size + A);

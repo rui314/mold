@@ -128,6 +128,9 @@ static constexpr u32 EI_VERSION = 6;
 static constexpr u32 EI_OSABI = 7;
 static constexpr u32 EI_ABIVERSION = 8;
 
+static constexpr u32 ELFOSABI_NONE = 0;
+static constexpr u32 ELFOSABI_GNU = 3;
+
 static constexpr u32 DT_NULL = 0;
 static constexpr u32 DT_NEEDED = 1;
 static constexpr u32 DT_PLTRELSZ = 2;
