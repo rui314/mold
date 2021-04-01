@@ -232,16 +232,14 @@ public:
   std::string_view contents;
 
   std::span<ElfRel<E>> rels;
-  std::vector<bool> has_fragments;
+  std::vector<u8> has_fragments;
   std::vector<SectionFragmentRef<E>> rel_fragments;
-  std::vector<u16> rel_types;
+  std::vector<u8> rel_types;
   std::span<FdeRecord<E>> fdes;
 
   u32 offset = -1;
   u32 section_idx = -1;
   u32 reldyn_offset = 0;
-
-  bool is_ehframe = false;
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
@@ -254,6 +252,8 @@ public:
   u32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
+
+  bool is_ehframe = false;
 
 private:
   typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
