@@ -1483,11 +1483,11 @@ public:
     return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
   }
 
-  bool has_plt(Context <E> &ctx) const {
+  bool has_plt(Context<E> &ctx) const {
     return get_plt_idx(ctx) != -1 || get_pltgot_idx(ctx) != -1;
   }
 
-  bool has_got(Context <E> &ctx) const {
+  bool has_got(Context<E> &ctx) const {
     return get_got_idx(ctx) != -1;
   }
 
