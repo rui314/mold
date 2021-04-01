@@ -221,6 +221,7 @@ template <>
 void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
   i64 ref_idx = 0;
   ElfRel<X86_64> *dynrel = nullptr;
+  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
 
   if (ctx.reldyn)
     dynrel = (ElfRel<X86_64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -377,6 +378,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 // scan_relocations.
 template <>
 void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
+  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
   i64 ref_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -436,6 +438,7 @@ template <>
 void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
+  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {

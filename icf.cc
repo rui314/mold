@@ -128,8 +128,8 @@ static Digest digest_final(SHA256_CTX &sha) {
 }
 
 template <typename E>
-static bool is_leaf(InputSection<E> &isec) {
-  if (!isec.rels.empty())
+static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
+  if (!isec.get_rels(ctx).empty())
     return false;
 
   for (FdeRecord<E> &fde : isec.fdes)
@@ -193,7 +193,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
         continue;
       }
 
-      if (is_leaf(*isec)) {
+      if (is_leaf(ctx, *isec)) {
         leaf++;
         isec->icf_leaf = true;
         auto [it, inserted] = map.insert({isec, isec});
@@ -218,7 +218,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 }
 
 template <typename E>
-static Digest compute_digest(InputSection<E> &isec) {
+static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   SHA256_CTX sha;
   SHA256_Init(&sha);
 
@@ -259,7 +259,7 @@ static Digest compute_digest(InputSection<E> &isec) {
   hash_string(isec.contents);
   hash(isec.shdr.sh_flags);
   hash(isec.fdes.size());
-  hash(isec.rels.size());
+  hash(isec.get_rels(ctx).size());
 
   for (FdeRecord<E> &fde : isec.fdes) {
     hash(isec.file.cies[fde.cie_idx].icf_idx);
@@ -280,8 +280,8 @@ static Digest compute_digest(InputSection<E> &isec) {
 
   i64 ref_idx = 0;
 
-  for (i64 i = 0; i < isec.rels.size(); i++) {
-    ElfRel<E> &rel = isec.rels[i];
+  for (i64 i = 0; i < isec.get_rels(ctx).size(); i++) {
+    ElfRel<E> &rel = isec.get_rels(ctx)[i];
     hash(rel.r_offset);
     hash(rel.r_type);
     hash(isec.get_addend(rel));
@@ -336,18 +336,19 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
 
 template <typename E>
 static std::vector<Digest>
-compute_digests(std::span<InputSection<E> *> sections) {
+compute_digests(Context<E> &ctx, std::span<InputSection<E> *> sections) {
   Timer t("compute_digests");
 
   std::vector<Digest> digests(sections.size());
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    digests[i] = compute_digest(*sections[i]);
+    digests[i] = compute_digest(ctx, *sections[i]);
   });
   return digests;
 }
 
 template <typename E>
-static void gather_edges(std::span<InputSection<E> *> sections,
+static void gather_edges(Context<E> &ctx,
+                         std::span<InputSection<E> *> sections,
                          std::vector<u32> &edges,
                          std::vector<u32> &edge_indices) {
   Timer t("gather_edges");
@@ -359,9 +360,9 @@ static void gather_edges(std::span<InputSection<E> *> sections,
     InputSection<E> &isec = *sections[i];
     assert(isec.icf_eligible);
 
-    for (i64 j = 0; j < isec.rels.size(); j++) {
+    for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
       if (!isec.has_fragments[j]) {
-        ElfRel<E> &rel = isec.rels[j];
+        ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
           num_edges[i]++;
@@ -378,9 +379,9 @@ static void gather_edges(std::span<InputSection<E> *> sections,
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
 
-    for (i64 j = 0; j < isec.rels.size(); j++) {
+    for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
       if (!isec.has_fragments[j]) {
-        ElfRel<E> &rel = isec.rels[j];
+        ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
           edges[idx++] = sym.input_section->icf_idx;
@@ -489,13 +490,13 @@ void icf_sections(Context<E> &ctx) {
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
   std::vector<std::vector<Digest>> digests(3);
-  digests[0] = compute_digests<E>(sections);
+  digests[0] = compute_digests<E>(ctx, sections);
   digests[1].resize(digests[0].size());
   digests[2] = digests[0];
 
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
-  gather_edges<E>(sections, edges, edge_indices);
+  gather_edges<E>(ctx, sections, edges, edge_indices);
 
   bool slot = 0;
 

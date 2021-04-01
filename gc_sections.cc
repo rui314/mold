@@ -27,7 +27,8 @@ static bool mark_section(InputSection<E> *isec) {
 }
 
 template <typename E>
-static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
+static void visit(Context<E> &ctx, InputSection<E> *isec,
+                  Feeder<E> &feeder, i64 depth) {
   assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
@@ -45,7 +46,7 @@ static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
         if (mark_section(isec))
           feeder.add(isec);
 
-  for (ElfRel<E> &rel : isec->rels) {
+  for (ElfRel<E> &rel : isec->get_rels(ctx)) {
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
     // Symbol can refer either a section fragment or an input section.
@@ -61,7 +62,7 @@ static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
     // Mark a section alive. For better performacne, we don't call
     // `feeder.add` too often.
     if (depth < 3)
-      visit(sym.input_section, feeder, depth + 1);
+      visit(ctx, sym.input_section, feeder, depth + 1);
     else
       feeder.add(sym.input_section);
   }
@@ -132,11 +133,12 @@ collect_root_set(Context<E> &ctx) {
 
 // Mark all reachable sections
 template <typename E>
-static void mark(tbb::concurrent_vector<InputSection<E> *> &roots) {
+static void mark(Context<E> &ctx,
+                 tbb::concurrent_vector<InputSection<E> *> &roots) {
   Timer t("mark");
 
   tbb::parallel_do(roots, [&](InputSection<E> *isec, Feeder<E> &feeder) {
-    visit(isec, feeder, 0);
+    visit(ctx, isec, feeder, 0);
   });
 }
 
@@ -180,7 +182,7 @@ void gc_sections(Context<E> &ctx) {
   mark_nonalloc_fragments(ctx);
 
   tbb::concurrent_vector<InputSection<E> *> roots = collect_root_set(ctx);
-  mark(roots);
+  mark(ctx, roots);
   sweep(ctx);
 }
 

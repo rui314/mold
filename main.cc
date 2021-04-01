@@ -253,9 +253,9 @@ static void show_stats(Context<E> &ctx) {
       static Counter nonalloc("reloc_nonalloc");
 
       if (sec->shdr.sh_flags & SHF_ALLOC)
-        alloc += sec->rels.size();
+        alloc += sec->get_rels(ctx).size();
       else
-        nonalloc += sec->rels.size();
+        nonalloc += sec->get_rels(ctx).size();
     }
   }
 
@@ -273,12 +273,6 @@ static void show_stats(Context<E> &ctx) {
 template <typename E>
 int do_main(int argc, char **argv) {
   Context<E> ctx;
-
-#if 0
-  SyncOut(ctx) << "symbol=" << sizeof(Symbol<E>)
-               << " input_section=" << sizeof(InputSection<E>)
-               << " vec=" << sizeof(std::span<ElfRel<E>>);
-#endif
 
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)

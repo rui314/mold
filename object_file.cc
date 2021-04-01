@@ -215,14 +215,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
               << (u32)shdr.sh_info;
 
     if (InputSection<E> *target = sections[shdr.sh_info]) {
-      target->rels = this->template get_data<ElfRel<E>>(ctx, shdr);
-
       assert(target->relsec_idx == -1);
       target->relsec_idx = i;
 
-      target->has_fragments.resize(target->rels.size());
+      i64 size = shdr.sh_size / sizeof(ElfRel<E>);
+      target->has_fragments.resize(size);
       if (target->shdr.sh_flags & SHF_ALLOC)
-        target->rel_types.resize(target->rels.size());
+        target->rel_types.resize(size);
     }
   }
 }

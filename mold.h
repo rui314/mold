@@ -240,7 +240,6 @@ public:
   std::string_view name;
   std::string_view contents;
 
-  std::span<ElfRel<E>> rels;
   std::vector<u8> has_fragments;
   std::vector<SectionFragmentRef<E>> rel_fragments;
   std::vector<u8> rel_types;
