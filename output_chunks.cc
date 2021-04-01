@@ -28,7 +28,6 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
-  hdr.e_ident[EI_OSABI] = ELFOSABI_GNU;
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
