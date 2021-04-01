@@ -205,7 +205,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   }
 
   // Attach relocation sections to their target sections.
-  for (const ElfShdr<E> &shdr : this->elf_sections) {
+  for (i64 i = 0; i < this->elf_sections.size(); i++) {
+    const ElfShdr<E> &shdr = this->elf_sections[i];
     if (shdr.sh_type != E::rel_type)
       continue;
 
@@ -215,6 +216,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
     if (InputSection<E> *target = sections[shdr.sh_info]) {
       target->rels = this->template get_data<ElfRel<E>>(ctx, shdr);
+
+      assert(target->relsec_idx == -1);
+      target->relsec_idx = i;
+
       target->has_fragments.resize(target->rels.size());
       if (target->shdr.sh_flags & SHF_ALLOC)
         target->rel_types.resize(target->rels.size());
@@ -279,7 +284,7 @@ bool is_valid_ehframe_reloc<I386>(u32 type) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRel<E>> rels = isec.rels;
+  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
   std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
@@ -561,11 +566,15 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
 
   // Initialize rel_fragments
   for (InputSection<E> *isec : sections) {
-    if (!isec || isec->rels.empty())
+    if (!isec)
       continue;
 
-    for (i64 i = 0; i < isec->rels.size(); i++) {
-      const ElfRel<E> &rel = isec->rels[i];
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    if (rels.empty())
+      continue;
+
+    for (i64 i = 0; i < rels.size(); i++) {
+      const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;

@@ -231,6 +231,7 @@ public:
   inline i64 get_priority() const;
   inline u64 get_addr() const;
   inline i64 get_addend(const ElfRel<E> &rel) const;
+  inline std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
 
   ObjectFile<E> &file;
   const ElfShdr<E> &shdr;
@@ -247,6 +248,7 @@ public:
 
   u32 offset = -1;
   u32 section_idx = -1;
+  u32 relsec_idx = -1;
   u32 reldyn_offset = 0;
 
   // For COMDAT de-duplication and garbage collection
@@ -809,7 +811,6 @@ public:
   u32 priority;
   std::atomic_bool is_alive = false;
 
-protected:
   template<typename T> std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
   template<typename T> std::span<T> get_data(Context<E> &ctx, i64 idx);
   ElfShdr<E> *find_section(i64 type);
@@ -1736,6 +1737,13 @@ template <>
 inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
   u8 *buf = (u8 *)contents.data();
   return *(i32 *)(buf + rel.r_offset);
+}
+
+template <typename E>
+inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
+  if (relsec_idx == -1)
+    return {};
+  return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
 }
 
 template <typename E>

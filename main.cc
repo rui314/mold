@@ -274,6 +274,12 @@ template <typename E>
 int do_main(int argc, char **argv) {
   Context<E> ctx;
 
+#if 0
+  SyncOut(ctx) << "symbol=" << sizeof(Symbol<E>)
+               << " input_section=" << sizeof(InputSection<E>)
+               << " vec=" << sizeof(std::span<ElfRel<E>>);
+#endif
+
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
