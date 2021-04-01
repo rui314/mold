@@ -172,17 +172,19 @@ template <typename E>
 struct FdeRecord {
   FdeRecord(std::string_view contents, std::vector<EhReloc<E>> &&rels,
             u32 cie_idx)
-    : contents(contents), rels(std::move(rels)), cie_idx(cie_idx) {}
+    : contents(contents), rels(std::move(rels)), cie_idx(cie_idx) {
+    assert(this->cie_idx == cie_idx);
+  }
 
   FdeRecord(const FdeRecord &&other)
     : contents(other.contents), rels(std::move(other.rels)),
-      cie_idx(other.cie_idx), offset(other.offset),
+      offset(other.offset), cie_idx(other.cie_idx),
       is_alive(other.is_alive.load()) {}
 
   std::string_view contents;
   std::vector<EhReloc<E>> rels;
-  u32 cie_idx = -1;
   u32 offset = -1;
+  u16 cie_idx = -1;
   std::atomic_bool is_alive = true;
 };
 
