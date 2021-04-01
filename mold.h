@@ -887,7 +887,7 @@ public:
   SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx);
-  std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
+  std::span<Symbol<E> *> find_aliases(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
   std::string_view soname;

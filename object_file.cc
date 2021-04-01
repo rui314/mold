@@ -1168,6 +1168,29 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     }
   }
 
+  // Sort symbols by value.
+  std::vector<i32> indices(this->symbols.size());
+  for (i64 i = 0; i < indices.size(); i++)
+    indices[i] = i;
+
+  sort(indices.begin(), indices.end(), [&](i32 i, i32 j) {
+    return elf_syms[i]->st_value < elf_syms[j]->st_value;
+  });
+
+  std::vector<const ElfSym<E> *> elf_syms2(elf_syms.size());
+  std::vector<u16> versyms2(versyms.size());
+  std::vector<Symbol<E> *> symbols2(this->symbols.size());
+
+  for (i64 i = 0; i < indices.size(); i++) {
+    elf_syms2[i] = elf_syms[indices[i]];
+    versyms2[i] = versyms[indices[i]];
+    symbols2[i] = this->symbols[indices[i]];
+  }
+
+  elf_syms = std::move(elf_syms2);
+  versyms = std::move(versyms2);
+  this->symbols = std::move(symbols2);
+
   static Counter counter("dso_syms");
   counter += elf_syms.size();
 }
@@ -1229,14 +1252,17 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
+std::span<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
   assert(sym->file == this);
-  std::vector<Symbol<E> *> vec;
-  for (Symbol<E> *sym2 : this->symbols)
-    if (sym2->file == this && sym != sym2 &&
-        sym->esym().st_value == sym2->esym().st_value)
-      vec.push_back(sym2);
-  return vec;
+
+  auto [begin, end] = std::equal_range(this->symbols.begin(),
+                                       this->symbols.end(),
+                                       sym,
+                                       [](Symbol<E> *a, Symbol<E> *b) {
+    return a->esym().st_value < b->esym().st_value;
+  });
+
+  return {begin, end};
 }
 
 template <typename E>
