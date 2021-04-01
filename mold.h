@@ -1388,7 +1388,7 @@ public:
         : ctx.dynbss->shdr.sh_addr + value;
     }
 
-    if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
+    if (get_plt_idx(ctx) != -1 && esym->st_type == STT_GNU_IFUNC)
       return get_plt_addr(ctx);
 
     if (input_section) {
@@ -1407,7 +1407,7 @@ public:
       return input_section->get_addr() + value;
     }
 
-    if (plt_idx != -1)
+    if (get_plt_idx(ctx) != -1)
       return get_plt_addr(ctx);
     return value;
   }
@@ -1433,79 +1433,79 @@ public:
   }
 
   u64 get_plt_addr(Context<E> &ctx) const {
-    if (ctx.symbol_aux[aux_idx].got_idx == -1)
+    if (get_got_idx(ctx) == -1)
       return ctx.plt->shdr.sh_addr + get_plt_idx(ctx) * E::plt_size;
     return ctx.pltgot->shdr.sh_addr + get_plt_idx(ctx) * E::plt_got_size;
   }
 
   void set_got_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].got_idx < 0);
     ctx.symbol_aux[aux_idx].got_idx = idx;
   }
 
   void set_gotplt_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].gotplt_idx < 0);
     ctx.symbol_aux[aux_idx].gotplt_idx = idx;
   }
 
   void set_gottp_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].gottp_idx < 0);
     ctx.symbol_aux[aux_idx].gottp_idx = idx;
   }
 
   void set_tlsgd_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].tlsgd_idx < 0);
     ctx.symbol_aux[aux_idx].tlsgd_idx = idx;
   }
 
   void set_tlsdesc_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].tlsdesc_idx < 0);
     ctx.symbol_aux[aux_idx].tlsdesc_idx = idx;
   }
 
   void set_plt_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].plt_idx < 0);
     ctx.symbol_aux[aux_idx].plt_idx = idx;
   }
 
   void set_dynsym_idx(Context<E> &ctx, i32 idx) const {
-    assert(got_idx != -1);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
     ctx.symbol_aux[aux_idx].dynsym_idx = idx;
   }
 
-  u32 get_got_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].got_idx;
+  i32 get_got_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].got_idx;
   }
 
-  u32 get_gotplt_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].gotplt_idx;
+  i32 get_gotplt_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].gotplt_idx;
   }
 
-  u32 get_gottp_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].gottp_idx;
+  i32 get_gottp_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].gottp_idx;
   }
 
-  u32 get_tlsgd_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].tlsgd_idx;
+  i32 get_tlsgd_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].tlsgd_idx;
   }
 
-  u32 get_tlsdesc_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].tlsdesc_idx;
+  i32 get_tlsdesc_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].tlsdesc_idx;
   }
 
-  u32 get_plt_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].plt_idx;
+  i32 get_plt_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].plt_idx;
   }
 
-  u32 get_dynsym_idx(Context<E> &ctx) const {
-    assert(aux_idx != -1);
-    return ctx.symbol_aux[aux_idx].dynsym_idx;
+  i32 get_dynsym_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
   }
 
   bool is_alive() const {

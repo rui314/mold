@@ -30,7 +30,7 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   };
 
   for (Symbol<X86_64> *sym : symbols) {
-    u8 *ent = buf + sym->plt_idx * X86_64::plt_size;
+    u8 *ent = buf + sym->get_plt_idx(ctx) * X86_64::plt_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
     *(u32 *)(ent + 7) = relplt_idx++;
@@ -240,7 +240,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       break;
     case R_DYN:
-      *dynrel++ = {P, R_X86_64_64, sym.dynsym_idx, A};
+      *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
       break;
     case R_PC:
       write(S + A - P);

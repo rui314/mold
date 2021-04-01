@@ -596,8 +596,7 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->got_idx == -1);
-  sym->got_idx = this->shdr.sh_size / E::got_size;
+  sym->set_got_idx(ctx, this->shdr.sh_size / E::got_size);
   this->shdr.sh_size += E::got_size;
   got_syms.push_back(sym);
 
@@ -607,8 +606,7 @@ void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->gottp_idx == -1);
-  sym->gottp_idx = this->shdr.sh_size / E::got_size;
+  sym->set_gottp_idx(ctx, this->shdr.sh_size / E::got_size);
   this->shdr.sh_size += E::got_size;
   gottp_syms.push_back(sym);
 
@@ -618,8 +616,7 @@ void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->tlsgd_idx == -1);
-  sym->tlsgd_idx = this->shdr.sh_size / E::got_size;
+  sym->set_tlsgd_idx(ctx, this->shdr.sh_size / E::got_size);
   this->shdr.sh_size += E::got_size * 2;
   tlsgd_syms.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
@@ -688,9 +685,9 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
-      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->dynsym_idx, 0);
+      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx), 0);
     } else {
-      buf[sym->got_idx] = sym->get_addr(ctx);
+      buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
       if (ctx.arg.pic && sym->is_relative(ctx))
         *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
     }
@@ -698,30 +695,30 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
-    *rel++ = reloc<E>(addr, E::R_DTPMOD, sym->dynsym_idx, 0);
-    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(addr, E::R_DTPMOD, sym->get_dynsym_idx(ctx), 0);
+    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, sym->get_dynsym_idx(ctx), 0);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
     *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
-                      sym->dynsym_idx, 0);
+                      sym->get_dynsym_idx(ctx), 0);
 
   for (Symbol<E> *sym : gottp_syms) {
     if (sym->is_imported)
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
-                        sym->dynsym_idx, 0);
+                        sym->get_dynsym_idx(ctx), 0);
     else
-      buf[sym->gottp_idx] = sym->get_addr(ctx) - ctx.tls_end;
+      buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
     *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0, 0);
 
   for (Symbol<E> *sym : ctx.dynbss->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
 
   for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->dynsym_idx, 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
 }
 
 template <typename E>
@@ -737,11 +734,12 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.plt->symbols) {
     if (sym->get_type() == STT_GNU_IFUNC) {
       if (E::rel_type == SHT_REL)
-        buf[sym->gotplt_idx] = sym->input_section->get_addr() + sym->value;
+        buf[sym->get_gotplt_idx(ctx)] =
+          sym->input_section->get_addr() + sym->value;
       continue;
     }
 
-    buf[sym->gotplt_idx] = sym->get_plt_addr(ctx) + 6;
+    buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
   }
 }
 
@@ -752,19 +750,19 @@ void GotIpltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->plt_idx == -1);
-  assert(sym->got_idx == -1);
+  assert(sym->get_plt_idx(ctx) == -1);
+  assert(sym->get_got_idx(ctx) == -1);
 
   if (this->shdr.sh_size == 0) {
     this->shdr.sh_size = E::plt_size;
     ctx.gotplt->shdr.sh_size = E::got_size * 3;
   }
 
-  sym->plt_idx = this->shdr.sh_size / E::plt_size;
+  sym->set_plt_idx(ctx, this->shdr.sh_size / E::plt_size);
   this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
 
-  sym->gotplt_idx = ctx.gotplt->shdr.sh_size / E::got_size;
+  sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / E::got_size);
   ctx.gotplt->shdr.sh_size += E::got_size;
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
@@ -782,10 +780,10 @@ void IpltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->plt_idx == -1);
-  assert(sym->got_idx != -1);
+  assert(sym->get_plt_idx(ctx) == -1);
+  assert(sym->get_got_idx(ctx) != -1);
 
-  sym->plt_idx = this->shdr.sh_size / E::plt_got_size;
+  sym->set_plt_idx(ctx, this->shdr.sh_size / E::plt_got_size);
   this->shdr.sh_size += E::plt_got_size;
   symbols.push_back(sym);
 }
@@ -800,7 +798,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->plt_idx * E::plt_got_size;
+    u8 *ent = buf + sym->get_plt_idx(ctx) * E::plt_got_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
@@ -830,7 +828,7 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
       r_addend = sym->input_section->get_addr() + sym->value;
     } else {
       r_type = E::R_JUMP_SLOT;
-      r_sym = sym->dynsym_idx;
+      r_sym = sym->get_dynsym_idx(ctx);
     }
 
     ElfRel<E> *rel = buf + relplt_idx++;
@@ -853,9 +851,9 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (symbols.empty())
     symbols.push_back({});
 
-  if (sym->dynsym_idx != -1)
+  if (sym->get_dynsym_idx(ctx) != -1)
     return;
-  sym->dynsym_idx = -2;
+  sym->set_dynsym_idx(ctx, -2);
   symbols.push_back(sym);
 }
 
@@ -912,7 +910,7 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
 
   for (i64 i = 1; i < symbols.size(); i++) {
     symbols[i] = vec[i].sym;
-    symbols[i]->dynsym_idx = i;
+    symbols[i]->set_dynsym_idx(ctx, i);
     ctx.dynstr->shdr.sh_size += symbols[i]->name.size() + 1;
   }
 }
@@ -932,7 +930,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
 
-    ElfSym<E> &esym = *(ElfSym<E> *)(base + sym.dynsym_idx * sizeof(ElfSym<E>));
+    ElfSym<E> &esym = *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
     memset(&esym, 0, sizeof(esym));
     esym.st_type = sym.get_type();
     esym.st_size = sym.esym->st_size;
@@ -954,7 +952,8 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
-      if (!ctx.arg.shared && sym.plt_idx != -1 && sym.got_idx == -1) {
+      if (!ctx.arg.shared && sym.get_plt_idx(ctx) != -1 &&
+          sym.get_got_idx(ctx) == -1) {
         // Emit an address for a canonical PLT
         esym.st_value = sym.get_plt_addr(ctx);
       }
@@ -997,8 +996,8 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
     Symbol<E> *sym = ctx.dynsym->symbols[i];
     i64 idx = elf_hash(sym->name) % num_slots;
-    chains[sym->dynsym_idx] = buckets[idx];
-    buckets[idx] = sym->dynsym_idx;
+    chains[sym->get_dynsym_idx(ctx)] = buckets[idx];
+    buckets[idx] = sym->get_dynsym_idx(ctx);
   }
 }
 

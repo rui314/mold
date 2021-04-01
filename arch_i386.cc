@@ -32,7 +32,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
   i64 relplt_idx = 0;
 
   for (Symbol<I386> *sym : symbols) {
-    u8 *ent = buf + sym->plt_idx * I386::plt_size;
+    u8 *ent = buf + sym->get_plt_idx(ctx) * I386::plt_size;
 
     if (ctx.arg.pic) {
       static const u8 data[] = {
@@ -124,7 +124,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       *(u32 *)loc += S + A;
       break;
     case R_DYN:
-      *dynrel++ = {P, R_386_32, sym.dynsym_idx};
+      *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
       *(u32 *)loc += A;
       break;
     case R_PC:

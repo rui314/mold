@@ -411,6 +411,14 @@ void scan_rels(Context<E> &ctx) {
           sym->flags |= NEEDS_DYNSYM;
   });
 
+  // Add symbol aliases for COPYREL.
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    for (Symbol<E> *sym : file->symbols)
+      if (sym->flags & NEEDS_COPYREL)
+        for (Symbol<E> *alias : file->find_aliases(sym))
+          alias->flags |= NEEDS_DYNSYM;
+  });
+
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
@@ -424,8 +432,14 @@ void scan_rels(Context<E> &ctx) {
         vec[i].push_back(sym);
   });
 
+  std::vector<Symbol<E> *> syms = flatten(vec);
+
+  ctx.symbol_aux.resize(syms.size());
+  for (i64 i = 0; i < syms.size(); i++)
+    syms[i]->aux_idx = i;
+
   // Assign offsets in additional tables for each dynamic symbol.
-  for (Symbol<E> *sym : flatten(vec)) {
+  for (Symbol<E> *sym : syms) {
     if (sym->flags & NEEDS_DYNSYM)
       ctx.dynsym->add_symbol(ctx, sym);
 
@@ -620,7 +634,7 @@ void fill_verdef(Context<E> &ctx) {
     write(verstr, idx++, 0);
 
   for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1))
-    ctx.versym->contents[sym->dynsym_idx] = sym->ver_idx;
+    ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
 }
 
 template <typename E>
@@ -697,7 +711,7 @@ void fill_verneed(Context<E> &ctx) {
       add_entry(syms[i]);
     }
 
-    ctx.versym->contents[syms[i]->dynsym_idx] = veridx;
+    ctx.versym->contents[syms[i]->get_dynsym_idx(ctx)] = veridx;
   }
 
   // Resize .gnu.version_r to fit to its contents.
