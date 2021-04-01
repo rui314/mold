@@ -737,16 +737,8 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   // the psABI.
   buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
 
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    if (sym->get_type() == STT_GNU_IFUNC) {
-      if (E::rel_type == SHT_REL)
-        buf[sym->get_gotplt_idx(ctx)] =
-          sym->input_section->get_addr() + sym->value;
-      continue;
-    }
-
+  for (Symbol<E> *sym : ctx.plt->symbols)
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
-  }
 }
 
 template <typename E>
