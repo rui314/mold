@@ -744,17 +744,6 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void GotIpltSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
-
-  if (E::rel_type == SHT_REL) {
-    std::span<Symbol<E> *> syms = ctx.iplt->symbols;
-    for (i64 i = 0; i < syms.size(); i++)
-      buf[i] = syms[i]->input_section->get_addr() + syms[i]->value;
-  }
-}
-
-template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
   assert(!sym->has_got(ctx));
@@ -772,31 +761,6 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   ctx.gotplt->shdr.sh_size += E::got_size;
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
-}
-
-template <typename E>
-void IpltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_iplt_idx(ctx, this->shdr.sh_size / E::pltgot_size);
-  this->shdr.sh_size += E::pltgot_size;
-  symbols.push_back(sym);
-
-  ctx.gotiplt->shdr.sh_size += E::got_size;
-}
-
-template <typename E>
-void IpltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  static const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@IGOT
-    0x66, 0x90,             // nop
-  };
-
-  for (i64 i = 0; i < symbols.size(); i++) {
-    u8 *ent = buf + i * E::pltgot_size;
-    memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = ctx.gotiplt->shdr.sh_addr + i * E::got_size - 6;
-  }
 }
 
 template <typename E>
@@ -855,16 +819,6 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
     ElfRel<E> *rel = buf + relplt_idx++;
     *rel = reloc<E>(r_offset, r_type, r_sym, r_addend);
   }
-}
-
-template <typename E>
-void RelIpltSection<E>::update_shdr(Context<E> &ctx) {
-  // TODO
-}
-
-template <typename E>
-void RelIpltSection<E>::copy_buf(Context<E> &ctx) {
-  // TODO
 }
 
 template <typename E>
@@ -1526,12 +1480,9 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   template class OutputSection<E>;                              \
   template class GotSection<E>;                                 \
   template class GotPltSection<E>;                              \
-  template class GotIpltSection<E>;                             \
   template class PltSection<E>;                                 \
-  template class IpltSection<E>;                                \
   template class PltGotSection<E>;                              \
   template class RelPltSection<E>;                              \
-  template class RelIpltSection<E>;                             \
   template class RelDynSection<E>;                              \
   template class StrtabSection<E>;                              \
   template class ShstrtabSection<E>;                            \
