@@ -850,9 +850,17 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   }
 
-  // __rel_iplt_start and __rel_iplt_end
+  // __rel_iplt_start
   start(ctx.__rel_iplt_start, ctx.reldyn);
-  stop(ctx.__rel_iplt_end, ctx.reldyn);
+
+  // __rel_iplt_end
+  i64 num_irelatives = 0;
+  for (Symbol<E> *sym : ctx.got->got_syms)
+    if (sym->get_type() == STT_GNU_IFUNC)
+      num_irelatives++;
+  ctx.__rel_iplt_end->shndx = ctx.reldyn->shndx;
+  ctx.__rel_iplt_end->value =
+    ctx.reldyn->shdr.sh_addr + num_irelatives * sizeof(ElfRel<E>);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk<E> *chunk : ctx.chunks) {
