@@ -1,5 +1,4 @@
 #!/bin/bash
-exit
 set -e
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "

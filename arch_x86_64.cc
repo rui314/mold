@@ -38,6 +38,22 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   }
 }
 
+template <>
+void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  static const u8 data[] = {
+    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
+    0x66, 0x90,             // nop
+  };
+
+  for (Symbol<X86_64> *sym : symbols) {
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * X86_64::pltgot_size;
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+  }
+}
+
 static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
                            Symbol<X86_64> &sym, u64 r_type, u64 val) {
   switch (r_type) {

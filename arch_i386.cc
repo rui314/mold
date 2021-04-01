@@ -57,6 +57,36 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
   }
 }
 
+template <>
+void PltGotSection<I386>::copy_buf(Context<I386> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  if (ctx.arg.pic) {
+    static const u8 data[] = {
+      0xff, 0xa3, 0, 0, 0, 0, // jmp   *foo@GOT(%ebx)
+      0x66, 0x90,             // nop
+    };
+
+    for (i64 i = 0; i < symbols.size(); i++) {
+      u8 *ent = buf + i * sizeof(data);
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) =
+        symbols[i]->get_got_addr(ctx) - symbols[i]->get_plt_addr(ctx) - 6;
+    }
+  } else {
+    static const u8 data[] = {
+      0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
+      0x66, 0x90,             // nop
+    };
+
+    for (i64 i = 0; i < symbols.size(); i++) {
+      u8 *ent = buf + i * sizeof(data);
+      memcpy(ent, data, sizeof(data));
+      *(u32 *)(ent + 2) = symbols[i]->get_got_addr(ctx);
+    }
+  }
+}
+
 static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   switch (r_type) {
   case R_386_NONE:

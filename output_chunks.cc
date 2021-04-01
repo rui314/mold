@@ -781,22 +781,6 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  static const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
-    0x66, 0x90,             // nop
-  };
-
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
-  }
-}
-
-template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
   this->shdr.sh_info = ctx.gotplt->shndx;
