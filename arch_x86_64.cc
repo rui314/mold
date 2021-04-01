@@ -240,7 +240,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       break;
     case R_DYN:
-      *dynrel++ = {P, R_X86_64_64, sym.dynsym_idx, A};
+      *dynrel++ = {P, R_X86_64_64, (u32)sym.dynsym_idx, A};
       break;
     case R_PC:
       write(S + A - P);

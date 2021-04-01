@@ -163,13 +163,13 @@ public:
   SectionFragment<E> *frag = nullptr;
 
   u64 value = -1;
-  u32 got_idx = -1;
-  u32 gotplt_idx = -1;
-  u32 gottp_idx = -1;
-  u32 tlsgd_idx = -1;
-  u32 tlsdesc_idx = -1;
-  u32 plt_idx = -1;
-  u32 dynsym_idx = -1;
+  i32 got_idx = -1;
+  i32 gotplt_idx = -1;
+  i32 gottp_idx = -1;
+  i32 tlsgd_idx = -1;
+  i32 tlsdesc_idx = -1;
+  i32 plt_idx = -1;
+  i32 dynsym_idx = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;
 
