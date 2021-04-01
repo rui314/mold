@@ -501,7 +501,7 @@ void apply_version_script(Context<E> &ctx) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
-            ? sym->get_demangled_name() : sym->name;
+            ? sym->get_demangled_name() : sym->get_name();
           if (glob.match(name))
             sym->ver_idx = elem.ver_idx;
         }

@@ -381,7 +381,7 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
   // merged, so their origins shouldn't matter, but I dont' really
   // know the rationale. Anyway, this is the behavior of the
   // traditional linkers.
-  if (sym.name.starts_with(".L")) {
+  if (sym.get_name().starts_with(".L")) {
     if (ctx.arg.discard_locals)
       return false;
 
@@ -408,11 +408,11 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = locals[i];
 
-    sym.name = symbol_strtab.data() + esym.st_name;
+    sym.set_name(symbol_strtab.data() + esym.st_name);
 
-    if (sym.name.empty() && esym.st_type == STT_SECTION)
-      if (InputSection<E> *sec =  get_section(esym))
-        sym.name = sec->name;
+    if (sym.get_name().empty() && esym.st_type == STT_SECTION)
+      if (InputSection<E> *sec = get_section(esym))
+        sym.set_name(sec->name);
 
     sym.file = this;
     sym.value = esym.st_value;
@@ -426,7 +426,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
     if (should_write_to_local_symtab(ctx, sym)) {
       sym.write_to_symtab = true;
-      strtab_size += sym.name.size() + 1;
+      strtab_size += sym.get_name().size() + 1;
       num_local_symtab++;
     }
   }
@@ -897,7 +897,7 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
     for (EhReloc<E> &rel : cie.rels) {
       if (rel.sym.is_imported) {
         if (rel.sym.get_type() != STT_FUNC)
-          Fatal(ctx) << *this << ": " << rel.sym.name
+          Fatal(ctx) << *this << ": " << rel.sym
                   << ": .eh_frame CIE record with an external data reference"
                   << " is not supported";
         rel.sym.flags |= NEEDS_PLT;
@@ -961,7 +961,7 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
       Symbol<E> &sym = *this->symbols[i];
 
       if (sym.write_to_symtab && !sym.is_alive()) {
-        strtab_size -= sym.name.size() + 1;
+        strtab_size -= sym.get_name().size() + 1;
         num_local_symtab--;
         sym.write_to_symtab = false;
       }
@@ -973,7 +973,7 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
     Symbol<E> &sym = *this->symbols[i];
 
     if (sym.file == this && should_write_to_global_symtab(sym)) {
-      strtab_size += sym.name.size() + 1;
+      strtab_size += sym.get_name().size() + 1;
       sym.write_to_symtab = true;
       num_global_symtab++;
     }
@@ -1009,8 +1009,8 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
     else
       esym.st_shndx = SHN_ABS;
 
-    write_string(strtab_base + strtab_off, sym.name);
-    strtab_off += sym.name.size() + 1;
+    write_string(strtab_base + strtab_off, sym.get_name());
+    strtab_off += sym.get_name().size() + 1;
   };
 
   symtab_off = local_symtab_offset;

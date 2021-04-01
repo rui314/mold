@@ -1317,8 +1317,8 @@ template <typename E>
 class Symbol {
 public:
   Symbol() = default;
-  Symbol(std::string_view name) : name(name) {}
-  Symbol(const Symbol<E> &other) : name(other.name) {}
+  Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
+  Symbol(const Symbol<E> &other) : Symbol(other.get_name()) {}
 
   static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
                            std::string_view name) {
@@ -1534,13 +1534,24 @@ public:
     memcpy((char *)this, &null, sizeof(null));
   }
 
-  std::string_view name;
+  void set_name(std::string_view str) {
+    nameptr = str.data();
+    namelen = str.size();
+  }
+
+  std::string_view get_name() const {
+    return {nameptr, (size_t)namelen};
+  }
+
   InputFile<E> *file = nullptr;
   const ElfSym<E> *esym = nullptr;
   InputSection<E> *input_section = nullptr;
   SectionFragment<E> *frag = nullptr;
 
+  const char *nameptr = nullptr;
+
   u64 value = -1;
+  i32 namelen = 0;
   i32 aux_idx = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;

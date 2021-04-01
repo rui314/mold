@@ -12,17 +12,17 @@ static bool is_mangled_name(std::string_view name) {
 
 template <typename E>
 std::string_view Symbol<E>::get_demangled_name() const {
-  if (is_mangled_name(name)) {
-    assert(name[name.size()] == '\0');
+  if (is_mangled_name(get_name())) {
+    assert(nameptr[namelen] == '\0');
     size_t len = sizeof(demangle_buf);
     int status;
     demangle_buf =
-      abi::__cxa_demangle(name.data(), demangle_buf, &demangle_buf_len, &status);
+      abi::__cxa_demangle(nameptr, demangle_buf, &demangle_buf_len, &status);
     if (status == 0)
       return demangle_buf;
   }
 
-  return name;
+  return get_name();
 }
 
 template <typename E>
@@ -30,7 +30,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   if (opt_demangle)
     out << sym.get_demangled_name();
   else
-    out << sym.name;
+    out << sym.get_name();
   return out;
 }
 
