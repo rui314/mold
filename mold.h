@@ -156,10 +156,16 @@ enum {
 
 template <typename E>
 struct EhReloc {
+  EhReloc(Symbol<E> &sym, u8 type, u32 offset, i64 addend)
+    : sym(sym), type(type), offset(offset), addend(addend) {
+    assert(this->offset == offset);
+    assert(this->addend == addend);
+  }
+
   Symbol<E> &sym;
-  u32 type;
-  u32 offset;
-  i64 addend;
+  u32 type : 8;
+  u32 offset : 24;
+  i32 addend;
 };
 
 template <typename E>

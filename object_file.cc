@@ -323,9 +323,9 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
                    << ": FDE with non-local relocations is not supported";
 
       Symbol<E> &sym = *this->symbols[rels[0].r_sym];
-      eh_rels.push_back(EhReloc<E>{sym, rels[0].r_type,
+      eh_rels.push_back(EhReloc<E>(sym, rels[0].r_type,
                                    (u32)(rels[0].r_offset - begin_offset),
-                                   isec.get_addend(rels[0])});
+                                   isec.get_addend(rels[0])));
       rels = rels.subspan(1);
     }
 
