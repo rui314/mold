@@ -82,6 +82,16 @@ struct SectionFragmentRef {
   i32 addend = 0;
 };
 
+struct SymbolAux {
+  i32 got_idx = -1;
+  i32 gotplt_idx = -1;
+  i32 gottp_idx = -1;
+  i32 tlsgd_idx = -1;
+  i32 tlsdesc_idx = -1;
+  i32 plt_idx = -1;
+  i32 dynsym_idx = -1;
+};
+
 //
 // Interned string
 //
@@ -1256,6 +1266,9 @@ struct Context {
   // Symbol table
   ConcurrentMap<Symbol<E>> symbol_map;
 
+  // Symbol auxiliary data
+  std::vector<SymbolAux> symbol_aux;
+
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
 
@@ -1400,35 +1413,99 @@ public:
   }
 
   u64 get_got_addr(Context<E> &ctx) const {
-    assert(got_idx != -1);
-    return ctx.got->shdr.sh_addr + got_idx * E::got_size;
+    return ctx.got->shdr.sh_addr + get_got_idx(ctx) * E::got_size;
   }
 
   u64 get_gotplt_addr(Context<E> &ctx) const {
-    assert(gotplt_idx != -1);
-    return ctx.gotplt->shdr.sh_addr + gotplt_idx * E::got_size;
+    return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::got_size;
   }
 
   u64 get_gottp_addr(Context<E> &ctx) const {
-    assert(gottp_idx != -1);
-    return ctx.got->shdr.sh_addr + gottp_idx * E::got_size;
+    return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::got_size;
   }
 
   u64 get_tlsgd_addr(Context<E> &ctx) const {
-    assert(tlsgd_idx != -1);
-    return ctx.got->shdr.sh_addr + tlsgd_idx * E::got_size;
+    return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::got_size;
   }
 
   u64 get_tlsdesc_addr(Context<E> &ctx) const {
-    assert(tlsdesc_idx != -1);
-    return ctx.got->shdr.sh_addr + tlsdesc_idx * E::got_size;
+    return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::got_size;
   }
 
   u64 get_plt_addr(Context<E> &ctx) const {
-    assert(plt_idx != -1);
-    if (got_idx == -1)
-      return ctx.plt->shdr.sh_addr + plt_idx * E::plt_size;
-    return ctx.pltgot->shdr.sh_addr + plt_idx * E::plt_got_size;
+    if (ctx.symbol_aux[aux_idx].got_idx == -1)
+      return ctx.plt->shdr.sh_addr + get_plt_idx(ctx) * E::plt_size;
+    return ctx.pltgot->shdr.sh_addr + get_plt_idx(ctx) * E::plt_got_size;
+  }
+
+  void set_got_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].got_idx = idx;
+  }
+
+  void set_gotplt_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].gotplt_idx = idx;
+  }
+
+  void set_gottp_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].gottp_idx = idx;
+  }
+
+  void set_tlsgd_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].tlsgd_idx = idx;
+  }
+
+  void set_tlsdesc_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].tlsdesc_idx = idx;
+  }
+
+  void set_plt_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].plt_idx = idx;
+  }
+
+  void set_dynsym_idx(Context<E> &ctx, i32 idx) const {
+    assert(got_idx != -1);
+    ctx.symbol_aux[aux_idx].dynsym_idx = idx;
+  }
+
+  u32 get_got_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].got_idx;
+  }
+
+  u32 get_gotplt_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].gotplt_idx;
+  }
+
+  u32 get_gottp_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].gottp_idx;
+  }
+
+  u32 get_tlsgd_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].tlsgd_idx;
+  }
+
+  u32 get_tlsdesc_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].tlsdesc_idx;
+  }
+
+  u32 get_plt_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].plt_idx;
+  }
+
+  u32 get_dynsym_idx(Context<E> &ctx) const {
+    assert(aux_idx != -1);
+    return ctx.symbol_aux[aux_idx].dynsym_idx;
   }
 
   bool is_alive() const {
@@ -1489,18 +1566,12 @@ public:
   SectionFragment<E> *frag = nullptr;
 
   u64 value = -1;
-  i32 got_idx = -1;
-  i32 gotplt_idx = -1;
-  i32 gottp_idx = -1;
-  i32 tlsgd_idx = -1;
-  i32 tlsdesc_idx = -1;
-  i32 plt_idx = -1;
-  i32 dynsym_idx = -1;
+  i32 aux_idx = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;
 
-  tbb::spin_mutex mu;
   std::atomic_uint16_t flags = 0;
+  tbb::spin_mutex mu;
   std::atomic_uint8_t visibility = STV_DEFAULT;
 
   u8 is_lazy : 1 = false;

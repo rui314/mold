@@ -124,7 +124,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       *(u32 *)loc += S + A;
       break;
     case R_DYN:
-      *dynrel++ = {P, R_386_32, (u32)sym.dynsym_idx};
+      *dynrel++ = {P, R_386_32, sym.dynsym_idx};
       *(u32 *)loc += A;
       break;
     case R_PC:

@@ -627,8 +627,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->tlsdesc_idx == -1);
-  sym->tlsdesc_idx = this->shdr.sh_size / E::got_size;
+  sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / E::got_size);
   this->shdr.sh_size += E::got_size * 2;
   tlsdesc_syms.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
