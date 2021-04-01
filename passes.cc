@@ -851,8 +851,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // __rel_iplt_start and __rel_iplt_end
-  start(ctx.__rel_iplt_start, ctx.relplt);
-  stop(ctx.__rel_iplt_end, ctx.relplt);
+  start(ctx.__rel_iplt_start, ctx.reldyn);
+  stop(ctx.__rel_iplt_end, ctx.reldyn);
 
   // __{init,fini}_array_{start,end}
   for (OutputChunk<E> *chunk : ctx.chunks) {

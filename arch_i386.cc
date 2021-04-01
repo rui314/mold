@@ -226,8 +226,10 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       continue;
     }
 
-    if (sym.esym->st_type == STT_GNU_IFUNC)
+    if (sym.get_type() == STT_GNU_IFUNC) {
+      sym.flags |= NEEDS_GOT;
       sym.flags |= NEEDS_PLT;
+    }
 
     switch (rel.r_type) {
     case R_386_NONE:

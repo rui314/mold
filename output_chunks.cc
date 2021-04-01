@@ -642,7 +642,8 @@ template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (Symbol<E> *sym : got_syms)
-    if (sym->is_imported || (ctx.arg.pic && sym->is_relative(ctx)))
+    if (sym->is_imported || (ctx.arg.pic && sym->is_relative(ctx)) ||
+        sym->get_type() == STT_GNU_IFUNC)
       n++;
 
   n += tlsgd_syms.size() * 2;
@@ -686,6 +687,11 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
       *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx), 0);
+    } else if (sym->get_type() == STT_GNU_IFUNC) {
+      u64 resolver_addr = sym->input_section->get_addr() + sym->value;
+      *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
+      if (E::rel_type == SHT_REL)
+        buf[sym->get_got_idx(ctx)] = resolver_addr;
     } else {
       buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
       if (ctx.arg.pic && sym->is_relative(ctx))
@@ -695,8 +701,9 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
-    *rel++ = reloc<E>(addr, E::R_DTPMOD, sym->get_dynsym_idx(ctx), 0);
-    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, sym->get_dynsym_idx(ctx), 0);
+    u32 dynsym_idx = sym->get_dynsym_idx(ctx);
+    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx, 0);
+    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, dynsym_idx, 0);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
@@ -801,24 +808,9 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   memset(buf, 0, this->shdr.sh_size);
 
   i64 relplt_idx = 0;
-
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    u64 r_offset = sym->get_gotplt_addr(ctx);
-    u32 r_type = 0;
-    u64 r_sym = 0;
-    u32 r_addend = 0;
-
-    if (sym->get_type() == STT_GNU_IFUNC) {
-      r_type = E::R_IRELATIVE;
-      r_addend = sym->input_section->get_addr() + sym->value;
-    } else {
-      r_type = E::R_JUMP_SLOT;
-      r_sym = sym->get_dynsym_idx(ctx);
-    }
-
-    ElfRel<E> *rel = buf + relplt_idx++;
-    *rel = reloc<E>(r_offset, r_type, r_sym, r_addend);
-  }
+  for (Symbol<E> *sym : ctx.plt->symbols)
+    buf[relplt_idx++] = reloc<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
+                                 sym->get_dynsym_idx(ctx), 0);
 }
 
 template <typename E>
