@@ -46,10 +46,41 @@ template <typename E> class OutputChunk;
 template <typename E> class OutputSection;
 template <typename E> class SharedFile;
 template <typename E> class Symbol;
-
 template <typename E> struct Context;
 
 template <typename E> void cleanup();
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
+
+//
+// Mergeable section fragments
+//
+
+template <typename E>
+struct SectionFragment {
+  SectionFragment(MergedSection<E> *sec, std::string_view data)
+    : output_section(*sec), data(data) {}
+
+  SectionFragment(const SectionFragment &other)
+    : output_section(other.output_section), data(other.data),
+      offset(other.offset), alignment(other.alignment.load()),
+      is_alive(other.is_alive.load()) {}
+
+  inline u64 get_addr(Context<E> &ctx) const;
+
+  MergedSection<E> &output_section;
+  std::string_view data;
+  u32 offset = -1;
+  std::atomic_uint16_t alignment = 1;
+  std::atomic_bool is_alive = false;
+};
+
+template <typename E>
+struct SectionFragmentRef {
+  SectionFragment<E> *frag = nullptr;
+  i32 addend = 0;
+};
 
 //
 // Interned string
@@ -81,114 +112,6 @@ public:
 
   tbb::concurrent_hash_map<std::string_view, ValueT> map;
 };
-
-//
-// Symbol
-//
-
-template <typename E>
-struct SectionFragment {
-  SectionFragment(MergedSection<E> *sec, std::string_view data)
-    : output_section(*sec), data(data) {}
-
-  SectionFragment(const SectionFragment &other)
-    : output_section(other.output_section), data(other.data),
-      offset(other.offset), alignment(other.alignment.load()),
-      is_alive(other.is_alive.load()) {}
-
-  inline u64 get_addr(Context<E> &ctx) const;
-
-  MergedSection<E> &output_section;
-  std::string_view data;
-  u32 offset = -1;
-  std::atomic_uint16_t alignment = 1;
-  std::atomic_bool is_alive = false;
-};
-
-template <typename E>
-struct SectionFragmentRef {
-  SectionFragment<E> *frag = nullptr;
-  i32 addend = 0;
-};
-
-enum {
-  NEEDS_GOT      = 1 << 0,
-  NEEDS_PLT      = 1 << 1,
-  NEEDS_IPLT     = 1 << 2,
-  NEEDS_GOTTP    = 1 << 3,
-  NEEDS_TLSGD    = 1 << 4,
-  NEEDS_TLSLD    = 1 << 5,
-  NEEDS_COPYREL  = 1 << 6,
-  NEEDS_DYNSYM   = 1 << 7,
-  NEEDS_TLSDESC  = 1 << 8,
-};
-
-template <typename E>
-class Symbol {
-public:
-  Symbol() = default;
-  Symbol(std::string_view name) : name(name) {}
-  Symbol(const Symbol<E> &other) : name(other.name) {}
-
-  static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
-                           std::string_view name);
-
-  static Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
-    return intern(ctx, name, name);
-  }
-
-  inline u64 get_addr(Context<E> &ctx) const;
-  inline u64 get_got_addr(Context<E> &ctx) const;
-  inline u64 get_gotplt_addr(Context<E> &ctx) const;
-  inline u64 get_gottp_addr(Context<E> &ctx) const;
-  inline u64 get_tlsgd_addr(Context<E> &ctx) const;
-  inline u64 get_tlsdesc_addr(Context<E> &ctx) const;
-  inline u64 get_plt_addr(Context<E> &ctx) const;
-
-  inline bool is_alive() const;
-  inline bool is_absolute(Context<E> &ctx) const;
-  inline bool is_relative(Context<E> &ctx) const;
-  inline bool is_undef() const;
-  inline bool is_undef_weak() const;
-  inline u32 get_type() const;
-  inline std::string_view get_version() const;
-  std::string_view get_demangled_name() const;
-
-  inline void clear();
-
-  std::string_view name;
-  InputFile<E> *file = nullptr;
-  const ElfSym<E> *esym = nullptr;
-  InputSection<E> *input_section = nullptr;
-  SectionFragment<E> *frag = nullptr;
-
-  u64 value = -1;
-  i32 got_idx = -1;
-  i32 gotplt_idx = -1;
-  i32 gottp_idx = -1;
-  i32 tlsgd_idx = -1;
-  i32 tlsdesc_idx = -1;
-  i32 plt_idx = -1;
-  i32 dynsym_idx = -1;
-  u16 shndx = 0;
-  u16 ver_idx = 0;
-
-  tbb::spin_mutex mu;
-  std::atomic_uint16_t flags = 0;
-  std::atomic_uint8_t visibility = STV_DEFAULT;
-
-  u8 is_lazy : 1 = false;
-  u8 is_weak : 1 = false;
-  u8 write_to_symtab : 1 = false;
-  u8 traced : 1 = false;
-  u8 has_copyrel : 1 = false;
-  u8 copyrel_readonly : 1 = false;
-  u8 is_imported : 1 = false;
-  u8 is_exported : 1 = false;
-};
-
-template <typename E>
-std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 //
 // input_sections.cc
@@ -1409,6 +1332,188 @@ template <typename E>
 void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
+// Symbol
+//
+
+enum {
+  NEEDS_GOT      = 1 << 0,
+  NEEDS_PLT      = 1 << 1,
+  NEEDS_IPLT     = 1 << 2,
+  NEEDS_GOTTP    = 1 << 3,
+  NEEDS_TLSGD    = 1 << 4,
+  NEEDS_TLSLD    = 1 << 5,
+  NEEDS_COPYREL  = 1 << 6,
+  NEEDS_DYNSYM   = 1 << 7,
+  NEEDS_TLSDESC  = 1 << 8,
+};
+
+template <typename E>
+class Symbol {
+public:
+  Symbol() = default;
+  Symbol(std::string_view name) : name(name) {}
+  Symbol(const Symbol<E> &other) : name(other.name) {}
+
+  static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
+                           std::string_view name) {
+    return ctx.symbol_map.insert(key, {name});
+  }
+
+  static Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
+    return intern(ctx, name, name);
+  }
+
+  u64 get_addr(Context<E> &ctx) const {
+    if (frag) {
+      assert(frag->is_alive);
+      return frag->get_addr(ctx) + value;
+    }
+
+    if (has_copyrel) {
+      return copyrel_readonly
+        ? ctx.dynbss_relro->shdr.sh_addr + value
+        : ctx.dynbss->shdr.sh_addr + value;
+    }
+
+    if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
+      return get_plt_addr(ctx);
+
+    if (input_section) {
+      if (input_section->is_ehframe)
+        return ctx.eh_frame->get_addr(ctx, *this);
+
+      if (!input_section->is_alive) {
+        // The control can reach here if there's a relocation that refers
+        // a local symbol belonging to a comdat group section. This is a
+        // violation of the spec, as all relocations should use only global
+        // symbols of comdat members. However, .eh_frame tends to have such
+        // relocations.
+        return 0;
+      }
+
+      return input_section->get_addr() + value;
+    }
+
+    if (plt_idx != -1)
+      return get_plt_addr(ctx);
+    return value;
+  }
+
+  u64 get_got_addr(Context<E> &ctx) const {
+    assert(got_idx != -1);
+    return ctx.got->shdr.sh_addr + got_idx * E::got_size;
+  }
+
+  u64 get_gotplt_addr(Context<E> &ctx) const {
+    assert(gotplt_idx != -1);
+    return ctx.gotplt->shdr.sh_addr + gotplt_idx * E::got_size;
+  }
+
+  u64 get_gottp_addr(Context<E> &ctx) const {
+    assert(gottp_idx != -1);
+    return ctx.got->shdr.sh_addr + gottp_idx * E::got_size;
+  }
+
+  u64 get_tlsgd_addr(Context<E> &ctx) const {
+    assert(tlsgd_idx != -1);
+    return ctx.got->shdr.sh_addr + tlsgd_idx * E::got_size;
+  }
+
+  u64 get_tlsdesc_addr(Context<E> &ctx) const {
+    assert(tlsdesc_idx != -1);
+    return ctx.got->shdr.sh_addr + tlsdesc_idx * E::got_size;
+  }
+
+  u64 get_plt_addr(Context<E> &ctx) const {
+    assert(plt_idx != -1);
+    if (got_idx == -1)
+      return ctx.plt->shdr.sh_addr + plt_idx * E::plt_size;
+    return ctx.pltgot->shdr.sh_addr + plt_idx * E::plt_got_size;
+  }
+
+  bool is_alive() const {
+    if (frag)
+      return frag->is_alive;
+    if (input_section)
+      return input_section->is_alive;
+    return true;
+  }
+
+  bool is_absolute(Context<E> &ctx) const {
+    if (file == ctx.internal_obj)
+      return false;
+    if (file->is_dso)
+      return esym->is_abs();
+    if (is_imported)
+      return false;
+    if (frag)
+      return false;
+    return input_section == nullptr;
+  }
+
+  bool is_relative(Context<E> &ctx) const {
+    return !is_absolute(ctx);
+  }
+
+  bool is_undef() const {
+    return esym->is_undef() && esym->st_bind != STB_WEAK;
+  }
+
+  bool is_undef_weak() const {
+    return esym->is_undef() && esym->st_bind == STB_WEAK;
+  }
+
+  u32 get_type() const {
+    if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
+      return STT_FUNC;
+    return esym->st_type;
+  }
+
+  std::string_view get_version() const {
+    if (file->is_dso)
+      return ((SharedFile<E> *)file)->version_strings[ver_idx];
+    return "";
+  }
+
+  std::string_view get_demangled_name() const;
+
+  void clear() {
+    Symbol<E> null;
+    memcpy((char *)this, &null, sizeof(null));
+  }
+
+  std::string_view name;
+  InputFile<E> *file = nullptr;
+  const ElfSym<E> *esym = nullptr;
+  InputSection<E> *input_section = nullptr;
+  SectionFragment<E> *frag = nullptr;
+
+  u64 value = -1;
+  i32 got_idx = -1;
+  i32 gotplt_idx = -1;
+  i32 gottp_idx = -1;
+  i32 tlsgd_idx = -1;
+  i32 tlsdesc_idx = -1;
+  i32 plt_idx = -1;
+  i32 dynsym_idx = -1;
+  u16 shndx = 0;
+  u16 ver_idx = 0;
+
+  tbb::spin_mutex mu;
+  std::atomic_uint16_t flags = 0;
+  std::atomic_uint8_t visibility = STV_DEFAULT;
+
+  u8 is_lazy : 1 = false;
+  u8 is_weak : 1 = false;
+  u8 write_to_symtab : 1 = false;
+  u8 traced : 1 = false;
+  u8 has_copyrel : 1 = false;
+  u8 copyrel_readonly : 1 = false;
+  u8 is_imported : 1 = false;
+  u8 is_exported : 1 = false;
+};
+
+//
 // Error output
 //
 
@@ -1531,145 +1636,6 @@ inline u64 next_power_of_two(u64 val) {
   return (u64)1 << (64 - __builtin_clzl(val - 1));
 }
 
-
-template <typename E>
-Symbol<E> *Symbol<E>::intern(Context<E> &ctx, std::string_view key,
-                             std::string_view name) {
-  return ctx.symbol_map.insert(key, {name});
-}
-
-template <typename E>
-inline bool Symbol<E>::is_alive() const {
-  if (frag)
-    return frag->is_alive;
-  if (input_section)
-    return input_section->is_alive;
-  return true;
-}
-
-template <typename E>
-inline bool Symbol<E>::is_absolute(Context<E> &ctx) const {
-  if (file == ctx.internal_obj)
-    return false;
-  if (file->is_dso)
-    return esym->is_abs();
-  if (is_imported)
-    return false;
-  if (frag)
-    return false;
-  return input_section == nullptr;
-}
-
-template <typename E>
-inline bool Symbol<E>::is_relative(Context<E> &ctx) const {
-  return !is_absolute(ctx);
-}
-
-template <typename E>
-inline bool Symbol<E>::is_undef() const {
-  return esym->is_undef() && esym->st_bind != STB_WEAK;
-}
-
-template <typename E>
-inline bool Symbol<E>::is_undef_weak() const {
-  return esym->is_undef() && esym->st_bind == STB_WEAK;
-}
-
-template <typename E>
-inline u32 Symbol<E>::get_type() const {
-  if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
-    return STT_FUNC;
-  return esym->st_type;
-}
-
-template <typename E>
-inline std::string_view Symbol<E>::get_version() const {
-  if (file->is_dso)
-    return ((SharedFile<E> *)file)->version_strings[ver_idx];
-  return "";
-}
-
-template <typename E>
-inline void Symbol<E>::clear() {
-  Symbol<E> null;
-  memcpy((char *)this, &null, sizeof(null));
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_addr(Context<E> &ctx) const {
-  if (frag) {
-    assert(frag->is_alive);
-    return frag->get_addr(ctx) + value;
-  }
-
-  if (has_copyrel) {
-    return copyrel_readonly
-      ? ctx.dynbss_relro->shdr.sh_addr + value
-      : ctx.dynbss->shdr.sh_addr + value;
-  }
-
-  if (plt_idx != -1 && esym->st_type == STT_GNU_IFUNC)
-    return get_plt_addr(ctx);
-
-  if (input_section) {
-    if (input_section->is_ehframe)
-      return ctx.eh_frame->get_addr(ctx, *this);
-
-    if (!input_section->is_alive) {
-      // The control can reach here if there's a relocation that refers
-      // a local symbol belonging to a comdat group section. This is a
-      // violation of the spec, as all relocations should use only global
-      // symbols of comdat members. However, .eh_frame tends to have such
-      // relocations.
-      return 0;
-    }
-
-    return input_section->get_addr() + value;
-  }
-
-  if (plt_idx != -1)
-    return get_plt_addr(ctx);
-  return value;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
-  assert(got_idx != -1);
-  return ctx.got->shdr.sh_addr + got_idx * E::got_size;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
-  assert(gotplt_idx != -1);
-  return ctx.gotplt->shdr.sh_addr + gotplt_idx * E::got_size;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_gottp_addr(Context<E> &ctx) const {
-  assert(gottp_idx != -1);
-  return ctx.got->shdr.sh_addr + gottp_idx * E::got_size;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_tlsgd_addr(Context<E> &ctx) const {
-  assert(tlsgd_idx != -1);
-  return ctx.got->shdr.sh_addr + tlsgd_idx * E::got_size;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
-  assert(tlsdesc_idx != -1);
-  return ctx.got->shdr.sh_addr + tlsdesc_idx * E::got_size;
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
-  assert(plt_idx != -1);
-
-  if (got_idx == -1)
-    return ctx.plt->shdr.sh_addr + plt_idx * E::plt_size;
-  return ctx.pltgot->shdr.sh_addr + plt_idx * E::plt_got_size;
-}
 
 template <typename E>
 inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
