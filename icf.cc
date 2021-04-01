@@ -239,7 +239,7 @@ static Digest compute_digest(InputSection<E> &isec) {
     if (!sym.file) {
       hash('1');
       hash((u64)&sym);
-    } else if (SectionFragment<E> *frag = sym.frag) {
+    } else if (SectionFragment<E> *frag = sym.get_frag()) {
       hash('2');
       hash_string(frag->data);
     } else if (!isec) {
@@ -363,7 +363,7 @@ static void gather_edges(std::span<InputSection<E> *> sections,
       if (!isec.has_fragments[j]) {
         ElfRel<E> &rel = isec.rels[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
+        if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
           num_edges[i]++;
       }
     }
@@ -382,7 +382,7 @@ static void gather_edges(std::span<InputSection<E> *> sections,
       if (!isec.has_fragments[j]) {
         ElfRel<E> &rel = isec.rels[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.frag && sym.input_section && sym.input_section->icf_eligible)
+        if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
           edges[idx++] = sym.input_section->icf_idx;
       }
     }

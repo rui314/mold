@@ -851,6 +851,7 @@ public:
   std::vector<CieRecord<E>> cies;
   std::vector<const char *> symvers;
   std::vector<SectionFragment<E> *> fragments;
+  std::vector<SectionFragmentRef<E>> sym_fragments;
   bool exclude_libs = false;
 
   u64 num_dynrel = 0;
@@ -873,7 +874,6 @@ private:
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
 
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
-  std::vector<SectionFragmentRef<E>> sym_fragments;
   bool has_common_symbol;
 
   std::string_view symbol_strtab;
@@ -1338,7 +1338,7 @@ public:
   }
 
   u64 get_addr(Context<E> &ctx) const {
-    if (frag) {
+    if (SectionFragment<E> *frag = get_frag()) {
       assert(frag->is_alive);
       return frag->get_addr(ctx) + value;
     }
@@ -1492,7 +1492,7 @@ public:
   }
 
   bool is_alive() const {
-    if (frag)
+    if (SectionFragment<E> *frag = get_frag())
       return frag->is_alive;
     if (input_section)
       return input_section->is_alive;
@@ -1506,7 +1506,7 @@ public:
       return esym().is_abs();
     if (is_imported)
       return false;
-    if (frag)
+    if (get_frag())
       return false;
     return input_section == nullptr;
   }
@@ -1548,6 +1548,12 @@ public:
     return ((ObjectFile<E> *)file)->elf_syms[sym_idx];
   }
 
+  SectionFragment<E> *get_frag() const {
+    if (!file || file->is_dso)
+      return nullptr;
+    return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
+  }
+
   void set_name(std::string_view str) {
     nameptr = str.data();
     namelen = str.size();
@@ -1559,8 +1565,6 @@ public:
 
   InputFile<E> *file = nullptr;
   InputSection<E> *input_section = nullptr;
-  SectionFragment<E> *frag = nullptr;
-
   const char *nameptr = nullptr;
 
   u64 value = -1;

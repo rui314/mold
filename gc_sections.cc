@@ -50,8 +50,8 @@ static void visit(InputSection<E> *isec, Feeder<E> &feeder, i64 depth) {
 
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.
-    if (sym.frag) {
-      sym.frag->is_alive = true;
+    if (SectionFragment<E> *frag = sym.get_frag()) {
+      frag->is_alive = true;
       continue;
     }
 
@@ -80,8 +80,8 @@ collect_root_set(Context<E> &ctx) {
 
   auto enqueue_symbol = [&](Symbol<E> *sym) {
     if (sym) {
-      if (sym->frag)
-        sym->frag->is_alive = true;
+      if (SectionFragment<E> *frag = sym->get_frag())
+        frag->is_alive = true;
       else
         enqueue_section(sym->input_section);
     }

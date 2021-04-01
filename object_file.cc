@@ -434,7 +434,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   this->symbols.resize(elf_syms.size());
 
   i64 num_globals = elf_syms.size() - first_global;
-  sym_fragments.resize(num_globals);
+  sym_fragments.resize(elf_syms.size());
   symvers.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
@@ -605,13 +605,11 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
       Fatal(ctx) << *this << ": bad symbol value: " << esym.st_value;
     i64 idx = it - 1 - offsets.begin();
 
-    if (i < first_global) {
-      this->symbols[i]->frag = m.fragments[idx];
+    if (i < first_global)
       this->symbols[i]->value = esym.st_value - offsets[idx];
-    } else {
-      sym_fragments[i - first_global].frag = m.fragments[idx];
-      sym_fragments[i - first_global].addend = esym.st_value - offsets[idx];
-    }
+
+    sym_fragments[i].frag = m.fragments[idx];
+    sym_fragments[i].addend = esym.st_value - offsets[idx];
   }
 
   for (MergeableSection<E> &m : mergeable_sections)
@@ -678,16 +676,14 @@ void ObjectFile<E>::maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym,
   u64 existing_rank = get_rank(sym);
 
   if (new_rank < existing_rank) {
-    SectionFragmentRef<E> &ref = sym_fragments[symidx - first_global];
-
     sym.file = this;
     sym.input_section = isec;
-    if (ref.frag) {
-      sym.frag = ref.frag;
+
+    if (SectionFragmentRef<E> &ref = sym_fragments[symidx]; ref.frag)
       sym.value = ref.addend;
-    } else {
+    else
       sym.value = esym.st_value;
-    }
+
     sym.sym_idx = symidx;
     sym.ver_idx = ctx.arg.default_version;
     sym.is_lazy = false;
@@ -1084,9 +1080,9 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
   }
 
   elf_syms = *esyms;
+  sym_fragments.resize(elf_syms.size());
 
   i64 num_globals = elf_syms.size() - first_global;
-  sym_fragments.resize(num_globals);
   symvers.resize(num_globals);
 }
 
@@ -1218,7 +1214,6 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
     if (is_new || tie_but_higher_priority) {
       sym.file = this;
       sym.input_section = nullptr;
-      sym.frag = nullptr;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
