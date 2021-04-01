@@ -90,6 +90,7 @@ struct SymbolAux {
   i32 tlsdesc_idx = -1;
   i32 plt_idx = -1;
   i32 pltgot_idx = -1;
+  i32 iplt_idx = -1;
   i32 dynsym_idx = -1;
 };
 
@@ -1487,6 +1488,12 @@ public:
     ctx.symbol_aux[aux_idx].pltgot_idx = idx;
   }
 
+  void set_iplt_idx(Context<E> &ctx, i32 idx) const {
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].iplt_idx < 0);
+    ctx.symbol_aux[aux_idx].iplt_idx = idx;
+  }
+
   void set_dynsym_idx(Context<E> &ctx, i32 idx) const {
     assert(aux_idx != -1);
     assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
@@ -1519,6 +1526,10 @@ public:
 
   i32 get_pltgot_idx(Context<E> &ctx) const {
     return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].pltgot_idx;
+  }
+
+  i32 get_iplt_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].iplt_idx;
   }
 
   i32 get_dynsym_idx(Context<E> &ctx) const {
