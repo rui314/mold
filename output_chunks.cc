@@ -809,7 +809,7 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
     u32 hash;
 
     bool is_local() const {
-      return sym->esym->st_bind == STB_LOCAL;
+      return sym->esym().st_bind == STB_LOCAL;
     }
   };
 
@@ -875,14 +875,14 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     ElfSym<E> &esym = *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
     memset(&esym, 0, sizeof(esym));
     esym.st_type = sym.get_type();
-    esym.st_size = sym.esym->st_size;
+    esym.st_size = sym.esym().st_size;
 
     if (sym.is_weak)
       esym.st_bind = STB_WEAK;
     else if (sym.file->is_dso)
       esym.st_bind = STB_GLOBAL;
     else
-      esym.st_bind = sym.esym->st_bind;
+      esym.st_bind = sym.esym().st_bind;
 
     esym.st_name = name_offset;
     name_offset += sym.get_name().size() + 1;
@@ -891,7 +891,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       esym.st_shndx = sym.copyrel_readonly
         ? ctx.dynbss_relro->shndx : ctx.dynbss->shndx;
       esym.st_value = sym.get_addr(ctx);
-    } else if (sym.file->is_dso || sym.esym->is_undef()) {
+    } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
       if (!ctx.arg.shared && sym.has_plt(ctx) && !sym.has_got(ctx)) {
@@ -1342,7 +1342,7 @@ void DynbssSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size = align_to(this->shdr.sh_size, this->shdr.sh_addralign);
   sym->value = this->shdr.sh_size;
   sym->has_copyrel = true;
-  this->shdr.sh_size += sym->esym->st_size;
+  this->shdr.sh_size += sym->esym().st_size;
   symbols.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
 }

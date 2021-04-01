@@ -893,13 +893,13 @@ public:
   std::string_view soname;
   std::vector<std::string_view> version_strings;
   std::vector<Symbol<E> *> undefs;
+  std::vector<const ElfSym<E> *> elf_syms;
 
 private:
   std::string_view get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
   std::vector<std::string_view> read_verdef(Context<E> &ctx);
 
-  std::vector<const ElfSym<E> *> elf_syms;
   std::vector<u16> versyms;
   std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
@@ -1349,7 +1349,7 @@ public:
         : ctx.dynbss->shdr.sh_addr + value;
     }
 
-    if (has_plt(ctx) && esym->st_type == STT_GNU_IFUNC)
+    if (has_plt(ctx) && esym().st_type == STT_GNU_IFUNC)
       return get_plt_addr(ctx);
 
     if (input_section) {
@@ -1503,7 +1503,7 @@ public:
     if (file == ctx.internal_obj)
       return false;
     if (file->is_dso)
-      return esym->is_abs();
+      return esym().is_abs();
     if (is_imported)
       return false;
     if (frag)
@@ -1516,17 +1516,17 @@ public:
   }
 
   bool is_undef() const {
-    return esym->is_undef() && esym->st_bind != STB_WEAK;
+    return esym().is_undef() && esym().st_bind != STB_WEAK;
   }
 
   bool is_undef_weak() const {
-    return esym->is_undef() && esym->st_bind == STB_WEAK;
+    return esym().is_undef() && esym().st_bind == STB_WEAK;
   }
 
   u32 get_type() const {
-    if (esym->st_type == STT_GNU_IFUNC && file->is_dso)
+    if (esym().st_type == STT_GNU_IFUNC && file->is_dso)
       return STT_FUNC;
-    return esym->st_type;
+    return esym().st_type;
   }
 
   std::string_view get_version() const {
@@ -1542,6 +1542,12 @@ public:
     memcpy((char *)this, &null, sizeof(null));
   }
 
+  const ElfSym<E> &esym() const {
+    if (file->is_dso)
+      return *((SharedFile<E> *)file)->elf_syms[sym_idx];
+    return ((ObjectFile<E> *)file)->elf_syms[sym_idx];
+  }
+
   void set_name(std::string_view str) {
     nameptr = str.data();
     namelen = str.size();
@@ -1552,13 +1558,13 @@ public:
   }
 
   InputFile<E> *file = nullptr;
-  const ElfSym<E> *esym = nullptr;
   InputSection<E> *input_section = nullptr;
   SectionFragment<E> *frag = nullptr;
 
   const char *nameptr = nullptr;
 
   u64 value = -1;
+  i32 sym_idx = -1;
   i32 namelen = 0;
   i32 aux_idx = -1;
   u16 shndx = 0;

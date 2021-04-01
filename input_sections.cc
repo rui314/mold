@@ -104,7 +104,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
   case COPYREL:
     if (!ctx.arg.z_copyreloc)
       break;
-    if (sym.esym->st_visibility == STV_PROTECTED)
+    if (sym.esym().st_visibility == STV_PROTECTED)
       Error(ctx) << *this << ": cannot make copy relocation for "
                  << " protected symbol '" << sym << "', defined in "
                  << *sym.file;

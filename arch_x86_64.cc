@@ -344,7 +344,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       break;
     }
     case R_SIZE:
-      write(sym.esym->st_size + A);
+      write(sym.esym().st_size + A);
       break;
     case R_TLSDESC_CALL_RELAX:
       // call *(%rax) -> nop
@@ -417,7 +417,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       break;
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:
-      write(sym.esym->st_size + rel.r_addend);
+      write(sym.esym().st_size + rel.r_addend);
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "

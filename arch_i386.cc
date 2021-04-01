@@ -179,7 +179,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write(S + A - ctx.tls_end);
       break;
     case R_SIZE:
-      write(sym.esym->st_size + A);
+      write(sym.esym().st_size + A);
       break;
     default:
       unreachable(ctx);
@@ -230,7 +230,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
         write(sym.get_addr(ctx));
       break;
     case R_386_SIZE32:
-      write(sym.esym->st_size);
+      write(sym.esym().st_size);
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "

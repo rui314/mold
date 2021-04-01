@@ -416,7 +416,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
     sym.file = this;
     sym.value = esym.st_value;
-    sym.esym = &esym;
+    sym.sym_idx = i;
 
     if (!esym.is_abs()) {
       if (esym.is_common())
@@ -661,7 +661,7 @@ static u64 get_rank(const Symbol<E> &sym) {
     return 5 << 24;
   if (sym.is_lazy)
     return (4 << 24) + sym.file->priority;
-  return get_rank(sym.file, *sym.esym, sym.input_section);
+  return get_rank(sym.file, sym.esym(), sym.input_section);
 }
 
 template <typename E>
@@ -688,8 +688,8 @@ void ObjectFile<E>::maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym,
     } else {
       sym.value = esym.st_value;
     }
+    sym.sym_idx = symidx;
     sym.ver_idx = ctx.arg.default_version;
-    sym.esym = &esym;
     sym.is_lazy = false;
     sym.is_imported = false;
     sym.is_exported = false;
@@ -817,8 +817,8 @@ void ObjectFile<E>::convert_undefined_weak_symbols(Context<E> &ctx) {
         sym.file = this;
         sym.input_section = nullptr;
         sym.value = 0;
+        sym.sym_idx = i;
         sym.ver_idx = ctx.arg.default_version;
-        sym.esym = &esym;
         sym.is_lazy = false;
 
         if (ctx.arg.shared)
@@ -873,12 +873,12 @@ void ObjectFile<E>::claim_unresolved_symbols() {
       continue;
 
     std::lock_guard lock(sym.mu);
-    if (!sym.esym || sym.is_undef()) {
+    if (sym.sym_idx == -1 || sym.is_undef()) {
       if (sym.file && sym.file->priority < this->priority)
         continue;
       sym.file = this;
       sym.value = 0;
-      sym.esym = &esym;
+      sym.sym_idx = i;
       sym.is_imported = true;
       sym.is_exported = false;
     }
@@ -925,14 +925,14 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       continue;
     }
 
-    assert(sym->esym->st_value);
+    assert(sym->esym().st_value);
 
     auto *shdr = new ElfShdr<E>;
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
     shdr->sh_size = elf_syms[i].st_size;
-    shdr->sh_addralign = sym->esym->st_value;
+    shdr->sh_addralign = sym->esym().st_value;
 
     InputSection<E> *isec =
       new InputSection(ctx, *this, *shdr, ".common", sections.size());
@@ -1220,8 +1220,8 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.input_section = nullptr;
       sym.frag = nullptr;
       sym.value = esym.st_value;
+      sym.sym_idx = i;
       sym.ver_idx = versyms[i];
-      sym.esym = &esym;
       sym.is_weak = true;
       sym.is_imported = true;
       sym.is_exported = false;
@@ -1239,7 +1239,7 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
   std::vector<Symbol<E> *> vec;
   for (Symbol<E> *sym2 : this->symbols)
     if (sym2->file == this && sym != sym2 &&
-        sym->esym->st_value == sym2->esym->st_value)
+        sym->esym().st_value == sym2->esym().st_value)
       vec.push_back(sym2);
   return vec;
 }
@@ -1248,7 +1248,7 @@ template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data(ctx);
   ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mb->data(ctx) + ehdr->e_phoff);
-  u64 val = sym->esym->st_value;
+  u64 val = sym->esym().st_value;
 
   for (i64 i = 0; i < ehdr->e_phnum; i++)
     if (phdr[i].p_type == PT_LOAD && !(phdr[i].p_flags & PF_W) &&
