@@ -1442,7 +1442,7 @@ public:
     if (i32 idx = get_plt_idx(ctx); idx != -1)
       return ctx.plt->shdr.sh_addr + idx * E::plt_size;
     assert(get_pltgot_idx(ctx) != -1);
-    return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::plt_got_size;
+    return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::pltgot_size;
   }
 
   void set_got_idx(Context<E> &ctx, i32 idx) const {

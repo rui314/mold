@@ -783,8 +783,8 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
   assert(sym->has_got(ctx));
 
-  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::plt_got_size);
-  this->shdr.sh_size += E::plt_got_size;
+  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
+  this->shdr.sh_size += E::pltgot_size;
   symbols.push_back(sym);
 }
 
@@ -798,7 +798,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::plt_got_size;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
