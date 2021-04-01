@@ -750,8 +750,8 @@ void GotIpltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->get_plt_idx(ctx) == -1);
-  assert(sym->get_got_idx(ctx) == -1);
+  assert(!sym->has_plt(ctx));
+  assert(!sym->has_got(ctx));
 
   if (this->shdr.sh_size == 0) {
     this->shdr.sh_size = E::plt_size;
@@ -780,10 +780,10 @@ void IpltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym->get_plt_idx(ctx) == -1);
-  assert(sym->get_got_idx(ctx) != -1);
+  assert(!sym->has_plt(ctx));
+  assert(sym->has_got(ctx));
 
-  sym->set_plt_idx(ctx, this->shdr.sh_size / E::plt_got_size);
+  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::plt_got_size);
   this->shdr.sh_size += E::plt_got_size;
   symbols.push_back(sym);
 }
@@ -798,7 +798,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_plt_idx(ctx) * E::plt_got_size;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::plt_got_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
@@ -952,8 +952,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym.file->is_dso || sym.esym->is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
-      if (!ctx.arg.shared && sym.get_plt_idx(ctx) != -1 &&
-          sym.get_got_idx(ctx) == -1) {
+      if (!ctx.arg.shared && sym.has_plt(ctx) && !sym.has_got(ctx)) {
         // Emit an address for a canonical PLT
         esym.st_value = sym.get_plt_addr(ctx);
       }

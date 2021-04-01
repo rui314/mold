@@ -89,6 +89,7 @@ struct SymbolAux {
   i32 tlsgd_idx = -1;
   i32 tlsdesc_idx = -1;
   i32 plt_idx = -1;
+  i32 pltgot_idx = -1;
   i32 dynsym_idx = -1;
 };
 
@@ -1388,7 +1389,7 @@ public:
         : ctx.dynbss->shdr.sh_addr + value;
     }
 
-    if (get_plt_idx(ctx) != -1 && esym->st_type == STT_GNU_IFUNC)
+    if (has_plt(ctx) && esym->st_type == STT_GNU_IFUNC)
       return get_plt_addr(ctx);
 
     if (input_section) {
@@ -1407,7 +1408,7 @@ public:
       return input_section->get_addr() + value;
     }
 
-    if (get_plt_idx(ctx) != -1)
+    if (has_plt(ctx))
       return get_plt_addr(ctx);
     return value;
   }
@@ -1433,9 +1434,10 @@ public:
   }
 
   u64 get_plt_addr(Context<E> &ctx) const {
-    if (get_got_idx(ctx) == -1)
-      return ctx.plt->shdr.sh_addr + get_plt_idx(ctx) * E::plt_size;
-    return ctx.pltgot->shdr.sh_addr + get_plt_idx(ctx) * E::plt_got_size;
+    if (i32 idx = get_plt_idx(ctx); idx != -1)
+      return ctx.plt->shdr.sh_addr + idx * E::plt_size;
+    assert(get_pltgot_idx(ctx) != -1);
+    return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::plt_got_size;
   }
 
   void set_got_idx(Context<E> &ctx, i32 idx) const {
@@ -1474,6 +1476,12 @@ public:
     ctx.symbol_aux[aux_idx].plt_idx = idx;
   }
 
+  void set_pltgot_idx(Context<E> &ctx, i32 idx) const {
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
+    ctx.symbol_aux[aux_idx].pltgot_idx = idx;
+  }
+
   void set_dynsym_idx(Context<E> &ctx, i32 idx) const {
     assert(aux_idx != -1);
     assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
@@ -1504,8 +1512,20 @@ public:
     return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].plt_idx;
   }
 
+  i32 get_pltgot_idx(Context<E> &ctx) const {
+    return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].pltgot_idx;
+  }
+
   i32 get_dynsym_idx(Context<E> &ctx) const {
     return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
+  }
+
+  bool has_plt(Context <E> &ctx) const {
+    return get_plt_idx(ctx) != -1 || get_pltgot_idx(ctx) != -1;
+  }
+
+  bool has_got(Context <E> &ctx) const {
+    return get_got_idx(ctx) != -1;
   }
 
   bool is_alive() const {
