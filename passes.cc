@@ -473,8 +473,6 @@ void scan_rels(Context<E> &ctx) {
         ctx.dynbss->add_symbol(ctx, sym);
 
       for (Symbol<E> *alias : file->find_aliases(sym)) {
-        if (sym == alias)
-          continue;
         alias->has_copyrel = true;
         alias->value = sym->value;
         alias->copyrel_readonly = sym->copyrel_readonly;
