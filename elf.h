@@ -276,6 +276,7 @@ inline std::string rel_to_string<X86_64>(u32 r_type) {
   }
   return "unknown (" + std::to_string(r_type) + ")";
 }
+
 static constexpr u32 R_386_NONE = 0;
 static constexpr u32 R_386_32 = 1;
 static constexpr u32 R_386_PC32 = 2;
@@ -590,7 +591,7 @@ template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
 
 struct X86_64 {
-  typedef u64 word;
+  typedef u64 WordTy;
 
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
@@ -625,7 +626,7 @@ template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
-  typedef u32 word;
+  typedef u32 WordTy;
 
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;

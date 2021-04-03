@@ -381,8 +381,8 @@ static bool has_fini_array(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::vector<typename E::word> create_dynamic_section(Context<E> &ctx) {
-  std::vector<typename E::word> vec;
+static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
+  std::vector<typename E::WordTy> vec;
 
   auto define = [&](u64 tag, u64 val) {
     vec.push_back(tag);
@@ -507,7 +507,7 @@ void DynamicSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void DynamicSection<E>::copy_buf(Context<E> &ctx) {
-  std::vector<typename E::word> contents = create_dynamic_section(ctx);
+  std::vector<typename E::WordTy> contents = create_dynamic_section(ctx);
   assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
@@ -677,7 +677,7 @@ ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
+  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
@@ -729,7 +729,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::word *buf = (typename E::word *)(ctx.buf + this->shdr.sh_offset);
+  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -981,7 +981,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
     hashes[i] = djb_hash(symbols[i]->get_name());
 
   // Write a bloom filter
-  typename E::word *bloom = (typename E::word *)(base + HEADER_SIZE);
+  typename E::WordTy *bloom = (typename E::WordTy *)(base + HEADER_SIZE);
   for (i64 hash : hashes) {
     i64 idx = (hash / ELFCLASS_BITS) % num_bloom;
     bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
