@@ -54,6 +54,29 @@ void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   }
 }
 
+template <>
+void EhFrameSection<X86_64>::apply_reloc(Context<X86_64> &ctx,
+                                         EhReloc<X86_64> &rel,
+                                         u64 loc, u64 val) {
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+
+  switch (rel.type) {
+  case R_X86_64_32:
+    *(u32 *)(base + loc) = val;
+    return;
+  case R_X86_64_64:
+    *(u64 *)(base + loc) = val;
+    return;
+  case R_X86_64_PC32:
+    *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    return;
+  case R_X86_64_PC64:
+    *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    return;
+  }
+  unreachable(ctx);
+}
+
 static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
                            Symbol<X86_64> &sym, u64 r_type, u64 val) {
   switch (r_type) {

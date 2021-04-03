@@ -677,7 +677,9 @@ ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+  typename E::WordTy *buf =
+    (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+
   memset(buf, 0, this->shdr.sh_size);
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
@@ -871,8 +873,9 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
+    ElfSym<E> &esym =
+      *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
 
-    ElfSym<E> &esym = *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
     memset(&esym, 0, sizeof(esym));
     esym.st_type = sym.get_type();
     esym.st_size = sym.esym().st_size;
@@ -1186,28 +1189,6 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
   if (ctx.eh_frame_hdr)
     ctx.eh_frame_hdr->shdr.sh_size =
       ctx.eh_frame_hdr->HEADER_SIZE + num_fdes * 8;
-}
-
-template <typename E>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, EhReloc<E> &rel,
-                                    u64 loc, u64 val) {
-  u8 *base = ctx.buf + this->shdr.sh_offset;
-
-  switch (rel.type) {
-  case R_X86_64_32:
-    *(u32 *)(base + loc) = val;
-    return;
-  case R_X86_64_64:
-    *(u64 *)(base + loc) = val;
-    return;
-  case R_X86_64_PC32:
-    *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
-    return;
-  case R_X86_64_PC64:
-    *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
-    return;
-  }
-  unreachable(ctx);
 }
 
 template <typename E>
