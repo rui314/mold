@@ -643,8 +643,9 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void copy_buf(Context<E> &ctx) override;
   u64 get_addr(Context<E> &ctx, const Symbol<E> &sym);
+  void apply_reloc(Context<E> &ctx, EhReloc<E> &rel, u64 loc, u64 val);
+  void copy_buf(Context<E> &ctx) override;
 
   std::vector<CieRecord<E> *> cies;
   u32 num_fdes = 0;

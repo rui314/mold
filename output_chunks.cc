@@ -1189,30 +1189,34 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
 }
 
 template <typename E>
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, EhReloc<E> &rel,
+                                    u64 loc, u64 val) {
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+
+  switch (rel.type) {
+  case R_X86_64_32:
+    *(u32 *)(base + loc) = val;
+    return;
+  case R_X86_64_64:
+    *(u64 *)(base + loc) = val;
+    return;
+  case R_X86_64_PC32:
+    *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    return;
+  case R_X86_64_PC64:
+    *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    return;
+  }
+  unreachable(ctx);
+}
+
+template <typename E>
 void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   u8 *hdr_base = nullptr;
   if (ctx.eh_frame_hdr)
     hdr_base = ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset;
-
-  auto apply_reloc = [&](EhReloc<E> &rel, u64 loc, u64 val) {
-    switch (rel.type) {
-    case R_X86_64_32:
-      *(u32 *)(base + loc) = val;
-      return;
-    case R_X86_64_64:
-      *(u64 *)(base + loc) = val;
-      return;
-    case R_X86_64_PC32:
-      *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
-      return;
-    case R_X86_64_PC64:
-      *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
-      return;
-    }
-    unreachable(ctx);
-  };
 
   struct Entry {
     i32 init_addr;
@@ -1236,7 +1240,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       for (EhReloc<E> &rel : cie->rels) {
         u64 loc = cie->offset + rel.offset;
         u64 val = rel.sym.get_addr(ctx) + rel.addend;
-        apply_reloc(rel, loc, val);
+        apply_reloc(ctx, rel, loc, val);
       }
     }
 
@@ -1253,7 +1257,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         EhReloc<E> &rel = fde.rels[i];
         u64 loc = fde_off + rel.offset;
         u64 val = rel.sym.get_addr(ctx) + rel.addend;
-        apply_reloc(rel, loc, val);
+        apply_reloc(ctx, rel, loc, val);
 
         // Write to .eh_frame_hdr
         if (ctx.eh_frame_hdr && i == 0) {
