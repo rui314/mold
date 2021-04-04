@@ -1016,6 +1016,8 @@ struct TimerRecord {
   void stop();
 
   std::string name;
+  TimerRecord *parent = nullptr;
+  std::vector<TimerRecord *> children;
   i64 start;
   i64 end;
   i64 user;
@@ -1025,13 +1027,15 @@ struct TimerRecord {
 
 class Timer {
 public:
-  Timer(std::string name);
+  Timer(std::string name, Timer *parent = nullptr);
   ~Timer();
   void stop();
   static void print();
 
 private:
   static inline std::vector<TimerRecord *> records;
+  static inline std::mutex mu;
+
   TimerRecord *record;
 };
 

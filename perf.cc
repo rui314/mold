@@ -52,9 +52,16 @@ void TimerRecord::stop() {
   sys = to_nsec(usage.ru_stime) - sys;
 }
 
-Timer::Timer(std::string name) {
+Timer::Timer(std::string name, Timer *parent) {
+  std::lock_guard lock(mu);
+
   record = new TimerRecord(name);
   records.push_back(record);
+
+  if (parent) {
+    record->parent = parent->record;
+    parent->record->children.push_back(record);
+  }
 }
 
 Timer::~Timer() {
@@ -65,28 +72,47 @@ void Timer::stop() {
   record->stop();
 }
 
+static void print_rec(TimerRecord &rec, i64 indent) {
+  printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
+         ((double)rec.user / 1000000000),
+         ((double)rec.sys / 1000000000),
+         (((double)rec.end - rec.start) / 1000000000),
+         std::string(indent * 2, ' ').c_str(),
+         rec.name.c_str());
+
+  sort(rec.children.begin(), rec.children.end(),
+       [](TimerRecord *a, TimerRecord *b) {
+         return a->start < b->start;
+       });
+
+  for (TimerRecord *child : rec.children)
+    print_rec(*child, indent + 1);
+}
+
 void Timer::print() {
   for (i64 i = records.size() - 1; i >= 0; i--)
     records[i]->stop();
 
-  std::vector<i64> depth(records.size());
+  for (i64 i = 0; i < records.size(); i++) {
+    TimerRecord &inner = *records[i];
+    if (inner.parent)
+      continue;
 
-  for (i64 i = 0; i < records.size(); i++)
-    for (i64 j = 0; j < i; j++)
-      if (records[i]->end < records[j]->end)
-        depth[i]++;
+    for (i64 j = i - 1; j >= 0; j--) {
+      TimerRecord &outer = *records[j];
+      if (outer.start <= inner.start && inner.end <= outer.end) {
+        inner.parent = &outer;
+        outer.children.push_back(&inner);
+        break;
+      }
+    }
+  }
 
   std::cout << "     User   System     Real  Name\n";
 
-  for (i64 i = 0; i < records.size(); i++) {
-    TimerRecord &rec = *records[i];
-    printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
-           ((double)rec.user / 1000000000),
-           ((double)rec.sys / 1000000000),
-           (((double)rec.end - rec.start) / 1000000000),
-           std::string(depth[i] * 2, ' ').c_str(),
-           rec.name.c_str());
-  }
+  for (TimerRecord *rec : records)
+    if (!rec->parent)
+      print_rec(*rec, 0);
 
   std::cout << std::flush;
 }

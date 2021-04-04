@@ -525,9 +525,16 @@ int do_main(int argc, char **argv) {
   // Copy input sections to the output file
   {
     Timer t("copy_buf");
+
     tbb::parallel_for_each(ctx.chunks, [&](OutputChunk<E> *chunk) {
+      std::string name(chunk->name);
+      if (name.empty())
+        name = "(header)";
+      Timer t2(name, &t);
+
       chunk->copy_buf(ctx);
     });
+
     Error<E>::checkpoint(ctx);
   }
 
