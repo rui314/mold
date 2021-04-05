@@ -489,28 +489,19 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.output = "a.out";
 }
 
-template
-std::vector<std::string_view>
-expand_response_files(Context<X86_64> &ctx, char **argv);
+#define INSTANTIATE(E)                                                  \
+  template                                                              \
+  std::vector<std::string_view>                                         \
+  expand_response_files(Context<E> &ctx, char **argv);                  \
+                                                                        \
+  template                                                              \
+  bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,     \
+                std::string_view &arg,                                  \
+                std::string name);                                      \
+                                                                        \
+  template                                                              \
+  void parse_nonpositional_args(Context<E> &ctx,                        \
+                                std::vector<std::string_view> &remaining)
 
-template
-bool read_arg(Context<X86_64> &ctx, std::span<std::string_view> &args,
-              std::string_view &arg,
-              std::string name);
-
-template
-void parse_nonpositional_args(Context<X86_64> &ctx,
-                              std::vector<std::string_view> &remaining);
-
-template
-std::vector<std::string_view>
-expand_response_files(Context<I386> &ctx, char **argv);
-
-template
-bool read_arg(Context<I386> &ctx, std::span<std::string_view> &args,
-              std::string_view &arg,
-              std::string name);
-
-template
-void parse_nonpositional_args(Context<I386> &ctx,
-                              std::vector<std::string_view> &remaining);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);

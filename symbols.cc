@@ -34,12 +34,9 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   return out;
 }
 
-template class Symbol<X86_64>;
+#define INSTANTIATE(E)                                                  \
+  template class Symbol<E>;                                             \
+  template std::ostream &operator<<(std::ostream &, const Symbol<E> &)
 
-template
-std::ostream &operator<<(std::ostream &out, const Symbol<X86_64> &sym);
-
-template class Symbol<I386>;
-
-template
-std::ostream &operator<<(std::ostream &out, const Symbol<I386> &sym);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);

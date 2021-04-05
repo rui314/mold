@@ -318,20 +318,13 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
 }
 
-template
-void parse_linker_script(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
+#define INSTANTIATE(E)                                                  \
+  template                                                              \
+  void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);   \
+  template                                                              \
+  void parse_version_script(Context<E> &ctx, std::string path);         \
+  template                                                              \
+  void parse_dynamic_list(Context<E> &ctx, std::string path)
 
-template
-void parse_version_script(Context<X86_64> &ctx, std::string path);
-
-template
-void parse_dynamic_list(Context<X86_64> &ctx, std::string path);
-
-template
-void parse_linker_script(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
-
-template
-void parse_version_script(Context<I386> &ctx, std::string path);
-
-template
-void parse_dynamic_list(Context<I386> &ctx, std::string path);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);

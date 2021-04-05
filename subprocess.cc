@@ -252,24 +252,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   Fatal(ctx) << "execvp failed: " << strerror(errno);
 }
 
-template
-bool resume_daemon(Context<X86_64> &ctx, char **argv, i64 *code);
+#define INSTANTIATE(E)                                                  \
+  template bool resume_daemon(Context<E> &, char **, i64 *);            \
+  template void daemonize(Context<E> &, char **,                        \
+                          std::function<void()> *,                      \
+                          std::function<void()> *);                     \
+  template void process_run_subcommand(Context<E> &, int, char **)
 
-template
-void daemonize(Context<X86_64> &ctx, char **argv,
-               std::function<void()> *wait_for_client,
-               std::function<void()> *on_complete);
-
-template
-void process_run_subcommand(Context<X86_64> &ctx, int argc, char **argv);
-
-template
-bool resume_daemon(Context<I386> &ctx, char **argv, i64 *code);
-
-template
-void daemonize(Context<I386> &ctx, char **argv,
-               std::function<void()> *wait_for_client,
-               std::function<void()> *on_complete);
-
-template
-void process_run_subcommand(Context<I386> &ctx, int argc, char **argv);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
