@@ -1251,6 +1251,8 @@ struct Context {
   // Symbol table
   ConcurrentMap<Symbol<E>> symbol_map;
 
+  ConcurrentMap<ComdatGroup> comdat_groups;
+
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
 

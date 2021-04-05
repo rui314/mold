@@ -150,8 +150,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (entries[0] != GRP_COMDAT)
         Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-      static ConcurrentMap<ComdatGroup> map;
-      ComdatGroup *group = map.insert(signature, ComdatGroup());
+      ComdatGroup *group = ctx.comdat_groups.insert(signature, ComdatGroup());
       comdat_groups.push_back({group, entries.subspan(1)});
 
       static Counter counter("comdats");
