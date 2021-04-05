@@ -326,6 +326,9 @@ int do_main(int argc, char **argv) {
     ctx.tg.wait();
   }
 
+  if (ctx.objs.empty())
+    Fatal(ctx) << "no input files";
+
   // Uniquify shared object files with soname
   {
     std::vector<SharedFile<E> *> vec;
