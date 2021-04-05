@@ -86,25 +86,6 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 }
 
 template <typename E>
-std::string_view
-InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  u8 *begin = mb->data(ctx) + shdr.sh_offset;
-  u8 *end = begin + shdr.sh_size;
-  if (mb->data(ctx) + mb->size() < end)
-    Fatal(ctx) << *this << ": shdr corrupted";
-  return {(char *)begin, (char *)end};
-}
-
-template <typename E>
-std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
-  assert(idx < elf_sections.size());
-
-  if (elf_sections.size() <= idx)
-    Fatal(ctx) << *this << ": invalid section index: " << idx;
-  return this->get_string(ctx, elf_sections[idx]);
-}
-
-template <typename E>
 template <typename T>
 std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
   std::string_view view = this->get_string(ctx, shdr);
@@ -212,7 +193,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
     if (shdr.sh_info >= sections.size())
       Fatal(ctx) << *this << ": invalid relocated section index: "
-              << (u32)shdr.sh_info;
+                 << (u32)shdr.sh_info;
 
     if (InputSection<E> *target = sections[shdr.sh_info]) {
       assert(target->relsec_idx == -1);

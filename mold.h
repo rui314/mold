@@ -219,7 +219,18 @@ template <typename E>
 class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
-               std::string_view name, i64 section_idx);
+               std::string_view name, i64 section_idx)
+    : file(file), shdr(shdr), name(name), section_idx(section_idx) {
+    if (name.starts_with(".zdebug"))
+      uncompress_old_style(ctx);
+    else if (shdr.sh_flags & SHF_COMPRESSED)
+      uncompress_new_style(ctx);
+    else if (shdr.sh_type != SHT_NOBITS)
+      contents = file.get_string(ctx, shdr);
+
+    output_section =
+      OutputSection<E>::get_instance(name, shdr.sh_type, shdr.sh_flags);
+  }
 
   void scan_relocations(Context<E> &ctx);
   void report_undefined_symbols();
@@ -266,6 +277,10 @@ public:
 
 private:
   typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
+
+  void uncompress_old_style(Context<E> &ctx);
+  void uncompress_new_style(Context<E> &ctx);
+  void do_uncompress(Context<E> &ctx, std::string_view data, u64 size);
 
   void dispatch(Context<E> &ctx, Action table[3][4], u16 rel_type, i64 i);
 };
@@ -799,8 +814,8 @@ public:
   InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
   InputFile() : name("<internal>") {}
 
-  std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
-  std::string_view get_string(Context<E> &ctx, i64 idx);
+  inline std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
+  inline std::string_view get_string(Context<E> &ctx, i64 idx);
 
   MemoryMappedFile<E> *mb;
   std::span<ElfShdr<E>> elf_sections;
@@ -1748,6 +1763,25 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
+}
+
+template <typename E>
+inline std::string_view
+InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
+  u8 *begin = mb->data(ctx) + shdr.sh_offset;
+  u8 *end = begin + shdr.sh_size;
+  if (mb->data(ctx) + mb->size() < end)
+    Fatal(ctx) << *this << ": shdr corrupted";
+  return {(char *)begin, (char *)end};
+}
+
+template <typename E>
+inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
+  assert(idx < elf_sections.size());
+
+  if (elf_sections.size() <= idx)
+    Fatal(ctx) << *this << ": invalid section index: " << idx;
+  return this->get_string(ctx, elf_sections[idx]);
 }
 
 template <typename E>

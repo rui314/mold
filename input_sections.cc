@@ -11,44 +11,39 @@ static u64 read64be(u8 *buf) {
 }
 
 template <typename E>
-InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
-                              const ElfShdr<E> &shdr,
-                              std::string_view name, i64 section_idx)
-  : file(file), shdr(shdr), name(name), section_idx(section_idx) {
-  auto do_uncompress = [&](std::string_view data, u64 size) {
-    u8 *buf = new u8[size];
-    unsigned long size2 = size;
-    if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
-      Fatal(ctx) << file << ": " << name << ": uncompress failed";
-    if (size != size2)
-      Fatal(ctx) << file << ": " << name << ": uncompress: invalid size";
-    contents = {(char *)buf, size};
-  };
+void InputSection<E>::do_uncompress(Context<E> &ctx, std::string_view data,
+                                    u64 size) {
+  u8 *buf = new u8[size];
+  unsigned long size2 = size;
+  if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
+    Fatal(ctx) << file << ": " << name << ": uncompress failed";
+  if (size != size2)
+    Fatal(ctx) << file << ": " << name << ": uncompress: invalid size";
+  contents = {(char *)buf, size};
+}
 
-  if (name.starts_with(".zdebug")) {
-    // Old-style compressed section
-    std::string_view data = file.get_string(ctx, shdr);
-    if (!data.starts_with("ZLIB") || data.size() <= 12)
-      Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
+// Uncompress old-style compressed section
+template <typename E>
+void InputSection<E>::uncompress_old_style(Context<E> &ctx) {
+  std::string_view data = file.get_string(ctx, shdr);
+  if (!data.starts_with("ZLIB") || data.size() <= 12)
+    Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
+  u64 size = read64be((u8 *)&data[4]);
+  do_uncompress(ctx, data.substr(12), size);
+}
 
-    u64 size = read64be((u8 *)&data[4]);
-    do_uncompress(data.substr(12), size);
-  } else if (shdr.sh_flags & SHF_COMPRESSED) {
-    // New-style compressed section
-    std::string_view data = file.get_string(ctx, shdr);
-    if (data.size() < sizeof(ElfChdr<E>))
-      Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
+// Uncompress new-style compressed section
+template <typename E>
+void InputSection<E>::uncompress_new_style(Context<E> &ctx) {
+  // New-style compressed section
+  std::string_view data = file.get_string(ctx, shdr);
+  if (data.size() < sizeof(ElfChdr<E>))
+    Fatal(ctx) << file << ": " << name << ": corrupted compressed section";
 
-    ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
-    if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-      Fatal(ctx) << file << ": " << name << ": unsupported compression type";
-    do_uncompress(data.substr(sizeof(ElfChdr<E>)), hdr.ch_size);
-  } else if (shdr.sh_type != SHT_NOBITS) {
-    contents = file.get_string(ctx, shdr);
-  }
-
-  output_section =
-    OutputSection<E>::get_instance(name, shdr.sh_type, shdr.sh_flags);
+  ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
+  if (hdr.ch_type != ELFCOMPRESS_ZLIB)
+    Fatal(ctx) << file << ": " << name << ": unsupported compression type";
+  do_uncompress(ctx, data.substr(sizeof(ElfChdr<E>)), hdr.ch_size);
 }
 
 template <typename E>
