@@ -29,6 +29,12 @@ ifeq ($(STATIC), 1)
   LDFLAGS += -static
 endif
 
+LTO ?= 0
+ifeq ($(LTO), 1)
+  CPPFLAGS += -O3 -flto
+  LDFLAGS += -flto
+endif
+
 all: mold mold-wrapper.so
 
 mold: $(OBJS)
