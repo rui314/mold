@@ -13,6 +13,7 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <span>
 #include <sstream>
@@ -1304,7 +1305,7 @@ struct Context {
   OutputShdr<E> *shdr = nullptr;
   OutputPhdr<E> *phdr = nullptr;
   InterpSection<E> *interp = nullptr;
-  GotSection<E> *got = nullptr;
+  std::unique_ptr<GotSection<E>> got;
   GotPltSection<E> *gotplt = nullptr;
   RelPltSection<E> *relplt = nullptr;
   RelDynSection<E> *reldyn = nullptr;

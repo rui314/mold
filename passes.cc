@@ -28,10 +28,15 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.chunks.push_back(chunk);
   };
 
+  auto add2 = [&](auto &ptr, auto *chunk) {
+    ptr.reset(chunk);
+    ctx.chunks.push_back(chunk);
+  };
+
   add(ctx.ehdr = new OutputEhdr<E>);
   add(ctx.phdr = new OutputPhdr<E>);
   add(ctx.shdr = new OutputShdr<E>);
-  add(ctx.got = new GotSection<E>);
+  add2(ctx.got, new GotSection<E>);
   add(ctx.gotplt = new GotPltSection<E>);
   add(ctx.relplt = new RelPltSection<E>);
   add(ctx.strtab = new StrtabSection<E>);

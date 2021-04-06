@@ -81,7 +81,7 @@ bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
 
   bool match = (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
                type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-               chunk == ctx.got || chunk == ctx.dynamic ||
+               chunk == ctx.got.get() || chunk == ctx.dynamic ||
                name.ends_with(".rel.ro");
 
   return (flags & SHF_WRITE) && match;
