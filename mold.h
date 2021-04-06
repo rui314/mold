@@ -915,7 +915,8 @@ private:
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
-  SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
+  static SharedFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx);
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
@@ -927,6 +928,8 @@ public:
   std::vector<const ElfSym<E> *> elf_syms;
 
 private:
+  SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
   std::string_view get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
   std::vector<std::string_view> read_verdef(Context<E> &ctx);
@@ -1299,7 +1302,7 @@ struct Context {
   FileCache<E, SharedFile<E>> dso_cache;
 
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
-  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_dsos;
+  tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
   tbb::concurrent_vector<std::unique_ptr<std::vector<u8>>> owning_bufs;
 
   // Symbol auxiliary data

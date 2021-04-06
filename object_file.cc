@@ -1111,6 +1111,14 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 }
 
 template <typename E>
+SharedFile<E> *
+SharedFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  SharedFile<E> *obj = new SharedFile(ctx, mb);
+  ctx.owning_dsos.push_back(std::unique_ptr<SharedFile<E>>(obj));
+  return obj;
+}
+
+template <typename E>
 SharedFile<E>::SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   : InputFile<E>(ctx, mb) {
   this->is_alive = !ctx.as_needed;

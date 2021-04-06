@@ -65,7 +65,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
 
 template <typename E>
 static SharedFile<E> *new_shared_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  SharedFile<E> *file = new SharedFile<E>(ctx, mb);
+  SharedFile<E> *file = SharedFile<E>::create(ctx, mb);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
