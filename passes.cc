@@ -913,10 +913,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // __start_ and __stop_ symbols
   for (OutputChunk<E> *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
-      std::string *sym1 = new std::string("__start_" + std::string(chunk->name));
-      std::string *sym2 = new std::string("__stop_" + std::string(chunk->name));
-      start(Symbol<E>::intern(ctx, *sym1), chunk);
-      stop(Symbol<E>::intern(ctx, *sym2), chunk);
+      std::string_view sym1 =
+        save_string(ctx, "__start_" + std::string(chunk->name));
+      std::string_view sym2 =
+        save_string(ctx, "__stop_" + std::string(chunk->name));
+
+      start(Symbol<E>::intern(ctx, sym1), chunk);
+      stop(Symbol<E>::intern(ctx, sym2), chunk);
     }
   }
 }

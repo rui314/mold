@@ -12,26 +12,26 @@ read_response_file(Context<E> &ctx, std::string_view path) {
   u8 *data = mb->data(ctx);
 
   auto read_quoted = [&](i64 i, char quote) {
-    std::string *buf = new std::string;
+    std::string buf;
     while (i < mb->size() && data[i] != quote) {
       if (data[i] == '\\') {
-        buf->append(1, data[i + 1]);
+        buf.append(1, data[i + 1]);
         i += 2;
       } else {
-        buf->append(1, data[i++]);
+        buf.append(1, data[i++]);
       }
     }
     if (i >= mb->size())
       Fatal(ctx) << path << ": premature end of input";
-    vec.push_back(std::string_view(*buf));
+    vec.push_back(save_string(ctx, buf));
     return i + 1;
   };
 
   auto read_unquoted = [&](i64 i) {
-    std::string *buf = new std::string;
+    std::string buf;
     while (i < mb->size() && !isspace(data[i]))
-      buf->append(1, data[i++]);
-    vec.push_back(std::string_view(*buf));
+      buf.append(1, data[i++]);
+    vec.push_back(save_string(ctx, buf));
     return i;
   };
 

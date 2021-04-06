@@ -1381,7 +1381,7 @@ template <typename E>
 void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 template <typename E>
-std::string_view save_string(Context<E> &ctx, std::string str);
+std::string_view save_string(Context<E> &ctx, const std::string &str);
 
 //
 // Symbol

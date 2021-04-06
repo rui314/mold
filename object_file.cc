@@ -1081,10 +1081,8 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
     if (!is_c_identifier(chunk->name))
       continue;
 
-    auto *start = new std::string("__start_" + std::string(chunk->name));
-    auto *stop = new std::string("__stop_" + std::string(chunk->name));
-    add(*start);
-    add(*stop);
+    add(save_string(ctx, "__start_" + std::string(chunk->name)));
+    add(save_string(ctx, "__stop_" + std::string(chunk->name)));
   }
 
   obj->elf_syms = *esyms;

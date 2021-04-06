@@ -18,7 +18,7 @@ static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 template <typename E>
-std::string_view save_string(Context<E> &ctx, std::string str) {
+std::string_view save_string(Context<E> &ctx, const std::string &str) {
   std::vector<u8> *buf = new std::vector<u8>(str.size());
   memcpy(buf->data(), str.data(), str.size());
   ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
@@ -601,4 +601,9 @@ int main(int argc, char **argv) {
   }
 }
 
-template void read_file(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
+#define INSTANTIATE(E)                                                  \
+  template void read_file(Context<E> &, MemoryMappedFile<E> *);         \
+  template std::string_view save_string(Context<E> &, const std::string &)
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
