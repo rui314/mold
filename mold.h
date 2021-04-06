@@ -841,7 +841,7 @@ public:
   static ObjectFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb,
                                std::string archive_name, bool is_in_lib);
 
-  ObjectFile(Context<E> &ctx);
+  static ObjectFile<E> *create_internal_file(Context<E> &ctx);
 
   void parse(Context<E> &ctx);
   void resolve_lazy_symbols(Context<E> &ctx);
@@ -884,6 +884,8 @@ public:
   u64 strtab_size = 0;
 
 private:
+  ObjectFile();
+
   ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
              std::string archive_name, bool is_in_lib);
 

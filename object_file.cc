@@ -111,17 +111,20 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
-ObjectFile<E> *
-ObjectFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb,
-                      std::string archive_name, bool is_in_lib) {
-  return new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
-}
-
-template <typename E>
 ObjectFile<E>::ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
                           std::string archive_name, bool is_in_lib)
   : InputFile<E>(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {
   this->is_alive = !is_in_lib;
+}
+
+template <typename E>
+ObjectFile<E>::ObjectFile() {}
+
+template <typename E>
+ObjectFile<E> *
+ObjectFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb,
+                      std::string archive_name, bool is_in_lib) {
+  return new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
 }
 
 template <typename E>
@@ -1018,13 +1021,16 @@ bool is_c_identifier(std::string_view name) {
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile(Context<E> &ctx) {
+ObjectFile<E> *
+ObjectFile<E>::create_internal_file(Context<E> &ctx) {
+  ObjectFile<E> *obj = new ObjectFile<E>;
+
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym<E>>(1);
-  this->symbols.push_back(new Symbol<E>);
-  this->first_global = 1;
-  this->is_alive = true;
-  this->priority = 1;
+  obj->symbols.push_back(new Symbol<E>);
+  obj->first_global = 1;
+  obj->is_alive = true;
+  obj->priority = 1;
 
   auto add = [&](std::string_view name) {
     ElfSym<E> esym = {};
@@ -1035,7 +1041,7 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
     esyms->push_back(esym);
 
     Symbol<E> *sym = Symbol<E>::intern(ctx, name);
-    this->symbols.push_back(sym);
+    obj->symbols.push_back(sym);
     return sym;
   };
 
@@ -1071,11 +1077,12 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx) {
     add(*stop);
   }
 
-  elf_syms = *esyms;
-  sym_fragments.resize(elf_syms.size());
+  obj->elf_syms = *esyms;
+  obj->sym_fragments.resize(obj->elf_syms.size());
 
-  i64 num_globals = elf_syms.size() - first_global;
-  symvers.resize(num_globals);
+  i64 num_globals = obj->elf_syms.size() - obj->first_global;
+  obj->symvers.resize(num_globals);
+  return obj;
 }
 
 template <typename E>

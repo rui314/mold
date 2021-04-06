@@ -369,7 +369,7 @@ int do_main(int argc, char **argv) {
 
   // Create a dummy file containing linker-synthesized symbols
   // (e.g. `__bss_start`).
-  ctx.internal_obj = new ObjectFile<E>(ctx);
+  ctx.internal_obj = ObjectFile<E>::create_internal_file(ctx);
   ctx.internal_obj->resolve_regular_symbols(ctx);
   ctx.objs.push_back(ctx.internal_obj);
 
