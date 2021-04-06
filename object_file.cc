@@ -838,9 +838,6 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
     for (u32 i : entries)
       if (sections[i])
         sections[i]->kill();
-
-    static Counter counter("removed_comdat_mem");
-    counter += entries.size();
   }
 }
 

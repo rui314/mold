@@ -239,7 +239,7 @@ public:
   void copy_buf(Context<E> &ctx);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
-  void kill();
+  inline void kill();
 
   inline i64 get_priority() const;
   inline u64 get_addr() const;
@@ -870,6 +870,7 @@ public:
   std::vector<const char *> symvers;
   std::vector<SectionFragment<E> *> fragments;
   std::vector<SectionFragmentRef<E>> sym_fragments;
+  std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool exclude_libs = false;
 
   u64 num_dynrel = 0;
@@ -891,7 +892,6 @@ private:
   void maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
 
-  std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool has_common_symbol;
 
   std::string_view symbol_strtab;
@@ -1769,6 +1769,16 @@ inline u64 next_power_of_two(u64 val) {
 template <typename E>
 inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
   return output_section.shdr.sh_addr + offset;
+}
+
+
+template <typename E>
+inline void InputSection<E>::kill() {
+  if (is_alive.exchange(false)) {
+    is_alive = false;
+    for (FdeRecord<E> &fde : fdes)
+      fde.is_alive = false;
+  }
 }
 
 template <typename E>

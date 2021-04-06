@@ -231,6 +231,11 @@ static void show_stats(Context<E> &ctx) {
       else
         nonalloc += sec->get_rels(ctx).size();
     }
+
+    static Counter comdat("removed_comdat_mem");
+    for (auto &pair : obj->comdat_groups)
+      if (ComdatGroup *group = pair.first; group->owner != obj->priority)
+        comdat += pair.second.size();
   }
 
   Counter num_input_sections("input_sections");

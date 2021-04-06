@@ -133,14 +133,5 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
              << "' can not be used; recompile with -fPIE";
 }
 
-template <typename E>
-void InputSection<E>::kill() {
-  if (is_alive.exchange(false)) {
-    is_alive = false;
-    for (FdeRecord<E> &fde : fdes)
-      fde.is_alive = false;
-  }
-}
-
 template class InputSection<X86_64>;
 template class InputSection<I386>;
