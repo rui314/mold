@@ -24,49 +24,44 @@ void apply_exclude_libs(Context<E> &ctx) {
 
 template <typename E>
 void create_synthetic_sections(Context<E> &ctx) {
-  auto add = [&](OutputChunk<E> *chunk) {
-    ctx.chunks.push_back(chunk);
+  auto add = [&](auto &chunk) {
+    ctx.chunks.push_back(chunk.get());
   };
 
-  auto add2 = [&](auto &ptr, auto *chunk) {
-    ptr.reset(chunk);
-    ctx.chunks.push_back(chunk);
-  };
-
-  add(ctx.ehdr = new OutputEhdr<E>);
-  add(ctx.phdr = new OutputPhdr<E>);
-  add(ctx.shdr = new OutputShdr<E>);
-  add2(ctx.got, new GotSection<E>);
-  add(ctx.gotplt = new GotPltSection<E>);
-  add(ctx.relplt = new RelPltSection<E>);
-  add(ctx.strtab = new StrtabSection<E>);
-  add(ctx.shstrtab = new ShstrtabSection<E>);
-  add(ctx.plt = new PltSection<E>);
-  add(ctx.pltgot = new PltGotSection<E>);
-  add(ctx.symtab = new SymtabSection<E>);
-  add(ctx.dynsym = new DynsymSection<E>);
-  add(ctx.dynstr = new DynstrSection<E>);
-  add(ctx.eh_frame = new EhFrameSection<E>);
-  add(ctx.dynbss = new DynbssSection<E>(false));
-  add(ctx.dynbss_relro = new DynbssSection<E>(true));
+  add(ctx.ehdr = std::make_unique<OutputEhdr<E>>());
+  add(ctx.phdr = std::make_unique<OutputPhdr<E>>());
+  add(ctx.shdr = std::make_unique<OutputShdr<E>>());
+  add(ctx.got = std::make_unique<GotSection<E>>());
+  add(ctx.gotplt = std::make_unique<GotPltSection<E>>());
+  add(ctx.relplt = std::make_unique<RelPltSection<E>>());
+  add(ctx.strtab = std::make_unique<StrtabSection<E>>());
+  add(ctx.shstrtab = std::make_unique<ShstrtabSection<E>>());
+  add(ctx.plt = std::make_unique<PltSection<E>>());
+  add(ctx.pltgot = std::make_unique<PltGotSection<E>>());
+  add(ctx.symtab = std::make_unique<SymtabSection<E>>());
+  add(ctx.dynsym = std::make_unique<DynsymSection<E>>());
+  add(ctx.dynstr = std::make_unique<DynstrSection<E>>());
+  add(ctx.eh_frame = std::make_unique<EhFrameSection<E>>());
+  add(ctx.dynbss = std::make_unique<DynbssSection<E>>(false));
+  add(ctx.dynbss_relro = std::make_unique<DynbssSection<E>>(true));
 
   if (!ctx.arg.dynamic_linker.empty())
-    add(ctx.interp = new InterpSection<E>);
+    add(ctx.interp = std::make_unique<InterpSection<E>>());
   if (ctx.arg.build_id.kind != BuildId::NONE)
-    add(ctx.buildid = new BuildIdSection<E>);
+    add(ctx.buildid = std::make_unique<BuildIdSection<E>>());
   if (ctx.arg.eh_frame_hdr)
-    add(ctx.eh_frame_hdr = new EhFrameHdrSection<E>);
+    add(ctx.eh_frame_hdr = std::make_unique<EhFrameHdrSection<E>>());
   if (ctx.arg.hash_style_sysv)
-    add(ctx.hash = new HashSection<E>);
+    add(ctx.hash = std::make_unique<HashSection<E>>());
   if (ctx.arg.hash_style_gnu)
-    add(ctx.gnu_hash = new GnuHashSection<E>);
+    add(ctx.gnu_hash = std::make_unique<GnuHashSection<E>>());
   if (!ctx.arg.version_definitions.empty())
-    add(ctx.verdef = new VerdefSection<E>);
+    add(ctx.verdef = std::make_unique<VerdefSection<E>>());
 
-  add(ctx.reldyn = new RelDynSection<E>);
-  add(ctx.dynamic = new DynamicSection<E>);
-  add(ctx.versym = new VersymSection<E>);
-  add(ctx.verneed = new VerneedSection<E>);
+  add(ctx.reldyn = std::make_unique<RelDynSection<E>>());
+  add(ctx.dynamic = std::make_unique<DynamicSection<E>>());
+  add(ctx.versym = std::make_unique<VersymSection<E>>());
+  add(ctx.verneed = std::make_unique<VerneedSection<E>>());
 }
 
 template <typename E>
@@ -754,13 +749,13 @@ void clear_padding(Context<E> &ctx, i64 filesize) {
 //   section header
 template <typename E>
 i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
-  if (chunk == ctx.ehdr)
+  if (chunk == ctx.ehdr.get())
     return 0;
-  if (chunk == ctx.phdr)
+  if (chunk == ctx.phdr.get())
     return 1;
-  if (chunk == ctx.interp)
+  if (chunk == ctx.interp.get())
     return 2;
-  if (chunk == ctx.shdr)
+  if (chunk == ctx.shdr.get())
     return 1 << 20;
 
   u64 type = chunk->shdr.sh_type;
@@ -830,14 +825,14 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
 
 template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
-  auto start = [](Symbol<E> *sym, OutputChunk<E> *chunk) {
+  auto start = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
-  auto stop = [](Symbol<E> *sym, OutputChunk<E> *chunk) {
+  auto stop = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
       sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;

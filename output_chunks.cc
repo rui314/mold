@@ -81,7 +81,7 @@ bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
 
   bool match = (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
                type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-               chunk == ctx.got.get() || chunk == ctx.dynamic ||
+               chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
                name.ends_with(".rel.ro");
 
   return (flags & SHF_WRITE) && match;
@@ -91,7 +91,7 @@ template <typename E>
 std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
-  auto define = [&](u64 type, u64 flags, i64 min_align, OutputChunk<E> *chunk) {
+  auto define = [&](u64 type, u64 flags, i64 min_align, auto &chunk) {
     vec.push_back({});
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_type = type;
