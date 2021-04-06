@@ -272,7 +272,7 @@ void bin_sections(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
     for (ObjectFile<E> *file : slices[i])
       for (InputSection<E> *isec : file->sections)
-        if (isec)
+        if (isec && isec->is_alive)
           groups[i][isec->output_section->idx].push_back(isec);
   });
 

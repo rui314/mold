@@ -955,8 +955,11 @@ void parse_dynamic_list(Context<E> &ctx, std::string path);
 template <typename E>
 class OutputFile {
 public:
-  static OutputFile *open(Context<E> &ctx, std::string path, u64 filesize);
+  static std::unique_ptr<OutputFile>
+  open(Context<E> &ctx, std::string path, u64 filesize);
+
   virtual void close(Context<E> &ctx) = 0;
+  virtual ~OutputFile() {}
 
   u8 *buf;
   static inline char *tmpfile;

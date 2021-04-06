@@ -220,7 +220,7 @@ static void show_stats(Context<E> &ctx) {
     undefined += obj->symbols.size() - obj->first_global;
 
     for (InputSection<E> *sec : obj->sections) {
-      if (!sec)
+      if (!sec || !sec->is_alive)
         continue;
 
       static Counter alloc("reloc_alloc");
@@ -494,7 +494,8 @@ int do_main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  OutputFile<E> *file = OutputFile<E>::open(ctx, ctx.arg.output, filesize);
+  std::unique_ptr<OutputFile<E>> file =
+    OutputFile<E>::open(ctx, ctx.arg.output, filesize);
   ctx.buf = file->buf;
 
   Timer t_copy("copy");

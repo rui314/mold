@@ -84,7 +84,7 @@ public:
 };
 
 template <typename E>
-OutputFile<E> *
+std::unique_ptr<OutputFile<E>>
 OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
   Timer t("open_file");
 
@@ -93,11 +93,11 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
   if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFMT) != S_IFREG)
     is_special = true;
 
-  OutputFile<E> *file;
+  std::unique_ptr<OutputFile<E>> file;
   if (is_special)
-    file = new MallocOutputFile<E>(ctx, path, filesize);
+    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize);
   else
-    file = new MemoryMappedOutputFile<E>(ctx, path, filesize);
+    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
@@ -105,9 +105,9 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
 }
 
 template
-OutputFile<X86_64> *
+std::unique_ptr<OutputFile<X86_64>>
 OutputFile<X86_64>::open(Context<X86_64> &ctx, std::string path, u64 filesize);
 
 template
-OutputFile<I386> *
+std::unique_ptr<OutputFile<I386>>
 OutputFile<I386>::open(Context<I386> &ctx, std::string path, u64 filesize);
