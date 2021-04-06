@@ -784,12 +784,10 @@ struct ComdatGroup {
 template <typename E>
 class MemoryMappedFile {
 public:
-  static MemoryMappedFile *open(std::string path);
+  static MemoryMappedFile *open(Context<E> &ctx, std::string path);
   static MemoryMappedFile *must_open(Context<E> &ctx, std::string path);
 
-  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
-    : name(name), data_(data), size_(size), mtime(mtime) {}
-  MemoryMappedFile() = delete;
+  ~MemoryMappedFile();
 
   MemoryMappedFile *slice(std::string name, u64 start, u64 size);
 
@@ -804,6 +802,9 @@ public:
   i64 mtime = 0;
 
 private:
+  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
+    : name(name), data_(data), size_(size), mtime(mtime) {}
+
   std::mutex mu;
   MemoryMappedFile *parent;
   std::atomic<u8 *> data_;
@@ -819,6 +820,14 @@ public:
   inline std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   inline std::string_view get_string(Context<E> &ctx, i64 idx);
 
+  template<typename T> std::span<T>
+  get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
+
+  template<typename T> std::span<T>
+  get_data(Context<E> &ctx, i64 idx);
+
+  ElfShdr<E> *find_section(i64 type);
+
   MemoryMappedFile<E> *mb;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
@@ -827,12 +836,10 @@ public:
   bool is_dso = false;
   u32 priority;
   std::atomic_bool is_alive = false;
-
-  template<typename T> std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
-  template<typename T> std::span<T> get_data(Context<E> &ctx, i64 idx);
-  ElfShdr<E> *find_section(i64 type);
-
   std::string_view shstrtab;
+
+protected:
+  std::vector<Symbol<E>> local_syms;
 };
 
 template <typename E>

@@ -9,7 +9,8 @@
 #include <unistd.h>
 
 template <typename E>
-MemoryMappedFile<E> *MemoryMappedFile<E>::open(std::string path) {
+MemoryMappedFile<E> *
+MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
   struct stat st;
   if (stat(path.c_str(), &st) == -1)
     return nullptr;
@@ -20,7 +21,7 @@ MemoryMappedFile<E> *MemoryMappedFile<E>::open(std::string path) {
 template <typename E>
 MemoryMappedFile<E> *
 MemoryMappedFile<E>::must_open(Context<E> &ctx, std::string path) {
-  if (MemoryMappedFile *mb = MemoryMappedFile::open(path))
+  if (MemoryMappedFile *mb = MemoryMappedFile::open(ctx, path))
     return mb;
   Fatal(ctx) << "cannot open " << path;
 }
@@ -51,6 +52,12 @@ MemoryMappedFile<E>::slice(std::string name, u64 start, u64 size) {
   MemoryMappedFile *mb = new MemoryMappedFile(name, data_ + start, size);
   mb->parent = this;
   return mb;
+}
+
+template <typename E>
+MemoryMappedFile<E>::~MemoryMappedFile<E>() {
+  if (data_ && !parent)
+    munmap(data_, size_);
 }
 
 template <typename E>
@@ -400,11 +407,11 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   counter += elf_syms.size();
 
   // Initialize local symbols
-  Symbol<E> *locals = new Symbol<E>[first_global];
+  this->local_syms.resize(first_global);
 
   for (i64 i = 1; i < first_global; i++) {
     const ElfSym<E> &esym = elf_syms[i];
-    Symbol<E> &sym = locals[i];
+    Symbol<E> &sym = this->local_syms[i];
 
     sym.set_name(symbol_strtab.data() + esym.st_name);
 
@@ -436,7 +443,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   symvers.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
-    this->symbols[i] = &locals[i];
+    this->symbols[i] = &this->local_syms[i];
 
   // Initialize global symbols
   for (i64 i = first_global; i < elf_syms.size(); i++) {

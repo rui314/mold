@@ -147,16 +147,16 @@ static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) 
     return find_library(ctx, str.substr(2));
 
   if (std::string path = path_dirname(current_file<E>->name) + "/";
-      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path + str))
+      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path + str))
     return mb;
 
-  if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(str))
+  if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, str))
     return mb;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string path = root + std::string(dir) + "/" + str;
-    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path))
+    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path))
       return mb;
   }
 

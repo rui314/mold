@@ -156,7 +156,7 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
       std::string path = root + std::string(dir) + "/" + name.substr(1);
-      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(path))
+      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path))
         return mb;
     }
     Fatal(ctx) << "library not found: " << name;
@@ -166,9 +166,9 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(stem + ".so"))
+      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, stem + ".so"))
         return mb;
-    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(stem + ".a"))
+    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, stem + ".a"))
       return mb;
   }
   Fatal(ctx) << "library not found: " << name;
