@@ -48,7 +48,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
   count++;
 
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
-  ObjectFile<E> *file = new ObjectFile<E>(ctx, mb, archive_name, in_lib);
+  ObjectFile<E> *file = ObjectFile<E>::create(ctx, mb, archive_name, in_lib);
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;

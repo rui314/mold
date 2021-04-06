@@ -111,6 +111,13 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
+ObjectFile<E> *
+ObjectFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb,
+                      std::string archive_name, bool is_in_lib) {
+  return new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
+}
+
+template <typename E>
 ObjectFile<E>::ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
                           std::string archive_name, bool is_in_lib)
   : InputFile<E>(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {

@@ -838,8 +838,8 @@ public:
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
-  ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
-             std::string archive_name, bool is_in_lib);
+  static ObjectFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb,
+                               std::string archive_name, bool is_in_lib);
 
   ObjectFile(Context<E> &ctx);
 
@@ -884,6 +884,9 @@ public:
   u64 strtab_size = 0;
 
 private:
+  ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
+             std::string archive_name, bool is_in_lib);
+
   void initialize_sections(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
   void initialize_mergeable_sections(Context<E> &ctx);
