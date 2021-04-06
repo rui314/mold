@@ -13,13 +13,15 @@ static u64 read64be(u8 *buf) {
 template <typename E>
 void InputSection<E>::do_uncompress(Context<E> &ctx, std::string_view data,
                                     u64 size) {
-  u8 *buf = new u8[size];
+  std::vector<u8> *buf = new std::vector<u8>(size);
+  ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
+
   unsigned long size2 = size;
-  if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
+  if (uncompress(buf->data(), &size2, (u8 *)&data[0], data.size()) != Z_OK)
     Fatal(ctx) << file << ": " << name << ": uncompress failed";
   if (size != size2)
     Fatal(ctx) << file << ": " << name << ": uncompress: invalid size";
-  contents = {(char *)buf, size};
+  contents = {(char *)buf->data(), size};
 }
 
 // Uncompress old-style compressed section

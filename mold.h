@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
@@ -1296,9 +1297,10 @@ struct Context {
   ConcurrentMap<ComdatGroup> comdat_groups;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
-  std::mutex mu;
-  std::vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
-  std::vector<std::unique_ptr<ObjectFile<E>>> owning_dsos;
+
+  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
+  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_dsos;
+  tbb::concurrent_vector<std::unique_ptr<std::vector<u8>>> owning_bufs;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
@@ -1374,6 +1376,9 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
 void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
+template <typename E>
+std::string_view save_string(Context<E> &ctx, std::string str);
 
 //
 // Symbol

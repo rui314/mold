@@ -132,7 +132,6 @@ ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb,
                       std::string archive_name, bool is_in_lib) {
   ObjectFile<E> *obj = new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
-  std::lock_guard lock(ctx.mu);
   ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   return obj;
 }
@@ -1034,6 +1033,7 @@ template <typename E>
 ObjectFile<E> *
 ObjectFile<E>::create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
+  ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
 
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym<E>>(1);
@@ -1092,9 +1092,6 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
 
   i64 num_globals = obj->elf_syms.size() - obj->first_global;
   obj->symvers.resize(num_globals);
-
-  std::lock_guard lock(ctx.mu);
-  ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   return obj;
 }
 

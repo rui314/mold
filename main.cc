@@ -17,6 +17,14 @@ static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
          isprint(data[3]);
 }
 
+template <typename E>
+std::string_view save_string(Context<E> &ctx, std::string str) {
+  std::vector<u8> *buf = new std::vector<u8>(str.size());
+  memcpy(buf->data(), str.data(), str.size());
+  ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
+  return {(char *)buf->data(), str.size()};
+}
+
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
 template <typename E>
