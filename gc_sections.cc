@@ -90,8 +90,8 @@ collect_root_set(Context<E> &ctx) {
 
   // Add sections that are not subject to garbage collection.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (InputSection<E> *isec : file->sections) {
-      if (!isec)
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (!isec || !isec->is_alive)
         continue;
 
       // -gc-sections discards only SHF_ALLOC sections. If you want to
@@ -102,7 +102,7 @@ collect_root_set(Context<E> &ctx) {
         isec->is_visited = true;
 
       if (is_init_fini(*isec) || isec->shdr.sh_type == SHT_NOTE)
-        enqueue_section(isec);
+        enqueue_section(isec.get());
     }
   });
 
@@ -150,7 +150,7 @@ static void sweep(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->sections.size(); i++) {
-      InputSection<E> *isec = file->sections[i];
+      std::unique_ptr<InputSection<E>> &isec = file->sections[i];
 
       if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)

@@ -184,8 +184,8 @@ static void merge_leaf_nodes(Context<E> &ctx) {
                                 LeafHasher<E>, LeafEq<E>> map;
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (InputSection<E> *isec : ctx.objs[i]->sections) {
-      if (!isec)
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+      if (!isec || !isec->is_alive)
         continue;
 
       if (!is_eligible(*isec)) {
@@ -196,9 +196,9 @@ static void merge_leaf_nodes(Context<E> &ctx) {
       if (is_leaf(ctx, *isec)) {
         leaf++;
         isec->icf_leaf = true;
-        auto [it, inserted] = map.insert({isec, isec});
+        auto [it, inserted] = map.insert({isec.get(), isec.get()});
         if (!inserted && isec->get_priority() < it->second->get_priority())
-          it->second = isec;
+          it->second = isec.get();
       } else {
         eligible++;
         isec->icf_eligible = true;
@@ -207,9 +207,9 @@ static void merge_leaf_nodes(Context<E> &ctx) {
   });
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (InputSection<E> *isec : ctx.objs[i]->sections) {
-      if (isec && isec->icf_leaf) {
-        auto it = map.find(isec);
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+      if (isec && isec->is_alive && isec->icf_leaf) {
+        auto it = map.find(isec.get());
         assert(it != map.end());
         isec->leader = it->second;
       }
@@ -307,8 +307,8 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   std::vector<i64> num_sections(ctx.objs.size());
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (InputSection<E> *isec : ctx.objs[i]->sections)
-      if (isec && isec->icf_eligible)
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+      if (isec && isec->is_alive && isec->icf_eligible)
         num_sections[i]++;
   });
 
@@ -322,9 +322,9 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
-    for (InputSection<E> *isec : ctx.objs[i]->sections)
-      if (isec && isec->icf_eligible)
-        sections[idx++] = isec;
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+      if (isec && isec->is_alive && isec->icf_eligible)
+        sections[idx++] = isec.get();
   });
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
@@ -444,12 +444,12 @@ static void print_icf_sections(Context<E> &ctx) {
   tbb::concurrent_unordered_multimap<InputSection<E> *, InputSection<E> *> map;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (InputSection<E> *isec : file->sections) {
-      if (isec && isec->leader) {
-        if (isec == isec->leader)
-          leaders.push_back(isec);
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && isec->is_alive && isec->leader) {
+        if (isec.get() == isec->leader)
+          leaders.push_back(isec.get());
         else
-          map.insert({isec->leader, isec});
+          map.insert({isec->leader, isec.get()});
       }
     }
   });

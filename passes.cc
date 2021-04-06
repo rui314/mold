@@ -271,9 +271,9 @@ void bin_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
     for (ObjectFile<E> *file : slices[i])
-      for (InputSection<E> *isec : file->sections)
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
         if (isec && isec->is_alive)
-          groups[i][isec->output_section->idx].push_back(isec);
+          groups[i][isec->output_section->idx].push_back(isec.get());
   });
 
   std::vector<i64> sizes(num_osec);
@@ -297,10 +297,15 @@ void check_duplicate_symbols(Context<E> &ctx) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
+
       bool is_common = esym.is_common();
       bool is_weak = (esym.st_bind == STB_WEAK);
-      bool is_eliminated =
-        !esym.is_abs() && !esym.is_common() && !file->get_section(esym);
+      bool is_eliminated = false;
+
+      if (!esym.is_abs() && !esym.is_common())
+        if (InputSection<E> *isec = file->get_section(esym))
+          if (!isec->is_alive)
+            is_eliminated = true;
 
       if (sym.file != file && esym.is_defined() && !is_common &&
           !is_weak && !is_eliminated)

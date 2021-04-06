@@ -175,7 +175,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
-      this->sections[i] = new InputSection(ctx, *this, shdr, name, i);
+      this->sections[i] =
+        std::make_unique<InputSection<E>>(ctx, *this, shdr, name, i);
 
       static Counter counter("regular_sections");
       counter++;
@@ -194,7 +195,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       Fatal(ctx) << *this << ": invalid relocated section index: "
                  << (u32)shdr.sh_info;
 
-    if (InputSection<E> *target = sections[shdr.sh_info]) {
+    if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
       assert(target->relsec_idx == -1);
       target->relsec_idx = i;
 
@@ -209,11 +210,11 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
-    InputSection<E> *isec = sections[i];
-    if (isec && isec->name == ".eh_frame") {
+    std::unique_ptr<InputSection<E>> &isec = sections[i];
+    if (isec && isec->is_alive && isec->name == ".eh_frame") {
       read_ehframe(ctx, *isec);
       isec->is_ehframe = true;
-      sections[i] = nullptr;
+      isec->is_alive = false;
     }
   }
 }
@@ -535,17 +536,16 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   std::vector<MergeableSection<E>> mergeable_sections(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
-    if (InputSection<E> *isec = sections[i]) {
-      if (isec->shdr.sh_flags & SHF_MERGE) {
-        mergeable_sections[i] = split_section(ctx, *isec);
-        sections[i] = nullptr;
-      }
+    std::unique_ptr<InputSection<E>> &isec = sections[i];
+    if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_MERGE)) {
+      mergeable_sections[i] = split_section(ctx, *isec);
+      isec->is_alive = false;
     }
   }
 
   // Initialize rel_fragments
-  for (InputSection<E> *isec : sections) {
-    if (!isec)
+  for (std::unique_ptr<InputSection<E>> &isec : sections) {
+    if (!isec || !isec->is_alive)
       continue;
 
     std::span<ElfRel<E>> rels = isec->get_rels(ctx);
@@ -872,8 +872,8 @@ void ObjectFile<E>::claim_unresolved_symbols() {
 template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
-  for (InputSection<E> *isec : sections)
-    if (isec && (isec->shdr.sh_flags & SHF_ALLOC))
+  for (std::unique_ptr<InputSection<E>> &isec : sections)
+    if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames
@@ -918,13 +918,13 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     shdr->sh_size = elf_syms[i].st_size;
     shdr->sh_addralign = sym->esym().st_value;
 
-    InputSection<E> *isec =
-      new InputSection(ctx, *this, *shdr, ".common", sections.size());
+    std::unique_ptr<InputSection<E>> isec =
+      std::make_unique<InputSection<E>>(ctx, *this, *shdr, ".common",
+                                        sections.size());
     isec->output_section = osec;
-    sections.push_back(isec);
-
-    sym->input_section = isec;
+    sym->input_section = isec.get();
     sym->value = 0;
+    sections.push_back(std::move(isec));
   }
 }
 

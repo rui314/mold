@@ -139,7 +139,6 @@ void InputSection<E>::kill() {
     is_alive = false;
     for (FdeRecord<E> &fde : fdes)
       fde.is_alive = false;
-    file.sections[section_idx] = nullptr;
   }
 }
 

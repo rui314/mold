@@ -862,7 +862,7 @@ public:
   inline std::span<Symbol<E> *> get_global_syms();
 
   std::string archive_name;
-  std::vector<InputSection<E> *> sections;
+  std::vector<std::unique_ptr<InputSection<E>>> sections;
   std::span<ElfSym<E>> elf_syms;
   i64 first_global = 0;
   const bool is_in_lib = false;
@@ -1830,7 +1830,7 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
-  return sections[get_shndx(esym)];
+  return sections[get_shndx(esym)].get();
 }
 
 template <typename E>

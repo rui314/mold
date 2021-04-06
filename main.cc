@@ -219,7 +219,7 @@ static void show_stats(Context<E> &ctx) {
     static Counter undefined("undefined_syms");
     undefined += obj->symbols.size() - obj->first_global;
 
-    for (InputSection<E> *sec : obj->sections) {
+    for (std::unique_ptr<InputSection<E>> &sec : obj->sections) {
       if (!sec || !sec->is_alive)
         continue;
 
