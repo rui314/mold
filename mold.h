@@ -1289,6 +1289,9 @@ struct Context {
   ConcurrentMap<ComdatGroup> comdat_groups;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
+  std::mutex mu;
+  std::vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
+  std::vector<std::unique_ptr<ObjectFile<E>>> owning_dsos;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
