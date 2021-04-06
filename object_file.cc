@@ -928,6 +928,8 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     assert(sym->esym().st_value);
 
     auto *shdr = new ElfShdr<E>;
+    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(shdr));
+
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
@@ -1090,6 +1092,12 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
 
   i64 num_globals = obj->elf_syms.size() - obj->first_global;
   obj->symvers.resize(num_globals);
+
+  ctx.on_exit.push_back([=]() {
+    free(esyms);
+    free(obj->symbols[0]);
+  });
+
   return obj;
 }
 

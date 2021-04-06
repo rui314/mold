@@ -1305,6 +1305,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
   tbb::concurrent_vector<std::unique_ptr<std::vector<u8>>> owning_bufs;
+  tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> owning_shdrs;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
