@@ -895,7 +895,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
   if (!has_common_symbol)
     return;
 
-  static OutputSection<E> *osec =
+  OutputSection<E> *osec =
     OutputSection<E>::get_instance(".common", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
 
   for (i64 i = first_global; i < elf_syms.size(); i++) {

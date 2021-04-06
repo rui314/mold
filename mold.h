@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <span>
 #include <sstream>
@@ -1162,6 +1163,31 @@ struct VersionPattern {
   bool is_extern_cpp;
 };
 
+template <typename E, typename T>
+class FileCache {
+public:
+  void store(MemoryMappedFile<E> *mb, T *obj) {
+    Key k(mb->name, mb->size(), mb->mtime);
+    cache[k].push_back(obj);
+  }
+
+  std::vector<T *> get(MemoryMappedFile<E> *mb) {
+    Key k(mb->name, mb->size(), mb->mtime);
+    std::vector<T *> objs = cache[k];
+    cache[k].clear();
+    return objs;
+  }
+
+  T *get_one(MemoryMappedFile<E> *mb) {
+    std::vector<T *> objs = get(mb);
+    return objs.empty() ? nullptr : objs[0];
+  }
+
+private:
+  typedef std::tuple<std::string, i64, i64> Key;
+  std::map<Key, std::vector<T *>> cache;
+};
+
 template <typename E>
 struct Context {
   Context() = default;
@@ -1252,6 +1278,8 @@ struct Context {
   ConcurrentMap<Symbol<E>> symbol_map;
 
   ConcurrentMap<ComdatGroup> comdat_groups;
+  FileCache<E, ObjectFile<E>> obj_cache;
+  FileCache<E, SharedFile<E>> dso_cache;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
