@@ -1301,6 +1301,7 @@ struct Context {
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
 
+  std::vector<std::function<void()>> on_exit;
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
   tbb::concurrent_vector<std::unique_ptr<std::vector<u8>>> owning_bufs;

@@ -566,6 +566,9 @@ int do_main(int argc, char **argv) {
 
   if (ctx.arg.quick_exit)
     std::quick_exit(0);
+
+  for (std::function<void()> &fn : ctx.on_exit)
+    fn();
   return 0;
 }
 

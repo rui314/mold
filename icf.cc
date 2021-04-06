@@ -544,6 +544,9 @@ void icf_sections(Context<E> &ctx) {
       assert(it != map->end());
       sections[i]->leader = it->second;
     });
+
+    // Since free'ing the map is slow, postpone it.
+    ctx.on_exit.push_back([=]() { free(map); });
   }
 
   if (ctx.arg.print_icf_sections)
