@@ -1051,13 +1051,6 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   return osec;
 }
 
-static void update_atomic_max(std::atomic_uint16_t &atom, i16 val) {
-  u16 cur = atom;
-  while (cur < val)
-    if (atom.compare_exchange_strong(cur, val))
-      break;
-}
-
 template <typename E>
 SectionFragment<E> *
 MergedSection<E>::insert(std::string_view data, i64 alignment) {
@@ -1073,8 +1066,14 @@ MergedSection<E>::insert(std::string_view data, i64 alignment) {
     maps[shard].insert(acc, std::pair(data, SectionFragment(this, data)));
   SectionFragment<E> *frag = const_cast<SectionFragment<E> *>(&acc->second);
 
-  update_atomic_max(frag->alignment, alignment);
-  update_atomic_max(max_alignment, alignment);
+  for (u16 cur = frag->alignment; cur < alignment;)
+    if (frag->alignment.compare_exchange_strong(cur, alignment))
+      break;
+
+  for (u16 cur = max_alignment; cur < alignment;)
+    if (max_alignment.compare_exchange_strong(cur, alignment))
+      break;
+
   return frag;
 }
 
