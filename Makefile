@@ -31,14 +31,20 @@ endif
 
 LTO ?= 0
 ifeq ($(LTO), 1)
-  CPPFLAGS += -O3 -flto
-  LDFLAGS += -flto
+  CPPFLAGS += -flto -O3
+  LDFLAGS  += -flto
 endif
 
-SANITIZE ?= 0
-ifeq ($(SANITIZE), 1)
+ASAN ?= 0
+ifeq ($(ASAN), 1)
   CPPFLAGS += -fsanitize=address
-  LDFLAGS += -fsanitize=address
+  LDFLAGS  += -fsanitize=address
+endif
+
+TSAN ?= 0
+ifeq ($(TSAN), 1)
+  CPPFLAGS += -fsanitize=thread
+  LDFLAGS  += -fsanitize=thread
 endif
 
 all: mold mold-wrapper.so
