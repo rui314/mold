@@ -242,7 +242,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void RelDynSection<E>::sort(Context<E> &ctx) {
-  Timer t("sort_dynamic_relocs");
+  Timer t(ctx, "sort_dynamic_relocs");
 
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
   ElfRel<E> *end =
@@ -533,18 +533,18 @@ static std::string_view get_output_name(std::string_view name) {
 }
 
 template <typename E>
-OutputSection<E>::OutputSection(std::string_view name, u32 type, u64 flags)
-  : OutputChunk<E>(OutputChunk<E>::REGULAR) {
+OutputSection<E>::OutputSection(std::string_view name, u32 type,
+                                u64 flags, u32 idx)
+  : OutputChunk<E>(OutputChunk<E>::REGULAR), idx(idx) {
   this->name = name;
   this->shdr.sh_type = type;
   this->shdr.sh_flags = flags;
-  idx = instances.size();
-  instances.push_back(this);
 }
 
 template <typename E>
 OutputSection<E> *
-OutputSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
+OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
+                               u64 type, u64 flags) {
   if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
     type = SHT_PROGBITS;
 
@@ -552,10 +552,10 @@ OutputSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
   auto find = [&]() -> OutputSection<E> * {
-    for (OutputSection<E> *osec : OutputSection::instances)
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       if (name == osec->name && type == osec->shdr.sh_type &&
           flags == osec->shdr.sh_flags)
-        return osec;
+        return osec.get();
     return nullptr;
   };
 
@@ -572,7 +572,11 @@ OutputSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
   std::unique_lock lock(mu);
   if (OutputSection<E> *osec = find())
     return osec;
-  return new OutputSection(name, type, flags);
+
+  OutputSection<E> *osec = new OutputSection(name, type, flags,
+                                             ctx.output_sections.size());
+  ctx.output_sections.push_back(std::unique_ptr<OutputSection<E>>(osec));
+  return osec;
 }
 
 template <typename E>
@@ -803,7 +807,7 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
-  Timer t("sort_dynsyms");
+  Timer t(ctx, "sort_dynsyms");
 
   struct T {
     Symbol<E> *sym;
@@ -1016,15 +1020,16 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 MergedSection<E> *
-MergedSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
+MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
+                               u64 type, u64 flags) {
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 
   auto find = [&]() -> MergedSection * {
-    for (MergedSection *osec : MergedSection::instances)
+    for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
       if (std::tuple(name, flags, type) ==
           std::tuple(osec->name, osec->shdr.sh_flags, osec->shdr.sh_type))
-        return osec;
+        return osec.get();
     return nullptr;
   };
 
@@ -1042,7 +1047,7 @@ MergedSection<E>::get_instance(std::string_view name, u64 type, u64 flags) {
     return osec;
 
   auto *osec = new MergedSection(name, flags, type);
-  MergedSection::instances.push_back(osec);
+  ctx.merged_sections.push_back(std::unique_ptr<MergedSection>(osec));
   return osec;
 }
 

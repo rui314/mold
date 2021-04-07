@@ -19,8 +19,9 @@ static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
-  std::vector<u8> *buf = new std::vector<u8>(str.size());
+  std::vector<u8> *buf = new std::vector<u8>(str.size() + 1);
   memcpy(buf->data(), str.data(), str.size());
+  (*buf)[str.size()] = '\0';
   ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
   return {(char *)buf->data(), str.size()};
 }
@@ -266,7 +267,7 @@ int do_main(int argc, char **argv) {
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
       process_run_subcommand(ctx, argc, argv);
 
-  Timer t_all("all");
+  Timer t_all(ctx, "all");
 
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv + 1);
@@ -287,7 +288,7 @@ int do_main(int argc, char **argv) {
   std::function<void()> on_complete;
 
   if (ctx.arg.preload) {
-    Timer t("preload");
+    Timer t(ctx, "preload");
     std::function<void()> wait_for_client;
     daemonize(ctx, argv, &wait_for_client, &on_complete);
 
@@ -296,7 +297,7 @@ int do_main(int argc, char **argv) {
     ctx.tg.wait();
     t.stop();
 
-    Timer t2("wait_for_client");
+    Timer t2(ctx, "wait_for_client");
     wait_for_client();
   } else if (ctx.arg.fork) {
     on_complete = fork_child();
@@ -307,7 +308,7 @@ int do_main(int argc, char **argv) {
 
   // Parse input files
   {
-    Timer t("parse");
+    Timer t(ctx, "parse");
     ctx.reset_reader_context(false);
     read_input_files(ctx, file_args);
     ctx.tg.wait();
@@ -326,8 +327,8 @@ int do_main(int argc, char **argv) {
     ctx.dsos = vec;
   }
 
-  Timer t_total("total");
-  Timer t_before_copy("before_copy");
+  Timer t_total(ctx, "total");
+  Timer t_before_copy(ctx, "before_copy");
 
   // Apply -exclude-libs
   apply_exclude_libs(ctx);
@@ -394,7 +395,7 @@ int do_main(int argc, char **argv) {
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
   if (ctx.arg.shared && !ctx.arg.z_defs) {
-    Timer t("claim_unresolved_symbols");
+    Timer t(ctx, "claim_unresolved_symbols");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
       file->claim_unresolved_symbols();
     });
@@ -444,7 +445,7 @@ int do_main(int argc, char **argv) {
 
   // Compute .symtab and .strtab sizes for each file.
   {
-    Timer t("compute_symtab");
+    Timer t(ctx, "compute_symtab");
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       file->compute_symtab(ctx);
     });
@@ -456,7 +457,7 @@ int do_main(int argc, char **argv) {
   // Here, we transplant .eh_frame sections from a regular output
   // section to the special EHFrameSection.
   {
-    Timer t("eh_frame");
+    Timer t(ctx, "eh_frame");
     erase(ctx.chunks, [](OutputChunk<E> *chunk) {
       return chunk->kind == OutputChunk<E>::REGULAR &&
              chunk->name == ".eh_frame";
@@ -511,17 +512,17 @@ int do_main(int argc, char **argv) {
     OutputFile<E>::open(ctx, ctx.arg.output, filesize);
   ctx.buf = file->buf;
 
-  Timer t_copy("copy");
+  Timer t_copy(ctx, "copy");
 
   // Copy input sections to the output file
   {
-    Timer t("copy_buf");
+    Timer t(ctx, "copy_buf");
 
     tbb::parallel_for_each(ctx.chunks, [&](OutputChunk<E> *chunk) {
       std::string name(chunk->name);
       if (name.empty())
         name = "(header)";
-      Timer t2(name, &t);
+      Timer t2(ctx, name, &t);
 
       chunk->copy_buf(ctx);
     });
@@ -537,7 +538,7 @@ int do_main(int argc, char **argv) {
   clear_padding(ctx, filesize);
 
   if (ctx.buildid) {
-    Timer t("build_id");
+    Timer t(ctx, "build_id");
     ctx.buildid->write_buildid(ctx, filesize);
   }
 
@@ -557,7 +558,7 @@ int do_main(int argc, char **argv) {
     show_stats(ctx);
 
   if (ctx.arg.perf)
-    Timer::print();
+    Timer<E>::print(ctx);
 
   std::cout << std::flush;
   std::cerr << std::flush;

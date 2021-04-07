@@ -8,7 +8,7 @@
 
 template <typename E>
 void apply_exclude_libs(Context<E> &ctx) {
-  Timer t("apply_exclude_libs");
+  Timer t(ctx, "apply_exclude_libs");
 
   if (ctx.arg.exclude_libs.empty())
     return;
@@ -81,7 +81,7 @@ void set_file_priority(Context<E> &ctx) {
 
 template <typename E>
 void resolve_obj_symbols(Context<E> &ctx) {
-  Timer t("resolve_obj_symbols");
+  Timer t(ctx, "resolve_obj_symbols");
 
   // Register archive symbols
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -130,7 +130,7 @@ void resolve_obj_symbols(Context<E> &ctx) {
 
 template <typename E>
 void resolve_dso_symbols(Context<E> &ctx) {
-  Timer t("resolve_dso_symbols");
+  Timer t(ctx, "resolve_dso_symbols");
 
   // Register DSO symbols
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
@@ -172,7 +172,7 @@ void resolve_dso_symbols(Context<E> &ctx) {
 
 template <typename E>
 void eliminate_comdats(Context<E> &ctx) {
-  Timer t("eliminate_comdats");
+  Timer t(ctx, "eliminate_comdats");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     file->resolve_comdat_groups();
@@ -185,7 +185,7 @@ void eliminate_comdats(Context<E> &ctx) {
 
 template <typename E>
 void convert_common_symbols(Context<E> &ctx) {
-  Timer t("convert_common_symbols");
+  Timer t(ctx, "convert_common_symbols");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_common_symbols(ctx);
@@ -204,16 +204,16 @@ static std::string get_cmdline_args(Context<E> &ctx) {
 
 template <typename E>
 void add_comment_string(Context<E> &ctx, std::string str) {
-  char *buf = strdup(str.c_str());
+  std::string_view buf = save_string(ctx, str);
   MergedSection<E> *sec =
-    MergedSection<E>::get_instance(".comment", SHT_PROGBITS, 0);
-  SectionFragment<E> *frag = sec->insert({buf, strlen(buf) + 1}, 1);
+    MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS, 0);
+  SectionFragment<E> *frag = sec->insert({buf.data(), buf.size() + 1}, 1);
   frag->is_alive = true;
 }
 
 template <typename E>
 void compute_merged_section_sizes(Context<E> &ctx) {
-  Timer t("compute_merged_section_sizes");
+  Timer t(ctx, "compute_merged_section_sizes");
 
   // Mark section fragments referenced by live objects.
   if (!ctx.arg.gc_sections) {
@@ -229,8 +229,8 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   // Also embed command line arguments for now for debugging.
   add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
-  tbb::parallel_for_each(MergedSection<E>::instances,
-                         [](MergedSection<E> *sec) {
+  tbb::parallel_for_each(ctx.merged_sections,
+                         [](std::unique_ptr<MergedSection<E>> &sec) {
     sec->assign_offsets();
   });
 }
@@ -258,12 +258,12 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
 // So, we append input sections to output sections in parallel.
 template <typename E>
 void bin_sections(Context<E> &ctx) {
-  Timer t("bin_sections");
+  Timer t(ctx, "bin_sections");
 
   i64 unit = (ctx.objs.size() + 127) / 128;
   std::vector<std::span<ObjectFile<E> *>> slices = split(ctx.objs, unit);
 
-  i64 num_osec = OutputSection<E>::instances.size();
+  i64 num_osec = ctx.output_sections.size();
 
   std::vector<std::vector<std::vector<InputSection<E> *>>> groups(slices.size());
   for (i64 i = 0; i < groups.size(); i++)
@@ -283,15 +283,15 @@ void bin_sections(Context<E> &ctx) {
       sizes[i] += group[i].size();
 
   tbb::parallel_for((i64)0, num_osec, [&](i64 j) {
-    OutputSection<E>::instances[j]->members.reserve(sizes[j]);
+    ctx.output_sections[j]->members.reserve(sizes[j]);
     for (i64 i = 0; i < groups.size(); i++)
-      append(OutputSection<E>::instances[j]->members, groups[i][j]);
+      append(ctx.output_sections[j]->members, groups[i][j]);
   });
 }
 
 template <typename E>
 void check_duplicate_symbols(Context<E> &ctx) {
-  Timer t("check_dup_syms");
+  Timer t(ctx, "check_dup_syms");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
@@ -321,12 +321,12 @@ template <typename E>
 std::vector<OutputChunk<E> *> collect_output_sections(Context<E> &ctx) {
   std::vector<OutputChunk<E> *> vec;
 
-  for (OutputSection<E> *osec : OutputSection<E>::instances)
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (!osec->members.empty())
-      vec.push_back(osec);
-  for (MergedSection<E> *osec : MergedSection<E>::instances)
+      vec.push_back(osec.get());
+  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
     if (osec->shdr.sh_size)
-      vec.push_back(osec);
+      vec.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel.
@@ -340,10 +340,10 @@ std::vector<OutputChunk<E> *> collect_output_sections(Context<E> &ctx) {
 
 template <typename E>
 void compute_section_sizes(Context<E> &ctx) {
-  Timer t("compute_section_sizes");
+  Timer t(ctx, "compute_section_sizes");
 
-  tbb::parallel_for_each(OutputSection<E>::instances,
-                         [&](OutputSection<E> *osec) {
+  tbb::parallel_for_each(ctx.output_sections,
+                         [&](std::unique_ptr<OutputSection<E>> &osec) {
     if (osec->members.empty())
       return;
 
@@ -386,7 +386,7 @@ void compute_section_sizes(Context<E> &ctx) {
 
 template <typename E>
 void convert_undefined_weak_symbols(Context<E> &ctx) {
-  Timer t("undef_weak");
+  Timer t(ctx, "undef_weak");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_undefined_weak_symbols(ctx);
@@ -395,7 +395,7 @@ void convert_undefined_weak_symbols(Context<E> &ctx) {
 
 template <typename E>
 void scan_rels(Context<E> &ctx) {
-  Timer t("scan_rels");
+  Timer t(ctx, "scan_rels");
 
   // Scan relocations to find dynamic symbols.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -489,7 +489,7 @@ void scan_rels(Context<E> &ctx) {
 
 template <typename E>
 void apply_version_script(Context<E> &ctx) {
-  Timer t("apply_version_script");
+  Timer t(ctx, "apply_version_script");
 
   for (VersionPattern &elem : ctx.arg.version_patterns) {
     assert(elem.pattern != "*");
@@ -517,7 +517,7 @@ void apply_version_script(Context<E> &ctx) {
 
 template <typename E>
 void parse_symbol_version(Context<E> &ctx) {
-  Timer t("parse_symbol_version");
+  Timer t(ctx, "parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
   for (i64 i = 0; i < ctx.arg.version_definitions.size(); i++)
@@ -556,7 +556,7 @@ void parse_symbol_version(Context<E> &ctx) {
 
 template <typename E>
 void compute_import_export(Context<E> &ctx) {
-  Timer t("compute_import_export");
+  Timer t(ctx, "compute_import_export");
 
   // Export symbols referenced by DSOs.
   if (!ctx.arg.shared) {
@@ -590,7 +590,7 @@ void compute_import_export(Context<E> &ctx) {
 
 template <typename E>
 void fill_verdef(Context<E> &ctx) {
-  Timer t("fill_verdef");
+  Timer t(ctx, "fill_verdef");
 
   if (ctx.arg.version_definitions.empty())
     return;
@@ -641,7 +641,7 @@ void fill_verdef(Context<E> &ctx) {
 
 template <typename E>
 void fill_verneed(Context<E> &ctx) {
-  Timer t("fill_verneed");
+  Timer t(ctx, "fill_verneed");
 
   if (ctx.dynsym->symbols.empty())
     return;
@@ -722,7 +722,7 @@ void fill_verneed(Context<E> &ctx) {
 
 template <typename E>
 void clear_padding(Context<E> &ctx, i64 filesize) {
-  Timer t("clear_padding");
+  Timer t(ctx, "clear_padding");
 
   auto zero = [&](OutputChunk<E> *chunk, i64 next_start) {
     i64 pos = chunk->shdr.sh_offset;
@@ -789,7 +789,7 @@ inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
 
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
-  Timer t("osec_offset");
+  Timer t(ctx, "osec_offset");
 
   i64 fileoff = 0;
   i64 vaddr = ctx.arg.image_base;

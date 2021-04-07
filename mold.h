@@ -232,7 +232,7 @@ public:
       contents = file.get_string(ctx, shdr);
 
     output_section =
-      OutputSection<E>::get_instance(name, shdr.sh_type, shdr.sh_flags);
+      OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
   }
 
   void scan_relocations(Context<E> &ctx);
@@ -370,17 +370,15 @@ template <typename E>
 class OutputSection : public OutputChunk<E> {
 public:
   static OutputSection *
-  get_instance(std::string_view name, u64 type, u64 flags);
+  get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
   void copy_buf(Context<E> &ctx) override;
-
-  static inline std::vector<OutputSection *> instances;
 
   std::vector<InputSection<E> *> members;
   u32 idx;
 
 private:
-  OutputSection(std::string_view name, u32 type, u64 flags);
+  OutputSection(std::string_view name, u32 type, u64 flags, u32 idx);
 };
 
 template <typename E>
@@ -624,13 +622,11 @@ template <typename E>
 class MergedSection : public OutputChunk<E> {
 public:
   static MergedSection<E> *
-  get_instance(std::string_view name, u64 type, u64 flags);
+  get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
   SectionFragment<E> *insert(std::string_view data, i64 alignment);
   void assign_offsets();
   void copy_buf(Context<E> &ctx) override;
-
-  static inline std::vector<MergedSection<E> *> instances;
 
 private:
   using MapTy =
@@ -790,7 +786,7 @@ public:
 
   ~MemoryMappedFile();
 
-  MemoryMappedFile *slice(std::string name, u64 start, u64 size);
+  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start, u64 size);
 
   u8 *data(Context<E> &ctx);
   i64 size() const { return size_; }
@@ -1048,12 +1044,12 @@ private:
 };
 
 struct TimerRecord {
-  TimerRecord(std::string name);
+  TimerRecord(std::string name, TimerRecord *parent = nullptr);
   void stop();
 
   std::string name;
-  TimerRecord *parent = nullptr;
-  std::vector<TimerRecord *> children;
+  TimerRecord *parent;
+  tbb::concurrent_vector<TimerRecord *> children;
   i64 start;
   i64 end;
   i64 user;
@@ -1061,17 +1057,15 @@ struct TimerRecord {
   bool stopped = false;
 };
 
+template <typename E>
 class Timer {
 public:
-  Timer(std::string name, Timer *parent = nullptr);
+  Timer(Context<E> &ctx, std::string name, Timer *parent = nullptr);
   ~Timer();
   void stop();
-  static void print();
+  static void print(Context<E> &ctx);
 
 private:
-  static inline std::vector<TimerRecord *> records;
-  static inline std::mutex mu;
-
   TimerRecord *record;
 };
 
@@ -1298,14 +1292,19 @@ struct Context {
   ConcurrentMap<Symbol<E>> symbol_map;
 
   ConcurrentMap<ComdatGroup> comdat_groups;
+  tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
+  std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
 
-  std::vector<std::function<void()>> on_exit;
+  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
+  tbb::concurrent_vector<std::function<void()>> on_exit;
+
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
   tbb::concurrent_vector<std::unique_ptr<std::vector<u8>>> owning_bufs;
   tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> owning_shdrs;
+  tbb::concurrent_vector<std::unique_ptr<MemoryMappedFile<E>>> owning_mbs;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;

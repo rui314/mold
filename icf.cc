@@ -80,7 +80,7 @@ static bool cie_equal(const CieRecord<E> &a, const CieRecord<E> &b) {
 
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
-  Timer t("uniquify_cies");
+  Timer t(ctx, "uniquify_cies");
   std::vector<CieRecord<E> *> cies;
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -174,7 +174,7 @@ struct LeafEq {
 
 template <typename E>
 static void merge_leaf_nodes(Context<E> &ctx) {
-  Timer t("merge_leaf_nodes");
+  Timer t(ctx, "merge_leaf_nodes");
 
   static Counter eligible("icf_eligibles");
   static Counter non_eligible("icf_non_eligibles");
@@ -301,7 +301,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
 
 template <typename E>
 static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
-  Timer t("gather_sections");
+  Timer t(ctx, "gather_sections");
 
   // Count the number of input sections for each input file.
   std::vector<i64> num_sections(ctx.objs.size());
@@ -337,7 +337,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
 template <typename E>
 static std::vector<Digest>
 compute_digests(Context<E> &ctx, std::span<InputSection<E> *> sections) {
-  Timer t("compute_digests");
+  Timer t(ctx, "compute_digests");
 
   std::vector<Digest> digests(sections.size());
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
@@ -351,7 +351,7 @@ static void gather_edges(Context<E> &ctx,
                          std::span<InputSection<E> *> sections,
                          std::vector<u32> &edges,
                          std::vector<u32> &edge_indices) {
-  Timer t("gather_edges");
+  Timer t(ctx, "gather_edges");
 
   std::vector<i64> num_edges(sections.size());
   edge_indices.resize(sections.size());
@@ -481,7 +481,7 @@ static void print_icf_sections(Context<E> &ctx) {
 
 template <typename E>
 void icf_sections(Context<E> &ctx) {
-  Timer t("icf");
+  Timer t(ctx, "icf");
 
   uniquify_cies(ctx);
   merge_leaf_nodes(ctx);
@@ -502,7 +502,7 @@ void icf_sections(Context<E> &ctx) {
 
   // Execute the propagation rounds until convergence is obtained.
   {
-    Timer t("propagate");
+    Timer t(ctx, "propagate");
     tbb::affinity_partitioner ap;
 
     i64 num_changed = -1;
@@ -527,7 +527,7 @@ void icf_sections(Context<E> &ctx) {
 
   // Group sections by SHA digest.
   {
-    Timer t("group");
+    Timer t(ctx, "group");
 
     auto *map = new tbb::concurrent_unordered_map<Digest, InputSection<E> *>;
     std::span<Digest> digest = digests[slot];
@@ -546,7 +546,7 @@ void icf_sections(Context<E> &ctx) {
     });
 
     // Since free'ing the map is slow, postpone it.
-    ctx.on_exit.push_back([=]() { free(map); });
+    ctx.on_exit.push_back([=]() { delete map; });
   }
 
   if (ctx.arg.print_icf_sections)
@@ -554,7 +554,7 @@ void icf_sections(Context<E> &ctx) {
 
   // Re-assign input sections to symbols.
   {
-    Timer t("reassign");
+    Timer t(ctx, "reassign");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file != file)

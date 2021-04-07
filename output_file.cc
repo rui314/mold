@@ -17,8 +17,8 @@ class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
     : OutputFile<E>(path, filesize) {
-    std::string dir = dirname(strdup(ctx.arg.output.c_str()));
-    this->tmpfile = strdup((dir + "/.mold-XXXXXX").c_str());
+    std::string dir = dirname((char *)save_string(ctx, ctx.arg.output).data());
+    this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(this->tmpfile);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << strerror(errno);
@@ -52,7 +52,7 @@ public:
   }
 
   void close(Context<E> &ctx) override {
-    Timer t("close_file");
+    Timer t(ctx, "close_file");
     munmap(this->buf, this->filesize);
     if (rename(this->tmpfile, ctx.arg.output.c_str()) == -1)
       Fatal(ctx) << ctx.arg.output << ": rename filed: " << strerror(errno);
@@ -72,7 +72,7 @@ public:
   }
 
   void close(Context<E> &ctx) override {
-    Timer t("close_file");
+    Timer t(ctx, "close_file");
     i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << ctx.arg.output << ": " << strerror(errno);
@@ -86,7 +86,7 @@ public:
 template <typename E>
 std::unique_ptr<OutputFile<E>>
 OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
-  Timer t("open_file");
+  Timer t(ctx, "open_file");
 
   bool is_special = false;
   struct stat st;

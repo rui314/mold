@@ -15,7 +15,10 @@ MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
   if (stat(path.c_str(), &st) == -1)
     return nullptr;
   u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-  return new MemoryMappedFile(path, nullptr, st.st_size, mtime);
+
+  MemoryMappedFile *mb = new MemoryMappedFile(path, nullptr, st.st_size, mtime);
+  ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
+  return mb;
 }
 
 template <typename E>
@@ -48,8 +51,9 @@ u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
 
 template <typename E>
 MemoryMappedFile<E> *
-MemoryMappedFile<E>::slice(std::string name, u64 start, u64 size) {
-  MemoryMappedFile *mb = new MemoryMappedFile(name, data_ + start, size);
+MemoryMappedFile<E>::slice(Context<E> &ctx, std::string name, u64 start, u64 size) {
+  MemoryMappedFile *mb = new MemoryMappedFile<E>(name, data_ + start, size);
+  ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
   mb->parent = this;
   return mb;
 }
@@ -506,7 +510,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   MergeableSection<E> rec;
 
   MergedSection<E> *parent =
-    MergedSection<E>::get_instance(sec.name, sec.shdr.sh_type,
+    MergedSection<E>::get_instance(ctx, sec.name, sec.shdr.sh_type,
                                    sec.shdr.sh_flags);
 
   std::string_view data = sec.contents;
@@ -912,7 +916,8 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     return;
 
   OutputSection<E> *osec =
-    OutputSection<E>::get_instance(".common", SHT_NOBITS, SHF_WRITE | SHF_ALLOC);
+    OutputSection<E>::get_instance(ctx, ".common", SHT_NOBITS,
+                                   SHF_WRITE | SHF_ALLOC);
 
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     if (!elf_syms[i].is_common())
@@ -1094,8 +1099,8 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
   obj->symvers.resize(num_globals);
 
   ctx.on_exit.push_back([=]() {
-    free(esyms);
-    free(obj->symbols[0]);
+    delete esyms;
+    delete obj->symbols[0];
   });
 
   return obj;
@@ -1177,7 +1182,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
       std::string verstr(version_strings[ver]);
       std::string_view mangled =
-        *new std::string(std::string(name) + "@" + verstr);
+        save_string(ctx, std::string(name) + "@" + verstr);
 
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(ver);

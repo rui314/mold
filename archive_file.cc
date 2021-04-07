@@ -76,7 +76,7 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back(mb->slice(name, body - mb->data(ctx), size));
+    vec.push_back(mb->slice(ctx, name, body - mb->data(ctx), size));
   }
   return vec;
 }

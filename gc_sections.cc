@@ -71,7 +71,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
 template <typename E>
 static tbb::concurrent_vector<InputSection<E> *>
 collect_root_set(Context<E> &ctx) {
-  Timer t("collect_root_set");
+  Timer t(ctx, "collect_root_set");
   tbb::concurrent_vector<InputSection<E> *> roots;
 
   auto enqueue_section = [&](InputSection<E> *isec) {
@@ -135,7 +135,7 @@ collect_root_set(Context<E> &ctx) {
 template <typename E>
 static void mark(Context<E> &ctx,
                  tbb::concurrent_vector<InputSection<E> *> &roots) {
-  Timer t("mark");
+  Timer t(ctx, "mark");
 
   tbb::parallel_do(roots, [&](InputSection<E> *isec, Feeder<E> &feeder) {
     visit(ctx, isec, feeder, 0);
@@ -145,7 +145,7 @@ static void mark(Context<E> &ctx,
 // Remove unreachable sections
 template <typename E>
 static void sweep(Context<E> &ctx) {
-  Timer t("sweep");
+  Timer t(ctx, "sweep");
   static Counter counter("garbage_sections");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -166,7 +166,7 @@ static void sweep(Context<E> &ctx) {
 // This function marks such fragments.
 template <typename E>
 static void mark_nonalloc_fragments(Context<E> &ctx) {
-  Timer t("mark_nonalloc_fragments");
+  Timer t(ctx, "mark_nonalloc_fragments");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (SectionFragment<E> *frag : file->fragments)
@@ -177,7 +177,7 @@ static void mark_nonalloc_fragments(Context<E> &ctx) {
 
 template <typename E>
 void gc_sections(Context<E> &ctx) {
-  Timer t("gc");
+  Timer t(ctx, "gc");
 
   mark_nonalloc_fragments(ctx);
 

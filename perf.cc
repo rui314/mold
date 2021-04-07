@@ -30,13 +30,17 @@ static i64 to_nsec(struct timeval t) {
   return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
 
-TimerRecord::TimerRecord(std::string name) : name(name) {
+TimerRecord::TimerRecord(std::string name, TimerRecord *parent)
+  : name(name), parent(parent) {
   struct rusage usage;
   getrusage(RUSAGE_SELF, &usage);
 
   start = now_nsec();
   user = to_nsec(usage.ru_utime);
   sys = to_nsec(usage.ru_stime);
+
+  if (parent)
+    parent->children.push_back(this);
 }
 
 void TimerRecord::stop() {
@@ -52,23 +56,19 @@ void TimerRecord::stop() {
   sys = to_nsec(usage.ru_stime) - sys;
 }
 
-Timer::Timer(std::string name, Timer *parent) {
-  std::lock_guard lock(mu);
-
-  record = new TimerRecord(name);
-  records.push_back(record);
-
-  if (parent) {
-    record->parent = parent->record;
-    parent->record->children.push_back(record);
-  }
+template <typename E>
+Timer<E>::Timer(Context<E> &ctx, std::string name, Timer *parent) {
+  record = new TimerRecord(name, parent ? parent->record : nullptr);
+  ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
 }
 
-Timer::~Timer() {
+template <typename E>
+Timer<E>::~Timer() {
   record->stop();
 }
 
-void Timer::stop() {
+template <typename E>
+void Timer<E>::stop() {
   record->stop();
 }
 
@@ -80,16 +80,18 @@ static void print_rec(TimerRecord &rec, i64 indent) {
          std::string(indent * 2, ' ').c_str(),
          rec.name.c_str());
 
-  sort(rec.children.begin(), rec.children.end(),
-       [](TimerRecord *a, TimerRecord *b) {
-         return a->start < b->start;
-       });
+  sort(rec.children, [](TimerRecord *a, TimerRecord *b) {
+    return a->start < b->start;
+  });
 
   for (TimerRecord *child : rec.children)
     print_rec(*child, indent + 1);
 }
 
-void Timer::print() {
+template <typename E>
+void Timer<E>::print(Context<E> &ctx) {
+  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &records = ctx.timer_records;
+
   for (i64 i = records.size() - 1; i >= 0; i--)
     records[i]->stop();
 
@@ -110,9 +112,12 @@ void Timer::print() {
 
   std::cout << "     User   System     Real  Name\n";
 
-  for (TimerRecord *rec : records)
+  for (std::unique_ptr<TimerRecord> &rec : records)
     if (!rec->parent)
       print_rec(*rec, 0);
 
   std::cout << std::flush;
 }
+
+template class Timer<X86_64>;
+template class Timer<I386>;

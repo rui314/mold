@@ -35,6 +35,12 @@ ifeq ($(LTO), 1)
   LDFLAGS += -flto
 endif
 
+SANITIZE ?= 0
+ifeq ($(SANITIZE), 1)
+  CPPFLAGS += -fsanitize=address
+  LDFLAGS += -fsanitize=address
+endif
+
 all: mold mold-wrapper.so
 
 mold: $(OBJS)
