@@ -8,12 +8,10 @@ static constexpr int BLOCK_SIZE = 512;
 // Each Ustar header represents a single file in an archive.
 //
 // tar is an old file format, and its `name` field is only 100 bytes long.
-// If a filename is longer than that, you can split it at any '/'
-// and store the first half to `prefix` and the second half to `name`.
+// If `name` is longer than 100 bytes, we can emit a PAX header before a
+// Ustar header to store a long filename.
 //
-// If a filename still doesn't fit, you need to store it into an
-// extended header, which is so-called "PAX header", and put it before
-// a Ustar header.
+// For simplicity, we always emit a PAX header even for a short filename.
 struct UstarHeader {
   UstarHeader() {
     memset(this, 0, sizeof(*this));
@@ -48,23 +46,14 @@ struct UstarHeader {
   char pad[12];
 };
 
-std::tuple<bool, std::string, std::string> split_path(const std::string &path) {
-  if (path.size() < sizeof(UstarHeader::name))
-    return {false, "", path};
-
-  static std::regex re(R"(^(.{0,137})/(.{0,100})$)", std::regex::ECMAScript);
-  std::smatch m;
-  if (std::regex_match(path, m, re))
-    return {false, m[1], m[2]};
-
-  return {true, "", ""};
-}
-
 static void write_pax_hdr(std::ostream &out, const std::string &path) {
-  i64 len = std::string(" path=").size() + path.size();
+  // Construct a string which contains something like
+  // "16 path=foo/bar\n" where 16 is the size of the string
+  // including the size string itself.
+  i64 len = std::string(" path=\n").size() + path.size();
   i64 total = std::to_string(len).size() + len;
   total = std::to_string(total).size() + len;
-  std::string attr = std::to_string(total) + " path=" + path;
+  std::string attr = std::to_string(total) + " path=" + path + "\n";
 
   UstarHeader hdr;
   sprintf(hdr.size, "%011zo", attr.size());
@@ -76,13 +65,10 @@ static void write_pax_hdr(std::ostream &out, const std::string &path) {
   out.seekp(align_to(out.tellp(), BLOCK_SIZE));
 }
 
-static void write_ustar_hdr(std::ostream &out, std::string_view prefix,
-                            std::string_view name, i64 size) {
+static void write_ustar_hdr(std::ostream &out, i64 size) {
   UstarHeader hdr;
-  memcpy(hdr.name, name.data(), name.size());
   memcpy(hdr.mode, "0000664", 8);
   sprintf(hdr.size, "%011zo", size);
-  memcpy(hdr.prefix, prefix.data(), prefix.size());
   hdr.compute_checksum();
   out << std::string_view((char *)&hdr, sizeof(hdr));
 }
@@ -100,18 +86,8 @@ template <typename E>
 void TarFile<E>::append(std::string_view path, std::string_view data) {
   std::string fullpath = basedir + "/" + std::string(path);
 
-  bool needs_pax_hdr;
-  std::string prefix;
-  std::string name;
-  std::tie(needs_pax_hdr, prefix, name) = split_path(fullpath);
-
-  if (needs_pax_hdr) {
-    write_pax_hdr(out, fullpath);
-    write_ustar_hdr(out, "", "", data.size());
-  } else {
-    write_ustar_hdr(out, prefix, name, data.size());
-  }
-
+  write_pax_hdr(out, fullpath);
+  write_ustar_hdr(out, data.size());
   out << data;
 
   // A tar file must end with two null blocks.
