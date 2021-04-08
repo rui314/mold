@@ -89,7 +89,7 @@ void TarFile::append(std::string path, std::string_view data) {
 
   // A tar file must end with two null blocks.
   i64 pos = out.tellp();
-  out.seekp(align_to(pos + BLOCK_SIZE * 2, BLOCK_SIZE) - 1);
+  out.seekp(align_to(pos, BLOCK_SIZE) + BLOCK_SIZE * 2 - 1);
   out << '\0';
   out.seekp(align_to(pos, BLOCK_SIZE));
 }
