@@ -1133,13 +1133,18 @@ void parse_nonpositional_args(Context<E> &ctx,
 // tar.cc
 //
 
-template <typename E>
 class TarFile {
 public:
-  TarFile(Context<E> &ctx, std::string path, std::string basedir);
-  void append(std::string_view path, std::string_view data);
+  template <typename E>
+  static std::unique_ptr<TarFile>
+  open(Context<E> &ctx, std::string path, std::string basedir);
+
+  void append(std::string path, std::string_view data);
 
 private:
+  TarFile(std::ofstream &&out, std::string basedir)
+    : out(std::move(out)), basedir(basedir) {}
+
   std::ofstream out;
   std::string basedir;
 };

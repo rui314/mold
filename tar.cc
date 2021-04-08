@@ -1,9 +1,5 @@
 #include "mold.h"
 
-#include <regex>
-
-static constexpr int BLOCK_SIZE = 512;
-
 // A tar file consists of one or more Ustar header followed by data.
 // Each Ustar header represents a single file in an archive.
 //
@@ -46,6 +42,19 @@ struct UstarHeader {
   char pad[12];
 };
 
+static constexpr int BLOCK_SIZE = 512;
+
+template <typename E>
+std::unique_ptr<TarFile>
+TarFile::open(Context<E> &ctx, std::string path, std::string basedir) {
+  std::ofstream out;
+  out.open(path.c_str(),
+           std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
+  if (out.fail())
+    Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
+  return std::unique_ptr<TarFile>(new TarFile(std::move(out), basedir));
+}
+
 static void write_pax_hdr(std::ostream &out, const std::string &path) {
   // Construct a string which contains something like
   // "16 path=foo/bar\n" where 16 is the size of the string
@@ -73,20 +82,8 @@ static void write_ustar_hdr(std::ostream &out, i64 size) {
   out << std::string_view((char *)&hdr, sizeof(hdr));
 }
 
-template <typename E>
-TarFile<E>::TarFile(Context<E> &ctx, std::string path, std::string basedir)
-  : basedir(basedir) {
-  out.open(path.c_str(),
-           std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
-  if (out.fail())
-    Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
-}
-
-template <typename E>
-void TarFile<E>::append(std::string_view path, std::string_view data) {
-  std::string fullpath = basedir + "/" + std::string(path);
-
-  write_pax_hdr(out, fullpath);
+void TarFile::append(std::string path, std::string_view data) {
+  write_pax_hdr(out, basedir + "/" + path);
   write_ustar_hdr(out, data.size());
   out << data;
 
@@ -97,5 +94,9 @@ void TarFile<E>::append(std::string_view path, std::string_view data) {
   out.seekp(align_to(pos, BLOCK_SIZE));
 }
 
-template class TarFile<X86_64>;
-template class TarFile<I386>;
+#define INSTANTIATE(E)                                          \
+  template std::unique_ptr<TarFile>                             \
+  TarFile::open(Context<E> &, std::string, std::string)
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
