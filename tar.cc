@@ -74,10 +74,10 @@ static void write_pax_hdr(std::ostream &out, const std::string &path) {
   out.seekp(align_to(out.tellp(), BLOCK_SIZE));
 }
 
-static void write_ustar_hdr(std::ostream &out, i64 size) {
+static void write_ustar_hdr(std::ostream &out, i64 filesize) {
   UstarHeader hdr;
   memcpy(hdr.mode, "0000664", 8);
-  sprintf(hdr.size, "%011zo", size);
+  sprintf(hdr.size, "%011zo", filesize);
   hdr.compute_checksum();
   out << std::string_view((char *)&hdr, sizeof(hdr));
 }
