@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -1127,6 +1128,21 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
+
+//
+// tar.cc
+//
+
+template <typename E>
+class TarFile {
+public:
+  TarFile(Context<E> &ctx, std::string path, std::string basedir);
+  void append(std::string_view path, std::string_view data);
+
+private:
+  std::ofstream out;
+  std::string basedir;
+};
 
 //
 // passes.cc
