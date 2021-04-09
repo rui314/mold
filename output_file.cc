@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <fcntl.h>
-#include <libgen.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
