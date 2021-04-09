@@ -152,8 +152,19 @@ std::string create_response_file(Context<E> &ctx) {
     out << "\n";
   }
 
-  for (std::string_view arg : ctx.cmdline_args)
+  for (i64 i = 0; i < ctx.cmdline_args.size(); i++) {
+    std::string_view arg = ctx.cmdline_args[i];
+
+    if (arg == "-reproduce" || arg == "--reproduce") {
+      i++;
+      continue;
+    }
+    if (arg.starts_with("-reproduce=") || arg.starts_with("--reproduce="))
+      continue;
+
     out << arg << "\n";
+  }
+
   return out.str();
 }
 

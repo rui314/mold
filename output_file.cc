@@ -17,24 +17,22 @@ class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
     : OutputFile<E>(path, filesize) {
-    std::string dir = dirname((char *)save_string(ctx, ctx.arg.output).data());
+    std::string dir = path_dirname(path);
     this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(this->tmpfile);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << strerror(errno);
 
-    if (rename(ctx.arg.output.c_str(), this->tmpfile) == 0) {
+    if (rename(path.c_str(), this->tmpfile) == 0) {
       ::close(fd);
       fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
       if (fd == -1) {
         if (errno != ETXTBSY)
-          Fatal(ctx) << "cannot open " << ctx.arg.output << ": "
-                     << strerror(errno);
+          Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
         unlink(this->tmpfile);
         fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
         if (fd == -1)
-          Fatal(ctx) << "cannot open " << ctx.arg.output << ": "
-                     << strerror(errno);
+          Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
       }
     }
 
@@ -47,15 +45,15 @@ public:
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED, fd, 0);
     if (this->buf == MAP_FAILED)
-      Fatal(ctx) << ctx.arg.output << ": mmap failed: " << strerror(errno);
+      Fatal(ctx) << path << ": mmap failed: " << strerror(errno);
     ::close(fd);
   }
 
   void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
     munmap(this->buf, this->filesize);
-    if (rename(this->tmpfile, ctx.arg.output.c_str()) == -1)
-      Fatal(ctx) << ctx.arg.output << ": rename filed: " << strerror(errno);
+    if (rename(this->tmpfile, this->path.c_str()) == -1)
+      Fatal(ctx) << this->path << ": rename filed: " << strerror(errno);
     this->tmpfile = nullptr;
   }
 };
@@ -75,7 +73,7 @@ public:
     Timer t(ctx, "close_file");
     i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << ctx.arg.output << ": " << strerror(errno);
+      Fatal(ctx) << "cannot open " << this->path << ": " << strerror(errno);
 
     FILE *fp = fdopen(fd, "w");
     fwrite(this->buf, this->filesize, 1, fp);
