@@ -26,6 +26,10 @@ std::string_view save_string(Context<E> &ctx, const std::string &str) {
   return {(char *)buf->data(), str.size()};
 }
 
+std::string get_version_string() {
+  return "mold " GIT_HASH;
+}
+
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
 
 template <typename E>
@@ -283,6 +287,13 @@ int do_main(int argc, char **argv) {
 
   signal(SIGINT, signal_handler<E>);
   signal(SIGTERM, signal_handler<E>);
+
+  // Open reproducible tar file if --reproduce is given.
+  if (std::string &path = ctx.arg.reproduce; !path.empty()) {
+    ctx.tar_file = TarFile::open(ctx, path, path_basename(path));
+    ctx.tar_file->append("response.txt", create_response_file(ctx));
+    ctx.tar_file->append("version.txt", get_version_string());
+  }
 
   // Preload input files
   std::function<void()> on_complete;

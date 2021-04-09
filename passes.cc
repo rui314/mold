@@ -224,7 +224,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   }
 
   // Add an identification string to .comment.
-  add_comment_string(ctx, "mold " GIT_HASH);
+  add_comment_string(ctx, get_version_string());
 
   // Also embed command line arguments for now for debugging.
   add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));

@@ -1126,6 +1126,9 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
               std::string name);
 
 template <typename E>
+std::string create_response_file(Context<E> &ctx);
+
+template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
 
@@ -1274,11 +1277,13 @@ struct Context {
     i64 filler = -1;
     i64 thread_count = -1;
     std::string Map;
+    std::string directory;
     std::string dynamic_linker;
     std::string entry = "_start";
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output;
+    std::string reproduce;
     std::string rpaths;
     std::string soname;
     std::string sysroot;
@@ -1332,6 +1337,9 @@ struct Context {
 
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
+
+  // Tar file for --reproduce
+  std::unique_ptr<TarFile> tar_file;
 
   // Input files
   std::vector<ObjectFile<E> *> objs;
@@ -1404,6 +1412,8 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str);
+
+std::string get_version_string();
 
 //
 // Symbol

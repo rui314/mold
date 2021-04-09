@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <sstream>
 #include <tbb/global_control.h>
 #include <unordered_set>
 
@@ -133,6 +134,25 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   }
 
   return false;
+}
+
+template <typename E>
+static std::string get_current_dir(Context<E> &ctx) {
+  char cwd[4096];
+  if (!getcwd(cwd, sizeof(cwd)))
+    Fatal(ctx) << "getcwd failed: " << strerror(errno);
+  return cwd;
+}
+
+template <typename E>
+std::string create_response_file(Context<E> &ctx) {
+  std::string buf;
+  std::stringstream out;
+
+  out << "--directory " << get_current_dir(ctx) << "\n";
+  for (std::string_view arg : ctx.cmdline_args)
+    out << arg << "\n";
+  return buf;
 }
 
 template <typename E>
@@ -308,10 +328,14 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
+    } else if (read_arg(ctx, args, arg, "directory")) {
+      ctx.arg.directory = arg;
     } else if (read_flag(args, "warn-common")) {
       ctx.arg.warn_common = true;
     } else if (read_flag(args, "no-warn-common")) {
       ctx.arg.warn_common = false;
+    } else if (read_arg(ctx, args, arg, "reproduce")) {
+      ctx.arg.reproduce = arg;
     } else if (read_z_flag(args, "now")) {
       ctx.arg.z_now = true;
     } else if (read_z_flag(args, "execstack")) {
@@ -498,6 +522,8 @@ void parse_nonpositional_args(Context<E> &ctx,
   bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,     \
                 std::string_view &arg,                                  \
                 std::string name);                                      \
+                                                                        \
+  template std::string create_response_file(Context<E> &ctx);           \
                                                                         \
   template                                                              \
   void parse_nonpositional_args(Context<E> &ctx,                        \
