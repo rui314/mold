@@ -413,10 +413,6 @@ void parse_nonpositional_args(Context<E> &ctx,
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;
-    } else if (read_arg(ctx, args, arg, "version-script")) {
-      parse_version_script(ctx, std::string(arg));
-    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
-      parse_dynamic_list(ctx, std::string(arg));
     } else if (read_flag(args, "build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;
@@ -473,6 +469,12 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
     } else if (read_arg(ctx, args, arg, "rpath-link")) {
+    } else if (read_arg(ctx, args, arg, "version-script")) {
+      remaining.push_back("--version-script");
+      remaining.push_back(arg);
+    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
+      remaining.push_back("--dynamic-list");
+      remaining.push_back(arg);
     } else if (read_flag(args, "as-needed")) {
       remaining.push_back("-as-needed");
     } else if (read_flag(args, "no-as-needed")) {

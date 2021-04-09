@@ -207,6 +207,10 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       ctx.is_static = true;
     } else if (read_flag(args, "Bdynamic")) {
       ctx.is_static = false;
+    } else if (read_arg(ctx, args, arg, "version-script")) {
+      parse_version_script(ctx, std::string(arg));
+    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
+      parse_dynamic_list(ctx, std::string(arg));
     } else if (read_flag(args, "push-state")) {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static});
     } else if (read_flag(args, "pop-state")) {
