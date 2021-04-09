@@ -989,8 +989,11 @@ protected:
 // filepath.cc
 //
 
+std::string get_current_dir();
 std::string path_dirname(std::string_view path);
+std::string path_filename(std::string_view path);
 std::string path_basename(std::string_view path);
+std::string path_to_absolute(std::string_view path);
 std::string path_clean(std::string_view path);
 
 //
@@ -1277,6 +1280,7 @@ struct Context {
     i64 filler = -1;
     i64 thread_count = -1;
     std::string Map;
+    std::string chroot;
     std::string directory;
     std::string dynamic_linker;
     std::string entry = "_start";

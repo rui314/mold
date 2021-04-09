@@ -137,22 +137,24 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
 }
 
 template <typename E>
-static std::string get_current_dir(Context<E> &ctx) {
-  char cwd[4096];
-  if (!getcwd(cwd, sizeof(cwd)))
-    Fatal(ctx) << "getcwd failed: " << strerror(errno);
-  return cwd;
-}
-
-template <typename E>
 std::string create_response_file(Context<E> &ctx) {
   std::string buf;
   std::stringstream out;
 
-  out << "--directory " << get_current_dir(ctx) << "\n";
+  std::string cwd = get_current_dir();
+  out << "-C " << cwd.substr(1) << "\n";
+
+  if (cwd != "/") {
+    out << "--chroot ..";
+    i64 depth = std::count(cwd.begin(), cwd.end(), '/');
+    for (i64 i = 1; i < depth; i++)
+      out << "/..";
+    out << "\n";
+  }
+
   for (std::string_view arg : ctx.cmdline_args)
     out << arg << "\n";
-  return buf;
+  return out.str();
 }
 
 template <typename E>
@@ -328,8 +330,11 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
-    } else if (read_arg(ctx, args, arg, "directory")) {
+    } else if (read_arg(ctx, args, arg, "C") ||
+               read_arg(ctx, args, arg, "directory")) {
       ctx.arg.directory = arg;
+    } else if (read_arg(ctx, args, arg, "chroot")) {
+      ctx.arg.chroot = arg;
     } else if (read_flag(args, "warn-common")) {
       ctx.arg.warn_common = true;
     } else if (read_flag(args, "no-warn-common")) {

@@ -88,6 +88,9 @@ std::unique_ptr<OutputFile<E>>
 OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
   Timer t(ctx, "open_file");
 
+  if (path.starts_with('/') && !ctx.arg.chroot.empty())
+    path = ctx.arg.chroot + "/" + path_clean(path);
+
   bool is_special = false;
   struct stat st;
   if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFMT) != S_IFREG)
