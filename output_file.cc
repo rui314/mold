@@ -52,7 +52,7 @@ public:
     Timer t(ctx, "close_file");
     munmap(this->buf, this->filesize);
     if (rename(this->tmpfile, this->path.c_str()) == -1)
-      Fatal(ctx) << this->path << ": rename filed: " << strerror(errno);
+      Fatal(ctx) << this->path << ": rename failed: " << strerror(errno);
     this->tmpfile = nullptr;
   }
 };
