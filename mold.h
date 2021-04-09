@@ -1151,6 +1151,7 @@ private:
   TarFile(std::ofstream &&out, std::string basedir)
     : out(std::move(out)), basedir(basedir) {}
 
+  std::mutex mu;
   std::ofstream out;
   std::string basedir;
 };

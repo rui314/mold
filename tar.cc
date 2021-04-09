@@ -83,6 +83,8 @@ static void write_ustar_hdr(std::ostream &out, i64 filesize) {
 }
 
 void TarFile::append(std::string path, std::string_view data) {
+  std::lock_guard lock(mu);
+
   write_pax_hdr(out, path_clean(basedir + "/" + path));
   write_ustar_hdr(out, data.size());
   out << data;
