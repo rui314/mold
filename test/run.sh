@@ -16,20 +16,20 @@ EOF
 
 gcc -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log
+if grep -q mold $t/log; then false; fi
 
 clang -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log
+if grep -q mold $t/log; then false; fi
 
 LD_PRELOAD=`pwd`/../mold-wrapper.so MOLD_REAL_PATH=`pwd`/../mold \
   gcc -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log
+grep -q mold $t/log
 
 LD_PRELOAD=`pwd`/../mold-wrapper.so MOLD_REAL_PATH=`pwd`/../mold \
   clang -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log
+grep -q mold $t/log
 
 echo OK
