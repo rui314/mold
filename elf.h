@@ -184,6 +184,7 @@ static constexpr u32 DF_1_NOW = 0x00000001;
 static constexpr u32 DF_1_NODELETE = 0x00000008;
 static constexpr u32 DF_1_INITFIRST = 0x00000020;
 static constexpr u32 DF_1_NOOPEN = 0x00000040;
+static constexpr u32 DF_1_INTERPOSE = 0x00000400;
 static constexpr u32 DF_1_PIE = 0x08000000;
 
 static constexpr u32 NT_GNU_BUILD_ID = 3;

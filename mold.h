@@ -1274,6 +1274,7 @@ struct Context {
     bool z_dlopen = true;
     bool z_execstack = false;
     bool z_initfirst = false;
+    bool z_interpose = false;
     bool z_now = false;
     bool z_relro = true;
     i16 default_version = VER_NDX_GLOBAL;

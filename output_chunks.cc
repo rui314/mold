@@ -482,6 +482,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     flags1 |= DF_1_NODELETE;
   if (ctx.arg.z_initfirst)
     flags1 |= DF_1_INITFIRST;
+  if (ctx.arg.z_interpose)
+    flags1 |= DF_1_INTERPOSE;
 
   if (ctx.has_gottp_rel)
     flags |= DF_STATIC_TLS;
