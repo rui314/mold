@@ -182,6 +182,7 @@ static constexpr u32 DF_STATIC_TLS = 0x10;
 
 static constexpr u32 DF_1_NOW = 0x00000001;
 static constexpr u32 DF_1_NODELETE = 0x00000008;
+static constexpr u32 DF_1_INITFIRST = 0x00000020;
 static constexpr u32 DF_1_NOOPEN = 0x00000040;
 static constexpr u32 DF_1_PIE = 0x08000000;
 
