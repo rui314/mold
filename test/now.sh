@@ -18,6 +18,6 @@ readelf --dynamic $t/b.so | grep -q 'Flags: NOW'
 
 clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,now,-z,lazy
 readelf --dynamic $t/b.so > $t/log
-if grep -q 'Flags: NOW' $t/log; then false; fi
+! grep -q 'Flags: NOW' $t/log || false
 
 echo OK

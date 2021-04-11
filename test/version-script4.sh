@@ -31,6 +31,6 @@ clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/
 
 readelf --dyn-syms $t/c.so > $t/log
 fgrep -q _ZN3foo3barE $t/log
-if fgrep -q ' bar' $t/log; then false; fi
+! fgrep -q ' bar' $t/log || false
 
 echo OK

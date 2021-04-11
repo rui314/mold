@@ -42,20 +42,20 @@ fgrep -q baz $t/log
 
 clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a
 readelf --dyn-syms $t/f.so > $t/log
-if fgrep -q foo $t/log; then false; fi
+! fgrep -q foo $t/log || false
 fgrep -q bar $t/log
 fgrep -q baz $t/log
 
 clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a -Wl,-exclude-libs=d.a
 readelf --dyn-syms $t/f.so > $t/log
-if fgrep -q foo $t/log; then false; fi
-if fgrep -q bar $t/log; then false; fi
+! fgrep -q foo $t/log || false
+! fgrep -q bar $t/log || false
 fgrep -q baz $t/log
 
 clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=ALL
 readelf --dyn-syms $t/f.so > $t/log
-if fgrep -q foo $t/log; then false; fi
-if fgrep -q bar $t/log; then false; fi
+! fgrep -q foo $t/log || false
+! fgrep -q bar $t/log || false
 fgrep -q baz $t/log
 
 echo OK

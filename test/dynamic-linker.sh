@@ -14,7 +14,7 @@ EOF
 ../mold -o $t/exe $t/a.o
 
 readelf --sections $t/exe > $t/log
-if fgrep .interp $t/log; then false; fi
+! fgrep .interp $t/log || false
 
 readelf --dynamic $t/exe > $t/log
 

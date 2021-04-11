@@ -26,7 +26,7 @@ clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o
 $t/exe | grep -q '3 5'
 
 ! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o \
-  -Wl,-z,nocopyreloc 2> $t/log
+  -Wl,-z,nocopyreloc 2> $t/log || false
 
 grep -q 'recompile with -fPIE' $t/log
 

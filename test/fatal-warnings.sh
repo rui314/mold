@@ -21,6 +21,6 @@ clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o \
   -Wl,-warn-common 2> /dev/null
 
 ! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o \
-  -Wl,-warn-common -Wl,-fatal-warnings 2> /dev/null
+  -Wl,-warn-common -Wl,-fatal-warnings 2> /dev/null || false
 
 echo OK

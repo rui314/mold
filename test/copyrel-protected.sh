@@ -17,7 +17,7 @@ cat <<EOF | cc -shared -o $t/b.so -xc -
 __attribute__((visibility("protected"))) int foo;
 EOF
 
-if clang -fuse-ld=`pwd`/../mold $t/a.o $t/b.so -o $t/exe >& $t/log; then false; fi
+! clang -fuse-ld=`pwd`/../mold $t/a.o $t/b.so -o $t/exe >& $t/log || false
 fgrep -q 'cannot make copy relocation for  protected symbol' $t/log
 
 echo OK

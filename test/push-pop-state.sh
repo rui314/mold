@@ -22,6 +22,6 @@ clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,-as-needed \
 
 readelf --dynamic $t/exe > $t/log
 fgrep -q a.so $t/log
-if fgrep -q b.so $t/log; then false; fi
+! fgrep -q b.so $t/log || false
 
 echo OK

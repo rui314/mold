@@ -26,18 +26,18 @@ fgrep -q .Lbar $t/log
 readelf --symbols $t/exe > $t/log
 fgrep -q _start $t/log
 fgrep -q foo $t/log
-if fgrep -q .Lbar $t/log; then false; fi
+! fgrep -q .Lbar $t/log || false
 
 ../mold -o $t/exe $t/a.o --discard-all
 readelf --symbols $t/exe > $t/log
 fgrep -q _start $t/log
-if fgrep -q foo $t/log; then false; fi
-if fgrep -q .Lbar $t/log; then false; fi
+! fgrep -q foo $t/log || false
+! fgrep -q .Lbar $t/log || false
 
 ../mold -o $t/exe $t/a.o --strip-all
 readelf --symbols $t/exe > $t/log
-if fgrep -q _start $t/log; then false; fi
-if fgrep -q foo $t/log; then false; fi
-if fgrep -q .Lbar $t/log; then false; fi
+! fgrep -q _start $t/log || false
+! fgrep -q foo $t/log || false
+! fgrep -q .Lbar $t/log || false
 
 echo OK

@@ -25,13 +25,13 @@ ar cr $t/d.a $t/b.o $t/c.o
 
 ../mold -static -o $t/exe $t/a.o $t/d.a
 readelf --symbols $t/exe > $t/log
-if grep -q foo $t/log; then false; fi
-if grep -q bar $t/log; then false; fi
+! grep -q foo $t/log || false
+! grep -q bar $t/log || false
 
 ../mold -static -o $t/exe $t/a.o $t/d.a -u foo
 readelf --symbols $t/exe > $t/log
 grep -q foo $t/log
-if grep -q bar $t/log; then false; fi
+! grep -q bar $t/log || false
 
 ../mold -static -o $t/exe $t/a.o $t/d.a -u foo --undefined=bar
 readelf --symbols $t/exe > $t/log

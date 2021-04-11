@@ -8,7 +8,7 @@ mkdir -p $t
 echo 'int main() { return 0; }' > $t/a.c
 echo 'int main() { return 0; }' > $t/b.c
 
-if clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c 2> /dev/null; then false; fi
+! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c 2> /dev/null || false
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c -Wl,-allow-multiple-definition
 
 echo OK

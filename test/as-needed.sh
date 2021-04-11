@@ -30,6 +30,6 @@ fgrep -q 'Shared library: [libbar.so]' $t/readelf
 
 readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
-if fgrep -q 'Shared library: [libbar.so]' $t/readelf; then false; fi
+! fgrep -q 'Shared library: [libbar.so]' $t/readelf || false
 
 echo OK

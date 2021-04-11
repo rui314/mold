@@ -18,7 +18,7 @@ int main() {
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o > $t/log
-if fgrep -q 'multiple common symbols' $t/log; then false; fi
+! fgrep -q 'multiple common symbols' $t/log || false
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-warn-common 2> $t/log
 fgrep -q 'multiple common symbols' $t/log

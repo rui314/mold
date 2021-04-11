@@ -12,7 +12,7 @@ main:
   call foo
 EOF
 
-if ../mold -o $t/exe $t/a.o 2> $t/log; then false; fi
+! ../mold -o $t/exe $t/a.o 2> $t/log || false
 grep -q 'undefined symbol: .*\.o: foo' $t/log
 
 echo OK
