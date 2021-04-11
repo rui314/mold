@@ -392,16 +392,15 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_FILTER, ctx.dynstr->find_string(str));
 
   if (ctx.reldyn->shdr.sh_size) {
-    bool is_rel = (E::rel_type == SHT_REL);
-    define(is_rel ? DT_REL : DT_RELA, ctx.reldyn->shdr.sh_addr);
-    define(is_rel ? DT_RELSZ : DT_RELASZ, ctx.reldyn->shdr.sh_size);
-    define(is_rel ? DT_RELENT : DT_RELAENT, sizeof(ElfRel<E>));
+    define(E::is_rel ? DT_REL : DT_RELA, ctx.reldyn->shdr.sh_addr);
+    define(E::is_rel ? DT_RELSZ : DT_RELASZ, ctx.reldyn->shdr.sh_size);
+    define(E::is_rel ? DT_RELENT : DT_RELAENT, sizeof(ElfRel<E>));
   }
 
   if (ctx.relplt->shdr.sh_size) {
     define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
     define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
-    define(DT_PLTREL, (E::rel_type == SHT_REL) ? DT_REL : DT_RELA);
+    define(DT_PLTREL, E::is_rel ? DT_REL : DT_RELA);
   }
 
   if (ctx.gotplt->shdr.sh_size)
@@ -690,7 +689,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym->get_type() == STT_GNU_IFUNC) {
       u64 resolver_addr = sym->input_section->get_addr() + sym->value;
       *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
-      if (E::rel_type == SHT_REL)
+      if (E::is_rel)
         buf[sym->get_got_idx(ctx)] = resolver_addr;
     } else {
       buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);

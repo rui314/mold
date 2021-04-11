@@ -1085,9 +1085,8 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
   ctx._edata = add("_edata");
   ctx.__executable_start = add("__executable_start");
 
-  bool is_rel = (E::rel_type == SHT_REL);
-  ctx.__rel_iplt_start = add(is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
-  ctx.__rel_iplt_end = add(is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
+  ctx.__rel_iplt_start = add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
+  ctx.__rel_iplt_end = add(E::is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");

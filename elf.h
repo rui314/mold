@@ -611,6 +611,7 @@ struct X86_64 {
   static constexpr i32 got_size = 8;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
+  static constexpr bool is_rel = false;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
 };
@@ -646,6 +647,7 @@ struct I386 {
   static constexpr i32 got_size = 4;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
+  static constexpr bool is_rel = true;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
 };
