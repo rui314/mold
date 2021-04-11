@@ -64,14 +64,14 @@ template <typename E>
 bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
   u64 flags = chunk->shdr.sh_flags;
   u64 type = chunk->shdr.sh_type;
-  std::string_view name = chunk->name;
 
-  bool match = (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
-               type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-               chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
-               name.ends_with(".rel.ro");
-
-  return (flags & SHF_WRITE) && match;
+  if ((flags & SHF_WRITE))
+    if ((flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
+        type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
+        chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
+        chunk->name.ends_with(".rel.ro"))
+      return true;
+  return false;
 }
 
 template <typename E>
@@ -232,12 +232,11 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   Timer t(ctx, "sort_dynamic_relocs");
 
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
-  ElfRel<E> *end =
-    (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset + this->shdr.sh_size);
+  ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
   tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return std::tuple(a.r_type != E::rel_type, a.r_sym, a.r_offset) <
-           std::tuple(b.r_type != E::rel_type, b.r_sym, b.r_offset);
+    return std::tuple(a.r_type != STT_GNU_IFUNC, a.r_sym, a.r_offset) <
+           std::tuple(b.r_type != STT_GNU_IFUNC, b.r_sym, b.r_offset);
   });
 }
 
