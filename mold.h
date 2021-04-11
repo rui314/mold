@@ -1281,6 +1281,7 @@ struct Context {
     std::vector<std::string_view> version_definitions;
     std::vector<VersionPattern> version_patterns;
     i64 filler = -1;
+    i64 spare_dynamic_tags = 5;
     i64 thread_count = -1;
     std::string Map;
     std::string chroot;

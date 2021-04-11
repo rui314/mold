@@ -495,6 +495,10 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
 
   define(DT_DEBUG, 0);
   define(DT_NULL, 0);
+
+  for (i64 i = 0; i < ctx.arg.spare_dynamic_tags; i++)
+    define(DT_NULL, 0);
+
   return vec;
 }
 

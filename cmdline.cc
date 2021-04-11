@@ -282,6 +282,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       remaining.push_back("-Bdynamic");
     } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
       ctx.arg.shared = true;
+    } else if (read_arg(ctx, args, arg, "spare-dynamic-tags")) {
+      ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
     } else if (read_flag(args, "demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {
