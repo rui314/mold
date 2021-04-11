@@ -13,10 +13,10 @@ EOF
 clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
 clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,nodefs
 
-! clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,defs 2> $t/log
+if clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,defs 2> $t/log; then false; fi
 grep -q 'undefined symbol:.* foo' $t/log
 
-! clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-no-undefined 2> $t/log
+if clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-no-undefined 2> $t/log; then false; fi
 grep -q 'undefined symbol:.* foo' $t/log
 
 echo OK

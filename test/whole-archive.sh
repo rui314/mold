@@ -20,8 +20,8 @@ ar cr $t/d.a $t/b.o $t/c.o
 
 ../mold -o $t/exe $t/a.o $t/d.a
 readelf --symbols $t/exe > $t/readelf
-! grep -q fn1 $t/readelf
-! grep -q fn2 $t/readelf
+if grep -q fn1 $t/readelf; then false; fi
+if grep -q fn2 $t/readelf; then false; fi
 
 ../mold -o $t/exe $t/a.o --whole-archive $t/d.a
 readelf --symbols $t/exe > $t/readelf
@@ -30,7 +30,7 @@ grep -q fn2 $t/readelf
 
 ../mold -o $t/exe $t/a.o --whole-archive --no-whole-archive $t/d.a
 readelf --symbols $t/exe > $t/readelf
-! grep -q fn1 $t/readelf
-! grep -q fn2 $t/readelf
+if grep -q fn1 $t/readelf; then false; fi
+if grep -q fn2 $t/readelf; then false; fi
 
 echo OK

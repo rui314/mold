@@ -12,7 +12,7 @@ foo:
   .short foo
 EOF
 
-! ../mold -e foo -static -o $t/exe $t/a.o 2> $t/log
+if ../mold -e foo -static -o $t/exe $t/a.o 2> $t/log; then false; fi
 fgrep -q 'relocation R_X86_64_16 against foo out of range' $t/log
 
 echo OK

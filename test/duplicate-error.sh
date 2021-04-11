@@ -12,7 +12,7 @@ main:
   nop
 EOF
 
-! ../mold -o $t/exe $t/a.o $t/a.o 2> $t/log
+if ../mold -o $t/exe $t/a.o $t/a.o 2> $t/log; then false; fi
 grep -q 'duplicate symbol: .*\.o: .*\.o: main' $t/log
 
 echo OK

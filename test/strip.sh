@@ -22,9 +22,9 @@ fgrep -q .L.baz $t/log
 
 ../mold -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log
-! fgrep -q _start $t/log
-! fgrep -q foo $t/log
-! fgrep -q bar $t/log
-! fgrep -q .L.baz $t/log
+if fgrep -q _start $t/log; then false; fi
+if fgrep -q foo $t/log; then false; fi
+if fgrep -q bar $t/log; then false; fi
+if fgrep -q .L.baz $t/log; then false; fi
 
 echo OK

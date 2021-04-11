@@ -18,7 +18,8 @@ void apply_exclude_libs(Context<E> &ctx) {
 
   for (ObjectFile<E> *file : ctx.objs)
     if (!file->archive_name.empty())
-      if (set.contains("ALL") || set.contains(file->archive_name))
+      if (set.contains("ALL") ||
+          set.contains(path_filename(file->archive_name)))
         file->exclude_libs = true;
 }
 

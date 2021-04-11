@@ -23,7 +23,7 @@ EOF
 rm -f $t/exe
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-preload
-! test -e $t/exe
+if test -e $t/exe; then false; fi
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 $t/exe | grep -q 'Hello world'
 

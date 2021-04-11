@@ -15,6 +15,6 @@ grep -q 'GNU_RELRO ' $t/log
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-z,norelro
 readelf --segments -W $t/exe > $t/log
-! grep -q 'GNU_RELRO ' $t/log
+if grep -q 'GNU_RELRO ' $t/log; then false; fi
 
 echo OK

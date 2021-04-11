@@ -213,11 +213,11 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg)
 }
 
 static std::vector<std::string_view>
-split(std::string_view str, std::string_view sep) {
+split_by_comma_or_colon(std::string_view str) {
   std::vector<std::string_view> vec;
 
   for (;;) {
-    i64 pos = str.find(sep);
+    i64 pos = str.find_first_of(",:");
     if (pos == str.npos) {
       vec.push_back(str);
       break;
@@ -264,6 +264,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.Bsymbolic = true;
     } else if (read_flag(args, "Bsymbolic-functions")) {
       ctx.arg.Bsymbolic_functions = true;
+    } else if (read_arg(ctx, args, arg, "exclude-libs")) {
+      append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
     } else if (read_arg(ctx, args, arg, "e") ||
                read_arg(ctx, args, arg, "entry")) {
       ctx.arg.entry = arg;
@@ -461,8 +463,6 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "filter") ||
                read_arg(ctx, args, arg, "F")) {
       ctx.arg.filter.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "exclude-libs")) {
-      ctx.arg.exclude_libs = split(arg, ",");
     } else if (read_flag(args, "preload")) {
       ctx.arg.preload = true;
     } else if (read_arg(ctx, args, arg, "z")) {
