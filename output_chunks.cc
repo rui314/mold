@@ -7,19 +7,6 @@
 #include <tbb/parallel_sort.h>
 
 template <typename E>
-i64 BuildId::size(Context<E> &ctx) const {
-  switch (kind) {
-  case HEX:
-    return value.size();
-  case HASH:
-    return hash_size;
-  case UUID:
-    return 16;
-  }
-  unreachable(ctx);
-}
-
-template <typename E>
 void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
@@ -1375,6 +1362,19 @@ void VerdefSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void VerdefSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
+}
+
+template <typename E>
+i64 BuildId::size(Context<E> &ctx) const {
+  switch (kind) {
+  case HEX:
+    return value.size();
+  case HASH:
+    return hash_size;
+  case UUID:
+    return 16;
+  }
+  unreachable(ctx);
 }
 
 template <typename E>

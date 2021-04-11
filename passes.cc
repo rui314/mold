@@ -779,7 +779,7 @@ i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
   bool hasbits = !(type == SHT_NOBITS);
 
   return ((!reaodnly << 9) | (exec << 8) | (!tls << 7) |
-          (!relro << 6) | (!hasbits << 5)) + 4;
+          (!relro << 6) | (!hasbits << 5)) + (1 << 4);
 }
 
 // Returns the smallest number n such that
