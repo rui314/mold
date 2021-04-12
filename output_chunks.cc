@@ -60,12 +60,26 @@ static i64 to_phdr_flags(OutputChunk<E> *chunk) {
   return ret;
 }
 
+// PT_GNU_RELRO segment is a security mechanism to make more pages
+// read-only than we could have done without it.
+//
+// Traditionally, sections are either read-only or read-write.  If a
+// section contains dynamic relocations, it must have been put into a
+// read-write segment so that the program loader can mutate its
+// contents in memory, even if no one will write to it at runtime.
+//
+// RELRO segment allows us to make such pages writable only when a
+// program is being loaded. After that, the page becomes read-only.
+//
+// Some sections, such as .init, .fini, .got, .dynamic, contain
+// dynamic relocations but doesn't have to be writable at runtime,
+// so they are put into a RELRO segment.
 template <typename E>
 bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
   u64 flags = chunk->shdr.sh_flags;
   u64 type = chunk->shdr.sh_type;
 
-  if ((flags & SHF_WRITE))
+  if (flags & SHF_WRITE)
     if ((flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
         type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
         chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
