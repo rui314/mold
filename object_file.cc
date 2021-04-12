@@ -418,13 +418,13 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   counter += elf_syms.size();
 
   // Initialize local symbols
-  this->local_syms.resize(first_global);
+  this->local_syms.reset(new Symbol<E>[first_global]);
+  new (&this->local_syms[0]) Symbol<E>;
 
   for (i64 i = 1; i < first_global; i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = this->local_syms[i];
-
-    sym.set_name(symbol_strtab.data() + esym.st_name);
+    new (&sym) Symbol<E>(symbol_strtab.data() + esym.st_name);
 
     if (sym.get_name().empty() && esym.st_type == STT_SECTION)
       if (InputSection<E> *sec = get_section(esym))

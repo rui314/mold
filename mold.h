@@ -837,7 +837,7 @@ public:
   std::string_view shstrtab;
 
 protected:
-  std::vector<Symbol<E>> local_syms;
+  std::unique_ptr<Symbol<E>[]> local_syms;
 };
 
 template <typename E>
