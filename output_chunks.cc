@@ -235,8 +235,8 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
   tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return std::tuple(a.r_type != STT_GNU_IFUNC, a.r_sym, a.r_offset) <
-           std::tuple(b.r_type != STT_GNU_IFUNC, b.r_sym, b.r_offset);
+    return std::tuple(a.r_type != E::R_IRELATIVE, a.r_sym, a.r_offset) <
+           std::tuple(b.r_type != E::R_IRELATIVE, b.r_sym, b.r_offset);
   });
 }
 

@@ -105,8 +105,9 @@ void resolve_obj_symbols(Context<E> &ctx) {
 
   for (std::string_view name : ctx.arg.undefined)
     if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
-      if (!file->is_alive.exchange(true) && !file->is_dso)
-        roots.push_back((ObjectFile<E> *)file);
+      if (!file->is_alive.exchange(true))
+        if (!file->is_dso)
+          roots.push_back((ObjectFile<E> *)file);
 
   tbb::parallel_do(roots,
                    [&](ObjectFile<E> *file,
@@ -118,7 +119,6 @@ void resolve_obj_symbols(Context<E> &ctx) {
 
   // Remove symbols of eliminated objects.
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    Symbol<E> null_sym;
     if (!file->is_alive)
       for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
@@ -160,7 +160,6 @@ void resolve_dso_symbols(Context<E> &ctx) {
 
   // Remove symbols of unreferenced DSOs.
   tbb::parallel_for_each(ctx.dsos, [](SharedFile<E> *file) {
-    Symbol<E> null_sym;
     if (!file->is_alive)
       for (Symbol<E> *sym : file->symbols)
         if (sym->file == file)
