@@ -1240,10 +1240,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         // Write to .eh_frame_hdr
         if (ctx.eh_frame_hdr && i == 0) {
           assert(rel.offset == 8);
-          entry->init_addr = val - ctx.eh_frame_hdr->shdr.sh_addr;
-          entry->fde_addr =
-            this->shdr.sh_addr + fde_off - ctx.eh_frame_hdr->shdr.sh_addr;
-          entry++;
+          u64 start = ctx.eh_frame_hdr->shdr.sh_addr;
+          *entry++ = {(i32)(val - start),
+                      (i32)(this->shdr.sh_addr + fde_off - start)};
         }
       }
     }
@@ -1273,7 +1272,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
 // Compiler-generated object files don't usually contain symbols
 // referring a .eh_frame section, but crtend.o contains such symbol
 // (i.e. "__FRAME_END__"). So we need to handle such symbol.
-// This function is slow, but it's okay because they are rare.
+// This function is slow, but it's okay because such symbols are rare.
 template <typename E>
 u64 EhFrameSection<E>::get_addr(Context<E> &ctx, const Symbol<E> &sym) {
   InputSection<E> &isec = *sym.input_section;
