@@ -122,7 +122,7 @@ void resolve_obj_symbols(Context<E> &ctx) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
-          sym->clear();
+          new (sym) Symbol<E>(sym->get_name());
   });
 
   // Eliminate unused archive members.
@@ -163,7 +163,7 @@ void resolve_dso_symbols(Context<E> &ctx) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->symbols)
         if (sym->file == file)
-          sym->clear();
+          new (sym) Symbol<E>(sym->get_name());
   });
 
   // Remove unreferenced DSOs

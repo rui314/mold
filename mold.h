@@ -1654,11 +1654,6 @@ public:
 
   std::string_view get_demangled_name() const;
 
-  void clear() {
-    Symbol<E> null;
-    memcpy((char *)this, &null, sizeof(null));
-  }
-
   const ElfSym<E> &esym() const {
     if (file->is_dso)
       return *((SharedFile<E> *)file)->elf_syms[sym_idx];
