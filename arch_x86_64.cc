@@ -256,7 +256,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     const SectionFragmentRef<X86_64> *ref = nullptr;
-    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+    if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {
@@ -415,7 +415,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     }
 
     const SectionFragmentRef<X86_64> *ref = nullptr;
-    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+    if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {

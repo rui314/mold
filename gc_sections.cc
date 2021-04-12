@@ -34,8 +34,9 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all
   // section fragments as alive.
-  for (SectionFragmentRef<E> &ref : isec->rel_fragments)
-    ref.frag->is_alive = true;
+  if (isec->rel_fragments)
+    for (i64 i = 0; isec->rel_fragments[i].idx >= 0; i++)
+      isec->rel_fragments[i].frag->is_alive = true;
 
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.

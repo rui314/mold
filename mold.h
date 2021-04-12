@@ -256,7 +256,7 @@ public:
   std::string_view name;
   std::string_view contents;
 
-  std::vector<SectionFragmentRef<E>> rel_fragments;
+  std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   std::unique_ptr<u8[]> rel_types;
   std::span<FdeRecord<E>> fdes;
 

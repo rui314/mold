@@ -584,6 +584,25 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
     if (rels.empty())
       continue;
 
+    i64 len = 0;
+
+    for (i64 i = 0; i < rels.size(); i++) {
+      const ElfRel<E> &rel = rels[i];
+      const ElfSym<E> &esym = elf_syms[rel.r_sym];
+
+      if (esym.st_type == STT_SECTION) {
+        MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
+        if (!m.fragments.empty())
+          len++;
+      }
+    }
+
+    if (len == 0)
+      continue;
+
+    isec->rel_fragments.reset(new SectionFragmentRef<E>[len + 1]);
+    i64 frag_idx = 0;
+
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
@@ -602,10 +621,11 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      SectionFragmentRef<E> ref{m.fragments[idx], (i32)i,
-                                (i32)(offset - offsets[idx])};
-      isec->rel_fragments.push_back(ref);
+      isec->rel_fragments[frag_idx++] = {m.fragments[idx], (i32)i,
+                                         (i32)(offset - offsets[idx])};
     }
+
+    isec->rel_fragments[frag_idx++] = {nullptr, -1, -1};
   }
 
   // Initialize sym_fragments
