@@ -1666,11 +1666,6 @@ public:
     return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
   }
 
-  void set_name(std::string_view str) {
-    nameptr = str.data();
-    namelen = str.size();
-  }
-
   std::string_view get_name() const {
     return {nameptr, (size_t)namelen};
   }

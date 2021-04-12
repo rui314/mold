@@ -423,13 +423,14 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
   for (i64 i = 1; i < first_global; i++) {
     const ElfSym<E> &esym = elf_syms[i];
-    Symbol<E> &sym = this->local_syms[i];
-    new (&sym) Symbol<E>(symbol_strtab.data() + esym.st_name);
+    std::string_view name = symbol_strtab.data() + esym.st_name;
 
-    if (sym.get_name().empty() && esym.st_type == STT_SECTION)
+    if (name.empty() && esym.st_type == STT_SECTION)
       if (InputSection<E> *sec = get_section(esym))
-        sym.set_name(sec->name);
+        name = sec->name;
 
+    Symbol<E> &sym = this->local_syms[i];
+    new (&sym) Symbol<E>(name);
     sym.file = this;
     sym.value = esym.st_value;
     sym.sym_idx = i;
