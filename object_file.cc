@@ -242,7 +242,7 @@ template <typename E>
 void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
-    if (isec && isec->is_alive && isec->name == ".eh_frame") {
+    if (isec && isec->is_alive && isec->name() == ".eh_frame") {
       read_ehframe(ctx, *isec);
       isec->is_ehframe = true;
       isec->is_alive = false;
@@ -427,7 +427,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
     if (name.empty() && esym.st_type == STT_SECTION)
       if (InputSection<E> *sec = get_section(esym))
-        name = sec->name;
+        name = sec->name();
 
     Symbol<E> &sym = this->local_syms[i];
     new (&sym) Symbol<E>(name);
@@ -519,7 +519,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   MergeableSection<E> rec;
 
   MergedSection<E> *parent =
-    MergedSection<E>::get_instance(ctx, sec.name, sec.shdr.sh_type,
+    MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr.sh_type,
                                    sec.shdr.sh_flags);
 
   std::string_view data = sec.contents;

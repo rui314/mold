@@ -225,7 +225,8 @@ class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
                std::string_view name, i64 section_idx)
-    : file(file), shdr(shdr), name(name), section_idx(section_idx) {
+    : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
+      section_idx(section_idx) {
     if (name.starts_with(".zdebug"))
       uncompress_old_style(ctx);
     else if (shdr.sh_flags & SHF_COMPRESSED)
@@ -244,6 +245,10 @@ public:
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   inline void kill();
 
+  inline std::string_view name() const {
+    return {nameptr, (size_t)namelen};
+  }
+
   inline i64 get_priority() const;
   inline u64 get_addr() const;
   inline i64 get_addend(const ElfRel<E> &rel) const;
@@ -253,12 +258,14 @@ public:
   const ElfShdr<E> &shdr;
   OutputSection<E> *output_section = nullptr;
 
-  std::string_view name;
   std::string_view contents;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   std::unique_ptr<u8[]> rel_types;
   std::span<FdeRecord<E>> fdes;
+
+  const char *nameptr = nullptr;
+  i32 namelen = 0;
 
   u32 offset = -1;
   u32 section_idx = -1;
@@ -1800,7 +1807,7 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 template <typename E>
 inline std::ostream &
 operator<<(std::ostream &out, const InputSection<E> &isec) {
-  out << isec.file << ":(" << isec.name << ")";
+  out << isec.file << ":(" << isec.name() << ")";
   return out;
 }
 

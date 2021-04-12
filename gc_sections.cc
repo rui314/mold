@@ -15,10 +15,10 @@ static bool is_init_fini(const InputSection<E> &isec) {
   return isec.shdr.sh_type == SHT_INIT_ARRAY ||
          isec.shdr.sh_type == SHT_FINI_ARRAY ||
          isec.shdr.sh_type == SHT_PREINIT_ARRAY ||
-         isec.name.starts_with(".ctors") ||
-         isec.name.starts_with(".dtors") ||
-         isec.name.starts_with(".init") ||
-         isec.name.starts_with(".fini");
+         isec.name().starts_with(".ctors") ||
+         isec.name().starts_with(".dtors") ||
+         isec.name().starts_with(".init") ||
+         isec.name().starts_with(".fini");
 }
 
 template <typename E>

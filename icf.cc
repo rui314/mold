@@ -101,7 +101,7 @@ static void uniquify_cies(Context<E> &ctx) {
 template <typename E>
 static bool is_eligible(InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr;
-  std::string_view name = isec.name;
+  std::string_view name = isec.name();
 
   bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
   bool is_executable = (shdr.sh_flags & SHF_EXECINSTR);
