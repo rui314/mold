@@ -83,6 +83,7 @@ struct SectionFragment {
 template <typename E>
 struct SectionFragmentRef {
   SectionFragment<E> *frag = nullptr;
+  i32 idx = 0;
   i32 addend = 0;
 };
 
@@ -255,9 +256,8 @@ public:
   std::string_view name;
   std::string_view contents;
 
-  std::vector<u8> has_fragments;
   std::vector<SectionFragmentRef<E>> rel_fragments;
-  std::vector<u8> rel_types;
+  std::unique_ptr<u8[]> rel_types;
   std::span<FdeRecord<E>> fdes;
 
   u32 offset = -1;

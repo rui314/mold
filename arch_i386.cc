@@ -134,9 +134,9 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
 
 template <>
 void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
-  i64 ref_idx = 0;
   ElfRel<I386> *dynrel = nullptr;
   std::span<ElfRel<I386>> rels = get_rels(ctx);
+  i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<I386> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -148,8 +148,8 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     const SectionFragmentRef<I386> *ref = nullptr;
-    if (has_fragments[i])
-      ref = &rel_fragments[ref_idx++];
+    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {
       write_val(ctx, rel.r_type, loc, val);
@@ -214,7 +214,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 template <>
 void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
   std::span<ElfRel<I386>> rels = get_rels(ctx);
-  i64 ref_idx = 0;
+  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<I386> &rel = rels[i];
@@ -227,8 +227,8 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     }
 
     const SectionFragmentRef<I386> *ref = nullptr;
-    if (has_fragments[i])
-      ref = &rel_fragments[ref_idx++];
+    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {
       write_val(ctx, rel.r_type, loc, val);

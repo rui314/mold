@@ -242,9 +242,9 @@ static u32 relax_gottpoff(u8 *loc) {
 // scan_relocations().
 template <>
 void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
-  i64 ref_idx = 0;
   ElfRel<X86_64> *dynrel = nullptr;
   std::span<ElfRel<X86_64>> rels = get_rels(ctx);
+  i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<X86_64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -256,8 +256,8 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     const SectionFragmentRef<X86_64> *ref = nullptr;
-    if (has_fragments[i])
-      ref = &rel_fragments[ref_idx++];
+    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {
       overflow_check(ctx, this, sym, rel.r_type, val);
@@ -402,7 +402,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 template <>
 void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
   std::span<ElfRel<X86_64>> rels = get_rels(ctx);
-  i64 ref_idx = 0;
+  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
@@ -415,8 +415,8 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     }
 
     const SectionFragmentRef<X86_64> *ref = nullptr;
-    if (has_fragments[i])
-      ref = &rel_fragments[ref_idx++];
+    if (frag_idx < rel_fragments.size() && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
     auto write = [&](u64 val) {
       overflow_check(ctx, this, sym, rel.r_type, val);

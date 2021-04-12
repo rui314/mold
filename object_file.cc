@@ -230,10 +230,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       assert(target->relsec_idx == -1);
       target->relsec_idx = i;
 
-      i64 size = shdr.sh_size / sizeof(ElfRel<E>);
-      target->has_fragments.resize(size);
-      if (target->shdr.sh_flags & SHF_ALLOC)
-        target->rel_types.resize(size);
+      if (target->shdr.sh_flags & SHF_ALLOC) {
+        i64 size = shdr.sh_size / sizeof(ElfRel<E>);
+        target->rel_types.reset(new u8[size]);
+      }
     }
   }
 }
@@ -602,9 +602,9 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      SectionFragmentRef<E> ref{m.fragments[idx], (i32)(offset - offsets[idx])};
+      SectionFragmentRef<E> ref{m.fragments[idx], (i32)i,
+                                (i32)(offset - offsets[idx])};
       isec->rel_fragments.push_back(ref);
-      isec->has_fragments[i] = true;
     }
   }
 
