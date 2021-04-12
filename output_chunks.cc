@@ -324,8 +324,8 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
     i64 offset = dynsym_offset;
     for (Symbol<E> *sym :
            std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1)) {
-      write_string(base + offset, sym->get_name());
-      offset += sym->get_name().size() + 1;
+      write_string(base + offset, sym->name());
+      offset += sym->name().size() + 1;
     }
   }
 }
@@ -853,7 +853,7 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
     ctx.gnu_hash->symoffset = first_global - vec.begin();
 
     tbb::parallel_for_each(first_global, vec.end(), [&](T &x) {
-      x.hash = djb_hash(x.sym->get_name()) % ctx.gnu_hash->num_buckets;
+      x.hash = djb_hash(x.sym->name()) % ctx.gnu_hash->num_buckets;
     });
 
     tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
@@ -866,7 +866,7 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
   for (i64 i = 1; i < symbols.size(); i++) {
     symbols[i] = vec[i].sym;
     symbols[i]->set_dynsym_idx(ctx, i);
-    ctx.dynstr->shdr.sh_size += symbols[i]->get_name().size() + 1;
+    ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
   }
 }
 
@@ -899,7 +899,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       esym.st_bind = sym.esym().st_bind;
 
     esym.st_name = name_offset;
-    name_offset += sym.get_name().size() + 1;
+    name_offset += sym.name().size() + 1;
 
     if (sym.has_copyrel) {
       esym.st_shndx = sym.copyrel_readonly
@@ -950,7 +950,7 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
     Symbol<E> *sym = ctx.dynsym->symbols[i];
-    i64 idx = elf_hash(sym->get_name()) % num_slots;
+    i64 idx = elf_hash(sym->name()) % num_slots;
     chains[sym->get_dynsym_idx(ctx)] = buckets[idx];
     buckets[idx] = sym->get_dynsym_idx(ctx);
   }
@@ -992,7 +992,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   std::vector<u32> hashes(symbols.size());
   for (i64 i = 0; i < symbols.size(); i++)
-    hashes[i] = djb_hash(symbols[i]->get_name());
+    hashes[i] = djb_hash(symbols[i]->name());
 
   // Write a bloom filter
   typename E::WordTy *bloom = (typename E::WordTy *)(base + HEADER_SIZE);

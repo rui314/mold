@@ -122,7 +122,7 @@ void resolve_obj_symbols(Context<E> &ctx) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
-          new (sym) Symbol<E>(sym->get_name());
+          new (sym) Symbol<E>(sym->name());
   });
 
   // Eliminate unused archive members.
@@ -163,7 +163,7 @@ void resolve_dso_symbols(Context<E> &ctx) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->symbols)
         if (sym->file == file)
-          new (sym) Symbol<E>(sym->get_name());
+          new (sym) Symbol<E>(sym->name());
   });
 
   // Remove unreferenced DSOs
@@ -506,7 +506,7 @@ void apply_version_script(Context<E> &ctx) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
-            ? sym->get_demangled_name() : sym->get_name();
+            ? sym->get_demangled_name() : sym->name();
           if (glob.match(name))
             sym->ver_idx = elem.ver_idx;
         }

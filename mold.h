@@ -1443,7 +1443,7 @@ class Symbol {
 public:
   Symbol() = default;
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
-  Symbol(const Symbol<E> &other) : Symbol(other.get_name()) {}
+  Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
   static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
                            std::string_view name) {
@@ -1666,7 +1666,7 @@ public:
     return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
   }
 
-  std::string_view get_name() const {
+  std::string_view name() const {
     return {nameptr, (size_t)namelen};
   }
 
