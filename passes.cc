@@ -754,31 +754,30 @@ void clear_padding(Context<E> &ctx, i64 filesize) {
 //   section header
 template <typename E>
 i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
-  if (chunk == ctx.ehdr.get())
-    return 0;
-  if (chunk == ctx.phdr.get())
-    return 1;
-  if (chunk == ctx.interp.get())
-    return 2;
-  if (chunk == ctx.shdr.get())
-    return 1 << 20;
-
   u64 type = chunk->shdr.sh_type;
   u64 flags = chunk->shdr.sh_flags;
 
+  if (chunk == ctx.ehdr.get())
+    return -4;
+  if (chunk == ctx.phdr.get())
+    return -3;
+  if (chunk == ctx.interp.get())
+    return -2;
   if (type == SHT_NOTE)
-    return 3;
+    return -1;
+  if (chunk == ctx.shdr.get())
+    return 1 << 6;
   if (!(flags & SHF_ALLOC))
-    return (1 << 20) - 1;
+    return 1 << 5;
 
-  bool reaodnly = !(flags & SHF_WRITE);
+  bool writable = (flags & SHF_WRITE);
   bool exec = (flags & SHF_EXECINSTR);
   bool tls = (flags & SHF_TLS);
   bool relro = is_relro(ctx, chunk);
-  bool hasbits = !(type == SHT_NOBITS);
+  bool is_bss = (type == SHT_NOBITS);
 
-  return ((!reaodnly << 9) | (exec << 8) | (!tls << 7) |
-          (!relro << 6) | (!hasbits << 5)) + (1 << 4);
+  return (writable << 4) | (exec << 3) | (!tls << 2) |
+         (!relro << 1) | is_bss;
 }
 
 // Returns the smallest number n such that
