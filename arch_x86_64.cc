@@ -649,7 +649,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_GOTPC32_TLSDESC:
       if (memcmp(loc - 3, "\x48\x8d\x05", 3))
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
-                << " against an invalid code sequence";
+                   << " against an invalid code sequence";
 
       if (ctx.arg.relax && !ctx.arg.shared) {
         rel_types[i] = R_GOTPC_TLSDESC_RELAX_LE;
@@ -669,7 +669,8 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         rel_types[i] = R_NONE;
       break;
     default:
-      Fatal(ctx) << *this << ": unknown relocation: " << rel.r_type;
+      Error(ctx) << *this << ": unknown relocation: "
+                 << rel_to_string<X86_64>(rel.r_type);
     }
   }
 }

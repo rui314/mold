@@ -369,9 +369,6 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       sym.flags |= NEEDS_GOT;
       rel_types[i] = R_GOTPC;
       break;
-    case R_386_TLS_IE:
-      Error(ctx) << "TLS reloc is not supported yet: "
-                 << rel_to_string<I386>(rel.r_type);
     case R_386_TLS_GOTIE:
       sym.flags |= NEEDS_GOTTP;
       rel_types[i] = R_TLS_GOTIE;
@@ -391,9 +388,6 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_TLS_LDO_32:
       rel_types[i] = R_TPOFF;
       break;
-    case R_386_TLS_LE_32:
-      Error(ctx) << "TLS reloc is not supported yet: "
-                 << rel_to_string<I386>(rel.r_type);
     case R_386_SIZE32:
       rel_types[i] = R_SIZE;
       break;
@@ -401,6 +395,10 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_TLS_DESC_CALL:
     case R_386_TLS_DESC:
       Error(ctx) << "tlsdesc reloc is not supported yet: "
+                 << rel_to_string<I386>(rel.r_type);
+      break;
+    default:
+      Error(ctx) << *this << ": unknown relocation: "
                  << rel_to_string<I386>(rel.r_type);
     }
   }
