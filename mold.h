@@ -1463,7 +1463,14 @@ public:
 
   u64 get_addr(Context<E> &ctx) const {
     if (SectionFragment<E> *frag = get_frag()) {
-      assert(frag->is_alive);
+      if (!frag->is_alive) {
+        // This condition is met if a non-alloc section refers an
+        // alloc section and if the referenced piece of data is
+        // garbage-collected. Typically, this condition is met if a
+        // debug info section referring a string constant in .rodata.
+        return 0;
+      }
+
       return frag->get_addr(ctx) + value;
     }
 
