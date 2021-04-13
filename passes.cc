@@ -405,14 +405,6 @@ void scan_rels(Context<E> &ctx) {
   // Exit if there was a relocation that refers an undefined symbol.
   Error<E>::checkpoint(ctx);
 
-  // Add imported or exported symbols to .dynsym.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->get_global_syms())
-      if (sym->file == file)
-        if (sym->is_imported || sym->is_exported)
-          sym->flags |= NEEDS_DYNSYM;
-  });
-
   // Add symbol aliases for COPYREL.
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     for (Symbol<E> *sym : file->symbols)
@@ -429,9 +421,14 @@ void scan_rels(Context<E> &ctx) {
   std::vector<std::vector<Symbol<E> *>> vec(files.size());
 
   tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
-    for (Symbol<E> *sym : files[i]->symbols)
-      if (sym->flags && sym->file == files[i])
+    for (Symbol<E> *sym : files[i]->symbols) {
+      if (sym->file != files[i])
+        continue;
+      if (sym->is_imported || sym->is_exported)
+        sym->flags |= NEEDS_DYNSYM;
+      if (sym->flags)
         vec[i].push_back(sym);
+    }
   });
 
   std::vector<Symbol<E> *> syms = flatten(vec);
