@@ -3,6 +3,9 @@
 enum {
   R_TLS_GOTIE = R_END + 1,
   R_TLS_LE,
+  R_TLS_GD,
+  R_TLS_LD,
+  R_TPOFF,
 };
 
 template <>
@@ -123,8 +126,11 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   case R_386_PLT32:
   case R_386_GOTOFF:
   case R_386_GOTPC:
+  case R_386_TLS_LDM:
   case R_386_TLS_GOTIE:
   case R_386_TLS_LE:
+  case R_386_TLS_GD:
+  case R_386_TLS_LDO_32:
   case R_386_SIZE32:
     *(u32 *)loc += val;
     return;
@@ -196,6 +202,15 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     case R_TLS_LE:
       write(S + A - ctx.tls_end);
       break;
+    case R_TLS_GD:
+      write(sym.get_tlsgd_addr(ctx) + A - GOT);
+      break;
+    case R_TLS_LD:
+      write(ctx.got->get_tlsld_addr(ctx) + A - GOT);
+      break;
+    case R_TPOFF:
+      write(S + A - ctx.tls_begin);
+      break;
     case R_SIZE:
       write(sym.esym().st_size + A);
       break;
@@ -247,6 +262,12 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
         write(ref->frag->get_addr(ctx) + ref->addend);
       else
         write(sym.get_addr(ctx));
+      break;
+    case R_386_GOTOFF:
+      write(sym.get_addr(ctx) - ctx.got->shdr.sh_addr);
+      break;
+    case R_386_TLS_LDO_32:
+      write(sym.get_addr(ctx) - ctx.tls_begin);
       break;
     case R_386_SIZE32:
       write(sym.esym().st_size);
@@ -360,8 +381,16 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       rel_types[i] = R_TLS_LE;
       break;
     case R_386_TLS_GD:
+      sym.flags |= NEEDS_TLSGD;
+      rel_types[i] = R_TLS_GD;
+      break;
     case R_386_TLS_LDM:
+      sym.flags |= NEEDS_TLSLD;
+      rel_types[i] = R_TLS_LD;
+      break;
     case R_386_TLS_LDO_32:
+      rel_types[i] = R_TPOFF;
+      break;
     case R_386_TLS_LE_32:
       Error(ctx) << "TLS reloc is not supported yet: "
                  << rel_to_string<I386>(rel.r_type);
