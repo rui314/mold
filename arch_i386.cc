@@ -6,6 +6,8 @@ enum {
   R_TLS_GD,
   R_TLS_LD,
   R_TLS_GOTDESC,
+  R_TLS_GOTDESC_RELAX,
+  R_TLS_DESC_CALL_RELAX,
   R_TPOFF,
 };
 
@@ -215,6 +217,19 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     case R_TLS_GOTDESC:
       write(sym.get_tlsdesc_addr(ctx) + A - GOT);
       break;
+    case R_TLS_GOTDESC_RELAX: {
+      static const u8 insn[] = {
+        0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
+      };
+      memcpy(loc - 2, insn, sizeof(insn));
+      write(S + A - ctx.tls_end);
+      break;
+    }
+    case R_TLS_DESC_CALL_RELAX:
+      // call *(%rax) -> nop
+      loc[0] = 0x66;
+      loc[1] = 0x90;
+      break;
     case R_SIZE:
       write(sym.esym().st_size + A);
       break;
@@ -396,11 +411,18 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       rel_types[i] = R_SIZE;
       break;
     case R_386_TLS_GOTDESC:
-      sym.flags |= NEEDS_TLSDESC;
-      rel_types[i] = R_TLS_GOTDESC;
+      if (ctx.arg.relax && !ctx.arg.shared) {
+        rel_types[i] = R_TLS_GOTDESC_RELAX;
+      } else {
+        sym.flags |= NEEDS_TLSDESC;
+        rel_types[i] = R_TLS_GOTDESC;
+      }
       break;
     case R_386_TLS_DESC_CALL:
-      rel_types[i] = R_NONE;
+      if (ctx.arg.relax && !ctx.arg.shared)
+        rel_types[i] = R_TLS_DESC_CALL_RELAX;
+      else
+        rel_types[i] = R_NONE;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "
