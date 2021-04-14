@@ -197,8 +197,9 @@ struct CieRecord {
 
   // For .eh_frame
   u32 offset = -1;
-  u32 leader_offset = -1;
+  u32 fde_offset = -1;
   u32 fde_size = -1;
+  bool is_leader = false;
 
   // For .eh_frame_hdr
   u32 num_fdes = 0;

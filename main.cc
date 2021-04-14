@@ -256,6 +256,16 @@ static void show_stats(Context<E> &ctx) {
         comdat += pair.second.size();
   }
 
+  Counter num_cies("num_cies", ctx.eh_frame->cies.size());
+  Counter num_unique_cies("num_unique_cies");
+  Counter num_fdes("num_fdes");
+
+  for (CieRecord<E> *cie : ctx.eh_frame->cies) {
+    if (cie->is_leader)
+      num_unique_cies++;
+    num_fdes += cie->fdes.size();
+  }
+
   Counter num_input_sections("input_sections");
   for (ObjectFile<E> *file : ctx.objs)
     num_input_sections += file->sections.size();

@@ -1149,10 +1149,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    ObjectFile<E> *file = ctx.objs[i];
-    i64 count = 0;
-
-    for (CieRecord<E> &cie : file->cies) {
+    for (CieRecord<E> &cie : ctx.objs[i]->cies) {
       i64 offset = 0;
       for (FdeRecord<E> &fde : cie.fdes) {
         if (!fde.is_alive)
@@ -1171,31 +1168,40 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
     for (CieRecord<E> &cie : file->cies)
       cies.push_back(&cie);
 
+  // Uniquify CIEs and assign offsets to them.
+  std::vector<CieRecord<E> *> leaders;
+  auto find_leader = [&](CieRecord<E> *cie) -> CieRecord<E> * {
+    for (CieRecord<E> *leader : leaders)
+      if (cie->contents == leader->contents && cie->rels == leader->rels)
+        return leader;
+    return nullptr;
+  };
+
+  i64 offset = 0;
+  for (CieRecord<E> *cie : cies) {
+    if (CieRecord<E> *leader = find_leader(cie)) {
+      cie->offset = leader->offset;
+    } else {
+      cie->offset = offset;
+      cie->is_leader = true;
+      offset += cie->contents.size();
+      leaders.push_back(cie);
+    }
+  }
+
+  // Assign offsets to FDEs.
+  for (CieRecord<E> *cie : cies) {
+    cie->fde_offset = offset;
+    offset += cie->fde_size;
+  }
+
+  this->shdr.sh_size = offset;
+
   // Record the total number of FDEs for .eh_frame_hdr.
   for (CieRecord<E> *cie : cies) {
     cie->fde_idx = num_fdes;
     num_fdes += cie->num_fdes;
   }
-
-  // Assign offsets within the output section to CIEs.
-  auto should_merge = [](CieRecord<E> &a, CieRecord<E> &b) {
-    return a.contents == b.contents && a.rels == b.rels;
-  };
-
-  i64 offset = 0;
-  for (i64 i = 0; i < cies.size(); i++) {
-    CieRecord<E> &cie = *cies[i];
-    cie.offset = offset;
-
-    if (i == 0 || !should_merge(cie, *cies[i - 1])) {
-      cie.leader_offset = offset;
-      offset += cie.contents.size() + cie.fde_size;
-    } else {
-      cie.leader_offset = cies[i - 1]->leader_offset;
-      offset += cie.fde_size;
-    }
-  }
-  this->shdr.sh_size = offset;
 
   if (ctx.eh_frame_hdr)
     ctx.eh_frame_hdr->shdr.sh_size =
@@ -1206,6 +1212,20 @@ template <typename E>
 void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
+  // Copy CIEs.
+  for (CieRecord<E> *cie : cies) {
+    if (!cie->is_leader)
+      continue;
+
+    memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
+
+    for (EhReloc<E> &rel : cie->rels) {
+      u64 loc = cie->offset + rel.offset;
+      u64 val = rel.sym.get_addr(ctx) + rel.addend;
+      apply_reloc(ctx, rel, loc, val);
+    }
+  }
+
   u8 *hdr_base = nullptr;
   if (ctx.eh_frame_hdr)
     hdr_base = ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset;
@@ -1215,35 +1235,20 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     i32 fde_addr;
   };
 
-  // Copy CIEs and FDEs.
+  // Copy FDEs.
   tbb::parallel_for_each(cies, [&](CieRecord<E> *cie) {
-    i64 cie_size = 0;
-
     Entry *entry = nullptr;
     if (ctx.eh_frame_hdr)
       entry = (Entry *)(hdr_base + ctx.eh_frame_hdr->HEADER_SIZE) +
               cie->fde_idx;
 
-    // Copy a CIE.
-    if (cie->offset == cie->leader_offset) {
-      memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
-      cie_size = cie->contents.size();
-
-      for (EhReloc<E> &rel : cie->rels) {
-        u64 loc = cie->offset + rel.offset;
-        u64 val = rel.sym.get_addr(ctx) + rel.addend;
-        apply_reloc(ctx, rel, loc, val);
-      }
-    }
-
-    // Copy FDEs.
     for (FdeRecord<E> &fde : cie->fdes) {
       if (fde.offset == -1)
         continue;
 
-      i64 fde_off = cie->offset + cie_size + fde.offset;
+      i64 fde_off = cie->fde_offset + fde.offset;
       memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
-      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->leader_offset;
+      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->offset;
 
       for (i64 i = 0; i < fde.rels.size(); i++) {
         EhReloc<E> &rel = fde.rels[i];
@@ -1299,24 +1304,23 @@ u64 EhFrameSection<E>::get_addr(Context<E> &ctx, const Symbol<E> &sym) {
   };
 
   for (CieRecord<E> &cie : isec.file.cies) {
-    u64 offset = 0;
-
-    if (cie.offset == cie.leader_offset) {
-      if (contains(cie.contents, section_begin + offset)) {
-        u64 cie_addr = this->shdr.sh_addr + cie.offset;
-        u64 addend = sym.value - offset;
-        return cie_addr + addend;
-      }
-      offset += cie.contents.size();
+    if (contains(cie.contents, section_begin + sym.value)) {
+      u64 cie_addr = this->shdr.sh_addr + cie.offset;
+      u64 addend = cie.contents.data() - section_begin - sym.value;
+      return cie_addr + addend;
     }
+  }
+
+  for (CieRecord<E> &cie : isec.file.cies) {
+    i64 offset = cie.fde_offset;
 
     for (FdeRecord<E> &fde : cie.fdes) {
-      if (contains(fde.contents, section_begin + offset)) {
+      if (contains(fde.contents, section_begin + sym.value)) {
         if (!fde.is_alive)
           return 0;
 
-        u64 fde_addr = this->shdr.sh_addr + cie.offset + offset;
-        u64 addend = sym.value - offset;
+        u64 fde_addr = this->shdr.sh_addr + offset;
+        u64 addend = fde.contents.data() - section_begin - sym.value;
         return fde_addr + addend;
       }
       offset += fde.contents.size();
