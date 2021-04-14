@@ -657,7 +657,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
       n++;
 
   n += tlsgd_syms.size() * 2;
-  n += tlsdesc_syms.size() * 2;
+  n += tlsdesc_syms.size();
 
   for (Symbol<E> *sym : gottp_syms)
     if (sym->is_imported)

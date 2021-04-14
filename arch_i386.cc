@@ -5,6 +5,7 @@ enum {
   R_TLS_LE,
   R_TLS_GD,
   R_TLS_LD,
+  R_TLS_GOTDESC,
   R_TPOFF,
 };
 
@@ -73,8 +74,7 @@ void PltGotSection<I386>::copy_buf(Context<I386> &ctx) {
     for (i64 i = 0; i < symbols.size(); i++) {
       u8 *ent = buf + i * sizeof(data);
       memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) =
-        symbols[i]->get_got_addr(ctx) - symbols[i]->get_plt_addr(ctx) - 6;
+      *(u32 *)(ent + 2) = symbols[i]->get_got_addr(ctx) - ctx.got->shdr.sh_addr;
     }
   } else {
     static const u8 data[] = {
@@ -132,6 +132,7 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   case R_386_TLS_GD:
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
+  case R_386_TLS_GOTDESC:
     *(u32 *)loc += val;
     return;
   }
@@ -210,6 +211,9 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       break;
     case R_TPOFF:
       write(S + A - ctx.tls_begin);
+      break;
+    case R_TLS_GOTDESC:
+      write(sym.get_tlsdesc_addr(ctx) + A - GOT);
       break;
     case R_SIZE:
       write(sym.esym().st_size + A);
@@ -392,10 +396,11 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       rel_types[i] = R_SIZE;
       break;
     case R_386_TLS_GOTDESC:
+      sym.flags |= NEEDS_TLSDESC;
+      rel_types[i] = R_TLS_GOTDESC;
+      break;
     case R_386_TLS_DESC_CALL:
-    case R_386_TLS_DESC:
-      Error(ctx) << "tlsdesc reloc is not supported yet: "
-                 << rel_to_string<I386>(rel.r_type);
+      rel_types[i] = R_NONE;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "

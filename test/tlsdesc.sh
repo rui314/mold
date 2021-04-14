@@ -30,8 +30,15 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q 42
 
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
+$t/exe | grep -q 42
+
 clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.o
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/b.o $t/c.so
+$t/exe | grep -q 42
+
+clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.o -Wl,-no-relax
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/b.o $t/c.so -Wl,-no-relax
 $t/exe | grep -q 42
 
 echo OK
