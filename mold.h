@@ -659,7 +659,6 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<CieRecord<E> *> cies;
-  u32 num_fdes = 0;
 };
 
 template <typename E>
@@ -674,6 +673,11 @@ public:
   }
 
   static constexpr i64 HEADER_SIZE = 12;
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+  u32 num_fdes = 0;
 };
 
 template <typename E>

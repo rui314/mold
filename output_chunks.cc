@@ -1197,15 +1197,11 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
 
   this->shdr.sh_size = offset;
 
-  // Record the total number of FDEs for .eh_frame_hdr.
+  i64 fde_idx = 0;
   for (CieRecord<E> *cie : cies) {
-    cie->fde_idx = num_fdes;
-    num_fdes += cie->num_fdes;
+    cie->fde_idx = fde_idx;
+    fde_idx += cie->num_fdes;
   }
-
-  if (ctx.eh_frame_hdr)
-    ctx.eh_frame_hdr->shdr.sh_size =
-      ctx.eh_frame_hdr->HEADER_SIZE + num_fdes * 8;
 }
 
 template <typename E>
@@ -1226,22 +1222,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     }
   }
 
-  u8 *hdr_base = nullptr;
-  if (ctx.eh_frame_hdr)
-    hdr_base = ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset;
-
-  struct Entry {
-    i32 init_addr;
-    i32 fde_addr;
-  };
-
   // Copy FDEs.
   tbb::parallel_for_each(cies, [&](CieRecord<E> *cie) {
-    Entry *entry = nullptr;
-    if (ctx.eh_frame_hdr)
-      entry = (Entry *)(hdr_base + ctx.eh_frame_hdr->HEADER_SIZE) +
-              cie->fde_idx;
-
     for (FdeRecord<E> &fde : cie->fdes) {
       if (fde.offset == -1)
         continue;
@@ -1255,37 +1237,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         u64 loc = fde_off + rel.offset;
         u64 val = rel.sym.get_addr(ctx) + rel.addend;
         apply_reloc(ctx, rel, loc, val);
-
-        // Write to .eh_frame_hdr
-        if (ctx.eh_frame_hdr && i == 0) {
-          assert(rel.offset == 8);
-          u64 start = ctx.eh_frame_hdr->shdr.sh_addr;
-          *entry++ = {(i32)(val - start),
-                      (i32)(this->shdr.sh_addr + fde_off - start)};
-        }
       }
     }
   });
-
-  if (ctx.eh_frame_hdr) {
-    // Write .eh_frame_hdr header
-    hdr_base[0] = 1;
-    hdr_base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
-    hdr_base[2] = DW_EH_PE_udata4;
-    hdr_base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
-
-    *(u32 *)(hdr_base + 4) =
-      this->shdr.sh_addr - ctx.eh_frame_hdr->shdr.sh_addr - 4;
-    *(u32 *)(hdr_base + 8) = num_fdes;
-
-    // Sort .eh_frame_hdr contents
-    Entry *begin = (Entry *)(hdr_base + ctx.eh_frame_hdr->HEADER_SIZE);
-    Entry *end = begin + num_fdes;
-
-    tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
-      return a.init_addr < b.init_addr;
-    });
-  }
 }
 
 // Compiler-generated object files don't usually contain symbols
@@ -1328,6 +1282,61 @@ u64 EhFrameSection<E>::get_addr(Context<E> &ctx, const Symbol<E> &sym) {
   }
 
   Fatal(ctx) << isec.file << ": .eh_frame has bad symbol: " << sym;
+}
+
+template <typename E>
+void EhFrameHdrSection<E>::update_shdr(Context<E> &ctx) {
+  num_fdes = 0;
+  for (CieRecord<E> *cie : ctx.eh_frame->cies)
+    num_fdes += cie->num_fdes;
+
+  if (num_fdes > 0)
+    this->shdr.sh_size = HEADER_SIZE + num_fdes * 8;
+}
+
+template <typename E>
+void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+  u64 eh_frame_addr = ctx.eh_frame->shdr.sh_addr;
+
+  struct Entry {
+    i32 init_addr;
+    i32 fde_addr;
+  };
+
+  // Fill contents
+  tbb::parallel_for_each(ctx.eh_frame->cies, [&](CieRecord<E> *cie) {
+    Entry *entry = (Entry *)(base + HEADER_SIZE) + cie->fde_idx;
+
+    for (FdeRecord<E> &fde : cie->fdes) {
+      if (fde.offset == -1)
+        continue;
+
+      i64 fde_off = cie->fde_offset + fde.offset;
+      EhReloc<E> &rel = fde.rels[0];
+      u64 val = rel.sym.get_addr(ctx) + rel.addend;
+
+      *entry++ = {(i32)(val - this->shdr.sh_addr),
+                  (i32)(eh_frame_addr + fde_off - this->shdr.sh_addr)};
+    }
+  });
+
+  // Write .eh_frame_hdr header
+  base[0] = 1;
+  base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+  base[2] = DW_EH_PE_udata4;
+  base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
+
+  *(u32 *)(base + 4) = eh_frame_addr - this->shdr.sh_addr - 4;
+  *(u32 *)(base + 8) = num_fdes;
+
+  // Sort contents
+  Entry *begin = (Entry *)(base + HEADER_SIZE);
+  Entry *end = begin + num_fdes;
+
+  tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
+    return a.init_addr < b.init_addr;
+  });
 }
 
 template <typename E>
