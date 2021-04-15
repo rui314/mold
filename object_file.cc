@@ -296,19 +296,24 @@ bool is_valid_ehframe_reloc<I386>(u32 type) {
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   std::span<ElfRel<E>> rels = isec.get_rels(ctx);
-  std::string_view data = this->get_string(ctx, isec.shdr);
-  const char *begin = data.data();
 
-  std::unordered_map<i64, i64> offset_to_cie;
-  i64 cur_cie = -1;
-  i64 cur_cie_offset = -1;
+  // Verify relocations.
+  for (i64 i = 1; i < rels.size(); i++)
+    if (rels[i].r_offset <= rels[i - 1].r_offset)
+      Fatal(ctx) << isec << ": relocation offsets must increase monotonically";
 
-  for (ElfRel<E> rel : rels)
-    if (!is_valid_ehframe_reloc<E>(rel.r_type))
-      Fatal(ctx) << isec << ": unsupported relocation type: "
-                 << rel_to_string<E>(rel.r_type);
+  // Read CIEs and FDEs until empty.
+  std::string_view contents = this->get_string(ctx, isec.shdr);
+  i64 rel_idx = 0;
 
-  while (!data.empty()) {
+  auto find_cie = [&](i64 offset) -> u16{
+    for (i64 i = cies.size() - 1; i >= 0; i--)
+      if (cies[i].input_offset == offset)
+        return i;
+    Fatal(ctx) << isec << ": bad FDE pointer";
+  };
+
+  for (std::string_view data = contents; !data.empty();) {
     i64 size = *(u32 *)data.data();
     if (size == 0) {
       if (data.size() != 4)
@@ -316,65 +321,52 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
       break;
     }
 
-    i64 begin_offset = data.data() - begin;
+    i64 begin_offset = data.data() - contents.data();
     i64 end_offset = begin_offset + size + 4;
-
-    if (!rels.empty() && rels[0].r_offset < begin_offset)
-      Fatal(ctx) << isec << ": unsupported relocation order";
-
-    std::string_view contents = data.substr(0, size + 4);
+    i64 id = *(u32 *)(data.data() + 4);
     data = data.substr(size + 4);
-    i64 id = *(u32 *)(contents.data() + 4);
 
-    std::vector<EhReloc<E>> eh_rels;
-    while (!rels.empty() && rels[0].r_offset < end_offset) {
-      if (id && first_global <= rels[0].r_sym)
-        Fatal(ctx) << isec
-                   << ": FDE with non-local relocations is not supported";
-
-      Symbol<E> &sym = *this->symbols[rels[0].r_sym];
-      eh_rels.push_back(EhReloc<E>(sym, rels[0].r_type,
-                                   (u32)(rels[0].r_offset - begin_offset),
-                                   isec.get_addend(rels[0])));
-      rels = rels.subspan(1);
-    }
+    i64 rel_begin = rel_idx;
+    while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
+      rel_idx++;
+    assert(begin_offset <= rels[rel_begin].r_offset);
 
     if (id == 0) {
-      // CIE
-      cur_cie = cies.size();
-      offset_to_cie[begin_offset] = cies.size();
-      cies.push_back(CieRecord<E>{contents, std::move(eh_rels)});
+      cies.push_back(CieRecord<E>{.file = *this,
+                                  .input_section = isec,
+                                  .input_offset = (u32)begin_offset,
+                                  .rel_idx = (u32)rel_begin,
+                                  .rels = rels,
+                                  .contents = contents});
     } else {
-      // FDE
-      i64 cie_offset = begin_offset + 4 - id;
-      if (cie_offset != cur_cie_offset) {
-        auto it = offset_to_cie.find(cie_offset);
-        if (it == offset_to_cie.end())
-          Fatal(ctx) << isec << ": bad FDE pointer";
-        cur_cie = it->second;
-        cur_cie_offset = cie_offset;
-      }
-
-      if (eh_rels.empty())
+      if (rel_begin == rel_idx)
         Fatal(ctx) << isec << ": FDE has no relocations";
-      if (eh_rels[0].offset != 8)
+      if (rels[rel_begin].r_offset - begin_offset != 8)
         Fatal(ctx) << isec << ": FDE's first relocation should have offset 8";
 
-      FdeRecord fde(contents, std::move(eh_rels), cur_cie);
-      cies[cur_cie].fdes.push_back(std::move(fde));
+      i64 cie_idx = find_cie(begin_offset + 4 - id);
+      fdes.push_back(FdeRecord<E>(begin_offset, rel_begin, cie_idx));
     }
   }
 
-  for (CieRecord<E> &cie : cies) {
-    std::span<FdeRecord<E>> fdes = cie.fdes;
-    while (!fdes.empty()) {
-      InputSection<E> *isec = fdes[0].rels[0].sym.input_section;
-      i64 i = 1;
-      while (i < fdes.size() && isec == fdes[i].rels[0].sym.input_section)
-        i++;
-      isec->fdes = fdes.subspan(0, i);
-      fdes = fdes.subspan(i);
-    }
+  sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
+    InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
+    InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
+    return std::tuple(x->file.priority, x->section_idx) <
+           std::tuple(y->file.priority, y->section_idx);
+  });
+
+  // Associate FDEs to input sections.
+  for (i64 i = 0; i < fdes.size();) {
+    InputSection<E> *isec =
+      this->symbols[rels[fdes[i].rel_idx].r_sym]->input_section;
+    assert(isec->fde_begin == -1);
+    isec->fde_begin = i++;
+
+    while (i < fdes.size() &&
+           isec == this->symbols[rels[fdes[i].rel_idx].r_sym]->input_section)
+      i++;
+    isec->fde_end = i;
   }
 }
 
@@ -921,13 +913,15 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
 
   // Scan relocations against exception frames
   for (CieRecord<E> &cie : cies) {
-    for (EhReloc<E> &rel : cie.rels) {
-      if (rel.sym.is_imported) {
-        if (rel.sym.get_type() != STT_FUNC)
-          Fatal(ctx) << *this << ": " << rel.sym
+    for (ElfRel<E> &rel : cie.get_rels()) {
+      Symbol<E> &sym = *this->symbols[rel.r_sym];
+
+      if (sym.is_imported) {
+        if (sym.get_type() != STT_FUNC)
+          Fatal(ctx) << *this << ": " << sym
                   << ": .eh_frame CIE record with an external data reference"
                   << " is not supported";
-        rel.sym.flags |= NEEDS_PLT;
+        sym.flags |= NEEDS_PLT;
       }
     }
   }
@@ -1302,10 +1296,66 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   return false;
 }
 
+template <typename E>
+std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
+  std::string_view data = file.cies[cie_idx].contents;
+  i64 size = *(u32 *)(data.data() + input_offset) + 4;
+  return data.substr(input_offset, size);
+}
+
+template <typename E>
+std::span<ElfRel<E>> FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
+  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
+  i64 size = get_contents(file).size();
+  i64 end = rel_idx;
+  while (end < rels.size() && rels[end].r_offset < input_offset + size)
+    end++;
+  return rels.subspan(rel_idx, end - rel_idx);
+}
+
+template <typename E>
+std::string_view CieRecord<E>::get_contents() const {
+  i64 size = *(u32 *)(contents.data() + input_offset) + 4;
+  return contents.substr(input_offset, size);
+}
+
+template <typename E>
+std::span<ElfRel<E>> CieRecord<E>::get_rels() const {
+  i64 size = get_contents().size();
+  i64 end = rel_idx;
+  while (end < rels.size() && rels[end].r_offset < input_offset + size)
+    end++;
+  return rels.subspan(rel_idx, end - rel_idx);
+}
+
+template <typename E>
+bool CieRecord<E>::equals(const CieRecord<E> &other) const {
+  if (get_contents() != other.get_contents())
+    return false;
+
+  std::span<ElfRel<E>> x = get_rels();
+  std::span<ElfRel<E>> y = other.get_rels();
+  if (x.size() != y.size())
+    return false;
+
+  for (i64 i = 0; i < x.size(); i++) {
+    if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
+        x[i].r_type != y[i].r_type ||
+        file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
+        input_section.get_addend(x[i]) != other.input_section.get_addend(y[i]))
+      return false;
+  }
+
+  return true;
+
+}
+
 #define INSTANTIATE(E)                                                  \
   template class MemoryMappedFile<E>;                                   \
   template class ObjectFile<E>;                                         \
   template class SharedFile<E>;                                         \
+  template class CieRecord<E>;                                          \
+  template class FdeRecord<E>;                                          \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
 INSTANTIATE(X86_64);

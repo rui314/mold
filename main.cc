@@ -254,16 +254,17 @@ static void show_stats(Context<E> &ctx) {
     for (auto &pair : obj->comdat_groups)
       if (ComdatGroup *group = pair.first; group->owner != obj->priority)
         comdat += pair.second.size();
-  }
 
-  Counter num_cies("num_cies", ctx.eh_frame->cies.size());
-  Counter num_unique_cies("num_unique_cies");
-  Counter num_fdes("num_fdes");
+    Counter num_cies("num_cies");
+    num_cies += obj->cies.size();
 
-  for (CieRecord<E> *cie : ctx.eh_frame->cies) {
-    if (cie->is_leader)
-      num_unique_cies++;
-    num_fdes += cie->fdes.size();
+    Counter num_unique_cies("num_unique_cies");
+    for (CieRecord<E> &cie : obj->cies)
+      if (cie.is_leader)
+        num_unique_cies++;
+
+    Counter num_fdes("num_fdes");
+    num_fdes +=  obj->fdes.size();
   }
 
   Counter num_input_sections("input_sections");

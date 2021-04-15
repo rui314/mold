@@ -1148,96 +1148,93 @@ template <typename E>
 void EhFrameSection<E>::construct(Context<E> &ctx) {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (CieRecord<E> &cie : ctx.objs[i]->cies) {
-      i64 offset = 0;
-      for (FdeRecord<E> &fde : cie.fdes) {
-        if (!fde.is_alive)
-          continue;
-        fde.offset = offset;
-        offset += fde.contents.size();
-        cie.num_fdes++;
-      }
-      cie.fde_size = offset;
-    }
-  });
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    erase(file->fdes, [](FdeRecord<E> &fde) { return !fde.is_alive; });
 
-  // Aggreagate CIEs.
-  cies.reserve(ctx.objs.size());
-  for (ObjectFile<E> *file : ctx.objs)
-    for (CieRecord<E> &cie : file->cies)
-      cies.push_back(&cie);
+    i64 offset = 0;
+    for (FdeRecord<E> &fde : file->fdes) {
+      fde.output_offset = offset;
+      offset += fde.get_contents(*file).size();
+    }
+    file->fde_size = offset;
+  });
 
   // Uniquify CIEs and assign offsets to them.
   std::vector<CieRecord<E> *> leaders;
-  auto find_leader = [&](CieRecord<E> *cie) -> CieRecord<E> * {
+  auto find_leader = [&](CieRecord<E> &cie) -> CieRecord<E> * {
     for (CieRecord<E> *leader : leaders)
-      if (cie->contents == leader->contents && cie->rels == leader->rels)
+      if (cie.equals(*leader))
         return leader;
     return nullptr;
   };
 
   i64 offset = 0;
-  for (CieRecord<E> *cie : cies) {
-    if (CieRecord<E> *leader = find_leader(cie)) {
-      cie->offset = leader->offset;
-    } else {
-      cie->offset = offset;
-      cie->is_leader = true;
-      offset += cie->contents.size();
-      leaders.push_back(cie);
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (CieRecord<E> &cie : file->cies) {
+      if (CieRecord<E> *leader = find_leader(cie)) {
+        cie.output_offset = leader->output_offset;
+      } else {
+        cie.output_offset = offset;
+        cie.is_leader = true;
+        offset += cie.get_contents().size();
+        leaders.push_back(&cie);
+      }
     }
   }
 
-  // Assign offsets to FDEs.
-  for (CieRecord<E> *cie : cies) {
-    cie->fde_offset = offset;
-    offset += cie->fde_size;
+  // Assign FDE offsets to files.
+  i64 idx = 0;
+  for (ObjectFile<E> *file : ctx.objs) {
+    file->fde_idx = idx;
+    idx += file->fdes.size();
+
+    file->fde_offset = offset;
+    offset += file->fde_size;
   }
 
   // .eh_frame must end with a null word.
   this->shdr.sh_size = offset + 4;
-
-  i64 fde_idx = 0;
-  for (CieRecord<E> *cie : cies) {
-    cie->fde_idx = fde_idx;
-    fde_idx += cie->num_fdes;
-  }
 }
 
 template <typename E>
 void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
+  memset(base, 0, this->shdr.sh_size); // TODO: remove
 
-  // Copy CIEs.
-  for (CieRecord<E> *cie : cies) {
-    if (!cie->is_leader)
-      continue;
-
-    memcpy(base + cie->offset, cie->contents.data(), cie->contents.size());
-
-    for (EhReloc<E> &rel : cie->rels) {
-      u64 loc = cie->offset + rel.offset;
-      u64 val = rel.sym.get_addr(ctx) + rel.addend;
-      apply_reloc(ctx, rel, loc, val);
-    }
-  }
-
-  // Copy FDEs.
-  tbb::parallel_for_each(cies, [&](CieRecord<E> *cie) {
-    for (FdeRecord<E> &fde : cie->fdes) {
-      if (fde.offset == -1)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    // Copy CIEs.
+    for (CieRecord<E> &cie : file->cies) {
+      if (!cie.is_leader)
         continue;
 
-      i64 fde_off = cie->fde_offset + fde.offset;
-      memcpy(base + fde_off, fde.contents.data(), fde.contents.size());
-      *(u32 *)(base + fde_off + 4) = fde_off + 4 - cie->offset;
+      std::string_view contents = cie.get_contents();
+      memcpy(base + cie.output_offset, contents.data(), contents.size());
 
-      for (i64 i = 0; i < fde.rels.size(); i++) {
-        EhReloc<E> &rel = fde.rels[i];
-        u64 loc = fde_off + rel.offset;
-        u64 val = rel.sym.get_addr(ctx) + rel.addend;
-        apply_reloc(ctx, rel, loc, val);
+      for (ElfRel<E> &rel : cie.get_rels()) {
+        assert(rel.r_offset - cie.input_offset < contents.size());
+        u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
+        u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
+        u64 addend = cie.input_section.get_addend(rel);
+        apply_reloc(ctx, rel, loc, val + addend);
+      }
+    }
+
+    // Copy FDEs.
+    for (FdeRecord<E> &fde : file->fdes) {
+      i64 offset = file->fde_offset + fde.output_offset;
+
+      std::string_view contents = fde.get_contents(*file);
+      memcpy(base + offset, contents.data(), contents.size());
+
+      CieRecord<E> &cie = file->cies[fde.cie_idx];
+      *(u32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
+
+      for (ElfRel<E> &rel : fde.get_rels(*file)) {
+        assert(rel.r_offset - fde.input_offset < contents.size());
+        u64 loc = offset + rel.r_offset - fde.input_offset;
+        u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
+        u64 addend = cie.input_section.get_addend(rel);
+        apply_reloc(ctx, rel, loc, val + addend);
       }
     }
   });
@@ -1249,11 +1246,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void EhFrameHdrSection<E>::update_shdr(Context<E> &ctx) {
   num_fdes = 0;
-  for (CieRecord<E> *cie : ctx.eh_frame->cies)
-    num_fdes += cie->num_fdes;
-
-  if (num_fdes > 0)
-    this->shdr.sh_size = HEADER_SIZE + num_fdes * 8;
+  for (ObjectFile<E> *file : ctx.objs)
+    num_fdes += file->fdes.size();
+  this->shdr.sh_size = HEADER_SIZE + num_fdes * 8;
 }
 
 template <typename E>
@@ -1267,19 +1262,17 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   // Fill contents
-  tbb::parallel_for_each(ctx.eh_frame->cies, [&](CieRecord<E> *cie) {
-    Entry *entry = (Entry *)(base + HEADER_SIZE) + cie->fde_idx;
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    Entry *entry = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
 
-    for (FdeRecord<E> &fde : cie->fdes) {
-      if (fde.offset == -1)
-        continue;
+    for (FdeRecord<E> &fde : file->fdes) {
+      ElfRel<E> rel = fde.get_rels(*file)[0];
+      u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
+      u64 addend = file->cies[fde.cie_idx].input_section.get_addend(rel);
 
-      i64 fde_off = cie->fde_offset + fde.offset;
-      EhReloc<E> &rel = fde.rels[0];
-      u64 val = rel.sym.get_addr(ctx) + rel.addend;
-
-      *entry++ = {(i32)(val - this->shdr.sh_addr),
-                  (i32)(eh_frame_addr + fde_off - this->shdr.sh_addr)};
+      *entry++ = {(i32)(val + addend - this->shdr.sh_addr),
+                  (i32)(eh_frame_addr + file->fde_offset +
+                        fde.output_offset - this->shdr.sh_addr)};
     }
   });
 

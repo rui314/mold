@@ -148,65 +148,50 @@ enum {
 };
 
 template <typename E>
-struct EhReloc {
-  EhReloc(Symbol<E> &sym, u8 type, u32 offset, i64 addend)
-    : sym(sym), type(type), offset(offset), addend(addend) {
-    assert(this->offset == offset);
-    assert(this->addend == addend);
-  }
-
-  Symbol<E> &sym;
-  u32 type : 8;
-  u32 offset : 24;
-  i32 addend;
-};
-
-template <typename E>
-inline bool operator==(const EhReloc<E> &a, const EhReloc<E> &b) {
-  return std::tuple(&a.sym, a.type, a.offset, a.addend) ==
-         std::tuple(&b.sym, b.type, b.offset, b.addend);
-}
-
-template <typename E>
 struct FdeRecord {
-  FdeRecord(std::string_view contents, std::vector<EhReloc<E>> &&rels,
-            u32 cie_idx)
-    : contents(contents), rels(std::move(rels)), cie_idx(cie_idx) {
-    assert(this->cie_idx == cie_idx);
-  }
+  FdeRecord(u32 input_offset, u32 rel_idx, u16 cie_idx)
+    : input_offset(input_offset), rel_idx(rel_idx), cie_idx(cie_idx) {}
 
-  FdeRecord(const FdeRecord &&other)
-    : contents(other.contents), rels(std::move(other.rels)),
-      offset(other.offset), cie_idx(other.cie_idx),
+  FdeRecord(const FdeRecord &other)
+    : input_offset(other.input_offset),
+      output_offset(other.output_offset),
+      rel_idx(other.rel_idx), cie_idx(other.cie_idx),
       is_alive(other.is_alive.load()) {}
 
-  std::string_view contents;
-  std::vector<EhReloc<E>> rels;
-  u32 offset = -1;
+  FdeRecord &operator=(const FdeRecord<E> &other) {
+    input_offset = other.input_offset;
+    output_offset = other.output_offset;
+    rel_idx = other.rel_idx;
+    cie_idx = other.cie_idx;
+    is_alive = other.is_alive.load();
+    return *this;
+  }
+
+  std::string_view get_contents(ObjectFile<E> &file) const;
+  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
+
+  u32 input_offset = -1;
+  u32 output_offset = -1;
+  u32 rel_idx = -1;
   u16 cie_idx = -1;
   std::atomic_bool is_alive = true;
 };
 
 template <typename E>
 struct CieRecord {
-  bool should_merge(const CieRecord &other) const;
+  std::string_view get_contents() const;
+  std::span<ElfRel<E>> get_rels() const;
+  bool equals(const CieRecord &other) const;
 
-  std::string_view contents;
-  std::vector<EhReloc<E>> rels;
-  std::vector<FdeRecord<E>> fdes;
-
-  // For .eh_frame
-  u32 offset = -1;
-  u32 fde_offset = -1;
-  u32 fde_size = -1;
-  bool is_leader = false;
-
-  // For .eh_frame_hdr
-  u32 num_fdes = 0;
-  u32 fde_idx = -1;
-
-  // For ICF
+  ObjectFile<E> &file;
+  InputSection<E> &input_section;
+  u32 input_offset = -1;
+  u32 output_offset = -1;
+  u32 rel_idx = -1;
   u32 icf_idx = -1;
+  bool is_leader = false;
+  std::span<ElfRel<E>> rels;
+  std::string_view contents;
 };
 
 template <typename E>
@@ -242,6 +227,7 @@ public:
   inline u64 get_addr() const;
   inline i64 get_addend(const ElfRel<E> &rel) const;
   inline std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
+  inline std::span<FdeRecord<E>> get_fdes() const;
 
   ObjectFile<E> &file;
   const ElfShdr<E> &shdr;
@@ -251,7 +237,8 @@ public:
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   std::unique_ptr<u8[]> rel_types;
-  std::span<FdeRecord<E>> fdes;
+  i32 fde_begin = -1;
+  i32 fde_end = -1;
 
   const char *nameptr = nullptr;
   i32 namelen = 0;
@@ -654,10 +641,8 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void apply_reloc(Context<E> &ctx, EhReloc<E> &rel, u64 loc, u64 val);
+  void apply_reloc(Context<E> &ctx, ElfRel<E> &rel, u64 loc, u64 val);
   void copy_buf(Context<E> &ctx) override;
-
-  std::vector<CieRecord<E> *> cies;
 };
 
 template <typename E>
@@ -871,6 +856,7 @@ public:
   i64 first_global = 0;
   const bool is_in_lib = false;
   std::vector<CieRecord<E>> cies;
+  std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
   std::vector<SectionFragment<E> *> fragments;
   std::vector<SectionFragmentRef<E>> sym_fragments;
@@ -886,6 +872,9 @@ public:
   u64 num_global_symtab = 0;
   u64 strtab_offset = 0;
   u64 strtab_size = 0;
+  u64 fde_idx = 0;
+  u64 fde_offset = 0;
+  u64 fde_size = 0;
 
 private:
   ObjectFile();
@@ -1843,7 +1832,7 @@ template <typename E>
 inline void InputSection<E>::kill() {
   if (is_alive.exchange(false)) {
     is_alive = false;
-    for (FdeRecord<E> &fde : fdes)
+    for (FdeRecord<E> &fde : get_fdes())
       fde.is_alive = false;
   }
 }
@@ -1874,6 +1863,12 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
+}
+
+template <typename E>
+inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
+  return std::span<FdeRecord<E>>(file.fdes).subspan(fde_begin,
+                                                    fde_end - fde_begin);
 }
 
 template <typename E>

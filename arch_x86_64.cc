@@ -68,11 +68,11 @@ void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
 
 template <>
 void EhFrameSection<X86_64>::apply_reloc(Context<X86_64> &ctx,
-                                         EhReloc<X86_64> &rel,
+                                         ElfRel<X86_64> &rel,
                                          u64 loc, u64 val) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
-  switch (rel.type) {
+  switch (rel.r_type) {
   case R_X86_64_32:
     *(u32 *)(base + loc) = val;
     return;

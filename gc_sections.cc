@@ -41,11 +41,11 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
-  for (FdeRecord<E> &fde : isec->fdes)
-    for (EhReloc<E> &rel : std::span<EhReloc<E>>(fde.rels).subspan(1))
-      if (InputSection<E> *isec = rel.sym.input_section)
-        if (mark_section(isec))
-          feeder.add(isec);
+  for (FdeRecord<E> &fde : isec->get_fdes())
+    for (ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
+      if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
+        if (mark_section(sym->input_section))
+          feeder.add(sym->input_section);
 
   for (ElfRel<E> &rel : isec->get_rels(ctx)) {
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
@@ -125,8 +125,8 @@ collect_root_set(Context<E> &ctx) {
   // We just keep all CIEs and everything that are referenced by them.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (CieRecord<E> &cie : file->cies)
-      for (EhReloc<E> &rel : cie.rels)
-        enqueue_section(rel.sym.input_section);
+      for (ElfRel<E> &rel : cie.get_rels())
+        enqueue_symbol(file->symbols[rel.r_sym]);
   });
 
   return roots;
