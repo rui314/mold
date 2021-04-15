@@ -313,8 +313,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     if (size == 0) {
       if (data.size() != 4)
         Fatal(ctx) << isec << ": garbage at end of section";
-      cies.push_back(CieRecord<E>{data});
-      return;
+      break;
     }
 
     i64 begin_offset = data.data() - begin;

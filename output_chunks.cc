@@ -1195,7 +1195,8 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
     offset += cie->fde_size;
   }
 
-  this->shdr.sh_size = offset;
+  // .eh_frame must end with a null word.
+  this->shdr.sh_size = offset + 4;
 
   i64 fde_idx = 0;
   for (CieRecord<E> *cie : cies) {
@@ -1240,6 +1241,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       }
     }
   });
+
+  // Write a terminator.
+  *(u32 *)(base + this->shdr.sh_size - 4) = 0;
 }
 
 template <typename E>
