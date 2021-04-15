@@ -299,11 +299,6 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   std::string_view data = this->get_string(ctx, isec.shdr);
   const char *begin = data.data();
 
-  if (data.empty()) {
-    cies.push_back(CieRecord<E>{data});
-    return;
-  }
-
   std::unordered_map<i64, i64> offset_to_cie;
   i64 cur_cie = -1;
   i64 cur_cie_offset = -1;

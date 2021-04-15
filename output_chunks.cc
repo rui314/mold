@@ -1242,48 +1242,6 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   });
 }
 
-// Compiler-generated object files don't usually contain symbols
-// referring a .eh_frame section, but crtend.o contains such symbol
-// (i.e. "__FRAME_END__"). So we need to handle such symbol.
-// This function is slow, but it's okay because such symbols are rare.
-template <typename E>
-u64 EhFrameSection<E>::get_addr(Context<E> &ctx, const Symbol<E> &sym) {
-  InputSection<E> &isec = *sym.input_section;
-  const char *section_begin = isec.contents.data();
-
-  auto contains = [](std::string_view str, const char *ptr) {
-    const char *begin = str.data();
-    const char *end = begin + str.size();
-    return (begin == ptr) || (begin < ptr && ptr < end);
-  };
-
-  for (CieRecord<E> &cie : isec.file.cies) {
-    if (contains(cie.contents, section_begin + sym.value)) {
-      u64 cie_addr = this->shdr.sh_addr + cie.offset;
-      u64 addend = cie.contents.data() - section_begin - sym.value;
-      return cie_addr + addend;
-    }
-  }
-
-  for (CieRecord<E> &cie : isec.file.cies) {
-    i64 offset = cie.fde_offset;
-
-    for (FdeRecord<E> &fde : cie.fdes) {
-      if (contains(fde.contents, section_begin + sym.value)) {
-        if (!fde.is_alive)
-          return 0;
-
-        u64 fde_addr = this->shdr.sh_addr + offset;
-        u64 addend = fde.contents.data() - section_begin - sym.value;
-        return fde_addr + addend;
-      }
-      offset += fde.contents.size();
-    }
-  }
-
-  Fatal(ctx) << isec.file << ": .eh_frame has bad symbol: " << sym;
-}
-
 template <typename E>
 void EhFrameHdrSection<E>::update_shdr(Context<E> &ctx) {
   num_fdes = 0;

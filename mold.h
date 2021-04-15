@@ -654,7 +654,6 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  u64 get_addr(Context<E> &ctx, const Symbol<E> &sym);
   void apply_reloc(Context<E> &ctx, EhReloc<E> &rel, u64 loc, u64 val);
   void copy_buf(Context<E> &ctx) override;
 
@@ -1575,8 +1574,16 @@ public:
       return get_plt_addr(ctx);
 
     if (input_section) {
-      if (input_section->is_ehframe)
-        return ctx.eh_frame->get_addr(ctx, *this);
+      if (input_section->is_ehframe) {
+        // This is a special case: Only crtbegin.o and crtend.o
+        // contain these symbols.
+        if (name() == "__EH_FRAME_BEGIN__" || esym().st_type == STT_SECTION)
+          return ctx.eh_frame->shdr.sh_addr;
+        if (name() == "__FRAME_END__")
+          return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
+        Fatal(ctx) << "symbol referring .eh_frame is not supported: "
+                   << *this << " " << *file;
+      }
 
       if (!input_section->is_alive) {
         // The control can reach here if there's a relocation that refers
