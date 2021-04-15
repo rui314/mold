@@ -1424,6 +1424,104 @@ std::string_view save_string(Context<E> &ctx, const std::string &str);
 std::string get_version_string();
 
 //
+// Error output
+//
+
+inline thread_local bool opt_demangle = false;
+
+template <typename E>
+class SyncOut {
+public:
+  SyncOut(Context<E> &ctx, std::ostream &out = std::cout) : out(out) {
+    opt_demangle = ctx.arg.demangle;
+  }
+
+  ~SyncOut() {
+    std::lock_guard lock(mu);
+    out << ss.str() << "\n";
+  }
+
+  template <class T> SyncOut &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+  static inline std::mutex mu;
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+};
+
+template <typename E>
+class Fatal {
+public:
+  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {}
+
+  [[noreturn]] ~Fatal() {
+    out.~SyncOut();
+    cleanup<E>();
+    _exit(1);
+  }
+
+  template <class T> Fatal &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut<E> out;
+};
+
+template <typename E>
+class Error {
+public:
+  Error(Context<E> &ctx) : out(ctx, std::cerr) {
+    ctx.has_error = true;
+  }
+
+  template <class T> Error &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+  static void checkpoint(Context<E> &ctx) {
+    if (!ctx.has_error)
+      return;
+    cleanup<E>();
+    _exit(1);
+  }
+
+private:
+  SyncOut<E> out;
+};
+
+template <typename E>
+class Warn {
+public:
+  Warn(Context<E> &ctx) : out(ctx, std::cerr) {
+    if (ctx.arg.fatal_warnings)
+      ctx.has_error = true;
+  }
+
+  template <class T> Warn &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut<E> out;
+};
+
+#define unreachable(ctx)                                               \
+  do {                                                                 \
+    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
+  } while (0)
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
+
+//
 // Symbol
 //
 
@@ -1701,104 +1799,6 @@ public:
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 };
-
-//
-// Error output
-//
-
-inline thread_local bool opt_demangle = false;
-
-template <typename E>
-class SyncOut {
-public:
-  SyncOut(Context<E> &ctx, std::ostream &out = std::cout) : out(out) {
-    opt_demangle = ctx.arg.demangle;
-  }
-
-  ~SyncOut() {
-    std::lock_guard lock(mu);
-    out << ss.str() << "\n";
-  }
-
-  template <class T> SyncOut &operator<<(T &&val) {
-    ss << std::forward<T>(val);
-    return *this;
-  }
-
-  static inline std::mutex mu;
-
-private:
-  std::ostream &out;
-  std::stringstream ss;
-};
-
-template <typename E>
-class Fatal {
-public:
-  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {}
-
-  [[noreturn]] ~Fatal() {
-    out.~SyncOut();
-    cleanup<E>();
-    _exit(1);
-  }
-
-  template <class T> Fatal &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-template <typename E>
-class Error {
-public:
-  Error(Context<E> &ctx) : out(ctx, std::cerr) {
-    ctx.has_error = true;
-  }
-
-  template <class T> Error &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-  static void checkpoint(Context<E> &ctx) {
-    if (!ctx.has_error)
-      return;
-    cleanup<E>();
-    _exit(1);
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-template <typename E>
-class Warn {
-public:
-  Warn(Context<E> &ctx) : out(ctx, std::cerr) {
-    if (ctx.arg.fatal_warnings)
-      ctx.has_error = true;
-  }
-
-  template <class T> Warn &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-#define unreachable(ctx)                                               \
-  do {                                                                 \
-    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
-  } while (0)
-
-template <typename E>
-std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 
 //
 // Inline objects and functions
