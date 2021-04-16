@@ -1268,10 +1268,10 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
       ElfRel<E> rel = fde.get_rels()[0];
       u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
       u64 addend = fde.cie->input_section.get_addend(rel);
+      i64 offset = file->fde_offset + fde.output_offset;
 
       *entry++ = {(i32)(val + addend - this->shdr.sh_addr),
-                  (i32)(eh_frame_addr + file->fde_offset +
-                        fde.output_offset - this->shdr.sh_addr)};
+                  (i32)(eh_frame_addr + offset - this->shdr.sh_addr)};
     }
   });
 
