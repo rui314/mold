@@ -1255,12 +1255,21 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   u64 eh_frame_addr = ctx.eh_frame->shdr.sh_addr;
 
+  // Write a header
+  base[0] = 1;
+  base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+  base[2] = DW_EH_PE_udata4;
+  base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
+
+  *(u32 *)(base + 4) = eh_frame_addr - this->shdr.sh_addr - 4;
+  *(u32 *)(base + 8) = num_fdes;
+
+  // Fill contents
   struct Entry {
     i32 init_addr;
     i32 fde_addr;
   };
 
-  // Fill contents
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     Entry *entry = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
 
@@ -1274,15 +1283,6 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
                   (i32)(eh_frame_addr + offset - this->shdr.sh_addr)};
     }
   });
-
-  // Write .eh_frame_hdr header
-  base[0] = 1;
-  base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
-  base[2] = DW_EH_PE_udata4;
-  base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
-
-  *(u32 *)(base + 4) = eh_frame_addr - this->shdr.sh_addr - 4;
-  *(u32 *)(base + 8) = num_fdes;
 
   // Sort contents
   Entry *begin = (Entry *)(base + HEADER_SIZE);
