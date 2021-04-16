@@ -179,6 +179,12 @@ struct FdeRecord {
 
 template <typename E>
 struct CieRecord {
+  CieRecord(Context<E> &ctx, ObjectFile<E> &file,
+            InputSection<E> &isec, u32 input_offset, u32 rel_idx)
+    : file(file), input_section(isec), input_offset(input_offset),
+      rel_idx(rel_idx), rels(isec.get_rels(ctx)),
+      contents(file.get_string(ctx, isec.shdr)) {}
+
   std::string_view get_contents() const;
   std::span<ElfRel<E>> get_rels() const;
   bool equals(const CieRecord &other) const;

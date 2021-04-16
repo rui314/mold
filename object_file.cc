@@ -332,12 +332,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     assert(begin_offset <= rels[rel_begin].r_offset);
 
     if (id == 0) {
-      cies.push_back(CieRecord<E>{.file = *this,
-                                  .input_section = isec,
-                                  .input_offset = (u32)begin_offset,
-                                  .rel_idx = (u32)rel_begin,
-                                  .rels = rels,
-                                  .contents = contents});
+      cies.push_back(CieRecord<E>(ctx, *this, isec, begin_offset, rel_begin));
     } else {
       if (rel_begin == rel_idx)
         Fatal(ctx) << isec << ": FDE has no relocations";
@@ -352,6 +347,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
     InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
     InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
+
     return std::tuple(x->file.priority, x->section_idx) <
            std::tuple(y->file.priority, y->section_idx);
   });
