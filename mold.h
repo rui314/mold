@@ -169,8 +169,6 @@ struct FdeRecord {
 
   std::string_view get_contents(ObjectFile<E> &file) const;
   std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
-  bool equals(ObjectFile<E> &this_file, FdeRecord<E> &other,
-              ObjectFile<E> &other_file) const;
 
   u32 input_offset = -1;
   u32 output_offset = -1;
