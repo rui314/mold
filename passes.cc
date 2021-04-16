@@ -298,19 +298,15 @@ void check_duplicate_symbols(Context<E> &ctx) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
-      bool is_common = esym.is_common();
-      bool is_weak = (esym.st_bind == STB_WEAK);
-      bool is_eliminated = false;
+      if (sym.file == file || esym.is_undef() || esym.is_common() ||
+          (esym.st_bind == STB_WEAK))
+        continue;
 
-      if (!esym.is_abs() && !esym.is_common())
-        if (InputSection<E> *isec = file->get_section(esym))
-          if (!isec->is_alive)
-            is_eliminated = true;
+      if (!esym.is_abs() && !file->get_section(esym)->is_alive)
+        continue;
 
-      if (sym.file != file && esym.is_defined() && !is_common &&
-          !is_weak && !is_eliminated)
-        Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
-                   << ": " << sym;
+      Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
+                 << ": " << sym;
     }
   });
 
