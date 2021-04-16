@@ -1310,6 +1310,31 @@ std::span<ElfRel<E>> FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
 }
 
 template <typename E>
+bool FdeRecord<E>::equals(ObjectFile<E> &this_file, FdeRecord<E> &other,
+                          ObjectFile<E> &other_file) const {
+  if (get_contents(this_file) != other.get_contents(other_file))
+    return false;
+
+  std::span<ElfRel<E>> x = get_rels(this_file);
+  std::span<ElfRel<E>> y = other.get_rels(other_file);
+  if (x.size() != y.size())
+    return false;
+
+  InputSection<E> &sec1 = this_file.cies[cie_idx].input_section;
+  InputSection<E> &sec2 = other_file.cies[other.cie_idx].input_section;
+
+  for (i64 i = 0; i < x.size(); i++) {
+    if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
+        x[i].r_type != y[i].r_type ||
+        this_file.symbols[x[i].r_sym] != other_file.symbols[y[i].r_sym] ||
+        sec1.get_addend(x[i]) != sec2.get_addend(y[i]))
+      return false;
+  }
+
+  return true;
+}
+
+template <typename E>
 std::string_view CieRecord<E>::get_contents() const {
   i64 size = *(u32 *)(contents.data() + input_offset) + 4;
   return contents.substr(input_offset, size);
