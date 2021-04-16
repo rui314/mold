@@ -338,9 +338,9 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
   // Associate CIEs to FDEs.
   auto find_cie = [&](i64 offset) -> CieRecord<E> * {
-    for (i64 i = cies.size() - 1; i >= 0; i--)
-      if (cies[i].input_offset == offset)
-        return &cies[i];
+    for (CieRecord<E> &cie : cies)
+      if (cie.input_offset == offset)
+        return &cie;
     Fatal(ctx) << isec << ": bad FDE pointer";
   };
 
