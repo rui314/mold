@@ -1330,7 +1330,6 @@ bool FdeRecord<E>::equals(ObjectFile<E> &this_file, FdeRecord<E> &other,
         sec1.get_addend(x[i]) != sec2.get_addend(y[i]))
       return false;
   }
-
   return true;
 }
 
@@ -1366,9 +1365,7 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
         input_section.get_addend(x[i]) != other.input_section.get_addend(y[i]))
       return false;
   }
-
   return true;
-
 }
 
 #define INSTANTIATE(E)                                                  \
