@@ -42,7 +42,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
   for (FdeRecord<E> &fde : isec->get_fdes())
-    for (ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
+    for (ElfRel<E> &rel : fde.get_rels().subspan(1))
       if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
         if (mark_section(sym->input_section))
           feeder.add(sym->input_section);

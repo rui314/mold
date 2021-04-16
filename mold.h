@@ -51,6 +51,8 @@ template <typename E> class OutputSection;
 template <typename E> class SharedFile;
 template <typename E> class Symbol;
 template <typename E> struct Context;
+template <typename E> struct FdeRecord;
+template <typename E> struct CieRecord;
 
 template <typename E> void cleanup();
 
@@ -149,31 +151,30 @@ enum {
 
 template <typename E>
 struct FdeRecord {
-  FdeRecord(u32 input_offset, u32 rel_idx, u16 cie_idx)
-    : input_offset(input_offset), rel_idx(rel_idx), cie_idx(cie_idx) {}
+  FdeRecord(u32 input_offset, u32 rel_idx)
+    : input_offset(input_offset), rel_idx(rel_idx) {}
 
   FdeRecord(const FdeRecord &other)
-    : input_offset(other.input_offset),
-      output_offset(other.output_offset),
-      rel_idx(other.rel_idx), cie_idx(other.cie_idx),
+    : cie(other.cie), input_offset(other.input_offset),
+      output_offset(other.output_offset), rel_idx(other.rel_idx),
       is_alive(other.is_alive.load()) {}
 
   FdeRecord &operator=(const FdeRecord<E> &other) {
+    cie = other.cie;
     input_offset = other.input_offset;
     output_offset = other.output_offset;
     rel_idx = other.rel_idx;
-    cie_idx = other.cie_idx;
     is_alive = other.is_alive.load();
     return *this;
   }
 
-  std::string_view get_contents(ObjectFile<E> &file) const;
-  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
+  std::string_view get_contents() const;
+  std::span<ElfRel<E>> get_rels() const;
 
+  CieRecord<E> *cie = nullptr;
   u32 input_offset = -1;
   u32 output_offset = -1;
   u32 rel_idx = -1;
-  u16 cie_idx = -1;
   std::atomic_bool is_alive = true;
 };
 

@@ -128,7 +128,7 @@ static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
     return false;
 
   for (FdeRecord<E> &fde : isec.get_fdes())
-    if (fde.get_rels(isec.file).size() > 1)
+    if (fde.get_rels().size() > 1)
       return false;
 
   return true;
@@ -143,7 +143,7 @@ struct LeafHasher {
   size_t operator()(const InputSection<E> *isec) const {
     size_t h = hash_string(isec->contents);
     for (FdeRecord<E> &fde : isec->get_fdes()) {
-      size_t h2 = hash_string(fde.get_contents(isec->file).substr(8));
+      size_t h2 = hash_string(fde.get_contents().substr(8));
       h = combine_hash(h, h2);
     }
     return h;
@@ -163,8 +163,7 @@ struct LeafEq {
       return false;
 
     for (i64 i = 0; i < x.size(); i++)
-      if (x[i].get_contents(a->file).substr(8) !=
-          y[i].get_contents(b->file).substr(8))
+      if (x[i].get_contents().substr(8) != y[i].get_contents().substr(8))
         return false;
     return true;
   }
@@ -260,19 +259,19 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   hash(isec.get_rels(ctx).size());
 
   for (FdeRecord<E> &fde : isec.get_fdes()) {
-    hash(isec.file.cies[fde.cie_idx].icf_idx);
+    hash(fde.cie->icf_idx);
 
     // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
-    hash_string(fde.get_contents(isec.file).substr(8));
+    hash_string(fde.get_contents().substr(8));
 
-    hash(fde.get_rels(isec.file).size());
+    hash(fde.get_rels().size());
 
-    for (ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1)) {
+    for (ElfRel<E> &rel : fde.get_rels().subspan(1)) {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
-      hash(isec.file.cies[fde.cie_idx].input_section.get_addend(rel));
+      hash(fde.cie->input_section.get_addend(rel));
     }
   }
 

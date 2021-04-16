@@ -306,13 +306,6 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   std::string_view contents = this->get_string(ctx, isec.shdr);
   i64 rel_idx = 0;
 
-  auto find_cie = [&](i64 offset) -> u16{
-    for (i64 i = cies.size() - 1; i >= 0; i--)
-      if (cies[i].input_offset == offset)
-        return i;
-    Fatal(ctx) << isec << ": bad FDE pointer";
-  };
-
   for (std::string_view data = contents; !data.empty();) {
     i64 size = *(u32 *)data.data();
     if (size == 0) {
@@ -339,11 +332,25 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
       if (rels[rel_begin].r_offset - begin_offset != 8)
         Fatal(ctx) << isec << ": FDE's first relocation should have offset 8";
 
-      i64 cie_idx = find_cie(begin_offset + 4 - id);
-      fdes.push_back(FdeRecord<E>(begin_offset, rel_begin, cie_idx));
+      fdes.push_back(FdeRecord<E>(begin_offset, rel_begin));
     }
   }
 
+  // Associate CIEs to FDEs.
+  auto find_cie = [&](i64 offset) -> CieRecord<E> * {
+    for (i64 i = cies.size() - 1; i >= 0; i--)
+      if (cies[i].input_offset == offset)
+        return &cies[i];
+    Fatal(ctx) << isec << ": bad FDE pointer";
+  };
+
+  for (FdeRecord<E> &fde : fdes) {
+    i64 cie_offset = *(i32 *)(contents.data() + fde.input_offset + 4);
+    fde.cie = find_cie(fde.input_offset + 4 - cie_offset);
+  }
+
+  // We assume that FDEs for the same input sections are contiguous
+  // in `fdes` vector.
   sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
     InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
     InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
@@ -1293,16 +1300,15 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
-  std::string_view data = file.cies[cie_idx].contents;
-  i64 size = *(u32 *)(data.data() + input_offset) + 4;
-  return data.substr(input_offset, size);
+std::string_view FdeRecord<E>::get_contents() const {
+  i64 size = *(u32 *)(cie->contents.data() + input_offset) + 4;
+  return cie->contents.substr(input_offset, size);
 }
 
 template <typename E>
-std::span<ElfRel<E>> FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
-  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
-  i64 size = get_contents(file).size();
+std::span<ElfRel<E>> FdeRecord<E>::get_rels() const {
+  std::span<ElfRel<E>> rels = cie->rels;
+  i64 size = get_contents().size();
   i64 end = rel_idx;
   while (end < rels.size() && rels[end].r_offset < input_offset + size)
     end++;
