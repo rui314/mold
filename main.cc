@@ -351,12 +351,10 @@ int do_main(int argc, char **argv) {
 
   // Uniquify shared object files with soname
   {
-    std::vector<SharedFile<E> *> vec;
     std::unordered_set<std::string_view> seen;
-    for (SharedFile<E> *file : ctx.dsos)
-      if (seen.insert(file->soname).second)
-        vec.push_back(file);
-    ctx.dsos = vec;
+    erase(ctx.dsos, [&](SharedFile<E> *file) {
+      return !seen.insert(file->soname).second;
+    });
   }
 
   Timer t_total(ctx, "total");
