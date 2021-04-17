@@ -355,11 +355,10 @@ void compute_section_sizes(Context<E> &ctx) {
       [&](const tbb::blocked_range<i64> &r, T sum, bool is_final) {
         for (i64 i = r.begin(); i < r.end(); i++) {
           InputSection<E> &isec = *osec->members[i];
+          sum.offset = align_to(sum.offset, isec.shdr.sh_addralign);
           if (is_final)
             isec.offset = sum.offset;
-
-          sum.offset = align_to(sum.offset, isec.shdr.sh_addralign) +
-            isec.shdr.sh_size;
+          sum.offset += isec.shdr.sh_size;
           sum.align = std::max<i64>(sum.align, isec.shdr.sh_addralign);
         }
         return sum;
