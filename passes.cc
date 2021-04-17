@@ -789,7 +789,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   template void resolve_dso_symbols(Context<E> &ctx);                   \
   template void eliminate_comdats(Context<E> &ctx);                     \
   template void convert_common_symbols(Context<E> &ctx);                \
-  template void add_comment_string(Context<E> &ctx, std::string str);   \
   template void compute_merged_section_sizes(Context<E> &ctx);          \
   template void bin_sections(Context<E> &ctx);                          \
   template void check_duplicate_symbols(Context<E> &ctx);               \

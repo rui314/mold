@@ -1166,7 +1166,6 @@ template <typename E> void resolve_obj_symbols(Context<E> &);
 template <typename E> void resolve_dso_symbols(Context<E> &);
 template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
-template <typename E> void add_comment_string(Context<E> &, std::string str);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
