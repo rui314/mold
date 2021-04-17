@@ -649,6 +649,12 @@ void GotSection<E>::add_tlsld(Context<E> &ctx) {
 }
 
 template <typename E>
+u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
+  assert(tlsld_idx != -1);
+  return this->shdr.sh_addr + tlsld_idx * E::got_size;
+}
+
+template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (Symbol<E> *sym : got_syms)

@@ -390,11 +390,7 @@ public:
   void add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsld(Context<E> &ctx);
 
-  u64 get_tlsld_addr(Context<E> &ctx) const {
-    assert(tlsld_idx != -1);
-    return this->shdr.sh_addr + tlsld_idx * E::got_size;
-  }
-
+  u64 get_tlsld_addr(Context<E> &ctx) const;
   i64 get_reldyn_size(Context<E> &ctx) const;
   void copy_buf(Context<E> &ctx) override;
 
@@ -1113,6 +1109,7 @@ template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 
+//
 // commandline.cc
 //
 
@@ -1875,8 +1872,8 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
 
 template <typename E>
 inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
-  return std::span<FdeRecord<E>>(file.fdes).subspan(fde_begin,
-                                                    fde_end - fde_begin);
+  std::span<FdeRecord<E>> span(file.fdes);
+  return span.subspan(fde_begin, fde_end - fde_begin);
 }
 
 template <typename E>

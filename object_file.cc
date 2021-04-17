@@ -354,9 +354,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
     InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
     InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
-
-    return std::tuple(x->file.priority, x->section_idx) <
-           std::tuple(y->file.priority, y->section_idx);
+    return x->get_priority() < y->get_priority();
   });
 
   // Associate FDEs to input sections.
