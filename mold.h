@@ -425,7 +425,7 @@ public:
     this->name = ".plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 16;
+    this->shdr.sh_addralign = E::plt_size;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -441,7 +441,7 @@ public:
     this->name = ".plt.got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = E::pltgot_size;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
