@@ -90,8 +90,7 @@ static void print_rec(TimerRecord &rec, i64 indent) {
 
 template <typename E>
 void Timer<E>::print(Context<E> &ctx) {
-  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &records =
-    ctx.timer_records;
+  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &records = ctx.timer_records;
 
   for (i64 i = records.size() - 1; i >= 0; i--)
     records[i]->stop();
