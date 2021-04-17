@@ -198,9 +198,8 @@ template <typename E>
 static std::string get_cmdline_args(Context<E> &ctx) {
   std::stringstream ss;
   ss << ctx.cmdline_args[0];
-  for (std::string_view arg :
-         std::span<std::string_view>(ctx.cmdline_args).subspan(1))
-    ss << " " << arg;
+  for (i64 i = 1; i < ctx.cmdline_args.size(); i++)
+    ss << " " << ctx.cmdline_args[i];
   return ss.str();
 }
 
