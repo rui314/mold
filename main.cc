@@ -470,10 +470,10 @@ int do_main(int argc, char **argv) {
   ctx.dynsym->sort_symbols(ctx);
 
   // Fill .gnu.version_d section contents.
-  fill_verdef(ctx);
+  ctx.verdef->construct(ctx);
 
   // Fill .gnu.version_r section contents.
-  fill_verneed(ctx);
+  ctx.verneed->construct(ctx);
 
   // Compute .symtab and .strtab sizes for each file.
   {

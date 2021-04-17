@@ -1321,6 +1321,87 @@ void VersymSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+void VerneedSection<E>::construct(Context<E> &ctx) {
+  Timer t(ctx, "fill_verneed");
+
+  if (ctx.dynsym->symbols.empty())
+    return;
+
+  // Create a list of versioned symbols and sort by file and version.
+  std::vector<Symbol<E> *> syms(ctx.dynsym->symbols.begin() + 1,
+                             ctx.dynsym->symbols.end());
+
+  erase(syms, [](Symbol<E> *sym) {
+    return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
+  });
+
+  if (syms.empty())
+    return;
+
+  sort(syms, [](Symbol<E> *a, Symbol<E> *b) {
+    return std::tuple(((SharedFile<E> *)a->file)->soname, a->ver_idx) <
+           std::tuple(((SharedFile<E> *)b->file)->soname, b->ver_idx);
+  });
+
+  // Resize of .gnu.version
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
+  ctx.versym->contents[0] = 0;
+
+  // Allocate a large enough buffer for .gnu.version_r.
+  contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) *
+                                syms.size());
+
+  // Fill .gnu.version_r.
+  u8 *buf = (u8 *)&contents[0];
+  u8 *ptr = buf;
+  ElfVerneed<E> *verneed = nullptr;
+  ElfVernaux<E> *aux = nullptr;
+
+  u16 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
+
+  auto start_group = [&](InputFile<E> *file) {
+    this->shdr.sh_info++;
+    if (verneed)
+      verneed->vn_next = ptr - (u8 *)verneed;
+
+    verneed = (ElfVerneed<E> *)ptr;
+    ptr += sizeof(*verneed);
+    verneed->vn_version = 1;
+    verneed->vn_file = ctx.dynstr->find_string(((SharedFile<E> *)file)->soname);
+    verneed->vn_aux = sizeof(ElfVerneed<E>);
+    aux = nullptr;
+  };
+
+  auto add_entry = [&](Symbol<E> *sym) {
+    verneed->vn_cnt++;
+
+    if (aux)
+      aux->vna_next = sizeof(ElfVernaux<E>);
+    aux = (ElfVernaux<E> *)ptr;
+    ptr += sizeof(*aux);
+
+    std::string_view verstr = sym->get_version();
+    aux->vna_hash = elf_hash(verstr);
+    aux->vna_other = ++veridx;
+    aux->vna_name = ctx.dynstr->add_string(verstr);
+  };
+
+  for (i64 i = 0; i < syms.size(); i++) {
+    if (i == 0 || syms[i - 1]->file != syms[i]->file) {
+      start_group(syms[i]->file);
+      add_entry(syms[i]);
+    } else if (syms[i - 1]->ver_idx != syms[i]->ver_idx) {
+      add_entry(syms[i]);
+    }
+
+    ctx.versym->contents[syms[i]->get_dynsym_idx(ctx)] = veridx;
+  }
+
+  // Resize .gnu.version_r to fit to its contents.
+  contents.resize(ptr - buf);
+}
+
+template <typename E>
 void VerneedSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = contents.size();
   this->shdr.sh_link = ctx.dynstr->shndx;
@@ -1329,6 +1410,57 @@ void VerneedSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void VerneedSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
+}
+
+template <typename E>
+void VerdefSection<E>::construct(Context<E> &ctx) {
+  Timer t(ctx, "fill_verdef");
+
+  if (ctx.arg.version_definitions.empty())
+    return;
+
+  // Resize .gnu.version
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
+  ctx.versym->contents[0] = 0;
+
+  // Allocate a buffer for .gnu.version_d.
+  contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
+                  (ctx.arg.version_definitions.size() + 1));
+
+  u8 *buf = (u8 *)&contents[0];
+  u8 *ptr = buf;
+  ElfVerdef<E> *verdef = nullptr;
+
+  auto write = [&](std::string_view verstr, i64 idx, i64 flags) {
+    this->shdr.sh_info++;
+    if (verdef)
+      verdef->vd_next = ptr - (u8 *)verdef;
+
+    verdef = (ElfVerdef<E> *)ptr;
+    ptr += sizeof(ElfVerdef<E>);
+
+    verdef->vd_version = 1;
+    verdef->vd_flags = flags;
+    verdef->vd_ndx = idx;
+    verdef->vd_cnt = 1;
+    verdef->vd_hash = elf_hash(verstr);
+    verdef->vd_aux = sizeof(ElfVerdef<E>);
+
+    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)ptr;
+    ptr += sizeof(ElfVerdaux<E>);
+    aux->vda_name = ctx.dynstr->add_string(verstr);
+  };
+
+  std::string_view basename = ctx.arg.soname.empty() ?
+    ctx.arg.output : ctx.arg.soname;
+  write(basename, 1, VER_FLG_BASE);
+
+  i64 idx = 2;
+  for (std::string_view verstr : ctx.arg.version_definitions)
+    write(verstr, idx++, 0);
+
+  for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1))
+    ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
 }
 
 template <typename E>

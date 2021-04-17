@@ -713,6 +713,7 @@ public:
     this->shdr.sh_addralign = E::wordsize;
   }
 
+  void construct(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -729,6 +730,7 @@ public:
     this->shdr.sh_addralign = 8;
   }
 
+  void construct(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -1174,8 +1176,6 @@ template <typename E> void scan_rels(Context<E> &ctx);
 template <typename E> void apply_version_script(Context<E> &ctx);
 template <typename E> void parse_symbol_version(Context<E> &ctx);
 template <typename E> void compute_import_export(Context<E> &ctx);
-template <typename E> void fill_verdef(Context<E> &ctx);
-template <typename E> void fill_verneed(Context<E> &ctx);
 template <typename E> void clear_padding(Context<E> &ctx, i64 filesize);
 template <typename E> i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &ctx);

@@ -17,7 +17,7 @@ clang -shared -fuse-ld=`pwd`/../mold -o $t/b.so $t/a.o
 readelf --dyn-syms $t/b.so > $t/log
 
 grep -q '0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND fn2' $t/log
-grep -q '000000000003311c     0 NOTYPE  GLOBAL DEFAULT   15 fn1' $t/log
+grep -q '0000000000033119     0 NOTYPE  GLOBAL DEFAULT   15 fn1' $t/log
 
 cat <<EOF | clang -fPIC -c -o $t/c.o -xc -
 #include <stdio.h>
