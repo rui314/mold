@@ -1329,7 +1329,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
 
   // Create a list of versioned symbols and sort by file and version.
   std::vector<Symbol<E> *> syms(ctx.dynsym->symbols.begin() + 1,
-                             ctx.dynsym->symbols.end());
+                                ctx.dynsym->symbols.end());
 
   erase(syms, [](Symbol<E> *sym) {
     return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
@@ -1349,7 +1349,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
 
   // Allocate a large enough buffer for .gnu.version_r.
   contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) *
-                                syms.size());
+                  syms.size());
 
   // Fill .gnu.version_r.
   u8 *buf = (u8 *)&contents[0];

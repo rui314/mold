@@ -1157,29 +1157,29 @@ private:
 // passes.cc
 //
 
-template <typename E> void apply_exclude_libs(Context<E> &ctx);
-template <typename E> void create_synthetic_sections(Context<E> &ctx);
-template <typename E> void set_file_priority(Context<E> &ctx);
-template <typename E> void resolve_obj_symbols(Context<E> &ctx);
-template <typename E> void resolve_dso_symbols(Context<E> &ctx);
-template <typename E> void eliminate_comdats(Context<E> &ctx);
-template <typename E> void convert_common_symbols(Context<E> &ctx);
-template <typename E> void add_comment_string(Context<E> &ctx, std::string str);
-template <typename E> void compute_merged_section_sizes(Context<E> &ctx);
-template <typename E> void bin_sections(Context<E> &ctx);
-template <typename E> void check_duplicate_symbols(Context<E> &ctx);
+template <typename E> void apply_exclude_libs(Context<E> &);
+template <typename E> void create_synthetic_sections(Context<E> &);
+template <typename E> void set_file_priority(Context<E> &);
+template <typename E> void resolve_obj_symbols(Context<E> &);
+template <typename E> void resolve_dso_symbols(Context<E> &);
+template <typename E> void eliminate_comdats(Context<E> &);
+template <typename E> void convert_common_symbols(Context<E> &);
+template <typename E> void add_comment_string(Context<E> &, std::string str);
+template <typename E> void compute_merged_section_sizes(Context<E> &);
+template <typename E> void bin_sections(Context<E> &);
+template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> std::vector<OutputChunk<E> *>
-collect_output_sections(Context<E> &ctx);
-template <typename E> void compute_section_sizes(Context<E> &ctx);
-template <typename E> void convert_undefined_weak_symbols(Context<E> &ctx);
-template <typename E> void scan_rels(Context<E> &ctx);
-template <typename E> void apply_version_script(Context<E> &ctx);
-template <typename E> void parse_symbol_version(Context<E> &ctx);
-template <typename E> void compute_import_export(Context<E> &ctx);
-template <typename E> void clear_padding(Context<E> &ctx, i64 filesize);
-template <typename E> i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk);
-template <typename E> i64 set_osec_offsets(Context<E> &ctx);
-template <typename E> void fix_synthetic_symbols(Context<E> &ctx);
+collect_output_sections(Context<E> &);
+template <typename E> void compute_section_sizes(Context<E> &);
+template <typename E> void convert_undefined_weak_symbols(Context<E> &);
+template <typename E> void scan_rels(Context<E> &);
+template <typename E> void apply_version_script(Context<E> &);
+template <typename E> void parse_symbol_version(Context<E> &);
+template <typename E> void compute_import_export(Context<E> &);
+template <typename E> void clear_padding(Context<E> &, i64 filesize);
+template <typename E> i64 get_section_rank(Context<E> &, OutputChunk<E> *chunk);
+template <typename E> i64 set_osec_offsets(Context<E> &);
+template <typename E> void fix_synthetic_symbols(Context<E> &);
 
 //
 // main.cc
