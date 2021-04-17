@@ -255,25 +255,25 @@ static void show_stats(Context<E> &ctx) {
       if (ComdatGroup *group = pair.first; group->owner != obj->priority)
         comdat += pair.second.size();
 
-    Counter num_cies("num_cies");
+    static Counter num_cies("num_cies");
     num_cies += obj->cies.size();
 
-    Counter num_unique_cies("num_unique_cies");
+    static Counter num_unique_cies("num_unique_cies");
     for (CieRecord<E> &cie : obj->cies)
       if (cie.is_leader)
         num_unique_cies++;
 
-    Counter num_fdes("num_fdes");
+    static Counter num_fdes("num_fdes");
     num_fdes +=  obj->fdes.size();
   }
 
-  Counter num_input_sections("input_sections");
+  static Counter num_input_sections("input_sections");
   for (ObjectFile<E> *file : ctx.objs)
     num_input_sections += file->sections.size();
 
-  Counter num_output_chunks("output_chunks", ctx.chunks.size());
-  Counter num_objs("num_objs", ctx.objs.size());
-  Counter num_dsos("num_dsos", ctx.dsos.size());
+  static Counter num_output_chunks("output_chunks", ctx.chunks.size());
+  static Counter num_objs("num_objs", ctx.objs.size());
+  static Counter num_dsos("num_dsos", ctx.dsos.size());
 
   Counter::print();
 }
