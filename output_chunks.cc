@@ -1154,7 +1154,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
     i64 offset = 0;
     for (FdeRecord<E> &fde : file->fdes) {
       fde.output_offset = offset;
-      offset += fde.get_contents().size();
+      offset += fde.size();
     }
     file->fde_size = offset;
   });
@@ -1176,7 +1176,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
       } else {
         cie.output_offset = offset;
         cie.is_leader = true;
-        offset += cie.get_contents().size();
+        offset += cie.size();
         leaders.push_back(&cie);
       }
     }
@@ -1274,7 +1274,7 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
     Entry *entry = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
 
     for (FdeRecord<E> &fde : file->fdes) {
-      ElfRel<E> rel = fde.get_rels()[0];
+      ElfRel<E> &rel = fde.cie->rels[fde.rel_idx];
       u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
       u64 addend = fde.cie->input_section.get_addend(rel);
       i64 offset = file->fde_offset + fde.output_offset;

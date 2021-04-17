@@ -168,6 +168,7 @@ struct FdeRecord {
     return *this;
   }
 
+  i64 size() const;
   std::string_view get_contents() const;
   std::span<ElfRel<E>> get_rels() const;
 
@@ -186,6 +187,7 @@ struct CieRecord {
       rel_idx(rel_idx), rels(isec.get_rels(ctx)),
       contents(file.get_string(ctx, isec.shdr)) {}
 
+  i64 size() const;
   std::string_view get_contents() const;
   std::span<ElfRel<E>> get_rels() const;
   bool equals(const CieRecord &other) const;

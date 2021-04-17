@@ -1300,9 +1300,13 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
+i64 FdeRecord<E>::size() const {
+  return *(u32 *)(cie->contents.data() + input_offset) + 4;
+}
+
+template <typename E>
 std::string_view FdeRecord<E>::get_contents() const {
-  i64 size = *(u32 *)(cie->contents.data() + input_offset) + 4;
-  return cie->contents.substr(input_offset, size);
+  return cie->contents.substr(input_offset, size());
 }
 
 template <typename E>
@@ -1316,9 +1320,13 @@ std::span<ElfRel<E>> FdeRecord<E>::get_rels() const {
 }
 
 template <typename E>
+i64 CieRecord<E>::size() const {
+  return *(u32 *)(contents.data() + input_offset) + 4;
+}
+
+template <typename E>
 std::string_view CieRecord<E>::get_contents() const {
-  i64 size = *(u32 *)(contents.data() + input_offset) + 4;
-  return contents.substr(input_offset, size);
+  return contents.substr(input_offset, size());
 }
 
 template <typename E>
