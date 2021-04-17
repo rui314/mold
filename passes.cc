@@ -4,6 +4,8 @@
 #include <map>
 #include <tbb/parallel_do.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_scan.h>
+#include <tbb/partitioner.h>
 #include <unordered_set>
 
 template <typename E>
@@ -343,40 +345,35 @@ void compute_section_sizes(Context<E> &ctx) {
     if (osec->members.empty())
       return;
 
-    std::vector<std::span<InputSection<E> *>> slices =
-      split(osec->members, 10000);
+    struct T {
+      i64 offset;
+      i64 align;
+    };
 
-    std::vector<i64> size(slices.size());
-    std::vector<i64> alignments(slices.size());
+    T sum = tbb::parallel_scan(
+      tbb::blocked_range<i64>(0, osec->members.size(), 10000),
+      T{0, 1},
+      [&](const tbb::blocked_range<i64> &r, T sum, bool is_final) {
+        for (i64 i = r.begin(); i < r.end(); i++) {
+          InputSection<E> &isec = *osec->members[i];
+          if (is_final)
+            isec.offset = sum.offset;
 
-    tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
-      i64 off = 0;
-      i64 align = 1;
+          sum.offset = align_to(sum.offset, isec.shdr.sh_addralign) +
+            isec.shdr.sh_size;
+          sum.align = std::max<i64>(sum.align, isec.shdr.sh_addralign);
+        }
+        return sum;
+      },
+      [](T lhs, T rhs) {
+        i64 offset = align_to(lhs.offset, rhs.align) + rhs.offset;
+        i64 align = std::max(lhs.align, rhs.align);
+        return T{offset, align};
+      },
+      tbb::simple_partitioner());
 
-      for (InputSection<E> *isec : slices[i]) {
-        off = align_to(off, isec->shdr.sh_addralign);
-        isec->offset = off;
-        off += isec->shdr.sh_size;
-        align = std::max<i64>(align, isec->shdr.sh_addralign);
-      }
-
-      size[i] = off;
-      alignments[i] = align;
-    });
-
-    i64 align = *std::max_element(alignments.begin(), alignments.end());
-
-    std::vector<i64> start(slices.size());
-    for (i64 i = 1; i < slices.size(); i++)
-      start[i] = align_to(start[i - 1] + size[i - 1], align);
-
-    tbb::parallel_for((i64)1, (i64)slices.size(), [&](i64 i) {
-      for (InputSection<E> *isec : slices[i])
-        isec->offset += start[i];
-    });
-
-    osec->shdr.sh_size = start.back() + size.back();
-    osec->shdr.sh_addralign = align;
+    osec->shdr.sh_size = sum.offset;
+    osec->shdr.sh_addralign = sum.align;
   });
 }
 
