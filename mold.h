@@ -89,6 +89,10 @@ struct SectionFragmentRef {
   i32 addend = 0;
 };
 
+// Additinal class members for dynamic symbols. Because most symbols
+// don't need them and we allocate tens of millions of symbol objects
+// for large programs, and we separate them from `Symbol` class to
+// save memory.
 struct SymbolAux {
   i32 got_idx = -1;
   i32 gotplt_idx = -1;
@@ -149,6 +153,33 @@ enum {
   R_END,
 };
 
+// .eh_frame section contains CIE and FDE records to teach the runtime
+// how to handle exceptions. Usually, a .eh_frame contains one CIE
+// followed by as many FDEs as the number of functions defined by the
+// file. CIE contains common information for FDEs (it is actually
+// short for Common Information Entry). FDE contains the start address
+// of a function and its length as well as how to handle exceptions
+// for that function.
+//
+// Unlike other sections, the linker has to parse .eh_frame for optimal
+// output for the following reasons:
+//
+//  - Compilers tend to emit the same CIE as long as the programming
+//    language is the same, so CIEs in input object files are almost
+//    always identical. We want to merge them to make a resulting
+//    .eh_frame smaller.
+//
+//  - If we eliminate a function (e.g. when we see two object files
+//    containing the duplicate definition of an inlined function), we
+//    want to also eliminate a corresponding FDE so that a resulting
+//    .eh_frame doesn't contain a dead FDE entry.
+//
+//  - If we need to compare two function definitions for equality for
+//    ICF, we need to compare not only the function body but also its
+//    exception handlers.
+//
+// Note that we assume that the first relocation entry for an FDE
+// always points to the function that the FDE is associated to.
 template <typename E>
 struct FdeRecord {
   FdeRecord(u32 input_offset, u32 rel_idx)
@@ -203,6 +234,7 @@ struct CieRecord {
   std::string_view contents;
 };
 
+// InputSection represents a section in an input object file.
 template <typename E>
 class InputSection {
 public:
@@ -288,9 +320,14 @@ private:
 template <typename E>
 bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk);
 
+// OutputChunk represents a contiguous region in an output file.
 template <typename E>
 class OutputChunk {
 public:
+  // There are three types of OutputChunks:
+  //  - HEADER: the ELF, section or segment headers
+  //  - REGULAR: output sections containing input sections
+  //  - SYNTHETIC: linker-synthesized sections such as .got or .plt
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
   virtual void copy_buf(Context<E> &ctx) {}
@@ -762,14 +799,28 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx);
 // object_file.cc
 //
 
+// A comdat section typically represents an inline function,
+// which are de-duplicated by the linker.
+//
+// For each inline function, there's one comdat section, which
+// contains section indices of the function code and its data such as
+// string literals, if any.
+//
+// Comdat sections are identified by its signature. If two comdat
+// sections have the same signature, the linker picks up one and
+// discards the other by eliminating all sections that the other
+// comdat section refers to.
 struct ComdatGroup {
   ComdatGroup() = default;
   ComdatGroup(const ComdatGroup &other)
     : owner(other.owner.load()) {}
 
+  // The file priority of the owner file of this comdat section.
   std::atomic_uint32_t owner = -1;
 };
 
+// MemoryMappedFile represents an mmap'ed input file.
+// mold uses mmap-IO only.
 template <typename E>
 class MemoryMappedFile {
 public:
@@ -800,6 +851,7 @@ private:
   i64 size_ = 0;
 };
 
+// InputFile is the base class of ObjectFile and SharedFile.
 template <typename E>
 class InputFile {
 public:
@@ -831,6 +883,7 @@ protected:
   std::unique_ptr<Symbol<E>[]> local_syms;
 };
 
+// ObjectFile represents an input .o file.
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
@@ -904,6 +957,7 @@ private:
   std::span<u32> symtab_shndx_sec;
 };
 
+// SharedFile represents an input .so file.
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
@@ -935,6 +989,8 @@ private:
 // archive_file.cc
 //
 
+// Unlike traditional linkers, mold doesn't read archive file symbol
+// tables. Instead, it directly read archive members.
 template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
@@ -960,6 +1016,7 @@ void parse_dynamic_list(Context<E> &ctx, std::string path);
 // output_file.cc
 //
 
+// OutputFile represents a mmap'ed output file.
 template <typename E>
 class OutputFile {
 public:
@@ -984,6 +1041,7 @@ protected:
 // filepath.cc
 //
 
+// These are various utility functions to deal with file pathnames.
 std::string get_current_dir();
 std::string path_dirname(std::string_view path);
 std::string path_filename(std::string_view path);
@@ -995,6 +1053,8 @@ std::string path_clean(std::string_view path);
 // glob.cc
 //
 
+// GlobPattern handles the glob pattern. Currently, only '*' (zero or
+// more occurrences of any character) is supported as a metacharacter.
 class GlobPattern {
 public:
   GlobPattern(std::string_view pat);
@@ -1009,6 +1069,7 @@ private:
 // perf.cc
 //
 
+// Counter is used to collect statistics numbers.
 class Counter {
 public:
   Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
@@ -1042,6 +1103,8 @@ private:
   static inline std::vector<Counter *> instances;
 };
 
+// Timer and TimeRecord records elapsed time (wall clock time)
+// used by each pass of the linker.
 struct TimerRecord {
   TimerRecord(std::string name, TimerRecord *parent = nullptr);
   void stop();
@@ -1135,6 +1198,11 @@ void parse_nonpositional_args(Context<E> &ctx,
 // tar.cc
 //
 
+// TarFile is a class to create a tar file.
+//
+// If you pass `--reproduce=repro.tar` to mold, mold collects all
+// input files and put them into `repro.tar`, so that it is easy to
+// run the same command with the same command line arguments.
 class TarFile {
 public:
   template <typename E>
@@ -1223,6 +1291,10 @@ private:
   std::map<Key, std::vector<T *>> cache;
 };
 
+// Context represents a context object for each invocation of the linker.
+// It contains command line flags, pointers to singleton objects
+// (such as linker-synthesized output sections), unique_ptrs for
+// resource management, and other miscellaneous objects.
 template <typename E>
 struct Context {
   Context() = default;
@@ -1529,6 +1601,11 @@ enum {
   NEEDS_TLSDESC  = 1 << 7,
 };
 
+// Symbol class represents a defined symbol.
+//
+// A symbol has not only one but several different addresses if it
+// has PLT or GOT entries. This class provides various functions to
+// compute different addresses.
 template <typename E>
 class Symbol {
 public:
@@ -1536,6 +1613,9 @@ public:
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
+  // If we haven't seen the same `key` before, create a new instance
+  // of Symbol and returns it. Otherwise, returns the previously-
+  // instantiated object. `key` is usually the same as `name`.
   static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
                            std::string_view name) {
     return ctx.symbol_map.insert(key, {name});
@@ -1776,18 +1856,27 @@ public:
     return {nameptr, (size_t)namelen};
   }
 
+  // A symbol is owned by a file. If two or more files define the
+  // same symbol, the one with the strongest definition owns the symbol.
+  // If `file` is null, the symbol is equivalent to nonexistent.
   InputFile<E> *file = nullptr;
+
   InputSection<E> *input_section = nullptr;
   const char *nameptr = nullptr;
 
   u64 value = -1;
+
+  // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
+
   i32 namelen = 0;
   i32 aux_idx = -1;
   u16 shndx = 0;
   u16 ver_idx = 0;
 
+  // `flags` has NEEDS_ flags.
   std::atomic_uint8_t flags = 0;
+
   tbb::spin_mutex mu;
   std::atomic_uint8_t visibility = STV_DEFAULT;
 
@@ -1797,6 +1886,28 @@ public:
   u8 traced : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 copyrel_readonly : 1 = false;
+
+  // If a symbol can be interposed at runtime, `is_imported` is true.
+  // If a symbol is a dynamic symbol and can be used by other ELF
+  // module at runtime, `is_exported` is true.
+  //
+  // Note that both can be true at the same time. Such symbol
+  // represents a function or data exported from this ELF module
+  // which can be interposed by other definition at runtime.
+  // That is the usual exported symbols when creating a DSO.
+  // In other words, a dynamic symbol is exported by a DSO and
+  // imported by itself.
+  //
+  // If is_imported is true and is_exported is false, it is a dynamic
+  // symbol imported from other DSO.
+  //
+  // If is_imported is false and is_exported is true, there are two
+  // possible cases. If we are creating an executable, we know that
+  // exported symbols cannot be interposed by any DSO (because the
+  // dynamic loader searches a dynamic symbol from an exectuable
+  // before examining any DSOs), so any exported symbol is export-only.
+  // If we are creating a DSO, export-only symbols represent a
+  // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 };
