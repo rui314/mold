@@ -2,49 +2,52 @@
 
 ![mold image](mold.jpg)
 
-This is a repository of a linker I'm currently developing as a
-replacement for existing Unix linkers such as GNU BFD, GNU gold or
-LLVM lld.
+mold is a high performance drop-in replacement for existing Unix
+linkers. It is several times faster than LLVM lld linker, which is the
+fastest open-source linker which I originally created a few years ago.
+Here is a performance comparison of GNU gold, LLVM lld and mold for
+linking final executables of major large programs.
 
-My goal was to make a linker that is as fast as concatenating input
-object files with `cat` command. It may sound like an impossible goal,
-but it's not entirely impossible because of the following two reasons:
+| Program                       | GNU gold | LLVM lld | mold  | mold w/ preloading
+|-------------------------------|----------|----------|-------|-------
+| Chrome 86 (1.9GB)             | 54.5s    | 11.7s    | 1.85s | 0.97s
+| Firefox 87 (libxul.so, 1.6GB) | 29.2s    | 6.16s    | 1.69s | 0.79s
+| Clang 13 (3.1GB)              | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-1. `cat` is a simple single-threaded program which isn't the fastest
-   one as a file copy command. My linker can use multiple threads to
-   copy file contents more efficiently to save time to do extra work.
+(These nubmers are measured on a AMD Threadripper 3990X 64-core
+machine with 32 threads enabled. All programs are built with debug
+info enabled.)
 
-2. Copying file contents is I/O-bounded, and many CPU cores should be
-   available during file copy. We can use them to do extra work while
-   copying file contents.
+Let me explain the "w/ preloading" column. mold supports file
+preloading feature. That is, if you run mold with `-preload` flag
+along with other command line flags, it becomes a daemon and stops
+after parsing input files. Then, if you invoke mold with the same
+command line option (except `-preload` flag), it tells the daemon to
+reload only updated files and proceed. With this feature enabled, and
+if most of the input files haven't been updated, mold achieve
+near-`cp` performance or even exceeds it, as the throughput of file
+copy using the `cp` command is about 2 GiB/s on my machine.
 
-Concretely speaking, I wanted to use the linker to link a Chromium
-executable with full debug info (~2 GiB in size) just in 1 second.
-LLVM's lld, the fastest open-source linker which I originally created
-a few years ago, takes about 12 seconds to link Chromium on my machine.
-So the goal is 12x performance bump over lld. Compared to GNU gold,
-it's more than 50x.
+So, mold is extremely fast per-se and even faster with a bit of cheating.
 
-It looks like mold has achieved the goal. It can link Chromium in 2
-seconds with 8-cores/16-threads, and if I enable the preloading
-feature (I'll explain it later), the latency of the linker for an
-interactive use is less than 900 milliseconds. It is actualy faster
-than `cat`.
-
-Note that even though mold can create a runnable Chrome executable,
-it is far from complete and not usable for production. mold is still
-just a toy linker, and this is still just my pet project.
-
-## Performance visualization
+Why mold is so fast? One reason is because it simply uses better
+algorithms and data structures than other linkers do. The other reason
+is that the new linker is highly parallelized.
 
 Here is a side-by-side comparison of per-core CPU usage of lld (left)
 and mold (right). They are linking the same program, Chromium
-executable, which is ~2GB with debug info. As you can see, mold is
-much faster than lld. Throughout its execution, mold uses all
-available cores, which is artificially capped to 16 cores in this
-demo.
+executable.
 
 ![](htop.gif)
+
+As you can see, mold uses all available cores throughout its execution
+and finishes quickly. On the other hand, lld failed to use available
+cores most of the time. On this demo, the maximum parallelism is
+artificially capped to 16 so that the bars fit in the GIF.
+
+Note: Even though mold can successfully link large programs such as
+Chrome, Firefox or LLVM, it is not tested well and not usable for
+production. mold is still just my pet project.
 
 ## How to build
 
