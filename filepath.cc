@@ -7,6 +7,8 @@ std::string get_current_dir() {
   return buf;
 }
 
+// Returns the directory part of a given path.
+// Returns '.' if path doesn't contain '/'.
 std::string path_dirname(std::string_view path) {
   i64 pos = path.find_last_of('/');
   if (pos == path.npos)
@@ -14,6 +16,9 @@ std::string path_dirname(std::string_view path) {
   return std::string(path.substr(0, pos));
 }
 
+// Returns the filename part of a given path.
+// Returns '/' if path reperesents the root directory.
+// Returns '.' if path is empty.
 std::string path_filename(std::string_view path) {
   if (path.empty())
     return ".";
@@ -30,6 +35,8 @@ std::string path_filename(std::string_view path) {
   return std::string(path.substr(pos + 1));
 }
 
+// Returns the filename part of a given path without the file
+// extension.
 std::string path_basename(std::string_view path) {
   std::string name = path_filename(path);
 
@@ -45,6 +52,9 @@ std::string path_to_absolute(std::string_view path) {
   return get_current_dir() + "/" + std::string(path);
 }
 
+// Removes redundant '/..' or '/.' from a given path.
+// The transformation is done purely by lexical processing.
+// This function does not access file system.
 std::string path_clean(std::string_view path) {
   std::vector<std::string_view> components;
   bool is_rooted = path.starts_with('/');

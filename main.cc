@@ -267,6 +267,10 @@ static void show_stats(Context<E> &ctx) {
     num_fdes +=  obj->fdes.size();
   }
 
+  static Counter num_bytes("total_input_bytes");
+  for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs)
+    num_bytes += mb->size();
+
   static Counter num_input_sections("input_sections");
   for (ObjectFile<E> *file : ctx.objs)
     num_input_sections += file->sections.size();
