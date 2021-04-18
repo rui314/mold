@@ -3,34 +3,34 @@
 ![mold image](mold.jpg)
 
 mold is a high performance drop-in replacement for existing Unix
-linkers. It is several times faster than LLVM lld linker, which is the
+linkers. It is several times faster than LLVM lld linker, the (then-)
 fastest open-source linker which I originally created a few years ago.
 Here is a performance comparison of GNU gold, LLVM lld and mold for
 linking final executables of major large programs.
 
-| Program                       | GNU gold | LLVM lld | mold  | mold w/ preloading
-|-------------------------------|----------|----------|-------|-------
-| Chrome 86 (1.9GB)             | 54.5s    | 11.7s    | 1.85s | 0.97s
-| Firefox 87 (libxul.so, 1.6GB) | 29.2s    | 6.16s    | 1.69s | 0.79s
-| Clang 13 (3.1GB)              | 59.4s    | 5.68s    | 2.76s | 0.86s
+| Program (linker output size) | GNU gold | LLVM lld | mold  | mold w/ preloading
+|------------------------------|----------|----------|-------|-------------------
+| Firefox 87 (1.6 GB)          | 29.2s    | 6.16s    | 1.69s | 0.79s
+| Chrome 86 (1.9 GB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
+| Clang 13 (3.1 GB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-(These nubmers are measured on a AMD Threadripper 3990X 64-core
+(These nubmers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
 info enabled.)
 
-Let me explain the "w/ preloading" column. mold supports file
+Let me explain the "w/ preloading" column. mold supports the file
 preloading feature. That is, if you run mold with `-preload` flag
-along with other command line flags, it becomes a daemon and stops
+along with other command line flags, it becomes a daemon and halts
 after parsing input files. Then, if you invoke mold with the same
-command line option (except `-preload` flag), it tells the daemon to
+command line options (except `-preload` flag), it tells the daemon to
 reload only updated files and proceed. With this feature enabled, and
-if most of the input files haven't been updated, mold achieve
+if most of the input files haven't been updated, mold achieve a
 near-`cp` performance or even exceeds it, as the throughput of file
 copy using the `cp` command is about 2 GiB/s on my machine.
 
 So, mold is extremely fast per-se and even faster with a bit of cheating.
 
-Why mold is so fast? One reason is because it simply uses better
+Why is mold so fast? One reason is because it simply uses faster
 algorithms and data structures than other linkers do. The other reason
 is that the new linker is highly parallelized.
 
