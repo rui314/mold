@@ -244,7 +244,13 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   std::string self = get_self_path(ctx);
-  std::string env = "LD_PRELOAD=" + path_dirname(self) + "/mold-wrapper.so";
+  std::string dso_path = path_dirname(self) + "/mold-wrapper.so";
+
+  struct stat st;
+  if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
+    Fatal(ctx) << dso_path << " is missing";
+
+  std::string env = "LD_PRELOAD=" + dso_path;
   putenv(strdup(env.c_str()));
   putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
