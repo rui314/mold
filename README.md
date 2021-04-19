@@ -45,6 +45,12 @@ and finishes quickly. On the other hand, lld failed to use available
 cores most of the time. On this demo, the maximum parallelism is
 artificially capped to 16 so that the bars fit in the GIF.
 
+Currently, mold is being developed with Linux/x86-64 as the primary
+target platform. mold can link many user-land programs including large
+ones such as web browsers for the environment. It also has preliminary
+Linux/i386 support. Supporting other OSes and ISAs are planned after
+Linux/x86-64 support is complete.
+
 Note: Even though mold can successfully link large programs such as
 Chrome, Firefox or LLVM, it is not tested well and not usable for
 production. mold is still just my pet project.
