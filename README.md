@@ -31,8 +31,8 @@ copy using the `cp` command is about 2 GiB/s on my machine.
 So, mold is extremely fast per-se and even faster with a bit of cheating.
 
 Why is mold so fast? One reason is because it simply uses faster
-algorithms and data structures than other linkers do. The other reason
-is that the new linker is highly parallelized.
+algorithms and efficient data structures than other linkers do.
+The other reason is that the new linker is highly parallelized.
 
 Here is a side-by-side comparison of per-core CPU usage of lld (left)
 and mold (right). They are linking the same program, Chromium
@@ -47,13 +47,13 @@ artificially capped to 16 so that the bars fit in the GIF.
 
 Currently, mold is being developed with Linux/x86-64 as the primary
 target platform. mold can link many user-land programs including large
-ones such as web browsers for the environment. It also has preliminary
+ones such as web browsers for that target. It also has preliminary
 Linux/i386 support. Supporting other OSes and ISAs are planned after
 Linux/x86-64 support is complete.
 
 Note: Even though mold can successfully link large programs such as
-Chrome, Firefox or LLVM, it is not tested well and not usable for
-production. mold is still just my pet project.
+Chrome, Firefox or LLVM, it is not tested well, and I don't think it
+is ready for production use. mold is still just my pet project.
 
 ## How to build
 
@@ -71,6 +71,12 @@ $ make
 
 The last `make` command creates `mold` executable.
 
+You can build a statically-linked mold executable by substituting the
+last `make` with `make STATIC=1`. A statically-linked mold executable
+can be copied to any Linux system and run there without copying other
+libraries. This is useful if you want to use Ubuntu 20.04 only for
+building mold.
+
 ## How to use
 
 On Unix, the linker command (which is usually `/usr/bin/ld`) is
@@ -81,7 +87,7 @@ option to `cc` to specify an alternative linker.
 
 To deal with the situation, mold has a feature to intercept all
 invocations of `/usr/bin/ld` and redirect it to itself. To use the
-feature, run `make` (or other build command) as a subprocess of mold
+feature, run `make` (or other build command) as a subcommand of mold
 as follows:
 
 ```
@@ -90,8 +96,8 @@ $ path/to/mold -run make <make-options-if-any>
 
 Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
-file intercepts all function calls to exec-family functions and
-`posix_spawn` to replace `argv[0]` with `mold` if it is `/usr/bin/ld`.
+file intercepts all function calls to exec-family functions to replace
+`argv[0]` with `mold` if it is `/usr/bin/ld`.
 
 Alternatively, you can pass `-fuse-ld=<absolute-path-to-mold-executable>`
 to a linker command line. Since GCC doesn't support that option,
@@ -111,6 +117,8 @@ String dump of section '.comment':
 If `mold` is in `.comment`, the file is created by mold.
 
 ## Background
+
+Here is why I'm writing a new linker:
 
 - Even though lld has significantly improved the situation, linking is
   still one of the slowest steps in a build. It is especially
@@ -134,7 +142,7 @@ If `mold` is in `.comment`, the file is created by mold.
 
 ## Basic design
 
-- In order to achieve a `cat`-like performance, the most important
+- In order to achieve a `cp`-like performance, the most important
   thing is to fix the layout of an output file as quickly as possible, so
   that we can start copying actual data from input object files to an
   output file as soon as possible.
