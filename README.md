@@ -8,11 +8,11 @@ fastest open-source linker which I originally created a few years ago.
 Here is a performance comparison of GNU gold, LLVM lld and mold for
 linking final executables of major large programs.
 
-| Program (linker output size) | GNU gold | LLVM lld | mold  | mold w/ preloading
-|------------------------------|----------|----------|-------|-------------------
-| Firefox 87 (1.6 GB)          | 29.2s    | 6.16s    | 1.69s | 0.79s
-| Chrome 86 (1.9 GB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
-| Clang 13 (3.1 GB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
+| Program (linker output size)  | GNU gold | LLVM lld | mold  | mold w/ preloading
+|-------------------------------|----------|----------|-------|-------------------
+| Firefox 87 (1.6 GiB)          | 29.2s    | 6.16s    | 1.69s | 0.79s
+| Chrome 86 (1.9 GiB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
+| Clang 13 (3.1 GiB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
 (These nubmers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
@@ -116,7 +116,13 @@ String dump of section '.comment':
 
 If `mold` is in `.comment`, the file is created by mold.
 
-## Background
+# Design and implementation of mold
+
+For the rest of this documentation, I'll explain the design and the
+implementation of mold. If you are only interested in using mold, you
+don't need to read the below.
+
+## Motivation
 
 Here is why I'm writing a new linker:
 
@@ -128,7 +134,7 @@ Here is why I'm writing a new linker:
 
 - The number of cores on a PC has increased a lot lately, and this
   trend is expected to continue. However, the existing linkers can't
-  take the advantage of that because they don't scale well for more
+  take the advantage of the trend because they don't scale well for more
   cores. I have a 64-core/128-thread machine, so my goal is to create
   a linker that uses the CPU nicely. mold should be much faster than
   other linkers on 4 or 8-core machines too, though.
@@ -153,50 +159,37 @@ Here is why I'm writing a new linker:
 
 - We should allow the linker to preload object files from disk and
   parse them in memory before a complete set of input object files
-  is ready. My idea is this: if a user invokes the linker with
-  `--preload` flag along with other command line flags a few seconds
-  before the actual linker invocation, then the following actual
-  linker invocation with the same command line options (except
-  `--preload` flag) becomes magically faster. Behind the scenes, the
-  linker starts preloading object files on the first invocation and
-  becomes a daemon. The second invocation of the linker notifies the
-  daemon to reload updated object files and then proceed.
-
-- Daemonizing alone wouldn't make the linker magically faster. We need
+  is ready. To do so, we need
   to split the linker into two in such a way that the latter half of
   the process finishes as quickly as possible by speculatively parsing
-  and preprocessing input files in the first half of the process. The
-  key factor of success would be to design nice data structures that
-  allows us to offload as much processing as possible from the second
-  to the first half.
+  and preprocessing input files in the first half of the process.
 
-- One of the most time-consuming stage among linker stages is symbol
-  resolution. To resolve symbols, we basically have to throw all
-  symbol strings into a hash table to match undefined symbols with
-  defined symbols. But this can be done in the daemon using [string
-  interning](https://en.wikipedia.org/wiki/String_interning).
+- One of the most computationally-intensive stage among linker stages
+  is symbol resolution. To resolve symbols, we basically have to throw
+  all symbol strings into a hash table to match undefined symbols with
+  defined symbols. But this can be done in the preloading stage using
+  [string interning](https://en.wikipedia.org/wiki/String_interning).
 
 - Object files may contain a special section called a mergeable string
   section. The section contains lots of null-terminated strings, and
   the linker is expected to gather all mergeable string sections and
   merge their contents. So, if two object files contain the same
   string literal, for example, the resulting output will contain a
-  single merged string. This step is time-consuming, but string
-  merging can be done in the daemon using string interning.
+  single merged string. This step is computationally-intensive, but string
+  merging can be done in the preloading stage using string interning.
 
 - Static archives (.a files) contain object files, but the static
   archive's string table contains only defined symbols of member
   object files and lacks other types of symbols. That makes static
-  archives unsuitable for speculative parsing. The daemon should
-  ignore the string table of static archive and directly read all
-  member object files of all archives to get the whole picture of
-  all possible input files.
+  archives unsuitable for speculative parsing. Therefore, the linker
+  should ignore the symbol table of static archive and directly read
+  static archive members.
 
 - If there's a relocation that uses a GOT of a symbol, then we have to
   create a GOT entry for that symbol. Otherwise, we shouldn't. That
   means we need to scan all relocation tables to fix the length and
-  the contents of a .got section. This is perhaps time-consuming, but
-  this step is parallelizable.
+  the contents of a .got section. This is computationally intensive,
+  but this step is parallelizable.
 
 ## Compatibility
 
@@ -209,9 +202,8 @@ Here is why I'm writing a new linker:
   their projects' build files.
 
 - mold emits Linux executables and runs only on Linux. I won't avoid
-  Unix-ism when writing code (e.g. I'll probably use fork(2)).
-  I don't want to think about portability until mold becomes a thing
-  that's worth to be ported.
+  Unix-ism when writing code. I don't want to think about portability
+  until mold becomes a thing that's worth to be ported.
 
 ## Linker Script
 
@@ -256,7 +248,7 @@ tool.
 
 ## Details
 
-- If we aim to the 1 second goal for Chromium, every millisecond
+- As we aim to the 1 second goal for Chromium, every millisecond
   counts. We can't ignore the latency of process exit. If we mmap a
   lot of files, \_exit(2) is not instantaneous but takes a few hundred
   milliseconds because the kernel has to clean up a lot of
@@ -270,14 +262,14 @@ tool.
 - At least on Linux, it looks like the filesystem's performance to
   allocate new blocks to a new file is the limiting factor when
   creating a new large file and filling its contents using mmap.
-  If you already have a large file on a filesystem, writing to it is
+  If you already have a large file in the buffer cache, writing to it is
   much faster than creating a new fresh file and writing to it.
-  Based on this observation, mold should overwrite to an existing
+  Based on this observation, mold overwrites to an existing
   executable file if exists. My quick benchmark showed that I could
   save 300 milliseconds when creating a 2 GiB output file.
   Linux doesn't allow to open an executable for writing if it is
-  running (you'll get "text busy" error if you attempt). mold should
-  fall back to the usual way if it fails to open an output file.
+  running (you'll get "text busy" error if you attempt). mold
+  falls back to the usual way if it fails to open an output file.
 
 - The output from the linker should be deterministic for the sake of
   [build reproducibility](https://en.wikipedia.org/wiki/Reproducible_builds)
