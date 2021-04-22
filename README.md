@@ -1,6 +1,6 @@
 # mold: A Modern Linker
 
-![mold image](mold.jpg)
+![mold image](docs/mold.jpg)
 
 mold is a high performance drop-in replacement for existing Unix
 linkers. It is several times faster than LLVM lld linker, the (then-)
@@ -38,7 +38,7 @@ Here is a side-by-side comparison of per-core CPU usage of lld (left)
 and mold (right). They are linking the same program, Chromium
 executable.
 
-![](htop.gif)
+![](docs/htop.gif)
 
 As you can see, mold uses all available cores throughout its execution
 and finishes quickly. On the other hand, lld failed to use available
