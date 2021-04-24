@@ -552,11 +552,15 @@ template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
-  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
-    type = SHT_PROGBITS;
-
   name = get_output_name(name);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
+
+  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
+    type = SHT_PROGBITS;
+  if (name == ".init_array" && type == SHT_PROGBITS)
+    type = SHT_INIT_ARRAY;
+  if (name == ".fini_array" && type == SHT_PROGBITS)
+    type = SHT_FINI_ARRAY;
 
   auto find = [&]() -> OutputSection<E> * {
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
