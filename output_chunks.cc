@@ -757,12 +757,13 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
-  memset(buf, 0, this->shdr.sh_size);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the x86-64 psABI. The second and the third slots are reserved by
   // the psABI.
   buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols)
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
@@ -807,7 +808,6 @@ void RelPltSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
-  memset(buf, 0, this->shdr.sh_size);
 
   i64 relplt_idx = 0;
   for (Symbol<E> *sym : ctx.plt->symbols)
@@ -1213,7 +1213,6 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
 template <typename E>
 void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
-  memset(base, 0, this->shdr.sh_size); // TODO: remove
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Copy CIEs.
