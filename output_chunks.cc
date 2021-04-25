@@ -548,19 +548,23 @@ OutputSection<E>::OutputSection(std::string_view name, u32 type,
   this->shdr.sh_flags = flags;
 }
 
+static u64 canonicalize_type(std::string_view name, u64 type) {
+  if (type == SHT_PROGBITS && name == ".init_array")
+    return SHT_INIT_ARRAY;
+  if (type == SHT_PROGBITS && name == ".fini_array")
+    return SHT_FINI_ARRAY;
+  if (type == SHT_X86_64_UNWIND)
+    return SHT_PROGBITS;
+  return type;
+}
+
 template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
   name = get_output_name(name);
+  type = canonicalize_type(name, type);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
-
-  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
-    type = SHT_PROGBITS;
-  if (name == ".init_array" && type == SHT_PROGBITS)
-    type = SHT_INIT_ARRAY;
-  if (name == ".fini_array" && type == SHT_PROGBITS)
-    type = SHT_FINI_ARRAY;
 
   auto find = [&]() -> OutputSection<E> * {
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
