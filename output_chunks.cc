@@ -3,6 +3,7 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <shared_mutex>
+#include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 
@@ -1516,7 +1517,7 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
-  i64 shard_size = 1024 * 1024;
+  i64 shard_size = 4096 * 1024;
   i64 num_shards = size / shard_size + 1;
   std::vector<u8> shards(num_shards * SHA256_SIZE);
 
@@ -1524,6 +1525,13 @@ static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
     u8 *begin = buf + shard_size * i;
     i64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
     SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
+
+    // We call munmap early for each chunk so that the last munmap
+    // gets cheaper. We assume that the .note.build-id section is
+    // at the beginning of an output file. This is an ugly performance
+    // hack, but we can save about 30 ms for a 2 GiB output.
+    if (i > 0)
+      munmap(begin, sz);
   });
 
   SHA256(shards.data(), shards.size(), digest);
