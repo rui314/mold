@@ -1012,12 +1012,11 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
   i64 strtab_off = strtab_offset;
   i64 symtab_off;
 
-  auto write_sym = [&](i64 i) {
-    Symbol<E> &sym = *this->symbols[i];
+  auto write_sym = [&](Symbol<E> &sym) {
     ElfSym<E> &esym = *(ElfSym<E> *)(symtab_base + symtab_off);
     symtab_off += sizeof(esym);
 
-    esym = elf_syms[i];
+    esym = sym.esym();
     esym.st_name = strtab_off;
 
     if (sym.get_type() == STT_TLS)
@@ -1039,14 +1038,18 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
   };
 
   symtab_off = local_symtab_offset;
-  for (i64 i = 1; i < first_global; i++)
-    if (this->symbols[i]->write_to_symtab)
-      write_sym(i);
+  for (i64 i = 1; i < first_global; i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    if (sym.write_to_symtab)
+      write_sym(sym);
+  }
 
   symtab_off = global_symtab_offset;
-  for (i64 i = first_global; i < elf_syms.size(); i++)
-    if (this->symbols[i]->file == this && this->symbols[i]->write_to_symtab)
-      write_sym(i);
+  for (i64 i = first_global; i < elf_syms.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    if (sym.file == this && sym.write_to_symtab)
+      write_sym(sym);
+  }
 }
 
 bool is_c_identifier(std::string_view name) {
