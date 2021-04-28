@@ -11,7 +11,8 @@ clang -o $t/exe $t/a.c -fuse-ld=`pwd`/../mold -Wl,-build-id
 readelf -n $t/exe | grep -qv 'GNU.*0x00000010.*NT_GNU_BUILD_ID'
 
 clang -o $t/exe $t/a.c -fuse-ld=`pwd`/../mold -Wl,-build-id=uuid
-readelf -n $t/exe | grep -q 'GNU.*0x00000010.*NT_GNU_BUILD_ID'
+readelf -nW $t/exe |
+  grep -Pq 'GNU.*0x00000010.*NT_GNU_BUILD_ID.*Build ID: ............4...[89abcdef]'
 
 clang -o $t/exe $t/a.c -fuse-ld=`pwd`/../mold -Wl,-build-id=md5
 readelf -n $t/exe | grep -q 'GNU.*0x00000010.*NT_GNU_BUILD_ID'

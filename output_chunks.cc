@@ -1549,6 +1549,22 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
 }
 
 template <typename E>
+static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
+  std::vector<u8> buf(16);
+  if (!RAND_bytes(buf.data(), buf.size()))
+    Fatal(ctx) << "RAND_bytes failed";
+
+  // Indicate that this is UUIDv4.
+  buf[6] &= 0b00001111;
+  buf[6] |= 0b01000000;
+
+  // Indicates that this is an RFC4122 variant.
+  buf[8] &= 0b00111111;
+  buf[8] |= 0b10000000;
+  return buf;
+}
+
+template <typename E>
 void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
@@ -1563,9 +1579,8 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
     compute_sha256(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
   case BuildId::UUID:
-    if (!RAND_bytes(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
-                    ctx.arg.build_id.size(ctx)))
-      Fatal(ctx) << "RAND_bytes failed";
+    write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
+                 get_uuid_v4(ctx));
     return;
   }
 
