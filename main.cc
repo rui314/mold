@@ -542,9 +542,8 @@ int do_main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  std::unique_ptr<OutputFile<E>> file =
-    OutputFile<E>::open(ctx, ctx.arg.output, filesize);
-  ctx.buf = file->buf;
+  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, filesize);
+  ctx.buf = ctx.output_file->buf;
 
   Timer t_copy(ctx, "copy");
 
@@ -579,7 +578,7 @@ int do_main(int argc, char **argv) {
   t_copy.stop();
 
   // Commit
-  file->close(ctx);
+  ctx.output_file->close(ctx);
 
   t_total.stop();
   t_all.stop();

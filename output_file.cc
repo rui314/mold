@@ -15,7 +15,7 @@ template <typename E>
 class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
-    : OutputFile<E>(path, filesize) {
+    : OutputFile<E>(path, filesize, true) {
     std::string dir = path_dirname(path);
     this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(this->tmpfile);
@@ -50,7 +50,10 @@ public:
 
   void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
-    munmap(this->buf, this->filesize);
+
+    if (!ctx.buildid)
+      munmap(this->buf, this->filesize);
+
     if (rename(this->tmpfile, this->path.c_str()) == -1)
       Fatal(ctx) << this->path << ": rename failed: " << strerror(errno);
     this->tmpfile = nullptr;
@@ -61,7 +64,7 @@ template <typename E>
 class MallocOutputFile : public OutputFile<E> {
 public:
   MallocOutputFile(Context<E> &ctx, std::string path, u64 filesize)
-    : OutputFile<E>(path, filesize) {
+    : OutputFile<E>(path, filesize, false) {
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
@@ -70,6 +73,12 @@ public:
 
   void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
+
+    if (this->path == "-") {
+      fwrite(this->buf, this->filesize, 1, stdout);
+      return;
+    }
+
     i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, 0777);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << this->path << ": " << strerror(errno);
@@ -89,9 +98,13 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
     path = ctx.arg.chroot + "/" + path_clean(path);
 
   bool is_special = false;
-  struct stat st;
-  if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFMT) != S_IFREG)
+  if (path == "-") {
     is_special = true;
+  } else {
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFMT) != S_IFREG)
+      is_special = true;
+  }
 
   std::unique_ptr<OutputFile<E>> file;
   if (is_special)

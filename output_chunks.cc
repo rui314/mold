@@ -1516,25 +1516,36 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(base + 3, "GNU", 4);           // Name string
 }
 
-static void compute_sha256(u8 *buf, i64 size, u8 *digest) {
+template <typename E>
+static void compute_sha256(Context<E> &ctx, i64 offset) {
+  u8 *buf = ctx.buf;
+  i64 bufsize = ctx.output_file->filesize;
+
   i64 shard_size = 4096 * 1024;
-  i64 num_shards = size / shard_size + 1;
+  i64 num_shards = bufsize / shard_size + 1;
   std::vector<u8> shards(num_shards * SHA256_SIZE);
 
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
-    i64 sz = (i < num_shards - 1) ? shard_size : (size % shard_size);
+    i64 sz = (i < num_shards - 1) ? shard_size : (bufsize % shard_size);
     SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
 
     // We call munmap early for each chunk so that the last munmap
     // gets cheaper. We assume that the .note.build-id section is
     // at the beginning of an output file. This is an ugly performance
     // hack, but we can save about 30 ms for a 2 GiB output.
-    if (i > 0)
+    if (i > 0 && ctx.output_file->is_mmapped)
       munmap(begin, sz);
   });
 
+  assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
+
+  u8 digest[SHA256_SIZE];
   SHA256(shards.data(), shards.size(), digest);
+  memcpy(buf + offset, digest, ctx.arg.build_id.size(ctx));
+
+  if (ctx.output_file->is_mmapped)
+    munmap(buf, std::min(bufsize, shard_size));
 }
 
 template <typename E>
@@ -1544,18 +1555,13 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
     write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
                  ctx.arg.build_id.value);
     return;
-  case BuildId::HASH: {
+  case BuildId::HASH:
     // Modern x86 processors have purpose-built instructions to accelerate
     // SHA256 computation, and SHA256 outperforms MD5 on such computers.
     // So, we always compute SHA256 and truncate it if smaller digest was
     // requested.
-    u8 digest[SHA256_SIZE];
-    assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
-    compute_sha256(ctx.buf, filesize, digest);
-    memcpy(ctx.buf + this->shdr.sh_offset + HEADER_SIZE, digest,
-           ctx.arg.build_id.size(ctx));
+    compute_sha256(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
-  }
   case BuildId::UUID:
     if (!RAND_bytes(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
                     ctx.arg.build_id.size(ctx)))

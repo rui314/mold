@@ -1026,15 +1026,16 @@ public:
   virtual void close(Context<E> &ctx) = 0;
   virtual ~OutputFile() {}
 
-  u8 *buf;
   static inline char *tmpfile;
 
-protected:
-  OutputFile(std::string path, u64 filesize)
-    : path(path), filesize(filesize) {}
-
+  u8 *buf = nullptr;
   std::string path;
   u64 filesize;
+  bool is_mmapped;
+
+protected:
+  OutputFile(std::string path, u64 filesize, bool is_mmapped)
+    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
 };
 
 //
@@ -1420,6 +1421,7 @@ struct Context {
   ObjectFile<E> *internal_obj = nullptr;
 
   // Output buffer
+  std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf = nullptr;
 
   std::vector<OutputChunk<E> *> chunks;
