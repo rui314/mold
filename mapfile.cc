@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iomanip>
 #include <ios>
+#include <sstream>
 #include <tbb/parallel_for_each.h>
 #include <unordered_map>
 
@@ -61,22 +62,30 @@ void print_map(Context<E> &ctx) {
     if (osec->kind != OutputChunk<E>::REGULAR)
       continue;
 
-    for (InputSection<E> *mem : ((OutputSection<E> *)osec)->members) {
-      *out << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-           << std::setw(11) << (u64)mem->shdr.sh_size
-           << std::setw(6) << (u64)mem->shdr.sh_addralign
-           << "         " << *mem << "\n";
+    std::span<InputSection<E> *> members = ((OutputSection<E> *)osec)->members;
+    std::vector<std::string> bufs(members.size());
+
+    tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
+      InputSection<E> *mem = members[i];
+      std::ostringstream ss;
+
+      ss << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
+         << std::setw(11) << (u64)mem->shdr.sh_size
+         << std::setw(6) << (u64)mem->shdr.sh_addralign
+         << "         " << *mem << "\n";
 
       typename MapTy::const_accessor acc;
-      if (!map.find(acc, mem))
-        continue;
-
-      std::vector<Symbol<E> *> syms = acc->second;
-      for (Symbol<E> *sym : syms)
-        *out << std::setw(16) << sym->get_addr(ctx)
+      if (map.find(acc, mem))
+        for (Symbol<E> *sym : acc->second)
+          ss << std::setw(16) << sym->get_addr(ctx)
              << "          0     0                 "
              << *sym << "\n";
-    }
+
+      bufs[i] = std::move(ss.str());
+    });
+
+    for (std::string &str : bufs)
+      *out << str;
   }
 
   if (file)
