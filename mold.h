@@ -790,6 +790,22 @@ public:
   static constexpr i64 HEADER_SIZE = 16;
 };
 
+template <typename E>
+class NotePropertySection : public OutputChunk<E> {
+public:
+  NotePropertySection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".note.gnu.property";
+    this->shdr.sh_type = SHT_NOTE;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = E::wordsize;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+  u32 features = 0;
+};
+
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -922,6 +938,7 @@ public:
   std::vector<SectionFragmentRef<E>> sym_fragments;
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool exclude_libs = false;
+  u32 features = 0;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -946,6 +963,7 @@ private:
   void initialize_symbols(Context<E> &ctx);
   void initialize_mergeable_sections(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
+  u32 read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr);
   void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
   void maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
@@ -1455,6 +1473,7 @@ struct Context {
   std::unique_ptr<VerneedSection<E>> verneed;
   std::unique_ptr<VerdefSection<E>> verdef;
   std::unique_ptr<BuildIdSection<E>> buildid;
+  std::unique_ptr<NotePropertySection<E>> note_property;
 
   u64 tls_begin = -1;
   u64 tls_end = -1;

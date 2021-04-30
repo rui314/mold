@@ -1587,6 +1587,31 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   unreachable(ctx);
 }
 
+template <typename E>
+void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
+  features = -1;
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file != ctx.internal_obj)
+      features &= file->features;
+
+  if (features != 0 && features != -1)
+    this->shdr.sh_size = E::is_64 ? 32 : 28;
+}
+
+template <typename E>
+void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
+  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, this->shdr.sh_size);
+
+  buf[0] = 4;                              // Name size
+  buf[1] = E::is_64 ? 16 : 12;             // Content size
+  buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
+  memcpy(buf + 3, "GNU", 4);               // Name
+  buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND; // Feature type
+  buf[5] = 4;                              // Feature size
+  buf[6] = features;                       // Feature flags
+}
+
 #define INSTANTIATE(E)                                          \
   template class OutputChunk<E>;                                \
   template class OutputEhdr<E>;                                 \
@@ -1616,6 +1641,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
   template class VerneedSection<E>;                             \
   template class VerdefSection<E>;                              \
   template class BuildIdSection<E>;                             \
+  template class NotePropertySection<E>;                        \
   template i64 BuildId::size(Context<E> &) const;               \
   template bool is_relro(Context<E> &, OutputChunk<E> *);       \
   template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)

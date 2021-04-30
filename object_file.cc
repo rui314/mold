@@ -155,6 +155,37 @@ static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
 }
 
 template <typename E>
+u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
+                                          const ElfShdr<E> &shdr) {
+  std::string_view data = this->get_string(ctx, shdr);
+  u32 ret = 0;
+
+  while (!data.empty()) {
+    ElfNhdr<E> &hdr = *(ElfNhdr<E> *)data.data();
+    data = data.substr(sizeof(hdr));
+
+    std::string_view name = data.substr(0, hdr.n_namesz - 1);
+    data = data.substr(align_to(hdr.n_namesz, 4));
+
+    std::string_view desc = data.substr(0, hdr.n_descsz);
+    data = data.substr(align_to(hdr.n_descsz, E::wordsize));
+
+    if (hdr.n_type != NT_GNU_PROPERTY_TYPE_0 || name != "GNU")
+      continue;
+
+    while (!desc.empty()) {
+      u32 type = *(u32 *)desc.data();
+      u32 size = *(u32 *)(desc.data() + 4);
+      desc = desc.substr(8);
+      if (type == GNU_PROPERTY_X86_FEATURE_1_AND)
+        ret |= *(u32 *)desc.data();
+      desc = desc.substr(align_to(size, E::wordsize));
+    }
+  }
+  return ret;
+}
+
+template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
@@ -199,8 +230,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       break;
     default: {
       std::string_view name = this->shstrtab.data() + shdr.sh_name;
-      if (name == ".note.GNU-stack" || name == ".note.gnu.property")
+      if (name == ".note.GNU-stack")
         continue;
+
+      if (name == ".note.gnu.property") {
+        this->features = read_note_gnu_property(ctx, shdr);
+        continue;
+      }
 
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))

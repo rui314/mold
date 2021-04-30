@@ -187,7 +187,14 @@ static constexpr u32 DF_1_NOOPEN = 0x00000040;
 static constexpr u32 DF_1_INTERPOSE = 0x00000400;
 static constexpr u32 DF_1_PIE = 0x08000000;
 
+static constexpr u32 NT_GNU_ABI_TAG = 1;
+static constexpr u32 NT_GNU_HWCAP = 2;
 static constexpr u32 NT_GNU_BUILD_ID = 3;
+static constexpr u32 NT_GNU_GOLD_VERSION = 4;
+static constexpr u32 NT_GNU_PROPERTY_TYPE_0 = 5;
+
+static constexpr u32 GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xc0000000;
+static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_AND = 0xc0000002;
 
 static constexpr u32 ELFCOMPRESS_ZLIB = 1;
 
@@ -580,6 +587,12 @@ struct Elf32Chdr {
   u32 ch_addralign;
 };
 
+struct Elf64Nhdr {
+  u32 n_namesz;
+  u32 n_descsz;
+  u32 n_type;
+};
+
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
 template <typename E> struct ElfEhdr;
@@ -591,6 +604,7 @@ template <typename E> struct ElfVernaux;
 template <typename E> struct ElfVerdef;
 template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
+template <typename E> struct ElfNhdr;
 
 struct X86_64 {
   typedef u64 WordTy;
@@ -627,6 +641,7 @@ template <> struct ElfVernaux<X86_64> : public Elf64Vernaux {};
 template <> struct ElfVerdef<X86_64> : public Elf64Verdef {};
 template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
+template <> struct ElfNhdr<X86_64> : public Elf64Nhdr {};
 
 struct I386 {
   typedef u32 WordTy;
@@ -663,3 +678,4 @@ template <> struct ElfVernaux<I386> : public Elf64Vernaux {};
 template <> struct ElfVerdef<I386> : public Elf64Verdef {};
 template <> struct ElfVerdaux<I386> : public Elf64Verdaux {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
+template <> struct ElfNhdr<I386> : public Elf64Nhdr {};

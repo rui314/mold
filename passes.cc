@@ -65,6 +65,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.dynamic = std::make_unique<DynamicSection<E>>());
   add(ctx.versym = std::make_unique<VersymSection<E>>());
   add(ctx.verneed = std::make_unique<VerneedSection<E>>());
+  add(ctx.note_property = std::make_unique<NotePropertySection<E>>());
 }
 
 template <typename E>
