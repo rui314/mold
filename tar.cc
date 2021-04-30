@@ -1,5 +1,7 @@
 #include "mold.h"
 
+static constexpr int BLOCK_SIZE = 512;
+
 // A tar file consists of one or more Ustar header followed by data.
 // Each Ustar header represents a single file in an archive.
 //
@@ -42,7 +44,7 @@ struct UstarHeader {
   char pad[12];
 };
 
-static constexpr int BLOCK_SIZE = 512;
+static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
 
 template <typename E>
 std::unique_ptr<TarFile>
