@@ -214,9 +214,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       ComdatGroup *group = ctx.comdat_groups.insert(signature, ComdatGroup());
       comdat_groups.push_back({group, entries.subspan(1)});
-
-      static Counter counter("comdats");
-      counter++;
       break;
     }
     case SHT_SYMTAB_SHNDX:
