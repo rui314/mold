@@ -49,11 +49,6 @@ u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
   if (data_ == MAP_FAILED)
     Fatal(ctx) << name << ": mmap failed: " << strerror(errno);
   close(fd);
-
-  // Add to a tar file if --reproduce is given.
-  if (ctx.tar_file)
-    ctx.tar_file->append(path_to_absolute(name), get_contents(ctx));
-
   return data_;
 }
 

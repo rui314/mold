@@ -155,12 +155,10 @@ std::string create_response_file(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.cmdline_args.size(); i++) {
     std::string_view arg = ctx.cmdline_args[i];
 
-    if (arg == "-reproduce" || arg == "--reproduce") {
+    if (arg == "-repro" || arg == "--repro") {
       i++;
       continue;
     }
-    if (arg.starts_with("-reproduce=") || arg.starts_with("--reproduce="))
-      continue;
 
     out << arg << "\n";
   }
@@ -354,8 +352,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.warn_common = true;
     } else if (read_flag(args, "no-warn-common")) {
       ctx.arg.warn_common = false;
-    } else if (read_arg(ctx, args, arg, "reproduce")) {
-      ctx.arg.reproduce = arg;
+    } else if (read_flag(args, "repro")) {
+      ctx.arg.repro = true;
     } else if (read_z_flag(args, "now")) {
       ctx.arg.z_now = true;
     } else if (read_z_flag(args, "lazy")) {

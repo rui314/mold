@@ -14,7 +14,8 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-reproduce=$t/repro.tar
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-repro
+objcopy --dump-section .repro=$t/repro.tar $t/exe
 
 tar -C $t -xf $t/repro.tar
 fgrep -q /a.o  $t/repro/response.txt

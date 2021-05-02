@@ -53,6 +53,7 @@ template <typename E> class Symbol;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> struct CieRecord;
+class TarFile;
 
 template <typename E> void cleanup();
 
@@ -806,6 +807,21 @@ public:
   u32 features = 0;
 };
 
+template <typename E>
+class ReproSection : public OutputChunk<E> {
+public:
+  ReproSection() : OutputChunk<E>(this->SYNTHETIC) {
+    this->name = ".repro";
+    this->shdr.sh_type = SHT_PROGBITS;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  std::unique_ptr<TarFile> tar;
+};
+
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -1224,19 +1240,19 @@ void parse_nonpositional_args(Context<E> &ctx,
 // run the same command with the same command line arguments.
 class TarFile {
 public:
-  template <typename E>
-  static std::unique_ptr<TarFile>
-  open(Context<E> &ctx, std::string path, std::string basedir);
+  static constexpr i64 BLOCK_SIZE = 512;
+
+
+  TarFile(std::string basedir) : basedir(basedir) {}
 
   void append(std::string path, std::string_view data);
+  void write(u8 *buf);
+  i64 size() const { return size_; }
 
 private:
-  TarFile(std::ofstream &&out, std::string basedir)
-    : out(std::move(out)), basedir(basedir) {}
-
-  std::mutex mu;
-  std::ofstream out;
   std::string basedir;
+  std::vector<std::pair<std::string, std::string_view>> contents;
+  i64 size_ = BLOCK_SIZE * 2;
 };
 
 //
@@ -1346,6 +1362,7 @@ struct Context {
     bool print_map = false;
     bool quick_exit = true;
     bool relax = true;
+    bool repro = false;
     bool shared = false;
     bool stats = false;
     bool strip_all = false;
@@ -1375,7 +1392,6 @@ struct Context {
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output;
-    std::string reproduce;
     std::string rpaths;
     std::string soname;
     std::string sysroot;
@@ -1430,9 +1446,6 @@ struct Context {
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
 
-  // Tar file for --reproduce
-  std::unique_ptr<TarFile> tar_file;
-
   // Input files
   std::vector<ObjectFile<E> *> objs;
   std::vector<SharedFile<E> *> dsos;
@@ -1474,6 +1487,7 @@ struct Context {
   std::unique_ptr<VerdefSection<E>> verdef;
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
+  std::unique_ptr<ReproSection<E>> repro;
 
   u64 tls_begin = -1;
   u64 tls_end = -1;

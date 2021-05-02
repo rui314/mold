@@ -316,13 +316,6 @@ int do_main(int argc, char **argv) {
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
                  << ": " << strerror(errno);
 
-  // Open reproducible tar file if --reproduce is given.
-  if (std::string &path = ctx.arg.reproduce; !path.empty()) {
-    ctx.tar_file = TarFile::open(ctx, path, path_basename(path));
-    ctx.tar_file->append("response.txt", create_response_file(ctx));
-    ctx.tar_file->append("version.txt", get_version_string() + "\n");
-  }
-
   // Preload input files
   std::function<void()> on_complete;
 

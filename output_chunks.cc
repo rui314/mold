@@ -1612,6 +1612,30 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   buf[6] = features;                       // Feature flags
 }
 
+template <typename E>
+void ReproSection<E>::update_shdr(Context<E> &ctx) {
+  if (tar)
+    return;
+  tar = std::make_unique<TarFile>("repro");
+
+  tar->append("response.txt", save_string(ctx, create_response_file(ctx)));
+  tar->append("version.txt", save_string(ctx, get_version_string() + "\n"));
+
+  std::unordered_set<std::string> seen;
+  for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs) {
+    std::string path = path_to_absolute(mb->name);
+    if (seen.insert(path).second)
+      tar->append(path, mb->get_contents(ctx));
+  }
+
+  this->shdr.sh_size = tar->size();
+}
+
+template <typename E>
+void ReproSection<E>::copy_buf(Context<E> &ctx) {
+  tar->write(ctx.buf + this->shdr.sh_offset);
+}
+
 #define INSTANTIATE(E)                                          \
   template class OutputChunk<E>;                                \
   template class OutputEhdr<E>;                                 \
@@ -1642,6 +1666,7 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   template class VerdefSection<E>;                              \
   template class BuildIdSection<E>;                             \
   template class NotePropertySection<E>;                        \
+  template class ReproSection<E>;                               \
   template i64 BuildId::size(Context<E> &) const;               \
   template bool is_relro(Context<E> &, OutputChunk<E> *);       \
   template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)
