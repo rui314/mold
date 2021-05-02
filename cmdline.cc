@@ -533,6 +533,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
+  if (char *env = getenv("MOLD_REPRO"); env && env[0])
+    ctx.arg.repro = true;
+
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
 }

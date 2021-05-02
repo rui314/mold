@@ -14,7 +14,19 @@ int main() {
 }
 EOF
 
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
+! readelf --sections $t/exe | fgrep -q .repro || false
+
+
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-repro
+objcopy --dump-section .repro=$t/repro.tar $t/exe
+
+tar -C $t -xf $t/repro.tar
+fgrep -q /a.o  $t/repro/response.txt
+fgrep -q mold $t/repro/version.txt
+
+
+MOLD_REPRO=1 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 objcopy --dump-section .repro=$t/repro.tar $t/exe
 
 tar -C $t -xf $t/repro.tar
