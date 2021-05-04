@@ -227,6 +227,7 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
     *shdr2 = shdr;
     shdr2->sh_flags &= ~(u64)(SHF_COMPRESSED);
     shdr2->sh_size = hdr.ch_size;
+    shdr2->sh_addralign = hdr.ch_addralign;
 
     return {do_uncompress(data, hdr.ch_size), shdr2};
   }
