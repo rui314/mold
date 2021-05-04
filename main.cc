@@ -20,11 +20,11 @@ static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
-  std::vector<u8> *buf = new std::vector<u8>(str.size() + 1);
-  memcpy(buf->data(), str.data(), str.size());
-  (*buf)[str.size()] = '\0';
-  ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
-  return {(char *)buf->data(), str.size()};
+  u8 *buf = new u8[str.size() + 1];
+  memcpy(buf, str.data(), str.size());
+  buf[str.size()] = '\0';
+  ctx.owning_bufs.push_back(std::unique_ptr<u8[]>(buf));
+  return {(char *)buf, str.size()};
 }
 
 std::string get_version_string() {

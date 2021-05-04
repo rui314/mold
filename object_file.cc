@@ -193,15 +193,15 @@ std::pair<std::string_view, const ElfShdr<E> *>
 ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
                                    std::string_view name) {
   auto do_uncompress = [&](std::string_view data, u64 size) {
-    std::vector<u8> *buf = new std::vector<u8>(size);
-    ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
+    u8 *buf = new u8[size];
+    ctx.owning_bufs.push_back(std::unique_ptr<u8[]>(buf));
 
     unsigned long size2 = size;
-    if (uncompress(buf->data(), &size2, (u8 *)&data[0], data.size()) != Z_OK)
+    if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
       Fatal(ctx) << *this << ": " << name << ": uncompress failed";
     if (size != size2)
       Fatal(ctx) << *this << ": " << name << ": uncompress: invalid size";
-    return std::string_view((char *)buf->data(), size);
+    return std::string_view((char *)buf, size);
   };
 
   if (name.starts_with(".zdebug")) {
