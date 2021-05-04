@@ -14,7 +14,7 @@ linking final executables of major large programs.
 | Chrome 86 (1.9 GiB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
 | Clang 13 (3.1 GiB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-(These nubmers are measured on an AMD Threadripper 3990X 64-core
+(These numbers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
 info enabled.)
 
@@ -281,7 +281,7 @@ tool.
   an output file. This is a slow step, but we can speed it up by
   splitting a file into small chunks, computing SHA-1 for each chunk,
   and then computing SHA-1 of the concatenated SHA-1 hashes
-  (i.e. constructing a [Markle
+  (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
   can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
