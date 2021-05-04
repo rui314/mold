@@ -524,6 +524,7 @@ static std::string_view get_output_name(std::string_view name) {
   static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.",
     ".bss.", ".init_array.", ".fini_array.", ".tbss.", ".tdata.",
+    ".gcc_except_table.",
   };
 
   for (std::string_view prefix : prefixes)
