@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <limits>
-#include <zlib.h>
 
 template <typename E>
 void InputSection<E>::copy_buf(Context<E> &ctx) {

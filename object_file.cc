@@ -192,6 +192,9 @@ template <typename E>
 std::pair<std::string_view, const ElfShdr<E> *>
 ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
                                    std::string_view name) {
+  if (shdr.sh_type == SHT_NOBITS)
+    return {{}, &shdr};
+
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
     ctx.owning_bufs.push_back(std::unique_ptr<u8[]>(buf));
@@ -205,14 +208,17 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
   };
 
   if (name.starts_with(".zdebug")) {
+    // Old-style compressed section
     std::string_view data = this->get_string(ctx, shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
       Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
     u64 size = read64be((u8 *)&data[4]);
-    return {do_uncompress(data.substr(12), size), &shdr};
+    std::string_view contents = do_uncompress(data.substr(12), size);
+    return {contents, &shdr};
   }
 
   if (shdr.sh_flags & SHF_COMPRESSED) {
+    // New-style compressed section
     std::string_view data = this->get_string(ctx, shdr);
     if (data.size() < sizeof(ElfChdr<E>))
       Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
@@ -229,12 +235,11 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
     shdr2->sh_size = hdr.ch_size;
     shdr2->sh_addralign = hdr.ch_addralign;
 
-    return {do_uncompress(data, hdr.ch_size), shdr2};
+    std::string_view contents = do_uncompress(data, hdr.ch_size);
+    return {contents, shdr2};
   }
 
-  if (shdr.sh_type != SHT_NOBITS)
-    return {this->get_string(ctx, shdr), &shdr};
-  return {{}, &shdr};
+  return {this->get_string(ctx, shdr), &shdr};
 }
 
 template <typename E>
