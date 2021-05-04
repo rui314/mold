@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <zlib.h>
 
 template <typename E>
 MemoryMappedFile<E> *
@@ -180,6 +181,61 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
   return ret;
 }
 
+static u64 read64be(u8 *buf) {
+  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
+         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
+         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
+         ((u64)buf[6] << 8)  | (u64)buf[7];
+}
+
+template <typename E>
+std::pair<std::string_view, const ElfShdr<E> *>
+ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
+                                   std::string_view name) {
+  auto do_uncompress = [&](std::string_view data, u64 size) {
+    std::vector<u8> *buf = new std::vector<u8>(size);
+    ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
+
+    unsigned long size2 = size;
+    if (uncompress(buf->data(), &size2, (u8 *)&data[0], data.size()) != Z_OK)
+      Fatal(ctx) << *this << ": " << name << ": uncompress failed";
+    if (size != size2)
+      Fatal(ctx) << *this << ": " << name << ": uncompress: invalid size";
+    return std::string_view((char *)buf->data(), size);
+  };
+
+  if (name.starts_with(".zdebug")) {
+    std::string_view data = this->get_string(ctx, shdr);
+    if (!data.starts_with("ZLIB") || data.size() <= 12)
+      Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
+    u64 size = read64be((u8 *)&data[4]);
+    return {do_uncompress(data.substr(12), size), &shdr};
+  }
+
+  if (shdr.sh_flags & SHF_COMPRESSED) {
+    std::string_view data = this->get_string(ctx, shdr);
+    if (data.size() < sizeof(ElfChdr<E>))
+      Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
+    ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
+    data = data.substr(sizeof(ElfChdr<E>));
+
+    if (hdr.ch_type != ELFCOMPRESS_ZLIB)
+      Fatal(ctx) << *this << ": " << name << ": unsupported compression type";
+
+    ElfShdr<E> *shdr2 = new ElfShdr<E>;
+    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(shdr2));
+    *shdr2 = shdr;
+    shdr2->sh_flags &= ~(u64)(SHF_COMPRESSED);
+    shdr2->sh_size = hdr.ch_size;
+
+    return {do_uncompress(data, hdr.ch_size), shdr2};
+  }
+
+  if (shdr.sh_type != SHT_NOBITS)
+    return {this->get_string(ctx, shdr), &shdr};
+  return {{}, &shdr};
+}
+
 template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
@@ -234,8 +290,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
+      std::string_view contents;
+      const ElfShdr<E> *shdr2;
+      std::tie(contents, shdr2) = uncompress_contents(ctx, shdr, name);
+
       this->sections[i] =
-        std::make_unique<InputSection<E>>(ctx, *this, shdr, name, i);
+        std::make_unique<InputSection<E>>(ctx, *this, *shdr2, name,
+                                          contents, i);
 
       static Counter counter("regular_sections");
       counter++;
@@ -989,7 +1050,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
     std::unique_ptr<InputSection<E>> isec =
       std::make_unique<InputSection<E>>(ctx, *this, *shdr, ".common",
-                                        sections.size());
+                                        std::string_view(), sections.size());
     isec->output_section = osec;
     sym->input_section = isec.get();
     sym->value = 0;

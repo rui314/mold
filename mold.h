@@ -240,16 +240,10 @@ template <typename E>
 class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
-               std::string_view name, i64 section_idx)
+               std::string_view name, std::string_view contents,
+               i64 section_idx)
     : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
-      section_idx(section_idx) {
-    if (name.starts_with(".zdebug"))
-      uncompress_old_style(ctx);
-    else if (shdr.sh_flags & SHF_COMPRESSED)
-      uncompress_new_style(ctx);
-    else if (shdr.sh_type != SHT_NOBITS)
-      contents = file.get_string(ctx, shdr);
-
+      contents(contents), section_idx(section_idx) {
     output_section =
       OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
   }
@@ -983,6 +977,10 @@ private:
   void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
   void maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
+
+  std::pair<std::string_view, const ElfShdr<E> *>
+  uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
+                      std::string_view name);
 
   bool has_common_symbol;
 

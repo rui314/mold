@@ -3,51 +3,6 @@
 #include <limits>
 #include <zlib.h>
 
-static u64 read64be(u8 *buf) {
-  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
-         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
-         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
-         ((u64)buf[6] << 8)  | (u64)buf[7];
-}
-
-template <typename E>
-void InputSection<E>::do_uncompress(Context<E> &ctx, std::string_view data,
-                                    u64 size) {
-  std::vector<u8> *buf = new std::vector<u8>(size);
-  ctx.owning_bufs.push_back(std::unique_ptr<std::vector<u8>>(buf));
-
-  unsigned long size2 = size;
-  if (uncompress(buf->data(), &size2, (u8 *)&data[0], data.size()) != Z_OK)
-    Fatal(ctx) << file << ": " << name() << ": uncompress failed";
-  if (size != size2)
-    Fatal(ctx) << file << ": " << name() << ": uncompress: invalid size";
-  contents = {(char *)buf->data(), size};
-}
-
-// Uncompress old-style compressed section
-template <typename E>
-void InputSection<E>::uncompress_old_style(Context<E> &ctx) {
-  std::string_view data = file.get_string(ctx, shdr);
-  if (!data.starts_with("ZLIB") || data.size() <= 12)
-    Fatal(ctx) << file << ": " << name() << ": corrupted compressed section";
-  u64 size = read64be((u8 *)&data[4]);
-  do_uncompress(ctx, data.substr(12), size);
-}
-
-// Uncompress new-style compressed section
-template <typename E>
-void InputSection<E>::uncompress_new_style(Context<E> &ctx) {
-  // New-style compressed section
-  std::string_view data = file.get_string(ctx, shdr);
-  if (data.size() < sizeof(ElfChdr<E>))
-    Fatal(ctx) << file << ": " << name() << ": corrupted compressed section";
-
-  ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
-  if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-    Fatal(ctx) << file << ": " << name() << ": unsupported compression type";
-  do_uncompress(ctx, data.substr(sizeof(ElfChdr<E>)), hdr.ch_size);
-}
-
 template <typename E>
 void InputSection<E>::copy_buf(Context<E> &ctx) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
