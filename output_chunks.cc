@@ -266,13 +266,18 @@ void StrtabSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void ShstrtabSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = 1;
-  for (OutputChunk<E> *chunk : ctx.chunks) {
-    if (!chunk->name.empty()) {
-      chunk->shdr.sh_name = this->shdr.sh_size;
-      this->shdr.sh_size += chunk->name.size() + 1;
-    }
-  }
+  std::unordered_map<std::string_view, i64> map;
+  i64 offset = 1;
+
+  for (OutputChunk<E> *chunk : ctx.chunks)
+    if (!chunk->name.empty() && map.insert({chunk->name, offset}).second)
+      offset += chunk->name.size() + 1;
+
+  this->shdr.sh_size = offset;
+
+  for (OutputChunk<E> *chunk : ctx.chunks)
+    if (!chunk->name.empty())
+      chunk->shdr.sh_name = map[chunk->name];
 }
 
 template <typename E>
@@ -280,13 +285,9 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   base[0] = '\0';
 
-  i64 i = 1;
-  for (OutputChunk<E> *chunk : ctx.chunks) {
-    if (!chunk->name.empty()) {
-      write_string(base + i, chunk->name);
-      i += chunk->name.size() + 1;
-    }
-  }
+  for (OutputChunk<E> *chunk : ctx.chunks)
+    if (!chunk->name.empty())
+      write_string(base + chunk->shdr.sh_name, chunk->name);
 }
 
 template <typename E>
