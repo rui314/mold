@@ -564,11 +564,11 @@ int do_main(int argc, char **argv) {
   ctx.reldyn->sort(ctx);
 
   // Zero-clear paddings between sections
-  clear_padding(ctx, filesize);
+  clear_padding(ctx);
 
   if (ctx.buildid) {
     Timer t(ctx, "build_id");
-    ctx.buildid->write_buildid(ctx, filesize);
+    ctx.buildid->write_buildid(ctx);
   }
 
   t_copy.stop();

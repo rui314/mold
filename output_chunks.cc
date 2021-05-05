@@ -1567,7 +1567,7 @@ static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
 }
 
 template <typename E>
-void BuildIdSection<E>::write_buildid(Context<E> &ctx, i64 filesize) {
+void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
     write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,

@@ -581,7 +581,7 @@ void compute_import_export(Context<E> &ctx) {
 }
 
 template <typename E>
-void clear_padding(Context<E> &ctx, i64 filesize) {
+void clear_padding(Context<E> &ctx) {
   Timer t(ctx, "clear_padding");
 
   auto zero = [&](OutputChunk<E> *chunk, i64 next_start) {
@@ -593,7 +593,7 @@ void clear_padding(Context<E> &ctx, i64 filesize) {
 
   for (i64 i = 1; i < ctx.chunks.size(); i++)
     zero(ctx.chunks[i - 1], ctx.chunks[i]->shdr.sh_offset);
-  zero(ctx.chunks.back(), filesize);
+  zero(ctx.chunks.back(), ctx.output_file->filesize);
 }
 
 // We want to sort output chunks in the following order.
@@ -802,7 +802,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   template void apply_version_script(Context<E> &ctx);                  \
   template void parse_symbol_version(Context<E> &ctx);                  \
   template void compute_import_export(Context<E> &ctx);                 \
-  template void clear_padding(Context<E> &ctx, i64 filesize);           \
+  template void clear_padding(Context<E> &ctx);                         \
   template i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk); \
   template i64 set_osec_offsets(Context<E> &ctx);                       \
   template void fix_synthetic_symbols(Context<E> &ctx);
