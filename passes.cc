@@ -783,6 +783,26 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 }
 
+template <typename E>
+void compress_debug_sections(Context<E> &ctx) {
+  Timer t(ctx, "compress_debug_sections");
+
+  tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
+    OutputChunk<E> &chunk = *ctx.chunks[i];
+
+    if (!(chunk.shdr.sh_flags & SHF_ALLOC) &&
+        chunk.shdr.sh_size > 0 &&
+        chunk.name.starts_with(".debug")) {
+      CompressedSection<E> *comp = new CompressedSection<E>(ctx, chunk);
+      ctx.output_chunks.push_back(std::unique_ptr<OutputChunk<E>>(comp));
+      ctx.chunks[i] = comp;
+    }
+  });
+
+  ctx.ehdr->update_shdr(ctx);
+  ctx.shdr->update_shdr(ctx);
+}
+
 #define INSTANTIATE(E)                                                  \
   template void apply_exclude_libs(Context<E> &ctx);                    \
   template void create_synthetic_sections(Context<E> &ctx);             \
@@ -805,7 +825,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   template void clear_padding(Context<E> &ctx);                         \
   template i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk); \
   template i64 set_osec_offsets(Context<E> &ctx);                       \
-  template void fix_synthetic_symbols(Context<E> &ctx);
+  template void fix_synthetic_symbols(Context<E> &ctx);                 \
+  template void compress_debug_sections(Context<E> &ctx);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

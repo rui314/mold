@@ -3,19 +3,18 @@
 #include <limits>
 
 template <typename E>
-void InputSection<E>::copy_buf(Context<E> &ctx) {
+void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
 
   // Copy data
-  u8 *base = ctx.buf + output_section->shdr.sh_offset + offset;
-  memcpy(base, contents.data(), contents.size());
+  memcpy(buf, contents.data(), contents.size());
 
   // Apply relocations
   if (shdr.sh_flags & SHF_ALLOC)
-    apply_reloc_alloc(ctx, base);
+    apply_reloc_alloc(ctx, buf);
   else
-    apply_reloc_nonalloc(ctx, base);
+    apply_reloc_nonalloc(ctx, buf);
 }
 
 template <typename E>

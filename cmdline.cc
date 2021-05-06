@@ -352,6 +352,13 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.warn_common = true;
     } else if (read_flag(args, "no-warn-common")) {
       ctx.arg.warn_common = false;
+    } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
+      if (arg == "zlib" || arg == "zlib-gabi")
+        ctx.arg.compress_debug_sections = true;
+      else if (arg == "none")
+        ctx.arg.compress_debug_sections = false;
+      else
+        Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
     } else if (read_flag(args, "repro")) {
       ctx.arg.repro = true;
     } else if (read_z_flag(args, "now")) {

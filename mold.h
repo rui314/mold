@@ -250,7 +250,7 @@ public:
 
   void scan_relocations(Context<E> &ctx);
   void report_undefined_symbols();
-  void copy_buf(Context<E> &ctx);
+  void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   inline void kill();
@@ -325,7 +325,9 @@ public:
   //  - SYNTHETIC: linker-synthesized sections such as .got or .plt
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
+  virtual ~OutputChunk() = default;
   virtual void copy_buf(Context<E> &ctx) {}
+  virtual void write_to(Context<E> &ctx, u8 *buf);
   virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
@@ -398,6 +400,7 @@ public:
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
   void copy_buf(Context<E> &ctx) override;
+  void write_to(Context<E> &ctx, u8 *buf) override;
 
   std::vector<InputSection<E> *> members;
   u32 idx;
@@ -648,6 +651,7 @@ public:
   SectionFragment<E> *insert(std::string_view data, i64 alignment);
   void assign_offsets();
   void copy_buf(Context<E> &ctx) override;
+  void write_to(Context<E> &ctx, u8 *buf) override;
 
 private:
   using MapTy =
@@ -799,6 +803,16 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   u32 features = 0;
+};
+
+template <typename E>
+class CompressedSection : public OutputChunk<E> {
+public:
+  CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  std::unique_ptr<u8[]> contents;
 };
 
 template <typename E>
@@ -1279,6 +1293,7 @@ template <typename E> void clear_padding(Context<E> &);
 template <typename E> i64 get_section_rank(Context<E> &, OutputChunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
+template <typename E> void compress_debug_sections(Context<E> &);
 
 //
 // main.cc
@@ -1339,6 +1354,7 @@ struct Context {
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
+    bool compress_debug_sections = false;
     bool demangle = true;
     bool discard_all = false;
     bool discard_locals = false;
@@ -1425,6 +1441,7 @@ struct Context {
 
   ConcurrentMap<ComdatGroup> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
+  tbb::concurrent_vector<std::unique_ptr<OutputChunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;

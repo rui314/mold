@@ -6,6 +6,12 @@
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+#include <zlib.h>
+
+template <typename E>
+void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {
+  Fatal(ctx) << name << ": write_to is called on an invalid section";
+}
 
 template <typename E>
 void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
@@ -599,19 +605,22 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 
 template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
-  if (this->shdr.sh_type == SHT_NOBITS)
-    return;
+  if (this->shdr.sh_type != SHT_NOBITS)
+    write_to(ctx, ctx.buf + this->shdr.sh_offset);
+}
 
+template <typename E>
+void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     // Copy section contents to an output file
     InputSection<E> &isec = *members[i];
-    isec.copy_buf(ctx);
+    isec.write_to(ctx, buf + isec.offset);
 
     // Zero-clear trailing padding
     u64 this_end = isec.offset + isec.shdr.sh_size;
     u64 next_start = (i == members.size() - 1) ?
       this->shdr.sh_size : members[i + 1]->offset;
-    memset(ctx.buf + this->shdr.sh_offset + this_end, 0, next_start - this_end);
+    memset(buf + this_end, 0, next_start - this_end);
   });
 }
 
@@ -1150,14 +1159,16 @@ void MergedSection<E>::assign_offsets() {
 
 template <typename E>
 void MergedSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *base = ctx.buf + this->shdr.sh_offset;
+  write_to(ctx, ctx.buf + this->shdr.sh_offset);
+}
 
+template <typename E>
+void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
-    memset(base + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
-
+    memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
     for (auto it = maps[i].begin(); it != maps[i].end(); it++)
       if (SectionFragment<E> &frag = it->second; frag.is_alive)
-        memcpy(base + frag.offset, frag.data.data(), frag.data.size());
+        memcpy(buf + frag.offset, frag.data.data(), frag.data.size());
   });
 }
 
@@ -1615,6 +1626,37 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
+  : OutputChunk<E>(this->SYNTHETIC) {
+  assert(chunk.name.starts_with(".debug"));
+  this->name = chunk.name;
+
+  std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
+  chunk.write_to(ctx, buf.get());
+
+  ElfChdr<E> hdr = {};
+  hdr.ch_type = ELFCOMPRESS_ZLIB;
+  hdr.ch_size = chunk.shdr.sh_size;
+  hdr.ch_addralign = chunk.shdr.sh_addralign;
+
+  unsigned long size = compressBound(chunk.shdr.sh_size);
+  contents.reset(new u8[sizeof(hdr) + size]);
+  memcpy(contents.get(), &hdr, sizeof(hdr));
+  int res = compress2(contents.get() + sizeof(hdr), &size, buf.get(),
+                      chunk.shdr.sh_size, Z_DEFAULT_COMPRESSION);
+
+  this->shdr = chunk.shdr;
+  this->shdr.sh_flags |= SHF_COMPRESSED;
+  this->shdr.sh_addralign = 1;
+  this->shdr.sh_size = sizeof(hdr) + size;
+}
+
+template <typename E>
+void CompressedSection<E>::copy_buf(Context<E> &ctx) {
+  memcpy(ctx.buf + this->shdr.sh_offset, contents.get(), this->shdr.sh_size);
+}
+
+template <typename E>
 void ReproSection<E>::update_shdr(Context<E> &ctx) {
   if (tar)
     return;
@@ -1668,6 +1710,7 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   template class VerdefSection<E>;                              \
   template class BuildIdSection<E>;                             \
   template class NotePropertySection<E>;                        \
+  template class CompressedSection<E>;                          \
   template class ReproSection<E>;                               \
   template i64 BuildId::size(Context<E> &) const;               \
   template bool is_relro(Context<E> &, OutputChunk<E> *);       \
