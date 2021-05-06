@@ -1,8 +1,16 @@
 // This file implements a multi-threaded zlib compression routine.
 //
-// Multiple pieces of raw zlib-format compressed data can be merged
-// just by concatenation as long as they are terminated with
-// Z_SYNC_FLUSH.
+// Multiple pieces of raw compressed data in zlib-format can be merged
+// just by concatenation as long as each zlib streams are flushed with
+// Z_SYNC_FLUSH. In this file, we split input data into multiple
+// shards, compress them individually and concatenate them. We then
+// append a header and a trailer so that the concatenated data is
+// valid zlib-format data.
+//
+// Using threads to compress data has a downside. Since the dictionary
+// is reset on boundaries of shards, compression ratio is sacrificed
+// a little bit. However, if a shard size is large enough, that loss
+// is negligible in practice.
 
 #include "mold.h"
 
