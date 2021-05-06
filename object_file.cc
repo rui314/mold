@@ -181,13 +181,6 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
   return ret;
 }
 
-static u64 read64be(u8 *buf) {
-  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
-         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
-         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
-         ((u64)buf[6] << 8)  | (u64)buf[7];
-}
-
 template <typename E>
 std::pair<std::string_view, const ElfShdr<E> *>
 ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,

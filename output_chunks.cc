@@ -1634,26 +1634,23 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
   chunk.write_to(ctx, buf.get());
 
-  ElfChdr<E> hdr = {};
-  hdr.ch_type = ELFCOMPRESS_ZLIB;
-  hdr.ch_size = chunk.shdr.sh_size;
-  hdr.ch_addralign = chunk.shdr.sh_addralign;
+  chdr.ch_type = ELFCOMPRESS_ZLIB;
+  chdr.ch_size = chunk.shdr.sh_size;
+  chdr.ch_addralign = chunk.shdr.sh_addralign;
 
-  unsigned long size = compressBound(chunk.shdr.sh_size);
-  contents.reset(new u8[sizeof(hdr) + size]);
-  memcpy(contents.get(), &hdr, sizeof(hdr));
-  int res = compress2(contents.get() + sizeof(hdr), &size, buf.get(),
-                      chunk.shdr.sh_size, Z_DEFAULT_COMPRESSION);
+  contents.reset(new Compress({(char *)buf.get(), chunk.shdr.sh_size}));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
-  this->shdr.sh_size = sizeof(hdr) + size;
+  this->shdr.sh_size = sizeof(chdr) + contents->size();
 }
 
 template <typename E>
 void CompressedSection<E>::copy_buf(Context<E> &ctx) {
-  memcpy(ctx.buf + this->shdr.sh_offset, contents.get(), this->shdr.sh_size);
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+  memcpy(base, &chdr, sizeof(chdr));
+  contents->write_to(base + sizeof(chdr));
 }
 
 template <typename E>

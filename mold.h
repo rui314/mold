@@ -53,6 +53,7 @@ template <typename E> class Symbol;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> struct CieRecord;
+class Compress;
 class TarFile;
 
 template <typename E> void cleanup();
@@ -812,7 +813,8 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  std::unique_ptr<u8[]> contents;
+  ElfChdr<E> chdr = {};
+  std::unique_ptr<Compress> contents;
 };
 
 template <typename E>
@@ -1240,6 +1242,21 @@ std::string create_response_file(Context<E> &ctx);
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
+
+//
+// compress.cc
+//
+
+class Compress {
+public:
+  Compress(std::string_view input);
+  void write_to(u8 *buf);
+  i64 size() const;
+
+private:
+  std::vector<std::vector<u8>> shards;
+  u64 checksum = 0;
+};
 
 //
 // tar.cc
@@ -2126,4 +2143,18 @@ inline void erase(std::vector<T> &vec, U pred) {
 template <typename T, typename U>
 inline void sort(T &vec, U less) {
   std::stable_sort(vec.begin(), vec.end(), less);
+}
+
+inline u64 read64be(u8 *buf) {
+  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
+         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
+         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
+         ((u64)buf[6] << 8)  | (u64)buf[7];
+}
+
+inline void write32be(u8 *buf, u32 val) {
+  buf[0] = val >> 24;
+  buf[1] = val >> 16;
+  buf[2] = val >> 8;
+  buf[3] = val;
 }
