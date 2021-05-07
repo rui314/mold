@@ -1,11 +1,11 @@
 // This file implements a multi-threaded zlib compression routine.
 //
 // Multiple pieces of raw compressed data in zlib-format can be merged
-// just by concatenation as long as each zlib streams are flushed with
+// just by concatenation as long as each zlib stream is flushed with
 // Z_SYNC_FLUSH. In this file, we split input data into multiple
 // shards, compress them individually and concatenate them. We then
-// append a header and a trailer so that the concatenated data is
-// valid zlib-format data.
+// append a header, a trailer and a checksum so that the concatenated
+// data is valid zlib-format data.
 //
 // Using threads to compress data has a downside. Since the dictionary
 // is reset on boundaries of shards, compression ratio is sacrificed
