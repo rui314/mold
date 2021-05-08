@@ -9,112 +9,116 @@ static const char helpmsg[] = R"(Options:
   -v, --version               Report version information
   -(, --start-group           Ignored
   -), --end-group             Ignored
-  -C DIR, --directory DIR
-  -E, --export-dynamic
+  -C DIR, --directory DIR     Change to DIR before doing anything
+  -E, --export-dynamic        Put symbols in the dynamic symbol table
     --no-export-dynamic
   -F LIBNAME, --filter LIBNAME
+                              Set DT_FILTER to the specified value
   -I FILE, --dynamic-linker FILE
+                              Set dynamic linker path
     --no-dynamic-linker
-  -L DIR, --library-path DIR
-  -M, --print-map
+  -L DIR, --library-path DIR  Add DIR to library search path
+  -M, --print-map             Write map file to stdout
   -O NUMBER                   Ignored
-  -S, --strip-debug
-  -T FILE, --script FILE
-  -X, --discard-locals
-  -e SYMBOL, --entry SYMBOL
-  -f SHLIB, --auxiliary SHLIB
+  -S, --strip-debug           Strip .debug_* sections
+  -T FILE, --script FILE      Read linker script
+  -X, --discard-locals        Discard temporary local symbols
+  -e SYMBOL, --entry SYMBOL   Set program entry point
+  -f SHLIB, --auxiliary SHLIB Set DT_AUXILIARY to the specified value
   -h LIBNAME, --soname LIBNAME
-  -l LIBNAME
+                              Set shared library name
+  -l LIBNAME                  Search for a given library
   -m EMULATION                Ignored
-  -o FILE
-  -s, --strip-all
+  -o FILE                     Set output filename
+  -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
-  --Bdynamic
-  --Bshareable
-  --Bstatic
-  --Bsymbolic
-  --Bsymbolic-functions
-  --Map
+                              Force to resolve SYMBOL
+  --Bdynamic                  Link against shared libraries (default)
+  --Bstatic                   Do not link against shared libraries
+  --Bsymbolic                 Bind global symbols locally
+  --Bsymbolic-functions       Bind global functions locally
+  --Map FILE                  Write map file to a given file
   --allow-multiple-definition Ignored
-  --as-needed
+  --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
   --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
+                              Generate build ID
     --no-build-id
-  --chroot DIR
+  --chroot DIR                Set a given path to root directory
   --color-diagnostics         Ignored
   --compress-debug-sections [none,zlib,zlib-gabi]
-  --demangle
+                              Compress .debug_* sections
+  --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
-  --disable-new-dtags
-  --dynamic-list
-  --eh-frame-hdr
-  --eh-frame-hdr
+  --disable-new-dtags         Ignored
+  --dynamic-list              Read a list of dynamic symbols
+  --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
-  --enable-new-dtags
-  --exclude-libs
-  --execstack
+  --enable-new-dtags          Ignored
+  --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
   --fatal-warnings            Ignored
     --no-fatal-warnings       Ignored
-  --fini SYMBOL
-  --fork
+  --fini SYMBOL               Call SYMBOL at unload-time
+  --fork                      Spawn a child process (default)
     --no-fork
-  --gc-sections
+  --gc-sections               Remove unreferenced sections
     --no-gc-sections
-  --gdb-index
+  --gdb-index                 Ignored
   --hash-style [sysv,gnu,both]
-  --icf
+                              Set hash style
+  --icf                       Fold identical code
     --no-icf
-  --init SYMBOL
-  --no-undefined
-  --perf
-  --pie, --pic-executable
+  --init SYMBOL               Call SYMBOl at load-time
+  --no-undefined              Report undefined symbols (even with --shared)
+  --perf                      Print performance statistics
+  --pie, --pic-executable     Create a position independent executable
     --no-pie, --no-pic-executable
   --plugin                    Ignored
   --plugin-opt                Ignored
-  --pop-state
+  --pop-state                 Pop state of flags governing input file handling
   --preload
-  --print-gc-sections
+  --print-gc-sections         Print removed unreferenced sections
     --no-print-gc-sections
-  --print-icf-sections
+  --print-icf-sections        Print folded identical sections
     --no-print-icf-sections
-  --push-state
-  --quick-exit
+  --push-state                Pop state of flags governing input file handling
+  --quick-exit                Use quick_exit to exit (default)
     --no-quick-exit
-  --relax
+  --relax                     Optimize instructions (default)
     --no-relax
-  --repro
-  --rpath DIR
-  --rpath-link DIR
-  --shared
+  --repro                     Embed input files to .repro section
+  --rpath DIR                 Add DIR to runtime search path
+  --rpath-link DIR            Ignored
+  --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
+  --shared, --Bshareable      Create a share library
   --sort-common               Ignored
   --sort-section              Ignored
-  --spare-dynamic-tags NUMBER
-  --static
-  --stats
-  --sysroot DIR
-  --thread-count COUNT
-  --threads
+  --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
+  --static                    Do not link against shared libraries
+  --stats                     Print input statistics
+  --sysroot DIR               Set target system root directory
+  --thread-count COUNT        Use COUNT number of threads
+  --threads                   Use multiple threads (default)
     --no-threads
-  --trace
-  --version-script FILE
-  --warn-common
+  --trace                     Print name of each input file
+  --version-script FILE       Read version script
+  --warn-common               Warn about common symbols
     --no-warn-common
-  --whole-archive
+  --whole-archive             Include all objects from static archives
     --no-whole-archive
-  -z now
-  -z lazy
-  -z execstack
+  -z now                      Disable lazy function resolution
+  -z lazy                     Enable lazy function resolution (default)
+  -z execstack                Require executable stack
     -z noexecstack
-  -z relro
+  -z relro                    Make some sections read-only after relocation (default)
     -z norelro
-  -z defs
+  -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
-  -z nodlopen
-  -z nodelete
-  -z nocopyreloc
-  -z initfirst
-  -z interpose
-  -z no-undefined)";
+  -z nodlopen                 Mark DSO not available to dlopen
+  -z nodelete                 Mark DSO non-deletable at runtime
+  -z nocopyreloc              Do not create copy relocations
+  -z initfirst                Mark DSO to be initialized first at runtime
+  -z interpose                Mark object to interpose all DSOs but executable)";
 
 template <typename E>
 static std::vector<std::string_view>
