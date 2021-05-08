@@ -135,7 +135,7 @@ static i64 recv_fd(Context<E> &ctx, i64 conn) {
 }
 
 template <typename E>
-bool resume_daemon(Context<E> &ctx, char **argv, i64 *code) {
+void try_resume_daemon(Context<E> &ctx, char **argv) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
     Fatal(ctx) << "socket failed: " << strerror(errno);
@@ -148,14 +148,13 @@ bool resume_daemon(Context<E> &ctx, char **argv, i64 *code) {
 
   if (connect(conn, (struct sockaddr *)&name, sizeof(name)) != 0) {
     close(conn);
-    return false;
+    return;
   }
 
   send_fd(ctx, conn, STDOUT_FILENO);
   send_fd(ctx, conn, STDERR_FILENO);
   i64 r = read(conn, (char[1]){}, 1);
-  *code = (r != 1);
-  return true;
+  exit(r != 1);
 }
 
 template <typename E>
@@ -259,7 +258,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template bool resume_daemon(Context<E> &, char **, i64 *);            \
+  template void try_resume_daemon(Context<E> &, char **);               \
   template void daemonize(Context<E> &, char **,                        \
                           std::function<void()> *,                      \
                           std::function<void()> *);                     \

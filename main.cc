@@ -302,8 +302,7 @@ int do_main(int argc, char **argv) {
   parse_nonpositional_args(ctx, file_args);
 
   if (!ctx.arg.preload)
-    if (i64 code; resume_daemon(ctx, argv, &code))
-      exit(code);
+    try_resume_daemon(ctx, argv);
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
@@ -349,7 +348,7 @@ int do_main(int argc, char **argv) {
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 
-  // Uniquify shared object files with soname
+  // Uniquify shared object files by soname
   {
     std::unordered_set<std::string_view> seen;
     erase(ctx.dsos, [&](SharedFile<E> *file) {
