@@ -4,6 +4,118 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
+static const char helpmsg[] = R"(Options:
+  --help                      Report usage information
+  -v, --version               Report version information
+  -(, --start-group           Ignored
+  -), --end-group             Ignored
+  -C DIR, --directory DIR
+  -E, --export-dynamic
+    --no-export-dynamic
+  -F LIBNAME, --filter LIBNAME
+  -I FILE, --dynamic-linker FILE
+    --no-dynamic-linker
+  -L DIR, --library-path DIR
+  -M, --print-map
+  -O NUMBER                   Ignored
+  -S, --strip-debug
+  -T FILE, --script FILE
+  -X, --discard-locals
+  -e SYMBOL, --entry SYMBOL
+  -f SHLIB, --auxiliary SHLIB
+  -h LIBNAME, --soname LIBNAME
+  -l LIBNAME
+  -m EMULATION                Ignored
+  -o FILE
+  -s, --strip-all
+  -u SYMBOL, --undefined SYMBOL
+  --Bdynamic
+  --Bshareable
+  --Bstatic
+  --Bsymbolic
+  --Bsymbolic-functions
+  --Map
+  --allow-multiple-definition Ignored
+  --as-needed
+    --no-as-needed
+  --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
+    --no-build-id
+  --chroot DIR
+  --color-diagnostics         Ignored
+  --compress-debug-sections [none,zlib,zlib-gabi]
+  --demangle
+    --no-demangle
+  --disable-new-dtags
+  --dynamic-list
+  --eh-frame-hdr
+  --eh-frame-hdr
+    --no-eh-frame-hdr
+  --enable-new-dtags
+  --exclude-libs
+  --execstack
+  --fatal-warnings            Ignored
+    --no-fatal-warnings       Ignored
+  --fini SYMBOL
+  --fork
+    --no-fork
+  --gc-sections
+    --no-gc-sections
+  --gdb-index
+  --hash-style [sysv,gnu,both]
+  --icf
+    --no-icf
+  --init SYMBOL
+  --no-undefined
+  --perf
+  --pie, --pic-executable
+    --no-pie, --no-pic-executable
+  --plugin                    Ignored
+  --plugin-opt                Ignored
+  --pop-state
+  --preload
+  --print-gc-sections
+    --no-print-gc-sections
+  --print-icf-sections
+    --no-print-icf-sections
+  --push-state
+  --quick-exit
+    --no-quick-exit
+  --relax
+    --no-relax
+  --repro
+  --rpath DIR
+  --rpath-link DIR
+  --shared
+  --sort-common               Ignored
+  --sort-section              Ignored
+  --spare-dynamic-tags NUMBER
+  --static
+  --stats
+  --sysroot DIR
+  --thread-count COUNT
+  --threads
+    --no-threads
+  --trace
+  --version-script FILE
+  --warn-common
+    --no-warn-common
+  --whole-archive
+    --no-whole-archive
+  -z now
+  -z lazy
+  -z execstack
+    -z noexecstack
+  -z relro
+    -z norelro
+  -z defs
+    -z nodefs
+  -z nodlopen
+  -z nodelete
+  -z nocopyreloc
+  -z initfirst
+  -z interpose
+  -z no-undefined)";
+
 template <typename E>
 static std::vector<std::string_view>
 read_response_file(Context<E> &ctx, std::string_view path) {
@@ -152,7 +264,7 @@ std::string create_response_file(Context<E> &ctx) {
     out << "\n";
   }
 
-  for (i64 i = 0; i < ctx.cmdline_args.size(); i++) {
+  for (i64 i = 1; i < ctx.cmdline_args.size(); i++) {
     std::string_view arg = ctx.cmdline_args[i];
 
     if (arg == "-repro" || arg == "--repro") {
@@ -237,6 +349,8 @@ template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
+  args = args.subspan(1);
+
   ctx.arg.thread_count = get_default_thread_count();
 
   while (!args.empty()) {
@@ -244,6 +358,13 @@ void parse_nonpositional_args(Context<E> &ctx,
 
     if (read_flag(args, "v") || read_flag(args, "version")) {
       SyncOut(ctx) << "mold " GIT_HASH " (compatible with GNU ld)";
+      exit(0);
+    }
+
+    if (read_flag(args, "help")) {
+      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
+                   << " [options] file...\n\n"
+                   << helpmsg;
       exit(0);
     }
 

@@ -297,7 +297,7 @@ int do_main(int argc, char **argv) {
   Timer t_all(ctx, "all");
 
   // Parse non-positional command line options
-  ctx.cmdline_args = expand_response_files(ctx, argv + 1);
+  ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
 

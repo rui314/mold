@@ -201,8 +201,8 @@ void convert_common_symbols(Context<E> &ctx) {
 template <typename E>
 static std::string get_cmdline_args(Context<E> &ctx) {
   std::stringstream ss;
-  ss << ctx.cmdline_args[0];
-  for (i64 i = 1; i < ctx.cmdline_args.size(); i++)
+  ss << ctx.cmdline_args[1];
+  for (i64 i = 2; i < ctx.cmdline_args.size(); i++)
     ss << " " << ctx.cmdline_args[i];
   return ss.str();
 }
