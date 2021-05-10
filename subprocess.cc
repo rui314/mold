@@ -225,12 +225,12 @@ void daemonize(Context<E> &ctx, char **argv,
 template <typename E>
 static std::string get_self_path(Context<E> &ctx) {
   char buf[4096];
-  i64 n = readlink("/proc/self/exe", buf, sizeof(buf));
+  size_t n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
     Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << strerror(errno);
   if (n == sizeof(buf))
     Fatal(ctx) << "readlink: path too long";
-  return buf;
+  return {buf, n};
 }
 
 template <typename E>

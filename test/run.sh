@@ -32,4 +32,6 @@ LD_PRELOAD=`pwd`/../mold-wrapper.so MOLD_REAL_PATH=`pwd`/../mold \
 readelf -p .comment $t/exe > $t/log
 grep -q mold $t/log
 
+../mold -run env | grep -q '^MOLD_REAL_PATH=.*/mold$'
+
 echo OK
