@@ -417,11 +417,9 @@ void scan_rels(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
     for (Symbol<E> *sym : files[i]->symbols) {
-      if (sym->file != files[i])
-        continue;
-      if (sym->is_imported || sym->is_exported)
+      if (!files[i]->is_dso && (sym->is_imported || sym->is_exported))
         sym->flags |= NEEDS_DYNSYM;
-      if (sym->flags)
+      if (sym->file == files[i] && sym->flags)
         vec[i].push_back(sym);
     }
   });
