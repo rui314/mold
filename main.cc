@@ -622,7 +622,7 @@ static MachineType get_machine_type(int argc, char **argv) {
         return MachineType::X86_64;
       if (val == "elf_i386")
         return MachineType::I386;
-      std::cerr << "unknown -m argument: " << val;
+      std::cerr << "unknown -m argument: " << val << "\n";
       exit(1);
     }
   }
