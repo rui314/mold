@@ -8,4 +8,8 @@ mkdir -p $t
 ../mold -v | grep -Pq 'mold .*\(compatible with GNU ld\)'
 ../mold --version | grep -Pq 'mold .*\(compatible with GNU ld\)'
 
+../mold -V | grep -Pq 'mold .*\(compatible with GNU ld\)'
+../mold -V | grep -q elf_x86_64
+../mold -V | grep -q elf_i386
+
 echo OK

@@ -365,6 +365,12 @@ void parse_nonpositional_args(Context<E> &ctx,
       exit(0);
     }
 
+    if (read_flag(args, "V")) {
+      SyncOut(ctx) << "mold " GIT_HASH " (compatible with GNU ld)\n"
+                   << "  Supported emulations:\n   elf_x86_64\n   elf_i386";
+      exit(0);
+    }
+
     if (read_flag(args, "help")) {
       SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
                    << " [options] file...\n\n"
