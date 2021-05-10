@@ -7,6 +7,7 @@
 static const char helpmsg[] = R"(Options:
   --help                      Report usage information
   -v, --version               Report version information
+  -V                          Report version and target information
   -(, --start-group           Ignored
   -), --end-group             Ignored
   -C DIR, --directory DIR     Change to DIR before doing anything
@@ -19,6 +20,8 @@ static const char helpmsg[] = R"(Options:
     --no-dynamic-linker
   -L DIR, --library-path DIR  Add DIR to library search path
   -M, --print-map             Write map file to stdout
+  -N, --omagic                Do not page align data, do not make text readonly
+    --no-omagic
   -O NUMBER                   Ignored
   -S, --strip-debug           Strip .debug_* sections
   -T FILE, --script FILE      Read linker script
@@ -186,7 +189,7 @@ static std::vector<std::string> add_dashes(std::string name) {
   // interpreted as "-o magic". If you really want to specify the
   // "omagic" option, you have to pass "--omagic".
   if (name[0] == 'o')
-    return {"-" + name};
+    return {"--" + name};
   return {"-" + name, "--" + name};
 }
 
@@ -490,6 +493,11 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.compress_debug_sections = false;
       else
         Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
+    } else if (read_flag(args, "omagic") || read_flag(args, "N")) {
+      ctx.arg.omagic = true;
+      ctx.arg.is_static = true;
+    } else if (read_flag(args, "no-omagic")) {
+      ctx.arg.omagic = false;
     } else if (read_flag(args, "repro")) {
       ctx.arg.repro = true;
     } else if (read_z_flag(args, "now")) {

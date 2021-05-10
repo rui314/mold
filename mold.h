@@ -1384,6 +1384,7 @@ struct Context {
     bool hash_style_sysv = true;
     bool icf = false;
     bool is_static = false;
+    bool omagic = false;
     bool perf = false;
     bool pic = false;
     bool pie = false;
