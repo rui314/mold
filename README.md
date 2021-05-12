@@ -222,7 +222,7 @@ to mold.
 
 Besides that, we really don't want to implement the linker script
 langauge. But at the same time, we want to satisfy the user needs that
-are currently satisfied with the linker script langauge. So, what
+are currently satisfied with the linker script language. So, what
 should we do? Here is my observation:
 
 - Linker script allows to do a lot of tricky stuff, such as specifying
