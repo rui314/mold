@@ -63,7 +63,7 @@ MemoryMappedFile<E>::slice(Context<E> &ctx, std::string name, u64 start, u64 siz
 }
 
 template <typename E>
-MemoryMappedFile<E>::~MemoryMappedFile<E>() {
+MemoryMappedFile<E>::~MemoryMappedFile() {
   if (data_ && !parent)
     munmap(data_, size_);
 }
