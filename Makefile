@@ -70,7 +70,8 @@ test: all
 
 install: all
 	install mold /usr/bin
-	install -m 444 mold-wrapper.so /usr/bin
+	install -d /usr/lib/mold
+	install -m 644 mold-wrapper.so /usr/lib/mold
 	install docs/mold.1 /usr/share/man/man1
 	mandb -q
 

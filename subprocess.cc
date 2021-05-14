@@ -248,7 +248,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   std::string self = get_self_path(ctx);
-  std::string dso_path = path_dirname(self) + "/mold-wrapper.so";
+  std::string dso_path;
+
+  if (self == "/usr/bin/mold")
+    dso_path = "/usr/lib/mold/mold-wrapper.so";
+  else
+    dso_path = path_dirname(self) + "/mold-wrapper.so";
 
   struct stat st;
   if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
@@ -259,7 +264,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
   execvp(argv[2], argv + 2);
-  Fatal(ctx) << "execvp failed: " << strerror(errno);
+  Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << strerror(errno);
 }
 
 #define INSTANTIATE(E)                                                  \
