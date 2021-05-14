@@ -243,13 +243,12 @@ template <typename E>
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   std::string_view arg1 = argv[1];
   assert(arg1 == "-run" || arg1 == "--run");
-
   if (!argv[2])
     Fatal(ctx) << "-run: argument missing";
 
+  // Get the mold-wrapper.so path
   std::string self = get_self_path(ctx);
   std::string dso_path;
-
   if (self == "/usr/bin/mold")
     dso_path = "/usr/lib/mold/mold-wrapper.so";
   else
@@ -259,10 +258,18 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
     Fatal(ctx) << dso_path << " is missing";
 
-  std::string env = "LD_PRELOAD=" + dso_path;
-  putenv(strdup(env.c_str()));
+  // Set environment variables
+  char *old_env = getenv("MOLD_REAL_PATH");
+  putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
   putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
+  // If MOLD_REAL_PATH was not set, run mold itself with the envvar
+  if (!old_env) {
+    execv(self.c_str(), argv);
+    Fatal(ctx) << "mold -run failed: " << self << ": " << strerror(errno);
+  }
+
+  // Execute a given command
   execvp(argv[2], argv + 2);
   Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << strerror(errno);
 }
