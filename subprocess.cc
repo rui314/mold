@@ -30,7 +30,9 @@ std::function<void()> fork_child() {
   if (pid > 0) {
     // Parent
     close(pipefd[1]);
-    if (read(pipefd[0], (char[1]){}, 1) == 1)
+
+    char buf[1];
+    if (read(pipefd[0], buf, 1) == 1)
       _exit(0);
 
     int status;
@@ -219,7 +221,10 @@ void daemonize(Context<E> &ctx, char **argv,
     dup2(recv_fd(ctx, conn), STDERR_FILENO);
   };
 
-  *on_complete = [=]() { write(conn, (char []){1}, 1); };
+  *on_complete = [=]() {
+    char buf[] = {1};
+    write(conn, buf, 1);
+  };
 }
 
 template <typename E>
