@@ -1,0 +1,249 @@
+.TH FOO 1
+.SH NAME
+mold \- A Modern Linker
+
+.SH SYNOPSIS
+.B mold [
+.I options
+.B ]
+.I objfile
+.B ...
+
+.SH DESCRIPTION
+.B mold
+is a multi-threaded, high-performance linker that is several times
+faster than the industry-standard linkers, namely, GNU ld, GNU gold or
+LLVM lld.  It takes almost all command line options of the GNU linker
+and is developed as a drop-in replacement for the GNU linker.
+.P
+.B mold
+is still in alpha. It supports Linux/x86-64 and Linux/i386.
+
+.SH OPTIONS
+.IP "--help"
+Report usage information
+.IP "-v, --version"
+Report version information
+.IP "-V"
+Report version and target information
+.IP "-(, --start-group"
+Ignored
+.IP "-), --end-group"
+Ignored
+.IP "-C DIR, --directory DIR"
+Change to DIR before doing anything
+.IP "-E, --export-dynamic"
+Put symbols in the dynamic symbol table
+.IP "--no-export-dynamic"
+Do not put symbols in the dynamic symbol table
+.IP "-F LIBNAME, --filter LIBNAME"
+Set DT_FILTER to the specified value
+.IP "-I FILE, --dynamic-linker FILE"
+Set dynamic linker path
+.IP "--no-dynamic-linker"
+Do not set dynamic linker path
+.IP "-L DIR, --library-path DIR"
+Add DIR to library search path
+.IP "-M, --print-map"
+Write map file to stdout
+.IP "-N, --omagic"
+Do not page align data, do not make text readonly
+.IP "--no-omagic"
+Page align data, make text readonly
+.IP "-O NUMBER"
+Ignored
+.IP "-S, --strip-debug"
+Strip .debug_* sections
+.IP "-T FILE, --script FILE"
+Read linker script
+.IP "-X, --discard-locals"
+Discard temporary local symbols
+.IP "-e SYMBOL, --entry SYMBOL"
+Set program entry point
+.IP "-f SHLIB, --auxiliary SHLI"
+B Set DT_AUXILIARY to the specified value
+.IP "-h LIBNAME, --soname LIBNAME"
+Set shared library name
+.IP "-l LIBNAME"
+Search for a given library
+.IP "-m EMULATION"
+Ignored
+.IP "-o FILE"
+Set output filename
+.IP "-s, --strip-all"
+Strip .symtab section
+.IP "-u SYMBOL, --undefined SYMBOL"
+Force to resolve SYMBOL
+.IP "--Bdynamic"
+Link against shared libraries (default)
+.IP "--Bstatic"
+Do not link against shared libraries
+.IP "--Bsymbolic"
+Bind global symbols locally
+.IP "--Bsymbolic-functions"
+Bind global functions locally
+.IP "--Map FILE"
+Write map file to a given file
+.IP "--allow-multiple-definitio"
+n Ignored
+.IP "--as-needed"
+Only set DT_NEEDED if used
+.IP "--no-as-needed"
+Always set DT_NEEDED
+.IP "--build-id [none,md5,sha1,sha256,uuid,HEXSTRING]"
+Generate build ID
+.IP "--no-build-id"
+Do not generate build ID
+.IP "--chroot DIR"
+Set a given path to root directory
+.IP "--color-diagnostics"
+Ignored
+.IP "--compress-debug-sections [none,zlib,zlib-gabi]"
+Compress .debug_* sections
+.IP "--demangle"
+Demangle C++ symbols in log messages (default)
+.IP "--no-demangle"
+Do not demangle
+.IP "--disable-new-dtags"
+Ignored
+.IP "--dynamic-list"
+Read a list of dynamic symbols
+.IP "--eh-frame-hdr"
+Create .eh_frame_hdr section
+.IP "--no-eh-frame-hdr"
+Do not create .eh_frame_hdr section (default)
+.IP "--enable-new-dtags"
+Ignored
+.IP "--exclude-libs LIB,LIB,.."
+Mark all symbols in given libraries hidden
+.IP "--fatal-warnings"
+Ignored
+.IP "--no-fatal-warnings"
+Ignored
+.IP "--fini SYMBOL"
+Call SYMBOL at unload-time
+.IP "--fork"
+Spawn a child process (default)
+.IP "--no-fork"
+Do not spawn a child process
+.IP "--gc-sections"
+Remove unreferenced sections
+.IP "--no-gc-sections"
+Do not remove unreferenced sections
+.IP "--gdb-index"
+Ignored
+.IP "--hash-style [sysv,gnu,both]"
+Set hash style
+.IP "--icf"
+Fold identical code
+.IP "--no-icf"
+Do not fold identical code
+.IP "--init SYMBOL"
+Call SYMBOl at load-time
+.IP "--no-undefined"
+Report undefined symbols (even with --shared)
+.IP "--perf"
+Print performance statistics
+.IP "--pie, --pic-executable"
+Create a position independent executable
+.IP "--no-pie, --no-pic-executable"
+Do not create a position independent executable
+.IP "--plugin"
+Ignored
+.IP "--plugin-opt"
+Ignored
+.IP "--pop-state"
+Pop state of flags governing input file handling
+.IP "--preload"
+Preload object files
+.IP " --print-gc-sections"
+Print removed unreferenced sections
+.IP "--no-print-gc-sections"
+Do not print removed unreferenced sections (default)
+.IP "--print-icf-sections"
+Print folded identical sections
+.IP "--no-print-icf-sections"
+Do not print folded identical sections
+.IP "--push-state"
+Pop state of flags governing input file handling
+.IP "--quick-exit"
+Use quick_exit to exit (default)
+.IP "--no-quick-exit"
+Do not use quick_exit to exit
+.IP "--relax"
+Optimize instructions (default)
+.IP "--no-relax"
+Do not optimize instructions
+.IP "--repro"
+Embed input files to .repro section
+.IP "--rpath DIR"
+Add DIR to runtime search path
+.IP "--rpath-link DIR"
+Ignored
+.IP "--run COMMAND ARG..."
+Run COMMAND with mold as /usr/bin/ld
+.IP "--shared, --Bshareable"
+Create a share library
+.IP "--sort-common"
+Ignored
+.IP "--sort-section"
+Ignored
+.IP "--spare-dynamic-tags NUMBE"
+R Reserve give number of tags in .dynamic section
+.IP "--static"
+Do not link against shared libraries
+.IP "--stats"
+Print input statistics
+.IP "--sysroot DIR"
+Set target system root directory
+.IP "--thread-count COUNT"
+Use COUNT number of threads
+.IP "--threads"
+Use multiple threads (default)
+.IP "--no-threads"
+Do not use multiple threads
+.IP "--trace"
+Print name of each input file
+.IP "--version-script FILE"
+Read version script
+.IP "--warn-common"
+Warn about common symbols
+.IP "--no-warn-common"
+Do not warn about common symbols
+.IP "--whole-archive"
+Include all objects from static archives
+.IP "--no-whole-archive"
+Do not include all objects from static archives
+.IP "-z now"
+Disable lazy function resolution
+.IP "-z lazy"
+Enable lazy function resolution (default)
+.IP "-z execstack"
+Require executable stack
+.IP "-z noexecstack"
+Do not require executable stack (default)
+.IP "-z relro"
+Make some sections read-only after relocation (default)
+.IP "-z norelro"
+Do not use relro
+.IP "-z defs"
+Report undefined symbols (even with --shared)
+.IP "-z nodefs"
+Do not report undefined symbols
+.IP "-z nodlopen"
+Mark DSO not available to dlopen
+.IP "-z nodelete"
+Mark DSO non-deletable at runtime
+.IP "-z nocopyreloc"
+Do not create copy relocations
+.IP "-z initfirst"
+Mark DSO to be initialized first at runtime
+.IP "-z interpose"
+Mark object to interpose all DSOs but executable
+
+.SH AUTHOR
+Rui Ueyama <rui314@gmail.com>
+
+.SH "SEE ALSO"
+.BR ld (1),
+.BR gold (1)
