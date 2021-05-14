@@ -68,6 +68,12 @@ submodules:
 test: all
 	for i in test/*.sh; do $$i || exit 1; done
 
+install: all
+	install mold /usr/bin
+	install -m 444 mold-wrapper.so /usr/bin
+	install docs/mold.1 /usr/share/man/man1
+	mandb -q
+
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
 
