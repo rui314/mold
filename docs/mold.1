@@ -31,20 +31,24 @@ that it is not always clear how to do that. In a complicated build
 system, it can be very hard to figure out how to convince a system to
 use a non-standard linker.
 .PP
-To deal with the situation, \fBmold\fR provides a convenient
-option to force any build system to use \fBmold\fR.
-If you invoke your build command (in the following example, it is
-\fBmake\fR, but it can be any command) as a subcommand of \fBmold
-\-run\fR as follows:
+To deal with the situation, \fBmold\fR provides a convenient option to
+force any build system to use \fBmold\fR. To use the feature, invoke
+\fBmake\fR or a build command of your choice (such as \fBcargo
+build\fR) as follows:
 .PP
 .Vb 1
-\&          mold \-run make <make arguments if any>
+\&    mold \-run make <make arguments if any>
 .Ve
+.PP
+If you run a build command like above, the command runs under the
+influence of \fBmold\fR so that when the command tries to run
+\fB/usr/bin/ld\fR, \fBmold\fR is silently invoked instead.
 .PP
 Internally, \fBmold\fR invokes a given command with the
 \fBLD_PRELOAD\fR environment variable set to its companion shared
-object file. The shared object file intercepts all invocations of
-\fB/usr/bin/ld\fR to replace it with \fBmold\fR.
+object file. The shared object file intercepts all \fBexec()\fR-family
+functions to run \fBmold\fR if \fB/usr/bin/ld\fR is attempted to be
+run.
 .PP
 If you don't want to use the \fB\-run\fR option, and if you are using
 \fBclang\fR, you can pass \fB\-fuse\-ld=/absolute/path/to/mold\fR to
@@ -52,6 +56,21 @@ If you don't want to use the \fB\-run\fR option, and if you are using
 like there's unfortunately no easy way to force it to use \fBmold\fR,
 as \fBgcc\fR doesn't take an arbitrary pathname as an argument for
 \fB\-fuse\-ld\fR.
+
+.SS Compatibility
+\fBmold\fR is designed to be a drop-in replacement for the GNU linkers
+for linking user-land programs. If your user-land program cannot be
+built due to missing command-line options, please file a bug at
+\fBhttps://github.com/rui314/mold/issues\fR.
+
+\fBmold\fR supports a very limited set of linker script features,
+which is sufficient to read \fB/usr/lib/x86_64-linux-gnu/libc.so\fR on
+Linux systems (on Linux, that file is despite its name not a shared
+library but an ASCII linker script that loads a real libc.so file!)
+Beyond that, I have no plan to support any linker script features.
+The linker script is an ad-hoc, over-designed, complex language which
+I believe needs to be disrupted by a simpler mechanism. I have a plan
+to add a replacement for the linker script to \fBmold\fR instead.
 
 .SH OPTIONS
 .IP "--help"
@@ -284,3 +303,4 @@ Rui Ueyama <\fBruiu@cs\&.stanford\&.edu\fR>
 .SH "SEE ALSO"
 .BR ld (1),
 .BR gold (1)
+.BR ld.so (8)
