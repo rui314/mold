@@ -53,9 +53,9 @@ run.
 If you don't want to use the \fB\-run\fR option, and if you are using
 \fBclang\fR, you can pass \fB\-fuse\-ld=/absolute/path/to/mold\fR to
 \fBclang\fR to used \fBmold\fR. If you are using \fBgcc\fR, it looks
-like there's unfortunately no easy way to force it to use \fBmold\fR,
-as \fBgcc\fR doesn't take an arbitrary pathname as an argument for
-\fB\-fuse\-ld\fR.
+like there's unfortunately no easy way (other than \fB\-run\fR) to
+force it to use \fBmold\fR, as \fBgcc\fR doesn't take an arbitrary
+pathname as an argument for \fB\-fuse\-ld\fR.
 
 .SS Compatibility
 \fBmold\fR is designed to be a drop-in replacement for the GNU linkers
@@ -64,13 +64,14 @@ built due to missing command-line options, please file a bug at
 \fBhttps://github.com/rui314/mold/issues\fR.
 
 \fBmold\fR supports a very limited set of linker script features,
-which is sufficient to read \fB/usr/lib/x86_64-linux-gnu/libc.so\fR on
-Linux systems (on Linux, that file is despite its name not a shared
-library but an ASCII linker script that loads a real libc.so file!)
-Beyond that, I have no plan to support any linker script features.
-The linker script is an ad-hoc, over-designed, complex language which
-I believe needs to be disrupted by a simpler mechanism. I have a plan
-to add a replacement for the linker script to \fBmold\fR instead.
+which is just sufficient to read
+\fB/usr/lib/x86_64-linux-gnu/libc.so\fR on Linux systems (on Linux,
+that file is despite its name not a shared library but an ASCII linker
+script that loads a real libc.so file!)  Beyond that, I have no plan
+to support any linker script features.  The linker script is an
+ad-hoc, over-designed, complex language which I believe needs to be
+disrupted by a simpler mechanism. I have a plan to add a replacement
+for the linker script to \fBmold\fR instead.
 
 .SH OPTIONS
 .IP "--help"
