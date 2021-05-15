@@ -1,4 +1,4 @@
-.TH FOO 1
+.TH MOLD 1
 .SH NAME
 mold \- A Modern Linker
 
@@ -12,12 +12,50 @@ mold \- A Modern Linker
 .SH DESCRIPTION
 .B mold
 is a multi-threaded, high-performance linker that is several times
-faster than the industry-standard linkers, namely, GNU ld, GNU gold or
-LLVM lld.  It takes almost all command line options of the GNU linker
-and is developed as a drop-in replacement for the GNU linker.
-.P
-.B mold
-is still in alpha. It supports Linux/x86-64 and Linux/i386.
+faster than the industry-standard ones, namely, GNU ld, GNU gold or
+LLVM lld. It is developed as a drop-in replacement for these linkers
+and command-line compatible with them with a few exceptions.
+.PP
+Note that even though many userland programs, including large ones
+such as Chrome and Firefox, can be built with \fBmold\fR, \fBmold\fR
+is still very experimental. It supports Linux/x86-64 and Linux/i386.
+
+.SS "How to use mold"
+On Unix, \fBcc\fR (or \fBgcc\fR or \fBclang\fR, depending on what
+compiler you use) is not just a C compiler but is actually a compiler
+driver for various kinds of input files. \fBcc\fR dispatches based
+on input file extensions. If you pass object files (\fB.o\fR files) to
+a compiler driver, the linker command, which is usually installed as
+\fB/usr/bin/ld\fR, is invoked as a backend.
+.PP
+To use an alternative linker, you have to modify a build config file
+such as \fBMakefile\fR or \fBcargo.toml\fR to pass an appropriate
+option to a compiler driver which invokes a linker. The problem is
+that it is not always clear how to do that. In a complicated build
+system, it can be very hard to figure out how to convince a system to
+use a non-standard linker.
+.PP
+To deal with the situation, \fBmold\fR provides a convenient
+option to force any build system to use \fBmold\fR.
+If you invoke your build command (in the following example, it is
+\fBmake\fR, but it can be any command) as a subcommand of \fBmold
+\-run\fR as follows:
+.PP
+.Vb 1
+\&          mold \-run make <make arguments if any>
+.Ve
+.PP
+Internally, \fBmold\fR invokes a given command with the
+\fBLD_PRELOAD\fR environment variable set to its companion shared
+object file. The shared object file intercepts all invocations of
+\fB/usr/bin/ld\fR to replace it with \fBmold\fR.
+.PP
+If you don't want to use the \fB\-run\fR option, and if you are using
+\fBclang\fR, you can pass \fB\-fuse\-ld=/absolute/path/to/mold\fR to
+\fBclang\fR to used \fBmold\fR. If you are using \fBgcc\fR, it looks
+like there's unfortunately no easy way to force it to use \fBmold\fR,
+as \fBgcc\fR doesn't take an arbitrary pathname as an argument for
+\fB\-fuse\-ld\fR.
 
 .SH OPTIONS
 .IP "--help"
@@ -241,8 +279,11 @@ Mark DSO to be initialized first at runtime
 .IP "-z interpose"
 Mark object to interpose all DSOs but executable
 
+.SH BUGS
+Report bugs at \fBhttps://github.com/rui314/mold/issues\fR.
+
 .SH AUTHOR
-Rui Ueyama <rui314@gmail.com>
+Rui Ueyama <\fBruiu@cs\&.stanford\&.edu\fR>
 
 .SH "SEE ALSO"
 .BR ld (1),
