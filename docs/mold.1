@@ -3,18 +3,14 @@
 mold \- A Modern Linker
 
 .SH SYNOPSIS
-.B mold [
-.I options
-.B ]
-.I objfile
-.B ...
+mold [\fBoptions\fR] \fIobjfile\fR \fB...\fR
 
 .SH DESCRIPTION
-.B mold
-is a multi-threaded, high-performance linker that is several times
-faster than the industry-standard ones, namely, GNU ld, GNU gold or
-LLVM lld. It is developed as a drop-in replacement for these linkers
-and command-line compatible with them with a few exceptions.
+\fBmold\fR is a multi-threaded, high-performance linker that is
+several times faster than the industry-standard ones, namely, GNU ld,
+GNU gold or LLVM lld. It is developed as a drop-in replacement for
+these linkers and command-line compatible with them with a few
+exceptions.
 .PP
 Note that even though many userland programs, including large ones
 such as Chrome and Firefox, can be built with \fBmold\fR, \fBmold\fR
