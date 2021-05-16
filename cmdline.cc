@@ -32,7 +32,7 @@ static const char helpmsg[] = R"(Options:
                               Set shared library name
   -l LIBNAME                  Search for a given library
   -m EMULATION                Ignored
-  -o FILE                     Set output filename
+  -o FILE, --output FILE      Set output filename
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
@@ -381,7 +381,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       exit(0);
     }
 
-    if (read_arg(ctx, args, arg, "o")) {
+    if (read_arg(ctx, args, arg, "o") || read_arg(ctx, args, arg, "output")) {
       ctx.arg.output = arg;
     } else if (read_arg(ctx, args, arg, "dynamic-linker") ||
                read_arg(ctx, args, arg, "I")) {

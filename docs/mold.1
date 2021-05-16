@@ -62,237 +62,303 @@ pathname as an argument for \fB\-fuse\-ld\fR.
 for linking user-land programs. If your user-land program cannot be
 built due to missing command-line options, please file a bug at
 \fBhttps://github.com/rui314/mold/issues\fR.
-
+.PP
 \fBmold\fR supports a very limited set of linker script features,
 which is just sufficient to read
 \fB/usr/lib/x86_64-linux-gnu/libc.so\fR on Linux systems (on Linux,
 that file is despite its name not a shared library but an ASCII linker
-script that loads a real libc.so file!)  Beyond that, I have no plan
-to support any linker script features.  The linker script is an
-ad-hoc, over-designed, complex language which I believe needs to be
-disrupted by a simpler mechanism. I have a plan to add a replacement
-for the linker script to \fBmold\fR instead.
+script that loads a real \fBlibc.so\fR file!)
+Beyond that, I have no plan to support any linker script features.
+The linker script is an ad-hoc, over-designed, complex language which
+I believe needs to be disrupted by a simpler mechanism. I have a plan
+to add a replacement for the linker script to \fBmold\fR instead.
 
 .SH OPTIONS
-.IP "--help"
+.IP "\fB\-\-help\fR"
 Report usage information
-.IP "-v, --version"
+.IP "\fB\-v\fR"
+.PD 0
+.IP "\fB\-\-version\fR"
+.PD
 Report version information
-.IP "-V"
+.IP "\fB\-V\fR"
 Report version and target information
-.IP "-(, --start-group"
+.IP "\fB\-(\fR"
+.PD 0
+.IP "\fB\-\-start\-group\fR"
+.PD
 Ignored
-.IP "-), --end-group"
+.IP "\fB\-)\fR"
+.PD 0
+.IP "\fB\-\-end\-group\fR"
+.PD
 Ignored
-.IP "-C DIR, --directory DIR"
-Change to DIR before doing anything
-.IP "-E, --export-dynamic"
+.IP "\fB\-C\fR \fIdir\fR"
+.PD 0
+.IP "\fB\-\-directory\fR \fIdir\fR"
+.PD
+Change to \fIdir\fR before doing anything
+.IP "\fB\-E\fR"
+.PD 0
+.IP "\fB\-\-export\-dynamic\fR"
+.PD
 Put symbols in the dynamic symbol table
-.IP "--no-export-dynamic"
+.IP "\fB\-\-no\-export\-dynamic\fR"
 Do not put symbols in the dynamic symbol table
-.IP "-F LIBNAME, --filter LIBNAME"
-Set DT_FILTER to the specified value
-.IP "-I FILE, --dynamic-linker FILE"
+.IP "\fB\-F\fR \fIlibname\fR"
+.PD 0
+.IP "\fB\-\-filter\fR=\fIlibname\fR"
+.PD
+Set \fBDT_FILTER\fR to the specified value
+.IP "\fB\-I\fR\fIfile\fR"
+.PD 0
+.IP "\fB\-\-dynamic\-linker\fR=\fIfile\fR"
+.PD
 Set dynamic linker path
-.IP "--no-dynamic-linker"
+.IP "\fB\-\-no\-dynamic\-linker\fR"
 Do not set dynamic linker path
-.IP "-L DIR, --library-path DIR"
-Add DIR to library search path
-.IP "-M, --print-map"
+.IP "\fB\-L\fR\fIdir\fR"
+.PD 0
+.IP "\fB\-\-library\-path\fR=\fIdir\fR"
+.PD
+Add \fIdir\fR to library search path
+.IP "\fB\-M\fR"
+.PD 0
+.IP "\fB\-\-print\-map\fR"
+.PD
 Write map file to stdout
-.IP "-N, --omagic"
+.IP "\fB\-N\fR"
+.PD 0
+.IP "\fB\-\-omagic\fR"
+.PD
 Do not page align data, do not make text readonly
-.IP "--no-omagic"
+.IP "\fB\-\-no\-omagic\fR"
 Page align data, make text readonly
-.IP "-O NUMBER"
+.IP "\fB\-O\fR\fInumber\fR"
 Ignored
-.IP "-S, --strip-debug"
-Strip .debug_* sections
-.IP "-T FILE, --script FILE"
+.IP "\fB\-S\fR"
+.PD 0
+.IP "\fB\-\-strip\-debug\fR"
+.PD
+Strip \fB.debug_*\fR sections
+.IP "\fB\-T\fR \fIfile\fR"
+.PD 0
+.IP "\fB\-\-script\fR=\fIfile\fR"
+.PD
 Read linker script
-.IP "-X, --discard-locals"
+.IP "\fB\-X\fR"
+.PD 0
+.IP "\fB\-\-discard\-locals\fR"
+.PD
 Discard temporary local symbols
-.IP "-e SYMBOL, --entry SYMBOL"
+.IP "\fB\-e\fR\fIsymbol\fR"
+.PD 0
+.IP "\fB\-\-entry\fR=\fIsymbol\fR"
+.PD
 Set program entry point
-.IP "-f SHLIB, --auxiliary SHLI"
-B Set DT_AUXILIARY to the specified value
-.IP "-h LIBNAME, --soname LIBNAME"
+.IP "\fB\-f\fR \fIshlib\fR"
+.PD 0
+.IP "\fB\-\-auxiliary\fR=\fIshlib\fR"
+.PD
+Set \fBDT_AUXILIARY\fR to the specified value
+.IP "\fB\-h\fR \fIlibname\fR"
+.PD 0
+.IP "\fB\-\-soname\fR\fIlibname\fR"
+.PD
 Set shared library name
-.IP "-l LIBNAME"
+.IP "\fB\-l\fR\fIlibname\fR"
 Search for a given library
-.IP "-m EMULATION"
+.IP "\fB\-m\fR \fIemulation\fR"
 Ignored
-.IP "-o FILE"
+.IP "\fB\-o\fR \fIfile\fR"
+.PD 0
+.IP "\fB\-\-output\fR=\fIfile\fR"
+.PD
 Set output filename
-.IP "-s, --strip-all"
+.IP "\fB\-s\fR"
+.PD 0
+.IP "\fB\-\-strip\-all\fR"
+.PD
 Strip .symtab section
-.IP "-u SYMBOL, --undefined SYMBOL"
-Force to resolve SYMBOL
-.IP "--Bdynamic"
+.IP "\fB\-u\fR \fIsymbol\fR"
+.PD 0
+.IP "\fB\-\-undefined\fR=\fIsymbol\fR"
+.PD
+Force to resolve \fIsymbol\fR
+.IP "\fB\-\-Bdynamic\fR"
 Link against shared libraries (default)
-.IP "--Bstatic"
+.IP "\fB\-\-Bstatic\fR"
 Do not link against shared libraries
-.IP "--Bsymbolic"
+.IP "\fB\-\-Bsymbolic\fR"
 Bind global symbols locally
-.IP "--Bsymbolic-functions"
+.IP "\fB\-\-Bsymbolic\-functions\fR"
 Bind global functions locally
-.IP "--Map FILE"
+.IP "\fB\-\-Map\fR=\fIfile\fR"
 Write map file to a given file
-.IP "--allow-multiple-definitio"
-n Ignored
-.IP "--as-needed"
-Only set DT_NEEDED if used
-.IP "--no-as-needed"
-Always set DT_NEEDED
-.IP "--build-id [none,md5,sha1,sha256,uuid,HEXSTRING]"
+.IP "\fB\-\-allow\-multiple\-definition\fR"
+Ignored
+.IP "\fB\-\-as\-needed\fR"
+Only set \fBDT_NEEDED\fR if used
+.IP "\fB\-\-no\-as\-needed\fR"
+Always set \fBDT_NEEDED\fR
+.IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,\fIhexstring\fR]"
 Generate build ID
-.IP "--no-build-id"
+.IP "\fB\-\-no\-build\-id\fR"
 Do not generate build ID
-.IP "--chroot DIR"
+.IP "\fB\-\-chroot\fR=\fIdir\fR"
 Set a given path to root directory
-.IP "--color-diagnostics"
+.IP "\fB\-\-color\-diagnostics\fR"
 Ignored
-.IP "--compress-debug-sections [none,zlib,zlib-gabi]"
-Compress .debug_* sections
-.IP "--demangle"
+.IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
+Compress \fB.debug_*\fR sections
+.IP "\fB\-\-demangle\fR"
 Demangle C++ symbols in log messages (default)
-.IP "--no-demangle"
+.IP "\fB\-\-no\-demangle\fR"
 Do not demangle
-.IP "--disable-new-dtags"
+.IP "\fB\-\-disable\-new\-dtags\fR"
 Ignored
-.IP "--dynamic-list"
+.IP "\fB\-\-dynamic\-list\fR"
 Read a list of dynamic symbols
-.IP "--eh-frame-hdr"
-Create .eh_frame_hdr section
-.IP "--no-eh-frame-hdr"
-Do not create .eh_frame_hdr section (default)
-.IP "--enable-new-dtags"
+.IP "\fB\-\-eh\-frame\-hdr\fR"
+Create \fB.eh_frame_hdr\fR section
+.IP "\fB\-\-no\-eh\-frame\-hdr\fR"
+Do not create \fB.eh_frame_hdr\fR section (default)
+.IP "\fB\-\-enable\-new\-dtags\fR"
 Ignored
-.IP "--exclude-libs LIB,LIB,.."
+.IP "\fB\-\-exclude\-libs\fR=\fIlib,lib,..\fR"
 Mark all symbols in given libraries hidden
-.IP "--fatal-warnings"
+.IP "\fB\-\-fatal\-warnings\fR"
 Ignored
-.IP "--no-fatal-warnings"
+.IP "\fB\-\-no\-fatal\-warnings\fR"
 Ignored
-.IP "--fini SYMBOL"
-Call SYMBOL at unload-time
-.IP "--fork"
+.IP "\fB\-\-fini\fR=\fIsymbol\fR"
+Call \fIsymbol\fR at unload-time
+.IP "\fB\-\-fork\fR"
 Spawn a child process (default)
-.IP "--no-fork"
+.IP "\fB\-\-no\-fork\fR"
 Do not spawn a child process
-.IP "--gc-sections"
+.IP "\fB\-\-gc\-sections\fR"
 Remove unreferenced sections
-.IP "--no-gc-sections"
+.IP "\fB\-\-no\-gc\-sections\fR"
 Do not remove unreferenced sections
-.IP "--gdb-index"
+.IP "\fB\-\-gdb\-index\fR"
 Ignored
-.IP "--hash-style [sysv,gnu,both]"
+.IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
 Set hash style
-.IP "--icf"
+.IP "\fB\-\-icf\fR"
 Fold identical code
-.IP "--no-icf"
+.IP "\fB\-\-no\-icf\fR"
 Do not fold identical code
-.IP "--init SYMBOL"
+.IP "\fB\-\-init\fR=\fIsymbol\fR"
 Call SYMBOl at load-time
-.IP "--no-undefined"
-Report undefined symbols (even with --shared)
-.IP "--perf"
+.IP "\fB\-\-no\-undefined\fR"
+Report undefined symbols (even with \fB\-\-shared\fR)
+.IP "\fB\-\-perf\fR"
 Print performance statistics
-.IP "--pie, --pic-executable"
+.IP "\fB\-\-pie\fR"
+.PD 0
+.IP "\fB\-\-pic\-executable\fR"
+.PD
 Create a position independent executable
-.IP "--no-pie, --no-pic-executable"
+.IP "\fB\-\-no\-pie\fR"
+.PD 0
+.IP "\fB\-\-no\-pic\-executable\fR"
+.PD
 Do not create a position independent executable
-.IP "--plugin"
+.IP "\fB\-\-plugin\fR"
 Ignored
-.IP "--plugin-opt"
+.IP "\fB\-\-plugin\-opt\fR"
 Ignored
-.IP "--pop-state"
+.IP "\fB\-\-pop\-state\fR"
 Pop state of flags governing input file handling
-.IP "--preload"
+.IP "\fB\-\-preload\fR"
 Preload object files
-.IP " --print-gc-sections"
+.IP "\fB \-\-print\-gc\-sections\fR"
 Print removed unreferenced sections
-.IP "--no-print-gc-sections"
+.IP "\fB\-\-no\-print\-gc\-sections\fR"
 Do not print removed unreferenced sections (default)
-.IP "--print-icf-sections"
+.IP "\fB\-\-print\-icf\-sections\fR"
 Print folded identical sections
-.IP "--no-print-icf-sections"
+.IP "\fB\-\-no\-print\-icf\-sections\fR"
 Do not print folded identical sections
-.IP "--push-state"
+.IP "\fB\-\-push\-state\fR"
 Pop state of flags governing input file handling
-.IP "--quick-exit"
+.IP "\fB\-\-quick\-exit\fR"
 Use quick_exit to exit (default)
-.IP "--no-quick-exit"
+.IP "\fB\-\-no\-quick\-exit\fR"
 Do not use quick_exit to exit
-.IP "--relax"
+.IP "\fB\-\-relax\fR"
 Optimize instructions (default)
-.IP "--no-relax"
+.IP "\fB\-\-no\-relax\fR"
 Do not optimize instructions
-.IP "--repro"
+.IP "\fB\-\-repro\fR"
 Embed input files to .repro section
-.IP "--rpath DIR"
-Add DIR to runtime search path
-.IP "--rpath-link DIR"
+.IP "\fB\-\-rpath\fR=\fIdir\fR"
+Add \fIdir\fR to runtime search path
+.IP "\fB\-\-rpath\-link\fR=\fIdir\fR"
 Ignored
-.IP "--run COMMAND ARG..."
-Run COMMAND with mold as /usr/bin/ld
-.IP "--shared, --Bshareable"
+.IP "\fB\-\-run\fR \fIcommand arg ...\fR"
+Run COMMAND with mold as \fB/usr/bin/ld\fR
+.IP "\fB\-\-shared\fR"
+.PD 0
+.IP "\fB\-\-Bshareable\fR"
+.PD
 Create a share library
-.IP "--sort-common"
+.IP "\fB\-\-sort\-common\fR"
 Ignored
-.IP "--sort-section"
+.IP "\fB\-\-sort\-section\fR"
 Ignored
-.IP "--spare-dynamic-tags NUMBE"
-R Reserve give number of tags in .dynamic section
-.IP "--static"
+.IP "\fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR"
+Reserve give number of tags in .dynamic section
+.IP "\fB\-\-static\fR"
 Do not link against shared libraries
-.IP "--stats"
+.IP "\fB\-\-stats\fR"
 Print input statistics
-.IP "--sysroot DIR"
+.IP "\fB\-\-sysroot\fR=\fIdir\fR"
 Set target system root directory
-.IP "--thread-count COUNT"
+.IP "\fB\-\-thread\-count COUNT\fR"
 Use COUNT number of threads
-.IP "--threads"
+.IP "\fB\-\-threads\fR"
 Use multiple threads (default)
-.IP "--no-threads"
+.IP "\fB\-\-no\-threads\fR"
 Do not use multiple threads
-.IP "--trace"
+.IP "\fB\-\-trace\fR"
 Print name of each input file
-.IP "--version-script FILE"
+.IP "\fB\-\-version\-script\fR=\fIfile\fR"
 Read version script
-.IP "--warn-common"
+.IP "\fB\-\-warn\-common\fR"
 Warn about common symbols
-.IP "--no-warn-common"
+.IP "\fB\-\-no\-warn\-common\fR"
 Do not warn about common symbols
-.IP "--whole-archive"
+.IP "\fB\-\-whole\-archive\fR"
 Include all objects from static archives
-.IP "--no-whole-archive"
+.IP "\fB\-\-no\-whole\-archive\fR"
 Do not include all objects from static archives
-.IP "-z now"
+.IP "\fB\-z now\fR"
 Disable lazy function resolution
-.IP "-z lazy"
+.IP "\fB\-z lazy\fR"
 Enable lazy function resolution (default)
-.IP "-z execstack"
+.IP "\fB\-z execstack\fR"
 Require executable stack
-.IP "-z noexecstack"
+.IP "\fB\-z noexecstack\fR"
 Do not require executable stack (default)
-.IP "-z relro"
+.IP "\fB\-z relro\fR"
 Make some sections read-only after relocation (default)
-.IP "-z norelro"
+.IP "\fB\-z norelro\fR"
 Do not use relro
-.IP "-z defs"
-Report undefined symbols (even with --shared)
-.IP "-z nodefs"
+.IP "\fB\-z defs\fR"
+Report undefined symbols (even with \fI\-\-shared\fR)
+.IP "\fB\-z nodefs\fR"
 Do not report undefined symbols
-.IP "-z nodlopen"
+.IP "\fB\-z nodlopen\fR"
 Mark DSO not available to dlopen
-.IP "-z nodelete"
+.IP "\fB\-z nodelete\fR"
 Mark DSO non-deletable at runtime
-.IP "-z nocopyreloc"
+.IP "\fB\-z nocopyreloc\fR"
 Do not create copy relocations
-.IP "-z initfirst"
+.IP "\fB\-z initfirst\fR"
 Mark DSO to be initialized first at runtime
-.IP "-z interpose"
+.IP "\fB\-z interpose\fR"
 Mark object to interpose all DSOs but executable
 
 .SH BUGS
