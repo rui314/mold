@@ -4,7 +4,8 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
-static const char helpmsg[] = R"(Options:
+static const char helpmsg[] = R"(
+Options:
   --help                      Report usage information
   -v, --version               Report version information
   -V                          Report version and target information
@@ -376,8 +377,7 @@ void parse_nonpositional_args(Context<E> &ctx,
 
     if (read_flag(args, "help")) {
       SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
-                   << " [options] file...\n\n"
-                   << helpmsg;
+                   << " [options] file...\n" << helpmsg;
       exit(0);
     }
 
