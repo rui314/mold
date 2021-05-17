@@ -259,13 +259,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << dso_path << " is missing";
 
   // Set environment variables
-  char *old_env = getenv("MOLD_REAL_PATH");
   putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
   putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
 
-  // If MOLD_REAL_PATH was not set, run mold itself with the envvar
-  if (!old_env) {
-    execv(self.c_str(), argv);
+  // If /usr/bin/ld is specified, run mold itself
+  if (std::string_view cmd = argv[2]; cmd == "ld" || cmd == "/usr/bin/ld") {
+    execv(self.c_str(), argv + 2);
     Fatal(ctx) << "mold -run failed: " << self << ": " << strerror(errno);
   }
 
