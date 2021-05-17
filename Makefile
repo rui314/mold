@@ -69,11 +69,11 @@ test: all
 	for i in test/*.sh; do $$i || exit 1; done
 
 install: all
-	install mold /usr/bin
-	install -d /usr/lib/mold
+	install -m 755 mold /usr/bin
+	install -m 755 -d /usr/lib/mold
 	install -m 644 mold-wrapper.so /usr/lib/mold
-	install docs/mold.1 /usr/share/man/man1
-	mandb -q
+	install -m 644 docs/mold.1 /usr/share/man/man1
+	gzip -9 /usr/share/man/man1/mold.1
 
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
