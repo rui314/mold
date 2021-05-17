@@ -68,6 +68,7 @@ install: all
 	install -m 755 -d /usr/lib/mold
 	install -m 644 mold-wrapper.so /usr/lib/mold
 	install -m 644 docs/mold.1 /usr/share/man/man1
+	rm -f /usr/share/man/man1/mold.1.gz
 	gzip -9 /usr/share/man/man1/mold.1
 
 clean:
