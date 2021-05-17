@@ -74,29 +74,32 @@ I believe needs to be disrupted by a simpler mechanism. I have a plan
 to add a replacement for the linker script to \fBmold\fR instead.
 
 .SS Archive symbol resolution
-Traditionally, Unix linkers process input files from left to right as
-they appeared in a command line. For each archive file, the
-information about object files that were not pulled out is completely
-discarded before a linker go on to a next input file.
-
-Due to this semantics, you usually had to add archive files (\fB.a\fR
-files) at the end of a command line, so that when a linker reaches
-archive files, it knows what symbols are remain undefined. If you put
-archive files at the beginning of a command line, a linker doesn't
-have any undefined symbol, and thus no object files will be pulled out
-from archives, and they will never be revisited again.
-
+Traditionally, Unix linkers are sensitive to the order in which input
+files appear on command line. They process input files from the first
+(leftmost) file to the last (rightmost) file one by one. While reading
+input files, they maintain sets of defined and undefined symbols.
+When visiting an archive file (\fB.a\fR files), they pull out object
+files to resolve as many undefined symbols as possible and go on to
+the next input file. If an object file wasn't pulled out from an
+archive file, it will never have a chance for a second look.
+.PP
+Due to this semantics, you usually had to add archive files at the end
+of a command line, so that when a linker reaches archive files, it
+knows what symbols are remain undefined. If you put archive files at
+the beginning of a command line, a linker doesn't have any undefined
+symbol, and thus no object files will be pulled out from archives.
+.PP
 You can change the processing order by \fB\-\-start\-group\fR and
 \fB\-\-end\-group\fR options, though they degrade the performance.
-
+.PP
 \fBmold\fR as well as LLVM \fBlld\fR linker take a different
 approach. They memorize what symbols can be resolved from archive
 files instead of forgetting it after processing each
 archive. Therefore, \fBmold\fR and \fBlld\fR can "go back" in a
 command line to pull out object files from archives, if they are
-needed to resolve undefined symbols. They are not sensitive to input
-file order.
-
+needed to resolve remaining undefined symbols. They are not sensitive
+to the input file order.
+.PP
 \fB\-\-start\-group\fR and \fB\-\-end\-group\fR are still accepted
 by \fBmold\fR and \fBlld\fR for compatibility with traditional linkers,
 but they are silently ignored.
