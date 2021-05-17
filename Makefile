@@ -8,7 +8,7 @@ MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
 CPPFLAGS=-g -IoneTBB/include -IxxHash -pthread -std=c++20 \
          -Wno-deprecated-volatile -Wno-switch \
          -DGIT_HASH=\"$(shell git rev-parse HEAD)\"
-LDFLAGS=-L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
+LDFLAGS=-static -fuse-ld=lld -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
         -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
         -L$(CURRENT_DIR)/xxHash -Wl,-rpath=$(CURRENT_DIR)/xxHash
 LIBS=-lcrypto -pthread -ltbb -lmimalloc -lz -lxxhash -ldl
@@ -22,11 +22,6 @@ ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0
 else
   CPPFLAGS += -O2
-endif
-
-STATIC ?= 0
-ifeq ($(STATIC), 1)
-  LDFLAGS += -static
 endif
 
 LTO ?= 0
