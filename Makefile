@@ -8,7 +8,7 @@ MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
 CPPFLAGS=-g -IoneTBB/include -IxxHash -pthread -std=c++20 \
          -Wno-deprecated-volatile -Wno-switch \
          -DGIT_HASH=\"$(shell git rev-parse HEAD)\"
-LDFLAGS=-static -fuse-ld=lld -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
+LDFLAGS=-fuse-ld=lld -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
         -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
         -L$(CURRENT_DIR)/xxHash -Wl,-rpath=$(CURRENT_DIR)/xxHash
 LIBS=-lcrypto -pthread -ltbb -lmimalloc -lz -lxxhash -ldl
@@ -20,28 +20,36 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
 PREFIX ?= /usr
 
 DEBUG ?= 0
+LTO ?= 0
+ASAN ?= 0
+TSAN ?= 0
+STATIC ?= 1
+
 ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0
 else
   CPPFLAGS += -O2
 endif
 
-LTO ?= 0
 ifeq ($(LTO), 1)
   CPPFLAGS += -flto -O3
   LDFLAGS  += -flto
 endif
 
-ASAN ?= 0
 ifeq ($(ASAN), 1)
   CPPFLAGS += -fsanitize=address
   LDFLAGS  += -fsanitize=address
+  STATIC    = 0
 endif
 
-TSAN ?= 0
 ifeq ($(TSAN), 1)
   CPPFLAGS += -fsanitize=thread
   LDFLAGS  += -fsanitize=thread
+  STATIC    = 0
+endif
+
+ifeq ($(STATIC), 1)
+  CPPFLAGS += -static
 endif
 
 all: mold mold-wrapper.so
