@@ -12,9 +12,10 @@ GNU gold or LLVM lld. It is developed as a drop-in replacement for
 these linkers and command-line compatible with them with a few
 exceptions.
 .PP
-Note that even though many userland programs, including large ones
-such as Chrome and Firefox, can be built with \fBmold\fR, \fBmold\fR
-is still very experimental. It supports Linux/x86-64 and Linux/i386.
+Note that even though \fBmold\fR can build many userland programs,
+including large ones such as Chrome and Firefox, it is still very
+experimental. Do not use \fBmold\fR for production unless you know
+what you are doing. \fBmold\fR supports Linux/x86-64 and Linux/i386.
 
 .SS "How to use mold"
 On Unix, \fBcc\fR (or \fBgcc\fR or \fBclang\fR, depending on what
@@ -37,7 +38,7 @@ force any build system to use \fBmold\fR. To use the feature, invoke
 build\fR) as follows:
 .PP
 .Vb 1
-\&    mold \-run make <make arguments if any>
+\&        mold \-run make <make arguments if any>
 .Ve
 .PP
 If you run a build command like above, the command runs under the
@@ -56,6 +57,9 @@ If you don't want to use the \fB\-run\fR option, and if you are using
 like there's unfortunately no easy way (other than \fB\-run\fR) to
 force it to use \fBmold\fR, as \fBgcc\fR doesn't take an arbitrary
 pathname as an argument for \fB\-fuse\-ld\fR.
+.PP
+I do not recommend installing \fBmold\fR as \fB/usr/bin/ld\fR
+unless you know what you are doing.
 
 .SS Compatibility
 \fBmold\fR is designed to be a drop-in replacement for the GNU linkers
@@ -114,16 +118,6 @@ Report usage information
 Report version information
 .IP "\fB\-V\fR"
 Report version and target information
-.IP "\fB\-(\fR"
-.PD 0
-.IP "\fB\-\-start\-group\fR"
-.PD
-Ignored
-.IP "\fB\-)\fR"
-.PD 0
-.IP "\fB\-\-end\-group\fR"
-.PD
-Ignored
 .IP "\fB\-C\fR \fIdir\fR"
 .PD 0
 .IP "\fB\-\-directory\fR \fIdir\fR"
@@ -165,8 +159,6 @@ Write map file to stdout
 Do not page align data, do not make text readonly
 .IP "\fB\-\-no\-omagic\fR"
 Page align data, make text readonly
-.IP "\fB\-O\fR\fInumber\fR"
-Ignored
 .IP "\fB\-S\fR"
 .PD 0
 .IP "\fB\-\-strip\-debug\fR"
@@ -199,8 +191,6 @@ Set \fBDT_AUXILIARY\fR to the specified value
 Set shared library name
 .IP "\fB\-l\fR\fIlibname\fR"
 Search for a given library
-.IP "\fB\-m\fR \fIemulation\fR"
-Ignored
 .IP "\fB\-o\fR \fIfile\fR"
 .PD 0
 .IP "\fB\-\-output\fR=\fIfile\fR"
@@ -226,8 +216,6 @@ Bind global symbols locally
 Bind global functions locally
 .IP "\fB\-\-Map\fR=\fIfile\fR"
 Write map file to a given file
-.IP "\fB\-\-allow\-multiple\-definition\fR"
-Ignored
 .IP "\fB\-\-as\-needed\fR"
 Only set \fBDT_NEEDED\fR if used
 .IP "\fB\-\-no\-as\-needed\fR"
@@ -238,30 +226,20 @@ Generate build ID
 Do not generate build ID
 .IP "\fB\-\-chroot\fR=\fIdir\fR"
 Set a given path to root directory
-.IP "\fB\-\-color\-diagnostics\fR"
-Ignored
 .IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
 Compress \fB.debug_*\fR sections
 .IP "\fB\-\-demangle\fR"
 Demangle C++ symbols in log messages (default)
 .IP "\fB\-\-no\-demangle\fR"
 Do not demangle
-.IP "\fB\-\-disable\-new\-dtags\fR"
-Ignored
 .IP "\fB\-\-dynamic\-list\fR"
 Read a list of dynamic symbols
 .IP "\fB\-\-eh\-frame\-hdr\fR"
 Create \fB.eh_frame_hdr\fR section
 .IP "\fB\-\-no\-eh\-frame\-hdr\fR"
 Do not create \fB.eh_frame_hdr\fR section (default)
-.IP "\fB\-\-enable\-new\-dtags\fR"
-Ignored
 .IP "\fB\-\-exclude\-libs\fR=\fIlib,lib,..\fR"
 Mark all symbols in given libraries hidden
-.IP "\fB\-\-fatal\-warnings\fR"
-Ignored
-.IP "\fB\-\-no\-fatal\-warnings\fR"
-Ignored
 .IP "\fB\-\-fini\fR=\fIsymbol\fR"
 Call \fIsymbol\fR at unload-time
 .IP "\fB\-\-fork\fR"
@@ -272,8 +250,6 @@ Do not spawn a child process
 Remove unreferenced sections
 .IP "\fB\-\-no\-gc\-sections\fR"
 Do not remove unreferenced sections
-.IP "\fB\-\-gdb\-index\fR"
-Ignored
 .IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
 Set hash style
 .IP "\fB\-\-icf\fR"
@@ -296,10 +272,6 @@ Create a position independent executable
 .IP "\fB\-\-no\-pic\-executable\fR"
 .PD
 Do not create a position independent executable
-.IP "\fB\-\-plugin\fR"
-Ignored
-.IP "\fB\-\-plugin\-opt\fR"
-Ignored
 .IP "\fB\-\-pop\-state\fR"
 Pop state of flags governing input file handling
 .IP "\fB\-\-preload\fR"
@@ -326,8 +298,6 @@ Do not optimize instructions
 Embed input files to .repro section
 .IP "\fB\-\-rpath\fR=\fIdir\fR"
 Add \fIdir\fR to runtime search path
-.IP "\fB\-\-rpath\-link\fR=\fIdir\fR"
-Ignored
 .IP "\fB\-\-run\fR \fIcommand arg ...\fR"
 Run COMMAND with mold as \fB/usr/bin/ld\fR
 .IP "\fB\-\-shared\fR"
@@ -335,10 +305,6 @@ Run COMMAND with mold as \fB/usr/bin/ld\fR
 .IP "\fB\-\-Bshareable\fR"
 .PD
 Create a share library
-.IP "\fB\-\-sort\-common\fR"
-Ignored
-.IP "\fB\-\-sort\-section\fR"
-Ignored
 .IP "\fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR"
 Reserve give number of tags in .dynamic section
 .IP "\fB\-\-static\fR"
@@ -391,6 +357,28 @@ Do not create copy relocations
 Mark DSO to be initialized first at runtime
 .IP "\fB\-z interpose\fR"
 Mark object to interpose all DSOs but executable
+
+.IP "\fB\-(\fR"
+.PD 0
+.IP "\fB\-)\fR"
+.IP "\fB\-O\fR\fInumber\fR"
+.IP "\fB\-m\fR \fIemulation\fR"
+.IP "\fB\-\-allow\-multiple\-definition\fR"
+.IP "\fB\-\-color\-diagnostics\fR"
+.IP "\fB\-\-disable\-new\-dtags\fR"
+.IP "\fB\-\-enable\-new\-dtags\fR"
+.IP "\fB\-\-end\-group\fR"
+.IP "\fB\-\-fatal\-warnings\fR"
+.IP "\fB\-\-gdb\-index\fR"
+.IP "\fB\-\-no\-fatal\-warnings\fR"
+.IP "\fB\-\-plugin\-opt\fR"
+.IP "\fB\-\-plugin\fR"
+.IP "\fB\-\-rpath\-link\fR=\fIdir\fR"
+.IP "\fB\-\-sort\-common\fR"
+.IP "\fB\-\-sort\-section\fR"
+.IP "\fB\-\-start\-group\fR"
+.PD
+Ignored
 
 .SH BUGS
 Report bugs at \fBhttps://github.com/rui314/mold/issues\fR.
