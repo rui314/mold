@@ -251,6 +251,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   std::string dso_path;
   if (self == "/usr/bin/mold")
     dso_path = "/usr/lib/mold/mold-wrapper.so";
+  else if (self == "/usr/local/bin/mold")
+    dso_path = "/usr/local/lib/mold/mold-wrapper.so";
   else
     dso_path = path_dirname(self) + "/mold-wrapper.so";
 

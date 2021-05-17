@@ -17,6 +17,8 @@ OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
      icf.o symbols.o cmdline.o filepath.o glob.o passes.o tar.o compress.o \
      arch_x86_64.o arch_i386.o
 
+PREFIX ?= /usr
+
 DEBUG ?= 0
 ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0
@@ -64,12 +66,12 @@ test: all
 	for i in test/*.sh; do $$i || exit 1; done
 
 install: all
-	install -m 755 mold /usr/bin
-	install -m 755 -d /usr/lib/mold
-	install -m 644 mold-wrapper.so /usr/lib/mold
-	install -m 644 docs/mold.1 /usr/share/man/man1
-	rm -f /usr/share/man/man1/mold.1.gz
-	gzip -9 /usr/share/man/man1/mold.1
+	install -m 755 mold $(PREFIX)/bin
+	install -m 755 -d $(PREFIX)/lib/mold
+	install -m 644 mold-wrapper.so $(PREFIX)/lib/mold
+	install -m 644 docs/mold.1 $(PREFIX)/share/man/man1
+	rm -f $(PREFIX)/share/man/man1/mold.1.gz
+	gzip -9 $(PREFIX)/share/man/man1/mold.1
 
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
