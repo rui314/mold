@@ -73,6 +73,10 @@ install: all
 	rm -f $(PREFIX)/share/man/man1/mold.1.gz
 	gzip -9 $(PREFIX)/share/man/man1/mold.1
 
+uninstall:
+	rm -rf $(PREFIX)/bin/mold $(PREFIX)/share/man/man1/mold.1.gz \
+	       $(PREFIX)/lib/mold
+
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
 
