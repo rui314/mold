@@ -134,7 +134,7 @@ Do not put symbols in the dynamic symbol table
 .PD 0
 .IP "\fB\-\-filter\fR=\fIlibname\fR"
 .PD
-Set \fBDT_FILTER\fR to the specified value
+Set \fBDT_FILTER\fR to \fIlibname\fR
 .IP "\fB\-I\fR\fIfile\fR"
 .PD 0
 .IP "\fB\-\-dynamic\-linker\fR=\fIfile\fR"
@@ -168,7 +168,7 @@ Strip \fB.debug_*\fR sections
 .PD 0
 .IP "\fB\-\-script\fR=\fIfile\fR"
 .PD
-Read linker script
+Read linker script from \fIfile\fR
 .IP "\fB\-X\fR"
 .PD 0
 .IP "\fB\-\-discard\-locals\fR"
@@ -183,14 +183,14 @@ Set program entry point
 .PD 0
 .IP "\fB\-\-auxiliary\fR=\fIshlib\fR"
 .PD
-Set \fBDT_AUXILIARY\fR to the specified value
+Set \fBDT_AUXILIARY\fR to \fIshlib\fR
 .IP "\fB\-h\fR \fIlibname\fR"
 .PD 0
 .IP "\fB\-\-soname\fR\fIlibname\fR"
 .PD
 Set shared library name
 .IP "\fB\-l\fR\fIlibname\fR"
-Search for a given library
+Search for \fIlibname\fR
 .IP "\fB\-o\fR \fIfile\fR"
 .PD 0
 .IP "\fB\-\-output\fR=\fIfile\fR"
@@ -225,7 +225,7 @@ Generate build ID
 .IP "\fB\-\-no\-build\-id\fR"
 Do not generate build ID
 .IP "\fB\-\-chroot\fR=\fIdir\fR"
-Set a given path to root directory
+Set \fIdir\fR to root directory
 .IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
 Compress \fB.debug_*\fR sections
 .IP "\fB\-\-demangle\fR"
@@ -257,7 +257,7 @@ Fold identical code
 .IP "\fB\-\-no\-icf\fR"
 Do not fold identical code
 .IP "\fB\-\-init\fR=\fIsymbol\fR"
-Call SYMBOl at load-time
+Call \fIsymbol\fR at load-time
 .IP "\fB\-\-no\-undefined\fR"
 Report undefined symbols (even with \fB\-\-shared\fR)
 .IP "\fB\-\-perf\fR"
@@ -299,7 +299,7 @@ Embed input files to .repro section
 .IP "\fB\-\-rpath\fR=\fIdir\fR"
 Add \fIdir\fR to runtime search path
 .IP "\fB\-\-run\fR \fIcommand arg ...\fR"
-Run COMMAND with mold as \fB/usr/bin/ld\fR
+Run \fIcommand\fR with mold as \fB/usr/bin/ld\fR
 .IP "\fB\-\-shared\fR"
 .PD 0
 .IP "\fB\-\-Bshareable\fR"
@@ -313,8 +313,8 @@ Do not link against shared libraries
 Print input statistics
 .IP "\fB\-\-sysroot\fR=\fIdir\fR"
 Set target system root directory
-.IP "\fB\-\-thread\-count COUNT\fR"
-Use COUNT number of threads
+.IP "\fB\-\-thread\-count=\fIcount\fR\fR"
+Use \fIcount\fR number of threads
 .IP "\fB\-\-threads\fR"
 Use multiple threads (default)
 .IP "\fB\-\-no\-threads\fR"
@@ -388,5 +388,5 @@ Rui Ueyama <\fBruiu@cs\&.stanford\&.edu\fR>
 
 .SH "SEE ALSO"
 .BR ld (1),
-.BR gold (1)
+.BR gold (1),
 .BR ld.so (8)
