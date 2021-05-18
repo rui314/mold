@@ -354,6 +354,12 @@ static i64 get_default_thread_count() {
 }
 
 template <typename E>
+static void print_version(Context<E> &ctx) {
+  SyncOut(ctx) << "mold " << MOLD_VERSION << " ("
+               << GIT_HASH << "; compatible with GNU ld)";
+}
+
+template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
@@ -365,13 +371,13 @@ void parse_nonpositional_args(Context<E> &ctx,
     std::string_view arg;
 
     if (read_flag(args, "v") || read_flag(args, "version")) {
-      SyncOut(ctx) << "mold " GIT_HASH " (compatible with GNU ld)";
+      print_version(ctx);
       exit(0);
     }
 
     if (read_flag(args, "V")) {
-      SyncOut(ctx) << "mold " GIT_HASH " (compatible with GNU ld)\n"
-                   << "  Supported emulations:\n   elf_x86_64\n   elf_i386";
+      print_version(ctx);
+      SyncOut(ctx) << "  Supported emulations:\n   elf_x86_64\n   elf_i386";
       exit(0);
     }
 

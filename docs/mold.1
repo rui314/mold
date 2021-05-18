@@ -52,7 +52,7 @@ functions to run \fBmold\fR if \fB/usr/bin/ld\fR is attempted to be
 run.
 .PP
 If you don't want to use the \fB\-run\fR option, and if you are using
-\fBclang\fR, you can pass \fB\-fuse\-ld=/absolute/path/to/mold\fR to
+\fBclang\fR, you can pass \fB\-fuse\-ld\fR=\fI/absolute/path/to/mold\fR to
 \fBclang\fR to used \fBmold\fR. If you are using \fBgcc\fR, it looks
 like there's unfortunately no easy way (other than \fB\-run\fR) to
 force it to use \fBmold\fR, as \fBgcc\fR doesn't take an arbitrary
@@ -84,17 +84,17 @@ files appear on command line. They process input files from the first
 input files, they maintain sets of defined and undefined symbols.
 When visiting an archive file (\fB.a\fR files), they pull out object
 files to resolve as many undefined symbols as possible and go on to
-the next input file. If an object file wasn't pulled out from an
-archive file, it will never have a chance for a second look.
+the next input file. Object files that weren't pulled out will never
+have a chance for a second look.
 .PP
-Due to this semantics, you usually had to add archive files at the end
+Due to this semantics, you usually have to add archive files at the end
 of a command line, so that when a linker reaches archive files, it
 knows what symbols are remain undefined. If you put archive files at
 the beginning of a command line, a linker doesn't have any undefined
 symbol, and thus no object files will be pulled out from archives.
 .PP
 You can change the processing order by \fB\-\-start\-group\fR and
-\fB\-\-end\-group\fR options, though they degrade the performance.
+\fB\-\-end\-group\fR options, though they make a linker slower.
 .PP
 \fBmold\fR as well as LLVM \fBlld\fR linker take a different
 approach. They memorize what symbols can be resolved from archive

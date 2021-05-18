@@ -5,6 +5,7 @@ MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -Wno-deprecated-volatile -Wno-switch \
+           -DMOLD_VERSION=\"0.1\" \
            -DGIT_HASH=\"$(shell git rev-parse HEAD)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS = $(EXTRA_LDFLAGS)
