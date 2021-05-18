@@ -8,8 +8,7 @@ CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -DGIT_HASH=\"$(shell git rev-parse HEAD)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS = $(EXTRA_LDFLAGS)
-LIBS = -lcrypto -pthread -ltbb -lz -lxxhash \
-       -Wl,-as-needed -ldl -Wl,-no-as-needed
+LIBS = -Wl,-as-needed -lcrypto -pthread -ltbb -lz -lxxhash -ldl
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \
        subprocess.o gc_sections.o icf.o symbols.o cmdline.o filepath.o \
