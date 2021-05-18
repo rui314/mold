@@ -66,8 +66,12 @@ test: all
 
 install: all
 	install -m 755 mold $(PREFIX)/bin
+	strip $(PREFIX)/bin/mold
+
 	install -m 755 -d $(PREFIX)/lib/mold
 	install -m 644 mold-wrapper.so $(PREFIX)/lib/mold
+	strip $(PREFIX)/lib/mold/mold-wrapper.so
+
 	install -m 644 docs/mold.1 $(PREFIX)/share/man/man1
 	rm -f $(PREFIX)/share/man/man1/mold.1.gz
 	gzip -9 $(PREFIX)/share/man/man1/mold.1
