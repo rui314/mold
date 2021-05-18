@@ -1,29 +1,25 @@
-CC=clang
-CXX=clang++
+CC = clang
+CXX = clang++
 
-CURRENT_DIR=$(shell pwd)
-TBB_LIBDIR=$(wildcard $(CURRENT_DIR)/oneTBB/build/linux_intel64_*_release/)
-MALLOC_LIBDIR=$(CURRENT_DIR)/mimalloc/out/release
+MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
 
-CPPFLAGS=-g -IoneTBB/include -IxxHash -pthread -std=c++20 \
-         -Wno-deprecated-volatile -Wno-switch \
-         -DGIT_HASH=\"$(shell git rev-parse HEAD)\"
-LDFLAGS=-fuse-ld=lld -L$(TBB_LIBDIR) -Wl,-rpath=$(TBB_LIBDIR) \
-        -L$(MALLOC_LIBDIR) -Wl,-rpath=$(MALLOC_LIBDIR) \
-        -L$(CURRENT_DIR)/xxHash -Wl,-rpath=$(CURRENT_DIR)/xxHash
-LIBS=-lcrypto -pthread -ltbb -lmimalloc -lz -lxxhash -ldl
-OBJS=main.o object_file.o input_sections.o output_chunks.o mapfile.o perf.o \
-     linker_script.o archive_file.o output_file.o subprocess.o gc_sections.o \
-     icf.o symbols.o cmdline.o filepath.o glob.o passes.o tar.o compress.o \
-     arch_x86_64.o arch_i386.o
+CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
+           -Wno-deprecated-volatile -Wno-switch \
+           -DGIT_HASH=\"$(shell git rev-parse HEAD)\" \
+	   $(EXTRA_CPPFLAGS)
+LDFLAGS = $(EXTRA_LDFLAGS)
+LIBS = -lcrypto -pthread -ltbb -lz -lxxhash \
+       -Wl,-as-needed -ldl -Wl,-no-as-needed
+OBJS = main.o object_file.o input_sections.o output_chunks.o \
+       mapfile.o perf.o linker_script.o archive_file.o output_file.o \
+       subprocess.o gc_sections.o icf.o symbols.o cmdline.o filepath.o \
+       glob.o passes.o tar.o compress.o arch_x86_64.o arch_i386.o
 
 PREFIX ?= /usr
-
 DEBUG ?= 0
 LTO ?= 0
 ASAN ?= 0
 TSAN ?= 0
-STATIC ?= 1
 
 ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0
@@ -39,22 +35,21 @@ endif
 ifeq ($(ASAN), 1)
   CPPFLAGS += -fsanitize=address
   LDFLAGS  += -fsanitize=address
-  STATIC    = 0
+else
+  # By default, we want to use mimalloc as a memory allocator.
+  # Since replacing the standard malloc is not compatible with ASAN,
+  # we do that only when ASAN is not enabled.
+  LDFLAGS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
 endif
 
 ifeq ($(TSAN), 1)
   CPPFLAGS += -fsanitize=thread
   LDFLAGS  += -fsanitize=thread
-  STATIC    = 0
-endif
-
-ifeq ($(STATIC), 1)
-  CPPFLAGS += -static
 endif
 
 all: mold mold-wrapper.so
 
-mold: $(OBJS)
+mold: $(OBJS) $(MIMALLOC_LIB)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 mold-wrapper.so: mold-wrapper.c Makefile
@@ -62,13 +57,10 @@ mold-wrapper.so: mold-wrapper.c Makefile
 
 $(OBJS): mold.h elf.h Makefile
 
-submodules:
-	$(MAKE) -C oneTBB
-	$(MAKE) -C oneTBB extra_inc=big_iron.inc
+$(MIMALLOC_LIB):
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
 	$(MAKE) -C mimalloc/out/release
-	$(MAKE) -C xxHash
 
 test: all
 	for i in test/*.sh; do $$i || exit 1; done

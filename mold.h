@@ -5,7 +5,6 @@
 #endif
 
 #include "elf.h"
-#include "xxHash/xxhash.h"
 
 #include <atomic>
 #include <cassert>
@@ -27,6 +26,7 @@
 #include <tbb/task_group.h>
 #include <unordered_set>
 #include <vector>
+#include <xxh3.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;

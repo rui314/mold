@@ -62,20 +62,19 @@ Clang. I'm using Ubuntu 20.04 as a development platform. In that
 environment, you can build mold by the following commands.
 
 ```
-$ sudo apt-get install build-essential libstdc++-10-dev clang-10 libssl-dev zlib1g-dev cmake
+$ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev
 $ git clone --recursive https://github.com/rui314/mold.git
 $ cd mold
-$ make submodules
 $ make
 ```
 
 The last `make` command creates `mold` executable.
 
-You can build a statically-linked mold executable by substituting the
-last `make` with `make STATIC=1`. A statically-linked mold executable
-can be copied to any Linux system and run there without copying other
-libraries. This is useful if you want to use Ubuntu 20.04 only for
-building mold.
+If you don't have Ubuntu 20.04, or if for any reason `make` in the
+above commands doesn't work for you, you can use Docker to build it in
+a Docker environment. To do so, just run `./build-static.sh` in this
+directory. The script creates a Ubuntu 20.04 Docker image, install
+necessary tools and libraries to it and build mold as a static binary.
 
 ## How to use
 
