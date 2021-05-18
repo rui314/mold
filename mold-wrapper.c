@@ -73,7 +73,7 @@ int execle(const char *path, const char *arg0, ...) {
   char *argv[4096] = {(char *)arg0};
   get_args(ap, 4096, argv);
   char **env = va_arg(ap, char **);
-  execve(path, argv, env);
+  return execve(path, argv, env);
 }
 
 int execv(const char *path, char *const *argv) {

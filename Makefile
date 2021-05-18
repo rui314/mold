@@ -52,7 +52,7 @@ mold: $(OBJS) $(MIMALLOC_LIB)
 	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 mold-wrapper.so: mold-wrapper.c Makefile
-	cc -fPIC -shared -o $@ $< -ldl
+	$(CC) -fPIC -shared -o $@ $< -ldl
 
 $(OBJS): mold.h elf.h Makefile
 
@@ -83,4 +83,4 @@ uninstall:
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
 
-.PHONY: all intel_tbb test clean
+.PHONY: all test clean
