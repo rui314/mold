@@ -39,11 +39,11 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void OutputShdr<E>::update_shdr(Context<E> &ctx) {
-  i64 n = 1;
+  i64 n = 0;
   for (OutputChunk<E> *chunk : ctx.chunks)
-    if (chunk->kind != OutputChunk<E>::HEADER)
-      n++;
-  this->shdr.sh_size = n * sizeof(ElfShdr<E>);
+    if (chunk->shndx)
+      n = chunk->shndx;
+  this->shdr.sh_size = (n + 1) * sizeof(ElfShdr<E>);
 }
 
 template <typename E>
@@ -51,10 +51,9 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
   ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->shdr.sh_offset);
   hdr[0] = {};
 
-  i64 i = 1;
   for (OutputChunk<E> *chunk : ctx.chunks)
-    if (chunk->kind != OutputChunk<E>::HEADER)
-      hdr[i++] = chunk->shdr;
+    if (chunk->shndx)
+      hdr[chunk->shndx] = chunk->shdr;
 }
 
 template <typename E>
@@ -1644,6 +1643,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
   this->shdr.sh_size = sizeof(chdr) + contents->size();
+  this->shndx = chunk.shndx;
 }
 
 template <typename E>
