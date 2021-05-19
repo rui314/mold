@@ -934,7 +934,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
-      if (!ctx.arg.shared && sym.has_plt(ctx) && !sym.has_got(ctx)) {
+      if (!ctx.arg.pic && sym.has_plt(ctx) && !sym.has_got(ctx)) {
         // Emit an address for a canonical PLT
         esym.st_value = sym.get_plt_addr(ctx);
       }

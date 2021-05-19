@@ -47,7 +47,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
         0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
       };
       memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx);
+      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
     } else {
       static const u8 data[] = {
         0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
