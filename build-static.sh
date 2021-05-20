@@ -26,8 +26,10 @@ docker run -it --rm -v `pwd`/oneTBB:/oneTBB -u $(id -u):$(id -g) \
   mold-build-ubuntu20 \
   make -C /oneTBB -j$(nproc) extra_inc=big_iron.inc
 
-docker run -it --rm -v `pwd`/oneTBB:/oneTBB -v `pwd`:/mold \
-  -u $(id -u):$(id -g) mold-build-ubuntu20 \
-  make EXTRA_CPPFLAGS=-I/oneTBB/include \
-       EXTRA_LDFLAGS="-fuse-ld=lld -static -L/$(ls -d oneTBB/build/linux_intel64_*_release)" \
-       -j$(nproc) -C /mold
+tbb_bindir=$(ls -d oneTBB/build/linux_intel64_*_release)
+
+docker run -it --rm -v `pwd`:/mold -u $(id -u):$(id -g) \
+  mold-build-ubuntu20 \
+  make -C /mold -j$(nproc) \
+       EXTRA_CPPFLAGS=-IoneTBB/include \
+       EXTRA_LDFLAGS="-fuse-ld=lld -static -L$tbb_bindir"
