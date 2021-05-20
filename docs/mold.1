@@ -43,13 +43,13 @@ build\fR) as follows:
 .PP
 If you run a build command like above, the command runs under the
 influence of \fBmold\fR so that when the command tries to run
-\fB/usr/bin/ld\fR, \fBmold\fR is silently invoked instead.
+\fB/usr/bin/ld\fR, \fB/usr/bin/ld.gold\fR or \fB/usr/bin/ld.lld\fR,
+\fBmold\fR is silently invoked instead.
 .PP
 Internally, \fBmold\fR invokes a given command with the
 \fBLD_PRELOAD\fR environment variable set to its companion shared
 object file. The shared object file intercepts all \fBexec()\fR-family
-functions to run \fBmold\fR if \fB/usr/bin/ld\fR is attempted to be
-run.
+functions to run \fBmold\fR if other linker is attempted to be run.
 .PP
 If you don't want to use the \fB\-run\fR option, and if you are using
 \fBclang\fR, you can pass \fB\-fuse\-ld\fR=\fI/absolute/path/to/mold\fR to

@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <spawn.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,10 +40,16 @@ static void get_args(va_list ap, int argc, char **argv) {
   }
 }
 
+static bool is_ld(const char *path) {
+  return !strcmp(path, "/usr/bin/ld") ||
+         !strcmp(path, "/usr/bin/ld.lld") ||
+         !strcmp(path, "/usr/bin/ld.gold");
+}
+
 int execve(const char *path, char *const *argv, char *const *envp) {
   debug_print("execve %s\n", path);
 
-  if (!strcmp(path, "/usr/bin/ld")) {
+  if (is_ld(path)) {
     path = get_mold_path();
     ((const char **)argv)[0] = path;
   }
@@ -87,7 +94,7 @@ int execvp(const char *file, char *const *argv) {
 int execvpe(const char *file, char *const *argv, char *const *envp) {
   debug_print("execvpe %s\n", file);
 
-  if (!strcmp(file, "ld") || !strcmp(file, "/usr/bin/ld")) {
+  if (!strcmp(file, "ld") || is_ld(file)) {
     file = get_mold_path();
     ((const char **)argv)[0] = file;
   }
@@ -102,7 +109,7 @@ int posix_spawn(pid_t *pid, const char *path,
                 char *const *argv, char *const *envp) {
   debug_print("posix_spawn %s\n", path);
 
-  if (!strcmp(path, "/usr/bin/ld")) {
+  if (is_ld(path)) {
     path = get_mold_path();
     ((const char **)argv)[0] = path;
   }

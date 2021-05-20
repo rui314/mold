@@ -35,5 +35,7 @@ grep -q mold $t/log
 ../mold -run env | grep -q '^MOLD_REAL_PATH=.*/mold$'
 
 ../mold -run /usr/bin/ld --version | grep -q mold
+../mold -run /usr/bin/ld.lld --version | grep -q mold
+../mold -run /usr/bin/ld.gold --version | grep -q mold
 
 echo OK
