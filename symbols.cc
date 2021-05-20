@@ -13,11 +13,15 @@ static bool is_mangled_name(std::string_view name) {
 template <typename E>
 std::string_view Symbol<E>::get_demangled_name() const {
   if (is_mangled_name(name())) {
-    assert(nameptr[namelen] == '\0');
+    char *mangled = new char[name().size() + 1];
+    memcpy(mangled, name().data(), name().size());
+    mangled[name().size()] = '\0';
+
     size_t len = sizeof(demangle_buf);
     int status;
     demangle_buf =
-      abi::__cxa_demangle(nameptr, demangle_buf, &demangle_buf_len, &status);
+      abi::__cxa_demangle(mangled, demangle_buf, &demangle_buf_len, &status);
+    delete[](mangled);
     if (status == 0)
       return demangle_buf;
   }
