@@ -1,5 +1,4 @@
 #!/bin/bash -x
-
 # This is a shell script to build a statically-linked mold
 # executable using Docker, so that it is easy to build mold
 # on non-Ubuntu 20.04 machines.
@@ -7,6 +6,8 @@
 # A docker image used for building mold is persistent.
 # Run `docker image rm mold-build-ubuntu20` to remove the image
 # from disk.
+
+set -e
 
 cat <<EOF | docker build -t mold-build-ubuntu20 -
 FROM ubuntu:20.04
