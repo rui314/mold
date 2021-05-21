@@ -63,7 +63,7 @@ $(MIMALLOC_LIB):
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
 	$(MAKE) -C mimalloc/out/release
 
-test: all
+test tests check: all
 	for i in test/*.sh; do $$i || exit 1; done
 
 install: all
@@ -85,4 +85,4 @@ uninstall:
 clean:
 	rm -f *.o *~ mold mold-wrapper.so
 
-.PHONY: all test clean
+.PHONY: all test tests check clean
