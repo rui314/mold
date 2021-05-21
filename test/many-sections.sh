@@ -9,7 +9,7 @@ seq 1 65500 | sed 's/.*/.section .text.\0, "ax",@progbits/' > $t/a.s
 
 cc -c -o $t/a.o $t/a.s
 
-cat <<'EOF' | cc -c -xc -o $t/c.o -
+cat <<'EOF' | cc -c -xc -o $t/b.o -
 #include <stdio.h>
 
 int main() {
@@ -18,7 +18,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o $t/c.o
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q Hello
 
 echo OK
