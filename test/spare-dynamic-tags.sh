@@ -13,6 +13,6 @@ grep -Pq '\.dynamic.*\b000190\b' $t/log
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-spare-dynamic-tags=100
 readelf --wide --sections $t/exe > $t/log
-grep -Pq '\.dynamic.*\b001140\b' $t/log
+grep -Pq '\.dynamic.*\b002010\b' $t/log
 
 echo OK
