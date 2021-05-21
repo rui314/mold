@@ -14,7 +14,7 @@ linking final executables of major large programs.
 | Chrome 86 (1.9 GiB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
 | Clang 13 (3.1 GiB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-(These nubmers are measured on an AMD Threadripper 3990X 64-core
+(These numbers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
 info enabled.)
 
@@ -221,8 +221,8 @@ set for this purpose is very limited, and it is okay to implement them
 to mold.
 
 Besides that, we really don't want to implement the linker script
-langauge. But at the same time, we want to satisfy the user needs that
-are currently satisfied with the linker script langauge. So, what
+language. But at the same time, we want to satisfy the user needs that
+are currently satisfied with the linker script language. So, what
 should we do? Here is my observation:
 
 - Linker script allows to do a lot of tricky stuff, such as specifying
@@ -235,7 +235,7 @@ should we do? Here is my observation:
   sections, and (b) applying relocations.
 
 From the above observation, I believe we need to provide only the
-following features instead of the entire linker script langauge:
+following features instead of the entire linker script language:
 
 - A method to specify how input sections are mapped to output
   sections, and
@@ -281,7 +281,7 @@ tool.
   an output file. This is a slow step, but we can speed it up by
   splitting a file into small chunks, computing SHA-1 for each chunk,
   and then computing SHA-1 of the concatenated SHA-1 hashes
-  (i.e. constructing a [Markle
+  (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
   can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
@@ -413,7 +413,7 @@ first place.
    the archive file.
 
    An archive file is just a bundle of object files, just like zip
-   file but in an uncompressed form. An achive file typically has the
+   file but in an uncompressed form. An archive file typically has the
    .a file extension and named after its contents. For example, the
    archive file containing all libc objects is named `libc.a`.
 
@@ -481,7 +481,7 @@ an undefined symbol by name. We do the hash table insertion from a
 parallel for-loop which iterates over a list of input files.
 
 Overall, even though mold is highly scalable, it succeeded to avoid
-complexties you often find in complex parallel programs. From high
+complexities you often find in complex parallel programs. From high
 level, mold just serially executes linker's internal passes one by
 one. Each pass is parallelized using parallel for-loops.
 
