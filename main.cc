@@ -319,6 +319,10 @@ int do_main(int argc, char **argv) {
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
                  << ": " << strerror(errno);
 
+  // Handle -wrap options if any.
+  for (std::string_view name : ctx.arg.wrap)
+    Symbol<E>::intern(ctx, name, name)->wrap = true;
+
   // Preload input files
   std::function<void()> on_complete;
 

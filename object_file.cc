@@ -535,9 +535,12 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   // Initialize global symbols
   for (i64 i = first_global; i < elf_syms.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
+
+    // Get a symbol name
     std::string_view key = symbol_strtab.data() + esym.st_name;
     std::string_view name = key;
 
+    // Parse symbol version after atsign
     if (i64 pos = name.find('@'); pos != name.npos) {
       std::string_view ver = name.substr(pos + 1);
       name = name.substr(0, pos);
@@ -547,7 +550,21 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
         symvers[i - first_global] = ver.data();
     }
 
-    this->symbols[i] = Symbol<E>::intern(ctx, key, name);
+    Symbol<E> *sym = Symbol<E>::intern(ctx, key, name);
+
+    // Handle -wrap option
+    if (esym.is_undef()) {
+      if (sym->wrap) {
+        sym = Symbol<E>::intern(ctx,
+          save_string(ctx, "__wrap_" + std::string(key)),
+          save_string(ctx, "__wrap_" + std::string(name)));
+      } else if (name.starts_with("__real_") &&
+                 ctx.arg.wrap.count(name.substr(7))) {
+        sym = Symbol<E>::intern(ctx, key.substr(7), name.substr(7));
+      }
+    }
+
+    this->symbols[i] = sym;
 
     if (esym.is_common())
       has_common_symbol = true;

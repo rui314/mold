@@ -1427,6 +1427,7 @@ struct Context {
     std::string rpaths;
     std::string soname;
     std::string sysroot;
+    std::unordered_set<std::string_view> wrap;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
@@ -1956,6 +1957,7 @@ public:
   u8 is_weak : 1 = false;
   u8 write_to_symtab : 1 = false;
   u8 traced : 1 = false;
+  u8 wrap : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 copyrel_readonly : 1 = false;
 

@@ -111,6 +111,7 @@ Options:
     --no-warn-common
   --whole-archive             Include all objects from static archives
     --no-whole-archive
+  --wrap SYMBOL               Use wrapper function for a given symbol
   -z now                      Disable lazy function resolution
   -z lazy                     Enable lazy function resolution (default)
   -z execstack                Require executable stack
@@ -496,6 +497,8 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.compress_debug_sections = false;
       else
         Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
+    } else if (read_arg(ctx, args, arg, "wrap")) {
+      ctx.arg.wrap.insert(arg);
     } else if (read_flag(args, "omagic") || read_flag(args, "N")) {
       ctx.arg.omagic = true;
       ctx.arg.is_static = true;
