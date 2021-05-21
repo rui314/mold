@@ -62,7 +62,7 @@ Clang. I'm using Ubuntu 20.04 as a development platform. In that
 environment, you can build mold by the following commands.
 
 ```
-$ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev
+$ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git
 $ git clone https://github.com/rui314/mold.git
 $ cd mold
 $ make
