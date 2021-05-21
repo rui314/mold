@@ -1589,7 +1589,9 @@ private:
 template <typename E>
 class Fatal {
 public:
-  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {}
+  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
+  }
 
   [[noreturn]] ~Fatal() {
     out.~SyncOut();
@@ -1610,6 +1612,7 @@ template <typename E>
 class Error {
 public:
   Error(Context<E> &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
     ctx.has_error = true;
   }
 
@@ -1633,6 +1636,7 @@ template <typename E>
 class Warn {
 public:
   Warn(Context<E> &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
     if (ctx.arg.fatal_warnings)
       ctx.has_error = true;
   }
