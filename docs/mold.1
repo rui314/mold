@@ -126,10 +126,9 @@ Change to \fIdir\fR before doing anything
 .IP "\fB\-E\fR"
 .PD 0
 .IP "\fB\-\-export\-dynamic\fR"
+.IP "\fB\-\-no\-export\-dynamic\fR"
 .PD
 Put symbols in the dynamic symbol table
-.IP "\fB\-\-no\-export\-dynamic\fR"
-Do not put symbols in the dynamic symbol table
 .IP "\fB\-F\fR \fIlibname\fR"
 .PD 0
 .IP "\fB\-\-filter\fR=\fIlibname\fR"
@@ -138,10 +137,10 @@ Set \fBDT_FILTER\fR to \fIlibname\fR
 .IP "\fB\-I\fR\fIfile\fR"
 .PD 0
 .IP "\fB\-\-dynamic\-linker\fR=\fIfile\fR"
+.PD 0
+.IP "\fB\-\-no\-dynamic\-linker\fR"
 .PD
 Set dynamic linker path
-.IP "\fB\-\-no\-dynamic\-linker\fR"
-Do not set dynamic linker path
 .IP "\fB\-L\fR\fIdir\fR"
 .PD 0
 .IP "\fB\-\-library\-path\fR=\fIdir\fR"
@@ -155,10 +154,9 @@ Write map file to stdout
 .IP "\fB\-N\fR"
 .PD 0
 .IP "\fB\-\-omagic\fR"
+.IP "\fB\-\-no\-omagic\fR"
 .PD
 Do not page align data, do not make text readonly
-.IP "\fB\-\-no\-omagic\fR"
-Page align data, make text readonly
 .IP "\fB\-S\fR"
 .PD 0
 .IP "\fB\-\-strip\-debug\fR"
@@ -217,45 +215,52 @@ Bind global functions locally
 .IP "\fB\-\-Map\fR=\fIfile\fR"
 Write map file to a given file
 .IP "\fB\-\-as\-needed\fR"
-Only set \fBDT_NEEDED\fR if used
+.PD 0
 .IP "\fB\-\-no\-as\-needed\fR"
-Always set \fBDT_NEEDED\fR
+.PD
+Only set \fBDT_NEEDED\fR if used
 .IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,\fIhexstring\fR]"
-Generate build ID
+.PD 0
 .IP "\fB\-\-no\-build\-id\fR"
-Do not generate build ID
+.PD
+Generate build ID
 .IP "\fB\-\-chroot\fR=\fIdir\fR"
 Set \fIdir\fR to root directory
 .IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
 Compress \fB.debug_*\fR sections
 .IP "\fB\-\-demangle\fR"
-Demangle C++ symbols in log messages (default)
+.PD 0
 .IP "\fB\-\-no\-demangle\fR"
-Do not demangle
+.PD
+Demangle C++ symbols in log messages (default)
 .IP "\fB\-\-dynamic\-list\fR"
 Read a list of dynamic symbols
 .IP "\fB\-\-eh\-frame\-hdr\fR"
-Create \fB.eh_frame_hdr\fR section
+.PD 0
 .IP "\fB\-\-no\-eh\-frame\-hdr\fR"
-Do not create \fB.eh_frame_hdr\fR section (default)
+.PD
+Create \fB.eh_frame_hdr\fR section
 .IP "\fB\-\-exclude\-libs\fR=\fIlib,lib,..\fR"
 Mark all symbols in given libraries hidden
 .IP "\fB\-\-fini\fR=\fIsymbol\fR"
 Call \fIsymbol\fR at unload-time
 .IP "\fB\-\-fork\fR"
-Spawn a child process (default)
+.PD 0
 .IP "\fB\-\-no\-fork\fR"
-Do not spawn a child process
+.PD
+Spawn a child process (default)
 .IP "\fB\-\-gc\-sections\fR"
-Remove unreferenced sections
+.PD 0
 .IP "\fB\-\-no\-gc\-sections\fR"
-Do not remove unreferenced sections
+.PD
+Remove unreferenced sections
 .IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
 Set hash style
 .IP "\fB\-\-icf\fR"
-Fold identical code
+.PD 0
 .IP "\fB\-\-no\-icf\fR"
-Do not fold identical code
+.PD
+Fold identical code
 .IP "\fB\-\-image\-base\fR=\fIaddr\fR"
 Set the base address to \fIaddr\fR
 .IP "\fB\-\-init\fR=\fIsymbol\fR"
@@ -267,35 +272,36 @@ Print performance statistics
 .IP "\fB\-\-pie\fR"
 .PD 0
 .IP "\fB\-\-pic\-executable\fR"
-.PD
-Create a position independent executable
 .IP "\fB\-\-no\-pie\fR"
-.PD 0
 .IP "\fB\-\-no\-pic\-executable\fR"
 .PD
-Do not create a position independent executable
+Create a position independent executable
 .IP "\fB\-\-pop\-state\fR"
 Pop state of flags governing input file handling
 .IP "\fB\-\-preload\fR"
 Preload object files
 .IP "\fB \-\-print\-gc\-sections\fR"
-Print removed unreferenced sections
+.PD 0
 .IP "\fB\-\-no\-print\-gc\-sections\fR"
-Do not print removed unreferenced sections (default)
+.PD
+Print removed unreferenced sections
 .IP "\fB\-\-print\-icf\-sections\fR"
-Print folded identical sections
+.PD 0
 .IP "\fB\-\-no\-print\-icf\-sections\fR"
-Do not print folded identical sections
+.PD
+Print folded identical sections
 .IP "\fB\-\-push\-state\fR"
 Pop state of flags governing input file handling
 .IP "\fB\-\-quick\-exit\fR"
-Use quick_exit to exit (default)
+.PD 0
 .IP "\fB\-\-no\-quick\-exit\fR"
+.PD
 Do not use quick_exit to exit
 .IP "\fB\-\-relax\fR"
-Optimize instructions (default)
+.PD 0
 .IP "\fB\-\-no\-relax\fR"
-Do not optimize instructions
+.PD
+Optimize instructions (default)
 .IP "\fB\-\-repro\fR"
 Embed input files to .repro section
 .IP "\fB\-\-rpath\fR=\fIdir\fR"
@@ -318,21 +324,24 @@ Set target system root directory
 .IP "\fB\-\-thread\-count=\fIcount\fR\fR"
 Use \fIcount\fR number of threads
 .IP "\fB\-\-threads\fR"
-Use multiple threads (default)
+.PD 0
 .IP "\fB\-\-no\-threads\fR"
-Do not use multiple threads
+.PD
+Use multiple threads (default)
 .IP "\fB\-\-trace\fR"
 Print name of each input file
 .IP "\fB\-\-version\-script\fR=\fIfile\fR"
 Read version script
 .IP "\fB\-\-warn\-common\fR"
-Warn about common symbols
+.PD 0
 .IP "\fB\-\-no\-warn\-common\fR"
-Do not warn about common symbols
+.PD
+Warn about common symbols
 .IP "\fB\-\-whole\-archive\fR"
-Include all objects from static archives
+.PD 0
 .IP "\fB\-\-no\-whole\-archive\fR"
-Do not include all objects from static archives
+.PD
+Include all objects from static archives
 .IP "\fB\-z now\fR"
 Disable lazy function resolution
 .IP "\fB\-z lazy\fR"
