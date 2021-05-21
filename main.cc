@@ -28,7 +28,9 @@ std::string_view save_string(Context<E> &ctx, const std::string &str) {
 }
 
 std::string get_version_string() {
-  return "mold " GIT_HASH;
+  if (strlen(GIT_HASH) == 0)
+    return "mold " MOLD_VERSION " (compatible with GNU ld)";
+  return "mold " MOLD_VERSION " (" GIT_HASH "; compatible with GNU ld)";
 }
 
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };

@@ -7,3 +7,4 @@ options.inc
 core
 ld
 oneTBB
+mimalloc

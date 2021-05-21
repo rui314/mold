@@ -2,11 +2,12 @@ CC = clang
 CXX = clang++
 
 MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
+GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -Wno-deprecated-volatile -Wno-switch \
            -DMOLD_VERSION=\"0.1\" \
-           -DGIT_HASH=\"$(shell git rev-parse HEAD)\" \
+           -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS = $(EXTRA_LDFLAGS)
 LIBS = -Wl,-as-needed -lcrypto -pthread -ltbb -lz -lxxhash -ldl
@@ -57,11 +58,14 @@ mold-wrapper.so: mold-wrapper.c Makefile
 
 $(OBJS): mold.h elf.h Makefile
 
-$(MIMALLOC_LIB):
-	[ -f mimalloc/CMakeLists.txt ] || git submodule update --init
+$(MIMALLOC_LIB): mimalloc/CMakeLists.txt
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
 	$(MAKE) -C mimalloc/out/release
+
+mimalloc/CMakeLists.txt:
+	git clone https://github.com/microsoft/mimalloc
+	(cd mimalloc; git checkout -q v2.0.1)
 
 test tests check: all
 	for i in test/*.sh; do $$i || exit 1; done
