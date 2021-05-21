@@ -5,7 +5,7 @@ MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
 GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
-           -Wno-deprecated-volatile -Wno-switch \
+           -Wno-deprecated-volatile \
            -DMOLD_VERSION=\"0.1.1\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)

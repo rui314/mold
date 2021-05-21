@@ -1509,8 +1509,9 @@ i64 BuildId::size(Context<E> &ctx) const {
     return hash_size;
   case UUID:
     return 16;
+  default:
+    unreachable(ctx);
   }
-  unreachable(ctx);
 }
 
 template <typename E>
@@ -1594,9 +1595,9 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
     write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
                  get_uuid_v4(ctx));
     return;
+  default:
+    unreachable(ctx);
   }
-
-  unreachable(ctx);
 }
 
 template <typename E>

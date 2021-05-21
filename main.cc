@@ -106,8 +106,9 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     case FileType::TEXT:
       parse_linker_script(ctx, mb);
       return;
+    default:
+      Fatal(ctx) << mb->name << ": unknown file type";
     }
-    Fatal(ctx) << mb->name << ": unknown file type";
   }
 
   switch (get_file_type(ctx, mb)) {
@@ -148,8 +149,9 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   case FileType::TEXT:
     parse_linker_script(ctx, mb);
     return;
+  default:
+    Fatal(ctx) << mb->name << ": unknown file type";
   }
-  Fatal(ctx) << mb->name << ": unknown file type";
 }
 
 template <typename E>
