@@ -72,6 +72,7 @@ Options:
                               Set hash style
   --icf                       Fold identical code
     --no-icf
+  --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
   --perf                      Print performance statistics
@@ -299,9 +300,12 @@ static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
 template <typename E>
 static i64 parse_number(Context<E> &ctx, std::string opt,
                         std::string_view value) {
-  if (value.find_first_not_of("0123456789") != std::string_view::npos)
-    Fatal(ctx) << "option -" << opt << ": not a number";
-  return std::stol(std::string(value), nullptr, 16);
+  size_t nread;
+  i64 ret = std::stol(std::string(value), &nread, 0);
+  if (value.size() != nread)
+    Fatal(ctx) << "option -" << opt << ": not a number: " << value
+               << " " << nread << " " << value.size();
+  return ret;
 }
 
 template <typename E>
@@ -548,6 +552,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.icf = true;
     } else if (read_flag(args, "no-icf")) {
       ctx.arg.icf = false;
+    } else if (read_arg(ctx, args, arg, "image-base")) {
+      ctx.arg.image_base = parse_number(ctx, "image-base", arg);
     } else if (read_flag(args, "quick-exit")) {
       ctx.arg.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {
