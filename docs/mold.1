@@ -108,147 +108,289 @@ to the input file order.
 by \fBmold\fR and \fBlld\fR for compatibility with traditional linkers,
 but they are silently ignored.
 
+.SS Dynamic symbol resolution
+Some of Unix linker's features are unable to be understood without
+understanding the semantics of dynamic symbol resolution. Therefore,
+even though that's not specific to \fBmold\fR, we'll explain it here.
+.PP
+We use "ELF module" or just "module" as a collective term to refer an
+executable or a shared library file in the ELF format.
+.PP
+An ELF module may have lists of imported symbols and exported symbols,
+as well as a list of shared library names from which imported symbols
+should be imported. The point is that imported symbols are not bound
+to any specific shared library until runtime. This is contrary to
+systems such as Windows that have the two-level namespace for dynamic
+symbols. On Windows, for example, dynamic symbols are represented as a
+tuple of (symbol name, shared library name), so that each dynamic
+symbol is guaranteed to be resolved from its corresponding library.
+.PP
+Here is how the Unix dynamic linker resolves dynamic symbols. Upon the
+start of an ELF program, the dynamic linker construct a list of ELF
+modules which as a whole consists of a complete program. The
+executable file is always at the beginning of the list, which is
+followed by its depending shared libraries. An imported symbol is
+searched from the beginning of the list to the end. If two or more
+modules define the same symbol, the one that appears first in the list
+takes precedence over the others.
+.PP
+Typically, a module that exports a symbol also imports the same
+symbol. Such symbol is usually resolved to itself, but that's not the
+case if a module that appears before in the symbol search list
+provides another definition of the same symbol.
+.PP
+Let me take \fBmalloc\fR as an example. Assume that you define your
+version of \fBmalloc\fR in your main executable file. Then, all
+\fBmalloc\fR calls from any module are resolved to your function
+instead of the one in libc, because the executable is at the beginning
+of the dynamic symbol search list. Note that even \fBmalloc\fR calls
+within libc are resolved to your definition since libc exports and
+imports \fBmalloc\fR. Therefore, by defining \fBmalloc\fR yourself,
+You can overwrite a library function, and the \fBmalloc\fR in libc
+becomes dead code.
+.PP
+This Unix's semantics is tricky and sometimes considered harmful. For
+example, assume that you accidentally define \fBatoi\fR as a global
+function in your executable that behaves completely different from the
+one in the C standard. Then, all \fBatoi\fR function calls from any
+modules (even function calls within libc) are redirected to your
+function instead of the one in libc which obviously causes a problem.
+That is a somewhat surprising consequence for an accidental name
+conflict. On the other hand, this semantics is sometimes considered
+useful because it allows users to overwrite library functions without
+recompiling modules containing them. Whether good or bad, you should
+this semantics in your mind to understand Unix linkers behaviors.
+
 .SH OPTIONS
 .IP "\fB\-\-help\fR"
-Report usage information
+Report usage information to stdout and exit.
 .IP "\fB\-v\fR"
 .PD 0
 .IP "\fB\-\-version\fR"
 .PD
-Report version information
+Report version information to stdout.
+
 .IP "\fB\-V\fR"
-Report version and target information
+Report version and target information to stdout.
+
 .IP "\fB\-C\fR \fIdir\fR"
 .PD 0
 .IP "\fB\-\-directory\fR \fIdir\fR"
 .PD
-Change to \fIdir\fR before doing anything
+Change to \fIdir\fR before doing anything.
+
 .IP "\fB\-E\fR"
 .PD 0
 .IP "\fB\-\-export\-dynamic\fR"
 .IP "\fB\-\-no\-export\-dynamic\fR"
 .PD
-Put symbols in the dynamic symbol table
+When creating an executable, using \fB\-E\fI option causes all global
+symbols to be put into the dynamic symbol table, so that the symbols
+are visible from other ELF modules at runtime.
+.PP
+By default, or if \fB\-\-no\-export\-dynamic\fR is given, only symbols
+that are referenced by DSOs at link-time are exported from an executable.
+
 .IP "\fB\-F\fR \fIlibname\fR"
 .PD 0
 .IP "\fB\-\-filter\fR=\fIlibname\fR"
 .PD
-Set \fBDT_FILTER\fR to \fIlibname\fR
+Set the \fBDT_FILTER\fR dynamic section field to \fIlibname\fR.
+
 .IP "\fB\-I\fR\fIfile\fR"
 .PD 0
 .IP "\fB\-\-dynamic\-linker\fR=\fIfile\fR"
 .PD 0
 .IP "\fB\-\-no\-dynamic\-linker\fR"
 .PD
-Set dynamic linker path
+Set the dynamic linker path to \fIfile\fR. If no \fB-I\fR option is
+given, or if \fB\-\-no\-dynamic\-linker\fR is given, no dynamic linker
+path is set to an output file. This is contrary to the GNU linkers
+which sets a default dynamic linker path in that case.
+However, this difference doesn't usually make any difference because
+the compiler driver always passes \fB-I\fR to a linker.
+
 .IP "\fB\-L\fR\fIdir\fR"
 .PD 0
 .IP "\fB\-\-library\-path\fR=\fIdir\fR"
 .PD
-Add \fIdir\fR to library search path
+Add \fIdir\fR to the list of library search paths from which
+\fBmold\fR searches libraries for the \fB-l\fR option.
+
+Unlike the GNU linkers, \fBmold\fR does not have the default search
+paths. This difference doesn't usually make any difference because the
+compiler driver always passes all necessary search paths to a linker.
+
 .IP "\fB\-M\fR"
 .PD 0
 .IP "\fB\-\-print\-map\fR"
 .PD
-Write map file to stdout
+Write a map file to stdout.
+
 .IP "\fB\-N\fR"
 .PD 0
 .IP "\fB\-\-omagic\fR"
 .IP "\fB\-\-no\-omagic\fR"
 .PD
-Do not page align data, do not make text readonly
+Force \fBmold\fR to emit an output file with an old-fashioned memory
+layout. First, it makes the first data segment to not be aligned to a
+page boundary. Second, text segments are marked as writable if the
+option is given.
+.RE
+
 .IP "\fB\-S\fR"
 .PD 0
 .IP "\fB\-\-strip\-debug\fR"
 .PD
-Strip \fB.debug_*\fR sections
+Omit \fB.debug_*\fR sections from the output file.
+
 .IP "\fB\-T\fR \fIfile\fR"
 .PD 0
 .IP "\fB\-\-script\fR=\fIfile\fR"
 .PD
-Read linker script from \fIfile\fR
+Read linker script from \fIfile\fR.
+
 .IP "\fB\-X\fR"
 .PD 0
 .IP "\fB\-\-discard\-locals\fR"
 .PD
-Discard temporary local symbols
-.IP "\fB\-e\fR\fIsymbol\fR"
+Discard temporary local symbols to reduce the sizes of the symbol
+table and the string table. Temporary local symbols are local symbols
+starting with \fB.L\fR. Compilers usually generate such symbols for
+unnamed program elements such as string literals or floating-point
+literals.
+
+.IP "\fB\-e \fR\fIsymbol\fR"
 .PD 0
 .IP "\fB\-\-entry\fR=\fIsymbol\fR"
 .PD
-Set program entry point
+Use \fIsymbol\fR as the entry point symbol instead of the default
+entry point symbol \fB_start\fR.
+
 .IP "\fB\-f\fR \fIshlib\fR"
 .PD 0
 .IP "\fB\-\-auxiliary\fR=\fIshlib\fR"
 .PD
-Set \fBDT_AUXILIARY\fR to \fIshlib\fR
+Set the \fBDT_AUXILIARY\fR dynamic section field to \fIshlib\fR.
+
 .IP "\fB\-h\fR \fIlibname\fR"
 .PD 0
 .IP "\fB\-\-soname\fR\fIlibname\fR"
 .PD
-Set shared library name
+Set the \fBDT_SONAME\fR dynamic section field to \fIlibname\fR.  This
+option is used when creating a shared object file. Typically, when you
+create lib\fIfoo\fR.so, you want to pass \fB\-\-soname\fR=\fIfoo\fR to
+a linker.
+
 .IP "\fB\-l\fR\fIlibname\fR"
-Search for \fIlibname\fR
+Search for lib\fIlibname\fR.so or lib\fIlibname\fR.a from library
+search paths.
+
 .IP "\fB\-o\fR \fIfile\fR"
 .PD 0
 .IP "\fB\-\-output\fR=\fIfile\fR"
 .PD
-Set output filename
+Use \fIfile\fR as the output file name instead of the default name
+\fBa.out\fR.
+
 .IP "\fB\-s\fR"
 .PD 0
 .IP "\fB\-\-strip\-all\fR"
 .PD
-Strip .symtab section
+Omit \fB.symtab\fR section from the output file.
+
 .IP "\fB\-u\fR \fIsymbol\fR"
 .PD 0
 .IP "\fB\-\-undefined\fR=\fIsymbol\fR"
 .PD
-Force to resolve \fIsymbol\fR
+If \fIsymbol\fR remains as an undefined symbol after reading all
+object files, and if there is an static archive that contains an
+object file defining \fIsymbol\fR, pull out the object file and link
+it so that the output file contains a definition of \fIsymbol\fR.
+
 .IP "\fB\-\-Bdynamic\fR"
-Link against shared libraries (default)
+Link against shared libraries.
+
 .IP "\fB\-\-Bstatic\fR"
-Do not link against shared libraries
+Do not link against shared libraries.
+
 .IP "\fB\-\-Bsymbolic\fR"
-Bind global symbols locally
+When creating a shared library, make global symbols export-only
+(i.e. do not import the same symbol). As a result, references within a
+shared library is always resolved locally, negating symbol override at
+runtime. See \fB\s-1Dynamic symbol resolution\s0\fR for more
+information about symbol imports and exports.
+
 .IP "\fB\-\-Bsymbolic\-functions\fR"
-Bind global functions locally
+Have the same effect as \fB\-\-Bsymbolic\fR but works only for
+function symbols. Data symbols remains both imported and exported.
+
 .IP "\fB\-\-Map\fR=\fIfile\fR"
-Write map file to a given file
+Write map file to \fIfile\fR.
+
 .IP "\fB\-\-as\-needed\fR"
 .PD 0
 .IP "\fB\-\-no\-as\-needed\fR"
 .PD
-Only set \fBDT_NEEDED\fR if used
-.IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,\fIhexstring\fR]"
+By default, shared libraries given to a linker are unconditionally
+added to the list of required libraries in an output file. However,
+shared libraries after \fB\-\-as\-needed\fR are added to the list only
+when at least one symbol is actually used by an object file. In other
+words, shared libraries after \fB\-\-as\-needed\fR are not added to the
+list if they are not needed by a program.
+
+The \fB\-\-no\-as\-needed\fR option restores the default behavior
+for files following the option.
+
+.IP "\fB\-\-build\-id\fR"
 .PD 0
+.IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,0x\fIhexstring\fR]"
 .IP "\fB\-\-no\-build\-id\fR"
 .PD
-Generate build ID
+
+Create a \fB.note.gnu.build-id\fR section containing a byte string to
+uniquely identify an output file. \fB\-\-build\-id\fR and
+\fB\-\-build\-id=sha256\fR compute a 256 bits cryptographic hash of an
+output file and set it to build-id. \fBmd5\fR and \fBsha1\fR compute
+the same hash but truncate it to 128 and 160 bits, respectively,
+before setting it to build-id. \fBuuid\fR sets a random 128 bits
+random UUID. 0x\fIhexstring\fR sets \fIhexstring\fR.
+
 .IP "\fB\-\-chroot\fR=\fIdir\fR"
-Set \fIdir\fR to root directory
+Set \fIdir\fR to root directory.
+
 .IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
-Compress \fB.debug_*\fR sections
+Compress \fB.debug_*\fR sections using the zlib compression algorithm.
+
 .IP "\fB\-\-demangle\fR"
 .PD 0
 .IP "\fB\-\-no\-demangle\fR"
 .PD
-Demangle C++ symbols in log messages (default)
-.IP "\fB\-\-dynamic\-list\fR"
-Read a list of dynamic symbols
+Demangle C++ symbols in log messages.
+
+.IP "\fB\-\-dynamic\-list\fR=\fIfile\fR"
+Read a list of dynamic symbols from \fIfile\fR.
+
 .IP "\fB\-\-eh\-frame\-hdr\fR"
 .PD 0
 .IP "\fB\-\-no\-eh\-frame\-hdr\fR"
 .PD
-Create \fB.eh_frame_hdr\fR section
+Create \fB.eh_frame_hdr\fR section.
+
 .IP "\fB\-\-exclude\-libs\fR=\fIlib,lib,..\fR"
-Mark all symbols in given libraries hidden
+Mark all symbols in given libraries hidden.
+
 .IP "\fB\-\-fini\fR=\fIsymbol\fR"
-Call \fIsymbol\fR at unload-time
+Call \fIsymbol\fR at unload-time.
+
 .IP "\fB\-\-fork\fR"
 .PD 0
 .IP "\fB\-\-no\-fork\fR"
 .PD
-Spawn a child process (default)
+Spawn a child process and let it do the actual linking. When linking a
+large program, the OS kernel can take a few hundred milliseconds to
+terminate a mold process. \fB\-\-fork\fR hides that latency.
+
 .IP "\fB\-\-gc\-sections\fR"
 .PD 0
 .IP "\fB\-\-no\-gc\-sections\fR"
@@ -296,7 +438,7 @@ Pop state of flags governing input file handling
 .PD 0
 .IP "\fB\-\-no\-quick\-exit\fR"
 .PD
-Do not use quick_exit to exit
+Use quick_exit to exit
 .IP "\fB\-\-relax\fR"
 .PD 0
 .IP "\fB\-\-no\-relax\fR"
