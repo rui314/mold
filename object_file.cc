@@ -484,6 +484,26 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
   return true;
 }
 
+// Returns a symbol object for a given key. This function handles
+// the -wrap option.
+template <typename E>
+static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
+                                std::string_view key, std::string_view name) {
+  if (esym.is_undef() && name.starts_with("__real_") &&
+      ctx.arg.wrap.count(name.substr(7))) {
+    return Symbol<E>::intern(ctx, key.substr(7), name.substr(7));
+  }
+
+  Symbol<E> *sym = Symbol<E>::intern(ctx, key, name);
+
+  if (esym.is_undef() && sym->wrap) {
+    key = save_string(ctx, "__wrap_" + std::string(key));
+    name = save_string(ctx, "__wrap_" + std::string(name));
+    return Symbol<E>::intern(ctx, key, name);
+  }
+  return sym;
+}
+
 template <typename E>
 void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   if (!symtab_sec)
@@ -550,22 +570,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
         symvers[i - first_global] = ver.data();
     }
 
-    Symbol<E> *sym = Symbol<E>::intern(ctx, key, name);
-
-    // Handle -wrap option
-    if (esym.is_undef()) {
-      if (sym->wrap) {
-        sym = Symbol<E>::intern(ctx,
-          save_string(ctx, "__wrap_" + std::string(key)),
-          save_string(ctx, "__wrap_" + std::string(name)));
-      } else if (name.starts_with("__real_") &&
-                 ctx.arg.wrap.count(name.substr(7))) {
-        sym = Symbol<E>::intern(ctx, key.substr(7), name.substr(7));
-      }
-    }
-
-    this->symbols[i] = sym;
-
+    this->symbols[i] = insert_symbol(ctx, esym, key, name);
     if (esym.is_common())
       has_common_symbol = true;
   }
