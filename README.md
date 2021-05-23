@@ -76,6 +76,13 @@ a Docker environment. To do so, just run `./build-static.sh` in this
 directory. The script creates a Ubuntu 20.04 Docker image, install
 necessary tools and libraries to it and build mold as a static binary.
 
+`make test` depends on a few more packages. To install, run the following commands:
+
+```
+$ sudo dpkg --add-architecture i386
+$ sudo apt-get install dwarfdump libc6-dev:i386 lib32gcc-10-dev gcc-multilib
+```
+
 ## How to use
 
 On Unix, the linker command (which is usually `/usr/bin/ld`) is

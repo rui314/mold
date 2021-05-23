@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: apt-get
-      run: sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git
+      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git dwarfdump libc6-dev:i386 lib32gcc-10-dev gcc-multilib
     - name: make
       run: make -j
     - name: make test
