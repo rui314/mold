@@ -68,6 +68,7 @@ mimalloc/CMakeLists.txt:
 	(cd mimalloc; git checkout -q v2.0.1)
 
 test tests check: all
+	rm -rf test/tmp
 	for i in test/*.sh; do $$i || exit 1; done
 
 install: all
