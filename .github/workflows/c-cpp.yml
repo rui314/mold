@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
+    - name: apt-get
+      run: sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git
     - name: make
       run: make
     - name: make test
