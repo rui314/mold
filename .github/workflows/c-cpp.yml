@@ -12,6 +12,6 @@ jobs:
     - name: apt-get
       run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git dwarfdump libc6-dev:i386 lib32gcc-10-dev gcc-multilib
     - name: make
-      run: make -j
+      run: make -j$(nproc)
     - name: make test
       run: make test
