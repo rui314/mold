@@ -360,7 +360,8 @@ random UUID. 0x\fIhexstring\fR sets \fIhexstring\fR.
 Set \fIdir\fR to root directory.
 
 .IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR]"
-Compress \fB.debug_*\fR sections using the zlib compression algorithm.
+Compress DWARF debug info (\fB.debug_*\fR sections) using the zlib
+compression algorithm.
 
 .IP "\fB\-\-demangle\fR"
 .PD 0
@@ -396,21 +397,28 @@ terminate a mold process. \fB\-\-fork\fR hides that latency.
 .IP "\fB\-\-no\-gc\-sections\fR"
 .PD
 Remove unreferenced sections
+
 .IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
 Set hash style
+
 .IP "\fB\-\-icf\fR"
 .PD 0
 .IP "\fB\-\-no\-icf\fR"
 .PD
 Fold identical code
+
 .IP "\fB\-\-image\-base\fR=\fIaddr\fR"
 Set the base address to \fIaddr\fR
+
 .IP "\fB\-\-init\fR=\fIsymbol\fR"
 Call \fIsymbol\fR at load-time
+
 .IP "\fB\-\-no\-undefined\fR"
 Report undefined symbols (even with \fB\-\-shared\fR)
+
 .IP "\fB\-\-perf\fR"
 Print performance statistics
+
 .IP "\fB\-\-pie\fR"
 .PD 0
 .IP "\fB\-\-pic\-executable\fR"
@@ -418,32 +426,41 @@ Print performance statistics
 .IP "\fB\-\-no\-pic\-executable\fR"
 .PD
 Create a position independent executable
+
 .IP "\fB\-\-pop\-state\fR"
 Pop state of flags governing input file handling
+
 .IP "\fB\-\-preload\fR"
 Preload object files
+
 .IP "\fB \-\-print\-gc\-sections\fR"
 .PD 0
 .IP "\fB\-\-no\-print\-gc\-sections\fR"
 .PD
 Print removed unreferenced sections
+
 .IP "\fB\-\-print\-icf\-sections\fR"
 .PD 0
 .IP "\fB\-\-no\-print\-icf\-sections\fR"
 .PD
 Print folded identical sections
+
 .IP "\fB\-\-push\-state\fR"
 Pop state of flags governing input file handling
+
 .IP "\fB\-\-quick\-exit\fR"
 .PD 0
 .IP "\fB\-\-no\-quick\-exit\fR"
 .PD
-Use quick_exit to exit
+Use quick_exit to exit.
+
 .IP "\fB\-\-relax\fR"
 .PD 0
 .IP "\fB\-\-no\-relax\fR"
 .PD
-Optimize instructions (default)
+Rewrite machine instructions with more efficient ones for some
+relocations. The feature is enabled by default.
+
 .IP "\fB\-\-repro\fR"
 Embed input files to .repro section
 .IP "\fB\-\-rpath\fR=\fIdir\fR"
@@ -461,19 +478,29 @@ Reserve give number of tags in .dynamic section
 Do not link against shared libraries
 .IP "\fB\-\-stats\fR"
 Print input statistics
+
 .IP "\fB\-\-sysroot\fR=\fIdir\fR"
 Set target system root directory
+
 .IP "\fB\-\-thread\-count=\fIcount\fR\fR"
-Use \fIcount\fR number of threads
+Use \fIcount\fR number of threads.
+
 .IP "\fB\-\-threads\fR"
 .PD 0
 .IP "\fB\-\-no\-threads\fR"
 .PD
-Use multiple threads (default)
+Use multiple threads. By default, \fBmold\fR uses as many threads as
+the number of cores or 32, whichever is the smallest. The reason why
+it is capped to 32 is because \fBmold\fR doesn't scale well beyond
+that point. To use only one thread, pass \fB\-\-no\-threads\fR or
+\fB\-\-thread-count=1\fR.
+
 .IP "\fB\-\-trace\fR"
-Print name of each input file
+Print name of each input file.
+
 .IP "\fB\-\-version\-script\fR=\fIfile\fR"
-Read version script
+Read version script from \fIfile\fR.
+
 .IP "\fB\-\-warn\-common\fR"
 .PD 0
 .IP "\fB\-\-no\-warn\-common\fR"
