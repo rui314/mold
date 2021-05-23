@@ -12,4 +12,15 @@ mkdir -p $t
 ../mold -V | grep -q elf_x86_64
 ../mold -V | grep -q elf_i386
 
+cat <<EOF | clang -c -xc -o $t/a.o -
+#include <stdio.h>
+
+int main() {
+  printf("Hello world\n");
+}
+EOF
+
+clang -fuse-ld=`pwd`/../mold -Wl,--version -o $t/exe $t/a.o | grep -q mold
+$t/exe | grep -q 'Hello world'
+
 echo OK

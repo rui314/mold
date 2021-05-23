@@ -364,14 +364,10 @@ void parse_nonpositional_args(Context<E> &ctx,
   args = args.subspan(1);
 
   ctx.arg.thread_count = get_default_thread_count();
+  bool version_shown = false;
 
   while (!args.empty()) {
     std::string_view arg;
-
-    if (read_flag(args, "v") || read_flag(args, "version")) {
-      SyncOut(ctx) << get_version_string();
-      exit(0);
-    }
 
     if (read_flag(args, "help")) {
       SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
@@ -386,9 +382,13 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.dynamic_linker = arg;
     } else if (read_arg(ctx, args, arg, "no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
+    } else if (read_flag(args, "v") || read_flag(args, "version")) {
+      SyncOut(ctx) << get_version_string();
+      version_shown = true;
     } else if (read_flag(args, "V")) {
       SyncOut(ctx) << get_version_string()
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386";
+      version_shown = true;
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       ctx.arg.export_dynamic = true;
     } else if (read_flag(args, "no-export-dynamic")) {
@@ -693,6 +693,9 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
+
+  if (version_shown && remaining.empty())
+    exit(0);
 }
 
 #define INSTANTIATE(E)                                                  \
