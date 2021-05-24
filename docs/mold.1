@@ -161,6 +161,18 @@ useful because it allows users to overwrite library functions without
 recompiling modules containing them. Whether good or bad, you should
 this semantics in your mind to understand Unix linkers behaviors.
 
+.SS Build reproducibility
+\fBmold\fR's output is deterministic. That is, if you pass the same
+object files and the same command line options to \fBmold\fR, it is
+guaranteed that the output is always bit-wise the same. The linker's
+internal randomness, such as the timing of thread scheduling or
+iteration orders of hash tables, doesn't affect the output.
+.PP
+\fBmold\fR does not have any host-specific default settings. This is
+contrary to the GNU linkers to which some configurable values, such as
+system-dependent library search paths, are hard-coded. Therefore,
+\fBmold\fR depends only on its command-line arguments.
+
 .SH OPTIONS
 .IP "\fB\-\-help\fR"
 Report usage information to stdout and exit.
@@ -293,6 +305,11 @@ search paths.
 Use \fIfile\fR as the output file name instead of the default name
 \fBa.out\fR.
 
+.IP "\fB\-m\fR \fI[\fIelf_x86_64\fR,\fIelf_i386\fR\fR]"
+.PD 0
+.PD
+Choose a target.
+
 .IP "\fB\-s\fR"
 .PD 0
 .IP "\fB\-\-strip\-all\fR"
@@ -340,21 +357,20 @@ words, shared libraries after \fB\-\-as\-needed\fR are not added to the
 list if they are not needed by a program.
 
 The \fB\-\-no\-as\-needed\fR option restores the default behavior
-for files following the option.
+for subsequent files.
 
 .IP "\fB\-\-build\-id\fR"
 .PD 0
 .IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,0x\fIhexstring\fR]"
 .IP "\fB\-\-no\-build\-id\fR"
 .PD
-
 Create a \fB.note.gnu.build-id\fR section containing a byte string to
 uniquely identify an output file. \fB\-\-build\-id\fR and
 \fB\-\-build\-id=sha256\fR compute a 256 bits cryptographic hash of an
 output file and set it to build-id. \fBmd5\fR and \fBsha1\fR compute
 the same hash but truncate it to 128 and 160 bits, respectively,
-before setting it to build-id. \fBuuid\fR sets a random 128 bits
-random UUID. 0x\fIhexstring\fR sets \fIhexstring\fR.
+before setting it to build-id. \fBuuid\fR sets a random 128 bits UUID.
+0x\fIhexstring\fR sets \fIhexstring\fR.
 
 .IP "\fB\-\-chroot\fR=\fIdir\fR"
 Set \fIdir\fR to root directory.
@@ -476,8 +492,9 @@ Create a share library
 Reserve give number of tags in .dynamic section
 .IP "\fB\-\-static\fR"
 Do not link against shared libraries
+
 .IP "\fB\-\-stats\fR"
-Print input statistics
+Print input statistics.
 
 .IP "\fB\-\-sysroot\fR=\fIdir\fR"
 Set target system root directory
@@ -506,13 +523,26 @@ Read version script from \fIfile\fR.
 .IP "\fB\-\-no\-warn\-common\fR"
 .PD
 Warn about common symbols
+
 .IP "\fB\-\-whole\-archive\fR"
 .PD 0
 .IP "\fB\-\-no\-whole\-archive\fR"
 .PD
-Include all objects from static archives
+When archive files (\fB.a\fR files) are given to a linker, only object
+files that are needed to resolve undefined symbols are extracted from
+them and linked to an output file. \fB\-\-whole\-archive\fR changes
+that behavior for subsequent archives so that a linker extracts all
+object files and link them to an output. For example, if you are
+creating a shared object file and you want to include all archive
+members to the output, you should pass \fB\-\-whole\-archive\fR.
+\fB\-\-no\-whole\-archive\fR restores the default behavior for
+subsequent archives.
+
 .IP "\fB\-\-wrap\fR=\fIsymbol\fR"
-Use wrapper functions for \fIsymbol\fR
+Make \fIsymbol\fR to be resolved to \fB__wrap_\fIsymbol\fR. The
+original symbol can be resolved as \fB__real_\fIsymbol\fR. This
+option is typically used for wrapping an existing function.
+
 .IP "\fB\-z now\fR"
 Disable lazy function resolution
 .IP "\fB\-z lazy\fR"
@@ -544,7 +574,6 @@ Mark object to interpose all DSOs but executable
 .PD 0
 .IP "\fB\-)\fR"
 .IP "\fB\-O\fR\fInumber\fR"
-.IP "\fB\-m\fR \fIemulation\fR"
 .IP "\fB\-\-allow\-multiple\-definition\fR"
 .IP "\fB\-\-allow\-shlib\-undefined\fR"
 .IP "\fB\-\-color\-diagnostics\fR"
