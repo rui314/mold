@@ -9,6 +9,10 @@
 
 set -e
 
+# If the existing file is not statically-linked, remove it.
+[ -f mold ] && ! ldd mold 2>&1 | grep -q 'not a dynamic executable' && \
+  rm mold
+
 cat <<EOF | docker build -t mold-build-ubuntu20 -
 FROM ubuntu:20.04
 RUN apt-get update && \
