@@ -124,7 +124,10 @@ Options:
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nocopyreloc              Do not create copy relocations
   -z initfirst                Mark DSO to be initialized first at runtime
-  -z interpose                Mark object to interpose all DSOs but executable)";
+  -z interpose                Mark object to interpose all DSOs but executable)
+
+mold: supported targets: elf32-i386 elf64-x86-64
+mold: supported emulations: elf_i386 elf_x86_64)";
 
 template <typename E>
 static std::vector<std::string_view>
