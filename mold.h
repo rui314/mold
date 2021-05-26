@@ -1427,6 +1427,7 @@ struct Context {
     std::string rpaths;
     std::string soname;
     std::string sysroot;
+    std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;

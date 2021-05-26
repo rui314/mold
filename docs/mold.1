@@ -479,6 +479,14 @@ relocations. The feature is enabled by default.
 
 .IP "\fB\-\-repro\fR"
 Embed input files to .repro section
+
+.IP "\fB\-\-retain\-symbols\-file\fR=\fIfile\fR"
+Keep only symbols listed in \fIfile\fR. \fIfile\fR is a text file
+containing a symbol name on each line. \fBmold\fR discards all local
+symbols as well as global sybmol that are not in \fIfile\fR. Note that
+this option removes symbols only from \fB.symtab\fR section and does
+not affect \fB.dynsym\fR section, which is used for dynamic linking.
+
 .IP "\fB\-\-rpath\fR=\fIdir\fR"
 Add \fIdir\fR to runtime search path
 .IP "\fB\-\-run\fR \fIcommand arg ...\fR"

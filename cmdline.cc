@@ -92,6 +92,7 @@ Options:
   --relax                     Optimize instructions (default)
     --no-relax
   --repro                     Embed input files to .repro section
+  --retain-symbols-file FILE  Keep only symbols listed in FILE
   --rpath DIR                 Add DIR to runtime search path
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
@@ -360,6 +361,44 @@ static i64 get_default_thread_count() {
   return std::min(n, 32);
 }
 
+static std::string_view trim(std::string_view str) {
+  size_t pos = str.find_first_not_of(" \t");
+  if (pos == str.npos)
+    return "";
+  str = str.substr(pos);
+
+  pos = str.find_last_not_of(" \t");
+  if (pos == str.npos)
+    return str;
+  return str.substr(0, pos + 1);
+}
+
+template <typename E>
+static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
+  MemoryMappedFile<E> *mb =
+    MemoryMappedFile<E>::must_open(ctx, std::string(path));
+  std::string_view data((char *)mb->data(ctx), mb->size());
+
+  ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);
+
+  while (!data.empty()) {
+    size_t pos = data.find('\n');
+    std::string_view name;
+
+    if (pos == data.npos) {
+      name = data;
+      data = "";
+    } else {
+      name = data.substr(0, pos);
+      data = data.substr(pos + 1);
+    }
+
+    name = trim(name);
+    if (!name.empty())
+      ctx.arg.retain_symbols_file->insert(name);
+  }
+}
+
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
@@ -504,6 +543,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.is_static = true;
     } else if (read_flag(args, "no-omagic")) {
       ctx.arg.omagic = false;
+    } else if (read_arg(ctx, args, arg, "retain-symbols-file")) {
+      read_retain_symbols_file(ctx, arg);
     } else if (read_flag(args, "repro")) {
       ctx.arg.repro = true;
     } else if (read_z_flag(args, "now")) {
@@ -684,6 +725,11 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   if (ctx.arg.pic)
     ctx.arg.image_base = 0;
+
+  if (ctx.arg.retain_symbols_file) {
+    ctx.arg.strip_all = false;
+    ctx.arg.discard_all = false;
+  }
 
   if (!ctx.arg.shared) {
     if (!ctx.arg.filter.empty())

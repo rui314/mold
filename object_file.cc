@@ -461,7 +461,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
 template <typename E>
 static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
-  if (ctx.arg.discard_all || ctx.arg.strip_all)
+  if (ctx.arg.discard_all || ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return false;
   if (sym.get_type() == STT_SECTION)
     return false;
@@ -1086,6 +1086,17 @@ static bool should_write_to_global_symtab(Symbol<E> &sym) {
 
 template <typename E>
 void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.retain_symbols_file) {
+    std::span<Symbol<E> *> syms(this->symbols);
+    for (Symbol<E> *sym : syms.subspan(first_global)) {
+      if (sym->file == this && sym->write_to_symtab) {
+        strtab_size += sym->name().size() + 1;
+        num_global_symtab++;
+      }
+    }
+    return;
+  }
+
   if (ctx.arg.strip_all)
     return;
 

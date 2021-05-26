@@ -314,14 +314,18 @@ int do_main(int argc, char **argv) {
   signal(SIGINT, signal_handler<E>);
   signal(SIGTERM, signal_handler<E>);
 
-  if (!ctx.arg.directory.empty())
-    if (chdir(ctx.arg.directory.c_str()) == -1)
-      Fatal(ctx) << "chdir failed: " << ctx.arg.directory
-                 << ": " << strerror(errno);
+  if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
+    Fatal(ctx) << "chdir failed: " << ctx.arg.directory
+               << ": " << strerror(errno);
 
-  // Handle -wrap options if any.
+  // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
     Symbol<E>::intern(ctx, name, name)->wrap = true;
+
+  // Handle --retain-symbols-file options if any.
+  if (ctx.arg.retain_symbols_file)
+    for (std::string_view name : *ctx.arg.retain_symbols_file)
+      Symbol<E>::intern(ctx, name, name)->write_to_symtab = true;
 
   // Preload input files
   std::function<void()> on_complete;
