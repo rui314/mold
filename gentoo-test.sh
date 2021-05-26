@@ -1,9 +1,15 @@
 #!/bin/bash
 #
-# This test script builds lots of programs using mold in a Docker
-# environment to make sure that mold can build programs in the wild.
-# We are using Gentoo Linux as a build environment, because its
-# source-based package allows us to build programs without any hassle.
+# This test script takes a Gentoo package name and tries to build it
+# using mold in a Docker environment. We chose Gentoo Linux as a test
+# target, because its source-based package allows us to build programs
+# locally and run their test suites without any hassle.
+#
+# You can get a complete list of Gentoo packages availalbe for testing
+# with the following command:
+#
+# docker run --rm mold-gentoo emerge --color n -s '' | \
+#   perl -ne 'next unless m!^\*\s+(\S+/\S+)!; print "$1\n"'
 
 if [ "$1" = "" ]; then
   echo "Usage: $0 gentoo-package-name"
@@ -30,7 +36,7 @@ if ! [ -f mold ] || ! ldd mold 2>&1 | grep -q 'not a dynamic executable'; then
 fi
 
 # Build a given package in Docker
-run() {
+build() {
   package="$1"
   cmd="FEATURES=test MAKEOPTS=-j8 emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
@@ -56,5 +62,5 @@ run() {
   fi
 }
 
-# Run a test
-run "$1"
+# Build a package
+build "$1"
