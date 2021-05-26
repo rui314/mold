@@ -23,8 +23,9 @@ if ! docker image ls mold-gentoo | grep -q mold-gentoo; then
   set -e
   cat <<EOF | docker build -t mold-gentoo -
 FROM gentoo/stage3
-RUN echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
 RUN emerge-webrsync
+RUN echo 'USE="elogind -systemd"' >> /etc/portage/make.conf
+RUN echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
 EOF
   set +e
 fi
@@ -35,30 +36,32 @@ if ! [ -f mold ] || ! ldd mold 2>&1 | grep -q 'not a dynamic executable'; then
   ./build-static.sh
 fi
 
+git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
+
 # Build a given package in Docker
 build() {
   package="$1"
   cmd="FEATURES=test MAKEOPTS=-j8 emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
   link="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
+  docker="timeout 10m docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo"
+  dir=gentoo/$git_hash
 
-  mkdir -p gentoo/success gentoo/failure
-  docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo \
-    bash -c "$cmd" > gentoo/$filename.ld
+  mkdir -p $dir/success $dir/failure
+  $docker bash -c "$cmd" >& $dir/$filename.ld
 
   if [ $? = 0 ]; then
-    mv gentoo/$filename.ld gentoo/success
+    mv $dir/$filename.ld $dir/success
   else
-    mv gentoo/$filename.ld gentoo/failure
+    mv $dir/$filename.ld $dir/failure
   fi
 
-  docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo \
-    bash -c "$link; $cmd" > gentoo/$filename.mold
+  $docker bash -c "$link; $cmd" >& $dir/$filename.mold
 
   if [ $? = 0 ]; then
-    mv gentoo/$filename.mold gentoo/success
+    mv $dir/$filename.mold $dir/success
   else
-    mv gentoo/$filename.mold gentoo/failure
+    mv $dir/$filename.mold $dir/failure
   fi
 }
 
