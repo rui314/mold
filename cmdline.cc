@@ -637,6 +637,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "fatal-warnings")) {
     } else if (read_flag(args, "enable-new-dtags")) {
     } else if (read_flag(args, "disable-new-dtags")) {
+    } else if (read_flag(args, "nostdlib")) {
     } else if (read_flag(args, "allow-shlib-undefined")) {
     } else if (read_flag(args, "no-allow-shlib-undefined")) {
     } else if (read_flag(args, "no-copy-dt-needed-entries")) {
