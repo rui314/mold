@@ -48,20 +48,19 @@ build() {
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
-  $docker bash -c "$cmd" >& $dir/$filename.ld
-
-  if [ $? = 0 ]; then
-    mv $dir/$filename.ld $dir/success
-  else
-    mv $dir/$filename.ld $dir/failure
-  fi
 
   $docker bash -c "$link; $cmd" >& $dir/$filename.mold
-
   if [ $? = 0 ]; then
     mv $dir/$filename.mold $dir/success
   else
     mv $dir/$filename.mold $dir/failure
+  fi
+
+  $docker bash -c "$cmd" >& $dir/$filename.ld
+  if [ $? = 0 ]; then
+    mv $dir/$filename.ld $dir/success
+  else
+    mv $dir/$filename.ld $dir/failure
   fi
 }
 
