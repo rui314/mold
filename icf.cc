@@ -115,7 +115,8 @@ static bool is_eligible(InputSection<E> &isec) {
 
 static Digest digest_final(SHA256_CTX &sha) {
   u8 buf[SHA256_SIZE];
-  assert(SHA256_Final(buf, &sha) == 1);
+  const int result = SHA256_Final(buf, &sha);
+  assert(result == 1);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);
