@@ -1528,23 +1528,26 @@ struct Context {
   u64 tls_end = -1;
 
   // Linker-synthesized symbols
-  Symbol<E> *__bss_start = nullptr;
-  Symbol<E> *__ehdr_start = nullptr;
-  Symbol<E> *__rel_iplt_start = nullptr;
-  Symbol<E> *__rel_iplt_end = nullptr;
-  Symbol<E> *__init_array_start = nullptr;
-  Symbol<E> *__init_array_end = nullptr;
-  Symbol<E> *__fini_array_start = nullptr;
-  Symbol<E> *__fini_array_end = nullptr;
-  Symbol<E> *__preinit_array_start = nullptr;
-  Symbol<E> *__preinit_array_end = nullptr;
   Symbol<E> *_DYNAMIC = nullptr;
   Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
   Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
+  Symbol<E> *__bss_start = nullptr;
+  Symbol<E> *__ehdr_start = nullptr;
+  Symbol<E> *__executable_start = nullptr;
+  Symbol<E> *__fini_array_end = nullptr;
+  Symbol<E> *__fini_array_start = nullptr;
+  Symbol<E> *__init_array_end = nullptr;
+  Symbol<E> *__init_array_start = nullptr;
+  Symbol<E> *__preinit_array_end = nullptr;
+  Symbol<E> *__preinit_array_start = nullptr;
+  Symbol<E> *__rel_iplt_end = nullptr;
+  Symbol<E> *__rel_iplt_start = nullptr;
+  Symbol<E> *_edata = nullptr;
   Symbol<E> *_end = nullptr;
   Symbol<E> *_etext = nullptr;
-  Symbol<E> *_edata = nullptr;
-  Symbol<E> *__executable_start = nullptr;
+  Symbol<E> *edata = nullptr;
+  Symbol<E> *end = nullptr;
+  Symbol<E> *etext = nullptr;
 };
 
 template <typename E>

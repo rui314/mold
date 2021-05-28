@@ -748,14 +748,21 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (chunk->kind == OutputChunk<E>::HEADER)
       continue;
 
-    if (chunk->shdr.sh_flags & SHF_ALLOC)
+    if (chunk->shdr.sh_flags & SHF_ALLOC) {
       stop(ctx._end, chunk);
+      stop(ctx.end, chunk);
+    }
 
-    if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+    if (chunk->shdr.sh_flags & SHF_EXECINSTR) {
       stop(ctx._etext, chunk);
+      stop(ctx.etext, chunk);
+    }
 
-    if (chunk->shdr.sh_type != SHT_NOBITS && chunk->shdr.sh_flags & SHF_ALLOC)
+    if (chunk->shdr.sh_type != SHT_NOBITS &&
+        (chunk->shdr.sh_flags & SHF_ALLOC)) {
       stop(ctx._edata, chunk);
+      stop(ctx.edata, chunk);
+    }
   }
 
   // _DYNAMIC

@@ -1225,6 +1225,13 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
 
+  if (!Symbol<E>::intern(ctx, "end")->file)
+    ctx.end = add("end");
+  if (!Symbol<E>::intern(ctx, "etext")->file)
+    ctx.etext = add("etext");
+  if (!Symbol<E>::intern(ctx, "edata")->file)
+    ctx.edata = add("edata");
+
   for (OutputChunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
