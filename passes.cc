@@ -303,8 +303,8 @@ void check_duplicate_symbols(Context<E> &ctx) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
-      if (sym.file == file || esym.is_undef() || esym.is_common() ||
-          (esym.st_bind == STB_WEAK))
+      if (sym.file == file || sym.file == ctx.internal_obj ||
+          esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
         continue;
 
       if (!esym.is_abs() && !file->get_section(esym)->is_alive)
