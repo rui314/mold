@@ -1210,11 +1210,10 @@ inline char *socket_tmpfile;
 std::function<void()> fork_child();
 
 template <typename E>
-void try_resume_daemon(Context<E> &ctx, char **argv);
+void try_resume_daemon(Context<E> &ctx);
 
 template <typename E>
-void daemonize(Context<E> &ctx, char **argv,
-               std::function<void()> *wait_for_client,
+void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete);
 
 template <typename E>

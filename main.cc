@@ -306,7 +306,7 @@ int do_main(int argc, char **argv) {
   parse_nonpositional_args(ctx, file_args);
 
   if (!ctx.arg.preload)
-    try_resume_daemon(ctx, argv);
+    try_resume_daemon(ctx);
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
@@ -333,7 +333,7 @@ int do_main(int argc, char **argv) {
   if (ctx.arg.preload) {
     Timer t(ctx, "preload");
     std::function<void()> wait_for_client;
-    daemonize(ctx, argv, &wait_for_client, &on_complete);
+    daemonize(ctx, &wait_for_client, &on_complete);
 
     ctx.reset_reader_context(true);
     read_input_files(ctx, file_args);

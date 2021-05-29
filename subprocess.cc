@@ -74,13 +74,16 @@ static std::string base64(u8 *data, u64 size) {
   return out.str();
 }
 
-static std::string compute_sha256(char **argv) {
+static std::string compute_sha256(std::span<std::string_view> argv) {
   SHA256_CTX sha;
   SHA256_Init(&sha);
 
-  for (i64 i = 0; argv[i]; i++)
-    if (!strcmp(argv[i], "-preload") && !strcmp(argv[i], "--preload"))
-      SHA256_Update(&sha, argv[i], strlen(argv[i]) + 1);
+  for (std::string_view arg : argv) {
+    if (arg != "-preload" && arg != "--preload") {
+      SHA256_Update(&sha, arg.data(), arg.size());
+      SHA256_Update(&sha, (char []){0}, 1);
+    }
+  }
 
   u8 digest[SHA256_SIZE];
   SHA256_Final(digest, &sha);
@@ -137,12 +140,12 @@ static i64 recv_fd(Context<E> &ctx, i64 conn) {
 }
 
 template <typename E>
-void try_resume_daemon(Context<E> &ctx, char **argv) {
+void try_resume_daemon(Context<E> &ctx) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
     Fatal(ctx) << "socket failed: " << strerror(errno);
 
-  std::string path = "/tmp/mold-" + compute_sha256(argv);
+  std::string path = "/tmp/mold-" + compute_sha256(ctx.cmdline_args);
 
   struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
@@ -156,12 +159,13 @@ void try_resume_daemon(Context<E> &ctx, char **argv) {
   send_fd(ctx, conn, STDOUT_FILENO);
   send_fd(ctx, conn, STDERR_FILENO);
   i64 r = read(conn, (char[1]){}, 1);
-  exit(r != 1);
+  close(conn);
+  if (r == 1)
+    exit(0);
 }
 
 template <typename E>
-void daemonize(Context<E> &ctx, char **argv,
-               std::function<void()> *wait_for_client,
+void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
   if (daemon(1, 0) == -1)
     Fatal(ctx) << "daemon failed: " << strerror(errno);
@@ -170,7 +174,8 @@ void daemonize(Context<E> &ctx, char **argv,
   if (sock == -1)
     Fatal(ctx) << "socket failed: " << strerror(errno);
 
-  socket_tmpfile = strdup(("/tmp/mold-" + compute_sha256(argv)).c_str());
+  socket_tmpfile =
+    strdup(("/tmp/mold-" + compute_sha256(ctx.cmdline_args)).c_str());
 
   struct sockaddr_un name = {};
   name.sun_family = AF_UNIX;
@@ -278,9 +283,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template void try_resume_daemon(Context<E> &, char **);               \
-  template void daemonize(Context<E> &, char **,                        \
-                          std::function<void()> *,                      \
+  template void try_resume_daemon(Context<E> &);                        \
+  template void daemonize(Context<E> &, std::function<void()> *,        \
                           std::function<void()> *);                     \
   template void process_run_subcommand(Context<E> &, int, char **)
 

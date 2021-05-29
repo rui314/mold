@@ -76,6 +76,7 @@ public:
 
     if (this->path == "-") {
       fwrite(this->buf, this->filesize, 1, stdout);
+      fclose(stdout);
       return;
     }
 

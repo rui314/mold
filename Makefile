@@ -68,8 +68,7 @@ mimalloc/CMakeLists.txt:
 	(cd mimalloc; git checkout -q v2.0.1)
 
 test tests check: all
-	rm -rf test/tmp
-	for i in test/*.sh; do $$i || exit 1; done
+	 $(MAKE) -C test --output-sync --no-print-directory
 
 install: all
 	install -m 755 mold $(PREFIX)/bin
@@ -88,6 +87,6 @@ uninstall:
 	       $(PREFIX)/lib/mold
 
 clean:
-	rm -f *.o *~ mold mold-wrapper.so
+	rm -f *.o *~ mold mold-wrapper.so test/tmp
 
-.PHONY: all test tests check clean
+.PHONY: all test tests check clean $(TESTS)
