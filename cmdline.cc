@@ -1,7 +1,10 @@
 #include "mold.h"
 
 #include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <tbb/global_control.h>
+#include <unistd.h>
 #include <unordered_set>
 
 static const char helpmsg[] = R"(
@@ -399,6 +402,12 @@ static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
   }
 }
 
+static bool is_file(std::string_view path) {
+  struct stat st;
+  return stat(std::string(path).c_str(), &st) == 0 &&
+         (st.st_mode & S_IFMT) != S_IFDIR;
+}
+
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
@@ -624,6 +633,14 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
       ctx.arg.strip_debug = true;
     } else if (read_arg(ctx, args, arg, "rpath")) {
+      if (!ctx.arg.rpaths.empty())
+        ctx.arg.rpaths += ":";
+      ctx.arg.rpaths += arg;
+    } else if (read_arg(ctx, args, arg, "R")) {
+      if (is_file(arg))
+        Fatal(ctx) << "-R" << arg
+                   << ": -R as an alias for --just-symbols is not supported";
+
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;

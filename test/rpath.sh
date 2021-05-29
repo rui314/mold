@@ -7,16 +7,15 @@ mkdir -p $t
 
 cat <<EOF | cc -o $t/a.o -c -x assembler -
   .text
-  .globl _start
-_start:
+  .globl main
+main:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o -rpath /foo -rpath /bar
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o \
+  -Wl,-rpath,/foo -Wl,-rpath,/bar -Wl,-R/no/such/directory -Wl,-R/
 
-readelf --dynamic $t/exe | grep -q "
-0x000000000000001d (RUNPATH) Library runpath: [/foo]
-0x000000000000001d (RUNPATH) Library runpath: [/bar]
-"
+readelf --dynamic $t/exe | \
+  fgrep -q 'Library runpath: [/foo:/bar:/no/such/directory:/]'
 
 echo OK
