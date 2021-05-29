@@ -699,6 +699,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "allow-shlib-undefined")) {
     } else if (read_flag(args, "no-allow-shlib-undefined")) {
     } else if (read_flag(args, "no-copy-dt-needed-entries")) {
+    } else if (read_flag(args, "no-undefined-version")) {
     } else if (read_arg(ctx, args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
     } else if (read_flag(args, "nodefaultlibs")) {
