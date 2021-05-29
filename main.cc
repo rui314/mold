@@ -168,13 +168,50 @@ static void signal_handler(int) {
   _exit(1);
 }
 
+// Read the beginning of a given file and returns its machine type
+// (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
+template <typename E>
+static i64 get_machine_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  switch (get_file_type(ctx, mb)) {
+  case FileType::DSO:
+    return ((ElfEhdr<E> *)mb->data(ctx))->e_machine;
+  case FileType::AR:
+    for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
+      if (get_file_type(ctx, child) == FileType::OBJ)
+        return ((ElfEhdr<E> *)child->data(ctx))->e_machine;
+    return -1;
+  case FileType::THIN_AR:
+    for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb))
+      if (get_file_type(ctx, child) == FileType::OBJ)
+        return ((ElfEhdr<E> *)child->data(ctx))->e_machine;
+    return -1;
+  case FileType::TEXT:
+    return get_script_output_type(ctx, mb);
+  default:
+    return -1;
+  }
+}
+
+template <typename E>
+static MemoryMappedFile<E> *open_library(Context<E> &ctx, std::string path) {
+  MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path);
+  if (!mb)
+    return nullptr;
+
+  i64 type = get_machine_type(ctx, mb);
+  if (type == -1 || type == E::e_machine)
+    return mb;
+  Warn(ctx) << path << ": skipping incompatible file";
+  return nullptr;
+}
+
 template <typename E>
 MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
       std::string path = root + std::string(dir) + "/" + name.substr(1);
-      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path))
+      if (MemoryMappedFile<E> *mb = open_library(ctx, path))
         return mb;
     }
     Fatal(ctx) << "library not found: " << name;
@@ -184,9 +221,9 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
     std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
     std::string stem = root + std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, stem + ".so"))
+      if (MemoryMappedFile<E> *mb = open_library(ctx, stem + ".so"))
         return mb;
-    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, stem + ".a"))
+    if (MemoryMappedFile<E> *mb = open_library(ctx, stem + ".a"))
       return mb;
   }
   Fatal(ctx) << "library not found: " << name;

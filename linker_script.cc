@@ -204,6 +204,22 @@ void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   }
 }
 
+template <typename E>
+i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  current_file<E> = mb;
+
+  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents(ctx));
+  std::span<std::string_view> tok = vec;
+
+  if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
+    if (tok[2] == "elf64-x86-64")
+      return EM_X86_64;
+    if (tok[2] == "elf32-i386")
+      return EM_386;
+  }
+  return -1;
+}
+
 static bool read_label(std::span<std::string_view> &tok,
                        std::string label) {
   if (tok.size() >= 1 && tok[0] == label + ":") {
@@ -321,6 +337,8 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 #define INSTANTIATE(E)                                                  \
   template                                                              \
   void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);   \
+  template                                                              \
+  i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb); \
   template                                                              \
   void parse_version_script(Context<E> &ctx, std::string path);         \
   template                                                              \

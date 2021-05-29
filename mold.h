@@ -1055,6 +1055,9 @@ template <typename E>
 void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 template <typename E>
+i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
+template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path);
 
 template <typename E>
