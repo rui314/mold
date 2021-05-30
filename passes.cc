@@ -507,6 +507,9 @@ void apply_version_script(Context<E> &ctx) {
 
 template <typename E>
 void parse_symbol_version(Context<E> &ctx) {
+  if (!ctx.arg.shared)
+    return;
+
   Timer t(ctx, "parse_symbol_version");
 
   std::unordered_map<std::string_view, u16> verdefs;
