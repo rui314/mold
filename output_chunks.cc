@@ -538,6 +538,11 @@ static std::string_view get_output_name(std::string_view name) {
     if (name.starts_with(prefix))
       return prefix.substr(0, prefix.size() - 1);
 
+  if (name == ".ctors" || name.starts_with(".ctors."))
+    return ".init_array";
+  if (name == ".dtors" || name.starts_with(".dtors."))
+    return ".fini_array";
+
   if (name == ".zdebug_info")
     return ".debug_info";
   if (name == ".zdebug_aranges")
