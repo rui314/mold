@@ -474,6 +474,8 @@ void scan_rels(Context<E> &ctx) {
         ctx.dynsym->add_symbol(ctx, alias);
       }
     }
+
+    sym->flags = 0;
   }
 }
 
