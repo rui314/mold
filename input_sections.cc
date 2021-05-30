@@ -15,6 +15,18 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     apply_reloc_alloc(ctx, buf);
   else
     apply_reloc_nonalloc(ctx, buf);
+
+  // As a special case, .ctors and .dtors section contents are
+  // reversed. These sections are now obsolete and mapped to
+  // .init_array and .fini_array, but they have to be reversed to
+  // maintain the original semantics.
+  bool init_fini = output_section->name == ".init_array" ||
+                   output_section->name == ".fini_array";
+  bool ctors_dtors = name().starts_with(".ctors") ||
+                     name().starts_with(".dtors");
+  if (init_fini && ctors_dtors)
+    std::reverse((typename E::WordTy *)buf,
+                 (typename E::WordTy *)(buf + shdr.sh_size));
 }
 
 template <typename E>

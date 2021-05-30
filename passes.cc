@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <regex>
 #include <tbb/parallel_do.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
@@ -316,6 +317,28 @@ void check_duplicate_symbols(Context<E> &ctx) {
   });
 
   Error<E>::checkpoint(ctx);
+}
+
+template <typename E>
+void sort_init_fini(Context<E> &ctx) {
+  Timer t(ctx, "sort_init_fini");
+
+  auto get_priority = [](InputSection<E> *isec) {
+    static std::regex re(R"(_array\.(\d+)$)");
+    std::string name = isec->name().begin();
+    std::smatch m;
+    if (std::regex_search(name, m, re))
+      return std::stoi(m[1]);
+    return 65536;
+  };
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    if (osec->name == ".init_array" || osec->name == ".fini_array") {
+      sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
+        return get_priority(a) < get_priority(b);
+      });
+    }
+  }
 }
 
 template <typename E>
@@ -824,6 +847,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void compute_merged_section_sizes(Context<E> &ctx);          \
   template void bin_sections(Context<E> &ctx);                          \
   template void check_duplicate_symbols(Context<E> &ctx);               \
+  template void sort_init_fini(Context<E> &ctx);                        \
   template std::vector<OutputChunk<E> *>                                \
     collect_output_sections(Context<E> &ctx);                           \
   template void compute_section_sizes(Context<E> &ctx);                 \

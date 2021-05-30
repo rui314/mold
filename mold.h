@@ -1300,6 +1300,7 @@ template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
+template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> std::vector<OutputChunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);

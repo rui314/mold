@@ -485,6 +485,10 @@ int do_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  // .init_array and .fini_array contents have to be sorted by
+  // a special rule. Sort them.
+  sort_init_fini(ctx);
+
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.
   compute_section_sizes(ctx);
