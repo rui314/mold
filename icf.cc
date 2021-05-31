@@ -364,7 +364,8 @@ static void gather_edges(Context<E> &ctx,
       } else {
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
+        if (!sym.get_frag() && sym.input_section &&
+            sym.input_section->icf_eligible)
           num_edges[i]++;
       }
     }
@@ -385,7 +386,8 @@ static void gather_edges(Context<E> &ctx,
         frag_idx++;
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section && sym.input_section->icf_eligible)
+        if (!sym.get_frag() && sym.input_section &&
+            sym.input_section->icf_eligible)
           edges[idx++] = sym.input_section->icf_idx;
       }
     }

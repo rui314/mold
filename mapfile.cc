@@ -8,7 +8,8 @@
 #include <unordered_map>
 
 template <typename E>
-using Map = tbb::concurrent_hash_map<InputSection<E> *, std::vector<Symbol<E> *>>;
+using Map =
+  tbb::concurrent_hash_map<InputSection<E> *, std::vector<Symbol<E> *>>;
 
 template <typename E>
 static std::unique_ptr<std::ofstream> open_output_file(Context<E> &ctx) {

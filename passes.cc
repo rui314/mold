@@ -116,13 +116,12 @@ void resolve_obj_symbols(Context<E> &ctx) {
         if (!file->is_dso)
           roots.push_back((ObjectFile<E> *)file);
 
-  tbb::parallel_do(roots,
-                   [&](ObjectFile<E> *file,
-                       tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
-                     file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) {
-                       feeder.add(obj);
-                     });
-                   });
+  tbb::parallel_do(roots, [&](ObjectFile<E> *file,
+                              tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
+    file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) {
+      feeder.add(obj);
+    });
+  });
 
   // Remove symbols of eliminated objects.
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {

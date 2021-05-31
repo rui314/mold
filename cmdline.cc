@@ -316,7 +316,8 @@ static i64 parse_number(Context<E> &ctx, std::string opt,
 }
 
 template <typename E>
-static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg) {
+static std::vector<u8> parse_hex_build_id(Context<E> &ctx,
+                                          std::string_view arg) {
   assert(arg.starts_with("0x") || arg.starts_with("0X"));
 
   if (arg.size() % 2)

@@ -110,7 +110,8 @@ static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
   case R_X86_64_PC16:
     if (val != (i16)val)
       Error(ctx) << *sec << ": relocation R_X86_64_PC16 against " << sym
-                 << " out of range: " << (i64)val << " is not in [-32768, 32767]";
+                 << " out of range: " << (i64)val
+                 << " is not in [-32768, 32767]";
     return;
   case R_X86_64_32:
     if (val != (u32)val)

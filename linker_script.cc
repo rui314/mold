@@ -111,7 +111,8 @@ template <typename E>
 static std::span<std::string_view>
 skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty())
-    Fatal(ctx) << current_file<E>->name << ": expected '" << str << "', but got EOF";
+    Fatal(ctx) << current_file<E>->name << ": expected '" << str
+               << "', but got EOF";
   if (tok[0] != str)
     SyntaxError(ctx, tok[0]) << "expected '" << str << "'";
   return tok.subspan(1);

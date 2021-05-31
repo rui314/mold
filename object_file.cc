@@ -55,7 +55,8 @@ u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
 
 template <typename E>
 MemoryMappedFile<E> *
-MemoryMappedFile<E>::slice(Context<E> &ctx, std::string name, u64 start, u64 size) {
+MemoryMappedFile<E>::slice(Context<E> &ctx, std::string name, u64 start,
+                           u64 size) {
   MemoryMappedFile *mb = new MemoryMappedFile<E>(name, data_ + start, size);
   ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
   mb->parent = this;
@@ -1219,8 +1220,10 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
   ctx._edata = add("_edata");
   ctx.__executable_start = add("__executable_start");
 
-  ctx.__rel_iplt_start = add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
-  ctx.__rel_iplt_end = add(E::is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
+  ctx.__rel_iplt_start =
+    add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
+  ctx.__rel_iplt_end =
+    add(E::is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");

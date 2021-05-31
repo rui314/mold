@@ -871,7 +871,8 @@ public:
 
   ~MemoryMappedFile();
 
-  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start, u64 size);
+  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start,
+                          u64 size);
 
   u8 *data(Context<E> &ctx);
   i64 size() const { return size_; }

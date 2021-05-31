@@ -704,7 +704,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
 }
 
 template <typename E>
-static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend);
+static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0);
 
 template <>
 ElfRel<X86_64> reloc<X86_64>(u64 offset, u32 type, u32 sym, i64 addend) {
@@ -729,7 +729,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
     if (sym->is_imported) {
-      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx), 0);
+      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx));
     } else if (sym->get_type() == STT_GNU_IFUNC) {
       u64 resolver_addr = sym->input_section->get_addr() + sym->value;
       *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
@@ -745,35 +745,36 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
     u32 dynsym_idx = sym->get_dynsym_idx(ctx);
-    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx, 0);
-    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, dynsym_idx, 0);
+    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
+    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, dynsym_idx);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
     *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
-                      sym->get_dynsym_idx(ctx), 0);
+                      sym->get_dynsym_idx(ctx));
 
   for (Symbol<E> *sym : gottp_syms) {
     if (sym->is_imported)
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
-                        sym->get_dynsym_idx(ctx), 0);
+                        sym->get_dynsym_idx(ctx));
     else
       buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
   }
 
   if (tlsld_idx != -1)
-    *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0, 0);
+    *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0);
 
   for (Symbol<E> *sym : ctx.dynbss->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 
   for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 }
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+  typename E::WordTy *buf =
+    (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the x86-64 psABI. The second and the third slots are reserved by
@@ -829,7 +830,7 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   i64 relplt_idx = 0;
   for (Symbol<E> *sym : ctx.plt->symbols)
     buf[relplt_idx++] = reloc<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
-                                 sym->get_dynsym_idx(ctx), 0);
+                                 sym->get_dynsym_idx(ctx));
 }
 
 template <typename E>
