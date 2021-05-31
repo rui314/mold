@@ -628,7 +628,7 @@ i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
     return -3;
   if (chunk == ctx.interp.get())
     return -2;
-  if (type == SHT_NOTE)
+  if (type == SHT_NOTE && (flags & SHF_ALLOC))
     return -1;
   if (chunk == ctx.shdr.get())
     return 1 << 6;
