@@ -864,11 +864,11 @@ void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
     vec[i] = {symbols[i], i, 0};
 
   // In any ELF file, local symbols should precede global symbols.
-  tbb::parallel_sort(vec.begin() + 1, vec.end(), [](const T &a, const T &b) {
+  tbb::parallel_sort(vec.begin(), vec.end(), [](const T &a, const T &b) {
     return std::tuple(a.is_local(), a.idx) < std::tuple(b.is_local(), b.idx);
   });
 
-  auto first_global = std::partition_point(vec.begin() + 1, vec.end(),
+  auto first_global = std::partition_point(vec.begin(), vec.end(),
                                            [](const T &x) {
     return x.is_local();
   });
