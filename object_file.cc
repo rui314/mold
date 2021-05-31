@@ -871,14 +871,9 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
       continue;
 
     std::lock_guard lock(sym.mu);
-    bool is_new = !sym.file;
-    bool tie_but_higher_priority =
-      sym.is_lazy && this->priority < sym.file->priority;
-
-    if (is_new || tie_but_higher_priority) {
+    if (!sym.file || this->priority < sym.file->priority) {
       sym.file = this;
       sym.is_lazy = true;
-
       if (sym.traced)
         SyncOut(ctx) << "trace-symbol: " << *sym.file
                   << ": lazy definition of " << sym;
@@ -1379,18 +1374,14 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
 }
 
 template <typename E>
-void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
+void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = *elf_syms[i];
 
     std::lock_guard lock(sym.mu);
 
-    bool is_new = !sym.file;
-    bool tie_but_higher_priority =
-      !is_new && sym.file->is_dso && this->priority < sym.file->priority;
-
-    if (is_new || tie_but_higher_priority) {
+    if (!sym.file || this->priority < sym.file->priority) {
       sym.file = this;
       sym.input_section = nullptr;
       sym.value = esym.st_value;
@@ -1402,7 +1393,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
       if (sym.traced)
         SyncOut(ctx) << "trace-symbol: " << *sym.file << ": definition of "
-                  << sym;
+                     << sym;
     }
   }
 }

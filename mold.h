@@ -1013,7 +1013,7 @@ public:
   static SharedFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
   void parse(Context<E> &ctx);
-  void resolve_symbols(Context<E> &ctx);
+  void resolve_dso_symbols(Context<E> &ctx);
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
@@ -1295,7 +1295,6 @@ template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_obj_symbols(Context<E> &);
-template <typename E> void resolve_dso_symbols(Context<E> &);
 template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
@@ -1455,6 +1454,7 @@ struct Context {
   bool whole_archive;
   bool is_preloading;
   bool is_static;
+  i64 file_priority = 2;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 

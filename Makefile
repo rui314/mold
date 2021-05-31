@@ -87,6 +87,6 @@ uninstall:
 	       $(PREFIX)/lib/mold
 
 clean:
-	rm -f *.o *~ mold mold-wrapper.so test/tmp
+	rm -rf *.o *~ mold mold-wrapper.so test/tmp
 
 .PHONY: all test tests check clean $(TESTS)

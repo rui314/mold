@@ -73,21 +73,6 @@ void create_synthetic_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void set_file_priority(Context<E> &ctx) {
-  // File priority 1 is reserved for the internal file.
-  i64 priority = 2;
-
-  for (ObjectFile<E> *file : ctx.objs)
-    if (!file->is_in_lib)
-      file->priority = priority++;
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_in_lib)
-      file->priority = priority++;
-  for (SharedFile<E> *file : ctx.dsos)
-    file->priority = priority++;
-}
-
-template <typename E>
 void resolve_obj_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_obj_symbols");
 
@@ -95,6 +80,11 @@ void resolve_obj_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_in_lib)
       file->resolve_lazy_symbols(ctx);
+  });
+
+  // Register DSO symbols
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    file->resolve_dso_symbols(ctx);
   });
 
   // Register defined symbols
@@ -133,16 +123,6 @@ void resolve_obj_symbols(Context<E> &ctx) {
 
   // Eliminate unused archive members.
   erase(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-}
-
-template <typename E>
-void resolve_dso_symbols(Context<E> &ctx) {
-  Timer t(ctx, "resolve_dso_symbols");
-
-  // Register DSO symbols
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
 
   // Mark live DSOs
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
@@ -838,9 +818,7 @@ void compress_debug_sections(Context<E> &ctx) {
 #define INSTANTIATE(E)                                                  \
   template void apply_exclude_libs(Context<E> &ctx);                    \
   template void create_synthetic_sections(Context<E> &ctx);             \
-  template void set_file_priority(Context<E> &ctx);                     \
   template void resolve_obj_symbols(Context<E> &ctx);                   \
-  template void resolve_dso_symbols(Context<E> &ctx);                   \
   template void eliminate_comdats(Context<E> &ctx);                     \
   template void convert_common_symbols(Context<E> &ctx);                \
   template void compute_merged_section_sizes(Context<E> &ctx);          \

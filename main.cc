@@ -66,6 +66,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
 
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mb, archive_name, in_lib);
+  file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
@@ -75,6 +76,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
 template <typename E>
 static SharedFile<E> *new_shared_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   SharedFile<E> *file = SharedFile<E>::create(ctx, mb);
+  file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
@@ -416,9 +418,6 @@ int do_main(int argc, char **argv) {
   // .got or .plt.
   create_synthetic_sections(ctx);
 
-  // Set unique indices to files.
-  set_file_priority(ctx);
-
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_obj_symbols(ctx);
@@ -460,9 +459,6 @@ int do_main(int argc, char **argv) {
   ctx.internal_obj = ObjectFile<E>::create_internal_file(ctx);
   ctx.internal_obj->resolve_regular_symbols(ctx);
   ctx.objs.push_back(ctx.internal_obj);
-
-  // Add symbols from shared object files.
-  resolve_dso_symbols(ctx);
 
   // Beyond this point, no new files will be added to ctx.objs
   // or ctx.dsos.
