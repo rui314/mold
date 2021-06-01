@@ -264,6 +264,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       state.pop_back();
     } else if (read_arg(ctx, args, arg, "l")) {
       MemoryMappedFile<E> *mb = find_library(ctx, std::string(arg));
+      mb->given_fullpath = false;
       read_file(ctx, mb);
     } else {
       read_file(ctx, MemoryMappedFile<E>::must_open(ctx, std::string(args[0])));

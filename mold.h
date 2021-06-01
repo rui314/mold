@@ -883,6 +883,7 @@ public:
 
   std::string name;
   i64 mtime = 0;
+  bool given_fullpath = true;
 
 private:
   MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
@@ -1097,8 +1098,8 @@ protected:
 // These are various utility functions to deal with file pathnames.
 std::string get_current_dir();
 std::string path_dirname(std::string_view path);
-std::string path_filename(std::string_view path);
-std::string path_basename(std::string_view path);
+std::string_view path_filename(std::string_view path);
+std::string_view path_basename(std::string_view path);
 std::string path_to_absolute(std::string_view path);
 std::string path_clean(std::string_view path);
 

@@ -1287,7 +1287,9 @@ std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
-  return this->name;
+  if (this->mb->given_fullpath)
+    return this->name;
+  return path_filename(this->name);
 }
 
 template <typename E>

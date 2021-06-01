@@ -19,7 +19,7 @@ std::string path_dirname(std::string_view path) {
 // Returns the filename part of a given path.
 // Returns '/' if path reperesents the root directory.
 // Returns '.' if path is empty.
-std::string path_filename(std::string_view path) {
+std::string_view path_filename(std::string_view path) {
   if (path.empty())
     return ".";
 
@@ -31,14 +31,14 @@ std::string path_filename(std::string_view path) {
 
   i64 pos = path.find_last_of('/');
   if (pos == path.npos)
-    return std::string(path);
-  return std::string(path.substr(pos + 1));
+    return path;
+  return path.substr(pos + 1);
 }
 
 // Returns the filename part of a given path without the file
 // extension.
-std::string path_basename(std::string_view path) {
-  std::string name = path_filename(path);
+std::string_view path_basename(std::string_view path) {
+  std::string_view name = path_filename(path);
 
   i64 pos = name.find_last_of('.');
   if (pos == name.npos)
