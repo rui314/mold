@@ -9,11 +9,11 @@ std::string get_current_dir() {
 
 // Returns the directory part of a given path.
 // Returns '.' if path doesn't contain '/'.
-std::string path_dirname(std::string_view path) {
+std::string_view path_dirname(std::string_view path) {
   i64 pos = path.find_last_of('/');
   if (pos == path.npos)
     return ".";
-  return std::string(path.substr(0, pos));
+  return path.substr(0, pos);
 }
 
 // Returns the filename part of a given path.

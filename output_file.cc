@@ -16,7 +16,7 @@ class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
     : OutputFile<E>(path, filesize, true) {
-    std::string dir = path_dirname(path);
+    std::string dir(path_dirname(path));
     this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(this->tmpfile);
     if (fd == -1)

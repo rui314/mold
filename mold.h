@@ -1097,7 +1097,7 @@ protected:
 
 // These are various utility functions to deal with file pathnames.
 std::string get_current_dir();
-std::string path_dirname(std::string_view path);
+std::string_view path_dirname(std::string_view path);
 std::string_view path_filename(std::string_view path);
 std::string_view path_basename(std::string_view path);
 std::string path_to_absolute(std::string_view path);

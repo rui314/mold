@@ -147,8 +147,8 @@ static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (std::string path = path_dirname(current_file<E>->name) + "/";
-      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path + str))
+  if (std::string dir(path_dirname(current_file<E>->name));
+      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, dir + "/" + str))
     return mb;
 
   if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, str))
