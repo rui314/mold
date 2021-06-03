@@ -8,7 +8,7 @@ mkdir -p $t
 echo 'int main() { return 0; }' > $t/a.c
 
 clang -o $t/exe $t/a.c -fuse-ld=`pwd`/../mold -Wl,-build-id
-readelf -n $t/exe | grep -qv 'GNU.*0x00000010.*NT_GNU_BUILD_ID'
+readelf -n $t/exe | grep -q 'GNU.*0x00000010.*NT_GNU_BUILD_ID'
 
 clang -o $t/exe $t/a.c -fuse-ld=`pwd`/../mold -Wl,-build-id=uuid
 readelf -nW $t/exe |
