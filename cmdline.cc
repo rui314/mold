@@ -53,7 +53,7 @@ Options:
     --no-build-id
   --chroot DIR                Set a given path to root directory
   --color-diagnostics         Ignored
-  --compress-debug-sections [none,zlib,zlib-gabi]
+  --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu]
                               Compress .debug_* sections
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
@@ -541,9 +541,11 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.warn_common = false;
     } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
-        ctx.arg.compress_debug_sections = true;
+        ctx.arg.compress_debug_sections = COMPRESS_GABI;
+      else if (arg == "zlib-gnu")
+        ctx.arg.compress_debug_sections = COMPRESS_GNU;
       else if (arg == "none")
-        ctx.arg.compress_debug_sections = false;
+        ctx.arg.compress_debug_sections = COMPRESS_NONE;
       else
         Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
     } else if (read_arg(ctx, args, arg, "wrap")) {

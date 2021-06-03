@@ -53,7 +53,7 @@ template <typename E> class Symbol;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> struct CieRecord;
-class Compress;
+class Compressor;
 class TarFile;
 
 template <typename E> void cleanup();
@@ -807,14 +807,26 @@ public:
 };
 
 template <typename E>
-class CompressedSection : public OutputChunk<E> {
+class GabiCompressedSection : public OutputChunk<E> {
 public:
-  CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
+  GabiCompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
 
 private:
   ElfChdr<E> chdr = {};
-  std::unique_ptr<Compress> contents;
+  std::unique_ptr<Compressor> contents;
+};
+
+template <typename E>
+class GnuCompressedSection : public OutputChunk<E> {
+public:
+  GnuCompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  static constexpr i64 HEADER_SIZE = 12;
+  i64 original_size = 0;
+  std::unique_ptr<Compressor> contents;
 };
 
 template <typename E>
@@ -1251,9 +1263,9 @@ void parse_nonpositional_args(Context<E> &ctx,
 // compress.cc
 //
 
-class Compress {
+class Compressor {
 public:
-  Compress(std::string_view input);
+  Compressor(std::string_view input);
   void write_to(u8 *buf);
   i64 size() const;
 
@@ -1329,6 +1341,8 @@ struct BuildId {
   i64 hash_size = 0;
 };
 
+typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
+
 struct VersionPattern {
   std::string_view pattern;
   i16 ver_idx;
@@ -1372,10 +1386,10 @@ struct Context {
   // Command-line arguments
   struct {
     BuildId build_id;
+    CompressKind compress_debug_sections = COMPRESS_NONE;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
-    bool compress_debug_sections = false;
     bool demangle = true;
     bool discard_all = false;
     bool discard_locals = false;
@@ -2166,6 +2180,17 @@ inline u64 read64be(u8 *buf) {
          ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
          ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
          ((u64)buf[6] << 8)  | (u64)buf[7];
+}
+
+inline void write64be(u8 *buf, u64 val) {
+  buf[0] = val >> 56;
+  buf[1] = val >> 48;
+  buf[2] = val >> 40;
+  buf[3] = val >> 32;
+  buf[4] = val >> 24;
+  buf[5] = val >> 16;
+  buf[6] = val >> 8;
+  buf[7] = val;
 }
 
 inline void write32be(u8 *buf, u32 val) {

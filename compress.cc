@@ -61,7 +61,7 @@ static std::vector<u8> do_compress(std::string_view input) {
   return buf;
 }
 
-Compress::Compress(std::string_view input) {
+Compressor::Compressor(std::string_view input) {
   std::vector<std::string_view> inputs = split(input);
   std::vector<u64> adlers(inputs.size());
   shards.resize(inputs.size());
@@ -78,14 +78,14 @@ Compress::Compress(std::string_view input) {
     checksum = adler32_combine(checksum, adlers[i], inputs[i].size());
 }
 
-i64 Compress::size() const {
+i64 Compressor::size() const {
   i64 size = 2;    // +2 for header
   for (const std::vector<u8> &shard : shards)
     size += shard.size();
   return size + 6; // +6 for trailer and checksum
 }
 
-void Compress::write_to(u8 *buf) {
+void Compressor::write_to(u8 *buf) {
   // Write a zlib-format header
   buf[0] = 0x78;
   buf[1] = 0x9c;

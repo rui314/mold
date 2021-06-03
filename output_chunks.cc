@@ -1633,7 +1633,8 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
+GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
+                                                OutputChunk<E> &chunk)
   : OutputChunk<E>(this->SYNTHETIC) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
@@ -1645,7 +1646,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
 
-  contents.reset(new Compress({(char *)buf.get(), chunk.shdr.sh_size}));
+  contents.reset(new Compressor({(char *)buf.get(), chunk.shdr.sh_size}));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
@@ -1655,10 +1656,36 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, OutputChunk<E> &chunk)
 }
 
 template <typename E>
-void CompressedSection<E>::copy_buf(Context<E> &ctx) {
+void GabiCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, &chdr, sizeof(chdr));
   contents->write_to(base + sizeof(chdr));
+}
+
+template <typename E>
+GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
+                                              OutputChunk<E> &chunk)
+  : OutputChunk<E>(this->SYNTHETIC) {
+  assert(chunk.name.starts_with(".debug"));
+  this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
+
+  std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
+  chunk.write_to(ctx, buf.get());
+
+  contents.reset(new Compressor({(char *)buf.get(), chunk.shdr.sh_size}));
+
+  this->shdr = chunk.shdr;
+  this->shdr.sh_size = HEADER_SIZE + contents->size();
+  this->shndx = chunk.shndx;
+  this->original_size = chunk.shdr.sh_size;
+}
+
+template <typename E>
+void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+  memcpy(base, "ZLIB", 4);
+  write64be(base + 4, this->original_size);
+  contents->write_to(base + 12);
 }
 
 template <typename E>
@@ -1715,7 +1742,8 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   template class VerdefSection<E>;                              \
   template class BuildIdSection<E>;                             \
   template class NotePropertySection<E>;                        \
-  template class CompressedSection<E>;                          \
+  template class GabiCompressedSection<E>;                      \
+  template class GnuCompressedSection<E>;                       \
   template class ReproSection<E>;                               \
   template i64 BuildId::size(Context<E> &) const;               \
   template bool is_relro(Context<E> &, OutputChunk<E> *);       \

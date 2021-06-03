@@ -16,7 +16,12 @@ EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib
 dwarfdump $t/exe > $t/log
-grep -q '.debug_info SHF_COMPRESSED' $t/log
-grep -q '.debug_str SHF_COMPRESSED' $t/log
+fgrep -q '.debug_info SHF_COMPRESSED' $t/log
+fgrep -q '.debug_str SHF_COMPRESSED' $t/log
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib-gnu
+dwarfdump $t/exe > $t/log
+fgrep -q .zdebug_info $t/log
+fgrep -q .zdebug_str $t/log
 
 echo OK

@@ -802,15 +802,22 @@ void compress_debug_sections(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
     OutputChunk<E> &chunk = *ctx.chunks[i];
 
-    if (!(chunk.shdr.sh_flags & SHF_ALLOC) &&
-        chunk.shdr.sh_size > 0 &&
-        chunk.name.starts_with(".debug")) {
-      CompressedSection<E> *comp = new CompressedSection<E>(ctx, chunk);
-      ctx.output_chunks.push_back(std::unique_ptr<OutputChunk<E>>(comp));
-      ctx.chunks[i] = comp;
-    }
+    if ((chunk.shdr.sh_flags & SHF_ALLOC) || chunk.shdr.sh_size == 0 ||
+        !chunk.name.starts_with(".debug"))
+      return;
+
+    OutputChunk<E> *comp = nullptr;
+    if (ctx.arg.compress_debug_sections == COMPRESS_GABI)
+      comp = new GabiCompressedSection<E>(ctx, chunk);
+    else if (ctx.arg.compress_debug_sections == COMPRESS_GNU)
+      comp = new GnuCompressedSection<E>(ctx, chunk);
+    assert(comp);
+
+    ctx.output_chunks.push_back(std::unique_ptr<OutputChunk<E>>(comp));
+    ctx.chunks[i] = comp;
   });
 
+  ctx.shstrtab->update_shdr(ctx);
   ctx.ehdr->update_shdr(ctx);
   ctx.shdr->update_shdr(ctx);
 }

@@ -572,7 +572,7 @@ int do_main(int argc, char **argv) {
 
   // If --compress-debug-sections is given, compress .debug_* sections
   // using zlib.
-  if (ctx.arg.compress_debug_sections) {
+  if (ctx.arg.compress_debug_sections != COMPRESS_NONE) {
     compress_debug_sections(ctx);
     filesize = set_osec_offsets(ctx);
   }
