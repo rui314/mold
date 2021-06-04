@@ -649,7 +649,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.rpaths += arg;
     } else if (read_flag(args, "build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
-      ctx.arg.build_id.hash_size = 16;
+      ctx.arg.build_id.hash_size = 20;
     } else if (read_arg(ctx, args, arg, "build-id")) {
       if (arg == "none") {
         ctx.arg.build_id.kind = BuildId::NONE;
