@@ -267,7 +267,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 
   // Set environment variables
   putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
-  putenv(strdup(("MOLD_REAL_PATH=" + self).c_str()));
+  putenv(strdup(("MOLD_PATH=" + self).c_str()));
 
   // If /usr/bin/ld{,lld,gold} is specified, run mold itself
   if (std::string_view cmd = argv[2]; cmd == "ld" ||

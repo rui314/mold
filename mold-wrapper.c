@@ -12,10 +12,10 @@
 extern char **environ;
 
 static char *get_mold_path() {
-  char *path = getenv("MOLD_REAL_PATH");
+  char *path = getenv("MOLD_PATH");
   if (path)
     return path;
-  fprintf(stderr, "MOLD_REAL_PATH is not set\n");
+  fprintf(stderr, "MOLD_PATH is not set\n");
   exit(1);
 }
 
