@@ -120,6 +120,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_filesz =
       (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
+    phdr.p_paddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
   };
 
