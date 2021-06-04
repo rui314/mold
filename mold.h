@@ -510,6 +510,8 @@ public:
 
   void update_shdr(Context<E> &ctx) override;
   void sort(Context<E> &ctx);
+
+  i64 relcount = 0;
 };
 
 template <typename E>

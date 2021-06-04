@@ -27,4 +27,16 @@ fgrep -q 'Shared library: [ld-linux-x86-64.so.2]' $t/log
 readelf --symbols --use-dynamic $t/exe > $t/log2
 fgrep -q 'FUNC    GLOBAL DEFAULT UND __libc_start_main' $t/log2
 
+cat <<EOF | clang -c -fPIC -o $t/b.o -xc -
+#include <stdio.h>
+
+int main() {
+  printf("Hello world\n");
+}
+EOF
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe -pie $t/b.o
+count=$(readelf --relocs $t/exe | grep R_X86_64_RELATIVE | wc -l)
+readelf --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
+
 echo OK

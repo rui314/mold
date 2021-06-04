@@ -271,9 +271,19 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
   tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return std::tuple(a.r_type != E::R_IRELATIVE, a.r_sym, a.r_offset) <
-           std::tuple(b.r_type != E::R_IRELATIVE, b.r_sym, b.r_offset);
+    return std::tuple(a.r_type != E::R_RELATIVE, a.r_sym, a.r_offset) <
+           std::tuple(b.r_type != E::R_RELATIVE, b.r_sym, b.r_offset);
   });
+
+  // Dynamic section contains the number of R_RELATIVE dynamic relocations,
+  // so rewrite it if necessary.
+  if (ctx.dynamic->shdr.sh_size) {
+    auto it = std::find_if(begin, end, [](const ElfRel<E> &rel) {
+      return rel.r_type != E::R_RELATIVE;
+    });
+    this->relcount = it - begin;
+    ctx.dynamic->copy_buf(ctx);
+  }
 }
 
 template <typename E>
@@ -486,6 +496,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_HASH, ctx.hash->shdr.sh_addr);
   if (ctx.gnu_hash)
     define(DT_GNU_HASH, ctx.gnu_hash->shdr.sh_addr);
+  if (ctx.reldyn)
+    define(E::is_rel ? DT_RELCOUNT : DT_RELACOUNT, ctx.reldyn->relcount);
 
   i64 flags = 0;
   i64 flags1 = 0;
