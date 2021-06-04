@@ -37,7 +37,7 @@ read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
       Fatal(ctx) << mb->name << ": filename is not stored as a long filename";
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-    std::string name(start, strstr(start, "/\n"));
+    std::string name(start, (const char *)strstr(start, "/\n"));
     std::string path = std::string(path_dirname(mb->name)) + "/" + name;
     vec.push_back(MemoryMappedFile<E>::must_open(ctx, path));
     data = body;
@@ -71,7 +71,7 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 
     if (hdr.ar_name[0] == '/') {
       const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-      name = {start, strstr(start, "/\n")};
+      name = {start, (const char *)strstr(start, "/\n")};
     } else {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
