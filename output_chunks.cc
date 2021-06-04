@@ -163,6 +163,9 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Create PT_LOAD segments.
+  for (OutputChunk<E> *chunk : ctx.chunks)
+    chunk->new_page = false;
+
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
     OutputChunk<E> *first = ctx.chunks[i++];
     if (!(first->shdr.sh_flags & SHF_ALLOC))
