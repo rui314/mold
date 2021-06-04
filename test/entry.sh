@@ -21,4 +21,8 @@ grep -q 'Entry point address:.*0x201000' $t/log
 readelf -e $t/exe > $t/log
 grep -q 'Entry point address:.*0x201008' $t/log
 
+../mold -static -o $t/exe $t/a.o
+readelf -e $t/exe > $t/log
+grep -q 'Entry point address:.*0x201000' $t/log
+
 echo OK

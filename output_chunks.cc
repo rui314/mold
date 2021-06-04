@@ -14,6 +14,19 @@ void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
+u64 get_entry_addr(Context<E> &ctx) {
+  if (!ctx.arg.entry.empty())
+    if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.entry))
+      if (sym->file)
+        return sym->get_addr(ctx);
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+    if (osec->name == ".text")
+      return osec->shdr.sh_addr;
+  return 0;
+}
+
+template <typename E>
 void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
@@ -25,8 +38,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
-  if (!ctx.arg.entry.empty())
-    hdr.e_entry = Symbol<E>::intern(ctx, ctx.arg.entry)->get_addr(ctx);
+  hdr.e_entry = get_entry_addr(ctx);
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
