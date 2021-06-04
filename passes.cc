@@ -128,16 +128,10 @@ void resolve_obj_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
-      if (esym.is_defined())
-        continue;
-
       Symbol<E> &sym = *file->symbols[i];
-      if (!sym.file || !sym.file->is_dso)
-        continue;
-
-      sym.file->is_alive = true;
-
-      if (esym.st_bind != STB_WEAK) {
+      if (esym.is_undef() && esym.st_bind != STB_WEAK &&
+          sym.file && sym.file->is_dso) {
+        sym.file->is_alive = true;
         std::lock_guard lock(sym.mu);
         sym.is_weak = false;
       }
