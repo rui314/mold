@@ -135,16 +135,16 @@ static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
   return true;
 }
 
-static size_t combine_hash(size_t a, size_t b) {
+static u64 combine_hash(u64 a, u64 b) {
   return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
 }
 
 template <typename E>
 struct LeafHasher {
   size_t operator()(const InputSection<E> *isec) const {
-    size_t h = hash_string(isec->contents);
+    u64 h = hash_string(isec->contents);
     for (FdeRecord<E> &fde : isec->get_fdes()) {
-      size_t h2 = hash_string(fde.get_contents().substr(8));
+      u64 h2 = hash_string(fde.get_contents().substr(8));
       h = combine_hash(h, h2);
     }
     return h;
