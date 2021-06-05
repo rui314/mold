@@ -916,14 +916,14 @@ public:
   InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
   InputFile() : name("<internal>") {}
 
+  template<typename T> std::span<T>
+  inline get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
+
+  template<typename T> std::span<T>
+  inline get_data(Context<E> &ctx, i64 idx);
+
   inline std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   inline std::string_view get_string(Context<E> &ctx, i64 idx);
-
-  template<typename T> std::span<T>
-  get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
-
-  template<typename T> std::span<T>
-  get_data(Context<E> &ctx, i64 idx);
 
   ElfShdr<E> *find_section(i64 type);
 
@@ -2084,6 +2084,23 @@ template <typename E>
 inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
   std::span<FdeRecord<E>> span(file.fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
+}
+
+template <typename E>
+template <typename T>
+inline std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
+  std::string_view view = this->get_string(ctx, shdr);
+  if (view.size() % sizeof(T))
+    Fatal(ctx) << *this << ": corrupted section";
+  return {(T *)view.data(), view.size() / sizeof(T)};
+}
+
+template <typename E>
+template <typename T>
+inline std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
+  if (elf_sections.size() <= idx)
+    Fatal(ctx) << *this << ": invalid section index";
+  return this->template get_data<T>(elf_sections[idx]);
 }
 
 template <typename E>

@@ -47,7 +47,12 @@ std::function<void()> fork_child() {
 
   // Child
   close(pipefd[0]);
-  return [=]() { write(pipefd[1], (char []){1}, 1); };
+
+  return [=]() {
+    char buf[] = {1};
+    int n = write(pipefd[1], buf, 1);
+    assert(n == 1);
+  };
 }
 
 static std::string base64(u8 *data, u64 size) {
@@ -81,7 +86,8 @@ static std::string compute_sha256(std::span<std::string_view> argv) {
   for (std::string_view arg : argv) {
     if (arg != "-preload" && arg != "--preload") {
       SHA256_Update(&sha, arg.data(), arg.size());
-      SHA256_Update(&sha, (char []){0}, 1);
+      char buf[] = {0};
+      SHA256_Update(&sha, buf, 1);
     }
   }
 
@@ -158,7 +164,9 @@ void try_resume_daemon(Context<E> &ctx) {
 
   send_fd(ctx, conn, STDOUT_FILENO);
   send_fd(ctx, conn, STDERR_FILENO);
-  i64 r = read(conn, (char[1]){}, 1);
+
+  char buf[1];
+  i64 r = read(conn, buf, 1);
   close(conn);
   if (r == 1)
     exit(0);
@@ -228,7 +236,8 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
   *on_complete = [=]() {
     char buf[] = {1};
-    write(conn, buf, 1);
+    int n = write(conn, buf, 1);
+    assert(n == 1);
   };
 }
 

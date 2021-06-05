@@ -54,6 +54,8 @@ public:
     return *this;
   }
 
+  [[noreturn]] ~SyntaxError() = default;
+
   Fatal<E> out;
 };
 

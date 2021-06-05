@@ -102,23 +102,6 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 }
 
 template <typename E>
-template <typename T>
-std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  std::string_view view = this->get_string(ctx, shdr);
-  if (view.size() % sizeof(T))
-    Fatal(ctx) << *this << ": corrupted section";
-  return {(T *)view.data(), view.size() / sizeof(T)};
-}
-
-template <typename E>
-template <typename T>
-std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
-  if (elf_sections.size() <= idx)
-    Fatal(ctx) << *this << ": invalid section index";
-  return this->template get_data<T>(elf_sections[idx]);
-}
-
-template <typename E>
 ElfShdr<E> *InputFile<E>::find_section(i64 type) {
   for (ElfShdr<E> &sec : elf_sections)
     if (sec.sh_type == type)

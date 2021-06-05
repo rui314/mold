@@ -43,7 +43,8 @@ bool GlobPattern::match(std::string_view str) const {
     return str.starts_with(pat);
   case SUFFIX:
     return str.ends_with(pat);
-  case GENERIC:
+  default:
+    assert(kind == GENERIC);
     return generic_match(pat, str);
   }
 }
