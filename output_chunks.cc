@@ -571,12 +571,11 @@ static std::string_view get_output_name(std::string_view name) {
   if (name == ".dtors" || name.starts_with(".dtors."))
     return ".fini_array";
 
-  if (name == ".zdebug_info")
-    return ".debug_info";
-  if (name == ".zdebug_aranges")
-    return ".debug_aranges";
-  if (name == ".zdebug_str")
-    return ".debug_str";
+  if (name.starts_with(".zdebug")) {
+    std::string realname = "." + std::string(name.substr(2));
+    static ConcurrentMap<std::string> map;
+    return *map.insert(realname, realname);
+  }
 
   return name;
 }

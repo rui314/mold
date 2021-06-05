@@ -184,6 +184,13 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
     return std::string_view((char *)buf, size);
   };
 
+  auto copy_shdr = [&](const ElfShdr<E> &shdr) {
+    ElfShdr<E> *ret = new ElfShdr<E>;
+    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(ret));
+    *ret = shdr;
+    return ret;
+  };
+
   if (name.starts_with(".zdebug")) {
     // Old-style compressed section
     std::string_view data = this->get_string(ctx, shdr);
@@ -191,7 +198,10 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
       Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
     u64 size = read64be((u8 *)&data[4]);
     std::string_view contents = do_uncompress(data.substr(12), size);
-    return {contents, &shdr};
+
+    ElfShdr<E> *shdr2 = copy_shdr(shdr);
+    shdr2->sh_size = size;
+    return {contents, shdr2};
   }
 
   if (shdr.sh_flags & SHF_COMPRESSED) {
@@ -205,9 +215,7 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
     if (hdr.ch_type != ELFCOMPRESS_ZLIB)
       Fatal(ctx) << *this << ": " << name << ": unsupported compression type";
 
-    ElfShdr<E> *shdr2 = new ElfShdr<E>;
-    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(shdr2));
-    *shdr2 = shdr;
+    ElfShdr<E> *shdr2 = copy_shdr(shdr);
     shdr2->sh_flags &= ~(u64)(SHF_COMPRESSED);
     shdr2->sh_size = hdr.ch_size;
     shdr2->sh_addralign = hdr.ch_addralign;

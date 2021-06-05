@@ -18,5 +18,7 @@ int foo() {
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
+dwarfdump $t/exe > /dev/null
+readelf --sections $t/exe | fgrep -q .debug_info
 
 echo ' OK'
