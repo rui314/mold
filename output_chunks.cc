@@ -923,10 +923,19 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
-  for (i64 i = 1; i < symbols.size(); i++) {
-    symbols[i]->set_dynsym_idx(ctx, i);
-    ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
-  }
+  constexpr auto symbol_name_len = [](const auto &sym) {
+    return sym->name().size() + 1;
+  };
+  ctx.dynstr->shdr.sh_size += std::transform_reduce(
+      std::execution::par_unseq, std::begin(symbols) + 1, std::end(symbols),
+      std::size_t{0}, std::plus{}, symbol_name_len);
+
+  const auto set_sym_idx = [&](auto &sym) {
+      sym->set_dynsym_idx(ctx,
+                          static_cast<i32>(std::distance(&symbols[0], &sym)));
+  };
+  std::for_each(std::execution::par_unseq, std::begin(symbols) + 1,
+                std::end(symbols), set_sym_idx);
 }
 
 template <typename E>

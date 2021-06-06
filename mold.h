@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <execution>
 #include <fstream>
 #include <functional>
 #include <iostream>
