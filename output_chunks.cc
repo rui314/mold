@@ -875,58 +875,54 @@ template <typename E>
 void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
   Timer t(ctx, "sort_dynsyms");
 
-  struct T {
-    Symbol<E> *sym;
-    i32 idx;
-    u32 hash;
-
-    bool is_local() const {
-      return sym->esym().st_bind == STB_LOCAL;
-    }
-  };
-
-  std::vector<T> vec(symbols.size());
-
-  for (i32 i = 1; i < symbols.size(); i++)
-    vec[i] = {symbols[i], i, 0};
+  // The first entry of an ELF symbol table is a null symbol
+  const auto first_nonnull_symbol =
+      std::min(std::begin(symbols) + 1, std::end(symbols));
 
   // In any ELF file, local symbols should precede global symbols.
-  tbb::parallel_sort(vec.begin() + 1, vec.end(), [](const T &a, const T &b) {
-    return std::tuple(a.is_local(), a.idx) < std::tuple(b.is_local(), b.idx);
-  });
-
-  auto first_global = std::partition_point(vec.begin() + 1, vec.end(),
-                                           [](const T &x) {
-    return x.is_local();
-  });
+  constexpr auto is_local = [](const auto &sym) {
+    return sym->esym().st_bind == STB_LOCAL;
+  };
+  const auto first_global = std::stable_partition(
+      std::execution::par, first_nonnull_symbol, std::end(symbols), is_local);
 
   // In any ELF file, the index of the first global symbols can be
   // found in the symtab's sh_info field.
-  this->shdr.sh_info = first_global - vec.begin();
+  this->shdr.sh_info = std::distance(std::begin(symbols), first_global);
 
   // If we have .gnu.hash section, it imposes more constraints
   // on the order of symbols.
   if (ctx.gnu_hash) {
-    i64 num_globals = vec.end() - first_global;
+    const auto num_globals = std::distance(first_global, std::end(symbols));
     ctx.gnu_hash->num_buckets = num_globals / ctx.gnu_hash->LOAD_FACTOR + 1;
-    ctx.gnu_hash->symoffset = first_global - vec.begin();
+    ctx.gnu_hash->symoffset = std::distance(std::begin(symbols), first_global);
 
-    tbb::parallel_for_each(first_global, vec.end(), [&](T &x) {
-      x.hash = djb_hash(x.sym->name()) % ctx.gnu_hash->num_buckets;
-    });
-
-    tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
-      return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
-    });
+    const auto compare_hash = [num_buckets = ctx.gnu_hash->num_buckets](
+                                  const auto &sym1, const auto &sym2) {
+      return djb_hash(sym1->name()) % num_buckets <
+             djb_hash(sym2->name()) % num_buckets;
+    };
+    std::stable_sort(std::execution::par, first_global, std::end(symbols),
+                     compare_hash);
   }
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
-  for (i64 i = 1; i < symbols.size(); i++) {
-    symbols[i] = vec[i].sym;
-    symbols[i]->set_dynsym_idx(ctx, i);
-    ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
-  }
+  constexpr auto symbol_name_len = [](const auto &sym) {
+    return sym->name().size() + 1;
+  };
+  ctx.dynstr->shdr.sh_size += std::transform_reduce(
+      std::execution::par_unseq, first_nonnull_symbol, std::end(symbols),
+      std::size_t{0}, std::plus{}, symbol_name_len);
+
+  const auto set_sym_idx = [&](auto &sym)
+    requires std::contiguous_iterator<typename decltype(symbols)::iterator>
+  {
+    sym->set_dynsym_idx(ctx,
+                        static_cast<i32>(std::distance(&symbols[0], &sym)));
+  };
+  std::for_each(std::execution::par_unseq, first_nonnull_symbol,
+                std::end(symbols), set_sym_idx);
 }
 
 template <typename E>
