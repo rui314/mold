@@ -600,7 +600,7 @@ public:
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
-  void sort_symbols(Context<E> &ctx);
+  void finalize(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 

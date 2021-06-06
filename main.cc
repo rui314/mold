@@ -513,9 +513,10 @@ int do_main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels(ctx);
 
-  // Sort .dynsym contents. Beyond this point, no symbol will be
-  // added to .dynsym.
-  ctx.dynsym->sort_symbols(ctx);
+  // Reserve a space for dynamic symbol strings in .dynstr and sort
+  // .dynsym contents if necessary. Beyond this point, no symbol will
+  // be added to .dynsym.
+  ctx.dynsym->finalize(ctx);
 
   // Fill .gnu.version_d section contents.
   ctx.verdef->construct(ctx);

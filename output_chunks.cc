@@ -681,7 +681,8 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_tlsgd_idx(ctx, this->shdr.sh_size / E::got_size);
   this->shdr.sh_size += E::got_size * 2;
   tlsgd_syms.push_back(sym);
-  ctx.dynsym->add_symbol(ctx, sym);
+  if (sym->esym().st_bind != STB_LOCAL)
+    ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -714,7 +715,11 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
         sym->get_type() == STT_GNU_IFUNC)
       n++;
 
-  n += tlsgd_syms.size() * 2;
+  n += tlsgd_syms.size();
+  for (Symbol<E> *sym : tlsgd_syms)
+    if (sym->get_dynsym_idx(ctx) != -1)
+      n++;
+
   n += tlsdesc_syms.size();
 
   for (Symbol<E> *sym : gottp_syms)
@@ -771,9 +776,15 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
-    u32 dynsym_idx = sym->get_dynsym_idx(ctx);
-    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
-    *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, dynsym_idx);
+    i32 dynsym_idx = sym->get_dynsym_idx(ctx);
+
+    if (dynsym_idx == -1) {
+      *rel++ = reloc<E>(addr, E::R_DTPMOD, 0);
+      buf[sym->get_tlsgd_idx(ctx) + 1] = sym->get_addr(ctx) - ctx.tls_begin;
+    } else {
+      *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
+      *rel++ = reloc<E>(addr + E::got_size, E::R_DTPOFF, dynsym_idx);
+    }
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
@@ -862,8 +873,12 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  if (symbols.empty())
+  assert(sym->esym().st_bind != STB_LOCAL);
+
+  if (symbols.empty()) {
     symbols.push_back({});
+    this->shdr.sh_info = 1;
+  }
 
   if (sym->get_dynsym_idx(ctx) != -1)
     return;
@@ -872,58 +887,43 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void DynsymSection<E>::sort_symbols(Context<E> &ctx) {
-  Timer t(ctx, "sort_dynsyms");
+void DynsymSection<E>::finalize(Context<E> &ctx) {
+  Timer t(ctx, "DynsymSection::finalize");
+  if (symbols.empty())
+    return;
 
-  struct T {
-    Symbol<E> *sym;
-    i32 idx;
-    u32 hash;
-
-    bool is_local() const {
-      return sym->esym().st_bind == STB_LOCAL;
-    }
-  };
-
-  std::vector<T> vec(symbols.size());
-
-  for (i32 i = 1; i < symbols.size(); i++)
-    vec[i] = {symbols[i], i, 0};
-
-  // In any ELF file, local symbols should precede global symbols.
-  tbb::parallel_sort(vec.begin() + 1, vec.end(), [](const T &a, const T &b) {
-    return std::tuple(a.is_local(), a.idx) < std::tuple(b.is_local(), b.idx);
-  });
-
-  auto first_global = std::partition_point(vec.begin() + 1, vec.end(),
-                                           [](const T &x) {
-    return x.is_local();
-  });
-
-  // In any ELF file, the index of the first global symbols can be
-  // found in the symtab's sh_info field.
-  this->shdr.sh_info = first_global - vec.begin();
-
-  // If we have .gnu.hash section, it imposes more constraints
-  // on the order of symbols.
+  // If we have .gnu.hash section, we need to sort .dynsym contents by
+  // symbol hashes.
   if (ctx.gnu_hash) {
-    i64 num_globals = vec.end() - first_global;
-    ctx.gnu_hash->num_buckets = num_globals / ctx.gnu_hash->LOAD_FACTOR + 1;
-    ctx.gnu_hash->symoffset = first_global - vec.begin();
+    // We need a stable sort for build reproducibility, but parallel_sort
+    // isn't stable, so we use this struct to make it stable.
+    struct T {
+      Symbol<E> *sym;
+      u32 hash;
+      i32 idx;
+    };
 
-    tbb::parallel_for_each(first_global, vec.end(), [&](T &x) {
-      x.hash = djb_hash(x.sym->name()) % ctx.gnu_hash->num_buckets;
+    std::vector<T> vec(symbols.size());
+    ctx.gnu_hash->num_buckets = (vec.size() - 1) / ctx.gnu_hash->LOAD_FACTOR + 1;
+    ctx.gnu_hash->symoffset = 1;
+
+    tbb::parallel_for((i64)1, (i64)vec.size(), [&](i64 i) {
+      vec[i].sym = symbols[i];
+      vec[i].hash = djb_hash(symbols[i]->name()) % ctx.gnu_hash->num_buckets;
+      vec[i].idx = i;
     });
 
-    tbb::parallel_sort(first_global, vec.end(), [&](const T &a, const T &b) {
+    tbb::parallel_sort(vec.begin() + 1, vec.end(), [&](const T &a, const T &b) {
       return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
     });
+
+    for (i64 i = 1; i < symbols.size(); i++)
+      symbols[i] = vec[i].sym;
   }
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
   for (i64 i = 1; i < symbols.size(); i++) {
-    symbols[i] = vec[i].sym;
     symbols[i]->set_dynsym_idx(ctx, i);
     ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
   }

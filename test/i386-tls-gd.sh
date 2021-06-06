@@ -8,28 +8,41 @@ mkdir -p $t
 cat <<EOF | cc -fPIC -c -o $t/a.o -xc - -m32
 #include <stdio.h>
 
-extern _Thread_local int foo;
-static _Thread_local int bar;
-
-int *get_foo_addr() { return &foo; }
-int *get_bar_addr() { return &bar; }
+static _Thread_local int x1 = 1;
+static _Thread_local int x2;
+extern _Thread_local int x3;
+extern _Thread_local int x4;
+int get_x5();
+int get_x6();
 
 int main() {
-  bar = 5;
+  x2 = 2;
 
-  printf("%d %d %d %d\n", *get_foo_addr(), *get_bar_addr(), foo, bar);
+  printf("%d %d %d %d %d %d\n", x1, x2, x3, x4, get_x5(), get_x6());
   return 0;
 }
 EOF
 
-cat <<EOF | cc -fPIC -shared -o $t/b.so -xc - -m32
-_Thread_local int foo = 3;
+cat <<EOF | cc -fPIC -c -o $t/b.o -xc - -m32
+_Thread_local int x3 = 3;
+static _Thread_local int x5 = 5;
+int get_x5() { return x5; }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.so -m32
-$t/exe | grep -q '3 5 3 5'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.so -Wl,-no-relax -m32
-$t/exe | grep -q '3 5 3 5'
+cat <<EOF | cc -fPIC -c -o $t/c.o -xc - -m32
+_Thread_local int x4 = 4;
+static _Thread_local int x6 = 6;
+int get_x6() { return x6; }
+EOF
+
+clang -shared -o $t/d.so $t/b.o -m32
+clang -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.so $t/e.so -m32
+$t/exe | grep -q '1 2 3 4 5 6'
+
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax -m32
+$t/exe | grep -q '1 2 3 4 5 6'
 
 echo OK
