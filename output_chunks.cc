@@ -6,7 +6,6 @@
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
-#include <zlib.h>
 
 template <typename E>
 void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {
