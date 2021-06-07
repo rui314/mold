@@ -226,7 +226,7 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
-        Fatal(ctx) << "option " << name << ": argument missing";
+        Fatal(ctx) << "option -" << name << ": argument missing";
       arg = args[1];
       args = args.subspan(2);
       return true;
@@ -605,8 +605,13 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.print_gc_sections = true;
     } else if (read_flag(args, "no-print-gc-sections")) {
       ctx.arg.print_gc_sections = false;
-    } else if (read_flag(args, "icf")) {
-      ctx.arg.icf = true;
+    } else if (read_arg(ctx, args, arg, "icf")) {
+      if (arg == "all")
+        ctx.arg.icf = true;
+      else if (arg == "none")
+        ctx.arg.icf = false;
+      else
+        Fatal(ctx) << "unknown --icf argument: " << arg;
     } else if (read_flag(args, "no-icf")) {
       ctx.arg.icf = false;
     } else if (read_arg(ctx, args, arg, "image-base")) {

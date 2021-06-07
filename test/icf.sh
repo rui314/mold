@@ -31,7 +31,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-icf
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-icf=all
 $t/exe | grep -q '1 0'
 
 echo OK
