@@ -682,7 +682,6 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.filter.push_back(arg);
     } else if (read_flag(args, "preload")) {
       ctx.arg.preload = true;
-    } else if (read_arg(ctx, args, arg, "z")) {
     } else if (read_arg(ctx, args, arg, "O")) {
     } else if (read_flag(args, "O0")) {
     } else if (read_flag(args, "O1")) {
@@ -734,6 +733,8 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "pop-state")) {
       remaining.push_back("-pop-state");
     } else {
+      if (args[0] == "-z" && args.size() >= 2)
+        Fatal(ctx) << "mold: unknown command line option: -z " << args[1];
       if (args[0][0] == '-')
         Fatal(ctx) << "mold: unknown command line option: " << args[0];
       remaining.push_back(args[0]);
