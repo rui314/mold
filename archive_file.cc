@@ -81,18 +81,11 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   return vec;
 }
 
-template
-std::vector<MemoryMappedFile<X86_64> *>
-read_fat_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
+#define INSTANTIATE(E)                                                  \
+  template std::vector<MemoryMappedFile<E> *>                           \
+  read_fat_archive_members(Context<E> &, MemoryMappedFile<E> *);        \
+  template std::vector<MemoryMappedFile<E> *>                           \
+  read_thin_archive_members(Context<E> &, MemoryMappedFile<E> *);
 
-template
-std::vector<MemoryMappedFile<X86_64> *>
-read_thin_archive_members(Context<X86_64> &ctx, MemoryMappedFile<X86_64> *mb);
-
-template
-std::vector<MemoryMappedFile<I386> *>
-read_fat_archive_members(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
-
-template
-std::vector<MemoryMappedFile<I386> *>
-read_thin_archive_members(Context<I386> &ctx, MemoryMappedFile<I386> *mb);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
