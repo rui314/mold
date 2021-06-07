@@ -10,5 +10,6 @@ echo 'int main() { return 0; }' > $t/b.c
 
 ! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c 2> /dev/null || false
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c -Wl,-allow-multiple-definition
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.c $t/b.c -Wl,-z,muldefs
 
 echo OK

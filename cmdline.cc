@@ -585,6 +585,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_initfirst = true;
     } else if (read_z_flag(args, "interpose")) {
       ctx.arg.z_interpose = true;
+    } else if (read_z_flag(args, "muldefs")) {
+      ctx.arg.allow_multiple_definition = true;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {
