@@ -36,8 +36,8 @@ static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
 EOF
 
-clang -shared -o $t/d.so $t/b.o -m32
-clang -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
+clang -fuse-ld=`pwd`/../mold -shared -o $t/d.so $t/b.o -m32
+clang -fuse-ld=`pwd`/../mold -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.so $t/e.so -m32
 $t/exe | grep -q '1 2 3 4 5 6'

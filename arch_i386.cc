@@ -47,7 +47,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
         0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
       };
       memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
+      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - ctx.gotplt->shdr.sh_addr;
     } else {
       static const u8 data[] = {
         0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
@@ -76,7 +76,7 @@ void PltGotSection<I386>::copy_buf(Context<I386> &ctx) {
     for (i64 i = 0; i < symbols.size(); i++) {
       u8 *ent = buf + i * sizeof(data);
       memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) = symbols[i]->get_got_addr(ctx) - ctx.got->shdr.sh_addr;
+      *(u32 *)(ent + 2) = symbols[i]->get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
     }
   } else {
     static const u8 data[] = {
@@ -164,11 +164,11 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write_val(ctx, rel.r_type, loc, val);
     };
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (ref ? ref->addend : 0)
-#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
-#define GOT ctx.got->shdr.sh_addr
+#define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A      (ref ? ref->addend : 0)
+#define P      (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
+#define GOTPLT ctx.gotplt->shdr.sh_addr
 
     switch (rel_types[i]) {
     case R_NONE:
@@ -188,34 +188,34 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write(S + A - P);
       break;
     case R_GOT:
-      write(G + A);
+      write(sym.get_got_addr(ctx) + A - GOTPLT);
       break;
     case R_GOTOFF:
-      write(S + A - GOT);
+      write(S + A - GOTPLT);
       break;
     case R_GOTPC:
-      write(GOT + A - P);
+      write(GOTPLT + A - P);
       break;
     case R_GOTPCREL:
-      write(G + GOT + A - P);
+      write(G + GOTPLT + A - P);
       break;
     case R_TLS_GOTIE:
-      write(sym.get_gottp_addr(ctx) + A - GOT);
+      write(sym.get_gottp_addr(ctx) + A - GOTPLT);
       break;
     case R_TLS_LE:
       write(S + A - ctx.tls_end);
       break;
     case R_TLS_GD:
-      write(sym.get_tlsgd_addr(ctx) + A - GOT);
+      write(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
       break;
     case R_TLS_LD:
-      write(ctx.got->get_tlsld_addr(ctx) + A - GOT);
+      write(ctx.got->get_tlsld_addr(ctx) + A - GOTPLT);
       break;
     case R_TPOFF:
       write(S + A - ctx.tls_begin);
       break;
     case R_TLS_GOTDESC:
-      write(sym.get_tlsdesc_addr(ctx) + A - GOT);
+      write(sym.get_tlsdesc_addr(ctx) + A - GOTPLT);
       break;
     case R_TLS_GOTDESC_RELAX: {
       static const u8 insn[] = {
@@ -241,7 +241,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 #undef A
 #undef P
 #undef G
-#undef GOT
+#undef GOTPLT
   }
 }
 
