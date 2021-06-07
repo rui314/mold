@@ -45,7 +45,7 @@ Options:
   --Bsymbolic                 Bind global symbols locally
   --Bsymbolic-functions       Bind global functions locally
   --Map FILE                  Write map file to a given file
-  --allow-multiple-definition Ignored
+  --allow-multiple-definition Allow multiple definitions
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
   --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]

@@ -345,6 +345,12 @@ function symbols. Data symbols remains both imported and exported.
 .IP "\fB\-\-Map\fR=\fIfile\fR"
 Write map file to \fIfile\fR.
 
+.IP "\fB\-\-allow\-multiple\-definition\fR"
+Normally, the linker reports an error if there are more than one
+definition of a symbol. This option changes the default behavior so
+that it doesn't report an error for duplicate definitions and instead
+use the first definition.
+
 .IP "\fB\-\-as\-needed\fR"
 .PD 0
 .IP "\fB\-\-no\-as\-needed\fR"
@@ -582,7 +588,6 @@ Mark object to interpose all DSOs but executable
 .PD 0
 .IP "\fB\-)\fR"
 .IP "\fB\-O\fR\fInumber\fR"
-.IP "\fB\-\-allow\-multiple\-definition\fR"
 .IP "\fB\-\-allow\-shlib\-undefined\fR"
 .IP "\fB\-\-color\-diagnostics\fR"
 .IP "\fB\-\-disable\-new\-dtags\fR"
