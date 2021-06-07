@@ -269,7 +269,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       break;
     default: {
       std::string_view name = this->shstrtab.data() + shdr.sh_name;
-      if (name == ".note.GNU-stack")
+      if (name == ".note.GNU-stack" || name.starts_with(".gnu.warning."))
         continue;
 
       if (name == ".note.gnu.property") {
