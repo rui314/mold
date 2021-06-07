@@ -417,7 +417,7 @@ public:
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = E::got_size;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -444,7 +444,7 @@ public:
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = E::got_size;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -1775,27 +1775,27 @@ public:
   }
 
   u64 get_got_addr(Context<E> &ctx) const {
-    return ctx.got->shdr.sh_addr + get_got_idx(ctx) * E::got_size;
+    return ctx.got->shdr.sh_addr + get_got_idx(ctx) * E::wordsize;
   }
 
   u64 get_gotplt_addr(Context<E> &ctx) const {
     assert(get_gotplt_idx(ctx) != -1);
-    return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::got_size;
+    return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::wordsize;
   }
 
   u64 get_gottp_addr(Context<E> &ctx) const {
     assert(get_gottp_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::got_size;
+    return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::wordsize;
   }
 
   u64 get_tlsgd_addr(Context<E> &ctx) const {
     assert(get_tlsgd_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::got_size;
+    return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::wordsize;
   }
 
   u64 get_tlsdesc_addr(Context<E> &ctx) const {
     assert(get_tlsdesc_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::got_size;
+    return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::wordsize;
   }
 
   u64 get_plt_addr(Context<E> &ctx) const {

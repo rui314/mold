@@ -622,7 +622,6 @@ struct X86_64 {
   static constexpr u32 wordsize = 8;
   static constexpr u32 rel_type = SHT_RELA;
   static constexpr u32 e_machine = EM_X86_64;
-  static constexpr i32 got_size = 8;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = false;
@@ -659,7 +658,6 @@ struct I386 {
   static constexpr u32 wordsize = 4;
   static constexpr u32 rel_type = SHT_REL;
   static constexpr u32 e_machine = EM_386;
-  static constexpr i32 got_size = 4;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
