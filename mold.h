@@ -54,6 +54,13 @@ template <typename E> class Symbol;
 template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
+
+template <typename E> class ROutputChunk;
+template <typename E> class ROutputEhdr;
+template <typename E> class ROutputShdr;
+template <typename E> class RStrtabSection;
+template <typename E> class RSymtabSection;
+
 class Compressor;
 class TarFile;
 
@@ -1224,6 +1231,13 @@ template <typename E>
 void icf_sections(Context<E> &ctx);
 
 //
+// relocatable.cc
+//
+
+template <typename E>
+void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args);
+
+//
 // mapfile.cc
 //
 
@@ -1424,6 +1438,7 @@ struct Context {
     bool print_map = false;
     bool quick_exit = true;
     bool relax = true;
+    bool relocatable = false;
     bool repro = false;
     bool shared = false;
     bool stats = false;
@@ -1554,6 +1569,14 @@ struct Context {
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
   std::unique_ptr<ReproSection<E>> repro;
+
+  // For --relocatable
+  std::vector<ROutputChunk<E> *> r_chunks;
+  ROutputEhdr<E> *r_ehdr = nullptr;
+  ROutputShdr<E> *r_shdr = nullptr;
+  RStrtabSection<E> *r_shstrtab = nullptr;
+  RStrtabSection<E> *r_strtab = nullptr;
+  RSymtabSection<E> *r_symtab = nullptr;
 
   u64 tls_begin = -1;
   u64 tls_end = -1;

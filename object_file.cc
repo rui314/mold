@@ -298,6 +298,8 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+  i64 cies_begin = cies.size();
+  i64 fdes_begin = fdes.size();
 
   // Verify relocations.
   for (i64 i = 1; i < rels.size(); i++)
@@ -328,10 +330,17 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     assert(begin_offset <= rels[rel_begin].r_offset);
 
     if (id == 0) {
+      // This is CIE.
       cies.push_back(CieRecord<E>(ctx, *this, isec, begin_offset, rel_begin));
     } else {
-      if (rel_begin == rel_idx)
-        Fatal(ctx) << isec << ": FDE has no relocations";
+      // This is FDE.
+      if (rel_begin == rel_idx) {
+        // FDE has no valid relocation, which means FDE is dead from
+        // the beginning. Compilers usually don't create such FDE, but
+        // `ld -r` tend to generate such dead FDEs.
+        continue;
+      }
+
       if (rels[rel_begin].r_offset - begin_offset != 8)
         Fatal(ctx) << isec << ": FDE's first relocation should have offset 8";
 
@@ -341,27 +350,28 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
   // Associate CIEs to FDEs.
   auto find_cie = [&](i64 offset) -> CieRecord<E> * {
-    for (CieRecord<E> &cie : cies)
-      if (cie.input_offset == offset)
-        return &cie;
+    for (i64 i = cies_begin; i < cies.size(); i++)
+      if (cies[i].input_offset == offset)
+        return &cies[i];
     Fatal(ctx) << isec << ": bad FDE pointer";
   };
 
-  for (FdeRecord<E> &fde : fdes) {
-    i64 cie_offset = *(i32 *)(contents.data() + fde.input_offset + 4);
-    fde.cie = find_cie(fde.input_offset + 4 - cie_offset);
+  for (i64 i = fdes_begin; i < fdes.size(); i++) {
+    i64 cie_offset = *(i32 *)(contents.data() + fdes[i].input_offset + 4);
+    fdes[i].cie = find_cie(fdes[i].input_offset + 4 - cie_offset);
   }
 
   // We assume that FDEs for the same input sections are contiguous
   // in `fdes` vector.
-  sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
+  std::stable_sort(fdes.begin() + fdes_begin, fdes.end(),
+                   [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
     InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
     InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
     return x->get_priority() < y->get_priority();
   });
 
   // Associate FDEs to input sections.
-  for (i64 i = 0; i < fdes.size();) {
+  for (i64 i = fdes_begin; i < fdes.size();) {
     InputSection<E> *isec =
       this->symbols[rels[fdes[i].rel_idx].r_sym]->input_section;
     assert(isec->fde_begin == -1);

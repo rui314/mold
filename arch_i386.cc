@@ -310,6 +310,12 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<I386> &rel = rels[i];
+
+    if (rel.r_type == R_386_NONE) {
+      rel_types[i] = R_NONE;
+      break;
+    }
+
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
@@ -324,9 +330,6 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     }
 
     switch (rel.r_type) {
-    case R_386_NONE:
-      rel_types[i] = R_NONE;
-      break;
     case R_386_8:
     case R_386_16: {
       Action table[][4] = {

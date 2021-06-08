@@ -1270,6 +1270,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       memcpy(base + cie.output_offset, contents.data(), contents.size());
 
       for (ElfRel<E> &rel : cie.get_rels()) {
+        if (rel.r_type == E::R_NONE)
+          continue;
         assert(rel.r_offset - cie.input_offset < contents.size());
         u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
@@ -1288,6 +1290,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       *(u32 *)(base + offset + 4) = offset + 4 - fde.cie->output_offset;
 
       for (ElfRel<E> &rel : fde.get_rels()) {
+        if (rel.r_type == E::R_NONE)
+          continue;
         assert(rel.r_offset - fde.input_offset < contents.size());
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);

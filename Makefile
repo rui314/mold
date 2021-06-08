@@ -14,7 +14,7 @@ LIBS = -Wl,-as-needed -lcrypto -pthread -ltbb -lz -lxxhash -ldl
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \
        subprocess.o gc_sections.o icf.o symbols.o cmdline.o filepath.o \
-       glob.o passes.o tar.o compress.o memory_mapped_file.o \
+       glob.o passes.o tar.o compress.o memory_mapped_file.o relocatable.o \
        arch_x86_64.o arch_i386.o
 
 PREFIX ?= /usr

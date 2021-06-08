@@ -37,6 +37,7 @@ Options:
   -l LIBNAME                  Search for a given library
   -m EMULATION                Ignored
   -o FILE, --output FILE      Set output filename
+  -r, --relocatable           Generate relocatable output
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
@@ -525,6 +526,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.relax = true;
     } else if (read_flag(args, "no-relax")) {
       ctx.arg.relax = false;
+    } else if (read_flag(args, "r") || read_flag(args, "relocatable")) {
+      ctx.arg.relocatable = true;
     } else if (read_flag(args, "perf")) {
       ctx.arg.perf = true;
     } else if (read_flag(args, "stats")) {

@@ -312,6 +312,11 @@ int do_main(int argc, char **argv) {
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
 
+  if (ctx.arg.relocatable) {
+    combine_objects(ctx, file_args);
+    return 0;
+  }
+
   if (!ctx.arg.preload)
     try_resume_daemon(ctx);
 

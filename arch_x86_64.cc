@@ -481,6 +481,12 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
+
+    if (rel.r_type == R_X86_64_NONE) {
+      rel_types[i] = R_NONE;
+      continue;
+    }
+
     Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
@@ -495,9 +501,6 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     }
 
     switch (rel.r_type) {
-    case R_X86_64_NONE:
-      rel_types[i] = R_NONE;
-      break;
     case R_X86_64_8:
     case R_X86_64_16:
     case R_X86_64_32:
