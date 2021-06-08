@@ -99,6 +99,8 @@ void EhFrameSection<I386>::apply_reloc(Context<I386> &ctx,
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   switch (rel.r_type) {
+  case R_386_NONE:
+    return;
   case R_386_32:
     *(u32 *)(base + loc) = val;
     return;

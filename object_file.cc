@@ -330,20 +330,6 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
   }
 }
 
-template <typename E>
-static bool is_valid_ehframe_reloc(u32 type);
-
-template <>
-bool is_valid_ehframe_reloc<X86_64>(u32 type) {
-  return type == R_X86_64_32   || type == R_X86_64_64 ||
-         type == R_X86_64_PC32 || type == R_X86_64_PC64;
-}
-
-template <>
-bool is_valid_ehframe_reloc<I386>(u32 type) {
-  return type == R_386_32 || type == R_386_PC32;
-}
-
 // .eh_frame contains data records explaining how to handle exceptions.
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
@@ -379,7 +365,8 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
   // Verify relocations.
   for (i64 i = 1; i < rels.size(); i++)
-    if (rels[i].r_offset <= rels[i - 1].r_offset)
+    if (rels[i].r_type != E::R_NONE &&
+        rels[i].r_offset <= rels[i - 1].r_offset)
       Fatal(ctx) << isec << ": relocation offsets must increase monotonically";
 
   // Read CIEs and FDEs until empty.

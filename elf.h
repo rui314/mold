@@ -609,6 +609,7 @@ template <typename E> struct ElfNhdr;
 struct X86_64 {
   typedef u64 WordTy;
 
+  static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
@@ -643,6 +644,7 @@ template <> struct ElfNhdr<X86_64> : public Elf64Nhdr {};
 struct I386 {
   typedef u32 WordTy;
 
+  static constexpr u32 R_NONE = R_386_NONE;
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
