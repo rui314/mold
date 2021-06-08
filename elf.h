@@ -620,12 +620,10 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr u32 wordsize = 8;
-  static constexpr u32 rel_type = SHT_RELA;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = false;
-  static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
 };
 
@@ -656,12 +654,10 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr u32 wordsize = 4;
-  static constexpr u32 rel_type = SHT_REL;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
-  static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
 };
 
