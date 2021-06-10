@@ -64,8 +64,7 @@ $(MIMALLOC_LIB): mimalloc/CMakeLists.txt
 	$(MAKE) -C mimalloc/out/release
 
 mimalloc/CMakeLists.txt:
-	git clone https://github.com/microsoft/mimalloc
-	(cd mimalloc; git checkout -q v2.0.1)
+	git submodule update --init --recursive
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory

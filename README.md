@@ -63,7 +63,7 @@ environment, you can build mold by the following commands.
 
 ```
 $ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git
-$ git clone https://github.com/rui314/mold.git
+$ git clone --recursive https://github.com/rui314/mold.git
 $ cd mold
 $ make
 ```
