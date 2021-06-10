@@ -51,10 +51,6 @@ ones such as web browsers for that target. It also has preliminary
 Linux/i386 support. Supporting other OSes and ISAs are planned after
 Linux/x86-64 support is complete.
 
-Note: Even though mold can successfully link large programs such as
-Chrome, Firefox or LLVM, it is not tested well, and I don't think it
-is ready for production use. mold is still just my pet project.
-
 ## How to build
 
 mold is written in C++20, so you need a very recent version of GCC or
