@@ -44,15 +44,16 @@ static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;
 template <typename E> class InputSection;
+template <typename E> class MemoryMappedFile;
 template <typename E> class MergedSection;
 template <typename E> class ObjectFile;
 template <typename E> class OutputChunk;
 template <typename E> class OutputSection;
 template <typename E> class SharedFile;
 template <typename E> class Symbol;
+template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
-template <typename E> struct CieRecord;
 class Compressor;
 class TarFile;
 
@@ -875,40 +876,6 @@ struct ComdatGroup {
   std::atomic_uint32_t owner = -1;
 };
 
-// MemoryMappedFile represents an mmap'ed input file.
-// mold uses mmap-IO only.
-template <typename E>
-class MemoryMappedFile {
-public:
-  static MemoryMappedFile *open(Context<E> &ctx, std::string path);
-  static MemoryMappedFile *must_open(Context<E> &ctx, std::string path);
-
-  ~MemoryMappedFile();
-
-  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start,
-                          u64 size);
-
-  u8 *data(Context<E> &ctx);
-  i64 size() const { return size_; }
-
-  std::string_view get_contents(Context<E> &ctx) {
-    return std::string_view((char *)data(ctx), size());
-  }
-
-  std::string name;
-  i64 mtime = 0;
-  bool given_fullpath = true;
-
-private:
-  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
-    : name(name), data_(data), size_(size), mtime(mtime) {}
-
-  std::mutex mu;
-  MemoryMappedFile *parent;
-  std::atomic<u8 *> data_;
-  i64 size_ = 0;
-};
-
 // InputFile is the base class of ObjectFile and SharedFile.
 template <typename E>
 class InputFile {
@@ -1048,6 +1015,49 @@ private:
   std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
 };
+
+//
+// memory_mapped_file.cc
+//
+
+// MemoryMappedFile represents an mmap'ed input file.
+// mold uses mmap-IO only.
+template <typename E>
+class MemoryMappedFile {
+public:
+  static MemoryMappedFile *open(Context<E> &ctx, std::string path);
+  static MemoryMappedFile *must_open(Context<E> &ctx, std::string path);
+
+  ~MemoryMappedFile();
+
+  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start,
+                          u64 size);
+
+  u8 *data(Context<E> &ctx);
+  i64 size() const { return size_; }
+
+  std::string_view get_contents(Context<E> &ctx) {
+    return std::string_view((char *)data(ctx), size());
+  }
+
+  std::string name;
+  i64 mtime = 0;
+  bool given_fullpath = true;
+
+private:
+  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
+    : name(name), data_(data), size_(size), mtime(mtime) {}
+
+  std::mutex mu;
+  MemoryMappedFile *parent;
+  std::atomic<u8 *> data_;
+  i64 size_ = 0;
+};
+
+enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
+
+template <typename E>
+FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
 // archive_file.cc

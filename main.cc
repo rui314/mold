@@ -9,16 +9,6 @@
 #include <unordered_set>
 
 template <typename E>
-static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *data = mb->data(ctx);
-  return mb->size() >= 4 &&
-         isprint(data[0]) &&
-         isprint(data[1]) &&
-         isprint(data[2]) &&
-         isprint(data[3]);
-}
-
-template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];
   memcpy(buf, str.data(), str.size());
@@ -32,30 +22,6 @@ std::string get_version_string() {
     return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
   return "mold " MOLD_VERSION " (" GIT_HASH
          "; compatible with GNU ld and GNU gold)";
-}
-
-enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
-
-template <typename E>
-static FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *data = mb->data(ctx);
-
-  if (mb->size() >= 20 && memcmp(data, "\177ELF", 4) == 0) {
-    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
-    if (ehdr.e_type == ET_REL)
-      return FileType::OBJ;
-    if (ehdr.e_type == ET_DYN)
-      return FileType::DSO;
-    return FileType::UNKNOWN;
-  }
-
-  if (mb->size() >= 8 && memcmp(data, "!<arch>\n", 8) == 0)
-    return FileType::AR;
-  if (mb->size() >= 8 && memcmp(data, "!<thin>\n", 8) == 0)
-    return FileType::THIN_AR;
-  if (is_text_file(ctx, mb))
-    return FileType::TEXT;
-  return FileType::UNKNOWN;
 }
 
 template <typename E>

@@ -1,73 +1,9 @@
 #include "mold.h"
 
 #include <cstring>
-#include <fcntl.h>
 #include <regex>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <zlib.h>
-
-template <typename E>
-MemoryMappedFile<E> *
-MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
-  if (path.starts_with('/') && !ctx.arg.chroot.empty())
-    path = ctx.arg.chroot + "/" + path_clean(path);
-
-  struct stat st;
-  if (stat(path.c_str(), &st) == -1)
-    return nullptr;
-  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-
-  MemoryMappedFile *mb = new MemoryMappedFile(path, nullptr, st.st_size, mtime);
-  ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
-  return mb;
-}
-
-template <typename E>
-MemoryMappedFile<E> *
-MemoryMappedFile<E>::must_open(Context<E> &ctx, std::string path) {
-  if (MemoryMappedFile *mb = MemoryMappedFile::open(ctx, path))
-    return mb;
-  Fatal(ctx) << "cannot open " << path;
-}
-
-template <typename E>
-u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
-  if (data_)
-    return data_;
-
-  std::lock_guard lock(mu);
-  if (data_)
-    return data_;
-
-  i64 fd = ::open(name.c_str(), O_RDONLY);
-  if (fd == -1)
-    Fatal(ctx) << name << ": cannot open: " << strerror(errno);
-
-  data_ = (u8 *)mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
-  if (data_ == MAP_FAILED)
-    Fatal(ctx) << name << ": mmap failed: " << strerror(errno);
-  close(fd);
-  return data_;
-}
-
-template <typename E>
-MemoryMappedFile<E> *
-MemoryMappedFile<E>::slice(Context<E> &ctx, std::string name, u64 start,
-                           u64 size) {
-  MemoryMappedFile *mb = new MemoryMappedFile<E>(name, data_ + start, size);
-  ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
-  mb->parent = this;
-  return mb;
-}
-
-template <typename E>
-MemoryMappedFile<E>::~MemoryMappedFile() {
-  if (data_ && !parent)
-    munmap(data_, size_);
-}
 
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
@@ -1462,7 +1398,6 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template class MemoryMappedFile<E>;                                   \
   template class ObjectFile<E>;                                         \
   template class SharedFile<E>;                                         \
   template class CieRecord<E>;                                          \
