@@ -570,12 +570,26 @@ static std::string_view get_output_name(std::string_view name) {
   if (name == ".dtors" || name.starts_with(".dtors."))
     return ".fini_array";
 
-  if (name.starts_with(".zdebug")) {
-    std::string realname = "." + std::string(name.substr(2));
-    static ConcurrentMap<std::string> map;
-    return *map.insert(realname, realname);
-  }
-
+  if (name == ".zdebug_aranges")
+    return ".debug_aranges";
+  if (name == ".zdebug_frame")
+    return ".debug_frame";
+  if (name == ".zdebug_info")
+    return ".debug_info";
+  if (name == ".zdebug_line")
+    return ".debug_line";
+  if (name == ".zdebug_loc")
+    return ".debug_loc";
+  if (name == ".zdebug_pubnames")
+    return ".debug_pubnames";
+  if (name == ".zdebug_pubtypes")
+    return ".debug_pubtypes";
+  if (name == ".zdebug_ranges")
+    return ".debug_ranges";
+  if (name == ".zdebug_str")
+    return ".debug_str";
+  if (name == ".zdebug_types")
+    return ".debug_types";
   return name;
 }
 

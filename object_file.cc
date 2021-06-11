@@ -264,6 +264,9 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
       isec->is_alive = false;
     }
   }
+
+  for (FdeRecord<E> &fde : fdes)
+    fde.cie = &cies[fde.cie_idx];
 }
 
 // .eh_frame contains data records explaining how to handle exceptions.
@@ -349,16 +352,16 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   }
 
   // Associate CIEs to FDEs.
-  auto find_cie = [&](i64 offset) -> CieRecord<E> * {
+  auto find_cie = [&](i64 offset) {
     for (i64 i = cies_begin; i < cies.size(); i++)
       if (cies[i].input_offset == offset)
-        return &cies[i];
+        return i;
     Fatal(ctx) << isec << ": bad FDE pointer";
   };
 
   for (i64 i = fdes_begin; i < fdes.size(); i++) {
     i64 cie_offset = *(i32 *)(contents.data() + fdes[i].input_offset + 4);
-    fdes[i].cie = find_cie(fdes[i].input_offset + 4 - cie_offset);
+    fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
   }
 
   // We assume that FDEs for the same input sections are contiguous

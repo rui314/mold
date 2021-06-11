@@ -213,7 +213,11 @@ struct FdeRecord {
   std::string_view get_contents() const;
   std::span<ElfRel<E>> get_rels() const;
 
-  CieRecord<E> *cie = nullptr;
+  union {
+    CieRecord<E> *cie = nullptr;
+    u32 cie_idx;
+  };
+
   u32 input_offset = -1;
   u32 output_offset = -1;
   u32 rel_idx = -1;

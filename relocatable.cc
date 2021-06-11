@@ -374,9 +374,9 @@ void RObjectFile<E>::remove_comdats(Context<E> &ctx,
       continue;
 
     // If it is a duplicate, remove it and its members.
-    sections[i] = nullptr;
     for (i64 j : this->template get_data<u32>(ctx, shdr).subspan(1))
       sections[j] = nullptr;
+    sections[i] = nullptr;
   }
 }
 
