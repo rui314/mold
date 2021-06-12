@@ -293,9 +293,11 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       break;
     case R_BASEREL:
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
+      *(u64 *)loc = S + A;
       break;
     case R_DYN:
       *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
+      *(u64 *)loc = A;
       break;
     case R_PC:
       write(S + A - P);
