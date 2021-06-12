@@ -55,7 +55,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
   std::span<ElfRel<E>> rels = get_rels(ctx);
   const ElfRel<E> &rel = rels[i];
   Symbol<E> &sym = *file.symbols[rel.r_sym];
-  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+  bool is_writable = (shdr.sh_flags & SHF_WRITE);
   Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
 
   switch (action) {
@@ -79,14 +79,14 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
     rel_types[i] = rel_type;
     return;
   case DYNREL:
-    if (is_readonly)
+    if (!is_writable)
       break;
     sym.flags |= NEEDS_DYNSYM;
     rel_types[i] = R_DYN;
     file.num_dynrel++;
     return;
   case BASEREL:
-    if (is_readonly)
+    if (!is_writable)
       break;
     rel_types[i] = R_BASEREL;
     file.num_dynrel++;

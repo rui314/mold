@@ -475,8 +475,10 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
 template <>
 void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
+
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
   std::span<ElfRel<X86_64>> rels = get_rels(ctx);
+  bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -521,11 +523,12 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_64: {
       // Unlike the above, we can use R_X86_64_RELATIVE and R_86_64_64
       // relocations.
+      Action act = is_writable ? DYNREL : COPYREL;
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
+        {  NONE,     NONE,    act,           PLT    },     // PDE
       };
 
       dispatch(ctx, table, R_ABS, i);

@@ -304,8 +304,10 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 template <>
 void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
+
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<I386>);
   std::span<ElfRel<I386>> rels = get_rels(ctx);
+  bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -343,11 +345,12 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       break;
     }
     case R_386_32: {
+      Action act = is_writable ? DYNREL : COPYREL;
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
+        {  NONE,     NONE,    act,           PLT    },     // PDE
       };
 
       dispatch(ctx, table, R_ABS, i);
