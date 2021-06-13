@@ -561,9 +561,11 @@ static std::string_view get_output_name(std::string_view name) {
     ".tdata.", ".gcc_except_table.",
   };
 
-  for (std::string_view prefix : prefixes)
-    if (name.starts_with(prefix))
-      return prefix.substr(0, prefix.size() - 1);
+  for (std::string_view prefix : prefixes) {
+    std::string_view stem = prefix.substr(0, prefix.size() - 1);
+    if (name == stem || name.starts_with(prefix))
+      return stem;
+  }
 
   if (name == ".ctors" || name.starts_with(".ctors."))
     return ".init_array";
