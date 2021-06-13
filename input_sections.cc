@@ -100,5 +100,13 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
              << "' can not be used; recompile with -fPIE";
 }
 
+template <typename E>
+void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
+  if (ctx.arg.warn_unresolved_symbols)
+    Warn(ctx) << "undefined symbol: " << file << ": " << sym;
+  else
+    Error(ctx) << "undefined symbol: " << file << ": " << sym;
+}
+
 template class InputSection<X86_64>;
 template class InputSection<I386>;

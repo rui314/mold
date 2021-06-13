@@ -262,7 +262,6 @@ public:
   }
 
   void scan_relocations(Context<E> &ctx);
-  void report_undefined_symbols();
   void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
@@ -319,6 +318,7 @@ private:
   void do_uncompress(Context<E> &ctx, std::string_view data, u64 size);
 
   void dispatch(Context<E> &ctx, Action table[3][4], u16 rel_type, i64 i);
+  void report_undef(Context<E> &ctx, Symbol<E> &sym);
 };
 
 //
@@ -1450,6 +1450,7 @@ struct Context {
     bool strip_debug = false;
     bool trace = false;
     bool warn_common = false;
+    bool warn_unresolved_symbols = false;
     bool z_copyreloc = true;
     bool z_defs = false;
     bool z_delete = true;

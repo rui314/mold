@@ -114,6 +114,9 @@ Options:
   --version-script FILE       Read version script
   --warn-common               Warn about common symbols
     --no-warn-common
+  --warn-unresolved-symbols   Report unresolved symbols as warnings
+    --error-unresolved-symbols
+                              Report unresolved symbols as errors (default)
   --whole-archive             Include all objects from static archives
     --no-whole-archive
   --wrap SYMBOL               Use wrapper function for a given symbol
@@ -644,7 +647,11 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
       ctx.arg.strip_all = true;
     } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
-      ctx.arg.strip_debug = true;
+      ctx.arg.strip_all = true;
+    } else if (read_flag(args, "warn-unresolved-symbols")) {
+      ctx.arg.warn_unresolved_symbols = true;
+    } else if (read_flag(args, "error-unresolved-symbols")) {
+      ctx.arg.warn_unresolved_symbols = false;
     } else if (read_arg(ctx, args, arg, "rpath")) {
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";

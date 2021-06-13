@@ -427,7 +427,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
-      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      report_undef(ctx, sym);
       continue;
     }
 
@@ -495,7 +495,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
-      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      report_undef(ctx, sym);
       continue;
     }
 

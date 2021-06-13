@@ -258,7 +258,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
-      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      report_undef(ctx, sym);
       continue;
     }
 
@@ -322,7 +322,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
-      Error(ctx) << "undefined symbol: " << file << ": " << sym;
+      report_undef(ctx, sym);
       continue;
     }
 
