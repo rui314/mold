@@ -174,8 +174,11 @@ void RSymtabSection<E>::add_global_symbol(Context<E> &ctx, RObjectFile<E> &file,
     return;
   }
 
-  // TODO
   file.symidx[idx] = it->second;
+
+  ElfSym<E> &existing = syms[it->second];
+  if (existing.is_undef() && !sym.is_undef())
+    existing = sym;
 }
 
 template <typename E>
@@ -467,7 +470,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
     for (i64 i = 1; i < file->first_global; i++)
       symtab.add_local_symbol(ctx, *file, i);
 
-  symtab.out_shdr.sh_info = symtab.syms.size() + 1;
+  symtab.out_shdr.sh_info = symtab.syms.size();
 
   for (std::unique_ptr<RObjectFile<E>> &file : files)
     for (i64 i = file->first_global; i < file->syms.size(); i++)
