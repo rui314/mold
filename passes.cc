@@ -206,7 +206,8 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   add_comment_string(ctx, get_version_string());
 
   // Also embed command line arguments for now for debugging.
-  add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
+  if (char *env = getenv("MOLD_DEBUG"); env && env[0])
+    add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
   tbb::parallel_for_each(ctx.merged_sections,
                          [](std::unique_ptr<MergedSection<E>> &sec) {
