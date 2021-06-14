@@ -1012,7 +1012,7 @@ public:
 
   std::string_view soname;
   std::vector<std::string_view> version_strings;
-  std::vector<Symbol<E> *> undefs;
+  std::vector<Symbol<E> *> globals;
   std::vector<const ElfSym<E> *> elf_syms;
 
 private:

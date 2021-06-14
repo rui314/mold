@@ -1241,10 +1241,9 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   for (i64 i = first_global; i < esyms.size(); i++) {
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
 
-    if (!esyms[i].is_defined()) {
-      undefs.push_back(Symbol<E>::intern(ctx, name));
+    globals.push_back(Symbol<E>::intern(ctx, name));
+    if (esyms[i].is_undef())
       continue;
-    }
 
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
