@@ -118,7 +118,7 @@ public:
 template <typename E>
 class RObjectFile {
 public:
-  RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb);
+  RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb, bool is_alive);
 
   void remove_comdats(Context<E> &ctx,
                       std::unordered_set<std::string_view> &groups);
@@ -131,8 +131,11 @@ public:
   std::vector<std::unique_ptr<RInputSection<E>>> sections;
   std::span<const ElfSym<E>> syms;
   std::vector<i64> symidx;
+  std::unordered_set<std::string_view> defined_syms;
+  std::unordered_set<std::string_view> undef_syms;
   i64 symtab_shndx = 0;
   i64 first_global = 0;
+  bool is_alive;
   const char *strtab = nullptr;
   const char *shstrtab = nullptr;
 };
@@ -177,8 +180,12 @@ void RSymtabSection<E>::add_global_symbol(Context<E> &ctx, RObjectFile<E> &file,
   file.symidx[idx] = it->second;
 
   ElfSym<E> &existing = syms[it->second];
-  if (existing.is_undef() && !sym.is_undef())
+  if (existing.is_undef() && !sym.is_undef()) {
+    if (!sym.is_abs() && !sym.is_common())
+      sym.st_shndx = file.sections[sym.st_shndx]->shndx;
+    sym.st_name = existing.st_name;
     existing = sym;
+  }
 }
 
 template <typename E>
@@ -317,8 +324,9 @@ void ROutputShdr<E>::write_to(Context<E> &ctx) {
 }
 
 template <typename E>
-RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb)
-  : mb(mb) {
+RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb,
+                            bool is_alive)
+  : mb(mb), is_alive(is_alive) {
   // Read ELF header and section header
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb.data(ctx);
   ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb.data(ctx) + ehdr.e_shoff);
@@ -357,6 +365,15 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb)
       sections[i].reset(new RInputSection(ctx, *this, shdr));
     }
   }
+
+  // Read global symbols
+  for (i64 i = first_global; i < syms.size(); i++) {
+    std::string_view name = strtab + syms[i].st_name;
+    if (syms[i].is_defined())
+      defined_syms.insert(name);
+    else
+      undef_syms.insert(name);
+  }
 }
 
 // Remove duplicate comdat groups
@@ -393,16 +410,51 @@ std::span<T> RObjectFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
 
 template <typename E>
 static std::vector<std::unique_ptr<RObjectFile<E>>>
-open_files(Context<E> &ctx, std::span<std::string_view> file_args) {
+open_files(Context<E> &ctx, std::span<std::string_view> args) {
   std::vector<std::unique_ptr<RObjectFile<E>>> files;
-  for (std::string_view arg : file_args) {
-    if (arg.starts_with('-'))
+  bool whole_archive = false;
+
+  while (!args.empty()) {
+    if (read_flag(args, "whole-archive")) {
+      whole_archive = true;
+      continue;
+    }
+
+    if (read_flag(args, "no-whole-archive")) {
+      whole_archive = false;
+      continue;
+    }
+
+    std::string_view arg;
+    if (read_arg(ctx, args, arg, "version-script") ||
+        read_arg(ctx, args, arg, "dynamic-list"))
       continue;
 
-    MemoryMappedFile<E> *mb =
-      MemoryMappedFile<E>::must_open(ctx, std::string(arg));
-    if (get_file_type(ctx, mb) == FileType::OBJ)
-      files.emplace_back(new RObjectFile<E>(ctx, *mb));
+    MemoryMappedFile<E> *mb = nullptr;
+
+    if (read_arg(ctx, args, arg, "l")) {
+      mb = find_library(ctx, std::string(arg));
+    } else {
+      if (arg.starts_with('-'))
+        continue;
+      arg = args[0];
+      args = args.subspan(1);
+      mb = MemoryMappedFile<E>::must_open(ctx, std::string(arg));
+    }
+
+    switch (get_file_type(ctx, mb)) {
+    case FileType::OBJ:
+      files.emplace_back(new RObjectFile<E>(ctx, *mb, true));
+      break;
+    case FileType::AR:
+    case FileType::THIN_AR:
+      for (MemoryMappedFile<E> *child : read_archive_members(ctx, mb))
+        if (get_file_type(ctx, child) == FileType::OBJ)
+          files.emplace_back(new RObjectFile<E>(ctx, *child, whole_archive));
+      break;
+    default:
+      break;
+    }
   }
   return files;
 }
@@ -418,10 +470,49 @@ static i64 assign_offsets(Context<E> &ctx) {
   return offset;
 }
 
+static bool contains(std::unordered_set<std::string_view> &a,
+                     std::unordered_set<std::string_view> &b) {
+  for (std::string_view x : b)
+    if (a.contains(x))
+      return true;
+  return false;
+}
+
 template <typename E>
 void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
   // Read object files
   std::vector<std::unique_ptr<RObjectFile<E>>> files = open_files(ctx, file_args);
+
+  // Identify needed objects
+  std::unordered_set<std::string_view> undef_syms;
+  auto add_syms = [&](RObjectFile<E> &file) {
+    undef_syms.insert(file.undef_syms.begin(), file.undef_syms.end());
+    for (std::string_view name : file.defined_syms)
+      undef_syms.erase(name);
+    file.is_alive = true;
+  };
+
+  for (std::unique_ptr<RObjectFile<E>> &file : files)
+    if (file->is_alive)
+      add_syms(*file);
+
+  for (;;) {
+    bool added = false;
+    for (std::unique_ptr<RObjectFile<E>> &file : files) {
+      if (!file->is_alive && contains(undef_syms, file->defined_syms)) {
+        add_syms(*file);
+        added = true;
+      }
+    }
+    if (!added)
+      break;
+  }
+
+  files.erase(std::remove_if(files.begin(), files.end(),
+                             [](std::unique_ptr<RObjectFile<E>> &file) {
+                               return !file->is_alive;
+                             }),
+              files.end());
 
   // Remove duplicate comdat groups
   std::unordered_set<std::string_view> comdat_groups;

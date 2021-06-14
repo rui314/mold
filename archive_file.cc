@@ -81,11 +81,26 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   return vec;
 }
 
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+  switch (get_file_type(ctx, mb)) {
+  case FileType::AR:
+    return read_fat_archive_members(ctx, mb);
+  case FileType::THIN_AR:
+    return read_thin_archive_members(ctx, mb);
+  default:
+    unreachable(ctx);
+  }
+}
+
 #define INSTANTIATE(E)                                                  \
   template std::vector<MemoryMappedFile<E> *>                           \
   read_fat_archive_members(Context<E> &, MemoryMappedFile<E> *);        \
   template std::vector<MemoryMappedFile<E> *>                           \
-  read_thin_archive_members(Context<E> &, MemoryMappedFile<E> *);
+  read_thin_archive_members(Context<E> &, MemoryMappedFile<E> *);       \
+  template std::vector<MemoryMappedFile<E> *>                           \
+  read_archive_members(Context<E> &, MemoryMappedFile<E> *);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

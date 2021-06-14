@@ -1084,6 +1084,10 @@ template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
+template <typename E>
+std::vector<MemoryMappedFile<E> *>
+read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
+
 //
 // linker_script.cc
 //

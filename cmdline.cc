@@ -770,6 +770,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.discard_all = false;
   }
 
+  if (ctx.arg.relocatable)
+    ctx.arg.is_static = true;
+
   if (!ctx.arg.shared) {
     if (!ctx.arg.filter.empty())
       Fatal(ctx) << "-filter may not be used without -shared";
