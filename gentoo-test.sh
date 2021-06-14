@@ -24,8 +24,9 @@ if ! docker image ls mold-gentoo | grep -q mold-gentoo; then
   cat <<EOF | docker build -t mold-gentoo -
 FROM gentoo/stage3
 RUN emerge-webrsync
-RUN echo 'USE="elogind -systemd"' >> /etc/portage/make.conf
-RUN echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
+RUN echo 'USE="elogind corefonts truetype jpeg2k tiff -systemd"' >> /etc/portage/make.conf && \
+    echo 'ACCEPT_LICENSE="* -@EULA"' >> /etc/portage/make.conf && \
+    echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
 EOF
   set +e
 fi
@@ -44,7 +45,7 @@ build() {
   cmd="FEATURES=test MAKEOPTS=-j8 emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
   link="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
-  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 10s 20m"
+  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 10s 30m"
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
