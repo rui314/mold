@@ -44,7 +44,7 @@ build() {
   cmd="FEATURES=test MAKEOPTS=-j8 emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
   link="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
-  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 10s 10m"
+  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 10s 20m"
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
