@@ -593,6 +593,13 @@ variables reside) are not executable for security reasons. \fB\-z
 execstack\fR makes it executable. \fB\-z noexecstack\fR restores the
 default behavior.
 
+.IP "\fB\-z keep\-text\-section\-prefix\fR"
+.PD 0
+.IP "\fB\-z nokeep\-text\-section\-prefix\fR"
+.PD
+Keep .text.hot, .text.unknown, .text.unlikely, .text.startup
+and .text.exit as separate sections in the final binary.
+
 .IP "\fB\-z relro\fR"
 .PD 0
 .IP "\fB\-z norelro\fR"

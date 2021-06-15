@@ -553,12 +553,24 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-static std::string_view get_output_name(std::string_view name) {
+template <typename E>
+static std::string_view get_output_name(Context<E> &ctx, std::string_view name) {
+  if (ctx.arg.z_keep_text_section_prefix) {
+    static std::string_view text_prefixes[] = {
+      ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
+      ".text.exit."
+    };
+
+    for (std::string_view prefix : text_prefixes) {
+      std::string_view stem = prefix.substr(0, prefix.size() - 1);
+      if (name == stem || name.starts_with(prefix))
+        return stem;
+    }
+  }
+
   static std::string_view prefixes[] = {
-    ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
-    ".text.exit.", ".text.", ".data.rel.ro.", ".data.", ".rodata.",
-    ".bss.rel.ro.", ".bss.", ".init_array.", ".fini_array.", ".tbss.",
-    ".tdata.", ".gcc_except_table.",
+    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
+    ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
   };
 
   for (std::string_view prefix : prefixes) {
@@ -618,7 +630,7 @@ template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
-  name = get_output_name(name);
+  name = get_output_name(ctx, name);
   type = canonicalize_type(name, type);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
@@ -1103,7 +1115,7 @@ template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
-  name = get_output_name(name);
+  name = get_output_name(ctx, name);
   flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 
   auto find = [&]() -> MergedSection * {

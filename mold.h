@@ -1462,11 +1462,10 @@ struct Context {
     bool z_execstack = false;
     bool z_initfirst = false;
     bool z_interpose = false;
+    bool z_keep_text_section_prefix = false;
     bool z_now = false;
     bool z_relro = true;
     i16 default_version = VER_NDX_GLOBAL;
-    std::vector<std::string_view> version_definitions;
-    std::vector<VersionPattern> version_patterns;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 thread_count = -1;
@@ -1483,12 +1482,14 @@ struct Context {
     std::string sysroot;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
+    std::vector<VersionPattern> version_patterns;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
     std::vector<std::string_view> library_paths;
     std::vector<std::string_view> trace_symbol;
     std::vector<std::string_view> undefined;
+    std::vector<std::string_view> version_definitions;
     u64 image_base = 0x200000;
   } arg;
 

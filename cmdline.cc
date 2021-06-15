@@ -128,6 +128,8 @@ Options:
     -z norelro
   -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
+  -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
+    -z nokeep-text-section-prefix
   -z nodlopen                 Mark DSO not available to dlopen
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nocopyreloc              Do not create copy relocations
@@ -593,6 +595,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_interpose = true;
     } else if (read_z_flag(args, "muldefs")) {
       ctx.arg.allow_multiple_definition = true;
+    } else if (read_z_flag(args, "keep-text-section-prefix")) {
+      ctx.arg.z_keep_text_section_prefix = true;
+    } else if (read_z_flag(args, "nokeep-text-section-prefix")) {
+      ctx.arg.z_keep_text_section_prefix = false;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {
