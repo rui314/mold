@@ -431,11 +431,11 @@ Remove unreferenced sections
 .IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
 Set hash style
 
-.IP "\fB\-\-icf\fR"
+.IP "\fB\-\-icf=all\fR"
 .PD 0
 .IP "\fB\-\-no\-icf\fR"
 .PD
-Fold identical code
+Fold identical code.
 
 .IP "\fB\-\-image\-base\fR=\fIaddr\fR"
 Set the base address to \fIaddr\fR
@@ -575,21 +575,46 @@ original symbol can be resolved as \fB__real_\fIsymbol\fR. This
 option is typically used for wrapping an existing function.
 
 .IP "\fB\-z now\fR"
-Disable lazy function resolution
+.PD 0
 .IP "\fB\-z lazy\fR"
-Enable lazy function resolution (default)
+.PD
+By default, functions referring other ELF modules are resolved by the
+dynamic linker when they are called for the first time. \fB\-z now\fR
+marks an executable or a shared library file so that all dynamic
+symbols are loaded when a file is loaded to memory. \fB\-z lazy\fR
+restores the default behavior.
+
 .IP "\fB\-z execstack\fR"
-Require executable stack
+.PD 0
 .IP "\fB\-z noexecstack\fR"
-Do not require executable stack (default)
+.PD
+By default, the pages for the stack area (i.e. the pages where local
+variables reside) are not executable for security reasons. \fB\-z
+execstack\fR makes it executable. \fB\-z noexecstack\fR restores the
+default behavior.
+
 .IP "\fB\-z relro\fR"
-Make some sections read-only after relocation (default)
+.PD 0
 .IP "\fB\-z norelro\fR"
-Do not use relro
+.PD
+Some sections such as \fB.dynamic\fR have to be writable only during
+an executable or a shared library file is being loaded to memory.
+Once the dynamic linker finishes its job, such sections won't be
+mutated by anyone. As a security mitigation, it is preferred to make
+such segments read-only during program execution.
+
+\fB\-z relro\fR puts such sections into a special section called
+\fIrelro\fR. The dynamic linker make a relro segment read-only
+after it finishes its job.
+
+By default, \fBmold\fR generates a relro segment. \fB\-z
+norelro\fR disables the feature.
+
 .IP "\fB\-z defs\fR"
-Report undefined symbols (even with \fI\-\-shared\fR)
+.PD 0
 .IP "\fB\-z nodefs\fR"
-Do not report undefined symbols
+.PD
+Report undefined symbols (even with \fI\-\-shared\fR)
 .IP "\fB\-z nodlopen\fR"
 Mark DSO not available to dlopen
 .IP "\fB\-z nodelete\fR"
