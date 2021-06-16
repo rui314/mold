@@ -1254,17 +1254,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       if (ver == VER_NDX_LOCAL)
         continue;
 
-      std::string verstr(version_strings[ver]);
-      std::string_view mangled =
-        save_string(ctx, std::string(name) + "@" + verstr);
-
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(ver);
-      this->symbols.push_back(Symbol<E>::intern(ctx, mangled, name));
 
-      if (!(vers[i] & VERSYM_HIDDEN)) {
-        elf_syms.push_back(&esyms[i]);
-        versyms.push_back(ver);
+      if (vers[i] & VERSYM_HIDDEN) {
+        std::string_view mangled_name = save_string(
+          ctx, std::string(name) + "@" + std::string(version_strings[ver]));
+        this->symbols.push_back(Symbol<E>::intern(ctx, mangled_name, name));
+      } else {
         this->symbols.push_back(Symbol<E>::intern(ctx, name));
       }
     }

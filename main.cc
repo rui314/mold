@@ -332,12 +332,12 @@ int do_main(int argc, char **argv) {
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
-    Symbol<E>::intern(ctx, name, name)->wrap = true;
+    Symbol<E>::intern(ctx, name)->wrap = true;
 
   // Handle --retain-symbols-file options if any.
   if (ctx.arg.retain_symbols_file)
     for (std::string_view name : *ctx.arg.retain_symbols_file)
-      Symbol<E>::intern(ctx, name, name)->write_to_symtab = true;
+      Symbol<E>::intern(ctx, name)->write_to_symtab = true;
 
   // Preload input files
   std::function<void()> on_complete;
