@@ -770,6 +770,10 @@ void ObjectFile<E>::maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym,
 template <typename E>
 void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
                                      u8 visibility) {
+  // Canonicalize visibility
+  if (visibility == STV_INTERNAL)
+    visibility = STV_HIDDEN;
+
   auto priority = [&](u8 visibility) {
     switch (visibility) {
     case STV_HIDDEN:
