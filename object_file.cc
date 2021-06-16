@@ -492,10 +492,13 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     if (i64 pos = name.find('@'); pos != name.npos) {
       std::string_view ver = name.substr(pos + 1);
       name = name.substr(0, pos);
-      if (ver.starts_with('@'))
-        key = name;
-      if (esym.is_defined())
-        symvers[i - first_global] = ver.data();
+
+      if (!ver.empty() && ver != "@") {
+        if (ver.starts_with('@'))
+          key = name;
+        if (esym.is_defined())
+          symvers[i - first_global] = ver.data();
+      }
     }
 
     this->symbols[i] = insert_symbol(ctx, esym, key, name);
