@@ -497,6 +497,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_GNU_HASH, ctx.gnu_hash->shdr.sh_addr);
   if (ctx.reldyn)
     define(E::is_rel ? DT_RELCOUNT : DT_RELACOUNT, ctx.reldyn->relcount);
+  if (ctx.has_textrel)
+    define(DT_TEXTREL, 0);
 
   i64 flags = 0;
   i64 flags1 = 0;
@@ -520,6 +522,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
 
   if (ctx.has_gottp_rel)
     flags |= DF_STATIC_TLS;
+  if (ctx.has_textrel)
+    flags |= DF_TEXTREL;
 
   if (flags)
     define(DT_FLAGS, flags);

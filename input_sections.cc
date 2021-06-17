@@ -79,15 +79,21 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
     rel_types[i] = rel_type;
     return;
   case DYNREL:
-    if (!is_writable)
-      break;
+    if (!is_writable) {
+      if (ctx.arg.z_text)
+        break;
+      ctx.has_textrel = true;
+    }
     sym.flags |= NEEDS_DYNSYM;
     rel_types[i] = R_DYN;
     file.num_dynrel++;
     return;
   case BASEREL:
-    if (!is_writable)
-      break;
+    if (!is_writable) {
+      if (ctx.arg.z_text)
+        break;
+      ctx.has_textrel = true;
+    }
     rel_types[i] = R_BASEREL;
     file.num_dynrel++;
     return;

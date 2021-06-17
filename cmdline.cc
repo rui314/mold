@@ -120,21 +120,24 @@ Options:
   --whole-archive             Include all objects from static archives
     --no-whole-archive
   --wrap SYMBOL               Use wrapper function for a given symbol
-  -z now                      Disable lazy function resolution
-  -z lazy                     Enable lazy function resolution (default)
-  -z execstack                Require executable stack
-    -z noexecstack
-  -z relro                    Make some sections read-only after relocation (default)
-    -z norelro
   -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
-  -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
-    -z nokeep-text-section-prefix
-  -z nodlopen                 Mark DSO not available to dlopen
-  -z nodelete                 Mark DSO non-deletable at runtime
-  -z nocopyreloc              Do not create copy relocations
+  -z execstack                Require executable stack
+    -z noexecstack
   -z initfirst                Mark DSO to be initialized first at runtime
   -z interpose                Mark object to interpose all DSOs but executable
+  -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
+    -z nokeep-text-section-prefix
+  -z lazy                     Enable lazy function resolution (default)
+  -z nocopyreloc              Do not create copy relocations
+  -z nodelete                 Mark DSO non-deletable at runtime
+  -z nodlopen                 Mark DSO not available to dlopen
+  -z now                      Disable lazy function resolution
+  -z relro                    Make some sections read-only after relocation (default)
+    -z norelro
+  -z text                     Report error if DT_TEXTREL is set
+    -z notext
+    -z textoff
 
 mold: supported targets: elf32-i386 elf64-x86-64
 mold: supported emulations: elf_i386 elf_x86_64)";
@@ -599,6 +602,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_keep_text_section_prefix = true;
     } else if (read_z_flag(args, "nokeep-text-section-prefix")) {
       ctx.arg.z_keep_text_section_prefix = false;
+    } else if (read_z_flag(args, "text")) {
+      ctx.arg.z_text = true;
+    } else if (read_z_flag(args, "notext") || read_z_flag(args, "textoff")) {
+      ctx.arg.z_text = false;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {
