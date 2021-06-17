@@ -707,6 +707,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "O0")) {
     } else if (read_flag(args, "O1")) {
     } else if (read_flag(args, "O2")) {
+    } else if (read_flag(args, "verbose")) {
     } else if (read_arg(ctx, args, arg, "plugin")) {
     } else if (read_arg(ctx, args, arg, "plugin-opt")) {
     } else if (read_flag(args, "color-diagnostics")) {
