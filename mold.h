@@ -347,7 +347,6 @@ public:
   i64 shndx = 0;
   Kind kind;
   bool new_page = false;
-  bool new_page_end = false;
   ElfShdr<E> shdr = {};
 
 protected:
@@ -372,9 +371,7 @@ public:
 template <typename E>
 class OutputShdr : public OutputChunk<E> {
 public:
-  OutputShdr() : OutputChunk<E>(this->HEADER) {
-    this->shdr.sh_flags = SHF_ALLOC;
-  }
+  OutputShdr() : OutputChunk<E>(this->HEADER) {}
 
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;

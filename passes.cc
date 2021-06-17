@@ -649,34 +649,59 @@ inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
   return align_to(val + align - skew, align) - align + skew;
 }
 
+// Assign virtual addresses and file offsets to output sections.
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "osec_offset");
 
-  i64 fileoff = 0;
-  i64 vaddr = ctx.arg.image_base;
+  u64 fileoff = 0;
+  u64 vaddr = ctx.arg.image_base;
 
-  for (OutputChunk<E> *chunk : ctx.chunks) {
-    if (chunk->new_page)
-      vaddr = align_to(vaddr, PAGE_SIZE);
+  i64 i = 0;
+  i64 end = 0;
+  while (ctx.chunks[end]->shdr.sh_flags & SHF_ALLOC)
+    end++;
 
-    vaddr = align_to(vaddr, chunk->shdr.sh_addralign);
+  while (i < end) {
     fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
 
-    chunk->shdr.sh_offset = fileoff;
-    if (chunk->shdr.sh_flags & SHF_ALLOC)
-      chunk->shdr.sh_addr = vaddr;
+    for (; i < end && ctx.chunks[i]->shdr.sh_type != SHT_NOBITS; i++) {
+      OutputChunk<E> &chunk = *ctx.chunks[i];
+      u64 prev_vaddr = vaddr;
 
-    bool is_bss = (chunk->shdr.sh_type == SHT_NOBITS);
-    if (!is_bss)
-      fileoff += chunk->shdr.sh_size;
+      if (chunk.new_page)
+        vaddr = align_to(vaddr, PAGE_SIZE);
+      vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
+      fileoff += vaddr - prev_vaddr;
 
-    bool is_tbss = is_bss && (chunk->shdr.sh_flags & SHF_TLS);
-    if (!is_tbss)
-      vaddr += chunk->shdr.sh_size;
+      chunk.shdr.sh_addr = vaddr;
+      vaddr += chunk.shdr.sh_size;
 
-    if (chunk->new_page_end)
-      vaddr = align_to(vaddr, PAGE_SIZE);
+      chunk.shdr.sh_offset = fileoff;
+      fileoff += chunk.shdr.sh_size;
+    }
+
+    for (; i < end && ctx.chunks[i]->shdr.sh_type == SHT_NOBITS; i++) {
+      OutputChunk<E> &chunk = *ctx.chunks[i];
+
+      if (chunk.new_page)
+        vaddr = align_to(vaddr, PAGE_SIZE);
+      vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
+      fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
+
+      chunk.shdr.sh_addr = vaddr;
+      chunk.shdr.sh_offset = fileoff;
+      if (!(chunk.shdr.sh_flags & SHF_TLS))
+        vaddr += chunk.shdr.sh_size;
+    }
+  }
+
+  for (; i < ctx.chunks.size(); i++) {
+    OutputChunk<E> &chunk = *ctx.chunks[i];
+    assert(!(chunk.shdr.sh_flags & SHF_ALLOC));
+    fileoff = align_to(fileoff, chunk.shdr.sh_addralign);
+    chunk.shdr.sh_offset = fileoff;
+    fileoff += chunk.shdr.sh_size;
   }
   return fileoff;
 }

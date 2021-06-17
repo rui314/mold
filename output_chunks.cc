@@ -221,7 +221,8 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       i++;
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
-      ctx.chunks[i - 1]->new_page_end = true;
+      if (i < ctx.chunks.size())
+        ctx.chunks[i]->new_page = true;
     }
   }
 
