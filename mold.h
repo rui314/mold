@@ -553,7 +553,7 @@ public:
 template <typename E>
 class DynstrSection : public OutputChunk<E> {
 public:
-DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
+  DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -562,7 +562,6 @@ DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
 
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
-  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   i64 dynsym_offset = -1;
@@ -609,6 +608,7 @@ public:
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
     this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_info = 1;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -616,7 +616,7 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol<E> *> symbols;
+  std::vector<Symbol<E> *> symbols{1};
 };
 
 template <typename E>

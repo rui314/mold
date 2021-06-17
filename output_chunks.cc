@@ -322,9 +322,6 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 DynstrSection<E>::add_string(std::string_view str) {
-  if (strings.empty())
-    this->shdr.sh_size = 1;
-
   auto [it, inserted] = strings.insert({str, this->shdr.sh_size});
   if (inserted)
     this->shdr.sh_size += str.size() + 1;
@@ -336,12 +333,6 @@ i64 DynstrSection<E>::find_string(std::string_view str) {
   auto it = strings.find(str);
   assert(it != strings.end());
   return it->second;
-}
-
-template <typename E>
-void DynstrSection<E>::update_shdr(Context<E> &ctx) {
-  if (this->shdr.sh_size == 1)
-    this->shdr.sh_size = 0;
 }
 
 template <typename E>
@@ -543,7 +534,7 @@ template <typename E>
 void DynamicSection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.arg.is_static)
     return;
-  if (!ctx.arg.shared && ctx.dsos.empty())
+  if (!ctx.arg.pic && ctx.dsos.empty())
     return;
 
   this->shdr.sh_size = create_dynamic_section(ctx).size() * E::wordsize;
@@ -905,12 +896,6 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->esym().st_bind != STB_LOCAL);
-
-  if (symbols.empty()) {
-    symbols.push_back({});
-    this->shdr.sh_info = 1;
-  }
-
   if (sym->get_dynsym_idx(ctx) != -1)
     return;
   sym->set_dynsym_idx(ctx, -2);
@@ -920,8 +905,6 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
-  if (symbols.empty())
-    return;
 
   // If we have .gnu.hash section, we need to sort .dynsym contents by
   // symbol hashes.
