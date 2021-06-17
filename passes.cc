@@ -400,7 +400,7 @@ void scan_rels(Context<E> &ctx) {
   // Add symbol aliases for COPYREL.
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     for (Symbol<E> *sym : file->symbols)
-      if (sym->flags & NEEDS_COPYREL)
+      if (sym->file == file && (sym->flags & NEEDS_COPYREL))
         for (Symbol<E> *alias : file->find_aliases(sym))
           alias->flags |= NEEDS_DYNSYM;
   });
