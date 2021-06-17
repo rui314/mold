@@ -574,7 +574,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
   // Open an output file
   i64 filesize = assign_offsets(ctx);
   std::unique_ptr<OutputFile<E>> out =
-    OutputFile<E>::open(ctx, ctx.arg.output, filesize);
+    OutputFile<E>::open(ctx, ctx.arg.output, filesize, 0666);
   memset(out->buf, 0, filesize);
   ctx.buf = out->buf;
 

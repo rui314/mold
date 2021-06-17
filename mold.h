@@ -1110,7 +1110,7 @@ template <typename E>
 class OutputFile {
 public:
   static std::unique_ptr<OutputFile>
-  open(Context<E> &ctx, std::string path, u64 filesize);
+  open(Context<E> &ctx, std::string path, i64 filesize, i64 perm);
 
   virtual void close(Context<E> &ctx) = 0;
   virtual ~OutputFile() {}
@@ -1119,11 +1119,11 @@ public:
 
   u8 *buf = nullptr;
   std::string path;
-  u64 filesize;
+  i64 filesize;
   bool is_mmapped;
 
 protected:
-  OutputFile(std::string path, u64 filesize, bool is_mmapped)
+  OutputFile(std::string path, i64 filesize, bool is_mmapped)
     : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
 };
 

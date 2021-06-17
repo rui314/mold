@@ -14,7 +14,8 @@ static u32 get_umask() {
 template <typename E>
 class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize)
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize,
+                         i64 perm)
     : OutputFile<E>(path, filesize, true) {
     std::string dir(path_dirname(path));
     this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
@@ -24,12 +25,12 @@ public:
 
     if (rename(path.c_str(), this->tmpfile) == 0) {
       ::close(fd);
-      fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
+      fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
       if (fd == -1) {
         if (errno != ETXTBSY)
           Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
         unlink(this->tmpfile);
-        fd = ::open(this->tmpfile, O_RDWR | O_CREAT, 0777);
+        fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
         if (fd == -1)
           Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
       }
@@ -38,7 +39,7 @@ public:
     if (ftruncate(fd, filesize))
       Fatal(ctx) << "ftruncate failed";
 
-    if (fchmod(fd, (0777 & ~get_umask())) == -1)
+    if (fchmod(fd, (perm & ~get_umask())) == -1)
       Fatal(ctx) << "fchmod failed";
 
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
@@ -63,8 +64,8 @@ public:
 template <typename E>
 class MallocOutputFile : public OutputFile<E> {
 public:
-  MallocOutputFile(Context<E> &ctx, std::string path, u64 filesize)
-    : OutputFile<E>(path, filesize, false) {
+  MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<E>(path, filesize, false), perm(perm) {
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
@@ -80,7 +81,7 @@ public:
       return;
     }
 
-    i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, 0777);
+    i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
     if (fd == -1)
       Fatal(ctx) << "cannot open " << this->path << ": " << strerror(errno);
 
@@ -88,11 +89,14 @@ public:
     fwrite(this->buf, this->filesize, 1, fp);
     fclose(fp);
   }
+
+private:
+  i64 perm;
 };
 
 template <typename E>
 std::unique_ptr<OutputFile<E>>
-OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
+OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -109,9 +113,9 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
 
   std::unique_ptr<OutputFile<E>> file;
   if (is_special)
-    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize);
+    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize, perm);
   else
-    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize);
+    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize, perm);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
@@ -120,8 +124,8 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, u64 filesize) {
 
 template
 std::unique_ptr<OutputFile<X86_64>>
-OutputFile<X86_64>::open(Context<X86_64> &ctx, std::string path, u64 filesize);
+OutputFile<X86_64>::open(Context<X86_64> &, std::string, i64, i64);
 
 template
 std::unique_ptr<OutputFile<I386>>
-OutputFile<I386>::open(Context<I386> &ctx, std::string path, u64 filesize);
+OutputFile<I386>::open(Context<I386> &, std::string, i64, i64);

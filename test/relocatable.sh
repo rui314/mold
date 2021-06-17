@@ -33,6 +33,9 @@ EOF
 
 ../mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
+[ -f $t/c.o ]
+! [ -x t/c.o ] || false
+
 cat <<EOF | clang++ -c -o $t/d.o -xc++ -
 #include <iostream>
 

@@ -567,7 +567,7 @@ int do_main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, filesize);
+  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, filesize, 0777);
   ctx.buf = ctx.output_file->buf;
 
   Timer t_copy(ctx, "copy");
