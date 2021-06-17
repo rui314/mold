@@ -14,25 +14,31 @@ int five() { return 5; }
 EOF
 
 cat <<EOF | cc -o $t/c.o -c -xc -
+int seven() { return 7; }
+EOF
+
+cat <<EOF | cc -o $t/d.o -c -xc -
 #include <stdio.h>
 
 int three();
 int five();
+int seven();
 
 int main() {
-  printf("%d\n", three() + five());
+  printf("%d\n", three() + five() + seven());
 }
 EOF
 
 rm -f $t/d.a
-(cd $t; ar rcsT d.a long-long-long-filename.o b.o)
+(cd $t; ar rcsT d.a long-long-long-filename.o b.o `pwd`/c.o)
 
-clang -fuse-ld=`pwd`/../mold -Wl,--trace -o $t/exe $t/c.o $t/d.a > $t/log
+clang -fuse-ld=`pwd`/../mold -Wl,--trace -o $t/exe $t/d.o $t/d.a > $t/log
 
 grep -Pq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
 grep -Pq 'thin-archive/d.a\(.*b.o\)' $t/log
-fgrep -q thin-archive/c.o $t/log
+grep -Pq 'thin-archive/d.a\(/.*/b.o\)' $t/log
+fgrep -q thin-archive/d.o $t/log
 
-$t/exe | grep -q '8'
+$t/exe | grep -q 15
 
 echo OK
