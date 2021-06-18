@@ -921,7 +921,7 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
 }
 
 template <typename E>
-void ObjectFile<E>::claim_unresolved_symbols() {
+void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
 
@@ -936,6 +936,9 @@ void ObjectFile<E>::claim_unresolved_symbols() {
     if (sym.sym_idx == -1 || sym.is_undef()) {
       if (sym.file && sym.file->priority < this->priority)
         continue;
+
+      if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
+        Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
       sym.file = this;
       sym.value = 0;
       sym.sym_idx = i;

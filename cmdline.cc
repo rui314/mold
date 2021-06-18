@@ -111,6 +111,7 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
+  --unique PATTERN            Don't merge input sections that match a given pattern
   --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
                               How to handle unresolved symbols
   --version-script FILE       Read version script
@@ -494,6 +495,15 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.library_paths.push_back(arg);
     } else if (read_arg(ctx, args, arg, "sysroot")) {
       ctx.arg.sysroot = arg;
+    } else if (read_arg(ctx, args, arg, "unique")) {
+      ctx.arg.unique.reset(new GlobPattern(arg));
+    } else if (read_arg(ctx, args, arg, "unresolved-symbols")) {
+      if (arg == "report-all" || arg == "ignore-in-shared-libs")
+        ctx.arg.unresolved_symbols = UnresolvedKind::ERROR;
+      else if (arg == "ignore-all" || arg == "ignore-in-object-files")
+        ctx.arg.unresolved_symbols = UnresolvedKind::IGNORE;
+      else
+        Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
     } else if (read_arg(ctx, args, arg, "u") ||
                read_arg(ctx, args, arg, "undefined")) {
       ctx.arg.undefined.push_back(arg);
@@ -664,9 +674,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
       ctx.arg.strip_all = true;
     } else if (read_flag(args, "warn-unresolved-symbols")) {
-      ctx.arg.warn_unresolved_symbols = true;
+      ctx.arg.unresolved_symbols = UnresolvedKind::WARN;
     } else if (read_flag(args, "error-unresolved-symbols")) {
-      ctx.arg.warn_unresolved_symbols = false;
+      ctx.arg.unresolved_symbols = UnresolvedKind::ERROR;
     } else if (read_arg(ctx, args, arg, "rpath")) {
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";

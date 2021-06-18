@@ -62,6 +62,7 @@ template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
 
 class Compressor;
+class GlobPattern;
 class TarFile;
 
 template <typename E> void cleanup();
@@ -933,7 +934,7 @@ public:
   void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
-  void claim_unresolved_symbols();
+  void claim_unresolved_symbols(Context<E> &ctx);
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
   void compute_symtab(Context<E> &ctx);
@@ -1373,6 +1374,7 @@ struct BuildId {
 };
 
 typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
+typedef enum { ERROR, WARN, IGNORE } UnresolvedKind;
 
 struct VersionPattern {
   std::string_view pattern;
@@ -1418,6 +1420,7 @@ struct Context {
   struct {
     BuildId build_id;
     CompressKind compress_debug_sections = COMPRESS_NONE;
+    UnresolvedKind unresolved_symbols = UnresolvedKind::ERROR;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
@@ -1451,7 +1454,6 @@ struct Context {
     bool strip_debug = false;
     bool trace = false;
     bool warn_common = false;
-    bool warn_unresolved_symbols = false;
     bool z_copyreloc = true;
     bool z_defs = false;
     bool z_delete = true;
@@ -1478,6 +1480,7 @@ struct Context {
     std::string rpaths;
     std::string soname;
     std::string sysroot;
+    std::unique_ptr<GlobPattern> unique;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<VersionPattern> version_patterns;

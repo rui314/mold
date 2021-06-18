@@ -441,10 +441,11 @@ int do_main(int argc, char **argv) {
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
-  if ((ctx.arg.shared && !ctx.arg.z_defs) || ctx.arg.warn_unresolved_symbols) {
+  if ((ctx.arg.shared && !ctx.arg.z_defs) ||
+      ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
     Timer t(ctx, "claim_unresolved_symbols");
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      file->claim_unresolved_symbols();
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      file->claim_unresolved_symbols(ctx);
     });
   }
 

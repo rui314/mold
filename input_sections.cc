@@ -108,10 +108,16 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
 
 template <typename E>
 void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
-  if (ctx.arg.warn_unresolved_symbols)
-    Warn(ctx) << "undefined symbol: " << file << ": " << sym;
-  else
+  switch (ctx.arg.unresolved_symbols) {
+  case UnresolvedKind::ERROR:
     Error(ctx) << "undefined symbol: " << file << ": " << sym;
+    break;
+  case UnresolvedKind::WARN:
+    Warn(ctx) << "undefined symbol: " << file << ": " << sym;
+    break;
+  case UnresolvedKind::IGNORE:
+    break;
+  }
 }
 
 template class InputSection<X86_64>;

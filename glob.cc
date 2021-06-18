@@ -21,7 +21,7 @@ static bool generic_match(std::string_view pat, std::string_view str) {
       return str.empty();
 
     if (pat[0] == '*') {
-      for (i64 i = 0; i < str.size(); i++)
+      for (i64 i = 0; i <= str.size(); i++)
         if (generic_match(pat.substr(1), str.substr(i)))
           return true;
       return false;
