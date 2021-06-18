@@ -111,6 +111,8 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
+  --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
+                              How to handle unresolved symbols
   --version-script FILE       Read version script
   --warn-common               Warn about common symbols
     --no-warn-common
