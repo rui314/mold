@@ -102,7 +102,8 @@ collect_root_set(Context<E> &ctx) {
       if (!(isec->shdr.sh_flags & SHF_ALLOC))
         isec->is_visited = true;
 
-      if (is_init_fini(*isec) || isec->shdr.sh_type == SHT_NOTE)
+      if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
+          isec->shdr.sh_type == SHT_NOTE)
         enqueue_section(isec.get());
     }
   });

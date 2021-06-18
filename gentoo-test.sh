@@ -27,6 +27,7 @@ RUN emerge-webrsync
 RUN echo 'USE="elogind -systemd corefonts truetype jpeg jpeg2k tiff zstd static-libs"' >> /etc/portage/make.conf && \
     echo 'ACCEPT_LICENSE="* -@EULA"' >> /etc/portage/make.conf && \
     echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
+RUN emerge gdb lld vim strace && rm -rf /var/tmp/portage
 EOF
   set +e
 fi
