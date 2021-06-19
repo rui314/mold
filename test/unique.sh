@@ -6,15 +6,15 @@ t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
 cat <<EOF | cc -c -o $t/a.o -x assembler -
-.section .data.foo.1,"a",@progbits
+.section .data.foo.1,"aw",@progbits
 .ascii "a"
-.section .data.foo.1,"a",@progbits
+.section .data.foo.1,"aw",@progbits
 .ascii "b"
-.section .data.foo.2,"a",@progbits
+.section .data.foo.2,"aw",@progbits
 .ascii "c"
-.section .data.bar.1,"a",@progbits
+.section .data.bar.1,"aw",@progbits
 .ascii "d"
-.section .data.bar.2,"a",@progbits
+.section .data.bar.2,"aw",@progbits
 .ascii "e"
 .text
 .globl _start
