@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <functional>
+#include <iomanip>
 #include <map>
 #include <signal.h>
 #include <tbb/global_control.h>
@@ -22,6 +23,17 @@ std::string get_version_string() {
     return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
   return "mold " MOLD_VERSION " (" GIT_HASH
          "; compatible with GNU ld and GNU gold)";
+}
+
+std::regex glob_to_regex(std::string_view pattern) {
+  std::stringstream ss;
+  for (u8 c : pattern) {
+    if (c == '*')
+      ss << ".*";
+    else
+      ss << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (int)c;
+  }
+  return std::regex(ss.str(), std::regex::optimize);
 }
 
 template <typename E>

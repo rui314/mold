@@ -494,14 +494,14 @@ void apply_version_script(Context<E> &ctx) {
       continue;
     }
 
-    GlobPattern glob(elem.pattern);
+    std::regex re = glob_to_regex(elem.pattern);
 
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file == file) {
           std::string_view name = elem.is_extern_cpp
             ? sym->get_demangled_name() : sym->name();
-          if (glob.match(name))
+          if (std::regex_match(name.begin(), name.end(), re))
             sym->ver_idx = elem.ver_idx;
         }
       }

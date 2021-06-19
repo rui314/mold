@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <span>
 #include <sstream>
 #include <string>
@@ -62,7 +63,6 @@ template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
 
 class Compressor;
-class GlobPattern;
 class TarFile;
 
 template <typename E> void cleanup();
@@ -1142,22 +1142,6 @@ std::string path_to_absolute(std::string_view path);
 std::string path_clean(std::string_view path);
 
 //
-// glob.cc
-//
-
-// GlobPattern handles the glob pattern. Currently, only '*' (zero or
-// more occurrences of any character) is supported as a metacharacter.
-class GlobPattern {
-public:
-  GlobPattern(std::string_view pat);
-  bool match(std::string_view str) const;
-
-private:
-  enum { EXACT, PREFIX, SUFFIX, GENERIC } kind;
-  std::string_view pat;
-};
-
-//
 // perf.cc
 //
 
@@ -1481,7 +1465,7 @@ struct Context {
     std::string rpaths;
     std::string soname;
     std::string sysroot;
-    std::unique_ptr<GlobPattern> unique;
+    std::unique_ptr<std::regex> unique;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<VersionPattern> version_patterns;
@@ -1625,6 +1609,7 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str);
 
+std::regex glob_to_regex(std::string_view pat);
 std::string get_version_string();
 
 //
