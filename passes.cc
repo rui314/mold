@@ -113,6 +113,11 @@ void resolve_symbols(Context<E> &ctx) {
     });
   });
 
+  // Register common symbols
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->resolve_common_symbols(ctx);
+  });
+
   // Remove symbols of eliminated objects.
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     if (!file->is_alive)

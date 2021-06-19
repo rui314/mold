@@ -801,7 +801,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = elf_syms[i];
 
-    if (!esym.is_defined())
+    if (esym.is_undef())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -810,7 +810,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
       sym.is_lazy = true;
       if (sym.traced)
         SyncOut(ctx) << "trace-symbol: " << *sym.file
-                  << ": lazy definition of " << sym;
+                     << ": lazy definition of " << sym;
     }
   }
 }
@@ -824,7 +824,7 @@ void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
     const ElfSym<E> &esym = elf_syms[i];
     merge_visibility(ctx, sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
-    if (esym.is_defined())
+    if (!esym.is_undef() && !esym.is_common())
       maybe_override_symbol(ctx, sym, i);
   }
 }
@@ -840,7 +840,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     Symbol<E> &sym = *this->symbols[i];
     merge_visibility(ctx, sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
 
-    if (esym.is_defined()) {
+    if (!esym.is_undef() && !esym.is_common()) {
       if (is_in_lib)
         maybe_override_symbol(ctx, sym, i);
       continue;
@@ -859,6 +859,20 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
       if (sym.traced)
         SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
                   << " for " << sym;
+    }
+  }
+}
+
+template <typename E>
+void ObjectFile<E>::resolve_common_symbols(Context<E> &ctx) {
+  if (!has_common_symbol)
+    return;
+
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    const ElfSym<E> &esym = elf_syms[i];
+    if (esym.is_common()) {
+      Symbol<E> &sym = *this->symbols[i];
+      maybe_override_symbol(ctx, sym, i);
     }
   }
 }

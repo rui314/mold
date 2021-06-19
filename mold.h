@@ -931,6 +931,7 @@ public:
   void resolve_regular_symbols(Context<E> &ctx);
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(ObjectFile<E> *)> feeder);
+  void resolve_common_symbols(Context<E> &ctx);
   void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
