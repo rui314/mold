@@ -364,24 +364,24 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
   }
 
+  auto get_isec = [&](const FdeRecord<E> &fde) -> InputSection<E> * {
+    return get_section(elf_syms[rels[fde.rel_idx].r_sym]);
+  };
+
   // We assume that FDEs for the same input sections are contiguous
   // in `fdes` vector.
   std::stable_sort(fdes.begin() + fdes_begin, fdes.end(),
                    [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
-    InputSection<E> *x = this->symbols[rels[a.rel_idx].r_sym]->input_section;
-    InputSection<E> *y = this->symbols[rels[b.rel_idx].r_sym]->input_section;
-    return x->get_priority() < y->get_priority();
+    return get_isec(a)->get_priority() < get_isec(b)->get_priority();
   });
 
   // Associate FDEs to input sections.
   for (i64 i = fdes_begin; i < fdes.size();) {
-    InputSection<E> *isec =
-      this->symbols[rels[fdes[i].rel_idx].r_sym]->input_section;
+    InputSection<E> *isec = get_isec(fdes[i]);
     assert(isec->fde_begin == -1);
     isec->fde_begin = i++;
 
-    while (i < fdes.size() &&
-           isec == this->symbols[rels[fdes[i].rel_idx].r_sym]->input_section)
+    while (i < fdes.size() && isec == get_isec(fdes[i]))
       i++;
     isec->fde_end = i;
   }
