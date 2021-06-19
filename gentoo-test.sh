@@ -43,22 +43,23 @@ git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 # Build a given package in Docker
 build() {
   package="$1"
-  cmd="MAKEOPTS=-j8 emerge --onlydeps $package && FEATURES=test MAKEOPTS=-j8 emerge $package"
+  cmd1="MAKEOPTS=-j8 emerge --onlydeps $package"
+  cmd2="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
+  cmd3="MAKEOPTS=-j8 FEATURES=test emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
-  link="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
   docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 15s 1h"
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
 
-  $docker bash -c "$link; $cmd" >& $dir/$filename.mold
+  $docker bash -c "$cmd1 && $cmd2 && $cmd3" >& $dir/$filename.mold
   if [ $? = 0 ]; then
     mv $dir/$filename.mold $dir/success
   else
     mv $dir/$filename.mold $dir/failure
   fi
 
-  $docker bash -c "$cmd" >& $dir/$filename.ld
+  $docker bash -c "$cmd1 && cmd3" >& $dir/$filename.ld
   if [ $? = 0 ]; then
     mv $dir/$filename.ld $dir/success
   else
