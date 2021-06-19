@@ -392,7 +392,7 @@ int do_main(int argc, char **argv) {
 
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
-  resolve_obj_symbols(ctx);
+  resolve_symbols(ctx);
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats(ctx);

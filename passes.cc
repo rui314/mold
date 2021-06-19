@@ -73,7 +73,7 @@ void create_synthetic_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void resolve_obj_symbols(Context<E> &ctx) {
+void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_obj_symbols");
 
   // Register archive symbols
@@ -848,7 +848,7 @@ void compress_debug_sections(Context<E> &ctx) {
 #define INSTANTIATE(E)                                                  \
   template void apply_exclude_libs(Context<E> &ctx);                    \
   template void create_synthetic_sections(Context<E> &ctx);             \
-  template void resolve_obj_symbols(Context<E> &ctx);                   \
+  template void resolve_symbols(Context<E> &ctx);                       \
   template void eliminate_comdats(Context<E> &ctx);                     \
   template void convert_common_symbols(Context<E> &ctx);                \
   template void compute_merged_section_sizes(Context<E> &ctx);          \
