@@ -59,7 +59,7 @@ build() {
     mv $dir/$filename.mold $dir/failure
   fi
 
-  $docker bash -c "$cmd1 && cmd3" >& $dir/$filename.ld
+  $docker bash -c "$cmd1 && $cmd3" >& $dir/$filename.ld
   if [ $? = 0 ]; then
     mv $dir/$filename.ld $dir/success
   else
