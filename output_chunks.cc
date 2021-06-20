@@ -512,6 +512,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     flags1 |= DF_1_NOOPEN;
   if (!ctx.arg.z_delete)
     flags1 |= DF_1_NODELETE;
+  if (!ctx.arg.z_dump)
+    flags1 |= DF_1_NODUMP;
   if (ctx.arg.z_initfirst)
     flags1 |= DF_1_INITFIRST;
   if (ctx.arg.z_interpose)

@@ -631,12 +631,14 @@ norelro\fR disables the feature.
 .IP "\fB\-z nodefs\fR"
 .PD
 Report undefined symbols (even with \fI\-\-shared\fR)
-.IP "\fB\-z nodlopen\fR"
-Mark DSO not available to dlopen
-.IP "\fB\-z nodelete\fR"
-Mark DSO non-deletable at runtime
 .IP "\fB\-z nocopyreloc\fR"
 Do not create copy relocations
+.IP "\fB\-z nodelete\fR"
+Mark DSO non-deletable at runtime
+.IP "\fB\-z nodlopen\fR"
+Mark DSO not available to dlopen
+.IP "\fB\-z nodump\fR"
+Mark DSO not available to dldump
 .IP "\fB\-z initfirst\fR"
 Mark DSO to be initialized first at runtime
 .IP "\fB\-z interpose\fR"

@@ -135,6 +135,7 @@ Options:
   -z nocopyreloc              Do not create copy relocations
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nodlopen                 Mark DSO not available to dlopen
+  -z nodump                   Mark DSO not available to dldump
   -z now                      Disable lazy function resolution
   -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
   -z relro                    Make some sections read-only after relocation (default)
@@ -605,6 +606,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_delete = false;
     } else if (read_z_flag(args, "nocopyreloc")) {
       ctx.arg.z_copyreloc = false;
+    } else if (read_z_flag(args, "nodump")) {
+      ctx.arg.z_dump = false;
     } else if (read_z_flag(args, "initfirst")) {
       ctx.arg.z_initfirst = true;
     } else if (read_z_flag(args, "interpose")) {
