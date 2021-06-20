@@ -255,12 +255,7 @@ class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
                std::string_view name, std::string_view contents,
-               i64 section_idx)
-    : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
-      contents(contents), section_idx(section_idx) {
-    output_section =
-      OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
-  }
+               i64 section_idx);
 
   void scan_relocations(Context<E> &ctx);
   void write_to(Context<E> &ctx, u8 *buf);

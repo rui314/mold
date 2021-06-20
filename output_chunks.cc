@@ -584,11 +584,6 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
       return stem;
   }
 
-  if (name == ".ctors" || name.starts_with(".ctors."))
-    return ".init_array";
-  if (name == ".dtors" || name.starts_with(".dtors."))
-    return ".fini_array";
-
   if (name == ".zdebug_aranges")
     return ".debug_aranges";
   if (name == ".zdebug_frame")

@@ -3,6 +3,36 @@
 #include <limits>
 
 template <typename E>
+InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
+                              const ElfShdr<E> &shdr, std::string_view name,
+                              std::string_view contents, i64 section_idx)
+  : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
+    contents(contents), section_idx(section_idx) {
+  // As a special case, we want to map .ctors and .dtors to
+  // .init_array and .fini_array, respectively. However, old CRT
+  // object files are not compatible with this translation, so we need
+  // to keep them as-is if a section came from crtbegin.o or crtend.o.
+  //
+  // Yeah, this is an ugly hack, but the fundamental problem is that
+  // we have two different mechanism, ctors/dtors and init_array/fini_array
+  // for the same purpose. The latter was introduced to replace the
+  // former, but as it is often the case, the former still lingers
+  // around, so we need to keep this code to conver the old mechanism
+  // to the new one.
+  std::string_view stem = path_filename(file.filename);
+  if (stem != "crtbegin.o" && stem != "crtend.o" &&
+      stem != "crtbeginS.o" && stem != "crtendS.o") {
+    if (name == ".ctors" || name.starts_with(".ctors."))
+      name = ".init_array";
+    else if (name == ".dtors" || name.starts_with(".dtors."))
+      name = ".fini_array";
+  }
+
+  output_section =
+    OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
+}
+
+template <typename E>
 void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
     return;
