@@ -935,6 +935,34 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
 }
 
 template <typename E>
+void ObjectFile<E>::ignore_unresolved_symbols(Context<E> &ctx) {
+  if (!this->is_alive)
+    return;
+
+  for (i64 i = first_global; i < this->symbols.size(); i++) {
+    const ElfSym<E> &esym = elf_syms[i];
+    Symbol<E> &sym = *this->symbols[i];
+    if (esym.is_defined())
+      continue;
+
+    std::lock_guard lock(sym.mu);
+    if (sym.sym_idx == -1 || sym.is_undef()) {
+      if (sym.file && sym.file->priority < this->priority)
+        continue;
+      if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
+        Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
+
+      sym.file = this;
+      sym.input_section = nullptr;
+      sym.value = 0;
+      sym.sym_idx = i;
+      sym.is_imported = false;
+      sym.is_exported = false;
+    }
+  }
+}
+
+template <typename E>
 void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
@@ -942,7 +970,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
-
     if (esym.is_defined())
       continue;
 
@@ -951,8 +978,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       if (sym.file && sym.file->priority < this->priority)
         continue;
 
-      if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
-        Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
       sym.file = this;
       sym.value = 0;
       sym.sym_idx = i;

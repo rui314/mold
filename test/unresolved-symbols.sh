@@ -17,6 +17,8 @@ cmd="clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o"
 
 $cmd -Wl,-unresolved-symbols=ignore-all
 
+! readelf --dyn-syms $t/exe | grep -w foo || false
+
 $cmd -Wl,-unresolved-symbols=report-all -Wl,--warn-unresolved-symbols 2>&1 | \
   grep -q 'undefined.*foo'
 
