@@ -13,21 +13,28 @@ struct ArHdr {
 template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *data = mb->data(ctx) + 8;
+  u8 *begin = mb->data(ctx);
+  u8 *data = begin + 8;
   std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
-  while (data < mb->data(ctx) + mb->size()) {
+  while (data < begin + mb->size()) {
+    // Each header is aligned to a 2 byte boundary.
+    if ((begin - data) % 2)
+      data++;
+
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
 
+    // Read a string table.
     if (!memcmp(hdr.ar_name, "// ", 3)) {
       strtab = {(char *)body, size};
       data = body + size;
       continue;
     }
 
+    // Skip a symbol table.
     if (!memcmp(hdr.ar_name, "/ ", 2)) {
       data = body + size;
       continue;
@@ -49,11 +56,15 @@ read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *data = mb->data(ctx) + 8;
+  u8 *begin = mb->data(ctx);
+  u8 *data = begin + 8;
   std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
-  while (mb->data(ctx) + mb->size() - data >= 2) {
+  while (begin + mb->size() - data >= 2) {
+    if ((begin - data) % 2)
+      data++;
+
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -77,7 +88,7 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back(mb->slice(ctx, name, body - mb->data(ctx), size));
+    vec.push_back(mb->slice(ctx, name, body - begin, size));
   }
   return vec;
 }
