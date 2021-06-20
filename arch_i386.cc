@@ -279,6 +279,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     case R_386_PC8:
     case R_386_PC16:
     case R_386_PC32:
+    case R_386_GOTPC:
       if (ref)
         write(ref->frag->get_addr(ctx) + ref->addend);
       else
