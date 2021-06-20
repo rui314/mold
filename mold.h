@@ -890,7 +890,7 @@ template <typename E>
 class InputFile {
 public:
   InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
-  InputFile() : name("<internal>") {}
+  InputFile() : filename("<internal>") {}
 
   template<typename T> std::span<T>
   inline get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
@@ -907,7 +907,7 @@ public:
   std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
 
-  std::string name;
+  std::string filename;
   bool is_dso = false;
   u32 priority;
   std::atomic_bool is_alive = false;

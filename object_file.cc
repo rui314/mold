@@ -7,7 +7,7 @@
 
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
-  : mb(mb), name(mb->name) {
+  : mb(mb), filename(mb->name) {
   if (mb->size() < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
   if (memcmp(mb->data(ctx), "\177ELF", 4))
@@ -1231,15 +1231,15 @@ ObjectFile<E>::create_internal_file(Context<E> &ctx) {
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
   if (file.is_dso) {
-    out << path_clean(file.name);
+    out << path_clean(file.filename);
     return out;
   }
 
   ObjectFile<E> *obj = (ObjectFile<E> *)&file;
   if (obj->archive_name == "")
-    out << path_clean(obj->name);
+    out << path_clean(obj->filename);
   else
-    out << path_clean(obj->archive_name) << "(" << obj->name + ")";
+    out << path_clean(obj->archive_name) << "(" << obj->filename + ")";
   return out;
 }
 
@@ -1264,8 +1264,8 @@ std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
   if (this->mb->given_fullpath)
-    return this->name;
-  return path_filename(this->name);
+    return this->filename;
+  return path_filename(this->filename);
 }
 
 template <typename E>
