@@ -801,7 +801,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = elf_syms[i];
 
-    if (esym.is_undef())
+    if (esym.is_undef() || esym.is_common())
       continue;
 
     std::lock_guard lock(sym.mu);
