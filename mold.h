@@ -1449,6 +1449,7 @@ struct Context {
     bool z_interpose = false;
     bool z_keep_text_section_prefix = false;
     bool z_now = false;
+    bool z_origin = false;
     bool z_relro = true;
     bool z_text = false;
     i16 default_version = VER_NDX_GLOBAL;

@@ -136,6 +136,7 @@ Options:
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nodlopen                 Mark DSO not available to dlopen
   -z now                      Disable lazy function resolution
+  -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
   -z text                     Report error if DT_TEXTREL is set
@@ -618,6 +619,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_text = true;
     } else if (read_z_flag(args, "notext") || read_z_flag(args, "textoff")) {
       ctx.arg.z_text = false;
+    } else if (read_z_flag(args, "origin")) {
+      ctx.arg.z_origin = true;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {
