@@ -968,7 +968,9 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
 
     memset(&esym, 0, sizeof(esym));
-    esym.st_type = sym.get_type();
+    esym.st_type = sym.esym().st_type;
+    if (esym.st_type == STT_GNU_IFUNC)
+      esym.st_type = STT_FUNC;
     esym.st_size = sym.esym().st_size;
 
     if (sym.is_weak)
