@@ -16,7 +16,15 @@ MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
     return nullptr;
   u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
 
-  MemoryMappedFile *mb = new MemoryMappedFile(path, nullptr, st.st_size, mtime);
+  u8 *data = nullptr;
+  if (st.st_size == 0) {
+    // mmap(2) doesn't allow 0 as an argument for length parameter,
+    // so this case has to be handled as a special case.
+    static u8 dummy[1];
+    data = dummy;
+  }
+
+  MemoryMappedFile *mb = new MemoryMappedFile(path, data, st.st_size, mtime);
   ctx.owning_mbs.push_back(std::unique_ptr<MemoryMappedFile>(mb));
   return mb;
 }
