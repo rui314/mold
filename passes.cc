@@ -98,12 +98,12 @@ void resolve_symbols(Context<E> &ctx) {
 
   for (std::string_view name : ctx.arg.undefined)
     if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
-      if (!file->is_alive.exchange(true))
-        if (!file->is_dso)
-          roots.push_back((ObjectFile<E> *)file);
+      if (!file->is_alive.exchange(true) && !file->is_dso)
+        roots.push_back((ObjectFile<E> *)file);
 
-  tbb::parallel_do(roots, [&](ObjectFile<E> *file,
-                              tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
+  tbb::parallel_do(roots,
+                   [&](ObjectFile<E> *file,
+                       tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
     file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) {
       feeder.add(obj);
     });
@@ -130,13 +130,27 @@ void resolve_symbols(Context<E> &ctx) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
-      if (esym.is_undef() && esym.st_bind != STB_WEAK &&
-          sym.file && sym.file->is_dso) {
-        sym.file->is_alive = true;
+      if (esym.is_undef_strong() && sym.file && sym.file->is_dso) {
         std::lock_guard lock(sym.mu);
+        sym.file->is_alive = true;
         sym.is_weak = false;
       }
     }
+  });
+
+  // DSOs referenced by live DSOs are also alive.
+  std::vector<SharedFile<E> *> live_dsos;
+  for (SharedFile<E> *file : ctx.dsos)
+    if (file->is_alive)
+      live_dsos.push_back(file);
+
+  tbb::parallel_do(live_dsos,
+                   [&](SharedFile<E> *file,
+                       tbb::parallel_do_feeder<SharedFile<E> *> &feeder) {
+    for (Symbol<E> *sym : file->globals)
+      if (sym->file && sym->file != file && sym->file->is_dso &&
+          !sym->file->is_alive.exchange(true))
+        feeder.add(file);
   });
 
   // Remove symbols of unreferenced DSOs.

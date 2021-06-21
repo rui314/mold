@@ -9,7 +9,7 @@ echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 readelf --wide --sections $t/exe > $t/log
-grep -Pq '\.dynamic.*\b0001a0\b' $t/log
+grep -Pq '\.dynamic.*\b0001b0\b' $t/log
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-spare-dynamic-tags=100
 readelf --wide --sections $t/exe > $t/log
