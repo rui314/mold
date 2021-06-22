@@ -346,12 +346,11 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       break;
     }
     case R_386_32: {
-      Action act = is_writable ? DYNREL : COPYREL;
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    act,           PLT    },     // PDE
+        {  NONE,     NONE,    DYNREL,        PLT    },     // PDE
       };
 
       dispatch(ctx, table, R_ABS, i);

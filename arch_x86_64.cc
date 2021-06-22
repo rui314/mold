@@ -525,12 +525,11 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_64: {
       // Unlike the above, we can use R_X86_64_RELATIVE and R_86_64_64
       // relocations.
-      Action act = is_writable ? DYNREL : COPYREL;
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    act,           PLT    },     // PDE
+        {  NONE,     NONE,    DYNREL,        PLT    },     // PDE
       };
 
       dispatch(ctx, table, R_ABS, i);
