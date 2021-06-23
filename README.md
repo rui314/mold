@@ -284,7 +284,7 @@ tool.
   an output file. This is a slow step, but we can speed it up by
   splitting a file into small chunks, computing SHA-1 for each chunk,
   and then computing SHA-1 of the concatenated SHA-1 hashes
-  (i.e. constructing a [Markle
+  (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
   can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
