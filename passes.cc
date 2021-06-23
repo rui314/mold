@@ -76,21 +76,17 @@ template <typename E>
 void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_obj_symbols");
 
-  // Register archive symbols
+  // Register object symbols
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_in_lib)
       file->resolve_lazy_symbols(ctx);
+    else
+      file->resolve_regular_symbols(ctx);
   });
 
   // Register DSO symbols
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     file->resolve_dso_symbols(ctx);
-  });
-
-  // Register defined symbols
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->is_in_lib)
-      file->resolve_regular_symbols(ctx);
   });
 
   // Mark reachable objects to decide which files to include

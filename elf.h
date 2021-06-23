@@ -402,6 +402,15 @@ struct Elf64Sym {
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+
+  bool is_undef_strong() const {
+    return st_shndx == SHN_UNDEF && st_bind != STB_WEAK;
+  }
+
+  bool is_undef_weak() const {
+    return st_shndx == SHN_UNDEF && st_bind == STB_WEAK;
+  }
 
   u32 st_name;
   u8 st_type : 4;
@@ -417,6 +426,15 @@ struct Elf32Sym {
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+
+  bool is_undef_strong() const {
+    return st_shndx == SHN_UNDEF && st_bind != STB_WEAK;
+  }
+
+  bool is_undef_weak() const {
+    return st_shndx == SHN_UNDEF && st_bind == STB_WEAK;
+  }
 
   u32 st_name;
   u32 st_value;

@@ -980,7 +980,8 @@ private:
   void initialize_ehframe_sections(Context<E> &ctx);
   u32 read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr);
   void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
-  void maybe_override_symbol(Context<E> &ctx, Symbol<E> &sym, i64 symidx);
+  void override_symbol(Context<E> &ctx, Symbol<E> &sym,
+                       const ElfSym<E> &esym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
 
   std::pair<std::string_view, const ElfShdr<E> *>
@@ -1942,14 +1943,6 @@ public:
 
   bool is_relative(Context<E> &ctx) const {
     return !is_absolute(ctx);
-  }
-
-  bool is_undef() const {
-    return esym().is_undef() && esym().st_bind != STB_WEAK;
-  }
-
-  bool is_undef_weak() const {
-    return esym().is_undef() && esym().st_bind == STB_WEAK;
   }
 
   u32 get_type() const {
