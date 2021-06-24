@@ -758,6 +758,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "sort-common")) {
     } else if (read_flag(args, "warn-once")) {
     } else if (read_flag(args, "nodefaultlibs")) {
+    } else if (read_flag(args, "warn-constructors")) {
     } else if (read_arg(ctx, args, arg, "rpath-link")) {
     } else if (read_z_flag(args, "combreloc")) {
     } else if (read_z_flag(args, "nocombreloc")) {
