@@ -1770,8 +1770,12 @@ public:
         : ctx.dynbss->shdr.sh_addr + value;
     }
 
-    if (has_plt(ctx) && esym().st_type == STT_GNU_IFUNC)
-      return get_plt_addr(ctx);
+    if (has_plt(ctx)) {
+      if (esym().st_type == STT_GNU_IFUNC)
+        return get_plt_addr(ctx);
+      if (is_imported)
+        return get_plt_addr(ctx);
+    }
 
     if (input_section) {
       if (input_section->is_ehframe) {
@@ -1793,12 +1797,8 @@ public:
         // relocations.
         return 0;
       }
-
       return input_section->get_addr() + value;
     }
-
-    if (has_plt(ctx))
-      return get_plt_addr(ctx);
     return value;
   }
 
