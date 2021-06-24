@@ -20,7 +20,11 @@ int main() {
 }
 EOF
 
+rm -f $t/exe
 clang -fuse-ld=`pwd`/../mold -Wl,--version -o $t/exe $t/a.o | grep -q mold
+! [ -f $t/exe ] || false
+
+clang -fuse-ld=`pwd`/../mold -Wl,-v -o $t/exe $t/a.o | grep -q mold
 $t/exe | grep -q 'Hello world'
 
 echo OK
