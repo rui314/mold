@@ -930,7 +930,6 @@ public:
   void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
-  void ignore_unresolved_symbols(Context<E> &ctx);
   void claim_unresolved_symbols(Context<E> &ctx);
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
@@ -1331,7 +1330,7 @@ template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> std::vector<OutputChunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
-template <typename E> void convert_undefined_weak_symbols(Context<E> &);
+template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);

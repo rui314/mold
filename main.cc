@@ -447,26 +447,13 @@ int do_main(int argc, char **argv) {
   // Beyond this point, no new files will be added to ctx.objs
   // or ctx.dsos.
 
-  // Convert weak symbols to absolute symbols with value 0.
-  convert_undefined_weak_symbols(ctx);
-
-  // If we do not handle undefined symbols as errors, such symbols
-  // are converted to absolute symbols with value 0.
-  if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->ignore_unresolved_symbols(ctx);
-    });
-  }
-
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
-  if (ctx.arg.shared && !ctx.arg.z_defs) {
-    Timer t(ctx, "claim_unresolved_symbols");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->claim_unresolved_symbols(ctx);
-    });
-  }
+  //
+  // If we are linking an executable, weak undefs are converted to
+  // weakly imported symbol so that they'll have another chance to be
+  claim_unresolved_symbols(ctx);
 
   // Beyond this point, no new symbols will be added to the result.
 

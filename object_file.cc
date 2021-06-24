@@ -884,36 +884,6 @@ void ObjectFile<E>::resolve_common_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::convert_undefined_weak_symbols(Context<E> &ctx) {
-  for (i64 i = first_global; i < this->symbols.size(); i++) {
-    const ElfSym<E> &esym = elf_syms[i];
-    if (!esym.is_undef() || !esym.is_weak())
-      continue;
-
-    Symbol<E> &sym = *this->symbols[i];
-    std::lock_guard lock(sym.mu);
-
-    if (!sym.file ||
-        (sym.esym().is_undef_weak() && this->priority < sym.file->priority)) {
-      sym.file = this;
-      sym.input_section = nullptr;
-      sym.value = 0;
-      sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
-      sym.is_lazy = false;
-      sym.is_weak = true;
-
-      if (ctx.arg.shared)
-        sym.is_imported = true;
-
-      if (sym.traced)
-        SyncOut(ctx) << "trace-symbol: " << *this
-                     << ": unresolved weak symbol " << sym;
-    }
-  }
-}
-
-template <typename E>
 void ObjectFile<E>::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
@@ -939,58 +909,54 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
 }
 
 template <typename E>
-void ObjectFile<E>::ignore_unresolved_symbols(Context<E> &ctx) {
-  if (!this->is_alive)
-    return;
-
-  for (i64 i = first_global; i < this->symbols.size(); i++) {
-    const ElfSym<E> &esym = elf_syms[i];
-    Symbol<E> &sym = *this->symbols[i];
-    if (esym.is_defined())
-      continue;
-
-    std::lock_guard lock(sym.mu);
-    if (!sym.file ||
-        (sym.esym().is_undef_strong() && sym.file->priority < this->priority)) {
-      if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
-        Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
-
-      sym.file = this;
-      sym.input_section = nullptr;
-      sym.value = esym.st_value;
-      sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
-      sym.is_lazy = false;
-      sym.is_weak = false;
-      sym.is_imported = false;
-      sym.is_exported = false;
-    }
-  }
-}
-
-template <typename E>
 void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
 
+  bool claim_all = ctx.arg.shared && !ctx.arg.z_defs;
+
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
-    if (esym.is_defined())
+    if (!esym.is_undef())
       continue;
 
     std::lock_guard lock(sym.mu);
+
     if (!sym.file ||
-        (sym.esym().is_undef_strong() && sym.file->priority < this->priority)) {
-      sym.file = this;
-      sym.input_section = nullptr;
-      sym.value = 0;
-      sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
-      sym.is_lazy = false;
-      sym.is_weak = false;
-      sym.is_imported = true;
-      sym.is_exported = false;
+        (sym.esym().is_undef() && sym.file->priority < this->priority)) {
+      if (claim_all || esym.is_weak()) {
+        // Convert remaining undefined symbols to dynamic symbols.
+        sym.file = this;
+        sym.input_section = nullptr;
+        sym.value = 0;
+        sym.sym_idx = i;
+        sym.ver_idx = ctx.arg.default_version;
+        sym.is_lazy = false;
+        sym.is_weak = false;
+        sym.is_imported = !ctx.arg.is_static;
+        sym.is_exported = false;
+
+        if (sym.traced)
+          SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
+                       << (esym.is_weak() ? " weak" : "")
+                       << " symbol " << sym;
+      } else if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
+        // Convert remaining undefined symbols to absolute symbols with
+        // value 0.
+        sym.file = this;
+        sym.input_section = nullptr;
+        sym.value = 0;
+        sym.sym_idx = i;
+        sym.ver_idx = ctx.arg.default_version;
+        sym.is_lazy = false;
+        sym.is_weak = false;
+        sym.is_imported = false;
+        sym.is_exported = false;
+
+        if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
+          Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
+      }
     }
   }
 }
@@ -1034,7 +1000,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     Symbol<E> *sym = this->symbols[i];
     if (sym->file != this) {
       if (ctx.arg.warn_common)
-        Warn(ctx) << *this << ": " << "multiple common symbols: " << *sym;
+        Warn(ctx) << *this << ": multiple common symbols: " << *sym;
       continue;
     }
 

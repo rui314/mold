@@ -392,11 +392,10 @@ void compute_section_sizes(Context<E> &ctx) {
 }
 
 template <typename E>
-void convert_undefined_weak_symbols(Context<E> &ctx) {
-  Timer t(ctx, "undef_weak");
-
+void claim_unresolved_symbols(Context<E> &ctx) {
+  Timer t(ctx, "claim_unresolved_symbols");
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->convert_undefined_weak_symbols(ctx);
+    file->claim_unresolved_symbols(ctx);
   });
 }
 
@@ -444,6 +443,20 @@ void scan_rels(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
+    if ((sym->flags & NEEDS_COPYREL) && !sym->file->is_dso) {
+      // Weak undefined symbols can be converted to imported symbols, but
+      // we can't create copy relocations against them because we don't
+      // know their symbol sizes. Therefore, if we have to create copyrels
+      // against such symbols, we instead turns the symbols into
+      // non-imported absoute ones with value 0. That means weak symbols
+      // are exported only when compiled with -fPIC, and the same program
+      // can have different meanings depending on the presence or absense
+      // that flag. That's bad, but this is the best we can do.
+      sym->is_imported = false;
+      sym->flags = 0;
+      continue;
+    }
+
     if (sym->flags & NEEDS_DYNSYM)
       ctx.dynsym->add_symbol(ctx, sym);
 
@@ -873,7 +886,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template std::vector<OutputChunk<E> *>                                \
     collect_output_sections(Context<E> &ctx);                           \
   template void compute_section_sizes(Context<E> &ctx);                 \
-  template void convert_undefined_weak_symbols(Context<E> &ctx);        \
+  template void claim_unresolved_symbols(Context<E> &ctx);        \
   template void scan_rels(Context<E> &ctx);                             \
   template void apply_version_script(Context<E> &ctx);                  \
   template void parse_symbol_version(Context<E> &ctx);                  \
