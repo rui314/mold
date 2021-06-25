@@ -26,7 +26,7 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
 
   if (mb->data(ctx) + mb->size() < (u8 *)(sh_begin + num_sections))
     Fatal(ctx) << *this << ": e_shoff or e_shnum corrupted: "
-            << mb->size() << " " << num_sections;
+               << mb->size() << " " << num_sections;
   elf_sections = {sh_begin, sh_begin + num_sections};
 
   // e_shstrndx is a 16-bit field. If .shstrtab's section index is

@@ -1159,10 +1159,7 @@ MergedSection<E>::insert(std::string_view data, i64 alignment) {
     if (frag->alignment.compare_exchange_strong(cur, alignment))
       break;
 
-  for (u16 cur = max_alignment; cur < alignment;)
-    if (max_alignment.compare_exchange_strong(cur, alignment))
-      break;
-
+  max_alignments[shard] = std::max(max_alignments[shard], alignment);
   return frag;
 }
 
@@ -1196,9 +1193,13 @@ void MergedSection<E>::assign_offsets() {
     sizes[i] = offset;
   });
 
+  i64 alignment = 1;
+  for (i64 x : max_alignments)
+    alignment = std::max(alignment, x);
+
   for (i64 i = 1; i < NUM_SHARDS + 1; i++)
     shard_offsets[i] =
-      align_to(shard_offsets[i - 1] + sizes[i - 1], max_alignment);
+      align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
 
   tbb::parallel_for((i64)1, NUM_SHARDS, [&](i64 i) {
     for (SectionFragment<E> *frag : fragments[i])
@@ -1206,7 +1207,7 @@ void MergedSection<E>::assign_offsets() {
   });
 
   this->shdr.sh_size = shard_offsets[NUM_SHARDS];
-  this->shdr.sh_addralign = max_alignment;
+  this->shdr.sh_addralign = alignment;
 
   static Counter merged_strings("merged_strings");
   for (std::span<SectionFragment<E> *> span : fragments)

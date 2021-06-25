@@ -676,7 +676,7 @@ private:
 
   MapTy maps[NUM_SHARDS];
   i64 shard_offsets[NUM_SHARDS + 1] = {};
-  std::atomic_uint16_t max_alignment;
+  i64 max_alignments[NUM_SHARDS];
 };
 
 template <typename E>

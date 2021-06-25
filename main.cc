@@ -657,8 +657,6 @@ static MachineType get_machine_type(int argc, char **argv) {
     }
   }
   return MachineType::X86_64;
-  //  std::cerr << "-m is missing";
-  //  exit(1);
 }
 
 int main(int argc, char **argv) {

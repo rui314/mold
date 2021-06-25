@@ -91,22 +91,18 @@ void resolve_symbols(Context<E> &ctx) {
 
   // Mark reachable objects to decide which files to include
   // into an output.
-  std::vector<ObjectFile<E> *> roots;
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_alive)
-      roots.push_back(file);
+  std::vector<ObjectFile<E> *> live_objs = ctx.objs;
+  erase(live_objs, [](InputFile<E> *file) { return !file->is_alive; });
 
   for (std::string_view name : ctx.arg.undefined)
     if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
-        roots.push_back((ObjectFile<E> *)file);
+        live_objs.push_back((ObjectFile<E> *)file);
 
-  tbb::parallel_do(roots,
+  tbb::parallel_do(live_objs,
                    [&](ObjectFile<E> *file,
                        tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
-    file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) {
-      feeder.add(obj);
-    });
+    file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) { feeder.add(obj); });
   });
 
   // Remove symbols of eliminated objects.
@@ -134,10 +130,8 @@ void resolve_symbols(Context<E> &ctx) {
   });
 
   // DSOs referenced by live DSOs are also alive.
-  std::vector<SharedFile<E> *> live_dsos;
-  for (SharedFile<E> *file : ctx.dsos)
-    if (file->is_alive)
-      live_dsos.push_back(file);
+  std::vector<SharedFile<E> *> live_dsos = ctx.dsos;
+  erase(live_dsos, [](SharedFile<E> *file) { return !file->is_alive; });
 
   tbb::parallel_do(live_dsos,
                    [&](SharedFile<E> *file,
@@ -220,7 +214,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   // Add an identification string to .comment.
   add_comment_string(ctx, get_version_string());
 
-  // Also embed command line arguments for now for debugging.
+  // Embed command line arguments for debugging.
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])
     add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
@@ -255,7 +249,8 @@ template <typename E>
 void bin_sections(Context<E> &ctx) {
   Timer t(ctx, "bin_sections");
 
-  i64 unit = (ctx.objs.size() + 127) / 128;
+  static constexpr i64 num_shards = 128;
+  i64 unit = (ctx.objs.size() + num_shards - 1) / num_shards;
   std::vector<std::span<ObjectFile<E> *>> slices = split(ctx.objs, unit);
 
   i64 num_osec = ctx.output_sections.size();
@@ -693,6 +688,10 @@ i64 set_osec_offsets(Context<E> &ctx) {
   while (i < end) {
     fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
 
+    // Each group consists of zero or more non-BSS sections followed
+    // by zero or more BSS sections. Virtual addresses of non-BSS
+    // sections need to be congruent to file offsets modulo the page size.
+    // BSS sections don't increment file offsets.
     for (; i < end && ctx.chunks[i]->shdr.sh_type != SHT_NOBITS; i++) {
       OutputChunk<E> &chunk = *ctx.chunks[i];
       u64 prev_vaddr = vaddr;
@@ -886,7 +885,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template std::vector<OutputChunk<E> *>                                \
     collect_output_sections(Context<E> &ctx);                           \
   template void compute_section_sizes(Context<E> &ctx);                 \
-  template void claim_unresolved_symbols(Context<E> &ctx);        \
+  template void claim_unresolved_symbols(Context<E> &ctx);              \
   template void scan_rels(Context<E> &ctx);                             \
   template void apply_version_script(Context<E> &ctx);                  \
   template void parse_symbol_version(Context<E> &ctx);                  \
