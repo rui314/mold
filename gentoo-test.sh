@@ -67,5 +67,10 @@ build() {
   fi
 }
 
+if [ "$1" = dev-libs/concurrencykit ]; then
+  echo "Skipping known broken package: $1"
+  exit 0
+fi
+
 # Build a package
 build "$1"
