@@ -44,7 +44,7 @@ public:
 
     std::stringstream ss;
     ss << current_file<E>->name << ":" << lineno << ": ";
-    i64 indent = ss.tellp();
+    i64 indent = (i64)ss.tellp() + strlen("mold: ");
     ss << line << "\n" << std::setw(indent + column) << " " << "^ ";
     out << ss.str();
   }
@@ -256,9 +256,18 @@ static void parse_version_script_commands(Context<E> &ctx,
 
     if (tok[0] == "extern") {
       tok = tok.subspan(1);
-      tok = skip(ctx, tok, "\"C++\"");
+
+      bool is_cpp;
+      if (!tok.empty() && tok[0] == "\"C\"") {
+        tok = tok.subspan(1);
+        is_cpp = false;
+      } else {
+        tok = skip(ctx, tok, "\"C++\"");
+        is_cpp = true;
+      }
+
       tok = skip(ctx, tok, "{");
-      parse_version_script_commands(ctx, tok, ver, true);
+      parse_version_script_commands(ctx, tok, ver, is_cpp);
       tok = skip(ctx, tok, "}");
       tok = skip(ctx, tok, ";");
       continue;
@@ -268,10 +277,11 @@ static void parse_version_script_commands(Context<E> &ctx,
       ctx.arg.default_version = (is_global ? ver : VER_NDX_LOCAL);
     else
       ctx.arg.version_patterns.push_back({tok[0], ver, is_extern_cpp});
+    tok = tok.subspan(1);
 
     if (!tok.empty() && tok[0] == "}")
       return;
-    tok = skip(ctx, tok.subspan(1), ";");
+    tok = skip(ctx, tok, ";");
   }
 }
 
