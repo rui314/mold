@@ -879,6 +879,10 @@ void ObjectFile<E>::resolve_common_symbols(Context<E> &ctx) {
       sym.is_weak = false;
       sym.is_imported = false;
       sym.is_exported = false;
+
+      if (sym.traced)
+        SyncOut(ctx) << "trace-symbol: " << *this
+                     << ": common definition of " << sym;
     }
   }
 }
