@@ -268,6 +268,9 @@ static void parse_version_script_commands(Context<E> &ctx,
       ctx.arg.default_version = (is_global ? ver : VER_NDX_LOCAL);
     else
       ctx.arg.version_patterns.push_back({tok[0], ver, is_extern_cpp});
+
+    if (!tok.empty() && tok[0] == "}")
+      return;
     tok = skip(ctx, tok.subspan(1), ";");
   }
 }
