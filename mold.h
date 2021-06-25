@@ -1751,7 +1751,7 @@ public:
     return intern(ctx, name, name);
   }
 
-  u64 get_addr(Context<E> &ctx) const {
+  u64 get_addr(Context<E> &ctx, bool allow_plt = true) const {
     if (SectionFragment<E> *frag = get_frag()) {
       if (!frag->is_alive) {
         // This condition is met if a non-alloc section refers an
@@ -1770,12 +1770,9 @@ public:
         : ctx.dynbss->shdr.sh_addr + value;
     }
 
-    if (has_plt(ctx)) {
-      if (esym().st_type == STT_GNU_IFUNC)
+    if (allow_plt && has_plt(ctx))
+      if (is_imported || esym().st_type == STT_GNU_IFUNC)
         return get_plt_addr(ctx);
-      if (is_imported)
-        return get_plt_addr(ctx);
-    }
 
     if (input_section) {
       if (input_section->is_ehframe) {

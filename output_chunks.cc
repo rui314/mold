@@ -1002,7 +1002,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     } else {
       esym.st_shndx = sym.input_section->output_section->shndx;
-      esym.st_value = sym.get_addr(ctx);
+      esym.st_value = sym.get_addr(ctx, false);
     }
   }
 }

@@ -12,9 +12,13 @@ void world() {
   printf("world\n");
 }
 
-void hello() {
+void real_hello() {
   printf("Hello ");
   world();
+}
+
+void hello() {
+  real_hello();
 }
 EOF
 
