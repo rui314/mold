@@ -1,7 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <endian.h>
 #include <string>
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+#error "mold does not support big-endian hosts"
+#endif
 
 typedef uint8_t u8;
 typedef uint16_t u16;
