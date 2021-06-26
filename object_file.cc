@@ -591,6 +591,48 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   return rec;
 }
 
+// Usually a section is an atomic unit of inclusion and exclusion.
+// the Linker doesn't care its contents. However, if a section is a
+// mergeable section (a section with SHF_MERGE bit set), the linker
+// is expected split it into smaller pieces and merge each piece with
+// other pieces from different object files. In mold, we call the
+// atomic unit of mergeable section "section pieces".
+//
+// This feature is typically used for string literals. String literals
+// are usually put into a mergeable section by a compiler. If the same
+// string literal happen to occur in two different translation units,
+// a linker merges them into a single instance of a string, so that
+// a linker's output doens't contain duplicate string literals.
+//
+// Handling relocations referring mergeable sections is a bit tricky.
+// Assume that we have a mergeable section with the following contents
+// and symbols:
+//
+//
+//   Hello world\0foo bar\0
+//   ^            ^
+//   .rodata      .L.str1
+//   .L.str0
+//
+// '\0' represents a NUL byte. This mergeable section contains two
+// section pieces, "Hello world" and "foo bar". The first string is
+// referred by two symbols, .rodata and .L.str0, and the second by
+// .L.str1. .rodata is a section symbol and therefore a local symbol
+// and refers the begining of the section.
+//
+// In this example, there are actually two different ways to point to
+// string "foo bar", because .rodata+12 and .L.str1+0 refer the same
+// place in the section. This kind of "out-of-bound" reference occurs
+// only when a symbol is a section symbol. In other words, compiler
+// may use an offset from the beginning of a section to refer any
+// section piece in a section, but it doesn't do for any other types
+// of symbols.
+//
+// In mold, we attach section pieces to either relocations or symbols.
+// If a relocation refers a section symbol whose section is a
+// mergeable section, a section piece is attached to the relocation.
+// If a non-section symbol refers a section piece, the section piece
+// is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   std::vector<MergeableSection<E>> mergeable_sections(sections.size());
@@ -612,8 +654,8 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
     if (rels.empty())
       continue;
 
+    // Compute the size of rel_fragments.
     i64 len = 0;
-
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
@@ -624,13 +666,13 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
           len++;
       }
     }
-
     if (len == 0)
       continue;
 
     isec->rel_fragments.reset(new SectionFragmentRef<E>[len + 1]);
     i64 frag_idx = 0;
 
+    // Fill rel_fragments contents.
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
