@@ -87,6 +87,9 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     case FileType::TEXT:
       parse_linker_script(ctx, mb);
       return;
+    case FileType::LLVM_BITCODE:
+      Fatal(ctx) << mb->name << ": looks like this is an LLVM bitcode, but"
+                 << " mold does not support LTO";
     default:
       Fatal(ctx) << mb->name << ": unknown file type";
     }
@@ -130,6 +133,9 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   case FileType::TEXT:
     parse_linker_script(ctx, mb);
     return;
+  case FileType::LLVM_BITCODE:
+    Fatal(ctx) << mb->name << ": looks like this is an LLVM bitcode, "
+               << "but mold does not support LTO";
   default:
     Fatal(ctx) << mb->name << ": unknown file type";
   }

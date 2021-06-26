@@ -1060,7 +1060,7 @@ private:
   i64 size_ = 0;
 };
 
-enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT };
+enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
 
 template <typename E>
 FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb);

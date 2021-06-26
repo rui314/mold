@@ -157,6 +157,10 @@ void resolve_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->resolve_common_symbols(ctx);
   });
+
+  if (Symbol<E> *sym = Symbol<E>::intern(ctx, "__gnu_lto_slim"); sym->file)
+    Fatal(ctx) << *sym->file << ": looks like this file contains a GCC "
+               << "intermediate code, but mold does not support LTO";
 }
 
 template <typename E>

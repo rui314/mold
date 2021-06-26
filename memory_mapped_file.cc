@@ -103,6 +103,10 @@ FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     return FileType::THIN_AR;
   if (is_text_file(ctx, mb))
     return FileType::TEXT;
+  if (mb->size() >= 4 && memcmp(data, "\xDE\xC0\x17\x0B", 4) == 0)
+    return FileType::LLVM_BITCODE;
+  if (mb->size() >= 4 && memcmp(data, "BC\xC0\xDE", 4) == 0)
+    return FileType::LLVM_BITCODE;
   return FileType::UNKNOWN;
 }
 
