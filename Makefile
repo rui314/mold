@@ -59,13 +59,10 @@ mold-wrapper.so: mold-wrapper.c Makefile
 
 $(OBJS): mold.h elf.h Makefile
 
-$(MIMALLOC_LIB): mimalloc/CMakeLists.txt
+$(MIMALLOC_LIB):
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
 	$(MAKE) -C mimalloc/out/release
-
-mimalloc/CMakeLists.txt:
-	git submodule update --init --recursive
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
