@@ -512,7 +512,9 @@ void apply_version_script(Context<E> &ctx) {
 
     if (!elem.is_extern_cpp &&
         elem.pattern.find('*') == elem.pattern.npos) {
-      Symbol<E>::intern(ctx, elem.pattern)->ver_idx = elem.ver_idx;
+      Symbol<E> *sym = Symbol<E>::intern(ctx, elem.pattern);
+      if (sym->file && !sym->file->is_dso)
+        sym->ver_idx = elem.ver_idx;
       continue;
     }
 
