@@ -95,7 +95,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
   case ERROR:
     break;
   case COPYREL:
-    if (!ctx.arg.z_copyreloc)
+    if (!ctx.arg.z_copyreloc && !sym.esym().is_undef_weak())
       break;
     if (sym.esym().st_visibility == STV_PROTECTED)
       Error(ctx) << *this << ": cannot make copy relocation for "

@@ -442,7 +442,7 @@ void scan_rels(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    if ((sym->flags & NEEDS_COPYREL) && !sym->file->is_dso) {
+    if ((sym->flags & NEEDS_COPYREL) && sym->esym().is_undef_weak()) {
       // Weak undefined symbols can be converted to imported symbols, but
       // we can't create copy relocations against them because we don't
       // know their symbol sizes. Therefore, if we have to create copyrels
