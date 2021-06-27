@@ -43,23 +43,23 @@ git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 # Build a given package in Docker
 build() {
   package="$1"
-  cmd1="MAKEOPTS=-j8 nice -n 19 emerge --onlydeps $package"
-  cmd2="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
-  cmd3="MAKEOPTS=-j8 FEATURES=test nice -n 19 emerge $package"
+  cmd1="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
+  cmd2="MAKEOPTS=-j8 emerge --onlydeps $package"
+  cmd3="MAKEOPTS=-j8 FEATURES=test emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
   docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 15s 1h"
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
 
-  $docker bash -c "$cmd1 && $cmd2 && $cmd3" >& $dir/$filename.mold
+  $docker nice -n 19 bash -c "$cmd1 && $cmd2 && $cmd3" >& $dir/$filename.mold
   if [ $? = 0 ]; then
     mv $dir/$filename.mold $dir/success
   else
     mv $dir/$filename.mold $dir/failure
   fi
 
-  $docker bash -c "$cmd1 && $cmd3" >& $dir/$filename.ld
+  $docker nice -n 19 bash -c "$cmd1 && $cmd3" >& $dir/$filename.ld
   if [ $? = 0 ]; then
     mv $dir/$filename.ld $dir/success
   else
