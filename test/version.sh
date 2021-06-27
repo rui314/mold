@@ -5,10 +5,10 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-../mold -v | grep -Pq 'mold .*\; compatible with GNU ld and GNU gold\)'
-../mold --version | grep -Pq 'mold .*\; compatible with GNU ld and GNU gold\)'
+../mold -v | grep -q 'mold .*compatible with GNU ld and GNU gold'
+../mold --version | grep -q 'mold .*compatible with GNU ld and GNU gold'
 
-../mold -V | grep -Pq 'mold .*\; compatible with GNU ld and GNU gold\)'
+../mold -V | grep -q 'mold .*compatible with GNU ld and GNU gold'
 ../mold -V | grep -q elf_x86_64
 ../mold -V | grep -q elf_i386
 
