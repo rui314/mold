@@ -1043,14 +1043,12 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     if (!elf_syms[i].is_common())
       continue;
 
-    Symbol<E> *sym = this->symbols[i];
-    if (sym->file != this) {
+    Symbol<E> &sym = *this->symbols[i];
+    if (sym.file != this) {
       if (ctx.arg.warn_common)
-        Warn(ctx) << *this << ": multiple common symbols: " << *sym;
+        Warn(ctx) << *this << ": multiple common symbols: " << sym;
       continue;
     }
-
-    assert(sym->esym().st_value);
 
     auto *shdr = new ElfShdr<E>;
     ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(shdr));
@@ -1059,14 +1057,23 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     shdr->sh_flags = SHF_ALLOC;
     shdr->sh_type = SHT_NOBITS;
     shdr->sh_size = elf_syms[i].st_size;
-    shdr->sh_addralign = sym->esym().st_value;
+    shdr->sh_addralign = elf_syms[i].st_value;
 
     std::unique_ptr<InputSection<E>> isec =
       std::make_unique<InputSection<E>>(ctx, *this, *shdr, ".common",
                                         std::string_view(), sections.size());
     isec->output_section = osec;
-    sym->input_section = isec.get();
-    sym->value = 0;
+
+    sym.file = this;
+    sym.input_section = isec.get();
+    sym.value = 0;
+    sym.sym_idx = i;
+    sym.ver_idx = ctx.arg.default_version;
+    sym.is_lazy = false;
+    sym.is_weak = false;
+    sym.is_imported = false;
+    sym.is_exported = false;
+
     sections.push_back(std::move(isec));
   }
 }
