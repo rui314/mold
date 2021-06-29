@@ -254,6 +254,9 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<I386> &rel = rels[i];
+    if (rel.r_type == R_386_NONE)
+      continue;
+
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -271,8 +274,6 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     };
 
     switch (rel.r_type) {
-    case R_386_NONE:
-      return;
     case R_386_8:
     case R_386_16:
     case R_386_32:

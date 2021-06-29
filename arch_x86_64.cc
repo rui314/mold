@@ -423,6 +423,9 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
+    if (rel.r_type == R_X86_64_NONE)
+      continue;
+
     Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -441,8 +444,6 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     };
 
     switch (rel.r_type) {
-    case R_X86_64_NONE:
-      break;
     case R_X86_64_8:
     case R_X86_64_16:
     case R_X86_64_32:
