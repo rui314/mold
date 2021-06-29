@@ -62,7 +62,7 @@ $(OBJS): mold.h elf.h Makefile
 $(MIMALLOC_LIB):
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
-	$(MAKE) -C mimalloc/out/release
+	$(MAKE) -C mimalloc/out/release mimalloc-static
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
