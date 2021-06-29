@@ -3,10 +3,11 @@ CXX = clang++
 
 MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
 GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
+GIT_TAG = $(shell [ -d .git ] && git describe --abbrev=0 --tags | tr -d 'v')
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -Wno-deprecated-volatile \
-           -DMOLD_VERSION=\"0.1.1\" \
+           -DMOLD_VERSION=\"$(GIT_TAG)\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS = $(EXTRA_LDFLAGS)
