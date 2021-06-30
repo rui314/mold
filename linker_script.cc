@@ -140,25 +140,27 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
 }
 
 template <typename E>
+static bool is_in_sysroot(Context<E> &ctx, std::string path) {
+  std::string sysroot = path_clean(ctx.arg.sysroot);
+  path = path_clean(path);
+  return std::string_view(sysroot).starts_with(path_dirname(path));
+}
+
+template <typename E>
 static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
-  if (str.starts_with("/"))
+  if (str.starts_with('/') && is_in_sysroot(ctx, str))
     return MemoryMappedFile<E>::must_open(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (std::string dir(path_dirname(current_file<E>->name));
-      MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, dir + "/" + str))
-    return mb;
-
   if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, str))
     return mb;
 
   for (std::string_view dir : ctx.arg.library_paths) {
-    std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
-    std::string path = root + std::string(dir) + "/" + str;
+    std::string path = std::string(dir) + "/" + str;
     if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path))
       return mb;
   }

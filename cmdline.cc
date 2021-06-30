@@ -497,7 +497,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.filler = parse_hex(ctx, "filler", arg);
     } else if (read_arg(ctx, args, arg, "L") ||
                read_arg(ctx, args, arg, "library-path")) {
-      ctx.arg.library_paths.push_back(arg);
+      ctx.arg.library_paths.push_back(std::string(arg));
     } else if (read_arg(ctx, args, arg, "sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg(ctx, args, arg, "unique")) {
@@ -794,6 +794,15 @@ void parse_nonpositional_args(Context<E> &ctx,
         Fatal(ctx) << "mold: unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
+    }
+  }
+
+  if (!ctx.arg.sysroot.empty()) {
+    for (std::string &path : ctx.arg.library_paths) {
+      if (std::string_view(path).starts_with('='))
+        path = std::string(ctx.arg.sysroot) + path.substr(1);
+      else if (std::string_view(path).starts_with("$SYSROOT"))
+        path = std::string(ctx.arg.sysroot) + path.substr(8);
     }
   }
 
