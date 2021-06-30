@@ -196,8 +196,7 @@ template <typename E>
 MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
-      std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
-      std::string path = root + std::string(dir) + "/" + name.substr(1);
+      std::string path = std::string(dir) + "/" + name.substr(1);
       if (MemoryMappedFile<E> *mb = open_library(ctx, path))
         return mb;
     }
@@ -205,8 +204,7 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
   }
 
   for (std::string_view dir : ctx.arg.library_paths) {
-    std::string root = dir.starts_with("/") ? ctx.arg.sysroot : "";
-    std::string stem = root + std::string(dir) + "/lib" + name;
+    std::string stem = std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
       if (MemoryMappedFile<E> *mb = open_library(ctx, stem + ".so"))
         return mb;

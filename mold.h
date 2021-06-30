@@ -1467,10 +1467,10 @@ struct Context {
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<VersionPattern> version_patterns;
+    std::vector<std::string> library_paths;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
-    std::vector<std::string_view> library_paths;
     std::vector<std::string_view> trace_symbol;
     std::vector<std::string_view> undefined;
     std::vector<std::string_view> version_definitions;
