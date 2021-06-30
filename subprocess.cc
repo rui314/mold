@@ -263,14 +263,11 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   // Get the mold-wrapper.so path
   std::string self = get_self_path(ctx);
   std::string dso_path;
-  if (self == "/usr/bin/mold")
-    dso_path = "/usr/lib/mold/mold-wrapper.so";
-  else if (self == "/usr/local/bin/mold")
-    dso_path = "/usr/local/lib/mold/mold-wrapper.so";
-  else
-    dso_path = std::string(path_dirname(self)) + "/mold-wrapper.so";
+  dso_path = path_clean(self+"/../../lib/mold/mold-wrapper.so");
 
   struct stat st;
+  if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
+    dso_path = std::string(path_dirname(self)) + "/mold-wrapper.so";
   if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
     Fatal(ctx) << dso_path << " is missing";
 
