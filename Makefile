@@ -2,14 +2,14 @@ CC = clang
 CXX = clang++
 
 MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
-GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
+GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -Wno-deprecated-volatile \
            -DMOLD_VERSION=\"0.9.1\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
-LDFLAGS = $(EXTRA_LDFLAGS)
+LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -Wl,-as-needed -lcrypto -pthread -ltbb -lz -lxxhash -ldl
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \
@@ -41,7 +41,11 @@ else
   # By default, we want to use mimalloc as a memory allocator.
   # Since replacing the standard malloc is not compatible with ASAN,
   # we do that only when ASAN is not enabled.
-  LDFLAGS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
+  ifndef SYSTEM_MIMALLOC
+    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
+  else
+    LIBS += -lmimalloc
+  endif
 endif
 
 ifeq ($(TSAN), 1)
@@ -51,8 +55,12 @@ endif
 
 all: mold mold-wrapper.so
 
+ifdef SYSTEM_MIMALLOC
+  undefine MIMALLOC_LIB
+endif
+
 mold: $(OBJS) $(MIMALLOC_LIB)
-	$(CXX) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 mold-wrapper.so: mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
@@ -68,20 +76,21 @@ test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
 
 install: all
-	install -m 755 mold $(PREFIX)/bin
+	install -m 755 mold $(DESTDIR)$(PREFIX)/bin
 	strip $(PREFIX)/bin/mold
 
-	install -m 755 -d $(PREFIX)/lib/mold
-	install -m 644 mold-wrapper.so $(PREFIX)/lib/mold
-	strip $(PREFIX)/lib/mold/mold-wrapper.so
+	install -m 755 -d $(DESTDIR)$(PREFIX)/lib/mold
+	install -m 644 mold-wrapper.so $(DESTDIR)$(PREFIX)/lib/mold
+	strip $(DESTDIR)$(PREFIX)/lib/mold/mold-wrapper.so
 
-	install -m 644 docs/mold.1 $(PREFIX)/share/man/man1
-	rm -f $(PREFIX)/share/man/man1/mold.1.gz
-	gzip -9 $(PREFIX)/share/man/man1/mold.1
+	install -m 755 -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 644 docs/mold.1 $(DESTDIR)$(PREFIX)/share/man/man1
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz
+	gzip -9 $(DESTDIR)$(PREFIX)/share/man/man1/mold.1
 
 uninstall:
-	rm -rf $(PREFIX)/bin/mold $(PREFIX)/share/man/man1/mold.1.gz \
-	       $(PREFIX)/lib/mold
+	rm -rf $(DESTDIR)$(PREFIX)/bin/mold $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz \
+	       $(DESTDIR)$(PREFIX)/lib/mold
 
 clean:
 	rm -rf *.o *~ mold mold-wrapper.so test/tmp
