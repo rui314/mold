@@ -83,10 +83,15 @@ $ sudo apt-get install dwarfdump libc6-dev:i386 lib32gcc-10-dev gcc-multilib
 
 On Unix, the linker command (which is usually `/usr/bin/ld`) is
 invoked indirectly by `cc` (or `gcc` or `clang`), which is typically
-in turn indirectly invoked by `make` or some other build system
-command. It is sometimes very hard to pass an appropriate command line
-option to `cc` to specify an alternative linker.
+in turn indirectly invoked by `make` or some other build system command.
 
+A classic way to use `mold`:
+- `clang` before 12.0: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+- clang after 12.0: pass `--ld-path=<absolute-path-to-mold-executable>`;
+- gcc: `--ld-path` patch [has been declined by GCC maintainers](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html), instead they advise to use a [workaround](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573823.html): create directory `<dirname>`, then `ln -s <path-to-mold> <dirname>/ld`, and then pass `-B<dirname>` (`-B` tells GCC to look for `ld` in specified location).
+
+It is sometimes very hard to pass an appropriate command line
+option to `cc` to specify an alternative linker.
 To deal with the situation, mold has a feature to intercept all
 invocations of `/usr/bin/ld`, `/usr/bin/ld.lld` or `/usr/bin/ld.gold`
  and redirect it to itself. To use the feature, run `make` (or other
@@ -101,10 +106,6 @@ variable set to its companion shared object file. The shared object
 file intercepts all function calls to exec-family functions to replace
 `argv[0]` with `mold` if it is `/usr/bin/ld`, `/usr/bin/ld.gold` or
 `/usr/bin/ld.lld`.
-
-Alternatively, you can pass `-fuse-ld=<absolute-path-to-mold-executable>`
-to a linker command line. Since GCC doesn't support that option,
-I recommend using clang.
 
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
