@@ -73,7 +73,7 @@ test tests check: all
 
 install: all
 	install -m 755 mold $(DESTDIR)$(PREFIX)/bin
-	strip $(PREFIX)/bin/mold
+	strip $(DESTDIR)$(PREFIX)/bin/mold
 
 	install -m 755 -d $(DESTDIR)$(PREFIX)/lib/mold
 	install -m 644 mold-wrapper.so $(DESTDIR)$(PREFIX)/lib/mold
