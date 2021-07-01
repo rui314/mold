@@ -252,6 +252,27 @@ static std::string get_self_path(Context<E> &ctx) {
   return {buf, n};
 }
 
+static bool is_regular_file(const std::string &path) {
+  struct stat st;
+  return !stat(path.c_str(), &st) && (st.st_mode & S_IFMT) == S_IFREG;
+}
+
+template <typename E>
+std::string find_dso(Context<E> &ctx, const std::string &self) {
+  // Look for mold-wrapper.so from the same directory as the executable is.
+  std::string path = std::string(path_dirname(self)) + "/mold-wrapper.so";
+  if (is_regular_file(path))
+    return path;
+
+  // If not exist, mold might be installed as $PREFIX/bin/mold and the
+  // DSO as $PREFIX/lib/mold/mold-wrapper.so.
+  path = path_clean(self + "/../../lib/mold/mold-wrapper.so");
+  if (is_regular_file(path))
+    return path;
+
+  Fatal(ctx) << "mold-wrapper.so is missing";
+}
+
 template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
@@ -262,14 +283,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 
   // Get the mold-wrapper.so path
   std::string self = get_self_path(ctx);
-  std::string dso_path;
-  dso_path = path_clean(self+"/../../lib/mold/mold-wrapper.so");
-
-  struct stat st;
-  if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
-    dso_path = std::string(path_dirname(self)) + "/mold-wrapper.so";
-  if (stat(dso_path.c_str(), &st) || (st.st_mode & S_IFMT) != S_IFREG)
-    Fatal(ctx) << dso_path << " is missing";
+  std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
   putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
