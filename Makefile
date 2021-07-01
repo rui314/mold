@@ -1,7 +1,6 @@
 CC = clang
 CXX = clang++
 
-MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
@@ -41,10 +40,11 @@ else
   # By default, we want to use mimalloc as a memory allocator.
   # Since replacing the standard malloc is not compatible with ASAN,
   # we do that only when ASAN is not enabled.
-  ifndef SYSTEM_MIMALLOC
-    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
-  else
+  ifdef SYSTEM_MIMALLOC
     LIBS += -lmimalloc
+  else
+    MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
+    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
 
@@ -54,10 +54,6 @@ ifeq ($(TSAN), 1)
 endif
 
 all: mold mold-wrapper.so
-
-ifdef SYSTEM_MIMALLOC
-  undefine MIMALLOC_LIB
-endif
 
 mold: $(OBJS) $(MIMALLOC_LIB)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
