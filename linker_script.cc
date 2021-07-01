@@ -142,15 +142,17 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
 template <typename E>
 static bool is_in_sysroot(Context<E> &ctx, std::string path) {
   std::string sysroot = path_clean(ctx.arg.sysroot);
-  path = path_clean(path);
-  return std::string_view(sysroot).starts_with(path_dirname(path));
+  path = path_clean(path_to_absolute(path));
+  return path_dirname(path).starts_with(sysroot);
 }
 
 template <typename E>
 static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
-  if (str.starts_with('/') && is_in_sysroot(ctx, str))
+  // GNU ld prepends the sysroot if a pathname starts with '/' and the
+  // script being processed is in the sysroot. We do the same.
+  if (str.starts_with('/') && is_in_sysroot(ctx, current_file<E>->name))
     return MemoryMappedFile<E>::must_open(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
