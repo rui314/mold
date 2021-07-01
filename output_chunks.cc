@@ -1159,7 +1159,7 @@ MergedSection<E>::insert(std::string_view data, i64 alignment) {
     if (frag->alignment.compare_exchange_strong(cur, alignment))
       break;
 
-  max_alignments[shard] = std::max(max_alignments[shard], alignment);
+  max_alignments.local() = std::max(max_alignments.local(), alignment);
   return frag;
 }
 

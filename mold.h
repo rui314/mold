@@ -676,7 +676,7 @@ private:
 
   MapTy maps[NUM_SHARDS];
   i64 shard_offsets[NUM_SHARDS + 1] = {};
-  i64 max_alignments[NUM_SHARDS];
+  tbb::enumerable_thread_specific<i64> max_alignments;
 };
 
 template <typename E>
