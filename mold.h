@@ -25,6 +25,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
+#include <unistd.h>
 #include <unordered_set>
 #include <vector>
 #include <xxh3.h>

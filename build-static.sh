@@ -22,19 +22,6 @@ RUN apt-get update && \
   rm -rf /var/lib/apt/lists/*
 EOF
 
-if ! [ -d oneTBB ]; then
-  git clone https://github.com/oneapi-src/oneTBB.git
-  (cd oneTBB; git checkout --quiet v2020.3)
-fi
-
-docker run -it --rm -v `pwd`/oneTBB:/oneTBB -u $(id -u):$(id -g) \
-  mold-build-ubuntu20 \
-  make -C /oneTBB -j$(nproc) extra_inc=big_iron.inc
-
-tbb_bindir=$(ls -d oneTBB/build/linux_intel64_*_release)
-
 docker run -it --rm -v `pwd`:/mold -u $(id -u):$(id -g) \
   mold-build-ubuntu20 \
-  make -C /mold -j$(nproc) \
-       EXTRA_CPPFLAGS=-IoneTBB/include \
-       EXTRA_LDFLAGS="-fuse-ld=lld -static -L$tbb_bindir"
+  make -C /mold -j$(nproc) EXTRA_LDFLAGS='-fuse-ld=lld -static'

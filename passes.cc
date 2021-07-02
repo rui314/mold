@@ -3,7 +3,6 @@
 #include <functional>
 #include <map>
 #include <regex>
-#include <tbb/parallel_do.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/partitioner.h>
@@ -99,9 +98,9 @@ void resolve_symbols(Context<E> &ctx) {
       if (!file->is_alive.exchange(true) && !file->is_dso)
         live_objs.push_back((ObjectFile<E> *)file);
 
-  tbb::parallel_do(live_objs,
+  tbb::parallel_for_each(live_objs,
                    [&](ObjectFile<E> *file,
-                       tbb::parallel_do_feeder<ObjectFile<E> *> &feeder) {
+                       tbb::feeder<ObjectFile<E> *> &feeder) {
     file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) { feeder.add(obj); });
   });
 
@@ -133,9 +132,9 @@ void resolve_symbols(Context<E> &ctx) {
   std::vector<SharedFile<E> *> live_dsos = ctx.dsos;
   erase(live_dsos, [](SharedFile<E> *file) { return !file->is_alive; });
 
-  tbb::parallel_do(live_dsos,
-                   [&](SharedFile<E> *file,
-                       tbb::parallel_do_feeder<SharedFile<E> *> &feeder) {
+  tbb::parallel_for_each(live_dsos,
+                         [&](SharedFile<E> *file,
+                             tbb::feeder<SharedFile<E> *> &feeder) {
     for (Symbol<E> *sym : file->globals)
       if (sym->file && sym->file != file && sym->file->is_dso &&
           !sym->file->is_alive.exchange(true))

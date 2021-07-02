@@ -65,8 +65,8 @@ static constexpr i64 HASH_SIZE = 16;
 
 typedef std::array<u8, HASH_SIZE> Digest;
 
-namespace tbb {
-template<> struct tbb_hash<Digest> {
+namespace std {
+template<> struct hash<Digest> {
   size_t operator()(const Digest &k) const {
     return *(i64 *)&k[0];
   }

@@ -4,12 +4,11 @@ CXX = clang++
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
-           -Wno-deprecated-volatile \
            -DMOLD_VERSION=\"0.9.1\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
-LIBS = -Wl,-as-needed -lcrypto -pthread -ltbb -lz -lxxhash -ldl
+LIBS = -Wl,-as-needed -lcrypto -pthread -lz -lxxhash -ldl
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \
        subprocess.o gc_sections.o icf.o symbols.o cmdline.o filepath.o \
@@ -53,9 +52,17 @@ ifeq ($(TSAN), 1)
   LDFLAGS  += -fsanitize=thread
 endif
 
+ifdef SYSTEM_TBB
+  LIBS += -ltbb
+else
+  TBB_LIB = oneTBB/out/libs/libtbb.a
+  LIBS += $(TBB_LIB)
+  CPPFLAGS += -IoneTBB/include
+endif
+
 all: mold mold-wrapper.so
 
-mold: $(OBJS) $(MIMALLOC_LIB)
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 mold-wrapper.so: mold-wrapper.c Makefile
@@ -67,6 +74,12 @@ $(MIMALLOC_LIB):
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
 	$(MAKE) -C mimalloc/out/release mimalloc-static
+
+$(TBB_LIB):
+	mkdir -p oneTBB/out
+	(cd oneTBB/out; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ..)
+	$(MAKE) -C oneTBB/out
+	(cd oneTBB/out; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory

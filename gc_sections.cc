@@ -8,9 +8,6 @@
 #include <tbb/parallel_for_each.h>
 
 template <typename E>
-using Feeder = tbb::parallel_do_feeder<InputSection<E> *>;
-
-template <typename E>
 static bool is_init_fini(const InputSection<E> &isec) {
   return isec.shdr.sh_type == SHT_INIT_ARRAY ||
          isec.shdr.sh_type == SHT_FINI_ARRAY ||
@@ -28,7 +25,7 @@ static bool mark_section(InputSection<E> *isec) {
 
 template <typename E>
 static void visit(Context<E> &ctx, InputSection<E> *isec,
-                  Feeder<E> &feeder, i64 depth) {
+                  tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
   assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
@@ -139,7 +136,8 @@ static void mark(Context<E> &ctx,
                  tbb::concurrent_vector<InputSection<E> *> &roots) {
   Timer t(ctx, "mark");
 
-  tbb::parallel_do(roots, [&](InputSection<E> *isec, Feeder<E> &feeder) {
+  tbb::parallel_for_each(roots, [&](InputSection<E> *isec,
+                                    tbb::feeder<InputSection<E> *> &feeder) {
     visit(ctx, isec, feeder, 0);
   });
 }
