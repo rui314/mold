@@ -383,7 +383,7 @@ namespace r1 {
         __TBB_ASSERT_EX(res && library_handle || !res && !library_handle, nullptr);
 #else /* _WIN32 */
     #if !__TBB_DYNAMIC_LOAD_ENABLED /* only __TBB_WEAK_SYMBOLS_PRESENT is defined */
-        if ( !dlopen ) return 0;
+        return 0;
     #endif /* !__TBB_DYNAMIC_LOAD_ENABLED */
         // RTLD_GLOBAL - to guarantee that old TBB will find the loaded library
         // RTLD_NOLOAD - not to load the library without the full path
