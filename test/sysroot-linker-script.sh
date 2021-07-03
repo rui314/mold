@@ -24,4 +24,6 @@ EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ $t/foo/bar/b.script
 
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=tmp/$(basename -s .sh $0)/ $t/foo/bar/b.script
+
 echo OK

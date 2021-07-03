@@ -141,7 +141,7 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
 
 template <typename E>
 static bool is_in_sysroot(Context<E> &ctx, std::string path) {
-  std::string sysroot = path_clean(ctx.arg.sysroot);
+  std::string sysroot = path_clean(path_to_absolute(ctx.arg.sysroot));
   path = path_clean(path_to_absolute(path));
   return path_dirname(path).starts_with(sysroot);
 }
