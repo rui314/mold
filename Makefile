@@ -102,6 +102,6 @@ uninstall:
 	       $(DESTDIR)$(PREFIX)/lib/mold
 
 clean:
-	rm -rf *.o *~ mold mold-wrapper.so test/tmp
+	rm -rf *.o *~ mold mold-wrapper.so test/tmp mimalloc/out oneTBB/out
 
 .PHONY: all test tests check clean $(TESTS)
