@@ -3,6 +3,7 @@
 enum {
   R_TLS_GOTIE = R_END + 1,
   R_TLS_LE,
+  R_TLS_IE,
   R_TLS_GD,
   R_TLS_LD,
   R_TLS_GOTDESC,
@@ -133,6 +134,7 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   case R_386_TLS_LDM:
   case R_386_TLS_GOTIE:
   case R_386_TLS_LE:
+  case R_386_TLS_IE:
   case R_386_TLS_GD:
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
@@ -206,6 +208,9 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       break;
     case R_TLS_LE:
       write(S + A - ctx.tls_end);
+      break;
+    case R_TLS_IE:
+      write(sym.get_gottp_addr(ctx) + A);
       break;
     case R_TLS_GD:
       write(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
@@ -404,6 +409,10 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_TLS_LE:
       sym.flags |= NEEDS_GOTTP;
       rel_types[i] = R_TLS_LE;
+      break;
+    case R_386_TLS_IE:
+      sym.flags |= NEEDS_GOTTP;
+      rel_types[i] = R_TLS_IE;
       break;
     case R_386_TLS_GD:
       sym.flags |= NEEDS_TLSGD;
