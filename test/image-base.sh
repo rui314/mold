@@ -16,6 +16,6 @@ EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,--image-base=0x8000000
 $t/exe | grep -q 'Hello world'
-readelf --sections $t/exe | grep -Pq '.interp\s+PROGBITS\s+00000000080002e0'
+readelf -W --sections $t/exe | grep -Pq '.interp\s+PROGBITS\s+0000000008000...\b'
 
 echo OK

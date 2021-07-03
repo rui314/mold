@@ -7,25 +7,14 @@ mkdir -p $t
 
 echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
 
-../mold -o $t/exe /usr/lib/x86_64-linux-gnu/crt1.o \
-  /usr/lib/x86_64-linux-gnu/crti.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtbegin.o \
-  $t/a.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/crtend.o \
-  /usr/lib/x86_64-linux-gnu/crtn.o \
-  /usr/lib/gcc/x86_64-linux-gnu/9/libgcc.a \
-  /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
-  /lib/x86_64-linux-gnu/libc.so.6 \
-  /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
-  /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 
 readelf --dynamic $t/exe > $t/log
-fgrep -q 'Shared library: [libgcc_s.so.1]' $t/log
 fgrep -q 'Shared library: [libc.so.6]' $t/log
 fgrep -q 'Shared library: [ld-linux-x86-64.so.2]' $t/log
 
-readelf --symbols --use-dynamic $t/exe > $t/log2
-fgrep -q 'FUNC    GLOBAL DEFAULT UND __libc_start_main' $t/log2
+readelf -W --symbols --use-dynamic $t/exe > $t/log2
+grep -Pq 'FUNC\s+GLOBAL\s+DEFAULT\s+UND\s+__libc_start_main' $t/log2
 
 cat <<EOF | clang -c -fPIC -o $t/b.o -xc -
 #include <stdio.h>
@@ -37,6 +26,6 @@ EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe -pie $t/b.o
 count=$(readelf --relocs $t/exe | grep R_X86_64_RELATIVE | wc -l)
-readelf --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
+readelf -W --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
 
 echo OK
