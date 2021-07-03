@@ -85,6 +85,7 @@ test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
 
 install: all
+	install -m 755 -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 mold $(DESTDIR)$(PREFIX)/bin
 	strip $(DESTDIR)$(PREFIX)/bin/mold
 
@@ -98,8 +99,9 @@ install: all
 	gzip -9 $(DESTDIR)$(PREFIX)/share/man/man1/mold.1
 
 uninstall:
-	rm -rf $(DESTDIR)$(PREFIX)/bin/mold $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz \
-	       $(DESTDIR)$(PREFIX)/lib/mold
+	rm -f $(DESTDIR)$(PREFIX)/bin/mold
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz
+	rm -rf $(DESTDIR)$(PREFIX)/lib/mold
 
 clean:
 	rm -rf *.o *~ mold mold-wrapper.so test/tmp mimalloc/out oneTBB/out
