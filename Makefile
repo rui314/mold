@@ -64,6 +64,7 @@ all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	ln -sf mold ld
 
 mold-wrapper.so: mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
