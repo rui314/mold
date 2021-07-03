@@ -1491,3 +1491,4 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

@@ -188,7 +188,8 @@ static MemoryMappedFile<E> *open_library(Context<E> &ctx, std::string path) {
   i64 type = get_machine_type(ctx, mb);
   if (type == -1 || type == E::e_machine)
     return mb;
-  Warn(ctx) << path << ": skipping incompatible file";
+  Warn(ctx) << path << ": skipping incompatible file"
+            << " " << (int)type << " " << (int)E::e_machine;
   return nullptr;
 }
 
@@ -642,25 +643,35 @@ int do_main(int argc, char **argv) {
   return 0;
 }
 
-enum class MachineType { X86_64, I386 };
+enum class MachineType { X86_64, I386, AARCH64 };
 
-static MachineType get_machine_type(int argc, char **argv) {
+static std::string_view get_machine_type_string(int argc, char **argv) {
   for (i64 i = 1; i < argc; i++) {
     if (std::string_view(argv[i]) == "-m") {
       if (i + 1 == argc)
-        break;
-      i++;
-
-      std::string_view val(argv[i]);
-      if (val == "elf_x86_64")
-        return MachineType::X86_64;
-      if (val == "elf_i386")
-        return MachineType::I386;
-      std::cerr << "unknown -m argument: " << val << "\n";
-      exit(1);
+        return "";
+      return argv[i + 1];
     }
+
+    if (std::string_view(argv[i]).starts_with("-m"))
+      return argv[i] + 2;
   }
-  return MachineType::X86_64;
+  return "";
+}
+
+static MachineType get_machine_type(int argc, char **argv) {
+  std::string_view val = get_machine_type_string(argc, argv);
+  if (val.empty())
+    return MachineType::X86_64;
+
+  if (val == "elf_x86_64")
+    return MachineType::X86_64;
+  if (val == "elf_i386")
+    return MachineType::I386;
+  if (val == "aarch64linux")
+    return MachineType::AARCH64;
+  std::cerr << "unknown -m argument: " << val << "\n";
+  exit(1);
 }
 
 int main(int argc, char **argv) {
@@ -669,6 +680,8 @@ int main(int argc, char **argv) {
     return do_main<X86_64>(argc, argv);
   case MachineType::I386:
     return do_main<I386>(argc, argv);
+  case MachineType::AARCH64:
+    return do_main<AARCH64>(argc, argv);
   }
 }
 
@@ -678,3 +691,4 @@ int main(int argc, char **argv) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

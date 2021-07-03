@@ -186,5 +186,9 @@ void gc_sections(Context<E> &ctx) {
   sweep(ctx);
 }
 
-template void gc_sections(Context<X86_64> &ctx);
-template void gc_sections(Context<I386> &ctx);
+#define INSTANTIATE(E)                                  \
+  template void gc_sections(Context<E> &ctx);
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

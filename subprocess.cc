@@ -310,3 +310,4 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

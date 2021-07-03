@@ -120,5 +120,9 @@ void Timer<E>::print(Context<E> &ctx) {
   std::cout << std::flush;
 }
 
-template class Timer<X86_64>;
-template class Timer<I386>;
+#define INSTANTIATE(E)                          \
+  template class Timer<E>;
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

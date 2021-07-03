@@ -116,3 +116,4 @@ FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

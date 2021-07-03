@@ -100,5 +100,9 @@ void print_map(Context<E> &ctx) {
   }
 }
 
-template void print_map(Context<X86_64> &ctx);
-template void print_map(Context<I386> &ctx);
+#define INSTANTIATE(E)                          \
+  template void print_map(Context<E> &ctx);
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

@@ -44,3 +44,4 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

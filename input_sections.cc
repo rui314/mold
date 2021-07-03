@@ -150,5 +150,9 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
   }
 }
 
-template class InputSection<X86_64>;
-template class InputSection<I386>;
+#define INSTANTIATE(E)                          \
+  template class InputSection<E>;
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

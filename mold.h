@@ -1781,8 +1781,8 @@ public:
           return ctx.eh_frame->shdr.sh_addr;
         if (name() == "__FRAME_END__")
           return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
-        Fatal(ctx) << "symbol referring .eh_frame is not supported: "
-                   << *this << " " << *file;
+        // Fatal(ctx) << "symbol referring .eh_frame is not supported: "
+        //           << *this << " " << *file;
       }
 
       if (!input_section->is_alive) {
@@ -2087,6 +2087,11 @@ template <>
 inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
   u8 *buf = (u8 *)contents.data();
   return *(i32 *)(buf + rel.r_offset);
+}
+
+template <>
+inline i64 InputSection<AARCH64>::get_addend(const ElfRel<AARCH64> &rel) const {
+  return rel.r_addend;
 }
 
 template <typename E>

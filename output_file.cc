@@ -122,10 +122,11 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
   return file;
 }
 
-template
-std::unique_ptr<OutputFile<X86_64>>
-OutputFile<X86_64>::open(Context<X86_64> &, std::string, i64, i64);
+#define INSTANTIATE(E)                                                  \
+  template                                                              \
+  std::unique_ptr<OutputFile<E>>                                        \
+  OutputFile<E>::open(Context<E> &, std::string, i64, i64);
 
-template
-std::unique_ptr<OutputFile<I386>>
-OutputFile<I386>::open(Context<I386> &, std::string, i64, i64);
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

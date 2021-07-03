@@ -574,5 +574,9 @@ void icf_sections(Context<E> &ctx) {
   }
 }
 
-template void icf_sections(Context<X86_64> &ctx);
-template void icf_sections(Context<I386> &ctx);
+#define INSTANTIATE(E)                          \
+  template void icf_sections(Context<E> &ctx);
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

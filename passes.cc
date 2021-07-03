@@ -903,3 +903,4 @@ void compress_debug_sections(Context<E> &ctx) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);

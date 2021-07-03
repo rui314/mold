@@ -757,6 +757,8 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "no-undefined-version")) {
     } else if (read_arg(ctx, args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
+    } else if (read_flag(args, "fix-cortex-a53-843419")) {
+    } else if (read_flag(args, "EL")) {
     } else if (read_flag(args, "warn-once")) {
     } else if (read_flag(args, "nodefaultlibs")) {
     } else if (read_flag(args, "warn-constructors")) {
@@ -857,3 +859,4 @@ void parse_nonpositional_args(Context<E> &ctx,
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
+INSTANTIATE(AARCH64);
