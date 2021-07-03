@@ -860,16 +860,16 @@ struct AARCH64 {
   static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
   static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_AARCH64_NONE;
-  static constexpr u32 R_TPOFF = R_AARCH64_NONE;
-  static constexpr u32 R_DTPMOD = R_AARCH64_NONE;
-  static constexpr u32 R_TLSDESC = R_AARCH64_NONE;
+  static constexpr u32 R_DTPOFF = R_AARCH64_TLS_DTPREL64;
+  static constexpr u32 R_TPOFF = R_AARCH64_TLS_TPREL64;
+  static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr u32 wordsize = 8;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 8;
+  static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
 };

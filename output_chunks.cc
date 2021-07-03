@@ -826,11 +826,15 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
                       sym->get_dynsym_idx(ctx));
 
   for (Symbol<E> *sym : gottp_syms) {
-    if (sym->is_imported)
+    if (sym->is_imported) {
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
                         sym->get_dynsym_idx(ctx));
-    else
+    } else if (E::e_machine == EM_386 || E::e_machine == EM_X86_64) {
       buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
+    } else {
+      assert(E::e_machine == EM_AARCH64);
+      buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_begin + 16;
+    }
   }
 
   if (tlsld_idx != -1)

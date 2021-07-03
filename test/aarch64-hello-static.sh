@@ -5,7 +5,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | aarch64-linux-gnu-gcc-10 -o $t/a.o -c -xc -
+cat <<EOF | aarch64-linux-gnu-gcc -o $t/a.o -c -xc -
 #include <stdio.h>
 
 int main() {
@@ -14,11 +14,12 @@ int main() {
 }
 EOF
 
-aarch64-linux-gnu-gcc-10 -B`pwd`/.. -o $t/exe $t/a.o -static
+aarch64-linux-gnu-gcc -B`pwd`/.. -o $t/exe $t/a.o -static
+
+readelf -p .comment $t/exe | grep -qw mold
+
 readelf -a $t/exe > $t/log
 grep -Pq 'Machine:\s+AArch64' $t/log
-
-# Generated executable can't run yet
-#  qemu-aarch64 -L /usr/aarch64-linux-gnu $t/exe | grep -q 'Hello world'
+qemu-aarch64 -L /usr/aarch64-linux-gnu $t/exe | grep -q 'Hello world'
 
 echo OK
