@@ -103,8 +103,8 @@ struct SectionFragmentRef {
 
 // Additinal class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
-// for large programs, and we separate them from `Symbol` class to
-// save memory.
+// for large programs, we separate them from `Symbol` class to save
+// memory.
 struct SymbolAux {
   i32 got_idx = -1;
   i32 gotplt_idx = -1;
