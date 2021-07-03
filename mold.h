@@ -124,8 +124,7 @@ inline u64 hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
 }
 
-namespace tbb {
-template<> struct tbb_hash_compare<std::string_view> {
+template<> struct tbb::tbb_hash_compare<std::string_view> {
   static size_t hash(const std::string_view &k) {
     return hash_string(k);
   }
@@ -134,7 +133,6 @@ template<> struct tbb_hash_compare<std::string_view> {
     return k1 == k2;
   }
 };
-}
 
 template<typename ValueT> class ConcurrentMap {
 public:
