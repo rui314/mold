@@ -77,7 +77,8 @@ necessary tools and libraries to it and build mold as a static binary.
 
 ```
 $ sudo dpkg --add-architecture i386
-$ sudo apt-get install dwarfdump libc6-dev:i386 lib32gcc-10-dev gcc-multilib
+$ sudo apt update
+$ sudo apt-get install bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
 ```
 
 ## How to use
