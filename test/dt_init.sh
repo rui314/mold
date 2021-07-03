@@ -18,17 +18,15 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 readelf -a $t/exe > $t/log
 
-grep -Pq '\(INIT\)\s+0x201010' $t/log
-grep -Pq '\(FINI\)\s+0x201000' $t/log
-grep -Pq '0000000000201010\s+0 FUNC    GLOBAL HIDDEN    \d+ _init$' $t/log
-grep -Pq '0000000000201000\s+0 FUNC    GLOBAL HIDDEN    \d+ _fini$' $t/log
+grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 FUNC    GLOBAL HIDDEN\s+\d+ _init\b' $t/log
+
+grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 FUNC    GLOBAL HIDDEN\s+\d+ _fini\b' $t/log
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-init,init -Wl,-fini,fini
 readelf -a $t/exe > $t/log
 
-grep -Pq '\(INIT\)\s+0x201119' $t/log
-grep -Pq '\(FINI\)\s+0x20111a' $t/log
-grep -Pq '0000000000201119\s+0 NOTYPE  GLOBAL DEFAULT   \d+ init$' $t/log
-grep -Pq '000000000020111a\s+0 NOTYPE  GLOBAL DEFAULT   \d+ fini$' $t/log
+grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 NOTYPE  GLOBAL DEFAULT\s+\d+ init\b' $t/log
+
+grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 NOTYPE  GLOBAL DEFAULT\s+\d+ fini\b' $t/log
 
 echo OK
