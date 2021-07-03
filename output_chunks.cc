@@ -860,7 +860,7 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_got(ctx));
 
   if (this->shdr.sh_size == 0) {
-    this->shdr.sh_size = E::plt_size;
+    this->shdr.sh_size = E::plt_hdr_size;
     ctx.gotplt->shdr.sh_size = E::wordsize * 3;
   }
 

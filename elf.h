@@ -23,6 +23,7 @@ static std::string rel_to_string(u32 r_type);
 
 struct X86_64;
 struct I386;
+struct AARCH64;
 
 static constexpr u32 SHN_UNDEF = 0;
 static constexpr u32 SHN_ABS = 0xfff1;
@@ -126,6 +127,7 @@ static constexpr u32 EV_CURRENT = 1;
 
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_X86_64 = 62;
+static constexpr u32 EM_AARCH64 = 183;
 
 static constexpr u32 EI_CLASS = 4;
 static constexpr u32 EI_DATA = 5;
@@ -381,6 +383,152 @@ std::string rel_to_string<I386>(u32 r_type) {
   case R_386_TLS_DESC: return "R_386_TLS_DESC";
   case R_386_IRELATIVE: return "R_386_IRELATIVE";
   case R_386_GOT32X: return "R_386_GOT32X";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
+static constexpr u32 R_AARCH64_NONE = 0;
+static constexpr u32 R_AARCH64_ABS64 = 0x101;
+static constexpr u32 R_AARCH64_ABS32 = 0x102;
+static constexpr u32 R_AARCH64_ABS16 = 0x103;
+static constexpr u32 R_AARCH64_PREL64 = 0x104;
+static constexpr u32 R_AARCH64_PREL32 = 0x105;
+static constexpr u32 R_AARCH64_PREL16 = 0x106;
+static constexpr u32 R_AARCH64_MOVW_UABS_G0 = 0x107;
+static constexpr u32 R_AARCH64_MOVW_UABS_G0_NC = 0x108;
+static constexpr u32 R_AARCH64_MOVW_UABS_G1 = 0x109;
+static constexpr u32 R_AARCH64_MOVW_UABS_G1_NC = 0x10a;
+static constexpr u32 R_AARCH64_MOVW_UABS_G2 = 0x10b;
+static constexpr u32 R_AARCH64_MOVW_UABS_G2_NC = 0x10c;
+static constexpr u32 R_AARCH64_MOVW_UABS_G3 = 0x10d;
+static constexpr u32 R_AARCH64_MOVW_SABS_G0 = 0x10e;
+static constexpr u32 R_AARCH64_MOVW_SABS_G1 = 0x10f;
+static constexpr u32 R_AARCH64_MOVW_SABS_G2 = 0x110;
+static constexpr u32 R_AARCH64_LD_PREL_LO19 = 0x111;
+static constexpr u32 R_AARCH64_ADR_PREL_LO21 = 0x112;
+static constexpr u32 R_AARCH64_ADR_PREL_PG_HI21 = 0x113;
+static constexpr u32 R_AARCH64_ADR_PREL_PG_HI21_NC = 0x114;
+static constexpr u32 R_AARCH64_ADD_ABS_LO12_NC = 0x115;
+static constexpr u32 R_AARCH64_LDST8_ABS_LO12_NC = 0x116;
+static constexpr u32 R_AARCH64_TSTBR14 = 0x117;
+static constexpr u32 R_AARCH64_CONDBR19 = 0x118;
+static constexpr u32 R_AARCH64_JUMP26 = 0x11a;
+static constexpr u32 R_AARCH64_CALL26 = 0x11b;
+static constexpr u32 R_AARCH64_LDST16_ABS_LO12_NC = 0x11c;
+static constexpr u32 R_AARCH64_LDST32_ABS_LO12_NC = 0x11d;
+static constexpr u32 R_AARCH64_LDST64_ABS_LO12_NC = 0x11e;
+static constexpr u32 R_AARCH64_MOVW_PREL_G0 = 0x11f;
+static constexpr u32 R_AARCH64_MOVW_PREL_G0_NC = 0x120;
+static constexpr u32 R_AARCH64_MOVW_PREL_G1 = 0x121;
+static constexpr u32 R_AARCH64_MOVW_PREL_G1_NC = 0x122;
+static constexpr u32 R_AARCH64_MOVW_PREL_G2 = 0x123;
+static constexpr u32 R_AARCH64_MOVW_PREL_G2_NC = 0x124;
+static constexpr u32 R_AARCH64_MOVW_PREL_G3 = 0x125;
+static constexpr u32 R_AARCH64_LDST128_ABS_LO12_NC = 0x12b;
+static constexpr u32 R_AARCH64_ADR_GOT_PAGE = 0x137;
+static constexpr u32 R_AARCH64_LD64_GOT_LO12_NC = 0x138;
+static constexpr u32 R_AARCH64_LD64_GOTPAGE_LO15 = 0x139;
+static constexpr u32 R_AARCH64_PLT32 = 0x13a;
+static constexpr u32 R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 = 0x21d;
+static constexpr u32 R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC = 0x21e;
+static constexpr u32 R_AARCH64_TLSLE_MOVW_TPREL_G2 = 0x220;
+static constexpr u32 R_AARCH64_TLSLE_MOVW_TPREL_G1 = 0x221;
+static constexpr u32 R_AARCH64_TLSLE_MOVW_TPREL_G1_NC = 0x222;
+static constexpr u32 R_AARCH64_TLSLE_MOVW_TPREL_G0 = 0x223;
+static constexpr u32 R_AARCH64_TLSLE_MOVW_TPREL_G0_NC = 0x224;
+static constexpr u32 R_AARCH64_TLSLE_ADD_TPREL_HI12 = 0x225;
+static constexpr u32 R_AARCH64_TLSLE_ADD_TPREL_LO12_NC = 0x227;
+static constexpr u32 R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC = 0x229;
+static constexpr u32 R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC = 0x22b;
+static constexpr u32 R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC = 0x22d;
+static constexpr u32 R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC = 0x22f;
+static constexpr u32 R_AARCH64_TLSDESC_ADR_PAGE21 = 0x232;
+static constexpr u32 R_AARCH64_TLSDESC_LD64_LO12 = 0x233;
+static constexpr u32 R_AARCH64_TLSDESC_ADD_LO12 = 0x234;
+static constexpr u32 R_AARCH64_TLSDESC_CALL = 0x239;
+static constexpr u32 R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC = 0x23b;
+static constexpr u32 R_AARCH64_COPY = 0x400;
+static constexpr u32 R_AARCH64_GLOB_DAT = 0x401;
+static constexpr u32 R_AARCH64_JUMP_SLOT = 0x402;
+static constexpr u32 R_AARCH64_RELATIVE = 0x403;
+static constexpr u32 R_AARCH64_TLS_DTPMOD64 = 0x404;
+static constexpr u32 R_AARCH64_TLS_DTPREL64 = 0x405;
+static constexpr u32 R_AARCH64_TLS_TPREL64 = 0x406;
+static constexpr u32 R_AARCH64_TLSDESC = 0x407;
+static constexpr u32 R_AARCH64_IRELATIVE = 0x408;
+
+template <>
+std::string rel_to_string<AARCH64>(u32 r_type) {
+  switch (r_type) {
+  case R_AARCH64_NONE: return "R_AARCH64_NONE";
+  case R_AARCH64_ABS64: return "R_AARCH64_ABS64";
+  case R_AARCH64_ABS32: return "R_AARCH64_ABS32";
+  case R_AARCH64_ABS16: return "R_AARCH64_ABS16";
+  case R_AARCH64_PREL64: return "R_AARCH64_PREL64";
+  case R_AARCH64_PREL32: return "R_AARCH64_PREL32";
+  case R_AARCH64_PREL16: return "R_AARCH64_PREL16";
+  case R_AARCH64_MOVW_UABS_G0: return "R_AARCH64_MOVW_UABS_G0";
+  case R_AARCH64_MOVW_UABS_G0_NC: return "R_AARCH64_MOVW_UABS_G0_NC";
+  case R_AARCH64_MOVW_UABS_G1: return "R_AARCH64_MOVW_UABS_G1";
+  case R_AARCH64_MOVW_UABS_G1_NC: return "R_AARCH64_MOVW_UABS_G1_NC";
+  case R_AARCH64_MOVW_UABS_G2: return "R_AARCH64_MOVW_UABS_G2";
+  case R_AARCH64_MOVW_UABS_G2_NC: return "R_AARCH64_MOVW_UABS_G2_NC";
+  case R_AARCH64_MOVW_UABS_G3: return "R_AARCH64_MOVW_UABS_G3";
+  case R_AARCH64_MOVW_SABS_G0: return "R_AARCH64_MOVW_SABS_G0";
+  case R_AARCH64_MOVW_SABS_G1: return "R_AARCH64_MOVW_SABS_G1";
+  case R_AARCH64_MOVW_SABS_G2: return "R_AARCH64_MOVW_SABS_G2";
+  case R_AARCH64_LD_PREL_LO19: return "R_AARCH64_LD_PREL_LO19";
+  case R_AARCH64_ADR_PREL_LO21: return "R_AARCH64_ADR_PREL_LO21";
+  case R_AARCH64_ADR_PREL_PG_HI21: return "R_AARCH64_ADR_PREL_PG_HI21";
+  case R_AARCH64_ADR_PREL_PG_HI21_NC: return "R_AARCH64_ADR_PREL_PG_HI21_NC";
+  case R_AARCH64_ADD_ABS_LO12_NC: return "R_AARCH64_ADD_ABS_LO12_NC";
+  case R_AARCH64_LDST8_ABS_LO12_NC: return "R_AARCH64_LDST8_ABS_LO12_NC";
+  case R_AARCH64_TSTBR14: return "R_AARCH64_TSTBR14";
+  case R_AARCH64_CONDBR19: return "R_AARCH64_CONDBR19";
+  case R_AARCH64_JUMP26: return "R_AARCH64_JUMP26";
+  case R_AARCH64_CALL26: return "R_AARCH64_CALL26";
+  case R_AARCH64_LDST16_ABS_LO12_NC: return "R_AARCH64_LDST16_ABS_LO12_NC";
+  case R_AARCH64_LDST32_ABS_LO12_NC: return "R_AARCH64_LDST32_ABS_LO12_NC";
+  case R_AARCH64_LDST64_ABS_LO12_NC: return "R_AARCH64_LDST64_ABS_LO12_NC";
+  case R_AARCH64_MOVW_PREL_G0: return "R_AARCH64_MOVW_PREL_G0";
+  case R_AARCH64_MOVW_PREL_G0_NC: return "R_AARCH64_MOVW_PREL_G0_NC";
+  case R_AARCH64_MOVW_PREL_G1: return "R_AARCH64_MOVW_PREL_G1";
+  case R_AARCH64_MOVW_PREL_G1_NC: return "R_AARCH64_MOVW_PREL_G1_NC";
+  case R_AARCH64_MOVW_PREL_G2: return "R_AARCH64_MOVW_PREL_G2";
+  case R_AARCH64_MOVW_PREL_G2_NC: return "R_AARCH64_MOVW_PREL_G2_NC";
+  case R_AARCH64_MOVW_PREL_G3: return "R_AARCH64_MOVW_PREL_G3";
+  case R_AARCH64_LDST128_ABS_LO12_NC: return "R_AARCH64_LDST128_ABS_LO12_NC";
+  case R_AARCH64_ADR_GOT_PAGE: return "R_AARCH64_ADR_GOT_PAGE";
+  case R_AARCH64_LD64_GOT_LO12_NC: return "R_AARCH64_LD64_GOT_LO12_NC";
+  case R_AARCH64_LD64_GOTPAGE_LO15: return "R_AARCH64_LD64_GOTPAGE_LO15";
+  case R_AARCH64_PLT32: return "R_AARCH64_PLT32";
+  case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21: return "R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21";
+  case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC: return "R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC";
+  case R_AARCH64_TLSLE_MOVW_TPREL_G2: return "R_AARCH64_TLSLE_MOVW_TPREL_G2";
+  case R_AARCH64_TLSLE_MOVW_TPREL_G1: return "R_AARCH64_TLSLE_MOVW_TPREL_G1";
+  case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC: return "R_AARCH64_TLSLE_MOVW_TPREL_G1_NC";
+  case R_AARCH64_TLSLE_MOVW_TPREL_G0: return "R_AARCH64_TLSLE_MOVW_TPREL_G0";
+  case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC: return "R_AARCH64_TLSLE_MOVW_TPREL_G0_NC";
+  case R_AARCH64_TLSLE_ADD_TPREL_HI12: return "R_AARCH64_TLSLE_ADD_TPREL_HI12";
+  case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: return "R_AARCH64_TLSLE_ADD_TPREL_LO12_NC";
+  case R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC: return "R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC";
+  case R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC: return "R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC";
+  case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC: return "R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC";
+  case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC: return "R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC";
+  case R_AARCH64_TLSDESC_ADR_PAGE21: return "R_AARCH64_TLSDESC_ADR_PAGE21";
+  case R_AARCH64_TLSDESC_LD64_LO12: return "R_AARCH64_TLSDESC_LD64_LO12";
+  case R_AARCH64_TLSDESC_ADD_LO12: return "R_AARCH64_TLSDESC_ADD_LO12";
+  case R_AARCH64_TLSDESC_CALL: return "R_AARCH64_TLSDESC_CALL";
+  case R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC: return "R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC";
+  case R_AARCH64_COPY: return "R_AARCH64_COPY";
+  case R_AARCH64_GLOB_DAT: return "R_AARCH64_GLOB_DAT";
+  case R_AARCH64_JUMP_SLOT: return "R_AARCH64_JUMP_SLOT";
+  case R_AARCH64_RELATIVE: return "R_AARCH64_RELATIVE";
+  case R_AARCH64_TLS_DTPMOD64: return "R_AARCH64_TLS_DTPMOD64";
+  case R_AARCH64_TLS_DTPREL64: return "R_AARCH64_TLS_DTPREL64";
+  case R_AARCH64_TLS_TPREL64: return "R_AARCH64_TLS_TPREL64";
+  case R_AARCH64_TLSDESC: return "R_AARCH64_TLSDESC";
+  case R_AARCH64_IRELATIVE: return "R_AARCH64_IRELATIVE";
   }
   return "unknown (" + std::to_string(r_type) + ")";
 }
@@ -647,6 +795,7 @@ struct X86_64 {
 
   static constexpr u32 wordsize = 8;
   static constexpr u32 e_machine = EM_X86_64;
+  static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = false;
@@ -682,6 +831,7 @@ struct I386 {
 
   static constexpr u32 wordsize = 4;
   static constexpr u32 e_machine = EM_386;
+  static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
@@ -700,3 +850,39 @@ template <> struct ElfVerdef<I386> : public Elf64Verdef {};
 template <> struct ElfVerdaux<I386> : public Elf64Verdaux {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
 template <> struct ElfNhdr<I386> : public Elf64Nhdr {};
+
+struct AARCH64 {
+  typedef u64 WordTy;
+
+  static constexpr u32 R_NONE = R_AARCH64_NONE;
+  static constexpr u32 R_COPY = R_AARCH64_COPY;
+  static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
+  static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_AARCH64_NONE;
+  static constexpr u32 R_TPOFF = R_AARCH64_NONE;
+  static constexpr u32 R_DTPMOD = R_AARCH64_NONE;
+  static constexpr u32 R_TLSDESC = R_AARCH64_NONE;
+
+  static constexpr u32 wordsize = 8;
+  static constexpr u32 e_machine = EM_AARCH64;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 8;
+  static constexpr bool is_rel = false;
+  static constexpr bool is_le = true;
+};
+
+template <> struct ElfSym<AARCH64> : public Elf64Sym {};
+template <> struct ElfShdr<AARCH64> : public Elf64Shdr {};
+template <> struct ElfEhdr<AARCH64> : public Elf64Ehdr {};
+template <> struct ElfPhdr<AARCH64> : public Elf64Phdr {};
+template <> struct ElfRel<AARCH64> : public Elf64Rela {};
+template <> struct ElfDyn<AARCH64> : public Elf64Dyn {};
+template <> struct ElfVerneed<AARCH64> : public Elf64Verneed {};
+template <> struct ElfVernaux<AARCH64> : public Elf64Vernaux {};
+template <> struct ElfVerdef<AARCH64> : public Elf64Verdef {};
+template <> struct ElfVerdaux<AARCH64> : public Elf64Verdaux {};
+template <> struct ElfChdr<AARCH64> : public Elf64Chdr {};
+template <> struct ElfNhdr<AARCH64> : public Elf64Nhdr {};
