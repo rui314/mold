@@ -14,7 +14,7 @@ jobs:
     - name: make
       run: make -j$(nproc)
     - name: make test
-      run: make test
+      run: make test -j$(nproc)
   build-gcc11:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
@@ -25,4 +25,4 @@ jobs:
     - name: make
       run: make CC=gcc CXX=g++ -j$(nproc)
     - name: make test
-      run: make test
+      run: make test -j$(nproc)
