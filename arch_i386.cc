@@ -156,7 +156,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
                               file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    if (rel_types[i] == R_NONE)
+    if (rel_exprs[i] == R_NONE)
       continue;
 
     const ElfRel<I386> &rel = rels[i];
@@ -177,7 +177,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 #define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 
-    switch (rel_types[i]) {
+    switch (rel_exprs[i]) {
     case R_ABS:
       write(S + A);
       break;
@@ -322,7 +322,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     const ElfRel<I386> &rel = rels[i];
 
     if (rel.r_type == R_386_NONE) {
-      rel_types[i] = R_NONE;
+      rel_exprs[i] = R_NONE;
       break;
     }
 
@@ -389,59 +389,59 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_GOT32:
     case R_386_GOT32X:
       sym.flags |= NEEDS_GOT;
-      rel_types[i] = R_GOT;
+      rel_exprs[i] = R_GOT;
       break;
     case R_386_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
-      rel_types[i] = R_PC;
+      rel_exprs[i] = R_PC;
       break;
     case R_386_GOTOFF:
-      rel_types[i] = R_GOTOFF;
+      rel_exprs[i] = R_GOTOFF;
       break;
     case R_386_GOTPC:
       sym.flags |= NEEDS_GOT;
-      rel_types[i] = R_GOTPC;
+      rel_exprs[i] = R_GOTPC;
       break;
     case R_386_TLS_GOTIE:
       sym.flags |= NEEDS_GOTTP;
-      rel_types[i] = R_TLS_GOTIE;
+      rel_exprs[i] = R_TLS_GOTIE;
       break;
     case R_386_TLS_LE:
       sym.flags |= NEEDS_GOTTP;
-      rel_types[i] = R_TLS_LE;
+      rel_exprs[i] = R_TLS_LE;
       break;
     case R_386_TLS_IE:
       sym.flags |= NEEDS_GOTTP;
-      rel_types[i] = R_TLS_IE;
+      rel_exprs[i] = R_TLS_IE;
       break;
     case R_386_TLS_GD:
       sym.flags |= NEEDS_TLSGD;
-      rel_types[i] = R_TLS_GD;
+      rel_exprs[i] = R_TLS_GD;
       break;
     case R_386_TLS_LDM:
       sym.flags |= NEEDS_TLSLD;
-      rel_types[i] = R_TLS_LD;
+      rel_exprs[i] = R_TLS_LD;
       break;
     case R_386_TLS_LDO_32:
-      rel_types[i] = R_TPOFF;
+      rel_exprs[i] = R_TPOFF;
       break;
     case R_386_SIZE32:
-      rel_types[i] = R_SIZE;
+      rel_exprs[i] = R_SIZE;
       break;
     case R_386_TLS_GOTDESC:
       if (ctx.arg.relax && !ctx.arg.shared) {
-        rel_types[i] = R_TLS_GOTDESC_RELAX;
+        rel_exprs[i] = R_TLS_GOTDESC_RELAX;
       } else {
         sym.flags |= NEEDS_TLSDESC;
-        rel_types[i] = R_TLS_GOTDESC;
+        rel_exprs[i] = R_TLS_GOTDESC;
       }
       break;
     case R_386_TLS_DESC_CALL:
       if (ctx.arg.relax && !ctx.arg.shared)
-        rel_types[i] = R_TLS_DESC_CALL_RELAX;
+        rel_exprs[i] = R_TLS_DESC_CALL_RELAX;
       else
-        rel_types[i] = R_NONE;
+        rel_exprs[i] = R_NONE;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "

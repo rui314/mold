@@ -248,7 +248,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
         i64 size = shdr.sh_size / sizeof(ElfRel<E>);
-        target->rel_types.reset(new u8[size]);
+        target->rel_exprs.reset(new u8[size]);
       }
     }
   }

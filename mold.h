@@ -279,7 +279,7 @@ public:
   std::string_view contents;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
-  std::unique_ptr<u8[]> rel_types;
+  std::unique_ptr<u8[]> rel_exprs;
   i32 fde_begin = -1;
   i32 fde_end = -1;
 

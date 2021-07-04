@@ -90,7 +90,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
 
   switch (action) {
   case NONE:
-    rel_types[i] = rel_type;
+    rel_exprs[i] = rel_type;
     return;
   case ERROR:
     break;
@@ -102,11 +102,11 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
                  << " protected symbol '" << sym << "', defined in "
                  << *sym.file;
     sym.flags |= NEEDS_COPYREL;
-    rel_types[i] = rel_type;
+    rel_exprs[i] = rel_type;
     return;
   case PLT:
     sym.flags |= NEEDS_PLT;
-    rel_types[i] = rel_type;
+    rel_exprs[i] = rel_type;
     return;
   case DYNREL:
     if (!is_writable) {
@@ -115,7 +115,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
       ctx.has_textrel = true;
     }
     sym.flags |= NEEDS_DYNSYM;
-    rel_types[i] = R_DYN;
+    rel_exprs[i] = R_DYN;
     file.num_dynrel++;
     return;
   case BASEREL:
@@ -124,7 +124,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
         break;
       ctx.has_textrel = true;
     }
-    rel_types[i] = R_BASEREL;
+    rel_exprs[i] = R_BASEREL;
     file.num_dynrel++;
     return;
   default:
