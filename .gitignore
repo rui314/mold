@@ -1,6 +1,8 @@
 *.o
 *.so
 *~
+.cache
+compile_commands.json
 /mold
 /test/tmp
 options.inc
