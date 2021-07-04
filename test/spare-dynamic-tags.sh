@@ -8,11 +8,12 @@ mkdir -p $t
 echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
-readelf --wide --sections $t/exe > $t/log
-grep -Pq '\.dynamic.*\b0001b0\b' $t/log
+size_before=$((16#$(readelf --wide --sections $t/exe  | grep .dynamic | tr -s ' ' | cut -d ' ' -f7)))
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-spare-dynamic-tags=100
-readelf --wide --sections $t/exe > $t/log
-grep -Pq '\.dynamic.*\b002010\b' $t/log
+size_after=$((16#$(readelf --wide --sections $t/exe  | grep .dynamic | tr -s ' ' | cut -d ' ' -f7)))
+
+# Ensure space for 95 additional spare tags has been added (default: 5)
+[[ $(( $size_after - $size_before )) == $(( 16*95 )) ]]
 
 echo OK
