@@ -266,6 +266,9 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
                                 file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
+    if (rel_types[i] == R_NONE)
+      continue;
+
     const ElfRel<X86_64> &rel = rels[i];
     Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -286,8 +289,6 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel_types[i]) {
-    case R_NONE:
-      break;
     case R_ABS:
       write(S + A);
       break;

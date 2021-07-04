@@ -156,6 +156,9 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
                               file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
+    if (rel_types[i] == R_NONE)
+      continue;
+
     const ElfRel<I386> &rel = rels[i];
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -175,8 +178,6 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 
     switch (rel_types[i]) {
-    case R_NONE:
-      break;
     case R_ABS:
       write(S + A);
       break;
