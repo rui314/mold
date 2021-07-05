@@ -323,7 +323,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
 
     if (rel.r_type == R_386_NONE) {
       rel_exprs[i] = R_NONE;
-      break;
+      continue;
     }
 
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
