@@ -24,7 +24,7 @@ TSAN ?= 0
 ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0
 else
-  CPPFLAGS += -O2
+  CPPFLAGS += -O2 -DNDEBUG
 endif
 
 ifeq ($(LTO), 1)
