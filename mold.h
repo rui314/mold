@@ -2142,7 +2142,7 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 template <typename E>
 inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
   assert(&elf_syms[0] <= &esym);
-  assert(&esym < &elf_syms[elf_syms.size()]);
+  assert(&esym <= &elf_syms[elf_syms.size() - 1]);
 
   if (esym.st_shndx == SHN_XINDEX)
     return symtab_shndx_sec[&esym - &elf_syms[0]];
