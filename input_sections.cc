@@ -80,8 +80,7 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 template <typename E>
-void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
-                               u16 rel_type, i64 i) {
+void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
   std::span<ElfRel<E>> rels = get_rels(ctx);
   const ElfRel<E> &rel = rels[i];
   Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -90,7 +89,6 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
 
   switch (action) {
   case NONE:
-    rel_exprs[i] = rel_type;
     return;
   case ERROR:
     break;
@@ -102,11 +100,9 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4],
                  << " protected symbol '" << sym << "', defined in "
                  << *sym.file;
     sym.flags |= NEEDS_COPYREL;
-    rel_exprs[i] = rel_type;
     return;
   case PLT:
     sym.flags |= NEEDS_PLT;
-    rel_exprs[i] = rel_type;
     return;
   case DYNREL:
     if (!is_writable) {

@@ -1,17 +1,5 @@
 #include "mold.h"
 
-enum {
-  R_TLS_GOTIE = R_END + 1,
-  R_TLS_LE,
-  R_TLS_IE,
-  R_TLS_GD,
-  R_TLS_LD,
-  R_TLS_GOTDESC,
-  R_TLS_GOTDESC_RELAX,
-  R_TLS_DESC_CALL_RELAX,
-  R_TPOFF,
-};
-
 template <>
 void PltSection<I386>::copy_buf(Context<I386> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -156,10 +144,10 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
                               file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    if (rel_exprs[i] == R_NONE)
+    const ElfRel<I386> &rel = rels[i];
+    if (rel.r_type == R_386_NONE)
       continue;
 
-    const ElfRel<I386> &rel = rels[i];
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -178,69 +166,77 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 
     switch (rel_exprs[i]) {
-    case R_ABS:
-      write(S + A);
-      break;
     case R_BASEREL:
       *dynrel++ = {P, R_386_RELATIVE, 0};
       *(u32 *)loc += S + A;
-      break;
+      continue;
     case R_DYN:
       *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
       *(u32 *)loc += A;
-      break;
-    case R_PC:
-      write(S + A - P);
-      break;
-    case R_GOT:
-      write(sym.get_got_addr(ctx) + A - GOTPLT);
-      break;
-    case R_GOTOFF:
-      write(S + A - GOTPLT);
-      break;
-    case R_GOTPC:
-      write(GOTPLT + A - P);
-      break;
-    case R_GOTPCREL:
-      write(G + GOTPLT + A - P);
-      break;
-    case R_TLS_GOTIE:
-      write(sym.get_gottp_addr(ctx) + A - GOTPLT);
-      break;
-    case R_TLS_LE:
-      write(S + A - ctx.tls_end);
-      break;
-    case R_TLS_IE:
-      write(sym.get_gottp_addr(ctx) + A);
-      break;
-    case R_TLS_GD:
-      write(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
-      break;
-    case R_TLS_LD:
-      write(ctx.got->get_tlsld_addr(ctx) + A - GOTPLT);
-      break;
-    case R_TPOFF:
-      write(S + A - ctx.tls_begin);
-      break;
-    case R_TLS_GOTDESC:
-      write(sym.get_tlsdesc_addr(ctx) + A - GOTPLT);
-      break;
-    case R_TLS_GOTDESC_RELAX: {
-      static const u8 insn[] = {
-        0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
-      };
-      memcpy(loc - 2, insn, sizeof(insn));
-      write(S + A - ctx.tls_end);
-      break;
+      continue;
     }
-    case R_TLS_DESC_CALL_RELAX:
-      // call *(%rax) -> nop
-      loc[0] = 0x66;
-      loc[1] = 0x90;
-      break;
-    case R_SIZE:
+
+    switch (rel.r_type) {
+    case R_386_8:
+    case R_386_16:
+    case R_386_32:
+      write(S + A);
+      continue;
+    case R_386_PC8:
+    case R_386_PC16:
+    case R_386_PC32:
+    case R_386_PLT32:
+      write(S + A - P);
+      continue;
+    case R_386_GOT32:
+    case R_386_GOT32X:
+      write(sym.get_got_addr(ctx) + A - GOTPLT);
+      continue;
+    case R_386_GOTOFF:
+      write(S + A - GOTPLT);
+      continue;
+    case R_386_GOTPC:
+      write(GOTPLT + A - P);
+      continue;
+    case R_386_TLS_GOTIE:
+      write(sym.get_gottp_addr(ctx) + A - GOTPLT);
+      continue;
+    case R_386_TLS_LE:
+      write(S + A - ctx.tls_end);
+      continue;
+    case R_386_TLS_IE:
+      write(sym.get_gottp_addr(ctx) + A);
+      continue;
+    case R_386_TLS_GD:
+      write(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
+      continue;
+    case R_386_TLS_LDM:
+      write(ctx.got->get_tlsld_addr(ctx) + A - GOTPLT);
+      continue;
+    case R_386_TLS_LDO_32:
+      write(S + A - ctx.tls_begin);
+      continue;
+    case R_386_SIZE32:
       write(sym.esym().st_size + A);
-      break;
+      continue;
+    case R_386_TLS_GOTDESC:
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
+        static const u8 insn[] = {
+          0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
+        };
+        memcpy(loc - 2, insn, sizeof(insn));
+        write(S + A - ctx.tls_end);
+      } else {
+        write(sym.get_tlsdesc_addr(ctx) + A - GOTPLT);
+      }
+      continue;
+    case R_386_TLS_DESC_CALL:
+      if (ctx.arg.relax && !ctx.arg.shared) {
+        // call *(%rax) -> nop
+        loc[0] = 0x66;
+        loc[1] = 0x90;
+      }
+      continue;
     default:
       unreachable(ctx);
     }
@@ -320,11 +316,8 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<I386> &rel = rels[i];
-
-    if (rel.r_type == R_386_NONE) {
-      rel_exprs[i] = R_NONE;
+    if (rel.r_type == R_386_NONE)
       continue;
-    }
 
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
@@ -348,8 +341,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  NONE,     ERROR, ERROR,         ERROR },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_ABS, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_386_32: {
@@ -359,8 +351,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    DYNREL,        PLT    },     // PDE
       };
-
-      dispatch(ctx, table, R_ABS, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_386_PC8:
@@ -371,8 +362,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_PC, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_386_PC32: {
@@ -382,66 +372,37 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_PC, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_386_GOT32:
     case R_386_GOT32X:
+    case R_386_GOTPC:
       sym.flags |= NEEDS_GOT;
-      rel_exprs[i] = R_GOT;
       break;
     case R_386_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
-      rel_exprs[i] = R_PC;
-      break;
-    case R_386_GOTOFF:
-      rel_exprs[i] = R_GOTOFF;
-      break;
-    case R_386_GOTPC:
-      sym.flags |= NEEDS_GOT;
-      rel_exprs[i] = R_GOTPC;
       break;
     case R_386_TLS_GOTIE:
-      sym.flags |= NEEDS_GOTTP;
-      rel_exprs[i] = R_TLS_GOTIE;
-      break;
     case R_386_TLS_LE:
-      sym.flags |= NEEDS_GOTTP;
-      rel_exprs[i] = R_TLS_LE;
-      break;
     case R_386_TLS_IE:
       sym.flags |= NEEDS_GOTTP;
-      rel_exprs[i] = R_TLS_IE;
       break;
     case R_386_TLS_GD:
       sym.flags |= NEEDS_TLSGD;
-      rel_exprs[i] = R_TLS_GD;
       break;
     case R_386_TLS_LDM:
       sym.flags |= NEEDS_TLSLD;
-      rel_exprs[i] = R_TLS_LD;
-      break;
-    case R_386_TLS_LDO_32:
-      rel_exprs[i] = R_TPOFF;
-      break;
-    case R_386_SIZE32:
-      rel_exprs[i] = R_SIZE;
       break;
     case R_386_TLS_GOTDESC:
-      if (ctx.arg.relax && !ctx.arg.shared) {
-        rel_exprs[i] = R_TLS_GOTDESC_RELAX;
-      } else {
+      if (!ctx.arg.relax || ctx.arg.shared)
         sym.flags |= NEEDS_TLSDESC;
-        rel_exprs[i] = R_TLS_GOTDESC;
-      }
       break;
+    case R_386_GOTOFF:
+    case R_386_TLS_LDO_32:
+    case R_386_SIZE32:
     case R_386_TLS_DESC_CALL:
-      if (ctx.arg.relax && !ctx.arg.shared)
-        rel_exprs[i] = R_TLS_DESC_CALL_RELAX;
-      else
-        rel_exprs[i] = R_NONE;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "

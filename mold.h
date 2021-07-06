@@ -150,17 +150,8 @@ public:
 //
 
 enum {
-  R_NONE = 1,
-  R_ABS,
-  R_DYN,
+  R_DYN = 1,
   R_BASEREL,
-  R_PC,
-  R_GOT,
-  R_GOTOFF,
-  R_GOTPC,
-  R_GOTPCREL,
-  R_SIZE,
-  R_END,
 };
 
 // .eh_frame section contains CIE and FDE records to teach the runtime
@@ -312,7 +303,7 @@ private:
   void uncompress_new_style(Context<E> &ctx);
   void do_uncompress(Context<E> &ctx, std::string_view data, u64 size);
 
-  void dispatch(Context<E> &ctx, Action table[3][4], u16 rel_type, i64 i);
+  void dispatch(Context<E> &ctx, Action table[3][4], i64 i);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
 };
 

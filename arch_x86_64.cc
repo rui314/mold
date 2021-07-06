@@ -1,22 +1,5 @@
 #include "mold.h"
 
-enum {
-  R_GOTPCRELX_RELAX = R_END + 1,
-  R_REX_GOTPCRELX_RELAX,
-  R_TLSGD,
-  R_TLSGD_RELAX_LE,
-  R_TLSLD,
-  R_TLSLD_RELAX_LE,
-  R_DTPOFF,
-  R_DTPOFF_RELAX,
-  R_TPOFF,
-  R_GOTTPOFF,
-  R_GOTTPOFF_RELAX,
-  R_GOTPC_TLSDESC,
-  R_GOTPC_TLSDESC_RELAX_LE,
-  R_TLSDESC_CALL_RELAX,
-};
-
 template <>
 void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -266,10 +249,10 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
                                 file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    if (rel_exprs[i] == R_NONE)
+    const ElfRel<X86_64> &rel = rels[i];
+    if (rel.r_type == R_X86_64_NONE)
       continue;
 
-    const ElfRel<X86_64> &rel = rels[i];
     Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
@@ -289,110 +272,135 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel_exprs[i]) {
-    case R_ABS:
-      write(S + A);
-      break;
     case R_BASEREL:
       *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       *(u64 *)loc = S + A;
-      break;
+      continue;
     case R_DYN:
       *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
       *(u64 *)loc = A;
-      break;
-    case R_PC:
+      continue;
+    }
+
+    switch (rel.r_type) {
+    case R_X86_64_8:
+    case R_X86_64_16:
+    case R_X86_64_32:
+    case R_X86_64_32S:
+    case R_X86_64_64:
+      write(S + A);
+      continue;
+    case R_X86_64_PC8:
+    case R_X86_64_PC16:
+    case R_X86_64_PC32:
+    case R_X86_64_PC64:
+    case R_X86_64_PLT32:
       write(S + A - P);
-      break;
-    case R_GOT:
+      continue;
+    case R_X86_64_GOT32:
+    case R_X86_64_GOT64:
       write(G + A);
-      break;
-    case R_GOTPC:
+      continue;
+    case R_X86_64_GOTPC32:
+    case R_X86_64_GOTPC64:
       write(GOT + A - P);
-      break;
-    case R_GOTPCREL:
+      continue;
+    case R_X86_64_GOTPCREL:
+    case R_X86_64_GOTPCREL64:
       write(G + GOT + A - P);
-      break;
-    case R_GOTPCRELX_RELAX: {
-      u32 insn = relax_gotpcrelx(loc - 2);
-      loc[-2] = insn >> 8;
-      loc[-1] = insn;
-      write(S + A - P);
-      break;
-    }
-    case R_REX_GOTPCRELX_RELAX: {
-      u32 insn = relax_rex_gotpcrelx(loc - 3);
-      loc[-3] = insn >> 16;
-      loc[-2] = insn >> 8;
-      loc[-1] = insn;
-      write(S + A - P);
-      break;
-    }
-    case R_TLSGD:
-      write(sym.get_tlsgd_addr(ctx) + A - P);
-      break;
-    case R_TLSGD_RELAX_LE: {
-      // Relax GD to LE
-      static const u8 insn[] = {
-        0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-        0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
-      };
-      memcpy(loc - 4, insn, sizeof(insn));
-      *(u32 *)(loc + 8) = S - ctx.tls_end + A + 4;
-      i++;
-      break;
-    }
-    case R_TLSLD:
-      write(ctx.got->get_tlsld_addr(ctx) + A - P);
-      break;
-    case R_TLSLD_RELAX_LE: {
-      // Relax LD to LE
-      static const u8 insn[] = {
-        0x66, 0x66, 0x66,                         // (padding)
-        0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-      };
-      memcpy(loc - 3, insn, sizeof(insn));
-      i++;
-      break;
-    }
-    case R_DTPOFF:
-      write(S + A - ctx.tls_begin);
-      break;
-    case R_DTPOFF_RELAX:
+      continue;
+    case R_X86_64_GOTPCRELX:
+      if (sym.get_got_idx(ctx) == -1) {
+        u32 insn = relax_gotpcrelx(loc - 2);
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
+        write(S + A - P);
+      } else {
+        write(G + GOT + A - P);
+      }
+      continue;
+    case R_X86_64_REX_GOTPCRELX:
+      if (sym.get_got_idx(ctx) == -1) {
+        u32 insn = relax_rex_gotpcrelx(loc - 3);
+        loc[-3] = insn >> 16;
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
+        write(S + A - P);
+      } else {
+        write(G + GOT + A - P);
+      }
+      continue;
+    case R_X86_64_TLSGD:
+      if (sym.get_tlsgd_idx(ctx) == -1) {
+        // Relax GD to LE
+        static const u8 insn[] = {
+          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+          0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
+        };
+        memcpy(loc - 4, insn, sizeof(insn));
+        *(u32 *)(loc + 8) = S - ctx.tls_end + A + 4;
+        i++;
+      } else {
+        write(sym.get_tlsgd_addr(ctx) + A - P);
+      }
+      continue;
+    case R_X86_64_TLSLD:
+      if (ctx.got->tlsld_idx == -1) {
+        // Relax LD to LE
+        static const u8 insn[] = {
+          0x66, 0x66, 0x66,                         // (padding)
+          0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+        };
+        memcpy(loc - 3, insn, sizeof(insn));
+        i++;
+      } else {
+        write(ctx.got->get_tlsld_addr(ctx) + A - P);
+      }
+      continue;
+    case R_X86_64_DTPOFF32:
+    case R_X86_64_DTPOFF64:
+      if (ctx.arg.relax && !ctx.arg.shared)
+        write(S + A - ctx.tls_end);
+      else
+        write(S + A - ctx.tls_begin);
+      continue;
+    case R_X86_64_TPOFF32:
+    case R_X86_64_TPOFF64:
       write(S + A - ctx.tls_end);
-      break;
-    case R_TPOFF:
-      write(S + A - ctx.tls_end);
-      break;
-    case R_GOTTPOFF:
-      write(sym.get_gottp_addr(ctx) + A - P);
-      break;
-    case R_GOTTPOFF_RELAX: {
-      u32 insn = relax_gottpoff(loc - 3);
-      loc[-3] = insn >> 16;
-      loc[-2] = insn >> 8;
-      loc[-1] = insn;
-      write(S + A - ctx.tls_end + 4);
-      break;
-    }
-    case R_GOTPC_TLSDESC:
-      write(sym.get_tlsdesc_addr(ctx) + A - P);
-      break;
-    case R_GOTPC_TLSDESC_RELAX_LE: {
-      static const u8 insn[] = {
-        0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
-      };
-      memcpy(loc - 3, insn, sizeof(insn));
-      write(S + A - ctx.tls_end + 4);
-      break;
-    }
-    case R_SIZE:
+      continue;
+    case R_X86_64_GOTTPOFF:
+      if (sym.get_gottp_idx(ctx) == -1) {
+        u32 insn = relax_gottpoff(loc - 3);
+        loc[-3] = insn >> 16;
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
+        write(S + A - ctx.tls_end + 4);
+      } else {
+        write(sym.get_gottp_addr(ctx) + A - P);
+      }
+      continue;
+    case R_X86_64_GOTPC32_TLSDESC:
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
+        static const u8 insn[] = {
+          0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
+        };
+        memcpy(loc - 3, insn, sizeof(insn));
+        write(S + A - ctx.tls_end + 4);
+      } else {
+        write(sym.get_tlsdesc_addr(ctx) + A - P);
+      }
+      continue;
+    case R_X86_64_SIZE32:
+    case R_X86_64_SIZE64:
       write(sym.esym().st_size + A);
-      break;
-    case R_TLSDESC_CALL_RELAX:
-      // call *(%rax) -> nop
-      loc[0] = 0x66;
-      loc[1] = 0x90;
-      break;
+      continue;
+    case R_X86_64_TLSDESC_CALL:
+      if (ctx.arg.relax && !ctx.arg.shared) {
+        // call *(%rax) -> nop
+        loc[0] = 0x66;
+        loc[1] = 0x90;
+      }
+      continue;
     default:
       unreachable(ctx);
     }
@@ -487,11 +495,8 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
-
-    if (rel.r_type == R_X86_64_NONE) {
-      rel_exprs[i] = R_NONE;
+    if (rel.r_type == R_X86_64_NONE)
       continue;
-    }
 
     Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
@@ -520,8 +525,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  NONE,     ERROR, ERROR,         ERROR },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_ABS, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_X86_64_64: {
@@ -533,8 +537,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    DYNREL,        PLT    },     // PDE
       };
-
-      dispatch(ctx, table, R_ABS, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_X86_64_PC8:
@@ -546,8 +549,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_PC, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_X86_64_PC64: {
@@ -557,68 +559,47 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-
-      dispatch(ctx, table, R_PC, i);
+      dispatch(ctx, table, i);
       break;
     }
     case R_X86_64_GOT32:
     case R_X86_64_GOT64:
-      sym.flags |= NEEDS_GOT;
-      rel_exprs[i] = R_GOT;
-      break;
     case R_X86_64_GOTPC32:
     case R_X86_64_GOTPC64:
-      sym.flags |= NEEDS_GOT;
-      rel_exprs[i] = R_GOTPC;
-      break;
     case R_X86_64_GOTPCREL:
     case R_X86_64_GOTPCREL64:
       sym.flags |= NEEDS_GOT;
-      rel_exprs[i] = R_GOTPCREL;
       break;
-    case R_X86_64_GOTPCRELX: {
+    case R_X86_64_GOTPCRELX:
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
-          relax_gotpcrelx(loc - 2)) {
-        rel_exprs[i] = R_GOTPCRELX_RELAX;
-      } else {
+      if (!ctx.arg.relax || sym.is_imported || !sym.is_relative(ctx) ||
+          !relax_gotpcrelx(loc - 2))
         sym.flags |= NEEDS_GOT;
-        rel_exprs[i] = R_GOTPCREL;
-      }
       break;
-    }
     case R_X86_64_REX_GOTPCRELX:
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
-      if (ctx.arg.relax && !sym.is_imported && sym.is_relative(ctx) &&
-          relax_rex_gotpcrelx(loc - 3)) {
-        rel_exprs[i] = R_REX_GOTPCRELX_RELAX;
-      } else {
+      if (!ctx.arg.relax || sym.is_imported || !sym.is_relative(ctx) ||
+          !relax_rex_gotpcrelx(loc - 3))
         sym.flags |= NEEDS_GOT;
-        rel_exprs[i] = R_GOTPCREL;
-      }
       break;
     case R_X86_64_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
-      rel_exprs[i] = R_PC;
       break;
-    case R_X86_64_TLSGD: {
+    case R_X86_64_TLSGD:
       if (i + 1 == rels.size())
         Fatal(ctx) << *this
                    << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
 
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported) {
-        rel_exprs[i++] = R_TLSGD_RELAX_LE;
-      } else {
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
+        i++;
+      else
         sym.flags |= NEEDS_TLSGD;
-        rel_exprs[i] = R_TLSGD;
-      }
       break;
-    }
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size())
         Fatal(ctx) << *this
@@ -626,59 +607,36 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
       if (sym.is_imported)
         Fatal(ctx) << *this << ": TLSLD reloc refers external symbol " << sym;
 
-      if (ctx.arg.relax && !ctx.arg.shared) {
-        rel_exprs[i++] = R_TLSLD_RELAX_LE;
-      } else {
+      if (ctx.arg.relax && !ctx.arg.shared)
+        i++;
+      else
         sym.flags |= NEEDS_TLSLD;
-        rel_exprs[i] = R_TLSLD;
-      }
       break;
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       if (sym.is_imported)
         Fatal(ctx) << *this << ": DTPOFF reloc refers external symbol " << sym;
-
-      if (ctx.arg.relax && !ctx.arg.shared)
-        rel_exprs[i] = R_DTPOFF_RELAX;
-      else
-        rel_exprs[i] = R_DTPOFF;
-      break;
-    case R_X86_64_TPOFF32:
-    case R_X86_64_TPOFF64:
-      rel_exprs[i] = R_TPOFF;
       break;
     case R_X86_64_GOTTPOFF:
       ctx.has_gottp_rel = true;
 
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported &&
-          relax_gottpoff(loc - 3)) {
-        rel_exprs[i] = R_GOTTPOFF_RELAX;
-      } else {
+      if (!ctx.arg.relax || ctx.arg.shared || sym.is_imported ||
+          !relax_gottpoff(loc - 3))
         sym.flags |= NEEDS_GOTTP;
-        rel_exprs[i] = R_GOTTPOFF;
-      }
       break;
     case R_X86_64_GOTPC32_TLSDESC:
       if (memcmp(loc - 3, "\x48\x8d\x05", 3))
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
 
-      if (ctx.arg.relax && !ctx.arg.shared) {
-        rel_exprs[i] = R_GOTPC_TLSDESC_RELAX_LE;
-      } else {
+      if (!ctx.arg.relax || ctx.arg.shared)
         sym.flags |= NEEDS_TLSDESC;
-        rel_exprs[i] = R_GOTPC_TLSDESC;
-      }
       break;
+    case R_X86_64_TPOFF32:
+    case R_X86_64_TPOFF64:
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:
-      rel_exprs[i] = R_SIZE;
-      break;
     case R_X86_64_TLSDESC_CALL:
-      if (ctx.arg.relax && !ctx.arg.shared)
-        rel_exprs[i] = R_TLSDESC_CALL_RELAX;
-      else
-        rel_exprs[i] = R_NONE;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "
