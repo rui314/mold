@@ -2094,6 +2094,8 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
 
 template <typename E>
 inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
+  if (fde_begin == -1)
+    return {};
   std::span<FdeRecord<E>> span(file.fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
 }
