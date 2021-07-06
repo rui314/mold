@@ -185,6 +185,9 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     case R_AARCH64_LD64_GOT_LO12_NC:
       *(u32 *)loc |= extract(G + GOT + A, 11, 3) << 10;
       continue;
+    case R_AARCH64_LD64_GOTPAGE_LO15:
+      *(u32 *)loc |= extract(G + GOT + A - page(GOT), 14, 3) << 10;
+      continue;
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
       write_addr(loc, (page(sym.get_gottp_addr(ctx) + A) - page(P)) >> 12);
       continue;
@@ -276,15 +279,14 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
       break;
     }
     case R_AARCH64_ADR_GOT_PAGE:
+    case R_AARCH64_LD64_GOT_LO12_NC:
+    case R_AARCH64_LD64_GOTPAGE_LO15:
       sym.flags |= NEEDS_GOT;
       break;
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
-      break;
-    case R_AARCH64_LD64_GOT_LO12_NC:
-      sym.flags |= NEEDS_GOT;
       break;
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
