@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: apt-get
-      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
+      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
     - name: make
       run: make -j$(nproc)
     - name: make test
@@ -21,7 +21,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: apt-get
-      run: dpkg --add-architecture i386 && apt-get update && apt-get install -y libssl-dev zlib1g-dev libxxhash-dev cmake clang dwarfdump bsdextrautils libgcc-9-dev gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu libc6-dev:i386 lib32gcc-10-dev
+      run: dpkg --add-architecture i386 && apt-get update && apt-get install -y libssl-dev zlib1g-dev libxxhash-dev cmake clang dwarfdump bsdextrautils libgcc-9-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev:i386 lib32gcc-10-dev
     - name: make
       run: make CC=gcc CXX=g++ -j$(nproc)
     - name: make test
