@@ -330,7 +330,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     i64 rel_begin = rel_idx;
     while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
       rel_idx++;
-    assert(begin_offset <= rels[rel_begin].r_offset);
+    assert(rel_idx == rels.size() || begin_offset <= rels[rel_begin].r_offset);
 
     if (id == 0) {
       // This is CIE.
@@ -836,6 +836,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
     std::lock_guard lock(sym.mu);
     if (get_rank(this, esym, true) < get_rank(sym)) {
       sym.file = this;
+      sym.sym_idx = i;
       sym.is_lazy = true;
       sym.is_weak = false;
       if (sym.traced)
