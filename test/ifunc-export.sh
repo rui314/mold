@@ -32,6 +32,6 @@ resolve_foobar:
 EOF
 
 clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
-readelf --dyn-syms $t/b.so | grep -Pq '0 FUNC    GLOBAL DEFAULT   \d+ foobar'
+readelf --dyn-syms $t/b.so | grep -Pq '0 (IFUNC|<OS specific>: 10) GLOBAL DEFAULT   \d+ foobar'
 
 echo OK
