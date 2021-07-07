@@ -1003,6 +1003,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else {
       esym.st_shndx = sym.input_section->output_section->shndx;
       esym.st_value = sym.get_addr(ctx, false);
+      esym.st_visibility = sym.visibility;
     }
   }
 }
