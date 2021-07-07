@@ -234,9 +234,30 @@ void InputSection<AARCH64>::apply_reloc_nonalloc(Context<AARCH64> &ctx, u8 *base
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A   (ref ? ref->addend : rel.r_addend)
+#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
+#define GOT ctx.got->shdr.sh_addr
+
     switch (rel.r_type) {
-      // TODO
+    case R_AARCH64_ABS64:
+      *(u64 *)loc = S + A;
+      continue;
+    case R_AARCH64_ABS32:
+      *(u32 *)loc = S + A;
+      continue;
+    default:
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel_to_string<X86_64>(rel.r_type);
+      break;
     }
+
+#undef S
+#undef A
+#undef P
+#undef G
+#undef GOT
   }
 }
 

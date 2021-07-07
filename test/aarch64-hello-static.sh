@@ -5,7 +5,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | aarch64-linux-gnu-gcc -o $t/a.o -c -xc -
+cat <<EOF | aarch64-linux-gnu-gcc -o $t/a.o -c -g -xc -
 #include <stdio.h>
 
 int main() {
