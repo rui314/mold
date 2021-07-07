@@ -1176,7 +1176,8 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
 }
 
 bool is_c_identifier(std::string_view name) {
-  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*");
+  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*",
+                       std::regex_constants::optimize);
   return std::regex_match(name.begin(), name.end(), re);
 }
 

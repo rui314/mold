@@ -311,7 +311,7 @@ void sort_init_fini(Context<E> &ctx) {
   Timer t(ctx, "sort_init_fini");
 
   auto get_priority = [](InputSection<E> *isec) {
-    static std::regex re(R"(_array\.(\d+)$)");
+    static std::regex re(R"(_array\.(\d+)$)", std::regex_constants::optimize);
     std::string name = isec->name().begin();
     std::smatch m;
     if (std::regex_search(name, m, re))
