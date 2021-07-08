@@ -348,6 +348,7 @@ public:
   OutputEhdr() : OutputChunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -357,7 +358,9 @@ public:
 template <typename E>
 class OutputShdr : public OutputChunk<E> {
 public:
-  OutputShdr() : OutputChunk<E>(this->HEADER) {}
+  OutputShdr() : OutputChunk<E>(this->HEADER) {
+    this->shdr.sh_addralign = E::wordsize;
+  }
 
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
@@ -369,6 +372,7 @@ class OutputPhdr : public OutputChunk<E> {
 public:
   OutputPhdr() : OutputChunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = E::wordsize;
   }
 
   void update_shdr(Context<E> &ctx) override;
