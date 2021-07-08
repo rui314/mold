@@ -61,7 +61,7 @@ static std::vector<u8> do_compress(std::string_view input) {
   return buf;
 }
 
-Compressor::Compressor(std::string_view input) {
+ZlibCompressor::ZlibCompressor(std::string_view input) {
   std::vector<std::string_view> inputs = split(input);
   std::vector<u64> adlers(inputs.size());
   shards.resize(inputs.size());
@@ -78,14 +78,14 @@ Compressor::Compressor(std::string_view input) {
     checksum = adler32_combine(checksum, adlers[i], inputs[i].size());
 }
 
-i64 Compressor::size() const {
+i64 ZlibCompressor::size() const {
   i64 size = 2;    // +2 for header
   for (const std::vector<u8> &shard : shards)
     size += shard.size();
   return size + 6; // +6 for trailer and checksum
 }
 
-void Compressor::write_to(u8 *buf) {
+void ZlibCompressor::write_to(u8 *buf) {
   // Write a zlib-format header
   buf[0] = 0x78;
   buf[1] = 0x9c;
@@ -107,4 +107,56 @@ void Compressor::write_to(u8 *buf) {
 
   // Write a checksum
   write32be(end - 4, checksum);
+}
+
+GzipCompressor::GzipCompressor(std::string_view input) {
+  std::vector<std::string_view> inputs = split(input);
+  std::vector<u32> crc(inputs.size());
+  shards.resize(inputs.size());
+
+  // Compress each shard
+  tbb::parallel_for((i64)0, (i64)inputs.size(), [&](i64 i) {
+    crc[i] = crc32(0, (u8 *)inputs[i].data(), inputs[i].size());
+    shards[i] = do_compress(inputs[i]);
+  });
+
+  // Combine checksums
+  checksum = crc[0];
+  for (i64 i = 1; i < inputs.size(); i++)
+    checksum = crc32_combine(checksum, crc[i], inputs[i].size());
+
+  uncompressed_size = input.size();
+}
+
+i64 GzipCompressor::size() const {
+  i64 size = 10;    // +10 for header
+  for (const std::vector<u8> &shard : shards)
+    size += shard.size();
+  return size + 10; // +10 for trailer and checksum
+}
+
+void GzipCompressor::write_to(u8 *buf) {
+  // Write a zlib-format header
+  memset(buf, 0, 10);
+  buf[0] = 0x1f; // magic
+  buf[1] = 0x8b; // magic
+  buf[2] = 0x08; // compression method is zlib
+  buf[9] = 0xff; // made on unknown OS
+
+  // Copy compressed data
+  std::vector<i64> offsets(shards.size());
+  offsets[0] = 10; // +10 for header
+  for (i64 i = 1; i < shards.size(); i++)
+    offsets[i] = offsets[i - 1] + shards[i - 1].size();
+
+  tbb::parallel_for((i64)0, (i64)shards.size(), [&](i64 i) {
+    memcpy(&buf[offsets[i]], shards[i].data(), shards[i].size());
+  });
+
+  // Write a trailer
+  u8 *end = buf + size();
+  end[-10] = 0x3; // two-byte zlib stream terminator
+  end[-9] = 0;
+  *(u32 *)(end - 8) = checksum;
+  *(u32 *)(end - 4) = uncompressed_size;
 }

@@ -63,7 +63,8 @@ template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
 
-class Compressor;
+class ZlibCompressor;
+class GzipCompressor;
 class TarFile;
 
 template <typename E> void cleanup();
@@ -815,7 +816,7 @@ public:
 
 private:
   ElfChdr<E> chdr = {};
-  std::unique_ptr<Compressor> contents;
+  std::unique_ptr<ZlibCompressor> contents;
 };
 
 template <typename E>
@@ -827,7 +828,7 @@ public:
 private:
   static constexpr i64 HEADER_SIZE = 12;
   i64 original_size = 0;
-  std::unique_ptr<Compressor> contents;
+  std::unique_ptr<ZlibCompressor> contents;
 };
 
 template <typename E>
@@ -842,7 +843,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  std::unique_ptr<TarFile> tar;
+  std::unique_ptr<GzipCompressor> contents;
 };
 
 bool is_c_identifier(std::string_view name);
@@ -1270,15 +1271,27 @@ void parse_nonpositional_args(Context<E> &ctx,
 // compress.cc
 //
 
-class Compressor {
+class ZlibCompressor {
 public:
-  Compressor(std::string_view input);
+  ZlibCompressor(std::string_view input);
   void write_to(u8 *buf);
   i64 size() const;
 
 private:
   std::vector<std::vector<u8>> shards;
   u64 checksum = 0;
+};
+
+class GzipCompressor {
+public:
+  GzipCompressor(std::string_view input);
+  void write_to(u8 *buf);
+  i64 size() const;
+
+private:
+  std::vector<std::vector<u8>> shards;
+  u32 checksum = 0;
+  u32 uncompressed_size = 0;
 };
 
 //
@@ -1298,7 +1311,7 @@ public:
   TarFile(std::string basedir) : basedir(basedir) {}
 
   void append(std::string path, std::string_view data);
-  void write(u8 *buf);
+  void write_to(u8 *buf);
   i64 size() const { return size_; }
 
 private:

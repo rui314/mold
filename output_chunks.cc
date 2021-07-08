@@ -1709,7 +1709,7 @@ GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
 
-  contents.reset(new Compressor({(char *)buf.get(), chunk.shdr.sh_size}));
+  contents.reset(new ZlibCompressor({(char *)buf.get(), chunk.shdr.sh_size}));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
@@ -1735,7 +1735,7 @@ GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
   chunk.write_to(ctx, buf.get());
 
-  contents.reset(new Compressor({(char *)buf.get(), chunk.shdr.sh_size}));
+  contents.reset(new ZlibCompressor({(char *)buf.get(), chunk.shdr.sh_size}));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_size = HEADER_SIZE + contents->size();
@@ -1753,26 +1753,29 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void ReproSection<E>::update_shdr(Context<E> &ctx) {
-  if (tar)
+  if (contents)
     return;
-  tar = std::make_unique<TarFile>("repro");
+  TarFile tar("repro");
 
-  tar->append("response.txt", save_string(ctx, create_response_file(ctx)));
-  tar->append("version.txt", save_string(ctx, get_version_string() + "\n"));
+  tar.append("response.txt", save_string(ctx, create_response_file(ctx)));
+  tar.append("version.txt", save_string(ctx, get_version_string() + "\n"));
 
   std::unordered_set<std::string> seen;
   for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs) {
     std::string path = path_to_absolute(mb->name);
     if (seen.insert(path).second)
-      tar->append(path, mb->get_contents(ctx));
+      tar.append(path, mb->get_contents(ctx));
   }
 
-  this->shdr.sh_size = tar->size();
+  std::vector<u8> buf(tar.size());
+  tar.write_to(&buf[0]);
+  contents.reset(new GzipCompressor({(char *)&buf[0], buf.size()}));
+  this->shdr.sh_size = contents->size();
 }
 
 template <typename E>
 void ReproSection<E>::copy_buf(Context<E> &ctx) {
-  tar->write(ctx.buf + this->shdr.sh_offset);
+  contents->write_to(ctx.buf + this->shdr.sh_offset);
 }
 
 #define INSTANTIATE(E)                                          \

@@ -19,17 +19,17 @@ clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-repro
-objcopy --dump-section .repro=$t/repro.tar $t/exe
+objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
 
-tar -C $t -xf $t/repro.tar
+tar -C $t -xzf $t/repro.tar.gz
 fgrep -q /a.o  $t/repro/response.txt
 fgrep -q mold $t/repro/version.txt
 
 
 MOLD_REPRO=1 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
-objcopy --dump-section .repro=$t/repro.tar $t/exe
+objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
 
-tar -C $t -xf $t/repro.tar
+tar -C $t -xzf $t/repro.tar.gz
 fgrep -q /a.o  $t/repro/response.txt
 fgrep -q mold $t/repro/version.txt
 

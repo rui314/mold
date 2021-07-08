@@ -60,7 +60,7 @@ void TarFile::append(std::string path, std::string_view data) {
   size_ += align_to(data.size(), BLOCK_SIZE);
 }
 
-void TarFile::write(u8 *buf) {
+void TarFile::write_to(u8 *buf) {
   u8 *start = buf;
   memset(buf, 0, size_);
 
