@@ -11,6 +11,9 @@
 template <typename E>
 static thread_local MemoryMappedFile<E> *current_file;
 
+template <typename E>
+void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok);
+
 static std::string_view get_line(std::string_view input, const char *pos) {
   ASSERT(input.data() <= pos);
   ASSERT(pos < input.data() + input.size());
@@ -202,12 +205,20 @@ void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
-    if (tok[0] == "OUTPUT_FORMAT")
+    if (tok[0] == "OUTPUT_FORMAT") {
       tok = read_output_format(ctx, tok.subspan(1));
-    else if (tok[0] == "INPUT" || tok[0] == "GROUP")
+    } else if (tok[0] == "INPUT" || tok[0] == "GROUP") {
       tok = read_group(ctx, tok.subspan(1));
-    else
-      SyntaxError(ctx, tok[0]) << "unknown token";
+    } else if (tok[0] == "VERSION") {
+      tok = tok.subspan(1);
+      tok = skip(ctx, tok, "{");
+      read_version_script(ctx, tok);
+      tok = skip(ctx, tok, "}");
+    } else if (tok[0] == ";") {
+      tok = tok.subspan(1);
+    } else {
+      SyntaxError(ctx, tok[0]) << "unknown linker script token";
+    }
   }
 }
 
@@ -242,9 +253,9 @@ static bool read_label(std::span<std::string_view> &tok,
 }
 
 template <typename E>
-static void parse_version_script_commands(Context<E> &ctx,
-                                          std::span<std::string_view> &tok,
-                                          i16 &ver, bool is_extern_cpp) {
+static void read_version_script_commands(Context<E> &ctx,
+                                         std::span<std::string_view> &tok,
+                                         i16 &ver, bool is_extern_cpp) {
   bool is_global = true;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -271,7 +282,7 @@ static void parse_version_script_commands(Context<E> &ctx,
       }
 
       tok = skip(ctx, tok, "{");
-      parse_version_script_commands(ctx, tok, ver, is_cpp);
+      read_version_script_commands(ctx, tok, ver, is_cpp);
       tok = skip(ctx, tok, "}");
       tok = skip(ctx, tok, ";");
       continue;
@@ -290,15 +301,10 @@ static void parse_version_script_commands(Context<E> &ctx,
 }
 
 template <typename E>
-void parse_version_script(Context<E> &ctx, std::string path) {
-  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
-  std::vector<std::string_view> vec =
-    tokenize(ctx, current_file<E>->get_contents(ctx));
-
-  std::span<std::string_view> tok = vec;
+void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
   i16 next_ver = VER_NDX_LAST_RESERVED + 1;
 
-  while (!tok.empty()) {
+  while (!tok.empty() && tok[0] != "}") {
     i16 ver = VER_NDX_GLOBAL;
     if (tok[0] != "{") {
       ver = next_ver++;
@@ -307,13 +313,21 @@ void parse_version_script(Context<E> &ctx, std::string path) {
     }
 
     tok = skip(ctx, tok, "{");
-    parse_version_script_commands(ctx, tok, ver, false);
+    read_version_script_commands(ctx, tok, ver, false);
     tok = skip(ctx, tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
     tok = skip(ctx, tok, ";");
   }
+}
 
+template <typename E>
+void parse_version_script(Context<E> &ctx, std::string path) {
+  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
+  std::vector<std::string_view> vec =
+    tokenize(ctx, current_file<E>->get_contents(ctx));
+  std::span<std::string_view> tok = vec;
+  read_version_script(ctx, tok);
   if (!tok.empty())
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
 }
