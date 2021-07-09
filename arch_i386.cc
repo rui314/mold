@@ -307,7 +307,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 
 template <>
 void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
-  assert(shdr.sh_flags & SHF_ALLOC);
+  ASSERT(shdr.sh_flags & SHF_ALLOC);
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<I386>);
   std::span<ElfRel<I386>> rels = get_rels(ctx);

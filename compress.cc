@@ -39,7 +39,7 @@ static std::vector<u8> do_compress(std::string_view input) {
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
   int r = deflateInit2(&strm, 3, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
-  assert(r == Z_OK);
+  ASSERT(r == Z_OK);
 
   // Set an input buffer
   strm.avail_in = input.size();
@@ -53,8 +53,8 @@ static std::vector<u8> do_compress(std::string_view input) {
   strm.next_out = buf.data();
 
   r = deflate(&strm, Z_SYNC_FLUSH);
-  assert(r == Z_OK);
-  assert(strm.avail_out > 0);
+  ASSERT(r == Z_OK);
+  ASSERT(strm.avail_out > 0);
 
   buf.resize(buf.size() - strm.avail_out);
   deflateEnd(&strm);

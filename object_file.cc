@@ -243,7 +243,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
                  << (u32)shdr.sh_info;
 
     if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
-      assert(target->relsec_idx == -1);
+      ASSERT(target->relsec_idx == -1);
       target->relsec_idx = i;
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
@@ -331,7 +331,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
     i64 rel_begin = rel_idx;
     while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
       rel_idx++;
-    assert(rel_idx == rels.size() || begin_offset <= rels[rel_begin].r_offset);
+    ASSERT(rel_idx == rels.size() || begin_offset <= rels[rel_begin].r_offset);
 
     if (id == 0) {
       // This is CIE.
@@ -379,7 +379,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   // Associate FDEs to input sections.
   for (i64 i = fdes_begin; i < fdes.size();) {
     InputSection<E> *isec = get_isec(fdes[i]);
-    assert(isec->fde_begin == -1);
+    ASSERT(isec->fde_begin == -1);
     isec->fde_begin = i++;
 
     while (i < fdes.size() && isec == get_isec(fdes[i]))
@@ -827,7 +827,7 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
 
 template <typename E>
 void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
-  assert(is_in_lib);
+  ASSERT(is_in_lib);
 
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
@@ -850,7 +850,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
-  assert(!is_in_lib);
+  ASSERT(!is_in_lib);
 
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
@@ -868,7 +868,7 @@ template <typename E>
 void
 ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(ObjectFile<E> *)> feeder) {
-  assert(this->is_alive);
+  ASSERT(this->is_alive);
 
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
@@ -1405,7 +1405,7 @@ void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
 
 template <typename E>
 std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
-  assert(sym->file == this);
+  ASSERT(sym->file == this);
   std::vector<Symbol<E> *> vec;
   for (Symbol<E> *sym2 : this->symbols)
     if (sym2->file == this && sym != sym2 &&

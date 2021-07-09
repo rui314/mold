@@ -65,7 +65,7 @@ void TarFile::write_to(u8 *buf) {
   memset(buf, 0, size_);
 
   for (i64 i = 0; i < contents.size(); i++) {
-    assert(buf - start <= size_);
+    ASSERT(buf - start <= size_);
 
     const std::string &path = contents[i].first;
     std::string_view data = contents[i].second;

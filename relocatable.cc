@@ -144,7 +144,7 @@ template <typename E>
 void RSymtabSection<E>::add_local_symbol(Context<E> &ctx, RObjectFile<E> &file,
                                          i64 idx) {
   ElfSym<E> sym = file.syms[idx];
-  assert(sym.st_bind == STB_LOCAL);
+  ASSERT(sym.st_bind == STB_LOCAL);
 
   if (!sym.is_undef() && !sym.is_abs() && !sym.is_common()) {
     if (!file.sections[sym.st_shndx])
@@ -163,7 +163,7 @@ template <typename E>
 void RSymtabSection<E>::add_global_symbol(Context<E> &ctx, RObjectFile<E> &file,
                                           i64 idx) {
   ElfSym<E> sym = file.syms[idx];
-  assert(sym.st_bind != STB_LOCAL);
+  ASSERT(sym.st_bind != STB_LOCAL);
 
   std::string_view name = file.strtab + sym.st_name;
   auto [it, inserted] = sym_map.insert({name, syms.size()});

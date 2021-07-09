@@ -28,7 +28,7 @@ static Map<E> get_map(Context<E> &ctx) {
     for (Symbol<E> *sym : file->symbols) {
       if (sym->file == file && sym->input_section &&
           sym->get_type() != STT_SECTION) {
-        assert(file == &sym->input_section->file);
+        ASSERT(file == &sym->input_section->file);
 
         typename Map<E>::accessor acc;
         map.insert(acc, {sym->input_section, {}});

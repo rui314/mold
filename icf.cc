@@ -116,7 +116,7 @@ static bool is_eligible(InputSection<E> &isec) {
 static Digest digest_final(SHA256_CTX &sha) {
   u8 buf[SHA256_SIZE];
   int res = SHA256_Final(buf, &sha);
-  assert(res == 1);
+  ASSERT(res == 1);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);
@@ -208,7 +208,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
       if (isec && isec->is_alive && isec->icf_leaf) {
         auto it = map.find(isec.get());
-        assert(it != map.end());
+        ASSERT(it != map.end());
         isec->leader = it->second;
       }
     }
@@ -356,7 +356,7 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    assert(isec.icf_eligible);
+    ASSERT(isec.icf_eligible);
     i64 frag_idx = 0;
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
@@ -546,7 +546,7 @@ void icf_sections(Context<E> &ctx) {
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       auto it = map->find(digest[i]);
-      assert(it != map->end());
+      ASSERT(it != map->end());
       sections[i]->leader = it->second;
     });
 

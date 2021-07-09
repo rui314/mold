@@ -12,8 +12,8 @@ template <typename E>
 static thread_local MemoryMappedFile<E> *current_file;
 
 static std::string_view get_line(std::string_view input, const char *pos) {
-  assert(input.data() <= pos);
-  assert(pos < input.data() + input.size());
+  ASSERT(input.data() <= pos);
+  ASSERT(pos < input.data() + input.size());
 
   i64 start = input.rfind('\n', pos - input.data());
   if (start == input.npos)
@@ -122,7 +122,7 @@ skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
 
 static std::string_view unquote(std::string_view s) {
   if (s.size() > 0 && s[0] == '"') {
-    assert(s[s.size() - 1] == '"');
+    ASSERT(s[s.size() - 1] == '"');
     return s.substr(1, s.size() - 2);
   }
   return s;
