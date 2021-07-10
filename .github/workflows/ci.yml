@@ -38,3 +38,12 @@ jobs:
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
         make test -j$(nproc)
+  build-with-nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: cachix/install-nix-action@v13
+        with:
+          nix_path: nixpkgs=channel:nixos-stable
+      - name: Build the CI package set
+        run: nix-build default.nix -A ciPackages

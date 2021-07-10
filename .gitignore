@@ -9,3 +9,5 @@ options.inc
 core
 ld
 gentoo
+result # nix build output symlink
+result-*
