@@ -1158,10 +1158,12 @@ MergedSection<E>::insert(std::string_view data, i64 alignment) {
     suffix = suffix.substr(suffix.size() - 32);
   i64 shard = hash_string(suffix) % NUM_SHARDS;
 
-  typename MapTy::const_accessor acc;
-  bool inserted =
-    maps[shard].insert(acc, std::pair(data, SectionFragment(this, data)));
-  SectionFragment<E> *frag = const_cast<SectionFragment<E> *>(&acc->second);
+  SectionFragment<E> *frag;
+  {
+    auto [it, inserted] =
+      maps[shard].insert(std::pair(data, SectionFragment(this, data)));
+    frag = &it->second;
+  }
 
   for (u16 cur = frag->alignment; cur < alignment;)
     if (frag->alignment.compare_exchange_strong(cur, alignment))

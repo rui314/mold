@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
@@ -666,7 +667,7 @@ public:
 
 private:
   using MapTy =
-    tbb::concurrent_hash_map<std::string_view, SectionFragment<E>>;
+    tbb::concurrent_unordered_map<std::string_view, SectionFragment<E>>;
 
   static constexpr i64 NUM_SHARDS = 64;
 
