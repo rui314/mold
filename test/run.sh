@@ -14,11 +14,11 @@ int main() {
 }
 EOF
 
-gcc -o $t/exe $t/a.o
+gcc -fuse-ld=bfd -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
 ! grep -q mold $t/log || false
 
-clang -o $t/exe $t/a.o
+clang -fuse-ld=bfd -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
 ! grep -q mold $t/log || false
 
