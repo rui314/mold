@@ -415,6 +415,13 @@ int do_main(int argc, char **argv) {
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 
+  {
+    Timer t(ctx, "register_section_pieces");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      file->register_section_pieces(ctx);
+    });
+  }
+
   // Uniquify shared object files by soname
   {
     std::unordered_set<std::string_view> seen;

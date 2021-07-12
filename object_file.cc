@@ -510,12 +510,6 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   }
 }
 
-template <typename E>
-struct MergeableSection {
-  std::vector<SectionFragment<E> *> fragments;
-  std::vector<u32> frag_offsets;
-};
-
 static size_t find_null(std::string_view data, u64 entsize) {
   if (entsize == 1)
     return data.find('\0');
@@ -545,17 +539,17 @@ static size_t find_null(std::string_view data, u64 entsize) {
 //
 // We do not support mergeable sections that have relocations.
 template <typename E>
-static MergeableSection<E>
+static std::unique_ptr<MergeableSection<E>>
 split_section(Context<E> &ctx, InputSection<E> &sec) {
-  MergeableSection<E> rec;
-
-  MergedSection<E> *parent =
-    MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr.sh_type,
-                                   sec.shdr.sh_flags);
+  std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
+  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr.sh_type,
+                                               sec.shdr.sh_flags);
+  rec->shdr = sec.shdr;
 
   std::string_view data = sec.contents;
   const char *begin = data.data();
   u64 entsize = sec.shdr.sh_entsize;
+  HyperLogLog estimator;
 
   static_assert(sizeof(SectionFragment<E>::alignment) == 2);
   if (sec.shdr.sh_addralign >= UINT16_MAX)
@@ -570,9 +564,12 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       std::string_view substr = data.substr(0, end + entsize);
       data = data.substr(end + entsize);
 
-      SectionFragment<E> *frag = parent->insert(substr, sec.shdr.sh_addralign);
-      rec.fragments.push_back(frag);
-      rec.frag_offsets.push_back(substr.data() - begin);
+      rec->strings.push_back(substr);
+      rec->frag_offsets.push_back(substr.data() - begin);
+
+      u64 hash = hash_string(substr);
+      rec->hashes.push_back(hash);
+      estimator.insert(hash);
     }
   } else {
     if (data.size() % entsize)
@@ -582,15 +579,19 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       std::string_view substr = data.substr(0, entsize);
       data = data.substr(entsize);
 
-      SectionFragment<E> *frag = parent->insert(substr, sec.shdr.sh_addralign);
-      rec.fragments.push_back(frag);
-      rec.frag_offsets.push_back(substr.data() - begin);
+      rec->strings.push_back(substr);
+      rec->frag_offsets.push_back(substr.data() - begin);
+
+      u64 hash = hash_string(substr);
+      rec->hashes.push_back(hash);
+      estimator.insert(hash);
     }
   }
 
-  static Counter counter("string_fragments");
-  counter += rec.fragments.size();
+  rec->parent->estimator.merge(estimator);
 
+  static Counter counter("string_fragments");
+  counter += rec->fragments.size();
   return rec;
 }
 
@@ -638,7 +639,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
-  std::vector<MergeableSection<E>> mergeable_sections(sections.size());
+  mergeable_sections.resize(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
@@ -648,6 +649,15 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
       isec->is_alive = false;
     }
   }
+}
+
+template <typename E>
+void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
+  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
+    if (m)
+      for (i64 i = 0; i < m->strings.size(); i++)
+        m->fragments.push_back(m->parent->insert(m->strings[i], m->hashes[i],
+                                                 m->shdr.sh_addralign));
 
   // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
@@ -663,13 +673,10 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
-
-      if (esym.st_type == STT_SECTION) {
-        MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
-        if (!m.fragments.empty())
-          len++;
-      }
+      if (esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
+        len++;
     }
+
     if (len == 0)
       continue;
 
@@ -683,19 +690,20 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
       if (esym.st_type != STT_SECTION)
         continue;
 
-      MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
-      if (m.fragments.empty())
+      std::unique_ptr<MergeableSection<E>> &m =
+        mergeable_sections[get_shndx(esym)];
+      if (!m)
         continue;
 
       i64 offset = esym.st_value + isec->get_addend(rel);
-      std::span<u32> offsets = m.frag_offsets;
+      std::span<u32> offsets = m->frag_offsets;
 
       auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
       if (it == offsets.begin())
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      isec->rel_fragments[frag_idx++] = {m.fragments[idx], (i32)i,
+      isec->rel_fragments[frag_idx++] = {m->fragments[idx], (i32)i,
                                          (i32)(offset - offsets[idx])};
     }
 
@@ -708,11 +716,12 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
     if (esym.is_abs() || esym.is_common())
       continue;
 
-    MergeableSection<E> &m = mergeable_sections[get_shndx(esym)];
-    if (m.fragments.empty())
+    std::unique_ptr<MergeableSection<E>> &m =
+      mergeable_sections[get_shndx(esym)];
+    if (!m)
       continue;
 
-    std::span<u32> offsets = m.frag_offsets;
+    std::span<u32> offsets = m->frag_offsets;
 
     auto it = std::upper_bound(offsets.begin(), offsets.end(), esym.st_value);
     if (it == offsets.begin())
@@ -722,12 +731,13 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
     if (i < first_global)
       this->symbols[i]->value = esym.st_value - offsets[idx];
 
-    sym_fragments[i].frag = m.fragments[idx];
+    sym_fragments[i].frag = m->fragments[idx];
     sym_fragments[i].addend = esym.st_value - offsets[idx];
   }
 
-  for (MergeableSection<E> &m : mergeable_sections)
-    fragments.insert(fragments.end(), m.fragments.begin(), m.fragments.end());
+  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
+    if (m)
+      fragments.insert(fragments.end(), m->fragments.begin(), m->fragments.end());
 }
 
 template <typename E>

@@ -8,11 +8,12 @@ CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS) -rdynamic
-LIBS = -Wl,-as-needed -lcrypto -pthread -lz -lxxhash -ldl
+LIBS = -Wl,-as-needed -lcrypto -pthread -lz -lxxhash -ldl -lm
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \
        subprocess.o gc_sections.o icf.o symbols.o cmdline.o filepath.o \
        passes.o tar.o compress.o memory_mapped_file.o relocatable.o \
+       concurrent_map.o hyperloglog.o \
        arch_x86_64.o arch_i386.o arch_aarch64.o
 
 PREFIX ?= /usr

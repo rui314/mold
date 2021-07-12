@@ -198,7 +198,8 @@ void add_comment_string(Context<E> &ctx, std::string str) {
   std::string_view buf = save_string(ctx, str);
   MergedSection<E> *sec =
     MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS, 0);
-  SectionFragment<E> *frag = sec->insert({buf.data(), buf.size() + 1}, 1);
+  std::string_view data(buf.data(), buf.size() + 1);
+  SectionFragment<E> *frag = sec->insert(data, hash_string(data), 1);
   frag->is_alive = true;
 }
 
@@ -221,9 +222,10 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])
     add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
+  Timer t2(ctx, "MergedSection assign_offsets");
   tbb::parallel_for_each(ctx.merged_sections,
-                         [](std::unique_ptr<MergedSection<E>> &sec) {
-    sec->assign_offsets();
+                         [&](std::unique_ptr<MergedSection<E>> &sec) {
+    sec->assign_offsets(ctx);
   });
 }
 

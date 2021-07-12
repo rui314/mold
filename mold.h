@@ -63,6 +63,8 @@ template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
 
+template <typename T> class ConcurrentMap;
+
 class ZlibCompressor;
 class GzipCompressor;
 class TarFile;
@@ -300,6 +302,59 @@ private:
 
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
+};
+
+//
+// hyperloglog.cc
+//
+
+class HyperLogLog {
+public:
+  HyperLogLog() : buckets(NBUCKETS) {}
+
+  void insert(u32 hash) {
+    merge_one(hash & (NBUCKETS - 1), __builtin_clz(hash) + 1);
+  }
+
+  void merge_one(i64 idx, u8 newval) {
+    u8 cur = buckets[idx];
+    while (cur < newval)
+      if (buckets[idx].compare_exchange_strong(cur, newval))
+        break;
+  }
+
+  i64 get_cardinality() const;
+  void merge(const HyperLogLog &other);
+
+private:
+  static constexpr i64 NBUCKETS = 2048;
+  static constexpr double ALPHA = 0.79402;
+
+  std::vector<std::atomic_uint8_t> buckets;
+};
+
+//
+// concurrent_map.cc
+//
+
+template <typename T>
+class ConcurrentMap {
+public:
+  ConcurrentMap();
+  ConcurrentMap(i64 nbuckets);
+  ~ConcurrentMap();
+
+  void resize(i64 nbuckets);
+  std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val);
+
+  bool has_key(i64 idx) {
+    return keys[idx];
+  }
+
+  i64 nbuckets = 0;
+  std::atomic<const char *> *keys = nullptr;
+  u32 *sizes = nullptr;
+  T *values = nullptr;
 };
 
 //
@@ -645,27 +700,22 @@ public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
-  SectionFragment<E> *insert(std::string_view data, i64 alignment);
-  void assign_offsets();
+  SectionFragment<E> *insert(std::string_view data, u64 hash, i64 alignment);
+  void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 
-private:
-  using MapTy =
-    tbb::concurrent_unordered_map<std::string_view, SectionFragment<E>>;
+  HyperLogLog estimator;
 
+private:
   static constexpr i64 NUM_SHARDS = 64;
 
-  MergedSection(std::string_view name, u64 flags, u32 type)
-    : OutputChunk<E>(this->SYNTHETIC) {
-    this->name = name;
-    this->shdr.sh_flags = flags;
-    this->shdr.sh_type = type;
-  }
+  MergedSection(std::string_view name, u64 flags, u32 type);
 
-  MapTy maps[NUM_SHARDS];
+  ConcurrentMap<SectionFragment<E>> map;
   i64 shard_offsets[NUM_SHARDS + 1] = {};
   tbb::enumerable_thread_specific<i64> max_alignments;
+  std::once_flag once_flag;
 };
 
 template <typename E>
@@ -869,6 +919,16 @@ struct ComdatGroup {
   std::atomic_uint32_t owner = -1;
 };
 
+template <typename E>
+struct MergeableSection {
+  MergedSection<E> *parent;
+  ElfShdr<E> shdr;
+  std::vector<std::string_view> strings;
+  std::vector<u64> hashes;
+  std::vector<u32> frag_offsets;
+  std::vector<SectionFragment<E> *> fragments;
+};
+
 // InputFile is the base class of ObjectFile and SharedFile.
 template <typename E>
 class InputFile {
@@ -911,6 +971,7 @@ public:
   static ObjectFile<E> *create_internal_file(Context<E> &ctx);
 
   void parse(Context<E> &ctx);
+  void register_section_pieces(Context<E> &ctx);
   void resolve_lazy_symbols(Context<E> &ctx);
   void resolve_regular_symbols(Context<E> &ctx);
   void mark_live_objects(Context<E> &ctx,
@@ -981,6 +1042,7 @@ private:
   std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
   std::span<u32> symtab_shndx_sec;
+  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
 };
 
 // SharedFile represents an input .so file.
