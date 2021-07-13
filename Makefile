@@ -75,12 +75,12 @@ $(OBJS): mold.h elf.h Makefile
 $(MIMALLOC_LIB):
 	mkdir -p mimalloc/out/release
 	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
-	$(MAKE) -C mimalloc/out/release mimalloc-static
+	cmake --build mimalloc/out/release mimalloc-static
 
 $(TBB_LIB):
 	mkdir -p oneTBB/out
 	(cd oneTBB/out; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ..)
-	$(MAKE) -C oneTBB/out tbb
+	cmake --build oneTBB/out tbb
 	(cd oneTBB/out; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
