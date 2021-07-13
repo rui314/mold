@@ -126,10 +126,6 @@ struct SymbolAux {
   i32 dynsym_idx = -1;
 };
 
-//
-// Interned string
-//
-
 inline u64 hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
 }
@@ -142,17 +138,6 @@ template<> struct tbb::tbb_hash_compare<std::string_view> {
   static bool equal(const std::string_view &k1, const std::string_view &k2) {
     return k1 == k2;
   }
-};
-
-template<typename ValueT> class ConcurrentMap {
-public:
-  ValueT *insert(std::string_view key, const ValueT &val) {
-    typename decltype(map)::const_accessor acc;
-    map.insert(acc, std::make_pair(key, val));
-    return const_cast<ValueT *>(&acc->second);
-  }
-
-  tbb::concurrent_hash_map<std::string_view, ValueT> map;
 };
 
 //
@@ -1513,9 +1498,8 @@ struct Context {
   bool has_error = false;
 
   // Symbol table
-  ConcurrentMap<Symbol<E>> symbol_map;
-
-  ConcurrentMap<ComdatGroup> comdat_groups;
+  tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;
+  tbb::concurrent_hash_map<std::string_view, ComdatGroup> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
   tbb::concurrent_vector<std::unique_ptr<OutputChunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
@@ -1760,7 +1744,9 @@ public:
   // instantiated object. `key` is usually the same as `name`.
   static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
                            std::string_view name) {
-    return ctx.symbol_map.insert(key, {name});
+    typename decltype(ctx.symbol_map)::const_accessor acc;
+    ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
+    return const_cast<Symbol<E> *>(&acc->second);
   }
 
   static Symbol<E> *intern(Context<E> &ctx, std::string_view name) {

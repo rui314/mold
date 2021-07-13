@@ -190,7 +190,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (entries[0] != GRP_COMDAT)
         Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-      ComdatGroup *group = ctx.comdat_groups.insert(signature, ComdatGroup());
+      typename decltype(ctx.comdat_groups)::const_accessor acc;
+      ctx.comdat_groups.insert(acc, {signature, ComdatGroup()});
+      ComdatGroup *group = const_cast<ComdatGroup *>(&acc->second);
       comdat_groups.push_back({group, entries.subspan(1)});
       break;
     }
