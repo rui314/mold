@@ -2,8 +2,6 @@
 
 static const char *locked = (char *)-1;
 
-static constexpr i64 MIN_NBUCKETS = 256;
-
 template <typename T>
 ConcurrentMap<T>::ConcurrentMap() {}
 
@@ -41,9 +39,9 @@ ConcurrentMap<T>::insert(std::string_view key, u64 hash, const T &val) {
 
   ASSERT(__builtin_popcount(nbuckets) == 1);
   i64 idx = hash & (nbuckets - 1);
-  i64 nretry = 0;
+  i64 retry = 0;
 
-  while (nretry < MIN_NBUCKETS) {
+  while (retry < MAX_RETRY) {
     const char *ptr = keys[idx];
     if (ptr == locked) {
 #ifdef __x86_64__
@@ -64,8 +62,9 @@ ConcurrentMap<T>::insert(std::string_view key, u64 hash, const T &val) {
     if (key.size() == sizes[idx] && memcmp(ptr, key.data(), sizes[idx]) == 0)
       return {values + idx, false};
 
-    idx = (idx + 1) & (nbuckets - 1);
-    nretry++;
+    u64 mask = nbuckets / NUM_SHARDS - 1;
+    idx = ((idx + 1) & ~mask) | ((idx + 1) & mask);
+    retry++;
   }
 
   ASSERT(false && "ConcurrentMap is full");

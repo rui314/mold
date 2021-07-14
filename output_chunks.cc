@@ -1179,42 +1179,63 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
 
 template <typename E>
 void MergedSection<E>::assign_offsets(Context<E> &ctx) {
-  std::vector<SectionFragment<E> *> fragments(map.nbuckets);
-  for (i64 i = 0; i < map.nbuckets; i++)
-    fragments[i] = map.values + i;
+  std::vector<SectionFragment<E> *> fragments[map.NUM_SHARDS];
+  std::vector<i64> sizes(map.NUM_SHARDS);
+  tbb::enumerable_thread_specific<i64> max_alignments;
+  shard_offsets.resize(map.NUM_SHARDS + 1);
 
-  // Sort fragments to make output deterministic.
-  tbb::parallel_sort(fragments.begin(), fragments.end(),
-                     [](SectionFragment<E> *a, SectionFragment<E> *b) {
-    if (!a->is_alive || !b->is_alive)
-      return a->is_alive && !b->is_alive;
-    if (a->alignment != b->alignment)
-      return a->alignment < b->alignment;
-    if (a->data.size() != b->data.size())
-      return a->data.size() < b->data.size();
-    return a->data < b->data;
+  i64 shard_size = map.nbuckets / map.NUM_SHARDS;
+
+  tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
+    fragments[i].reserve(shard_size);
+
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        fragments[i].push_back(&frag);
+
+    // Sort fragments to make output deterministic.
+    tbb::parallel_sort(fragments[i].begin(), fragments[i].end(),
+                       [](SectionFragment<E> *a, SectionFragment<E> *b) {
+      if (a->alignment != b->alignment)
+        return a->alignment < b->alignment;
+      if (a->data.size() != b->data.size())
+        return a->data.size() < b->data.size();
+      return a->data < b->data;
+    });
+
+    // Assign offsets.
+    i64 offset = 0;
+    i64 max_alignment = 0;
+
+    for (SectionFragment<E> *frag : fragments[i]) {
+      offset = align_to(offset, frag->alignment);
+      frag->offset = offset;
+      offset += frag->data.size();
+      max_alignment = std::max<i64>(max_alignment, frag->alignment);
+    }
+
+    sizes[i] = offset;
+    max_alignments.local() = max_alignment;
+
+    static Counter merged_strings("merged_strings");
+    merged_strings += fragments[i].size();
   });
 
-  // Remove dead fragments.
-  auto mid = std::partition_point(fragments.begin(), fragments.end(),
-                                  [](SectionFragment<E> *frag) -> bool {
-    return frag->is_alive;
+  i64 alignment = 1;
+  for (i64 x : max_alignments)
+    alignment = std::max(alignment, x);
+
+  for (i64 i = 1; i < map.NUM_SHARDS + 1; i++)
+    shard_offsets[i] =
+      align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
+
+  tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
+    for (SectionFragment<E> *frag : fragments[i])
+      frag->offset += shard_offsets[i];
   });
-  fragments.resize(mid - fragments.begin());
 
-  // Assign offsets.
-  i64 offset = 0;
-  for (SectionFragment<E> *frag : fragments) {
-    offset = align_to(offset, frag->alignment);
-    frag->offset = offset;
-    offset += frag->data.size();
-    this->shdr.sh_addralign =
-      std::max<i64>(this->shdr.sh_addralign, frag->alignment);
-  }
-  this->shdr.sh_size = offset;
-
-  static Counter merged_strings("merged_strings");
-  merged_strings += fragments.size();
+  this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
+  this->shdr.sh_addralign = alignment;
 }
 
 template <typename E>
@@ -1224,12 +1245,14 @@ void MergedSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
-  memset(buf, 0, this->shdr.sh_size);
+  i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
-  tbb::parallel_for_each(map.values, map.values + map.nbuckets,
-                         [&](SectionFragment<E> &frag) {
-    if (frag.is_alive)
-      memcpy(buf + frag.offset, frag.data.data(), frag.data.size());
+  tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
+    memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
+
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        memcpy(buf + frag.offset, frag.data.data(), frag.data.size());
   });
 }
 

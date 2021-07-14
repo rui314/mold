@@ -351,6 +351,10 @@ public:
     return keys[idx];
   }
 
+  static constexpr i64 MIN_NBUCKETS = 2048;
+  static constexpr i64 NUM_SHARDS = 16;
+  static constexpr i64 MAX_RETRY = 128;
+
   i64 nbuckets = 0;
   std::atomic<const char *> *keys = nullptr;
   u32 *sizes = nullptr;
@@ -708,13 +712,10 @@ public:
   HyperLogLog estimator;
 
 private:
-  static constexpr i64 NUM_SHARDS = 64;
-
   MergedSection(std::string_view name, u64 flags, u32 type);
 
   ConcurrentMap<SectionFragment<E>> map;
-  i64 shard_offsets[NUM_SHARDS + 1] = {};
-  tbb::enumerable_thread_specific<i64> max_alignments;
+  std::vector<i64> shard_offsets;
   std::once_flag once_flag;
 };
 
