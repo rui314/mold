@@ -7,6 +7,7 @@
 #include "elf.h"
 
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <fstream>
 #include <functional>
@@ -77,11 +78,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 void assertion_failure(std::string file, i64 line, std::string func,
                        std::string expr);
 
-#define ASSERT(expr)                                                    \
-  do {                                                                  \
-    if (!(expr))                                                        \
-      assertion_failure(__FILE__, __LINE__, __PRETTY_FUNCTION__, #expr); \
-  } while (0)
+#define ASSERT(expr) assert(expr)
 
 //
 // Mergeable section fragments

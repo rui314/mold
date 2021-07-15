@@ -7,7 +7,7 @@ CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
            -DMOLD_VERSION=\"0.9.1\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
-LDFLAGS += $(EXTRA_LDFLAGS) -rdynamic
+LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -Wl,-as-needed -lcrypto -pthread -lz -lxxhash -ldl -lm
 OBJS = main.o object_file.o input_sections.o output_chunks.o \
        mapfile.o perf.o linker_script.o archive_file.o output_file.o \

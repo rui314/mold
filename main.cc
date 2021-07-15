@@ -1,6 +1,5 @@
 #include "mold.h"
 
-#include <execinfo.h>
 #include <functional>
 #include <iomanip>
 #include <map>
@@ -153,30 +152,6 @@ void cleanup() {
 template <typename E>
 static void signal_handler(int) {
   cleanup<E>();
-  _exit(1);
-}
-
-void assertion_failure(std::string file, i64 line, std::string func,
-                       std::string expr) {
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-
-  std::cerr << "mold: " << file << ":" << line << ": " << func
-            << ": Assertion `" << expr << "' failed.\n";
-  void *buf[100];
-  size_t len = backtrace(buf, 100);
-  backtrace_symbols_fd(buf, len, STDERR_FILENO);
-  _exit(1);
-}
-
-void print_stack_trace() {
-}
-
-static void sigsegv_handler(int sig) {
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-  std::cerr << "mold: received signal " << sig << "\n";
-  print_stack_trace();
   _exit(1);
 }
 
@@ -367,7 +342,6 @@ int do_main(int argc, char **argv) {
 
   signal(SIGINT, signal_handler<E>);
   signal(SIGTERM, signal_handler<E>);
-  signal(SIGSEGV, sigsegv_handler);
 
   if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
     Fatal(ctx) << "chdir failed: " << ctx.arg.directory
