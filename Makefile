@@ -43,7 +43,7 @@ else
   ifdef SYSTEM_MIMALLOC
     LIBS += -lmimalloc
   else
-    MIMALLOC_LIB = mimalloc/out/release/libmimalloc.a
+    MIMALLOC_LIB = out/mimalloc/libmimalloc.a
     LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
@@ -56,7 +56,7 @@ endif
 ifdef SYSTEM_TBB
   LIBS += -ltbb
 else
-  TBB_LIB = tbb/out/libs/libtbb.a
+  TBB_LIB = out/tbb/libs/libtbb.a
   LIBS += $(TBB_LIB)
   CPPFLAGS += -Itbb/include
 endif
@@ -73,15 +73,15 @@ mold-wrapper.so: mold-wrapper.c Makefile
 $(OBJS): mold.h elf.h Makefile
 
 $(MIMALLOC_LIB):
-	mkdir -p mimalloc/out/release
-	(cd mimalloc/out/release; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../..)
-	$(MAKE) -C mimalloc/out/release mimalloc-static
+	mkdir -p out/mimalloc
+	(cd out/mimalloc; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../../mimalloc)
+	$(MAKE) -C out/mimalloc mimalloc-static
 
 $(TBB_LIB):
-	mkdir -p tbb/out
-	(cd tbb/out; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ..)
-	$(MAKE) -C tbb/out tbb
-	(cd tbb/out; ln -sf *_relwithdebinfo libs)
+	mkdir -p out/tbb
+	(cd out/tbb; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ../../tbb)
+	$(MAKE) -C out/tbb tbb
+	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
@@ -106,6 +106,6 @@ uninstall:
 	rm -rf $(DESTDIR)$(PREFIX)/lib/mold
 
 clean:
-	rm -rf *.o *~ mold mold-wrapper.so test/tmp mimalloc/out tbb/out ld
+	rm -rf *.o *~ mold mold-wrapper.so test/tmp out ld
 
 .PHONY: all test tests check clean $(TESTS)
