@@ -56,9 +56,9 @@ endif
 ifdef SYSTEM_TBB
   LIBS += -ltbb
 else
-  TBB_LIB = oneTBB/out/libs/libtbb.a
+  TBB_LIB = tbb/out/libs/libtbb.a
   LIBS += $(TBB_LIB)
-  CPPFLAGS += -IoneTBB/include
+  CPPFLAGS += -Itbb/include
 endif
 
 all: mold mold-wrapper.so
@@ -78,10 +78,10 @@ $(MIMALLOC_LIB):
 	$(MAKE) -C mimalloc/out/release mimalloc-static
 
 $(TBB_LIB):
-	mkdir -p oneTBB/out
-	(cd oneTBB/out; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ..)
-	$(MAKE) -C oneTBB/out tbb
-	(cd oneTBB/out; ln -sf *_relwithdebinfo libs)
+	mkdir -p tbb/out
+	(cd tbb/out; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 ..)
+	$(MAKE) -C tbb/out tbb
+	(cd tbb/out; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
@@ -106,6 +106,6 @@ uninstall:
 	rm -rf $(DESTDIR)$(PREFIX)/lib/mold
 
 clean:
-	rm -rf *.o *~ mold mold-wrapper.so test/tmp mimalloc/out oneTBB/out ld
+	rm -rf *.o *~ mold mold-wrapper.so test/tmp mimalloc/out tbb/out ld
 
 .PHONY: all test tests check clean $(TESTS)
