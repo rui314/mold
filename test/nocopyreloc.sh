@@ -22,7 +22,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o
+clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/a.so $t/b.o
 $t/exe | grep -q '3 5'
 
 ! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o \

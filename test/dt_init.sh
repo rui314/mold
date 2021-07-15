@@ -18,9 +18,9 @@ EOF
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 readelf -a $t/exe > $t/log
 
-grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 FUNC    GLOBAL HIDDEN\s+\d+ _init\b' $t/log
+grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 \w+\s+GLOBAL \w+\s+\d+ _init\b' $t/log
 
-grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 FUNC    GLOBAL HIDDEN\s+\d+ _fini\b' $t/log
+grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 \w+\s+GLOBAL \w+\s+\d+ _fini\b' $t/log
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-init,init -Wl,-fini,fini
 readelf -a $t/exe > $t/log

@@ -5,6 +5,10 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+# Skip if libc is musl because musl does not support GNU FUNC
+echo 'int main() {}' | cc -o $t/exe -xc -
+ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
+
 cat <<EOF | cc -o $t/a.o -c -x assembler -
   .text
   .globl  main

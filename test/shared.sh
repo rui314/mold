@@ -5,10 +5,12 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | clang -fPIC -c -o $t/a.o -x assembler -
+cat <<'EOF' | clang -fPIC -c -o $t/a.o -x assembler -
 .globl fn1, fn2, fn3
 fn1:
+  sub $8, %rsp
   call fn2@PLT
+  add $8, %rsp
   ret
 fn3:
   nop

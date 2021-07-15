@@ -5,14 +5,16 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
+cat <<'EOF' | cc -o $t/a.o -c -x assembler -
   .text
   .globl main
 main:
+  sub $8, %rsp
   lea msg(%rip), %rdi
   xor %rax, %rax
   call printf@PLT
   xor %rax, %rax
+  add $8, %rsp
   ret
 
   .data

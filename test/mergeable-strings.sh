@@ -5,10 +5,11 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
+cat <<'EOF' | cc -o $t/a.o -c -x assembler -
   .text
   .globl main
 main:
+  sub $8, %rsp
   mov $.L.str+3, %rdi
   xor %rax, %rax
   call printf
@@ -16,6 +17,7 @@ main:
   xor %rax, %rax
   call printf
   xor %rax, %rax
+  add $8, %rsp
   ret
 
   .section .rodata.str1.1, "aMS", @progbits, 1

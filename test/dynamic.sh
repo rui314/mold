@@ -10,8 +10,7 @@ echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
 
 readelf --dynamic $t/exe > $t/log
-fgrep -q 'Shared library: [libc.so.6]' $t/log
-fgrep -q 'Shared library: [ld-linux-x86-64.so.2]' $t/log
+grep -Pq 'Shared library:.*\blibc.so\b' $t/log
 
 readelf -W --symbols --use-dynamic $t/exe > $t/log2
 grep -Pq 'FUNC\s+GLOBAL\s+DEFAULT\s+UND\s+__libc_start_main' $t/log2

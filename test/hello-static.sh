@@ -5,19 +5,12 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
-  .text
-  .globl main
-main:
-  lea msg(%rip), %rdi
-  xor %rax, %rax
-  call printf
-  xor %rax, %rax
-  ret
+cat <<EOF | cc -o $t/a.o -c -xc -
+#include <stdio.h>
 
-  .data
-msg:
-  .string "Hello world\n"
+int main() {
+  printf("Hello world\n");
+}
 EOF
 
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -static

@@ -5,6 +5,11 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+# Skip if libc is musl because musl does not fully support GNU-style
+# symbol versioning.
+echo 'int main() {}' | cc -o $t/exe -xc -
+ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
+
 cat <<EOF | cc -fPIC -c -o $t/a.o -xc -
 int foo1() { return 1; }
 int foo2() { return 2; }

@@ -42,7 +42,8 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -Wl,--image-base=0x40000 -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=`pwd`/../mold -no-pie -Wl,--image-base=0x40000 \
+  -o $t/exe $t/a.o $t/b.o
 $t/exe > $t/log
 
 grep -q '^__ehdr_start=0x40000$' $t/log
@@ -85,7 +86,8 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -Wl,--image-base=0x40000 -o $t/exe $t/a.o $t/c.o
+clang -fuse-ld=`pwd`/../mold -no-pie -Wl,--image-base=0x40000 \
+  -o $t/exe $t/a.o $t/c.o
 $t/exe > $t/log
 
 grep -q '^end=foo$' $t/log

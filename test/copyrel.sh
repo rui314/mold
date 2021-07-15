@@ -25,7 +25,7 @@ bar:
   .long 42
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q '42 42 1'
 
 echo OK

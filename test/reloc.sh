@@ -37,8 +37,10 @@ cat <<'EOF' > $t/d.s
 
 .globl main
 main:
+  sub $8, %rsp
   lea abs_sym, %edi
   call print
+  add $8, %rsp
   ret
 EOF
 
@@ -51,9 +53,11 @@ $t/exe | grep -q 42
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov ext_var@GOTPCREL(%rip), %rdi
   mov (%rdi), %edi
   call print
+  add $8, %rsp
   ret
 EOF
 
@@ -66,12 +70,15 @@ $t/exe | grep -q 56
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov ext_var(%rip), %edi
   call print
+  add $8, %rsp
   ret
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s -no-pie
+clang -c -o $t/d.o $t/d.s
+clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.o -no-pie
 $t/exe | grep -q 56
 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.so $t/d.s -pie
 $t/exe | grep -q 56
@@ -80,9 +87,11 @@ $t/exe | grep -q 56
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov foo(%rip), %rdi
   mov (%rdi), %edi
   call print
+  add $8, %rsp
   ret
 
 .data
@@ -99,8 +108,10 @@ $t/exe | grep -q 56
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov $76, %edi
   call print@PLT
+  add $8, %rsp
   ret
 EOF
 
@@ -113,9 +124,11 @@ $t/exe | grep -q 76
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov $76, %edi
   lea print(%rip), %rax
   call *%rax
+  add $8, %rsp
   ret
 EOF
 
@@ -128,8 +141,10 @@ $t/exe | grep -q 76
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   mov $foo+2@SIZE, %edi
   call print@PLT
+  add $8, %rsp
   ret
 
 .data
@@ -146,8 +161,10 @@ $t/exe | grep -q 26
 cat <<'EOF' > $t/d.s
 .globl main
 main:
+  sub $8, %rsp
   movabs $foo+5@SIZE, %rdi
   call print64@PLT
+  add $8, %rsp
   ret
 
 .data
@@ -178,6 +195,8 @@ $t/exe | grep -q 56
 cat <<'EOF' > $t/f.s
 .globl main
 main:
+  sub $8, %rsp
+  add $8, %rsp
   ret
 
 .section .foo, "", @progbits
