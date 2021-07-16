@@ -693,7 +693,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     end++;
 
   while (i < end) {
-    fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
+    fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr % COMMON_PAGE_SIZE);
 
     // Each group consists of zero or more non-BSS sections followed
     // by zero or more BSS sections. Virtual addresses of non-BSS
@@ -704,7 +704,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
       u64 prev_vaddr = vaddr;
 
       if (chunk.new_page)
-        vaddr = align_to(vaddr, PAGE_SIZE);
+        vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
       vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
       fileoff += vaddr - prev_vaddr;
 
@@ -719,9 +719,9 @@ i64 set_osec_offsets(Context<E> &ctx) {
       OutputChunk<E> &chunk = *ctx.chunks[i];
 
       if (chunk.new_page)
-        vaddr = align_to(vaddr, PAGE_SIZE);
+        vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
       vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
-      fileoff = align_with_skew(fileoff, PAGE_SIZE, vaddr % PAGE_SIZE);
+      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr % COMMON_PAGE_SIZE);
 
       chunk.shdr.sh_addr = vaddr;
       chunk.shdr.sh_offset = fileoff;

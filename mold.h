@@ -42,7 +42,7 @@ typedef int32_t i32;
 typedef int64_t i64;
 
 static constexpr i32 SECTOR_SIZE = 512;
-static constexpr i32 PAGE_SIZE = 4096;
+static constexpr i32 COMMON_PAGE_SIZE = 4096;
 static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;

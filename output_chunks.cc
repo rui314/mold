@@ -171,7 +171,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       break;
 
     i64 flags = to_phdr_flags(first);
-    define(PT_LOAD, flags, PAGE_SIZE, first);
+    define(PT_LOAD, flags, COMMON_PAGE_SIZE, first);
     first->new_page = true;
 
     if (!is_bss(first))
