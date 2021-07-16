@@ -63,7 +63,7 @@ ConcurrentMap<T>::insert(std::string_view key, u64 hash, const T &val) {
       return {values + idx, false};
 
     u64 mask = nbuckets / NUM_SHARDS - 1;
-    idx = ((idx + 1) & ~mask) | ((idx + 1) & mask);
+    idx = (idx & ~mask) | ((idx + 1) & mask);
     retry++;
   }
 

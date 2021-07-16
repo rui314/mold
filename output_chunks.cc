@@ -1179,22 +1179,22 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
 
 template <typename E>
 void MergedSection<E>::assign_offsets(Context<E> &ctx) {
-  std::vector<SectionFragment<E> *> fragments[map.NUM_SHARDS];
   std::vector<i64> sizes(map.NUM_SHARDS);
-  tbb::enumerable_thread_specific<i64> max_alignments;
+  std::vector<i64> max_alignments(map.NUM_SHARDS);
   shard_offsets.resize(map.NUM_SHARDS + 1);
 
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
-    fragments[i].reserve(shard_size);
+    std::vector<SectionFragment<E> *> fragments;
+    fragments.reserve(shard_size);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-        fragments[i].push_back(&frag);
+        fragments.push_back(&frag);
 
     // Sort fragments to make output deterministic.
-    tbb::parallel_sort(fragments[i].begin(), fragments[i].end(),
+    tbb::parallel_sort(fragments.begin(), fragments.end(),
                        [](SectionFragment<E> *a, SectionFragment<E> *b) {
       if (a->alignment != b->alignment)
         return a->alignment < b->alignment;
@@ -1207,7 +1207,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     i64 offset = 0;
     i64 max_alignment = 0;
 
-    for (SectionFragment<E> *frag : fragments[i]) {
+    for (SectionFragment<E> *frag : fragments) {
       offset = align_to(offset, frag->alignment);
       frag->offset = offset;
       offset += frag->data.size();
@@ -1215,10 +1215,10 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     }
 
     sizes[i] = offset;
-    max_alignments.local() = max_alignment;
+    max_alignments[i] = max_alignment;
 
     static Counter merged_strings("merged_strings");
-    merged_strings += fragments[i].size();
+    merged_strings += fragments.size();
   });
 
   i64 alignment = 1;
@@ -1230,8 +1230,9 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
       align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
-    for (SectionFragment<E> *frag : fragments[i])
-      frag->offset += shard_offsets[i];
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        frag.offset += shard_offsets[i];
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
