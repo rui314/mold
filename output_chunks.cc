@@ -256,11 +256,45 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   // .rel.dyn contents are filled by GotSection::copy_buf(Context<E> &ctx) and
   // InputSection::apply_reloc_alloc().
   i64 offset = ctx.got->get_reldyn_size(ctx);
+
+  offset += ctx.dynbss->symbols.size() * sizeof(ElfRel<E>);
+  offset += ctx.dynbss_relro->symbols.size() * sizeof(ElfRel<E>);
+
   for (ObjectFile<E> *file : ctx.objs) {
     file->reldyn_offset = offset;
     offset += file->num_dynrel * sizeof(ElfRel<E>);
   }
   this->shdr.sh_size = offset;
+}
+
+template <typename E>
+static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0);
+
+template <>
+ElfRel<X86_64> reloc<X86_64>(u64 offset, u32 type, u32 sym, i64 addend) {
+  return {offset, type, sym, addend};
+}
+
+template <>
+ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
+  return {(u32)offset, type, sym};
+}
+
+template <>
+ElfRel<AARCH64> reloc<AARCH64>(u64 offset, u32 type, u32 sym, i64 addend) {
+  return {offset, type, sym, addend};
+}
+
+template <typename E>
+void RelDynSection<E>::copy_buf(Context<E> &ctx) {
+  ElfRel<E> *rel =
+    (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset + ctx.got->get_reldyn_size(ctx));
+
+  for (Symbol<E> *sym : ctx.dynbss->symbols)
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
+
+  for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
+    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 }
 
 template <typename E>
@@ -758,28 +792,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   if (tlsld_idx != -1)
     n++;
 
-  n += ctx.dynbss->symbols.size();
-  n += ctx.dynbss_relro->symbols.size();
-
   return n * sizeof(ElfRel<E>);
-}
-
-template <typename E>
-static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0);
-
-template <>
-ElfRel<X86_64> reloc<X86_64>(u64 offset, u32 type, u32 sym, i64 addend) {
-  return {offset, type, sym, addend};
-}
-
-template <>
-ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
-  return {(u32)offset, type, sym};
-}
-
-template <>
-ElfRel<AARCH64> reloc<AARCH64>(u64 offset, u32 type, u32 sym, i64 addend) {
-  return {offset, type, sym, addend};
 }
 
 // Fill .got and .rel.dyn.
@@ -839,12 +852,6 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   if (tlsld_idx != -1)
     *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0);
-
-  for (Symbol<E> *sym : ctx.dynbss->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
-
-  for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 }
 
 template <typename E>
