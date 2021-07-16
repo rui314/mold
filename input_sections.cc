@@ -21,7 +21,8 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   // to the new one.
   std::string_view stem = path_filename(file.filename);
   if (stem != "crtbegin.o" && stem != "crtend.o" &&
-      stem != "crtbeginS.o" && stem != "crtendS.o") {
+      stem != "crtbeginS.o" && stem != "crtendS.o" &&
+      stem != "crtbeginT.o" && stem != "crtendT.o") {;
     if (name == ".ctors" || name.starts_with(".ctors."))
       name = ".init_array";
     else if (name == ".dtors" || name.starts_with(".dtors."))
