@@ -33,7 +33,7 @@ EOF
 fi
 
 # Build mold as a statically-linked executable
-if ! [ -f mold ] || ! ldd mold 2>&1 | grep -q 'statically linked'; then
+if ! [ -f mold ] || ! ldd mold 2>&1 | grep -Pq 'statically linked|not a dynamic executable'; then
   make clean
   ./build-static.sh
 fi
