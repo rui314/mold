@@ -5,6 +5,9 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+echo 'int main() {}' | cc -m32 -o $t/exe -xc - >& /dev/null \
+  || { echo skipped; exit; }
+
 cat <<EOF | cc -m32 -c -o $t/a.o -xc -
 char hello[] = "Hello world";
 EOF

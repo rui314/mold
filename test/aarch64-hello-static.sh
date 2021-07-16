@@ -5,6 +5,9 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+echo 'int main() {}' | aarch64-linux-gnu-gcc -o $t/exe -xc - >& /dev/null \
+  || { echo skipped; exit; }
+
 cat <<EOF | aarch64-linux-gnu-gcc -o $t/a.o -c -g -xc -
 #include <stdio.h>
 
