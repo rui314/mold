@@ -103,7 +103,7 @@ build command) as a subcommand of mold as follows:
 $ path/to/mold -run make <make-options-if-any>
 ```
 
-Here's an example showing how to link rust code when using the
+Here's an example showing how to link Rust code when using the
 cargo package manager.
 
 ```
