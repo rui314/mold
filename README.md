@@ -103,6 +103,13 @@ build command) as a subcommand of mold as follows:
 $ path/to/mold -run make <make-options-if-any>
 ```
 
+Here's an example showing how to link rust code when using the
+cargo package manager.
+
+```
+$ path/to/mold -run cargo build
+```
+
 Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
 file intercepts all function calls to exec-family functions to replace
