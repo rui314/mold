@@ -211,7 +211,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   if (!ctx.arg.gc_sections) {
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
       for (SectionFragment<E> *frag : file->fragments)
-        frag->is_alive = true;
+        frag->is_alive.store(true, std::memory_order_relaxed);
     });
   }
 

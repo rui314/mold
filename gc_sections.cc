@@ -31,9 +31,9 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all
   // section fragments as alive.
-  if (isec->rel_fragments)
-    for (i64 i = 0; isec->rel_fragments[i].idx >= 0; i++)
-      isec->rel_fragments[i].frag->is_alive = true;
+  if (SectionFragmentRef<E> *refs = isec->rel_fragments.get())
+    for (i64 i = 0; refs[i].idx >= 0; i++)
+      refs[i].frag->is_alive.store(true, std::memory_order_relaxed);
 
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.
@@ -50,7 +50,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.
     if (SectionFragment<E> *frag = sym.get_frag()) {
-      frag->is_alive = true;
+      frag->is_alive.store(true, std::memory_order_relaxed);
       continue;
     }
 
@@ -80,7 +80,7 @@ collect_root_set(Context<E> &ctx) {
   auto enqueue_symbol = [&](Symbol<E> *sym) {
     if (sym) {
       if (SectionFragment<E> *frag = sym->get_frag())
-        frag->is_alive = true;
+        frag->is_alive.store(true, std::memory_order_relaxed);
       else
         enqueue_section(sym->input_section);
     }
@@ -171,7 +171,7 @@ static void mark_nonalloc_fragments(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (SectionFragment<E> *frag : file->fragments)
       if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
-        frag->is_alive = true;
+        frag->is_alive.store(true, std::memory_order_relaxed);
   });
 }
 
