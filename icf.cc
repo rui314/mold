@@ -416,8 +416,8 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
-    for (i64 j = begin; j < end; j++)
-      SHA256_Update(&sha, digests[slot][edges[j]].data(), HASH_SIZE);
+    for (i64 j : edges.subspan(begin, end - begin))
+      SHA256_Update(&sha, digests[slot][j].data(), HASH_SIZE);
 
     digests[!slot][i] = digest_final(sha);
 
