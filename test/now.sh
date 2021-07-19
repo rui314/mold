@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,10 +14,10 @@ void foo() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,now
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,now
 readelf --dynamic $t/b.so | grep -q 'Flags: NOW'
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,now,-z,lazy
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,now,-z,lazy
 readelf --dynamic $t/b.so > $t/log
 ! grep -q 'Flags: NOW' $t/log || false
 

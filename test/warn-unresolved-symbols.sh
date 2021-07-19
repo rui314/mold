@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,13 +13,13 @@ int main() {
 }
 EOF
 
-! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o 2>&1 \
+! clang -fuse-ld=$mold -o $t/exe $t/a.o 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o --warn-unresolved-symbols 2>&1 \
+clang -fuse-ld=$mold -o $t/exe $t/a.o --warn-unresolved-symbols 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 
-! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o --warn-unresolved-symbols \
+! clang -fuse-ld=$mold -o $t/exe $t/a.o --warn-unresolved-symbols \
   --error-unresolved-symbols 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 

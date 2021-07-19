@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,7 +13,7 @@ main:
   call foo
 EOF
 
-! ../mold -o $t/exe $t/a.o 2> $t/log || false
+! $mold -o $t/exe $t/a.o 2> $t/log || false
 grep -q 'undefined symbol: .*\.o: foo' $t/log
 
 echo OK

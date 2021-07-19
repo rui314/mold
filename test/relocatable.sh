@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -31,7 +32,7 @@ int b() {
 }
 EOF
 
-../mold --relocatable -o $t/c.o $t/a.o $t/b.o
+$mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 [ -f $t/c.o ]
 ! [ -x t/c.o ] || false
@@ -52,7 +53,7 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/d.o
+clang++ -fuse-ld=$mold -o $t/exe $t/c.o $t/d.o
 $t/exe | grep -q '^1 2 3$'
 
 echo OK

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -28,7 +29,7 @@ int main() {
 EOF
 
 ar crs $t/e.a $t/a.o $t/b.o $t/c.o
-../mold -r -o $t/f.o $t/d.o $t/e.a
+$mold -r -o $t/f.o $t/d.o $t/e.a
 
 readelf --symbols $t/f.o > $t/log
 grep -q 'foo$' $t/log

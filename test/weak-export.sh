@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -18,17 +19,17 @@ EOF
 
 cc -fno-PIC -c -o $t/c.o $t/a.c
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/c.o
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o
 ! readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo' || false
 $t/exe | grep -q '3 5'
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/c.o -Wl,-z,nocopyreloc
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o -Wl,-z,nocopyreloc
 ! readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo' || false
 $t/exe | grep -q '3 5'
 
 cc -fPIC -c -o $t/b.o $t/a.c
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/b.o
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/b.o
 readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo'
 $t/exe | grep -q '3 5'
 

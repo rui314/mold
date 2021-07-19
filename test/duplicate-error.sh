@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,7 +13,7 @@ main:
   nop
 EOF
 
-! ../mold -o $t/exe $t/a.o $t/a.o 2> $t/log || false
+! $mold -o $t/exe $t/a.o $t/a.o 2> $t/log || false
 grep -q 'duplicate symbol: .*\.o: .*\.o: main' $t/log
 
 echo OK

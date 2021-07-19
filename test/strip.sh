@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,14 +14,14 @@ bar:
 .L.baz:
 EOF
 
-../mold -o $t/exe $t/a.o
+$mold -o $t/exe $t/a.o
 readelf --symbols $t/exe > $t/log
 fgrep -q _start $t/log
 fgrep -q foo $t/log
 fgrep -q bar $t/log
 fgrep -q .L.baz $t/log
 
-../mold -o $t/exe $t/a.o -strip-all
+$mold -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log
 ! fgrep -q _start $t/log || false
 ! fgrep -q foo $t/log || false

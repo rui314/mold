@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -9,10 +10,10 @@ cat <<EOF | clang -c -o $t/a.o -xc -
 void foo() {}
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o
 ! readelf --dynamic $t/b.so | grep -Pq 'Flags: NODUMP' || false
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,nodump
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,nodump
 readelf --dynamic $t/b.so | grep -Pq 'Flags: NODUMP'
 
 echo OK

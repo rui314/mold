@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -14,7 +15,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/a.o -Wl,--image-base=0x8000000
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/a.o -Wl,--image-base=0x8000000
 $t/exe | grep -q 'Hello world'
 readelf -W --sections $t/exe | grep -Pq '.interp\s+PROGBITS\s+0000000008000...\b'
 

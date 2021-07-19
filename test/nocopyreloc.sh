@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -22,10 +23,10 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/a.so $t/b.o
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/a.so $t/b.o
 $t/exe | grep -q '3 5'
 
-! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.so $t/b.o \
+! clang -fuse-ld=$mold -o $t/exe $t/a.so $t/b.o \
   -Wl,-z,nocopyreloc 2> $t/log || false
 
 grep -q 'recompile with -fPIE' $t/log

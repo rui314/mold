@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -30,10 +31,10 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/b.a
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/b.a
 $t/exe | grep -q 'section foo 3'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/b.a -Wl,-gc-sections
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/b.a -Wl,-gc-sections
 $t/exe | grep -q 'section foo 3'
 
 echo OK

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ cat <<EOF | cc -shared -o $t/b.so -xc -
 __attribute__((visibility("protected"))) int foo;
 EOF
 
-! clang -fuse-ld=`pwd`/../mold $t/a.o $t/b.so -o $t/exe >& $t/log || false
+! clang -fuse-ld=$mold $t/a.o $t/b.so -o $t/exe >& $t/log || false
 fgrep -q 'cannot make copy relocation for  protected symbol' $t/log
 
 echo OK

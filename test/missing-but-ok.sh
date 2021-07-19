@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,6 +13,6 @@ _start:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o
+$mold -o $t/exe $t/a.o
 
 echo OK

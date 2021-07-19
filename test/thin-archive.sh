@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -32,7 +33,7 @@ EOF
 rm -f $t/d.a
 (cd $t; ar rcsT d.a long-long-long-filename.o b.o `pwd`/c.o)
 
-clang -fuse-ld=`pwd`/../mold -Wl,--trace -o $t/exe $t/d.o $t/d.a > $t/log
+clang -fuse-ld=$mold -Wl,--trace -o $t/exe $t/d.o $t/d.a > $t/log
 
 grep -Pq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
 grep -Pq 'thin-archive/d.a\(.*b.o\)' $t/log

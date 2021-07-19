@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -62,7 +63,7 @@ _start:
 .ascii ".gcc_except_table.foo "
 EOF
 
-../mold -o $t/exe $t/a.o -z keep-text-section-prefix
+$mold -o $t/exe $t/a.o -z keep-text-section-prefix
 
 readelf -p .text.hot $t/exe | fgrep -q '.text.hot .text.hot.foo'
 readelf -p .text.unknown $t/exe | fgrep -q '.text.unknown .text.unknown.foo'
@@ -75,10 +76,10 @@ readelf -p .data $t/exe | fgrep -q '.data .data.foo'
 readelf -p .rodata $t/exe | fgrep -q '.rodata .rodata.foo'
 readelf -p .gcc_except_table $t/exe | fgrep -q '.gcc_except_table .gcc_except_table.foo'
 
-../mold -o $t/exe $t/a.o
+$mold -o $t/exe $t/a.o
 ! readelf --sections $t/exe | fgrep -q .text.hot || false
 
-../mold -o $t/exe $t/a.o -z nokeep-text-section-prefix
+$mold -o $t/exe $t/a.o -z nokeep-text-section-prefix
 ! readelf --sections $t/exe | fgrep -q .text.hot || false
 
 echo OK

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ baz:
   nop
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.script $t/b.s
+clang -fuse-ld=$mold -shared -o $t/c.so $t/a.script $t/b.s
 readelf --version-info $t/c.so > $t/log
 
 fgrep -q 'Rev: 1  Flags: none  Index: 2  Cnt: 1  Name: ver_x' $t/log

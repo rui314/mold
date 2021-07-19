@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -24,7 +25,7 @@ EOF
 
 echo '{ local: module_local; };' > $t/c.map
 
-../mold -o $t/exe $t/a.o $t/b.o --version-script=$t/c.map
+$mold -o $t/exe $t/a.o $t/b.o --version-script=$t/c.map
 
 readelf --symbols $t/exe > $t/log
 

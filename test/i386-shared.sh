@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -18,7 +19,7 @@ void set_bar(int x) { bar = x; }
 int get_bar() { return bar; }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/b.so -shared $t/a.o -m32
+clang -fuse-ld=$mold -o $t/b.so -shared $t/a.o -m32
 
 cat <<EOF > $t/c.c
 #include <stdio.h>
@@ -34,15 +35,15 @@ int main() {
 EOF
 
 clang -c -o $t/d.o $t/c.c -fno-PIC -m32
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/d.o $t/b.so -m32
+clang -fuse-ld=$mold -o $t/exe $t/d.o $t/b.so -m32
 $t/exe | grep -q '5 7 2'
 
 clang -c -o $t/e.o $t/c.c -fPIE -m32
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/e.o $t/b.so -m32
+clang -fuse-ld=$mold -o $t/exe $t/e.o $t/b.so -m32
 $t/exe | grep -q '5 7 2'
 
 clang -c -o $t/f.o $t/c.c -fPIC -m32
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/f.o $t/b.so -m32
+clang -fuse-ld=$mold -o $t/exe $t/f.o $t/b.so -m32
 $t/exe | grep -q '5 7 2'
 
 echo OK

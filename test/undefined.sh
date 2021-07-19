@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -23,17 +24,17 @@ EOF
 rm -f $t/d.a
 ar cr $t/d.a $t/b.o $t/c.o
 
-../mold -static -o $t/exe $t/a.o $t/d.a
+$mold -static -o $t/exe $t/a.o $t/d.a
 readelf --symbols $t/exe > $t/log
 ! grep -q foo $t/log || false
 ! grep -q bar $t/log || false
 
-../mold -static -o $t/exe $t/a.o $t/d.a -u foo
+$mold -static -o $t/exe $t/a.o $t/d.a -u foo
 readelf --symbols $t/exe > $t/log
 grep -q foo $t/log
 ! grep -q bar $t/log || false
 
-../mold -static -o $t/exe $t/a.o $t/d.a -u foo --undefined=bar
+$mold -static -o $t/exe $t/a.o $t/d.a -u foo --undefined=bar
 readelf --symbols $t/exe > $t/log
 grep -q foo $t/log
 grep -q bar $t/log

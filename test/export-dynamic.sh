@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -20,7 +21,7 @@ _start:
 EOF
 
 cc -shared -fPIC -o $t/b.so -xc /dev/null
-../mold -o $t/exe $t/a.o $t/b.so --export-dynamic
+$mold -o $t/exe $t/a.o $t/b.so --export-dynamic
 
 readelf --dyn-syms $t/exe > $t/log
 fgrep -q 'NOTYPE  GLOBAL DEFAULT    6 bar' $t/log

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ int main() {
 }
 EOF
 
-aarch64-linux-gnu-gcc -B`pwd`/.. -o $t/exe $t/a.o -static
+aarch64-linux-gnu-gcc -B`dirname $mold` -o $t/exe $t/a.o -static
 
 readelf -p .comment $t/exe | grep -qw mold
 

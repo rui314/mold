@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -37,13 +38,13 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q '^foo$'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o -Wl,-wrap,foo
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o -Wl,-wrap,foo
 $t/exe | grep -q '^wrap_foo$'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/c.o -Wl,-wrap,foo
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/c.o -Wl,-wrap,foo
 $t/exe | grep -q '^foo$'
 
 echo OK

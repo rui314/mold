@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,7 +14,7 @@ void foo() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,initfirst
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,initfirst
 readelf --dynamic $t/b.so | grep -q 'Flags: INITFIRST'
 
 echo OK

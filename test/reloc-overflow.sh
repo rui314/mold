@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,7 +13,7 @@ foo:
   .short foo
 EOF
 
-! ../mold -e foo -static -o $t/exe $t/a.o 2> $t/log || false
+! $mold -e foo -static -o $t/exe $t/a.o 2> $t/log || false
 fgrep -q 'relocation R_X86_64_16 against foo out of range' $t/log
 
 echo OK

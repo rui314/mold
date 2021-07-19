@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -9,7 +10,7 @@ cat <<EOF | clang -fPIC -c -o $t/a.o -xc -
 void foo() {}
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/b.so -shared $t/a.o -Wl,-soname,foo
+clang -fuse-ld=$mold -o $t/b.so -shared $t/a.o -Wl,-soname,foo
 readelf --dynamic $t/b.so | fgrep -q 'Library soname: [foo]'
 
 echo OK

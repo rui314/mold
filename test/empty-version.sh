@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,7 +14,7 @@ __asm__(".symver foo1, bar1@");
 __asm__(".symver foo2, bar2@@");
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o
 
 readelf --dyn-syms $t/b.so | grep -q 'bar1$'
 readelf --dyn-syms $t/b.so | grep -q 'bar2$'

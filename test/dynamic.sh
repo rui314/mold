@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -7,7 +8,7 @@ mkdir -p $t
 
 echo '.globl main; main:' | cc -o $t/a.o -c -x assembler -
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o
 
 readelf --dynamic $t/exe > $t/log
 grep -Pq 'Shared library:.*\blibc.so\b' $t/log
@@ -23,7 +24,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe -pie $t/b.o
+clang -fuse-ld=$mold -o $t/exe -pie $t/b.o
 count=$(readelf --relocs $t/exe | grep R_X86_64_RELATIVE | wc -l)
 readelf -W --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
 

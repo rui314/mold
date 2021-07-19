@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -10,13 +11,13 @@ void foo();
 void bar() { foo(); }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,nodefs
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,nodefs
 
-! clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-z,defs 2> $t/log || false
+! clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-z,defs 2> $t/log || false
 grep -q 'undefined symbol:.* foo' $t/log
 
-! clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o -Wl,-no-undefined 2> $t/log || false
+! clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-no-undefined 2> $t/log || false
 grep -q 'undefined symbol:.* foo' $t/log
 
 echo OK

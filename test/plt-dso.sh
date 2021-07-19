@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -22,7 +23,7 @@ void hello() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o
 
 cat <<EOF | cc -c -o $t/c.o -xc -
 #include <stdio.h>
@@ -38,7 +39,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe -Wl,-rpath=$t $t/c.o $t/b.so
+clang -fuse-ld=$mold -o $t/exe -Wl,-rpath=$t $t/c.o $t/b.so
 $t/exe | grep -q 'Hello WORLD'
 
 echo OK

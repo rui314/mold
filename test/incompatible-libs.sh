@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -37,7 +38,7 @@ EOF
 mkdir -p $t/script
 echo 'OUTPUT_FORMAT(elf32-i386)' > $t/script/libfoo.so
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe -L$t/script -L$t/lib32 -L$t/lib64 \
+clang -fuse-ld=$mold -o $t/exe -L$t/script -L$t/lib32 -L$t/lib64 \
   $t/e.o -lfoo -rpath $t/lib64 >& $t/log
 
 grep -q 'script/libfoo.so: skipping incompatible file' $t/log

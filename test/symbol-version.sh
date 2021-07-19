@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -22,7 +23,7 @@ void bar() {
 EOF
 
 echo 'VER1 { local: *; }; VER2 { local: *; }; VER3 { local: *; };' > $t/b.ver
-clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
+clang -fuse-ld=$mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
 readelf --symbols $t/c.so > $t/log
 
 fgrep -q 'foo@VER1' $t/log

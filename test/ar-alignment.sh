@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -24,6 +25,6 @@ EOF
 rm -f $t/d.a
 ar rcs $t/d.a $t/a.bin $t/b.o
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/d.a
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/d.a
 
 echo OK

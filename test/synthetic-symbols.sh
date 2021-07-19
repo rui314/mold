@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -42,7 +43,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -Wl,--image-base=0x40000 \
+clang -fuse-ld=$mold -no-pie -Wl,--image-base=0x40000 \
   -o $t/exe $t/a.o $t/b.o
 $t/exe > $t/log
 
@@ -86,7 +87,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -Wl,--image-base=0x40000 \
+clang -fuse-ld=$mold -no-pie -Wl,--image-base=0x40000 \
   -o $t/exe $t/a.o $t/c.o
 $t/exe > $t/log
 

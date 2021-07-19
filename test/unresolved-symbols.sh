@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -10,7 +11,7 @@ int foo();
 int main() { foo(); }
 EOF
 
-cmd="clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o"
+cmd="clang -fuse-ld=$mold -o $t/exe $t/a.o"
 
 ! $cmd 2>&1 | grep -q 'undefined.*foo'
 ! $cmd -Wl,-unresolved-symbols=report-all 2>&1 | grep -q 'undefined.*foo'

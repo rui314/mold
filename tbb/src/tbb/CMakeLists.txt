@@ -137,7 +137,7 @@ else()
     if (BUILD_TYPE STREQUAL "debug")
         set(TBB_LIB_NAME ${TBB_LIB_NAME}${CMAKE_DEBUG_POSTFIX})
     endif()
-    configure_file(${CMAKE_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_LIB_NAME}.pc @ONLY)
+    configure_file(${PROJECT_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_LIB_NAME}.pc @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TBB_LIB_NAME}.pc
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ foo
 baz
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o \
+clang -fuse-ld=$mold -o $t/exe $t/a.o \
   -Wl,--retain-symbols-file=$t/symbols
 readelf --symbols $t/exe > $t/log
 

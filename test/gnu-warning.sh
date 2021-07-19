@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -19,7 +20,7 @@ int main() { foo(); }
 EOF
 
 # Make sure that we do not copy .gnu.warning.* sections.
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
 ! readelf --sections $t/exe | fgrep -q .gnu.warning || false
 
 echo OK

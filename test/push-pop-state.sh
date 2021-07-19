@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ cat <<EOF | clang -c -o $t/c.o -xc -
 int main() {}
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,-as-needed \
+clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,-as-needed \
   -Wl,-push-state -Wl,-no-as-needed $t/a.so -Wl,-pop-state $t/b.so
 
 readelf --dynamic $t/exe > $t/log

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -16,13 +17,13 @@ cat <<EOF > $t/script
 GROUP($t/a.o)
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/script
+clang -fuse-ld=$mold -o $t/exe $t/script
 $t/exe | grep -q 'Hello world'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe -Wl,-T,$t/script
+clang -fuse-ld=$mold -o $t/exe -Wl,-T,$t/script
 $t/exe | grep -q 'Hello world'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe -Wl,--script,$t/script
+clang -fuse-ld=$mold -o $t/exe -Wl,--script,$t/script
 $t/exe | grep -q 'Hello world'
 
 echo OK

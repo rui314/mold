@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,10 +14,10 @@ cat <<EOF | clang -fcf-protection=none -c -o $t/b.o -xc -
 void _start() {}
 EOF
 
-../mold -o $t/exe $t/a.o
+$mold -o $t/exe $t/a.o
 readelf -n $t/exe | grep -q 'x86 feature: IBT'
 
-../mold -o $t/exe $t/b.o
+$mold -o $t/exe $t/b.o
 ! readelf -n $t/exe | grep -q 'x86 feature: IBT' || false
 
 echo OK

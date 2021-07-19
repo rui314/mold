@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -29,7 +30,7 @@ EOF
 rm -f $t/d.a
 ar rcs $t/d.a $t/b.o $t/c.o
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.a
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/d.a
 $t/exe | grep -q '5 0 -1'
 
 cat <<EOF | cc -fcommon -xc -c -o $t/e.o -
@@ -40,7 +41,7 @@ EOF
 rm -f $t/e.a
 ar rcs $t/e.a $t/b.o $t/e.o
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/e.a
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/e.a
 $t/exe | grep -q '5 0 2'
 
 echo OK

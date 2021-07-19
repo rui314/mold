@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,7 +14,7 @@ cat <<EOF | cc -fPIC -c -o $t/b.o -xc -
 __attribute__((visibility("protected"))) int foo;
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.o $t/b.o -Wl,-strip-all
+clang -fuse-ld=$mold -shared -o $t/c.so $t/a.o $t/b.o -Wl,-strip-all
 readelf --symbols $t/c.so | grep -Pq 'PROTECTED\b.*\bfoo\b'
 
 echo OK

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -14,6 +15,6 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold $t/a.o -o $t/exe -static -Wl,--omagic
+clang -fuse-ld=$mold $t/a.o -o $t/exe -static -Wl,--omagic
 
 echo OK

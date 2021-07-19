@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -21,7 +22,7 @@ __asm__(".symver foo3, foo@@VER3");
 EOF
 
 echo 'VER1 { local: *; }; VER2 { local: *; }; VER3 { local: *; };' > $t/b.ver
-clang -fuse-ld=`pwd`/../mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
+clang -fuse-ld=$mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
 
 cat <<EOF | cc -c -o $t/d.o -x assembler -
 .globl bar1, bar2, bar3
@@ -44,7 +45,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/d.o $t/e.o $t/c.so
+clang -fuse-ld=$mold -o $t/exe $t/d.o $t/e.o $t/c.so
 $t/exe | grep -q '^1 2$'
 
 echo OK

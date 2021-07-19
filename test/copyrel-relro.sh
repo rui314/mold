@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -19,7 +20,7 @@ const char readonly[100] = "abc";
 char readwrite[100] = "abc";
 EOF
 
-clang -fuse-ld=`pwd`/../mold $t/a.o $t/b.so -o $t/exe
+clang -fuse-ld=$mold $t/a.o $t/b.so -o $t/exe
 readelf -a $t/exe > $t/log
 
 grep -Pqz '(?s)\[(\d+)\] .dynbss.rel.ro .* \1 readonly' $t/log

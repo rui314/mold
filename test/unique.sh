@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -22,7 +23,7 @@ _start:
   nop
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -nostdlib -Wl,-unique='*foo*'
+clang -fuse-ld=$mold -o $t/exe $t/a.o -nostdlib -Wl,-unique='*foo*'
 
 readelf -x .data.foo.1 $t/exe | grep -q ab
 readelf -x .data.foo.2 $t/exe | grep -q c

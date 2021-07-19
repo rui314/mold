@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ..."
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -17,7 +18,7 @@ int foo() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
 dwarfdump $t/exe > /dev/null
 readelf --sections $t/exe | fgrep -q .debug_info
 

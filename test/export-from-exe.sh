@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -23,7 +24,7 @@ expfn2:
   nop
 EOF
 
-../mold -o $t/exe $t/a.o $t/b.so
+$mold -o $t/exe $t/a.o $t/b.so
 readelf --dyn-syms $t/exe | grep -q expfn2
 readelf --dyn-syms $t/exe | grep -q expfn1
 

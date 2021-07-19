@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -12,7 +13,7 @@ _start:
   nop
 EOF
 
-../mold -o $t/b.so $t/a.o --filter foo -F bar -shared
+$mold -o $t/b.so $t/a.o --filter foo -F bar -shared
 
 readelf --dynamic $t/b.so > $t/log
 fgrep -q 'Filter library: [foo]' $t/log

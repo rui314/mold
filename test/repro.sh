@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -14,11 +15,11 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o
 ! readelf --sections $t/exe | fgrep -q .repro || false
 
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-repro
+clang -fuse-ld=$mold -o $t/exe $t/a.o -Wl,-repro
 objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
 
 tar -C $t -xzf $t/repro.tar.gz
@@ -26,7 +27,7 @@ fgrep -q /a.o  $t/repro/response.txt
 fgrep -q mold $t/repro/version.txt
 
 
-MOLD_REPRO=1 clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o
+MOLD_REPRO=1 clang -fuse-ld=$mold -o $t/exe $t/a.o
 objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
 
 tar -C $t -xzf $t/repro.tar.gz

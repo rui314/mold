@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -16,19 +17,19 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static
+clang++ -fuse-ld=$mold -o $t/exe $t/a.cc -static
 $t/exe
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc
+clang++ -fuse-ld=$mold -o $t/exe $t/a.cc
 $t/exe
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -Wl,--gc-sections
+clang++ -fuse-ld=$mold -o $t/exe $t/a.cc -Wl,--gc-sections
 $t/exe
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static -Wl,--gc-sections
+clang++ -fuse-ld=$mold -o $t/exe $t/a.cc -static -Wl,--gc-sections
 $t/exe
 
-clang++ -fuse-ld=`pwd`/../mold -o $t/exe $t/a.cc -static -mcmodel=large
+clang++ -fuse-ld=$mold -o $t/exe $t/a.cc -static -mcmodel=large
 $t/exe
 
 echo OK

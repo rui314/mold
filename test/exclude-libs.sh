@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -34,25 +35,25 @@ int baz() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a
+clang -fuse-ld=$mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a
 readelf --dyn-syms $t/f.so > $t/log
 fgrep -q foo $t/log
 fgrep -q bar $t/log
 fgrep -q baz $t/log
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a
+clang -fuse-ld=$mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a
 readelf --dyn-syms $t/f.so > $t/log
 ! fgrep -q foo $t/log || false
 fgrep -q bar $t/log
 fgrep -q baz $t/log
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a -Wl,-exclude-libs=d.a
+clang -fuse-ld=$mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a -Wl,-exclude-libs=d.a
 readelf --dyn-syms $t/f.so > $t/log
 ! fgrep -q foo $t/log || false
 ! fgrep -q bar $t/log || false
 fgrep -q baz $t/log
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=ALL
+clang -fuse-ld=$mold -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=ALL
 readelf --dyn-syms $t/f.so > $t/log
 ! fgrep -q foo $t/log || false
 ! fgrep -q bar $t/log || false

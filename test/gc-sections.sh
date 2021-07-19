@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -26,7 +27,7 @@ int main() {
 }
 EOF
 
-cflags="-ffunction-sections -fdata-sections -fuse-ld=`pwd`/../mold"
+cflags="-ffunction-sections -fdata-sections -fuse-ld=$mold"
 
 clang++ -o $t/exe1 $t/a.cc $cflags
 readelf --symbols $t/exe1 > $t/log.1

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -13,7 +14,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o -Wl,-z,origin
+clang -fuse-ld=$mold -o $t/exe $t/a.o -Wl,-z,origin
 
 readelf --dynamic $t/exe | grep -Pq '\(FLAGS\)\s+ORIGIN'
 readelf --dynamic $t/exe | grep -Pq 'Flags: ORIGIN'

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -24,21 +25,21 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
+clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
   -Wl,-L=foo/bar -lfoo
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
+clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
   -Wl,-L=/foo/bar -lfoo
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
+clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
   '-Wl,-L$SYSROOTfoo/bar' -lfoo
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
+clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
   '-Wl,-L$SYSROOT/foo/bar' -lfoo
 
-! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -lfoo >& /dev/null
+! clang -fuse-ld=$mold -o $t/exe $t/c.o -lfoo >& /dev/null
 
-! clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o -Wl,--sysroot=$t \
+! clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t \
   -Wl,-Lfoo/bar -lfoo >& /dev/null
 
 echo OK

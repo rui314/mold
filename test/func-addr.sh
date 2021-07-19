@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -20,7 +21,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/b.o $t/a.so
+clang -fuse-ld=$mold -o $t/exe $t/b.o $t/a.so
 $t/exe | grep -q 1
 
 echo OK

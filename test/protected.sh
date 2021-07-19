@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -23,7 +24,7 @@ void *baz() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/b.so -shared $t/a.o
+clang -fuse-ld=$mold -o $t/b.so -shared $t/a.o
 
 cat <<EOF | cc -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
@@ -40,7 +41,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/c.o $t/b.so
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o $t/b.so
 $t/exe | grep -q '3 4 0'
 
 echo OK

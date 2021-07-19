@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -39,13 +40,13 @@ static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/d.so $t/b.o -m32
-clang -fuse-ld=`pwd`/../mold -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
+clang -fuse-ld=$mold -shared -o $t/d.so $t/b.o -m32
+clang -fuse-ld=$mold -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.so $t/e.so -m32
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/d.so $t/e.so -m32
 $t/exe | grep -q '1 2 3 4 5 6'
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax -m32
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax -m32
 $t/exe | grep -q '1 2 3 4 5 6'
 
 echo OK

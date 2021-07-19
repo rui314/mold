@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -28,7 +29,7 @@ _start:
 .quad 42
 EOF
 
-../mold -static -o $t/exe $t/a.o
+$mold -static -o $t/exe $t/a.o
 readelf -W --sections $t/exe > $t/log
 
 grep -Pq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log

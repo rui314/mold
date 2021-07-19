@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -25,7 +26,7 @@ bar:
   .long 42
 EOF
 
-clang -fuse-ld=`pwd`/../mold -no-pie -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -no-pie -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q '42 42 1'
 
 echo OK

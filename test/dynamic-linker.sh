@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -11,14 +12,14 @@ _start:
   ret
 EOF
 
-../mold -o $t/exe $t/a.o
+$mold -o $t/exe $t/a.o
 
 readelf --sections $t/exe > $t/log
 ! fgrep .interp $t/log || false
 
 readelf --dynamic $t/exe > $t/log
 
-../mold -o $t/exe $t/a.o --dynamic-linker=/foo/bar
+$mold -o $t/exe $t/a.o --dynamic-linker=/foo/bar
 
 readelf --sections $t/exe > $t/log
 fgrep -q .interp $t/log

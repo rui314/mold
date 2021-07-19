@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -15,7 +16,7 @@ int foo = 5;
 int bar = 6;
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -Wl,--version-script=$t/a.ver \
+clang -fuse-ld=$mold -shared -Wl,--version-script=$t/a.ver \
   -o $t/c.so $t/b.o
 
 cat <<'EOF' > $t/d.ver
@@ -30,7 +31,7 @@ extern int bar;
 int baz() { return foo + bar; }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -Wl,-version-script,$t/d.ver \
+clang -fuse-ld=$mold -shared -Wl,-version-script,$t/d.ver \
   -o $t/f.so $t/e.o $t/c.so
 
 readelf --dyn-syms $t/f.so > $t/log

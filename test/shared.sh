@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -16,7 +17,7 @@ fn3:
   nop
 EOF
 
-clang -shared -fuse-ld=`pwd`/../mold -o $t/b.so $t/a.o
+clang -shared -fuse-ld=$mold -o $t/b.so $t/a.o
 
 readelf --dyn-syms $t/b.so > $t/log
 
@@ -38,7 +39,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/c.o $t/b.so
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/b.so
 $t/exe | grep -q hello
 ! readelf --symbols $t/exe | grep -q fn3 || false
 

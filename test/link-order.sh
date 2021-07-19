@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -9,7 +10,7 @@ cat <<EOF | clang -fPIC -c -o $t/a.o -xc -
 void foo() {}
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/libfoo.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/libfoo.so $t/a.o
 ar crs $t/libfoo.a $t/a.o
 
 cat <<EOF | clang -c -o $t/b.o -xc -
@@ -19,11 +20,11 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/b.o -Wl,--as-needed \
+clang -fuse-ld=$mold -o $t/exe $t/b.o -Wl,--as-needed \
   $t/libfoo.so $t/libfoo.a
 ldd $t/exe | grep -q libfoo
 
-clang -fuse-ld=`pwd`/../mold -o $t/exe $t/b.o -Wl,--as-needed \
+clang -fuse-ld=$mold -o $t/exe $t/b.o -Wl,--as-needed \
   $t/libfoo.a $t/libfoo.so
 ! ldd $t/exe | grep -q libfoo || false
 

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -20,7 +21,7 @@ int foo() {
 }
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/d.so $t/c.o $t/b.a -Wl,-exclude-libs=b.a
+clang -fuse-ld=$mold -shared -o $t/d.so $t/c.o $t/b.a -Wl,-exclude-libs=b.a
 readelf --dyn-syms $t/d.so > $t/log
 fgrep -q foo $t/log
 

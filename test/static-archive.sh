@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -27,7 +28,7 @@ EOF
 rm -f $t/d.a
 (cd $t; ar rcs d.a long-long-long-filename.o b.o)
 
-clang -fuse-ld=`pwd`/../mold -Wl,--trace -o $t/exe $t/c.o $t/d.a > $t/log
+clang -fuse-ld=$mold -Wl,--trace -o $t/exe $t/c.o $t/d.a > $t/log
 
 fgrep -q 'static-archive/d.a(long-long-long-filename.o)' $t/log
 fgrep -q 'static-archive/d.a(b.o)' $t/log

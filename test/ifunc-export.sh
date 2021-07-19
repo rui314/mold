@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+mold=$1
 cd $(dirname $0)
 echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
@@ -35,7 +36,7 @@ resolve_foobar:
 .string "Hello world\n"
 EOF
 
-clang -fuse-ld=`pwd`/../mold -shared -o $t/b.so $t/a.o
+clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o
 readelf --dyn-syms $t/b.so | grep -Pq '0 (IFUNC|<OS specific>: 10)\s+GLOBAL DEFAULT   \d+ foobar'
 
 echo OK
