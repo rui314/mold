@@ -6,7 +6,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -c -o $t/a.o -xc -
+cat <<EOF | cc -c -fPIC -o$t/a.o -xc -
 int foo = 4;
 
 int get_foo() {
