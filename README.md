@@ -77,7 +77,7 @@ The following command copies `mold` and `mold-wrapper.so` to
 `$PREFIX/bin` and `$PREFIX/lib/mold`, respectively.
 
 ```
-$ cmake --install mold/out/release
+$ sudo cmake --install mold/out/release
 ```
 
 By default, `$PREFIX` is `/usr/local`. You can change that by passing
