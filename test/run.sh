@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+ldd $mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
+
 cat <<'EOF' | cc -xc -c -o $t/a.o -
 #include <stdio.h>
 
