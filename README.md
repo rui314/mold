@@ -60,20 +60,38 @@ environment, you can build mold by the following commands.
 ```
 $ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev git
 $ git clone https://github.com/rui314/mold.git
-$ cd mold
-$ git checkout v0.9.1
-$ make
+$ cmake -DCMAKE_CXX_COMPILER=clang++ -S mold -B mold/out/release
+$ cmake --build mold/out/release
 ```
 
-The last `make` command creates `mold` executable.
+The last `cmake --build` command creates `mold` executable in
+`mold/out/release` directory.
 
-If you don't have Ubuntu 20.04, or if for any reason `make` in the
-above commands doesn't work for you, you can use Docker to build it in
+If you don't have Ubuntu 20.04, or if for any reason `cmake` in the
+above commands didn't work for you, you can use Docker to build it in
 a Docker environment. To do so, just run `./build-static.sh` in this
 directory. The script creates a Ubuntu 20.04 Docker image, install
 necessary tools and libraries to it and build mold as a static binary.
 
-`make test` depends on a few more packages. To install, run the following commands:
+The following command copies `mold` and `mold-wrapper.so` to
+`$PREFIX/bin` and `$PREFIX/lib/mold`, respectively.
+
+```
+$ cmake --install mold/out/release
+```
+
+By default, `$PREFIX` is `/usr/local`. You can change that by passing
+`-DCMAKE_INSTALL_PREFIX=<directory-name>` to the initial `cmake`.
+
+You can run unit tests by the following commands:
+
+```
+$ cd mold/out/release
+$ ctest -j$(nproc)
+```
+
+mold's test suit depends on a few more packages. To install, run the
+following commands:
 
 ```
 $ sudo dpkg --add-architecture i386
