@@ -8,6 +8,7 @@ option(MOLD_USE_ASAN "Use address sanitizer" OFF)
 option(MOLD_USE_TSAN "Use thread sanitizer" OFF)
 option(MOLD_USE_SYSTEM_MIMALLOC "Use system mimalloc library" OFF)
 option(MOLD_USE_SYSTEM_TBB "Use system OneTBB library" OFF)
+option(MOLD_BUILD_STATIC_EXE "Build statically-linked mold executable" OFF)
 
 set(MOLD_LIBS "")
 set(MOLD_INCLUDES "")
@@ -54,6 +55,11 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Third-party dependencies
 
+if(MOLD_BUILD_STATIC_EXE)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+endif()
+
 if(MOLD_USE_SYSTEM_MIMALLOC)
   list(APPEND MOLD_LIBS mimalloc)
 else()
@@ -83,6 +89,9 @@ if(UNIX)
   set(THREADS_PREFER_PTHREAD_FLAG ON)
   find_package(Threads REQUIRED)
 endif()
+
+find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # Targets
 
@@ -131,9 +140,9 @@ target_include_directories(mold
 target_link_libraries(mold
   PRIVATE
   ${MOLD_LIBS}
-  crypto
   xxhash
-  z
+  OpenSSL::Crypto
+  ZLIB::ZLIB
   $<$<PLATFORM_ID:Linux>:dl>
   $<$<PLATFORM_ID:Linux>:Threads::Threads>)
 

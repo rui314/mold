@@ -22,6 +22,8 @@ RUN apt-get update && \
   rm -rf /var/lib/apt/lists/*
 EOF
 
+rm -rf out/build-static
+
 docker run -it --rm -v `pwd`:/mold -u $(id -u):$(id -g) \
   mold-build-ubuntu20 bash -c \
-  'cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release -S /mold -B /mold/out/release; ninja -C /mold/out/release'
+  'cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release -DMOLD_BUILD_STATIC_EXE=On -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -S /mold -B /mold/out/build-static; ninja -C /mold/out/build-static'
