@@ -90,6 +90,13 @@ if(UNIX)
   find_package(Threads REQUIRED)
 endif()
 
+CHECK_LIBRARY_EXISTS(xxhash XXH3_64bits "" HAVE_XXHASH_LIB)
+if(HAVE_XXHASH_LIB)
+  list(APPEND MOLD_LIBS xxhash)
+else()
+  message(FATAL_ERROR "libxxhash is missing or too old")
+endif()
+
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 
@@ -140,7 +147,6 @@ target_include_directories(mold
 target_link_libraries(mold
   PRIVATE
   ${MOLD_LIBS}
-  xxhash
   OpenSSL::Crypto
   ZLIB::ZLIB
   $<$<PLATFORM_ID:Linux>:dl>
