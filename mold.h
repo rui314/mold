@@ -4,8 +4,6 @@
 #define _GNU_SOURCE
 #endif
 
-#undef NDEBUG
-
 #include "elf.h"
 
 #include <atomic>

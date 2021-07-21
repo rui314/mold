@@ -10,35 +10,31 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: apt-get
-      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake ninja-build clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: build
+    - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        cmake -GNinja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out
-        ninja -C out
-    - name: test
+        make -j$(nproc)
+    - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        cd out
-        ctest -j$(nproc)
+        make test -j$(nproc)
   build-gcc11:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
     steps:
     - uses: actions/checkout@v2
     - name: apt-get
-      run: dpkg --add-architecture i386 && apt-get update && apt-get install -y sudo libssl-dev zlib1g-dev libxxhash-dev cmake ninja-build clang dwarfdump bsdextrautils libgcc-9-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev:i386 lib32gcc-10-dev qemu-user
+      run: dpkg --add-architecture i386 && apt-get update && apt-get install -y sudo libssl-dev zlib1g-dev libxxhash-dev cmake clang dwarfdump bsdextrautils libgcc-9-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev:i386 lib32gcc-10-dev qemu-user
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: build
+    - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        cmake -GNinja -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -S . -B out
-        ninja -C out
-    - name: test
+        make CC=gcc CXX=g++ -j$(nproc)
+    - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        cd out
-        ctest -j$(nproc)
+        make test -j$(nproc)

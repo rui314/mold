@@ -17,13 +17,11 @@ cat <<EOF | docker build -t mold-build-ubuntu20 -
 FROM ubuntu:20.04
 RUN apt-get update && \
   TZ=Europe/London apt-get install -y tzdata && \
-  apt-get install -y build-essential git clang lld cmake ninja-build \
+  apt-get install -y build-essential git clang lld cmake \
     libstdc++-10-dev libxxhash-dev zlib1g-dev libssl-dev && \
   rm -rf /var/lib/apt/lists/*
 EOF
 
-rm -rf out/build-static
-
 docker run -it --rm -v `pwd`:/mold -u $(id -u):$(id -g) \
-  mold-build-ubuntu20 bash -c \
-  'cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release -DMOLD_BUILD_STATIC_EXE=On -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -S /mold -B /mold/out/build-static; ninja -C /mold/out/build-static'
+  mold-build-ubuntu20 \
+  make -C /mold -j$(nproc) EXTRA_LDFLAGS='-fuse-ld=lld -static'
