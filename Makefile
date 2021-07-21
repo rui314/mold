@@ -4,7 +4,7 @@ CXX = clang++
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
 CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
-           -DMOLD_VERSION=\"0.9.1\" \
+           -DMOLD_VERSION=\"0.9.3\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
