@@ -3,7 +3,7 @@ CXX = clang++
 
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
-CPPFLAGS = -g -Imimalloc/include -pthread -std=c++20 \
+CPPFLAGS = -g -pthread -std=c++20 \
            -DMOLD_VERSION=\"0.9.3\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
@@ -44,6 +44,7 @@ else
     LIBS += -lmimalloc
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
+    CPPFLAGS += -Imimalloc/include
     LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
