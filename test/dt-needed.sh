@@ -24,7 +24,7 @@ clang -fuse-ld=$mold -o $t/exe $t/b.o -L $t -lfoo
 readelf --dynamic $t/exe | fgrep -q 'Shared library: [libfoo]'
 
 clang -fuse-ld=$mold -o $t/exe $t/b.o $t/libbar.so
-readelf --dynamic $t/exe | grep -Pq 'Shared library: \[.*dt_needed/libbar\.so\]'
+readelf --dynamic $t/exe | grep -Pq 'Shared library: \[.*dt-needed/libbar\.so\]'
 
 clang -fuse-ld=$mold -o $t/exe $t/b.o -L$t -lbar
 readelf --dynamic $t/exe | fgrep -q 'Shared library: [libbar.so]'
