@@ -22,12 +22,12 @@ main:
   ret
 EOF
 
-cat <<EOF | cc -shared -fPIC -o $t/b.so -x assembler -
+cat <<EOF | cc -shared -o $t/b.so -x assembler -
   .text
 real_foobar:
   lea     .Lmsg(%rip), %rdi
   xor     %rax, %rax
-  call    printf
+  call    printf@PLT
   xor     %rax, %rax
   ret
 
