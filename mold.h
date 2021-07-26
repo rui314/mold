@@ -2149,8 +2149,35 @@ inline i64 InputSection<X86_64>::get_addend(const ElfRel<X86_64> &rel) const {
 
 template <>
 inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
-  u8 *buf = (u8 *)contents.data();
-  return *(i32 *)(buf + rel.r_offset);
+  u8 *loc = (u8 *)contents.data() + rel.r_offset;
+
+  switch (rel.r_type) {
+  case R_386_NONE:
+    return 0;
+  case R_386_8:
+  case R_386_PC8:
+    return *loc;
+  case R_386_16:
+  case R_386_PC16:
+    return *(u16 *)loc;
+  case R_386_32:
+  case R_386_PC32:
+  case R_386_GOT32:
+  case R_386_GOT32X:
+  case R_386_PLT32:
+  case R_386_GOTOFF:
+  case R_386_GOTPC:
+  case R_386_TLS_LDM:
+  case R_386_TLS_GOTIE:
+  case R_386_TLS_LE:
+  case R_386_TLS_IE:
+  case R_386_TLS_GD:
+  case R_386_TLS_LDO_32:
+  case R_386_SIZE32:
+  case R_386_TLS_GOTDESC:
+    return *(u32 *)loc;
+  }
+  assert(0 && "unreachable");
 }
 
 template <>

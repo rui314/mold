@@ -106,11 +106,11 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
     return;
   case R_386_8:
   case R_386_PC8:
-    *loc += val;
+    *loc = val;
     return;
   case R_386_16:
   case R_386_PC16:
-    *(u16 *)loc += val;
+    *(u16 *)loc = val;
     return;
   case R_386_32:
   case R_386_PC32:
@@ -127,7 +127,7 @@ static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
   case R_386_TLS_GOTDESC:
-    *(u32 *)loc += val;
+    *(u32 *)loc = val;
     return;
   }
   unreachable(ctx);
@@ -160,7 +160,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     };
 
 #define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A      (ref ? ref->addend : 0)
+#define A      (ref ? ref->addend : this->get_addend(rel))
 #define P      (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOTPLT ctx.gotplt->shdr.sh_addr
@@ -168,11 +168,11 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     switch (rel_exprs[i]) {
     case R_BASEREL:
       *dynrel++ = {P, R_386_RELATIVE, 0};
-      *(u32 *)loc += S + A;
+      *(u32 *)loc = S + A;
       continue;
     case R_DYN:
       *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
-      *(u32 *)loc += A;
+      *(u32 *)loc = A;
       continue;
     }
 
