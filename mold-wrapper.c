@@ -41,9 +41,12 @@ static void get_args(va_list ap, int argc, char **argv) {
 }
 
 static bool is_ld(const char *path) {
-  return !strcmp(path, "/usr/bin/ld") ||
-         !strcmp(path, "/usr/bin/ld.lld") ||
-         !strcmp(path, "/usr/bin/ld.gold");
+  const char *ptr = path + strlen(path);
+  while (path < ptr && ptr[-1] != '/')
+    ptr--;
+
+  return !strcmp(ptr, "ld") || !strcmp(ptr, "ld.lld") ||
+         !strcmp(ptr, "ld.gold");
 }
 
 int execve(const char *path, char *const *argv, char *const *envp) {

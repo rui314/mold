@@ -289,10 +289,9 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
   putenv(strdup(("MOLD_PATH=" + self).c_str()));
 
-  // If /usr/bin/ld{,lld,gold} is specified, run mold itself
-  if (std::string_view cmd = argv[2]; cmd == "ld" ||
-      cmd == "/usr/bin/ld" || cmd == "/usr/bin/ld.lld" ||
-      cmd == "/usr/bin/ld.gold") {
+  // If ld, ld.lld or ld.gold is specified, run mold itself
+  if (std::string_view cmd = path_basename(argv[2]);
+      cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold") {
     execv(self.c_str(), argv + 2);
     Fatal(ctx) << "mold -run failed: " << self << ": " << strerror(errno);
   }
