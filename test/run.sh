@@ -42,10 +42,9 @@ $mold -run /usr/bin/ld --version | grep -q mold
 $mold -run /usr/bin/ld.lld --version | grep -q mold
 $mold -run /usr/bin/ld.gold --version | grep -q mold
 
-ln -sf /usr/bin/ld $t/ld
-ln -sf /usr/bin/ld $t/ld.lld
-ln -sf /usr/bin/ld $t/ld.gold
-ln -sf /usr/bin/ld $t/foo.ld
+rm -f $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
+touch $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
+chmod 755 $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
 
 $mold -run $t/ld --version | grep -q mold
 $mold -run $t/ld.lld --version | grep -q mold
@@ -60,8 +59,6 @@ EOF
 chmod 755 $t/sh
 
 $mold -run $t/sh ld --version | grep -q mold
-$mold -run $t/sh ld.lld --version | grep -q mold
-$mold -run $t/sh ld.gold --version | grep -q mold
 $mold -run $t/sh foo.ld --version >& /dev/null | grep -q mold && false
 
 $mold -run $t/sh $t/ld --version | grep -q mold
