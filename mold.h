@@ -964,10 +964,10 @@ protected:
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
+  ObjectFile();
+
   static ObjectFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb,
                                std::string archive_name, bool is_in_lib);
-
-  static ObjectFile<E> *create_internal_file(Context<E> &ctx);
 
   void parse(Context<E> &ctx);
   void register_section_pieces(Context<E> &ctx);
@@ -1017,8 +1017,6 @@ public:
   u64 fde_size = 0;
 
 private:
-  ObjectFile();
-
   ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
              std::string archive_name, bool is_in_lib);
 
@@ -1387,6 +1385,7 @@ template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
+template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> std::vector<OutputChunk<E> *>

@@ -284,6 +284,85 @@ void bin_sections(Context<E> &ctx) {
   });
 }
 
+// Create a dummy object file containing linker-synthesized
+// symbols.
+template <typename E>
+ObjectFile<E> *create_internal_file(Context<E> &ctx) {
+  ObjectFile<E> *obj = new ObjectFile<E>;
+  ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+
+  // Create linker-synthesized symbols.
+  auto *esyms = new std::vector<ElfSym<E>>(1);
+  obj->symbols.push_back(new Symbol<E>);
+  obj->first_global = 1;
+  obj->is_alive = true;
+  obj->priority = 1;
+
+  auto add = [&](std::string_view name) {
+    ElfSym<E> esym = {};
+    esym.st_type = STT_NOTYPE;
+    esym.st_shndx = SHN_ABS;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = STV_HIDDEN;
+    esyms->push_back(esym);
+
+    Symbol<E> *sym = Symbol<E>::intern(ctx, name);
+    obj->symbols.push_back(sym);
+    return sym;
+  };
+
+  ctx.__ehdr_start = add("__ehdr_start");
+  ctx.__init_array_start = add("__init_array_start");
+  ctx.__init_array_end = add("__init_array_end");
+  ctx.__fini_array_start = add("__fini_array_start");
+  ctx.__fini_array_end = add("__fini_array_end");
+  ctx.__preinit_array_start = add("__preinit_array_start");
+  ctx.__preinit_array_end = add("__preinit_array_end");
+  ctx._DYNAMIC = add("_DYNAMIC");
+  ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
+  ctx.__bss_start = add("__bss_start");
+  ctx._end = add("_end");
+  ctx._etext = add("_etext");
+  ctx._edata = add("_edata");
+  ctx.__executable_start = add("__executable_start");
+
+  ctx.__rel_iplt_start =
+    add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
+  ctx.__rel_iplt_end =
+    add(E::is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
+
+  if (ctx.arg.eh_frame_hdr)
+    ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
+
+  if (!Symbol<E>::intern(ctx, "end")->file)
+    ctx.end = add("end");
+  if (!Symbol<E>::intern(ctx, "etext")->file)
+    ctx.etext = add("etext");
+  if (!Symbol<E>::intern(ctx, "edata")->file)
+    ctx.edata = add("edata");
+
+  for (OutputChunk<E> *chunk : ctx.chunks) {
+    if (!is_c_identifier(chunk->name))
+      continue;
+
+    add(save_string(ctx, "__start_" + std::string(chunk->name)));
+    add(save_string(ctx, "__stop_" + std::string(chunk->name)));
+  }
+
+  obj->elf_syms = *esyms;
+  obj->sym_fragments.resize(obj->elf_syms.size());
+
+  i64 num_globals = obj->elf_syms.size() - obj->first_global;
+  obj->symvers.resize(num_globals);
+
+  ctx.on_exit.push_back([=]() {
+    delete esyms;
+    delete obj->symbols[0];
+  });
+
+  return obj;
+}
+
 template <typename E>
 void check_duplicate_symbols(Context<E> &ctx) {
   Timer t(ctx, "check_dup_syms");
@@ -892,6 +971,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void convert_common_symbols(Context<E> &ctx);                \
   template void compute_merged_section_sizes(Context<E> &ctx);          \
   template void bin_sections(Context<E> &ctx);                          \
+  template ObjectFile<E> *create_internal_file(Context<E> &ctx);        \
   template void check_duplicate_symbols(Context<E> &ctx);               \
   template void sort_init_fini(Context<E> &ctx);                        \
   template std::vector<OutputChunk<E> *>                                \
