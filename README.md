@@ -14,7 +14,7 @@ linking final executables of major large programs.
 | Chrome 86 (1.9 GiB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
 | Clang 13 (3.1 GiB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-(These nubmers are measured on an AMD Threadripper 3990X 64-core
+(These numbers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
 info enabled.)
 
