@@ -1394,16 +1394,18 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    Entry *entry = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
+    Entry *entries = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
 
-    for (FdeRecord<E> &fde : file->fdes) {
+    for (i64 i = 0; i < file->fdes.size(); i++) {
+      FdeRecord<E> &fde = file->fdes[i];
+
       ElfRel<E> &rel = fde.cie->rels[fde.rel_idx];
       u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
       u64 addend = fde.cie->input_section.get_addend(rel);
       i64 offset = file->fde_offset + fde.output_offset;
 
-      *entry++ = {(i32)(val + addend - this->shdr.sh_addr),
-                  (i32)(eh_frame_addr + offset - this->shdr.sh_addr)};
+      entries[i].init_addr = val + addend - this->shdr.sh_addr;
+      entries[i].fde_addr = eh_frame_addr + offset - this->shdr.sh_addr;
     }
   });
 
