@@ -713,7 +713,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
   // Initialize sym_fragments
   for (i64 i = 0; i < elf_syms.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
-    if (esym.is_abs() || esym.is_common())
+    if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
 
     std::unique_ptr<MergeableSection<E>> &m =
