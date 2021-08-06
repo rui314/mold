@@ -296,7 +296,7 @@ tool.
   (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
-  can compute SHA-1 pretty quickly at about 2 GiB/s rates. Using 16
+  can compute SHA-1 pretty quickly at about 2 GiB/s. Using 16
   cores, a build-id for a 2 GiB executable can be computed in 60 to 70
   milliseconds.
 
@@ -376,7 +376,7 @@ and linker have gained features that we see today. That should give
 you an idea of why a particular feature has been added to a linker in the
 first place.
 
-1. Original Unix didn't support a shared library, and a program was
+1. Original Unix didn't support shared libraries, and a program was
    always loaded to a fixed address. An executable was something like
    a memory dump that was just loaded to a particular address by the
    kernel. After loading, the kernel started executing the program by
@@ -433,7 +433,7 @@ first place.
    linker, the linker pulls out an object file from the archive _only
    when_ it is referenced by other object files. In other words,
    unlike object files directly given to a linker, object files
-   wrapped in an archive are not linked to output by default.
+   wrapped in an archive are not linked to the output by default.
    An archive works as a supplement to complete your program.
 
    Even today, you can still find a libc archive file. Run `ar t
