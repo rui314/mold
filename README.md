@@ -96,7 +96,8 @@ It is sometimes very hard to pass an appropriate command line
 option to `cc` to specify an alternative linker.
 To deal with the situation, mold has a feature to intercept all
 invocations of `/usr/bin/ld`, `/usr/bin/ld.lld` or `/usr/bin/ld.gold`
- and redirect it to itself. To use the feature, run `make` (or another build command) as a subcommand of mold as follows:
+and redirect it to itself. To use the feature, run `make` (or another
+build command) as a subcommand of mold as follows:
 
 ```
 $ path/to/mold -run make <make-options-if-any>
