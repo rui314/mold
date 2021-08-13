@@ -2,10 +2,10 @@
 
 ![mold image](docs/mold.jpg)
 
-mold is a high performance drop-in replacement for existing Unix
+mold is a high-performance drop-in replacement for existing Unix
 linkers. It is several times faster than LLVM lld linker, the (then-)
 fastest open-source linker which I originally created a few years ago.
-Here is a performance comparison of GNU gold, LLVM lld and mold for
+Here is a performance comparison of GNU gold, LLVM lld, and mold for
 linking final executables of major large programs.
 
 | Program (linker output size)  | GNU gold | LLVM lld | mold  | mold w/ preloading
@@ -14,23 +14,23 @@ linking final executables of major large programs.
 | Chrome 86 (1.9 GiB)           | 54.5s    | 11.7s    | 1.85s | 0.97s
 | Clang 13 (3.1 GiB)            | 59.4s    | 5.68s    | 2.76s | 0.86s
 
-(These nubmers are measured on an AMD Threadripper 3990X 64-core
+(These numbers are measured on an AMD Threadripper 3990X 64-core
 machine with 32 threads enabled. All programs are built with debug
 info enabled.)
 
 Let me explain the "w/ preloading" column. mold supports the file
 preloading feature. That is, if you run mold with `-preload` flag
-along with other command line flags, it becomes a daemon and halts
+along with other command-line flags, it becomes a daemon and halts
 after parsing input files. Then, if you invoke mold with the same
-command line options (except `-preload` flag), it tells the daemon to
+command-line options (except `-preload` flag), it tells the daemon to
 reload only updated files and proceed. With this feature enabled, and
-if most of the input files haven't been updated, mold achieve a
+if most of the input files haven't been updated, mold achieves a
 near-`cp` performance or even exceeds it, as the throughput of file
 copy using the `cp` command is about 2 GiB/s on my machine.
 
-So, mold is extremely fast per-se and even faster with a bit of cheating.
+So, mold is extremely fast per se and even faster with a bit of cheating.
 
-Why is mold so fast? One reason is because it simply uses faster
+Why is mold so fast? One reason is that it simply uses faster
 algorithms and efficient data structures than other linkers do.
 The other reason is that the new linker is highly parallelized.
 
@@ -42,7 +42,7 @@ executable.
 
 As you can see, mold uses all available cores throughout its execution
 and finishes quickly. On the other hand, lld failed to use available
-cores most of the time. On this demo, the maximum parallelism is
+cores most of the time. In this demo, the maximum parallelism is
 artificially capped to 16 so that the bars fit in the GIF.
 
 Currently, mold is being developed with Linux/x86-64 as the primary
@@ -70,8 +70,8 @@ The last `make` command creates `mold` executable.
 If you don't have Ubuntu 20.04, or if for any reason `make` in the
 above commands doesn't work for you, you can use Docker to build it in
 a Docker environment. To do so, just run `./build-static.sh` in this
-directory. The script creates a Ubuntu 20.04 Docker image, install
-necessary tools and libraries to it and build mold as a static binary.
+directory. The script creates a Ubuntu 20.04 Docker image, installs
+necessary tools and libraries to it, and builds mold as a static binary.
 
 `make test` depends on a few more packages. To install, run the following commands:
 
@@ -96,7 +96,7 @@ It is sometimes very hard to pass an appropriate command line
 option to `cc` to specify an alternative linker.
 To deal with the situation, mold has a feature to intercept all
 invocations of `/usr/bin/ld`, `/usr/bin/ld.lld` or `/usr/bin/ld.gold`
- and redirect it to itself. To use the feature, run `make` (or other
+and redirect it to itself. To use the feature, run `make` (or another
 build command) as a subcommand of mold as follows:
 
 ```
@@ -188,7 +188,7 @@ Here is why I'm writing a new linker:
   the linker is expected to gather all mergeable string sections and
   merge their contents. So, if two object files contain the same
   string literal, for example, the resulting output will contain a
-  single merged string. This step is computationally-intensive, but string
+  single merged string. This step is computationally intensive, but string
   merging can be done in the preloading stage using string interning.
 
 - Static archives (.a files) contain object files, but the static
@@ -216,7 +216,7 @@ Here is why I'm writing a new linker:
 
 - mold emits Linux executables and runs only on Linux. I won't avoid
   Unix-ism when writing code. I don't want to think about portability
-  until mold becomes a thing that's worth to be ported.
+  until mold becomes a thing that's worth being ported.
 
 ## Linker Script
 
@@ -234,34 +234,34 @@ set for this purpose is very limited, and it is okay to implement them
 to mold.
 
 Besides that, we really don't want to implement the linker script
-langauge. But at the same time, we want to satisfy the user needs that
-are currently satisfied with the linker script langauge. So, what
+language. But at the same time, we want to satisfy the user needs that
+are currently satisfied with the linker script language. So, what
 should we do? Here is my observation:
 
-- Linker script allows to do a lot of tricky stuff, such as specifying
+- Linker script allows doing a lot of tricky stuff, such as specifying
   the exact layout of a file, inserting arbitrary bytes between
   sections, etc. But most of them can be done with a post-link binary
   editing tool (such as `objcopy`).
 
-- It looks like there are two things that truely cannot be done by a
+- It looks like there are two things that truly cannot be done by a
   post-link editing tool: (a) mapping input sections to output
   sections, and (b) applying relocations.
 
 From the above observation, I believe we need to provide only the
-following features instead of the entire linker script langauge:
+following features instead of the entire linker script language:
 
 - A method to specify how input sections are mapped to output
   sections, and
 
 - a method to set addresses to output sections, so that relocations
-  are applied based on desired adddresses.
+  are applied based on desired addresses.
 
 I believe everything else can be done with a post-link binary editing
 tool.
 
 ## Details
 
-- As we aim to the 1 second goal for Chromium, every millisecond
+- As we aim to the 1-second goal for Chromium, every millisecond
   counts. We can't ignore the latency of process exit. If we mmap a
   lot of files, \_exit(2) is not instantaneous but takes a few hundred
   milliseconds because the kernel has to clean up a lot of
@@ -281,7 +281,7 @@ tool.
   executable file if exists. My quick benchmark showed that I could
   save 300 milliseconds when creating a 2 GiB output file.
   Linux doesn't allow to open an executable for writing if it is
-  running (you'll get "text busy" error if you attempt). mold
+  running (you'll get a "text busy" error if you attempt). mold
   falls back to the usual way if it fails to open an output file.
 
 - The output from the linker should be deterministic for the sake of
@@ -294,10 +294,10 @@ tool.
   an output file. This is a slow step, but we can speed it up by
   splitting a file into small chunks, computing SHA-1 for each chunk,
   and then computing SHA-1 of the concatenated SHA-1 hashes
-  (i.e. constructing a [Markle
+  (i.e. constructing a [Merkle
   Tree](https://en.wikipedia.org/wiki/Merkle_tree) of height 2).
   Modern x86 processors have purpose-built instructions for SHA-1 and
-  can compute SHA-1 pretty quickly at about 2 GiB/s rate. Using 16
+  can compute SHA-1 pretty quickly at about 2 GiB/s. Using 16
   cores, a build-id for a 2 GiB executable can be computed in 60 to 70
   milliseconds.
 
@@ -309,7 +309,7 @@ tool.
   multiple threads to mark sections concurrently.
 
 - Similarly, BFD, gold an lld support Identical Comdat Folding (ICF)
-  as a yet another size optimization. ICF merges two or more read-only
+  as yet another size optimization. ICF merges two or more read-only
   sections that happen to have the same contents and relocations.
   To do that, we have to find isomorphic subgraphs from larger graphs.
   I implemented a new algorithm for mold, which is 5x faster than lld
@@ -358,11 +358,11 @@ In this section, I'll explain the internals of mold linker.
 Conceptually, what a linker does is pretty simple. A compiler compiles
 a fragment of a program (a single source file) into a fragment of
 machine code and data (an object file, which typically has the .o
-extension), and a linker stiches them together into a single
+extension), and a linker stitches them together into a single
 executable or a shared library image.
 
 In reality, modern linkers for Unix-like systems are much more
-compilcated than the naive understanding because they have gradually
+complicated than the naive understanding because they have gradually
 gained one feature at a time over the 50 years history of Unix, and
 they are now something like a bag of lots of miscellaneous features in
 which none of the features is more important than the others. It is
@@ -372,14 +372,14 @@ essential and which is not.
 
 That being said, one thing is clear that at any point of Unix history,
 a Unix linker has a coherent feature set for the Unix of that age. So,
-let me entangle the history to see how the operating system, runtime
+let me entangle the history to see how the operating system, runtime,
 and linker have gained features that we see today. That should give
-you an idea why a particular feature has been added to a linker in the
+you an idea of why a particular feature has been added to a linker in the
 first place.
 
-1. Original Unix didn't support shared library, and a program was
+1. Original Unix didn't support shared libraries, and a program was
    always loaded to a fixed address. An executable was something like
-   a memory dump which was just loaded to a particular address by the
+   a memory dump that was just loaded to a particular address by the
    kernel. After loading, the kernel started executing the program by
    setting the instruction pointer to a particular address.
 
@@ -390,11 +390,11 @@ first place.
    Individual object files are inevitably incomplete as a program,
    because when a compiler created them, it only see a part of an
    entire program. For example, if an object file contains a function
-   call that refers other object file, the `call` instruction in the
+   call that refers to another object file, the `call` instruction in the
    object cannot be complete, as the compiler has no idea as to what
    is the called function's address. To deal with this, the compiler
    emits a placeholder value (typically just zero) instead of a real
-   address and leave a metadata in an object file saying "fix offset X
+   address and leaves metadata in an object file saying "fix offset X
    of this file with an address of Y". That metadata is called
    "relocation". Relocations are typically processed by the linker.
 
@@ -408,13 +408,13 @@ first place.
    To understand what it is, imagine that you are trying to compile
    a program for the early Unix. You don't want to waste time to
    compile libc functions every time you compile your program (the
-   computers of the era was incredibly slow), so you have already
+   computers of the era were incredibly slow), so you have already
    placed each libc function into a separate source file and compiled
-   them individually. That means, you have object files for each libc
+   them individually. That means you have object files for each libc
    function, e.g., printf.o, scanf.o, atoi.o, write.o, etc.
 
    Given this configuration, all you have to do to link your program
-   against libc functions is to pick up a right set of libc object
+   against libc functions is to pick up the right set of libc object
    files and give them to the linker along with the object files of your
    program. But, keeping the linker command line in sync with the
    libc functions you are using in your program is bothersome. You can
@@ -426,7 +426,7 @@ first place.
    the archive file.
 
    An archive file is just a bundle of object files, just like zip
-   file but in an uncompressed form. An achive file typically has the
+   file but in an uncompressed form. An archive file typically has the
    .a file extension and named after its contents. For example, the
    archive file containing all libc objects is named `libc.a`.
 
@@ -434,25 +434,25 @@ first place.
    linker, the linker pulls out an object file from the archive _only
    when_ it is referenced by other object files. In other words,
    unlike object files directly given to a linker, object files
-   wrapped in an archive are not linked to an output by default.
-   An archive works as supplements to complete your program.
+   wrapped in an archive are not linked to the output by default.
+   An archive works as a supplement to complete your program.
 
    Even today, you can still find a libc archive file. Run `ar t
    /usr/lib/x86_64-linux-gnu/libc.a` on Linux should give you a list
    of object files in the libc archive.
 
-2. In '80s, Sun Microsystems, a leading commercial Unix vendor at the
-   time, added a shared library support to their Unix variant, SunOS.
+2. In the '80s, Sun Microsystems, a leading commercial Unix vendor at the
+   time, added shared library support to their Unix variant, SunOS.
 
 (This section is incomplete.)
 
 ## Concurrency strategy
 
-In this section, I'll explain the high level concurrency strategy of
+In this section, I'll explain the high-level concurrency strategy of
 mold.
 
 In most places, mold adopts data parallelism. That is, we have a huge
-number of piece of data of the same kind, and we process each of them
+number of pieces of data of the same kind, and we process each of them
 individually using parallel for-loop. For example, after identifying
 the exact set of input object files, we need to scan all relocation
 tables to determine the sizes of .got and .plt sections. We do that
@@ -495,7 +495,7 @@ parallel for-loop which iterates over a list of input files.
 
 Overall, even though mold is highly scalable, it succeeded to avoid
 complexties you often find in complex parallel programs. From high
-level, mold just serially executes linker's internal passes one by
+level, mold just serially executes the linker's internal passes one by
 one. Each pass is parallelized using parallel for-loops.
 
 ## Rejected ideas
@@ -517,7 +517,7 @@ not plan to implement and why I turned them down.
   anyway.
 
   The linker has to de-duplicate comdat sections (i.e. inline
-  functions that are included into multiple object files), so we
+  functions that are included in multiple object files), so we
   cannot compute the layout of regular sections until we resolve all
   symbols and de-duplicate comdats. That takes a few hundred
   milliseconds. After that, we can compute the sizes of
@@ -561,7 +561,7 @@ not plan to implement and why I turned them down.
   Makefile? The linker has to include a malloc from libc, which may
   include more object files to satisfy its dependencies. Such code
   change can affect the entire program rather than just replacing one
-  function. The same is true to adding malloc to your program. Making
+  function. The same is true for adding malloc to your program. Making
   a local change doesn't necessarily result in a local change in the
   binary level.  It can easily have cascading effects.
 
@@ -570,7 +570,7 @@ not plan to implement and why I turned them down.
   as a weak symbol in your program, and if you are not using `atoi`
   at all in your program, that symbol will be resolved to address
   0. But if you start using some libc function that indirectly calls
-  `atoi`, then `atoi` will be included to your program, and your weak
+  `atoi`, then `atoi` will be included in your program, and your weak
   symbol will be resolved to that function. I don't know how to
   efficiently fix up a binary for this case.
 
@@ -591,22 +591,22 @@ not plan to implement and why I turned them down.
   binaries even if you are compiling the same source tree using the
   same compiler toolchain. Or, it is complex and there might be a bug
   in it. If something doesn't work correctly, "remove --incremental
-  from your Makefile and try again" could be a piece of advise, but
+  from your Makefile and try again" could be a piece of advice, but
   that isn't ideal.
 
   So, all in all, incremental linking is tricky. I wanted to make full
   link as fast as possible, so that we don't have to think about how
-  to workaround the slowness of full link.
+  to work around the slowness of full link.
 
 - Defining a completely new file format and use it
 
   Idea: Sometimes, the ELF file format itself seems to be a limiting
-  factor of improving linker's performance. We might be able to make a
+  factor in improving the linker's performance. We might be able to make a
   far better one if we create a new file format.
 
   Reason for rejection: I rejected the idea because it apparently has
   a practical issue (backward compatibility issue) and also doesn't
-  seem to improve performance of linkers that much. As clearly
+  seem to improve the performance of linkers that much. As clearly
   demonstrated by mold, we can create a fast linker for ELF. I believe
   ELF isn't that bad, after all. The semantics of the existing Unix
   linkers, such as the name resolution algorithm or the linker script,
