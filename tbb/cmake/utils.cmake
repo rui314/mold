@@ -40,5 +40,8 @@ macro(tbb_install_target target)
         LIBRARY
             DESTINATION ${CMAKE_INSTALL_LIBDIR}
             NAMELINK_ONLY
+            COMPONENT devel
+        ARCHIVE
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT devel)
 endmacro()
