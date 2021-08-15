@@ -80,12 +80,12 @@ $(OBJS): mold.h elf.h Makefile
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
-	(cd out/mimalloc; CFLAGS=-DMI_USE_ENVIRON=0 cmake ../../mimalloc)
+	(cd out/mimalloc; CFLAGS=-DMI_USE_ENVIRON=0 cmake -G'Unix Makefiles' ../../mimalloc)
 	$(MAKE) -C out/mimalloc mimalloc-static
 
 $(TBB_LIB):
 	mkdir -p out/tbb
-	(cd out/tbb; cmake -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 -DTBB_STRICT=OFF ../../tbb)
+	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 -DTBB_STRICT=OFF ../../tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
