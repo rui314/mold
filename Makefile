@@ -1,5 +1,10 @@
-CC = clang
-CXX = clang++
+ifeq ($(origin CC), default)
+	CC = clang
+endif
+
+ifeq ($(origin CXX), default)
+	CXX = clang++
+endif
 
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
