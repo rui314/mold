@@ -465,6 +465,7 @@ int do_main(int argc, char **argv) {
   //
   // If we are linking an executable, weak undefs are converted to
   // weakly imported symbol so that they'll have another chance to be
+  // resolved.
   claim_unresolved_symbols(ctx);
 
   // Beyond this point, no new symbols will be added to the result.

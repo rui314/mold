@@ -522,15 +522,11 @@ void scan_rels(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    if ((sym->flags & NEEDS_COPYREL) && sym->esym().is_undef_weak()) {
-      // Weak undefined symbols can be converted to imported symbols, but
-      // we can't create copy relocations against them because we don't
-      // know their symbol sizes. Therefore, if we have to create copyrels
-      // against such symbols, we instead turns the symbols into
-      // non-imported absoute ones with value 0. That means weak symbols
-      // are exported only when compiled with -fPIC, and the same program
-      // can have different meanings depending on the presence or absense
-      // that flag. That's bad, but this is the best we can do.
+    if ((i8)sym->flags == -1) {
+      // As a special case, we convert weak undefined symbols to
+      // absolute symbols with value 0 if they cannot be exported.
+      // See comment in InputSection<E>::dispatch().
+      static_assert(sizeof(sym->flags) == 1);
       sym->is_imported = false;
       sym->flags = 0;
       continue;
