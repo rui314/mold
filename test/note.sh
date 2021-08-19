@@ -13,19 +13,19 @@ _start:
   nop
 
 .section .note.foo, "a", @note
-.align 8
+.p2align 3
 .quad 42
 
 .section .note.bar, "a", @note
-.align 4
+.p2align 2
 .quad 42
 
 .section .note.baz, "a", @note
-.align 8
+.p2align 3
 .quad 42
 
 .section .note.nonalloc, "", @note
-.align 1
+.p2align 0
 .quad 42
 EOF
 

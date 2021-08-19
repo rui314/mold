@@ -6,11 +6,11 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
-        .text
-        .globl _start
-_start:
-        call fn1@PLT
+cat <<EOF | cc -o $t/a.o -c -xc -
+void fn1();
+int main() {
+  fn1();
+}
 EOF
 
 cat <<EOF | cc -o $t/b.so -shared -fPIC -Wl,-soname,libfoo.so -xc -
@@ -21,13 +21,13 @@ cat <<EOF | cc -o $t/c.so -shared -fPIC -Wl,-soname,libbar.so -xc -
 int fn2() { return 42; }
 EOF
 
-$mold -o $t/exe $t/a.o $t/b.so $t/c.so
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
 fgrep -q 'Shared library: [libbar.so]' $t/readelf
 
-$mold -o $t/exe $t/a.o --as-needed $t/b.so $t/c.so
+clang -fuse-ld=$mold -o $t/exe $t/a.o -Wl,--as-needed $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
 fgrep -q 'Shared library: [libfoo.so]' $t/readelf
