@@ -41,6 +41,9 @@ endif
 ifeq ($(ASAN), 1)
   CPPFLAGS += -fsanitize=address
   LDFLAGS  += -fsanitize=address
+else ifeq ($(TSAN), 1)
+  CPPFLAGS += -fsanitize=thread
+  LDFLAGS  += -fsanitize=thread
 else
   # By default, we want to use mimalloc as a memory allocator.
   # Since replacing the standard malloc is not compatible with ASAN,
@@ -52,11 +55,6 @@ else
     CPPFLAGS += -Imimalloc/include
     LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
-endif
-
-ifeq ($(TSAN), 1)
-  CPPFLAGS += -fsanitize=thread
-  LDFLAGS  += -fsanitize=thread
 endif
 
 ifdef SYSTEM_TBB
