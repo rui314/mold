@@ -862,22 +862,6 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::WordTy *buf =
-    (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
-
-  // The first slot of .got.plt points to _DYNAMIC, as requested by
-  // the x86-64 psABI. The second and the third slots are reserved by
-  // the psABI.
-  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
-  buf[1] = 0;
-  buf[2] = 0;
-
-  for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
-}
-
-template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   ASSERT(!sym->has_plt(ctx));
   ASSERT(!sym->has_got(ctx));

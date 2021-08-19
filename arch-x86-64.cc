@@ -1,6 +1,21 @@
 #include "mold.h"
 
 template <>
+void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
+
+  // The first slot of .got.plt points to _DYNAMIC, as requested by
+  // the x86-64 psABI. The second and the third slots are reserved by
+  // the psABI.
+  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
+
+  for (Symbol<X86_64> *sym : ctx.plt->symbols)
+    buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
+}
+
+template <>
 void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 

@@ -15,50 +15,65 @@ static u64 page(u64 val) {
 }
 
 template <>
-void PltSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+void GotPltSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
+  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
 
+  // The first slot of .got.plt points to _DYNAMIC.
+  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
+
+  for (Symbol<AARCH64> *sym : ctx.plt->symbols)
+    buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
+}
+
+static void write_plt_header(Context<AARCH64> &ctx, u8 *buf) {
   // Write PLT header
   static const u8 plt0[] = {
-      0xf0, 0x7b, 0xbf, 0xa9, // stp    x16, x30, [sp,#-16]!
-      0x10, 0x00, 0x00, 0x90, // adrp   x16, PLTGOT[2]
-      0x11, 0x02, 0x40, 0xf9, // ldr    x17, [x16, PLTGOT[2]]
-      0x10, 0x02, 0x00, 0x91, // add    x16, x16, PLTGOT[2]
-      0x20, 0x02, 0x1f, 0xd6, // br     x17
-      0x1f, 0x20, 0x03, 0xd5, // nop
-      0x1f, 0x20, 0x03, 0xd5, // nop
-      0x1f, 0x20, 0x03, 0xd5, // nop
+    0xf0, 0x7b, 0xbf, 0xa9, // stp    x16, x30, [sp,#-16]!
+    0x10, 0x00, 0x00, 0x90, // adrp   x16, .got.plt[2]
+    0x11, 0x02, 0x40, 0xf9, // ldr    x17, [x16, .got.plt[2]]
+    0x10, 0x02, 0x00, 0x91, // add    x16, x16, .got.plt[2]
+    0x20, 0x02, 0x1f, 0xd6, // br     x17
+    0x1f, 0x20, 0x03, 0xd5, // nop
+    0x1f, 0x20, 0x03, 0xd5, // nop
+    0x1f, 0x20, 0x03, 0xd5, // nop
   };
 
-  u64 got = ctx.got->shdr.sh_addr;
+  u64 gotplt = ctx.gotplt->shdr.sh_addr + 16;
   u64 plt = ctx.plt->shdr.sh_addr;
 
   memcpy(buf, plt0, sizeof(plt0));
-  write_addr(buf + 4, (page(got + 16) - page(plt + 4)) >> 12);
-  *(u32 *)(buf + 8) |= ((got + 16) & 0xfff) << 10;
-  *(u32 *)(buf + 12) |= ((got + 16) & 0xfff) << 10;
+  write_addr(buf + 4, (page(gotplt) - page(plt + 4)) >> 12);
+  *(u32 *)(buf + 8) |= extract(gotplt, 11, 3) << 10;
+  *(u32 *)(buf + 12) |= ((gotplt) & 0xfff) << 10;
+}
 
-  // Write PLT entries
-  i64 relplt_idx = 0;
+static void write_plt_entry(Context<AARCH64> &ctx, u8 *buf, Symbol<AARCH64> *sym) {
+  u8 *ent = buf + sym->get_plt_idx(ctx) * AARCH64::plt_size;
 
-  for (Symbol<AARCH64> *sym : symbols) {
-    u8 *ent = buf + sym->get_plt_idx(ctx) * AARCH64::plt_size;
+  static const u8 data[] = {
+    0x10, 0x00, 0x00, 0x90, // adrp x16, .got.plt[n]
+    0x11, 0x02, 0x40, 0xf9, // ldr  x17, [x16, .got.plt[n]]
+    0x10, 0x02, 0x00, 0x91, // add  x16, x16, .got.plt[n]
+    0x20, 0x02, 0x1f, 0xd6, // br   x17
+  };
 
-    static const u8 data[] = {
-      0x10, 0x00, 0x00, 0x90, // adrp x16, PLTGOT[n]
-      0x11, 0x02, 0x40, 0xf9, // ldr  x17, [x16, PLTGOT[n]]
-      0x10, 0x02, 0x00, 0x91, // add  x16, x16, PLTGOT[n]
-      0x20, 0x02, 0x1f, 0xd6, // br   x17
-    };
+  u64 gotplt = sym->get_gotplt_addr(ctx);
+  u64 plt = sym->get_plt_addr(ctx);
 
-    u64 gotplt = sym->get_gotplt_addr(ctx);
-    u64 plt = sym->get_plt_addr(ctx);
+  memcpy(ent, data, sizeof(data));
+  write_addr(ent, (page(gotplt) - page(plt)) >> 12);
+  *(u32 *)(ent + 4) |= extract(gotplt, 11, 3) << 10;
+  *(u32 *)(ent + 8) |= (gotplt & 0xfff) << 10;
+}
 
-    memcpy(ent, data, sizeof(data));
-    write_addr(ent, (page(gotplt) - page(plt)) >> 12);
-    *(u32 *)(ent + 4) |= extract(got, 11, 3) << 10;
-    *(u32 *)(ent + 8) |= (got & 0xfff) << 10;
-  }
+template <>
+void PltSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  write_plt_header(ctx, buf);
+  for (Symbol<AARCH64> *sym : symbols)
+    write_plt_entry(ctx, buf, sym);
 }
 
 template <>

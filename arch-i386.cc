@@ -1,6 +1,19 @@
 #include "mold.h"
 
 template <>
+void GotPltSection<I386>::copy_buf(Context<I386> &ctx) {
+  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+
+  // The first slot of .got.plt points to _DYNAMIC.
+  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
+
+  for (Symbol<I386> *sym : ctx.plt->symbols)
+    buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
+}
+
+template <>
 void PltSection<I386>::copy_buf(Context<I386> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
