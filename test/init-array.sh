@@ -10,19 +10,19 @@ cat <<EOF | cc -c -o $t/a.o -x assembler -Wa,-no-warn -
 .globl init1, init2, fini1, fini2
 
 .section .init_array,"aw",@progbits
-.align 8
+.p2align 3
 .quad init1
 
 .section .init_array,"aw",@init_array
-.align 8
+.p2align 3
 .quad init2
 
 .section .fini_array,"aw",@progbits
-.align 8
+.p2align 3
 .quad fini1
 
 .section .fini_array,"aw",@fini_array
-.align 8
+.p2align 3
 .quad fini2
 EOF
 

@@ -6,6 +6,9 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+# Skip if target is not x86-64
+[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+
 cat <<EOF | clang -fcf-protection=branch -c -o $t/a.o -xc -
 void _start() {}
 EOF

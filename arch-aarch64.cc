@@ -328,8 +328,17 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
       sym.flags |= NEEDS_GOTTP;
       break;
+    case R_AARCH64_ADR_PREL_PG_HI21: {
+      Action table[][4] = {
+        // Absolute  Local    Imported data  Imported code
+        {  NONE,     NONE,    ERROR,         NONE },       // DSO
+        {  NONE,     NONE,    ERROR,         NONE },       // PIE
+        {  NONE,     NONE,    COPYREL,       NONE },       // PDE
+      };
+      dispatch(ctx, table, i);
+      break;
+    }
     case R_AARCH64_ADD_ABS_LO12_NC:
-    case R_AARCH64_ADR_PREL_PG_HI21:
     case R_AARCH64_LDST64_ABS_LO12_NC:
     case R_AARCH64_LDST32_ABS_LO12_NC:
     case R_AARCH64_LDST8_ABS_LO12_NC:
