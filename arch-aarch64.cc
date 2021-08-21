@@ -331,9 +331,9 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_ADR_PREL_PG_HI21: {
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
-        {  NONE,     NONE,    ERROR,         NONE },       // DSO
-        {  NONE,     NONE,    ERROR,         NONE },       // PIE
-        {  NONE,     NONE,    COPYREL,       NONE },       // PDE
+        {  NONE,     NONE,    ERROR,         ERROR },      // DSO
+        {  NONE,     NONE,    ERROR,         PLT   },     // PIE
+        {  NONE,     NONE,    COPYREL,       PLT   },       // PDE
       };
       dispatch(ctx, table, i);
       break;

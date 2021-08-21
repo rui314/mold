@@ -21,22 +21,16 @@ ver3 {
 };
 EOF
 
-cat <<EOF > $t/b.s
-.globl foo, bar, baz
-foo:
-  ret
-bar:
-  ret
-baz:
-  ret
+cat <<EOF | clang -fuse-ld=$mold -xc -shared -o $t/b.so -Wl,-version-script,$t/a.ver -
+void foo() {}
+void bar() {}
+void baz() {}
 EOF
 
-clang -fuse-ld=$mold -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.s
-
-cat <<EOF | clang -xc -c -o $t/d.o -
-int foo();
-int bar();
-int baz();
+cat <<EOF | clang -xc -c -o $t/c.o -
+void foo();
+void bar();
+void baz();
 
 int main() {
   foo();
@@ -46,7 +40,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/d.o $t/c.so
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/b.so
 $t/exe
 
 readelf --dyn-syms $t/exe > $t/log
