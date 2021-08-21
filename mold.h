@@ -1838,14 +1838,31 @@ public:
 
     if (input_section) {
       if (input_section->is_ehframe) {
-        // This is a special case: Only crtbegin.o and crtend.o
-        // contain these symbols.
+        // .eh_frame contents are parsed and reconstructed by the linker,
+        // so pointing to a specific location in a source .eh_frame
+        // section doesn't make much sense. However, CRT files contain
+        // symbols pointing to the very beginning and ending of the
+        // section.
         if (name() == "__EH_FRAME_BEGIN__" || esym().st_type == STT_SECTION)
           return ctx.eh_frame->shdr.sh_addr;
         if (name() == "__FRAME_END__")
           return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
-        // Fatal(ctx) << "symbol referring .eh_frame is not supported: "
-        //           << *this << " " << *file;
+
+        // LLVM compiler-rt's crtbegin.o and crtend.o contain these symbols
+        // instead.
+        if (name() == "__EH_FRAME_LIST__")
+          return ctx.eh_frame->shdr.sh_addr;
+        if (name() == "__EH_FRAME_LIST_END__")
+          return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
+
+        // ARM object files contain "$d" local symbol at the beginning
+        // of data sections. Their values are not significant for .eh_frame,
+        // so we just treat them as offset 0.
+        if (name() == "$d")
+          return ctx.eh_frame->shdr.sh_addr;
+
+        Fatal(ctx) << "symbol referring .eh_frame is not supported: "
+                   << *this << " " << *file;
       }
 
       if (!input_section->is_alive) {
@@ -1858,6 +1875,7 @@ public:
       }
       return input_section->get_addr() + value;
     }
+
     return value;
   }
 
