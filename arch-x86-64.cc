@@ -410,7 +410,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       write(sym.esym().st_size + A);
       continue;
     case R_X86_64_TLSDESC_CALL:
-      if (ctx.arg.relax && !ctx.arg.shared) {
+      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared)) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
@@ -644,7 +644,10 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
 
-      if (!ctx.arg.relax || ctx.arg.shared)
+      // TLSDESC relocs must be relaxed for a statically-linked executable
+      // even if -no-relax is given. It is because a statically-linked
+      // executable doesn't contain a tranpoline function needed for TLSDESC.
+      if (!ctx.arg.is_static && (!ctx.arg.relax || ctx.arg.shared))
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_X86_64_TPOFF32:
