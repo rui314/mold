@@ -6,7 +6,16 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | gcc -fPIC -mtls-dialect=gnu2 -c -o $t/a.o -xc -
+if [ $(uname -m) = x86_64 ]; then
+  dialect=gnu2
+elif [ $(uname -m) = aarch64 ]; then
+  dialect=desc
+else
+  echo skipped
+  exit 0
+fi
+
+cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
 extern _Thread_local int foo;
 
 int get_foo() {

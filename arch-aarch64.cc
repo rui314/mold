@@ -107,6 +107,9 @@ void EhFrameSection<AARCH64>::apply_reloc(Context<AARCH64> &ctx,
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   switch (rel.r_type) {
+  case R_AARCH64_ABS64:
+    *(u64 *)(base + loc) = val;
+    return;
   case R_AARCH64_PREL32:
     *(u32 *)(base + loc) = val;
     return;
@@ -214,6 +217,17 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(u32 *)loc |= extract(S + A - ctx.tls_begin + 16, 11, 0) << 10;
+      continue;
+    case R_AARCH64_TLSDESC_ADR_PAGE21:
+      write_addr(loc, (page(sym.get_tlsdesc_addr(ctx) + A) - page(P)) >> 12);
+      continue;
+    case R_AARCH64_TLSDESC_LD64_LO12:
+      *(u32 *)loc |= extract(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
+      continue;
+    case R_AARCH64_TLSDESC_ADD_LO12:
+      *(u32 *)loc |= extract(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
+      continue;
+    case R_AARCH64_TLSDESC_CALL:
       continue;
     default:
       unreachable(ctx);
@@ -338,6 +352,11 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
       dispatch(ctx, table, i);
       break;
     }
+    case R_AARCH64_TLSDESC_ADR_PAGE21:
+    case R_AARCH64_TLSDESC_LD64_LO12:
+    case R_AARCH64_TLSDESC_ADD_LO12:
+      sym.flags |= NEEDS_TLSDESC;
+      break;
     case R_AARCH64_ADD_ABS_LO12_NC:
     case R_AARCH64_LDST64_ABS_LO12_NC:
     case R_AARCH64_LDST32_ABS_LO12_NC:
@@ -349,6 +368,7 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_PREL32:
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+    case R_AARCH64_TLSDESC_CALL:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: "

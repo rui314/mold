@@ -1856,7 +1856,7 @@ public:
         // ARM object files contain "$d" local symbol at the beginning
         // of data sections. Their values are not significant for .eh_frame,
         // so we just treat them as offset 0.
-        if (name() == "$d")
+        if (name() == "$d" || name().starts_with("$d."))
           return ctx.eh_frame->shdr.sh_addr;
 
         Fatal(ctx) << "symbol referring .eh_frame is not supported: "
