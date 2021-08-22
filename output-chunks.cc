@@ -751,8 +751,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_tlsgd_idx(ctx, this->shdr.sh_size / E::wordsize);
   this->shdr.sh_size += E::wordsize * 2;
   tlsgd_syms.push_back(sym);
-  if (sym->esym().st_bind != STB_LOCAL)
-    ctx.dynsym->add_symbol(ctx, sym);
+  ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -785,11 +784,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
         sym->get_type() == STT_GNU_IFUNC)
       n++;
 
-  n += tlsgd_syms.size();
-  for (Symbol<E> *sym : tlsgd_syms)
-    if (sym->get_dynsym_idx(ctx) != -1)
-      n++;
-
+  n += tlsgd_syms.size() * 2;
   n += tlsdesc_syms.size();
 
   for (Symbol<E> *sym : gottp_syms)
@@ -831,14 +826,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : tlsgd_syms) {
     u64 addr = sym->get_tlsgd_addr(ctx);
     i32 dynsym_idx = sym->get_dynsym_idx(ctx);
-
-    if (dynsym_idx == -1) {
-      *rel++ = reloc<E>(addr, E::R_DTPMOD, 0);
-      buf[sym->get_tlsgd_idx(ctx) + 1] = sym->get_addr(ctx) - ctx.tls_begin;
-    } else {
-      *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
-      *rel++ = reloc<E>(addr + E::wordsize, E::R_DTPOFF, dynsym_idx);
-    }
+    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
+    *rel++ = reloc<E>(addr + E::wordsize, E::R_DTPOFF, dynsym_idx);
   }
 
   for (Symbol<E> *sym : tlsdesc_syms)
@@ -909,7 +898,6 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  ASSERT(sym->esym().st_bind != STB_LOCAL);
   if (sym->get_dynsym_idx(ctx) != -1)
     return;
   sym->set_dynsym_idx(ctx, -2);
@@ -919,6 +907,15 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
+
+  // In any symtab, local symbols must precede global symbols.
+  auto first_global = std::stable_partition(symbols.begin() + 1, symbols.end(),
+                                            [](Symbol<E> *sym) {
+    return sym->esym().st_bind == STB_LOCAL;
+  });
+
+  i64 global_offset = first_global - symbols.begin();
+  i64 num_globals = symbols.end() - first_global;
 
   // If we have .gnu.hash section, we need to sort .dynsym contents by
   // symbol hashes.
@@ -931,22 +928,22 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
       i32 idx;
     };
 
-    std::vector<T> vec(symbols.size());
-    ctx.gnu_hash->num_buckets = (vec.size() - 1) / ctx.gnu_hash->LOAD_FACTOR + 1;
-    ctx.gnu_hash->symoffset = 1;
+    std::vector<T> vec(num_globals);
+    ctx.gnu_hash->num_buckets = num_globals / ctx.gnu_hash->LOAD_FACTOR + 1;
 
-    tbb::parallel_for((i64)1, (i64)vec.size(), [&](i64 i) {
-      vec[i].sym = symbols[i];
-      vec[i].hash = djb_hash(symbols[i]->name()) % ctx.gnu_hash->num_buckets;
+    tbb::parallel_for((i64)0, num_globals, [&](i64 i) {
+      Symbol<E> *sym = symbols[global_offset + i];
+      vec[i].sym = sym;
+      vec[i].hash = djb_hash(sym->name()) % ctx.gnu_hash->num_buckets;
       vec[i].idx = i;
     });
 
-    tbb::parallel_sort(vec.begin() + 1, vec.end(), [&](const T &a, const T &b) {
+    tbb::parallel_sort(vec.begin(), vec.end(), [&](const T &a, const T &b) {
       return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
     });
 
-    for (i64 i = 1; i < symbols.size(); i++)
-      symbols[i] = vec[i].sym;
+    for (i64 i = 0; i < num_globals; i++)
+      symbols[global_offset + i] = vec[i].sym;
   }
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
@@ -955,6 +952,9 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
     symbols[i]->set_dynsym_idx(ctx, i);
     ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
   }
+
+  // ELF's symbol table sh_info holds the offset of the first global symbol.
+  this->shdr.sh_info = global_offset;
 }
 
 template <typename E>
@@ -1051,18 +1051,17 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
 
   this->shdr.sh_link = ctx.dynsym->shndx;
 
-  if (i64 num_symbols = ctx.dynsym->symbols.size() - symoffset) {
+  i64 num_globals = ctx.dynsym->symbols.size() - ctx.dynsym->shdr.sh_info;
+  if (num_globals) {
     // We allocate 12 bits for each symbol in the bloom filter.
-    i64 num_bits = num_symbols * 12;
+    i64 num_bits = num_globals * 12;
     num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
   }
-
-  i64 num_symbols = ctx.dynsym->symbols.size() - symoffset;
 
   this->shdr.sh_size = HEADER_SIZE;              // Header
   this->shdr.sh_size += num_bloom * E::wordsize; // Bloom filter
   this->shdr.sh_size += num_buckets * 4;         // Hash buckets
-  this->shdr.sh_size += num_symbols * 4;         // Hash values
+  this->shdr.sh_size += num_globals * 4;         // Hash values
 }
 
 template <typename E>
@@ -1070,6 +1069,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memset(base, 0, this->shdr.sh_size);
 
+  i64 symoffset = ctx.dynsym->shdr.sh_info;
   *(u32 *)base = num_buckets;
   *(u32 *)(base + 4) = symoffset;
   *(u32 *)(base + 8) = num_bloom;

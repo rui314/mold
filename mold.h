@@ -647,7 +647,6 @@ public:
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
     this->shdr.sh_addralign = E::wordsize;
-    this->shdr.sh_info = 1;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -692,7 +691,6 @@ public:
   static constexpr i64 ELFCLASS_BITS = E::wordsize * 8;
 
   u32 num_buckets = -1;
-  u32 symoffset = -1;
   u32 num_bloom = 1;
 };
 
