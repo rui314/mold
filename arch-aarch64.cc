@@ -86,8 +86,8 @@ void PltGotSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
     static const u8 data[] = {
       0x10, 0x00, 0x00, 0x90, // adrp x16, GOT[n]
       0x11, 0x02, 0x40, 0xf9, // ldr  x17, [x16, GOT[n]]
-      0x10, 0x02, 0x00, 0x91, // add  x16, x16, GOT[n]
       0x20, 0x02, 0x1f, 0xd6, // br   x17
+      0x1f, 0x20, 0x03, 0xd5, // nop
     };
 
     u64 got = sym->get_got_addr(ctx);
@@ -96,7 +96,6 @@ void PltGotSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
     memcpy(ent, data, sizeof(data));
     write_addr(ent, (page(got) - page(plt)) >> 12);
     *(u32 *)(ent + 4) |= extract(got, 11, 3) << 10;
-    *(u32 *)(ent + 8) |= (got & 0xfff) << 10;
   }
 }
 
