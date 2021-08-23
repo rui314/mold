@@ -395,7 +395,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       }
       continue;
     case R_X86_64_GOTPC32_TLSDESC:
-      if (ctx.relax_tlsdesc) {
+      if (ctx.relax_tlsdesc && !sym.is_imported) {
         static const u8 insn[] = {
           0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
         };
@@ -410,7 +410,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       write(sym.esym().st_size + A);
       continue;
     case R_X86_64_TLSDESC_CALL:
-      if (ctx.relax_tlsdesc) {
+      if (ctx.relax_tlsdesc && !sym.is_imported) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
@@ -643,7 +643,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
       if (memcmp(loc - 3, "\x48\x8d\x05", 3))
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
-      if (!ctx.relax_tlsdesc)
+      if (!ctx.relax_tlsdesc || sym.is_imported)
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_X86_64_TPOFF32:
