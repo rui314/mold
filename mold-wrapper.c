@@ -31,14 +31,13 @@ static void debug_print(char *fmt, ...) {
   va_end(ap);
 }
 
-static va_list get_args(va_list ap, int argc, char **argv) {
+static void get_args(va_list *ap, int argc, char **argv) {
   for (int i = 1; i < argc - 1; i++) {
-    char *arg = va_arg(ap, char *);
+    char *arg = va_arg(*ap, char *);
     if (!arg)
       break;
     argv[i] = arg;
   }
-  return ap;
 }
 
 static bool is_ld(const char *path) {
@@ -66,7 +65,7 @@ int execl(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
   char *argv[4096] = {(char *)arg0};
-  get_args(ap, 4096, argv);
+  get_args(&ap, 4096, argv);
   return execve(path, argv, environ);
 }
 
@@ -74,7 +73,7 @@ int execlp(const char *file, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
   char *argv[4096] = {(char *)arg0};
-  get_args(ap, 4096, argv);
+  get_args(&ap, 4096, argv);
   return execvpe(file, argv, environ);
 }
 
@@ -82,7 +81,7 @@ int execle(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
   char *argv[4096] = {(char *)arg0};
-  ap = get_args(ap, 4096, argv);
+  get_args(&ap, 4096, argv);
   char **env = va_arg(ap, char **);
   return execve(path, argv, env);
 }
