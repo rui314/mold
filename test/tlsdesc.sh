@@ -29,7 +29,7 @@ int get_bar() {
 }
 EOF
 
-cat <<EOF | clang -fPIC -c -o $t/b.o -xc -
+cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -c -o $t/b.o -xc -
 #include <stdio.h>
 
 _Thread_local int foo;
