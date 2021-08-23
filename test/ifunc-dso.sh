@@ -18,7 +18,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | cc -shared -o $t/b.so -xc -
+cat <<EOF | cc -fPIC -shared -o $t/b.so -xc -
 #include <stdio.h>
 
 __attribute__((ifunc("resolve_foobar")))
