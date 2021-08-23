@@ -837,6 +837,12 @@ void parse_nonpositional_args(Context<E> &ctx,
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
 
+  // TLSDESC relocs must be always relaxed for statically-linked
+  // executables even if -no-relax is given. It is because a
+  // statically-linked executable doesn't contain a tranpoline
+  // function needed for TLSDESC.
+  ctx.relax_tlsdesc = ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared);
+
   if (version_shown && remaining.empty())
     exit(0);
 }

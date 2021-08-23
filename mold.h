@@ -140,7 +140,7 @@ template<> struct tbb::tbb_hash_compare<std::string_view> {
 };
 
 //
-// input_sections.cc
+// input-sections.cc
 //
 
 enum {
@@ -331,7 +331,7 @@ private:
 };
 
 //
-// concurrent_map.cc
+// concurrent-map.cc
 //
 
 template <typename T>
@@ -359,7 +359,7 @@ public:
 };
 
 //
-// output_chunks.cc
+// output-chunks.cc
 //
 
 template <typename E>
@@ -893,7 +893,7 @@ template <typename E>
 std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx);
 
 //
-// object_file.cc
+// object-file.cc
 //
 
 // A comdat section typically represents an inline function,
@@ -1069,7 +1069,7 @@ private:
 };
 
 //
-// memory_mapped_file.cc
+// memory-mapped-file.cc
 //
 
 // MemoryMappedFile represents an mmap'ed input file.
@@ -1112,7 +1112,7 @@ template <typename E>
 FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
-// archive_file.cc
+// archive-file.cc
 //
 
 // Unlike traditional linkers, mold doesn't read archive file symbol
@@ -1130,7 +1130,7 @@ std::vector<MemoryMappedFile<E> *>
 read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
 
 //
-// linker_script.cc
+// linker-script.cc
 //
 
 template <typename E>
@@ -1146,7 +1146,7 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
-// output_file.cc
+// output-file.cc
 //
 
 // OutputFile represents a mmap'ed output file.
@@ -1250,7 +1250,7 @@ private:
 };
 
 //
-// gc_sections.cc
+// gc-sections.cc
 //
 
 template <typename E>
@@ -1632,6 +1632,7 @@ struct Context {
 
   u64 tls_begin = -1;
   u64 tls_end = -1;
+  bool relax_tlsdesc = false;
 
   // Linker-synthesized symbols
   Symbol<E> *_DYNAMIC = nullptr;
