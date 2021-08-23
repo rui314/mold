@@ -35,8 +35,10 @@
 // This problem boils down to one in graph theory. Input to ICF can be
 // considered as a directed graph in which vertices are sections and edges
 // are relocations. Vertices have labels (section contents, etc.), and so
-// are edges (relocation offsets, etc.). Given this formulation, we want to
-// find as many isomorphic subgraphs as possible.
+// are edges (relocation offsets, etc.). Two vertices are considered
+// identical if and only if the (possibly infinite) their unfoldings into
+// regular trees are equal. Given this formulation, we want to find as
+// many identical vertices as possible.
 //
 // Solving such problem is computationally intensive, but mold is quite fast.
 // For Chromium, mold's ICF finishes in less than 1 second with 20 threads.
