@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+
 echo 'int main() {}' | aarch64-linux-gnu-gcc -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 

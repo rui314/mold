@@ -10,40 +10,25 @@ mkdir -p $t
 echo 'int main() {}' | cc -o $t/exe -xc -
 ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
-  .text
-  .globl  real_foobar
-real_foobar:
-  lea     msg(%rip), %rdi
-  xor     %rax, %rax
-  call    printf
-  xor     %rax, %rax
-  ret
+cat <<EOF | cc -o $t/a.o -c -xc -
+#include <stdio.h>
 
-  .globl  resolve_foobar
-resolve_foobar:
-  pushq   %rbp
-  movq    %rsp, %rbp
-  leaq    real_foobar(%rip), %rax
-  popq    %rbp
-  ret
+__attribute__((ifunc("resolve_foobar")))
+static void foobar(void);
 
-  .globl  foobar
-  .type   foobar, @gnu_indirect_function
-  .set    foobar, resolve_foobar
+static void real_foobar(void) {
+  printf("Hello world\n");
+}
 
-  .globl  main
-main:
-  pushq   %rbp
-  movq    %rsp, %rbp
-  call    foobar@PLT
-	xor     %rax, %rax
-  popq    %rbp
-  ret
+typedef void Func();
 
-  .data
-msg:
-  .string "Hello world\n"
+static Func *resolve_foobar(void) {
+  return real_foobar;
+}
+
+int main() {
+  foobar();
+}
 EOF
 
 clang -fuse-ld=$mold -o $t/exe $t/a.o

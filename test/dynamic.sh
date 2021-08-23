@@ -25,7 +25,7 @@ int main() {
 EOF
 
 clang -fuse-ld=$mold -o $t/exe -pie $t/b.o
-count=$(readelf --relocs $t/exe | grep R_X86_64_RELATIVE | wc -l)
+count=$(readelf -W --relocs $t/exe | grep -P 'R_[\w\d_]+_RELATIVE' | wc -l)
 readelf -W --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
 
 echo OK

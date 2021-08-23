@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+
 # Skip if libc is musl
 echo 'int main() {}' | cc -o $t/exe -xc -
 ldd $t/exe | grep -q ld-musl && { echo OK; exit; }

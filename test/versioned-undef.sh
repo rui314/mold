@@ -24,14 +24,20 @@ EOF
 echo 'VER1 { local: *; }; VER2 { local: *; }; VER3 { local: *; };' > $t/b.ver
 clang -fuse-ld=$mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
 
-cat <<EOF | cc -c -o $t/d.o -x assembler -
-.globl bar1, bar2, bar3
-bar1:
-  call "foo@VER1"
-  ret
-bar2:
-  call "foo@VER2"
-  ret
+cat <<EOF | cc -c -o $t/d.o -xc -
+int foo1();
+int foo2();
+
+__asm__(".symver foo1, foo@VER1");
+__asm__(".symver foo2, foo@VER2");
+
+int bar1() {
+  return foo1();
+}
+
+int bar2() {
+  return foo2();
+}
 EOF
 
 cat <<EOF | cc -c -o $t/e.o -xc -

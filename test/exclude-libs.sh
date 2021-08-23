@@ -6,16 +6,16 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | clang -x assembler -c -o $t/a.o -
-.globl foo
-foo:
-  ret
+cat <<EOF | clang -fPIC -xc -c -o $t/a.o -
+int foo() {
+  return 3;
+}
 EOF
 
-cat <<EOF | clang -x assembler -c -o $t/b.o -
-.globl bar
-bar:
-  ret
+cat <<EOF | clang -fPIC -xc -c -o $t/b.o -
+int bar() {
+  return 5;
+}
 EOF
 
 rm -f $t/c.a
@@ -24,7 +24,7 @@ ar crs $t/c.a $t/a.o
 rm -f $t/d.a
 ar crs $t/d.a $t/b.o
 
-cat <<EOF | clang -xc -c -o $t/e.o -
+cat <<EOF | clang -fPIC -xc -c -o $t/e.o -
 int foo();
 int bar();
 

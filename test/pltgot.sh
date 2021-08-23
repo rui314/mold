@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
+[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+
 cat <<EOF | clang -fPIC -shared -o $t/a.so -x assembler -
 .globl ext1, ext2
 ext1:

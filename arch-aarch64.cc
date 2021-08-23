@@ -192,10 +192,13 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
-      if (sym.esym().is_undef_weak())
-        *(u32 *)loc |= 1;
-      else
+      if (sym.file) {
         *(u32 *)loc |= ((S + A - P) >> 2) & 0x3ffffff;
+      } else {
+        // On ARM, calling an weak undefined symbol jumps to the
+        // next instruction.
+        *(u32 *)loc |= 1;
+      }
       continue;
     case R_AARCH64_PREL32:
       *(u32 *)loc = S + A - P;

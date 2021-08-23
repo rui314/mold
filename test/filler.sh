@@ -6,19 +6,18 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
-  .text
-  .globl main
-main:
-  lea msg(%rip), %rdi
-  xor %rax, %rax
-  call printf
-  xor %rax, %rax
-  ret
+cat <<EOF | cc -o $t/a.o -c -xc -
+#include <stdio.h>
 
-  .data
-msg:
-  .string "Hello world\n"
+__attribute__((aligned(512)))
+char hello[] = "Hello";
+
+__attribute__((aligned(512)))
+char world[] = "world";
+
+int main() {
+  printf("%s %s\n", hello, world);
+}
 EOF
 
 clang -fuse-ld=$mold -static -Wl,--filler,0xfe -o $t/exe1 $t/a.o
