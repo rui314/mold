@@ -110,10 +110,14 @@ void EhFrameSection<AARCH64>::apply_reloc(Context<AARCH64> &ctx,
     *(u64 *)(base + loc) = val;
     return;
   case R_AARCH64_PREL32:
-    *(u32 *)(base + loc) = val;
+    *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    return;
+  case R_AARCH64_PREL64:
+    *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
     return;
   }
-  unreachable(ctx);
+  Fatal(ctx) << "unsupported relocation in .eh_frame: "
+             << rel_to_string<AARCH64>(rel.r_type);
 }
 
 template <>
@@ -167,6 +171,9 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_LDST64_ABS_LO12_NC:
       *(u32 *)loc |= extract(S + A, 11, 3) << 10;
+      continue;
+    case R_AARCH64_LDST128_ABS_LO12_NC:
+      *(u32 *)loc |= extract(S + A, 11, 4) << 10;
       continue;
     case R_AARCH64_ADD_ABS_LO12_NC:
       *(u32 *)loc |= extract(S + A, 11, 0) << 10;
@@ -391,8 +398,9 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
-    case R_AARCH64_LDST64_ABS_LO12_NC:
     case R_AARCH64_LDST32_ABS_LO12_NC:
+    case R_AARCH64_LDST64_ABS_LO12_NC:
+    case R_AARCH64_LDST128_ABS_LO12_NC:
     case R_AARCH64_LDST8_ABS_LO12_NC:
     case R_AARCH64_MOVW_UABS_G0_NC:
     case R_AARCH64_MOVW_UABS_G1_NC:
