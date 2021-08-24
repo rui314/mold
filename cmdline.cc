@@ -458,6 +458,16 @@ void parse_nonpositional_args(Context<E> &ctx,
       SyncOut(ctx) << get_version_string()
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386";
       version_shown = true;
+    } else if (read_arg(ctx, args, arg, "m")) {
+      if (arg == "elf_x86_64") {
+        ctx.arg.emulation = EM_X86_64;
+      } else if (arg == "elf_i386") {
+        ctx.arg.emulation = EM_386;
+      } else if (arg == "aarch64linux") {
+        ctx.arg.emulation = EM_AARCH64;
+      } else {
+        Fatal(ctx) << "unknown -m argument: " << arg;
+      }
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       ctx.arg.export_dynamic = true;
     } else if (read_flag(args, "no-export-dynamic")) {
@@ -740,7 +750,6 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "plugin-opt")) {
     } else if (read_flag(args, "color-diagnostics")) {
     } else if (read_flag(args, "gdb-index")) {
-    } else if (read_arg(ctx, args, arg, "m")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {

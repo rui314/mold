@@ -322,12 +322,23 @@ int do_main(int argc, char **argv) {
     if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
       process_run_subcommand(ctx, argc, argv);
 
-  Timer t_all(ctx, "all");
-
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
+
+  // Redo if -m is not x86-64.
+  if (ctx.arg.emulation != E::e_machine) {
+    switch (ctx.arg.emulation) {
+    case EM_386:
+      return do_main<I386>(argc, argv);
+    case EM_AARCH64:
+      return do_main<AARCH64>(argc, argv);
+    }
+    unreachable(ctx);
+  }
+
+  Timer t_all(ctx, "all");
 
   if (ctx.arg.relocatable) {
     combine_objects(ctx, file_args);
@@ -651,46 +662,8 @@ int do_main(int argc, char **argv) {
   return 0;
 }
 
-enum class MachineType { X86_64, I386, AARCH64 };
-
-static std::string_view get_machine_type_string(int argc, char **argv) {
-  for (i64 i = 1; i < argc; i++) {
-    if (std::string_view(argv[i]) == "-m") {
-      if (i + 1 == argc)
-        return "";
-      return argv[i + 1];
-    }
-
-    if (std::string_view(argv[i]).starts_with("-m"))
-      return argv[i] + 2;
-  }
-  return "";
-}
-
-static MachineType get_machine_type(int argc, char **argv) {
-  std::string_view val = get_machine_type_string(argc, argv);
-  if (val.empty())
-    return MachineType::X86_64;
-
-  if (val == "elf_x86_64")
-    return MachineType::X86_64;
-  if (val == "elf_i386")
-    return MachineType::I386;
-  if (val == "aarch64linux")
-    return MachineType::AARCH64;
-  std::cerr << "unknown -m argument: " << val << "\n";
-  exit(1);
-}
-
 int main(int argc, char **argv) {
-  switch (get_machine_type(argc, argv)) {
-  case MachineType::X86_64:
-    return do_main<X86_64>(argc, argv);
-  case MachineType::I386:
-    return do_main<I386>(argc, argv);
-  case MachineType::AARCH64:
-    return do_main<AARCH64>(argc, argv);
-  }
+  return do_main<X86_64>(argc, argv);
 }
 
 #define INSTANTIATE(E)                                                  \
