@@ -15,7 +15,7 @@ else
   exit 0
 fi
 
-cat <<EOF | gcc -ftls-model=local-dynamic -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
+cat <<EOF | gcc -ftls-model=local-exec -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -32,7 +32,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | gcc -ftls-model=local-dynamic -mtls-dialect=$dialect  -fPIC -c -o $t/b.o -xc -
+cat <<EOF | gcc -ftls-model=local-exec -mtls-dialect=$dialect -fPIC -c -o $t/b.o -xc -
 _Thread_local int foo = 3;
 EOF
 

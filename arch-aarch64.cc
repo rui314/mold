@@ -220,6 +220,12 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(u32 *)loc |= extract(S + A - ctx.tls_begin + 16, 11, 0) << 10;
       continue;
+    case R_AARCH64_TLSGD_ADR_PAGE21:
+      write_addr(loc, (page(sym.get_tlsgd_addr(ctx) + A) - page(P)) >> 12);
+      continue;
+    case R_AARCH64_TLSGD_ADD_LO12_NC:
+      *(u32 *)loc |= extract(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
+      continue;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // adrp x0, 0 -> movz x0, #tls_ofset_hi, lsl #16
@@ -375,6 +381,9 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
       dispatch(ctx, table, i);
       break;
     }
+    case R_AARCH64_TLSGD_ADR_PAGE21:
+      sym.flags |= NEEDS_TLSGD;
+      break;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
     case R_AARCH64_TLSDESC_LD64_LO12:
     case R_AARCH64_TLSDESC_ADD_LO12:
@@ -392,6 +401,7 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_PREL32:
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+    case R_AARCH64_TLSGD_ADD_LO12_NC:
     case R_AARCH64_TLSDESC_CALL:
       break;
     default:
