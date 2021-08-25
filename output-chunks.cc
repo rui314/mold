@@ -1170,7 +1170,7 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
   ASSERT(frag);
 
   for (u16 cur = frag->alignment; cur < alignment;)
-    if (frag->alignment.compare_exchange_strong(cur, alignment))
+    if (frag->alignment.compare_exchange_weak(cur, alignment))
       break;
   return frag;
 }

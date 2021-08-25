@@ -833,7 +833,7 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
   u8 val = sym.visibility;
 
   while (priority(visibility) < priority(val))
-    if (sym.visibility.compare_exchange_strong(val, visibility))
+    if (sym.visibility.compare_exchange_weak(val, visibility))
       break;
 }
 

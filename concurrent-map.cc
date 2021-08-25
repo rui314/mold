@@ -51,7 +51,7 @@ ConcurrentMap<T>::insert(std::string_view key, u64 hash, const T &val) {
     }
 
     if (ptr == nullptr) {
-      if (!keys[idx].compare_exchange_strong(ptr, locked))
+      if (!keys[idx].compare_exchange_weak(ptr, locked))
         continue;
       new (values + idx) T(val);
       sizes[idx] = key.size();
