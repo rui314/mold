@@ -1,12 +1,13 @@
 #include "mold.h"
 
-static void write_addr(u8 *buf, u64 val) {
+static void write_adr(u8 *buf, u64 val) {
   u32 hi = (val & 0x1ffffc) << 3;
   u32 lo = (val & 3) << 29;
   *(u32 *)buf = (*(u32 *)buf & 0x9f00001f) | hi | lo;
 }
 
-static u64 extract(u64 val, u64 hi, u64 lo) {
+// Returns [hi:lo] bits of val.
+static u64 bits(u64 val, u64 hi, u64 lo) {
   return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
 }
 
@@ -44,8 +45,8 @@ static void write_plt_header(Context<AARCH64> &ctx, u8 *buf) {
   u64 plt = ctx.plt->shdr.sh_addr;
 
   memcpy(buf, plt0, sizeof(plt0));
-  write_addr(buf + 4, (page(gotplt) - page(plt + 4)) >> 12);
-  *(u32 *)(buf + 8) |= extract(gotplt, 11, 3) << 10;
+  write_adr(buf + 4, bits(page(gotplt) - page(plt + 4), 32, 12));
+  *(u32 *)(buf + 8) |= bits(gotplt, 11, 3) << 10;
   *(u32 *)(buf + 12) |= ((gotplt) & 0xfff) << 10;
 }
 
@@ -63,8 +64,8 @@ static void write_plt_entry(Context<AARCH64> &ctx, u8 *buf, Symbol<AARCH64> *sym
   u64 plt = sym->get_plt_addr(ctx);
 
   memcpy(ent, data, sizeof(data));
-  write_addr(ent, (page(gotplt) - page(plt)) >> 12);
-  *(u32 *)(ent + 4) |= extract(gotplt, 11, 3) << 10;
+  write_adr(ent, bits(page(gotplt) - page(plt), 32, 12));
+  *(u32 *)(ent + 4) |= bits(gotplt, 11, 3) << 10;
   *(u32 *)(ent + 8) |= (gotplt & 0xfff) << 10;
 }
 
@@ -94,8 +95,8 @@ void PltGotSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
     u64 plt = sym->get_plt_addr(ctx);
 
     memcpy(ent, data, sizeof(data));
-    write_addr(ent, (page(got) - page(plt)) >> 12);
-    *(u32 *)(ent + 4) |= extract(got, 11, 3) << 10;
+    write_adr(ent, bits(page(got) - page(plt), 32, 12));
+    *(u32 *)(ent + 4) |= bits(got, 11, 3) << 10;
   }
 }
 
@@ -164,40 +165,40 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       *(u64 *)loc = S + A;
       continue;
     case R_AARCH64_LDST8_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 0) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 0) << 10;
       continue;
     case R_AARCH64_LDST16_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 1) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 1) << 10;
       continue;
     case R_AARCH64_LDST32_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 2) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 2) << 10;
       continue;
     case R_AARCH64_LDST64_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 3) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 3) << 10;
       continue;
     case R_AARCH64_LDST128_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 4) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 4) << 10;
       continue;
     case R_AARCH64_ADD_ABS_LO12_NC:
-      *(u32 *)loc |= extract(S + A, 11, 0) << 10;
+      *(u32 *)loc |= bits(S + A, 11, 0) << 10;
       continue;
     case R_AARCH64_MOVW_UABS_G0_NC:
-      *(u32 *)loc |= extract(S + A, 15, 0) << 5;
+      *(u32 *)loc |= bits(S + A, 15, 0) << 5;
       continue;
     case R_AARCH64_MOVW_UABS_G1_NC:
-      *(u32 *)loc |= extract(S + A, 31, 16) << 5;
+      *(u32 *)loc |= bits(S + A, 31, 16) << 5;
       continue;
     case R_AARCH64_MOVW_UABS_G2_NC:
-      *(u32 *)loc |= extract(S + A, 47, 32) << 5;
+      *(u32 *)loc |= bits(S + A, 47, 32) << 5;
       continue;
     case R_AARCH64_MOVW_UABS_G3:
-      *(u32 *)loc |= extract(S + A, 63, 48) << 5;
+      *(u32 *)loc |= bits(S + A, 63, 48) << 5;
       continue;
     case R_AARCH64_ADR_GOT_PAGE:
-      write_addr(loc, extract(page(G + GOT + A) - page(P), 32, 12));
+      write_adr(loc, bits(page(G + GOT + A) - page(P), 32, 12));
       continue;
     case R_AARCH64_ADR_PREL_PG_HI21:
-      write_addr(loc, extract(page(S + A) - page(P), 32, 12));
+      write_adr(loc, bits(page(S + A) - page(P), 32, 12));
       continue;
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
@@ -213,28 +214,28 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       *(u32 *)loc = S + A - P;
       continue;
     case R_AARCH64_LD64_GOT_LO12_NC:
-      *(u32 *)loc |= extract(G + GOT + A, 11, 3) << 10;
+      *(u32 *)loc |= bits(G + GOT + A, 11, 3) << 10;
       continue;
     case R_AARCH64_LD64_GOTPAGE_LO15:
-      *(u32 *)loc |= extract(G + GOT + A - page(GOT), 14, 3) << 10;
+      *(u32 *)loc |= bits(G + GOT + A - page(GOT), 14, 3) << 10;
       continue;
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
-      write_addr(loc, (page(sym.get_gottp_addr(ctx) + A) - page(P)) >> 12);
+      write_adr(loc, bits(page(sym.get_gottp_addr(ctx) + A) - page(P), 32, 12));
       continue;
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
-      *(u32 *)loc |= extract(sym.get_gottp_addr(ctx) + A, 11, 3) << 10;
+      *(u32 *)loc |= bits(sym.get_gottp_addr(ctx) + A, 11, 3) << 10;
       continue;
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
-      *(u32 *)loc |= extract(S + A - ctx.tls_begin + 16, 23, 12) << 10;
+      *(u32 *)loc |= bits(S + A - ctx.tls_begin + 16, 23, 12) << 10;
       continue;
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
-      *(u32 *)loc |= extract(S + A - ctx.tls_begin + 16, 11, 0) << 10;
+      *(u32 *)loc |= bits(S + A - ctx.tls_begin + 16, 11, 0) << 10;
       continue;
     case R_AARCH64_TLSGD_ADR_PAGE21:
-      write_addr(loc, (page(sym.get_tlsgd_addr(ctx) + A) - page(P)) >> 12);
+      write_adr(loc, bits(page(sym.get_tlsgd_addr(ctx) + A) - page(P), 32, 12));
       continue;
     case R_AARCH64_TLSGD_ADD_LO12_NC:
-      *(u32 *)loc |= extract(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
+      *(u32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
       continue;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
@@ -242,7 +243,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
         u32 offset_hi = (u32)(S + A - ctx.tls_begin + 16) >> 16;
         *(u32 *)loc = 0xd2a00000 | (offset_hi << 5);
       } else {
-        write_addr(loc, (page(sym.get_tlsdesc_addr(ctx) + A) - page(P)) >> 12);
+        write_adr(loc, bits(page(sym.get_tlsdesc_addr(ctx) + A) - page(P), 32, 12));
       }
       continue;
     case R_AARCH64_TLSDESC_LD64_LO12:
@@ -251,7 +252,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
         u32 offset_lo = (S + A - ctx.tls_begin + 16) & 0xffff;
         *(u32 *)loc = 0xf2800000 | (offset_lo << 5);
       } else {
-        *(u32 *)loc |= extract(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
+        *(u32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
       }
       continue;
     case R_AARCH64_TLSDESC_ADD_LO12:
@@ -259,7 +260,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
         // add x0, x0, #0 -> nop
         *(u32 *)loc = 0xd503201f;
       } else {
-        *(u32 *)loc |= extract(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
+        *(u32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
       }
       continue;
     case R_AARCH64_TLSDESC_CALL:
