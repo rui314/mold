@@ -43,7 +43,7 @@ git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 # Build a given package in Docker
 build() {
   package="$1"
-  cmd1="ln -sf /mold/mold /usr/x86_64-pc-linux-gnu/bin/ld"
+  cmd1='(cd /usr/bin; ln -sf /mold/mold $(readlink ld))'
   cmd2="MAKEOPTS=-j8 emerge --onlydeps $package"
   cmd3="MAKEOPTS=-j8 FEATURES=test emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
