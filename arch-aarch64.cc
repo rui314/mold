@@ -166,6 +166,9 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     case R_AARCH64_LDST8_ABS_LO12_NC:
       *(u32 *)loc |= extract(S + A, 11, 0) << 10;
       continue;
+    case R_AARCH64_LDST16_ABS_LO12_NC:
+      *(u32 *)loc |= extract(S + A, 11, 1) << 10;
+      continue;
     case R_AARCH64_LDST32_ABS_LO12_NC:
       *(u32 *)loc |= extract(S + A, 11, 2) << 10;
       continue;
@@ -398,6 +401,7 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
+    case R_AARCH64_LDST16_ABS_LO12_NC:
     case R_AARCH64_LDST32_ABS_LO12_NC:
     case R_AARCH64_LDST64_ABS_LO12_NC:
     case R_AARCH64_LDST128_ABS_LO12_NC:
