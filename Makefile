@@ -1,9 +1,9 @@
 ifeq ($(origin CC), default)
-	CC = clang
+  CC = clang
 endif
 
 ifeq ($(origin CXX), default)
-	CXX = clang++
+  CXX = clang++
 endif
 
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
