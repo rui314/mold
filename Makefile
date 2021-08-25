@@ -22,6 +22,7 @@ OBJS = main.o object-file.o input-sections.o output-chunks.o \
        arch-x86-64.o arch-i386.o arch-aarch64.o
 
 PREFIX ?= /usr
+DEST = $(DESTDIR)$(PREFIX)
 DEBUG ?= 0
 LTO ?= 0
 ASAN ?= 0
@@ -91,23 +92,23 @@ test tests check: all
 	 $(MAKE) -C test --output-sync --no-print-directory
 
 install: all
-	install -m 755 -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 mold $(DESTDIR)$(PREFIX)/bin
-	strip $(DESTDIR)$(PREFIX)/bin/mold
+	install -m 755 -d $(DEST)/bin
+	install -m 755 mold $(DEST)/bin
+	strip $(DEST)/bin/mold
 
-	install -m 755 -d $(DESTDIR)$(PREFIX)/lib/mold
-	install -m 644 mold-wrapper.so $(DESTDIR)$(PREFIX)/lib/mold
-	strip $(DESTDIR)$(PREFIX)/lib/mold/mold-wrapper.so
+	install -m 755 -d $(DEST)/lib/mold
+	install -m 644 mold-wrapper.so $(DEST)/lib/mold
+	strip $(DEST)/lib/mold/mold-wrapper.so
 
-	install -m 755 -d $(DESTDIR)$(PREFIX)/share/man/man1
-	install -m 644 docs/mold.1 $(DESTDIR)$(PREFIX)/share/man/man1
-	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz
-	gzip -9 $(DESTDIR)$(PREFIX)/share/man/man1/mold.1
+	install -m 755 -d $(DEST)/share/man/man1
+	install -m 644 docs/mold.1 $(DEST)/share/man/man1
+	rm -f $(DEST)/share/man/man1/mold.1.gz
+	gzip -9 $(DEST)/share/man/man1/mold.1
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/mold
-	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/mold.1.gz
-	rm -rf $(DESTDIR)$(PREFIX)/lib/mold
+	rm -f $(DEST)/bin/mold
+	rm -f $(DEST)/share/man/man1/mold.1.gz
+	rm -rf $(DEST)/lib/mold
 
 clean:
 	rm -rf *.o *~ mold mold-wrapper.so test/tmp out ld
