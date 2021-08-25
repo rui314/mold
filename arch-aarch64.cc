@@ -191,7 +191,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       *(u32 *)loc |= extract(S + A, 63, 48) << 5;
       continue;
     case R_AARCH64_ADR_GOT_PAGE:
-      write_addr(loc, extract(page(GOT + A) - page(P), 32, 12));
+      write_addr(loc, extract(page(G + GOT + A) - page(P), 32, 12));
       continue;
     case R_AARCH64_ADR_PREL_PG_HI21:
       write_addr(loc, extract(page(S + A) - page(P), 32, 12));
