@@ -26,8 +26,9 @@ FROM gentoo/stage3
 RUN emerge-webrsync
 RUN echo 'USE="elogind -systemd corefonts truetype jpeg jpeg2k tiff zstd static-libs binary"' >> /etc/portage/make.conf && \
     echo 'ACCEPT_LICENSE="* -@EULA"' >> /etc/portage/make.conf && \
-    echo 'FEATURES="${FEATURE} noclean nostrip -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf
-RUN emerge gdb lld vim strace && rm -rf /var/tmp/portage
+    echo 'FEATURES="\${FEATURE} noclean nostrip ccache -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf && \
+    echo 'CCACHE_DIR="/ccache"' >> /etc/portage/make.conf
+RUN emerge gdb lld vim strace ccache && rm -rf /var/tmp/portage
 EOF
   set +e
 fi
@@ -44,10 +45,10 @@ git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 build() {
   package="$1"
   cmd1='(cd /usr/bin; ln -sf /mold/mold $(realpath ld))'
-  cmd2="MAKEOPTS=-j8 emerge --onlydeps $package"
-  cmd3="MAKEOPTS=-j8 FEATURES=test emerge $package"
+  cmd2="MAKEOPTS=-'j$(nproc) --load-average=100' emerge --onlydeps $package"
+  cmd3="MAKEOPTS='-j$(nproc) --load-average=100' FEATURES=test emerge $package"
   filename=`echo "$package" | sed 's!/!_!g'`
-  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold mold-gentoo timeout -v -k 15s 1h"
+  docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold -v /var/cache/ccache-gentoo:/ccache mold-gentoo timeout -v -k 15s 1h"
   dir=gentoo/$git_hash
 
   mkdir -p $dir/success $dir/failure
