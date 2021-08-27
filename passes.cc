@@ -522,16 +522,6 @@ void scan_rels(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    if ((i8)sym->flags == -1) {
-      // As a special case, we convert weak undefined symbols to
-      // absolute symbols with value 0 if they cannot be exported.
-      // See comment in InputSection<E>::dispatch().
-      static_assert(sizeof(sym->flags) == 1);
-      sym->is_imported = false;
-      sym->flags = 0;
-      continue;
-    }
-
     if (sym->flags & NEEDS_DYNSYM)
       ctx.dynsym->add_symbol(ctx, sym);
 

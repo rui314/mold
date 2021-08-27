@@ -986,7 +986,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     if (!sym.file ||
         (sym.esym().is_undef() && sym.file->priority < this->priority)) {
-      if (claim_all || esym.is_weak()) {
+      if (claim_all) {
         // Convert remaining undefined symbols to dynamic symbols.
         sym.file = this;
         sym.input_section = nullptr;
@@ -1002,7 +1002,8 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
           SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
                        << (esym.is_weak() ? " weak" : "")
                        << " symbol " << sym;
-      } else if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
+      } else if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
+                 esym.is_undef_weak()) {
         // Convert remaining undefined symbols to absolute symbols with
         // value 0.
         sym.file = this;

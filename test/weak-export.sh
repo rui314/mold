@@ -6,38 +6,28 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/tmp/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF > $t/a.c
+cat <<EOF | cc -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((weak)) int foo();
-__attribute__((weak)) extern int bar;
+__attribute__((weak)) int bar();
 
 int main() {
-  printf("%d %d\n", foo ? foo() : 3, &bar ? bar : 5);
+  printf("%d %d\n", foo ? foo() : 3, &bar ? bar() : 5);
 }
 EOF
 
-cc -fno-PIC -c -o $t/c.o $t/a.c
-
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o
-! readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo' || false
-$t/exe | grep -q '3 5'
-
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o -Wl,-z,nocopyreloc
-! readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo' || false
-$t/exe | grep -q '3 5'
-
-cc -fPIC -c -o $t/b.o $t/a.c
-
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/b.o
-readelf --dyn-syms $t/exe | grep -q 'NOTYPE  WEAK   DEFAULT  UND foo'
-$t/exe | grep -q '3 5'
-
-cat <<EOF | cc -shared -o $t/d.so -xc -
-int foo() { return 42; }
-int bar = 7;
+cat <<EOF | cc -shared -fPIC -o $t/b.so -xc -
+int foo() {
+  return 42;
+}
 EOF
 
-LD_PRELOAD=$t/d.so $t/exe | grep -q '42 7'
+clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.so
+
+readelf --dyn-syms $t/exe | grep -q 'FUNC    WEAK   DEFAULT  UND foo'
+! readelf --dyn-syms $t/exe | grep -q 'FUNC    WEAK   DEFAULT  UND bar' || false
+
+$t/exe | grep -q '^42 5$'
 
 echo OK

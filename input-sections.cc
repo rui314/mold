@@ -88,26 +88,6 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
   bool is_writable = (shdr.sh_flags & SHF_WRITE);
   Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
 
-  // Weak undefined symbols are usually converted to imported symbols
-  // so that they will get another chance to be resolved at load-time.
-  // However, we need to convert them to absolute symbols with value 0
-  // in a few cases:
-  //
-  // - If a symbol is referred by a read-only section, we can' tcreate
-  //   a dynamic relocation for it.
-  //
-  // - We can't create a copy relocation against a weak undefined
-  //   symbol because we don't know the actual size of the symbol.
-  //
-  // If that's the case, we convert a weak undefined symbol to an
-  // absolute symbol with value 0.
-  if (sym.esym().is_undef_weak()) {
-    if (action == COPYREL || (action == DYNREL && !is_writable)) {
-      sym.flags = -1;
-      return;
-    }
-  }
-
   switch (action) {
   case NONE:
     return;
