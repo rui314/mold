@@ -984,20 +984,23 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     std::lock_guard lock(sym.mu);
 
+    auto claim = [&](bool is_imported) {
+      sym.file = this;
+      sym.input_section = nullptr;
+      sym.value = 0;
+      sym.sym_idx = i;
+      sym.ver_idx = ctx.arg.default_version;
+      sym.is_lazy = false;
+      sym.is_weak = false;
+      sym.is_imported = is_imported;
+      sym.is_exported = false;
+    };
+
     if (!sym.file ||
         (sym.esym().is_undef() && sym.file->priority < this->priority)) {
       if (claim_all) {
         // Convert remaining undefined symbols to dynamic symbols.
-        sym.file = this;
-        sym.input_section = nullptr;
-        sym.value = 0;
-        sym.sym_idx = i;
-        sym.ver_idx = ctx.arg.default_version;
-        sym.is_lazy = false;
-        sym.is_weak = false;
-        sym.is_imported = !ctx.arg.is_static;
-        sym.is_exported = false;
-
+        claim(!ctx.arg.is_static);
         if (sym.traced)
           SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
                        << (esym.is_weak() ? " weak" : "")
@@ -1006,16 +1009,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
                  esym.is_undef_weak()) {
         // Convert remaining undefined symbols to absolute symbols with
         // value 0.
-        sym.file = this;
-        sym.input_section = nullptr;
-        sym.value = 0;
-        sym.sym_idx = i;
-        sym.ver_idx = ctx.arg.default_version;
-        sym.is_lazy = false;
-        sym.is_weak = false;
-        sym.is_imported = false;
-        sym.is_exported = false;
-
+        claim(false);
         if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
           Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
       }
