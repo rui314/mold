@@ -30,4 +30,9 @@ readelf --dyn-syms $t/exe | grep -q 'FUNC    WEAK   DEFAULT  UND foo'
 
 $t/exe | grep -q '^42 5$'
 
+cat <<EOF | cc -shared -fPIC -o $t/b.so -xc -
+EOF
+
+$t/exe | grep -q '^3 5$'
+
 echo OK
