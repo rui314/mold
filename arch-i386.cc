@@ -113,39 +113,6 @@ void EhFrameSection<I386>::apply_reloc(Context<I386> &ctx,
   unreachable(ctx);
 }
 
-static void write_val(Context<I386> &ctx, u64 r_type, u8 *loc, u64 val) {
-  switch (r_type) {
-  case R_386_NONE:
-    return;
-  case R_386_8:
-  case R_386_PC8:
-    *loc = val;
-    return;
-  case R_386_16:
-  case R_386_PC16:
-    *(u16 *)loc = val;
-    return;
-  case R_386_32:
-  case R_386_PC32:
-  case R_386_GOT32:
-  case R_386_GOT32X:
-  case R_386_PLT32:
-  case R_386_GOTOFF:
-  case R_386_GOTPC:
-  case R_386_TLS_LDM:
-  case R_386_TLS_GOTIE:
-  case R_386_TLS_LE:
-  case R_386_TLS_IE:
-  case R_386_TLS_GD:
-  case R_386_TLS_LDO_32:
-  case R_386_SIZE32:
-  case R_386_TLS_GOTDESC:
-    *(u32 *)loc = val;
-    return;
-  }
-  unreachable(ctx);
-}
-
 template <>
 void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
   ElfRel<I386> *dynrel = nullptr;
@@ -168,8 +135,33 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
-    auto write = [&](u64 val) {
-      write_val(ctx, rel.r_type, loc, val);
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (lo <= val && val < hi)
+        return;
+      Error(ctx) << *this << ": relocation "
+                 << rel_to_string<I386>(rel.r_type) << " against "
+                 << sym << " out of range: " << val << " is not in ["
+                 << lo << ", " << hi << ")";
+    };
+
+    auto write8 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 8);
+      *loc = val;
+    };
+
+    auto write8s = [&](u64 val) {
+      overflow_check(val, -(1LL << 7), 1LL << 7);
+      *loc = val;
+    };
+
+    auto write16 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 16);
+      *(u16 *)loc = val;
+    };
+
+    auto write16s = [&](u64 val) {
+      overflow_check(val, -(1LL << 15), 1LL << 15);
+      *(u16 *)loc = val;
     };
 
 #define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
@@ -191,46 +183,54 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_386_8:
+      write8(S + A);
+      continue;
     case R_386_16:
+      write16(S + A);
+      continue;
     case R_386_32:
-      write(S + A);
+      *(u32 *)loc = S + A;
       continue;
     case R_386_PC8:
+      write8s(S + A);
+      continue;
     case R_386_PC16:
+      write16s(S + A);
+      continue;
     case R_386_PC32:
     case R_386_PLT32:
-      write(S + A - P);
+      *(u32 *)loc = S + A - P;
       continue;
     case R_386_GOT32:
     case R_386_GOT32X:
-      write(sym.get_got_addr(ctx) + A - GOTPLT);
+      *(u32 *)loc = sym.get_got_addr(ctx) + A - GOTPLT;
       continue;
     case R_386_GOTOFF:
-      write(S + A - GOTPLT);
+      *(u32 *)loc = S + A - GOTPLT;
       continue;
     case R_386_GOTPC:
-      write(GOTPLT + A - P);
+      *(u32 *)loc = GOTPLT + A - P;
       continue;
     case R_386_TLS_GOTIE:
-      write(sym.get_gottp_addr(ctx) + A - GOTPLT);
+      *(u32 *)loc = sym.get_gottp_addr(ctx) + A - GOTPLT;
       continue;
     case R_386_TLS_LE:
-      write(S + A - ctx.tls_end);
+      *(u32 *)loc = S + A - ctx.tls_end;
       continue;
     case R_386_TLS_IE:
-      write(sym.get_gottp_addr(ctx) + A);
+      *(u32 *)loc = sym.get_gottp_addr(ctx) + A;
       continue;
     case R_386_TLS_GD:
-      write(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
+      *(u32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOTPLT;
       continue;
     case R_386_TLS_LDM:
-      write(ctx.got->get_tlsld_addr(ctx) + A - GOTPLT);
+      *(u32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOTPLT;
       continue;
     case R_386_TLS_LDO_32:
-      write(S + A - ctx.tls_begin);
+      *(u32 *)loc = S + A - ctx.tls_begin;
       continue;
     case R_386_SIZE32:
-      write(sym.esym().st_size + A);
+      *(u32 *)loc = sym.esym().st_size + A;
       continue;
     case R_386_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
@@ -238,9 +238,9 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
           0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
         };
         memcpy(loc - 2, insn, sizeof(insn));
-        write(S + A - ctx.tls_end);
+        *(u32 *)loc = S + A - ctx.tls_end;
       } else {
-        write(sym.get_tlsdesc_addr(ctx) + A - GOTPLT);
+        *(u32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOTPLT;
       }
       continue;
     case R_386_TLS_DESC_CALL:
@@ -284,37 +284,78 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
-    auto write = [&](u64 val) {
-      write_val(ctx, rel.r_type, loc, val);
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (lo <= val && val < hi)
+        return;
+      Error(ctx) << *this << ": relocation "
+                 << rel_to_string<I386>(rel.r_type) << " against "
+                 << sym << " out of range: " << val << " is not in ["
+                 << lo << ", " << hi << ")";
     };
+
+    auto write8 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 8);
+      *loc = val;
+    };
+
+    auto write8s = [&](u64 val) {
+      overflow_check(val, -(1LL << 7), 1LL << 7);
+      *loc = val;
+    };
+
+    auto write16 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 16);
+      *(u16 *)loc = val;
+    };
+
+    auto write16s = [&](u64 val) {
+      overflow_check(val, -(1LL << 15), 1LL << 15);
+      *(u16 *)loc = val;
+    };
+
+#define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A      (ref ? ref->addend : this->get_addend(rel))
+#define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
+#define GOTPLT ctx.gotplt->shdr.sh_addr
 
     switch (rel.r_type) {
     case R_386_8:
+      write8(S + A);
+      continue;
     case R_386_16:
+      write16(S + A);
+      continue;
     case R_386_32:
+      *(u32 *)loc = S + A;
+      continue;
     case R_386_PC8:
+      write8s(S + A);
+      continue;
     case R_386_PC16:
+      write16s(S + A);
+      continue;
     case R_386_PC32:
+      *(u32 *)loc = S + A;
+      continue;
     case R_386_GOTPC:
-      if (ref)
-        write(ref->frag->get_addr(ctx) + ref->addend);
-      else
-        write(sym.get_addr(ctx));
-      break;
+      *(u32 *)loc = GOTPLT + A;
+      continue;
     case R_386_GOTOFF:
-      write(sym.get_addr(ctx) - ctx.got->shdr.sh_addr);
-      break;
+      *(u32 *)loc = S + A - GOTPLT;
+      continue;
     case R_386_TLS_LDO_32:
-      write(sym.get_addr(ctx) - ctx.tls_begin);
-      break;
+      *(u32 *)loc = S + A - ctx.tls_begin;
+      continue;
     case R_386_SIZE32:
-      write(sym.esym().st_size);
-      break;
+      *(u32 *)loc = sym.esym().st_size + A;
+      continue;
     default:
-      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
-                 << rel_to_string<I386>(rel.r_type);
-      break;
+      unreachable(ctx);
     }
+
+#undef S
+#undef A
+#undef GOTPLT
   }
 }
 
