@@ -89,115 +89,6 @@ void EhFrameSection<X86_64>::apply_reloc(Context<X86_64> &ctx,
   unreachable(ctx);
 }
 
-static void overflow_check(Context<X86_64> &ctx, InputSection<X86_64> *sec,
-                           Symbol<X86_64> &sym, u64 r_type, u64 val) {
-  switch (r_type) {
-  case R_X86_64_8:
-    if (val != (u8)val)
-      Error(ctx) << *sec << ": relocation R_X86_64_8 against " << sym
-                 << " out of range: " << val << " is not in [0, 255]";
-    return;
-  case R_X86_64_PC8:
-    if (val != (i8)val)
-      Error(ctx) << *sec << ": relocation R_X86_64_PC8 against " << sym
-                 << " out of range: " << (i64)val << " is not in [-128, 127]";
-    return;
-  case R_X86_64_16:
-    if (val != (u16)val)
-      Error(ctx) << *sec << ": relocation R_X86_64_16 against " << sym
-                 << " out of range: " << val << " is not in [0, 65535]";
-    return;
-  case R_X86_64_PC16:
-    if (val != (i16)val)
-      Error(ctx) << *sec << ": relocation R_X86_64_PC16 against " << sym
-                 << " out of range: " << (i64)val
-                 << " is not in [-32768, 32767]";
-    return;
-  case R_X86_64_32:
-    if (val != (u32)val)
-      Error(ctx) << *sec << ": relocation R_X86_64_32 against " << sym
-                 << " out of range: " << val << " is not in [0, 4294967296]";
-    return;
-  case R_X86_64_32S:
-  case R_X86_64_PC32:
-  case R_X86_64_GOT32:
-  case R_X86_64_GOTPC32:
-  case R_X86_64_GOTPCREL:
-  case R_X86_64_GOTPCRELX:
-  case R_X86_64_REX_GOTPCRELX:
-  case R_X86_64_PLT32:
-  case R_X86_64_TLSGD:
-  case R_X86_64_TLSLD:
-  case R_X86_64_TPOFF32:
-  case R_X86_64_DTPOFF32:
-  case R_X86_64_GOTTPOFF:
-  case R_X86_64_GOTPC32_TLSDESC:
-  case R_X86_64_SIZE32:
-  case R_X86_64_TLSDESC_CALL:
-    if (val != (i32)val)
-      Error(ctx) << *sec << ": relocation " << rel_to_string<X86_64>(r_type)
-                 << " against " << sym << " out of range: " << (i64)val
-                 << " is not in [-2147483648, 2147483647]";
-    return;
-  case R_X86_64_NONE:
-  case R_X86_64_64:
-  case R_X86_64_PC64:
-  case R_X86_64_TPOFF64:
-  case R_X86_64_DTPOFF64:
-  case R_X86_64_GOT64:
-  case R_X86_64_GOTPCREL64:
-  case R_X86_64_GOTPC64:
-  case R_X86_64_SIZE64:
-    return;
-  }
-  unreachable(ctx);
-}
-
-static void write_val(Context<X86_64> &ctx, u64 r_type, u8 *loc, u64 val) {
-  switch (r_type) {
-  case R_X86_64_NONE:
-    return;
-  case R_X86_64_8:
-  case R_X86_64_PC8:
-    *loc = val;
-    return;
-  case R_X86_64_16:
-  case R_X86_64_PC16:
-    *(u16 *)loc = val;
-    return;
-  case R_X86_64_32:
-  case R_X86_64_32S:
-  case R_X86_64_PC32:
-  case R_X86_64_GOT32:
-  case R_X86_64_GOTPC32:
-  case R_X86_64_GOTPCREL:
-  case R_X86_64_GOTPCRELX:
-  case R_X86_64_REX_GOTPCRELX:
-  case R_X86_64_PLT32:
-  case R_X86_64_TLSGD:
-  case R_X86_64_TLSLD:
-  case R_X86_64_TPOFF32:
-  case R_X86_64_DTPOFF32:
-  case R_X86_64_GOTTPOFF:
-  case R_X86_64_GOTPC32_TLSDESC:
-  case R_X86_64_SIZE32:
-  case R_X86_64_TLSDESC_CALL:
-    *(u32 *)loc = val;
-    return;
-  case R_X86_64_64:
-  case R_X86_64_PC64:
-  case R_X86_64_TPOFF64:
-  case R_X86_64_DTPOFF64:
-  case R_X86_64_GOT64:
-  case R_X86_64_GOTPCREL64:
-  case R_X86_64_GOTPC64:
-  case R_X86_64_SIZE64:
-    *(u64 *)loc = val;
-    return;
-  }
-  unreachable(ctx);
-}
-
 static u32 relax_gotpcrelx(u8 *loc) {
   switch ((loc[0] << 8) | loc[1]) {
   case 0xff15: return 0x90e8; // call *0(%rip) -> call 0
@@ -275,9 +166,43 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
-    auto write = [&](u64 val) {
-      overflow_check(ctx, this, sym, rel.r_type, val);
-      write_val(ctx, rel.r_type, loc, val);
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (lo <= val && val < hi)
+        return;
+      Error(ctx) << *this << ": relocation "
+                 << rel_to_string<X86_64>(rel.r_type) << " against "
+                 << sym << " out of range: " << val << " is not in ["
+                 << lo << ", " << hi << ")";
+    };
+
+    auto write8 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 8);
+      *loc = val;
+    };
+
+    auto write8s = [&](u64 val) {
+      overflow_check(val, -(1LL << 7), 1LL << 7);
+      *loc = val;
+    };
+
+    auto write16 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 16);
+      *(u16 *)loc = val;
+    };
+
+    auto write16s = [&](u64 val) {
+      overflow_check(val, -(1LL << 15), 1LL << 15);
+      *(u16 *)loc = val;
+    };
+
+    auto write32 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 32);
+      *(u32 *)loc = val;
+    };
+
+    auto write32s = [&](u64 val) {
+      overflow_check(val, -(1LL << 31), 1LL << 31);
+      *(u32 *)loc = val;
     };
 
 #define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
@@ -299,39 +224,61 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_X86_64_8:
+      write8(S + A);
+      continue;
     case R_X86_64_16:
+      write16(S + A);
+      continue;
     case R_X86_64_32:
+      write32(S + A);
+      continue;
     case R_X86_64_32S:
+      write32s(S + A);
+      continue;
     case R_X86_64_64:
-      write(S + A);
+      *(u64 *)loc = S + A;
       continue;
     case R_X86_64_PC8:
+      write8s(S + A - P);
+      continue;
     case R_X86_64_PC16:
+      write16s(S + A - P);
+      continue;
     case R_X86_64_PC32:
+      write32s(S + A - P);
+      continue;
     case R_X86_64_PC64:
+      *(u64 *)loc = S + A - P;
+      continue;
     case R_X86_64_PLT32:
-      write(S + A - P);
+      write32s(S + A - P);
       continue;
     case R_X86_64_GOT32:
+      write32s(G + A);
+      continue;
     case R_X86_64_GOT64:
-      write(G + A);
+      *(u64 *)loc = G + A;
       continue;
     case R_X86_64_GOTPC32:
+      write32s(GOT + A - P);
+      continue;
     case R_X86_64_GOTPC64:
-      write(GOT + A - P);
+      *(u64 *)loc = GOT + A - P;
       continue;
     case R_X86_64_GOTPCREL:
+      write32s(G + GOT + A - P);
+      continue;
     case R_X86_64_GOTPCREL64:
-      write(G + GOT + A - P);
+      *(u64 *)loc = G + GOT + A - P;
       continue;
     case R_X86_64_GOTPCRELX:
       if (sym.get_got_idx(ctx) == -1) {
         u32 insn = relax_gotpcrelx(loc - 2);
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write(S + A - P);
+        write32s(S + A - P);
       } else {
-        write(G + GOT + A - P);
+        write32s(G + GOT + A - P);
       }
       continue;
     case R_X86_64_REX_GOTPCRELX:
@@ -340,9 +287,9 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write(S + A - P);
+        write32s(S + A - P);
       } else {
-        write(G + GOT + A - P);
+        write32s(G + GOT + A - P);
       }
       continue;
     case R_X86_64_TLSGD:
@@ -353,10 +300,13 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
           0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
         };
         memcpy(loc - 4, insn, sizeof(insn));
-        *(u32 *)(loc + 8) = S - ctx.tls_end + A + 4;
+
+        i64 val = S - ctx.tls_end + A + 4;
+        overflow_check(val, -(1LL << 31), 1LL << 31);
+        *(u32 *)(loc + 8) = val;
         i++;
       } else {
-        write(sym.get_tlsgd_addr(ctx) + A - P);
+        write32s(sym.get_tlsgd_addr(ctx) + A - P);
       }
       continue;
     case R_X86_64_TLSLD:
@@ -369,19 +319,26 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
         memcpy(loc - 3, insn, sizeof(insn));
         i++;
       } else {
-        write(ctx.got->get_tlsld_addr(ctx) + A - P);
+        write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       }
       continue;
     case R_X86_64_DTPOFF32:
+      if (ctx.arg.relax && !ctx.arg.shared)
+        write32s(S + A - ctx.tls_end);
+      else
+        write32s(S + A - ctx.tls_begin);
+      continue;
     case R_X86_64_DTPOFF64:
       if (ctx.arg.relax && !ctx.arg.shared)
-        write(S + A - ctx.tls_end);
+        *(u64 *)loc = S + A - ctx.tls_end;
       else
-        write(S + A - ctx.tls_begin);
+        *(u64 *)loc = S + A - ctx.tls_begin;
       continue;
     case R_X86_64_TPOFF32:
+      write32s(S + A - ctx.tls_end);
+      continue;
     case R_X86_64_TPOFF64:
-      write(S + A - ctx.tls_end);
+      *(u64 *)loc = S + A - ctx.tls_end;
       continue;
     case R_X86_64_GOTTPOFF:
       if (sym.get_gottp_idx(ctx) == -1) {
@@ -389,9 +346,9 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write(S + A - ctx.tls_end + 4);
+        write32s(S + A - ctx.tls_end + 4);
       } else {
-        write(sym.get_gottp_addr(ctx) + A - P);
+        write32s(sym.get_gottp_addr(ctx) + A - P);
       }
       continue;
     case R_X86_64_GOTPC32_TLSDESC:
@@ -400,14 +357,16 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
           0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
         };
         memcpy(loc - 3, insn, sizeof(insn));
-        write(S + A - ctx.tls_end + 4);
+        write32s(S + A - ctx.tls_end + 4);
       } else {
-        write(sym.get_tlsdesc_addr(ctx) + A - P);
+        write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
       continue;
     case R_X86_64_SIZE32:
+      write32(sym.esym().st_size + A);
+      continue;
     case R_X86_64_SIZE64:
-      write(sym.esym().st_size + A);
+      *(u64 *)loc = sym.esym().st_size + A;
       continue;
     case R_X86_64_TLSDESC_CALL:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
@@ -462,35 +421,84 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
-    auto write = [&](u64 val) {
-      overflow_check(ctx, this, sym, rel.r_type, val);
-      write_val(ctx, rel.r_type, loc, val);
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (lo <= val && val < hi)
+        return;
+      Error(ctx) << *this << ": relocation "
+                 << rel_to_string<X86_64>(rel.r_type) << " against "
+                 << sym << " out of range: " << val << " is not in ["
+                 << lo << ", " << hi << ")";
     };
+
+    auto write8 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 8);
+      *loc = val;
+    };
+
+    auto write8s = [&](u64 val) {
+      overflow_check(val, -(1LL << 7), 1LL << 7);
+      *loc = val;
+    };
+
+    auto write16 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 16);
+      *(u16 *)loc = val;
+    };
+
+    auto write16s = [&](u64 val) {
+      overflow_check(val, -(1LL << 15), 1LL << 15);
+      *(u16 *)loc = val;
+    };
+
+    auto write32 = [&](u64 val) {
+      overflow_check(val, 0, 1LL << 32);
+      *(u32 *)loc = val;
+    };
+
+    auto write32s = [&](u64 val) {
+      overflow_check(val, -(1LL << 31), 1LL << 31);
+      *(u32 *)loc = val;
+    };
+
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A   (ref ? ref->addend : rel.r_addend)
 
     switch (rel.r_type) {
     case R_X86_64_8:
+      write8(S + A);
+      break;
     case R_X86_64_16:
+      write16(S + A);
+      break;
     case R_X86_64_32:
+      write32(S + A);
+      break;
     case R_X86_64_32S:
+      write32s(S + A);
+      break;
     case R_X86_64_64:
-      if (ref)
-        write(ref->frag->get_addr(ctx) + ref->addend);
-      else
-        write(sym.get_addr(ctx) + rel.r_addend);
+      *(u64 *)loc = S + A;
       break;
     case R_X86_64_DTPOFF32:
+      write32s(S + A - ctx.tls_begin);
+      break;
     case R_X86_64_DTPOFF64:
-      write(sym.get_addr(ctx) + rel.r_addend - ctx.tls_begin);
+      *(u64 *)loc = S + A - ctx.tls_begin;
       break;
     case R_X86_64_SIZE32:
+      write32(sym.esym().st_size + A);
+      break;
     case R_X86_64_SIZE64:
-      write(sym.esym().st_size + rel.r_addend);
+      *(u64 *)loc = sym.esym().st_size + A;
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel_to_string<X86_64>(rel.r_type);
       break;
     }
+
+#undef S
+#undef A
   }
 }
 
