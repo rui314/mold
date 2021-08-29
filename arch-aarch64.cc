@@ -146,8 +146,10 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (lo <= val && val < hi)
         return;
-      Error(ctx) << *this << ": relocation overflow: "
-                 << rel_to_string<AARCH64>(rel.r_type);
+      Error(ctx) << *this << ": relocation "
+                 << rel_to_string<AARCH64>(rel.r_type) << " against "
+                 << sym << " out of range: " << val << " is not in ["
+                 << lo << ", " << hi << ")";
     };
 
 #define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
