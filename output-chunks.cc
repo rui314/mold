@@ -911,7 +911,7 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
   // In any symtab, local symbols must precede global symbols.
   auto first_global = std::stable_partition(symbols.begin() + 1, symbols.end(),
                                             [](Symbol<E> *sym) {
-    return sym->esym().st_bind == STB_LOCAL;
+    return !sym->is_imported && !sym->is_exported;
   });
 
   i64 global_offset = first_global - symbols.begin();
@@ -978,7 +978,9 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     esym.st_type = sym.esym().st_type;
     esym.st_size = sym.esym().st_size;
 
-    if (sym.is_weak)
+    if (i < this->shdr.sh_info)
+      esym.st_bind = STB_LOCAL;
+    else if (sym.is_weak)
       esym.st_bind = STB_WEAK;
     else if (sym.file->is_dso)
       esym.st_bind = STB_GLOBAL;
