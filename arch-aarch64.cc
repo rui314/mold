@@ -50,8 +50,8 @@ static void write_plt_header(Context<AARCH64> &ctx, u8 *buf) {
   *(u32 *)(buf + 12) |= ((gotplt) & 0xfff) << 10;
 }
 
-static void write_plt_entry(Context<AARCH64> &ctx, u8 *buf, Symbol<AARCH64> *sym) {
-  u8 *ent = buf + sym->get_plt_idx(ctx) * AARCH64::plt_size;
+static void write_plt_entry(Context<AARCH64> &ctx, u8 *buf, Symbol<AARCH64> &sym) {
+  u8 *ent = buf + sym.get_plt_idx(ctx) * AARCH64::plt_size;
 
   static const u8 data[] = {
     0x10, 0x00, 0x00, 0x90, // adrp x16, .got.plt[n]
@@ -60,8 +60,8 @@ static void write_plt_entry(Context<AARCH64> &ctx, u8 *buf, Symbol<AARCH64> *sym
     0x20, 0x02, 0x1f, 0xd6, // br   x17
   };
 
-  u64 gotplt = sym->get_gotplt_addr(ctx);
-  u64 plt = sym->get_plt_addr(ctx);
+  u64 gotplt = sym.get_gotplt_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
 
   memcpy(ent, data, sizeof(data));
   write_adr(ent, bits(page(gotplt) - page(plt), 32, 12));
@@ -74,7 +74,7 @@ void PltSection<AARCH64>::copy_buf(Context<AARCH64> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   write_plt_header(ctx, buf);
   for (Symbol<AARCH64> *sym : symbols)
-    write_plt_entry(ctx, buf, sym);
+    write_plt_entry(ctx, buf, *sym);
 }
 
 template <>

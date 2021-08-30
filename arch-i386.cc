@@ -13,11 +13,7 @@ void GotPltSection<I386>::copy_buf(Context<I386> &ctx) {
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
 }
 
-template <>
-void PltSection<I386>::copy_buf(Context<I386> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  // Write PLT header
+static void write_plt_header(Context<I386> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 plt0[] = {
       0xff, 0xb3, 0x04, 0, 0, 0, // pushl 4(%ebx)
@@ -35,34 +31,41 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
     *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr + 4;
     *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr + 8;
   }
+}
 
-  // Write PLT entries
-  i64 relplt_idx = 0;
+static void write_plt_entry(Context<I386> &ctx, u8 *buf, Symbol<I386> &sym,
+                            i64 idx) {
+  u8 *ent = buf + sym.get_plt_idx(ctx) * I386::plt_size;
 
-  for (Symbol<I386> *sym : symbols) {
-    u8 *ent = buf + sym->get_plt_idx(ctx) * I386::plt_size;
-
-    if (ctx.arg.pic) {
-      static const u8 data[] = {
-        0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-        0x68, 0,    0, 0, 0,    // pushl $reloc_offset
-        0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
-      };
-      memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - ctx.gotplt->shdr.sh_addr;
-    } else {
-      static const u8 data[] = {
-        0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-        0x68, 0,    0, 0, 0,    // pushl $reloc_offset
-        0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
-      };
-      memcpy(ent, data, sizeof(data));
-      *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx);
-    }
-
-    *(u32 *)(ent + 7) = relplt_idx++ * sizeof(ElfRel<I386>);
-    *(u32 *)(ent + 12) = this->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
+  if (ctx.arg.pic) {
+    static const u8 data[] = {
+      0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
+      0x68, 0,    0, 0, 0,    // pushl $reloc_offset
+      0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+    };
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 2) = sym.get_gotplt_addr(ctx) - ctx.gotplt->shdr.sh_addr;
+  } else {
+    static const u8 data[] = {
+      0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+      0x68, 0,    0, 0, 0,    // pushl $reloc_offset
+      0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+    };
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 2) = sym.get_gotplt_addr(ctx);
   }
+
+  *(u32 *)(ent + 7) = idx * sizeof(ElfRel<I386>);
+  *(u32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 16;
+}
+
+template <>
+void PltSection<I386>::copy_buf(Context<I386> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  write_plt_header(ctx, buf);
+
+  for (i64 i = 0; i < symbols.size(); i++)
+    write_plt_entry(ctx, buf, *symbols[i], i);
 }
 
 template <>
