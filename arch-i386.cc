@@ -136,31 +136,30 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
-      if (lo <= val && val < hi)
-        return;
-      Error(ctx) << *this << ": relocation "
-                 << rel_to_string<I386>(rel.r_type) << " against "
-                 << sym << " out of range: " << val << " is not in ["
-                 << lo << ", " << hi << ")";
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation "
+                   << rel_to_string<I386>(rel.r_type) << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
     };
 
     auto write8 = [&](u64 val) {
-      overflow_check(val, 0, 1LL << 8);
+      overflow_check(val, 0, 1 << 8);
       *loc = val;
     };
 
     auto write8s = [&](u64 val) {
-      overflow_check(val, -(1LL << 7), 1LL << 7);
+      overflow_check(val, -(1 << 7), 1 << 7);
       *loc = val;
     };
 
     auto write16 = [&](u64 val) {
-      overflow_check(val, 0, 1LL << 16);
+      overflow_check(val, 0, 1 << 16);
       *(u16 *)loc = val;
     };
 
     auto write16s = [&](u64 val) {
-      overflow_check(val, -(1LL << 15), 1LL << 15);
+      overflow_check(val, -(1 << 15), 1 << 15);
       *(u16 *)loc = val;
     };
 
@@ -285,31 +284,30 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
       ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
-      if (lo <= val && val < hi)
-        return;
-      Error(ctx) << *this << ": relocation "
-                 << rel_to_string<I386>(rel.r_type) << " against "
-                 << sym << " out of range: " << val << " is not in ["
-                 << lo << ", " << hi << ")";
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation "
+                   << rel_to_string<I386>(rel.r_type) << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
     };
 
     auto write8 = [&](u64 val) {
-      overflow_check(val, 0, 1LL << 8);
+      overflow_check(val, 0, 1 << 8);
       *loc = val;
     };
 
     auto write8s = [&](u64 val) {
-      overflow_check(val, -(1LL << 7), 1LL << 7);
+      overflow_check(val, -(1 << 7), 1 << 7);
       *loc = val;
     };
 
     auto write16 = [&](u64 val) {
-      overflow_check(val, 0, 1LL << 16);
+      overflow_check(val, 0, 1 << 16);
       *(u16 *)loc = val;
     };
 
     auto write16s = [&](u64 val) {
-      overflow_check(val, -(1LL << 15), 1LL << 15);
+      overflow_check(val, -(1 << 15), 1 << 15);
       *(u16 *)loc = val;
     };
 

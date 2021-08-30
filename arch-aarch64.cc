@@ -144,12 +144,11 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
-      if (lo <= val && val < hi)
-        return;
-      Error(ctx) << *this << ": relocation "
-                 << rel_to_string<AARCH64>(rel.r_type) << " against "
-                 << sym << " out of range: " << val << " is not in ["
-                 << lo << ", " << hi << ")";
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation "
+                   << rel_to_string<AARCH64>(rel.r_type) << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
     };
 
 #define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
@@ -205,13 +204,13 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_ADR_GOT_PAGE: {
       i64 val = page(G + GOT + A) - page(P);
-      overflow_check(val, -(1LL << 32), 1LL << 32);
+      overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
       continue;
     }
     case R_AARCH64_ADR_PREL_PG_HI21: {
       i64 val = page(S + A) - page(P);
-      overflow_check(val, -(1LL << 32), 1LL << 32);
+      overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
       continue;
     }
@@ -219,7 +218,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     case R_AARCH64_JUMP26:
       if (sym.file) {
         i64 val = S + A - P;
-        overflow_check(val, -(1LL << 26), 1LL << 26);
+        overflow_check(val, -((i64)1 << 26), (i64)1 << 26);
         *(u32 *)loc |= (val >> 2) & 0x3ffffff;
       } else {
         // On ARM, calling an weak undefined symbol jumps to the
@@ -229,7 +228,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_PREL32: {
       i64 val = S + A - P;
-      overflow_check(val, -(1LL << 31), 1LL << 32);
+      overflow_check(val, -((i64)1 << 31), (i64)1 << 32);
       *(u32 *)loc = val;
       continue;
     }
@@ -238,13 +237,13 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_LD64_GOTPAGE_LO15: {
       i64 val = G + GOT + A - page(GOT);
-      overflow_check(val, 0, 1LL << 15);
+      overflow_check(val, 0, 1 << 15);
       *(u32 *)loc |= bits(val, 14, 3) << 10;
       continue;
     }
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21: {
       i64 val = page(sym.get_gottp_addr(ctx) + A) - page(P);
-      overflow_check(val, -(1LL << 32), 1LL << 32);
+      overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
       continue;
     }
@@ -253,7 +252,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_TLSLE_ADD_TPREL_HI12: {
       i64 val = S + A - ctx.tls_begin + 16;
-      overflow_check(val, 0, 1LL << 24);
+      overflow_check(val, 0, (i64)1 << 24);
       *(u32 *)loc |= bits(val, 23, 12) << 10;
       continue;
     }
@@ -262,7 +261,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       continue;
     case R_AARCH64_TLSGD_ADR_PAGE21: {
       i64 val = page(sym.get_tlsgd_addr(ctx) + A) - page(P);
-      overflow_check(val, -(1LL << 32), 1LL << 32);
+      overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
       continue;
     }
@@ -273,11 +272,11 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // adrp x0, 0 -> movz x0, #tls_ofset_hi, lsl #16
         i64 val = (S + A - ctx.tls_begin + 16);
-        overflow_check(val, -(1LL << 32), 1LL << 32);
+        overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
         *(u32 *)loc = 0xd2a00000 | (bits(val, 32, 16) << 5);
       } else {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
-        overflow_check(val, -(1LL << 32), 1LL << 32);
+        overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
         write_adr(loc, bits(val, 32, 12));
       }
       continue;
