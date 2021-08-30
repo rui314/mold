@@ -75,9 +75,6 @@ template <typename E> void cleanup();
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
-void assertion_failure(std::string file, i64 line, std::string func,
-                       std::string expr);
-
 #define ASSERT(expr) assert(expr)
 
 //
