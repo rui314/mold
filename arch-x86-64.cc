@@ -168,8 +168,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation "
-                   << rel_to_string<X86_64>(rel.r_type) << " against "
+        Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
@@ -422,8 +421,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation "
-                   << rel_to_string<X86_64>(rel.r_type) << " against "
+        Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
@@ -491,7 +489,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
-                 << rel_to_string<X86_64>(rel.r_type);
+                 << rel;
       break;
     }
 
@@ -659,8 +657,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_TLSDESC_CALL:
       break;
     default:
-      Error(ctx) << *this << ": unknown relocation: "
-                 << rel_to_string<X86_64>(rel.r_type);
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }

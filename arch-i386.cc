@@ -140,8 +140,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation "
-                   << rel_to_string<I386>(rel.r_type) << " against "
+        Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
@@ -288,8 +287,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation "
-                   << rel_to_string<I386>(rel.r_type) << " against "
+        Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
@@ -460,8 +458,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_TLS_DESC_CALL:
       break;
     default:
-      Error(ctx) << *this << ": unknown relocation: "
-                 << rel_to_string<I386>(rel.r_type);
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }

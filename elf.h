@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <endian.h>
+#include <ostream>
 #include <string>
 
 #if __BYTE_ORDER == __BIG_ENDIAN
@@ -18,12 +19,31 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-template <typename E>
-static std::string rel_to_string(u32 r_type);
-
 struct X86_64;
 struct I386;
 struct AARCH64;
+
+template <typename E> struct ElfSym;
+template <typename E> struct ElfShdr;
+template <typename E> struct ElfEhdr;
+template <typename E> struct ElfPhdr;
+template <typename E> struct ElfRel;
+template <typename E> struct ElfDyn;
+template <typename E> struct ElfVerneed;
+template <typename E> struct ElfVernaux;
+template <typename E> struct ElfVerdef;
+template <typename E> struct ElfVerdaux;
+template <typename E> struct ElfChdr;
+template <typename E> struct ElfNhdr;
+
+template <typename E>
+std::string rel_to_string(u32 r_type);
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const ElfRel<E> &rel) {
+  out << rel_to_string<E>(rel.r_type);
+  return out;
+}
 
 static constexpr u32 SHN_UNDEF = 0;
 static constexpr u32 SHN_ABS = 0xfff1;
@@ -339,7 +359,7 @@ static constexpr u32 R_386_IRELATIVE = 42;
 static constexpr u32 R_386_GOT32X = 43;
 
 template <>
-std::string rel_to_string<I386>(u32 r_type) {
+inline std::string rel_to_string<I386>(u32 r_type) {
   switch (r_type) {
   case R_386_NONE: return "R_386_NONE";
   case R_386_32: return "R_386_32";
@@ -493,7 +513,7 @@ static constexpr u32 R_AARCH64_TLSDESC = 0x407;
 static constexpr u32 R_AARCH64_IRELATIVE = 0x408;
 
 template <>
-std::string rel_to_string<AARCH64>(u32 r_type) {
+inline std::string rel_to_string<AARCH64>(u32 r_type) {
   switch (r_type) {
   case R_AARCH64_NONE: return "R_AARCH64_NONE";
   case R_AARCH64_ABS64: return "R_AARCH64_ABS64";
@@ -835,19 +855,6 @@ struct Elf64Nhdr {
   u32 n_descsz;
   u32 n_type;
 };
-
-template <typename E> struct ElfSym;
-template <typename E> struct ElfShdr;
-template <typename E> struct ElfEhdr;
-template <typename E> struct ElfPhdr;
-template <typename E> struct ElfRel;
-template <typename E> struct ElfDyn;
-template <typename E> struct ElfVerneed;
-template <typename E> struct ElfVernaux;
-template <typename E> struct ElfVerdef;
-template <typename E> struct ElfVerdaux;
-template <typename E> struct ElfChdr;
-template <typename E> struct ElfNhdr;
 
 struct X86_64 {
   typedef u64 WordTy;

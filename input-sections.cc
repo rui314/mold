@@ -128,9 +128,8 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
     unreachable(ctx);
   }
 
-  Error(ctx) << *this << ": " << rel_to_string<E>(rel.r_type)
-             << " relocation against symbol `" << sym
-             << "' can not be used; recompile with -fPIE";
+  Error(ctx) << *this << ": " << rel << " relocation against symbol `"
+             << sym << "' can not be used; recompile with -fPIE";
 }
 
 template <typename E>

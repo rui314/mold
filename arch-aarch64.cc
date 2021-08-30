@@ -117,8 +117,7 @@ void EhFrameSection<AARCH64>::apply_reloc(Context<AARCH64> &ctx,
     *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
     return;
   }
-  Fatal(ctx) << "unsupported relocation in .eh_frame: "
-             << rel_to_string<AARCH64>(rel.r_type);
+  Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
 }
 
 template <>
@@ -145,8 +144,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation "
-                   << rel_to_string<AARCH64>(rel.r_type) << " against "
+        Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
@@ -353,7 +351,7 @@ void InputSection<AARCH64>::apply_reloc_nonalloc(Context<AARCH64> &ctx, u8 *base
       continue;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
-                 << rel_to_string<AARCH64>(rel.r_type);
+                 << rel;
       break;
     }
 
@@ -453,8 +451,7 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_TLSDESC_CALL:
       break;
     default:
-      Error(ctx) << *this << ": unknown relocation: "
-                 << rel_to_string<AARCH64>(rel.r_type);
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }
