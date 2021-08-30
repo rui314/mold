@@ -85,21 +85,32 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
   std::span<ElfRel<E>> rels = get_rels(ctx);
   const ElfRel<E> &rel = rels[i];
   Symbol<E> &sym = *file.symbols[rel.r_sym];
+  bool is_code = (shdr.sh_flags & SHF_EXECINSTR);
   bool is_writable = (shdr.sh_flags & SHF_WRITE);
   Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
+
+  auto error = [&]() {
+    Error(ctx) << *this << ": " << rel << " relocation against symbol `"
+               << sym << "' can not be used; recompile with -fPIC";
+  };
 
   switch (action) {
   case NONE:
     return;
   case ERROR:
-    break;
+    error();
+    return;
   case COPYREL:
-    if (!ctx.arg.z_copyreloc)
-      break;
-    if (sym.esym().st_visibility == STV_PROTECTED)
+    if (!ctx.arg.z_copyreloc) {
+      error();
+      return;
+    }
+    if (sym.esym().st_visibility == STV_PROTECTED) {
       Error(ctx) << *this << ": cannot make copy relocation for "
                  << " protected symbol '" << sym << "', defined in "
                  << *sym.file;
+      return;
+    }
     sym.flags |= NEEDS_COPYREL;
     return;
   case PLT:
@@ -107,8 +118,10 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
     return;
   case DYNREL:
     if (!is_writable) {
-      if (ctx.arg.z_text)
-        break;
+      if (!is_code || ctx.arg.z_text) {
+        error();
+        return;
+      }
       ctx.has_textrel = true;
     }
     sym.flags |= NEEDS_DYNSYM;
@@ -117,8 +130,10 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
     return;
   case BASEREL:
     if (!is_writable) {
-      if (ctx.arg.z_text)
-        break;
+      if (!is_code || ctx.arg.z_text) {
+        error();
+        return;
+      }
       ctx.has_textrel = true;
     }
     rel_exprs[i] = R_BASEREL;
@@ -127,9 +142,6 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
   default:
     unreachable(ctx);
   }
-
-  Error(ctx) << *this << ": " << rel << " relocation against symbol `"
-             << sym << "' can not be used; recompile with -fPIE";
 }
 
 template <typename E>
