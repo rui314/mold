@@ -589,22 +589,26 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_GOTPCREL64:
       sym.flags |= NEEDS_GOT;
       break;
-    case R_X86_64_GOTPCRELX:
+    case R_X86_64_GOTPCRELX: {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      if (!ctx.arg.relax || sym.is_imported || !sym.is_relative(ctx) ||
-          !relax_gotpcrelx(loc - 2))
+      bool do_relax = ctx.arg.relax && !sym.is_imported &&
+                      sym.is_relative(ctx) && relax_gotpcrelx(loc - 2);
+      if (!do_relax)
         sym.flags |= NEEDS_GOT;
       break;
-    case R_X86_64_REX_GOTPCRELX:
+    }
+    case R_X86_64_REX_GOTPCRELX: {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
-      if (!ctx.arg.relax || sym.is_imported || !sym.is_relative(ctx) ||
-          !relax_rex_gotpcrelx(loc - 3))
+      bool do_relax = ctx.arg.relax && !sym.is_imported &&
+                      sym.is_relative(ctx) && relax_rex_gotpcrelx(loc - 3);
+      if (!do_relax)
         sym.flags |= NEEDS_GOT;
       break;
+    }
     case R_X86_64_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
@@ -636,20 +640,25 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
       if (sym.is_imported)
         Fatal(ctx) << *this << ": DTPOFF reloc refers external symbol " << sym;
       break;
-    case R_X86_64_GOTTPOFF:
+    case R_X86_64_GOTTPOFF: {
       ctx.has_gottp_rel = true;
 
-      if (!ctx.arg.relax || ctx.arg.shared || sym.is_imported ||
-          !relax_gottpoff(loc - 3))
+      bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
+                      !sym.is_imported && relax_gottpoff(loc - 3);
+      if (!do_relax)
         sym.flags |= NEEDS_GOTTP;
       break;
-    case R_X86_64_GOTPC32_TLSDESC:
+    }
+    case R_X86_64_GOTPC32_TLSDESC: {
       if (memcmp(loc - 3, "\x48\x8d\x05", 3))
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
-      if (!ctx.relax_tlsdesc || sym.is_imported)
+
+      bool do_relax = ctx.relax_tlsdesc && !sym.is_imported;
+      if (!do_relax)
         sym.flags |= NEEDS_TLSDESC;
       break;
+    }
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
     case R_X86_64_SIZE32:
