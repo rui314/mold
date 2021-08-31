@@ -27,6 +27,7 @@
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <xxh3.h>
