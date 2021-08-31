@@ -1,11 +1,10 @@
 #pragma once
 
 #include <cstdint>
-#include <endian.h>
 #include <ostream>
 #include <string>
 
-#if __BYTE_ORDER == __BIG_ENDIAN
+#ifdef __BIG_ENDIAN__
 #error "mold does not support big-endian hosts"
 #endif
 
