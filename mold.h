@@ -2239,7 +2239,7 @@ InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
   u8 *end = begin + shdr.sh_size;
   if (mb->data(ctx) + mb->size() < end)
     Fatal(ctx) << *this << ": shdr corrupted";
-  return {(char *)begin, (char *)end};
+  return {(char *)begin, (size_t)(end - begin)};
 }
 
 template <typename E>
