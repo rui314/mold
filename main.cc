@@ -655,7 +655,7 @@ int do_main(int argc, char **argv) {
     on_complete();
 
   if (ctx.arg.quick_exit)
-    std::quick_exit(0);
+    _exit(0);
 
   for (std::function<void()> &fn : ctx.on_exit)
     fn();
