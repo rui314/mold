@@ -1,6 +1,5 @@
 #include "mold.h"
 
-#include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <shared_mutex>
 #include <sys/mman.h>
@@ -1656,8 +1655,13 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
 template <typename E>
 static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
   std::vector<u8> buf(16);
-  if (!RAND_bytes(buf.data(), buf.size()))
-    Fatal(ctx) << "RAND_bytes failed";
+
+  FILE *fp = fopen("/dev/urandom", "r");
+  if (!fp)
+    Fatal(ctx) << "cannot open /dev/urandom: " << strerror(errno);
+  if (fread(buf.data(), buf.size(), 1, fp) != 1)
+    Fatal(ctx) << "fread on /dev/urandom: short read";
+  fclose(fp);
 
   // Indicate that this is UUIDv4.
   buf[6] &= 0b00001111;
