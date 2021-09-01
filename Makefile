@@ -8,12 +8,14 @@ endif
 
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
+OS ?= $(shell uname -s)
+
 CPPFLAGS = -g -pthread -std=c++20 -fPIE \
            -DMOLD_VERSION=\"0.9.4\" \
            -DGIT_HASH=\"$(GIT_HASH)\" \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
-LIBS = -Wl,-as-needed -lcrypto -pthread -lz -lxxhash -ldl -lm
+LIBS = -pthread -lz -lxxhash -ldl -lm
 OBJS = main.o object-file.o input-sections.o output-chunks.o \
        mapfile.o perf.o linker-script.o archive-file.o output-file.o \
        subprocess.o gc-sections.o icf.o symbols.o cmdline.o filepath.o \
@@ -45,7 +47,7 @@ ifeq ($(ASAN), 1)
 else ifeq ($(TSAN), 1)
   CPPFLAGS += -fsanitize=thread
   LDFLAGS  += -fsanitize=thread
-else
+else ifneq ($(OS), Darwin)
   # By default, we want to use mimalloc as a memory allocator.
   # Since replacing the standard malloc is not compatible with ASAN,
   # we do that only when ASAN is not enabled.
@@ -64,6 +66,10 @@ else
   TBB_LIB = out/tbb/libs/libtbb.a
   LIBS += $(TBB_LIB)
   CPPFLAGS += -Itbb/include
+endif
+
+ifneq ($(OS), Darwin)
+  LIBS += -lcrypto
 endif
 
 all: mold mold-wrapper.so
