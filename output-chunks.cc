@@ -1,10 +1,17 @@
 #include "mold.h"
 
-#include <openssl/sha.h>
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+
+#ifdef __APPLE__
+#  define COMMON_DIGEST_FOR_OPENSSL
+#  include <CommonCrypto/CommonDigest.h>
+#  define SHA256(data, len, md) CC_SHA256(data, len, md)
+#else
+#  include <openssl/sha.h>
+#endif
 
 template <typename E>
 void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {

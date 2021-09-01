@@ -14,7 +14,13 @@ MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
   struct stat st;
   if (stat(path.c_str(), &st) == -1)
     return nullptr;
-  u64 mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+
+  u64 mtime;
+#ifdef __APPLE__
+  mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+#else
+  mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+#endif
 
   u8 *data = nullptr;
   if (st.st_size == 0) {

@@ -1,6 +1,5 @@
 #include "mold.h"
 
-#include <openssl/sha.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -8,6 +7,13 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#ifdef __APPLE__
+#  define COMMON_DIGEST_FOR_OPENSSL
+#  include <CommonCrypto/CommonDigest.h>
+#else
+#  include <openssl/sha.h>
+#endif
 
 #define DAEMON_TIMEOUT 30
 

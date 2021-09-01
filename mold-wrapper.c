@@ -49,6 +49,21 @@ static bool is_ld(const char *path) {
          !strcmp(ptr, "ld.gold");
 }
 
+int execvpe(const char *file, char *const *argv, char *const *envp) {
+  debug_print("execvpe %s\n", file);
+
+  if (!strcmp(file, "ld") || is_ld(file)) {
+    file = get_mold_path();
+    ((const char **)argv)[0] = file;
+  }
+
+  for (int i = 0; envp[i]; i++)
+    putenv(envp[i]);
+
+  typeof(execvpe) *real = dlsym(RTLD_NEXT, "execvp");
+  return real(file, argv, environ);
+}
+
 int execve(const char *path, char *const *argv, char *const *envp) {
   debug_print("execve %s\n", path);
 
@@ -92,18 +107,6 @@ int execv(const char *path, char *const *argv) {
 
 int execvp(const char *file, char *const *argv) {
   return execvpe(file, argv, environ);
-}
-
-int execvpe(const char *file, char *const *argv, char *const *envp) {
-  debug_print("execvpe %s\n", file);
-
-  if (!strcmp(file, "ld") || is_ld(file)) {
-    file = get_mold_path();
-    ((const char **)argv)[0] = file;
-  }
-
-  typeof(execvpe) *real = dlsym(RTLD_NEXT, "execvpe");
-  return real(file, argv, environ);
 }
 
 int posix_spawn(pid_t *pid, const char *path,
