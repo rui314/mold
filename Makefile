@@ -55,7 +55,7 @@ else ifneq ($(OS), Darwin)
     LIBS += -lmimalloc
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
-    CPPFLAGS += -Imimalloc/include
+    CPPFLAGS += -Ithird-party/mimalloc/include
     LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
@@ -65,7 +65,7 @@ ifdef SYSTEM_TBB
 else
   TBB_LIB = out/tbb/libs/libtbb.a
   LIBS += $(TBB_LIB)
-  CPPFLAGS += -Itbb/include
+  CPPFLAGS += -Ithird-party/tbb/include
 endif
 
 ifneq ($(OS), Darwin)
@@ -85,12 +85,12 @@ $(OBJS): mold.h elf.h Makefile
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
-	(cd out/mimalloc; CFLAGS=-DMI_USE_ENVIRON=0 cmake -G'Unix Makefiles' ../../mimalloc)
+	(cd out/mimalloc; CFLAGS=-DMI_USE_ENVIRON=0 cmake -G'Unix Makefiles' ../../third-party/mimalloc)
 	$(MAKE) -C out/mimalloc mimalloc-static
 
 $(TBB_LIB):
 	mkdir -p out/tbb
-	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 -DTBB_STRICT=OFF ../../tbb)
+	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 -DTBB_STRICT=OFF ../../third-party/tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
