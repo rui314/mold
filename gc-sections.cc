@@ -7,6 +7,8 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
+namespace mold::elf {
+
 template <typename E>
 static bool is_init_fini(const InputSection<E> &isec) {
   return isec.shdr.sh_type == SHT_INIT_ARRAY ||
@@ -192,3 +194,5 @@ void gc_sections(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

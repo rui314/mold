@@ -6,6 +6,8 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
+namespace mold::elf {
+
 i64 Counter::get_value() {
   return values.combine(std::plus());
 }
@@ -126,3 +128,5 @@ void Timer<E>::print(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

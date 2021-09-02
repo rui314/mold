@@ -8,6 +8,8 @@
 #include <tbb/partitioner.h>
 #include <unordered_set>
 
+namespace mold::elf {
+
 template <typename E>
 void apply_exclude_libs(Context<E> &ctx) {
   Timer t(ctx, "apply_exclude_libs");
@@ -977,3 +979,5 @@ void compress_debug_sections(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

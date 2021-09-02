@@ -8,6 +8,8 @@
 
 #include <cmath>
 
+namespace mold::elf {
+
 i64 HyperLogLog::get_cardinality() const {
   double z = 0;
   for (i64 val : buckets)
@@ -19,3 +21,5 @@ void HyperLogLog::merge(const HyperLogLog &other) {
   for (i64 i = 0; i < NBUCKETS; i++)
     merge_one(i, other.buckets[i]);
 }
+
+} // namespace mold::elf

@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 static const char *locked = (char *)-1;
 
 template <typename T>
@@ -77,3 +79,5 @@ ConcurrentMap<T>::insert(std::string_view key, u64 hash, const T &val) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

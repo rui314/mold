@@ -8,6 +8,8 @@
 #include <cctype>
 #include <iomanip>
 
+namespace mold::elf {
+
 template <typename E>
 static thread_local MemoryMappedFile<E> *current_file;
 
@@ -381,3 +383,5 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

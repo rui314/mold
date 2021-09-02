@@ -8,6 +8,8 @@
 #error "mold does not support big-endian hosts"
 #endif
 
+namespace mold::elf {
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -962,3 +964,5 @@ template <> struct ElfVerdef<AARCH64> : public Elf64Verdef {};
 template <> struct ElfVerdaux<AARCH64> : public Elf64Verdaux {};
 template <> struct ElfChdr<AARCH64> : public Elf64Chdr {};
 template <> struct ElfNhdr<AARCH64> : public Elf64Nhdr {};
+
+} // namespace mold::elf

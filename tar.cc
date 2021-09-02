@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 // A tar file consists of one or more Ustar header followed by data.
 // Each Ustar header represents a single file in an archive.
 //
@@ -96,3 +98,5 @@ void TarFile::write_to(u8 *buf) {
     buf += align_to(data.size(), BLOCK_SIZE);
   }
 }
+
+} // namespace mold::elf

@@ -3,6 +3,8 @@
 #include <cxxabi.h>
 #include <stdlib.h>
 
+namespace mold::elf {
+
 static thread_local char *demangle_buf;
 static thread_local size_t demangle_buf_len;
 
@@ -45,3 +47,5 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

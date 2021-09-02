@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <unordered_set>
 
+namespace mold::elf {
+
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];
@@ -662,10 +664,6 @@ int do_main(int argc, char **argv) {
   return 0;
 }
 
-int main(int argc, char **argv) {
-  return do_main<X86_64>(argc, argv);
-}
-
 #define INSTANTIATE(E)                                                  \
   template void read_file(Context<E> &, MemoryMappedFile<E> *);         \
   template std::string_view save_string(Context<E> &, const std::string &)
@@ -673,3 +671,9 @@ int main(int argc, char **argv) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf
+
+int main(int argc, char **argv) {
+  return mold::elf::do_main<mold::elf::X86_64>(argc, argv);
+}

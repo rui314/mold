@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+namespace mold::elf {
+
 static u32 get_umask() {
   u32 orig_umask = umask(0);
   umask(orig_umask);
@@ -130,3 +132,5 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <unordered_set>
 
+namespace mold::elf {
+
 static const char helpmsg[] = R"(
 Options:
   --help                      Report usage information
@@ -875,3 +877,5 @@ void parse_nonpositional_args(Context<E> &ctx,
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

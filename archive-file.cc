@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 struct ArHdr {
   char ar_name[16];
   char ar_date[12];
@@ -117,3 +119,5 @@ read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

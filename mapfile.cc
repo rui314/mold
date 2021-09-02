@@ -7,6 +7,8 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_map>
 
+namespace mold::elf {
+
 template <typename E>
 using Map =
   tbb::concurrent_hash_map<InputSection<E> *, std::vector<Symbol<E> *>>;
@@ -106,3 +108,5 @@ void print_map(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

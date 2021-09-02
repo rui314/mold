@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 template <>
 void GotPltSection<I386>::copy_buf(Context<I386> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
@@ -462,3 +464,5 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     }
   }
 }
+
+} // namespace mold::elf

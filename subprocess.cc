@@ -17,6 +17,8 @@
 
 #define DAEMON_TIMEOUT 30
 
+namespace mold::elf {
+
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
 // we fork a child and let it do the actual linking work.
@@ -316,3 +318,5 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

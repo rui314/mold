@@ -2,6 +2,8 @@
 
 #include <limits>
 
+namespace mold::elf {
+
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               const ElfShdr<E> &shdr, std::string_view name,
@@ -164,3 +166,5 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

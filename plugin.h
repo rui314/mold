@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+namespace mold::elf {
+
 enum PluginStatus {
   LDPS_OK,
   LDPS_NO_SYMS,
@@ -113,3 +115,5 @@ enum PluginLevel {
   LDPL_ERROR,
   LDPL_FATAL,
 };
+
+} // namespace mold::elf

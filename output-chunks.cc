@@ -13,6 +13,8 @@
 #  include <openssl/sha.h>
 #endif
 
+namespace mold::elf {
+
 template <typename E>
 void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {
   Fatal(ctx) << name << ": write_to is called on an invalid section";
@@ -1851,3 +1853,5 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

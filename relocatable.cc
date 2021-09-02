@@ -31,6 +31,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace mold::elf {
+
 template <typename E> class RObjectFile;
 
 template <typename E>
@@ -590,3 +592,5 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+namespace mold::elf {
+
 template <typename E>
 MemoryMappedFile<E> *
 MemoryMappedFile<E>::open(Context<E> &ctx, std::string path) {
@@ -123,3 +125,5 @@ FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

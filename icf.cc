@@ -69,17 +69,19 @@
 #  include <openssl/sha.h>
 #endif
 
-static constexpr i64 HASH_SIZE = 16;
+static constexpr int64_t HASH_SIZE = 16;
 
-typedef std::array<u8, HASH_SIZE> Digest;
+typedef std::array<uint8_t, HASH_SIZE> Digest;
 
 namespace std {
 template<> struct hash<Digest> {
   size_t operator()(const Digest &k) const {
-    return *(i64 *)&k[0];
+    return *(int64_t *)&k[0];
   }
 };
 }
+
+namespace mold::elf {
 
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
@@ -588,3 +590,5 @@ void icf_sections(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

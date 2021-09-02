@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <zlib.h>
 
+namespace mold::elf {
+
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   : mb(mb), filename(mb->name) {
@@ -1425,3 +1427,5 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

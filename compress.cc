@@ -17,6 +17,8 @@
 #include <tbb/parallel_for_each.h>
 #include <zlib.h>
 
+namespace mold::elf {
+
 static constexpr i64 SHARD_SIZE = 1024 * 1024;
 
 static std::vector<std::string_view> split(std::string_view input) {
@@ -160,3 +162,5 @@ void GzipCompressor::write_to(u8 *buf) {
   *(u32 *)(end - 8) = checksum;
   *(u32 *)(end - 4) = uncompressed_size;
 }
+
+} // namespace mold::elf

@@ -32,6 +32,18 @@
 #include <vector>
 #include <xxh3.h>
 
+template<> struct tbb::tbb_hash_compare<std::string_view> {
+  static size_t hash(const std::string_view &k) {
+    return XXH3_64bits(k.data(), k.size());
+  }
+
+  static bool equal(const std::string_view &k1, const std::string_view &k2) {
+    return k1 == k2;
+  }
+};
+
+namespace mold::elf {
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -126,16 +138,6 @@ struct SymbolAux {
 inline u64 hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
 }
-
-template<> struct tbb::tbb_hash_compare<std::string_view> {
-  static size_t hash(const std::string_view &k) {
-    return hash_string(k);
-  }
-
-  static bool equal(const std::string_view &k1, const std::string_view &k2) {
-    return k1 == k2;
-  }
-};
 
 //
 // input-sections.cc
@@ -2347,3 +2349,5 @@ inline void write32be(u8 *buf, u32 val) {
   buf[2] = val >> 8;
   buf[3] = val;
 }
+
+} // namespace mold::elf

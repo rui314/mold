@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 template <>
 void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
@@ -670,3 +672,5 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     }
   }
 }
+
+} // namespace mold::elf

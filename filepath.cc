@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 std::string get_current_dir() {
   std::string buf(8192, '\0');
   getcwd(buf.data(), buf.size());
@@ -103,3 +105,5 @@ std::string path_clean(std::string_view path) {
   }
   return ret;
 }
+
+} // namespace mold::elf

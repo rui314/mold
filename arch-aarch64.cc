@@ -1,5 +1,7 @@
 #include "mold.h"
 
+namespace mold::elf {
+
 static void write_adr(u8 *buf, u64 val) {
   u32 hi = (val & 0x1ffffc) << 3;
   u32 lo = (val & 3) << 29;
@@ -455,3 +457,5 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     }
   }
 }
+
+} // namespace mold::elf
