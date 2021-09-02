@@ -16,12 +16,10 @@ CPPFLAGS = -g -pthread -std=c++20 -fPIE \
 	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
-OBJS = main.o object-file.o input-sections.o output-chunks.o \
-       mapfile.o perf.o linker-script.o archive-file.o output-file.o \
-       subprocess.o gc-sections.o icf.o symbols.o cmdline.o filepath.o \
-       passes.o tar.o compress.o memory-mapped-file.o relocatable.o \
-       concurrent-map.o hyperloglog.o \
-       arch-x86-64.o arch-i386.o arch-aarch64.o
+
+SRCS=$(wildcard elf/*.cc)
+HEADERS=$(wildcard elf/*.h)
+OBJS=$(SRCS:.cc=.o)
 
 PREFIX ?= /usr
 DEST = $(DESTDIR)$(PREFIX)
@@ -78,10 +76,10 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 	ln -sf mold ld
 
-mold-wrapper.so: mold-wrapper.c Makefile
+mold-wrapper.so: elf/mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
 
-$(OBJS): mold.h elf.h Makefile
+$(OBJS): $(HEADERS) Makefile
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
@@ -117,6 +115,6 @@ uninstall:
 	rm -rf $(DEST)/lib/mold
 
 clean:
-	rm -rf *.o *~ mold mold-wrapper.so test/tmp out ld
+	rm -rf *.o elf/*.o *~ mold mold-wrapper.so test/tmp out ld
 
 .PHONY: all test tests check clean $(TESTS)
