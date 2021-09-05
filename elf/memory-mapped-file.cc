@@ -56,11 +56,11 @@ u8 *MemoryMappedFile<E>::data(Context<E> &ctx) {
 
   i64 fd = ::open(name.c_str(), O_RDONLY);
   if (fd == -1)
-    Fatal(ctx) << name << ": cannot open: " << strerror(errno);
+    Fatal(ctx) << name << ": cannot open: " << errno_string();
 
   data_ = (u8 *)mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
   if (data_ == MAP_FAILED)
-    Fatal(ctx) << name << ": mmap failed: " << strerror(errno);
+    Fatal(ctx) << name << ": mmap failed: " << errno_string();
   close(fd);
   return data_;
 }

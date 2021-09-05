@@ -1667,7 +1667,7 @@ static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
 
   FILE *fp = fopen("/dev/urandom", "r");
   if (!fp)
-    Fatal(ctx) << "cannot open /dev/urandom: " << strerror(errno);
+    Fatal(ctx) << "cannot open /dev/urandom: " << errno_string();
   if (fread(buf.data(), buf.size(), 1, fp) != 1)
     Fatal(ctx) << "fread on /dev/urandom: short read";
   fclose(fp);

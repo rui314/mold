@@ -126,7 +126,7 @@ static void send_fd(Context<E> &ctx, i64 conn, i64 fd) {
   *(int *)CMSG_DATA(cmsg) = fd;
 
   if (sendmsg(conn, &msg, 0) == -1)
-    Fatal(ctx) << "sendmsg failed: " << strerror(errno);
+    Fatal(ctx) << "sendmsg failed: " << errno_string();
 }
 
 template <typename E>
@@ -146,7 +146,7 @@ static i64 recv_fd(Context<E> &ctx, i64 conn) {
 
   i64 len = recvmsg(conn, &msg, 0);
   if (len <= 0)
-    Fatal(ctx) << "recvmsg failed: " << strerror(errno);
+    Fatal(ctx) << "recvmsg failed: " << errno_string();
 
   struct cmsghdr *cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
@@ -157,7 +157,7 @@ template <typename E>
 void try_resume_daemon(Context<E> &ctx) {
   i64 conn = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn == -1)
-    Fatal(ctx) << "socket failed: " << strerror(errno);
+    Fatal(ctx) << "socket failed: " << errno_string();
 
   std::string path = "/tmp/mold-" + compute_sha256(ctx.cmdline_args);
 
@@ -184,11 +184,11 @@ template <typename E>
 void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
                std::function<void()> *on_complete) {
   if (daemon(1, 0) == -1)
-    Fatal(ctx) << "daemon failed: " << strerror(errno);
+    Fatal(ctx) << "daemon failed: " << errno_string();
 
   i64 sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock == -1)
-    Fatal(ctx) << "socket failed: " << strerror(errno);
+    Fatal(ctx) << "socket failed: " << errno_string();
 
   socket_tmpfile =
     strdup(("/tmp/mold-" + compute_sha256(ctx.cmdline_args)).c_str());
@@ -201,17 +201,17 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
   if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1) {
     if (errno != EADDRINUSE)
-      Fatal(ctx) << "bind failed: " << strerror(errno);
+      Fatal(ctx) << "bind failed: " << errno_string();
 
     unlink(socket_tmpfile);
     if (bind(sock, (struct sockaddr *)&name, sizeof(name)) == -1)
-      Fatal(ctx) << "bind failed: " << strerror(errno);
+      Fatal(ctx) << "bind failed: " << errno_string();
   }
 
   umask(orig_mask);
 
   if (listen(sock, 0) == -1)
-    Fatal(ctx) << "listen failed: " << strerror(errno);
+    Fatal(ctx) << "listen failed: " << errno_string();
 
   static i64 conn = -1;
 
@@ -226,7 +226,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
     i64 res = select(sock + 1, &rfds, NULL, NULL, &tv);
     if (res == -1)
-      Fatal(ctx) << "select failed: " << strerror(errno);
+      Fatal(ctx) << "select failed: " << errno_string();
 
     if (res == 0) {
       std::cout << "timeout\n";
@@ -235,7 +235,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
     conn = accept(sock, NULL, NULL);
     if (conn == -1)
-      Fatal(ctx) << "accept failed: " << strerror(errno);
+      Fatal(ctx) << "accept failed: " << errno_string();
     unlink(socket_tmpfile);
 
     dup2(recv_fd(ctx, conn), STDOUT_FILENO);
@@ -254,7 +254,7 @@ static std::string get_self_path(Context<E> &ctx) {
   char buf[4096];
   size_t n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
-    Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << strerror(errno);
+    Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << errno_string();
   if (n == sizeof(buf))
     Fatal(ctx) << "readlink: path too long";
   return {buf, n};
@@ -301,12 +301,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   if (std::string_view cmd = path_basename(argv[2]);
       cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold") {
     execv(self.c_str(), argv + 2);
-    Fatal(ctx) << "mold -run failed: " << self << ": " << strerror(errno);
+    Fatal(ctx) << "mold -run failed: " << self << ": " << errno_string();
   }
 
   // Execute a given command
   execvp(argv[2], argv + 2);
-  Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << strerror(errno);
+  Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << errno_string();
 }
 
 #define INSTANTIATE(E)                                                  \

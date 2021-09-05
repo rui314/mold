@@ -23,18 +23,18 @@ public:
     this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(this->tmpfile);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << strerror(errno);
+      Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << errno_string();
 
     if (rename(path.c_str(), this->tmpfile) == 0) {
       ::close(fd);
       fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
       if (fd == -1) {
         if (errno != ETXTBSY)
-          Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
+          Fatal(ctx) << "cannot open " << path << ": " << errno_string();
         unlink(this->tmpfile);
         fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
         if (fd == -1)
-          Fatal(ctx) << "cannot open " << path << ": " << strerror(errno);
+          Fatal(ctx) << "cannot open " << path << ": " << errno_string();
       }
     }
 
@@ -47,7 +47,7 @@ public:
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED, fd, 0);
     if (this->buf == MAP_FAILED)
-      Fatal(ctx) << path << ": mmap failed: " << strerror(errno);
+      Fatal(ctx) << path << ": mmap failed: " << errno_string();
     ::close(fd);
   }
 
@@ -58,7 +58,7 @@ public:
       munmap(this->buf, this->filesize);
 
     if (rename(this->tmpfile, this->path.c_str()) == -1)
-      Fatal(ctx) << this->path << ": rename failed: " << strerror(errno);
+      Fatal(ctx) << this->path << ": rename failed: " << errno_string();
     this->tmpfile = nullptr;
   }
 };
@@ -71,7 +71,7 @@ public:
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
-      Fatal(ctx) << "mmap failed: " << strerror(errno);
+      Fatal(ctx) << "mmap failed: " << errno_string();
   }
 
   void close(Context<E> &ctx) override {
@@ -85,7 +85,7 @@ public:
 
     i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << this->path << ": " << strerror(errno);
+      Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
 
     FILE *fp = fdopen(fd, "w");
     fwrite(this->buf, this->filesize, 1, fp);

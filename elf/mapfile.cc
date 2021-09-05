@@ -18,7 +18,7 @@ static std::unique_ptr<std::ofstream> open_output_file(Context<E> &ctx) {
   std::unique_ptr<std::ofstream> file(new std::ofstream);
   file->open(ctx.arg.Map.c_str());
   if (!file->is_open())
-    Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << strerror(errno);
+    Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << errno_string();
   return file;
 }
 

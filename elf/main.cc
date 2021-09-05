@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <cstring>
 #include <functional>
 #include <iomanip>
 #include <map>
@@ -10,6 +11,12 @@
 #include <unordered_set>
 
 namespace mold::elf {
+
+std::string errno_string() {
+  char buf[500];
+  strerror_r(errno, buf, sizeof(buf));
+  return buf;
+}
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
@@ -358,7 +365,7 @@ int do_main(int argc, char **argv) {
 
   if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
     Fatal(ctx) << "chdir failed: " << ctx.arg.directory
-               << ": " << strerror(errno);
+               << ": " << errno_string();
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
