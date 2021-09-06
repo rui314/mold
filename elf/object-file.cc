@@ -976,8 +976,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
 
-  bool claim_all = ctx.arg.shared && !ctx.arg.z_defs;
-
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
@@ -1000,7 +998,17 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     if (!sym.file ||
         (sym.esym().is_undef() && sym.file->priority < this->priority)) {
-      if (claim_all) {
+      // Traditionally, remaining undefined symbols cause a link failure
+      // only when we are creating an executable. Undefined symbols in
+      // shared objects are promoted to dynamic symbols, so that they'll
+      // get another chance to be resolved at run-time. You can change the
+      // behavior by passing `-z defs` to the linker.
+      //
+      // Even if `-z defs` is given, weak undefined symbols are still
+      // promoted to dynamic symbols for compatibility with other linkers.
+      // Some major programs, notably Firefox, depend on the behavior
+      // (they use this loophole to export symbols from libxul.so).
+      if (ctx.arg.shared && (!ctx.arg.z_defs || esym.is_undef_weak())) {
         // Convert remaining undefined symbols to dynamic symbols.
         claim(!ctx.arg.is_static);
         if (sym.traced)
