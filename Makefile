@@ -73,17 +73,18 @@ endif
 all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
-	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	$(CXX) $(CPPFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 	ln -sf mold ld
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
 
-out/elf/%.o: elf/%.cc $(HEADERS) Makefile out/elf
+out/elf/%.o: elf/%.cc $(HEADERS) Makefile out/elf/.keep
 	$(CXX) $(CPPFLAGS) -c -o $@ $<
 
-out/elf:
-	mkdir -p $@
+out/elf/.keep:
+	mkdir -p out/elf
+	touch $@
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
