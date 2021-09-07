@@ -19,7 +19,7 @@ LIBS = -pthread -lz -lxxhash -ldl -lm
 
 SRCS=$(wildcard elf/*.cc)
 HEADERS=$(wildcard elf/*.h)
-OBJS=$(SRCS:.cc=.o)
+OBJS=$(SRCS:elf/%.cc=out/elf/%.o)
 
 PREFIX ?= /usr
 DEST = $(DESTDIR)$(PREFIX)
@@ -79,7 +79,11 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 mold-wrapper.so: elf/mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
 
-$(OBJS): $(HEADERS) Makefile
+out/elf/%.o: elf/%.cc $(HEADERS) Makefile out/elf
+	$(CXX) $(CPPFLAGS) -c -o $@ $<
+
+out/elf:
+	mkdir -p $@
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
@@ -115,6 +119,6 @@ uninstall:
 	rm -rf $(DEST)/lib/mold
 
 clean:
-	rm -rf *.o elf/*.o *~ mold mold-wrapper.so test/tmp out ld
+	rm -rf *~ mold mold-wrapper.so test/tmp out ld
 
 .PHONY: all test tests check clean $(TESTS)
