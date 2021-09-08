@@ -104,6 +104,7 @@ install: all
 	install -m 755 -d $(DEST)/bin
 	install -m 755 mold $(DEST)/bin
 	strip $(DEST)/bin/mold
+	ln -sf mold $(DEST)/bin/ld.mold
 
 	install -m 755 -d $(DEST)/lib/mold
 	install -m 644 mold-wrapper.so $(DEST)/lib/mold
@@ -115,7 +116,7 @@ install: all
 	gzip -9 $(DEST)/share/man/man1/mold.1
 
 uninstall:
-	rm -f $(DEST)/bin/mold
+	rm -f $(DEST)/bin/mold $(DEST)/bin/ld.mold
 	rm -f $(DEST)/share/man/man1/mold.1.gz
 	rm -rf $(DEST)/lib/mold
 

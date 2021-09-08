@@ -682,5 +682,9 @@ INSTANTIATE(AARCH64);
 } // namespace mold::elf
 
 int main(int argc, char **argv) {
-  return mold::elf::do_main<mold::elf::X86_64>(argc, argv);
+  std::string_view cmd = mold::elf::path_filename(argv[0]);
+  if (cmd == "ld" || cmd == "mold" || cmd == "ld.mold")
+    return mold::elf::do_main<mold::elf::X86_64>(argc, argv);
+  std::cerr << "mold: unknown command: " << argv[0] << "\n";
+  exit(1);
 }
