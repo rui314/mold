@@ -75,6 +75,7 @@ all: mold mold-wrapper.so
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(CPPFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
 	ln -sf mold ld
+	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
@@ -102,13 +103,12 @@ $(TBB_LIB):
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
-	 $(MAKE) -C test/elf --output-sync --no-print-directory
+	 $(MAKE) -C test --output-sync --no-print-directory
 
 install: all
 	install -m 755 -d $(DEST)/bin
 	install -m 755 mold $(DEST)/bin
 	strip $(DEST)/bin/mold
-	ln -sf mold $(DEST)/bin/ld.mold
 
 	install -m 755 -d $(DEST)/lib/mold
 	install -m 644 mold-wrapper.so $(DEST)/lib/mold
@@ -119,12 +119,15 @@ install: all
 	rm -f $(DEST)/share/man/man1/mold.1.gz
 	gzip -9 $(DEST)/share/man/man1/mold.1
 
+	ln -sf mold $(DEST)/bin/ld.mold
+	ln -sf mold $(DEST)/bin/ld64.mold
+
 uninstall:
 	rm -f $(DEST)/bin/mold $(DEST)/bin/ld.mold
 	rm -f $(DEST)/share/man/man1/mold.1.gz
 	rm -rf $(DEST)/lib/mold
 
 clean:
-	rm -rf *~ mold mold-wrapper.so out ld
+	rm -rf *~ mold mold-wrapper.so out ld ld64.mold
 
 .PHONY: all test tests check clean

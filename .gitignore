@@ -8,5 +8,6 @@ compile_commands.json
 options.inc
 core
 ld
+ld64.mold
 gentoo
 out

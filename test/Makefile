@@ -1,4 +1,4 @@
-TESTS = $(wildcard *.sh)
+TESTS = $(wildcard elf/*.sh macho/*.sh)
 
 test: $(TESTS)
 
