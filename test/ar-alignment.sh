@@ -3,7 +3,7 @@ set -e
 cd $(dirname $0)
 mold=`pwd`/../mold
 echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/tmp/$(basename -s .sh $0)
+t=$(pwd)/../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
 truncate -s 15 $t/a.bin

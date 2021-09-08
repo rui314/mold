@@ -125,6 +125,6 @@ uninstall:
 	rm -rf $(DEST)/lib/mold
 
 clean:
-	rm -rf *~ mold mold-wrapper.so test/tmp out ld
+	rm -rf *~ mold mold-wrapper.so out ld
 
 .PHONY: all test tests check clean

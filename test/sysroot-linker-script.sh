@@ -3,7 +3,7 @@ set -e
 cd $(dirname $0)
 mold=`pwd`/../mold
 echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/tmp/$(basename -s .sh $0)
+t=$(pwd)/../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
 cat <<EOF | cc -o $t/a.o -c -xc -
@@ -24,7 +24,5 @@ int main() { foo(); }
 EOF
 
 clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=$t/ $t/foo/bar/b.script
-
-clang -fuse-ld=$mold -o $t/exe $t/c.o -Wl,--sysroot=tmp/$(basename -s .sh $0)/ $t/foo/bar/b.script
 
 echo OK
