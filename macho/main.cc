@@ -4,7 +4,7 @@
 
 namespace mold::macho {
 
-int macho_main(int argc, char **argv) {
+int main(int argc, char **argv) {
   std::cout << "mold macho stub\n";
   return 0;
 }

@@ -2,6 +2,6 @@
 
 namespace mold::macho {
 
-int macho_main(int argc, char **argv);
+int main(int argc, char **argv);
 
 } // namespace mold::macho

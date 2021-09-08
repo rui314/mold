@@ -671,10 +671,13 @@ int elf_main(int argc, char **argv) {
   return 0;
 }
 
+int main(int argc, char **argv) {
+  return elf_main<X86_64>(argc, argv);
+}
+
 #define INSTANTIATE(E)                                                  \
   template void read_file(Context<E> &, MemoryMappedFile<E> *);         \
-  template std::string_view save_string(Context<E> &, const std::string &); \
-  template int elf_main<E>(int, char **);
+  template std::string_view save_string(Context<E> &, const std::string &);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
