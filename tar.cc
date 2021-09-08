@@ -1,6 +1,6 @@
 #include "mold.h"
 
-namespace mold::elf {
+namespace mold {
 
 // A tar file consists of one or more Ustar header followed by data.
 // Each Ustar header represents a single file in an archive.
@@ -67,7 +67,7 @@ void TarFile::write_to(u8 *buf) {
   memset(buf, 0, size_);
 
   for (i64 i = 0; i < contents.size(); i++) {
-    ASSERT(buf - start <= size_);
+    assert(buf - start <= size_);
 
     const std::string &path = contents[i].first;
     std::string_view data = contents[i].second;
@@ -99,4 +99,4 @@ void TarFile::write_to(u8 *buf) {
   }
 }
 
-} // namespace mold::elf
+} // namespace mold

@@ -5,6 +5,7 @@
 #endif
 
 #include "elf.h"
+#include "../mold.h"
 
 #include <atomic>
 #include <cassert>
@@ -44,16 +45,6 @@ template<> struct tbb::tbb_hash_compare<std::string_view> {
 
 namespace mold::elf {
 
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
 static constexpr i32 SECTOR_SIZE = 512;
 static constexpr i32 COMMON_PAGE_SIZE = 4096;
 static constexpr i32 SHA256_SIZE = 32;
@@ -76,12 +67,6 @@ template <typename E> class ROutputEhdr;
 template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
-
-template <typename T> class ConcurrentMap;
-
-class ZlibCompressor;
-class GzipCompressor;
-class TarFile;
 
 template <typename E> void cleanup();
 
@@ -299,63 +284,6 @@ private:
 
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
-};
-
-//
-// hyperloglog.cc
-//
-
-class HyperLogLog {
-public:
-  HyperLogLog() : buckets(NBUCKETS) {}
-
-  void insert(u32 hash) {
-    merge_one(hash & (NBUCKETS - 1), __builtin_clz(hash) + 1);
-  }
-
-  void merge_one(i64 idx, u8 newval) {
-    u8 cur = buckets[idx];
-    while (cur < newval)
-      if (buckets[idx].compare_exchange_strong(cur, newval))
-        break;
-  }
-
-  i64 get_cardinality() const;
-  void merge(const HyperLogLog &other);
-
-private:
-  static constexpr i64 NBUCKETS = 2048;
-  static constexpr double ALPHA = 0.79402;
-
-  std::vector<std::atomic_uint8_t> buckets;
-};
-
-//
-// concurrent-map.cc
-//
-
-template <typename T>
-class ConcurrentMap {
-public:
-  ConcurrentMap();
-  ConcurrentMap(i64 nbuckets);
-  ~ConcurrentMap();
-
-  void resize(i64 nbuckets);
-  std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val);
-
-  bool has_key(i64 idx) {
-    return keys[idx];
-  }
-
-  static constexpr i64 MIN_NBUCKETS = 2048;
-  static constexpr i64 NUM_SHARDS = 16;
-  static constexpr i64 MAX_RETRY = 128;
-
-  i64 nbuckets = 0;
-  std::atomic<const char *> *keys = nullptr;
-  u32 *sizes = nullptr;
-  T *values = nullptr;
 };
 
 //
@@ -1172,18 +1100,6 @@ protected:
 };
 
 //
-// filepath.cc
-//
-
-// These are various utility functions to deal with file pathnames.
-std::string get_current_dir();
-std::string_view path_dirname(std::string_view path);
-std::string_view path_filename(std::string_view path);
-std::string_view path_basename(std::string_view path);
-std::string path_to_absolute(std::string_view path);
-std::string path_clean(std::string_view path);
-
-//
 // perf.cc
 //
 
@@ -1317,59 +1233,6 @@ std::string create_response_file(Context<E> &ctx);
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
-
-//
-// compress.cc
-//
-
-class ZlibCompressor {
-public:
-  ZlibCompressor(std::string_view input);
-  void write_to(u8 *buf);
-  i64 size() const;
-
-private:
-  std::vector<std::vector<u8>> shards;
-  u64 checksum = 0;
-};
-
-class GzipCompressor {
-public:
-  GzipCompressor(std::string_view input);
-  void write_to(u8 *buf);
-  i64 size() const;
-
-private:
-  std::vector<std::vector<u8>> shards;
-  u32 checksum = 0;
-  u32 uncompressed_size = 0;
-};
-
-//
-// tar.cc
-//
-
-// TarFile is a class to create a tar file.
-//
-// If you pass `--reproduce=repro.tar` to mold, mold collects all
-// input files and put them into `repro.tar`, so that it is easy to
-// run the same command with the same command line arguments.
-class TarFile {
-public:
-  static constexpr i64 BLOCK_SIZE = 512;
-
-
-  TarFile(std::string basedir) : basedir(basedir) {}
-
-  void append(std::string path, std::string_view data);
-  void write_to(u8 *buf);
-  i64 size() const { return size_; }
-
-private:
-  std::string basedir;
-  std::vector<std::pair<std::string, std::string_view>> contents;
-  i64 size_ = BLOCK_SIZE * 2;
-};
 
 //
 // passes.cc
@@ -2123,21 +1986,6 @@ operator<<(std::ostream &out, const InputSection<E> &isec) {
   return out;
 }
 
-inline u64 align_to(u64 val, u64 align) {
-  if (align == 0)
-    return val;
-  ASSERT(__builtin_popcount(align) == 1);
-  return (val + align - 1) & ~(align - 1);
-}
-
-inline u64 next_power_of_two(u64 val) {
-  ASSERT(val >> 63 == 0);
-  if (val == 0 || val == 1)
-    return 1;
-  return (u64)1 << (64 - __builtin_clzl(val - 1));
-}
-
-
 template <typename E>
 inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
   return output_section.shdr.sh_addr + offset;
@@ -2304,54 +2152,6 @@ inline void write_string(u8 *buf, std::string_view str) {
 template <typename T>
 inline void write_vector(u8 *buf, const std::vector<T> &vec) {
   memcpy(buf, vec.data(), vec.size() * sizeof(T));
-}
-
-template <typename T, typename U>
-inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
-  vec1.insert(vec1.end(), vec2.begin(), vec2.end());
-}
-
-template <typename T>
-inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
-  std::vector<T> ret;
-  for (std::vector<T> &v : vec)
-    append(ret, v);
-  return ret;
-}
-
-template <typename T, typename U>
-inline void erase(std::vector<T> &vec, U pred) {
-  vec.erase(std::remove_if(vec.begin(), vec.end(), pred), vec.end());
-}
-
-template <typename T, typename U>
-inline void sort(T &vec, U less) {
-  std::stable_sort(vec.begin(), vec.end(), less);
-}
-
-inline u64 read64be(u8 *buf) {
-  return ((u64)buf[0] << 56) | ((u64)buf[1] << 48) |
-         ((u64)buf[2] << 40) | ((u64)buf[3] << 32) |
-         ((u64)buf[4] << 24) | ((u64)buf[5] << 16) |
-         ((u64)buf[6] << 8)  | (u64)buf[7];
-}
-
-inline void write64be(u8 *buf, u64 val) {
-  buf[0] = val >> 56;
-  buf[1] = val >> 48;
-  buf[2] = val >> 40;
-  buf[3] = val >> 32;
-  buf[4] = val >> 24;
-  buf[5] = val >> 16;
-  buf[6] = val >> 8;
-  buf[7] = val;
-}
-
-inline void write32be(u8 *buf, u32 val) {
-  buf[0] = val >> 24;
-  buf[1] = val >> 16;
-  buf[2] = val >> 8;
-  buf[3] = val;
 }
 
 } // namespace mold::elf

@@ -1,6 +1,6 @@
 #include "mold.h"
 
-namespace mold::elf {
+namespace mold {
 
 std::string get_current_dir() {
   std::string buf(8192, '\0');
@@ -106,4 +106,4 @@ std::string path_clean(std::string_view path) {
   return ret;
 }
 
-} // namespace mold::elf
+} // namespace mold

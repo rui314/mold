@@ -8,7 +8,7 @@
 
 #include <cmath>
 
-namespace mold::elf {
+namespace mold {
 
 i64 HyperLogLog::get_cardinality() const {
   double z = 0;
@@ -22,4 +22,4 @@ void HyperLogLog::merge(const HyperLogLog &other) {
     merge_one(i, other.buckets[i]);
 }
 
-} // namespace mold::elf
+} // namespace mold
