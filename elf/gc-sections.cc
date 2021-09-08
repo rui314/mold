@@ -28,7 +28,7 @@ static bool mark_section(InputSection<E> *isec) {
 template <typename E>
 static void visit(Context<E> &ctx, InputSection<E> *isec,
                   tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
-  ASSERT(isec->is_visited);
+  assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all

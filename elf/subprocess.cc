@@ -59,7 +59,7 @@ std::function<void()> fork_child() {
   return [=]() {
     char buf[] = {1};
     int n = write(pipefd[1], buf, 1);
-    ASSERT(n == 1);
+    assert(n == 1);
   };
 }
 
@@ -245,7 +245,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
   *on_complete = [=]() {
     char buf[] = {1};
     int n = write(conn, buf, 1);
-    ASSERT(n == 1);
+    assert(n == 1);
   };
 }
 
@@ -274,7 +274,7 @@ template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   std::string_view arg1 = argv[1];
-  ASSERT(arg1 == "-run" || arg1 == "--run");
+  assert(arg1 == "-run" || arg1 == "--run");
   if (!argv[2])
     Fatal(ctx) << "-run: argument missing";
 

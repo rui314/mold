@@ -73,8 +73,6 @@ template <typename E> void cleanup();
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
-#define ASSERT(expr) assert(expr)
-
 //
 // Mergeable section fragments
 //
@@ -1751,22 +1749,22 @@ public:
   }
 
   u64 get_gotplt_addr(Context<E> &ctx) const {
-    ASSERT(get_gotplt_idx(ctx) != -1);
+    assert(get_gotplt_idx(ctx) != -1);
     return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::wordsize;
   }
 
   u64 get_gottp_addr(Context<E> &ctx) const {
-    ASSERT(get_gottp_idx(ctx) != -1);
+    assert(get_gottp_idx(ctx) != -1);
     return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::wordsize;
   }
 
   u64 get_tlsgd_addr(Context<E> &ctx) const {
-    ASSERT(get_tlsgd_idx(ctx) != -1);
+    assert(get_tlsgd_idx(ctx) != -1);
     return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::wordsize;
   }
 
   u64 get_tlsdesc_addr(Context<E> &ctx) const {
-    ASSERT(get_tlsdesc_idx(ctx) != -1);
+    assert(get_tlsdesc_idx(ctx) != -1);
     return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::wordsize;
   }
 
@@ -1777,50 +1775,50 @@ public:
   }
 
   void set_got_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].got_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].got_idx < 0);
     ctx.symbol_aux[aux_idx].got_idx = idx;
   }
 
   void set_gotplt_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].gotplt_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].gotplt_idx < 0);
     ctx.symbol_aux[aux_idx].gotplt_idx = idx;
   }
 
   void set_gottp_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].gottp_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].gottp_idx < 0);
     ctx.symbol_aux[aux_idx].gottp_idx = idx;
   }
 
   void set_tlsgd_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].tlsgd_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].tlsgd_idx < 0);
     ctx.symbol_aux[aux_idx].tlsgd_idx = idx;
   }
 
   void set_tlsdesc_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].tlsdesc_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].tlsdesc_idx < 0);
     ctx.symbol_aux[aux_idx].tlsdesc_idx = idx;
   }
 
   void set_plt_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].plt_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].plt_idx < 0);
     ctx.symbol_aux[aux_idx].plt_idx = idx;
   }
 
   void set_pltgot_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
     ctx.symbol_aux[aux_idx].pltgot_idx = idx;
   }
 
   void set_dynsym_idx(Context<E> &ctx, i32 idx) const {
-    ASSERT(aux_idx != -1);
-    ASSERT(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
+    assert(aux_idx != -1);
+    assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
     ctx.symbol_aux[aux_idx].dynsym_idx = idx;
   }
 
@@ -2098,7 +2096,7 @@ InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
 
 template <typename E>
 inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
-  ASSERT(idx < elf_sections.size());
+  assert(idx < elf_sections.size());
 
   if (elf_sections.size() <= idx)
     Fatal(ctx) << *this << ": invalid section index: " << idx;
@@ -2107,8 +2105,8 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 
 template <typename E>
 inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
-  ASSERT(&elf_syms[0] <= &esym);
-  ASSERT(&esym <= &elf_syms[elf_syms.size() - 1]);
+  assert(&elf_syms[0] <= &esym);
+  assert(&esym <= &elf_syms[elf_syms.size() - 1]);
 
   if (esym.st_shndx == SHN_XINDEX)
     return symtab_shndx_sec[&esym - &elf_syms[0]];

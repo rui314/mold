@@ -367,7 +367,7 @@ void InputSection<AARCH64>::apply_reloc_nonalloc(Context<AARCH64> &ctx, u8 *base
 
 template <>
 void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
-  ASSERT(shdr.sh_flags & SHF_ALLOC);
+  assert(shdr.sh_flags & SHF_ALLOC);
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<AARCH64>);
   std::span<ElfRel<AARCH64>> rels = get_rels(ctx);

@@ -17,8 +17,8 @@ template <typename E>
 void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok);
 
 static std::string_view get_line(std::string_view input, const char *pos) {
-  ASSERT(input.data() <= pos);
-  ASSERT(pos < input.data() + input.size());
+  assert(input.data() <= pos);
+  assert(pos < input.data() + input.size());
 
   i64 start = input.rfind('\n', pos - input.data());
   if (start == input.npos)
@@ -127,7 +127,7 @@ skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
 
 static std::string_view unquote(std::string_view s) {
   if (s.size() > 0 && s[0] == '"') {
-    ASSERT(s[s.size() - 1] == '"');
+    assert(s[s.size() - 1] == '"');
     return s.substr(1, s.size() - 2);
   }
   return s;

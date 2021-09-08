@@ -374,7 +374,7 @@ i64 DynstrSection<E>::add_string(std::string_view str) {
 template <typename E>
 i64 DynstrSection<E>::find_string(std::string_view str) {
   auto it = strings.find(str);
-  ASSERT(it != strings.end());
+  assert(it != strings.end());
   return it->second;
 }
 
@@ -594,7 +594,7 @@ void DynamicSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   std::vector<typename E::WordTy> contents = create_dynamic_section(ctx);
-  ASSERT(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
+  assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
@@ -780,7 +780,7 @@ void GotSection<E>::add_tlsld(Context<E> &ctx) {
 
 template <typename E>
 u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
-  ASSERT(tlsld_idx != -1);
+  assert(tlsld_idx != -1);
   return this->shdr.sh_addr + tlsld_idx * E::wordsize;
 }
 
@@ -849,7 +849,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     } else if (E::e_machine == EM_386 || E::e_machine == EM_X86_64) {
       buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
     } else {
-      ASSERT(E::e_machine == EM_AARCH64);
+      assert(E::e_machine == EM_AARCH64);
       buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_begin + 16;
     }
   }
@@ -860,8 +860,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  ASSERT(!sym->has_plt(ctx));
-  ASSERT(!sym->has_got(ctx));
+  assert(!sym->has_plt(ctx));
+  assert(!sym->has_got(ctx));
 
   if (this->shdr.sh_size == 0) {
     this->shdr.sh_size = E::plt_hdr_size;
@@ -880,8 +880,8 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  ASSERT(!sym->has_plt(ctx));
-  ASSERT(sym->has_got(ctx));
+  assert(!sym->has_plt(ctx));
+  assert(sym->has_got(ctx));
 
   sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
   this->shdr.sh_size += E::pltgot_size;
@@ -1167,7 +1167,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 template <typename E>
 SectionFragment<E> *
 MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
-  ASSERT(alignment < UINT16_MAX);
+  assert(alignment < UINT16_MAX);
 
   std::call_once(once_flag, [&]() {
     // We aim 2/3 occupation ratio
@@ -1177,7 +1177,7 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
   SectionFragment<E> *frag;
   bool inserted;
   std::tie(frag, inserted) = map.insert(data, hash, SectionFragment(this, data));
-  ASSERT(frag);
+  assert(frag);
 
   for (u16 cur = frag->alignment; cur < alignment;)
     if (frag->alignment.compare_exchange_weak(cur, alignment))
@@ -1333,7 +1333,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       for (ElfRel<E> &rel : cie.get_rels()) {
         if (rel.r_type == E::R_NONE)
           continue;
-        ASSERT(rel.r_offset - cie.input_offset < contents.size());
+        assert(rel.r_offset - cie.input_offset < contents.size());
         u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
         u64 addend = cie.input_section.get_addend(rel);
@@ -1353,7 +1353,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       for (ElfRel<E> &rel : fde.get_rels()) {
         if (rel.r_type == E::R_NONE)
           continue;
-        ASSERT(rel.r_offset - fde.input_offset < contents.size());
+        assert(rel.r_offset - fde.input_offset < contents.size());
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
         u64 addend = fde.cie->input_section.get_addend(rel);
@@ -1424,8 +1424,8 @@ void DynbssSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (sym->has_copyrel)
     return;
 
-  ASSERT(!ctx.arg.shared);
-  ASSERT(sym->file->is_dso);
+  assert(!ctx.arg.shared);
+  assert(sym->file->is_dso);
 
   this->shdr.sh_size = align_to(this->shdr.sh_size, this->shdr.sh_addralign);
   sym->value = this->shdr.sh_size;
@@ -1651,7 +1651,7 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
       munmap(begin, sz);
   });
 
-  ASSERT(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
+  assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
 
   u8 digest[SHA256_SIZE];
   SHA256(shards.data(), shards.size(), digest);
@@ -1734,7 +1734,7 @@ template <typename E>
 GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
                                                 OutputChunk<E> &chunk)
   : OutputChunk<E>(this->SYNTHETIC) {
-  ASSERT(chunk.name.starts_with(".debug"));
+  assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
 
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
@@ -1764,7 +1764,7 @@ template <typename E>
 GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
                                               OutputChunk<E> &chunk)
   : OutputChunk<E>(this->SYNTHETIC) {
-  ASSERT(chunk.name.starts_with(".debug"));
+  assert(chunk.name.starts_with(".debug"));
   this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
 
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);

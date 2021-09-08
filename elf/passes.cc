@@ -233,7 +233,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
 
 template <typename T>
 static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
-  ASSERT(input.size() > 0);
+  assert(input.size() > 0);
   std::span<T> span(input);
   std::vector<std::span<T>> vec;
 
@@ -550,7 +550,7 @@ void scan_rels(Context<E> &ctx) {
       ctx.got->add_tlsld(ctx);
 
     if (sym->flags & NEEDS_COPYREL) {
-      ASSERT(sym->file->is_dso);
+      assert(sym->file->is_dso);
       SharedFile<E> *file = (SharedFile<E> *)sym->file;
       sym->copyrel_readonly = file->is_readonly(ctx, sym);
 
@@ -576,7 +576,7 @@ void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
   for (VersionPattern &elem : ctx.arg.version_patterns) {
-    ASSERT(elem.pattern != "*");
+    assert(elem.pattern != "*");
 
     if (!elem.is_extern_cpp &&
         elem.pattern.find('*') == elem.pattern.npos) {
@@ -799,7 +799,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
 
   for (; i < ctx.chunks.size(); i++) {
     OutputChunk<E> &chunk = *ctx.chunks[i];
-    ASSERT(!(chunk.shdr.sh_flags & SHF_ALLOC));
+    assert(!(chunk.shdr.sh_flags & SHF_ALLOC));
     fileoff = align_to(fileoff, chunk.shdr.sh_addralign);
     chunk.shdr.sh_offset = fileoff;
     fileoff += chunk.shdr.sh_size;
@@ -940,7 +940,7 @@ void compress_debug_sections(Context<E> &ctx) {
       comp = new GabiCompressedSection<E>(ctx, chunk);
     else if (ctx.arg.compress_debug_sections == COMPRESS_GNU)
       comp = new GnuCompressedSection<E>(ctx, chunk);
-    ASSERT(comp);
+    assert(comp);
 
     ctx.output_chunks.push_back(std::unique_ptr<OutputChunk<E>>(comp));
     ctx.chunks[i] = comp;
