@@ -123,7 +123,7 @@ install: all
 	ln -sf mold $(DEST)/bin/ld64.mold
 
 uninstall:
-	rm -f $(DEST)/bin/mold $(DEST)/bin/ld.mold
+	rm -f $(DEST)/bin/mold $(DEST)/bin/ld.mold $(DEST)/bin/ld64.mold
 	rm -f $(DEST)/share/man/man1/mold.1.gz
 	rm -rf $(DEST)/lib/mold
 
