@@ -122,4 +122,4 @@ uninstall:
 clean:
 	rm -rf *~ mold mold-wrapper.so test/tmp out ld
 
-.PHONY: all test tests check clean $(TESTS)
+.PHONY: all test tests check clean
