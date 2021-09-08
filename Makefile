@@ -17,9 +17,9 @@ CPPFLAGS = -g -pthread -std=c++20 -fPIE \
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
-SRCS=$(wildcard elf/*.cc)
-HEADERS=$(wildcard elf/*.h)
-OBJS=$(SRCS:elf/%.cc=out/elf/%.o)
+SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
+HEADERS=$(wildcard *.h elf/*.h macho/*.h)
+OBJS=$(SRCS:%.cc=out/%.o)
 
 PREFIX ?= /usr
 DEST = $(DESTDIR)$(PREFIX)
@@ -79,11 +79,15 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 mold-wrapper.so: elf/mold-wrapper.c Makefile
 	$(CC) -fPIC -shared -o $@ $< -ldl
 
-out/elf/%.o: elf/%.cc $(HEADERS) Makefile out/elf/.keep
+out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
 	$(CXX) $(CPPFLAGS) -c -o $@ $<
 
 out/elf/.keep:
 	mkdir -p out/elf
+	touch $@
+
+out/macho/.keep:
+	mkdir -p out/macho
 	touch $@
 
 $(MIMALLOC_LIB):

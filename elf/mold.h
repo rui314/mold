@@ -1671,6 +1671,9 @@ std::regex glob_to_regex(std::string_view pat);
 std::string errno_string();
 std::string get_version_string();
 
+template <typename E>
+int elf_main(int argc, char **argv);
+
 //
 // Error output
 //

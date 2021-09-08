@@ -323,7 +323,7 @@ static void show_stats(Context<E> &ctx) {
 }
 
 template <typename E>
-int do_main(int argc, char **argv) {
+int elf_main(int argc, char **argv) {
   Context<E> ctx;
 
   // Process -run option first. process_run_subcommand() does not return.
@@ -340,9 +340,9 @@ int do_main(int argc, char **argv) {
   if (ctx.arg.emulation != E::e_machine) {
     switch (ctx.arg.emulation) {
     case EM_386:
-      return do_main<I386>(argc, argv);
+      return elf_main<I386>(argc, argv);
     case EM_AARCH64:
-      return do_main<AARCH64>(argc, argv);
+      return elf_main<AARCH64>(argc, argv);
     }
     unreachable(ctx);
   }
@@ -673,18 +673,11 @@ int do_main(int argc, char **argv) {
 
 #define INSTANTIATE(E)                                                  \
   template void read_file(Context<E> &, MemoryMappedFile<E> *);         \
-  template std::string_view save_string(Context<E> &, const std::string &)
+  template std::string_view save_string(Context<E> &, const std::string &); \
+  template int elf_main<E>(int, char **);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(AARCH64);
 
 } // namespace mold::elf
-
-int main(int argc, char **argv) {
-  std::string_view cmd = mold::elf::path_filename(argv[0]);
-  if (cmd == "ld" || cmd == "mold" || cmd == "ld.mold")
-    return mold::elf::do_main<mold::elf::X86_64>(argc, argv);
-  std::cerr << "mold: unknown command: " << argv[0] << "\n";
-  exit(1);
-}
