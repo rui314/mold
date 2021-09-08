@@ -102,7 +102,7 @@ $(TBB_LIB):
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
 test tests check: all
-	 $(MAKE) -C test --output-sync --no-print-directory
+	 $(MAKE) -C test/elf --output-sync --no-print-directory
 
 install: all
 	install -m 755 -d $(DEST)/bin
