@@ -330,8 +330,8 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb,
                             bool is_alive)
   : mb(mb), is_alive(is_alive) {
   // Read ELF header and section header
-  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb.data(ctx);
-  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb.data(ctx) + ehdr.e_shoff);
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb.data;
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb.data + ehdr.e_shoff);
   i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
   elf_sections = {sh_begin, sh_begin + num_sections};
   sections.resize(num_sections);
@@ -339,14 +339,14 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb,
   // Read .shstrtab
   i64 shstrtab_idx = (ehdr.e_shstrndx == SHN_XINDEX)
     ? sh_begin->sh_link : ehdr.e_shstrndx;
-  shstrtab = (char *)(mb.data(ctx) + elf_sections[shstrtab_idx].sh_offset);
+  shstrtab = (char *)(mb.data + elf_sections[shstrtab_idx].sh_offset);
 
   // Read .symtab
   for (i64 i = 1; i < elf_sections.size(); i++) {
     ElfShdr<E> &shdr = elf_sections[i];
     if (shdr.sh_type == SHT_SYMTAB) {
       syms = get_data<const ElfSym<E>>(ctx, shdr);
-      strtab = (char *)(mb.data(ctx) + elf_sections[shdr.sh_link].sh_offset);
+      strtab = (char *)(mb.data + elf_sections[shdr.sh_link].sh_offset);
       symtab_shndx = i;
       first_global = shdr.sh_info;
       break;
@@ -405,8 +405,8 @@ void RObjectFile<E>::remove_comdats(Context<E> &ctx,
 template <typename E>
 template <typename T>
 std::span<T> RObjectFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  T *begin = (T *)(mb.data(ctx) + shdr.sh_offset);
-  T *end   = (T *)(mb.data(ctx) + shdr.sh_offset + shdr.sh_size);
+  T *begin = (T *)(mb.data + shdr.sh_offset);
+  T *end   = (T *)(mb.data + shdr.sh_offset + shdr.sh_size);
   return {begin, end};
 }
 

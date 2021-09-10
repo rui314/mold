@@ -15,12 +15,12 @@ struct ArHdr {
 template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *begin = mb->data(ctx);
+  u8 *begin = mb->data;
   u8 *data = begin + 8;
   std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
-  while (data < begin + mb->size()) {
+  while (data < begin + mb->size) {
     // Each header is aligned to a 2 byte boundary.
     if ((begin - data) % 2)
       data++;
@@ -58,12 +58,12 @@ read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 template <typename E>
 std::vector<MemoryMappedFile<E> *>
 read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *begin = mb->data(ctx);
+  u8 *begin = mb->data;
   u8 *data = begin + 8;
   std::vector<MemoryMappedFile<E> *> vec;
   std::string_view strtab;
 
-  while (begin + mb->size() - data >= 2) {
+  while (begin + mb->size - data >= 2) {
     if ((begin - data) % 2)
       data++;
 

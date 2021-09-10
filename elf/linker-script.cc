@@ -37,7 +37,7 @@ template <typename E>
 class SyntaxError {
 public:
   SyntaxError(Context<E> &ctx, std::string_view errpos) : out(ctx) {
-    std::string_view contents = current_file<E>->get_contents(ctx);
+    std::string_view contents = current_file<E>->get_contents();
     std::string_view line = get_line(contents, errpos.data());
 
     i64 lineno = 1;
@@ -203,7 +203,7 @@ template <typename E>
 void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   current_file<E> = mb;
 
-  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents(ctx));
+  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -228,7 +228,7 @@ template <typename E>
 i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   current_file<E> = mb;
 
-  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents(ctx));
+  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
   std::span<std::string_view> tok = vec;
 
   if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
@@ -327,7 +327,7 @@ template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path) {
   current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
   std::vector<std::string_view> vec =
-    tokenize(ctx, current_file<E>->get_contents(ctx));
+    tokenize(ctx, current_file<E>->get_contents());
   std::span<std::string_view> tok = vec;
   read_version_script(ctx, tok);
   if (!tok.empty())
@@ -338,7 +338,7 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path) {
   current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
   std::vector<std::string_view> vec =
-    tokenize(ctx, current_file<E>->get_contents(ctx));
+    tokenize(ctx, current_file<E>->get_contents());
 
   std::span<std::string_view> tok = vec;
 

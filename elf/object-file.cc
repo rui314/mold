@@ -10,15 +10,15 @@ namespace mold::elf {
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   : mb(mb), filename(mb->name) {
-  if (mb->size() < sizeof(ElfEhdr<E>))
+  if (mb->size < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
-  if (memcmp(mb->data(ctx), "\177ELF", 4))
+  if (memcmp(mb->data, "\177ELF", 4))
     Fatal(ctx) << *this << ": not an ELF file";
 
-  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb->data(ctx);
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb->data;
   is_dso = (ehdr.e_type == ET_DYN);
 
-  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb->data(ctx) + ehdr.e_shoff);
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb->data + ehdr.e_shoff);
 
   // e_shnum contains the total number of sections in an object file.
   // Since it is a 16-bit integer field, it's not large enough to
@@ -26,9 +26,9 @@ InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
   // sections, the actual number is stored to sh_size field.
   i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
 
-  if (mb->data(ctx) + mb->size() < (u8 *)(sh_begin + num_sections))
+  if (mb->data + mb->size < (u8 *)(sh_begin + num_sections))
     Fatal(ctx) << *this << ": e_shoff or e_shnum corrupted: "
-               << mb->size() << " " << num_sections;
+               << mb->size << " " << num_sections;
   elf_sections = {sh_begin, sh_begin + num_sections};
 
   // e_shstrndx is a 16-bit field. If .shstrtab's section index is
@@ -1355,8 +1355,8 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
-  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data(ctx);
-  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mb->data(ctx) + ehdr->e_phoff);
+  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data;
+  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mb->data + ehdr->e_phoff);
   u64 val = sym->esym().st_value;
 
   for (i64 i = 0; i < ehdr->e_phnum; i++)

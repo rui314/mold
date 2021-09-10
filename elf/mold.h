@@ -1011,25 +1011,18 @@ public:
   MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start,
                           u64 size);
 
-  u8 *data(Context<E> &ctx);
-  i64 size() const { return size_; }
-
-  std::string_view get_contents(Context<E> &ctx) {
-    return std::string_view((char *)data(ctx), size());
+  std::string_view get_contents() {
+    return std::string_view((char *)data, size);
   }
 
   std::string name;
+  u8 *data = nullptr;
+  i64 size = 0;
   i64 mtime = 0;
   bool given_fullpath = true;
 
 private:
-  MemoryMappedFile(std::string name, u8 *data, u64 size, u64 mtime = 0)
-    : name(name), data_(data), size_(size), mtime(mtime) {}
-
-  std::mutex mu;
-  MemoryMappedFile *parent;
-  std::atomic<u8 *> data_;
-  i64 size_ = 0;
+  MemoryMappedFile *parent = nullptr;
 };
 
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
@@ -1287,12 +1280,12 @@ template <typename E, typename T>
 class FileCache {
 public:
   void store(MemoryMappedFile<E> *mb, T *obj) {
-    Key k(mb->name, mb->size(), mb->mtime);
+    Key k(mb->name, mb->size, mb->mtime);
     cache[k].push_back(obj);
   }
 
   std::vector<T *> get(MemoryMappedFile<E> *mb) {
-    Key k(mb->name, mb->size(), mb->mtime);
+    Key k(mb->name, mb->size, mb->mtime);
     std::vector<T *> objs = cache[k];
     cache[k].clear();
     return objs;
@@ -2086,9 +2079,9 @@ inline std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
 template <typename E>
 inline std::string_view
 InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  u8 *begin = mb->data(ctx) + shdr.sh_offset;
+  u8 *begin = mb->data + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
-  if (mb->data(ctx) + mb->size() < end)
+  if (mb->data + mb->size < end)
     Fatal(ctx) << *this << ": shdr corrupted";
   return {(char *)begin, (size_t)(end - begin)};
 }

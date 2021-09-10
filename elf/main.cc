@@ -170,16 +170,16 @@ template <typename E>
 static i64 get_machine_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   switch (get_file_type(ctx, mb)) {
   case FileType::DSO:
-    return ((ElfEhdr<E> *)mb->data(ctx))->e_machine;
+    return ((ElfEhdr<E> *)mb->data)->e_machine;
   case FileType::AR:
     for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
       if (get_file_type(ctx, child) == FileType::OBJ)
-        return ((ElfEhdr<E> *)child->data(ctx))->e_machine;
+        return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::THIN_AR:
     for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb))
       if (get_file_type(ctx, child) == FileType::OBJ)
-        return ((ElfEhdr<E> *)child->data(ctx))->e_machine;
+        return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::TEXT:
     return get_script_output_type(ctx, mb);
@@ -309,7 +309,7 @@ static void show_stats(Context<E> &ctx) {
 
   static Counter num_bytes("total_input_bytes");
   for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs)
-    num_bytes += mb->size();
+    num_bytes += mb->size;
 
   static Counter num_input_sections("input_sections");
   for (ObjectFile<E> *file : ctx.objs)

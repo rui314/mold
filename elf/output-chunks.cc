@@ -1799,7 +1799,7 @@ void ReproSection<E>::update_shdr(Context<E> &ctx) {
   for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs) {
     std::string path = path_to_absolute(mb->name);
     if (seen.insert(path).second)
-      tar.append(path, mb->get_contents(ctx));
+      tar.append(path, mb->get_contents());
   }
 
   std::vector<u8> buf(tar.size());

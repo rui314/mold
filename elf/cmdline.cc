@@ -155,11 +155,11 @@ read_response_file(Context<E> &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
   MemoryMappedFile<E> *mb =
     MemoryMappedFile<E>::must_open(ctx, std::string(path));
-  u8 *data = mb->data(ctx);
+  u8 *data = mb->data;
 
   auto read_quoted = [&](i64 i, char quote) {
     std::string buf;
-    while (i < mb->size() && data[i] != quote) {
+    while (i < mb->size && data[i] != quote) {
       if (data[i] == '\\') {
         buf.append(1, data[i + 1]);
         i += 2;
@@ -167,7 +167,7 @@ read_response_file(Context<E> &ctx, std::string_view path) {
         buf.append(1, data[i++]);
       }
     }
-    if (i >= mb->size())
+    if (i >= mb->size)
       Fatal(ctx) << path << ": premature end of input";
     vec.push_back(save_string(ctx, buf));
     return i + 1;
@@ -175,13 +175,13 @@ read_response_file(Context<E> &ctx, std::string_view path) {
 
   auto read_unquoted = [&](i64 i) {
     std::string buf;
-    while (i < mb->size() && !isspace(data[i]))
+    while (i < mb->size && !isspace(data[i]))
       buf.append(1, data[i++]);
     vec.push_back(save_string(ctx, buf));
     return i;
   };
 
-  for (i64 i = 0; i < mb->size();) {
+  for (i64 i = 0; i < mb->size;) {
     if (isspace(data[i]))
       i++;
     else if (data[i] == '\'')
@@ -397,7 +397,7 @@ template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
   MemoryMappedFile<E> *mb =
     MemoryMappedFile<E>::must_open(ctx, std::string(path));
-  std::string_view data((char *)mb->data(ctx), mb->size());
+  std::string_view data((char *)mb->data, mb->size);
 
   ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);
 
