@@ -81,10 +81,10 @@ static bool is_text_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 
 template <typename E>
 FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
-  u8 *data = mb->data;
+  std::string_view data = mb->get_contents();
 
-  if (mb->size >= 20 && memcmp(data, "\177ELF", 4) == 0) {
-    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
+  if (data.starts_with("\177ELF")) {
+    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data.data();
     if (ehdr.e_type == ET_REL)
       return FileType::OBJ;
     if (ehdr.e_type == ET_DYN)
@@ -92,15 +92,15 @@ FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     return FileType::UNKNOWN;
   }
 
-  if (mb->size >= 8 && memcmp(data, "!<arch>\n", 8) == 0)
+  if (data.starts_with("!<arch>\n"))
     return FileType::AR;
-  if (mb->size >= 8 && memcmp(data, "!<thin>\n", 8) == 0)
+  if (data.starts_with("!<thin>\n"))
     return FileType::THIN_AR;
   if (is_text_file(ctx, mb))
     return FileType::TEXT;
-  if (mb->size >= 4 && memcmp(data, "\xDE\xC0\x17\x0B", 4) == 0)
+  if (data.starts_with("\xDE\xC0\x17\x0B"))
     return FileType::LLVM_BITCODE;
-  if (mb->size >= 4 && memcmp(data, "BC\xC0\xDE", 4) == 0)
+  if (data.starts_with("BC\xC0\xDE"))
     return FileType::LLVM_BITCODE;
   return FileType::UNKNOWN;
 }
