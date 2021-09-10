@@ -88,6 +88,7 @@ Options:
   --plugin-opt                Ignored
   --pop-state                 Pop state of flags governing input file handling
   --preload
+    --no-preload
   --print-gc-sections         Print removed unreferenced sections
     --no-print-gc-sections
   --print-icf-sections        Print folded identical sections
@@ -743,6 +744,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.filter.push_back(arg);
     } else if (read_flag(args, "preload")) {
       ctx.arg.preload = true;
+    } else if (read_flag(args, "no-preload")) {
+      ctx.arg.preload = false;
     } else if (read_arg(ctx, args, arg, "O")) {
     } else if (read_flag(args, "O0")) {
     } else if (read_flag(args, "O1")) {

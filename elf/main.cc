@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <map>
 #include <signal.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
 #include <unistd.h>
@@ -75,68 +77,19 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   if (ctx.visited.contains(mb->name))
     return;
 
-  if (ctx.is_preloading) {
-    switch (get_file_type(ctx, mb)) {
-    case FileType::OBJ:
-      ctx.obj_cache.store(mb, new_object_file(ctx, mb, ""));
-      return;
-    case FileType::DSO:
-      ctx.dso_cache.store(mb, new_shared_file(ctx, mb));
-      return;
-    case FileType::AR:
-      for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
-        if (get_file_type(ctx, child) == FileType::OBJ)
-          ctx.obj_cache.store(mb, new_object_file(ctx, child, mb->name));
-      return;
-    case FileType::THIN_AR:
-      for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb))
-        if (get_file_type(ctx, child) == FileType::OBJ)
-          ctx.obj_cache.store(child, new_object_file(ctx, child, mb->name));
-      return;
-    case FileType::TEXT:
-      parse_linker_script(ctx, mb);
-      return;
-    case FileType::LLVM_BITCODE:
-      Fatal(ctx) << mb->name << ": looks like this is an LLVM bitcode, but"
-                 << " mold does not support LTO";
-    default:
-      Fatal(ctx) << mb->name << ": unknown file type";
-    }
-  }
-
   switch (get_file_type(ctx, mb)) {
   case FileType::OBJ:
-    if (ObjectFile<E> *obj = ctx.obj_cache.get_one(mb))
-      ctx.objs.push_back(obj);
-    else
-      ctx.objs.push_back(new_object_file(ctx, mb, ""));
+    ctx.objs.push_back(new_object_file(ctx, mb, ""));
     return;
   case FileType::DSO:
-    if (SharedFile<E> *obj = ctx.dso_cache.get_one(mb))
-      ctx.dsos.push_back(obj);
-    else
-      ctx.dsos.push_back(new_shared_file(ctx, mb));
+    ctx.dsos.push_back(new_shared_file(ctx, mb));
     ctx.visited.insert(mb->name);
     return;
-  case FileType::AR: {
-    std::vector<ObjectFile<E> *> objs = ctx.obj_cache.get(mb);
-    if (!objs.empty()) {
-      append(ctx.objs, objs);
-    } else {
-      for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
-        if (get_file_type(ctx, child) == FileType::OBJ)
-          ctx.objs.push_back(new_object_file(ctx, child, mb->name));
-    }
-    ctx.visited.insert(mb->name);
-    return;
-  }
+  case FileType::AR:
   case FileType::THIN_AR:
-    for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb)) {
-      if (ObjectFile<E> *obj = ctx.obj_cache.get_one(child))
-        ctx.objs.push_back(obj);
-      else if (get_file_type(ctx, child) == FileType::OBJ)
+    for (MemoryMappedFile<E> *child : read_archive_members(ctx, mb))
+      if (get_file_type(ctx, child) == FileType::OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mb->name));
-    }
     ctx.visited.insert(mb->name);
     return;
   case FileType::TEXT:
@@ -226,7 +179,10 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
 
 template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) {
+  Timer t(ctx, "read_input_files");
+
   std::vector<std::tuple<bool, bool, bool>> state;
+  ctx.is_static = ctx.arg.is_static;
 
   while (!args.empty()) {
     std::string_view arg;
@@ -263,6 +219,64 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       args = args.subspan(1);
     }
   }
+
+  if (ctx.objs.empty())
+    Fatal(ctx) << "no input files";
+
+  ctx.tg.wait();
+}
+
+template <typename E>
+static i64 get_mtime(Context<E> &ctx, std::string path) {
+  struct stat st;
+  if (stat(path.c_str(), &st) < 0)
+    Fatal(ctx) << path << ": stat failed: " << errno_string();
+  return st.st_mtime;
+}
+
+template <typename E>
+static bool reload_input_files(Context<E> &ctx) {
+  Timer t(ctx, "reload_input_files");
+
+  std::vector<ObjectFile<E> *> objs;
+  std::vector<SharedFile<E> *> dsos;
+
+  // Reload updated .o files
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->mb->parent) {
+      if (get_mtime(ctx, file->mb->parent->name) != file->mb->parent->mtime)
+        return false;
+      objs.push_back(file);
+      continue;
+    }
+
+    if (get_mtime(ctx, file->mb->name) == file->mb->mtime) {
+      objs.push_back(file);
+      continue;
+    }
+
+    MemoryMappedFile<E> *mb =
+      MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+    objs.push_back(new_object_file(ctx, mb, file->mb->name));
+  }
+
+  // Reload updated .so files
+  for (SharedFile<E> *file : ctx.dsos) {
+    MemoryMappedFile<E> *mb =
+      MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+
+    if (get_mtime(ctx, file->mb->name) == file->mb->mtime) {
+      dsos.push_back(file);
+    } else {
+      MemoryMappedFile<E> *mb =
+        MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+      dsos.push_back(new_shared_file(ctx, mb));
+    }
+  }
+
+  ctx.objs = objs;
+  ctx.dsos = dsos;
+  return true;
 }
 
 template <typename E>
@@ -323,7 +337,7 @@ static void show_stats(Context<E> &ctx) {
 }
 
 template <typename E>
-int elf_main(int argc, char **argv) {
+static int elf_main(int argc, char **argv) {
   Context<E> ctx;
 
   // Process -run option first. process_run_subcommand() does not return.
@@ -378,36 +392,27 @@ int elf_main(int argc, char **argv) {
 
   // Preload input files
   std::function<void()> on_complete;
+  std::function<void()> wait_for_client;
 
-  if (ctx.arg.preload) {
-    Timer t(ctx, "preload");
-    std::function<void()> wait_for_client;
+  if (ctx.arg.preload)
     daemonize(ctx, &wait_for_client, &on_complete);
-
-    ctx.reset_reader_context(true);
-    read_input_files(ctx, file_args);
-    ctx.tg.wait();
-    t.stop();
-
-    Timer t2(ctx, "wait_for_client");
-    wait_for_client();
-  } else if (ctx.arg.fork) {
+  else if (ctx.arg.fork)
     on_complete = fork_child();
-  }
 
   for (std::string_view arg : ctx.arg.trace_symbol)
     Symbol<E>::intern(ctx, arg)->traced = true;
 
   // Parse input files
-  {
-    Timer t(ctx, "parse");
-    ctx.reset_reader_context(false);
-    read_input_files(ctx, file_args);
-    ctx.tg.wait();
-  }
+  read_input_files(ctx, file_args);
 
-  if (ctx.objs.empty())
-    Fatal(ctx) << "no input files";
+  if (ctx.arg.preload) {
+    wait_for_client();
+    if (!reload_input_files(ctx)) {
+      std::vector<char *> args(argv, argv + argc);
+      args.push_back("--no-preload");
+      return elf_main<E>(argc + 1, args.data());
+    }
+  }
 
   {
     Timer t(ctx, "register_section_pieces");

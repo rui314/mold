@@ -1020,8 +1020,6 @@ public:
   i64 size = 0;
   i64 mtime = 0;
   bool given_fullpath = true;
-
-private:
   MemoryMappedFile *parent = nullptr;
 };
 
@@ -1391,18 +1389,9 @@ struct Context {
     u64 image_base = 0x200000;
   } arg;
 
-  void reset_reader_context(bool is_preloading) {
-    as_needed = false;
-    whole_archive = false;
-    this->is_preloading = is_preloading;
-    is_static = arg.is_static;
-    visited.clear();
-  }
-
   // Reader context
-  bool as_needed;
-  bool whole_archive;
-  bool is_preloading;
+  bool as_needed = false;
+  bool whole_archive = false;
   bool is_static;
   i64 file_priority = 2;
   std::unordered_set<std::string_view> visited;
