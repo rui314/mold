@@ -409,7 +409,7 @@ static int elf_main(int argc, char **argv) {
     wait_for_client();
     if (!reload_input_files(ctx)) {
       std::vector<char *> args(argv, argv + argc);
-      args.push_back("--no-preload");
+      args.push_back((char *)"--no-preload");
       return elf_main<E>(argc + 1, args.data());
     }
   }
