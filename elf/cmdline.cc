@@ -47,6 +47,7 @@ Options:
   --Bstatic                   Do not link against shared libraries
   --Bsymbolic                 Bind global symbols locally
   --Bsymbolic-functions       Bind global functions locally
+  --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
   --Map FILE                  Write map file to a given file
   --allow-multiple-definition Allow multiple definitions
   --as-needed                 Only set DT_NEEDED if used
@@ -479,6 +480,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.Bsymbolic = true;
     } else if (read_flag(args, "Bsymbolic-functions")) {
       ctx.arg.Bsymbolic_functions = true;
+    } else if (read_flag(args, "Bno-symbolic")) {
+      ctx.arg.Bsymbolic = false;
+      ctx.arg.Bsymbolic_functions = false;
     } else if (read_arg(ctx, args, arg, "exclude-libs")) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
     } else if (read_arg(ctx, args, arg, "e") ||
