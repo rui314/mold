@@ -5,6 +5,26 @@
 namespace mold::elf {
 
 template <typename E>
+bool CieRecord<E>::equals(const CieRecord<E> &other) const {
+  if (get_contents() != other.get_contents())
+    return false;
+
+  std::span<ElfRel<E>> x = get_rels();
+  std::span<ElfRel<E>> y = other.get_rels();
+  if (x.size() != y.size())
+    return false;
+
+  for (i64 i = 0; i < x.size(); i++) {
+    if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
+        x[i].r_type != y[i].r_type ||
+        file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
+        input_section.get_addend(x[i]) != other.input_section.get_addend(y[i]))
+      return false;
+  }
+  return true;
+}
+
+template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               const ElfShdr<E> &shdr, std::string_view name,
                               std::string_view contents, i64 section_idx)
@@ -161,6 +181,7 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 #define INSTANTIATE(E)                          \
+  template class CieRecord<E>;                  \
   template class InputSection<E>;
 
 INSTANTIATE(X86_64);

@@ -159,6 +159,42 @@ enum {
 // Note that we assume that the first relocation entry for an FDE
 // always points to the function that the FDE is associated to.
 template <typename E>
+struct CieRecord {
+  CieRecord(Context<E> &ctx, ObjectFile<E> &file,
+            InputSection<E> &isec, u32 input_offset, u32 rel_idx)
+    : file(file), input_section(isec), input_offset(input_offset),
+      rel_idx(rel_idx), rels(isec.get_rels(ctx)),
+      contents(file.get_string(ctx, isec.shdr)) {}
+
+  i64 size() const {
+    return *(u32 *)(contents.data() + input_offset) + 4;
+  }
+
+  std::string_view get_contents() const {
+    return contents.substr(input_offset, size());
+  }
+
+  std::span<ElfRel<E>> get_rels() const {
+    i64 end = rel_idx;
+    while (end < rels.size() && rels[end].r_offset < input_offset + size())
+      end++;
+    return rels.subspan(rel_idx, end - rel_idx);
+  }
+
+  bool equals(const CieRecord &other) const;
+
+  ObjectFile<E> &file;
+  InputSection<E> &input_section;
+  u32 input_offset = -1;
+  u32 output_offset = -1;
+  u32 rel_idx = -1;
+  u32 icf_idx = -1;
+  bool is_leader = false;
+  std::span<ElfRel<E>> rels;
+  std::string_view contents;
+};
+
+template <typename E>
 struct FdeRecord {
   FdeRecord(u32 input_offset, u32 rel_idx)
     : input_offset(input_offset), rel_idx(rel_idx) {}
@@ -177,9 +213,21 @@ struct FdeRecord {
     return *this;
   }
 
-  i64 size() const;
-  std::string_view get_contents() const;
-  std::span<ElfRel<E>> get_rels() const;
+  i64 size() const {
+    return *(u32 *)(cie->contents.data() + input_offset) + 4;
+  }
+
+  std::string_view get_contents() const {
+    return cie->contents.substr(input_offset, size());
+  }
+
+  std::span<ElfRel<E>> get_rels() const {
+    std::span<ElfRel<E>> rels = cie->rels;
+    i64 end = rel_idx;
+    while (end < rels.size() && rels[end].r_offset < input_offset + size())
+      end++;
+    return rels.subspan(rel_idx, end - rel_idx);
+  }
 
   union {
     CieRecord<E> *cie = nullptr;
@@ -190,30 +238,6 @@ struct FdeRecord {
   u32 output_offset = -1;
   u32 rel_idx = -1;
   std::atomic_bool is_alive = true;
-};
-
-template <typename E>
-struct CieRecord {
-  CieRecord(Context<E> &ctx, ObjectFile<E> &file,
-            InputSection<E> &isec, u32 input_offset, u32 rel_idx)
-    : file(file), input_section(isec), input_offset(input_offset),
-      rel_idx(rel_idx), rels(isec.get_rels(ctx)),
-      contents(file.get_string(ctx, isec.shdr)) {}
-
-  i64 size() const;
-  std::string_view get_contents() const;
-  std::span<ElfRel<E>> get_rels() const;
-  bool equals(const CieRecord &other) const;
-
-  ObjectFile<E> &file;
-  InputSection<E> &input_section;
-  u32 input_offset = -1;
-  u32 output_offset = -1;
-  u32 rel_idx = -1;
-  u32 icf_idx = -1;
-  bool is_leader = false;
-  std::span<ElfRel<E>> rels;
-  std::string_view contents;
 };
 
 // InputSection represents a section in an input object file.

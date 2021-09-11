@@ -1366,70 +1366,9 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
   return false;
 }
 
-template <typename E>
-i64 FdeRecord<E>::size() const {
-  return *(u32 *)(cie->contents.data() + input_offset) + 4;
-}
-
-template <typename E>
-std::string_view FdeRecord<E>::get_contents() const {
-  return cie->contents.substr(input_offset, size());
-}
-
-template <typename E>
-std::span<ElfRel<E>> FdeRecord<E>::get_rels() const {
-  std::span<ElfRel<E>> rels = cie->rels;
-  i64 size = get_contents().size();
-  i64 end = rel_idx;
-  while (end < rels.size() && rels[end].r_offset < input_offset + size)
-    end++;
-  return rels.subspan(rel_idx, end - rel_idx);
-}
-
-template <typename E>
-i64 CieRecord<E>::size() const {
-  return *(u32 *)(contents.data() + input_offset) + 4;
-}
-
-template <typename E>
-std::string_view CieRecord<E>::get_contents() const {
-  return contents.substr(input_offset, size());
-}
-
-template <typename E>
-std::span<ElfRel<E>> CieRecord<E>::get_rels() const {
-  i64 size = get_contents().size();
-  i64 end = rel_idx;
-  while (end < rels.size() && rels[end].r_offset < input_offset + size)
-    end++;
-  return rels.subspan(rel_idx, end - rel_idx);
-}
-
-template <typename E>
-bool CieRecord<E>::equals(const CieRecord<E> &other) const {
-  if (get_contents() != other.get_contents())
-    return false;
-
-  std::span<ElfRel<E>> x = get_rels();
-  std::span<ElfRel<E>> y = other.get_rels();
-  if (x.size() != y.size())
-    return false;
-
-  for (i64 i = 0; i < x.size(); i++) {
-    if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
-        x[i].r_type != y[i].r_type ||
-        file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
-        input_section.get_addend(x[i]) != other.input_section.get_addend(y[i]))
-      return false;
-  }
-  return true;
-}
-
 #define INSTANTIATE(E)                                                  \
   template class ObjectFile<E>;                                         \
   template class SharedFile<E>;                                         \
-  template class CieRecord<E>;                                          \
-  template class FdeRecord<E>;                                          \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
 INSTANTIATE(X86_64);
