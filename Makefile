@@ -10,10 +10,8 @@ GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 
 OS ?= $(shell uname -s)
 
-CPPFLAGS = -g -pthread -std=c++20 -fPIE \
-           -DMOLD_VERSION=\"0.9.5\" \
-           -DGIT_HASH=\"$(GIT_HASH)\" \
-	   $(EXTRA_CPPFLAGS)
+CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.5\" \
+           -DGIT_HASH=\"$(GIT_HASH)\" $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
@@ -29,7 +27,7 @@ ASAN ?= 0
 TSAN ?= 0
 
 ifeq ($(DEBUG), 1)
-  CPPFLAGS += -O0
+  CPPFLAGS += -O0 -g
 else
   CPPFLAGS += -O2
 endif
