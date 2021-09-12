@@ -1407,6 +1407,7 @@ struct Context {
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
+    std::vector<std::string_view> require_defined;
     std::vector<std::string_view> trace_symbol;
     std::vector<std::string_view> undefined;
     std::vector<std::string_view> version_definitions;

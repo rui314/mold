@@ -120,6 +120,9 @@ collect_root_set(Context<E> &ctx) {
   for (std::string_view name : ctx.arg.undefined)
     enqueue_symbol(Symbol<E>::intern(ctx, name));
 
+  for (std::string_view name : ctx.arg.require_defined)
+    enqueue_symbol(Symbol<E>::intern(ctx, name));
+
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
   // We just keep all CIEs and everything that are referenced by them.

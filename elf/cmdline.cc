@@ -100,6 +100,7 @@ Options:
   --relax                     Optimize instructions (default)
     --no-relax
   --repro                     Embed input files to .repro section
+  --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
   --rpath DIR                 Add DIR to runtime search path
   --rpath-link DIR            Ignored
@@ -529,6 +530,8 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "u") ||
                read_arg(ctx, args, arg, "undefined")) {
       ctx.arg.undefined.push_back(arg);
+    } else if (read_arg(ctx, args, arg, "require-defined")) {
+      ctx.arg.require_defined.push_back(arg);
     } else if (read_arg(ctx, args, arg, "init")) {
       ctx.arg.init = arg;
     } else if (read_arg(ctx, args, arg, "fini")) {

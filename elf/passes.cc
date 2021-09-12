@@ -95,10 +95,16 @@ void resolve_symbols(Context<E> &ctx) {
   std::vector<ObjectFile<E> *> live_objs = ctx.objs;
   erase(live_objs, [](InputFile<E> *file) { return !file->is_alive; });
 
-  for (std::string_view name : ctx.arg.undefined)
+  auto load = [&](std::string_view name) {
     if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
         live_objs.push_back((ObjectFile<E> *)file);
+  };
+
+  for (std::string_view name : ctx.arg.undefined)
+    load(name);
+  for (std::string_view name : ctx.arg.require_defined)
+    load(name);
 
   tbb::parallel_for_each(live_objs,
                    [&](ObjectFile<E> *file,

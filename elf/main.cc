@@ -499,6 +499,10 @@ static int elf_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  for (std::string_view name : ctx.arg.require_defined)
+    if (!Symbol<E>::intern(ctx, name)->file)
+      Error(ctx) << "--require-defined: undefined symbol: " << name;
+
   // .init_array and .fini_array contents have to be sorted by
   // a special rule. Sort them.
   sort_init_fini(ctx);
