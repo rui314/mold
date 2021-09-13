@@ -94,11 +94,18 @@ int main(int argc, char **argv) {
                   << "\n  addr: 0x" << std::hex << sec[j].addr
                   << "\n  size: 0x" << sec[j].size
                   << "\n  offset: 0x" << sec[j].offset
-                  << "\n  align: " << std::dec << sec[j].align
+                  << "\n  align: " << std::dec << (1 << sec[j].align)
                   << "\n  reloff: " << std::hex << sec[j].reloff
                   << "\n  nreloc: " << std::dec << sec[j].nreloc
                   << "\n  flags: 0x" << std::hex << sec[j].flags
                   << "\n";
+
+        if (sec[j].size) {
+          std::cout << "  contents: [" << (u32)buf[sec[j].offset];
+          for (i64 k = 1; k < sec[j].size; k++)
+            std::cout << " " << (u32)buf[sec[j].offset + k];
+          std::cout << "]\n";
+        }
       }
       break;
     }
