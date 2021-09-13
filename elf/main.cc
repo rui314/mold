@@ -14,12 +14,6 @@
 
 namespace mold::elf {
 
-std::string errno_string() {
-  char buf[500];
-  strerror_r(errno, buf, sizeof(buf));
-  return buf;
-}
-
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];
@@ -27,13 +21,6 @@ std::string_view save_string(Context<E> &ctx, const std::string &str) {
   buf[str.size()] = '\0';
   ctx.owning_bufs.push_back(std::unique_ptr<u8[]>(buf));
   return {(char *)buf, str.size()};
-}
-
-std::string get_version_string() {
-  if (strlen(GIT_HASH) == 0)
-    return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
-  return "mold " MOLD_VERSION " (" GIT_HASH
-         "; compatible with GNU ld and GNU gold)";
 }
 
 std::regex glob_to_regex(std::string_view pattern) {

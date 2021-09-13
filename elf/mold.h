@@ -1532,8 +1532,6 @@ template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str);
 
 std::regex glob_to_regex(std::string_view pat);
-std::string errno_string();
-std::string get_version_string();
 
 int main(int argc, char **argv);
 

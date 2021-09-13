@@ -1,3 +1,6 @@
+#pragma once
+
+#include "macho.h"
 #include "../mold.h"
 
 namespace mold::macho {
