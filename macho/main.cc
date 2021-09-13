@@ -72,9 +72,17 @@ int main(int argc, char **argv) {
     p += lc.cmdsize;
 
     switch (lc.cmd) {
-    case LC_SYMTAB:
+    case LC_SYMTAB: {
       std::cout << "LC_SYMTAB\n";
+      SymtabCommand &cmd = *(SymtabCommand *)&lc;
+      std::cout << " cmdsize: " << cmd.cmdsize
+                << "\n symoff: 0x" << std::hex << cmd.symoff
+                << "\n nsyms: " << std::dec << cmd.nsyms
+                << "\n stroff: 0x" << std::hex << cmd.stroff
+                << "\n strsize: 0x" << cmd.strsize
+                << "\n";
       break;
+    }
     case LC_DYSYMTAB:
       std::cout << "LC_DYSYMTAB\n";
       break;
@@ -129,26 +137,41 @@ int main(int argc, char **argv) {
       if (cmd.rebase_off) {
         std::cout << "  rebase: ";
         print_bytes(buf + cmd.rebase_off, cmd.rebase_size);
+        std::cout << "  rebase_off: 0x" << std::hex << cmd.rebase_off
+                  << "\n  rebase_size: 0x" << cmd.rebase_size
+                  << "\n";
       }
 
       if (cmd.bind_off) {
         std::cout << "  bind: ";
         print_bytes(buf + cmd.bind_off, cmd.bind_size);
+        std::cout << "  bind_off: 0x" << std::hex << cmd.bind_off
+                  << "\n  bind_size: 0x" << cmd.bind_size
+                  << "\n";
       }
 
       if (cmd.weak_bind_off) {
         std::cout << "  weak_bind: ";
         print_bytes(buf + cmd.weak_bind_off, cmd.weak_bind_size);
+        std::cout << "  weak_bind_off: 0x" << std::hex << cmd.weak_bind_off
+                  << "\n  weak_bind_size: 0x" << cmd.weak_bind_size
+                  << "\n";
       }
 
       if (cmd.lazy_bind_off) {
         std::cout << "  lazy_bind: ";
         print_bytes(buf + cmd.lazy_bind_off, cmd.lazy_bind_size);
+        std::cout << "  lazy_bind_off: 0x" << std::hex << cmd.lazy_bind_off
+                  << "\n  lazy_bind_size: 0x" << cmd.lazy_bind_size
+                  << "\n";
       }
 
       if (cmd.export_off) {
         std::cout << "  export: ";
         print_bytes(buf + cmd.export_off, cmd.export_size);
+        std::cout << "  export_off: 0x" << std::hex << cmd.export_off
+                  << "\n  export_size: 0x" << cmd.export_size
+                  << "\n";
       }
       break;
     }
