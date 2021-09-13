@@ -53,6 +53,59 @@ int main(int argc, char **argv) {
             << "\nflags: 0x" << std::hex << hdr.flags << std::dec
             << "\n";
 
+  u8 *p = buf + sizeof(MachHeader);
+
+  for (i64 i = 0; i < hdr.ncmds; i++) {
+    LoadCommand &cmd = *(LoadCommand *)p;
+
+    switch (cmd.cmd) {
+    case LC_SEGMENT:
+      std::cout << "LC_SEGMENT\n";
+      break;
+    case LC_SYMTAB:
+      std::cout << "LC_SYMTAB\n";
+      break;
+    case LC_DYSYMTAB:
+      std::cout << "LC_DYSYMTAB\n";
+      break;
+    case LC_LOAD_DYLIB:
+      std::cout << "LC_LOAD_DYLIB\n";
+      break;
+    case LC_LOAD_DYLINKER:
+      std::cout << "LC_LOAD_DYLINKER\n";
+      break;
+    case LC_SEGMENT_64:
+      std::cout << "LC_SEGMENT_64\n";
+      break;
+    case LC_UUID:
+      std::cout << "LC_UUID\n";
+      break;
+    case LC_DYLD_INFO_ONLY:
+      std::cout << "LC_DYLD_INFO_ONLY\n";
+      break;
+    case LC_FUNCTION_STARTS:
+      std::cout << "LC_FUNCTION_STARTS\n";
+      break;
+    case LC_MAIN:
+      std::cout << "LC_MAIN\n";
+      break;
+    case LC_DATA_IN_CODE:
+      std::cout << "LC_DATA_IN_CODE\n";
+      break;
+    case LC_SOURCE_VERSION:
+      std::cout << "LC_SOURCE_VERSION\n";
+      break;
+    case LC_BUILD_VERSION:
+      std::cout << "LC_BUILD_VERSION\n";
+      break;
+    default:
+      std::cout << "UNKNOWN (0x" << std::hex << cmd.cmd << ")\n";
+      break;
+    }
+
+    p += cmd.cmdsize;
+  }
+
   return 0;
 }
 

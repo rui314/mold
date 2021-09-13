@@ -152,6 +152,12 @@ struct MachHeader {
   u32 ncmds;
   u32 sizeofcmds;
   u32 flags;
+  u32 reserved;
+};
+
+struct LoadCommand {
+  u32 cmd;
+  u32 cmdsize;
 };
 
 struct SegmentCommand {
