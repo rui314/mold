@@ -50,13 +50,14 @@ int main(int argc, char **argv) {
             << "\nfiletype: " << hdr.filetype
             << "\nncmds: " << hdr.ncmds
             << "\nsizeofcmds: " << hdr.sizeofcmds
-            << "\nflags: 0x" << std::hex << hdr.flags << std::dec
+            << "\nflags: 0x" << std::hex << hdr.flags
             << "\n\n";
 
   u8 *p = buf + sizeof(MachHeader);
 
   for (i64 i = 0; i < hdr.ncmds; i++) {
     LoadCommand &lc = *(LoadCommand *)p;
+    p += lc.cmdsize;
 
     switch (lc.cmd) {
     case LC_SYMTAB:
@@ -74,16 +75,31 @@ int main(int argc, char **argv) {
     case LC_SEGMENT_64: {
       std::cout << "LC_SEGMENT_64\n";
       SegmentCommand &cmd = *(SegmentCommand *)&lc;
-      std::cout << " segname: " << cmd.segname
-                << "\n vmaddr: 0x" << std::hex << cmd.vmaddr << std::dec
-                << "\n vmsize: 0x" << std::hex << cmd.vmsize << std::dec
-                << "\n fileoff: " << cmd.fileoff
-                << "\n filesize: " << cmd.filesize
-                << "\n maxprot: " << cmd.maxprot
+      std::cout << " cmdsize: " << cmd.cmdsize
+                << "\n segname: " << cmd.segname
+                << "\n vmaddr: 0x" << std::hex << cmd.vmaddr
+                << "\n vmsize: 0x" << cmd.vmsize
+                << "\n fileoff: 0x" << cmd.fileoff
+                << "\n filesize: 0x" << cmd.filesize
+                << "\n maxprot: " << std::dec << cmd.maxprot
                 << "\n initprot: " << cmd.initprot
                 << "\n nsects: " << cmd.nsects
-                << "\n flags: 0x" << std::hex << cmd.flags << std::dec
+                << "\n flags: 0x" << std::hex << cmd.flags
                 << "\n";
+
+      Section *sec = (Section *)((u8 *)&lc + sizeof(cmd));
+      for (i64 j = 0; j < cmd.nsects; j++) {
+        std::cout << " section:\n  sectname: " << sec[j].sectname
+                  << "\n  segname: " << sec[j].segname
+                  << "\n  addr: 0x" << std::hex << sec[j].addr
+                  << "\n  size: 0x" << sec[j].size
+                  << "\n  offset: 0x" << sec[j].offset
+                  << "\n  align: " << std::dec << sec[j].align
+                  << "\n  reloff: " << std::hex << sec[j].reloff
+                  << "\n  nreloc: " << std::dec << sec[j].nreloc
+                  << "\n  flags: 0x" << std::hex << sec[j].flags
+                  << "\n";
+      }
       break;
     }
     case LC_UUID:
@@ -111,8 +127,6 @@ int main(int argc, char **argv) {
       std::cout << "UNKNOWN (0x" << std::hex << lc.cmd << ")\n";
       break;
     }
-
-    p += lc.cmdsize;
   }
 
   return 0;
