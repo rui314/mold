@@ -51,17 +51,14 @@ int main(int argc, char **argv) {
             << "\nncmds: " << hdr.ncmds
             << "\nsizeofcmds: " << hdr.sizeofcmds
             << "\nflags: 0x" << std::hex << hdr.flags << std::dec
-            << "\n";
+            << "\n\n";
 
   u8 *p = buf + sizeof(MachHeader);
 
   for (i64 i = 0; i < hdr.ncmds; i++) {
-    LoadCommand &cmd = *(LoadCommand *)p;
+    LoadCommand &lc = *(LoadCommand *)p;
 
-    switch (cmd.cmd) {
-    case LC_SEGMENT:
-      std::cout << "LC_SEGMENT\n";
-      break;
+    switch (lc.cmd) {
     case LC_SYMTAB:
       std::cout << "LC_SYMTAB\n";
       break;
@@ -74,9 +71,21 @@ int main(int argc, char **argv) {
     case LC_LOAD_DYLINKER:
       std::cout << "LC_LOAD_DYLINKER\n";
       break;
-    case LC_SEGMENT_64:
+    case LC_SEGMENT_64: {
       std::cout << "LC_SEGMENT_64\n";
+      SegmentCommand &cmd = *(SegmentCommand *)&lc;
+      std::cout << " segname: " << cmd.segname
+                << "\n vmaddr: 0x" << std::hex << cmd.vmaddr << std::dec
+                << "\n vmsize: 0x" << std::hex << cmd.vmsize << std::dec
+                << "\n fileoff: " << cmd.fileoff
+                << "\n filesize: " << cmd.filesize
+                << "\n maxprot: " << cmd.maxprot
+                << "\n initprot: " << cmd.initprot
+                << "\n nsects: " << cmd.nsects
+                << "\n flags: 0x" << std::hex << cmd.flags << std::dec
+                << "\n";
       break;
+    }
     case LC_UUID:
       std::cout << "LC_UUID\n";
       break;
@@ -99,11 +108,11 @@ int main(int argc, char **argv) {
       std::cout << "LC_BUILD_VERSION\n";
       break;
     default:
-      std::cout << "UNKNOWN (0x" << std::hex << cmd.cmd << ")\n";
+      std::cout << "UNKNOWN (0x" << std::hex << lc.cmd << ")\n";
       break;
     }
 
-    p += cmd.cmdsize;
+    p += lc.cmdsize;
   }
 
   return 0;
