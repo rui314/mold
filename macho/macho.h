@@ -144,6 +144,22 @@ static constexpr u32 CPU_TYPE_X86_64 = 0x1000007;
 
 static constexpr u32 CPU_SUBTYPE_X86_64_ALL = 3;
 
+static constexpr u32 REBASE_TYPE_POINTER = 1;
+static constexpr u32 REBASE_TYPE_TEXT_ABSOLUTE32 = 2;
+static constexpr u32 REBASE_TYPE_TEXT_PCREL32 = 3;
+
+static constexpr u32 REBASE_OPCODE_MASK = 0xf0;
+static constexpr u32 REBASE_IMMEDIATE_MASK = 0x0f;
+static constexpr u32 REBASE_OPCODE_DONE = 0x00;
+static constexpr u32 REBASE_OPCODE_SET_TYPE_IMM = 0x10;
+static constexpr u32 REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB = 0x20;
+static constexpr u32 REBASE_OPCODE_ADD_ADDR_ULEB = 0x30;
+static constexpr u32 REBASE_OPCODE_ADD_ADDR_IMM_SCALED = 0x40;
+static constexpr u32 REBASE_OPCODE_DO_REBASE_IMM_TIMES = 0x50;
+static constexpr u32 REBASE_OPCODE_DO_REBASE_ULEB_TIMES = 0x60;
+static constexpr u32 REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB = 0x70;
+static constexpr u32 REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB = 0x80;
+
 struct MachHeader {
   u32 magic;
   u32 cputype;

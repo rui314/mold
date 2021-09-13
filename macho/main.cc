@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
       break;
     }
     case LC_UUID:
-      std::cout << "LC_UUID\n";
+      std::cout << "LC_UUID\n cmdsize: " << lc.cmdsize << "\n";
       break;
     case LC_DYLD_INFO_ONLY:
       std::cout << "LC_DYLD_INFO_ONLY\n";
