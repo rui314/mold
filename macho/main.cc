@@ -30,6 +30,18 @@ static u8 *open_file(std::string path) {
   return (u8 *)ptr;
 }
 
+static void print_bytes(u8 *buf, i64 size) {
+  if (size == 0) {
+    std::cout << "[]\n";
+    return;
+  }
+
+  std::cout << "[" << (u32)buf[0];
+  for (i64 i = 1; i < size; i++)
+    std::cout << " " << (u32)buf[i];
+  std::cout << "]\n";
+}
+
 int main(int argc, char **argv) {
   if (argc == 1) {
     std::cout << "mold macho stub\n";
@@ -101,10 +113,8 @@ int main(int argc, char **argv) {
                   << "\n";
 
         if (sec[j].size) {
-          std::cout << "  contents: [" << (u32)buf[sec[j].offset];
-          for (i64 k = 1; k < sec[j].size; k++)
-            std::cout << " " << (u32)buf[sec[j].offset + k];
-          std::cout << "]\n";
+          std::cout << "  contents: ";
+          print_bytes(buf + sec[j].offset, sec[j].size);
         }
       }
       break;
@@ -112,9 +122,36 @@ int main(int argc, char **argv) {
     case LC_UUID:
       std::cout << "LC_UUID\n cmdsize: " << lc.cmdsize << "\n";
       break;
-    case LC_DYLD_INFO_ONLY:
+    case LC_DYLD_INFO_ONLY: {
       std::cout << "LC_DYLD_INFO_ONLY\n";
+      DyldInfoCommand &cmd = *(DyldInfoCommand *)&lc;
+
+      if (cmd.rebase_off) {
+        std::cout << "  rebase: ";
+        print_bytes(buf + cmd.rebase_off, cmd.rebase_size);
+      }
+
+      if (cmd.bind_off) {
+        std::cout << "  bind: ";
+        print_bytes(buf + cmd.bind_off, cmd.bind_size);
+      }
+
+      if (cmd.weak_bind_off) {
+        std::cout << "  weak_bind: ";
+        print_bytes(buf + cmd.weak_bind_off, cmd.weak_bind_size);
+      }
+
+      if (cmd.lazy_bind_off) {
+        std::cout << "  lazy_bind: ";
+        print_bytes(buf + cmd.lazy_bind_off, cmd.lazy_bind_size);
+      }
+
+      if (cmd.export_off) {
+        std::cout << "  export: ";
+        print_bytes(buf + cmd.export_off, cmd.export_size);
+      }
       break;
+    }
     case LC_FUNCTION_STARTS:
       std::cout << "LC_FUNCTION_STARTS\n";
       break;

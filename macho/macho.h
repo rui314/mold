@@ -233,4 +233,19 @@ struct SymtabCommand {
   u32 strsize;
 };
 
+struct DyldInfoCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 rebase_off;
+  u32 rebase_size;
+  u32 bind_off;
+  u32 bind_size;
+  u32 weak_bind_off;
+  u32 weak_bind_size;
+  u32 lazy_bind_off;
+  u32 lazy_bind_size;
+  u32 export_off;
+  u32 export_size;
+};
+
 } // namespace mold::macho
