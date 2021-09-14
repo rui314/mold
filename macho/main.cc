@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <fcntl.h>
+#include <iomanip>
 #include <iostream>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -36,9 +37,9 @@ static void print_bytes(u8 *buf, i64 size) {
     return;
   }
 
-  std::cout << "[" << (u32)buf[0];
+  std::cout << "[" << std::setw(2) << std::setfill('0') << (u32)buf[0];
   for (i64 i = 1; i < size; i++)
-    std::cout << " " << (u32)buf[i];
+    std::cout << " " << std::setw(2) << std::setfill('0') << (u32)buf[i];
   std::cout << "]\n";
 }
 
@@ -175,12 +176,22 @@ int main(int argc, char **argv) {
       }
       break;
     }
-    case LC_FUNCTION_STARTS:
+    case LC_FUNCTION_STARTS: {
       std::cout << "LC_FUNCTION_STARTS\n";
+      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      std::cout << " dataoff: 0x" << cmd.dataoff
+                << "\n datasize: 0x" << cmd.datasize
+                << "\n";
       break;
-    case LC_MAIN:
+    }
+    case LC_MAIN: {
       std::cout << "LC_MAIN\n";
+      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      std::cout << " dataoff: 0x" << cmd.dataoff
+                << "\n datasize: 0x" << cmd.datasize
+                << "\n";
       break;
+    }
     case LC_DATA_IN_CODE:
       std::cout << "LC_DATA_IN_CODE\n";
       break;

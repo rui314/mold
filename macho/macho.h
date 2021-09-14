@@ -160,6 +160,45 @@ static constexpr u32 REBASE_OPCODE_DO_REBASE_ULEB_TIMES = 0x60;
 static constexpr u32 REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB = 0x70;
 static constexpr u32 REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB = 0x80;
 
+static constexpr u32 BIND_TYPE_POINTER = 1;
+static constexpr u32 BIND_TYPE_TEXT_ABSOLUTE32 = 2;
+static constexpr u32 BIND_TYPE_TEXT_PCREL32 = 3;
+
+static constexpr u32 BIND_SPECIAL_DYLIB_SELF = 0;
+static constexpr u32 BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE = -1;
+static constexpr u32 BIND_SPECIAL_DYLIB_FLAT_LOOKUP = -2;
+static constexpr u32 BIND_SPECIAL_DYLIB_WEAK_LOOKUP = -3;
+
+static constexpr u32 BIND_SYMBOL_FLAGS_WEAK_IMPORT = 0x1;
+static constexpr u32 BIND_SYMBOL_FLAGS_NON_WEAK_DEFINITION = 0x8;
+
+static constexpr u32 BIND_OPCODE_MASK = 0xF0;
+static constexpr u32 BIND_IMMEDIATE_MASK = 0x0F;
+static constexpr u32 BIND_OPCODE_DONE = 0x00;
+static constexpr u32 BIND_OPCODE_SET_DYLIB_ORDINAL_IMM = 0x10;
+static constexpr u32 BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB = 0x20;
+static constexpr u32 BIND_OPCODE_SET_DYLIB_SPECIAL_IMM = 0x30;
+static constexpr u32 BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM = 0x40;
+static constexpr u32 BIND_OPCODE_SET_TYPE_IMM = 0x50;
+static constexpr u32 BIND_OPCODE_SET_ADDEND_SLEB = 0x60;
+static constexpr u32 BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB = 0x70;
+static constexpr u32 BIND_OPCODE_ADD_ADDR_ULEB = 0x80;
+static constexpr u32 BIND_OPCODE_DO_BIND = 0x90;
+static constexpr u32 BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB = 0xA0;
+static constexpr u32 BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED = 0xB0;
+static constexpr u32 BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB = 0xC0;
+static constexpr u32 BIND_OPCODE_THREADED = 0xD0;
+static constexpr u32 BIND_SUBOPCODE_THREADED_SET_BIND_ORDINAL_TABLE_SIZE_ULEB = 0x00;
+static constexpr u32 BIND_SUBOPCODE_THREADED_APPLY = 0x01;
+
+static constexpr u32 EXPORT_SYMBOL_FLAGS_KIND_MASK = 0x03;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_KIND_REGULAR = 0x00;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL = 0x01;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE = 0x02;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION = 0x04;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_REEXPORT = 0x08;
+static constexpr u32 EXPORT_SYMBOL_FLAGS_STUB_AND_RESOLVER = 0x10;
+
 struct MachHeader {
   u32 magic;
   u32 cputype;
@@ -246,6 +285,13 @@ struct DyldInfoCommand {
   u32 lazy_bind_size;
   u32 export_off;
   u32 export_size;
+};
+
+struct LinkeditDataCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 dataoff;
+  u32 datasize;
 };
 
 } // namespace mold::macho
