@@ -87,9 +87,18 @@ int main(int argc, char **argv) {
     case LC_DYSYMTAB:
       std::cout << "LC_DYSYMTAB\n";
       break;
-    case LC_LOAD_DYLIB:
+    case LC_LOAD_DYLIB: {
       std::cout << "LC_LOAD_DYLIB\n";
+      DylibCommand &cmd = *(DylibCommand *)&lc;
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n nameoff: 0x" << cmd.nameoff
+                << "\n timestamp: 0x" << cmd.timestamp
+                << "\n current_version: 0x" << cmd.current_version
+                << "\n compatibility_version: 0x" << cmd.compatibility_version
+                << "\n data: " << (char *)((char *)&cmd + sizeof(cmd))
+                << "\n";
       break;
+    }
     case LC_LOAD_DYLINKER:
       std::cout << "LC_LOAD_DYLINKER\n";
       break;

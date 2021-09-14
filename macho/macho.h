@@ -250,17 +250,13 @@ struct Section {
   u32 reserved3;
 };
 
-struct Dylib {
+struct DylibCommand {
+  u32 cmd;
+  u32 cmdsize;
   u32 nameoff;
   u32 timestamp;
   u32 current_version;
   u32 compatibility_version;
-};
-
-struct DylibCommand {
-  u32 cmd;
-  u32 cmdsize;
-  Dylib dylib;
 };
 
 struct DylinkerCommand {
