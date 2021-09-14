@@ -231,6 +231,17 @@ static constexpr u32 REFERENCED_DYNAMICALLY = 0x0010;
 
 static constexpr u32 N_DESC_DISCARDED = 0x8000;
 
+static constexpr u32 X86_64_RELOC_UNSIGNED = 0;
+static constexpr u32 X86_64_RELOC_SIGNED = 1;
+static constexpr u32 X86_64_RELOC_BRANCH = 2;
+static constexpr u32 X86_64_RELOC_GOT_LOAD = 3;
+static constexpr u32 X86_64_RELOC_GOT = 4;
+static constexpr u32 X86_64_RELOC_SUBTRACTOR = 5;
+static constexpr u32 X86_64_RELOC_SIGNED_1 = 6;
+static constexpr u32 X86_64_RELOC_SIGNED_2 = 7;
+static constexpr u32 X86_64_RELOC_SIGNED_4 = 8;
+static constexpr u32 X86_64_RELOC_TLV = 9;
+
 struct MachHeader {
   u32 magic;
   u32 cputype;
