@@ -82,6 +82,17 @@ int main(int argc, char **argv) {
                 << "\n stroff: 0x" << std::hex << cmd.stroff
                 << "\n strsize: 0x" << cmd.strsize
                 << "\n";
+
+      MachoSym *syms = (MachoSym *)(buf + cmd.symoff);
+      for (i64 j = 0; j < cmd.nsyms; j++) {
+        std::cout << " symbol:"
+                  << "\n  name: " << (char *)(buf + cmd.stroff + syms[j].stroff)
+                  << "\n  type: 0x" << (u32)syms[j].type
+                  << "\n  sect: 0x" << (u32)syms[j].sect
+                  << "\n  desc: 0x" << (u32)syms[j].desc
+                  << "\n  value: 0x" << syms[j].value
+                  << "\n";
+      }
       break;
     }
     case LC_DYSYMTAB: {

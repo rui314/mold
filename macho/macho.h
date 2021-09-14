@@ -205,6 +205,32 @@ static constexpr u32 DICE_KIND_JUMP_TABLE16 = 3;
 static constexpr u32 DICE_KIND_JUMP_TABLE32 = 4;
 static constexpr u32 DICE_KIND_ABS_JUMP_TABLE32 = 5;
 
+static constexpr u32 N_STAB = 0xe0;
+static constexpr u32 N_PEXT = 0x10;
+static constexpr u32 N_TYPE = 0x0e;
+static constexpr u32 N_EXT = 0x01;
+
+static constexpr u32 N_UNDF = 0x0;
+static constexpr u32 N_ABS = 0x2;
+static constexpr u32 N_SECT = 0xe;
+static constexpr u32 N_PBUD = 0xc;
+static constexpr u32 N_INDR = 0xa;
+
+static constexpr u32 NO_SECT = 0;
+static constexpr u32 MAX_SECT =	255;
+
+static constexpr u32 REFERENCE_TYPE = 0xf;
+static constexpr u32 REFERENCE_FLAG_UNDEFINED_NON_LAZY = 0;
+static constexpr u32 REFERENCE_FLAG_UNDEFINED_LAZY = 1;
+static constexpr u32 REFERENCE_FLAG_DEFINED = 2;
+static constexpr u32 REFERENCE_FLAG_PRIVATE_DEFINED = 3;
+static constexpr u32 REFERENCE_FLAG_PRIVATE_UNDEFINED_NON_LAZY = 4;
+static constexpr u32 REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY = 5;
+
+static constexpr u32 REFERENCED_DYNAMICALLY = 0x0010;
+
+static constexpr u32 N_DESC_DISCARDED = 0x8000;
+
 struct MachHeader {
   u32 magic;
   u32 cputype;
@@ -338,6 +364,15 @@ struct DataInCodeEntry {
   u32 offset;
   u32 length;
   u16 kind;
+};
+
+// This struct is named `n_list` in BSD and macOS.
+struct MachoSym {
+  u32 stroff;
+  u8 type;
+  u8 sect;
+  u16 desc;
+  u64 value;
 };
 
 } // namespace mold::macho
