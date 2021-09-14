@@ -192,15 +192,27 @@ int main(int argc, char **argv) {
                 << "\n";
       break;
     }
-    case LC_DATA_IN_CODE:
+    case LC_DATA_IN_CODE: {
       std::cout << "LC_DATA_IN_CODE\n";
+      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      std::cout << " dataoff: 0x" << cmd.dataoff
+                << "\n datasize: 0x" << cmd.datasize
+                << "\n";
       break;
+    }
     case LC_SOURCE_VERSION:
       std::cout << "LC_SOURCE_VERSION\n";
       break;
-    case LC_BUILD_VERSION:
+    case LC_BUILD_VERSION: {
       std::cout << "LC_BUILD_VERSION\n";
+      BuildVersionCommand &cmd = *(BuildVersionCommand *)&lc;
+      std::cout << " platform: 0x" << cmd.platform
+                << "\n minos: 0x" << cmd.minos
+                << "\n sdk: 0x" << cmd.sdk
+                << "\n ntools: 0x" << cmd.ntools
+                << "\n";
       break;
+    }
     default:
       std::cout << "UNKNOWN (0x" << std::hex << lc.cmd << ")\n";
       break;

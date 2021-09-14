@@ -199,6 +199,12 @@ static constexpr u32 EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION = 0x04;
 static constexpr u32 EXPORT_SYMBOL_FLAGS_REEXPORT = 0x08;
 static constexpr u32 EXPORT_SYMBOL_FLAGS_STUB_AND_RESOLVER = 0x10;
 
+static constexpr u32 DICE_KIND_DATA = 1;
+static constexpr u32 DICE_KIND_JUMP_TABLE8 = 2;
+static constexpr u32 DICE_KIND_JUMP_TABLE16 = 3;
+static constexpr u32 DICE_KIND_JUMP_TABLE32 = 4;
+static constexpr u32 DICE_KIND_ABS_JUMP_TABLE32 = 5;
+
 struct MachHeader {
   u32 magic;
   u32 cputype;
@@ -292,6 +298,21 @@ struct LinkeditDataCommand {
   u32 cmdsize;
   u32 dataoff;
   u32 datasize;
+};
+
+struct BuildVersionCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 platform;
+  u32 minos;
+  u32 sdk;
+  u32 ntools;
+};
+
+struct DataInCodeEntry {
+  u32 offset;
+  u32 length;
+  u16 kind;
 };
 
 } // namespace mold::macho
