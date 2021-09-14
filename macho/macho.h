@@ -309,6 +309,12 @@ struct BuildVersionCommand {
   u32 ntools;
 };
 
+struct SourceVersionCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 version;
+};
+
 struct DataInCodeEntry {
   u32 offset;
   u32 length;

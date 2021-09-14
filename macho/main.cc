@@ -200,8 +200,13 @@ int main(int argc, char **argv) {
                 << "\n";
       break;
     }
-    case LC_SOURCE_VERSION:
+    case LC_SOURCE_VERSION: {
       std::cout << "LC_SOURCE_VERSION\n";
+      SourceVersionCommand &cmd = *(SourceVersionCommand *)&lc;
+      std::cout << " version: 0x" << cmd.version
+                << "\n";
+      break;
+    }
       break;
     case LC_BUILD_VERSION: {
       std::cout << "LC_BUILD_VERSION\n";
