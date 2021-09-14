@@ -205,19 +205,11 @@ static constexpr u32 DICE_KIND_JUMP_TABLE16 = 3;
 static constexpr u32 DICE_KIND_JUMP_TABLE32 = 4;
 static constexpr u32 DICE_KIND_ABS_JUMP_TABLE32 = 5;
 
-static constexpr u32 N_STAB = 0xe0;
-static constexpr u32 N_PEXT = 0x10;
-static constexpr u32 N_TYPE = 0x0e;
-static constexpr u32 N_EXT = 0x01;
-
-static constexpr u32 N_UNDF = 0x0;
-static constexpr u32 N_ABS = 0x2;
-static constexpr u32 N_SECT = 0xe;
-static constexpr u32 N_PBUD = 0xc;
-static constexpr u32 N_INDR = 0xa;
-
-static constexpr u32 NO_SECT = 0;
-static constexpr u32 MAX_SECT =	255;
+static constexpr u32 N_UNDF = 0;
+static constexpr u32 N_ABS = 1;
+static constexpr u32 N_INDR = 5;
+static constexpr u32 N_PBUD = 6;
+static constexpr u32 N_SECT = 7;
 
 static constexpr u32 REFERENCE_TYPE = 0xf;
 static constexpr u32 REFERENCE_FLAG_UNDEFINED_NON_LAZY = 0;
@@ -380,7 +372,10 @@ struct DataInCodeEntry {
 // This struct is named `n_list` in BSD and macOS.
 struct MachoSym {
   u32 stroff;
-  u8 type;
+  u8 ext : 1;
+  u8 type : 3;
+  u8 pext : 1;
+  u8 stub : 3;
   u8 sect;
   u16 desc;
   u64 value;

@@ -87,7 +87,10 @@ int main(int argc, char **argv) {
       for (i64 j = 0; j < cmd.nsyms; j++) {
         std::cout << " symbol:"
                   << "\n  name: " << (char *)(buf + cmd.stroff + syms[j].stroff)
-                  << "\n  type: 0x" << (u32)syms[j].type
+                  << "\n  stub: " << (u32)syms[j].stub
+                  << "\n  pext: " << (u32)syms[j].pext
+                  << "\n  type: " << (u32)syms[j].type
+                  << "\n  ext: " << (u32)syms[j].ext
                   << "\n  sect: 0x" << (u32)syms[j].sect
                   << "\n  desc: 0x" << (u32)syms[j].desc
                   << "\n  value: 0x" << syms[j].value
