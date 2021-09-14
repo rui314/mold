@@ -99,9 +99,15 @@ int main(int argc, char **argv) {
                 << "\n";
       break;
     }
-    case LC_LOAD_DYLINKER:
+    case LC_LOAD_DYLINKER: {
       std::cout << "LC_LOAD_DYLINKER\n";
+      DylinkerCommand &cmd = *(DylinkerCommand *)&lc;
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n nameoff: 0x" << cmd.nameoff
+                << "\n data: " << (char *)((char *)&cmd + cmd.nameoff)
+                << "\n";
       break;
+    }
     case LC_SEGMENT_64: {
       std::cout << "LC_SEGMENT_64\n";
       SegmentCommand &cmd = *(SegmentCommand *)&lc;
