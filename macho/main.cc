@@ -84,9 +84,36 @@ int main(int argc, char **argv) {
                 << "\n";
       break;
     }
-    case LC_DYSYMTAB:
+    case LC_DYSYMTAB: {
       std::cout << "LC_DYSYMTAB\n";
+      DysymtabCommand &cmd = *(DysymtabCommand *)&lc;
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n ilocalsym: 0x" << cmd.ilocalsym
+                << "\n nlocalsym: 0x" << cmd.nlocalsym
+                << "\n iextdefsym: 0x" << cmd.iextdefsym
+                << "\n nextdefsym: 0x" << cmd.nextdefsym
+                << "\n iundefsym: 0x" << cmd.iundefsym
+                << "\n nundefsym: 0x" << cmd.nundefsym
+                << "\n tocoff: 0x" << cmd.tocoff
+                << "\n ntoc: 0x" << cmd.ntoc
+                << "\n modtaboff: 0x" << cmd.modtaboff
+                << "\n nmodtab: 0x" << cmd.nmodtab
+                << "\n extrefsymoff: 0x" << cmd.extrefsymoff
+                << "\n nextrefsyms: 0x" << cmd.nextrefsyms
+                << "\n indirectsymoff: 0x" << cmd.indirectsymoff
+                << "\n nindirectsyms: 0x" << cmd.nindirectsyms
+                << "\n extreloff: 0x" << cmd.extreloff
+                << "\n nextrel: 0x" << cmd.nextrel
+                << "\n locreloff: 0x" << cmd.locreloff
+                << "\n nlocrel: 0x" << cmd.nlocrel
+                << "\n";
+
+      if (cmd.indirectsymoff) {
+        std::cout << " indirectsymdata: ";
+        print_bytes(buf + cmd.indirectsymoff, 4 * cmd.nindirectsyms);
+      }
       break;
+    }
     case LC_LOAD_DYLIB: {
       std::cout << "LC_LOAD_DYLIB\n";
       DylibCommand &cmd = *(DylibCommand *)&lc;

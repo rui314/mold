@@ -274,6 +274,29 @@ struct SymtabCommand {
   u32 strsize;
 };
 
+struct DysymtabCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 ilocalsym;
+  u32 nlocalsym;
+  u32 iextdefsym;
+  u32 nextdefsym;
+  u32 iundefsym;
+  u32 nundefsym;
+  u32 tocoff;
+  u32 ntoc;
+  u32 modtaboff;
+  u32 nmodtab;
+  u32 extrefsymoff;
+  u32 nextrefsyms;
+  u32 indirectsymoff;
+  u32 nindirectsyms;
+  u32 extreloff;
+  u32 nextrel;
+  u32 locreloff;
+  u32 nlocrel;
+};	
+
 struct DyldInfoCommand {
   u32 cmd;
   u32 cmdsize;
