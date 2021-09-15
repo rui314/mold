@@ -90,20 +90,6 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
   }
 }
 
-template <typename E>
-void cleanup() {
-  if (OutputFile<E>::tmpfile)
-    unlink(OutputFile<E>::tmpfile);
-  if (socket_tmpfile)
-    unlink(socket_tmpfile);
-}
-
-template <typename E>
-static void signal_handler(int) {
-  cleanup<E>();
-  _exit(1);
-}
-
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
 template <typename E>
@@ -361,8 +347,7 @@ static int elf_main(int argc, char **argv) {
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
 
-  signal(SIGINT, signal_handler<E>);
-  signal(SIGTERM, signal_handler<E>);
+  install_signal_handler();
 
   if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
     Fatal(ctx) << "chdir failed: " << ctx.arg.directory

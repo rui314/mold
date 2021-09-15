@@ -25,11 +25,17 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+inline char *output_tmpfile;
+inline char *socket_tmpfile;
+inline thread_local bool opt_demangle;
+
 std::string errno_string();
 std::string get_version_string();
+void cleanup();
+void install_signal_handler();
 
 //
-// Inline functions
+// Utility functions
 //
 
 inline u64 align_to(u64 val, u64 align) {

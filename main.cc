@@ -2,6 +2,7 @@
 #include "macho/mold.h"
 
 #include <cstring>
+#include <signal.h>
 
 namespace mold {
 
@@ -16,6 +17,23 @@ std::string get_version_string() {
     return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
   return "mold " MOLD_VERSION " (" GIT_HASH
          "; compatible with GNU ld and GNU gold)";
+}
+
+void cleanup() {
+  if (output_tmpfile)
+    unlink(output_tmpfile);
+  if (socket_tmpfile)
+    unlink(socket_tmpfile);
+}
+
+static void signal_handler(int) {
+  cleanup();
+  _exit(1);
+}
+
+void install_signal_handler() {
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
 }
 
 } // namespace mold

@@ -20,19 +20,19 @@ public:
                          i64 perm)
     : OutputFile<E>(path, filesize, true) {
     std::string dir(path_dirname(path));
-    this->tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
-    i64 fd = mkstemp(this->tmpfile);
+    output_tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
+    i64 fd = mkstemp(output_tmpfile);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << this->tmpfile <<  ": " << errno_string();
+      Fatal(ctx) << "cannot open " << output_tmpfile <<  ": " << errno_string();
 
-    if (rename(path.c_str(), this->tmpfile) == 0) {
+    if (rename(path.c_str(), output_tmpfile) == 0) {
       ::close(fd);
-      fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
+      fd = ::open(output_tmpfile, O_RDWR | O_CREAT, perm);
       if (fd == -1) {
         if (errno != ETXTBSY)
           Fatal(ctx) << "cannot open " << path << ": " << errno_string();
-        unlink(this->tmpfile);
-        fd = ::open(this->tmpfile, O_RDWR | O_CREAT, perm);
+        unlink(output_tmpfile);
+        fd = ::open(output_tmpfile, O_RDWR | O_CREAT, perm);
         if (fd == -1)
           Fatal(ctx) << "cannot open " << path << ": " << errno_string();
       }
@@ -57,9 +57,9 @@ public:
     if (!ctx.buildid)
       munmap(this->buf, this->filesize);
 
-    if (rename(this->tmpfile, this->path.c_str()) == -1)
+    if (rename(output_tmpfile, this->path.c_str()) == -1)
       Fatal(ctx) << this->path << ": rename failed: " << errno_string();
-    this->tmpfile = nullptr;
+    output_tmpfile = nullptr;
   }
 };
 

@@ -64,8 +64,6 @@ template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
 
-template <typename E> void cleanup();
-
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
@@ -1096,8 +1094,6 @@ public:
   virtual void close(Context<E> &ctx) = 0;
   virtual ~OutputFile() {}
 
-  static inline char *tmpfile;
-
   u8 *buf = nullptr;
   std::string path;
   i64 filesize;
@@ -1205,8 +1201,6 @@ void print_map(Context<E> &ctx);
 //
 // subprocess.cc
 //
-
-inline char *socket_tmpfile;
 
 std::function<void()> fork_child();
 
@@ -1539,8 +1533,6 @@ int main(int argc, char **argv);
 // Error output
 //
 
-inline thread_local bool opt_demangle = false;
-
 template <typename E>
 class SyncOut {
 public:
@@ -1574,7 +1566,7 @@ public:
 
   [[noreturn]] ~Fatal() {
     out.~SyncOut();
-    cleanup<E>();
+    cleanup();
     _exit(1);
   }
 
@@ -1603,7 +1595,7 @@ public:
   static void checkpoint(Context<E> &ctx) {
     if (!ctx.has_error)
       return;
-    cleanup<E>();
+    cleanup();
     _exit(1);
   }
 
