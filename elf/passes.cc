@@ -392,7 +392,7 @@ void check_duplicate_symbols(Context<E> &ctx) {
     }
   });
 
-  Error<E>::checkpoint(ctx);
+  ctx.checkpoint();
 }
 
 template <typename E>
@@ -496,7 +496,7 @@ void scan_rels(Context<E> &ctx) {
   });
 
   // Exit if there was a relocation that refers an undefined symbol.
-  Error<E>::checkpoint(ctx);
+  ctx.checkpoint();
 
   // Add symbol aliases for COPYREL.
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {

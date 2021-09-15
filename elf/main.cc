@@ -606,7 +606,7 @@ static int elf_main(int argc, char **argv) {
       chunk->copy_buf(ctx);
     });
 
-    Error<E>::checkpoint(ctx);
+    ctx.checkpoint();
   }
 
   // Dynamic linker works better with sorted .rela.dyn section,

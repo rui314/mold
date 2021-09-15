@@ -1322,6 +1322,13 @@ struct Context {
   Context() = default;
   Context(const Context<E> &) = delete;
 
+  void checkpoint() {
+    if (has_error) {
+      cleanup();
+      _exit(1);
+    }
+  }
+
   // Command-line arguments
   struct {
     BuildId build_id;
@@ -1528,103 +1535,6 @@ std::string_view save_string(Context<E> &ctx, const std::string &str);
 std::regex glob_to_regex(std::string_view pat);
 
 int main(int argc, char **argv);
-
-//
-// Error output
-//
-
-template <typename E>
-class SyncOut {
-public:
-  SyncOut(Context<E> &ctx, std::ostream &out = std::cout) : out(out) {
-    opt_demangle = ctx.arg.demangle;
-  }
-
-  ~SyncOut() {
-    std::lock_guard lock(mu);
-    out << ss.str() << "\n";
-  }
-
-  template <class T> SyncOut &operator<<(T &&val) {
-    ss << std::forward<T>(val);
-    return *this;
-  }
-
-  static inline std::mutex mu;
-
-private:
-  std::ostream &out;
-  std::stringstream ss;
-};
-
-template <typename E>
-class Fatal {
-public:
-  Fatal(Context<E> &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
-  }
-
-  [[noreturn]] ~Fatal() {
-    out.~SyncOut();
-    cleanup();
-    _exit(1);
-  }
-
-  template <class T> Fatal &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-template <typename E>
-class Error {
-public:
-  Error(Context<E> &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
-    ctx.has_error = true;
-  }
-
-  template <class T> Error &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-  static void checkpoint(Context<E> &ctx) {
-    if (!ctx.has_error)
-      return;
-    cleanup();
-    _exit(1);
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-template <typename E>
-class Warn {
-public:
-  Warn(Context<E> &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
-    if (ctx.arg.fatal_warnings)
-      ctx.has_error = true;
-  }
-
-  template <class T> Warn &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-private:
-  SyncOut<E> out;
-};
-
-#define unreachable(ctx)                                               \
-  do {                                                                 \
-    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
-  } while (0)
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);

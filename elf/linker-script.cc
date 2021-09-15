@@ -61,7 +61,7 @@ public:
 
   [[noreturn]] ~SyntaxError() = default;
 
-  Fatal<E> out;
+  Fatal<Context<E>> out;
 };
 
 template <typename E>

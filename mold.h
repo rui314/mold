@@ -1,13 +1,12 @@
 #pragma once
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-
 #include <atomic>
 #include <cassert>
 #include <cstring>
+#include <iostream>
+#include <mutex>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -33,6 +32,96 @@ std::string errno_string();
 std::string get_version_string();
 void cleanup();
 void install_signal_handler();
+
+//
+// Error output
+//
+
+template <typename C>
+class SyncOut {
+public:
+  SyncOut(C &ctx, std::ostream &out = std::cout) : out(out) {
+    opt_demangle = ctx.arg.demangle;
+  }
+
+  ~SyncOut() {
+    std::lock_guard lock(mu);
+    out << ss.str() << "\n";
+  }
+
+  template <class T> SyncOut &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+  static inline std::mutex mu;
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+};
+
+template <typename C>
+class Fatal {
+public:
+  Fatal(C &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
+  }
+
+  [[noreturn]] ~Fatal() {
+    out.~SyncOut();
+    cleanup();
+    _exit(1);
+  }
+
+  template <class T> Fatal &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut<C> out;
+};
+
+template <typename C>
+class Error {
+public:
+  Error(C &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
+    ctx.has_error = true;
+  }
+
+  template <class T> Error &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut<C> out;
+};
+
+template <typename C>
+class Warn {
+public:
+  Warn(C &ctx) : out(ctx, std::cerr) {
+    out << "mold: ";
+    if (ctx.arg.fatal_warnings)
+      ctx.has_error = true;
+  }
+
+  template <class T> Warn &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncOut<C> out;
+};
+
+#define unreachable(ctx)                                               \
+  do {                                                                 \
+    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
+  } while (0)
 
 //
 // Utility functions
