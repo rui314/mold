@@ -72,6 +72,17 @@ int main(int argc, char **argv) {
     LoadCommand &lc = *(LoadCommand *)p;
     p += lc.cmdsize;
 
+    auto print_dylib = [&]() {
+      DylibCommand &cmd = *(DylibCommand *)&lc;
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n nameoff: 0x" << cmd.nameoff
+                << "\n timestamp: 0x" << cmd.timestamp
+                << "\n current_version: 0x" << cmd.current_version
+                << "\n compatibility_version: 0x" << cmd.compatibility_version
+                << "\n data: " << (char *)((char *)&cmd + sizeof(cmd))
+                << "\n";
+    };
+
     switch (lc.cmd) {
     case LC_SYMTAB: {
       std::cout << "LC_SYMTAB\n";
@@ -128,18 +139,18 @@ int main(int argc, char **argv) {
       }
       break;
     }
-    case LC_LOAD_DYLIB: {
+    case LC_LOAD_DYLIB:
       std::cout << "LC_LOAD_DYLIB\n";
-      DylibCommand &cmd = *(DylibCommand *)&lc;
-      std::cout << " cmdsize: 0x" << cmd.cmdsize
-                << "\n nameoff: 0x" << cmd.nameoff
-                << "\n timestamp: 0x" << cmd.timestamp
-                << "\n current_version: 0x" << cmd.current_version
-                << "\n compatibility_version: 0x" << cmd.compatibility_version
-                << "\n data: " << (char *)((char *)&cmd + sizeof(cmd))
-                << "\n";
+      print_dylib();
       break;
-    }
+    case LC_LOAD_WEAK_DYLIB:
+      std::cout << "LC_LOAD_WEAK_DYLIB\n";
+      print_dylib();
+      break;
+    case LC_ID_DYLIB:
+      std::cout << "LC_ID_DYLIB\n";
+      print_dylib();
+      break;
     case LC_LOAD_DYLINKER: {
       std::cout << "LC_LOAD_DYLINKER\n";
       DylinkerCommand &cmd = *(DylinkerCommand *)&lc;
@@ -177,9 +188,23 @@ int main(int argc, char **argv) {
                   << "\n  flags: 0x" << std::hex << sec[j].flags
                   << "\n";
 
-        if (sec[j].size) {
-          std::cout << "  contents: ";
-          print_bytes(buf + sec[j].offset, sec[j].size);
+//        if (sec[j].size) {
+//          std::cout << "  contents: ";
+//          print_bytes(buf + sec[j].offset, sec[j].size);
+//        }
+
+        if (sec[j].reloff) {
+          MachoRel *rel = (MachoRel *)(buf + sec[j].reloff);
+          for (i64 k = 0; k < sec[j].nreloc; k++) {
+            std::cout << "  reloc: "
+                      << "\n   offset: 0x" << rel[k].offset
+                      << "\n   idx: 0x" << rel[k].idx
+                      << "\n   is_pcrel: " << rel[k].is_pcrel
+                      << "\n   length: 0x" << rel[k].length
+                      << "\n   is_extern: " << rel[k].is_extern
+                      << "\n   type: " << rel[k].type
+                      << "\n";
+          }
         }
       }
       break;
@@ -274,6 +299,17 @@ int main(int argc, char **argv) {
                 << "\n";
       break;
     }
+    case LC_VERSION_MIN_MACOSX: {
+      std::cout << "LC_VERSION_MIN_MACOSX\n";
+      VersionMinCommand &cmd = *(VersionMinCommand *)&lc;
+      std::cout << " version: " << (int)cmd.version
+                << "\n sdk: " << (int)cmd.sdk
+                << "\n";
+      break;
+    }
+    case LC_CODE_SIGNATURE:
+      std::cout << "LC_CODE_SIGNATURE\n";
+      break;
     default:
       std::cout << "UNKNOWN (0x" << std::hex << lc.cmd << ")\n";
       break;

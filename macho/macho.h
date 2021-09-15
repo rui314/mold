@@ -326,6 +326,13 @@ struct DysymtabCommand {
   u32 nlocrel;
 };	
 
+struct VersionMinCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 version;
+  u32 sdk;
+};
+
 struct DyldInfoCommand {
   u32 cmd;
   u32 cmdsize;
@@ -369,7 +376,7 @@ struct DataInCodeEntry {
   u16 kind;
 };
 
-// This struct is named `n_list` in BSD and macOS.
+// This struct is named `n_list` on BSD and macOS.
 struct MachoSym {
   u32 stroff;
   u8 ext : 1;
@@ -379,6 +386,16 @@ struct MachoSym {
   u8 sect;
   u16 desc;
   u64 value;
+};
+
+// This struct is named `relocation_info` on BSD and macOS.
+struct MachoRel {
+  i32 offset;
+  u32 idx : 24;
+  u32 is_pcrel : 1;
+  u32 length : 2;
+  u32 is_extern : 1;
+  u32 type : 4;
 };
 
 } // namespace mold::macho
