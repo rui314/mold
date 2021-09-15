@@ -377,7 +377,7 @@ struct DataInCodeEntry {
 };
 
 // This struct is named `n_list` on BSD and macOS.
-struct MachoSym {
+struct MachSym {
   u32 stroff;
   u8 ext : 1;
   u8 type : 3;
@@ -389,7 +389,7 @@ struct MachoSym {
 };
 
 // This struct is named `relocation_info` on BSD and macOS.
-struct MachoRel {
+struct MachRel {
   i32 offset;
   u32 idx : 24;
   u32 is_pcrel : 1;

@@ -10,21 +10,34 @@
 
 namespace mold::macho {
 
-static void print_bytes(u8 *buf, i64 size) {
-  if (size == 0) {
-    std::cout << "[]\n";
-    return;
-  }
+void create_synthetic_sections(Context &ctx) {
+  auto add = [&](auto &chunk) {
+    ctx.chunks.push_back(chunk.get());
+  };
 
-  std::cout << "[" << std::setw(2) << std::setfill('0') << (u32)buf[0];
-  for (i64 i = 1; i < size; i++)
-    std::cout << " " << std::setw(2) << std::setfill('0') << (u32)buf[i];
-  std::cout << "]\n";
+  add(ctx.mach_hdr = std::make_unique<MachHeaderChunk>());
+  add(ctx.load_cmd = std::make_unique<LoadCommandChunk>());
+  add(ctx.zero_page = std::make_unique<PageZeroChunk>());
+}
+
+void compute_chunk_sizes(Context &ctx) {
+  for (Chunk *chunk : ctx.chunks)
+    chunk->update_hdr(ctx);
+}
+
+void assign_file_offsets(Context &ctx) {
+  i64 fileoff = 0;
+
+  for (Chunk *chunk : ctx.chunks) {
+    chunk->fileoff = fileoff;
+    fileoff += chunk->size;
+  }
 }
 
 int main(int argc, char **argv) {
   Context ctx;
 
+  // Parse command line arguments
   if (argc == 1) {
     SyncOut(ctx) << "mold macho stub\n";
     exit(0);
@@ -37,25 +50,27 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
-  if (argc != 2)
-    Fatal(ctx) << "usage: ld64.mold <output-file>\n";
-  ctx.arg.output = argv[1];
+  if (std::string_view(argv[1]) == "-out") {
+    if (argc != 3)
+      Fatal(ctx) << "usage: ld64.mold -out <output-file>\n";
+    ctx.arg.output = argv[2];
 
-  ctx.output_file = std::make_unique<OutputFile>(ctx, ctx.arg.output, 1024, 0777);
-  ctx.buf = ctx.output_file->buf;
+    create_synthetic_sections(ctx);
+    compute_chunk_sizes(ctx);
+    assign_file_offsets(ctx);
 
-  MachHeader &hdr = *(MachHeader *)ctx.buf;
-  hdr.magic = 0xfeedfacf;
-  hdr.cputype = CPU_TYPE_X86_64;
-  hdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
-  hdr.filetype = MH_EXECUTE;
-  hdr.ncmds = 0x10;
-  hdr.sizeofcmds = 0x558;
-  hdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
+    ctx.output_file =
+      std::make_unique<OutputFile>(ctx, ctx.arg.output, 1024, 0777);
+    ctx.buf = ctx.output_file->buf;
 
-  ctx.output_file->close(ctx);
+    for (Chunk *chunk : ctx.chunks)
+      chunk->copy_buf(ctx);
 
-  return 0;
+    ctx.output_file->close(ctx);
+    exit(0);
+  }
+
+  Fatal(ctx) << "usage: ld64.mold\n";
 }
 
 }

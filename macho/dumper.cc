@@ -84,7 +84,7 @@ void dump_file(std::string path) {
                 << "\n strsize: 0x" << cmd.strsize
                 << "\n";
 
-      MachoSym *syms = (MachoSym *)(buf + cmd.symoff);
+      MachSym *syms = (MachSym *)(buf + cmd.symoff);
       for (i64 j = 0; j < cmd.nsyms; j++) {
         std::cout << " symbol:"
                   << "\n  name: " << (char *)(buf + cmd.stroff + syms[j].stroff)
@@ -184,7 +184,7 @@ void dump_file(std::string path) {
 //        }
 
         if (sec[j].reloff) {
-          MachoRel *rel = (MachoRel *)(buf + sec[j].reloff);
+          MachRel *rel = (MachRel *)(buf + sec[j].reloff);
           for (i64 k = 0; k < sec[j].nreloc; k++) {
             std::cout << "  reloc: "
                       << "\n   offset: 0x" << rel[k].offset
