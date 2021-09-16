@@ -123,6 +123,13 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
+class GotSection : public OutputSection {
+public:
+  GotSection(OutputSegment &parent);
+
+  static constexpr char contents[] = "Hello world\n";
+};
+
 //
 // output-file.cc
 //
@@ -175,6 +182,7 @@ struct Context {
   std::unique_ptr<OutputLoadCommand> load_cmd;
   std::unique_ptr<OutputPageZero> zero_page;
   std::unique_ptr<OutputSegment> text_segment;
+  std::unique_ptr<OutputSegment> data_const_segment;
 
   std::vector<Chunk *> chunks;
   std::vector<std::unique_ptr<OutputSection>> sections;

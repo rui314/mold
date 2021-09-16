@@ -116,6 +116,12 @@ static constexpr u32 LC_VERSION_MIN_WATCHOS = 0x30;
 static constexpr u32 LC_NOTE = 0x31;
 static constexpr u32 LC_BUILD_VERSION = 0x32;
 
+static constexpr u32 SG_HIGHVM = 0x1;
+static constexpr u32 SG_FVMLIB = 0x2;
+static constexpr u32 SG_NORELOC = 0x4;
+static constexpr u32 SG_PROTECTED_VERSION_1 = 0x8;
+static constexpr u32 SG_READ_ONLY = 0x10;
+
 static constexpr u32 S_REGULAR = 0x0;
 static constexpr u32 S_ZEROFILL = 0x1;
 static constexpr u32 S_CSTRING_LITERALS = 0x2;

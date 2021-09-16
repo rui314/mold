@@ -20,6 +20,9 @@ void create_synthetic_sections(Context &ctx) {
   add(ctx.zero_page = std::make_unique<OutputPageZero>());
   add(ctx.text_segment =
       std::make_unique<OutputSegment>("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0));
+  add(ctx.data_const_segment =
+      std::make_unique<OutputSegment>("__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
+                                      SG_READ_ONLY));
 
   TextSection *text_sec = new TextSection(*ctx.text_segment);
   ctx.text_segment->sections.push_back(text_sec);
@@ -36,6 +39,10 @@ void create_synthetic_sections(Context &ctx) {
   CstringSection *cstring_sec = new CstringSection(*ctx.text_segment);
   ctx.text_segment->sections.push_back(cstring_sec);
   ctx.sections.emplace_back(cstring_sec);
+
+  GotSection *got_sec = new GotSection(*ctx.data_const_segment);
+  ctx.data_const_segment->sections.push_back(got_sec);
+  ctx.sections.emplace_back(got_sec);
 }
 
 void compute_chunk_sizes(Context &ctx) {

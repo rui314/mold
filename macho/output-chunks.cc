@@ -167,4 +167,11 @@ void CstringSection::copy_buf(Context &ctx) {
   memcpy(ctx.buf + parent.fileoff + hdr.offset, contents, sizeof(contents));
 }
 
+GotSection::GotSection(OutputSegment &parent)
+  : OutputSection(parent, "__cstring") {
+  hdr.p2align = __builtin_ctz(8);
+  hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
+  hdr.size = 8;
+}
+
 } // namespace mold::macho
