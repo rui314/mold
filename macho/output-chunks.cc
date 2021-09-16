@@ -43,10 +43,61 @@ void OutputLoadCommand::copy_buf(Context &ctx) {
 OutputPageZero::OutputPageZero() : Chunk(SYNTHETIC) {
   load_cmd.resize(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
+
   cmd.cmd = LC_SEGMENT_64;
   cmd.cmdsize = sizeof(cmd);
   strcpy(cmd.segname, "__PAGEZERO");
   cmd.vmsize = 0x100000000;
+}
+
+OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags)
+  : Chunk(REGULAR) {
+  load_cmd.resize(sizeof(SegmentCommand));
+  SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
+
+  assert(name.size() <= sizeof(cmd.segname));
+
+  cmd.cmd = LC_SEGMENT_64;
+  memcpy(cmd.segname, name.data(), name.size());
+  cmd.maxprot = prot;
+  cmd.initprot = prot;
+  cmd.flags = flags;
+}
+
+void OutputSegment::update_hdr(Context &ctx) {
+  SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
+  cmd.cmdsize = sizeof(SegmentCommand) + sizeof(MachSection) * sections.size();
+  cmd.nsects = sections.size();
+
+  for (OutputSection *sec : sections)
+    sec->update_hdr(ctx);
+}
+
+void OutputSegment::copy_buf(Context &ctx) {
+  for (OutputSection *sec : sections)
+    sec->copy_buf(ctx);
+}
+
+OutputSection::OutputSection(OutputSegment &parent, std::string_view name)
+  : parent(parent) {
+  assert(name.size() <= sizeof(hdr.sectname));
+  memcpy(hdr.sectname, name.data(), name.size());
+
+  SegmentCommand &cmd = *(SegmentCommand *)parent.load_cmd.data();
+  memcpy(hdr.segname, cmd.segname, sizeof(cmd.segname));
+}
+
+TextSection::TextSection(OutputSegment &parent)
+  : OutputSection(parent, "__text") {
+  hdr.align = __builtin_ctz(8);
+}
+
+void TextSection::update_hdr(Context &ctx) {
+  hdr.size = align_to(contents.size(), 1 << hdr.align);
+}
+
+void TextSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
 }
 
 } // namespace mold::macho

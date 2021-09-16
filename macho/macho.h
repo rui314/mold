@@ -264,7 +264,7 @@ struct SegmentCommand {
   u32 flags;
 };
 
-struct Section {
+struct MachSection {
   char sectname[16];
   char segname[16];
   u64 addr;

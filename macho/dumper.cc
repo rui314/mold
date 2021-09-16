@@ -165,7 +165,7 @@ void dump_file(std::string path) {
                 << "\n flags: 0x" << std::hex << cmd.flags
                 << "\n";
 
-      Section *sec = (Section *)((u8 *)&lc + sizeof(cmd));
+      MachSection *sec = (MachSection *)((u8 *)&lc + sizeof(cmd));
       for (i64 j = 0; j < cmd.nsects; j++) {
         std::cout << " section:\n  sectname: " << sec[j].sectname
                   << "\n  segname: " << sec[j].segname

@@ -7,6 +7,7 @@
 
 namespace mold::macho {
 
+class OutputSection;
 struct Context;
 
 //
@@ -60,6 +61,40 @@ private:
 class OutputPageZero : public Chunk {
 public:
   OutputPageZero();
+};
+
+class OutputSegment : public Chunk {
+public:
+  OutputSegment(std::string_view name, u32 prot, u32 flags);
+
+  void update_hdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+
+  std::vector<OutputSection *> sections;
+};
+
+class OutputSection {
+public:
+  enum Kind : u8 { REGULAR, SYNTHETIC };
+
+  virtual ~OutputSection() = default;
+  virtual void update_hdr(Context &ctx) {}
+  virtual void copy_buf(Context &ctx) {}
+
+protected:
+  OutputSection(OutputSegment &parent, std::string_view name);
+
+  MachSection hdr = {};
+  OutputSegment &parent;
+};
+
+class TextSection : public OutputSection {
+public:
+  TextSection(OutputSegment &parent);
+  void update_hdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents;
 };
 
 //

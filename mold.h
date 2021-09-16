@@ -189,6 +189,16 @@ inline void write32be(u8 *buf, u32 val) {
   buf[3] = val;
 }
 
+inline void write_string(u8 *buf, std::string_view str) {
+  memcpy(buf, str.data(), str.size());
+  buf[str.size()] = '\0';
+}
+
+template <typename T>
+inline void write_vector(u8 *buf, const std::vector<T> &vec) {
+  memcpy(buf, vec.data(), vec.size() * sizeof(T));
+}
+
 //
 // Concurrent Map
 //
