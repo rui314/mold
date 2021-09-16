@@ -35,18 +35,18 @@ protected:
   Chunk(Kind kind) : kind(kind) {}
 };
 
-class MachHeaderChunk : public Chunk {
+class OutputMachHeader : public Chunk {
 public:
-  MachHeaderChunk() : Chunk(HEADER) {
+  OutputMachHeader() : Chunk(HEADER) {
     size = sizeof(MachHeader);
   }
 
   void copy_buf(Context &ctx) override;
 };
 
-class LoadCommandChunk : public Chunk {
+class OutputLoadCommand : public Chunk {
 public:
-  LoadCommandChunk() : Chunk(HEADER) {}
+  OutputLoadCommand() : Chunk(HEADER) {}
 
   void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
@@ -57,9 +57,9 @@ private:
   std::vector<u8> contents;
 };
 
-class PageZeroChunk : public Chunk {
+class OutputPageZero : public Chunk {
 public:
-  PageZeroChunk();
+  OutputPageZero();
 };
 
 //
@@ -110,9 +110,9 @@ struct Context {
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
-  std::unique_ptr<MachHeaderChunk> mach_hdr;
-  std::unique_ptr<LoadCommandChunk> load_cmd;
-  std::unique_ptr<PageZeroChunk> zero_page;
+  std::unique_ptr<OutputMachHeader> mach_hdr;
+  std::unique_ptr<OutputLoadCommand> load_cmd;
+  std::unique_ptr<OutputPageZero> zero_page;
   std::vector<Chunk *> chunks;
 };
 

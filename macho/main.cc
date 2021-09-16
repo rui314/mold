@@ -15,9 +15,9 @@ void create_synthetic_sections(Context &ctx) {
     ctx.chunks.push_back(chunk.get());
   };
 
-  add(ctx.mach_hdr = std::make_unique<MachHeaderChunk>());
-  add(ctx.load_cmd = std::make_unique<LoadCommandChunk>());
-  add(ctx.zero_page = std::make_unique<PageZeroChunk>());
+  add(ctx.mach_hdr = std::make_unique<OutputMachHeader>());
+  add(ctx.load_cmd = std::make_unique<OutputLoadCommand>());
+  add(ctx.zero_page = std::make_unique<OutputPageZero>());
 }
 
 void compute_chunk_sizes(Context &ctx) {

@@ -2,7 +2,7 @@
 
 namespace mold::macho {
 
-void MachHeaderChunk::copy_buf(Context &ctx) {
+void OutputMachHeader::copy_buf(Context &ctx) {
   MachHeader &hdr = *(MachHeader *)(ctx.buf + fileoff);
   memset(&hdr, 0, sizeof(hdr));
 
@@ -15,7 +15,7 @@ void MachHeaderChunk::copy_buf(Context &ctx) {
   hdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
-void LoadCommandChunk::update_hdr(Context &ctx) {
+void OutputLoadCommand::update_hdr(Context &ctx) {
   size = 0;
   ncmds = 0;
 
@@ -27,7 +27,7 @@ void LoadCommandChunk::update_hdr(Context &ctx) {
   }
 }
 
-void LoadCommandChunk::copy_buf(Context &ctx) {
+void OutputLoadCommand::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + fileoff;
   i64 off = 0;
 
@@ -40,7 +40,7 @@ void LoadCommandChunk::copy_buf(Context &ctx) {
   }
 }
 
-PageZeroChunk::PageZeroChunk() : Chunk(SYNTHETIC) {
+OutputPageZero::OutputPageZero() : Chunk(SYNTHETIC) {
   load_cmd.resize(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
   cmd.cmd = LC_SEGMENT_64;
