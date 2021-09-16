@@ -130,6 +130,22 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
+class LaSymbolPtrSection : public OutputSection {
+public:
+  LaSymbolPtrSection(OutputSegment &parent);
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents;
+};
+
+class DataSection : public OutputSection {
+public:
+  DataSection(OutputSegment &parent);
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents;
+};
+
 //
 // output-file.cc
 //
@@ -183,6 +199,7 @@ struct Context {
   std::unique_ptr<OutputPageZero> zero_page;
   std::unique_ptr<OutputSegment> text_segment;
   std::unique_ptr<OutputSegment> data_const_segment;
+  std::unique_ptr<OutputSegment> data_segment;
 
   std::vector<Chunk *> chunks;
   std::vector<std::unique_ptr<OutputSection>> sections;

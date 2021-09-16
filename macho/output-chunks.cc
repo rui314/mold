@@ -174,4 +174,29 @@ GotSection::GotSection(OutputSegment &parent)
   hdr.size = 8;
 }
 
+LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
+  : OutputSection(parent, "__la_symbol_ptr") {
+  hdr.p2align = __builtin_ctz(8);
+  hdr.type = S_LAZY_SYMBOL_POINTERS;
+  contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+  hdr.size = contents.size();
+}
+
+void LaSymbolPtrSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
+}
+
+DataSection::DataSection(OutputSegment &parent)
+  : OutputSection(parent, "__data") {
+  hdr.p2align = __builtin_ctz(8);
+  hdr.type = S_LAZY_SYMBOL_POINTERS;
+
+  contents.resize(8);
+  hdr.size = contents.size();
+}
+
+void DataSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
+}
+
 } // namespace mold::macho

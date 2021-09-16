@@ -23,6 +23,8 @@ void create_synthetic_sections(Context &ctx) {
   add(ctx.data_const_segment =
       std::make_unique<OutputSegment>("__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
                                       SG_READ_ONLY));
+  add(ctx.data_segment =
+      std::make_unique<OutputSegment>("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0));
 
   TextSection *text_sec = new TextSection(*ctx.text_segment);
   ctx.text_segment->sections.push_back(text_sec);
@@ -43,6 +45,14 @@ void create_synthetic_sections(Context &ctx) {
   GotSection *got_sec = new GotSection(*ctx.data_const_segment);
   ctx.data_const_segment->sections.push_back(got_sec);
   ctx.sections.emplace_back(got_sec);
+
+  LaSymbolPtrSection *la_sec = new LaSymbolPtrSection(*ctx.data_segment);
+  ctx.data_segment->sections.push_back(la_sec);
+  ctx.sections.emplace_back(la_sec);
+
+  DataSection *data_sec = new DataSection(*ctx.data_segment);
+  ctx.data_segment->sections.push_back(data_sec);
+  ctx.sections.emplace_back(data_sec);
 }
 
 void compute_chunk_sizes(Context &ctx) {
