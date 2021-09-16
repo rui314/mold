@@ -18,6 +18,12 @@ void create_synthetic_sections(Context &ctx) {
   add(ctx.mach_hdr = std::make_unique<OutputMachHeader>());
   add(ctx.load_cmd = std::make_unique<OutputLoadCommand>());
   add(ctx.zero_page = std::make_unique<OutputPageZero>());
+  add(ctx.text_segment =
+      std::make_unique<OutputSegment>("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0));
+
+  TextSection *text_sec = new TextSection(*ctx.text_segment);
+  ctx.text_segment->sections.push_back(text_sec);
+  ctx.sections.emplace_back(text_sec);
 }
 
 void compute_chunk_sizes(Context &ctx) {

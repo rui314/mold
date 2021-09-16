@@ -81,11 +81,11 @@ public:
   virtual void update_hdr(Context &ctx) {}
   virtual void copy_buf(Context &ctx) {}
 
-protected:
-  OutputSection(OutputSegment &parent, std::string_view name);
-
   MachSection hdr = {};
   OutputSegment &parent;
+
+protected:
+  OutputSection(OutputSegment &parent, std::string_view name);
 };
 
 class TextSection : public OutputSection {
@@ -148,7 +148,10 @@ struct Context {
   std::unique_ptr<OutputMachHeader> mach_hdr;
   std::unique_ptr<OutputLoadCommand> load_cmd;
   std::unique_ptr<OutputPageZero> zero_page;
+  std::unique_ptr<OutputSegment> text_segment;
+
   std::vector<Chunk *> chunks;
+  std::vector<std::unique_ptr<OutputSection>> sections;
 };
 
 int main(int argc, char **argv);

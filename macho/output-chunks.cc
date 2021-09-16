@@ -69,8 +69,14 @@ void OutputSegment::update_hdr(Context &ctx) {
   cmd.cmdsize = sizeof(SegmentCommand) + sizeof(MachSection) * sections.size();
   cmd.nsects = sections.size();
 
-  for (OutputSection *sec : sections)
-    sec->update_hdr(ctx);
+  load_cmd.resize(sizeof(cmd) + sizeof(MachSection) * sections.size());
+  MachSection *hdrs = (MachSection *)(load_cmd.data() + sizeof(cmd));
+
+  for (i64 i = 0; i < sections.size(); i++) {
+    OutputSection &sec = *sections[i];
+    sec.update_hdr(ctx);
+    hdrs[i] = sec.hdr;
+  }
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
