@@ -28,6 +28,10 @@ void create_synthetic_sections(Context &ctx) {
   StubsSection *stubs_sec = new StubsSection(*ctx.text_segment);
   ctx.text_segment->sections.push_back(stubs_sec);
   ctx.sections.emplace_back(stubs_sec);
+
+  StubHelperSection *stub_helper_sec = new StubHelperSection(*ctx.text_segment);
+  ctx.text_segment->sections.push_back(stub_helper_sec);
+  ctx.sections.emplace_back(stub_helper_sec);
 }
 
 void compute_chunk_sizes(Context &ctx) {

@@ -141,4 +141,25 @@ void StubsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
 }
 
+StubHelperSection::StubHelperSection(OutputSegment &parent)
+  : OutputSection(parent, "__stub_helper") {
+  hdr.p2align = __builtin_ctz(4);
+  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+
+  contents = {
+    0x7d, 0x1d, 0x8d, 0x4c, 0x41, 0x00, 0x00, 0x40,
+    0x6d, 0x25, 0xff, 0x53, 0x90, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x68, 0xff, 0xe6, 0xe9, 0x00,
+    0xff, 0xff,
+  };
+}
+
+void StubHelperSection::update_hdr(Context &ctx) {
+  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
+}
+
+void StubHelperSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
+}
+
 } // namespace mold::macho
