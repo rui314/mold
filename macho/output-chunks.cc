@@ -115,11 +115,10 @@ TextSection::TextSection(OutputSegment &parent)
     0x48, 0x89, 0xe5, 0xe8, 0xd7, 0xff, 0xff, 0xff, 0x31, 0xc0, 0x5d,
     0xc3,
   };
+
+  hdr.size = contents.size();
 }
 
-void TextSection::update_hdr(Context &ctx) {
-  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
-}
 
 void TextSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
@@ -131,10 +130,7 @@ StubsSection::StubsSection(OutputSegment &parent)
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
   contents = {0x40, 0x7c, 0x25, 0xff, 0x00, 0x00};
-}
-
-void StubsSection::update_hdr(Context &ctx) {
-  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
+  hdr.size = contents.size();
 }
 
 void StubsSection::copy_buf(Context &ctx) {
@@ -152,14 +148,23 @@ StubHelperSection::StubHelperSection(OutputSegment &parent)
     0x00, 0x00, 0x00, 0x68, 0xff, 0xe6, 0xe9, 0x00,
     0xff, 0xff,
   };
-}
 
-void StubHelperSection::update_hdr(Context &ctx) {
-  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
+  hdr.size = contents.size();
 }
 
 void StubHelperSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
+}
+
+CstringSection::CstringSection(OutputSegment &parent)
+  : OutputSection(parent, "__cstring") {
+  hdr.p2align = __builtin_ctz(4);
+  hdr.type = S_CSTRING_LITERALS;
+  hdr.size = sizeof(contents);
+}
+
+void CstringSection::copy_buf(Context &ctx) {
+  memcpy(ctx.buf + parent.fileoff + hdr.offset, contents, sizeof(contents));
 }
 
 } // namespace mold::macho

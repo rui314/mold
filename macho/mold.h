@@ -94,7 +94,6 @@ protected:
 class TextSection : public OutputSection {
 public:
   TextSection(OutputSegment &parent);
-  void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
@@ -103,7 +102,6 @@ public:
 class StubsSection : public OutputSection {
 public:
   StubsSection(OutputSegment &parent);
-  void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
@@ -112,10 +110,17 @@ public:
 class StubHelperSection : public OutputSection {
 public:
   StubHelperSection(OutputSegment &parent);
-  void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
+};
+
+class CstringSection : public OutputSection {
+public:
+  CstringSection(OutputSegment &parent);
+  void copy_buf(Context &ctx) override;
+
+  static constexpr char contents[] = "Hello world\n";
 };
 
 //
