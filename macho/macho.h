@@ -270,7 +270,7 @@ struct MachSection {
   u64 addr;
   u64 size;
   u32 offset;
-  u32 align;
+  u32 p2align;
   u32 reloff;
   u32 nreloc;
   u32 flags;

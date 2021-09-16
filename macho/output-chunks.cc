@@ -52,6 +52,8 @@ OutputPageZero::OutputPageZero() : Chunk(SYNTHETIC) {
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags)
   : Chunk(REGULAR) {
+  p2align = __builtin_ctz(PAGE_SIZE);
+
   load_cmd.resize(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
 
@@ -95,11 +97,11 @@ OutputSection::OutputSection(OutputSegment &parent, std::string_view name)
 
 TextSection::TextSection(OutputSegment &parent)
   : OutputSection(parent, "__text") {
-  hdr.align = __builtin_ctz(8);
+  hdr.p2align = __builtin_ctz(8);
 }
 
 void TextSection::update_hdr(Context &ctx) {
-  hdr.size = align_to(contents.size(), 1 << hdr.align);
+  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
 }
 
 void TextSection::copy_buf(Context &ctx) {

@@ -172,7 +172,7 @@ void dump_file(std::string path) {
                   << "\n  addr: 0x" << std::hex << sec[j].addr
                   << "\n  size: 0x" << sec[j].size
                   << "\n  offset: 0x" << sec[j].offset
-                  << "\n  align: " << std::dec << (1 << sec[j].align)
+                  << "\n  align: " << std::dec << (1 << sec[j].p2align)
                   << "\n  reloff: " << std::hex << sec[j].reloff
                   << "\n  nreloc: " << std::dec << sec[j].nreloc
                   << "\n  flags: 0x" << std::hex << sec[j].flags

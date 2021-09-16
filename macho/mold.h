@@ -7,6 +7,8 @@
 
 namespace mold::macho {
 
+static constexpr u32 PAGE_SIZE = 4096;
+
 class OutputSection;
 struct Context;
 
@@ -30,6 +32,7 @@ public:
   Kind kind;
   i64 size = 0;
   i64 fileoff = 0;
+  i64 p2align = 0;
   std::vector<u8> load_cmd;
 
 protected:
