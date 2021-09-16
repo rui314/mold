@@ -7,7 +7,8 @@
 
 namespace mold::macho {
 
-static constexpr u32 PAGE_SIZE = 4096;
+static constexpr i64 PAGE_SIZE = 4096;
+static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 
 class OutputSection;
 struct Context;
@@ -18,34 +19,24 @@ struct Context;
 
 class Chunk {
 public:
-  // There are three types of OutputChunks:
-  //  - HEADER: the ELF, section or segment headers
-  //  - REGULAR: output sections containing input sections
-  //  - SYNTHETIC: linker-synthesized sections such as got or plt
-  enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
-
   virtual ~Chunk() = default;
   virtual void copy_buf(Context &ctx) {}
   virtual void update_hdr(Context &ctx) {}
 
   std::string_view name;
-  Kind kind;
+  bool is_segment = false;
 
-  i64 vmaddr = 0;
-  i64 vmsize = 0;
   i64 fileoff = 0;
   i64 filesize = 0;
   i64 p2align = 0;
 
-  std::vector<u8> load_cmd;
-
 protected:
-  Chunk(Kind kind) : kind(kind) {}
+  Chunk() = default;
 };
 
 class OutputMachHeader : public Chunk {
 public:
-  OutputMachHeader() : Chunk(HEADER) {
+  OutputMachHeader() {
     filesize = sizeof(MachHeader);
   }
 
@@ -54,8 +45,6 @@ public:
 
 class OutputLoadCommand : public Chunk {
 public:
-  OutputLoadCommand() : Chunk(HEADER) {}
-
   void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -65,11 +54,6 @@ private:
   std::vector<u8> contents;
 };
 
-class OutputPageZero : public Chunk {
-public:
-  OutputPageZero();
-};
-
 class OutputSegment : public Chunk {
 public:
   OutputSegment(std::string_view name, u32 prot, u32 flags);
@@ -77,13 +61,12 @@ public:
   void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
+  SegmentCommand cmd = {};
   std::vector<OutputSection *> sections;
 };
 
 class OutputSection {
 public:
-  enum Kind : u8 { REGULAR, SYNTHETIC };
-
   virtual ~OutputSection() = default;
   virtual void update_hdr(Context &ctx) {}
   virtual void copy_buf(Context &ctx) {}
@@ -200,13 +183,11 @@ struct Context {
 
   std::unique_ptr<OutputMachHeader> mach_hdr;
   std::unique_ptr<OutputLoadCommand> load_cmd;
-  std::unique_ptr<OutputPageZero> zero_page;
   std::unique_ptr<OutputSegment> text_segment;
   std::unique_ptr<OutputSegment> data_const_segment;
   std::unique_ptr<OutputSegment> data_segment;
 
   std::vector<Chunk *> chunks;
-  std::vector<std::unique_ptr<OutputSection>> sections;
 };
 
 int main(int argc, char **argv);

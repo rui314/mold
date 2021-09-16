@@ -17,7 +17,6 @@ void create_synthetic_sections(Context &ctx) {
 
   add(ctx.mach_hdr = std::make_unique<OutputMachHeader>());
   add(ctx.load_cmd = std::make_unique<OutputLoadCommand>());
-  add(ctx.zero_page = std::make_unique<OutputPageZero>());
   add(ctx.text_segment =
       std::make_unique<OutputSegment>("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0));
   add(ctx.data_const_segment =
@@ -26,33 +25,13 @@ void create_synthetic_sections(Context &ctx) {
   add(ctx.data_segment =
       std::make_unique<OutputSegment>("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0));
 
-  TextSection *text_sec = new TextSection(*ctx.text_segment);
-  ctx.text_segment->sections.push_back(text_sec);
-  ctx.sections.emplace_back(text_sec);
-
-  StubsSection *stubs_sec = new StubsSection(*ctx.text_segment);
-  ctx.text_segment->sections.push_back(stubs_sec);
-  ctx.sections.emplace_back(stubs_sec);
-
-  StubHelperSection *stub_helper_sec = new StubHelperSection(*ctx.text_segment);
-  ctx.text_segment->sections.push_back(stub_helper_sec);
-  ctx.sections.emplace_back(stub_helper_sec);
-
-  CstringSection *cstring_sec = new CstringSection(*ctx.text_segment);
-  ctx.text_segment->sections.push_back(cstring_sec);
-  ctx.sections.emplace_back(cstring_sec);
-
-  GotSection *got_sec = new GotSection(*ctx.data_const_segment);
-  ctx.data_const_segment->sections.push_back(got_sec);
-  ctx.sections.emplace_back(got_sec);
-
-  LaSymbolPtrSection *la_sec = new LaSymbolPtrSection(*ctx.data_segment);
-  ctx.data_segment->sections.push_back(la_sec);
-  ctx.sections.emplace_back(la_sec);
-
-  DataSection *data_sec = new DataSection(*ctx.data_segment);
-  ctx.data_segment->sections.push_back(data_sec);
-  ctx.sections.emplace_back(data_sec);
+  ctx.text_segment->sections.push_back(new TextSection(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(new StubsSection(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(new StubHelperSection(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(new CstringSection(*ctx.text_segment));
+  ctx.data_const_segment->sections.push_back(new GotSection(*ctx.data_const_segment));
+  ctx.data_segment->sections.push_back(new LaSymbolPtrSection(*ctx.data_segment));
+  ctx.data_segment->sections.push_back(new DataSection(*ctx.data_segment));
 }
 
 void compute_chunk_sizes(Context &ctx) {
@@ -61,14 +40,8 @@ void compute_chunk_sizes(Context &ctx) {
 }
 
 i64 assign_file_offsets(Context &ctx) {
-  i64 vmaddr = 0;
   i64 fileoff = 0;
-
   for (Chunk *chunk : ctx.chunks) {
-    vmaddr = align_to(vmaddr, PAGE_SIZE);
-    chunk->vmaddr = vmaddr;
-    vmaddr += chunk->vmsize;
-
     fileoff = align_to(fileoff, 1 << chunk->p2align);
     chunk->fileoff = fileoff;
     fileoff += chunk->filesize;

@@ -15,48 +15,57 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   hdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
-void OutputLoadCommand::update_hdr(Context &ctx) {
-  filesize = 0;
-  ncmds = 0;
+static std::pair<std::vector<u8>, i64>
+create_load_commands(Context &ctx) {
+  std::vector<u8> vec;
+  i64 ncmds = 0;
 
+  auto add = [&](auto &x) {
+    i64 off = vec.size();
+    vec.resize(vec.size() + sizeof(x));
+    memcpy(vec.data() + off, &x, sizeof(x));
+  };
+
+  // Add a PAGE_ZERO command
+  SegmentCommand zero = {};
+  zero.cmd = LC_SEGMENT_64;
+  zero.cmdsize = sizeof(SegmentCommand);
+  strcpy(zero.segname, "__PAGEZERO");
+  zero.vmsize = PAGE_ZERO_SIZE;
+
+  add(zero);
+  ncmds++;
+
+  // Add LC_SEGMENT_64 comamnds
   for (Chunk *chunk : ctx.chunks) {
-    if (chunk->load_cmd.size() > 0) {
-      filesize += chunk->load_cmd.size();
+    if (chunk->is_segment) {
+      OutputSegment &seg = *(OutputSegment *)chunk;
+      add(seg.cmd);
       ncmds++;
+
+      for (OutputSection *sec : seg.sections)
+        add(sec->hdr);
     }
   }
+
+  return {vec, ncmds};
+}
+
+void OutputLoadCommand::update_hdr(Context &ctx) {
+  std::vector<u8> contents;
+  std::tie(contents, ncmds) = create_load_commands(ctx);
+  filesize = contents.size();
 }
 
 void OutputLoadCommand::copy_buf(Context &ctx) {
-  u8 *buf = ctx.buf + fileoff;
-  i64 off = 0;
-
-  for (Chunk *chunk : ctx.chunks) {
-    if (chunk->load_cmd.size() > 0) {
-      std::vector<u8> &vec = chunk->load_cmd;
-      memcpy(buf + off, vec.data(), vec.size());
-      off += vec.size();
-    }
-  }
+  std::vector<u8> contents;
+  std::tie(contents, std::ignore) = create_load_commands(ctx);
+  write_vector(ctx.buf + fileoff, contents);
 }
 
-OutputPageZero::OutputPageZero() : Chunk(SYNTHETIC) {
-  load_cmd.resize(sizeof(SegmentCommand));
-  SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
-
-  cmd.cmd = LC_SEGMENT_64;
-  cmd.cmdsize = sizeof(cmd);
-  strcpy(cmd.segname, "__PAGEZERO");
-
-  vmsize = cmd.vmsize = 0x100000000;
-}
-
-OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags)
-  : Chunk(REGULAR) {
+OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
+  is_segment = true;
   p2align = __builtin_ctz(PAGE_SIZE);
-
-  load_cmd.resize(sizeof(SegmentCommand));
-  SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
 
   assert(name.size() <= sizeof(cmd.segname));
 
@@ -68,29 +77,19 @@ OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags)
 }
 
 void OutputSegment::update_hdr(Context &ctx) {
-  SegmentCommand &cmd = *(SegmentCommand *)load_cmd.data();
   cmd.cmdsize = sizeof(SegmentCommand) + sizeof(MachSection) * sections.size();
   cmd.nsects = sections.size();
-
-  load_cmd.resize(sizeof(cmd) + sizeof(MachSection) * sections.size());
-  MachSection *hdrs = (MachSection *)(load_cmd.data() + sizeof(cmd));
-
-  for (i64 i = 0; i < sections.size(); i++) {
-    OutputSection &sec = *sections[i];
-    sec.update_hdr(ctx);
-    hdrs[i] = sec.hdr;
-  }
 
   i64 fileoff = 0;
 
   for (OutputSection *sec : sections) {
+    sec->update_hdr(ctx);
     fileoff = align_to(fileoff, 1 << sec->hdr.p2align);
     sec->hdr.offset = fileoff;
     fileoff += sec->hdr.size;
   }
 
-  vmsize = cmd.vmaddr = fileoff;
-  filesize = cmd.filesize = fileoff;
+  filesize = cmd.filesize = cmd.vmsize = fileoff;
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
@@ -102,9 +101,7 @@ OutputSection::OutputSection(OutputSegment &parent, std::string_view name)
   : parent(parent) {
   assert(name.size() <= sizeof(hdr.sectname));
   memcpy(hdr.sectname, name.data(), name.size());
-
-  SegmentCommand &cmd = *(SegmentCommand *)parent.load_cmd.data();
-  memcpy(hdr.segname, cmd.segname, sizeof(cmd.segname));
+  memcpy(hdr.segname, parent.cmd.segname, sizeof(parent.cmd.segname));
 }
 
 TextSection::TextSection(OutputSegment &parent)
