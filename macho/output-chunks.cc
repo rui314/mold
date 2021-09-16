@@ -106,6 +106,7 @@ OutputSection::OutputSection(OutputSegment &parent, std::string_view name)
 TextSection::TextSection(OutputSegment &parent)
   : OutputSection(parent, "__text") {
   hdr.p2align = __builtin_ctz(8);
+  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
 }
 
 void TextSection::update_hdr(Context &ctx) {
@@ -113,7 +114,6 @@ void TextSection::update_hdr(Context &ctx) {
 }
 
 void TextSection::copy_buf(Context &ctx) {
-  SyncOut(ctx) << "FILEOFF=" << parent.fileoff << " " << hdr.offset;
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
 }
 

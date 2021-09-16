@@ -140,6 +140,18 @@ static constexpr u32 S_THREAD_LOCAL_VARIABLE_POINTERS = 0x14;
 static constexpr u32 S_THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15;
 static constexpr u32 S_INIT_FUNC_OFFSETS = 0x16;
 
+static constexpr u32 S_ATTR_LOC_RELOC = 0x000001;
+static constexpr u32 S_ATTR_EXT_RELOC = 0x000002;
+static constexpr u32 S_ATTR_SOME_INSTRUCTIONS = 0x000004;
+
+static constexpr u32 S_ATTR_DEBUG = 0x020000;
+static constexpr u32 S_ATTR_SELF_MODIFYING_CODE = 0x040000;
+static constexpr u32 S_ATTR_LIVE_SUPPORT = 0x080000;
+static constexpr u32 S_ATTR_NO_DEAD_STRIP = 0x100000;
+static constexpr u32 S_ATTR_STRIP_STATIC_SYMS = 0x200000;
+static constexpr u32 S_ATTR_NO_TOC = 0x400000;
+static constexpr u32 S_ATTR_PURE_INSTRUCTIONS = 0x800000;
+
 static constexpr u32 CPU_TYPE_X86_64 = 0x1000007;
 
 static constexpr u32 CPU_SUBTYPE_X86_64_ALL = 3;
@@ -273,7 +285,8 @@ struct MachSection {
   u32 p2align;
   u32 reloff;
   u32 nreloc;
-  u32 flags;
+  u32 type : 8;
+  u32 attr : 24;
   u32 reserved1;
   u32 reserved2;
   u32 reserved3;
