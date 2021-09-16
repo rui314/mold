@@ -107,6 +107,14 @@ TextSection::TextSection(OutputSegment &parent)
   : OutputSection(parent, "__text") {
   hdr.p2align = __builtin_ctz(8);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+
+  contents = {
+    0x55, 0x48, 0x89, 0xe5, 0x48, 0x8d, 0x3d, 0x43, 0x00, 0x00, 0x00,
+    0xb0, 0x00, 0xe8, 0x1c, 0x00, 0x00, 0x00, 0x5d, 0xc3, 0x66, 0x2e,
+    0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x90, 0x55,
+    0x48, 0x89, 0xe5, 0xe8, 0xd7, 0xff, 0xff, 0xff, 0x31, 0xc0, 0x5d,
+    0xc3,
+  };
 }
 
 void TextSection::update_hdr(Context &ctx) {
@@ -114,6 +122,22 @@ void TextSection::update_hdr(Context &ctx) {
 }
 
 void TextSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
+}
+
+StubsSection::StubsSection(OutputSegment &parent)
+  : OutputSection(parent, "__stubs") {
+  hdr.p2align = __builtin_ctz(2);
+  hdr.type = S_SYMBOL_STUBS;
+  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+  contents = {0x40, 0x7c, 0x25, 0xff, 0x00, 0x00};
+}
+
+void StubsSection::update_hdr(Context &ctx) {
+  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
+}
+
+void StubsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
 }
 

@@ -100,6 +100,15 @@ public:
   std::vector<u8> contents;
 };
 
+class StubsSection : public OutputSection {
+public:
+  StubsSection(OutputSegment &parent);
+  void update_hdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents;
+};
+
 //
 // output-file.cc
 //
