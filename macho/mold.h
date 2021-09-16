@@ -30,9 +30,13 @@ public:
 
   std::string_view name;
   Kind kind;
-  i64 size = 0;
+
+  i64 vmaddr = 0;
+  i64 vmsize = 0;
   i64 fileoff = 0;
+  i64 filesize = 0;
   i64 p2align = 0;
+
   std::vector<u8> load_cmd;
 
 protected:
@@ -42,7 +46,7 @@ protected:
 class OutputMachHeader : public Chunk {
 public:
   OutputMachHeader() : Chunk(HEADER) {
-    size = sizeof(MachHeader);
+    filesize = sizeof(MachHeader);
   }
 
   void copy_buf(Context &ctx) override;

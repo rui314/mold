@@ -11,17 +11,17 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   hdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
   hdr.filetype = MH_EXECUTE;
   hdr.ncmds = ctx.load_cmd->ncmds;
-  hdr.sizeofcmds = ctx.load_cmd->size;
+  hdr.sizeofcmds = ctx.load_cmd->filesize;
   hdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
 void OutputLoadCommand::update_hdr(Context &ctx) {
-  size = 0;
+  filesize = 0;
   ncmds = 0;
 
   for (Chunk *chunk : ctx.chunks) {
     if (chunk->load_cmd.size() > 0) {
-      size += chunk->load_cmd.size();
+      filesize += chunk->load_cmd.size();
       ncmds++;
     }
   }
@@ -47,7 +47,8 @@ OutputPageZero::OutputPageZero() : Chunk(SYNTHETIC) {
   cmd.cmd = LC_SEGMENT_64;
   cmd.cmdsize = sizeof(cmd);
   strcpy(cmd.segname, "__PAGEZERO");
-  cmd.vmsize = 0x100000000;
+
+  vmsize = cmd.vmsize = 0x100000000;
 }
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags)
@@ -81,12 +82,15 @@ void OutputSegment::update_hdr(Context &ctx) {
   }
 
   i64 fileoff = 0;
+
   for (OutputSection *sec : sections) {
     fileoff = align_to(fileoff, 1 << sec->hdr.p2align);
     sec->hdr.offset = fileoff;
     fileoff += sec->hdr.size;
   }
-  size = fileoff;
+
+  vmsize = cmd.vmaddr = fileoff;
+  filesize = cmd.filesize = fileoff;
 }
 
 void OutputSegment::copy_buf(Context &ctx) {

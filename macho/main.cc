@@ -61,12 +61,17 @@ void compute_chunk_sizes(Context &ctx) {
 }
 
 i64 assign_file_offsets(Context &ctx) {
+  i64 vmaddr = 0;
   i64 fileoff = 0;
 
   for (Chunk *chunk : ctx.chunks) {
+    vmaddr = align_to(vmaddr, PAGE_SIZE);
+    chunk->vmaddr = vmaddr;
+    vmaddr += chunk->vmsize;
+
     fileoff = align_to(fileoff, 1 << chunk->p2align);
     chunk->fileoff = fileoff;
-    fileoff += chunk->size;
+    fileoff += chunk->filesize;
   }
   return fileoff;
 }
