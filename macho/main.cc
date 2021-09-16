@@ -24,6 +24,15 @@ void create_synthetic_sections(Context &ctx) {
   TextSection *text_sec = new TextSection(*ctx.text_segment);
   ctx.text_segment->sections.push_back(text_sec);
   ctx.sections.emplace_back(text_sec);
+
+  text_sec->contents = {
+    0x55, 0x48, 0x89, 0xe5, 0x48, 0x8d, 0x3d, 0x43, 0x00, 0x00, 0x00,
+    0xb0, 0x00, 0xe8, 0x1c, 0x00, 0x00, 0x00, 0x5d, 0xc3, 0x66, 0x2e,
+    0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x90, 0x55,
+    0x48, 0x89, 0xe5, 0xe8, 0xd7, 0xff, 0xff, 0xff, 0x31, 0xc0, 0x5d,
+    0xc3,
+  };
+
 }
 
 void compute_chunk_sizes(Context &ctx) {
@@ -31,13 +40,15 @@ void compute_chunk_sizes(Context &ctx) {
     chunk->update_hdr(ctx);
 }
 
-void assign_file_offsets(Context &ctx) {
+i64 assign_file_offsets(Context &ctx) {
   i64 fileoff = 0;
 
   for (Chunk *chunk : ctx.chunks) {
+    fileoff = align_to(fileoff, 1 << chunk->p2align);
     chunk->fileoff = fileoff;
     fileoff += chunk->size;
   }
+  return fileoff;
 }
 
 int main(int argc, char **argv) {
@@ -63,10 +74,10 @@ int main(int argc, char **argv) {
 
     create_synthetic_sections(ctx);
     compute_chunk_sizes(ctx);
-    assign_file_offsets(ctx);
+    i64 output_size = assign_file_offsets(ctx);
 
     ctx.output_file =
-      std::make_unique<OutputFile>(ctx, ctx.arg.output, 1024, 0777);
+      std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
     ctx.buf = ctx.output_file->buf;
 
     for (Chunk *chunk : ctx.chunks)

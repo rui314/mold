@@ -79,6 +79,14 @@ void OutputSegment::update_hdr(Context &ctx) {
     sec.update_hdr(ctx);
     hdrs[i] = sec.hdr;
   }
+
+  i64 fileoff = 0;
+  for (OutputSection *sec : sections) {
+    fileoff = align_to(fileoff, 1 << sec->hdr.p2align);
+    sec->hdr.offset = fileoff;
+    fileoff += sec->hdr.size;
+  }
+  size = fileoff;
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
@@ -105,6 +113,7 @@ void TextSection::update_hdr(Context &ctx) {
 }
 
 void TextSection::copy_buf(Context &ctx) {
+  SyncOut(ctx) << "FILEOFF=" << parent.fileoff << " " << hdr.offset;
   write_vector(ctx.buf + parent.fileoff + hdr.offset, contents);
 }
 
