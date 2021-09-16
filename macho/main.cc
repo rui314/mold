@@ -39,13 +39,25 @@ void compute_chunk_sizes(Context &ctx) {
     chunk->update_hdr(ctx);
 }
 
-i64 assign_file_offsets(Context &ctx) {
+i64 assign_offsets(Context &ctx) {
   i64 fileoff = 0;
+
   for (Chunk *chunk : ctx.chunks) {
     fileoff = align_to(fileoff, 1 << chunk->p2align);
     chunk->fileoff = fileoff;
     fileoff += chunk->filesize;
   }
+
+  i64 vmaddr = PAGE_ZERO_SIZE;
+  for (Chunk *chunk : ctx.chunks) {
+    if (chunk->is_segment) {
+      OutputSegment &seg = *(OutputSegment *)chunk;
+      vmaddr = align_to(vmaddr, PAGE_SIZE);
+      seg.cmd.vmaddr = vmaddr;
+      vmaddr += seg.cmd.vmsize;
+    }
+  }
+
   return fileoff;
 }
 
@@ -72,7 +84,7 @@ int main(int argc, char **argv) {
 
     create_synthetic_sections(ctx);
     compute_chunk_sizes(ctx);
-    i64 output_size = assign_file_offsets(ctx);
+    i64 output_size = assign_offsets(ctx);
 
     ctx.output_file =
       std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
