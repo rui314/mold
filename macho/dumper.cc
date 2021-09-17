@@ -82,7 +82,11 @@ void dump_file(std::string path) {
                 << "\n nsyms: " << std::dec << cmd.nsyms
                 << "\n stroff: 0x" << std::hex << cmd.stroff
                 << "\n strsize: 0x" << cmd.strsize
-                << "\n";
+                << "\n symdata: ";
+      print_bytes(buf + cmd.symoff, cmd.nsyms * sizeof(MachSym));
+
+      std::cout << " strdata: ";
+      print_bytes(buf + cmd.stroff, cmd.strsize);
 
       MachSym *syms = (MachSym *)(buf + cmd.symoff);
       for (i64 j = 0; j < cmd.nsyms; j++) {

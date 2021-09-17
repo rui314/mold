@@ -33,6 +33,8 @@ void create_synthetic_sections(Context &ctx) {
   ctx.data_const_segment->sections.push_back(new GotSection(*ctx.data_const_segment));
   ctx.data_segment->sections.push_back(new LaSymbolPtrSection(*ctx.data_segment));
   ctx.data_segment->sections.push_back(new DataSection(*ctx.data_segment));
+
+  ctx.text_segment->p2align = 0;
 }
 
 void compute_chunk_sizes(Context &ctx) {
@@ -55,6 +57,7 @@ i64 assign_offsets(Context &ctx) {
       OutputSegment &seg = *(OutputSegment *)chunk;
       vmaddr = align_to(vmaddr, PAGE_SIZE);
       seg.cmd.vmaddr = vmaddr;
+      seg.cmd.fileoff = seg.fileoff;
       vmaddr += seg.cmd.vmsize;
     }
   }

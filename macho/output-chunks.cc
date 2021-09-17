@@ -63,6 +63,18 @@ create_load_commands(Context &ctx) {
   add(lnk);
   ncmds++;
 
+  // Add a LC_SYMTAB command
+  SymtabCommand symtab = {};
+  symtab.cmd = LC_SYMTAB;
+  symtab.cmdsize = sizeof(SymtabCommand);
+  symtab.symoff = ctx.linkedit->fileoff + ctx.linkedit->symoff;
+  symtab.nsyms = ctx.linkedit->symtab.size() / sizeof(MachSym);
+  symtab.stroff = ctx.linkedit->fileoff + ctx.linkedit->stroff;
+  symtab.strsize = ctx.linkedit->strtab.size();
+
+//  add(symtab);
+//  ncmds++;
+
   return {vec, ncmds};
 }
 
@@ -118,7 +130,12 @@ OutputLinkEditChunk::OutputLinkEditChunk() {
 
 void OutputLinkEditChunk::update_hdr(Context &ctx) {
   filesize = rebase.size() + bind.size() + lazy_bind.size() +
-             export_.size() + function_starts.size();
+             export_.size() + function_starts.size() + symtab.size() +
+             strtab.size();
+
+  symoff = rebase.size() + bind.size() + lazy_bind.size() +
+           export_.size() + function_starts.size();
+  stroff = symoff + symtab.size();
 }
 
 void OutputLinkEditChunk::copy_buf(Context &ctx) {
@@ -137,6 +154,12 @@ void OutputLinkEditChunk::copy_buf(Context &ctx) {
   off += lazy_bind.size();
 
   write_vector(ctx.buf + off, function_starts);
+  off += function_starts.size();
+
+  write_vector(ctx.buf + off, symtab);
+  off += symtab.size();
+
+  write_vector(ctx.buf + off, strtab);
 }
 
 OutputSection::OutputSection(OutputSegment &parent, std::string_view name)
