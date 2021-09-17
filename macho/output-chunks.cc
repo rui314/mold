@@ -20,23 +20,19 @@ static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   cmd.cmd = LC_DYLD_INFO_ONLY;
   cmd.cmdsize = sizeof(cmd);
 
-  i64 off = ctx.linkedit->parent.cmd.fileoff + ctx.linkedit->hdr.offset;
+  i64 off = ctx.linkedit_segment->cmd.fileoff;
 
-  cmd.rebase_off = off;
-  cmd.rebase_size = ctx.linkedit->rebase.size();
-  off += ctx.linkedit->rebase.size();
+  cmd.rebase_off = off + ctx.rebase->hdr.offset;
+  cmd.rebase_size = ctx.rebase->contents.size();
 
-  cmd.bind_off = off;
-  cmd.bind_size = ctx.linkedit->bind.size();
-  off += ctx.linkedit->bind.size();
+  cmd.bind_size = off + ctx.bind->hdr.offset;
+  off += ctx.bind->contents.size();
 
-  cmd.lazy_bind_off = off;
-  cmd.lazy_bind_size = ctx.linkedit->lazy_bind.size();
-  off += ctx.linkedit->lazy_bind.size();
+  cmd.lazy_bind_size = off + ctx.lazy_bind->hdr.offset;
+  off += ctx.lazy_bind->contents.size();
 
-  cmd.export_off = off;
-  cmd.export_size = ctx.linkedit->export_.size();
-  off += ctx.linkedit->export_.size();
+  cmd.export_size = ctx.export_->hdr.offset;
+  off += ctx.export_->contents.size();
   return cmd;
 }
 
@@ -44,12 +40,10 @@ static SymtabCommand create_symtab_cmd(Context &ctx) {
   SymtabCommand cmd = {};
   cmd.cmd = LC_SYMTAB;
   cmd.cmdsize = sizeof(cmd);
-  cmd.symoff = ctx.linkedit->parent.cmd.fileoff + 
-               ctx.linkedit->hdr.offset + ctx.linkedit->symoff;
-  cmd.nsyms = ctx.linkedit->symtab.size() / sizeof(MachSym);
-  cmd.stroff = ctx.linkedit->parent.cmd.fileoff + 
-               ctx.linkedit->hdr.offset + ctx.linkedit->stroff;
-  cmd.strsize = ctx.linkedit->strtab.size();
+  cmd.symoff = ctx.linkedit_segment->cmd.fileoff + ctx.symtab->hdr.offset;
+  cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
+  cmd.stroff = ctx.linkedit_segment->cmd.fileoff + ctx.strtab->hdr.offset;
+  cmd.strsize = ctx.strtab->contents.size();
   return cmd;
 }
 
@@ -145,39 +139,32 @@ void OutputSegment::copy_buf(Context &ctx) {
     sec->copy_buf(ctx);
 }
 
-void OutputLinkEditChunk::update_hdr(Context &ctx) {
-  hdr.size = rebase.size() + bind.size() + lazy_bind.size() +
-             export_.size() + function_starts.size() + symtab.size() +
-             strtab.size();
-
-  symoff = rebase.size() + bind.size() + lazy_bind.size() +
-           export_.size() + function_starts.size();
-  stroff = symoff + symtab.size();
+void OutputRebaseSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
 }
 
-void OutputLinkEditChunk::copy_buf(Context &ctx) {
-  u8 *ptr = ctx.buf + parent.cmd.fileoff + hdr.offset;
+void OutputBindSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
 
-  write_vector(ptr, rebase);
-  ptr += rebase.size();
+void OutputLazyBindSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
 
-  write_vector(ptr, bind);
-  ptr += bind.size();
+void OutputExportSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
 
-  write_vector(ptr, lazy_bind);
-  ptr += lazy_bind.size();
+void OutputFunctionStartsSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
 
-  write_vector(ptr, export_);
-  ptr += export_.size();
+void OutputSymtabSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
 
-  write_vector(ptr, function_starts);
-  ptr += function_starts.size();
-
-  write_vector(ptr, symtab);
-  ptr += symtab.size();
-
-  write_vector(ptr, strtab);
-  ptr += strtab.size();
+void OutputStrtabSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
 }
 
 OutputSection::OutputSection(OutputSegment &parent)

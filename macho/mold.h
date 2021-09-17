@@ -67,42 +67,90 @@ private:
   std::vector<u8> contents;
 };
 
-class OutputLinkEditChunk : public OutputSection {
+class OutputRebaseSection : public OutputSection {
 public:
-  OutputLinkEditChunk(OutputSegment &parent) : OutputSection(parent) {
+  OutputRebaseSection(OutputSegment &parent) : OutputSection(parent) {
     is_hidden = true;
+    hdr.size = contents.size();
   }
 
-  void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  i64 vmaddr = 0;
+  std::vector<u8> contents = {0x11, 0x23, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00};
+};
 
-  std::vector<u8> rebase = {0x11, 0x23, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00};
+class OutputBindSection : public OutputSection {
+public:
+  OutputBindSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
 
-  std::vector<u8> bind = {
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0x11, 0x40, 0x64, 0x79, 0x6c, 0x64, 0x5f, 0x73, 0x74, 0x75, 0x62, 0x5f,
     0x62, 0x69, 0x6e, 0x64, 0x65, 0x72, 0x00, 0x51, 0x72, 0x00, 0x90, 0x00,
   };
+};
 
-  std::vector<u8> lazy_bind = {
+class OutputLazyBindSection : public OutputSection {
+public:
+  OutputLazyBindSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0x73, 0x00, 0x11, 0x40, 0x5f, 0x70, 0x72, 0x69, 0x6e, 0x74, 0x66, 0x00,
     0x90, 0x00, 0x00, 0x00,
   };
+};
 
-  std::vector<u8> export_ = {
+class OutputExportSection : public OutputSection {
+public:
+  OutputExportSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0x00, 0x01, 0x5f, 0x00, 0x05, 0x00, 0x03, 0x5f, 0x6d, 0x68, 0x5f, 0x65,
     0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65,
     0x72, 0x00, 0x28, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x2c, 0x6d, 0x61,
     0x69, 0x6e, 0x00, 0x31, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0xd0, 0x7e,
     0x00, 0x03, 0x00, 0xf0, 0x7e, 0x00, 0x00, 0x00,
   };
+};
 
-  std::vector<u8> function_starts = {
+class OutputFunctionStartsSection : public OutputSection {
+public:
+  OutputFunctionStartsSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0xd0, 0x7e, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00
   };
+};
 
-  std::vector<u8> symtab = {
+class OutputSymtabSection : public OutputSection {
+public:
+  OutputSymtabSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0x3c, 0x00, 0x00, 0x00, 0x0e, 0x08, 0x00, 0x00, 0x08, 0x80, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x10, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
@@ -112,8 +160,18 @@ public:
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   };
+};
 
-  std::vector<u8> strtab = {
+class OutputStrtabSection : public OutputSection {
+public:
+  OutputStrtabSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
     0x20, 0x00, 0x5f, 0x5f, 0x6d, 0x68, 0x5f, 0x65, 0x78, 0x65, 0x63, 0x75,
     0x74, 0x65, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x00, 0x5f, 0x68,
     0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x5f, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x5f,
@@ -122,9 +180,6 @@ public:
     0x5f, 0x5f, 0x64, 0x79, 0x6c, 0x64, 0x5f, 0x70, 0x72, 0x69, 0x76, 0x61,
     0x74, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   };
-
-  i64 symoff = 0;
-  i64 stroff = 0;
 };
 
 class TextSection : public OutputSection {
@@ -236,7 +291,14 @@ struct Context {
   std::unique_ptr<OutputSegment> data_const_segment;
   std::unique_ptr<OutputSegment> data_segment;
   std::unique_ptr<OutputSegment> linkedit_segment;
-  std::unique_ptr<OutputLinkEditChunk> linkedit;
+
+  std::unique_ptr<OutputRebaseSection> rebase;
+  std::unique_ptr<OutputBindSection> bind;
+  std::unique_ptr<OutputLazyBindSection> lazy_bind;
+  std::unique_ptr<OutputExportSection> export_;
+  std::unique_ptr<OutputFunctionStartsSection> function_starts;
+  std::unique_ptr<OutputSymtabSection> symtab;
+  std::unique_ptr<OutputStrtabSection> strtab;
 
   std::vector<OutputSegment *> segments;
 };

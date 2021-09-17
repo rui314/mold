@@ -46,8 +46,26 @@ void create_synthetic_sections(Context &ctx) {
   ctx.data_segment->sections.push_back(new LaSymbolPtrSection(*ctx.data_segment));
   ctx.data_segment->sections.push_back(new DataSection(*ctx.data_segment));
 
-  ctx.linkedit.reset(new OutputLinkEditChunk(*ctx.linkedit_segment));
-  ctx.linkedit_segment->sections.push_back(ctx.linkedit.get());
+  ctx.rebase.reset(new OutputRebaseSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.rebase.get());
+
+  ctx.bind.reset(new OutputBindSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.bind.get());
+
+  ctx.lazy_bind.reset(new OutputLazyBindSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.lazy_bind.get());
+
+  ctx.export_.reset(new OutputExportSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.export_.get());
+
+  ctx.function_starts.reset(new OutputFunctionStartsSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.function_starts.get());
+
+  ctx.symtab.reset(new OutputSymtabSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.symtab.get());
+
+  ctx.strtab.reset(new OutputStrtabSection(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.strtab.get());
 }
 
 void compute_segment_sizes(Context &ctx) {
