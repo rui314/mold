@@ -48,6 +48,21 @@ create_load_commands(Context &ctx) {
     }
   }
 
+  // Add a __LINKEDIT command
+  SegmentCommand lnk = {};
+  lnk.cmd = LC_SEGMENT_64;
+  lnk.cmdsize = sizeof(SegmentCommand);
+  strcpy(lnk.segname, "__LINKEDIT");
+  lnk.vmaddr = ctx.linkedit_chunk->vmaddr;
+  lnk.vmsize = align_to(ctx.linkedit_chunk->filesize, PAGE_SIZE);
+  lnk.fileoff = ctx.linkedit_chunk->fileoff;
+  lnk.filesize = ctx.linkedit_chunk->filesize;
+  lnk.maxprot = VM_PROT_READ;
+  lnk.initprot = VM_PROT_READ;
+
+  add(lnk);
+  ncmds++;
+
   return {vec, ncmds};
 }
 
@@ -95,6 +110,18 @@ void OutputSegment::update_hdr(Context &ctx) {
 void OutputSegment::copy_buf(Context &ctx) {
   for (OutputSection *sec : sections)
     sec->copy_buf(ctx);
+}
+
+OutputLinkEditChunk::OutputLinkEditChunk() {
+  p2align = __builtin_ctz(PAGE_SIZE);
+}
+
+void OutputLinkEditChunk::update_hdr(Context &ctx) {
+  filesize = rebase.size();
+}
+
+void OutputLinkEditChunk::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + fileoff, rebase);
 }
 
 OutputSection::OutputSection(OutputSegment &parent, std::string_view name)

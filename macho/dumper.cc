@@ -250,7 +250,7 @@ void dump_file(std::string path) {
     }
     case LC_FUNCTION_STARTS: {
       std::cout << "LC_FUNCTION_STARTS\n";
-      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
       std::cout << " dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
                 << "\n";
@@ -258,7 +258,7 @@ void dump_file(std::string path) {
     }
     case LC_MAIN: {
       std::cout << "LC_MAIN\n";
-      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
       std::cout << " dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
                 << "\n";
@@ -266,7 +266,7 @@ void dump_file(std::string path) {
     }
     case LC_DATA_IN_CODE: {
       std::cout << "LC_DATA_IN_CODE\n";
-      LinkeditDataCommand &cmd = *(LinkeditDataCommand *)&lc;
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
       std::cout << " dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
                 << "\n";

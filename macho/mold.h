@@ -65,6 +65,16 @@ public:
   std::vector<OutputSection *> sections;
 };
 
+class OutputLinkEditChunk : public Chunk {
+public:
+  OutputLinkEditChunk();
+  void update_hdr(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+
+  i64 vmaddr = 0;
+  std::vector<u8> rebase = {0, 0, 0, 0, 0, 0, 0, 0};
+};
+
 class OutputSection {
 public:
   virtual ~OutputSection() = default;
@@ -186,6 +196,7 @@ struct Context {
   std::unique_ptr<OutputSegment> text_segment;
   std::unique_ptr<OutputSegment> data_const_segment;
   std::unique_ptr<OutputSegment> data_segment;
+  std::unique_ptr<OutputLinkEditChunk> linkedit_chunk;
 
   std::vector<Chunk *> chunks;
 };

@@ -367,7 +367,7 @@ struct DyldInfoCommand {
   u32 export_size;
 };
 
-struct LinkeditDataCommand {
+struct LinkEditDataCommand {
   u32 cmd;
   u32 cmdsize;
   u32 dataoff;
