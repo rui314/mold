@@ -15,20 +15,6 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
-static SegmentCommand create_link_edit_cmd(Context &ctx) {
-  SegmentCommand cmd = {};
-  cmd.cmd = LC_SEGMENT_64;
-  cmd.cmdsize = sizeof(cmd);
-  strcpy(cmd.segname, "__LINKEDIT");
-  cmd.vmaddr = ctx.linkedit->vmaddr;
-  cmd.vmsize = align_to(ctx.linkedit->hdr.size, PAGE_SIZE);
-  cmd.fileoff = ctx.linkedit->parent.cmd.fileoff + ctx.linkedit->hdr.offset;
-  cmd.filesize = ctx.linkedit->hdr.size;
-  cmd.maxprot = VM_PROT_READ;
-  cmd.initprot = VM_PROT_READ;
-  return cmd;
-}
-
 static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   DyldInfoCommand cmd = {};
   cmd.cmd = LC_DYLD_INFO_ONLY;
@@ -97,10 +83,6 @@ create_load_commands(Context &ctx) {
       if (!sec->is_hidden)
         add(sec->hdr);
   }
-
-  // Add a __LINKEDIT command
-  add(create_link_edit_cmd(ctx));
-  ncmds++;
 
   // Add a LC_DYLD_INFO_ONLY command
   add(create_dyld_info_only_cmd(ctx));

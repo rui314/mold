@@ -235,6 +235,7 @@ struct Context {
   std::unique_ptr<OutputSegment> text_segment;
   std::unique_ptr<OutputSegment> data_const_segment;
   std::unique_ptr<OutputSegment> data_segment;
+  std::unique_ptr<OutputSegment> linkedit_segment;
   std::unique_ptr<OutputLinkEditChunk> linkedit;
 
   std::vector<OutputSegment *> segments;

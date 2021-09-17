@@ -26,6 +26,10 @@ void create_synthetic_sections(Context &ctx) {
   ctx.segments.push_back(data);
   ctx.data_segment.reset(data);
 
+  OutputSegment *linkedit = new OutputSegment("__LINKEDIT", VM_PROT_READ, 0);
+  ctx.segments.push_back(linkedit);
+  ctx.linkedit_segment.reset(linkedit);
+
   ctx.mach_hdr.reset(new OutputMachHeader(*ctx.text_segment));
   ctx.text_segment->sections.push_back(ctx.mach_hdr.get());
 
@@ -42,8 +46,8 @@ void create_synthetic_sections(Context &ctx) {
   ctx.data_segment->sections.push_back(new LaSymbolPtrSection(*ctx.data_segment));
   ctx.data_segment->sections.push_back(new DataSection(*ctx.data_segment));
 
-  ctx.linkedit.reset(new OutputLinkEditChunk(*ctx.text_segment));
-  ctx.text_segment->sections.push_back(ctx.linkedit.get());
+  ctx.linkedit.reset(new OutputLinkEditChunk(*ctx.linkedit_segment));
+  ctx.linkedit_segment->sections.push_back(ctx.linkedit.get());
 }
 
 void compute_segment_sizes(Context &ctx) {
