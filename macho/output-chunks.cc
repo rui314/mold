@@ -20,7 +20,7 @@ static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   cmd.cmd = LC_DYLD_INFO_ONLY;
   cmd.cmdsize = sizeof(cmd);
 
-  i64 off = ctx.linkedit_segment->cmd.fileoff;
+  i64 off = ctx.linkedit_seg->cmd.fileoff;
 
   cmd.rebase_off = off + ctx.rebase->hdr.offset;
   cmd.rebase_size = ctx.rebase->contents.size();
@@ -40,9 +40,9 @@ static SymtabCommand create_symtab_cmd(Context &ctx) {
   SymtabCommand cmd = {};
   cmd.cmd = LC_SYMTAB;
   cmd.cmdsize = sizeof(cmd);
-  cmd.symoff = ctx.linkedit_segment->cmd.fileoff + ctx.symtab->hdr.offset;
+  cmd.symoff = ctx.linkedit_seg->cmd.fileoff + ctx.symtab->hdr.offset;
   cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
-  cmd.stroff = ctx.linkedit_segment->cmd.fileoff + ctx.strtab->hdr.offset;
+  cmd.stroff = ctx.linkedit_seg->cmd.fileoff + ctx.strtab->hdr.offset;
   cmd.strsize = ctx.strtab->contents.size();
   return cmd;
 }

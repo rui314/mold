@@ -287,10 +287,10 @@ struct Context {
 
   std::unique_ptr<OutputMachHeader> mach_hdr;
   std::unique_ptr<OutputLoadCommand> load_cmd;
-  std::unique_ptr<OutputSegment> text_segment;
-  std::unique_ptr<OutputSegment> data_const_segment;
-  std::unique_ptr<OutputSegment> data_segment;
-  std::unique_ptr<OutputSegment> linkedit_segment;
+  std::unique_ptr<OutputSegment> text_seg;
+  std::unique_ptr<OutputSegment> data_const_seg;
+  std::unique_ptr<OutputSegment> data_seg;
+  std::unique_ptr<OutputSegment> linkedit_seg;
 
   std::unique_ptr<OutputRebaseSection> rebase;
   std::unique_ptr<OutputBindSection> bind;
