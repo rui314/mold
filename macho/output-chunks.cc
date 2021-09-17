@@ -167,6 +167,10 @@ void OutputStrtabSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
 }
 
+void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
+
 OutputSection::OutputSection(OutputSegment &parent)
   : parent(parent) {
   memcpy(hdr.segname, parent.cmd.segname, sizeof(parent.cmd.segname));

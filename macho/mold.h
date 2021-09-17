@@ -146,6 +146,7 @@ public:
   OutputSymtabSection(OutputSegment &parent) : OutputSection(parent) {
     is_hidden = true;
     hdr.size = contents.size();
+    hdr.p2align = __builtin_ctz(8);
   }
 
   void copy_buf(Context &ctx) override;
@@ -167,6 +168,7 @@ public:
   OutputStrtabSection(OutputSegment &parent) : OutputSection(parent) {
     is_hidden = true;
     hdr.size = contents.size();
+    hdr.p2align = __builtin_ctz(8);
   }
 
   void copy_buf(Context &ctx) override;
@@ -179,6 +181,20 @@ public:
     0x73, 0x74, 0x75, 0x62, 0x5f, 0x62, 0x69, 0x6e, 0x64, 0x65, 0x72, 0x00,
     0x5f, 0x5f, 0x64, 0x79, 0x6c, 0x64, 0x5f, 0x70, 0x72, 0x69, 0x76, 0x61,
     0x74, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+};
+
+class OutputIndirectSymtabSection : public OutputSection {
+public:
+  OutputIndirectSymtabSection(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = contents.size();
+  }
+
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents = {
+    0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
   };
 };
 
@@ -298,6 +314,7 @@ struct Context {
   std::unique_ptr<OutputExportSection> export_;
   std::unique_ptr<OutputFunctionStartsSection> function_starts;
   std::unique_ptr<OutputSymtabSection> symtab;
+  std::unique_ptr<OutputIndirectSymtabSection> indir_symtab;
   std::unique_ptr<OutputStrtabSection> strtab;
 
   std::vector<OutputSegment *> segments;

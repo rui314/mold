@@ -64,6 +64,9 @@ void create_synthetic_sections(Context &ctx) {
   ctx.symtab.reset(new OutputSymtabSection(*ctx.linkedit_seg));
   ctx.linkedit_seg->sections.push_back(ctx.symtab.get());
 
+  ctx.indir_symtab.reset(new OutputIndirectSymtabSection(*ctx.linkedit_seg));
+  ctx.linkedit_seg->sections.push_back(ctx.indir_symtab.get());
+
   ctx.strtab.reset(new OutputStrtabSection(*ctx.linkedit_seg));
   ctx.linkedit_seg->sections.push_back(ctx.strtab.get());
 }
