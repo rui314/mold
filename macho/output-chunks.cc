@@ -89,8 +89,8 @@ create_load_commands(Context &ctx) {
   ncmds++;
 
   // Add a LC_SYMTAB command
-  //add(create_symtab_cmd(ctx));
-  //ncmds++;
+  add(create_symtab_cmd(ctx));
+  ncmds++;
 
   return {vec, ncmds};
 }
@@ -156,27 +156,28 @@ void OutputLinkEditChunk::update_hdr(Context &ctx) {
 }
 
 void OutputLinkEditChunk::copy_buf(Context &ctx) {
-  i64 off = parent.cmd.fileoff + hdr.offset;
+  u8 *ptr = ctx.buf + parent.cmd.fileoff + hdr.offset;
 
-  write_vector(ctx.buf + off, rebase);
-  off += rebase.size();
+  write_vector(ptr, rebase);
+  ptr += rebase.size();
 
-  write_vector(ctx.buf + off, bind);
-  off += bind.size();
+  write_vector(ptr, bind);
+  ptr += bind.size();
 
-  write_vector(ctx.buf + off, lazy_bind);
-  off += lazy_bind.size();
+  write_vector(ptr, lazy_bind);
+  ptr += lazy_bind.size();
 
-  write_vector(ctx.buf + off, export_);
-  off += lazy_bind.size();
+  write_vector(ptr, export_);
+  ptr += export_.size();
 
-  write_vector(ctx.buf + off, function_starts);
-  off += function_starts.size();
+  write_vector(ptr, function_starts);
+  ptr += function_starts.size();
 
-  write_vector(ctx.buf + off, symtab);
-  off += symtab.size();
+  write_vector(ptr, symtab);
+  ptr += symtab.size();
 
-  write_vector(ctx.buf + off, strtab);
+  write_vector(ptr, strtab);
+  ptr += strtab.size();
 }
 
 OutputSection::OutputSection(OutputSegment &parent)
