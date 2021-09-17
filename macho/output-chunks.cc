@@ -53,10 +53,10 @@ create_load_commands(Context &ctx) {
   lnk.cmd = LC_SEGMENT_64;
   lnk.cmdsize = sizeof(SegmentCommand);
   strcpy(lnk.segname, "__LINKEDIT");
-  lnk.vmaddr = ctx.linkedit_chunk->vmaddr;
-  lnk.vmsize = align_to(ctx.linkedit_chunk->filesize, PAGE_SIZE);
-  lnk.fileoff = ctx.linkedit_chunk->fileoff;
-  lnk.filesize = ctx.linkedit_chunk->filesize;
+  lnk.vmaddr = ctx.linkedit->vmaddr;
+  lnk.vmsize = align_to(ctx.linkedit->filesize, PAGE_SIZE);
+  lnk.fileoff = ctx.linkedit->fileoff;
+  lnk.filesize = ctx.linkedit->filesize;
   lnk.maxprot = VM_PROT_READ;
   lnk.initprot = VM_PROT_READ;
 
@@ -117,11 +117,26 @@ OutputLinkEditChunk::OutputLinkEditChunk() {
 }
 
 void OutputLinkEditChunk::update_hdr(Context &ctx) {
-  filesize = rebase.size();
+  filesize = rebase.size() + bind.size() + lazy_bind.size() +
+             export_.size() + function_starts.size();
 }
 
 void OutputLinkEditChunk::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + fileoff, rebase);
+  i64 off = fileoff;
+
+  write_vector(ctx.buf + off, rebase);
+  off += rebase.size();
+
+  write_vector(ctx.buf + off, bind);
+  off += bind.size();
+
+  write_vector(ctx.buf + off, lazy_bind);
+  off += lazy_bind.size();
+
+  write_vector(ctx.buf + off, export_);
+  off += lazy_bind.size();
+
+  write_vector(ctx.buf + off, function_starts);
 }
 
 OutputSection::OutputSection(OutputSegment &parent, std::string_view name)

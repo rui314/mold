@@ -24,7 +24,7 @@ void create_synthetic_sections(Context &ctx) {
                                       SG_READ_ONLY));
   add(ctx.data_segment =
       std::make_unique<OutputSegment>("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0));
-  add(ctx.linkedit_chunk = std::make_unique<OutputLinkEditChunk>());
+  add(ctx.linkedit = std::make_unique<OutputLinkEditChunk>());
 
   ctx.text_segment->sections.push_back(new TextSection(*ctx.text_segment));
   ctx.text_segment->sections.push_back(new StubsSection(*ctx.text_segment));
@@ -59,7 +59,7 @@ i64 assign_offsets(Context &ctx) {
     }
   }
 
-  ctx.linkedit_chunk->vmaddr = align_to(vmaddr, PAGE_SIZE);
+  ctx.linkedit->vmaddr = align_to(vmaddr, PAGE_SIZE);
   return fileoff;
 }
 

@@ -253,7 +253,8 @@ void dump_file(std::string path) {
       LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
       std::cout << " dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
-                << "\n";
+                << "\n data: ";
+      print_bytes(buf + cmd.dataoff, cmd.datasize);
       break;
     }
     case LC_MAIN: {
