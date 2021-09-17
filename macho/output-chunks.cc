@@ -15,12 +15,64 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
+static SegmentCommand create_link_edit_cmd(Context &ctx) {
+  SegmentCommand cmd = {};
+  cmd.cmd = LC_SEGMENT_64;
+  cmd.cmdsize = sizeof(cmd);
+  strcpy(cmd.segname, "__LINKEDIT");
+  cmd.vmaddr = ctx.linkedit->vmaddr;
+  cmd.vmsize = align_to(ctx.linkedit->hdr.size, PAGE_SIZE);
+  cmd.fileoff = ctx.linkedit->parent.cmd.fileoff + ctx.linkedit->hdr.offset;
+  cmd.filesize = ctx.linkedit->hdr.size;
+  cmd.maxprot = VM_PROT_READ;
+  cmd.initprot = VM_PROT_READ;
+  return cmd;
+}
+
+static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
+  DyldInfoCommand cmd = {};
+  cmd.cmd = LC_DYLD_INFO_ONLY;
+  cmd.cmdsize = sizeof(cmd);
+
+  i64 off = ctx.linkedit->parent.cmd.fileoff + ctx.linkedit->hdr.offset;
+
+  cmd.rebase_off = off;
+  cmd.rebase_size = ctx.linkedit->rebase.size();
+  off += ctx.linkedit->rebase.size();
+
+  cmd.bind_off = off;
+  cmd.bind_size = ctx.linkedit->bind.size();
+  off += ctx.linkedit->bind.size();
+
+  cmd.lazy_bind_off = off;
+  cmd.lazy_bind_size = ctx.linkedit->lazy_bind.size();
+  off += ctx.linkedit->lazy_bind.size();
+
+  cmd.export_off = off;
+  cmd.export_size = ctx.linkedit->export_.size();
+  off += ctx.linkedit->export_.size();
+  return cmd;
+}
+
+static SymtabCommand create_symtab_cmd(Context &ctx) {
+  SymtabCommand cmd = {};
+  cmd.cmd = LC_SYMTAB;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.symoff = ctx.linkedit->parent.cmd.fileoff + 
+               ctx.linkedit->hdr.offset + ctx.linkedit->symoff;
+  cmd.nsyms = ctx.linkedit->symtab.size() / sizeof(MachSym);
+  cmd.stroff = ctx.linkedit->parent.cmd.fileoff + 
+               ctx.linkedit->hdr.offset + ctx.linkedit->stroff;
+  cmd.strsize = ctx.linkedit->strtab.size();
+  return cmd;
+}
+
 static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
   i64 ncmds = 0;
 
-  auto add = [&](auto &x) {
+  auto add = [&](auto x) {
     i64 off = vec.size();
     vec.resize(vec.size() + sizeof(x));
     memcpy(vec.data() + off, &x, sizeof(x));
@@ -47,33 +99,16 @@ create_load_commands(Context &ctx) {
   }
 
   // Add a __LINKEDIT command
-  SegmentCommand lnk = {};
-  lnk.cmd = LC_SEGMENT_64;
-  lnk.cmdsize = sizeof(SegmentCommand);
-  strcpy(lnk.segname, "__LINKEDIT");
-  lnk.vmaddr = ctx.linkedit->vmaddr;
-  lnk.vmsize = align_to(ctx.linkedit->hdr.size, PAGE_SIZE);
-  lnk.fileoff = ctx.linkedit->parent.cmd.fileoff + ctx.linkedit->hdr.offset;
-  lnk.filesize = ctx.linkedit->hdr.size;
-  lnk.maxprot = VM_PROT_READ;
-  lnk.initprot = VM_PROT_READ;
+  add(create_link_edit_cmd(ctx));
+  ncmds++;
 
-  add(lnk);
+  // Add a LC_DYLD_INFO_ONLY command
+  add(create_dyld_info_only_cmd(ctx));
   ncmds++;
 
   // Add a LC_SYMTAB command
-  SymtabCommand symtab = {};
-  symtab.cmd = LC_SYMTAB;
-  symtab.cmdsize = sizeof(SymtabCommand);
-  symtab.symoff = ctx.linkedit->parent.cmd.fileoff + 
-                  ctx.linkedit->hdr.offset + ctx.linkedit->symoff;
-  symtab.nsyms = ctx.linkedit->symtab.size() / sizeof(MachSym);
-  symtab.stroff = ctx.linkedit->parent.cmd.fileoff + 
-                  ctx.linkedit->hdr.offset + ctx.linkedit->stroff;
-  symtab.strsize = ctx.linkedit->strtab.size();
-
-//  add(symtab);
-//  ncmds++;
+  //add(create_symtab_cmd(ctx));
+  //ncmds++;
 
   return {vec, ncmds};
 }
