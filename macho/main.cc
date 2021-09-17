@@ -11,58 +11,60 @@
 namespace mold::macho {
 
 void create_synthetic_sections(Context &ctx) {
-  auto add = [&](auto &chunk) {
-    ctx.chunks.push_back(chunk.get());
-  };
+  OutputSegment *text =
+    new OutputSegment("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0);
+  ctx.segments.push_back(text);
+  ctx.text_segment.reset(text);
 
-  add(ctx.mach_hdr = std::make_unique<OutputMachHeader>());
-  add(ctx.load_cmd = std::make_unique<OutputLoadCommand>());
-  add(ctx.text_segment =
-      std::make_unique<OutputSegment>("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0));
-  add(ctx.data_const_segment =
-      std::make_unique<OutputSegment>("__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
-                                      SG_READ_ONLY));
-  add(ctx.data_segment =
-      std::make_unique<OutputSegment>("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0));
-  add(ctx.linkedit = std::make_unique<OutputLinkEditChunk>());
+  OutputSegment *data_const =
+    new OutputSegment("__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE, SG_READ_ONLY);
+  ctx.segments.push_back(data_const);
+  ctx.data_const_segment.reset(data_const);
+
+  OutputSegment *data =
+    new OutputSegment("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0);
+  ctx.segments.push_back(data);
+  ctx.data_segment.reset(data);
+
+  ctx.mach_hdr.reset(new OutputMachHeader(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(ctx.mach_hdr.get());
+
+  ctx.load_cmd.reset(new OutputLoadCommand(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(ctx.load_cmd.get());
 
   ctx.text_segment->sections.push_back(new TextSection(*ctx.text_segment));
   ctx.text_segment->sections.push_back(new StubsSection(*ctx.text_segment));
   ctx.text_segment->sections.push_back(new StubHelperSection(*ctx.text_segment));
   ctx.text_segment->sections.push_back(new CstringSection(*ctx.text_segment));
+
   ctx.data_const_segment->sections.push_back(new GotSection(*ctx.data_const_segment));
+
   ctx.data_segment->sections.push_back(new LaSymbolPtrSection(*ctx.data_segment));
   ctx.data_segment->sections.push_back(new DataSection(*ctx.data_segment));
 
-  ctx.text_segment->p2align = 0;
+  ctx.linkedit.reset(new OutputLinkEditChunk(*ctx.text_segment));
+  ctx.text_segment->sections.push_back(ctx.linkedit.get());
 }
 
-void compute_chunk_sizes(Context &ctx) {
-  for (Chunk *chunk : ctx.chunks)
-    chunk->update_hdr(ctx);
+void compute_segment_sizes(Context &ctx) {
+  for (OutputSegment *seg : ctx.segments)
+    seg->update_hdr(ctx);
 }
 
 i64 assign_offsets(Context &ctx) {
   i64 fileoff = 0;
-
-  for (Chunk *chunk : ctx.chunks) {
-    fileoff = align_to(fileoff, 1 << chunk->p2align);
-    chunk->fileoff = fileoff;
-    fileoff += chunk->filesize;
-  }
-
   i64 vmaddr = PAGE_ZERO_SIZE;
-  for (Chunk *chunk : ctx.chunks) {
-    if (chunk->is_segment) {
-      OutputSegment &seg = *(OutputSegment *)chunk;
-      vmaddr = align_to(vmaddr, PAGE_SIZE);
-      seg.cmd.vmaddr = vmaddr;
-      seg.cmd.fileoff = seg.fileoff;
-      vmaddr += seg.cmd.vmsize;
-    }
+
+  for (OutputSegment *seg : ctx.segments) {
+    fileoff = align_to(fileoff, PAGE_SIZE);
+    seg->cmd.fileoff = fileoff;
+    fileoff += seg->cmd.filesize;
+
+    vmaddr = align_to(vmaddr, PAGE_SIZE);
+    seg->cmd.vmaddr = vmaddr;
+    vmaddr += seg->cmd.vmsize;
   }
 
-  ctx.linkedit->vmaddr = align_to(vmaddr, PAGE_SIZE);
   return fileoff;
 }
 
@@ -88,15 +90,15 @@ int main(int argc, char **argv) {
     ctx.arg.output = argv[2];
 
     create_synthetic_sections(ctx);
-    compute_chunk_sizes(ctx);
+    compute_segment_sizes(ctx);
     i64 output_size = assign_offsets(ctx);
 
     ctx.output_file =
       std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
     ctx.buf = ctx.output_file->buf;
 
-    for (Chunk *chunk : ctx.chunks)
-      chunk->copy_buf(ctx);
+    for (OutputSegment *seg : ctx.segments)
+      seg->copy_buf(ctx);
 
     ctx.output_file->close(ctx);
     exit(0);

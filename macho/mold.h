@@ -17,34 +17,47 @@ struct Context;
 // output-chunks.cc
 //
 
-class Chunk {
+class OutputSegment {
 public:
-  virtual ~Chunk() = default;
-  virtual void copy_buf(Context &ctx) {}
-  virtual void update_hdr(Context &ctx) {}
+  OutputSegment(std::string_view name, u32 prot, u32 flags);
+  void copy_buf(Context &ctx);
+  void update_hdr(Context &ctx);
 
   std::string_view name;
-  bool is_segment = false;
-
-  i64 fileoff = 0;
-  i64 filesize = 0;
-  i64 p2align = 0;
-
-protected:
-  Chunk() = default;
+  SegmentCommand cmd = {};
+  std::vector<OutputSection *> sections;
 };
 
-class OutputMachHeader : public Chunk {
+class OutputSection {
 public:
-  OutputMachHeader() {
-    filesize = sizeof(MachHeader);
+  virtual ~OutputSection() = default;
+  virtual void update_hdr(Context &ctx) {}
+  virtual void copy_buf(Context &ctx) {}
+
+  MachSection hdr = {};
+  OutputSegment &parent;
+  bool is_hidden = false;
+
+protected:
+  OutputSection(OutputSegment &parent);
+};
+
+class OutputMachHeader : public OutputSection {
+public:
+  OutputMachHeader(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+    hdr.size = sizeof(MachHeader);;
   }
 
   void copy_buf(Context &ctx) override;
 };
 
-class OutputLoadCommand : public Chunk {
+class OutputLoadCommand : public OutputSection {
 public:
+  OutputLoadCommand(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+  }
+
   void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -54,20 +67,12 @@ private:
   std::vector<u8> contents;
 };
 
-class OutputSegment : public Chunk {
+class OutputLinkEditChunk : public OutputSection {
 public:
-  OutputSegment(std::string_view name, u32 prot, u32 flags);
+  OutputLinkEditChunk(OutputSegment &parent) : OutputSection(parent) {
+    is_hidden = true;
+  }
 
-  void update_hdr(Context &ctx) override;
-  void copy_buf(Context &ctx) override;
-
-  SegmentCommand cmd = {};
-  std::vector<OutputSection *> sections;
-};
-
-class OutputLinkEditChunk : public Chunk {
-public:
-  OutputLinkEditChunk();
   void update_hdr(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -120,19 +125,6 @@ public:
 
   i64 symoff = 0;
   i64 stroff = 0;
-};
-
-class OutputSection {
-public:
-  virtual ~OutputSection() = default;
-  virtual void update_hdr(Context &ctx) {}
-  virtual void copy_buf(Context &ctx) {}
-
-  MachSection hdr = {};
-  OutputSegment &parent;
-
-protected:
-  OutputSection(OutputSegment &parent, std::string_view name);
 };
 
 class TextSection : public OutputSection {
@@ -245,7 +237,7 @@ struct Context {
   std::unique_ptr<OutputSegment> data_segment;
   std::unique_ptr<OutputLinkEditChunk> linkedit;
 
-  std::vector<Chunk *> chunks;
+  std::vector<OutputSegment *> segments;
 };
 
 int main(int argc, char **argv);
