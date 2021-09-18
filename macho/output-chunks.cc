@@ -100,6 +100,14 @@ static SourceVersionCommand create_source_version_cmd(Context &ctx) {
   return cmd;
 }
 
+static LinkEditDataCommand create_main_cmd(Context &ctx) {
+  LinkEditDataCommand cmd = {};
+  cmd.cmd = LC_MAIN;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.dataoff = 0x3f70;
+  return cmd;
+}
+
 static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
@@ -157,6 +165,10 @@ create_load_commands(Context &ctx) {
 
   // LC_SOURCE_VERSION
   add(create_source_version_cmd(ctx));
+  ncmds++;
+
+  // LC_MAIN
+  add(create_main_cmd(ctx));
   ncmds++;
 
   return {vec, ncmds};
