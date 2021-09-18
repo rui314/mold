@@ -392,7 +392,7 @@ UnwindInfoSection::UnwindInfoSection(OutputSegment &parent)
   : OutputSection(parent) {
   strcpy(hdr.sectname, "__unwind_info");
   hdr.p2align = __builtin_ctz(4);
-  hdr.size = sizeof(contents);
+  hdr.size = contents.size();
 }
 
 void UnwindInfoSection::copy_buf(Context &ctx) {
