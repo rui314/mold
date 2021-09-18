@@ -236,6 +236,22 @@ OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
   cmd.flags = flags;
 }
 
+static i64 compute_text_padding_size(std::span<OutputSection *> sections) {
+  u64 addr = 0;
+
+  // Skip the first two sections which are the mach-o header and the
+  // load commands.
+  for (i64 i = sections.size() - 1; i >= 2; i--) {
+    OutputSection &sec = *sections[i];
+    addr -= sec.hdr.size;
+    addr = align_down(addr, 1 << sec.hdr.p2align);
+  }
+
+  addr -= sections[0]->hdr.size;
+  addr -= sections[1]->hdr.size;
+  return addr % PAGE_SIZE;
+}
+
 void OutputSegment::update_hdr(Context &ctx) {
   cmd.cmdsize = sizeof(SegmentCommand);
   cmd.nsects = 0;
@@ -247,17 +263,33 @@ void OutputSegment::update_hdr(Context &ctx) {
     }
   }
 
-  i64 fileoff = 0;
-  for (OutputSection *sec : sections) {
-    sec->update_hdr(ctx);
-    fileoff = align_to(fileoff, 1 << sec->hdr.p2align);
-    sec->hdr.offset = fileoff;
-    fileoff += sec->hdr.size;
+  i64 offset = 0;
+
+  auto set_offset = [&](OutputSection &sec) {
+    sec.update_hdr(ctx);
+    offset = align_to(offset, 1 << sec.hdr.p2align);
+    sec.hdr.addr = offset;
+    sec.hdr.offset = offset;
+    offset += sec.hdr.size;
+  };
+
+  if (this == ctx.segments[0]) {
+    // In the __TEXT segment, any extra space is put after the load commands
+    // so that a post-processing tool can add more load commands there.
+    set_offset(*sections[0]);
+    set_offset(*sections[1]);
+    offset += compute_text_padding_size(sections);
+    for (OutputSection *sec : std::span(sections).subspan(2))
+      set_offset(*sec);
+  } else {
+    // In other sections, any extra space is put at end of segment.
+    for (OutputSection *sec : sections)
+      set_offset(*sec);
   }
 
-  fileoff = align_to(fileoff, PAGE_SIZE);
-  cmd.vmsize = fileoff;
-  cmd.filesize = fileoff;
+  offset = align_to(offset, PAGE_SIZE);
+  cmd.vmsize = offset;
+  cmd.filesize = offset;
 }
 
 void OutputSegment::copy_buf(Context &ctx) {

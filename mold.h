@@ -134,6 +134,11 @@ inline u64 align_to(u64 val, u64 align) {
   return (val + align - 1) & ~(align - 1);
 }
 
+inline u64 align_down(u64 val, u64 align) {
+  assert(__builtin_popcount(align) == 1);
+  return val & ~(align - 1);
+}
+
 inline u64 next_power_of_two(u64 val) {
   assert(val >> 63 == 0);
   if (val == 0 || val == 1)

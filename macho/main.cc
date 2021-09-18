@@ -83,12 +83,12 @@ i64 assign_offsets(Context &ctx) {
     assert(seg->cmd.filesize % PAGE_SIZE == 0);
     assert(seg->cmd.vmsize % PAGE_SIZE == 0);
 
-    seg->cmd.fileoff = fileoff;
-    seg->cmd.vmaddr = vmaddr;
-
     seg->update_hdr(ctx);
 
+    seg->cmd.fileoff = fileoff;
     fileoff += seg->cmd.filesize;
+
+    seg->cmd.vmaddr = vmaddr;
     vmaddr += seg->cmd.vmsize;
   }
 
