@@ -359,6 +359,7 @@ StubsSection::StubsSection(OutputSegment &parent) : OutputSection(parent) {
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
   hdr.size = contents.size();
+  hdr.reserved2 = 6;
 }
 
 void StubsSection::copy_buf(Context &ctx) {
@@ -405,6 +406,7 @@ GotSection::GotSection(OutputSegment &parent)
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
   hdr.size = 8;
+  hdr.reserved1 = 1;
 }
 
 LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
@@ -413,6 +415,7 @@ LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
   hdr.size = contents.size();
+  hdr.reserved1 = 2;
 }
 
 void LaSymbolPtrSection::copy_buf(Context &ctx) {

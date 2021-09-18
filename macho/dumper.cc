@@ -185,10 +185,10 @@ void dump_file(std::string path) {
                   << "\n  attr: 0x" << std::hex << sec[j].attr
                   << "\n";
 
-//        if (sec[j].size) {
-//          std::cout << "  contents: ";
-//          print_bytes(buf + sec[j].offset, sec[j].size);
-//        }
+        if (sec[j].size) {
+          std::cout << "  contents: ";
+          print_bytes(buf + sec[j].offset, sec[j].size);
+        }
 
         if (sec[j].reloff) {
           MachRel *rel = (MachRel *)(buf + sec[j].reloff);
