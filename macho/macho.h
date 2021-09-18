@@ -411,6 +411,13 @@ struct BuildVersionCommand {
   u32 ntools;
 };
 
+struct EntryPointCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u64 entryoff;
+  u64 stacksize;
+};
+
 struct SourceVersionCommand {
   u32 cmd;
   u32 cmdsize;

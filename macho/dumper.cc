@@ -269,10 +269,10 @@ void dump_file(std::string path) {
     }
     case LC_MAIN: {
       std::cout << "LC_MAIN\n";
-      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
+      EntryPointCommand &cmd = *(EntryPointCommand *)&lc;
       std::cout << " cmdsize: 0x" << cmd.cmdsize
-                << "\n dataoff: 0x" << cmd.dataoff
-                << "\n datasize: 0x" << cmd.datasize
+                << "\n entryoff: 0x" << cmd.entryoff
+                << "\n stacksize: 0x" << cmd.stacksize
                 << "\n";
       break;
     }

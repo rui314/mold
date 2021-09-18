@@ -99,11 +99,11 @@ static SourceVersionCommand create_source_version_cmd(Context &ctx) {
   return cmd;
 }
 
-static LinkEditDataCommand create_main_cmd(Context &ctx) {
-  LinkEditDataCommand cmd = {};
+static EntryPointCommand create_main_cmd(Context &ctx) {
+  EntryPointCommand cmd = {};
   cmd.cmd = LC_MAIN;
   cmd.cmdsize = sizeof(cmd);
-  cmd.dataoff = 0x3f70;
+  cmd.entryoff = 0x3f70;
   return cmd;
 }
 
