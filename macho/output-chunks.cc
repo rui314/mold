@@ -236,6 +236,7 @@ OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
   cmd.flags = flags;
 }
 
+// Compute the size of the padding after the load commands.
 static i64 compute_text_padding_size(std::span<OutputSection *> sections) {
   u64 addr = 0;
 
