@@ -294,10 +294,9 @@ void OutputSegment::update_hdr(Context &ctx) {
       set_offset(*sec);
   }
 
-  if (this != ctx.segments.back())
-    offset = align_to(offset, PAGE_SIZE);
-  cmd.vmsize = offset;
-  cmd.filesize = offset;
+  cmd.vmsize = align_to(offset, PAGE_SIZE);
+  cmd.filesize =
+    (this == ctx.segments.back()) ? offset : align_to(offset, PAGE_SIZE);
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
@@ -344,7 +343,7 @@ OutputSection::OutputSection(OutputSegment &parent)
 
 TextSection::TextSection(OutputSegment &parent) : OutputSection(parent) {
   strcpy(hdr.sectname, "__text");
-  hdr.p2align = __builtin_ctz(8);
+  hdr.p2align = __builtin_ctz(16);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
   hdr.size = contents.size();
 }
@@ -381,7 +380,6 @@ void StubHelperSection::copy_buf(Context &ctx) {
 CstringSection::CstringSection(OutputSegment &parent)
   : OutputSection(parent) {
   strcpy(hdr.sectname, "__cstring");
-  hdr.p2align = __builtin_ctz(4);
   hdr.type = S_CSTRING_LITERALS;
   hdr.size = sizeof(contents);
 }
@@ -425,7 +423,6 @@ DataSection::DataSection(OutputSegment &parent)
   : OutputSection(parent) {
   strcpy(hdr.sectname, "__data");
   hdr.p2align = __builtin_ctz(8);
-  hdr.type = S_LAZY_SYMBOL_POINTERS;
 
   contents.resize(8);
   hdr.size = contents.size();
