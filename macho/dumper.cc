@@ -59,6 +59,8 @@ void dump_file(std::string path) {
   u8 *p = buf + sizeof(MachHeader);
 
   for (i64 i = 0; i < hdr.ncmds; i++) {
+    std::cout << "fileoff: 0x" << std::hex << (p - buf) << "\n";
+
     LoadCommand &lc = *(LoadCommand *)p;
     p += lc.cmdsize;
 
@@ -268,7 +270,8 @@ void dump_file(std::string path) {
     case LC_MAIN: {
       std::cout << "LC_MAIN\n";
       LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
-      std::cout << " dataoff: 0x" << cmd.dataoff
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
                 << "\n";
       break;
@@ -292,11 +295,19 @@ void dump_file(std::string path) {
     case LC_BUILD_VERSION: {
       std::cout << "LC_BUILD_VERSION\n";
       BuildVersionCommand &cmd = *(BuildVersionCommand *)&lc;
-      std::cout << " platform: 0x" << cmd.platform
+      std::cout << " cmdsize: 0x" << cmd.cmdsize
+                << "\n platform: 0x" << cmd.platform
                 << "\n minos: 0x" << cmd.minos
                 << "\n sdk: 0x" << cmd.sdk
                 << "\n ntools: 0x" << cmd.ntools
                 << "\n";
+
+      BuildToolVersion *tools =
+        (BuildToolVersion *)((u8 *)&lc + sizeof(BuildVersionCommand));
+      for (i64 i = 0; i < cmd.ntools; i++)
+        std::cout << "  tool: 0x" << tools[i].tool
+                  << "\n  version: 0x" << tools[i].version
+                  << "\n";
       break;
     }
     case LC_VERSION_MIN_MACOSX: {

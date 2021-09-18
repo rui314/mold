@@ -81,14 +81,14 @@ static UUIDCommand create_uuid_cmd(Context &ctx) {
   return cmd;
 }
 
-static BuildVersionCommand create_build_version_cmd(Context &ctx) {
+static BuildVersionCommand create_build_version_cmd(Context &ctx, i64 ntools) {
   BuildVersionCommand cmd = {};
   cmd.cmd = LC_BUILD_VERSION;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = sizeof(cmd) + sizeof(BuildToolVersion);
   cmd.platform = PLATFORM_MACOS;
   cmd.minos = 0xb0000;
   cmd.sdk = 0xb0300;
-  cmd.ntools = TOOL_CLANG;
+  cmd.ntools = ntools;
   return cmd;
 }
 
@@ -140,11 +140,19 @@ static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
   i64 ncmds = 0;
+  i64 last_off = 0;
 
   auto add = [&](auto x) {
+    if (alignof(decltype(x)) == 8 && vec.size() % 8) {
+      LoadCommand &cmd = *(LoadCommand *)(vec.data() + last_off);
+      cmd.cmdsize += 4;
+      vec.resize(vec.size() + 4);
+    }
+
     i64 off = vec.size();
     vec.resize(vec.size() + sizeof(x));
     memcpy(vec.data() + off, &x, sizeof(x));
+    last_off = off;
   };
 
   // Add a PAGE_ZERO command
@@ -188,7 +196,8 @@ create_load_commands(Context &ctx) {
   ncmds++;
 
   // LC_BUILD_VERSION
-  add(create_build_version_cmd(ctx));
+  add(create_build_version_cmd(ctx, 1));
+  add(BuildToolVersion{3, 0x28a0900});
   ncmds++;
 
   // LC_SOURCE_VERSION
@@ -288,7 +297,8 @@ void OutputSegment::update_hdr(Context &ctx) {
       set_offset(*sec);
   }
 
-  offset = align_to(offset, PAGE_SIZE);
+  if (this != ctx.segments.back())
+    offset = align_to(offset, PAGE_SIZE);
   cmd.vmsize = offset;
   cmd.filesize = offset;
 }

@@ -397,6 +397,11 @@ struct LinkEditDataCommand {
   u32 datasize;
 };
 
+struct BuildToolVersion {
+  u32 tool;
+  u32 version;
+};
+
 struct BuildVersionCommand {
   u32 cmd;
   u32 cmdsize;
@@ -409,7 +414,7 @@ struct BuildVersionCommand {
 struct SourceVersionCommand {
   u32 cmd;
   u32 cmdsize;
-  u32 version;
+  u64 version;
 };
 
 struct DataInCodeEntry {
