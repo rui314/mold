@@ -269,7 +269,7 @@ void OutputSegment::update_hdr(Context &ctx) {
   auto set_offset = [&](OutputSection &sec) {
     sec.update_hdr(ctx);
     offset = align_to(offset, 1 << sec.hdr.p2align);
-    sec.hdr.addr = offset;
+    sec.hdr.addr = cmd.vmaddr + offset;
     sec.hdr.offset = offset;
     offset += sec.hdr.size;
   };
