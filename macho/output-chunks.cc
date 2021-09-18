@@ -23,16 +23,16 @@ static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   i64 off = ctx.linkedit_seg->cmd.fileoff;
 
   cmd.rebase_off = off + ctx.rebase->hdr.offset;
-  cmd.rebase_size = ctx.rebase->contents.size();
+  cmd.rebase_size = ctx.rebase->hdr.size;
 
-  cmd.bind_size = off + ctx.bind->hdr.offset;
-  off += ctx.bind->contents.size();
+  cmd.bind_off = off + ctx.bind->hdr.offset;
+  cmd.bind_size = ctx.bind->hdr.size;
 
-  cmd.lazy_bind_size = off + ctx.lazy_bind->hdr.offset;
-  off += ctx.lazy_bind->contents.size();
+  cmd.lazy_bind_off = off + ctx.lazy_bind->hdr.offset;
+  cmd.lazy_bind_size = ctx.lazy_bind->hdr.size;
 
-  cmd.export_size = ctx.export_->hdr.offset;
-  off += ctx.export_->contents.size();
+  cmd.export_off = off += ctx.export_->hdr.offset;
+  cmd.export_size = ctx.export_->hdr.size;
   return cmd;
 }
 
@@ -305,15 +305,6 @@ TextSection::TextSection(OutputSegment &parent) : OutputSection(parent) {
   strcpy(hdr.sectname, "__text");
   hdr.p2align = __builtin_ctz(8);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-
-  contents = {
-    0x55, 0x48, 0x89, 0xe5, 0x48, 0x8d, 0x3d, 0x43, 0x00, 0x00, 0x00,
-    0xb0, 0x00, 0xe8, 0x1c, 0x00, 0x00, 0x00, 0x5d, 0xc3, 0x66, 0x2e,
-    0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x90, 0x55,
-    0x48, 0x89, 0xe5, 0xe8, 0xd7, 0xff, 0xff, 0xff, 0x31, 0xc0, 0x5d,
-    0xc3,
-  };
-
   hdr.size = contents.size();
 }
 
@@ -327,7 +318,6 @@ StubsSection::StubsSection(OutputSegment &parent) : OutputSection(parent) {
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  contents = {0x40, 0x7c, 0x25, 0xff, 0x00, 0x00};
   hdr.size = contents.size();
 }
 
@@ -340,14 +330,6 @@ StubHelperSection::StubHelperSection(OutputSegment &parent)
   strcpy(hdr.sectname, "__stub_helper");
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-
-  contents = {
-    0x7d, 0x1d, 0x8d, 0x4c, 0x41, 0x00, 0x00, 0x40,
-    0x6d, 0x25, 0xff, 0x53, 0x90, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x68, 0xff, 0xe6, 0xe9, 0x00,
-    0xff, 0xff,
-  };
-
   hdr.size = contents.size();
 }
 
@@ -367,6 +349,17 @@ void CstringSection::copy_buf(Context &ctx) {
   memcpy(ctx.buf + parent.cmd.fileoff + hdr.offset, contents, sizeof(contents));
 }
 
+UnwindInfoSection::UnwindInfoSection(OutputSegment &parent)
+  : OutputSection(parent) {
+  strcpy(hdr.sectname, "__unwind_info");
+  hdr.p2align = __builtin_ctz(4);
+  hdr.size = sizeof(contents);
+}
+
+void UnwindInfoSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+}
+
 GotSection::GotSection(OutputSegment &parent)
   : OutputSection(parent) {
   strcpy(hdr.sectname, "__cstring");
@@ -380,7 +373,6 @@ LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
   strcpy(hdr.sectname, "__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
-  contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
   hdr.size = contents.size();
 }
 

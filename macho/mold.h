@@ -203,7 +203,13 @@ public:
   TextSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents;
+  std::vector<u8> contents = {
+    0x55, 0x48, 0x89, 0xe5, 0x48, 0x8d, 0x3d, 0x43, 0x00, 0x00, 0x00,
+    0xb0, 0x00, 0xe8, 0x1c, 0x00, 0x00, 0x00, 0x5d, 0xc3, 0x66, 0x2e,
+    0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x90, 0x55,
+    0x48, 0x89, 0xe5, 0xe8, 0xd7, 0xff, 0xff, 0xff, 0x31, 0xc0, 0x5d,
+    0xc3,
+  };
 };
 
 class StubsSection : public OutputSection {
@@ -211,7 +217,7 @@ public:
   StubsSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents;
+  std::vector<u8> contents = {0x40, 0x7c, 0x25, 0xff, 0x00, 0x00};
 };
 
 class StubHelperSection : public OutputSection {
@@ -219,7 +225,11 @@ public:
   StubHelperSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents;
+  std::vector<u8> contents = {
+    0x7d, 0x1d, 0x8d, 0x4c, 0x41, 0x00, 0x00, 0x40, 0x6d, 0x25, 0xff, 0x53,
+    0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x68, 0xff, 0xe6, 0xe9, 0x00,
+    0xff, 0xff,
+  };
 };
 
 class CstringSection : public OutputSection {
@@ -228,6 +238,14 @@ public:
   void copy_buf(Context &ctx) override;
 
   static constexpr char contents[] = "Hello world\n";
+};
+
+class UnwindInfoSection : public OutputSection {
+public:
+  UnwindInfoSection(OutputSegment &parent);
+  void copy_buf(Context &ctx) override;
+
+  std::vector<u8> contents;
 };
 
 class GotSection : public OutputSection {
@@ -242,7 +260,7 @@ public:
   LaSymbolPtrSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents;
+  std::vector<u8> contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
 };
 
 class DataSection : public OutputSection {

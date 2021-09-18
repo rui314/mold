@@ -40,6 +40,7 @@ void create_synthetic_sections(Context &ctx) {
   ctx.text_seg->sections.push_back(new StubsSection(*ctx.text_seg));
   ctx.text_seg->sections.push_back(new StubHelperSection(*ctx.text_seg));
   ctx.text_seg->sections.push_back(new CstringSection(*ctx.text_seg));
+  ctx.text_seg->sections.push_back(new UnwindInfoSection(*ctx.text_seg));
 
   ctx.data_const_seg->sections.push_back(new GotSection(*ctx.data_const_seg));
 
