@@ -3,7 +3,7 @@
 namespace mold::macho {
 
 void OutputMachHeader::copy_buf(Context &ctx) {
-  MachHeader &mhdr = *(MachHeader *)(ctx.buf + parent.cmd.fileoff + hdr.offset);
+  MachHeader &mhdr = *(MachHeader *)(ctx.buf + hdr.offset);
   memset(&mhdr, 0, sizeof(mhdr));
 
   mhdr.magic = 0xfeedfacf;
@@ -20,18 +20,16 @@ static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   cmd.cmd = LC_DYLD_INFO_ONLY;
   cmd.cmdsize = sizeof(cmd);
 
-  i64 off = ctx.linkedit_seg->cmd.fileoff;
-
-  cmd.rebase_off = off + ctx.rebase->hdr.offset;
+  cmd.rebase_off = ctx.rebase->hdr.offset;
   cmd.rebase_size = ctx.rebase->hdr.size;
 
-  cmd.bind_off = off + ctx.bind->hdr.offset;
+  cmd.bind_off = ctx.bind->hdr.offset;
   cmd.bind_size = ctx.bind->hdr.size;
 
-  cmd.lazy_bind_off = off + ctx.lazy_bind->hdr.offset;
+  cmd.lazy_bind_off = ctx.lazy_bind->hdr.offset;
   cmd.lazy_bind_size = ctx.lazy_bind->hdr.size;
 
-  cmd.export_off = off += ctx.export_->hdr.offset;
+  cmd.export_off = ctx.export_->hdr.offset;
   cmd.export_size = ctx.export_->hdr.size;
   return cmd;
 }
@@ -40,9 +38,9 @@ static SymtabCommand create_symtab_cmd(Context &ctx) {
   SymtabCommand cmd = {};
   cmd.cmd = LC_SYMTAB;
   cmd.cmdsize = sizeof(cmd);
-  cmd.symoff = ctx.linkedit_seg->cmd.fileoff + ctx.symtab->hdr.offset;
+  cmd.symoff = ctx.symtab->hdr.offset;
   cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
-  cmd.stroff = ctx.linkedit_seg->cmd.fileoff + ctx.strtab->hdr.offset;
+  cmd.stroff = ctx.strtab->hdr.offset;
   cmd.strsize = ctx.strtab->contents.size();
   return cmd;
 }
@@ -56,8 +54,7 @@ static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
   cmd.nextdefsym = 3;
   cmd.iundefsym = 4;
   cmd.nundefsym = 2;
-  cmd.indirectsymoff =
-    ctx.linkedit_seg->cmd.fileoff + ctx.indir_symtab->hdr.offset;
+  cmd.indirectsymoff = ctx.indir_symtab->hdr.offset;
   cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
   return cmd;
 }
@@ -123,7 +120,7 @@ static LinkEditDataCommand create_function_starts_cmd(Context &ctx) {
   LinkEditDataCommand cmd = {};
   cmd.cmd = LC_FUNCTION_STARTS;
   cmd.cmdsize = sizeof(cmd);
-  cmd.dataoff = ctx.linkedit_seg->cmd.fileoff + ctx.function_starts->hdr.offset;
+  cmd.dataoff = ctx.function_starts->hdr.offset;
   cmd.datasize = ctx.function_starts->hdr.size;
   return cmd;
 }
@@ -232,7 +229,7 @@ void OutputLoadCommand::update_hdr(Context &ctx) {
 void OutputLoadCommand::copy_buf(Context &ctx) {
   std::vector<u8> contents;
   std::tie(contents, std::ignore) = create_load_commands(ctx);
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
@@ -279,7 +276,7 @@ void OutputSegment::update_hdr(Context &ctx) {
     sec.update_hdr(ctx);
     offset = align_to(offset, 1 << sec.hdr.p2align);
     sec.hdr.addr = cmd.vmaddr + offset;
-    sec.hdr.offset = offset;
+    sec.hdr.offset = cmd.fileoff + offset;
     offset += sec.hdr.size;
   };
 
@@ -309,35 +306,35 @@ void OutputSegment::copy_buf(Context &ctx) {
 }
 
 void OutputRebaseSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputBindSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputLazyBindSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputExportSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputFunctionStartsSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputStrtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 OutputSection::OutputSection(OutputSegment &parent)
@@ -354,7 +351,7 @@ TextSection::TextSection(OutputSegment &parent) : OutputSection(parent) {
 
 
 void TextSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 StubsSection::StubsSection(OutputSegment &parent) : OutputSection(parent) {
@@ -366,7 +363,7 @@ StubsSection::StubsSection(OutputSegment &parent) : OutputSection(parent) {
 }
 
 void StubsSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 StubHelperSection::StubHelperSection(OutputSegment &parent)
@@ -378,7 +375,7 @@ StubHelperSection::StubHelperSection(OutputSegment &parent)
 }
 
 void StubHelperSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 CstringSection::CstringSection(OutputSegment &parent)
@@ -390,7 +387,7 @@ CstringSection::CstringSection(OutputSegment &parent)
 }
 
 void CstringSection::copy_buf(Context &ctx) {
-  memcpy(ctx.buf + parent.cmd.fileoff + hdr.offset, contents, sizeof(contents));
+  memcpy(ctx.buf + hdr.offset, contents, sizeof(contents));
 }
 
 UnwindInfoSection::UnwindInfoSection(OutputSegment &parent)
@@ -401,12 +398,12 @@ UnwindInfoSection::UnwindInfoSection(OutputSegment &parent)
 }
 
 void UnwindInfoSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 GotSection::GotSection(OutputSegment &parent)
   : OutputSection(parent) {
-  strcpy(hdr.sectname, "__cstring");
+  strcpy(hdr.sectname, "__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
   hdr.size = 8;
@@ -421,7 +418,7 @@ LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
 }
 
 void LaSymbolPtrSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 DataSection::DataSection(OutputSegment &parent)
@@ -435,7 +432,7 @@ DataSection::DataSection(OutputSegment &parent)
 }
 
 void DataSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + parent.cmd.fileoff + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 } // namespace mold::macho
