@@ -119,6 +119,23 @@ static DylibCommand create_load_dylib_cmd(Context &ctx) {
   return cmd;
 }
 
+static LinkEditDataCommand create_function_starts_cmd(Context &ctx) {
+  LinkEditDataCommand cmd = {};
+  cmd.cmd = LC_FUNCTION_STARTS;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.dataoff = ctx.linkedit_seg->cmd.fileoff + ctx.function_starts->hdr.offset;
+  cmd.datasize = ctx.function_starts->hdr.size;
+  return cmd;
+}
+
+static LinkEditDataCommand create_data_in_code_cmd(Context &ctx) {
+  LinkEditDataCommand cmd = {};
+  cmd.cmd = LC_DATA_IN_CODE;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.dataoff = 0xc070;
+  return cmd;
+}
+
 static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
@@ -184,6 +201,14 @@ create_load_commands(Context &ctx) {
 
   // LC_LOAD_DYLIB
   add(create_load_dylib_cmd(ctx));
+  ncmds++;
+
+  // LC_FUNCTION_STARTS
+  add(create_function_starts_cmd(ctx));
+  ncmds++;
+
+  // LC_DATA_IN_CODE
+  add(create_data_in_code_cmd(ctx));
   ncmds++;
 
   return {vec, ncmds};
