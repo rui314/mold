@@ -96,7 +96,6 @@ static SourceVersionCommand create_source_version_cmd(Context &ctx) {
   SourceVersionCommand cmd = {};
   cmd.cmd = LC_SOURCE_VERSION;
   cmd.cmdsize = sizeof(cmd);
-  cmd.version = 0;
   return cmd;
 }
 
@@ -105,6 +104,18 @@ static LinkEditDataCommand create_main_cmd(Context &ctx) {
   cmd.cmd = LC_MAIN;
   cmd.cmdsize = sizeof(cmd);
   cmd.dataoff = 0x3f70;
+  return cmd;
+}
+
+static DylibCommand create_load_dylib_cmd(Context &ctx) {
+  DylibCommand cmd = {};
+  cmd.cmd = LC_LOAD_DYLIB;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.nameoff = offsetof(DylibCommand, name);
+  cmd.timestamp = 2;
+  cmd.current_version = 0x50c6405;
+  cmd.compatibility_version = 0x10000;
+  strcpy(cmd.name, "/usr/lib/libSystem.B.dylib");
   return cmd;
 }
 
@@ -169,6 +180,10 @@ create_load_commands(Context &ctx) {
 
   // LC_MAIN
   add(create_main_cmd(ctx));
+  ncmds++;
+
+  // LC_LOAD_DYLIB
+  add(create_load_dylib_cmd(ctx));
   ncmds++;
 
   return {vec, ncmds};

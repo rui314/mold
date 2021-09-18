@@ -69,7 +69,7 @@ void dump_file(std::string path) {
                 << "\n timestamp: 0x" << cmd.timestamp
                 << "\n current_version: 0x" << cmd.current_version
                 << "\n compatibility_version: 0x" << cmd.compatibility_version
-                << "\n data: " << (char *)((char *)&cmd + sizeof(cmd))
+                << "\n data: " << cmd.name
                 << "\n";
     };
 

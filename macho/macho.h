@@ -320,6 +320,7 @@ struct DylibCommand {
   u32 timestamp;
   u32 current_version;
   u32 compatibility_version;
+  char name[32]; // this field does not originally exist
 };
 
 struct DylinkerCommand {
