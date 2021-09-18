@@ -204,9 +204,13 @@ void dump_file(std::string path) {
       }
       break;
     }
-    case LC_UUID:
-      std::cout << "LC_UUID\n cmdsize: " << lc.cmdsize << "\n";
+    case LC_UUID: {
+      std::cout << "LC_UUID\n";
+      UUIDCommand &cmd = *(UUIDCommand *)&lc;
+      std::cout << " data: ";
+      print_bytes(cmd.uuid, sizeof(cmd.uuid));
       break;
+    }
     case LC_DYLD_INFO_ONLY: {
       std::cout << "LC_DYLD_INFO_ONLY\n";
       DyldInfoCommand &cmd = *(DyldInfoCommand *)&lc;

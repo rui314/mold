@@ -241,6 +241,21 @@ static constexpr u32 REFERENCED_DYNAMICALLY = 0x0010;
 
 static constexpr u32 N_DESC_DISCARDED = 0x8000;
 
+static constexpr u32 PLATFORM_MACOS = 1;
+static constexpr u32 PLATFORM_IOS = 2;
+static constexpr u32 PLATFORM_TVOS = 3;
+static constexpr u32 PLATFORM_WATCHOS = 4;
+static constexpr u32 PLATFORM_BRIDGEOS = 5;
+static constexpr u32 PLATFORM_MACCATALYST = 6;
+static constexpr u32 PLATFORM_IOSSIMULATOR = 7;
+static constexpr u32 PLATFORM_TVOSSIMULATOR = 8;
+static constexpr u32 PLATFORM_WATCHOSSIMULATOR = 9;
+static constexpr u32 PLATFORM_DRIVERKIT = 10;
+
+static constexpr u32 TOOL_CLANG = 1;
+static constexpr u32 TOOL_SWIFT = 2;
+static constexpr u32 TOOL_LD = 3;
+
 static constexpr u32 X86_64_RELOC_UNSIGNED = 0;
 static constexpr u32 X86_64_RELOC_SIGNED = 1;
 static constexpr u32 X86_64_RELOC_BRANCH = 2;
@@ -311,6 +326,7 @@ struct DylinkerCommand {
   u32 cmd;
   u32 cmdsize;
   u32 nameoff;
+  char name[20]; // this field does not originally exist
 };
 
 struct SymtabCommand {
@@ -343,7 +359,7 @@ struct DysymtabCommand {
   u32 nextrel;
   u32 locreloff;
   u32 nlocrel;
-};	
+};
 
 struct VersionMinCommand {
   u32 cmd;
@@ -365,6 +381,12 @@ struct DyldInfoCommand {
   u32 lazy_bind_size;
   u32 export_off;
   u32 export_size;
+};
+
+struct UUIDCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u8 uuid[16];
 };
 
 struct LinkEditDataCommand {

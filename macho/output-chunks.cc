@@ -47,6 +47,59 @@ static SymtabCommand create_symtab_cmd(Context &ctx) {
   return cmd;
 }
 
+static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
+  DysymtabCommand cmd = {};
+  cmd.cmd = LC_DYSYMTAB;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.nlocalsym = 1;
+  cmd.iextdefsym = 1;
+  cmd.nextdefsym = 3;
+  cmd.iundefsym = 4;
+  cmd.nundefsym = 2;
+  cmd.indirectsymoff =
+    ctx.linkedit_seg->cmd.fileoff + ctx.indir_symtab->hdr.offset;
+  cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
+  return cmd;
+}
+
+static DylinkerCommand create_dylinker_cmd(Context &ctx) {
+  DylinkerCommand cmd = {};
+  cmd.cmd = LC_LOAD_DYLINKER;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.nameoff = offsetof(DylinkerCommand, name);
+  strcpy(cmd.name, "/usr/lib/dyld");
+  return cmd;
+}
+
+static UUIDCommand create_uuid_cmd(Context &ctx) {
+  UUIDCommand cmd = {};
+  cmd.cmd = LC_UUID;
+  cmd.cmdsize = sizeof(cmd);
+  memcpy(cmd.uuid,
+         "\x65\x35\x2b\xae\x49\x1d\x34\xa5\xa9\x1d\x85\xfa\x37\x4b\xb9\xb2",
+         16);
+  return cmd;
+}
+
+static BuildVersionCommand create_build_version_cmd(Context &ctx) {
+  BuildVersionCommand cmd = {};
+  cmd.cmd = LC_BUILD_VERSION;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.platform = PLATFORM_MACOS;
+  cmd.minos = 0xb0000;
+  cmd.sdk = 0xb0300;
+  cmd.ntools = TOOL_CLANG;
+  return cmd;
+}
+
+static SourceVersionCommand create_source_version_cmd(Context &ctx) {
+  SourceVersionCommand cmd = {};
+  cmd.cmd = LC_SOURCE_VERSION;
+  cmd.cmdsize = sizeof(cmd);
+  cmd.version = 0;
+  return cmd;
+}
+
 static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
@@ -78,12 +131,32 @@ create_load_commands(Context &ctx) {
         add(sec->hdr);
   }
 
-  // Add a LC_DYLD_INFO_ONLY command
+  // LC_DYLD_INFO_ONLY
   add(create_dyld_info_only_cmd(ctx));
   ncmds++;
 
-  // Add a LC_SYMTAB command
+  // LC_SYMTAB
   add(create_symtab_cmd(ctx));
+  ncmds++;
+
+  // LC_DYSYMTAB
+  add(create_dysymtab_cmd(ctx));
+  ncmds++;
+
+  // LC_LOAD_DYLINKER
+  add(create_dylinker_cmd(ctx));
+  ncmds++;
+
+  // LC_UUID
+  add(create_uuid_cmd(ctx));
+  ncmds++;
+
+  // LC_BUILD_VERSION
+  add(create_build_version_cmd(ctx));
+  ncmds++;
+
+  // LC_SOURCE_VERSION
+  add(create_source_version_cmd(ctx));
   ncmds++;
 
   return {vec, ncmds};
