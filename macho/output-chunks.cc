@@ -255,6 +255,7 @@ void OutputSegment::update_hdr(Context &ctx) {
     fileoff += sec->hdr.size;
   }
 
+  fileoff = align_to(fileoff, PAGE_SIZE);
   cmd.vmsize = fileoff;
   cmd.filesize = fileoff;
 }

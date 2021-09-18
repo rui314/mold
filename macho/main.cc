@@ -73,8 +73,6 @@ void create_synthetic_sections(Context &ctx) {
 }
 
 void compute_seg_sizes(Context &ctx) {
-  for (OutputSegment *seg : ctx.segments)
-    seg->update_hdr(ctx);
 }
 
 i64 assign_offsets(Context &ctx) {
@@ -82,12 +80,15 @@ i64 assign_offsets(Context &ctx) {
   i64 vmaddr = PAGE_ZERO_SIZE;
 
   for (OutputSegment *seg : ctx.segments) {
-    fileoff = align_to(fileoff, PAGE_SIZE);
-    seg->cmd.fileoff = fileoff;
-    fileoff += seg->cmd.filesize;
+    assert(seg->cmd.filesize % PAGE_SIZE == 0);
+    assert(seg->cmd.vmsize % PAGE_SIZE == 0);
 
-    vmaddr = align_to(vmaddr, PAGE_SIZE);
+    seg->cmd.fileoff = fileoff;
     seg->cmd.vmaddr = vmaddr;
+
+    seg->update_hdr(ctx);
+
+    fileoff += seg->cmd.filesize;
     vmaddr += seg->cmd.vmsize;
   }
 
