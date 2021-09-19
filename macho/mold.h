@@ -92,6 +92,7 @@ public:
 
 class BindEncoder {
 public:
+  BindEncoder(bool type_ptr);
   void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
            i64 offset);
   void finish();
@@ -116,17 +117,10 @@ public:
 
 class OutputLazyBindSection : public OutputSection {
 public:
-  OutputLazyBindSection(OutputSegment &parent) : OutputSection(parent) {
-    is_hidden = true;
-    hdr.size = contents.size();
-  }
-
+  OutputLazyBindSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0x73, 0x00, 0x11, 0x40, 0x5f, 0x70, 0x72, 0x69, 0x6e, 0x74, 0x66, 0x00,
-    0x90, 0x00, 0x00, 0x00,
-  };
+  std::vector<u8> contents;
 };
 
 class OutputExportSection : public OutputSection {
