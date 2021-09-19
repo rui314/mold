@@ -462,10 +462,10 @@ i64 ExportEncoder::finish() {
 
   i64 size = set_offset(root, 0);
   for (;;) {
-    i64 size2 = set_offset(root, 0);
-    if (size == size2)
+    i64 sz = set_offset(root, 0);
+    if (size == sz)
       break;
-    size = size2;
+    size = sz;
   }
   return size;
 }
@@ -489,9 +489,10 @@ ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 le
     while (j < entries.size() && c == entries[j].name[len])
       j++;
 
-    TrieNode *child = new TrieNode;
     std::span<Entry> subspan = entries.subspan(i, j - i);
     i64 new_len = common_prefix_len(subspan, len + 1);
+
+    TrieNode *child = new TrieNode;
     child->prefix = entries[i].name.substr(len, new_len - len);
     construct_trie(*child, subspan, new_len);
     parent.children[c].reset(child);
