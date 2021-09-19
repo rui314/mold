@@ -319,7 +319,7 @@ void RebaseEncoder::add(i64 seg_idx, i64 offset) {
   }
 
   // Flush the accumulated base relocations
-  emit_do();
+  flush();
 
   // Advance the cursor
   if (seg_idx != last_seg) {
@@ -342,7 +342,7 @@ void RebaseEncoder::add(i64 seg_idx, i64 offset) {
   times = 1;
 }
 
-void RebaseEncoder::emit_do() {
+void RebaseEncoder::flush() {
   if (times == 0)
     return;
 
@@ -355,11 +355,9 @@ void RebaseEncoder::emit_do() {
   times = 0;
 }
 
-std::vector<u8> &&RebaseEncoder::finish() {
-  emit_do();
+void RebaseEncoder::finish() {
+  flush();
   buf.push_back(REBASE_OPCODE_DONE);
-  buf.resize(align_to(buf.size(), 8));
-  return std::move(buf);
 }
 
 OutputRebaseSection::OutputRebaseSection(OutputSegment &parent)
@@ -368,8 +366,9 @@ OutputRebaseSection::OutputRebaseSection(OutputSegment &parent)
 
   RebaseEncoder enc;
   enc.add(3, 0);
-  contents = enc.finish();
-  hdr.size = contents.size();
+  enc.finish();
+  contents = enc.buf;
+  hdr.size = align_to(contents.size(), 8);
 }
 
 void OutputRebaseSection::copy_buf(Context &ctx) {
