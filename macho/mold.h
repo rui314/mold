@@ -123,6 +123,36 @@ public:
   std::vector<u8> contents;
 };
 
+class ExportEncoder {
+public:
+  void add(std::string_view name, u64 addr, u32 flags);
+  void finish();
+
+  std::vector<u8> contents;
+
+private:
+  struct Entry {
+    std::string_view name;
+    u64 addr;
+    u32 flags;
+  };
+
+  struct TrieNode {
+    std::string_view prefix;
+    bool is_leaf = false;
+    u64 addr = 0;
+    u32 flags = 0;
+    u32 offset = 0;
+    u32 size = UINT32_MAX;
+    std::unique_ptr<TrieNode> children[256] = {};
+  };
+
+  static void construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len);
+  static i64 common_prefix_len(std::span<Entry> entries, i64 len);
+
+  std::vector<Entry> entries;
+};
+
 class OutputExportSection : public OutputSection {
 public:
   OutputExportSection(OutputSegment &parent) : OutputSection(parent) {

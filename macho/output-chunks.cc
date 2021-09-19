@@ -2,123 +2,123 @@
 
 namespace mold::macho {
 
-void OutputMachHeader::copy_buf(Context &ctx) {
-  MachHeader &mhdr = *(MachHeader *)(ctx.buf + hdr.offset);
-  memset(&mhdr, 0, sizeof(mhdr));
+  void OutputMachHeader::copy_buf(Context &ctx) {
+    MachHeader &mhdr = *(MachHeader *)(ctx.buf + hdr.offset);
+    memset(&mhdr, 0, sizeof(mhdr));
 
-  mhdr.magic = 0xfeedfacf;
-  mhdr.cputype = CPU_TYPE_X86_64;
-  mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
-  mhdr.filetype = MH_EXECUTE;
-  mhdr.ncmds = ctx.load_cmd->ncmds;
-  mhdr.sizeofcmds = ctx.load_cmd->hdr.size;
-  mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
-}
+    mhdr.magic = 0xfeedfacf;
+    mhdr.cputype = CPU_TYPE_X86_64;
+    mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+    mhdr.filetype = MH_EXECUTE;
+    mhdr.ncmds = ctx.load_cmd->ncmds;
+    mhdr.sizeofcmds = ctx.load_cmd->hdr.size;
+    mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
+  }
 
-static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
-  DyldInfoCommand cmd = {};
-  cmd.cmd = LC_DYLD_INFO_ONLY;
-  cmd.cmdsize = sizeof(cmd);
+  static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
+    DyldInfoCommand cmd = {};
+    cmd.cmd = LC_DYLD_INFO_ONLY;
+    cmd.cmdsize = sizeof(cmd);
 
-  cmd.rebase_off = ctx.rebase->hdr.offset;
-  cmd.rebase_size = ctx.rebase->hdr.size;
+    cmd.rebase_off = ctx.rebase->hdr.offset;
+    cmd.rebase_size = ctx.rebase->hdr.size;
 
-  cmd.bind_off = ctx.bind->hdr.offset;
-  cmd.bind_size = ctx.bind->hdr.size;
+    cmd.bind_off = ctx.bind->hdr.offset;
+    cmd.bind_size = ctx.bind->hdr.size;
 
-  cmd.lazy_bind_off = ctx.lazy_bind->hdr.offset;
-  cmd.lazy_bind_size = ctx.lazy_bind->hdr.size;
+    cmd.lazy_bind_off = ctx.lazy_bind->hdr.offset;
+    cmd.lazy_bind_size = ctx.lazy_bind->hdr.size;
 
-  cmd.export_off = ctx.export_->hdr.offset;
-  cmd.export_size = ctx.export_->hdr.size;
-  return cmd;
-}
+    cmd.export_off = ctx.export_->hdr.offset;
+    cmd.export_size = ctx.export_->hdr.size;
+    return cmd;
+  }
 
-static SymtabCommand create_symtab_cmd(Context &ctx) {
-  SymtabCommand cmd = {};
-  cmd.cmd = LC_SYMTAB;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.symoff = ctx.symtab->hdr.offset;
-  cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
-  cmd.stroff = ctx.strtab->hdr.offset;
-  cmd.strsize = ctx.strtab->contents.size();
-  return cmd;
-}
+  static SymtabCommand create_symtab_cmd(Context &ctx) {
+    SymtabCommand cmd = {};
+    cmd.cmd = LC_SYMTAB;
+    cmd.cmdsize = sizeof(cmd);
+    cmd.symoff = ctx.symtab->hdr.offset;
+    cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
+    cmd.stroff = ctx.strtab->hdr.offset;
+    cmd.strsize = ctx.strtab->contents.size();
+    return cmd;
+  }
 
-static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
-  DysymtabCommand cmd = {};
-  cmd.cmd = LC_DYSYMTAB;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.nlocalsym = 1;
-  cmd.iextdefsym = 1;
-  cmd.nextdefsym = 3;
-  cmd.iundefsym = 4;
-  cmd.nundefsym = 2;
-  cmd.indirectsymoff = ctx.indir_symtab->hdr.offset;
-  cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
-  return cmd;
-}
+  static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
+    DysymtabCommand cmd = {};
+    cmd.cmd = LC_DYSYMTAB;
+    cmd.cmdsize = sizeof(cmd);
+    cmd.nlocalsym = 1;
+    cmd.iextdefsym = 1;
+    cmd.nextdefsym = 3;
+    cmd.iundefsym = 4;
+    cmd.nundefsym = 2;
+    cmd.indirectsymoff = ctx.indir_symtab->hdr.offset;
+    cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
+    return cmd;
+  }
 
-static DylinkerCommand create_dylinker_cmd(Context &ctx) {
-  DylinkerCommand cmd = {};
-  cmd.cmd = LC_LOAD_DYLINKER;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.nameoff = offsetof(DylinkerCommand, name);
-  strcpy(cmd.name, "/usr/lib/dyld");
-  return cmd;
-}
+  static DylinkerCommand create_dylinker_cmd(Context &ctx) {
+    DylinkerCommand cmd = {};
+    cmd.cmd = LC_LOAD_DYLINKER;
+    cmd.cmdsize = sizeof(cmd);
+    cmd.nameoff = offsetof(DylinkerCommand, name);
+    strcpy(cmd.name, "/usr/lib/dyld");
+    return cmd;
+  }
 
-static UUIDCommand create_uuid_cmd(Context &ctx) {
-  UUIDCommand cmd = {};
-  cmd.cmd = LC_UUID;
-  cmd.cmdsize = sizeof(cmd);
-  memcpy(cmd.uuid,
-         "\x65\x35\x2b\xae\x49\x1d\x34\xa5\xa9\x1d\x85\xfa\x37\x4b\xb9\xb2",
-         16);
-  return cmd;
-}
+  static UUIDCommand create_uuid_cmd(Context &ctx) {
+    UUIDCommand cmd = {};
+    cmd.cmd = LC_UUID;
+    cmd.cmdsize = sizeof(cmd);
+    memcpy(cmd.uuid,
+           "\x65\x35\x2b\xae\x49\x1d\x34\xa5\xa9\x1d\x85\xfa\x37\x4b\xb9\xb2",
+           16);
+    return cmd;
+  }
 
-static BuildVersionCommand create_build_version_cmd(Context &ctx, i64 ntools) {
-  BuildVersionCommand cmd = {};
-  cmd.cmd = LC_BUILD_VERSION;
-  cmd.cmdsize = sizeof(cmd) + sizeof(BuildToolVersion);
-  cmd.platform = PLATFORM_MACOS;
-  cmd.minos = 0xb0000;
-  cmd.sdk = 0xb0300;
-  cmd.ntools = ntools;
-  return cmd;
-}
+  static BuildVersionCommand create_build_version_cmd(Context &ctx, i64 ntools) {
+    BuildVersionCommand cmd = {};
+    cmd.cmd = LC_BUILD_VERSION;
+    cmd.cmdsize = sizeof(cmd) + sizeof(BuildToolVersion);
+    cmd.platform = PLATFORM_MACOS;
+    cmd.minos = 0xb0000;
+    cmd.sdk = 0xb0300;
+    cmd.ntools = ntools;
+    return cmd;
+  }
 
-static SourceVersionCommand create_source_version_cmd(Context &ctx) {
-  SourceVersionCommand cmd = {};
-  cmd.cmd = LC_SOURCE_VERSION;
-  cmd.cmdsize = sizeof(cmd);
-  return cmd;
-}
+  static SourceVersionCommand create_source_version_cmd(Context &ctx) {
+    SourceVersionCommand cmd = {};
+    cmd.cmd = LC_SOURCE_VERSION;
+    cmd.cmdsize = sizeof(cmd);
+    return cmd;
+  }
 
-static EntryPointCommand create_main_cmd(Context &ctx) {
-  EntryPointCommand cmd = {};
-  cmd.cmd = LC_MAIN;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.entryoff = 0x3f70;
-  return cmd;
-}
+  static EntryPointCommand create_main_cmd(Context &ctx) {
+    EntryPointCommand cmd = {};
+    cmd.cmd = LC_MAIN;
+    cmd.cmdsize = sizeof(cmd);
+    cmd.entryoff = 0x3f70;
+    return cmd;
+  }
 
-static DylibCommand create_load_dylib_cmd(Context &ctx) {
-  DylibCommand cmd = {};
-  cmd.cmd = LC_LOAD_DYLIB;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.nameoff = offsetof(DylibCommand, name);
-  cmd.timestamp = 2;
-  cmd.current_version = 0x50c6405;
-  cmd.compatibility_version = 0x10000;
-  strcpy(cmd.name, "/usr/lib/libSystem.B.dylib");
-  return cmd;
-}
+  static DylibCommand create_load_dylib_cmd(Context &ctx) {
+    DylibCommand cmd = {};
+    cmd.cmd = LC_LOAD_DYLIB;
+    cmd.cmdsize = sizeof(cmd);
+    cmd.nameoff = offsetof(DylibCommand, name);
+    cmd.timestamp = 2;
+    cmd.current_version = 0x50c6405;
+    cmd.compatibility_version = 0x10000;
+    strcpy(cmd.name, "/usr/lib/libSystem.B.dylib");
+    return cmd;
+  }
 
-static LinkEditDataCommand create_function_starts_cmd(Context &ctx) {
-  LinkEditDataCommand cmd = {};
-  cmd.cmd = LC_FUNCTION_STARTS;
+  static LinkEditDataCommand create_function_starts_cmd(Context &ctx) {
+    LinkEditDataCommand cmd = {};
+    cmd.cmd = LC_FUNCTION_STARTS;
   cmd.cmdsize = sizeof(cmd);
   cmd.dataoff = ctx.function_starts->hdr.offset;
   cmd.datasize = ctx.function_starts->hdr.size;
@@ -447,6 +447,61 @@ OutputLazyBindSection::OutputLazyBindSection(OutputSegment &parent)
 
 void OutputLazyBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
+}
+
+void ExportEncoder::add(std::string_view name, u64 addr, u32 flags) {
+  entries.push_back({name, addr, flags});
+}
+
+void ExportEncoder::finish() {
+  sort(entries, [](const Entry &a, const Entry &b) {
+    return a.name < b.name;
+  });
+
+  TrieNode root;
+  construct_trie(root, entries, 0);
+}
+
+void
+ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len) {
+  if (entries.empty())
+    return;
+
+  if (entries[0].name.size() == len) {
+    parent.is_leaf = true;
+    parent.addr = entries[0].addr;
+    parent.flags = entries[0].flags;
+    entries = entries.subspan(1);
+  }
+
+  for (i64 i = 0; i < entries.size();) {
+    i64 j = i + 1;
+    u8 c = entries[i].name[len];
+
+    while (j < entries.size() && c == entries[j].name[len])
+      j++;
+
+    TrieNode *child = new TrieNode;
+    std::span<Entry> subspan = entries.subspan(i, j - i);
+    i64 new_len = common_prefix_len(subspan, len + 1);
+    child->prefix = entries[i].name.substr(len, new_len - len);
+    construct_trie(*child, subspan, new_len);
+    parent.children[c].reset(child);
+
+    i = j;
+  }
+}
+
+i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
+  for (;;) {
+    if (entries[0].name.size() == len)
+      return len;
+    u8 c = entries[0].name[len];
+    for (Entry &ent : entries.subspan(1))
+      if (ent.name.size() == len || ent.name[len] != c)
+        return len;
+    len++;
+  }
 }
 
 void OutputExportSection::copy_buf(Context &ctx) {
