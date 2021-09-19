@@ -544,14 +544,14 @@ void ExportEncoder::write_trie(u8 *start) {
 }
 
 void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
-  u8 *buf = start;
+  u8 *buf = start + node.offset;
 
   if (node.is_leaf) {
     buf += write_uleb(buf, uleb_size(node.flags) + uleb_size(node.addr));
     buf += write_uleb(buf, node.flags);
     buf += write_uleb(buf, node.addr);
   } else {
-    *buf++ = 1;
+    *buf++ = 0;
   }
 
   u8 *num_children = buf++;
@@ -573,8 +573,10 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
 OutputExportSection::OutputExportSection(OutputSegment &parent)
   : OutputSection(parent) {
   is_hidden = true;
-  enc.add("__mh_execute_header", 0, 0x100000000);
-  hdr.size = enc.finish();
+  enc.add("__mh_execute_header", 0, 0);
+  enc.add("_hello", 0, 0x3f50);
+  enc.add("_main", 0, 0x3f70);
+  hdr.size = align_to(enc.finish(), 8);
 }
 
 void OutputExportSection::copy_buf(Context &ctx) {
