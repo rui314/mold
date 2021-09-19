@@ -204,6 +204,14 @@ inline void write_vector(u8 *buf, const std::vector<T> &vec) {
   memcpy(buf, vec.data(), vec.size() * sizeof(T));
 }
 
+inline void encode_uleb(std::vector<u8> &vec, u64 val) {
+  do {
+    u8 byte = val & 0x7f;
+    val >>= 7;
+    vec.push_back(val ? (byte | 0x80) : byte);
+  } while (val);
+}
+
 //
 // Concurrent Map
 //

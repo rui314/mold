@@ -304,6 +304,74 @@ void OutputSegment::copy_buf(Context &ctx) {
     sec->copy_buf(ctx);
 }
 
+RebaseEncoder::RebaseEncoder() {
+  buf.push_back(REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER);
+}
+
+void RebaseEncoder::add(i64 seg_idx, i64 offset) {
+  assert(seg_idx < 16);
+
+  // Accumulate consecutive base relocations
+  if (seg_idx == last_seg && offset == last_off + 8) {
+    last_off = offset;
+    times++;
+    return;
+  }
+
+  // Flush the accumulated base relocations
+  emit_do();
+
+  // Advance the cursor
+  if (seg_idx != last_seg) {
+    buf.push_back(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
+    encode_uleb(buf, offset);
+  } else {
+    i64 dist = offset - last_off;
+    assert(dist >= 0);
+
+    if (dist % 8 == 0 && dist < 128) {
+      buf.push_back(REBASE_OPCODE_ADD_ADDR_IMM_SCALED | (dist >> 3));
+    } else {
+      buf.push_back(REBASE_OPCODE_ADD_ADDR_ULEB);
+      encode_uleb(buf, dist);
+    }
+  }
+
+  last_seg = seg_idx;
+  last_off = offset;
+  times = 1;
+}
+
+void RebaseEncoder::emit_do() {
+  if (times == 0)
+    return;
+
+  if (times < 16) {
+    buf.push_back(REBASE_OPCODE_DO_REBASE_IMM_TIMES | times);
+  } else {
+    buf.push_back(REBASE_OPCODE_DO_REBASE_ULEB_TIMES);
+    encode_uleb(buf, times);
+  }
+  times = 0;
+}
+
+std::vector<u8> &&RebaseEncoder::finish() {
+  emit_do();
+  buf.push_back(REBASE_OPCODE_DONE);
+  buf.resize(align_to(buf.size(), 8));
+  return std::move(buf);
+}
+
+OutputRebaseSection::OutputRebaseSection(OutputSegment &parent)
+  : OutputSection(parent) {
+  is_hidden = true;
+
+  RebaseEncoder enc;
+  enc.add(3, 0);
+  contents = enc.finish();
+  hdr.size = contents.size();
+}
+
 void OutputRebaseSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }

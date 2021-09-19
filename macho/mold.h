@@ -67,13 +67,24 @@ private:
   std::vector<u8> contents;
 };
 
+class RebaseEncoder {
+public:
+  RebaseEncoder();
+  void add(i64 seg_idx, i64 offset);
+  std::vector<u8> &&finish();
+
+private:
+  void emit_do();
+
+  std::vector<u8> buf;
+  i64 last_seg = -1;
+  i64 last_off = 0;
+  i64 times = 0;
+};
+
 class OutputRebaseSection : public OutputSection {
 public:
-  OutputRebaseSection(OutputSegment &parent) : OutputSection(parent) {
-    is_hidden = true;
-    hdr.size = contents.size();
-  }
-
+  OutputRebaseSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {0x11, 0x23, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00};
