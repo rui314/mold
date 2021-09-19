@@ -92,7 +92,7 @@ public:
 
 class BindEncoder {
 public:
-  BindEncoder(bool type_ptr);
+  BindEncoder(bool is_lazy);
   void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
            i64 offset);
   void finish();

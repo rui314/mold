@@ -375,8 +375,8 @@ void OutputRebaseSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-BindEncoder::BindEncoder(bool type_ptr) {
-  if (type_ptr)
+BindEncoder::BindEncoder(bool is_lazy) {
+  if (!is_lazy)
     buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
 }
 
@@ -421,7 +421,7 @@ OutputBindSection::OutputBindSection(OutputSegment &parent)
   : OutputSection(parent) {
   is_hidden = true;
 
-  BindEncoder enc(true);
+  BindEncoder enc(false);
   enc.add(1, "dyld_stub_binder", 0, 2, 0);
   enc.finish();
 
@@ -437,7 +437,7 @@ OutputLazyBindSection::OutputLazyBindSection(OutputSegment &parent)
   : OutputSection(parent) {
   is_hidden = true;
 
-  BindEncoder enc(false);
+  BindEncoder enc(true);
   enc.add(1, "_printf", 0, 3, 0);
   enc.finish();
 
