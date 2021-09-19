@@ -375,6 +375,57 @@ void OutputRebaseSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
+void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
+                      i64 seg_idx, i64 offset) {
+  if (last_dylib != dylib_idx) {
+    if (dylib_idx < 16) {
+      buf.push_back(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
+    } else {
+      buf.push_back(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
+      encode_uleb(buf, dylib_idx);
+    }
+  }
+
+  if (last_sym != sym || last_flags != flags) {
+    assert(flags < 16);
+    buf.push_back(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
+    buf.insert(buf.end(), (u8 *)sym.data(), (u8 *)(sym.data() + sym.size()));
+    buf.push_back(0);
+  }
+
+  buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
+
+  if (last_seg != seg_idx || last_off != offset) {
+    assert(seg_idx < 16);
+    buf.push_back(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
+    encode_uleb(buf, offset);
+  }
+
+  buf.push_back(BIND_OPCODE_DO_BIND);
+
+  last_dylib = dylib_idx;
+  last_sym = sym;
+  last_flags = flags;
+  last_seg = seg_idx;
+  last_off = offset;
+}
+
+void BindEncoder::finish() {
+  buf.push_back(BIND_OPCODE_DONE);
+}
+
+OutputBindSection::OutputBindSection(OutputSegment &parent)
+  : OutputSection(parent) {
+  is_hidden = true;
+
+  BindEncoder enc;
+  enc.add(1, "dyld_stub_binder", 0, 2, 0);
+  enc.finish();
+
+  contents = enc.buf;
+  hdr.size = align_to(contents.size(), 8);
+}
+
 void OutputBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }

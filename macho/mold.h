@@ -87,22 +87,31 @@ public:
   OutputRebaseSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {0x11, 0x23, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00};
+  std::vector<u8> contents;
+};
+
+class BindEncoder {
+public:
+  void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
+           i64 offset);
+  void finish();
+
+  std::vector<u8> buf;
+
+private:
+  std::string_view last_sym;
+  i64 last_flags = -1;
+  i64 last_dylib = -1;
+  i64 last_seg = -1;
+  i64 last_off = -1;
 };
 
 class OutputBindSection : public OutputSection {
 public:
-  OutputBindSection(OutputSegment &parent) : OutputSection(parent) {
-    is_hidden = true;
-    hdr.size = contents.size();
-  }
-
+  OutputBindSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0x11, 0x40, 0x64, 0x79, 0x6c, 0x64, 0x5f, 0x73, 0x74, 0x75, 0x62, 0x5f,
-    0x62, 0x69, 0x6e, 0x64, 0x65, 0x72, 0x00, 0x51, 0x72, 0x00, 0x90, 0x00,
-  };
+  std::vector<u8> contents;
 };
 
 class OutputLazyBindSection : public OutputSection {
