@@ -125,23 +125,22 @@ public:
 
 class ExportEncoder {
 public:
-  void add(std::string_view name, u64 addr, u32 flags);
-  void finish();
-
-  std::vector<u8> contents;
+  void add(std::string_view name, u32 flags, u64 addr);
+  i64 finish();
+  void write_trie(u8 *buf);
 
 private:
   struct Entry {
     std::string_view name;
-    u64 addr;
     u32 flags;
+    u64 addr;
   };
 
   struct TrieNode {
     std::string_view prefix;
     bool is_leaf = false;
-    u64 addr = 0;
     u32 flags = 0;
+    u64 addr = 0;
     u32 offset = 0;
     u32 size = UINT32_MAX;
     std::unique_ptr<TrieNode> children[256] = {};
@@ -149,26 +148,20 @@ private:
 
   static void construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len);
   static i64 common_prefix_len(std::span<Entry> entries, i64 len);
+  static i64 set_offset(TrieNode &node, i64 offset);
+  void write_trie(u8 *buf, TrieNode &node);
 
+  TrieNode root;
   std::vector<Entry> entries;
 };
 
 class OutputExportSection : public OutputSection {
 public:
-  OutputExportSection(OutputSegment &parent) : OutputSection(parent) {
-    is_hidden = true;
-    hdr.size = contents.size();
-  }
-
+  OutputExportSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0x00, 0x01, 0x5f, 0x00, 0x05, 0x00, 0x03, 0x5f, 0x6d, 0x68, 0x5f, 0x65,
-    0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65,
-    0x72, 0x00, 0x28, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x2c, 0x6d, 0x61,
-    0x69, 0x6e, 0x00, 0x31, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0xd0, 0x7e,
-    0x00, 0x03, 0x00, 0xf0, 0x7e, 0x00, 0x00, 0x00,
-  };
+private:
+  ExportEncoder enc;
 };
 
 class OutputFunctionStartsSection : public OutputSection {

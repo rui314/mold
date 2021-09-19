@@ -395,7 +395,7 @@ void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
     assert(flags < 16);
     buf.push_back(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
     buf.insert(buf.end(), (u8 *)sym.data(), (u8 *)(sym.data() + sym.size()));
-    buf.push_back(0);
+    buf.push_back('\0');
   }
 
   if (last_seg != seg_idx || last_off != offset) {
@@ -449,17 +449,25 @@ void OutputLazyBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void ExportEncoder::add(std::string_view name, u64 addr, u32 flags) {
-  entries.push_back({name, addr, flags});
+void ExportEncoder::add(std::string_view name, u32 flags, u64 addr) {
+  entries.push_back({name, flags, addr});
 }
 
-void ExportEncoder::finish() {
+i64 ExportEncoder::finish() {
   sort(entries, [](const Entry &a, const Entry &b) {
     return a.name < b.name;
   });
 
-  TrieNode root;
   construct_trie(root, entries, 0);
+
+  i64 size = set_offset(root, 0);
+  for (;;) {
+    i64 size2 = set_offset(root, 0);
+    if (size == size2)
+      break;
+    size = size2;
+  }
+  return size;
 }
 
 void
@@ -469,8 +477,8 @@ ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 le
 
   if (entries[0].name.size() == len) {
     parent.is_leaf = true;
-    parent.addr = entries[0].addr;
     parent.flags = entries[0].flags;
+    parent.addr = entries[0].addr;
     entries = entries.subspan(1);
   }
 
@@ -504,8 +512,73 @@ i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
   }
 }
 
+i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
+  node.offset = offset;
+
+  if (node.is_leaf) {
+    node.size = uleb_size(node.flags) + uleb_size(node.addr);
+    node.size += uleb_size(node.size);
+  } else {
+    node.size = 1;
+  }
+
+  node.size++; // # of children
+
+  for (std::unique_ptr<TrieNode> &child : node.children) {
+    if (child) {
+      // +1 for NUL byte
+      node.size += child->prefix.size() + 1 + uleb_size(child->offset);
+    }
+  }
+
+  offset += node.size;
+
+  for (std::unique_ptr<TrieNode> &child : node.children)
+    if (child)
+      offset = set_offset(*child, offset);
+  return offset;
+}
+
+void ExportEncoder::write_trie(u8 *start) {
+  write_trie(start, root);
+}
+
+void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
+  u8 *buf = start;
+
+  if (node.is_leaf) {
+    buf += write_uleb(buf, uleb_size(node.flags) + uleb_size(node.addr));
+    buf += write_uleb(buf, node.flags);
+    buf += write_uleb(buf, node.addr);
+  } else {
+    *buf++ = 1;
+  }
+
+  u8 *num_children = buf++;
+  *num_children = 0;
+
+  for (std::unique_ptr<TrieNode> &child : node.children) {
+    if (child) {
+      *num_children += 1;
+      buf += write_string(buf, child->prefix);
+      buf += write_uleb(buf, child->offset);
+    }
+  }
+
+  for (std::unique_ptr<TrieNode> &child : node.children)
+    if (child)
+      write_trie(start, *child);
+}
+
+OutputExportSection::OutputExportSection(OutputSegment &parent)
+  : OutputSection(parent) {
+  is_hidden = true;
+  enc.add("__mh_execute_header", 0, 0x100000000);
+  hdr.size = enc.finish();
+}
+
 void OutputExportSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  enc.write_trie(ctx.buf + hdr.offset);
 }
 
 void OutputFunctionStartsSection::copy_buf(Context &ctx) {

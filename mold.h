@@ -194,14 +194,17 @@ inline void write32be(u8 *buf, u32 val) {
   buf[3] = val;
 }
 
-inline void write_string(u8 *buf, std::string_view str) {
+inline i64 write_string(u8 *buf, std::string_view str) {
   memcpy(buf, str.data(), str.size());
   buf[str.size()] = '\0';
+  return str.size() + 1;
 }
 
 template <typename T>
-inline void write_vector(u8 *buf, const std::vector<T> &vec) {
-  memcpy(buf, vec.data(), vec.size() * sizeof(T));
+inline i64 write_vector(u8 *buf, const std::vector<T> &vec) {
+  i64 sz = vec.size() * sizeof(T);
+  memcpy(buf, vec.data(), sz);
+  return sz;
 }
 
 inline void encode_uleb(std::vector<u8> &vec, u64 val) {
@@ -210,6 +213,25 @@ inline void encode_uleb(std::vector<u8> &vec, u64 val) {
     val >>= 7;
     vec.push_back(val ? (byte | 0x80) : byte);
   } while (val);
+}
+
+inline i64 write_uleb(u8 *buf, u64 val) {
+  i64 i = 0;
+  do {
+    u8 byte = val & 0x7f;
+    val >>= 7;
+    buf[i++] = val ? (byte | 0x80) : byte;
+  } while (val);
+  return i;
+}
+
+inline i64 uleb_size(u64 val) {
+  i64 i = 0;
+  do {
+    i++;
+    val >>= 7;
+  } while (val);
+  return i;
 }
 
 //
