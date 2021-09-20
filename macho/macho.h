@@ -320,14 +320,12 @@ struct DylibCommand {
   u32 timestamp;
   u32 current_version;
   u32 compatibility_version;
-  char name[32]; // this field does not originally exist
 };
 
 struct DylinkerCommand {
   u32 cmd;
   u32 cmdsize;
   u32 nameoff;
-  char name[20]; // this field does not originally exist
 };
 
 struct SymtabCommand {

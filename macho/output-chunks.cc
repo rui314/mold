@@ -15,19 +15,23 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
-static SegmentCommand create_page_zero_cmd(Context &ctx) {
-  SegmentCommand cmd = {};
+static std::vector<u8> create_page_zero_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(SegmentCommand));
+  SegmentCommand &cmd = *(SegmentCommand *)buf.data();
+
   cmd.cmd = LC_SEGMENT_64;
-  cmd.cmdsize = sizeof(SegmentCommand);
+  cmd.cmdsize = buf.size();
   strcpy(cmd.segname, "__PAGEZERO");
   cmd.vmsize = PAGE_ZERO_SIZE;
-  return cmd;
+  return buf;
 }
 
-static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
-  DyldInfoCommand cmd = {};
+static std::vector<u8> create_dyld_info_only_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(DyldInfoCommand));
+  DyldInfoCommand &cmd = *(DyldInfoCommand *)buf.data();
+
   cmd.cmd = LC_DYLD_INFO_ONLY;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
 
   cmd.rebase_off = ctx.rebase->hdr.offset;
   cmd.rebase_size = ctx.rebase->hdr.size;
@@ -40,24 +44,28 @@ static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
 
   cmd.export_off = ctx.export_->hdr.offset;
   cmd.export_size = ctx.export_->hdr.size;
-  return cmd;
+  return buf;
 }
 
-static SymtabCommand create_symtab_cmd(Context &ctx) {
-  SymtabCommand cmd = {};
+static std::vector<u8> create_symtab_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(SymtabCommand));
+  SymtabCommand &cmd = *(SymtabCommand *)buf.data();
+
   cmd.cmd = LC_SYMTAB;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
   cmd.symoff = ctx.symtab->hdr.offset;
   cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
   cmd.stroff = ctx.strtab->hdr.offset;
   cmd.strsize = ctx.strtab->contents.size();
-  return cmd;
+  return buf;
 }
 
-static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
-  DysymtabCommand cmd = {};
+static std::vector<u8> create_dysymtab_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(DysymtabCommand));
+  DysymtabCommand &cmd = *(DysymtabCommand *)buf.data();
+
   cmd.cmd = LC_DYSYMTAB;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
   cmd.nlocalsym = 1;
   cmd.iextdefsym = 1;
   cmd.nextdefsym = 3;
@@ -65,137 +73,146 @@ static DysymtabCommand create_dysymtab_cmd(Context &ctx) {
   cmd.nundefsym = 2;
   cmd.indirectsymoff = ctx.indir_symtab->hdr.offset;
   cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
-  return cmd;
+  return buf;
 }
 
-static DylinkerCommand create_dylinker_cmd(Context &ctx) {
-  DylinkerCommand cmd = {};
+static std::vector<u8> create_dylinker_cmd(Context &ctx) {
+  static constexpr char path[] = "/usr/lib/dyld";
+
+  std::vector<u8> buf(align_to(sizeof(DylinkerCommand) + sizeof(path), 8));
+  DylinkerCommand &cmd = *(DylinkerCommand *)buf.data();
+
   cmd.cmd = LC_LOAD_DYLINKER;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.nameoff = offsetof(DylinkerCommand, name);
-  strcpy(cmd.name, "/usr/lib/dyld");
-  return cmd;
+  cmd.cmdsize = buf.size();
+  cmd.nameoff = sizeof(cmd);
+  memcpy(buf.data() + sizeof(cmd), path, sizeof(path));
+  return buf;
 }
 
-static UUIDCommand create_uuid_cmd(Context &ctx) {
-  UUIDCommand cmd = {};
+static std::vector<u8> create_uuid_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(UUIDCommand));
+  UUIDCommand &cmd = *(UUIDCommand *)buf.data();
+
   cmd.cmd = LC_UUID;
-  cmd.cmdsize = sizeof(cmd);
-  memcpy(cmd.uuid,
-         "\x65\x35\x2b\xae\x49\x1d\x34\xa5\xa9\x1d\x85\xfa\x37\x4b\xb9\xb2",
-         16);
-  return cmd;
+  cmd.cmdsize = buf.size();
+  return buf;
 }
 
-static BuildVersionCommand create_build_version_cmd(Context &ctx, i64 ntools) {
-  BuildVersionCommand cmd = {};
+static std::vector<u8> create_build_version_cmd(Context &ctx, i64 ntools) {
+  std::vector<u8> buf(sizeof(BuildVersionCommand) + sizeof(BuildToolVersion));
+  BuildVersionCommand &cmd = *(BuildVersionCommand *)buf.data();
+
   cmd.cmd = LC_BUILD_VERSION;
-  cmd.cmdsize = sizeof(cmd) + sizeof(BuildToolVersion);
+  cmd.cmdsize = buf.size();
   cmd.platform = PLATFORM_MACOS;
   cmd.minos = 0xb0000;
   cmd.sdk = 0xb0300;
   cmd.ntools = ntools;
-  return cmd;
+
+  BuildToolVersion &tool = *(BuildToolVersion *)(buf.data() + sizeof(cmd));
+  tool.tool = 3;
+  tool.version = 0x28a0900;
+  return buf;
 }
 
-static SourceVersionCommand create_source_version_cmd(Context &ctx) {
-  SourceVersionCommand cmd = {};
+static std::vector<u8> create_source_version_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(SourceVersionCommand));
+  SourceVersionCommand &cmd = *(SourceVersionCommand *)buf.data();
+
   cmd.cmd = LC_SOURCE_VERSION;
-  cmd.cmdsize = sizeof(cmd);
-  return cmd;
+  cmd.cmdsize = buf.size();
+  return buf;
 }
 
-static EntryPointCommand create_main_cmd(Context &ctx) {
-  EntryPointCommand cmd = {};
+static std::vector<u8> create_main_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(EntryPointCommand));
+  EntryPointCommand &cmd = *(EntryPointCommand *)buf.data();
+
   cmd.cmd = LC_MAIN;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
   cmd.entryoff = 0x3f70;
-  return cmd;
+  return buf;
 }
 
-static DylibCommand create_load_dylib_cmd(Context &ctx) {
-  DylibCommand cmd = {};
+static std::vector<u8> create_load_dylib_cmd(Context &ctx) {
+  static constexpr char path[] = "/usr/lib/libSystem.B.dylib";
+
+  std::vector<u8> buf(align_to(sizeof(DylibCommand) + sizeof(path), 8));
+  DylibCommand &cmd = *(DylibCommand *)buf.data();
+
   cmd.cmd = LC_LOAD_DYLIB;
-  cmd.cmdsize = sizeof(cmd);
-  cmd.nameoff = offsetof(DylibCommand, name);
+  cmd.cmdsize = buf.size();
+  cmd.nameoff = sizeof(cmd);
   cmd.timestamp = 2;
   cmd.current_version = 0x50c6405;
   cmd.compatibility_version = 0x10000;
-  strcpy(cmd.name, "/usr/lib/libSystem.B.dylib");
-  return cmd;
+  memcpy(buf.data() + sizeof(cmd), path, sizeof(path));
+  return buf;
 }
 
-static LinkEditDataCommand create_function_starts_cmd(Context &ctx) {
-  LinkEditDataCommand cmd = {};
+static std::vector<u8> create_function_starts_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(LinkEditDataCommand));
+  LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
+
   cmd.cmd = LC_FUNCTION_STARTS;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
   cmd.dataoff = ctx.function_starts->hdr.offset;
   cmd.datasize = ctx.function_starts->hdr.size;
-  return cmd;
+  return buf;
 }
 
-static LinkEditDataCommand create_data_in_code_cmd(Context &ctx) {
-  LinkEditDataCommand cmd = {};
+static std::vector<u8> create_data_in_code_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(LinkEditDataCommand));
+  LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
+
   cmd.cmd = LC_DATA_IN_CODE;
-  cmd.cmdsize = sizeof(cmd);
+  cmd.cmdsize = buf.size();
   cmd.dataoff = 0xc070;
-  return cmd;
+  return buf;
 }
 
-static std::pair<std::vector<u8>, i64>
-create_load_commands(Context &ctx) {
-  std::vector<u8> vec;
-  i64 ncmds = 0;
+static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
+  std::vector<std::vector<u8>> vec;
+  vec.push_back(create_page_zero_cmd(ctx));
 
-  auto add = [&](auto x) {
-    i64 off = vec.size();
-    vec.resize(vec.size() + sizeof(x));
-    memcpy(vec.data() + off, &x, sizeof(x));
+  auto append = [&](std::vector<u8> &buf, auto x) {
+    i64 off = buf.size();
+    buf.resize(buf.size() + sizeof(x));
+    memcpy(buf.data() + off, &x, sizeof(x));
   };
-
-  auto add_cmd = [&](auto x) {
-    add(x);
-    ncmds++;
-  };
-
-  add_cmd(create_page_zero_cmd(ctx));
 
   // Add LC_SEGMENT_64 comamnds
   for (OutputSegment *seg : ctx.segments) {
-    add_cmd(seg->cmd);
+    std::vector<u8> &buf = vec.emplace_back();
+    append(buf, seg->cmd);
     for (OutputSection *sec : seg->sections)
       if (!sec->is_hidden)
-        add(sec->hdr);
+        append(buf, sec->hdr);
   }
 
-  add_cmd(create_dyld_info_only_cmd(ctx));
-  add_cmd(create_symtab_cmd(ctx));
-  add_cmd(create_dysymtab_cmd(ctx));
-  add_cmd(create_dylinker_cmd(ctx));
-  add_cmd(create_uuid_cmd(ctx));
-
-  add_cmd(create_build_version_cmd(ctx, 1));
-  add(BuildToolVersion{3, 0x28a0900});
-
-  add_cmd(create_source_version_cmd(ctx));
-  add_cmd(create_main_cmd(ctx));
-  add_cmd(create_load_dylib_cmd(ctx));
-  add_cmd(create_function_starts_cmd(ctx));
-  add_cmd(create_data_in_code_cmd(ctx));
-
-  return {vec, ncmds};
+  vec.push_back(create_dyld_info_only_cmd(ctx));
+  vec.push_back(create_symtab_cmd(ctx));
+  vec.push_back(create_dysymtab_cmd(ctx));
+  vec.push_back(create_dylinker_cmd(ctx));
+  vec.push_back(create_uuid_cmd(ctx));
+  vec.push_back(create_build_version_cmd(ctx, 1));
+  vec.push_back(create_source_version_cmd(ctx));
+  vec.push_back(create_main_cmd(ctx));
+  vec.push_back(create_load_dylib_cmd(ctx));
+  vec.push_back(create_function_starts_cmd(ctx));
+  vec.push_back(create_data_in_code_cmd(ctx));
+  return vec;
 }
 
 void OutputLoadCommand::update_hdr(Context &ctx) {
-  std::vector<u8> contents;
-  std::tie(contents, ncmds) = create_load_commands(ctx);
-  hdr.size = contents.size();
+  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
+  ncmds = cmds.size();
+  hdr.size = flatten(cmds).size();
 }
 
 void OutputLoadCommand::copy_buf(Context &ctx) {
-  std::vector<u8> contents;
-  std::tie(contents, std::ignore) = create_load_commands(ctx);
-  write_vector(ctx.buf + hdr.offset, contents);
+  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
+  write_vector(ctx.buf + hdr.offset, flatten(cmds));
 }
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
