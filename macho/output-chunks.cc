@@ -15,6 +15,15 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
+static SegmentCommand create_page_zero_cmd(Context &ctx) {
+  SegmentCommand cmd = {};
+  cmd.cmd = LC_SEGMENT_64;
+  cmd.cmdsize = sizeof(SegmentCommand);
+  strcpy(cmd.segname, "__PAGEZERO");
+  cmd.vmsize = PAGE_ZERO_SIZE;
+  return cmd;
+}
+
 static DyldInfoCommand create_dyld_info_only_cmd(Context &ctx) {
   DyldInfoCommand cmd = {};
   cmd.cmd = LC_DYLD_INFO_ONLY;
@@ -137,85 +146,42 @@ static std::pair<std::vector<u8>, i64>
 create_load_commands(Context &ctx) {
   std::vector<u8> vec;
   i64 ncmds = 0;
-  i64 last_off = 0;
 
   auto add = [&](auto x) {
-    if (alignof(decltype(x)) == 8 && vec.size() % 8) {
-      LoadCommand &cmd = *(LoadCommand *)(vec.data() + last_off);
-      cmd.cmdsize += 4;
-      vec.resize(vec.size() + 4);
-    }
-
     i64 off = vec.size();
     vec.resize(vec.size() + sizeof(x));
     memcpy(vec.data() + off, &x, sizeof(x));
-    last_off = off;
   };
 
-  // Add a PAGE_ZERO command
-  SegmentCommand zero = {};
-  zero.cmd = LC_SEGMENT_64;
-  zero.cmdsize = sizeof(SegmentCommand);
-  strcpy(zero.segname, "__PAGEZERO");
-  zero.vmsize = PAGE_ZERO_SIZE;
+  auto add_cmd = [&](auto x) {
+    add(x);
+    ncmds++;
+  };
 
-  add(zero);
-  ncmds++;
+  add_cmd(create_page_zero_cmd(ctx));
 
   // Add LC_SEGMENT_64 comamnds
   for (OutputSegment *seg : ctx.segments) {
-    add(seg->cmd);
-    ncmds++;
-
+    add_cmd(seg->cmd);
     for (OutputSection *sec : seg->sections)
       if (!sec->is_hidden)
         add(sec->hdr);
   }
 
-  // LC_DYLD_INFO_ONLY
-  add(create_dyld_info_only_cmd(ctx));
-  ncmds++;
+  add_cmd(create_dyld_info_only_cmd(ctx));
+  add_cmd(create_symtab_cmd(ctx));
+  add_cmd(create_dysymtab_cmd(ctx));
+  add_cmd(create_dylinker_cmd(ctx));
+  add_cmd(create_uuid_cmd(ctx));
 
-  // LC_SYMTAB
-  add(create_symtab_cmd(ctx));
-  ncmds++;
-
-  // LC_DYSYMTAB
-  add(create_dysymtab_cmd(ctx));
-  ncmds++;
-
-  // LC_LOAD_DYLINKER
-  add(create_dylinker_cmd(ctx));
-  ncmds++;
-
-  // LC_UUID
-  add(create_uuid_cmd(ctx));
-  ncmds++;
-
-  // LC_BUILD_VERSION
-  add(create_build_version_cmd(ctx, 1));
+  add_cmd(create_build_version_cmd(ctx, 1));
   add(BuildToolVersion{3, 0x28a0900});
-  ncmds++;
 
-  // LC_SOURCE_VERSION
-  add(create_source_version_cmd(ctx));
-  ncmds++;
-
-  // LC_MAIN
-  add(create_main_cmd(ctx));
-  ncmds++;
-
-  // LC_LOAD_DYLIB
-  add(create_load_dylib_cmd(ctx));
-  ncmds++;
-
-  // LC_FUNCTION_STARTS
-  add(create_function_starts_cmd(ctx));
-  ncmds++;
-
-  // LC_DATA_IN_CODE
-  add(create_data_in_code_cmd(ctx));
-  ncmds++;
+  add_cmd(create_source_version_cmd(ctx));
+  add_cmd(create_main_cmd(ctx));
+  add_cmd(create_load_dylib_cmd(ctx));
+  add_cmd(create_function_starts_cmd(ctx));
+  add_cmd(create_data_in_code_cmd(ctx));
 
   return {vec, ncmds};
 }
