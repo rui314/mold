@@ -98,7 +98,7 @@ static std::vector<u8> create_uuid_cmd(Context &ctx) {
   return buf;
 }
 
-static std::vector<u8> create_build_version_cmd(Context &ctx, i64 ntools) {
+static std::vector<u8> create_build_version_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(BuildVersionCommand) + sizeof(BuildToolVersion));
   BuildVersionCommand &cmd = *(BuildVersionCommand *)buf.data();
 
@@ -107,7 +107,7 @@ static std::vector<u8> create_build_version_cmd(Context &ctx, i64 ntools) {
   cmd.platform = PLATFORM_MACOS;
   cmd.minos = 0xb0000;
   cmd.sdk = 0xb0300;
-  cmd.ntools = ntools;
+  cmd.ntools = 1;
 
   BuildToolVersion &tool = *(BuildToolVersion *)(buf.data() + sizeof(cmd));
   tool.tool = 3;
@@ -195,7 +195,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   vec.push_back(create_dysymtab_cmd(ctx));
   vec.push_back(create_dylinker_cmd(ctx));
   vec.push_back(create_uuid_cmd(ctx));
-  vec.push_back(create_build_version_cmd(ctx, 1));
+  vec.push_back(create_build_version_cmd(ctx));
   vec.push_back(create_source_version_cmd(ctx));
   vec.push_back(create_main_cmd(ctx));
   vec.push_back(create_load_dylib_cmd(ctx));
