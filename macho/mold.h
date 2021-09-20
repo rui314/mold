@@ -20,8 +20,8 @@ struct Context;
 class OutputSegment {
 public:
   OutputSegment(std::string_view name, u32 prot, u32 flags);
+  void set_offset(Context &ctx, i64 fileoff, u64 vmaddr);
   void copy_buf(Context &ctx);
-  void update_hdr(Context &ctx);
 
   std::string_view name;
   SegmentCommand cmd = {};
@@ -31,7 +31,6 @@ public:
 class OutputSection {
 public:
   virtual ~OutputSection() = default;
-  virtual void update_hdr(Context &ctx) {}
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
@@ -58,7 +57,7 @@ public:
     is_hidden = true;
   }
 
-  void update_hdr(Context &ctx) override;
+  void compute_size(Context &ctx);
   void copy_buf(Context &ctx) override;
 
   i64 ncmds = 0;

@@ -72,26 +72,15 @@ void create_synthetic_sections(Context &ctx) {
   ctx.linkedit_seg->sections.push_back(ctx.strtab.get());
 }
 
-void compute_seg_sizes(Context &ctx) {
-}
-
 i64 assign_offsets(Context &ctx) {
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
 
   for (OutputSegment *seg : ctx.segments) {
-    assert(seg->cmd.filesize % PAGE_SIZE == 0);
-    assert(seg->cmd.vmsize % PAGE_SIZE == 0);
-
-    seg->cmd.fileoff = fileoff;
-    seg->cmd.vmaddr = vmaddr;
-
-    seg->update_hdr(ctx);
-
+    seg->set_offset(ctx, fileoff, vmaddr);
     fileoff += seg->cmd.filesize;
     vmaddr += seg->cmd.vmsize;
   }
-
   return fileoff;
 }
 
@@ -117,7 +106,7 @@ int main(int argc, char **argv) {
     ctx.arg.output = argv[2];
 
     create_synthetic_sections(ctx);
-    compute_seg_sizes(ctx);
+    ctx.load_cmd->compute_size(ctx);
     i64 output_size = assign_offsets(ctx);
 
     ctx.output_file =

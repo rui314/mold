@@ -184,7 +184,17 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   // Add LC_SEGMENT_64 comamnds
   for (OutputSegment *seg : ctx.segments) {
     std::vector<u8> &buf = vec.emplace_back();
-    append(buf, seg->cmd);
+
+    i64 nsects = 0;
+    for (OutputSection *sec : seg->sections)
+      if (!sec->is_hidden)
+        nsects++;
+
+    SegmentCommand cmd = seg->cmd;
+    cmd.cmdsize = sizeof(SegmentCommand) + sizeof(MachSection) * nsects;
+    cmd.nsects = nsects;
+    append(buf, cmd);
+
     for (OutputSection *sec : seg->sections)
       if (!sec->is_hidden)
         append(buf, sec->hdr);
@@ -204,7 +214,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   return vec;
 }
 
-void OutputLoadCommand::update_hdr(Context &ctx) {
+void OutputLoadCommand::compute_size(Context &ctx) {
   std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
   ncmds = cmds.size();
   hdr.size = flatten(cmds).size();
@@ -242,28 +252,20 @@ static i64 compute_text_padding_size(std::span<OutputSection *> sections) {
   return addr % PAGE_SIZE;
 }
 
-void OutputSegment::update_hdr(Context &ctx) {
-  cmd.cmdsize = sizeof(SegmentCommand);
-  cmd.nsects = 0;
-
-  for (OutputSection *sec : sections) {
-    if (!sec->is_hidden) {
-      cmd.cmdsize += sizeof(MachSection);
-      cmd.nsects++;
-    }
-  }
+void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
+  cmd.fileoff = fileoff;
+  cmd.vmaddr = vmaddr;
 
   i64 offset = 0;
 
   auto set_offset = [&](OutputSection &sec) {
-    sec.update_hdr(ctx);
     offset = align_to(offset, 1 << sec.hdr.p2align);
-    sec.hdr.addr = cmd.vmaddr + offset;
-    sec.hdr.offset = cmd.fileoff + offset;
+    sec.hdr.addr = vmaddr + offset;
+    sec.hdr.offset = fileoff + offset;
     offset += sec.hdr.size;
   };
 
-  if (this == ctx.segments[0]) {
+  if (fileoff == 0) {
     // In the __TEXT segment, any extra space is put after the load commands
     // so that a post-processing tool can add more load commands there.
     set_offset(*sections[0]);
