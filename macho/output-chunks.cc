@@ -54,9 +54,9 @@ static std::vector<u8> create_symtab_cmd(Context &ctx) {
   cmd.cmd = LC_SYMTAB;
   cmd.cmdsize = buf.size();
   cmd.symoff = ctx.symtab->hdr.offset;
-  cmd.nsyms = ctx.symtab->contents.size() / sizeof(MachSym);
+  cmd.nsyms = ctx.symtab->hdr.size / sizeof(MachSym);
   cmd.stroff = ctx.strtab->hdr.offset;
-  cmd.strsize = ctx.strtab->contents.size();
+  cmd.strsize = ctx.strtab->hdr.size;
   return buf;
 }
 
@@ -565,12 +565,38 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
+void OutputSymtabSection::add(Context &ctx, std::string_view name,
+                              i64 type, bool is_external,
+                              i64 sect_idx, i64 desc, u64 value) {
+  MachSym &sym = symbols.emplace_back();
+  hdr.size += sizeof(sym);
+
+  memset(&sym, 0, sizeof(sym));
+
+  sym.stroff = ctx.strtab->add_string(name);
+  sym.type = type;
+  sym.ext = is_external;
+  sym.sect = sect_idx;
+  sym.desc = desc;
+  sym.value = value;
+}
+
 void OutputSymtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  memcpy(ctx.buf + hdr.offset, symbols.data(),
+         symbols.size() * sizeof(symbols[0]));
+}
+
+i64 OutputStrtabSection::add_string(std::string_view str) {
+  hdr.size += str.size() + 1;
+
+  i64 off = contents.size();
+  contents += str;
+  contents += '\0';
+  return off;
 }
 
 void OutputStrtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  memcpy(ctx.buf + hdr.offset, &contents[0], contents.size());
 }
 
 void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
