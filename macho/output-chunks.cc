@@ -463,11 +463,10 @@ i64 ExportEncoder::finish() {
   i64 size = set_offset(root, 0);
   for (;;) {
     i64 sz = set_offset(root, 0);
-    if (size == sz)
-      break;
+    if (sz == size)
+      return sz;
     size = sz;
   }
-  return size;
 }
 
 void
@@ -502,46 +501,39 @@ ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 le
 }
 
 i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
-  for (;;) {
-    if (entries[0].name.size() == len)
-      return len;
-    u8 c = entries[0].name[len];
+  for (; len < entries[0].name.size(); len++)
     for (Entry &ent : entries.subspan(1))
-      if (ent.name.size() == len || ent.name[len] != c)
+      if (ent.name.size() == len || ent.name[len] != entries[0].name[len])
         return len;
-    len++;
-  }
+  return len;
 }
 
 i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
   node.offset = offset;
 
+  i64 size = 0;
   if (node.is_leaf) {
-    node.size = uleb_size(node.flags) + uleb_size(node.addr);
-    node.size += uleb_size(node.size);
+    size = uleb_size(node.flags) + uleb_size(node.addr);
+    size += uleb_size(size);
   } else {
-    node.size = 1;
+    size = 1;
   }
 
-  node.size++; // # of children
+  size++; // # of children
 
   for (std::unique_ptr<TrieNode> &child : node.children) {
     if (child) {
       // +1 for NUL byte
-      node.size += child->prefix.size() + 1 + uleb_size(child->offset);
+      size += child->prefix.size() + 1 + uleb_size(child->offset);
     }
   }
 
-  offset += node.size;
+  offset += size;
 
   for (std::unique_ptr<TrieNode> &child : node.children)
     if (child)
       offset = set_offset(*child, offset);
   return offset;
-}
-
-void ExportEncoder::write_trie(u8 *start) {
-  write_trie(start, root);
 }
 
 void ExportEncoder::write_trie(u8 *start, TrieNode &node) {

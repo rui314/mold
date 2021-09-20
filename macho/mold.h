@@ -127,7 +127,10 @@ class ExportEncoder {
 public:
   void add(std::string_view name, u32 flags, u64 addr);
   i64 finish();
-  void write_trie(u8 *buf);
+
+  void write_trie(u8 *buf) {
+    write_trie(buf, root);
+  }
 
 private:
   struct Entry {
@@ -142,7 +145,6 @@ private:
     u32 flags = 0;
     u64 addr = 0;
     u32 offset = 0;
-    u32 size = UINT32_MAX;
     std::unique_ptr<TrieNode> children[256] = {};
   };
 
