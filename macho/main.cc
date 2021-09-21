@@ -50,6 +50,16 @@ static void fill_symtab(Context &ctx) {
   ctx.strtab.hdr.size = align_to(ctx.strtab.hdr.size, 8);
 }
 
+static void export_symbols(Context &ctx) {
+  ctx.stubs.entries.push_back({1, "_printf", 0, 3, 0});
+
+  i64 nsyms = ctx.stubs.entries.size();
+  ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
+  ctx.stub_helper.hdr.size =
+    StubHelperSection::HEADER_SIZE + nsyms * StubHelperSection::ENTRY_SIZE;
+  ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection::ENTRY_SIZE;
+}
+
 static i64 assign_offsets(Context &ctx) {
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
@@ -85,6 +95,7 @@ int main(int argc, char **argv) {
 
     create_synthetic_sections(ctx);
     fill_symtab(ctx);
+    export_symbols(ctx);
     ctx.load_cmd.compute_size(ctx);
     i64 output_size = assign_offsets(ctx);
 

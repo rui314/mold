@@ -620,23 +620,60 @@ StubsSection::StubsSection() {
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  hdr.size = contents.size();
   hdr.reserved2 = 6;
 }
 
 void StubsSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  u8 *buf = ctx.buf + hdr.offset;
+
+  for (i64 i = 0; i < entries.size(); i++) {
+    // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
+    // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
+    // and jump there.
+    buf[i * 6] = 0xff;
+    buf[i * 6 + 1] = 0x25;
+    *(u32 *)(buf + i * 6 + 2) =
+      (ctx.lazy_symbol_ptr.hdr.addr + i * 10) - (hdr.addr + i * 6 + 6);
+  }
 }
 
 StubHelperSection::StubHelperSection() {
   strcpy(hdr.sectname, "__stub_helper");
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  hdr.size = contents.size();
 }
 
 void StubHelperSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  u8 *start = ctx.buf + hdr.offset;
+  u8 *buf = start;
+
+  static constexpr u64 dyld_private_addr = 0x100008008;
+
+  u8 insn0[16] = {
+    0x4c, 0x8d, 0x1d, 0, 0, 0, 0, // lea $__dyld_private(%rip), %r11
+    0x41, 0x53,                   // push %r11
+    0xff, 0x25, 0, 0, 0, 0,       // jmp *$dyld_stub_binder@GOT(%rip)
+    0x90,                         // nop
+  };
+
+  memcpy(buf, insn0, sizeof(insn0));
+  *(u32 *)(buf + 3) = dyld_private_addr - hdr.addr - 7;
+  *(u32 *)(buf + 11) = ctx.got.hdr.addr - hdr.addr - 15;
+
+  buf += 16;
+
+  for (i64 i = 0; i < ctx.stubs.entries.size(); i++) {
+    u8 insn[10] = {
+      0x68, 0, 0, 0, 0, // push $idx
+      0xe9, 0, 0, 0, 0, // jmp $__stub_helper
+    };
+
+    memcpy(buf, insn, sizeof(insn));
+
+    *(u32 *)(buf + 1) = i;
+    *(u32 *)(buf + 6) = start - buf - 10;
+    buf += 10;
+  }
 }
 
 CstringSection::CstringSection() {

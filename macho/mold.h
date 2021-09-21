@@ -237,7 +237,17 @@ public:
   StubsSection();
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {0xff, 0x25, 0x7c, 0x40, 0x00, 0x00};
+  static constexpr i64 ENTRY_SIZE = 6;
+
+  struct Entry {
+    i64 dylib_idx;
+    std::string_view name;
+    i64 flags;
+    i64 seg_idx;
+    i64 offset;
+  };
+
+  std::vector<Entry> entries;
 };
 
 class StubHelperSection : public OutputSection {
@@ -245,11 +255,8 @@ public:
   StubHelperSection();
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0x4c, 0x8d, 0x1d, 0x7d, 0x40, 0x00, 0x00, 0x41, 0x53, 0xff, 0x25, 0x6d,
-    0x00, 0x00, 0x00, 0x90, 0x68, 0x00, 0x00, 0x00, 0x00, 0xe9, 0xe6, 0xff,
-    0xff, 0xff,
-  };
+  static constexpr i64 HEADER_SIZE = 16;
+  static constexpr i64 ENTRY_SIZE = 10;
 };
 
 class CstringSection : public OutputSection {
@@ -278,14 +285,14 @@ public:
 class GotSection : public OutputSection {
 public:
   GotSection();
-
-  static constexpr char contents[] = "Hello world\n";
 };
 
 class LazySymbolPtrSection : public OutputSection {
 public:
   LazySymbolPtrSection();
   void copy_buf(Context &ctx) override;
+
+  static constexpr i64 ENTRY_SIZE = 8;
 
   std::vector<u8> contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
 };
