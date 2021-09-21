@@ -72,7 +72,8 @@ static std::vector<u8> create_dysymtab_cmd(Context &ctx) {
   cmd.iundefsym = 4;
   cmd.nundefsym = 2;
   cmd.indirectsymoff = ctx.indir_symtab.hdr.offset;
-  cmd.nindirectsyms = ctx.indir_symtab.hdr.size / 4;
+  cmd.nindirectsyms =
+    ctx.indir_symtab.hdr.size / OutputIndirectSymtabSection::ENTRY_SIZE;
   return buf;
 }
 
