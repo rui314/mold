@@ -30,45 +30,45 @@ static void create_synthetic_sections(Context &ctx) {
   ctx.segments.push_back(linkedit);
   ctx.linkedit_seg.reset(linkedit);
 
-  ctx.mach_hdr.reset(new OutputMachHeader(*ctx.text_seg));
+  ctx.mach_hdr.reset(new OutputMachHeader);
   ctx.text_seg->sections.push_back(ctx.mach_hdr.get());
 
-  ctx.load_cmd.reset(new OutputLoadCommand(*ctx.text_seg));
+  ctx.load_cmd.reset(new OutputLoadCommand);
   ctx.text_seg->sections.push_back(ctx.load_cmd.get());
 
-  ctx.text_seg->sections.push_back(new TextSection(*ctx.text_seg));
-  ctx.text_seg->sections.push_back(new StubsSection(*ctx.text_seg));
-  ctx.text_seg->sections.push_back(new StubHelperSection(*ctx.text_seg));
-  ctx.text_seg->sections.push_back(new CstringSection(*ctx.text_seg));
-  ctx.text_seg->sections.push_back(new UnwindInfoSection(*ctx.text_seg));
+  ctx.text_seg->sections.push_back(new TextSection);
+  ctx.text_seg->sections.push_back(new StubsSection);
+  ctx.text_seg->sections.push_back(new StubHelperSection);
+  ctx.text_seg->sections.push_back(new CstringSection);
+  ctx.text_seg->sections.push_back(new UnwindInfoSection);
 
-  ctx.data_const_seg->sections.push_back(new GotSection(*ctx.data_const_seg));
+  ctx.data_const_seg->sections.push_back(new GotSection);
 
-  ctx.data_seg->sections.push_back(new LazySymbolPtrSection(*ctx.data_seg));
-  ctx.data_seg->sections.push_back(new DataSection(*ctx.data_seg));
+  ctx.data_seg->sections.push_back(new LazySymbolPtrSection);
+  ctx.data_seg->sections.push_back(new DataSection);
 
-  ctx.rebase.reset(new OutputRebaseSection(*ctx.linkedit_seg));
+  ctx.rebase.reset(new OutputRebaseSection);
   ctx.linkedit_seg->sections.push_back(ctx.rebase.get());
 
-  ctx.bind.reset(new OutputBindSection(*ctx.linkedit_seg));
+  ctx.bind.reset(new OutputBindSection);
   ctx.linkedit_seg->sections.push_back(ctx.bind.get());
 
-  ctx.lazy_bind.reset(new OutputLazyBindSection(*ctx.linkedit_seg));
+  ctx.lazy_bind.reset(new OutputLazyBindSection);
   ctx.linkedit_seg->sections.push_back(ctx.lazy_bind.get());
 
-  ctx.export_.reset(new OutputExportSection(*ctx.linkedit_seg));
+  ctx.export_.reset(new OutputExportSection);
   ctx.linkedit_seg->sections.push_back(ctx.export_.get());
 
-  ctx.function_starts.reset(new OutputFunctionStartsSection(*ctx.linkedit_seg));
+  ctx.function_starts.reset(new OutputFunctionStartsSection);
   ctx.linkedit_seg->sections.push_back(ctx.function_starts.get());
 
-  ctx.symtab.reset(new OutputSymtabSection(*ctx.linkedit_seg));
+  ctx.symtab.reset(new OutputSymtabSection);
   ctx.linkedit_seg->sections.push_back(ctx.symtab.get());
 
-  ctx.indir_symtab.reset(new OutputIndirectSymtabSection(*ctx.linkedit_seg));
+  ctx.indir_symtab.reset(new OutputIndirectSymtabSection);
   ctx.linkedit_seg->sections.push_back(ctx.indir_symtab.get());
 
-  ctx.strtab.reset(new OutputStrtabSection(*ctx.linkedit_seg));
+  ctx.strtab.reset(new OutputStrtabSection);
   ctx.linkedit_seg->sections.push_back(ctx.strtab.get());
 }
 

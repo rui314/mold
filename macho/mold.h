@@ -34,18 +34,15 @@ public:
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
-  OutputSegment *parent;
+  OutputSegment *parent = nullptr;
   bool is_hidden = false;
-
-protected:
-  OutputSection(OutputSegment &parent);
 };
 
 class OutputMachHeader : public OutputSection {
 public:
-  OutputMachHeader(OutputSegment &parent) : OutputSection(parent) {
+  OutputMachHeader() {
     is_hidden = true;
-    hdr.size = sizeof(MachHeader);;
+    hdr.size = sizeof(MachHeader);
   }
 
   void copy_buf(Context &ctx) override;
@@ -53,7 +50,7 @@ public:
 
 class OutputLoadCommand : public OutputSection {
 public:
-  OutputLoadCommand(OutputSegment &parent) : OutputSection(parent) {
+  OutputLoadCommand() {
     is_hidden = true;
   }
 
@@ -83,7 +80,7 @@ private:
 
 class OutputRebaseSection : public OutputSection {
 public:
-  OutputRebaseSection(OutputSegment &parent);
+  OutputRebaseSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
@@ -108,7 +105,7 @@ private:
 
 class OutputBindSection : public OutputSection {
 public:
-  OutputBindSection(OutputSegment &parent);
+  OutputBindSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
@@ -116,7 +113,7 @@ public:
 
 class OutputLazyBindSection : public OutputSection {
 public:
-  OutputLazyBindSection(OutputSegment &parent);
+  OutputLazyBindSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
@@ -158,7 +155,7 @@ private:
 
 class OutputExportSection : public OutputSection {
 public:
-  OutputExportSection(OutputSegment &parent);
+  OutputExportSection();
   void copy_buf(Context &ctx) override;
 
 private:
@@ -167,7 +164,7 @@ private:
 
 class OutputFunctionStartsSection : public OutputSection {
 public:
-  OutputFunctionStartsSection(OutputSegment &parent) : OutputSection(parent) {
+  OutputFunctionStartsSection() {
     is_hidden = true;
     hdr.size = contents.size();
   }
@@ -181,7 +178,7 @@ public:
 
 class OutputSymtabSection : public OutputSection {
 public:
-  OutputSymtabSection(OutputSegment &parent) : OutputSection(parent) {
+  OutputSymtabSection() {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -196,7 +193,7 @@ public:
 
 class OutputStrtabSection : public OutputSection {
 public:
-  OutputStrtabSection(OutputSegment &parent) : OutputSection(parent) {
+  OutputStrtabSection() {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -209,7 +206,7 @@ public:
 
 class OutputIndirectSymtabSection : public OutputSection {
 public:
-  OutputIndirectSymtabSection(OutputSegment &parent) : OutputSection(parent) {
+  OutputIndirectSymtabSection() {
     is_hidden = true;
     hdr.size = contents.size();
   }
@@ -223,7 +220,7 @@ public:
 
 class TextSection : public OutputSection {
 public:
-  TextSection(OutputSegment &parent);
+  TextSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {
@@ -237,7 +234,7 @@ public:
 
 class StubsSection : public OutputSection {
 public:
-  StubsSection(OutputSegment &parent);
+  StubsSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {0xff, 0x25, 0x7c, 0x40, 0x00, 0x00};
@@ -245,7 +242,7 @@ public:
 
 class StubHelperSection : public OutputSection {
 public:
-  StubHelperSection(OutputSegment &parent);
+  StubHelperSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {
@@ -257,7 +254,7 @@ public:
 
 class CstringSection : public OutputSection {
 public:
-  CstringSection(OutputSegment &parent);
+  CstringSection();
   void copy_buf(Context &ctx) override;
 
   static constexpr char contents[] = "Hello world\n";
@@ -265,7 +262,7 @@ public:
 
 class UnwindInfoSection : public OutputSection {
 public:
-  UnwindInfoSection(OutputSegment &parent);
+  UnwindInfoSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {
@@ -280,14 +277,14 @@ public:
 
 class GotSection : public OutputSection {
 public:
-  GotSection(OutputSegment &parent);
+  GotSection();
 
   static constexpr char contents[] = "Hello world\n";
 };
 
 class LazySymbolPtrSection : public OutputSection {
 public:
-  LazySymbolPtrSection(OutputSegment &parent);
+  LazySymbolPtrSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
@@ -295,7 +292,7 @@ public:
 
 class DataSection : public OutputSection {
 public:
-  DataSection(OutputSegment &parent);
+  DataSection();
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;

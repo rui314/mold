@@ -195,9 +195,13 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
     cmd.nsects = nsects;
     append(buf, cmd);
 
-    for (OutputSection *sec : seg->sections)
-      if (!sec->is_hidden)
-        append(buf, sec->hdr);
+    for (OutputSection *sec : seg->sections) {
+      if (!sec->is_hidden) {
+        MachSection hdr = sec->hdr;
+        memcpy(hdr.segname, cmd.segname, sizeof(cmd.segname));
+        append(buf, hdr);
+      }
+    }
   }
 
   vec.push_back(create_dyld_info_only_cmd(ctx));
@@ -345,8 +349,7 @@ void RebaseEncoder::finish() {
   buf.push_back(REBASE_OPCODE_DONE);
 }
 
-OutputRebaseSection::OutputRebaseSection(OutputSegment &parent)
-  : OutputSection(parent) {
+OutputRebaseSection::OutputRebaseSection() {
   is_hidden = true;
 
   RebaseEncoder enc;
@@ -402,8 +405,7 @@ void BindEncoder::finish() {
   buf.push_back(BIND_OPCODE_DONE);
 }
 
-OutputBindSection::OutputBindSection(OutputSegment &parent)
-  : OutputSection(parent) {
+OutputBindSection::OutputBindSection() {
   is_hidden = true;
 
   BindEncoder enc(false);
@@ -418,8 +420,7 @@ void OutputBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-OutputLazyBindSection::OutputLazyBindSection(OutputSegment &parent)
-  : OutputSection(parent) {
+OutputLazyBindSection::OutputLazyBindSection() {
   is_hidden = true;
 
   BindEncoder enc(true);
@@ -548,8 +549,7 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
       write_trie(start, *child);
 }
 
-OutputExportSection::OutputExportSection(OutputSegment &parent)
-  : OutputSection(parent) {
+OutputExportSection::OutputExportSection() {
   is_hidden = true;
   enc.add("__mh_execute_header", 0, 0);
   enc.add("_hello", 0, 0x3f50);
@@ -603,12 +603,7 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-OutputSection::OutputSection(OutputSegment &p)
-  : parent(&p) {
-  memcpy(hdr.segname, parent->cmd.segname, sizeof(parent->cmd.segname));
-}
-
-TextSection::TextSection(OutputSegment &parent) : OutputSection(parent) {
+TextSection::TextSection() {
   strcpy(hdr.sectname, "__text");
   hdr.p2align = __builtin_ctz(16);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
@@ -620,7 +615,7 @@ void TextSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-StubsSection::StubsSection(OutputSegment &parent) : OutputSection(parent) {
+StubsSection::StubsSection() {
   strcpy(hdr.sectname, "__stubs");
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
@@ -633,8 +628,7 @@ void StubsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-StubHelperSection::StubHelperSection(OutputSegment &parent)
-  : OutputSection(parent) {
+StubHelperSection::StubHelperSection() {
   strcpy(hdr.sectname, "__stub_helper");
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
@@ -645,8 +639,7 @@ void StubHelperSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-CstringSection::CstringSection(OutputSegment &parent)
-  : OutputSection(parent) {
+CstringSection::CstringSection() {
   strcpy(hdr.sectname, "__cstring");
   hdr.type = S_CSTRING_LITERALS;
   hdr.size = sizeof(contents);
@@ -656,8 +649,7 @@ void CstringSection::copy_buf(Context &ctx) {
   memcpy(ctx.buf + hdr.offset, contents, sizeof(contents));
 }
 
-UnwindInfoSection::UnwindInfoSection(OutputSegment &parent)
-  : OutputSection(parent) {
+UnwindInfoSection::UnwindInfoSection() {
   strcpy(hdr.sectname, "__unwind_info");
   hdr.p2align = __builtin_ctz(4);
   hdr.size = contents.size();
@@ -667,8 +659,7 @@ void UnwindInfoSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-GotSection::GotSection(OutputSegment &parent)
-  : OutputSection(parent) {
+GotSection::GotSection() {
   strcpy(hdr.sectname, "__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
@@ -676,8 +667,7 @@ GotSection::GotSection(OutputSegment &parent)
   hdr.reserved1 = 1;
 }
 
-LazySymbolPtrSection::LazySymbolPtrSection(OutputSegment &parent)
-  : OutputSection(parent) {
+LazySymbolPtrSection::LazySymbolPtrSection() {
   strcpy(hdr.sectname, "__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
@@ -689,8 +679,7 @@ void LazySymbolPtrSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-DataSection::DataSection(OutputSegment &parent)
-  : OutputSection(parent) {
+DataSection::DataSection() {
   strcpy(hdr.sectname, "__data");
   hdr.p2align = __builtin_ctz(8);
 
