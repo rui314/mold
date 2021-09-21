@@ -293,8 +293,6 @@ public:
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 8;
-
-  std::vector<u8> contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
 };
 
 class DataSection : public OutputSection {
