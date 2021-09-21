@@ -34,7 +34,7 @@ public:
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
-  OutputSegment &parent;
+  OutputSegment *parent;
   bool is_hidden = false;
 
 protected:

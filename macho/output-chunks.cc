@@ -603,9 +603,9 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-OutputSection::OutputSection(OutputSegment &parent)
-  : parent(parent) {
-  memcpy(hdr.segname, parent.cmd.segname, sizeof(parent.cmd.segname));
+OutputSection::OutputSection(OutputSegment &p)
+  : parent(&p) {
+  memcpy(hdr.segname, parent->cmd.segname, sizeof(parent->cmd.segname));
 }
 
 TextSection::TextSection(OutputSegment &parent) : OutputSection(parent) {
