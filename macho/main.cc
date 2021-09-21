@@ -30,12 +30,8 @@ static void create_synthetic_sections(Context &ctx) {
   ctx.segments.push_back(linkedit);
   ctx.linkedit_seg.reset(linkedit);
 
-  ctx.mach_hdr.reset(new OutputMachHeader);
-  ctx.text_seg->sections.push_back(ctx.mach_hdr.get());
-
-  ctx.load_cmd.reset(new OutputLoadCommand);
-  ctx.text_seg->sections.push_back(ctx.load_cmd.get());
-
+  ctx.text_seg->sections.push_back(&ctx.mach_hdr);
+  ctx.text_seg->sections.push_back(&ctx.load_cmd);
   ctx.text_seg->sections.push_back(new TextSection);
   ctx.text_seg->sections.push_back(new StubsSection);
   ctx.text_seg->sections.push_back(new StubHelperSection);
@@ -47,40 +43,25 @@ static void create_synthetic_sections(Context &ctx) {
   ctx.data_seg->sections.push_back(new LazySymbolPtrSection);
   ctx.data_seg->sections.push_back(new DataSection);
 
-  ctx.rebase.reset(new OutputRebaseSection);
-  ctx.linkedit_seg->sections.push_back(ctx.rebase.get());
-
-  ctx.bind.reset(new OutputBindSection);
-  ctx.linkedit_seg->sections.push_back(ctx.bind.get());
-
-  ctx.lazy_bind.reset(new OutputLazyBindSection);
-  ctx.linkedit_seg->sections.push_back(ctx.lazy_bind.get());
-
-  ctx.export_.reset(new OutputExportSection);
-  ctx.linkedit_seg->sections.push_back(ctx.export_.get());
-
-  ctx.function_starts.reset(new OutputFunctionStartsSection);
-  ctx.linkedit_seg->sections.push_back(ctx.function_starts.get());
-
-  ctx.symtab.reset(new OutputSymtabSection);
-  ctx.linkedit_seg->sections.push_back(ctx.symtab.get());
-
-  ctx.indir_symtab.reset(new OutputIndirectSymtabSection);
-  ctx.linkedit_seg->sections.push_back(ctx.indir_symtab.get());
-
-  ctx.strtab.reset(new OutputStrtabSection);
-  ctx.linkedit_seg->sections.push_back(ctx.strtab.get());
+  ctx.linkedit_seg->sections.push_back(&ctx.rebase);
+  ctx.linkedit_seg->sections.push_back(&ctx.bind);
+  ctx.linkedit_seg->sections.push_back(&ctx.lazy_bind);
+  ctx.linkedit_seg->sections.push_back(&ctx.export_);
+  ctx.linkedit_seg->sections.push_back(&ctx.function_starts);
+  ctx.linkedit_seg->sections.push_back(&ctx.symtab);
+  ctx.linkedit_seg->sections.push_back(&ctx.indir_symtab);
+  ctx.linkedit_seg->sections.push_back(&ctx.strtab);
 }
 
 static void fill_symtab(Context &ctx) {
-  ctx.symtab->add(ctx, "__dyld_private", N_SECT, false, 8, 0x0, 0x100008008);
-  ctx.symtab->add(ctx, "__mh_execute_header", N_SECT, true, 1, 0x10, 0x100000000);
-  ctx.symtab->add(ctx, "_hello", N_SECT, true, 1, 0x0, 0x100003f50);
-  ctx.symtab->add(ctx, "_main", N_SECT, true, 1, 0x0, 0x100003f70);
-  ctx.symtab->add(ctx, "_printf", N_UNDF, true, 0, 0x100, 0x0);
-  ctx.symtab->add(ctx, "dyld_stub_binder", N_UNDF, true, 0, 0x100, 0x0);
+  ctx.symtab.add(ctx, "__dyld_private", N_SECT, false, 8, 0x0, 0x100008008);
+  ctx.symtab.add(ctx, "__mh_execute_header", N_SECT, true, 1, 0x10, 0x100000000);
+  ctx.symtab.add(ctx, "_hello", N_SECT, true, 1, 0x0, 0x100003f50);
+  ctx.symtab.add(ctx, "_main", N_SECT, true, 1, 0x0, 0x100003f70);
+  ctx.symtab.add(ctx, "_printf", N_UNDF, true, 0, 0x100, 0x0);
+  ctx.symtab.add(ctx, "dyld_stub_binder", N_UNDF, true, 0, 0x100, 0x0);
 
-  ctx.strtab->hdr.size = align_to(ctx.strtab->hdr.size, 8);
+  ctx.strtab.hdr.size = align_to(ctx.strtab.hdr.size, 8);
 }
 
 static i64 assign_offsets(Context &ctx) {
@@ -118,7 +99,7 @@ int main(int argc, char **argv) {
 
     create_synthetic_sections(ctx);
     fill_symtab(ctx);
-    ctx.load_cmd->compute_size(ctx);
+    ctx.load_cmd.compute_size(ctx);
     i64 output_size = assign_offsets(ctx);
 
     ctx.output_file =

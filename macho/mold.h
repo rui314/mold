@@ -346,21 +346,21 @@ struct Context {
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
-  std::unique_ptr<OutputMachHeader> mach_hdr;
-  std::unique_ptr<OutputLoadCommand> load_cmd;
   std::unique_ptr<OutputSegment> text_seg;
   std::unique_ptr<OutputSegment> data_const_seg;
   std::unique_ptr<OutputSegment> data_seg;
   std::unique_ptr<OutputSegment> linkedit_seg;
 
-  std::unique_ptr<OutputRebaseSection> rebase;
-  std::unique_ptr<OutputBindSection> bind;
-  std::unique_ptr<OutputLazyBindSection> lazy_bind;
-  std::unique_ptr<OutputExportSection> export_;
-  std::unique_ptr<OutputFunctionStartsSection> function_starts;
-  std::unique_ptr<OutputSymtabSection> symtab;
-  std::unique_ptr<OutputIndirectSymtabSection> indir_symtab;
-  std::unique_ptr<OutputStrtabSection> strtab;
+  OutputMachHeader mach_hdr;
+  OutputLoadCommand load_cmd;
+  OutputRebaseSection rebase;
+  OutputBindSection bind;
+  OutputLazyBindSection lazy_bind;
+  OutputExportSection export_;
+  OutputFunctionStartsSection function_starts;
+  OutputSymtabSection symtab;
+  OutputIndirectSymtabSection indir_symtab;
+  OutputStrtabSection strtab;
 
   std::vector<OutputSegment *> segments;
 };

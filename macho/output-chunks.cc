@@ -10,8 +10,8 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.cputype = CPU_TYPE_X86_64;
   mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
   mhdr.filetype = MH_EXECUTE;
-  mhdr.ncmds = ctx.load_cmd->ncmds;
-  mhdr.sizeofcmds = ctx.load_cmd->hdr.size;
+  mhdr.ncmds = ctx.load_cmd.ncmds;
+  mhdr.sizeofcmds = ctx.load_cmd.hdr.size;
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 }
 
@@ -33,17 +33,17 @@ static std::vector<u8> create_dyld_info_only_cmd(Context &ctx) {
   cmd.cmd = LC_DYLD_INFO_ONLY;
   cmd.cmdsize = buf.size();
 
-  cmd.rebase_off = ctx.rebase->hdr.offset;
-  cmd.rebase_size = ctx.rebase->hdr.size;
+  cmd.rebase_off = ctx.rebase.hdr.offset;
+  cmd.rebase_size = ctx.rebase.hdr.size;
 
-  cmd.bind_off = ctx.bind->hdr.offset;
-  cmd.bind_size = ctx.bind->hdr.size;
+  cmd.bind_off = ctx.bind.hdr.offset;
+  cmd.bind_size = ctx.bind.hdr.size;
 
-  cmd.lazy_bind_off = ctx.lazy_bind->hdr.offset;
-  cmd.lazy_bind_size = ctx.lazy_bind->hdr.size;
+  cmd.lazy_bind_off = ctx.lazy_bind.hdr.offset;
+  cmd.lazy_bind_size = ctx.lazy_bind.hdr.size;
 
-  cmd.export_off = ctx.export_->hdr.offset;
-  cmd.export_size = ctx.export_->hdr.size;
+  cmd.export_off = ctx.export_.hdr.offset;
+  cmd.export_size = ctx.export_.hdr.size;
   return buf;
 }
 
@@ -53,10 +53,10 @@ static std::vector<u8> create_symtab_cmd(Context &ctx) {
 
   cmd.cmd = LC_SYMTAB;
   cmd.cmdsize = buf.size();
-  cmd.symoff = ctx.symtab->hdr.offset;
-  cmd.nsyms = ctx.symtab->hdr.size / sizeof(MachSym);
-  cmd.stroff = ctx.strtab->hdr.offset;
-  cmd.strsize = ctx.strtab->hdr.size;
+  cmd.symoff = ctx.symtab.hdr.offset;
+  cmd.nsyms = ctx.symtab.hdr.size / sizeof(MachSym);
+  cmd.stroff = ctx.strtab.hdr.offset;
+  cmd.strsize = ctx.strtab.hdr.size;
   return buf;
 }
 
@@ -71,8 +71,8 @@ static std::vector<u8> create_dysymtab_cmd(Context &ctx) {
   cmd.nextdefsym = 3;
   cmd.iundefsym = 4;
   cmd.nundefsym = 2;
-  cmd.indirectsymoff = ctx.indir_symtab->hdr.offset;
-  cmd.nindirectsyms = ctx.indir_symtab->hdr.size / 4;
+  cmd.indirectsymoff = ctx.indir_symtab.hdr.offset;
+  cmd.nindirectsyms = ctx.indir_symtab.hdr.size / 4;
   return buf;
 }
 
@@ -156,8 +156,8 @@ static std::vector<u8> create_function_starts_cmd(Context &ctx) {
 
   cmd.cmd = LC_FUNCTION_STARTS;
   cmd.cmdsize = buf.size();
-  cmd.dataoff = ctx.function_starts->hdr.offset;
-  cmd.datasize = ctx.function_starts->hdr.size;
+  cmd.dataoff = ctx.function_starts.hdr.offset;
+  cmd.datasize = ctx.function_starts.hdr.size;
   return buf;
 }
 
@@ -573,7 +573,7 @@ void OutputSymtabSection::add(Context &ctx, std::string_view name,
 
   memset(&sym, 0, sizeof(sym));
 
-  sym.stroff = ctx.strtab->add_string(name);
+  sym.stroff = ctx.strtab.add_string(name);
   sym.type = type;
   sym.ext = is_external;
   sym.sect = sect_idx;
