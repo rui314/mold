@@ -235,6 +235,9 @@ public:
 class StubsSection : public OutputSection {
 public:
   StubsSection();
+
+  void add(Context &ctx, i64 dylib_idx, std::string_view name,
+           i64 flags, i64 seg_idx, i64 offset);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 6;

@@ -623,6 +623,17 @@ StubsSection::StubsSection() {
   hdr.reserved2 = 6;
 }
 
+void StubsSection::add(Context &ctx, i64 dylib_idx, std::string_view name,
+                       i64 flags, i64 seg_idx, i64 offset) {
+  entries.push_back({dylib_idx, name, flags, seg_idx, offset});
+
+  i64 nsyms = entries.size();
+  ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
+  ctx.stub_helper.hdr.size =
+    StubHelperSection::HEADER_SIZE + nsyms * StubHelperSection::ENTRY_SIZE;
+  ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection::ENTRY_SIZE;
+}
+
 void StubsSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
 

@@ -51,13 +51,7 @@ static void fill_symtab(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
-  ctx.stubs.entries.push_back({1, "_printf", 0, 3, 0});
-
-  i64 nsyms = ctx.stubs.entries.size();
-  ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
-  ctx.stub_helper.hdr.size =
-    StubHelperSection::HEADER_SIZE + nsyms * StubHelperSection::ENTRY_SIZE;
-  ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection::ENTRY_SIZE;
+  ctx.stubs.add(ctx, 1, "_printf", 0, 3, 0);
 }
 
 static i64 assign_offsets(Context &ctx) {
