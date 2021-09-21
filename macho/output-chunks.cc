@@ -708,12 +708,15 @@ LazySymbolPtrSection::LazySymbolPtrSection() {
   strcpy(hdr.sectname, "__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
-  hdr.size = contents.size();
   hdr.reserved1 = 2;
 }
 
 void LazySymbolPtrSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  u64 *buf = (u64 *)(ctx.buf + hdr.offset);
+
+  for (i64 i = 0; i < ctx.stubs.entries.size(); i++)
+    buf[i] = ctx.stub_helper.hdr.addr + StubHelperSection::HEADER_SIZE +
+             i * StubHelperSection::ENTRY_SIZE;
 }
 
 DataSection::DataSection() {
