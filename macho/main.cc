@@ -18,16 +18,16 @@ static void create_synthetic_sections(Context &ctx) {
 
   ctx.text_seg.sections.push_back(&ctx.mach_hdr);
   ctx.text_seg.sections.push_back(&ctx.load_cmd);
-  ctx.text_seg.sections.push_back(new TextSection);
-  ctx.text_seg.sections.push_back(new StubsSection);
-  ctx.text_seg.sections.push_back(new StubHelperSection);
-  ctx.text_seg.sections.push_back(new CstringSection);
-  ctx.text_seg.sections.push_back(new UnwindInfoSection);
+  ctx.text_seg.sections.push_back(&ctx.text);
+  ctx.text_seg.sections.push_back(&ctx.stubs);
+  ctx.text_seg.sections.push_back(&ctx.stub_helper);
+  ctx.text_seg.sections.push_back(&ctx.cstring);
+  ctx.text_seg.sections.push_back(&ctx.unwind_info);
 
-  ctx.data_const_seg.sections.push_back(new GotSection);
+  ctx.data_const_seg.sections.push_back(&ctx.got);
 
-  ctx.data_seg.sections.push_back(new LazySymbolPtrSection);
-  ctx.data_seg.sections.push_back(new DataSection);
+  ctx.data_seg.sections.push_back(&ctx.lazy_symbol_ptr);
+  ctx.data_seg.sections.push_back(&ctx.data);
 
   ctx.linkedit_seg.sections.push_back(&ctx.rebase);
   ctx.linkedit_seg.sections.push_back(&ctx.bind);

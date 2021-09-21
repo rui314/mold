@@ -353,6 +353,15 @@ struct Context {
   OutputSegment linkedit_seg{"__LINKEDIT", VM_PROT_READ, 0};
 
   OutputMachHeader mach_hdr;
+  TextSection text;
+  StubsSection stubs;
+  StubHelperSection stub_helper;
+  CstringSection cstring;
+  UnwindInfoSection unwind_info;
+  GotSection got;
+  LazySymbolPtrSection lazy_symbol_ptr;
+  DataSection data;
+
   OutputLoadCommand load_cmd;
   OutputRebaseSection rebase;
   OutputBindSection bind;
