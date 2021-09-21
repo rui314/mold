@@ -346,10 +346,11 @@ struct Context {
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
-  std::unique_ptr<OutputSegment> text_seg;
-  std::unique_ptr<OutputSegment> data_const_seg;
-  std::unique_ptr<OutputSegment> data_seg;
-  std::unique_ptr<OutputSegment> linkedit_seg;
+  OutputSegment text_seg{"__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0};
+  OutputSegment data_const_seg{"__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
+                               SG_READ_ONLY};
+  OutputSegment data_seg{"__DATA", VM_PROT_READ | VM_PROT_WRITE, 0};
+  OutputSegment linkedit_seg{"__LINKEDIT", VM_PROT_READ, 0};
 
   OutputMachHeader mach_hdr;
   OutputLoadCommand load_cmd;

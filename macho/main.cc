@@ -11,46 +11,32 @@
 namespace mold::macho {
 
 static void create_synthetic_sections(Context &ctx) {
-  OutputSegment *text =
-    new OutputSegment("__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0);
-  ctx.segments.push_back(text);
-  ctx.text_seg.reset(text);
+  ctx.segments.push_back(&ctx.text_seg);
+  ctx.segments.push_back(&ctx.data_const_seg);
+  ctx.segments.push_back(&ctx.data_seg);
+  ctx.segments.push_back(&ctx.linkedit_seg);
 
-  OutputSegment *data_const =
-    new OutputSegment("__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE, SG_READ_ONLY);
-  ctx.segments.push_back(data_const);
-  ctx.data_const_seg.reset(data_const);
+  ctx.text_seg.sections.push_back(&ctx.mach_hdr);
+  ctx.text_seg.sections.push_back(&ctx.load_cmd);
+  ctx.text_seg.sections.push_back(new TextSection);
+  ctx.text_seg.sections.push_back(new StubsSection);
+  ctx.text_seg.sections.push_back(new StubHelperSection);
+  ctx.text_seg.sections.push_back(new CstringSection);
+  ctx.text_seg.sections.push_back(new UnwindInfoSection);
 
-  OutputSegment *data =
-    new OutputSegment("__DATA", VM_PROT_READ | VM_PROT_WRITE, 0);
-  ctx.segments.push_back(data);
-  ctx.data_seg.reset(data);
+  ctx.data_const_seg.sections.push_back(new GotSection);
 
-  OutputSegment *linkedit = new OutputSegment("__LINKEDIT", VM_PROT_READ, 0);
-  ctx.segments.push_back(linkedit);
-  ctx.linkedit_seg.reset(linkedit);
+  ctx.data_seg.sections.push_back(new LazySymbolPtrSection);
+  ctx.data_seg.sections.push_back(new DataSection);
 
-  ctx.text_seg->sections.push_back(&ctx.mach_hdr);
-  ctx.text_seg->sections.push_back(&ctx.load_cmd);
-  ctx.text_seg->sections.push_back(new TextSection);
-  ctx.text_seg->sections.push_back(new StubsSection);
-  ctx.text_seg->sections.push_back(new StubHelperSection);
-  ctx.text_seg->sections.push_back(new CstringSection);
-  ctx.text_seg->sections.push_back(new UnwindInfoSection);
-
-  ctx.data_const_seg->sections.push_back(new GotSection);
-
-  ctx.data_seg->sections.push_back(new LazySymbolPtrSection);
-  ctx.data_seg->sections.push_back(new DataSection);
-
-  ctx.linkedit_seg->sections.push_back(&ctx.rebase);
-  ctx.linkedit_seg->sections.push_back(&ctx.bind);
-  ctx.linkedit_seg->sections.push_back(&ctx.lazy_bind);
-  ctx.linkedit_seg->sections.push_back(&ctx.export_);
-  ctx.linkedit_seg->sections.push_back(&ctx.function_starts);
-  ctx.linkedit_seg->sections.push_back(&ctx.symtab);
-  ctx.linkedit_seg->sections.push_back(&ctx.indir_symtab);
-  ctx.linkedit_seg->sections.push_back(&ctx.strtab);
+  ctx.linkedit_seg.sections.push_back(&ctx.rebase);
+  ctx.linkedit_seg.sections.push_back(&ctx.bind);
+  ctx.linkedit_seg.sections.push_back(&ctx.lazy_bind);
+  ctx.linkedit_seg.sections.push_back(&ctx.export_);
+  ctx.linkedit_seg.sections.push_back(&ctx.function_starts);
+  ctx.linkedit_seg.sections.push_back(&ctx.symtab);
+  ctx.linkedit_seg.sections.push_back(&ctx.indir_symtab);
+  ctx.linkedit_seg.sections.push_back(&ctx.strtab);
 }
 
 static void fill_symtab(Context &ctx) {
