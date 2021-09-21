@@ -285,9 +285,9 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
-class LaSymbolPtrSection : public OutputSection {
+class LazySymbolPtrSection : public OutputSection {
 public:
-  LaSymbolPtrSection(OutputSegment &parent);
+  LazySymbolPtrSection(OutputSegment &parent);
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {0x94, 0x3f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};

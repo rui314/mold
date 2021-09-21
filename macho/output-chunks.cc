@@ -676,7 +676,7 @@ GotSection::GotSection(OutputSegment &parent)
   hdr.reserved1 = 1;
 }
 
-LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
+LazySymbolPtrSection::LazySymbolPtrSection(OutputSegment &parent)
   : OutputSection(parent) {
   strcpy(hdr.sectname, "__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
@@ -685,7 +685,7 @@ LaSymbolPtrSection::LaSymbolPtrSection(OutputSegment &parent)
   hdr.reserved1 = 2;
 }
 
-void LaSymbolPtrSection::copy_buf(Context &ctx) {
+void LazySymbolPtrSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 

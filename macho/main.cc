@@ -44,7 +44,7 @@ static void create_synthetic_sections(Context &ctx) {
 
   ctx.data_const_seg->sections.push_back(new GotSection(*ctx.data_const_seg));
 
-  ctx.data_seg->sections.push_back(new LaSymbolPtrSection(*ctx.data_seg));
+  ctx.data_seg->sections.push_back(new LazySymbolPtrSection(*ctx.data_seg));
   ctx.data_seg->sections.push_back(new DataSection(*ctx.data_seg));
 
   ctx.rebase.reset(new OutputRebaseSection(*ctx.linkedit_seg));
