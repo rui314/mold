@@ -211,6 +211,8 @@ public:
     hdr.size = contents.size();
   }
 
+  static constexpr i64 ENTRY_SIZE = 4;
+
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {
