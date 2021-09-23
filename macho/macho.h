@@ -477,7 +477,7 @@ struct MachRel {
   i32 offset;
   u32 idx : 24;
   u32 is_pcrel : 1;
-  u32 length : 2;
+  u32 p2size : 2;
   u32 is_extern : 1;
   u32 type : 4;
 };
