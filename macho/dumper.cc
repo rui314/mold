@@ -197,7 +197,7 @@ void dump_file(std::string path) {
                       << "\n   offset: 0x" << rel[k].offset
                       << "\n   idx: 0x" << rel[k].idx
                       << "\n   is_pcrel: " << rel[k].is_pcrel
-                      << "\n   length: 0x" << rel[k].length
+                      << "\n   p2size: 0x" << rel[k].p2size
                       << "\n   is_extern: " << rel[k].is_extern
                       << "\n   type: " << rel[k].type
                       << "\n";
