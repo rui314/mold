@@ -92,19 +92,18 @@ A classic way to use `mold`:
 - clang after 12.0: pass `--ld-path=<absolute-path-to-mold-executable>`;
 - gcc: `--ld-path` patch [has been declined by GCC maintainers](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html), instead they advise to use a [workaround](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573823.html): create directory `<dirname>`, then `ln -s <path-to-mold> <dirname>/ld`, and then pass `-B<dirname>` (`-B` tells GCC to look for `ld` in specified location).
 
-It is sometimes very hard to pass an appropriate command line
-option to `cc` to specify an alternative linker.
-To deal with the situation, mold has a feature to intercept all
-invocations of `/usr/bin/ld`, `/usr/bin/ld.lld` or `/usr/bin/ld.gold`
-and redirect it to itself. To use the feature, run `make` (or another
-build command) as a subcommand of mold as follows:
+It is sometimes very hard to pass an appropriate command line option
+to `cc` to specify an alternative linker.  To deal with the situation,
+mold has a feature to intercept all invocations of `ld`, `ld.lld` or
+`ld.gold` and redirect it to itself. To use the feature, run `make`
+(or another build command) as a subcommand of mold as follows:
 
 ```
 $ path/to/mold -run make <make-options-if-any>
 ```
 
 Here's an example showing how to link Rust code when using the
-cargo package manager.
+cargo package manager:
 
 ```
 $ path/to/mold -run cargo build
@@ -112,9 +111,8 @@ $ path/to/mold -run cargo build
 
 Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
-file intercepts all function calls to exec-family functions to replace
-`argv[0]` with `mold` if it is `/usr/bin/ld`, `/usr/bin/ld.gold` or
-`/usr/bin/ld.lld`.
+file intercepts all function calls to `exec(3)`-family functions to
+replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
 
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
