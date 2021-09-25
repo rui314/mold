@@ -19,6 +19,6 @@ __attribute__((visibility("protected"))) int foo;
 EOF
 
 ! clang -fuse-ld=$mold $t/a.o $t/b.so -o $t/exe >& $t/log || false
-fgrep -q 'cannot make copy relocation for  protected symbol' $t/log
+fgrep -q 'cannot make copy relocation for protected symbol' $t/log
 
 echo OK

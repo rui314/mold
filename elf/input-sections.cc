@@ -126,9 +126,9 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       return;
     }
     if (sym.esym().st_visibility == STV_PROTECTED) {
-      Error(ctx) << *this << ": cannot make copy relocation for "
-                 << " protected symbol '" << sym << "', defined in "
-                 << *sym.file;
+      Error(ctx) << *this
+                 << ": cannot make copy relocation for protected symbol '"
+                 << sym << "', defined in " << *sym.file;
       return;
     }
     sym.flags |= NEEDS_COPYREL;
