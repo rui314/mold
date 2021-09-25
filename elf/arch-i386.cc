@@ -404,7 +404,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    DYNREL,        DYNREL },     // PDE
+        {  NONE,     NONE,    COPYREL,       PLT },        // PDE
       };
       dispatch(ctx, table, i);
       break;
