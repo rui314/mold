@@ -537,7 +537,10 @@ void scan_rels(Context<E> &ctx) {
       ctx.got->add_got_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_PLT) {
-      if (sym->flags & NEEDS_GOT)
+      // If we need to create a canonical PLT (i.e. ctx.arg.pic is true),
+      // we can't use .plt.got because otherwise .plt.got and .plt would
+      // refer each other, resulting in an infinite loop at runtime.
+      if ((sym->flags & NEEDS_GOT) && !ctx.arg.pic)
         ctx.pltgot->add_symbol(ctx, sym);
       else
         ctx.plt->add_symbol(ctx, sym);

@@ -10,11 +10,13 @@ cat <<EOF | cc -shared -o $t/a.so -xc -
 void fn() {}
 EOF
 
-cat <<EOF | cc -o $t/b.o -c -xc -
+cat <<EOF | cc -o $t/b.o -c -xc -fno-PIC -
 #include <stdio.h>
 
+typedef void Func();
+
 void fn();
-void (*ptr)() = fn;
+Func *const ptr = fn;
 
 int main() {
   printf("%d\n", fn == ptr);

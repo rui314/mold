@@ -861,7 +861,6 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
-  assert(!sym->has_got(ctx));
 
   if (this->shdr.sh_size == 0) {
     this->shdr.sh_size = E::plt_hdr_size;
@@ -1005,7 +1004,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
-      if (!ctx.arg.pic && sym.has_plt(ctx) && !sym.has_got(ctx)) {
+      if (sym.has_plt(ctx) && !ctx.arg.pic) {
         // Emit an address for a canonical PLT
         esym.st_value = sym.get_plt_addr(ctx);
       }
