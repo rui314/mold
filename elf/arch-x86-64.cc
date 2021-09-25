@@ -546,7 +546,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  NONE,     ERROR, ERROR,         ERROR },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_X86_64_64: {
@@ -558,7 +558,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_X86_64_PC8:
@@ -570,7 +570,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_X86_64_PC64: {
@@ -580,7 +580,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_X86_64_GOT32:

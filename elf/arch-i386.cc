@@ -396,7 +396,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  NONE,     ERROR, ERROR,         ERROR },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_386_32: {
@@ -406,7 +406,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    COPYREL,       PLT },        // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_386_PC8:
@@ -417,7 +417,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_386_PC32: {
@@ -427,7 +427,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i);
+      dispatch(ctx, table, i, rel, sym);
       break;
     }
     case R_386_GOT32:

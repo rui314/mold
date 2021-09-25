@@ -103,13 +103,11 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 template <typename E>
-void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i) {
-  std::span<ElfRel<E>> rels = get_rels(ctx);
-  const ElfRel<E> &rel = rels[i];
-  Symbol<E> &sym = *file.symbols[rel.r_sym];
+void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
+                               const ElfRel<E> &rel, Symbol<E> &sym) {
+  Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
   bool is_code = (shdr.sh_flags & SHF_EXECINSTR);
   bool is_writable = (shdr.sh_flags & SHF_WRITE);
-  Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
 
   auto error = [&]() {
     Error(ctx) << *this << ": " << rel << " relocation against symbol `"

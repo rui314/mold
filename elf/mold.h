@@ -292,13 +292,14 @@ public:
   bool is_ehframe = false;
 
 private:
-  typedef enum { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
+  typedef enum : u8 { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
 
   void uncompress_old_style(Context<E> &ctx);
   void uncompress_new_style(Context<E> &ctx);
   void do_uncompress(Context<E> &ctx, std::string_view data, u64 size);
 
-  void dispatch(Context<E> &ctx, Action table[3][4], i64 i);
+  void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
+                const ElfRel<E> &rel, Symbol<E> &sym);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
 };
 
