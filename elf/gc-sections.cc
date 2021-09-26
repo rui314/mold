@@ -154,9 +154,7 @@ static void sweep(Context<E> &ctx) {
   static Counter counter("garbage_sections");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (i64 i = 0; i < file->sections.size(); i++) {
-      std::unique_ptr<InputSection<E>> &isec = file->sections[i];
-
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)
           SyncOut(ctx) << "removing unused section " << *isec;
