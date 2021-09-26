@@ -5,9 +5,6 @@
 
 namespace mold::elf {
 
-static thread_local char *demangle_buf;
-static thread_local size_t demangle_buf_len;
-
 static bool is_mangled_name(std::string_view name) {
   return name.starts_with("_Z");
 }
@@ -15,17 +12,19 @@ static bool is_mangled_name(std::string_view name) {
 template <typename E>
 std::string_view Symbol<E>::get_demangled_name() const {
   if (is_mangled_name(name())) {
-    char *mangled = new char[name().size() + 1];
-    memcpy(mangled, name().data(), name().size());
-    mangled[name().size()] = '\0';
+    static thread_local char *buf1;
+    static thread_local char *buf2;
 
-    size_t len = sizeof(demangle_buf);
+    buf1 = (char *)realloc(buf1, name().size() + 1);
+    memcpy(buf1, name().data(), name().size());
+    buf1[name().size()] = '\0';
+
     int status;
-    demangle_buf =
-      abi::__cxa_demangle(mangled, demangle_buf, &demangle_buf_len, &status);
-    delete[](mangled);
-    if (status == 0)
-      return demangle_buf;
+    char *p = abi::__cxa_demangle(buf1, buf2, NULL, &status);
+    if (status == 0) {
+      buf2 = p;
+      return p;
+    }
   }
 
   return name();
