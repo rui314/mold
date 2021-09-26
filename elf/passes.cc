@@ -600,8 +600,9 @@ void apply_version_script(Context<E> &ctx) {
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file == file) {
-          std::string_view name = elem.is_extern_cpp
-            ? sym->get_demangled_name() : sym->name();
+          std::string_view name = sym->name();
+          if (elem.is_extern_cpp)
+            name = demangle(name);
           if (std::regex_match(name.begin(), name.end(), re))
             sym->ver_idx = elem.ver_idx;
         }

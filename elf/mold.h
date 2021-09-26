@@ -1801,8 +1801,6 @@ public:
     return "";
   }
 
-  std::string_view get_demangled_name() const;
-
   const ElfSym<E> &esym() const {
     if (file->is_dso)
       return *((SharedFile<E> *)file)->elf_syms[sym_idx];
@@ -1875,6 +1873,15 @@ public:
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 };
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
+  if (opt_demangle)
+    out << demangle(sym.name());
+  else
+    out << sym.name();
+  return out;
+}
 
 //
 // Inline objects and functions

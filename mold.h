@@ -363,6 +363,12 @@ std::string path_to_absolute(std::string_view path);
 std::string path_clean(std::string_view path);
 
 //
+// demangle.cc
+//
+
+std::string_view demangle(std::string_view name);
+
+//
 // compress.cc
 //
 
