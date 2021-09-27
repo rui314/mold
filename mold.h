@@ -236,6 +236,14 @@ inline i64 uleb_size(u64 val) {
   return i;
 }
 
+inline void bitvector_set(u8 *vec, u64 idx) {
+  vec[idx / 8] |= 1 << (idx % 8);
+}
+
+inline bool bitvector_get(u8 *vec, u64 idx) {
+  return vec[idx / 8] & (1 << (idx % 8));
+}
+
 //
 // Concurrent Map
 //

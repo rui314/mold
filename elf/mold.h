@@ -120,11 +120,6 @@ inline u64 hash_string(std::string_view str) {
 // input-sections.cc
 //
 
-enum {
-  R_DYN = 1,
-  R_BASEREL,
-};
-
 // .eh_frame section contains CIE and FDE records to teach the runtime
 // how to handle exceptions. Usually, a .eh_frame contains one CIE
 // followed by as many FDEs as the number of functions defined by the
@@ -265,7 +260,8 @@ public:
   std::string_view contents;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
-  std::unique_ptr<u8[]> rel_exprs;
+  std::unique_ptr<u8[]> needs_dynrel;
+  std::unique_ptr<u8[]> needs_baserel;
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
