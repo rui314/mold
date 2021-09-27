@@ -637,7 +637,7 @@ static int elf_main(int argc, char **argv) {
     show_stats(ctx);
 
   if (ctx.arg.perf)
-    Timer<E>::print(ctx);
+    print_timer_records(ctx.timer_records);
 
   std::cout << std::flush;
   std::cerr << std::flush;

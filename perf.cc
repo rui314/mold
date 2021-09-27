@@ -6,7 +6,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
-namespace mold::elf {
+namespace mold {
 
 i64 Counter::get_value() {
   return values.combine(std::plus());
@@ -58,22 +58,6 @@ void TimerRecord::stop() {
   sys = to_nsec(usage.ru_stime) - sys;
 }
 
-template <typename E>
-Timer<E>::Timer(Context<E> &ctx, std::string name, Timer *parent) {
-  record = new TimerRecord(name, parent ? parent->record : nullptr);
-  ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
-}
-
-template <typename E>
-Timer<E>::~Timer() {
-  record->stop();
-}
-
-template <typename E>
-void Timer<E>::stop() {
-  record->stop();
-}
-
 static void print_rec(TimerRecord &rec, i64 indent) {
   printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
          ((double)rec.user / 1000000000),
@@ -90,11 +74,8 @@ static void print_rec(TimerRecord &rec, i64 indent) {
     print_rec(*child, indent + 1);
 }
 
-template <typename E>
-void Timer<E>::print(Context<E> &ctx) {
-  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &records =
-    ctx.timer_records;
-
+void print_timer_records(
+    tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &records) {
   for (i64 i = records.size() - 1; i >= 0; i--)
     records[i]->stop();
 
@@ -122,11 +103,4 @@ void Timer<E>::print(Context<E> &ctx) {
   std::cout << std::flush;
 }
 
-#define INSTANTIATE(E)                          \
-  template class Timer<E>;
-
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(AARCH64);
-
-} // namespace mold::elf
+} // namespace mold

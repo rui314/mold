@@ -9,6 +9,8 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tbb/concurrent_vector.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <unistd.h>
 #include <vector>
 
@@ -393,6 +395,83 @@ private:
   std::vector<std::vector<u8>> shards;
   u32 checksum = 0;
   u32 uncompressed_size = 0;
+};
+
+//
+// perf.cc
+//
+
+// Counter is used to collect statistics numbers.
+class Counter {
+public:
+  Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
+    static std::mutex mu;
+    std::lock_guard lock(mu);
+    instances.push_back(this);
+  }
+
+  Counter &operator++(int) {
+    if (enabled)
+      values.local()++;
+    return *this;
+  }
+
+  Counter &operator+=(int delta) {
+    if (enabled)
+      values.local() += delta;
+    return *this;
+  }
+
+  static void print();
+
+  static inline bool enabled = false;
+
+private:
+  i64 get_value();
+
+  std::string_view name;
+  tbb::enumerable_thread_specific<i64> values;
+
+  static inline std::vector<Counter *> instances;
+};
+
+// Timer and TimeRecord records elapsed time (wall clock time)
+// used by each pass of the linker.
+struct TimerRecord {
+  TimerRecord(std::string name, TimerRecord *parent = nullptr);
+  void stop();
+
+  std::string name;
+  TimerRecord *parent;
+  tbb::concurrent_vector<TimerRecord *> children;
+  i64 start;
+  i64 end;
+  i64 user;
+  i64 sys;
+  bool stopped = false;
+};
+
+void
+print_timer_records(tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &);
+
+template <typename C>
+class Timer {
+public:
+  Timer(C &ctx, std::string name, Timer *parent = nullptr) {
+    record = new TimerRecord(name, parent ? parent->record : nullptr);
+    ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
+  }
+
+  ~Timer() {
+    record->stop();
+  }
+
+  void stop() {
+    record->stop();
+  }
+
+private:
+  TimerRecord *record;
 };
 
 //
