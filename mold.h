@@ -406,16 +406,16 @@ private:
 // run the same command with the same command line arguments.
 class TarFile {
 public:
-  static constexpr i64 BLOCK_SIZE = 512;
-
-
   TarFile(std::string basedir) : basedir(basedir) {}
-
   void append(std::string path, std::string_view data);
   void write_to(u8 *buf);
   i64 size() const { return size_; }
 
 private:
+  static constexpr i64 BLOCK_SIZE = 512;
+
+  std::string encode_path(std::string path);
+
   std::string basedir;
   std::vector<std::pair<std::string, std::string_view>> contents;
   i64 size_ = BLOCK_SIZE * 2;

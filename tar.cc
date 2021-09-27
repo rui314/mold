@@ -42,9 +42,9 @@ struct UstarHeader {
   char pad[12];
 };
 
-static_assert(sizeof(UstarHeader) == TarFile::BLOCK_SIZE);
+std::string TarFile::encode_path(std::string path) {
+  path = path_clean(basedir + "/" + path);
 
-static std::string encode_path(const std::string &path) {
   // Construct a string which contains something like
   // "16 path=foo/bar\n" where 16 is the size of the string
   // including the size string itself.
@@ -58,7 +58,7 @@ void TarFile::append(std::string path, std::string_view data) {
   contents.push_back({path, data});
 
   size_ += BLOCK_SIZE * 2;
-  size_ += align_to(path_clean(basedir + "/" + path).size(), BLOCK_SIZE);
+  size_ += align_to(encode_path(path).size(), BLOCK_SIZE);
   size_ += align_to(data.size(), BLOCK_SIZE);
 }
 
@@ -73,10 +73,11 @@ void TarFile::write_to(u8 *buf) {
     std::string_view data = contents[i].second;
 
     // Write PAX header
+    static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
     UstarHeader &pax = *(UstarHeader *)buf;
     buf += BLOCK_SIZE;
 
-    std::string attr = encode_path(path_clean(basedir + "/" + path));
+    std::string attr = encode_path(path);
     sprintf(pax.size, "%011zo", attr.size());
     pax.typeflag[0] = 'x';
     pax.flush();
