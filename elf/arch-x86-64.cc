@@ -352,7 +352,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       }
       continue;
     case R_X86_64_GOTPC32_TLSDESC:
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         static const u8 insn[] = {
           0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
         };
@@ -369,7 +369,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       *(u64 *)loc = sym.esym().st_size + A;
       continue;
     case R_X86_64_TLSDESC_CALL:
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
