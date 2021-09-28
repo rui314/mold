@@ -16,7 +16,7 @@ jobs:
     - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        make -j$(nproc)
+        make DEBUG=1 -j$(nproc)
     - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
@@ -33,8 +33,17 @@ jobs:
     - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        make CC=gcc CXX=g++ -j$(nproc)
+        make CC=gcc CXX=g++ DEBUG=1 -j$(nproc)
     - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
         make test -j$(nproc)
+  build-macos:
+    runs-on: macos-11
+    steps:
+    - uses: actions/checkout@v2
+    - name: brew
+      run: brew install xxhash
+    - name: make
+      run: |
+        make DEBUG=1 -j$(nproc)
