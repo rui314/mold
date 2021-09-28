@@ -45,5 +45,6 @@ jobs:
     - name: brew
       run: brew install xxhash
     - name: make
-      run: |
-        make DEBUG=1 -j$(nproc)
+      run: make DEBUG=1 -j$(nproc)
+    - name: make test
+      run: make test -j$(nproc)
