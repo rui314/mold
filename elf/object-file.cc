@@ -251,11 +251,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       target->relsec_idx = i;
 
       if (target->shdr.sh_flags & SHF_ALLOC) {
-        i64 size = (shdr.sh_size / sizeof(ElfRel<E>) + 7) / 8;
-        target->needs_dynrel.reset(new u8[size]);
-        target->needs_baserel.reset(new u8[size]);
-        memset(&target->needs_dynrel[0], 0, size);
-        memset(&target->needs_baserel[0], 0, size);
+        i64 size = shdr.sh_size / sizeof(ElfRel<E>);
+        target->needs_dynrel.resize(size);
+        target->needs_baserel.resize(size);
       }
     }
   }

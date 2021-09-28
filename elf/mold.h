@@ -260,8 +260,8 @@ public:
   std::string_view contents;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
-  std::unique_ptr<u8[]> needs_dynrel;
-  std::unique_ptr<u8[]> needs_baserel;
+  BitVector needs_dynrel;
+  BitVector needs_baserel;
   i32 fde_begin = -1;
   i32 fde_end = -1;
 

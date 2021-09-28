@@ -157,13 +157,13 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
-    if (bitvector_get(&needs_dynrel[0], i)) {
+    if (needs_dynrel[i]) {
       *dynrel++ = {P, R_AARCH64_ABS64, (u32)sym.get_dynsym_idx(ctx), A};
       *(u64 *)loc = A;
       continue;
     }
 
-    if (bitvector_get(&needs_baserel[0], i)) {
+    if (needs_baserel[i]) {
       *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
       *(u64 *)loc = S + A;
       continue;

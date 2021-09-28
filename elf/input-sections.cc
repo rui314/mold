@@ -145,7 +145,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       ctx.has_textrel = true;
     }
     sym.flags |= NEEDS_DYNSYM;
-    bitvector_set(&needs_dynrel[0], i);
+    needs_dynrel[i] = true;
     file.num_dynrel++;
     return;
   case BASEREL:
@@ -156,7 +156,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       }
       ctx.has_textrel = true;
     }
-    bitvector_set(&needs_baserel[0], i);
+    needs_baserel[i] = true;
     file.num_dynrel++;
     return;
   default:

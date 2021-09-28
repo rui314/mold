@@ -236,14 +236,6 @@ inline i64 uleb_size(u64 val) {
   return i;
 }
 
-inline void bitvector_set(u8 *vec, u64 idx) {
-  vec[idx / 8] |= 1 << (idx % 8);
-}
-
-inline bool bitvector_get(u8 *vec, u64 idx) {
-  return vec[idx / 8] & (1 << (idx % 8));
-}
-
 //
 // Concurrent Map
 //
@@ -329,6 +321,44 @@ public:
 
 private:
   static constexpr const char *locked = "marker";
+};
+
+//
+// Bit vector
+//
+
+class BitVector {
+  struct BitRef {
+    BitRef(u8 &byte, u8 bitpos) : byte(byte), bitpos(bitpos) {}
+
+    BitRef &operator=(bool val) {
+      if (val)
+        byte |= (1 << bitpos);
+      else
+        byte &= ~(1 << bitpos);
+      return *this;
+    }
+
+    operator bool() const {
+      return byte & (1 << bitpos);
+    }
+
+    u8 &byte;
+    u8 bitpos;
+  };
+
+public:
+  void resize(i64 size) {
+    vec.reset(new u8[(size + 7) / 8]);
+    memset(vec.get(), 0, (size + 7) / 8);
+  }
+
+  BitRef operator[](i64 i) {
+    return BitRef(vec[i / 8], i % 8);
+  }
+
+private:
+  std::unique_ptr<u8[]> vec;
 };
 
 //

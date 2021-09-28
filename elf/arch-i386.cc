@@ -173,13 +173,13 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 #define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 
-    if (bitvector_get(&needs_dynrel[0], i)) {
+    if (needs_dynrel[i]) {
       *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
       *(u32 *)loc = A;
       continue;
     }
 
-    if (bitvector_get(&needs_baserel[0], i)) {
+    if (needs_baserel[i]) {
       *dynrel++ = {P, R_386_RELATIVE, 0};
       *(u32 *)loc = S + A;
       continue;
