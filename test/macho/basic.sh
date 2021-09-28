@@ -8,4 +8,7 @@ mkdir -p $t
 
 $mold | grep -q 'mold macho stub'
 
+$mold -out $t/hello
+$t/hello | grep -q 'Hello world'
+
 echo OK
