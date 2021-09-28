@@ -1792,7 +1792,7 @@ void ReproSection<E>::update_shdr(Context<E> &ctx) {
   TarFile tar("repro");
 
   tar.append("response.txt", save_string(ctx, create_response_file(ctx)));
-  tar.append("version.txt", save_string(ctx, get_version_string() + "\n"));
+  tar.append("version.txt", save_string(ctx, mold_version + "\n"));
 
   std::unordered_set<std::string> seen;
   for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs) {

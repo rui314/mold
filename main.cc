@@ -12,12 +12,12 @@ std::string_view errno_string() {
   return buf;
 }
 
-std::string get_version_string() {
-  if (GIT_HASH[0] == '\0')
-    return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
-  return "mold " MOLD_VERSION " (" GIT_HASH
-         "; compatible with GNU ld and GNU gold)";
-}
+const std::string mold_version =
+#ifdef GIT_HASH
+  "mold " MOLD_VERSION " (" GIT_HASH "; compatible with GNU ld and GNU gold)";
+#else
+  "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
+#endif
 
 void cleanup() {
   if (output_tmpfile)

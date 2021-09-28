@@ -224,7 +224,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   }
 
   // Add an identification string to .comment.
-  add_comment_string(ctx, get_version_string());
+  add_comment_string(ctx, mold_version);
 
   // Embed command line arguments for debugging.
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])

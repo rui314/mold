@@ -454,13 +454,13 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
     } else if (read_flag(args, "v")) {
-      SyncOut(ctx) << get_version_string();
+      SyncOut(ctx) << mold_version;
       version_shown = true;
     } else if (read_flag(args, "version")) {
-      SyncOut(ctx) << get_version_string();
+      SyncOut(ctx) << mold_version;
       exit(0);
     } else if (read_flag(args, "V")) {
-      SyncOut(ctx) << get_version_string()
+      SyncOut(ctx) << mold_version
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386";
       version_shown = true;
     } else if (read_arg(ctx, args, arg, "m")) {

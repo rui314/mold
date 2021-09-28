@@ -6,12 +6,9 @@ ifeq ($(origin CXX), default)
   CXX = clang++
 endif
 
-GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
-
 OS ?= $(shell uname -s)
 
-CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" \
-           -DGIT_HASH=\"$(GIT_HASH)\" $(EXTRA_CPPFLAGS)
+CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
@@ -25,6 +22,11 @@ DEBUG ?= 0
 LTO ?= 0
 ASAN ?= 0
 TSAN ?= 0
+
+GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
+ifneq ($(GIT_HASH),)
+  CPPFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
+endif
 
 ifeq ($(DEBUG), 1)
   CPPFLAGS += -O0 -g
