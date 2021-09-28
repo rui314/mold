@@ -49,8 +49,8 @@ jobs:
     - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        make DEBUG=1 -j$(nproc)
+        make DEBUG=1 -j$(sysctl -n hw.logicalcpu)
     - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        make test -j$(nproc)
+        make test -j$(sysctl -n hw.logicalcpu)
