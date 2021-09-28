@@ -42,9 +42,17 @@ jobs:
     runs-on: macos-11
     steps:
     - uses: actions/checkout@v2
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1
     - name: brew
-      run: brew install xxhash
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+        brew install xxhash
     - name: make
-      run: make DEBUG=1 -j$(nproc)
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+        make DEBUG=1 -j$(nproc)
     - name: make test
-      run: make test -j$(nproc)
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+        make test -j$(nproc)
