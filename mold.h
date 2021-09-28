@@ -30,7 +30,7 @@ inline char *output_tmpfile;
 inline char *socket_tmpfile;
 inline thread_local bool opt_demangle;
 
-std::string errno_string();
+std::string_view errno_string();
 std::string get_version_string();
 void cleanup();
 void install_signal_handler();

@@ -6,14 +6,14 @@
 
 namespace mold {
 
-std::string errno_string() {
-  char buf[500];
+std::string_view errno_string() {
+  static thread_local char buf[200];
   strerror_r(errno, buf, sizeof(buf));
   return buf;
 }
 
 std::string get_version_string() {
-  if (strlen(GIT_HASH) == 0)
+  if (GIT_HASH[0] == '\0')
     return "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
   return "mold " MOLD_VERSION " (" GIT_HASH
          "; compatible with GNU ld and GNU gold)";
