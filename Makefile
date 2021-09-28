@@ -102,8 +102,13 @@ $(TBB_LIB):
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
+ifeq ($(OS), Darwin)
 test tests check: all
-	 $(MAKE) -C test --output-sync --no-print-directory
+	$(MAKE) -C test -f Makefile.darwin --no-print-directory
+else
+test tests check: all
+	$(MAKE) -C test -f Makefile.linux --no-print-directory --output-sync
+endif
 
 install: all
 	install -m 755 -d $(DEST)/bin
