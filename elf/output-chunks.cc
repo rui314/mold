@@ -1175,7 +1175,7 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
 
   Subsection<E> *subsec;
   bool inserted;
-  std::tie(subsec, inserted) = map.insert(data, hash, Subsection(this, data));
+  std::tie(subsec, inserted) = map.insert(data, hash, Subsection(this));
   assert(subsec);
 
   for (u16 cur = subsec->alignment; cur < alignment;)
@@ -1193,32 +1193,38 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
-    std::vector<Subsection<E> *> subsections;
+    struct KeyVal {
+      std::string_view key;
+      Subsection<E> *val;
+    };
+
+    std::vector<KeyVal> subsections;
     subsections.reserve(shard_size);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (Subsection<E> &subsec = map.values[j]; subsec.is_alive)
-        subsections.push_back(&subsec);
+        subsections.push_back({{map.keys[j], map.sizes[j]}, &subsec});
 
     // Sort subsections to make output deterministic.
     tbb::parallel_sort(subsections.begin(), subsections.end(),
-                       [](Subsection<E> *a, Subsection<E> *b) {
-      if (a->alignment != b->alignment)
-        return a->alignment < b->alignment;
-      if (a->data.size() != b->data.size())
-        return a->data.size() < b->data.size();
-      return a->data < b->data;
+                       [](const KeyVal &a, const KeyVal &b) {
+      if (a.val->alignment != b.val->alignment)
+        return a.val->alignment < b.val->alignment;
+      if (a.key.size() != b.key.size())
+        return a.key.size() < b.key.size();
+      return a.key < b.key;
     });
 
     // Assign offsets.
     i64 offset = 0;
     i64 max_alignment = 0;
 
-    for (Subsection<E> *subsec : subsections) {
-      offset = align_to(offset, subsec->alignment);
-      subsec->offset = offset;
-      offset += subsec->data.size();
-      max_alignment = std::max<i64>(max_alignment, subsec->alignment);
+    for (KeyVal &kv : subsections) {
+      Subsection<E> &subsec = *kv.val;
+      offset = align_to(offset, subsec.alignment);
+      subsec.offset = offset;
+      offset += kv.key.size();
+      max_alignment = std::max<i64>(max_alignment, subsec.alignment);
     }
 
     sizes[i] = offset;
@@ -1260,7 +1266,7 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (Subsection<E> &subsec = map.values[j]; subsec.is_alive)
-        memcpy(buf + subsec.offset, subsec.data.data(), subsec.data.size());
+        memcpy(buf + subsec.offset, map.keys[j], map.sizes[j]);
   });
 }
 

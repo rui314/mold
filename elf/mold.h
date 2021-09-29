@@ -73,18 +73,15 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 template <typename E>
 struct Subsection {
-  Subsection(MergedSection<E> *sec, std::string_view data)
-    : output_section(*sec), data(data) {}
+  Subsection(MergedSection<E> *sec) : output_section(*sec) {}
 
   Subsection(const Subsection &other)
-    : output_section(other.output_section), data(other.data),
-      offset(other.offset), alignment(other.alignment.load()),
-      is_alive(other.is_alive.load()) {}
+    : output_section(other.output_section), offset(other.offset),
+      alignment(other.alignment.load()), is_alive(other.is_alive.load()) {}
 
   inline u64 get_addr(Context<E> &ctx) const;
 
   MergedSection<E> &output_section;
-  std::string_view data;
   u32 offset = -1;
   std::atomic_uint16_t alignment = 1;
   std::atomic_bool is_alive = false;

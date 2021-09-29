@@ -249,7 +249,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash((u64)&sym);
     } else if (Subsection<E> *subsec = sym.get_subsec()) {
       hash('2');
-      hash_string(subsec->data);
+      hash((u64)subsec);
     } else if (!isec) {
       hash('3');
     } else if (isec->leader) {
@@ -298,7 +298,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       SubsectionRef<E> &ref = isec.rel_subsections[subsec_idx++];
       hash('a');
       isec.get_addend(rel);
-      hash_string(ref.subsec->data);
+      hash((u64)ref.subsec);
     } else {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
     }
