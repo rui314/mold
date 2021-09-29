@@ -247,9 +247,9 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     if (!sym.file) {
       hash('1');
       hash((u64)&sym);
-    } else if (SectionFragment<E> *frag = sym.get_frag()) {
+    } else if (Subsection<E> *subsec = sym.get_subsec()) {
       hash('2');
-      hash_string(frag->data);
+      hash_string(subsec->data);
     } else if (!isec) {
       hash('3');
     } else if (isec->leader) {
@@ -286,7 +286,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
-  i64 frag_idx = 0;
+  i64 subsec_idx = 0;
 
   for (i64 i = 0; i < isec.get_rels(ctx).size(); i++) {
     ElfRel<E> &rel = isec.get_rels(ctx)[i];
@@ -294,11 +294,11 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     hash(rel.r_type);
     hash(isec.get_addend(rel));
 
-    if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == i) {
-      SectionFragmentRef<E> &ref = isec.rel_fragments[frag_idx++];
+    if (isec.rel_subsections && isec.rel_subsections[subsec_idx].idx == i) {
+      SubsectionRef<E> &ref = isec.rel_subsections[subsec_idx++];
       hash('a');
       isec.get_addend(rel);
-      hash_string(ref.frag->data);
+      hash_string(ref.subsec->data);
     } else {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
     }
@@ -367,15 +367,15 @@ static void gather_edges(Context<E> &ctx,
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
     assert(isec.icf_eligible);
-    i64 frag_idx = 0;
+    i64 subsec_idx = 0;
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
-        frag_idx++;
+      if (isec.rel_subsections && isec.rel_subsections[subsec_idx].idx == j) {
+        subsec_idx++;
       } else {
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section &&
+        if (!sym.get_subsec() && sym.input_section &&
             sym.input_section->icf_eligible)
           num_edges[i]++;
       }
@@ -389,15 +389,15 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    i64 frag_idx = 0;
+    i64 subsec_idx = 0;
     i64 idx = edge_indices[i];
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
-        frag_idx++;
+      if (isec.rel_subsections && isec.rel_subsections[subsec_idx].idx == j) {
+        subsec_idx++;
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section &&
+        if (!sym.get_subsec() && sym.input_section &&
             sym.input_section->icf_eligible)
           edges[idx++] = sym.input_section->icf_idx;
       }

@@ -207,19 +207,19 @@ void add_comment_string(Context<E> &ctx, std::string str) {
   MergedSection<E> *sec =
     MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS, 0);
   std::string_view data(buf.data(), buf.size() + 1);
-  SectionFragment<E> *frag = sec->insert(data, hash_string(data), 1);
-  frag->is_alive = true;
+  Subsection<E> *subsec = sec->insert(data, hash_string(data), 1);
+  subsec->is_alive = true;
 }
 
 template <typename E>
 void compute_merged_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_merged_section_sizes");
 
-  // Mark section fragments referenced by live objects.
+  // Mark section subsections referenced by live objects.
   if (!ctx.arg.gc_sections) {
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (SectionFragment<E> *frag : file->fragments)
-        frag->is_alive.store(true, std::memory_order_relaxed);
+      for (Subsection<E> *subsec : file->subsections)
+        subsec->is_alive.store(true, std::memory_order_relaxed);
     });
   }
 
@@ -358,7 +358,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   }
 
   obj->elf_syms = *esyms;
-  obj->sym_fragments.resize(obj->elf_syms.size());
+  obj->sym_subsections.resize(obj->elf_syms.size());
 
   i64 num_globals = obj->elf_syms.size() - obj->first_global;
   obj->symvers.resize(num_globals);
