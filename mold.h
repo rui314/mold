@@ -329,7 +329,8 @@ private:
 //
 
 class BitVector {
-  struct BitRef {
+  class BitRef {
+  public:
     BitRef(u8 &byte, u8 bitpos) : byte(byte), bitpos(bitpos) {}
 
     BitRef &operator=(bool val) {
@@ -340,10 +341,16 @@ class BitVector {
       return *this;
     }
 
+    BitRef &operator=(const BitRef &other) {
+      *this = (bool)other;
+      return *this;
+    }
+
     operator bool() const {
       return byte & (1 << bitpos);
     }
 
+  private:
     u8 &byte;
     u8 bitpos;
   };
