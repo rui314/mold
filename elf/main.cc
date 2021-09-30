@@ -34,39 +34,6 @@ std::regex glob_to_regex(std::string_view pattern) {
   return std::regex(ss.str(), std::regex::optimize);
 }
 
-template <typename C>
-static bool is_text_file(MappedFile<C> *mb) {
-  u8 *data = mb->data;
-  return mb->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
-         isprint(data[2]) && isprint(data[3]);
-}
-
-template <typename E>
-FileType get_file_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  std::string_view data = mb->get_contents();
-
-  if (data.starts_with("\177ELF")) {
-    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data.data();
-    if (ehdr.e_type == ET_REL)
-      return FileType::OBJ;
-    if (ehdr.e_type == ET_DYN)
-      return FileType::DSO;
-    return FileType::UNKNOWN;
-  }
-
-  if (data.starts_with("!<arch>\n"))
-    return FileType::AR;
-  if (data.starts_with("!<thin>\n"))
-    return FileType::THIN_AR;
-  if (is_text_file(mb))
-    return FileType::TEXT;
-  if (data.starts_with("\xDE\xC0\x17\x0B"))
-    return FileType::LLVM_BITCODE;
-  if (data.starts_with("BC\xC0\xDE"))
-    return FileType::LLVM_BITCODE;
-  return FileType::UNKNOWN;
-}
-
 template <typename E>
 static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mb,
                                       std::string archive_name) {
@@ -97,7 +64,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   if (ctx.visited.contains(mb->name))
     return;
 
-  switch (get_file_type(ctx, mb)) {
+  switch (get_file_type(mb)) {
   case FileType::OBJ:
     ctx.objs.push_back(new_object_file(ctx, mb, ""));
     return;
@@ -108,7 +75,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   case FileType::AR:
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
-      if (get_file_type(ctx, child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     ctx.visited.insert(mb->name);
     return;
@@ -127,17 +94,17 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
 // (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
 template <typename E>
 static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  switch (get_file_type(ctx, mb)) {
+  switch (get_file_type(mb)) {
   case FileType::DSO:
     return ((ElfEhdr<E> *)mb->data)->e_machine;
   case FileType::AR:
     for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mb))
-      if (get_file_type(ctx, child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mb))
-      if (get_file_type(ctx, child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::TEXT:

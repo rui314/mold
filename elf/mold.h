@@ -1006,24 +1006,6 @@ private:
 };
 
 //
-// archive-file.cc
-//
-
-// Unlike traditional linkers, mold doesn't read archive file symbol
-// tables. Instead, it directly read archive members.
-template <typename E>
-std::vector<MappedFile<Context<E>> *>
-read_fat_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
-
-template <typename E>
-std::vector<MappedFile<Context<E>> *>
-read_thin_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
-
-template <typename E>
-std::vector<MappedFile<Context<E>> *>
-read_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
-
-//
 // linker-script.cc
 //
 
@@ -1162,11 +1144,6 @@ template <typename E> void compress_debug_sections(Context<E> &);
 //
 // main.cc
 //
-
-enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
-
-template <typename E>
-FileType get_file_type(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 struct BuildId {
   template <typename E>

@@ -444,14 +444,14 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
       mb = MappedFile<Context<E>>::must_open(ctx, std::string(arg));
     }
 
-    switch (get_file_type(ctx, mb)) {
+    switch (get_file_type(mb)) {
     case FileType::OBJ:
       files.emplace_back(new RObjectFile<E>(ctx, *mb, true));
       break;
     case FileType::AR:
     case FileType::THIN_AR:
       for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
-        if (get_file_type(ctx, child) == FileType::OBJ)
+        if (get_file_type(child) == FileType::OBJ)
           files.emplace_back(new RObjectFile<E>(ctx, *child, whole_archive));
       break;
     default:
