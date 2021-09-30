@@ -66,4 +66,7 @@ $mold -run $t/sh $t/ld.lld --version | grep -q mold
 $mold -run $t/sh $t/ld.gold --version | grep -q mold
 $mold -run $t/sh $t/foo.ld --version | grep -q mold && false
 
+ln -sf $mold $t/mold
+PATH="$t:$PATH" mold -run $t/sh ld --version | grep -q mold
+
 echo OK

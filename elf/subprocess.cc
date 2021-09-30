@@ -249,6 +249,17 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
   };
 }
 
+template <typename E>
+static std::string get_self_path(Context<E> &ctx) {
+  char buf[4096];
+  size_t n = readlink("/proc/self/exe", buf, sizeof(buf));
+  if (n == -1)
+    Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << errno_string();
+  if (n == sizeof(buf))
+    Fatal(ctx) << "readlink: path too long";
+  return {buf, n};
+}
+
 static bool is_regular_file(const std::string &path) {
   struct stat st;
   return !stat(path.c_str(), &st) && (st.st_mode & S_IFMT) == S_IFREG;
@@ -279,11 +290,12 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   // Get the mold-wrapper.so path
-  std::string dso_path = find_dso(ctx, argv[0]);
+  std::string self = get_self_path(ctx);
+  std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
   putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
-  putenv(strdup(("MOLD_PATH=" + std::string(argv[0])).c_str()));
+  putenv(strdup(("MOLD_PATH=" + self).c_str()));
 
   // If ld, ld.lld or ld.gold is specified, run mold itself
   if (std::string_view cmd = path_basename(argv[2]);
@@ -291,8 +303,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     std::vector<char *> args;
     args.push_back(argv[0]);
     args.insert(args.end(), argv + 3, argv + argc);
-    execv(argv[0], args.data());
-    Fatal(ctx) << "mold -run failed: " << argv[0] << ": " << errno_string();
+    execv(self.c_str(), args.data());
+    Fatal(ctx) << "mold -run failed: " << self << ": " << errno_string();
   }
 
   // Execute a given command
