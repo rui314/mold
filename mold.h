@@ -3,12 +3,16 @@
 #include <atomic>
 #include <cassert>
 #include <cstring>
+#include <fcntl.h>
 #include <iostream>
 #include <mutex>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <unistd.h>
@@ -545,5 +549,95 @@ private:
   std::vector<std::pair<std::string, std::string_view>> contents;
   i64 size_ = BLOCK_SIZE * 2;
 };
+
+//
+// Memory-mapped file
+//
+
+// MappedFile represents an mmap'ed input file.
+// mold uses mmap-IO only.
+template <typename C>
+class MappedFile {
+public:
+  static MappedFile *open(C &ctx, std::string path);
+  static MappedFile *must_open(C &ctx, std::string path);
+
+  ~MappedFile();
+
+  MappedFile *slice(C &ctx, std::string name, u64 start, u64 size);
+
+  std::string_view get_contents() {
+    return std::string_view((char *)data, size);
+  }
+
+  std::string name;
+  u8 *data = nullptr;
+  i64 size = 0;
+  i64 mtime = 0;
+  bool given_fullpath = true;
+  MappedFile *parent = nullptr;
+};
+
+template <typename C>
+MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
+  MappedFile *mb = new MappedFile;
+  mb->name = path;
+
+  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mb));
+
+  if (path.starts_with('/') && !ctx.arg.chroot.empty())
+    path = ctx.arg.chroot + "/" + path_clean(path);
+
+  i64 fd = ::open(path.c_str(), O_RDONLY);
+  if (fd == -1)
+    return nullptr;
+
+  struct stat st;
+  if (fstat(fd, &st) == -1)
+    Fatal(ctx) << path << ": fstat failed: " << errno_string();
+
+  mb->size = st.st_size;
+
+#ifdef __APPLE__
+  mb->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+#else
+  mb->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+#endif
+
+  if (st.st_size > 0) {
+    mb->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mb->data == MAP_FAILED)
+      Fatal(ctx) << path << ": mmap failed: " << errno_string();
+  }
+
+  close(fd);
+  return mb;
+}
+
+template <typename C>
+MappedFile<C> *MappedFile<C>::must_open(C &ctx, std::string path) {
+  if (MappedFile *mb = MappedFile::open(ctx, path))
+    return mb;
+  Fatal(ctx) << "cannot open " << path;
+}
+
+template <typename C>
+MappedFile<C> *
+MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
+  MappedFile *mb = new MappedFile<C>;
+  mb->name = name;
+  mb->data = data + start;
+  mb->size = size;
+  mb->parent = this;
+
+  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mb));
+  return mb;
+}
+
+template <typename C>
+MappedFile<C>::~MappedFile() {
+  if (size && !parent)
+    munmap(data, size);
+}
 
 } // namespace mold

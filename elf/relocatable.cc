@@ -120,7 +120,7 @@ public:
 template <typename E>
 class RObjectFile {
 public:
-  RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb, bool is_alive);
+  RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mb, bool is_alive);
 
   void remove_comdats(Context<E> &ctx,
                       std::unordered_set<std::string_view> &groups);
@@ -128,7 +128,7 @@ public:
   template <typename T>
   std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
 
-  MemoryMappedFile<E> &mb;
+  MappedFile<Context<E>> &mb;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<std::unique_ptr<RInputSection<E>>> sections;
   std::span<const ElfSym<E>> syms;
@@ -326,7 +326,7 @@ void ROutputShdr<E>::write_to(Context<E> &ctx) {
 }
 
 template <typename E>
-RObjectFile<E>::RObjectFile(Context<E> &ctx, MemoryMappedFile<E> &mb,
+RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mb,
                             bool is_alive)
   : mb(mb), is_alive(is_alive) {
   // Read ELF header and section header
@@ -432,7 +432,7 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
         read_arg(ctx, args, arg, "dynamic-list"))
       continue;
 
-    MemoryMappedFile<E> *mb = nullptr;
+    MappedFile<Context<E>> *mb = nullptr;
 
     if (read_arg(ctx, args, arg, "l")) {
       mb = find_library(ctx, std::string(arg));
@@ -441,7 +441,7 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
         continue;
       arg = args[0];
       args = args.subspan(1);
-      mb = MemoryMappedFile<E>::must_open(ctx, std::string(arg));
+      mb = MappedFile<Context<E>>::must_open(ctx, std::string(arg));
     }
 
     switch (get_file_type(ctx, mb)) {
@@ -450,7 +450,7 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
       break;
     case FileType::AR:
     case FileType::THIN_AR:
-      for (MemoryMappedFile<E> *child : read_archive_members(ctx, mb))
+      for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
         if (get_file_type(ctx, child) == FileType::OBJ)
           files.emplace_back(new RObjectFile<E>(ctx, *child, whole_archive));
       break;

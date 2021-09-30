@@ -13,11 +13,11 @@ struct ArHdr {
 };
 
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+std::vector<MappedFile<Context<E>> *>
+read_thin_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   u8 *begin = mb->data;
   u8 *data = begin + 8;
-  std::vector<MemoryMappedFile<E> *> vec;
+  std::vector<MappedFile<Context<E>> *> vec;
   std::string_view strtab;
 
   while (data < begin + mb->size) {
@@ -49,18 +49,18 @@ read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     std::string name(start, (const char *)strstr(start, "/\n"));
     std::string path = name.starts_with('/') ?
       name : std::string(path_dirname(mb->name)) + "/" + name;
-    vec.push_back(MemoryMappedFile<E>::must_open(ctx, path));
+    vec.push_back(MappedFile<Context<E>>::must_open(ctx, path));
     data = body;
   }
   return vec;
 }
 
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+std::vector<MappedFile<Context<E>> *>
+read_fat_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   u8 *begin = mb->data;
   u8 *data = begin + 8;
-  std::vector<MemoryMappedFile<E> *> vec;
+  std::vector<MappedFile<Context<E>> *> vec;
   std::string_view strtab;
 
   while (begin + mb->size - data >= 2) {
@@ -96,8 +96,8 @@ read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+std::vector<MappedFile<Context<E>> *>
+read_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   switch (get_file_type(ctx, mb)) {
   case FileType::AR:
     return read_fat_archive_members(ctx, mb);
@@ -109,12 +109,12 @@ read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template std::vector<MemoryMappedFile<E> *>                           \
-  read_fat_archive_members(Context<E> &, MemoryMappedFile<E> *);        \
-  template std::vector<MemoryMappedFile<E> *>                           \
-  read_thin_archive_members(Context<E> &, MemoryMappedFile<E> *);       \
-  template std::vector<MemoryMappedFile<E> *>                           \
-  read_archive_members(Context<E> &, MemoryMappedFile<E> *);
+  template std::vector<MappedFile<Context<E>> *>                        \
+  read_fat_archive_members(Context<E> &, MappedFile<Context<E>> *);     \
+  template std::vector<MappedFile<Context<E>> *>                        \
+  read_thin_archive_members(Context<E> &, MappedFile<Context<E>> *);    \
+  template std::vector<MappedFile<Context<E>> *>                        \
+  read_archive_members(Context<E> &, MappedFile<Context<E>> *);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

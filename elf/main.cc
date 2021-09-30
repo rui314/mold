@@ -34,8 +34,41 @@ std::regex glob_to_regex(std::string_view pattern) {
   return std::regex(ss.str(), std::regex::optimize);
 }
 
+template <typename C>
+static bool is_text_file(MappedFile<C> *mb) {
+  u8 *data = mb->data;
+  return mb->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
+         isprint(data[2]) && isprint(data[3]);
+}
+
 template <typename E>
-static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
+FileType get_file_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
+  std::string_view data = mb->get_contents();
+
+  if (data.starts_with("\177ELF")) {
+    ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data.data();
+    if (ehdr.e_type == ET_REL)
+      return FileType::OBJ;
+    if (ehdr.e_type == ET_DYN)
+      return FileType::DSO;
+    return FileType::UNKNOWN;
+  }
+
+  if (data.starts_with("!<arch>\n"))
+    return FileType::AR;
+  if (data.starts_with("!<thin>\n"))
+    return FileType::THIN_AR;
+  if (is_text_file(mb))
+    return FileType::TEXT;
+  if (data.starts_with("\xDE\xC0\x17\x0B"))
+    return FileType::LLVM_BITCODE;
+  if (data.starts_with("BC\xC0\xDE"))
+    return FileType::LLVM_BITCODE;
+  return FileType::UNKNOWN;
+}
+
+template <typename E>
+static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mb,
                                       std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
@@ -50,7 +83,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MemoryMappedFile<E> *mb,
 }
 
 template <typename E>
-static SharedFile<E> *new_shared_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+static SharedFile<E> *new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   SharedFile<E> *file = SharedFile<E>::create(ctx, mb);
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
@@ -60,7 +93,7 @@ static SharedFile<E> *new_shared_file(Context<E> &ctx, MemoryMappedFile<E> *mb) 
 }
 
 template <typename E>
-void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   if (ctx.visited.contains(mb->name))
     return;
 
@@ -74,7 +107,7 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
     return;
   case FileType::AR:
   case FileType::THIN_AR:
-    for (MemoryMappedFile<E> *child : read_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
       if (get_file_type(ctx, child) == FileType::OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mb->name));
     ctx.visited.insert(mb->name);
@@ -93,17 +126,17 @@ void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
 template <typename E>
-static i64 get_machine_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   switch (get_file_type(ctx, mb)) {
   case FileType::DSO:
     return ((ElfEhdr<E> *)mb->data)->e_machine;
   case FileType::AR:
-    for (MemoryMappedFile<E> *child : read_fat_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mb))
       if (get_file_type(ctx, child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::THIN_AR:
-    for (MemoryMappedFile<E> *child : read_thin_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mb))
       if (get_file_type(ctx, child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
@@ -115,8 +148,8 @@ static i64 get_machine_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 template <typename E>
-static MemoryMappedFile<E> *open_library(Context<E> &ctx, std::string path) {
-  MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path);
+static MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
+  MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, path);
   if (!mb)
     return nullptr;
 
@@ -129,11 +162,11 @@ static MemoryMappedFile<E> *open_library(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
+MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string path = std::string(dir) + "/" + name.substr(1);
-      if (MemoryMappedFile<E> *mb = open_library(ctx, path))
+      if (MappedFile<Context<E>> *mb = open_library(ctx, path))
         return mb;
     }
     Fatal(ctx) << "library not found: " << name;
@@ -142,9 +175,9 @@ MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string name) {
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string stem = std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MemoryMappedFile<E> *mb = open_library(ctx, stem + ".so"))
+      if (MappedFile<Context<E>> *mb = open_library(ctx, stem + ".so"))
         return mb;
-    if (MemoryMappedFile<E> *mb = open_library(ctx, stem + ".a"))
+    if (MappedFile<Context<E>> *mb = open_library(ctx, stem + ".a"))
       return mb;
   }
   Fatal(ctx) << "library not found: " << name;
@@ -184,11 +217,11 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
     } else if (read_arg(ctx, args, arg, "l")) {
-      MemoryMappedFile<E> *mb = find_library(ctx, std::string(arg));
+      MappedFile<Context<E>> *mb = find_library(ctx, std::string(arg));
       mb->given_fullpath = false;
       read_file(ctx, mb);
     } else {
-      read_file(ctx, MemoryMappedFile<E>::must_open(ctx, std::string(args[0])));
+      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, std::string(args[0])));
       args = args.subspan(1);
     }
   }
@@ -228,21 +261,21 @@ static bool reload_input_files(Context<E> &ctx) {
       continue;
     }
 
-    MemoryMappedFile<E> *mb =
-      MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+    MappedFile<Context<E>> *mb =
+      MappedFile<Context<E>>::must_open(ctx, file->mb->name);
     objs.push_back(new_object_file(ctx, mb, file->mb->name));
   }
 
   // Reload updated .so files
   for (SharedFile<E> *file : ctx.dsos) {
-    MemoryMappedFile<E> *mb =
-      MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+    MappedFile<Context<E>> *mb =
+      MappedFile<Context<E>>::must_open(ctx, file->mb->name);
 
     if (get_mtime(ctx, file->mb->name) == file->mb->mtime) {
       dsos.push_back(file);
     } else {
-      MemoryMappedFile<E> *mb =
-        MemoryMappedFile<E>::must_open(ctx, file->mb->name);
+      MappedFile<Context<E>> *mb =
+        MappedFile<Context<E>>::must_open(ctx, file->mb->name);
       dsos.push_back(new_shared_file(ctx, mb));
     }
   }
@@ -295,7 +328,7 @@ static void show_stats(Context<E> &ctx) {
   }
 
   static Counter num_bytes("total_input_bytes");
-  for (std::unique_ptr<MemoryMappedFile<E>> &mb : ctx.owning_mbs)
+  for (std::unique_ptr<MappedFile<Context<E>>> &mb : ctx.owning_mbs)
     num_bytes += mb->size;
 
   static Counter num_input_sections("input_sections");
@@ -657,7 +690,7 @@ int main(int argc, char **argv) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template void read_file(Context<E> &, MemoryMappedFile<E> *);         \
+  template void read_file(Context<E> &, MappedFile<Context<E>> *);      \
   template std::string_view save_string(Context<E> &, const std::string &);
 
 INSTANTIATE(X86_64);

@@ -8,7 +8,7 @@
 namespace mold::elf {
 
 template <typename E>
-InputFile<E>::InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
+InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mb)
   : mb(mb), filename(mb->name) {
   if (mb->size < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
@@ -48,7 +48,7 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
+ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mb,
                           std::string archive_name, bool is_in_lib)
   : InputFile<E>(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {
   this->is_alive = !is_in_lib;
@@ -59,7 +59,7 @@ ObjectFile<E>::ObjectFile() {}
 
 template <typename E>
 ObjectFile<E> *
-ObjectFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb,
+ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mb,
                       std::string archive_name, bool is_in_lib) {
   ObjectFile<E> *obj = new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
   ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
@@ -1215,14 +1215,14 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 
 template <typename E>
 SharedFile<E> *
-SharedFile<E>::create(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   SharedFile<E> *obj = new SharedFile(ctx, mb);
   ctx.owning_dsos.push_back(std::unique_ptr<SharedFile<E>>(obj));
   return obj;
 }
 
 template <typename E>
-SharedFile<E>::SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb)
+SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mb)
   : InputFile<E>(ctx, mb) {
   this->is_alive = !ctx.as_needed;
 }

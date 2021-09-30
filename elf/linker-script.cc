@@ -11,7 +11,7 @@
 namespace mold::elf {
 
 template <typename E>
-static thread_local MemoryMappedFile<E> *current_file;
+static thread_local MappedFile<Context<E>> *current_file;
 
 template <typename E>
 void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok);
@@ -152,23 +152,23 @@ static bool is_in_sysroot(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-static MemoryMappedFile<E> *resolve_path(Context<E> &ctx, std::string_view tok) {
+static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
   // GNU ld prepends the sysroot if a pathname starts with '/' and the
   // script being processed is in the sysroot. We do the same.
   if (str.starts_with('/') && is_in_sysroot(ctx, current_file<E>->name))
-    return MemoryMappedFile<E>::must_open(ctx, ctx.arg.sysroot + str);
+    return MappedFile<Context<E>>::must_open(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, str))
+  if (MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, str))
     return mb;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string path = std::string(dir) + "/" + str;
-    if (MemoryMappedFile<E> *mb = MemoryMappedFile<E>::open(ctx, path))
+    if (MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, path))
       return mb;
   }
 
@@ -189,7 +189,7 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
       continue;
     }
 
-    MemoryMappedFile<E> *mb = resolve_path(ctx, tok[0]);
+    MappedFile<Context<E>> *mb = resolve_path(ctx, tok[0]);
     read_file(ctx, mb);
     tok = tok.subspan(1);
   }
@@ -200,7 +200,7 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
 }
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   current_file<E> = mb;
 
   std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
@@ -225,7 +225,7 @@ void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb) {
 }
 
 template <typename E>
-i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb) {
+i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
   current_file<E> = mb;
 
   std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
@@ -325,7 +325,7 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path) {
-  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
+  current_file<E> = MappedFile<Context<E>>::must_open(ctx, path);
   std::vector<std::string_view> vec =
     tokenize(ctx, current_file<E>->get_contents());
   std::span<std::string_view> tok = vec;
@@ -336,7 +336,7 @@ void parse_version_script(Context<E> &ctx, std::string path) {
 
 template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path) {
-  current_file<E> = MemoryMappedFile<E>::must_open(ctx, path);
+  current_file<E> = MappedFile<Context<E>>::must_open(ctx, path);
   std::vector<std::string_view> vec =
     tokenize(ctx, current_file<E>->get_contents());
 
@@ -372,9 +372,9 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 
 #define INSTANTIATE(E)                                                  \
   template                                                              \
-  void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);   \
+  void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb); \
   template                                                              \
-  i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb); \
+  i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb); \
   template                                                              \
   void parse_version_script(Context<E> &ctx, std::string path);         \
   template                                                              \

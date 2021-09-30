@@ -47,7 +47,6 @@ static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;
 template <typename E> class InputSection;
-template <typename E> class MemoryMappedFile;
 template <typename E> class MergedSection;
 template <typename E> class ObjectFile;
 template <typename E> class OutputChunk;
@@ -868,7 +867,7 @@ struct MergeableSection {
 template <typename E>
 class InputFile {
 public:
-  InputFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
+  InputFile(Context<E> &ctx, MappedFile<Context<E>> *mb);
   InputFile() : filename("<internal>") {}
 
   template<typename T> std::span<T>
@@ -882,7 +881,7 @@ public:
 
   ElfShdr<E> *find_section(i64 type);
 
-  MemoryMappedFile<E> *mb;
+  MappedFile<Context<E>> *mb;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
 
@@ -902,7 +901,7 @@ class ObjectFile : public InputFile<E> {
 public:
   ObjectFile();
 
-  static ObjectFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb,
+  static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mb,
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
@@ -953,7 +952,7 @@ public:
   u64 fde_size = 0;
 
 private:
-  ObjectFile(Context<E> &ctx, MemoryMappedFile<E> *mb,
+  ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mb,
              std::string archive_name, bool is_in_lib);
 
   void initialize_sections(Context<E> &ctx);
@@ -982,7 +981,7 @@ private:
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
-  static SharedFile<E> *create(Context<E> &ctx, MemoryMappedFile<E> *mb);
+  static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
   void parse(Context<E> &ctx);
   void resolve_dso_symbols(Context<E> &ctx);
@@ -995,7 +994,7 @@ public:
   std::vector<const ElfSym<E> *> elf_syms;
 
 private:
-  SharedFile(Context<E> &ctx, MemoryMappedFile<E> *mb);
+  SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
   std::string_view get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
@@ -1007,66 +1006,32 @@ private:
 };
 
 //
-// memory-mapped-file.cc
-//
-
-// MemoryMappedFile represents an mmap'ed input file.
-// mold uses mmap-IO only.
-template <typename E>
-class MemoryMappedFile {
-public:
-  static MemoryMappedFile *open(Context<E> &ctx, std::string path);
-  static MemoryMappedFile *must_open(Context<E> &ctx, std::string path);
-
-  ~MemoryMappedFile();
-
-  MemoryMappedFile *slice(Context<E> &ctx, std::string name, u64 start,
-                          u64 size);
-
-  std::string_view get_contents() {
-    return std::string_view((char *)data, size);
-  }
-
-  std::string name;
-  u8 *data = nullptr;
-  i64 size = 0;
-  i64 mtime = 0;
-  bool given_fullpath = true;
-  MemoryMappedFile *parent = nullptr;
-};
-
-enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
-
-template <typename E>
-FileType get_file_type(Context<E> &ctx, MemoryMappedFile<E> *mb);
-
-//
 // archive-file.cc
 //
 
 // Unlike traditional linkers, mold doesn't read archive file symbol
 // tables. Instead, it directly read archive members.
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_fat_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
+std::vector<MappedFile<Context<E>> *>
+read_fat_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_thin_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
+std::vector<MappedFile<Context<E>> *>
+read_thin_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
-std::vector<MemoryMappedFile<E> *>
-read_archive_members(Context<E> &ctx, MemoryMappedFile<E> *mb);
+std::vector<MappedFile<Context<E>> *>
+read_archive_members(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 //
 // linker-script.cc
 //
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MemoryMappedFile<E> *mb);
+void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
-i64 get_script_output_type(Context<E> &ctx, MemoryMappedFile<E> *mb);
+i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path);
@@ -1198,6 +1163,11 @@ template <typename E> void compress_debug_sections(Context<E> &);
 // main.cc
 //
 
+enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
+
+template <typename E>
+FileType get_file_type(Context<E> &ctx, MappedFile<Context<E>> *mb);
+
 struct BuildId {
   template <typename E>
   i64 size(Context<E> &ctx) const;
@@ -1219,19 +1189,19 @@ struct VersionPattern {
 template <typename E, typename T>
 class FileCache {
 public:
-  void store(MemoryMappedFile<E> *mb, T *obj) {
+  void store(MappedFile<Context<E>> *mb, T *obj) {
     Key k(mb->name, mb->size, mb->mtime);
     cache[k].push_back(obj);
   }
 
-  std::vector<T *> get(MemoryMappedFile<E> *mb) {
+  std::vector<T *> get(MappedFile<Context<E>> *mb) {
     Key k(mb->name, mb->size, mb->mtime);
     std::vector<T *> objs = cache[k];
     cache[k].clear();
     return objs;
   }
 
-  T *get_one(MemoryMappedFile<E> *mb) {
+  T *get_one(MappedFile<Context<E>> *mb) {
     std::vector<T *> objs = get(mb);
     return objs.empty() ? nullptr : objs[0];
   }
@@ -1365,7 +1335,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> owning_bufs;
   tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> owning_shdrs;
-  tbb::concurrent_vector<std::unique_ptr<MemoryMappedFile<E>>> owning_mbs;
+  tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> owning_mbs;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
@@ -1452,10 +1422,10 @@ struct Context {
 };
 
 template <typename E>
-MemoryMappedFile<E> *find_library(Context<E> &ctx, std::string path);
+MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
-void read_file(Context<E> &ctx, MemoryMappedFile<E> *mb);
+void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str);

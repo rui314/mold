@@ -156,8 +156,8 @@ template <typename E>
 static std::vector<std::string_view>
 read_response_file(Context<E> &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
-  MemoryMappedFile<E> *mb =
-    MemoryMappedFile<E>::must_open(ctx, std::string(path));
+  MappedFile<Context<E>> *mb =
+    MappedFile<Context<E>>::must_open(ctx, std::string(path));
   u8 *data = mb->data;
 
   auto read_quoted = [&](i64 i, char quote) {
@@ -398,8 +398,8 @@ static std::string_view trim(std::string_view str) {
 
 template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
-  MemoryMappedFile<E> *mb =
-    MemoryMappedFile<E>::must_open(ctx, std::string(path));
+  MappedFile<Context<E>> *mb =
+    MappedFile<Context<E>>::must_open(ctx, std::string(path));
   std::string_view data((char *)mb->data, mb->size);
 
   ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);
