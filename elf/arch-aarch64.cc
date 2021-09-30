@@ -306,7 +306,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
       }
       continue;
     default:
-      unreachable(ctx);
+      unreachable();
     }
 
 #undef S

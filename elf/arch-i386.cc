@@ -115,7 +115,7 @@ void EhFrameSection<I386>::apply_reloc(Context<I386> &ctx,
     *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
     return;
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 template <>
@@ -255,7 +255,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       }
       continue;
     default:
-      unreachable(ctx);
+      unreachable();
     }
 
 #undef S
@@ -352,7 +352,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
       *(u32 *)loc = sym.esym().st_size + A;
       continue;
     default:
-      unreachable(ctx);
+      unreachable();
     }
 
 #undef S

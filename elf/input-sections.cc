@@ -160,7 +160,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     file.num_dynrel++;
     return;
   default:
-    unreachable(ctx);
+    unreachable();
   }
 }
 

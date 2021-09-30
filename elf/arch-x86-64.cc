@@ -88,7 +88,7 @@ void EhFrameSection<X86_64>::apply_reloc(Context<X86_64> &ctx,
     *(u64 *)(base + loc) = val - this->shdr.sh_addr - loc;
     return;
   }
-  unreachable(ctx);
+  unreachable();
 }
 
 static u32 relax_gotpcrelx(u8 *loc) {
@@ -377,7 +377,7 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
       }
       continue;
     default:
-      unreachable(ctx);
+      unreachable();
     }
 
 #undef S

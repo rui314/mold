@@ -1615,7 +1615,7 @@ i64 BuildId::size(Context<E> &ctx) const {
   case UUID:
     return 16;
   default:
-    unreachable(ctx);
+    unreachable();
   }
 }
 
@@ -1706,7 +1706,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
                  get_uuid_v4(ctx));
     return;
   default:
-    unreachable(ctx);
+    unreachable();
   }
 }
 

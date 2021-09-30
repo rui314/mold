@@ -331,7 +331,7 @@ static int elf_main(int argc, char **argv) {
     case EM_AARCH64:
       return elf_main<AARCH64>(argc, argv);
     }
-    unreachable(ctx);
+    unreachable();
   }
 
   Timer t_all(ctx, "all");

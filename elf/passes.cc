@@ -915,7 +915,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   else if (E::e_machine == EM_AARCH64)
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
   else
-    unreachable(ctx);
+    unreachable();
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);

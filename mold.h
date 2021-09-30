@@ -125,10 +125,7 @@ private:
   SyncOut<C> out;
 };
 
-#define unreachable(ctx)                                               \
-  do {                                                                 \
-    Fatal(ctx) << "internal error at " << __FILE__ << ":" << __LINE__; \
-  } while (0)
+#define unreachable() assert(0 && "unreachable")
 
 //
 // Utility functions
@@ -783,7 +780,7 @@ read_archive_members(C &ctx, MappedFile<C> *mb) {
   case FileType::THIN_AR:
     return read_thin_archive_members(ctx, mb);
   default:
-    unreachable(ctx);
+    unreachable();
   }
 }
 
