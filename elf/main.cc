@@ -35,13 +35,13 @@ std::regex glob_to_regex(std::string_view pattern) {
 }
 
 template <typename E>
-static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mb,
+static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                       std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
 
   bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
-  ObjectFile<E> *file = ObjectFile<E>::create(ctx, mb, archive_name, in_lib);
+  ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, archive_name, in_lib);
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
@@ -50,8 +50,8 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *m
 }
 
 template <typename E>
-static SharedFile<E> *new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  SharedFile<E> *file = SharedFile<E>::create(ctx, mb);
+static SharedFile<E> *new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
   if (ctx.arg.trace)
@@ -60,55 +60,55 @@ static SharedFile<E> *new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *m
 }
 
 template <typename E>
-void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  if (ctx.visited.contains(mb->name))
+void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  if (ctx.visited.contains(mf->name))
     return;
 
-  switch (get_file_type(mb)) {
+  switch (get_file_type(mf)) {
   case FileType::OBJ:
-    ctx.objs.push_back(new_object_file(ctx, mb, ""));
+    ctx.objs.push_back(new_object_file(ctx, mf, ""));
     return;
   case FileType::DSO:
-    ctx.dsos.push_back(new_shared_file(ctx, mb));
-    ctx.visited.insert(mb->name);
+    ctx.dsos.push_back(new_shared_file(ctx, mf));
+    ctx.visited.insert(mf->name);
     return;
   case FileType::AR:
   case FileType::THIN_AR:
-    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
       if (get_file_type(child) == FileType::OBJ)
-        ctx.objs.push_back(new_object_file(ctx, child, mb->name));
-    ctx.visited.insert(mb->name);
+        ctx.objs.push_back(new_object_file(ctx, child, mf->name));
+    ctx.visited.insert(mf->name);
     return;
   case FileType::TEXT:
-    parse_linker_script(ctx, mb);
+    parse_linker_script(ctx, mf);
     return;
   case FileType::LLVM_BITCODE:
-    Fatal(ctx) << mb->name << ": looks like this is an LLVM bitcode, "
+    Fatal(ctx) << mf->name << ": looks like this is an LLVM bitcode, "
                << "but mold does not support LTO";
   default:
-    Fatal(ctx) << mb->name << ": unknown file type";
+    Fatal(ctx) << mf->name << ": unknown file type";
   }
 }
 
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
 template <typename E>
-static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  switch (get_file_type(mb)) {
+static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  switch (get_file_type(mf)) {
   case FileType::DSO:
-    return ((ElfEhdr<E> *)mb->data)->e_machine;
+    return ((ElfEhdr<E> *)mf->data)->e_machine;
   case FileType::AR:
-    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
       if (get_file_type(child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::THIN_AR:
-    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mb))
+    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
       if (get_file_type(child) == FileType::OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::TEXT:
-    return get_script_output_type(ctx, mb);
+    return get_script_output_type(ctx, mf);
   default:
     return -1;
   }
@@ -116,13 +116,13 @@ static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
 
 template <typename E>
 static MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
-  MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, path);
-  if (!mb)
+  MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
+  if (!mf)
     return nullptr;
 
-  i64 type = get_machine_type(ctx, mb);
+  i64 type = get_machine_type(ctx, mf);
   if (type == -1 || type == E::e_machine)
-    return mb;
+    return mf;
   Warn(ctx) << path << ": skipping incompatible file"
             << " " << (int)type << " " << (int)E::e_machine;
   return nullptr;
@@ -133,8 +133,8 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string path = std::string(dir) + "/" + name.substr(1);
-      if (MappedFile<Context<E>> *mb = open_library(ctx, path))
-        return mb;
+      if (MappedFile<Context<E>> *mf = open_library(ctx, path))
+        return mf;
     }
     Fatal(ctx) << "library not found: " << name;
   }
@@ -142,10 +142,10 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string stem = std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MappedFile<Context<E>> *mb = open_library(ctx, stem + ".so"))
-        return mb;
-    if (MappedFile<Context<E>> *mb = open_library(ctx, stem + ".a"))
-      return mb;
+      if (MappedFile<Context<E>> *mf = open_library(ctx, stem + ".so"))
+        return mf;
+    if (MappedFile<Context<E>> *mf = open_library(ctx, stem + ".a"))
+      return mf;
   }
   Fatal(ctx) << "library not found: " << name;
 }
@@ -184,9 +184,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
       state.pop_back();
     } else if (read_arg(ctx, args, arg, "l")) {
-      MappedFile<Context<E>> *mb = find_library(ctx, std::string(arg));
-      mb->given_fullpath = false;
-      read_file(ctx, mb);
+      MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg));
+      mf->given_fullpath = false;
+      read_file(ctx, mf);
     } else {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, std::string(args[0])));
       args = args.subspan(1);
@@ -216,34 +216,34 @@ static bool reload_input_files(Context<E> &ctx) {
 
   // Reload updated .o files
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->mb->parent) {
-      if (get_mtime(ctx, file->mb->parent->name) != file->mb->parent->mtime)
+    if (file->mf->parent) {
+      if (get_mtime(ctx, file->mf->parent->name) != file->mf->parent->mtime)
         return false;
       objs.push_back(file);
       continue;
     }
 
-    if (get_mtime(ctx, file->mb->name) == file->mb->mtime) {
+    if (get_mtime(ctx, file->mf->name) == file->mf->mtime) {
       objs.push_back(file);
       continue;
     }
 
-    MappedFile<Context<E>> *mb =
-      MappedFile<Context<E>>::must_open(ctx, file->mb->name);
-    objs.push_back(new_object_file(ctx, mb, file->mb->name));
+    MappedFile<Context<E>> *mf =
+      MappedFile<Context<E>>::must_open(ctx, file->mf->name);
+    objs.push_back(new_object_file(ctx, mf, file->mf->name));
   }
 
   // Reload updated .so files
   for (SharedFile<E> *file : ctx.dsos) {
-    MappedFile<Context<E>> *mb =
-      MappedFile<Context<E>>::must_open(ctx, file->mb->name);
+    MappedFile<Context<E>> *mf =
+      MappedFile<Context<E>>::must_open(ctx, file->mf->name);
 
-    if (get_mtime(ctx, file->mb->name) == file->mb->mtime) {
+    if (get_mtime(ctx, file->mf->name) == file->mf->mtime) {
       dsos.push_back(file);
     } else {
-      MappedFile<Context<E>> *mb =
-        MappedFile<Context<E>>::must_open(ctx, file->mb->name);
-      dsos.push_back(new_shared_file(ctx, mb));
+      MappedFile<Context<E>> *mf =
+        MappedFile<Context<E>>::must_open(ctx, file->mf->name);
+      dsos.push_back(new_shared_file(ctx, mf));
     }
   }
 
@@ -295,8 +295,8 @@ static void show_stats(Context<E> &ctx) {
   }
 
   static Counter num_bytes("total_input_bytes");
-  for (std::unique_ptr<MappedFile<Context<E>>> &mb : ctx.owning_mbs)
-    num_bytes += mb->size;
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.owning_mbs)
+    num_bytes += mf->size;
 
   static Counter num_input_sections("input_sections");
   for (ObjectFile<E> *file : ctx.objs)

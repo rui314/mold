@@ -577,10 +577,10 @@ public:
 
 template <typename C>
 MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
-  MappedFile *mb = new MappedFile;
-  mb->name = path;
+  MappedFile *mf = new MappedFile;
+  mf->name = path;
 
-  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mb));
+  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mf));
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
@@ -593,42 +593,42 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   if (fstat(fd, &st) == -1)
     Fatal(ctx) << path << ": fstat failed: " << errno_string();
 
-  mb->size = st.st_size;
+  mf->size = st.st_size;
 
 #ifdef __APPLE__
-  mb->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+  mf->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
 #else
-  mb->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+  mf->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
 #endif
 
   if (st.st_size > 0) {
-    mb->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (mb->data == MAP_FAILED)
+    mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mf->data == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
   }
 
   close(fd);
-  return mb;
+  return mf;
 }
 
 template <typename C>
 MappedFile<C> *MappedFile<C>::must_open(C &ctx, std::string path) {
-  if (MappedFile *mb = MappedFile::open(ctx, path))
-    return mb;
+  if (MappedFile *mf = MappedFile::open(ctx, path))
+    return mf;
   Fatal(ctx) << "cannot open " << path;
 }
 
 template <typename C>
 MappedFile<C> *
 MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
-  MappedFile *mb = new MappedFile<C>;
-  mb->name = name;
-  mb->data = data + start;
-  mb->size = size;
-  mb->parent = this;
+  MappedFile *mf = new MappedFile<C>;
+  mf->name = name;
+  mf->data = data + start;
+  mf->size = size;
+  mf->parent = this;
 
-  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mb));
-  return mb;
+  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mf));
+  return mf;
 }
 
 template <typename C>
@@ -654,15 +654,15 @@ struct ArHdr {
 enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
 
 template <typename C>
-bool is_text_file(MappedFile<C> *mb) {
-  u8 *data = mb->data;
-  return mb->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
+bool is_text_file(MappedFile<C> *mf) {
+  u8 *data = mf->data;
+  return mf->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
          isprint(data[2]) && isprint(data[3]);
 }
 
 template <typename C>
-FileType get_file_type(MappedFile<C> *mb) {
-  std::string_view data = mb->get_contents();
+FileType get_file_type(MappedFile<C> *mf) {
+  std::string_view data = mf->get_contents();
 
   if (data.starts_with("\177ELF")) {
     switch (*(u16 *)(data.data() + 16)) {
@@ -678,7 +678,7 @@ FileType get_file_type(MappedFile<C> *mb) {
     return FileType::AR;
   if (data.starts_with("!<thin>\n"))
     return FileType::THIN_AR;
-  if (is_text_file(mb))
+  if (is_text_file(mf))
     return FileType::TEXT;
   if (data.starts_with("\xDE\xC0\x17\x0B"))
     return FileType::LLVM_BITCODE;
@@ -690,13 +690,13 @@ FileType get_file_type(MappedFile<C> *mb) {
 
 template <typename C>
 std::vector<MappedFile<C> *>
-read_thin_archive_members(C &ctx, MappedFile<C> *mb) {
-  u8 *begin = mb->data;
+read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
+  u8 *begin = mf->data;
   u8 *data = begin + 8;
   std::vector<MappedFile<C> *> vec;
   std::string_view strtab;
 
-  while (data < begin + mb->size) {
+  while (data < begin + mf->size) {
     // Each header is aligned to a 2 byte boundary.
     if ((begin - data) % 2)
       data++;
@@ -719,12 +719,12 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mb) {
     }
 
     if (hdr.ar_name[0] != '/')
-      Fatal(ctx) << mb->name << ": filename is not stored as a long filename";
+      Fatal(ctx) << mf->name << ": filename is not stored as a long filename";
 
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name(start, (const char *)strstr(start, "/\n"));
     std::string path = name.starts_with('/') ?
-      name : std::string(path_dirname(mb->name)) + "/" + name;
+      name : std::string(path_dirname(mf->name)) + "/" + name;
     vec.push_back(MappedFile<C>::must_open(ctx, path));
     data = body;
   }
@@ -733,13 +733,13 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mb) {
 
 template <typename C>
 std::vector<MappedFile<C> *>
-read_fat_archive_members(C &ctx, MappedFile<C> *mb) {
-  u8 *begin = mb->data;
+read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
+  u8 *begin = mf->data;
   u8 *data = begin + 8;
   std::vector<MappedFile<C> *> vec;
   std::string_view strtab;
 
-  while (begin + mb->size - data >= 2) {
+  while (begin + mf->size - data >= 2) {
     if ((begin - data) % 2)
       data++;
 
@@ -766,19 +766,19 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mb) {
       name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
     }
 
-    vec.push_back(mb->slice(ctx, name, body - begin, size));
+    vec.push_back(mf->slice(ctx, name, body - begin, size));
   }
   return vec;
 }
 
 template <typename C>
 std::vector<MappedFile<C> *>
-read_archive_members(C &ctx, MappedFile<C> *mb) {
-  switch (get_file_type(mb)) {
+read_archive_members(C &ctx, MappedFile<C> *mf) {
+  switch (get_file_type(mf)) {
   case FileType::AR:
-    return read_fat_archive_members(ctx, mb);
+    return read_fat_archive_members(ctx, mf);
   case FileType::THIN_AR:
-    return read_thin_archive_members(ctx, mb);
+    return read_thin_archive_members(ctx, mf);
   default:
     unreachable();
   }

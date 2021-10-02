@@ -163,13 +163,13 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, str))
-    return mb;
+  if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, str))
+    return mf;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string path = std::string(dir) + "/" + str;
-    if (MappedFile<Context<E>> *mb = MappedFile<Context<E>>::open(ctx, path))
-      return mb;
+    if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
+      return mf;
   }
 
   SyntaxError(ctx, tok) << "library not found: " << str;
@@ -189,8 +189,8 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
       continue;
     }
 
-    MappedFile<Context<E>> *mb = resolve_path(ctx, tok[0]);
-    read_file(ctx, mb);
+    MappedFile<Context<E>> *mf = resolve_path(ctx, tok[0]);
+    read_file(ctx, mf);
     tok = tok.subspan(1);
   }
 
@@ -200,10 +200,10 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
 }
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  current_file<E> = mb;
+void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  current_file<E> = mf;
 
-  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
+  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
 
   while (!tok.empty()) {
@@ -225,10 +225,10 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb) {
 }
 
 template <typename E>
-i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  current_file<E> = mb;
+i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  current_file<E> = mf;
 
-  std::vector<std::string_view> vec = tokenize(ctx, mb->get_contents());
+  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
 
   if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
@@ -372,9 +372,9 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 
 #define INSTANTIATE(E)                                                  \
   template                                                              \
-  void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb); \
+  void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf); \
   template                                                              \
-  i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb); \
+  i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf); \
   template                                                              \
   void parse_version_script(Context<E> &ctx, std::string path);         \
   template                                                              \

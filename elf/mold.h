@@ -867,7 +867,7 @@ struct MergeableSection {
 template <typename E>
 class InputFile {
 public:
-  InputFile(Context<E> &ctx, MappedFile<Context<E>> *mb);
+  InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
   InputFile() : filename("<internal>") {}
 
   template<typename T> std::span<T>
@@ -881,7 +881,7 @@ public:
 
   ElfShdr<E> *find_section(i64 type);
 
-  MappedFile<Context<E>> *mb;
+  MappedFile<Context<E>> *mf;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
 
@@ -901,7 +901,7 @@ class ObjectFile : public InputFile<E> {
 public:
   ObjectFile();
 
-  static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mb,
+  static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
@@ -952,7 +952,7 @@ public:
   u64 fde_size = 0;
 
 private:
-  ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mb,
+  ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
              std::string archive_name, bool is_in_lib);
 
   void initialize_sections(Context<E> &ctx);
@@ -981,7 +981,7 @@ private:
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
-  static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mb);
+  static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
   void parse(Context<E> &ctx);
   void resolve_dso_symbols(Context<E> &ctx);
@@ -994,7 +994,7 @@ public:
   std::vector<const ElfSym<E> *> elf_syms;
 
 private:
-  SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mb);
+  SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
   std::string_view get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
@@ -1010,10 +1010,10 @@ private:
 //
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mb);
+void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
-i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mb);
+i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path);
@@ -1166,20 +1166,20 @@ struct VersionPattern {
 template <typename E, typename T>
 class FileCache {
 public:
-  void store(MappedFile<Context<E>> *mb, T *obj) {
-    Key k(mb->name, mb->size, mb->mtime);
+  void store(MappedFile<Context<E>> *mf, T *obj) {
+    Key k(mf->name, mf->size, mf->mtime);
     cache[k].push_back(obj);
   }
 
-  std::vector<T *> get(MappedFile<Context<E>> *mb) {
-    Key k(mb->name, mb->size, mb->mtime);
+  std::vector<T *> get(MappedFile<Context<E>> *mf) {
+    Key k(mf->name, mf->size, mf->mtime);
     std::vector<T *> objs = cache[k];
     cache[k].clear();
     return objs;
   }
 
-  T *get_one(MappedFile<Context<E>> *mb) {
-    std::vector<T *> objs = get(mb);
+  T *get_one(MappedFile<Context<E>> *mf) {
+    std::vector<T *> objs = get(mf);
     return objs.empty() ? nullptr : objs[0];
   }
 
@@ -1402,7 +1402,7 @@ template <typename E>
 MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
-void read_file(Context<E> &ctx, MappedFile<Context<E>> *mb);
+void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 std::string_view save_string(Context<E> &ctx, const std::string &str);
@@ -1871,9 +1871,9 @@ inline std::span<T> InputFile<E>::get_data(Context<E> &ctx, i64 idx) {
 template <typename E>
 inline std::string_view
 InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  u8 *begin = mb->data + shdr.sh_offset;
+  u8 *begin = mf->data + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
-  if (mb->data + mb->size < end)
+  if (mf->data + mf->size < end)
     Fatal(ctx) << *this << ": shdr corrupted";
   return {(char *)begin, (size_t)(end - begin)};
 }

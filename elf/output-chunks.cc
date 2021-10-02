@@ -1801,10 +1801,10 @@ void ReproSection<E>::update_shdr(Context<E> &ctx) {
   tar.append("version.txt", save_string(ctx, mold_version + "\n"));
 
   std::unordered_set<std::string> seen;
-  for (std::unique_ptr<MappedFile<Context<E>>> &mb : ctx.owning_mbs) {
-    std::string path = path_to_absolute(mb->name);
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.owning_mbs) {
+    std::string path = path_to_absolute(mf->name);
     if (seen.insert(path).second)
-      tar.append(path, mb->get_contents());
+      tar.append(path, mf->get_contents());
   }
 
   std::vector<u8> buf(tar.size());

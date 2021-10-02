@@ -8,17 +8,17 @@
 namespace mold::elf {
 
 template <typename E>
-InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mb)
-  : mb(mb), filename(mb->name) {
-  if (mb->size < sizeof(ElfEhdr<E>))
+InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
+  : mf(mf), filename(mf->name) {
+  if (mf->size < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
-  if (memcmp(mb->data, "\177ELF", 4))
+  if (memcmp(mf->data, "\177ELF", 4))
     Fatal(ctx) << *this << ": not an ELF file";
 
-  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb->data;
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mf->data;
   is_dso = (ehdr.e_type == ET_DYN);
 
-  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb->data + ehdr.e_shoff);
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mf->data + ehdr.e_shoff);
 
   // e_shnum contains the total number of sections in an object file.
   // Since it is a 16-bit integer field, it's not large enough to
@@ -26,9 +26,9 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mb)
   // sections, the actual number is stored to sh_size field.
   i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
 
-  if (mb->data + mb->size < (u8 *)(sh_begin + num_sections))
+  if (mf->data + mf->size < (u8 *)(sh_begin + num_sections))
     Fatal(ctx) << *this << ": e_shoff or e_shnum corrupted: "
-               << mb->size << " " << num_sections;
+               << mf->size << " " << num_sections;
   elf_sections = {sh_begin, sh_begin + num_sections};
 
   // e_shstrndx is a 16-bit field. If .shstrtab's section index is
@@ -48,9 +48,9 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mb,
+ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
                           std::string archive_name, bool is_in_lib)
-  : InputFile<E>(ctx, mb), archive_name(archive_name), is_in_lib(is_in_lib) {
+  : InputFile<E>(ctx, mf), archive_name(archive_name), is_in_lib(is_in_lib) {
   this->is_alive = !is_in_lib;
 }
 
@@ -59,9 +59,9 @@ ObjectFile<E>::ObjectFile() {}
 
 template <typename E>
 ObjectFile<E> *
-ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mb,
+ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name, bool is_in_lib) {
-  ObjectFile<E> *obj = new ObjectFile<E>(ctx, mb, archive_name, is_in_lib);
+  ObjectFile<E> *obj = new ObjectFile<E>(ctx, mf, archive_name, is_in_lib);
   ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   return obj;
 }
@@ -1215,15 +1215,15 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 
 template <typename E>
 SharedFile<E> *
-SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mb) {
-  SharedFile<E> *obj = new SharedFile(ctx, mb);
+SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  SharedFile<E> *obj = new SharedFile(ctx, mf);
   ctx.owning_dsos.push_back(std::unique_ptr<SharedFile<E>>(obj));
   return obj;
 }
 
 template <typename E>
-SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mb)
-  : InputFile<E>(ctx, mb) {
+SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
+  : InputFile<E>(ctx, mf) {
   this->is_alive = !ctx.as_needed;
 }
 
@@ -1233,7 +1233,7 @@ std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
-  if (this->mb->given_fullpath)
+  if (this->mf->given_fullpath)
     return this->filename;
   return path_filename(this->filename);
 }
@@ -1355,8 +1355,8 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
-  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mb->data;
-  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mb->data + ehdr->e_phoff);
+  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mf->data;
+  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mf->data + ehdr->e_phoff);
   u64 val = sym->esym().st_value;
 
   for (i64 i = 0; i < ehdr->e_phnum; i++)

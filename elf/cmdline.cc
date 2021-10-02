@@ -156,13 +156,13 @@ template <typename E>
 static std::vector<std::string_view>
 read_response_file(Context<E> &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
-  MappedFile<Context<E>> *mb =
+  MappedFile<Context<E>> *mf =
     MappedFile<Context<E>>::must_open(ctx, std::string(path));
-  u8 *data = mb->data;
+  u8 *data = mf->data;
 
   auto read_quoted = [&](i64 i, char quote) {
     std::string buf;
-    while (i < mb->size && data[i] != quote) {
+    while (i < mf->size && data[i] != quote) {
       if (data[i] == '\\') {
         buf.append(1, data[i + 1]);
         i += 2;
@@ -170,7 +170,7 @@ read_response_file(Context<E> &ctx, std::string_view path) {
         buf.append(1, data[i++]);
       }
     }
-    if (i >= mb->size)
+    if (i >= mf->size)
       Fatal(ctx) << path << ": premature end of input";
     vec.push_back(save_string(ctx, buf));
     return i + 1;
@@ -178,13 +178,13 @@ read_response_file(Context<E> &ctx, std::string_view path) {
 
   auto read_unquoted = [&](i64 i) {
     std::string buf;
-    while (i < mb->size && !isspace(data[i]))
+    while (i < mf->size && !isspace(data[i]))
       buf.append(1, data[i++]);
     vec.push_back(save_string(ctx, buf));
     return i;
   };
 
-  for (i64 i = 0; i < mb->size;) {
+  for (i64 i = 0; i < mf->size;) {
     if (isspace(data[i]))
       i++;
     else if (data[i] == '\'')
@@ -398,9 +398,9 @@ static std::string_view trim(std::string_view str) {
 
 template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
-  MappedFile<Context<E>> *mb =
+  MappedFile<Context<E>> *mf =
     MappedFile<Context<E>>::must_open(ctx, std::string(path));
-  std::string_view data((char *)mb->data, mb->size);
+  std::string_view data((char *)mf->data, mf->size);
 
   ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);
 

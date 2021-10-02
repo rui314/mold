@@ -120,7 +120,7 @@ public:
 template <typename E>
 class RObjectFile {
 public:
-  RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mb, bool is_alive);
+  RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf, bool is_alive);
 
   void remove_comdats(Context<E> &ctx,
                       std::unordered_set<std::string_view> &groups);
@@ -128,7 +128,7 @@ public:
   template <typename T>
   std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
 
-  MappedFile<Context<E>> &mb;
+  MappedFile<Context<E>> &mf;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<std::unique_ptr<RInputSection<E>>> sections;
   std::span<const ElfSym<E>> syms;
@@ -326,12 +326,12 @@ void ROutputShdr<E>::write_to(Context<E> &ctx) {
 }
 
 template <typename E>
-RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mb,
+RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf,
                             bool is_alive)
-  : mb(mb), is_alive(is_alive) {
+  : mf(mf), is_alive(is_alive) {
   // Read ELF header and section header
-  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mb.data;
-  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mb.data + ehdr.e_shoff);
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mf.data;
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mf.data + ehdr.e_shoff);
   i64 num_sections = (ehdr.e_shnum == 0) ? sh_begin->sh_size : ehdr.e_shnum;
   elf_sections = {sh_begin, sh_begin + num_sections};
   sections.resize(num_sections);
@@ -339,14 +339,14 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mb,
   // Read .shstrtab
   i64 shstrtab_idx = (ehdr.e_shstrndx == SHN_XINDEX)
     ? sh_begin->sh_link : ehdr.e_shstrndx;
-  shstrtab = (char *)(mb.data + elf_sections[shstrtab_idx].sh_offset);
+  shstrtab = (char *)(mf.data + elf_sections[shstrtab_idx].sh_offset);
 
   // Read .symtab
   for (i64 i = 1; i < elf_sections.size(); i++) {
     ElfShdr<E> &shdr = elf_sections[i];
     if (shdr.sh_type == SHT_SYMTAB) {
       syms = get_data<const ElfSym<E>>(ctx, shdr);
-      strtab = (char *)(mb.data + elf_sections[shdr.sh_link].sh_offset);
+      strtab = (char *)(mf.data + elf_sections[shdr.sh_link].sh_offset);
       symtab_shndx = i;
       first_global = shdr.sh_info;
       break;
@@ -405,8 +405,8 @@ void RObjectFile<E>::remove_comdats(Context<E> &ctx,
 template <typename E>
 template <typename T>
 std::span<T> RObjectFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
-  T *begin = (T *)(mb.data + shdr.sh_offset);
-  T *end   = (T *)(mb.data + shdr.sh_offset + shdr.sh_size);
+  T *begin = (T *)(mf.data + shdr.sh_offset);
+  T *end   = (T *)(mf.data + shdr.sh_offset + shdr.sh_size);
   return {begin, end};
 }
 
@@ -432,25 +432,25 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
         read_arg(ctx, args, arg, "dynamic-list"))
       continue;
 
-    MappedFile<Context<E>> *mb = nullptr;
+    MappedFile<Context<E>> *mf = nullptr;
 
     if (read_arg(ctx, args, arg, "l")) {
-      mb = find_library(ctx, std::string(arg));
+      mf = find_library(ctx, std::string(arg));
     } else {
       if (arg.starts_with('-'))
         continue;
       arg = args[0];
       args = args.subspan(1);
-      mb = MappedFile<Context<E>>::must_open(ctx, std::string(arg));
+      mf = MappedFile<Context<E>>::must_open(ctx, std::string(arg));
     }
 
-    switch (get_file_type(mb)) {
+    switch (get_file_type(mf)) {
     case FileType::OBJ:
-      files.emplace_back(new RObjectFile<E>(ctx, *mb, true));
+      files.emplace_back(new RObjectFile<E>(ctx, *mf, true));
       break;
     case FileType::AR:
     case FileType::THIN_AR:
-      for (MappedFile<Context<E>> *child : read_archive_members(ctx, mb))
+      for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
         if (get_file_type(child) == FileType::OBJ)
           files.emplace_back(new RObjectFile<E>(ctx, *child, whole_archive));
       break;
