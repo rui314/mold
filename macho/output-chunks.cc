@@ -457,7 +457,8 @@ i64 ExportEncoder::finish() {
 }
 
 void
-ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len) {
+ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries,
+			      i64 len) {
   if (entries.empty())
     return;
 
@@ -478,10 +479,9 @@ ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries, i64 le
     std::span<Entry> subspan = entries.subspan(i, j - i);
     i64 new_len = common_prefix_len(subspan, len + 1);
 
-    TrieNode *child = new TrieNode;
-    child->prefix = entries[i].name.substr(len, new_len - len);
-    construct_trie(*child, subspan, new_len);
-    parent.children[c].reset(child);
+    TrieNode child = {entries[i].name.substr(len, new_len - len)};
+    construct_trie(child, subspan, new_len);
+    parent.children.push_back(std::move(child));
 
     i = j;
   }
@@ -508,19 +508,14 @@ i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
 
   size++; // # of children
 
-  for (std::unique_ptr<TrieNode> &child : node.children) {
-    if (child) {
-      // +1 for NUL byte
-      size += child->prefix.size() + 1 + uleb_size(child->offset);
-    }
+  for (TrieNode &child : node.children) {
+    // +1 for NUL byte
+    size += child.prefix.size() + 1 + uleb_size(child.offset);
   }
 
-  offset += size;
-
-  for (std::unique_ptr<TrieNode> &child : node.children)
-    if (child)
-      offset = set_offset(*child, offset);
-  return offset;
+  for (TrieNode &child : node.children)
+    size += set_offset(child, offset + size);
+  return size;
 }
 
 void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
@@ -534,20 +529,15 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
     *buf++ = 0;
   }
 
-  u8 *num_children = buf++;
-  *num_children = 0;
+  *buf++ = node.children.size();
 
-  for (std::unique_ptr<TrieNode> &child : node.children) {
-    if (child) {
-      *num_children += 1;
-      buf += write_string(buf, child->prefix);
-      buf += write_uleb(buf, child->offset);
-    }
+  for (TrieNode &child : node.children) {
+    buf += write_string(buf, child.prefix);
+    buf += write_uleb(buf, child.offset);
   }
 
-  for (std::unique_ptr<TrieNode> &child : node.children)
-    if (child)
-      write_trie(start, *child);
+  for (TrieNode &child : node.children)
+    write_trie(start, child);
 }
 
 OutputExportSection::OutputExportSection() {

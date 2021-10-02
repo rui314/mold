@@ -140,8 +140,8 @@ private:
     bool is_leaf = false;
     u32 flags = 0;
     u64 addr = 0;
-    u32 offset = 0;
-    std::unique_ptr<TrieNode> children[256] = {};
+    u32 offset = -1;
+    std::vector<TrieNode> children;
   };
 
   static void construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len);
