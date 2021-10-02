@@ -43,6 +43,32 @@ static void print_bytes(u8 *buf, i64 size) {
   std::cout << "]\n";
 }
 
+struct ExportEntry {
+  std::string name;
+  u32 flags;
+  u64 addr;
+};
+
+static void read_trie(std::vector<ExportEntry> &vec, u8 *start, i64 offset = 0,
+                      const std::string &prefix = "") {
+  u8 *buf = start + offset;
+
+  if (read_uleb(buf)) {
+    ExportEntry ent;
+    ent.name = prefix;
+    ent.flags = read_uleb(buf);
+    ent.addr = read_uleb(buf);
+    vec.push_back(std::move(ent));
+  }
+
+  for (i64 i = 0, n = read_uleb(buf); i < n; i++) {
+    std::string suffix((char *)buf);
+    buf += suffix.size() + 1;
+    i64 off = read_uleb(buf);
+    read_trie(vec, start, off, prefix + suffix);
+  }
+}
+
 void dump_file(std::string path) {
   u8 *buf = open_file(path);
 
@@ -255,6 +281,11 @@ void dump_file(std::string path) {
         std::cout << "  export_off: 0x" << std::hex << cmd.export_off
                   << "\n  export_size: 0x" << cmd.export_size
                   << "\n";
+
+        std::vector<ExportEntry> vec;
+        read_trie(vec, buf + cmd.export_off);
+        for (ExportEntry &ent : vec)
+          std::cout << "  export_sym: " << ent.name << " 0x" << ent.addr << "\n";
       }
       break;
     }

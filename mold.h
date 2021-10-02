@@ -229,6 +229,16 @@ inline i64 write_uleb(u8 *buf, u64 val) {
   return i;
 }
 
+inline u64 read_uleb(u8 *&buf) {
+  u64 val = 0;
+  u8 byte;
+  do {
+    byte = *buf++;
+    val = (val << 7) | (byte & 0x7f);
+  } while (byte & 0x80);
+  return val;
+}
+
 inline i64 uleb_size(u64 val) {
   i64 i = 0;
   do {
