@@ -144,8 +144,8 @@ private:
     std::vector<TrieNode> children;
   };
 
-  static void construct_trie(TrieNode &parent, std::span<Entry> entries, i64 len);
   static i64 common_prefix_len(std::span<Entry> entries, i64 len);
+  static TrieNode construct_trie(std::span<Entry> entries, i64 len);
   static i64 set_offset(TrieNode &node, i64 offset);
   void write_trie(u8 *buf, TrieNode &node);
 

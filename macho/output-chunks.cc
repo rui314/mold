@@ -445,7 +445,7 @@ i64 ExportEncoder::finish() {
     return a.name < b.name;
   });
 
-  construct_trie(root, entries, 0);
+  root = construct_trie(entries, 0);
 
   i64 size = set_offset(root, 0);
   for (;;) {
@@ -456,43 +456,38 @@ i64 ExportEncoder::finish() {
   }
 }
 
-void
-ExportEncoder::construct_trie(TrieNode &parent, std::span<Entry> entries,
-			      i64 len) {
-  if (entries.empty())
-    return;
-
-  if (entries[0].name.size() == len) {
-    parent.is_leaf = true;
-    parent.flags = entries[0].flags;
-    parent.addr = entries[0].addr;
-    entries = entries.subspan(1);
-  }
-
-  for (i64 i = 0; i < entries.size();) {
-    i64 j = i + 1;
-    u8 c = entries[i].name[len];
-
-    while (j < entries.size() && c == entries[j].name[len])
-      j++;
-
-    std::span<Entry> subspan = entries.subspan(i, j - i);
-    i64 new_len = common_prefix_len(subspan, len + 1);
-
-    TrieNode child = {entries[i].name.substr(len, new_len - len)};
-    construct_trie(child, subspan, new_len);
-    parent.children.push_back(std::move(child));
-
-    i = j;
-  }
-}
-
 i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
   for (; len < entries[0].name.size(); len++)
     for (Entry &ent : entries.subspan(1))
       if (ent.name.size() == len || ent.name[len] != entries[0].name[len])
         return len;
   return len;
+}
+
+ExportEncoder::TrieNode
+ExportEncoder::construct_trie(std::span<Entry> entries, i64 len) {
+  TrieNode node;
+
+  i64 new_len = common_prefix_len(entries, len);
+  if (new_len > len) {
+    node.prefix = entries[0].name.substr(len, new_len - len);
+    if (entries[0].name.size() == new_len) {
+      node.is_leaf = true;
+      node.flags = entries[0].flags;
+      node.addr = entries[0].addr;
+      entries = entries.subspan(1);
+    }
+  }
+
+  for (i64 i = 0; i < entries.size();) {
+    i64 j = i + 1;
+    u8 c = entries[i].name[new_len];
+    while (j < entries.size() && c == entries[j].name[new_len])
+      j++;
+    node.children.push_back(construct_trie(entries.subspan(i, j - i), new_len));
+    i = j;
+  }
+  return node;
 }
 
 i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
