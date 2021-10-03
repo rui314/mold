@@ -67,6 +67,16 @@ static i64 assign_offsets(Context &ctx) {
   return fileoff;
 }
 
+void read_file(Context &ctx, MappedFile<Context> *mf) {
+  switch (get_file_type(mf)) {
+  case FileType::MACH_OBJ:
+    ctx.objs.push_back(ObjectFile::create(ctx, mf));
+    return;
+  default:
+    Fatal(ctx) << mf->name << ": unknown file type";
+  }
+}
+
 int main(int argc, char **argv) {
   Context ctx;
 
@@ -80,6 +90,9 @@ int main(int argc, char **argv) {
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
+
+  for (std::string_view arg : file_args)
+    read_file(ctx, MappedFile<Context>::must_open(ctx, std::string(arg)));
 
   create_synthetic_sections(ctx);
   fill_symtab(ctx);

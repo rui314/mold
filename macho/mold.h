@@ -14,6 +14,20 @@ class OutputSection;
 struct Context;
 
 //
+// object-file.cc
+//
+
+class ObjectFile {
+public:
+  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+
+private:
+  ObjectFile(Context &ctx, MappedFile<Context> *mf);
+
+  MappedFile<Context> *mf;
+};
+
+//
 // output-chunks.cc
 //
 
@@ -366,8 +380,11 @@ struct Context {
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
+  tbb::concurrent_vector<std::unique_ptr<ObjectFile>> obj_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context>>> mf_pool;
+
+  std::vector<ObjectFile *> objs;
 
   OutputSegment text_seg{"__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0};
   OutputSegment data_const_seg{"__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
