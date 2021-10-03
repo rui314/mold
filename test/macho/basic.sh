@@ -6,9 +6,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
-$mold | grep -q 'mold macho stub'
-
-$mold -out $t/hello
+$mold -o $t/hello
 $t/hello | grep -q 'Hello world'
 
 echo OK

@@ -70,7 +70,7 @@ static i64 assign_offsets(Context &ctx) {
 int main(int argc, char **argv) {
   Context ctx;
 
-  if (std::string_view(argv[1]) == "-dump") {
+  if (argc > 1 && std::string_view(argv[1]) == "-dump") {
     if (argc != 3)
       Fatal(ctx) << "usage: ld64.mold -dump <executable-name>\n";
     dump_file(argv[2]);

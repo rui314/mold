@@ -12,8 +12,7 @@ static const char helpmsg[] = R"(
 Options:
   --help                      Report usage information
   -v                          Report version information
-  -o FILE                     Set output filename
-)";
+  -o FILE                     Set output filename)";
 
 bool read_arg(Context &ctx, std::span<std::string_view> &args,
               std::string_view &arg, std::string name) {
