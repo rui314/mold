@@ -330,6 +330,13 @@ public:
 void dump_file(std::string path);
 
 //
+// cmdline.cc
+//
+
+void parse_nonpositional_args(Context &ctx,
+                              std::vector<std::string_view> &remaining);
+
+//
 // main.cc
 //
 
@@ -348,13 +355,19 @@ struct Context {
   struct {
     bool demangle = false;
     bool fatal_warnings = false;
+    std::string chroot;
     std::string output;
   } arg;
+
+  std::vector<std::string_view> cmdline_args;
 
   bool has_error = false;
 
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
+
+  tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
+  tbb::concurrent_vector<std::unique_ptr<MappedFile<Context>>> mf_pool;
 
   OutputSegment text_seg{"__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0};
   OutputSegment data_const_seg{"__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,

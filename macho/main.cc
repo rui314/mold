@@ -69,12 +69,6 @@ static i64 assign_offsets(Context &ctx) {
 int main(int argc, char **argv) {
   Context ctx;
 
-  // Parse command line arguments
-  if (argc == 1) {
-    SyncOut(ctx) << "mold macho stub\n";
-    exit(0);
-  }
-
   if (std::string_view(argv[1]) == "-dump") {
     if (argc != 3)
       Fatal(ctx) << "usage: ld64.mold -dump <executable-name>\n";
@@ -82,29 +76,25 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
-  if (std::string_view(argv[1]) == "-out") {
-    if (argc != 3)
-      Fatal(ctx) << "usage: ld64.mold -out <output-file>\n";
-    ctx.arg.output = argv[2];
+  ctx.cmdline_args = expand_response_files(ctx, argv);
+  std::vector<std::string_view> file_args;
+  parse_nonpositional_args(ctx, file_args);
 
-    create_synthetic_sections(ctx);
-    fill_symtab(ctx);
-    export_symbols(ctx);
-    ctx.load_cmd.compute_size(ctx);
-    i64 output_size = assign_offsets(ctx);
+  create_synthetic_sections(ctx);
+  fill_symtab(ctx);
+  export_symbols(ctx);
+  ctx.load_cmd.compute_size(ctx);
+  i64 output_size = assign_offsets(ctx);
 
-    ctx.output_file =
-      std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
-    ctx.buf = ctx.output_file->buf;
+  ctx.output_file =
+    std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
+  ctx.buf = ctx.output_file->buf;
 
-    for (OutputSegment *seg : ctx.segments)
-      seg->copy_buf(ctx);
+  for (OutputSegment *seg : ctx.segments)
+    seg->copy_buf(ctx);
 
-    ctx.output_file->close(ctx);
-    exit(0);
-  }
-
-  Fatal(ctx) << "usage: ld64.mold\n";
+  ctx.output_file->close(ctx);
+  return 0;
 }
 
 }
