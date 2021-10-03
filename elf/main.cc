@@ -13,15 +13,6 @@
 
 namespace mold::elf {
 
-template <typename E>
-std::string_view save_string(Context<E> &ctx, const std::string &str) {
-  u8 *buf = new u8[str.size() + 1];
-  memcpy(buf, str.data(), str.size());
-  buf[str.size()] = '\0';
-  ctx.string_pool.push_back(std::unique_ptr<u8[]>(buf));
-  return {(char *)buf, str.size()};
-}
-
 std::regex glob_to_regex(std::string_view pattern) {
   std::stringstream ss;
   for (u8 c : pattern) {
@@ -654,8 +645,7 @@ int main(int argc, char **argv) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template void read_file(Context<E> &, MappedFile<Context<E>> *);      \
-  template std::string_view save_string(Context<E> &, const std::string &);
+  template void read_file(Context<E> &, MappedFile<Context<E>> *);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

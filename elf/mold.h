@@ -1094,10 +1094,6 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 // commandline.cc
 //
 
-template <typename E>
-std::vector<std::string_view>
-expand_response_files(Context<E> &ctx, char **argv);
-
 bool read_flag(std::span<std::string_view> &args, std::string name);
 
 template <typename E>
@@ -1403,9 +1399,6 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
-
-template <typename E>
-std::string_view save_string(Context<E> &ctx, const std::string &str);
 
 std::regex glob_to_regex(std::string_view pat);
 
