@@ -661,7 +661,17 @@ struct ArHdr {
   char ar_fmag[2];
 };
 
-enum class FileType { UNKNOWN, OBJ, DSO, AR, THIN_AR, TEXT, LLVM_BITCODE };
+enum class FileType {
+  UNKNOWN,
+  ELF_OBJ,
+  ELF_DSO,
+  MACH_OBJ,
+  MACH_DYLIB,
+  AR,
+  THIN_AR,
+  TEXT,
+  LLVM_BITCODE,
+};
 
 template <typename C>
 bool is_text_file(MappedFile<C> *mf) {
@@ -677,9 +687,19 @@ FileType get_file_type(MappedFile<C> *mf) {
   if (data.starts_with("\177ELF")) {
     switch (*(u16 *)(data.data() + 16)) {
     case 1: // ET_REL
-      return FileType::OBJ;
+      return FileType::ELF_OBJ;
     case 3: // ET_DYN
-      return FileType::DSO;
+      return FileType::ELF_DSO;
+    }
+    return FileType::UNKNOWN;
+  }
+
+  if (data.starts_with("\xcf\xfa\xed\xfe")) {
+    switch (*(u32 *)(data.data() + 12)) {
+    case 1: // MH_OBJECT
+      return FileType::MACH_OBJ;
+    case 6: // MH_DYLIB
+      return FileType::MACH_DYLIB;
     }
     return FileType::UNKNOWN;
   }

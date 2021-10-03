@@ -65,17 +65,17 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     return;
 
   switch (get_file_type(mf)) {
-  case FileType::OBJ:
+  case FileType::ELF_OBJ:
     ctx.objs.push_back(new_object_file(ctx, mf, ""));
     return;
-  case FileType::DSO:
+  case FileType::ELF_DSO:
     ctx.dsos.push_back(new_shared_file(ctx, mf));
     ctx.visited.insert(mf->name);
     return;
   case FileType::AR:
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::ELF_OBJ)
         ctx.objs.push_back(new_object_file(ctx, child, mf->name));
     ctx.visited.insert(mf->name);
     return;
@@ -95,16 +95,16 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 template <typename E>
 static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   switch (get_file_type(mf)) {
-  case FileType::DSO:
+  case FileType::ELF_DSO:
     return ((ElfEhdr<E> *)mf->data)->e_machine;
   case FileType::AR:
     for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::ELF_OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::OBJ)
+      if (get_file_type(child) == FileType::ELF_OBJ)
         return ((ElfEhdr<E> *)child->data)->e_machine;
     return -1;
   case FileType::TEXT:
