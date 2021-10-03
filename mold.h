@@ -590,7 +590,7 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   MappedFile *mf = new MappedFile;
   mf->name = path;
 
-  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mf));
+  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
@@ -637,7 +637,7 @@ MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
   mf->size = size;
   mf->parent = this;
 
-  ctx.owning_mbs.push_back(std::unique_ptr<MappedFile>(mf));
+  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
   return mf;
 }
 

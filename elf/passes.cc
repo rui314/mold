@@ -297,7 +297,7 @@ void bin_sections(Context<E> &ctx) {
 template <typename E>
 ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
 
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym<E>>(1);

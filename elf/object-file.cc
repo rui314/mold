@@ -62,7 +62,7 @@ ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name, bool is_in_lib) {
   ObjectFile<E> *obj = new ObjectFile<E>(ctx, mf, archive_name, is_in_lib);
-  ctx.owning_objs.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   return obj;
 }
 
@@ -112,7 +112,7 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
 
   auto do_uncompress = [&](std::string_view data, u64 size) {
     u8 *buf = new u8[size];
-    ctx.owning_bufs.push_back(std::unique_ptr<u8[]>(buf));
+    ctx.string_pool.push_back(std::unique_ptr<u8[]>(buf));
 
     unsigned long size2 = size;
     if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
@@ -124,7 +124,7 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
 
   auto copy_shdr = [&](const ElfShdr<E> &shdr) {
     ElfShdr<E> *ret = new ElfShdr<E>;
-    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(ret));
+    ctx.shdr_pool.push_back(std::unique_ptr<ElfShdr<E>>(ret));
     *ret = shdr;
     return ret;
   };
@@ -1071,7 +1071,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     }
 
     auto *shdr = new ElfShdr<E>;
-    ctx.owning_shdrs.push_back(std::unique_ptr<ElfShdr<E>>(shdr));
+    ctx.shdr_pool.push_back(std::unique_ptr<ElfShdr<E>>(shdr));
 
     memset(shdr, 0, sizeof(*shdr));
     shdr->sh_flags = SHF_ALLOC;
@@ -1217,7 +1217,7 @@ template <typename E>
 SharedFile<E> *
 SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   SharedFile<E> *obj = new SharedFile(ctx, mf);
-  ctx.owning_dsos.push_back(std::unique_ptr<SharedFile<E>>(obj));
+  ctx.dso_pool.push_back(std::unique_ptr<SharedFile<E>>(obj));
   return obj;
 }
 

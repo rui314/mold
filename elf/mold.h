@@ -1308,11 +1308,11 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;
 
-  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> owning_objs;
-  tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> owning_dsos;
-  tbb::concurrent_vector<std::unique_ptr<u8[]>> owning_bufs;
-  tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> owning_shdrs;
-  tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> owning_mbs;
+  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
+  tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
+  tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
+  tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> shdr_pool;
+  tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
