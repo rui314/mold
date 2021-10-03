@@ -3,7 +3,6 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <tbb/global_control.h>
 #include <unistd.h>
 #include <unordered_set>
 
@@ -377,13 +376,6 @@ split_by_comma_or_colon(std::string_view str) {
   return vec;
 }
 
-static i64 get_default_thread_count() {
-  // mold doesn't scale above 32 threads.
-  int n = tbb::global_control::active_value(
-    tbb::global_control::max_allowed_parallelism);
-  return std::min(n, 32);
-}
-
 static std::string_view trim(std::string_view str) {
   size_t pos = str.find_first_not_of(" \t");
   if (pos == str.npos)
@@ -434,7 +426,6 @@ void parse_nonpositional_args(Context<E> &ctx,
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
 
-  ctx.arg.thread_count = get_default_thread_count();
   bool version_shown = false;
 
   while (!args.empty()) {
@@ -691,7 +682,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
     } else if (read_flag(args, "threads")) {
-      ctx.arg.thread_count = get_default_thread_count();
+      ctx.arg.thread_count = 0;
     } else if (read_flag(args, "no-threads")) {
       ctx.arg.thread_count = 1;
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {

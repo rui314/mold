@@ -1259,7 +1259,7 @@ struct Context {
     i64 emulation = EM_X86_64;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
-    i64 thread_count = -1;
+    i64 thread_count = 0;
     std::string Map;
     std::string chroot;
     std::string directory;

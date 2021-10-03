@@ -7,7 +7,6 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
 #include <unistd.h>
 #include <unordered_set>
@@ -344,9 +343,7 @@ static int elf_main(int argc, char **argv) {
   if (!ctx.arg.preload)
     try_resume_daemon(ctx);
 
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               ctx.arg.thread_count);
-
+  set_thread_count(ctx.arg.thread_count);
   install_signal_handler();
 
   if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
