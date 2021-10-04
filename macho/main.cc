@@ -64,6 +64,10 @@ static void export_symbols(Context &ctx) {
 }
 
 static i64 assign_offsets(Context &ctx) {
+  for (OutputSegment *seg : ctx.segments)
+    for (Chunk *chunk : seg->chunks)
+      chunk->compute_size();
+
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
 

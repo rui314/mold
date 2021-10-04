@@ -235,6 +235,12 @@ OutputSection::OutputSection(std::string_view name) {
   memcpy(hdr.segname, name.data(), name.size());
 }
 
+void OutputSection::compute_size() {
+  hdr.size = 0;
+  for (Subsection *subsec : members)
+    hdr.size += subsec->input_size;
+}
+
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
   assert(name.size() <= sizeof(cmd.segname));
 
