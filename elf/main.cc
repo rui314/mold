@@ -305,7 +305,7 @@ static int elf_main(int argc, char **argv) {
 
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2)
-    if (std::string_view arg = argv[1]; arg == "-run" || arg == "--run")
+    if (argv[1] == "-run"sv || argv[1] == "--run"sv)
       process_run_subcommand(ctx, argc, argv);
 
   // Parse non-positional command line options
