@@ -28,6 +28,7 @@ public:
 
   MappedFile<Context> *mf;
   std::vector<std::unique_ptr<InputSection>> sections;
+  std::vector<Symbol *> syms;
 
 private:
   ObjectFile(Context &ctx, MappedFile<Context> *mf);

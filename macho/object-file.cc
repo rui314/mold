@@ -40,9 +40,11 @@ void ObjectFile::parse(Context &ctx) {
     case LC_SYMTAB: {
       SymtabCommand &cmd = *(SymtabCommand *)p;
       MachSym *mach_sym = (MachSym *)(buf + cmd.symoff);
+      syms.reserve(cmd.nsyms);
 
       for (i64 j = 0; j < cmd.nsyms; j++) {
 	std::string_view name = (char *)(buf + cmd.stroff + mach_sym[j].stroff);
+	syms.push_back(Symbol::intern(ctx, name));
       }
       break;
     }
