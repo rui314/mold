@@ -11,33 +11,33 @@
 
 namespace mold::macho {
 
-static void create_synthetic_sections(Context &ctx) {
+static void create_synthetic_chunks(Context &ctx) {
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
   ctx.segments.push_back(&ctx.data_seg);
   ctx.segments.push_back(&ctx.linkedit_seg);
 
-  ctx.text_seg.sections.push_back(&ctx.mach_hdr);
-  ctx.text_seg.sections.push_back(&ctx.load_cmd);
-  ctx.text_seg.sections.push_back(&ctx.text);
-  ctx.text_seg.sections.push_back(&ctx.stubs);
-  ctx.text_seg.sections.push_back(&ctx.stub_helper);
-  ctx.text_seg.sections.push_back(&ctx.cstring);
-  ctx.text_seg.sections.push_back(&ctx.unwind_info);
+  ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
+  ctx.text_seg.chunks.push_back(&ctx.load_cmd);
+  ctx.text_seg.chunks.push_back(&ctx.text);
+  ctx.text_seg.chunks.push_back(&ctx.stubs);
+  ctx.text_seg.chunks.push_back(&ctx.stub_helper);
+  ctx.text_seg.chunks.push_back(&ctx.cstring);
+  ctx.text_seg.chunks.push_back(&ctx.unwind_info);
 
-  ctx.data_const_seg.sections.push_back(&ctx.got);
+  ctx.data_const_seg.chunks.push_back(&ctx.got);
 
-  ctx.data_seg.sections.push_back(&ctx.lazy_symbol_ptr);
-  ctx.data_seg.sections.push_back(&ctx.data);
+  ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
+  ctx.data_seg.chunks.push_back(&ctx.data);
 
-  ctx.linkedit_seg.sections.push_back(&ctx.rebase);
-  ctx.linkedit_seg.sections.push_back(&ctx.bind);
-  ctx.linkedit_seg.sections.push_back(&ctx.lazy_bind);
-  ctx.linkedit_seg.sections.push_back(&ctx.export_);
-  ctx.linkedit_seg.sections.push_back(&ctx.function_starts);
-  ctx.linkedit_seg.sections.push_back(&ctx.symtab);
-  ctx.linkedit_seg.sections.push_back(&ctx.indir_symtab);
-  ctx.linkedit_seg.sections.push_back(&ctx.strtab);
+  ctx.linkedit_seg.chunks.push_back(&ctx.rebase);
+  ctx.linkedit_seg.chunks.push_back(&ctx.bind);
+  ctx.linkedit_seg.chunks.push_back(&ctx.lazy_bind);
+  ctx.linkedit_seg.chunks.push_back(&ctx.export_);
+  ctx.linkedit_seg.chunks.push_back(&ctx.function_starts);
+  ctx.linkedit_seg.chunks.push_back(&ctx.symtab);
+  ctx.linkedit_seg.chunks.push_back(&ctx.indir_symtab);
+  ctx.linkedit_seg.chunks.push_back(&ctx.strtab);
 }
 
 static void fill_symtab(Context &ctx) {
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
   for (std::string_view arg : file_args)
     read_file(ctx, MappedFile<Context>::must_open(ctx, std::string(arg)));
 
-  create_synthetic_sections(ctx);
+  create_synthetic_chunks(ctx);
   fill_symtab(ctx);
   export_symbols(ctx);
   ctx.load_cmd.compute_size(ctx);

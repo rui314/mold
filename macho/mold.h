@@ -10,7 +10,7 @@ namespace mold::macho {
 static constexpr i64 PAGE_SIZE = 0x4000;
 static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 
-class OutputSection;
+class Chunk;
 struct Context;
 struct Symbol;
 struct Subsection;
@@ -30,7 +30,7 @@ private:
 };
 
 //
-// input-sections.cc
+// input-chunks.cc
 //
 
 struct Relocation {
@@ -78,12 +78,12 @@ public:
 
   std::string_view name;
   SegmentCommand cmd = {};
-  std::vector<OutputSection *> sections;
+  std::vector<Chunk *> chunks;
 };
 
-class OutputSection {
+class Chunk {
 public:
-  virtual ~OutputSection() = default;
+  virtual ~Chunk() = default;
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
@@ -91,7 +91,7 @@ public:
   bool is_hidden = false;
 };
 
-class OutputMachHeader : public OutputSection {
+class OutputMachHeader : public Chunk {
 public:
   OutputMachHeader() {
     is_hidden = true;
@@ -101,7 +101,7 @@ public:
   void copy_buf(Context &ctx) override;
 };
 
-class OutputLoadCommand : public OutputSection {
+class OutputLoadCommand : public Chunk {
 public:
   OutputLoadCommand() {
     is_hidden = true;
@@ -114,6 +114,10 @@ public:
 
 private:
   std::vector<u8> contents;
+};
+
+class OutputSection : public Chunk {
+  std::vector<Subsection *> contents;
 };
 
 class RebaseEncoder {
@@ -131,7 +135,7 @@ private:
   i64 times = 0;
 };
 
-class OutputRebaseSection : public OutputSection {
+class OutputRebaseSection : public Chunk {
 public:
   OutputRebaseSection();
   void copy_buf(Context &ctx) override;
@@ -156,7 +160,7 @@ private:
   i64 last_off = -1;
 };
 
-class OutputBindSection : public OutputSection {
+class OutputBindSection : public Chunk {
 public:
   OutputBindSection();
   void copy_buf(Context &ctx) override;
@@ -164,7 +168,7 @@ public:
   std::vector<u8> contents;
 };
 
-class OutputLazyBindSection : public OutputSection {
+class OutputLazyBindSection : public Chunk {
 public:
   OutputLazyBindSection();
   void copy_buf(Context &ctx) override;
@@ -206,7 +210,7 @@ private:
   std::vector<Entry> entries;
 };
 
-class OutputExportSection : public OutputSection {
+class OutputExportSection : public Chunk {
 public:
   OutputExportSection();
   void copy_buf(Context &ctx) override;
@@ -215,7 +219,7 @@ private:
   ExportEncoder enc;
 };
 
-class OutputFunctionStartsSection : public OutputSection {
+class OutputFunctionStartsSection : public Chunk {
 public:
   OutputFunctionStartsSection() {
     is_hidden = true;
@@ -229,7 +233,7 @@ public:
   };
 };
 
-class OutputSymtabSection : public OutputSection {
+class OutputSymtabSection : public Chunk {
 public:
   OutputSymtabSection() {
     is_hidden = true;
@@ -244,7 +248,7 @@ public:
   std::vector<MachSym> symbols;
 };
 
-class OutputStrtabSection : public OutputSection {
+class OutputStrtabSection : public Chunk {
 public:
   OutputStrtabSection() {
     is_hidden = true;
@@ -257,7 +261,7 @@ public:
   std::string contents;
 };
 
-class OutputIndirectSymtabSection : public OutputSection {
+class OutputIndirectSymtabSection : public Chunk {
 public:
   OutputIndirectSymtabSection() {
     is_hidden = true;
@@ -273,7 +277,7 @@ public:
   };
 };
 
-class TextSection : public OutputSection {
+class TextSection : public Chunk {
 public:
   TextSection();
   void copy_buf(Context &ctx) override;
@@ -287,7 +291,7 @@ public:
   };
 };
 
-class StubsSection : public OutputSection {
+class StubsSection : public Chunk {
 public:
   StubsSection();
 
@@ -308,7 +312,7 @@ public:
   std::vector<Entry> entries;
 };
 
-class StubHelperSection : public OutputSection {
+class StubHelperSection : public Chunk {
 public:
   StubHelperSection();
   void copy_buf(Context &ctx) override;
@@ -317,7 +321,7 @@ public:
   static constexpr i64 ENTRY_SIZE = 10;
 };
 
-class CstringSection : public OutputSection {
+class CstringSection : public Chunk {
 public:
   CstringSection();
   void copy_buf(Context &ctx) override;
@@ -325,7 +329,7 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
-class UnwindInfoSection : public OutputSection {
+class UnwindInfoSection : public Chunk {
 public:
   UnwindInfoSection();
   void copy_buf(Context &ctx) override;
@@ -340,12 +344,12 @@ public:
   };
 };
 
-class GotSection : public OutputSection {
+class GotSection : public Chunk {
 public:
   GotSection();
 };
 
-class LazySymbolPtrSection : public OutputSection {
+class LazySymbolPtrSection : public Chunk {
 public:
   LazySymbolPtrSection();
   void copy_buf(Context &ctx) override;
@@ -353,7 +357,7 @@ public:
   static constexpr i64 ENTRY_SIZE = 8;
 };
 
-class DataSection : public OutputSection {
+class DataSection : public Chunk {
 public:
   DataSection();
   void copy_buf(Context &ctx) override;
