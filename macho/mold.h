@@ -12,6 +12,8 @@ static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 
 class OutputSection;
 struct Context;
+struct Symbol;
+struct Subsection;
 
 //
 // object-file.cc
@@ -25,6 +27,43 @@ private:
   ObjectFile(Context &ctx, MappedFile<Context> *mf);
 
   MappedFile<Context> *mf;
+};
+
+//
+// input-sections.cc
+//
+
+struct Relocation {
+  u32 offset;
+  u32 type;
+  Symbol *sym;
+  Subsection *subsec;
+};
+
+class InputSection {
+public:
+  InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
+
+  ObjectFile &file;
+  const MachSection &hdr;
+  std::vector<Relocation> rels;
+};
+
+class Subsection {
+public:
+  const InputSection &sec;
+  u32 input_offset;
+  u32 input_size;
+  u32 rel_offset;
+  u32 nrels;
+  u32 output_offset;
+};
+
+//
+// Symbol
+//
+
+struct Symbol {
 };
 
 //

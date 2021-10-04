@@ -474,7 +474,7 @@ struct MachSym {
 
 // This struct is named `relocation_info` on BSD and macOS.
 struct MachRel {
-  i32 offset;
+  u32 offset;
   u32 idx : 24;
   u32 is_pcrel : 1;
   u32 p2size : 2;
