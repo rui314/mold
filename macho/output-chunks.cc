@@ -231,11 +231,12 @@ void OutputLoadCommand::copy_buf(Context &ctx) {
 }
 
 OutputSection::OutputSection(std::string_view name) {
-  assert(name.size() < sizeof(hdr.segname));
-  memcpy(hdr.segname, name.data(), name.size());
+  assert(name.size() < sizeof(hdr.sectname));
+  memcpy(hdr.sectname, name.data(), name.size());
 }
 
-void OutputSection::compute_size() {
+void OutputSection::compute_size(Context &ctx) {
+  SyncOut(ctx) << "members: " << members.size();
   hdr.size = 0;
   for (Subsection *subsec : members)
     hdr.size += subsec->input_size;

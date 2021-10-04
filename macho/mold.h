@@ -103,7 +103,7 @@ public:
 class Chunk {
 public:
   virtual ~Chunk() = default;
-  virtual void compute_size() {};
+  virtual void compute_size(Context &ctx) {};
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
@@ -127,7 +127,7 @@ public:
     is_hidden = true;
   }
 
-  void compute_size(Context &ctx);
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   i64 ncmds = 0;
@@ -139,7 +139,7 @@ private:
 class OutputSection : public Chunk {
 public:
   OutputSection(std::string_view name);
-  void compute_size() override;
+  void compute_size(Context &ctx) override;
 
   std::vector<Subsection *> members;
 };

@@ -22,10 +22,13 @@ static void create_synthetic_chunks(Context &ctx) {
 
   OutputSection *text = new OutputSection("__text");
   for (ObjectFile *obj : ctx.objs)
-    for (std::unique_ptr<InputSection> &sec : obj->sections)
+    for (std::unique_ptr<InputSection> &sec : obj->sections) {
+      SyncOut(ctx) << "segname: " << sec->hdr.segname
+		   << "sectname: " << sec->hdr.sectname;
       if (sec->hdr.segname == "__TEXT"sv && sec->hdr.sectname == "__text"sv)
 	for (Subsection &subsec : sec->subsections)
 	  text->members.push_back(&subsec);
+    }
 
   ctx.text_seg.chunks.push_back(text);
   ctx.text_seg.chunks.push_back(&ctx.stubs);
@@ -66,7 +69,7 @@ static void export_symbols(Context &ctx) {
 static i64 assign_offsets(Context &ctx) {
   for (OutputSegment *seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
-      chunk->compute_size();
+      chunk->compute_size(ctx);
 
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
@@ -109,7 +112,6 @@ int main(int argc, char **argv) {
   create_synthetic_chunks(ctx);
   fill_symtab(ctx);
   export_symbols(ctx);
-  ctx.load_cmd.compute_size(ctx);
   i64 output_size = assign_offsets(ctx);
 
   ctx.output_file =
