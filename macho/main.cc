@@ -21,14 +21,16 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
 
   OutputSection *text = new OutputSection("__text");
-  for (ObjectFile *obj : ctx.objs)
+  for (ObjectFile *obj : ctx.objs) {
+    SyncOut(ctx) << "obj: " << *obj;
     for (std::unique_ptr<InputSection> &sec : obj->sections) {
-      SyncOut(ctx) << "segname: " << sec->hdr.segname
-		   << "sectname: " << sec->hdr.sectname;
+      SyncOut(ctx) << "segname=" << sec->hdr.segname
+		   << " sectname=" << sec->hdr.sectname;
       if (sec->hdr.segname == "__TEXT"sv && sec->hdr.sectname == "__text"sv)
 	for (Subsection &subsec : sec->subsections)
 	  text->members.push_back(&subsec);
     }
+  }
 
   ctx.text_seg.chunks.push_back(text);
   ctx.text_seg.chunks.push_back(&ctx.stubs);
@@ -108,6 +110,9 @@ int main(int argc, char **argv) {
 
   for (std::string_view arg : file_args)
     read_file(ctx, MappedFile<Context>::must_open(ctx, std::string(arg)));
+
+  for (ObjectFile *obj : ctx.objs)
+    obj->parse(ctx);
 
   create_synthetic_chunks(ctx);
   fill_symtab(ctx);

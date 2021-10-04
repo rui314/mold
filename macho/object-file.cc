@@ -23,12 +23,17 @@ void ObjectFile::parse(Context &ctx) {
   data = data.substr(sizeof(hdr));
 
   for (i64 i = 0; i < hdr.ncmds; i++) {
-    LoadCommand &cmd = *(LoadCommand *)data.data();
+    u8 *buf = (u8 *)data.data();
+    LoadCommand &lc = *(LoadCommand *)buf;
 
-    switch (cmd.cmd) {
+    switch (lc.cmd) {
     case LC_SEGMENT_64: {
-      InputSection *sec = new InputSection(ctx, *this, *(MachSection *)&cmd);
-      sections.push_back(std::unique_ptr<InputSection>(sec));
+      SegmentCommand &cmd = *(SegmentCommand *)buf;
+      MachSection *sec = (MachSection *)(buf + sizeof(cmd));
+      for (i64 i = 0; i < cmd.nsects; i++) {
+	sections.push_back(
+          std::unique_ptr<InputSection>(new InputSection(ctx, *this, sec[i])));
+      }
       break;
     }
     case LC_BUILD_VERSION:
@@ -36,10 +41,10 @@ void ObjectFile::parse(Context &ctx) {
     case LC_DYSYMTAB:
       break;
     default:
-      Error(ctx) << *this << ": unknown load command: 0x" << std::hex << cmd.cmd;
+      Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
     }
 
-    data = data.substr(cmd.cmdsize);
+    data = data.substr(lc.cmdsize);
   }
 }
 
