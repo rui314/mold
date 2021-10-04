@@ -65,13 +65,13 @@ void print_map(Context<E> &ctx) {
   // Print a mapfile.
   *out << "             VMA       Size Align Out     In      Symbol\n";
 
-  for (OutputChunk<E> *osec : ctx.chunks) {
+  for (Chunk<E> *osec : ctx.chunks) {
     *out << std::setw(16) << (u64)osec->shdr.sh_addr
          << std::setw(11) << (u64)osec->shdr.sh_size
          << std::setw(6) << (u64)osec->shdr.sh_addralign
          << " " << osec->name << "\n";
 
-    if (osec->kind != OutputChunk<E>::REGULAR)
+    if (osec->kind != Chunk<E>::REGULAR)
       continue;
 
     std::span<InputSection<E> *> members = ((OutputSection<E> *)osec)->members;

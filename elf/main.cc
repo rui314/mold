@@ -473,7 +473,7 @@ static int elf_main(int argc, char **argv) {
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
-  sort(ctx.chunks, [&](OutputChunk<E> *a, OutputChunk<E> *b) {
+  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
     return get_section_rank(ctx, a) < get_section_rank(ctx, b);
   });
 
@@ -519,8 +519,8 @@ static int elf_main(int argc, char **argv) {
   // section to the special EHFrameSection.
   {
     Timer t(ctx, "eh_frame");
-    erase(ctx.chunks, [](OutputChunk<E> *chunk) {
-      return chunk->kind == OutputChunk<E>::REGULAR &&
+    erase(ctx.chunks, [](Chunk<E> *chunk) {
+      return chunk->kind == Chunk<E>::REGULAR &&
              chunk->name == ".eh_frame";
     });
     ctx.eh_frame->construct(ctx);
@@ -529,20 +529,20 @@ static int elf_main(int argc, char **argv) {
   // Now that we have computed sizes for all sections and assigned
   // section indices to them, so we can fix section header contents
   // for all output sections.
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
-  erase(ctx.chunks, [](OutputChunk<E> *chunk) {
-    return chunk->kind == OutputChunk<E>::SYNTHETIC &&
+  erase(ctx.chunks, [](Chunk<E> *chunk) {
+    return chunk->kind == Chunk<E>::SYNTHETIC &&
            chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
   for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
-    if (ctx.chunks[i]->kind != OutputChunk<E>::HEADER)
+    if (ctx.chunks[i]->kind != Chunk<E>::HEADER)
       ctx.chunks[i]->shndx = shndx++;
 
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
   // Assign offsets to output sections
@@ -585,7 +585,7 @@ static int elf_main(int argc, char **argv) {
   {
     Timer t(ctx, "copy_buf");
 
-    tbb::parallel_for_each(ctx.chunks, [&](OutputChunk<E> *chunk) {
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
       std::string name(chunk->name);
       if (name.empty())
         name = "(header)";

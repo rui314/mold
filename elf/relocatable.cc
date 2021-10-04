@@ -36,13 +36,13 @@ namespace mold::elf {
 template <typename E> class RObjectFile;
 
 template <typename E>
-class ROutputChunk {
+class RChunk {
 public:
-  ROutputChunk() {
+  RChunk() {
     out_shdr.sh_addralign = 1;
   }
 
-  virtual ~ROutputChunk() = default;
+  virtual ~RChunk() = default;
   virtual void update_shdr(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx) = 0;
 
@@ -53,7 +53,7 @@ public:
 };
 
 template <typename E>
-class RInputSection : public ROutputChunk<E> {
+class RInputSection : public RChunk<E> {
 public:
   RInputSection(Context<E> &ctx, RObjectFile<E> &file, const ElfShdr<E> &shdr);
   void update_shdr(Context<E> &ctx) override;
@@ -63,7 +63,7 @@ public:
 };
 
 template <typename E>
-class RSymtabSection : public ROutputChunk<E> {
+class RSymtabSection : public RChunk<E> {
 public:
   RSymtabSection() {
     this->name = ".symtab";
@@ -82,7 +82,7 @@ public:
 };
 
 template <typename E>
-class RStrtabSection : public ROutputChunk<E> {
+class RStrtabSection : public RChunk<E> {
 public:
   RStrtabSection(std::string_view name) {
     this->name = name;
@@ -97,7 +97,7 @@ public:
 };
 
 template <typename E>
-class ROutputEhdr : public ROutputChunk<E> {
+class ROutputEhdr : public RChunk<E> {
 public:
   ROutputEhdr() {
     this->out_shdr.sh_size = sizeof(ElfEhdr<E>);
@@ -107,7 +107,7 @@ public:
 };
 
 template <typename E>
-class ROutputShdr : public ROutputChunk<E> {
+class ROutputShdr : public RChunk<E> {
 public:
   ROutputShdr() {
     this->out_shdr.sh_size = sizeof(ElfShdr<E>);
@@ -312,7 +312,7 @@ void ROutputEhdr<E>::write_to(Context<E> &ctx) {
 
 template <typename E>
 void ROutputShdr<E>::update_shdr(Context<E> &ctx) {
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     if (chunk->shndx)
       this->out_shdr.sh_size += sizeof(ElfShdr<E>);
 }
@@ -320,7 +320,7 @@ void ROutputShdr<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void ROutputShdr<E>::write_to(Context<E> &ctx) {
   ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->out_shdr.sh_offset);
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     if (chunk->shndx)
       hdr[chunk->shndx] = chunk->out_shdr;
 }
@@ -464,7 +464,7 @@ open_files(Context<E> &ctx, std::span<std::string_view> args) {
 template <typename E>
 static i64 assign_offsets(Context<E> &ctx) {
   i64 offset = 0;
-  for (ROutputChunk<E> *chunk : ctx.r_chunks) {
+  for (RChunk<E> *chunk : ctx.r_chunks) {
     offset = align_to(offset, chunk->out_shdr.sh_addralign);
     chunk->out_shdr.sh_offset = offset;
     offset += chunk->out_shdr.sh_size;
@@ -549,12 +549,12 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
 
   // Assign output section indices
   i64 shndx = 1;
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     if (chunk != &ehdr && chunk != &shdr)
       chunk->shndx = shndx++;
 
   // Add section names to .shstrtab
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     if (chunk->shndx)
       chunk->out_shdr.sh_name = shstrtab.add_string(chunk->name);
 
@@ -570,7 +570,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
       symtab.add_global_symbol(ctx, *file, i);
 
   // Finalize section header
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     chunk->update_shdr(ctx);
 
   // Open an output file
@@ -581,7 +581,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
   ctx.buf = out->buf;
 
   // Write to the output file
-  for (ROutputChunk<E> *chunk : ctx.r_chunks)
+  for (RChunk<E> *chunk : ctx.r_chunks)
     chunk->write_to(ctx);
   out->close(ctx);
 }

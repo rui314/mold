@@ -49,7 +49,7 @@ template <typename E> class InputFile;
 template <typename E> class InputSection;
 template <typename E> class MergedSection;
 template <typename E> class ObjectFile;
-template <typename E> class OutputChunk;
+template <typename E> class Chunk;
 template <typename E> class OutputSection;
 template <typename E> class SharedFile;
 template <typename E> class Symbol;
@@ -57,7 +57,7 @@ template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 
-template <typename E> class ROutputChunk;
+template <typename E> class RChunk;
 template <typename E> class ROutputEhdr;
 template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
@@ -300,19 +300,19 @@ private:
 //
 
 template <typename E>
-bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk);
+bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
-// OutputChunk represents a contiguous region in an output file.
+// Chunk represents a contiguous region in an output file.
 template <typename E>
-class OutputChunk {
+class Chunk {
 public:
-  // There are three types of OutputChunks:
+  // There are three types of Chunks:
   //  - HEADER: the ELF, section or segment headers
   //  - REGULAR: output sections containing input sections
   //  - SYNTHETIC: linker-synthesized sections such as .got or .plt
   enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
 
-  virtual ~OutputChunk() = default;
+  virtual ~Chunk() = default;
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf);
   virtual void update_shdr(Context<E> &ctx) {}
@@ -324,16 +324,16 @@ public:
   ElfShdr<E> shdr = {};
 
 protected:
-  OutputChunk(Kind kind) : kind(kind) {
+  Chunk(Kind kind) : kind(kind) {
     shdr.sh_addralign = 1;
   }
 };
 
 // ELF header
 template <typename E>
-class OutputEhdr : public OutputChunk<E> {
+class OutputEhdr : public Chunk<E> {
 public:
-  OutputEhdr() : OutputChunk<E>(this->HEADER) {
+  OutputEhdr() : Chunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
     this->shdr.sh_addralign = E::wordsize;
@@ -344,9 +344,9 @@ public:
 
 // Section header
 template <typename E>
-class OutputShdr : public OutputChunk<E> {
+class OutputShdr : public Chunk<E> {
 public:
-  OutputShdr() : OutputChunk<E>(this->HEADER) {
+  OutputShdr() : Chunk<E>(this->HEADER) {
     this->shdr.sh_addralign = E::wordsize;
   }
 
@@ -356,9 +356,9 @@ public:
 
 // Program header
 template <typename E>
-class OutputPhdr : public OutputChunk<E> {
+class OutputPhdr : public Chunk<E> {
 public:
-  OutputPhdr() : OutputChunk<E>(this->HEADER) {
+  OutputPhdr() : Chunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_addralign = E::wordsize;
   }
@@ -368,9 +368,9 @@ public:
 };
 
 template <typename E>
-class InterpSection : public OutputChunk<E> {
+class InterpSection : public Chunk<E> {
 public:
-  InterpSection() : OutputChunk<E>(this->SYNTHETIC) {
+  InterpSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".interp";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -382,7 +382,7 @@ public:
 
 // Sections
 template <typename E>
-class OutputSection : public OutputChunk<E> {
+class OutputSection : public Chunk<E> {
 public:
   static OutputSection *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
@@ -398,9 +398,9 @@ private:
 };
 
 template <typename E>
-class GotSection : public OutputChunk<E> {
+class GotSection : public Chunk<E> {
 public:
-  GotSection() : OutputChunk<E>(this->SYNTHETIC) {
+  GotSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -425,9 +425,9 @@ public:
 };
 
 template <typename E>
-class GotPltSection : public OutputChunk<E> {
+class GotPltSection : public Chunk<E> {
 public:
-  GotPltSection() : OutputChunk<E>(this->SYNTHETIC) {
+  GotPltSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -438,9 +438,9 @@ public:
 };
 
 template <typename E>
-class PltSection : public OutputChunk<E> {
+class PltSection : public Chunk<E> {
 public:
-  PltSection() : OutputChunk<E>(this->SYNTHETIC) {
+  PltSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
@@ -454,9 +454,9 @@ public:
 };
 
 template <typename E>
-class PltGotSection : public OutputChunk<E> {
+class PltGotSection : public Chunk<E> {
 public:
-  PltGotSection() : OutputChunk<E>(this->SYNTHETIC) {
+  PltGotSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".plt.got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
@@ -470,9 +470,9 @@ public:
 };
 
 template <typename E>
-class RelPltSection : public OutputChunk<E> {
+class RelPltSection : public Chunk<E> {
 public:
-  RelPltSection() : OutputChunk<E>(this->SYNTHETIC) {
+  RelPltSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = E::is_rel ? ".rel.plt" : ".rela.plt";
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -485,9 +485,9 @@ public:
 };
 
 template <typename E>
-class RelDynSection : public OutputChunk<E> {
+class RelDynSection : public Chunk<E> {
 public:
-  RelDynSection() : OutputChunk<E>(this->SYNTHETIC) {
+  RelDynSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = E::is_rel ? ".rel.dyn" : ".rela.dyn";
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -503,9 +503,9 @@ public:
 };
 
 template <typename E>
-class StrtabSection : public OutputChunk<E> {
+class StrtabSection : public Chunk<E> {
 public:
-  StrtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+  StrtabSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".strtab";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_size = 1;
@@ -515,9 +515,9 @@ public:
 };
 
 template <typename E>
-class ShstrtabSection : public OutputChunk<E> {
+class ShstrtabSection : public Chunk<E> {
 public:
-  ShstrtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+  ShstrtabSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".shstrtab";
     this->shdr.sh_type = SHT_STRTAB;
   }
@@ -527,9 +527,9 @@ public:
 };
 
 template <typename E>
-class DynstrSection : public OutputChunk<E> {
+class DynstrSection : public Chunk<E> {
 public:
-  DynstrSection() : OutputChunk<E>(this->SYNTHETIC) {
+  DynstrSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -547,9 +547,9 @@ private:
 };
 
 template <typename E>
-class DynamicSection : public OutputChunk<E> {
+class DynamicSection : public Chunk<E> {
 public:
-  DynamicSection() : OutputChunk<E>(this->SYNTHETIC) {
+  DynamicSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".dynamic";
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -562,9 +562,9 @@ public:
 };
 
 template <typename E>
-class SymtabSection : public OutputChunk<E> {
+class SymtabSection : public Chunk<E> {
 public:
-  SymtabSection() : OutputChunk<E>(this->SYNTHETIC) {
+  SymtabSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".symtab";
     this->shdr.sh_type = SHT_SYMTAB;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
@@ -576,9 +576,9 @@ public:
 };
 
 template <typename E>
-class DynsymSection : public OutputChunk<E> {
+class DynsymSection : public Chunk<E> {
 public:
-  DynsymSection() : OutputChunk<E>(this->SYNTHETIC) {
+  DynsymSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".dynsym";
     this->shdr.sh_type = SHT_DYNSYM;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -595,9 +595,9 @@ public:
 };
 
 template <typename E>
-class HashSection : public OutputChunk<E> {
+class HashSection : public Chunk<E> {
 public:
-  HashSection() : OutputChunk<E>(this->SYNTHETIC) {
+  HashSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".hash";
     this->shdr.sh_type = SHT_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -610,9 +610,9 @@ public:
 };
 
 template <typename E>
-class GnuHashSection : public OutputChunk<E> {
+class GnuHashSection : public Chunk<E> {
 public:
-  GnuHashSection() : OutputChunk<E>(this->SYNTHETIC) {
+  GnuHashSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".gnu.hash";
     this->shdr.sh_type = SHT_GNU_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -632,7 +632,7 @@ public:
 };
 
 template <typename E>
-class MergedSection : public OutputChunk<E> {
+class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
@@ -653,9 +653,9 @@ private:
 };
 
 template <typename E>
-class EhFrameSection : public OutputChunk<E> {
+class EhFrameSection : public Chunk<E> {
 public:
-  EhFrameSection() : OutputChunk<E>(this->SYNTHETIC) {
+  EhFrameSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".eh_frame";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -668,9 +668,9 @@ public:
 };
 
 template <typename E>
-class EhFrameHdrSection : public OutputChunk<E> {
+class EhFrameHdrSection : public Chunk<E> {
 public:
-  EhFrameHdrSection() : OutputChunk<E>(this->SYNTHETIC) {
+  EhFrameHdrSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".eh_frame_hdr";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -687,9 +687,9 @@ public:
 };
 
 template <typename E>
-class DynbssSection : public OutputChunk<E> {
+class DynbssSection : public Chunk<E> {
 public:
-  DynbssSection(bool is_relro) : OutputChunk<E>(this->SYNTHETIC) {
+  DynbssSection(bool is_relro) : Chunk<E>(this->SYNTHETIC) {
     this->name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -702,9 +702,9 @@ public:
 };
 
 template <typename E>
-class VersymSection : public OutputChunk<E> {
+class VersymSection : public Chunk<E> {
 public:
-  VersymSection() : OutputChunk<E>(this->SYNTHETIC) {
+  VersymSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".gnu.version";
     this->shdr.sh_type = SHT_GNU_VERSYM;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -719,9 +719,9 @@ public:
 };
 
 template <typename E>
-class VerneedSection : public OutputChunk<E> {
+class VerneedSection : public Chunk<E> {
 public:
-  VerneedSection() : OutputChunk<E>(this->SYNTHETIC) {
+  VerneedSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -736,9 +736,9 @@ public:
 };
 
 template <typename E>
-class VerdefSection : public OutputChunk<E> {
+class VerdefSection : public Chunk<E> {
 public:
-  VerdefSection() : OutputChunk<E>(this->SYNTHETIC) {
+  VerdefSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".gnu.version_d";
     this->shdr.sh_type = SHT_GNU_VERDEF;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -753,9 +753,9 @@ public:
 };
 
 template <typename E>
-class BuildIdSection : public OutputChunk<E> {
+class BuildIdSection : public Chunk<E> {
 public:
-  BuildIdSection() : OutputChunk<E>(this->SYNTHETIC) {
+  BuildIdSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".note.gnu.build-id";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -771,9 +771,9 @@ public:
 };
 
 template <typename E>
-class NotePropertySection : public OutputChunk<E> {
+class NotePropertySection : public Chunk<E> {
 public:
-  NotePropertySection() : OutputChunk<E>(this->SYNTHETIC) {
+  NotePropertySection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".note.gnu.property";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -787,9 +787,9 @@ public:
 };
 
 template <typename E>
-class GabiCompressedSection : public OutputChunk<E> {
+class GabiCompressedSection : public Chunk<E> {
 public:
-  GabiCompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
+  GabiCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
 
 private:
@@ -798,9 +798,9 @@ private:
 };
 
 template <typename E>
-class GnuCompressedSection : public OutputChunk<E> {
+class GnuCompressedSection : public Chunk<E> {
 public:
-  GnuCompressedSection(Context<E> &ctx, OutputChunk<E> &chunk);
+  GnuCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
 
 private:
@@ -810,9 +810,9 @@ private:
 };
 
 template <typename E>
-class ReproSection : public OutputChunk<E> {
+class ReproSection : public Chunk<E> {
 public:
-  ReproSection() : OutputChunk<E>(this->SYNTHETIC) {
+  ReproSection() : Chunk<E>(this->SYNTHETIC) {
     this->name = ".repro";
     this->shdr.sh_type = SHT_PROGBITS;
   }
@@ -1123,7 +1123,7 @@ template <typename E> void bin_sections(Context<E> &);
 template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
-template <typename E> std::vector<OutputChunk<E> *>
+template <typename E> std::vector<Chunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
@@ -1132,7 +1132,7 @@ template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
 template <typename E> void clear_padding(Context<E> &);
-template <typename E> i64 get_section_rank(Context<E> &, OutputChunk<E> *chunk);
+template <typename E> i64 get_section_rank(Context<E> &, Chunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> void compress_debug_sections(Context<E> &);
@@ -1296,7 +1296,7 @@ struct Context {
   tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;
   tbb::concurrent_hash_map<std::string_view, ComdatGroup> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
-  tbb::concurrent_vector<std::unique_ptr<OutputChunk<E>>> output_chunks;
+  tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
@@ -1325,7 +1325,7 @@ struct Context {
   std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf = nullptr;
 
-  std::vector<OutputChunk<E> *> chunks;
+  std::vector<Chunk<E> *> chunks;
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
@@ -1360,7 +1360,7 @@ struct Context {
   std::unique_ptr<ReproSection<E>> repro;
 
   // For --relocatable
-  std::vector<ROutputChunk<E> *> r_chunks;
+  std::vector<RChunk<E> *> r_chunks;
   ROutputEhdr<E> *r_ehdr = nullptr;
   ROutputShdr<E> *r_shdr = nullptr;
   RStrtabSection<E> *r_shstrtab = nullptr;

@@ -16,7 +16,7 @@
 namespace mold::elf {
 
 template <typename E>
-void OutputChunk<E>::write_to(Context<E> &ctx, u8 *buf) {
+void Chunk<E>::write_to(Context<E> &ctx, u8 *buf) {
   Fatal(ctx) << name << ": write_to is called on an invalid section";
 }
 
@@ -59,7 +59,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void OutputShdr<E>::update_shdr(Context<E> &ctx) {
   i64 n = 0;
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shndx)
       n = chunk->shndx;
   this->shdr.sh_size = (n + 1) * sizeof(ElfShdr<E>);
@@ -70,13 +70,13 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
   ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->shdr.sh_offset);
   hdr[0] = {};
 
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shndx)
       hdr[chunk->shndx] = chunk->shdr;
 }
 
 template <typename E>
-static i64 to_phdr_flags(OutputChunk<E> *chunk) {
+static i64 to_phdr_flags(Chunk<E> *chunk) {
   i64 ret = PF_R;
   if (chunk->shdr.sh_flags & SHF_WRITE)
     ret |= PF_W;
@@ -100,7 +100,7 @@ static i64 to_phdr_flags(OutputChunk<E> *chunk) {
 // dynamic relocations but doesn't have to be writable at runtime,
 // so they are put into a RELRO segment.
 template <typename E>
-bool is_relro(Context<E> &ctx, OutputChunk<E> *chunk) {
+bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
   u64 flags = chunk->shdr.sh_flags;
   u64 type = chunk->shdr.sh_type;
 
@@ -131,7 +131,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_memsz = chunk->shdr.sh_size;
   };
 
-  auto append = [&](OutputChunk<E> *chunk) {
+  auto append = [&](Chunk<E> *chunk) {
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
     phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
@@ -140,7 +140,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
   };
 
-  auto is_bss = [](OutputChunk<E> *chunk) {
+  auto is_bss = [](Chunk<E> *chunk) {
     return chunk->shdr.sh_type == SHT_NOBITS &&
            !(chunk->shdr.sh_flags & SHF_TLS);
   };
@@ -155,7 +155,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // Create a PT_NOTE for each group of SHF_NOTE sections with the same
   // alignment requirement.
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
-    OutputChunk<E> *first = ctx.chunks[i++];
+    Chunk<E> *first = ctx.chunks[i++];
     if (first->shdr.sh_type != SHT_NOTE)
       continue;
 
@@ -170,11 +170,11 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Create PT_LOAD segments.
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     chunk->new_page = false;
 
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
-    OutputChunk<E> *first = ctx.chunks[i++];
+    Chunk<E> *first = ctx.chunks[i++];
     if (!(first->shdr.sh_flags & SHF_ALLOC))
       break;
 
@@ -342,13 +342,13 @@ void ShstrtabSection<E>::update_shdr(Context<E> &ctx) {
   std::unordered_map<std::string_view, i64> map;
   i64 offset = 1;
 
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (!chunk->name.empty() && map.insert({chunk->name, offset}).second)
       offset += chunk->name.size() + 1;
 
   this->shdr.sh_size = offset;
 
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (!chunk->name.empty())
       chunk->shdr.sh_name = map[chunk->name];
 }
@@ -358,7 +358,7 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   base[0] = '\0';
 
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (!chunk->name.empty())
       write_string(base + chunk->shdr.sh_name, chunk->name);
 }
@@ -432,7 +432,7 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 static bool has_init_array(Context<E> &ctx) {
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shdr.sh_type == SHT_INIT_ARRAY)
       return true;
   return false;
@@ -440,7 +440,7 @@ static bool has_init_array(Context<E> &ctx) {
 
 template <typename E>
 static bool has_fini_array(Context<E> &ctx) {
-  for (OutputChunk<E> *chunk : ctx.chunks)
+  for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shdr.sh_type == SHT_FINI_ARRAY)
       return true;
   return false;
@@ -661,7 +661,7 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
 template <typename E>
 OutputSection<E>::OutputSection(std::string_view name, u32 type,
                                 u64 flags, u32 idx)
-  : OutputChunk<E>(OutputChunk<E>::REGULAR), idx(idx) {
+  : Chunk<E>(Chunk<E>::REGULAR), idx(idx) {
   this->name = name;
   this->shdr.sh_type = type;
   this->shdr.sh_flags = flags;
@@ -1124,7 +1124,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 MergedSection<E>::MergedSection(std::string_view name, u64 flags, u32 type)
-  : OutputChunk<E>(this->SYNTHETIC) {
+  : Chunk<E>(this->SYNTHETIC) {
   this->name = name;
   this->shdr.sh_flags = flags;
   this->shdr.sh_type = type;
@@ -1737,8 +1737,8 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
-                                                OutputChunk<E> &chunk)
-  : OutputChunk<E>(this->SYNTHETIC) {
+                                                Chunk<E> &chunk)
+  : Chunk<E>(this->SYNTHETIC) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
 
@@ -1767,8 +1767,8 @@ void GabiCompressedSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
-                                              OutputChunk<E> &chunk)
-  : OutputChunk<E>(this->SYNTHETIC) {
+                                              Chunk<E> &chunk)
+  : Chunk<E>(this->SYNTHETIC) {
   assert(chunk.name.starts_with(".debug"));
   this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
 
@@ -1819,7 +1819,7 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 #define INSTANTIATE(E)                                          \
-  template class OutputChunk<E>;                                \
+  template class Chunk<E>;                                      \
   template class OutputEhdr<E>;                                 \
   template class OutputShdr<E>;                                 \
   template class OutputPhdr<E>;                                 \
@@ -1852,7 +1852,7 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   template class GnuCompressedSection<E>;                       \
   template class ReproSection<E>;                               \
   template i64 BuildId::size(Context<E> &) const;               \
-  template bool is_relro(Context<E> &, OutputChunk<E> *);       \
+  template bool is_relro(Context<E> &, Chunk<E> *);             \
   template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)
 
 INSTANTIATE(X86_64);

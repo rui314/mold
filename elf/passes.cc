@@ -349,7 +349,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (!Symbol<E>::intern(ctx, "edata")->file)
     ctx.edata = add("edata");
 
-  for (OutputChunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
 
@@ -418,8 +418,8 @@ void sort_init_fini(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<OutputChunk<E> *> collect_output_sections(Context<E> &ctx) {
-  std::vector<OutputChunk<E> *> vec;
+std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx) {
+  std::vector<Chunk<E> *> vec;
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (!osec->members.empty())
@@ -431,7 +431,7 @@ std::vector<OutputChunk<E> *> collect_output_sections(Context<E> &ctx) {
   // Sections are added to the section lists in an arbitrary order because
   // they are created in parallel.
   // Sort them to to make the output deterministic.
-  sort(vec, [](OutputChunk<E> *x, OutputChunk<E> *y) {
+  sort(vec, [](Chunk<E> *x, Chunk<E> *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
@@ -694,7 +694,7 @@ template <typename E>
 void clear_padding(Context<E> &ctx) {
   Timer t(ctx, "clear_padding");
 
-  auto zero = [&](OutputChunk<E> *chunk, i64 next_start) {
+  auto zero = [&](Chunk<E> *chunk, i64 next_start) {
     i64 pos = chunk->shdr.sh_offset;
     if (chunk->shdr.sh_type != SHT_NOBITS)
       pos += chunk->shdr.sh_size;
@@ -723,7 +723,7 @@ void clear_padding(Context<E> &ctx) {
 //   nonalloc
 //   section header
 template <typename E>
-i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk) {
+i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
   u64 flags = chunk->shdr.sh_flags;
 
@@ -777,7 +777,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     // sections need to be congruent to file offsets modulo the page size.
     // BSS sections don't increment file offsets.
     for (; i < end && ctx.chunks[i]->shdr.sh_type != SHT_NOBITS; i++) {
-      OutputChunk<E> &chunk = *ctx.chunks[i];
+      Chunk<E> &chunk = *ctx.chunks[i];
       u64 prev_vaddr = vaddr;
 
       if (chunk.new_page)
@@ -793,7 +793,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     }
 
     for (; i < end && ctx.chunks[i]->shdr.sh_type == SHT_NOBITS; i++) {
-      OutputChunk<E> &chunk = *ctx.chunks[i];
+      Chunk<E> &chunk = *ctx.chunks[i];
 
       if (chunk.new_page)
         vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
@@ -808,7 +808,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
   }
 
   for (; i < ctx.chunks.size(); i++) {
-    OutputChunk<E> &chunk = *ctx.chunks[i];
+    Chunk<E> &chunk = *ctx.chunks[i];
     assert(!(chunk.shdr.sh_flags & SHF_ALLOC));
     fileoff = align_to(fileoff, chunk.shdr.sh_addralign);
     chunk.shdr.sh_offset = fileoff;
@@ -843,15 +843,15 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   };
 
   // __bss_start
-  for (OutputChunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind == OutputChunk<E>::REGULAR && chunk->name == ".bss") {
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->kind == Chunk<E>::REGULAR && chunk->name == ".bss") {
       start(ctx.__bss_start, chunk);
       break;
     }
   }
 
   // __ehdr_start and __executable_start
-  for (OutputChunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk->shndx == 1) {
       ctx.__ehdr_start->shndx = 1;
       ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
@@ -871,7 +871,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
 
   // __{init,fini}_array_{start,end}
-  for (OutputChunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : ctx.chunks) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
@@ -885,8 +885,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // _end, _etext, _edata and the like
-  for (OutputChunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind == OutputChunk<E>::HEADER)
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->kind == Chunk<E>::HEADER)
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
@@ -921,7 +921,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // __start_ and __stop_ symbols
-  for (OutputChunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
       std::string_view sym1 =
         save_string(ctx, "__start_" + std::string(chunk->name));
@@ -939,20 +939,20 @@ void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
-    OutputChunk<E> &chunk = *ctx.chunks[i];
+    Chunk<E> &chunk = *ctx.chunks[i];
 
     if ((chunk.shdr.sh_flags & SHF_ALLOC) || chunk.shdr.sh_size == 0 ||
         !chunk.name.starts_with(".debug"))
       return;
 
-    OutputChunk<E> *comp = nullptr;
+    Chunk<E> *comp = nullptr;
     if (ctx.arg.compress_debug_sections == COMPRESS_GABI)
       comp = new GabiCompressedSection<E>(ctx, chunk);
     else if (ctx.arg.compress_debug_sections == COMPRESS_GNU)
       comp = new GnuCompressedSection<E>(ctx, chunk);
     assert(comp);
 
-    ctx.output_chunks.push_back(std::unique_ptr<OutputChunk<E>>(comp));
+    ctx.output_chunks.push_back(std::unique_ptr<Chunk<E>>(comp));
     ctx.chunks[i] = comp;
   });
 
@@ -972,8 +972,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template ObjectFile<E> *create_internal_file(Context<E> &ctx);        \
   template void check_duplicate_symbols(Context<E> &ctx);               \
   template void sort_init_fini(Context<E> &ctx);                        \
-  template std::vector<OutputChunk<E> *>                                \
-    collect_output_sections(Context<E> &ctx);                           \
+  template std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx); \
   template void compute_section_sizes(Context<E> &ctx);                 \
   template void claim_unresolved_symbols(Context<E> &ctx);              \
   template void scan_rels(Context<E> &ctx);                             \
@@ -981,7 +980,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void parse_symbol_version(Context<E> &ctx);                  \
   template void compute_import_export(Context<E> &ctx);                 \
   template void clear_padding(Context<E> &ctx);                         \
-  template i64 get_section_rank(Context<E> &ctx, OutputChunk<E> *chunk); \
+  template i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk);      \
   template i64 set_osec_offsets(Context<E> &ctx);                       \
   template void fix_synthetic_symbols(Context<E> &ctx);                 \
   template void compress_debug_sections(Context<E> &ctx);
