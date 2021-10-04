@@ -43,7 +43,6 @@ void ObjectFile::parse(Context &ctx) {
 
       for (i64 j = 0; j < cmd.nsyms; j++) {
 	std::string_view name = (char *)(buf + cmd.stroff + mach_sym[j].stroff);
-	SyncOut(ctx) << "name=" << name;
       }
       break;
     }

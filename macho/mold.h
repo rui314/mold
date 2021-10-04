@@ -4,6 +4,7 @@
 #include "../mold.h"
 
 #include <memory>
+#include <tbb/concurrent_hash_map.h>
 
 namespace mold::macho {
 
@@ -79,6 +80,8 @@ struct Symbol {
   Symbol() = default;
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
+
+  static inline Symbol *intern(Context &ctx, std::string_view name);
 
   std::string_view name;
 
@@ -449,6 +452,8 @@ struct Context {
 
   bool has_error = false;
 
+  tbb::concurrent_hash_map<std::string_view, Symbol> symbol_map;
+
   std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
@@ -487,5 +492,15 @@ struct Context {
 };
 
 int main(int argc, char **argv);
+
+//
+// Inline functions
+//
+
+Symbol *Symbol::intern(Context &ctx, std::string_view name) {
+  typename decltype(ctx.symbol_map)::const_accessor acc;
+  ctx.symbol_map.insert(acc, {name, Symbol(name)});
+  return const_cast<Symbol*>(&acc->second);
+}
 
 } // namespace mold::macho
