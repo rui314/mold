@@ -13,6 +13,7 @@ static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 class Chunk;
 struct Context;
 struct Symbol;
+struct InputSection;
 struct Subsection;
 
 //
@@ -22,15 +23,19 @@ struct Subsection;
 class ObjectFile {
 public:
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+  void parse(Context &ctx);
+
+  MappedFile<Context> *mf;
+  std::vector<std::unique_ptr<InputSection>> sections;
 
 private:
   ObjectFile(Context &ctx, MappedFile<Context> *mf);
-
-  MappedFile<Context> *mf;
 };
 
+std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
+
 //
-// input-chunks.cc
+// input-sections.cc
 //
 
 struct Relocation {
@@ -38,6 +43,7 @@ struct Relocation {
   u32 type;
   Symbol *sym;
   Subsection *subsec;
+  u64 addend;
 };
 
 class InputSection {
@@ -46,6 +52,8 @@ public:
 
   ObjectFile &file;
   const MachSection &hdr;
+  std::string_view contents;
+  std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
 };
 
@@ -64,6 +72,17 @@ public:
 //
 
 struct Symbol {
+  Symbol() = default;
+  Symbol(std::string_view name) : name(name) {}
+  Symbol(const Symbol &other) : name(other.name) {}
+
+  std::string_view name;
+
+  ObjectFile *file = nullptr;
+
+  u64 get_addr() const {
+    return 0;
+  }
 };
 
 //
@@ -117,7 +136,10 @@ private:
 };
 
 class OutputSection : public Chunk {
-  std::vector<Subsection *> contents;
+public:
+  OutputSection(std::string_view name);
+
+  std::vector<Subsection *> members;
 };
 
 class RebaseEncoder {

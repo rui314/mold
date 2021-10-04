@@ -230,6 +230,11 @@ void OutputLoadCommand::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, flatten(cmds));
 }
 
+OutputSection::OutputSection(std::string_view name) {
+  assert(name.size() < sizeof(hdr.segname));
+  memcpy(hdr.segname, name.data(), name.size());
+}
+
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
   assert(name.size() <= sizeof(cmd.segname));
 
