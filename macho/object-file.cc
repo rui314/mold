@@ -17,34 +17,44 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf) {
 };
 
 void ObjectFile::parse(Context &ctx) {
-  std::string_view data = mf->get_contents();
+  u8 *buf = mf->data;
+  u8 *p = mf->data;
 
-  MachHeader &hdr = *(MachHeader *)data.data();
-  data = data.substr(sizeof(hdr));
+  MachHeader &hdr = *(MachHeader *)p;
+  p += sizeof(hdr);
 
   for (i64 i = 0; i < hdr.ncmds; i++) {
-    u8 *buf = (u8 *)data.data();
-    LoadCommand &lc = *(LoadCommand *)buf;
+    LoadCommand &lc = *(LoadCommand *)p;
 
     switch (lc.cmd) {
     case LC_SEGMENT_64: {
-      SegmentCommand &cmd = *(SegmentCommand *)buf;
-      MachSection *sec = (MachSection *)(buf + sizeof(cmd));
+      SegmentCommand &cmd = *(SegmentCommand *)p;
+      MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
+
       for (i64 i = 0; i < cmd.nsects; i++) {
 	sections.push_back(
-          std::unique_ptr<InputSection>(new InputSection(ctx, *this, sec[i])));
+          std::unique_ptr<InputSection>(new InputSection(ctx, *this, mach_sec[i])));
+      }
+      break;
+    }
+    case LC_SYMTAB: {
+      SymtabCommand &cmd = *(SymtabCommand *)p;
+      MachSym *mach_sym = (MachSym *)(buf + cmd.symoff);
+
+      for (i64 j = 0; j < cmd.nsyms; j++) {
+	std::string_view name = (char *)(buf + cmd.stroff + mach_sym[j].stroff);
+	SyncOut(ctx) << "name=" << name;
       }
       break;
     }
     case LC_BUILD_VERSION:
-    case LC_SYMTAB:
     case LC_DYSYMTAB:
       break;
     default:
       Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
     }
 
-    data = data.substr(lc.cmdsize);
+    p += lc.cmdsize;
   }
 }
 
