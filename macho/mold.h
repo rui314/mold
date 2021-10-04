@@ -59,6 +59,10 @@ public:
 
 class Subsection {
 public:
+  std::string_view get_contents() {
+    return sec.contents.substr(input_offset, input_size);
+  }
+
   const InputSection &sec;
   u32 input_offset = 0;
   u32 input_size = 0;
@@ -140,6 +144,7 @@ class OutputSection : public Chunk {
 public:
   OutputSection(std::string_view name);
   void compute_size(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
 
   std::vector<Subsection *> members;
 };

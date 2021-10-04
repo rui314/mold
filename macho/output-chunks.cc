@@ -236,10 +236,20 @@ OutputSection::OutputSection(std::string_view name) {
 }
 
 void OutputSection::compute_size(Context &ctx) {
-  SyncOut(ctx) << "members: " << members.size();
   hdr.size = 0;
   for (Subsection *subsec : members)
     hdr.size += subsec->input_size;
+}
+
+void OutputSection::copy_buf(Context &ctx) {
+  u8 *buf = ctx.buf + hdr.offset;
+  i64 offset = 0;
+
+  for (Subsection *subsec : members) {
+    std::string_view data = subsec->get_contents();
+    memcpy(buf + offset, data.data(), data.size());
+    offset += data.size();
+  }
 }
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
