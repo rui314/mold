@@ -23,7 +23,7 @@ void Chunk<E>::write_to(Context<E> &ctx, u8 *buf) {
 template <typename E>
 u64 get_entry_addr(Context<E> &ctx) {
   if (!ctx.arg.entry.empty())
-    if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.entry))
+    if (Symbol<E> *sym = intern(ctx, ctx.arg.entry))
       if (sym->file)
         return sym->get_addr(ctx);
 
@@ -520,9 +520,9 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_VERDEFNUM, ctx.verdef->shdr.sh_info);
   }
 
-  if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.init); sym->file)
+  if (Symbol<E> *sym = intern(ctx, ctx.arg.init); sym->file)
     define(DT_INIT, sym->get_addr(ctx));
-  if (Symbol<E> *sym = Symbol<E>::intern(ctx, ctx.arg.fini); sym->file)
+  if (Symbol<E> *sym = intern(ctx, ctx.arg.fini); sym->file)
     define(DT_FINI, sym->get_addr(ctx));
 
   if (ctx.hash)

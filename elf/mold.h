@@ -1434,20 +1434,6 @@ public:
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
-  // If we haven't seen the same `key` before, create a new instance
-  // of Symbol and returns it. Otherwise, returns the previously-
-  // instantiated object. `key` is usually the same as `name`.
-  static Symbol<E> *intern(Context<E> &ctx, std::string_view key,
-                           std::string_view name) {
-    typename decltype(ctx.symbol_map)::const_accessor acc;
-    ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
-    return const_cast<Symbol<E> *>(&acc->second);
-  }
-
-  static Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
-    return intern(ctx, name, name);
-  }
-
   u64 get_addr(Context<E> &ctx, bool allow_plt = true) const {
     if (Subsection<E> *subsec = get_subsec()) {
       if (!subsec->is_alive) {
@@ -1740,6 +1726,22 @@ public:
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 };
+
+// If we haven't seen the same `key` before, create a new instance
+// of Symbol and returns it. Otherwise, returns the previously-
+// instantiated object. `key` is usually the same as `name`.
+template <typename E>
+inline Symbol<E> *intern(Context<E> &ctx, std::string_view key,
+                         std::string_view name) {
+  typename decltype(ctx.symbol_map)::const_accessor acc;
+  ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
+  return const_cast<Symbol<E> *>(&acc->second);
+}
+
+template <typename E>
+inline Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
+  return intern(ctx, name, name);
+}
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {

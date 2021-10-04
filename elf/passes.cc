@@ -96,7 +96,7 @@ void resolve_symbols(Context<E> &ctx) {
   erase(live_objs, [](InputFile<E> *file) { return !file->is_alive; });
 
   auto load = [&](std::string_view name) {
-    if (InputFile<E> *file = Symbol<E>::intern(ctx, name)->file)
+    if (InputFile<E> *file = intern(ctx, name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
         live_objs.push_back((ObjectFile<E> *)file);
   };
@@ -165,7 +165,7 @@ void resolve_symbols(Context<E> &ctx) {
     file->resolve_common_symbols(ctx);
   });
 
-  if (Symbol<E> *sym = Symbol<E>::intern(ctx, "__gnu_lto_slim"); sym->file)
+  if (Symbol<E> *sym = intern(ctx, "__gnu_lto_slim"); sym->file)
     Fatal(ctx) << *sym->file << ": looks like this file contains a GCC "
                << "intermediate code, but mold does not support LTO";
 }
@@ -314,7 +314,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     esym.st_visibility = STV_HIDDEN;
     esyms->push_back(esym);
 
-    Symbol<E> *sym = Symbol<E>::intern(ctx, name);
+    Symbol<E> *sym = intern(ctx, name);
     obj->symbols.push_back(sym);
     return sym;
   };
@@ -342,11 +342,11 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
 
-  if (!Symbol<E>::intern(ctx, "end")->file)
+  if (!intern(ctx, "end")->file)
     ctx.end = add("end");
-  if (!Symbol<E>::intern(ctx, "etext")->file)
+  if (!intern(ctx, "etext")->file)
     ctx.etext = add("etext");
-  if (!Symbol<E>::intern(ctx, "edata")->file)
+  if (!intern(ctx, "edata")->file)
     ctx.edata = add("edata");
 
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -589,7 +589,7 @@ void apply_version_script(Context<E> &ctx) {
 
     if (!elem.is_extern_cpp &&
         elem.pattern.find('*') == elem.pattern.npos) {
-      Symbol<E> *sym = Symbol<E>::intern(ctx, elem.pattern);
+      Symbol<E> *sym = intern(ctx, elem.pattern);
       if (sym->file && !sym->file->is_dso)
         sym->ver_idx = elem.ver_idx;
       continue;
@@ -928,8 +928,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       std::string_view sym2 =
         save_string(ctx, "__stop_" + std::string(chunk->name));
 
-      start(Symbol<E>::intern(ctx, sym1), chunk);
-      stop(Symbol<E>::intern(ctx, sym2), chunk);
+      start(intern(ctx, sym1), chunk);
+      stop(intern(ctx, sym2), chunk);
     }
   }
 }

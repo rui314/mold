@@ -424,15 +424,15 @@ static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
                                 std::string_view key, std::string_view name) {
   if (esym.is_undef() && name.starts_with("__real_") &&
       ctx.arg.wrap.count(name.substr(7))) {
-    return Symbol<E>::intern(ctx, key.substr(7), name.substr(7));
+    return intern(ctx, key.substr(7), name.substr(7));
   }
 
-  Symbol<E> *sym = Symbol<E>::intern(ctx, key, name);
+  Symbol<E> *sym = intern(ctx, key, name);
 
   if (esym.is_undef() && sym->wrap) {
     key = save_string(ctx, "__wrap_" + std::string(key));
     name = save_string(ctx, "__wrap_" + std::string(name));
-    return Symbol<E>::intern(ctx, key, name);
+    return intern(ctx, key, name);
   }
   return sym;
 }
@@ -1260,14 +1260,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   for (i64 i = first_global; i < esyms.size(); i++) {
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
 
-    globals.push_back(Symbol<E>::intern(ctx, name));
+    globals.push_back(intern(ctx, name));
     if (esyms[i].is_undef())
       continue;
 
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(VER_NDX_GLOBAL);
-      this->symbols.push_back(Symbol<E>::intern(ctx, name));
+      this->symbols.push_back(intern(ctx, name));
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
       if (ver == VER_NDX_LOCAL)
@@ -1279,9 +1279,9 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       if (vers[i] & VERSYM_HIDDEN) {
         std::string_view mangled_name = save_string(
           ctx, std::string(name) + "@" + std::string(version_strings[ver]));
-        this->symbols.push_back(Symbol<E>::intern(ctx, mangled_name, name));
+        this->symbols.push_back(intern(ctx, mangled_name, name));
       } else {
-        this->symbols.push_back(Symbol<E>::intern(ctx, name));
+        this->symbols.push_back(intern(ctx, name));
       }
     }
   }
