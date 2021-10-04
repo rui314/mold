@@ -39,11 +39,11 @@ std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
 //
 
 struct Relocation {
-  u32 offset;
-  u32 type;
-  Symbol *sym;
-  Subsection *subsec;
-  u64 addend;
+  u32 offset = 0;
+  u32 type = 0;
+  Symbol *sym = nullptr;
+  Subsection *subsec = nullptr;
+  u64 addend = 0;
 };
 
 class InputSection {
