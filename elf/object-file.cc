@@ -602,7 +602,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // mergeable section (a section with SHF_MERGE bit set), the linker
 // is expected split it into smaller pieces and merge each piece with
 // other pieces from different object files. In mold, we call the
-// atomic unit of mergeable section "section pieces".
+// atomic unit of mergeable section "subsections".
 //
 // This feature is typically used for string literals. String literals
 // are usually put into a mergeable section by a compiler. If the same
@@ -621,7 +621,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 //   .L.str0
 //
 // '\0' represents a NUL byte. This mergeable section contains two
-// section pieces, "Hello world" and "foo bar". The first string is
+// subsections, "Hello world" and "foo bar". The first string is
 // referred by two symbols, .rodata and .L.str0, and the second by
 // .L.str1. .rodata is a section symbol and therefore a local symbol
 // and refers the begining of the section.
@@ -631,13 +631,13 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // place in the section. This kind of "out-of-bound" reference occurs
 // only when a symbol is a section symbol. In other words, compiler
 // may use an offset from the beginning of a section to refer any
-// section piece in a section, but it doesn't do for any other types
+// subsection in a section, but it doesn't do for any other types
 // of symbols.
 //
-// In mold, we attach section pieces to either relocations or symbols.
+// In mold, we attach subsections to either relocations or symbols.
 // If a relocation refers a section symbol whose section is a
-// mergeable section, a section piece is attached to the relocation.
-// If a non-section symbol refers a section piece, the section piece
+// mergeable section, a subsection is attached to the relocation.
+// If a non-section symbol refers a subsection, the subsection
 // is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
@@ -654,7 +654,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
+void ObjectFile<E>::register_subsections(Context<E> &ctx) {
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
     if (m)
       for (i64 i = 0; i < m->strings.size(); i++)

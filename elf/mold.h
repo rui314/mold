@@ -905,7 +905,7 @@ public:
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
-  void register_section_pieces(Context<E> &ctx);
+  void register_subsections(Context<E> &ctx);
   void resolve_lazy_symbols(Context<E> &ctx);
   void resolve_regular_symbols(Context<E> &ctx);
   void mark_live_objects(Context<E> &ctx,
