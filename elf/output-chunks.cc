@@ -620,7 +620,7 @@ std::string_view replace_zdebug_prefix(Context<E> &ctx, std::string_view name) {
     return ".debug_str";
   if (name == ".zdebug_types")
     return ".debug_types";
-  return save_string(ctx, std::string(".") + std::string(name.substr(2)));
+  return save_string(ctx, "."s + std::string(name.substr(2)));
 }
 
 template <typename E>

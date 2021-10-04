@@ -20,6 +20,7 @@
 
 namespace mold {
 
+using namespace std::literals::string_literals;
 using namespace std::literals::string_view_literals;
 
 typedef uint8_t u8;
