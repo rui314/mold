@@ -19,7 +19,15 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
-  ctx.text_seg.chunks.push_back(&ctx.text);
+
+  OutputSection *text = new OutputSection("__text");
+  for (ObjectFile *obj : ctx.objs)
+    for (std::unique_ptr<InputSection> &sec : obj->sections)
+      if (sec->hdr.segname == "__TEXT"sv && sec->hdr.sectname == "__text"sv)
+	for (Subsection &subsec : sec->subsections)
+	  text->members.push_back(&subsec);
+
+  ctx.text_seg.chunks.push_back(text);
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
   ctx.text_seg.chunks.push_back(&ctx.cstring);

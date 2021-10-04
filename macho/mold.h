@@ -60,11 +60,11 @@ public:
 class Subsection {
 public:
   const InputSection &sec;
-  u32 input_offset;
-  u32 input_size;
-  u32 rel_offset;
-  u32 nrels;
-  u32 output_offset;
+  u32 input_offset = 0;
+  u32 input_size = 0;
+  u32 rel_offset = 0;
+  u32 nrels = 0;
+  u32 output_offset = -1;
 };
 
 //
@@ -458,7 +458,6 @@ struct Context {
   OutputSegment linkedit_seg{"__LINKEDIT", VM_PROT_READ, 0};
 
   OutputMachHeader mach_hdr;
-  TextSection text;
   StubsSection stubs;
   StubHelperSection stub_helper;
   CstringSection cstring;
