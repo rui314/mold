@@ -22,7 +22,7 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   });
 
   if (it == subsections.begin())
-    Fatal(ctx) << *this << ": bad relocation at 0x" << std::hex << addr;
+    return nullptr;
   return &*(it - 1);
 }
 
@@ -56,7 +56,10 @@ void InputSection::parse_relocations(Context &ctx) {
 	addr = addend;
       }
 
-      Subsection *target = file.sections[r.idx]->find_subsection(ctx, addr);
+      Subsection *target = file.sections[r.idx - 1]->find_subsection(ctx, addr);
+      if (!target)
+	Fatal(ctx) << *this << ": bad relocation: " << i;
+
       rels.push_back({r.offset, addend - target->input_addr, nullptr, target});
     }
   }

@@ -28,10 +28,8 @@ void ObjectFile::parse(Context &ctx) {
       SegmentCommand &cmd = *(SegmentCommand *)p;
       MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
 
-      for (i64 i = 0; i < cmd.nsects; i++) {
-	sections.push_back(
-          std::unique_ptr<InputSection>(new InputSection(ctx, *this, mach_sec[i])));
-      }
+      for (i64 i = 0; i < cmd.nsects; i++)
+	sections.push_back(std::make_unique<InputSection>(ctx, *this, mach_sec[i]));
       break;
     }
     case LC_SYMTAB: {
@@ -55,6 +53,9 @@ void ObjectFile::parse(Context &ctx) {
 
     p += lc.cmdsize;
   }
+
+  for (std::unique_ptr<InputSection> &sec : sections)
+    sec->parse_relocations(ctx);
 }
 
 } // namespace mold::macho
