@@ -26,10 +26,12 @@ class ObjectFile {
 public:
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
   void parse(Context &ctx);
+  void resolve_symbols(Context &ctx);
 
   MappedFile<Context> *mf;
   std::vector<std::unique_ptr<InputSection>> sections;
   std::vector<Symbol *> syms;
+  std::span<MachSym> mach_syms;
 
 private:
   ObjectFile(Context &ctx, MappedFile<Context> *mf);

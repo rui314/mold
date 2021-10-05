@@ -34,12 +34,11 @@ void ObjectFile::parse(Context &ctx) {
     }
     case LC_SYMTAB: {
       SymtabCommand &cmd = *(SymtabCommand *)p;
-      MachSym *mach_sym = (MachSym *)(mf->data + cmd.symoff);
-      syms.reserve(cmd.nsyms);
+      mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
+      syms.reserve(mach_syms.size());
 
-      for (i64 j = 0; j < cmd.nsyms; j++) {
-	std::string_view name =
-	  (char *)(mf->data + cmd.stroff + mach_sym[j].stroff);
+      for (MachSym &msym : mach_syms) {
+        std::string_view name = (char *)(mf->data + cmd.stroff + msym.stroff);
 	syms.push_back(intern(ctx, name));
       }
       break;
@@ -63,6 +62,24 @@ void ObjectFile::parse(Context &ctx) {
       else
 	SyncOut(ctx) << *sec << ": " << rel.offset << " " << rel.addend
 		     << " " << rel.subsec;
+  }
+}
+
+void ObjectFile::resolve_symbols(Context &ctx) {
+  for (i64 i = 0; i < syms.size(); i++) {
+    Symbol &sym = *syms[i];
+    MachSym &msym = mach_syms[i];
+
+    switch (msym.type) {
+    case N_ABS:
+      sym.file = this;
+      sym.value = msym.value;
+      break;
+    case N_SECT:
+      sym.file = this;
+      sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
+      break;
+    }
   }
 }
 

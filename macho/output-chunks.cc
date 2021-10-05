@@ -236,9 +236,12 @@ OutputSection::OutputSection(std::string_view name) {
 }
 
 void OutputSection::compute_size(Context &ctx) {
-  hdr.size = 0;
-  for (Subsection *subsec : members)
-    hdr.size += subsec->input_size;
+  i64 sz = 0;
+  for (Subsection *subsec : members) {
+    subsec->output_offset = sz;
+    sz += subsec->input_size;
+  }
+  hdr.size = sz;
 }
 
 void OutputSection::copy_buf(Context &ctx) {
