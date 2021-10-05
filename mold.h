@@ -33,6 +33,8 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+template <typename C> class OutputFile;
+
 inline char *output_tmpfile;
 inline char *socket_tmpfile;
 inline thread_local bool opt_demangle;

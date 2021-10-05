@@ -1022,30 +1022,6 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
-// output-file.cc
-//
-
-// OutputFile represents a mmap'ed output file.
-template <typename E>
-class OutputFile {
-public:
-  static std::unique_ptr<OutputFile>
-  open(Context<E> &ctx, std::string path, i64 filesize, i64 perm);
-
-  virtual void close(Context<E> &ctx) = 0;
-  virtual ~OutputFile() {}
-
-  u8 *buf = nullptr;
-  std::string path;
-  i64 filesize;
-  bool is_mmapped;
-
-protected:
-  OutputFile(std::string path, i64 filesize, bool is_mmapped)
-    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
-};
-
-//
 // gc-sections.cc
 //
 
@@ -1322,7 +1298,7 @@ struct Context {
   ObjectFile<E> *internal_obj = nullptr;
 
   // Output buffer
-  std::unique_ptr<OutputFile<E>> output_file;
+  std::unique_ptr<OutputFile<Context<E>>> output_file;
   u8 *buf = nullptr;
 
   std::vector<Chunk<E> *> chunks;

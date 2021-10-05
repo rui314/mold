@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "../output-file.h"
 
 #include <shared_mutex>
 #include <sys/mman.h>

@@ -1,6 +1,7 @@
 #include "mold.h"
-#include "../cmdline.h"
 #include "../archive-file.h"
+#include "../cmdline.h"
+#include "../output-file.h"
 
 #include <cstring>
 #include <functional>
@@ -574,7 +575,7 @@ static int elf_main(int argc, char **argv) {
   t_before_copy.stop();
 
   // Create an output file
-  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, filesize, 0777);
+  ctx.output_file = open_output_file(ctx, ctx.arg.output, filesize, 0777);
   ctx.buf = ctx.output_file->buf;
 
   Timer t_copy(ctx, "copy");
