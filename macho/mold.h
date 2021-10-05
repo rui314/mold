@@ -42,15 +42,16 @@ std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
 
 struct Relocation {
   u32 offset = 0;
-  u32 type = 0;
+  u64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
-  u64 addend = 0;
 };
 
 class InputSection {
 public:
   InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
+  void parse_relocations(Context &ctx);
+  Subsection *find_subsection(Context &ctx, u32 addr);
 
   ObjectFile &file;
   const MachSection &hdr;
@@ -58,6 +59,8 @@ public:
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
 };
+
+std::ostream &operator<<(std::ostream &out, const InputSection &sec);
 
 class Subsection {
 public:
@@ -68,6 +71,7 @@ public:
   const InputSection &sec;
   u32 input_offset = 0;
   u32 input_size = 0;
+  u32 input_addr = 0;
   u32 rel_offset = 0;
   u32 nrels = 0;
   u32 output_offset = -1;
