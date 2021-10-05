@@ -95,6 +95,8 @@ struct Symbol {
   }
 };
 
+std::ostream &operator<<(std::ostream &out, const Symbol &sym);
+
 //
 // output-chunks.cc
 //
@@ -504,6 +506,11 @@ inline Symbol *intern(Context &ctx, std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
   ctx.symbol_map.insert(acc, {name, Symbol(name)});
   return const_cast<Symbol*>(&acc->second);
+}
+
+inline std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
+  out << sym.name;
+  return out;
 }
 
 } // namespace mold::macho

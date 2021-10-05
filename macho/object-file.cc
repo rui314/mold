@@ -34,7 +34,7 @@ void ObjectFile::parse(Context &ctx) {
     }
     case LC_SYMTAB: {
       SymtabCommand &cmd = *(SymtabCommand *)p;
-      MachSym *mach_sym = (MachSym *)(p + cmd.symoff);
+      MachSym *mach_sym = (MachSym *)(mf->data + cmd.symoff);
       syms.reserve(cmd.nsyms);
 
       for (i64 j = 0; j < cmd.nsyms; j++) {
@@ -57,8 +57,12 @@ void ObjectFile::parse(Context &ctx) {
   for (std::unique_ptr<InputSection> &sec : sections) {
     sec->parse_relocations(ctx);
     for (Relocation &rel : sec->rels)
-      SyncOut(ctx) << *sec << ": " << rel.offset << " " << rel.addend
-		   << " " << rel.sym << " " << rel.subsec;
+      if (rel.sym)
+	SyncOut(ctx) << *sec << ": " << rel.offset << " " << rel.addend
+		     << " " << *rel.sym << "!";
+      else
+	SyncOut(ctx) << *sec << ": " << rel.offset << " " << rel.addend
+		     << " " << rel.subsec;
   }
 }
 
