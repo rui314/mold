@@ -26,11 +26,11 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   return &*(it - 1);
 }
 
-static u64 read_addend(u8 *buf, u32 offset, u32 p2size) {
+static i64 read_addend(u8 *buf, u32 offset, u32 p2size) {
   switch (p2size) {
-  case 0: return buf[offset];
-  case 1: return *(u16 *)(buf + offset);
-  case 2: return *(u32 *)(buf + offset);
+  case 0: return *(i8 *)(buf + offset);
+  case 1: return *(i16 *)(buf + offset);
+  case 2: return *(i32 *)(buf + offset);
   case 3: return *(i64 *)(buf + offset);
   }
   unreachable();
@@ -42,7 +42,7 @@ void InputSection::parse_relocations(Context &ctx) {
   MachRel *rel = (MachRel *)(file.mf->data + hdr.reloff);
   for (i64 i = 0; i < hdr.nreloc; i++) {
     MachRel &r = rel[i];
-    u64 addend = read_addend((u8 *)contents.data(), r.offset, r.p2size);
+    i64 addend = read_addend((u8 *)contents.data(), r.offset, r.p2size);
 
     if (r.is_extern) {
       rels.push_back({r.offset, addend, file.syms[r.idx], nullptr});

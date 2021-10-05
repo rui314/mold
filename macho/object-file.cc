@@ -54,8 +54,12 @@ void ObjectFile::parse(Context &ctx) {
     p += lc.cmdsize;
   }
 
-  for (std::unique_ptr<InputSection> &sec : sections)
+  for (std::unique_ptr<InputSection> &sec : sections) {
     sec->parse_relocations(ctx);
+    for (Relocation &rel : sec->rels)
+      SyncOut(ctx) << *sec << ": " << rel.offset << " " << rel.addend
+		   << " " << rel.sym << " " << rel.subsec;
+  }
 }
 
 } // namespace mold::macho

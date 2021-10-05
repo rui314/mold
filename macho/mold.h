@@ -42,7 +42,7 @@ std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
 
 struct Relocation {
   u32 offset = 0;
-  u64 addend = 0;
+  i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
 };
