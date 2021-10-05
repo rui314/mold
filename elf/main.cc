@@ -1,4 +1,6 @@
 #include "mold.h"
+#include "../cmdline.h"
+#include "../archive-file.h"
 
 #include <cstring>
 #include <functional>

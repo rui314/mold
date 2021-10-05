@@ -27,6 +27,7 @@
 //    symbol indices.
 
 #include "mold.h"
+#include "../archive-file.h"
 
 #include <unordered_map>
 #include <unordered_set>

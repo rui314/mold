@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "../cmdline.h"
 
 #include <cstdlib>
 #include <fcntl.h>
