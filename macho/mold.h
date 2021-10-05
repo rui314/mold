@@ -403,21 +403,6 @@ public:
 };
 
 //
-// output-file.cc
-//
-
-class OutputFile {
-public:
-  OutputFile(Context &ctx, std::string path, i64 filesize, i64 perm);
-  void close(Context &ctx);
-
-  u8 *buf = nullptr;
-  std::string path;
-  i64 filesize = 0;
-  i64 perm = 0;
-};
-
-//
 // dumper.cc
 //
 
@@ -449,6 +434,7 @@ struct Context {
   struct {
     bool demangle = false;
     bool fatal_warnings = false;
+    i64 filler = -1;
     std::string chroot;
     std::string output;
   } arg;
@@ -459,12 +445,14 @@ struct Context {
 
   tbb::concurrent_hash_map<std::string_view, Symbol> symbol_map;
 
-  std::unique_ptr<OutputFile> output_file;
+  std::unique_ptr<OutputFile<Context>> output_file;
   u8 *buf;
 
   tbb::concurrent_vector<std::unique_ptr<ObjectFile>> obj_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context>>> mf_pool;
+
+  tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 
   std::vector<ObjectFile *> objs;
 

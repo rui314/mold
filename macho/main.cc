@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../archive-file.h"
 #include "../cmdline.h"
+#include "../output-file.h"
 
 #include <cstdlib>
 #include <fcntl.h>
@@ -118,8 +119,7 @@ int main(int argc, char **argv) {
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);
 
-  ctx.output_file =
-    std::make_unique<OutputFile>(ctx, ctx.arg.output, output_size, 0777);
+  ctx.output_file = open_output_file(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
   for (OutputSegment *seg : ctx.segments)

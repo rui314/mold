@@ -63,6 +63,10 @@ void InputSection::parse_relocations(Context &ctx) {
       rels.push_back({r.offset, addend - target->input_addr, nullptr, target});
     }
   }
+
+  sort(rels, [](const Relocation &a, const Relocation &b) {
+    return a.offset < b.offset;
+  });
 }
 
 } // namespace mold::macho

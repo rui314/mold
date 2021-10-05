@@ -19,6 +19,7 @@ public:
   std::string path;
   i64 filesize;
   bool is_mmapped;
+  bool is_unmapped = false;
 
 protected:
   OutputFile(std::string path, i64 filesize, bool is_mmapped)
@@ -74,7 +75,7 @@ public:
   void close(C &ctx) override {
     Timer t(ctx, "close_file");
 
-    if (!ctx.buildid)
+    if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
 
     if (rename(output_tmpfile, this->path.c_str()) == -1)

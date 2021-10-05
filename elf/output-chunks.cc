@@ -1665,8 +1665,10 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   SHA256(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size(ctx));
 
-  if (ctx.output_file->is_mmapped)
+  if (ctx.output_file->is_mmapped) {
     munmap(buf, std::min(bufsize, shard_size));
+    ctx.output_file->is_unmapped = true;
+  }
 }
 
 template <typename E>
