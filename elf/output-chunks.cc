@@ -668,10 +668,12 @@ OutputSection<E>::OutputSection(std::string_view name, u32 type,
 }
 
 static u64 canonicalize_type(std::string_view name, u64 type) {
-  if (type == SHT_PROGBITS && name == ".init_array")
-    return SHT_INIT_ARRAY;
-  if (type == SHT_PROGBITS && name == ".fini_array")
-    return SHT_FINI_ARRAY;
+  if (type == SHT_PROGBITS) {
+    if (name == ".init_array" || name.starts_with(".init_array."))
+      return SHT_INIT_ARRAY;
+    if (name == ".fini_array" || name.starts_with(".fini_array."))
+      return SHT_FINI_ARRAY;
+  }
   if (type == SHT_X86_64_UNWIND)
     return SHT_PROGBITS;
   return type;
