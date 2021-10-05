@@ -82,8 +82,6 @@ struct Symbol {
   Symbol(std::string_view name) : name(name) {}
   Symbol(const Symbol &other) : name(other.name) {}
 
-  static inline Symbol *intern(Context &ctx, std::string_view name);
-
   std::string_view name;
 
   ObjectFile *file = nullptr;
@@ -498,7 +496,7 @@ int main(int argc, char **argv);
 // Inline functions
 //
 
-Symbol *Symbol::intern(Context &ctx, std::string_view name) {
+inline Symbol *intern(Context &ctx, std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
   ctx.symbol_map.insert(acc, {name, Symbol(name)});
   return const_cast<Symbol*>(&acc->second);

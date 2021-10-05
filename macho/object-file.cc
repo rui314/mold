@@ -42,7 +42,7 @@ void ObjectFile::parse(Context &ctx) {
 
   for (i64 j = 0; j < symtab->nsyms; j++) {
     std::string_view name = (char *)(buf + symtab->stroff + mach_sym[j].stroff);
-    syms.push_back(Symbol::intern(ctx, name));
+    syms.push_back(intern(ctx, name));
   }
 
   // Read other segments
