@@ -12,10 +12,11 @@ static constexpr i64 PAGE_SIZE = 0x4000;
 static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 
 class Chunk;
+class OutputSection;
 struct Context;
-struct Symbol;
 struct InputSection;
 struct Subsection;
+struct Symbol;
 
 //
 // object-file.cc
@@ -55,6 +56,7 @@ public:
 
   ObjectFile &file;
   const MachSection &hdr;
+  OutputSection *osec = nullptr;
   std::string_view contents;
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
@@ -65,10 +67,10 @@ std::ostream &operator<<(std::ostream &out, const InputSection &sec);
 class Subsection {
 public:
   std::string_view get_contents() {
-    return sec.contents.substr(input_offset, input_size);
+    return isec.contents.substr(input_offset, input_size);
   }
 
-  const InputSection &sec;
+  const InputSection &isec;
   u32 input_offset = 0;
   u32 input_size = 0;
   u32 input_addr = 0;
@@ -89,10 +91,10 @@ struct Symbol {
   std::string_view name;
 
   ObjectFile *file = nullptr;
+  Subsection *subsec = nullptr;
+  u64 value = 0;
 
-  u64 get_addr() const {
-    return 0;
-  }
+  inline u64 get_addr() const;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);
@@ -489,6 +491,12 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
+
+u64 Symbol::get_addr() const {
+  if (subsec)
+    return subsec->isec.osec->hdr.addr + subsec->output_offset + value;
+  return value;
+}
 
 inline Symbol *intern(Context &ctx, std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
