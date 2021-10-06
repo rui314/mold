@@ -45,6 +45,7 @@ std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
 
 struct Relocation {
   u32 offset = 0;
+  bool is_pcrel = false;
   i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
@@ -71,6 +72,8 @@ public:
   std::string_view get_contents() {
     return isec.contents.substr(input_offset, input_size);
   }
+
+  void apply_reloc(Context &ctx, u8 *buf);
 
   const InputSection &isec;
   u32 input_offset = 0;

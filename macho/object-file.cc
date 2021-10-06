@@ -73,11 +73,13 @@ void ObjectFile::resolve_symbols(Context &ctx) {
     switch (msym.type) {
     case N_ABS:
       sym.file = this;
+      sym.subsec = nullptr;
       sym.value = msym.value;
       break;
     case N_SECT:
       sym.file = this;
       sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
+      sym.value = msym.value - sym.subsec->input_addr;
       break;
     }
   }

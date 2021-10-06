@@ -251,6 +251,7 @@ void OutputSection::copy_buf(Context &ctx) {
   for (Subsection *subsec : members) {
     std::string_view data = subsec->get_contents();
     memcpy(buf + offset, data.data(), data.size());
+    subsec->apply_reloc(ctx, buf + offset);
     offset += data.size();
   }
 }
