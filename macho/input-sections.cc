@@ -62,7 +62,7 @@ void InputSection::parse_relocations(Context &ctx) {
       if (!target)
 	Fatal(ctx) << *this << ": bad relocation: " << i;
 
-      rels.push_back({r.offset, (bool)r.is_pcrel, addend - target->input_addr,
+      rels.push_back({r.offset, (bool)r.is_pcrel, addr - target->input_addr,
                       nullptr, target});
     }
   }
