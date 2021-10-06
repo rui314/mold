@@ -88,7 +88,7 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     u32 *loc = (u32 *)(buf + rel.offset);
 
     if (rel.sym) {
-      *loc = rel.sym->get_addr() + rel.addend;
+      *loc = rel.sym->get_addr(ctx) + rel.addend;
     } else {
       *loc = rel.subsec->isec.osec->hdr.addr + rel.subsec->output_offset +
              rel.addend;

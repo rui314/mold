@@ -78,7 +78,7 @@ static void fill_symtab(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
-  ctx.stubs.add(ctx, 1, "_printf", 0, 3, 0);
+  ctx.stubs.add(ctx, *intern(ctx, "_printf"), 1, 0, 3, 0);
 }
 
 static i64 assign_offsets(Context &ctx) {
@@ -137,12 +137,6 @@ int main(int argc, char **argv) {
 
   ctx.output_file = open_output_file(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
-
-  {
-    Symbol &sym = *intern(ctx, "_printf");
-    sym.subsec = nullptr;
-    sym.value = 0x100003f7e;
-  }
 
   for (OutputSegment *seg : ctx.segments)
     seg->copy_buf(ctx);

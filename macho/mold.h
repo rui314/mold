@@ -98,8 +98,9 @@ struct Symbol {
   ObjectFile *file = nullptr;
   Subsection *subsec = nullptr;
   u64 value = 0;
+  i32 stub_idx = -1;
 
-  inline u64 get_addr() const;
+  inline u64 get_addr(Context &ctx) const;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);
@@ -339,15 +340,15 @@ class StubsSection : public Chunk {
 public:
   StubsSection();
 
-  void add(Context &ctx, i64 dylib_idx, std::string_view name,
-           i64 flags, i64 seg_idx, i64 offset);
+  void add(Context &ctx, Symbol &sym, i64 dylib_idx, i64 flags,
+           i64 seg_idx, i64 offset);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 6;
 
   struct Entry {
+    Symbol &sym;
     i64 dylib_idx;
-    std::string_view name;
     i64 flags;
     i64 seg_idx;
     i64 offset;
@@ -497,9 +498,11 @@ int main(int argc, char **argv);
 // Inline functions
 //
 
-u64 Symbol::get_addr() const {
+u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)
     return subsec->isec.osec->hdr.addr + subsec->output_offset + value;
+  if (stub_idx != -1)
+    return ctx.stubs.hdr.addr + stub_idx * StubsSection::ENTRY_SIZE;
   return value;
 }
 
