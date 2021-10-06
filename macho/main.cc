@@ -13,8 +13,6 @@
 
 namespace mold::macho {
 
-OutputSection *text;
-
 static void add_section(Context &ctx, OutputSection &osec,
                         std::string_view segname, std::string_view sectname) {
   for (ObjectFile *obj : ctx.objs) {
@@ -38,15 +36,20 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
 
-  text = new OutputSection("__text");
+  OutputSection *text = new OutputSection("__text");
   text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
   text->hdr.p2align = 4;
-
   add_section(ctx, *text, "__TEXT", "__text");
   ctx.text_seg.chunks.push_back(text);
+
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
-  ctx.text_seg.chunks.push_back(&ctx.cstring);
+
+  OutputSection *cstring = new OutputSection("__cstring");
+  cstring->hdr.type = S_CSTRING_LITERALS;
+  add_section(ctx, *cstring, "__TEXT", "__cstring");
+  ctx.text_seg.chunks.push_back(cstring);
+
   ctx.text_seg.chunks.push_back(&ctx.unwind_info);
 
   ctx.data_const_seg.chunks.push_back(&ctx.got);
@@ -140,13 +143,6 @@ int main(int argc, char **argv) {
     Symbol &sym = *intern(ctx, "_printf");
     sym.subsec = nullptr;
     sym.value = 0x100003f7e;
-  }
-
-  for (std::unique_ptr<InputSection> &isec : ctx.objs[0]->sections) {
-    if (isec->hdr.sectname == "__cstring"sv) {
-      isec->osec = text;
-      isec->subsections[0].output_offset = 0x59;
-    }
   }
 
   for (OutputSegment *seg : ctx.segments)
