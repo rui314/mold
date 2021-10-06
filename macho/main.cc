@@ -15,6 +15,20 @@ namespace mold::macho {
 
 OutputSection *text;
 
+static void add_section(Context &ctx, OutputSection &osec,
+                        std::string_view segname, std::string_view sectname) {
+  for (ObjectFile *obj : ctx.objs) {
+    for (std::unique_ptr<InputSection> &sec : obj->sections) {
+      if (sec->hdr.segname == segname) {
+        if (sec->hdr.sectname == sectname)
+          for (Subsection &subsec : sec->subsections)
+            osec.members.push_back(&subsec);
+	sec->osec = &osec;
+      }
+    }
+  }
+}
+
 static void create_synthetic_chunks(Context &ctx) {
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
@@ -28,17 +42,7 @@ static void create_synthetic_chunks(Context &ctx) {
   text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
   text->hdr.p2align = 4;
 
-  for (ObjectFile *obj : ctx.objs) {
-    for (std::unique_ptr<InputSection> &sec : obj->sections) {
-      if (sec->hdr.segname == "__TEXT"sv) {
-        if (sec->hdr.sectname == "__text"sv)
-          for (Subsection &subsec : sec->subsections)
-            text->members.push_back(&subsec);
-	sec->osec = text;
-      }
-    }
-  }
-
+  add_section(ctx, *text, "__TEXT", "__text");
   ctx.text_seg.chunks.push_back(text);
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
