@@ -90,7 +90,8 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     if (rel.sym) {
       *loc = rel.sym->get_addr() + rel.addend;
     } else {
-      *loc = rel.subsec->output_offset + rel.addend;
+      *loc = rel.subsec->isec.osec->hdr.addr + rel.subsec->output_offset +
+             rel.addend;
     }
 
     if (rel.is_pcrel)

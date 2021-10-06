@@ -13,6 +13,8 @@
 
 namespace mold::macho {
 
+OutputSection *text;
+
 static void create_synthetic_chunks(Context &ctx) {
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
@@ -22,15 +24,16 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
 
-  OutputSection *text = new OutputSection("__text");
+  text = new OutputSection("__text");
   text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
   text->hdr.p2align = 4;
 
   for (ObjectFile *obj : ctx.objs) {
     for (std::unique_ptr<InputSection> &sec : obj->sections) {
-      if (sec->hdr.segname == "__TEXT"sv && sec->hdr.sectname == "__text"sv) {
-	for (Subsection &subsec : sec->subsections)
-	  text->members.push_back(&subsec);
+      if (sec->hdr.segname == "__TEXT"sv) {
+        if (sec->hdr.sectname == "__text"sv)
+          for (Subsection &subsec : sec->subsections)
+            text->members.push_back(&subsec);
 	sec->osec = text;
       }
     }
@@ -129,11 +132,21 @@ int main(int argc, char **argv) {
   ctx.output_file = open_output_file(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
+  {
+    Symbol &sym = *intern(ctx, "_printf");
+    sym.subsec = nullptr;
+    sym.value = 0x100003f7e;
+  }
+
+  for (std::unique_ptr<InputSection> &isec : ctx.objs[0]->sections) {
+    if (isec->hdr.sectname == "__cstring"sv) {
+      isec->osec = text;
+      isec->subsections[0].output_offset = 0x59;
+    }
+  }
+
   for (OutputSegment *seg : ctx.segments)
     seg->copy_buf(ctx);
-
-  SyncOut(ctx) << "_hello=0x" << std::hex << intern(ctx, "_hello")->get_addr();
-  SyncOut(ctx) << "_main=0x" << std::hex << intern(ctx, "_main")->get_addr();
 
   ctx.output_file->close(ctx);
   return 0;
