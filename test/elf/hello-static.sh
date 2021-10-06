@@ -15,7 +15,6 @@ int main() {
 EOF
 
 clang -fuse-ld=$mold -o $t/exe $t/a.o -static
-clang -fuse-ld=gold -o $t/exe $t/a.o -static
 $t/exe | grep -q 'Hello world'
 
 echo OK
