@@ -17,11 +17,10 @@ static void add_section(Context &ctx, OutputSection &osec,
                         std::string_view segname, std::string_view sectname) {
   for (ObjectFile *obj : ctx.objs) {
     for (std::unique_ptr<InputSection> &sec : obj->sections) {
-      if (sec->hdr.segname == segname) {
-        if (sec->hdr.sectname == sectname)
-          for (Subsection &subsec : sec->subsections)
-            osec.members.push_back(&subsec);
-	sec->osec = &osec;
+      if (sec->hdr.segname == segname && sec->hdr.sectname == sectname) {
+        for (Subsection &subsec : sec->subsections)
+          osec.members.push_back(&subsec);
+        sec->osec = &osec;
       }
     }
   }
