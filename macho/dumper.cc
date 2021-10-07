@@ -124,7 +124,7 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
       UnwindCompressedEntry *ent2 =
         (UnwindCompressedEntry *)(addr + hdr2.entryPageOffset);
       for (i64 j = 0; j < hdr2.entryCount; j++)
-        std::cout << std::hex << "\n    0x"
+        std::cout << std::hex << "\n    ent 0x"
                   << ent2[j].func_off << " 0x" << ent2[j].encoding;
 
       u32 *enc = (u32 *)(addr + hdr2.encodingsPageOffset);
