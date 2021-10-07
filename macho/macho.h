@@ -537,4 +537,9 @@ struct UnwindInfoCompressedSecondLevelPageHeader {
   // encodings array
 };
 
+struct UnwindCompressedEntry {
+  u32 func_off : 24;
+  u32 encoding : 8;
+};
+
 } // namespace mold::macho
