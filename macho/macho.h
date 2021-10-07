@@ -483,7 +483,7 @@ struct MachRel {
 };
 
 //
-// _unwind_info section contents
+// __TEXT,__unwind_info section contents
 //
 
 #define UNWIND_SECTION_VERSION 1
@@ -540,6 +540,18 @@ struct UnwindInfoCompressedSecondLevelPageHeader {
 struct UnwindCompressedEntry {
   u32 func_off : 24;
   u32 encoding : 8;
+};
+
+//
+// __LD,__compact_unwind section contents
+//
+
+struct CompactUnwindEntry {
+  u32 code_start;
+  u32 code_len;
+  u32 compact_unwind_info;
+  u32 personality;
+  u32 lsda;
 };
 
 } // namespace mold::macho
