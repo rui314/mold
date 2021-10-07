@@ -600,31 +600,6 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-std::string_view replace_zdebug_prefix(Context<E> &ctx, std::string_view name) {
-  if (name == ".zdebug_aranges")
-    return ".debug_aranges";
-  if (name == ".zdebug_frame")
-    return ".debug_frame";
-  if (name == ".zdebug_info")
-    return ".debug_info";
-  if (name == ".zdebug_line")
-    return ".debug_line";
-  if (name == ".zdebug_loc")
-    return ".debug_loc";
-  if (name == ".zdebug_pubnames")
-    return ".debug_pubnames";
-  if (name == ".zdebug_pubtypes")
-    return ".debug_pubtypes";
-  if (name == ".zdebug_ranges")
-    return ".debug_ranges";
-  if (name == ".zdebug_str")
-    return ".debug_str";
-  if (name == ".zdebug_types")
-    return ".debug_types";
-  return save_string(ctx, "."s + std::string(name.substr(2)));
-}
-
-template <typename E>
 static std::string_view get_output_name(Context<E> &ctx, std::string_view name) {
   if (ctx.arg.unique &&
       std::regex_match(name.begin(), name.end(), *ctx.arg.unique))
@@ -654,8 +629,30 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
       return stem;
   }
 
-  if (name.starts_with(".zdebug_"))
-    return replace_zdebug_prefix(ctx, name);
+  if (name.starts_with(".zdebug_")) {
+    if (name == ".zdebug_aranges")
+      return ".debug_aranges";
+    if (name == ".zdebug_frame")
+      return ".debug_frame";
+    if (name == ".zdebug_info")
+      return ".debug_info";
+    if (name == ".zdebug_line")
+      return ".debug_line";
+    if (name == ".zdebug_loc")
+      return ".debug_loc";
+    if (name == ".zdebug_pubnames")
+      return ".debug_pubnames";
+    if (name == ".zdebug_pubtypes")
+      return ".debug_pubtypes";
+    if (name == ".zdebug_ranges")
+      return ".debug_ranges";
+    if (name == ".zdebug_str")
+      return ".debug_str";
+    if (name == ".zdebug_types")
+      return ".debug_types";
+    return save_string(ctx, "."s + std::string(name.substr(2)));
+  }
+
   return name;
 }
 
