@@ -618,6 +618,11 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
     }
   }
 
+  if (name.starts_with( ".rodata.cst"))
+    return ".rodata.cst";
+  if (name.starts_with( ".rodata.str"))
+    return ".rodata.str";
+
   static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
     ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
