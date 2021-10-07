@@ -69,6 +69,54 @@ static void read_trie(std::vector<ExportEntry> &vec, u8 *start, i64 offset = 0,
   }
 }
 
+void dump_unwind_info(u8 *buf, MachSection &sec) {
+  UnwindInfoSectionHeader &hdr = *(UnwindInfoSectionHeader *)(buf + sec.offset);
+
+  std::cout << std::hex << "Unwind info:"
+            << "\n version: 0x" << hdr.version
+            << "\n common_encodings_array_section_offset: 0x"
+            << hdr.common_encodings_array_section_offset
+            << "\n common_encodings_array_count: 0x"
+            << hdr.common_encodings_array_count
+            << "\n personality_array_section_offset: 0x"
+            << hdr.personality_array_section_offset
+            << "\n personality_array_count: 0x"
+            << hdr.personality_array_count
+            << "\n index_section_offset: 0x" << hdr.index_section_offset
+            << "\n index_count: 0x" << hdr.index_count;
+
+  UnwindInfoSectionHeaderIndexEntry *ent1 =
+    (UnwindInfoSectionHeaderIndexEntry *)(buf + sec.offset + hdr.index_section_offset);
+
+  for (i64 i = 0; i < hdr.index_count; i++) {
+    std::cout << std::hex << "\n function:"
+              << "\n  function_offset: 0x" << ent1[i].function_offset
+              << "\n  second_level_pages_section_offset: 0x"
+              << ent1[i].second_level_pages_section_offset
+              << "\n  lsda_index_array_section_Offset: 0x"
+              << ent1[i].lsda_index_array_section_Offset;
+
+    if (ent1[i].second_level_pages_section_offset == 0)
+      break;
+
+    u32 kind =
+      *(u32 *)(buf + sec.offset + ent1[i].second_level_pages_section_offset);
+
+    switch (kind) {
+    case UNWIND_SECOND_LEVEL_REGULAR:
+      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR";
+      break;
+    case UNWIND_SECOND_LEVEL_COMPRESSED:
+      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR";
+      break;
+    default:
+      std::cout << "\n  bad 2nd-level unwind info header: " << kind;
+    }
+  }
+
+  std::cout << "\n";
+}
+
 void dump_file(std::string path) {
   u8 *buf = open_file(path);
 
@@ -229,6 +277,9 @@ void dump_file(std::string path) {
                       << "\n";
           }
         }
+
+        if (sec[j].segname == "__TEXT"sv && sec[j].sectname == "__unwind_info"sv)
+          dump_unwind_info(buf, sec[j]);
       }
       break;
     }

@@ -482,4 +482,59 @@ struct MachRel {
   u32 type : 4;
 };
 
+//
+// _unwind_info section contents
+//
+
+#define UNWIND_SECTION_VERSION 1
+#define UNWIND_SECOND_LEVEL_REGULAR 2
+#define UNWIND_SECOND_LEVEL_COMPRESSED 3
+
+struct UnwindInfoSectionHeader {
+  u32 version;
+  u32 common_encodings_array_section_offset;
+  u32 common_encodings_array_count;
+  u32 personality_array_section_offset;
+  u32 personality_array_count;
+  u32 index_section_offset;
+  u32 index_count;
+  // compact_unwind_encoding_t[]
+  // u32 personalities[]
+  // unwind_info_section_header_index_entry[]
+  // unwind_info_section_header_lsda_index_entry[]
+};
+
+struct UnwindInfoSectionHeaderIndexEntry {
+  u32 function_offset;
+  u32 second_level_pages_section_offset;
+  u32 lsda_index_array_section_Offset;
+};
+
+struct UnwindInfoSectionHeaderLsdaIndexEntry {
+  u32 function_offset;
+  u32 lsda_offset;
+};
+
+struct UnwindInfoRegularSecondLevelEntry {
+  u32 functionOffset;
+  u32 encoding;
+};
+
+struct UnwindInfoRegularSecondLevelPageHeader {
+  u32 kind;    // UNWIND_SECOND_LEVEL_REGULAR
+  u16 entryPageOffset;
+  u16 entryCount;
+  // entry array
+};
+
+struct UnwindInfoCompressedSecondLevelPageHeader {
+  u32 kind;    // UNWIND_SECOND_LEVEL_COMPRESSED
+  u16 entryPageOffset;
+  u16 entryCount;
+  u16 encodingsPageOffset;
+  u16 encodingsCount;
+  // 32-bit entry array
+  // encodings array
+};
+
 } // namespace mold::macho
