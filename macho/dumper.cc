@@ -99,13 +99,13 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
     if (ent[i].second_level_pages_section_offset == 0)
       break;
 
-    u8 *p = buf + sec.offset + ent[i].second_level_pages_section_offset;
+    u8 *addr = buf + sec.offset + ent[i].second_level_pages_section_offset;
 
-    switch (u32 kind = *p; kind) {
+    switch (u32 kind = *addr; kind) {
     case UNWIND_SECOND_LEVEL_REGULAR: {
       std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR:";
       UnwindInfoRegularSecondLevelPageHeader &hdr2 =
-        *(UnwindInfoRegularSecondLevelPageHeader *)p;
+        *(UnwindInfoRegularSecondLevelPageHeader *)addr;
       std::cout << std::hex
                 << "\n   entryPageOffset: 0x" << hdr2.entryPageOffset
                 << "\n   entryCount: 0x" << hdr2.entryCount;
@@ -114,12 +114,20 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
     case UNWIND_SECOND_LEVEL_COMPRESSED: {
       std::cout << "\n  UNWIND_SECOND_LEVEL_COMPRESSED";
       UnwindInfoCompressedSecondLevelPageHeader &hdr2 =
-        *(UnwindInfoCompressedSecondLevelPageHeader *)p;
+        *(UnwindInfoCompressedSecondLevelPageHeader *)addr;
       std::cout << std::hex
                 << "\n   entryPageOffset: 0x" << hdr2.entryPageOffset
                 << "\n   entryCount: 0x" << hdr2.entryCount
                 << "\n   encodingsPageOffset: 0x" << hdr2.encodingsPageOffset
                 << "\n   encodingsCount: 0x" << hdr2.encodingsCount;
+
+      u32 *ent2 = (u32 *)(addr + hdr2.entryPageOffset);
+      for (i64 j = 0; j < hdr2.entryCount; j++)
+        std::cout << std::hex << "\n    0x" << ent2[j];
+
+      ent2 = (u32 *)(addr + hdr2.encodingsPageOffset);
+      for (i64 j = 0; j < hdr2.encodingsCount; j++)
+        std::cout << std::hex << "\n    0x" << ent2[j];
       break;
     }
     default:
