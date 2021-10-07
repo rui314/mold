@@ -490,54 +490,42 @@ struct MachRel {
 #define UNWIND_SECOND_LEVEL_REGULAR 2
 #define UNWIND_SECOND_LEVEL_COMPRESSED 3
 
-struct UnwindInfoSectionHeader {
+struct UnwindSectionHeader {
   u32 version;
-  u32 common_encodings_array_section_offset;
-  u32 common_encodings_array_count;
-  u32 personality_array_section_offset;
-  u32 personality_array_count;
-  u32 index_section_offset;
-  u32 index_count;
+  u32 encodings_off;
+  u32 encodings_count;
+  u32 personalities_offset;
+  u32 personalities_count;
+  u32 indices_offset;
+  u32 indices_count;
   // compact_unwind_encoding_t[]
   // u32 personalities[]
   // unwind_info_section_header_index_entry[]
   // unwind_info_section_header_lsda_index_entry[]
 };
 
-struct UnwindInfoSectionHeaderIndexEntry {
-  u32 function_offset;
-  u32 second_level_pages_section_offset;
-  u32 lsda_index_array_section_Offset;
+struct UnwindIndexEntry {
+  u32 function_off;
+  u32 page_off;
+  u32 lsda_off;
 };
 
-struct UnwindInfoSectionHeaderLsdaIndexEntry {
-  u32 function_offset;
-  u32 lsda_offset;
+struct UnwindLsdaIndexEntry {
+  u32 function_off;
+  u32 lsda_off;
 };
 
-struct UnwindInfoRegularSecondLevelEntry {
-  u32 functionOffset;
-  u32 encoding;
-};
-
-struct UnwindInfoRegularSecondLevelPageHeader {
-  u32 kind;    // UNWIND_SECOND_LEVEL_REGULAR
-  u16 entryPageOffset;
-  u16 entryCount;
-  // entry array
-};
-
-struct UnwindInfoCompressedSecondLevelPageHeader {
+struct UnwindPageHeader {
   u32 kind;    // UNWIND_SECOND_LEVEL_COMPRESSED
-  u16 entryPageOffset;
-  u16 entryCount;
-  u16 encodingsPageOffset;
-  u16 encodingsCount;
+  u16 page_off;
+  u16 page_count;
+  u16 encodings_off;
+  u16 encodings_count;
   // 32-bit entry array
   // encodings array
 };
 
-struct UnwindCompressedEntry {
+struct UnwindPageEntry {
   u32 func_off : 24;
   u32 encoding : 8;
 };
