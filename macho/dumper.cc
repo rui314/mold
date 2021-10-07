@@ -85,30 +85,43 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
             << "\n index_section_offset: 0x" << hdr.index_section_offset
             << "\n index_count: 0x" << hdr.index_count;
 
-  UnwindInfoSectionHeaderIndexEntry *ent1 =
+  UnwindInfoSectionHeaderIndexEntry *ent =
     (UnwindInfoSectionHeaderIndexEntry *)(buf + sec.offset + hdr.index_section_offset);
 
   for (i64 i = 0; i < hdr.index_count; i++) {
     std::cout << std::hex << "\n function:"
-              << "\n  function_offset: 0x" << ent1[i].function_offset
+              << "\n  function_offset: 0x" << ent[i].function_offset
               << "\n  second_level_pages_section_offset: 0x"
-              << ent1[i].second_level_pages_section_offset
+              << ent[i].second_level_pages_section_offset
               << "\n  lsda_index_array_section_Offset: 0x"
-              << ent1[i].lsda_index_array_section_Offset;
+              << ent[i].lsda_index_array_section_Offset;
 
-    if (ent1[i].second_level_pages_section_offset == 0)
+    if (ent[i].second_level_pages_section_offset == 0)
       break;
 
-    u32 kind =
-      *(u32 *)(buf + sec.offset + ent1[i].second_level_pages_section_offset);
+    u8 *p = buf + sec.offset + ent[i].second_level_pages_section_offset;
 
-    switch (kind) {
-    case UNWIND_SECOND_LEVEL_REGULAR:
-      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR";
+    switch (u32 kind = *p; kind) {
+    case UNWIND_SECOND_LEVEL_REGULAR: {
+      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR:";
+      UnwindInfoRegularSecondLevelPageHeader &hdr2 =
+        *(UnwindInfoRegularSecondLevelPageHeader *)p;
+      std::cout << std::hex
+                << "\n   entryPageOffset: 0x" << hdr2.entryPageOffset
+                << "\n   entryCount: 0x" << hdr2.entryCount;
       break;
-    case UNWIND_SECOND_LEVEL_COMPRESSED:
-      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR";
+    }
+    case UNWIND_SECOND_LEVEL_COMPRESSED: {
+      std::cout << "\n  UNWIND_SECOND_LEVEL_COMPRESSED";
+      UnwindInfoCompressedSecondLevelPageHeader &hdr2 =
+        *(UnwindInfoCompressedSecondLevelPageHeader *)p;
+      std::cout << std::hex
+                << "\n   entryPageOffset: 0x" << hdr2.entryPageOffset
+                << "\n   entryCount: 0x" << hdr2.entryCount
+                << "\n   encodingsPageOffset: 0x" << hdr2.encodingsPageOffset
+                << "\n   encodingsCount: 0x" << hdr2.encodingsCount;
       break;
+    }
     default:
       std::cout << "\n  bad 2nd-level unwind info header: " << kind;
     }
