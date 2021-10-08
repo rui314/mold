@@ -127,6 +127,26 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
   std::cout << "\n";
 }
 
+void dump_compact_unwind(u8 *buf, MachSection &sec) {
+  CompactUnwindEntry *ent = (CompactUnwindEntry *)(buf + sec.offset);
+  i64 nentry = sec.size / sizeof(CompactUnwindEntry);
+
+  std::cout << "  Compact unwind:"
+            << "\n   num_entry: " << nentry;
+
+  for (i64 i = 0; i < nentry; i++) {
+    std::cout << std::hex
+              << "\n   entry: 0x" << (i * sizeof(CompactUnwindEntry))
+              << "\n    code_start: 0x" << ent[i].code_start
+              << "\n    code_len: 0x" << ent[i].code_len
+              << "\n    compact_unwind_info: 0x" << ent[i].compact_unwind_info
+              << "\n    personality: 0x" << ent[i].personality
+              << "\n    lsda: 0x" << ent[i].lsda;
+  }
+
+  std::cout << "\n";
+}
+
 void dump_file(std::string path) {
   u8 *buf = open_file(path);
   if (!buf) {
@@ -293,8 +313,12 @@ void dump_file(std::string path) {
         }
 
         if (sec[j].get_segname() == "__TEXT" &&
-            sec[j].get_sectname() == "__unwind_info"sv)
+            sec[j].get_sectname() == "__unwind_info")
           dump_unwind_info(buf, sec[j]);
+
+        if (sec[j].get_segname() == "__LD" &&
+            sec[j].get_sectname() == "__compact_unwind")
+          dump_compact_unwind(buf, sec[j]);
       }
       break;
     }

@@ -542,11 +542,11 @@ struct UnwindPageEntry {
 //
 
 struct CompactUnwindEntry {
-  u32 code_start;
+  u64 code_start;
   u32 code_len;
   u32 compact_unwind_info;
-  u32 personality;
-  u32 lsda;
+  u64 personality;
+  u64 lsda;
 };
 
 } // namespace mold::macho
