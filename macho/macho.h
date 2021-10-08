@@ -507,10 +507,10 @@ struct UnwindSectionHeader {
   u32 version;
   u32 encoding_offset;
   u32 encoding_count;
-  u32 personalities_offset;
-  u32 personalities_count;
-  u32 indices_offset;
-  u32 indices_count;
+  u32 personality_offset;
+  u32 personality_count;
+  u32 index_offset;
+  u32 index_count;
 };
 
 struct UnwindIndexEntry {

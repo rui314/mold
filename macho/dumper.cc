@@ -72,23 +72,23 @@ static void read_trie(std::vector<ExportEntry> &vec, u8 *start, i64 offset = 0,
 void dump_unwind_info(u8 *buf, MachSection &sec) {
   UnwindSectionHeader &hdr = *(UnwindSectionHeader *)(buf + sec.offset);
 
-  std::cout << std::hex << "Unwind info:"
-            << "\n version: 0x" << hdr.version
-            << "\n encoding_offset: 0x" << hdr.encoding_offset
-            << "\n encoding_count: 0x" << hdr.encoding_count
-            << "\n personalities_offset: 0x" << hdr.personalities_offset
-            << "\n personalities_count: 0x" << hdr.personalities_count
-            << "\n indices_offset: 0x" << hdr.indices_offset
-            << "\n indices_count: 0x" << hdr.indices_count;
+  std::cout << std::hex << "  Unwind info:"
+            << "\n   version: 0x"   << hdr.version
+            << "\n   encoding_offset: 0x"   << hdr.encoding_offset
+            << "\n   encoding_count: 0x"   << hdr.encoding_count
+            << "\n   personality_offset: 0x"   << hdr.personality_offset
+            << "\n   personality_count: 0x"   << hdr.personality_count
+            << "\n   index_offset: 0x"   << hdr.index_offset
+            << "\n   index_count: 0x"   << hdr.index_count;
 
   UnwindIndexEntry *ent =
-    (UnwindIndexEntry *)(buf + sec.offset + hdr.indices_offset);
+    (UnwindIndexEntry *)(buf + sec.offset + hdr.index_offset);
 
-  for (i64 i = 0; i < hdr.indices_count; i++) {
-    std::cout << std::hex << "\n function:"
-              << "\n  func_offset: 0x" << ent[i].func_offset
-              << "\n  page_offset: 0x" << ent[i].page_offset
-              << "\n  lsda_offset: 0x" << ent[i].lsda_offset;
+  for (i64 i = 0; i < hdr.index_count; i++) {
+    std::cout << std::hex << "\n   function:"  
+              << "\n    func_offset: 0x"   << ent[i].func_offset
+              << "\n    page_offset: 0x"   << ent[i].page_offset
+              << "\n    lsda_offset: 0x"   << ent[i].lsda_offset;
 
     if (ent[i].page_offset == 0)
       break;
@@ -97,30 +97,30 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
 
     switch (u32 kind = *addr; kind) {
     case UNWIND_SECOND_LEVEL_REGULAR: {
-      std::cout << "\n  UNWIND_SECOND_LEVEL_REGULAR:";
+      std::cout << "\n    UNWIND_SECOND_LEVEL_REGULAR:"  ;
       break;
     }
     case UNWIND_SECOND_LEVEL_COMPRESSED: {
-      std::cout << "\n  UNWIND_SECOND_LEVEL_COMPRESSED";
+      std::cout << "\n    UNWIND_SECOND_LEVEL_COMPRESSED"  ;
       UnwindPageHeader &hdr2 = *(UnwindPageHeader *)addr;
       std::cout << std::hex
-                << "\n   page_offset: 0x" << hdr2.page_offset
-                << "\n   page_count: 0x" << hdr2.page_count
-                << "\n   encoding_offset: 0x" << hdr2.encoding_offset
-                << "\n   encoding_count: 0x" << hdr2.encoding_count;
+                << "\n     page_offset: 0x"   << hdr2.page_offset
+                << "\n     page_count: 0x"   << hdr2.page_count
+                << "\n     encoding_offset: 0x"   << hdr2.encoding_offset
+                << "\n     encoding_count: 0x"   << hdr2.encoding_count;
 
       UnwindPageEntry *ent2 = (UnwindPageEntry *)(addr + hdr2.page_offset);
       for (i64 j = 0; j < hdr2.page_count; j++)
-        std::cout << std::hex << "\n    ent 0x"
+        std::cout << std::hex << "\n      ent 0x"  
                   << ent2[j].func_offset << " 0x" << ent2[j].encoding;
 
       u32 *enc = (u32 *)(addr + hdr2.encoding_offset);
       for (i64 j = 0; j < hdr2.encoding_count; j++)
-        std::cout << std::hex << "\n    0x" << enc[j];
+        std::cout << std::hex << "\n      0x"   << enc[j];
       break;
     }
     default:
-      std::cout << "\n  bad 2nd-level unwind info header: " << kind;
+      std::cout << "\n    bad 2nd-level unwind info header: " << kind;
     }
   }
 
