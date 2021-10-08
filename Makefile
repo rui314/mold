@@ -8,7 +8,9 @@ endif
 
 OS ?= $(shell uname -s)
 
-CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" $(EXTRA_CPPFLAGS)
+CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" \
+	   -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
+	   $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
