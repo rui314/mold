@@ -248,7 +248,7 @@ void dump_file(std::string path) {
       std::cout << "LC_SEGMENT_64\n";
       SegmentCommand &cmd = *(SegmentCommand *)&lc;
       std::cout << " cmdsize: " << cmd.cmdsize
-                << "\n segname: " << cmd.segname
+                << "\n segname: " << cmd.get_segname()
                 << "\n vmaddr: 0x" << std::hex << cmd.vmaddr
                 << "\n vmsize: 0x" << cmd.vmsize
                 << "\n fileoff: 0x" << cmd.fileoff
@@ -261,8 +261,8 @@ void dump_file(std::string path) {
 
       MachSection *sec = (MachSection *)((u8 *)&lc + sizeof(cmd));
       for (i64 j = 0; j < cmd.nsects; j++) {
-        std::cout << " section:\n  sectname: " << sec[j].sectname
-                  << "\n  segname: " << sec[j].segname
+        std::cout << " section:\n  sectname: " << sec[j].get_sectname()
+                  << "\n  segname: " << sec[j].get_segname()
                   << "\n  addr: 0x" << std::hex << sec[j].addr
                   << "\n  size: 0x" << sec[j].size
                   << "\n  offset: 0x" << sec[j].offset
@@ -292,7 +292,8 @@ void dump_file(std::string path) {
           }
         }
 
-        if (sec[j].segname == "__TEXT"sv && sec[j].sectname == "__unwind_info"sv)
+        if (sec[j].get_segname() == "__TEXT" &&
+            sec[j].get_sectname() == "__unwind_info"sv)
           dump_unwind_info(buf, sec[j]);
       }
       break;

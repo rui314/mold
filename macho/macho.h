@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace mold::macho {
 
@@ -316,6 +317,10 @@ struct LoadCommand {
 };
 
 struct SegmentCommand {
+  std::string_view get_segname() const {
+    return {segname, strnlen(segname, sizeof(segname))};
+  }
+
   u32 cmd;
   u32 cmdsize;
   char segname[16];
@@ -330,6 +335,14 @@ struct SegmentCommand {
 };
 
 struct MachSection {
+  std::string_view get_segname() const {
+    return {segname, strnlen(segname, sizeof(segname))};
+  }
+
+  std::string_view get_sectname() const {
+    return {sectname, strnlen(sectname, sizeof(sectname))};
+  }
+
   char sectname[16];
   char segname[16];
   u64 addr;

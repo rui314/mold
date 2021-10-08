@@ -5,7 +5,8 @@
 namespace mold::macho {
 
 std::ostream &operator<<(std::ostream &out, const InputSection &sec) {
-  out << sec.file << "(" << sec.hdr.segname << "," << sec.hdr.sectname << ")";
+  out << sec.file << "(" << sec.hdr.get_segname() << ","
+      << sec.hdr.get_sectname() << ")";
   return out;
 }
 
