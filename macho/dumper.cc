@@ -74,8 +74,8 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
 
   std::cout << std::hex << "Unwind info:"
             << "\n version: 0x" << hdr.version
-            << "\n encodings_off: 0x" << hdr.encodings_off
-            << "\n encodings_count: 0x" << hdr.encodings_count
+            << "\n encoding_offset: 0x" << hdr.encoding_offset
+            << "\n encoding_count: 0x" << hdr.encoding_count
             << "\n personalities_offset: 0x" << hdr.personalities_offset
             << "\n personalities_count: 0x" << hdr.personalities_count
             << "\n indices_offset: 0x" << hdr.indices_offset
@@ -86,14 +86,14 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
 
   for (i64 i = 0; i < hdr.indices_count; i++) {
     std::cout << std::hex << "\n function:"
-              << "\n  function_off: 0x" << ent[i].function_off
-              << "\n  page_off: 0x" << ent[i].page_off
-              << "\n  lsda_off: 0x" << ent[i].lsda_off;
+              << "\n  func_offset: 0x" << ent[i].func_offset
+              << "\n  page_offset: 0x" << ent[i].page_offset
+              << "\n  lsda_offset: 0x" << ent[i].lsda_offset;
 
-    if (ent[i].page_off == 0)
+    if (ent[i].page_offset == 0)
       break;
 
-    u8 *addr = buf + sec.offset + ent[i].page_off;
+    u8 *addr = buf + sec.offset + ent[i].page_offset;
 
     switch (u32 kind = *addr; kind) {
     case UNWIND_SECOND_LEVEL_REGULAR: {
@@ -104,18 +104,18 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
       std::cout << "\n  UNWIND_SECOND_LEVEL_COMPRESSED";
       UnwindPageHeader &hdr2 = *(UnwindPageHeader *)addr;
       std::cout << std::hex
-                << "\n   page_off: 0x" << hdr2.page_off
+                << "\n   page_offset: 0x" << hdr2.page_offset
                 << "\n   page_count: 0x" << hdr2.page_count
-                << "\n   encodings_off: 0x" << hdr2.encodings_off
-                << "\n   encodings_count: 0x" << hdr2.encodings_count;
+                << "\n   encoding_offset: 0x" << hdr2.encoding_offset
+                << "\n   encoding_count: 0x" << hdr2.encoding_count;
 
-      UnwindPageEntry *ent2 = (UnwindPageEntry *)(addr + hdr2.page_off);
+      UnwindPageEntry *ent2 = (UnwindPageEntry *)(addr + hdr2.page_offset);
       for (i64 j = 0; j < hdr2.page_count; j++)
         std::cout << std::hex << "\n    ent 0x"
-                  << ent2[j].func_off << " 0x" << ent2[j].encoding;
+                  << ent2[j].func_offset << " 0x" << ent2[j].encoding;
 
-      u32 *enc = (u32 *)(addr + hdr2.encodings_off);
-      for (i64 j = 0; j < hdr2.encodings_count; j++)
+      u32 *enc = (u32 *)(addr + hdr2.encoding_offset);
+      for (i64 j = 0; j < hdr2.encoding_count; j++)
         std::cout << std::hex << "\n    0x" << enc[j];
       break;
     }
@@ -129,6 +129,10 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
 
 void dump_file(std::string path) {
   u8 *buf = open_file(path);
+  if (!buf) {
+    std::cerr << "cannot open " << path << "\n";
+    exit(1);
+  }
 
   MachHeader &hdr = *(MachHeader *)buf;
   std::cout << "magic: 0x" << std::hex << hdr.magic

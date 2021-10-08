@@ -492,41 +492,35 @@ struct MachRel {
 
 struct UnwindSectionHeader {
   u32 version;
-  u32 encodings_off;
-  u32 encodings_count;
+  u32 encoding_offset;
+  u32 encoding_count;
   u32 personalities_offset;
   u32 personalities_count;
   u32 indices_offset;
   u32 indices_count;
-  // compact_unwind_encoding_t[]
-  // u32 personalities[]
-  // unwind_info_section_header_index_entry[]
-  // unwind_info_section_header_lsda_index_entry[]
 };
 
 struct UnwindIndexEntry {
-  u32 function_off;
-  u32 page_off;
-  u32 lsda_off;
+  u32 func_offset;
+  u32 page_offset;
+  u32 lsda_offset;
 };
 
 struct UnwindLsdaIndexEntry {
-  u32 function_off;
-  u32 lsda_off;
+  u32 func_offset;
+  u32 lsda_offset;
 };
 
 struct UnwindPageHeader {
-  u32 kind;    // UNWIND_SECOND_LEVEL_COMPRESSED
-  u16 page_off;
+  u32 kind;
+  u16 page_offset;
   u16 page_count;
-  u16 encodings_off;
-  u16 encodings_count;
-  // 32-bit entry array
-  // encodings array
+  u16 encoding_offset;
+  u16 encoding_count;
 };
 
 struct UnwindPageEntry {
-  u32 func_off : 24;
+  u32 func_offset : 24;
   u32 encoding : 8;
 };
 
