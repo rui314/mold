@@ -36,7 +36,7 @@ Options:
   -h LIBNAME, --soname LIBNAME
                               Set shared library name
   -l LIBNAME                  Search for a given library
-  -m EMULATION                Ignored
+  -m TARGET                   Set target
   -o FILE, --output FILE      Set output filename
   -r, --relocatable           Generate relocatable output
   -s, --strip-all             Strip .symtab section
