@@ -51,6 +51,14 @@ struct Relocation {
   Subsection *subsec = nullptr;
 };
 
+struct UnwindEntry {
+  Relocation code_start;
+  u32 code_len;
+  u32 compact_unwind_info;
+  Relocation personality;
+  Relocation lsda;
+};
+
 class InputSection {
 public:
   InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
@@ -63,6 +71,7 @@ public:
   std::string_view contents;
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
+  std::vector<UnwindEntry> unwind_entries;
 };
 
 std::ostream &operator<<(std::ostream &out, const InputSection &sec);
@@ -81,6 +90,8 @@ public:
   u32 input_addr = 0;
   u32 rel_offset = 0;
   u32 nrels = 0;
+  u32 unwind_offset = 0;
+  u32 nunwind = 0;
   u32 output_offset = -1;
 };
 
