@@ -79,18 +79,33 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
 
   // Read comapct unwind entries
   for (i64 i = 0; i < num_entries; i++) {
-    CompactUnwindEntry &src = ((CompactUnwindEntry *)contents.data())[i];
-    unwind_entries.push_back({{}, src.code_len, src.compact_unwind_info, {}, {}});
+    CompactUnwindEntry &ent = ((CompactUnwindEntry *)contents.data())[i];
+    unwind_entries.push_back({{}, ent.code_len, ent.compact_unwind_info, {}, {}});
   }
 
   // Read relocations
-  std::vector<MachRel> mach_rels((MachRel *)(mf->data + hdr.reloff),
-                                 (MachRel *)(mf->data + hdr.reloff) + hdr.nreloc);
+  MachRel *mach_rels = (MachRel *)(mf->data + hdr.reloff);
+  for (i64 i = 0; i < hdr.nreloc; i++) {
+    MachRel &r = mach_rels[i];
+    i64 idx = r.offset / sizeof(CompactUnwindEntry);
+    i64 offset = r.offset % sizeof(CompactUnwindEntry);
 
-  sort(mach_rels, [](const MachRel &a, const MachRel &b) {
-    return a.offset < b.offset;
-  });
+//    if (idx >= unwind_entries.size())
+//      Fatal(ctx) << *this << ": relocation offset too large: " << i;
+    UnwindEntry &ent = unwind_entries[idx];
 
+    if (offset == offsetof(CompactUnwindEntry, code_start)) {
+      
+    }
+
+    if (offset == offsetof(CompactUnwindEntry, personality)) {
+    }
+
+    if (offset == offsetof(CompactUnwindEntry, lsda)) {
+    }
+
+    // Fatal(ctx) << *this << ": unsupported relocation: " << i;
+  }
 }
 
 void ObjectFile::resolve_symbols(Context &ctx) {
@@ -111,6 +126,37 @@ void ObjectFile::resolve_symbols(Context &ctx) {
       break;
     }
   }
+}
+
+static i64 read_addend(u8 *buf, MachRel r) {
+  switch (r.p2size) {
+  case 0: return *(i8 *)(buf + r.offset);
+  case 1: return *(i16 *)(buf + r.offset);
+  case 2: return *(i32 *)(buf + r.offset);
+  case 3: return *(i64 *)(buf + r.offset);
+  }
+  unreachable();
+}
+
+Relocation ObjectFile::read_reloc(Context &ctx, const MachSection &hdr, MachRel r) {
+  i64 addend = read_addend((u8 *)mf->get_contents().data() + hdr.offset, r);
+
+  if (r.is_extern)
+    return {r.offset, (bool)r.is_pcrel, addend, syms[r.idx], nullptr};
+
+  u32 addr;
+  if (r.is_pcrel) {
+    if (r.p2size != 2)
+      Fatal(ctx) << *this << ": invalid PC-relative reloc: " << r.offset;
+    addr = hdr.addr + r.offset + 4 + addend;
+  } else {
+    addr = addend;
+  }
+
+  Subsection *target = sections[r.idx - 1]->find_subsection(ctx, addr);
+  if (!target)
+    Fatal(ctx) << *this << ": bad relocation: " << r.offset;
+  return {r.offset, (bool)r.is_pcrel, addr - target->input_addr, nullptr, target};
 }
 
 } // namespace mold::macho

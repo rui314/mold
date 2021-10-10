@@ -27,46 +27,13 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   return &*(it - 1);
 }
 
-static i64 read_addend(u8 *buf, u32 offset, u32 p2size) {
-  switch (p2size) {
-  case 0: return *(i8 *)(buf + offset);
-  case 1: return *(i16 *)(buf + offset);
-  case 2: return *(i32 *)(buf + offset);
-  case 3: return *(i64 *)(buf + offset);
-  }
-  unreachable();
-}
-
 void InputSection::parse_relocations(Context &ctx) {
   rels.reserve(hdr.nreloc);
 
   // Parse mach-o relocations to fill `rels` vector
   MachRel *rel = (MachRel *)(file.mf->data + hdr.reloff);
-  for (i64 i = 0; i < hdr.nreloc; i++) {
-    MachRel &r = rel[i];
-    i64 addend = read_addend((u8 *)contents.data(), r.offset, r.p2size);
-
-    if (r.is_extern) {
-      rels.push_back({r.offset, (bool)r.is_pcrel, addend, file.syms[r.idx],
-                      nullptr});
-    } else {
-      u32 addr;
-      if (r.is_pcrel) {
-        if (r.p2size != 2)
-          Fatal(ctx) << *this << ": invalid PC-relative reloc: " << i;
-        addr = hdr.addr + r.offset + 4 + addend;
-      } else {
-	addr = addend;
-      }
-
-      Subsection *target = file.sections[r.idx - 1]->find_subsection(ctx, addr);
-      if (!target)
-	Fatal(ctx) << *this << ": bad relocation: " << i;
-
-      rels.push_back({r.offset, (bool)r.is_pcrel, addr - target->input_addr,
-                      nullptr, target});
-    }
-  }
+  for (i64 i = 0; i < hdr.nreloc; i++)
+    rels.push_back(file.read_reloc(ctx, hdr, rel[i]));
 
   // Sort `rels` vector
   sort(rels, [](const Relocation &a, const Relocation &b) {

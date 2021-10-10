@@ -45,6 +45,8 @@ public:
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_symbols(Context &ctx);
 
+  Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
+
   MappedFile<Context> *mf;
   std::vector<std::unique_ptr<InputSection>> sections;
   std::vector<Symbol *> syms;
