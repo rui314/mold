@@ -22,27 +22,6 @@ struct Symbol;
 // object-file.cc
 //
 
-class ObjectFile {
-public:
-  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
-  void parse(Context &ctx);
-  void resolve_symbols(Context &ctx);
-
-  MappedFile<Context> *mf;
-  std::vector<std::unique_ptr<InputSection>> sections;
-  std::vector<Symbol *> syms;
-  std::span<MachSym> mach_syms;
-
-private:
-  ObjectFile(Context &ctx, MappedFile<Context> *mf);
-};
-
-std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
-
-//
-// input-sections.cc
-//
-
 struct Relocation {
   u32 offset = 0;
   bool is_pcrel = false;
@@ -58,6 +37,30 @@ struct UnwindEntry {
   Relocation personality;
   Relocation lsda;
 };
+
+class ObjectFile {
+public:
+  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+  void parse(Context &ctx);
+  void parse_compact_unwind(Context &ctx, MachSection &hdr);
+  void resolve_symbols(Context &ctx);
+
+  MappedFile<Context> *mf;
+  std::vector<std::unique_ptr<InputSection>> sections;
+  std::vector<Symbol *> syms;
+  std::span<MachSym> mach_syms;
+
+  std::vector<UnwindEntry> unwind_entries;
+
+private:
+  ObjectFile(Context &ctx, MappedFile<Context> *mf);
+};
+
+std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
+
+//
+// input-sections.cc
+//
 
 class InputSection {
 public:

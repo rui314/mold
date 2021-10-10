@@ -20,6 +20,8 @@ void ObjectFile::parse(Context &ctx) {
   MachHeader &hdr = *(MachHeader *)mf->data;
   u8 *p = mf->data + sizeof(hdr);
 
+  MachSection *unwind_sec = nullptr;
+
   for (i64 i = 0; i < hdr.ncmds; i++) {
     LoadCommand &lc = *(LoadCommand *)p;
 
@@ -28,8 +30,15 @@ void ObjectFile::parse(Context &ctx) {
       SegmentCommand &cmd = *(SegmentCommand *)p;
       MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
 
-      for (i64 i = 0; i < cmd.nsects; i++)
-        sections.push_back(std::make_unique<InputSection>(ctx, *this, mach_sec[i]));
+      for (i64 i = 0; i < cmd.nsects; i++) {
+        if (mach_sec[i].get_segname() == "__LD" &&
+            mach_sec[i].get_sectname() == "__compact_unwind") {
+          unwind_sec = &mach_sec[i];
+        } else {
+          sections.push_back(
+            std::make_unique<InputSection>(ctx, *this, mach_sec[i]));
+        }
+      }
       break;
     }
     case LC_SYMTAB: {
@@ -55,6 +64,33 @@ void ObjectFile::parse(Context &ctx) {
 
   for (std::unique_ptr<InputSection> &sec : sections)
     sec->parse_relocations(ctx);
+
+  if (unwind_sec)
+    parse_compact_unwind(ctx, *unwind_sec);
+}
+
+void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
+  std::string_view contents = mf->get_contents().substr(hdr.offset, hdr.size);
+  if (contents.size() % sizeof(CompactUnwindEntry))
+    Fatal(ctx) << *this << ": invalid __compact_unwind section size";
+
+  i64 num_entries = contents.size() % sizeof(CompactUnwindEntry);
+  unwind_entries.reserve(num_entries);
+
+  // Read comapct unwind entries
+  for (i64 i = 0; i < num_entries; i++) {
+    CompactUnwindEntry &src = ((CompactUnwindEntry *)contents.data())[i];
+    unwind_entries.push_back({{}, src.code_len, src.compact_unwind_info, {}, {}});
+  }
+
+  // Read relocations
+  std::vector<MachRel> mach_rels((MachRel *)(mf->data + hdr.reloff),
+                                 (MachRel *)(mf->data + hdr.reloff) + hdr.nreloc);
+
+  sort(mach_rels, [](const MachRel &a, const MachRel &b) {
+    return a.offset < b.offset;
+  });
+
 }
 
 void ObjectFile::resolve_symbols(Context &ctx) {
