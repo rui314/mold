@@ -70,16 +70,15 @@ void ObjectFile::parse(Context &ctx) {
 }
 
 void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
-  std::string_view contents = mf->get_contents().substr(hdr.offset, hdr.size);
-  if (contents.size() % sizeof(CompactUnwindEntry))
+  if (hdr.size % sizeof(CompactUnwindEntry))
     Fatal(ctx) << *this << ": invalid __compact_unwind section size";
 
-  i64 num_entries = contents.size() % sizeof(CompactUnwindEntry);
+  i64 num_entries = hdr.size / sizeof(CompactUnwindEntry);
   unwind_entries.reserve(num_entries);
 
   // Read comapct unwind entries
   for (i64 i = 0; i < num_entries; i++) {
-    CompactUnwindEntry &ent = ((CompactUnwindEntry *)contents.data())[i];
+    CompactUnwindEntry &ent = ((CompactUnwindEntry *)mf->data)[i];
     unwind_entries.push_back({{}, ent.code_len, ent.compact_unwind_info, {}, {}});
   }
 
@@ -87,24 +86,24 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   MachRel *mach_rels = (MachRel *)(mf->data + hdr.reloff);
   for (i64 i = 0; i < hdr.nreloc; i++) {
     MachRel &r = mach_rels[i];
-    i64 idx = r.offset / sizeof(CompactUnwindEntry);
-    i64 offset = r.offset % sizeof(CompactUnwindEntry);
+    if (r.offset >= hdr.size)
+      Fatal(ctx) << *this << ": relocation offset too large: " << i;
 
-//    if (idx >= unwind_entries.size())
-//      Fatal(ctx) << *this << ": relocation offset too large: " << i;
-    UnwindEntry &ent = unwind_entries[idx];
+    UnwindEntry &ent = unwind_entries[r.offset / sizeof(CompactUnwindEntry)];
 
-    if (offset == offsetof(CompactUnwindEntry, code_start)) {
-      
+    switch (r.offset % sizeof(CompactUnwindEntry)) {
+    case offsetof(CompactUnwindEntry, code_start):
+      ent.code_start = read_reloc(ctx, hdr, r);
+      break;
+    case offsetof(CompactUnwindEntry, personality):
+      ent.personality = read_reloc(ctx, hdr, r);
+      break;
+    case offsetof(CompactUnwindEntry, lsda):
+      ent.lsda = read_reloc(ctx, hdr, r);
+      break;
+    default:
+      Fatal(ctx) << *this << ": unsupported relocation: " << i;
     }
-
-    if (offset == offsetof(CompactUnwindEntry, personality)) {
-    }
-
-    if (offset == offsetof(CompactUnwindEntry, lsda)) {
-    }
-
-    // Fatal(ctx) << *this << ": unsupported relocation: " << i;
   }
 }
 
