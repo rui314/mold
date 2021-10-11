@@ -39,7 +39,7 @@ struct UnwindRecord {
   u32 offset = 0;
   u32 code_len;
   u32 compact_unwind_info;
-  Relocation personality;
+  Symbol *personality = nullptr;
   Relocation lsda;
 };
 

@@ -108,7 +108,9 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
       break;
     }
     case offsetof(CompactUnwindEntry, personality):
-      dst.personality = read_reloc(ctx, hdr, r);
+      if (r.is_pcrel || r.p2size != 3 || !r.is_extern || r.type)
+        Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+      dst.personality = syms[r.idx];
       break;
     case offsetof(CompactUnwindEntry, lsda):
       dst.lsda = read_reloc(ctx, hdr, r);
