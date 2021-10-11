@@ -93,15 +93,19 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
     CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[idx];
     UnwindRecord &dst = unwind_records[idx];
 
+    auto error = [&]() {
+      Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+    };
+
     switch (r.offset % sizeof(CompactUnwindEntry)) {
     case offsetof(CompactUnwindEntry, code_start): {
       if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
-        Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+        error();
 
       Subsection *target =
         sections[r.idx - 1]->find_subsection(ctx, src.code_start);
       if (!target)
-        Fatal(ctx) << *this << ": __compact_unwind: subsection not found: " << i;
+        error();
 
       dst.subsec = target;
       dst.offset = src.code_start - target->input_addr;
@@ -109,12 +113,18 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
     }
     case offsetof(CompactUnwindEntry, personality):
       if (r.is_pcrel || r.p2size != 3 || !r.is_extern || r.type)
-        Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+        error();
       dst.personality = syms[r.idx];
       break;
-    case offsetof(CompactUnwindEntry, lsda):
-      dst.lsda = read_reloc(ctx, hdr, r);
+    case offsetof(CompactUnwindEntry, lsda): {
+      if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
+        error();
+
+      i32 addr = *(i32 *)((u8 *)mf->data + hdr.offset + r.offset);
+      dst.lsda = sections[r.idx - 1]->find_subsection(ctx, addr);
+      dst.lsda_offset = addr - dst.lsda->input_addr;
       break;
+    }
     default:
       Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
     }
@@ -174,7 +184,7 @@ static i64 read_addend(u8 *buf, MachRel r) {
 }
 
 Relocation ObjectFile::read_reloc(Context &ctx, const MachSection &hdr, MachRel r) {
-  i64 addend = read_addend((u8 *)mf->get_contents().data() + hdr.offset, r);
+  i64 addend = read_addend((u8 *)mf->data + hdr.offset, r);
 
   if (r.is_extern)
     return {r.offset, (bool)r.is_pcrel, addend, syms[r.idx], nullptr};

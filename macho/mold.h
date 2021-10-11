@@ -40,7 +40,8 @@ struct UnwindRecord {
   u32 code_len;
   u32 compact_unwind_info;
   Symbol *personality = nullptr;
-  Relocation lsda;
+  Subsection *lsda = nullptr;
+  u32 lsda_offset = 0;
 };
 
 class ObjectFile {
