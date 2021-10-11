@@ -76,11 +76,10 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   i64 num_entries = hdr.size / sizeof(CompactUnwindEntry);
   unwind_entries.reserve(num_entries);
 
-  // Read comapct unwind entries
+  // Read compact unwind entries
   for (i64 i = 0; i < num_entries; i++) {
-    CompactUnwindEntry &ent = ((CompactUnwindEntry *)mf->data)[i];
-    unwind_entries.push_back({nullptr, 0, ent.code_len, ent.compact_unwind_info,
-                              {}, {}});
+    CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[i];
+    unwind_entries.emplace_back(src.code_len, src.compact_unwind_info);
   }
 
   // Read relocations
@@ -128,6 +127,18 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
     return std::tuple(a.subsec->input_addr, a.offset) <
            std::tuple(b.subsec->input_addr, b.offset);
   });
+
+  // Associate unwind entries to subsections
+  for (i64 i = 0; i < num_entries;) {
+    Subsection &subsec = *unwind_entries[i].subsec;
+    subsec.unwind_offset = i;
+
+    i64 j = i + 1;
+    while (j < num_entries && unwind_entries[j].subsec == &subsec)
+      j++;
+    subsec.nunwind = j - i;
+    i = j;
+  }
 }
 
 void ObjectFile::resolve_symbols(Context &ctx) {
