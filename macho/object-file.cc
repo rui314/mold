@@ -79,7 +79,8 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   // Read comapct unwind entries
   for (i64 i = 0; i < num_entries; i++) {
     CompactUnwindEntry &ent = ((CompactUnwindEntry *)mf->data)[i];
-    unwind_entries.push_back({{}, ent.code_len, ent.compact_unwind_info, {}, {}});
+    unwind_entries.push_back({nullptr, 0, ent.code_len, ent.compact_unwind_info,
+                              {}, {}});
   }
 
   // Read relocations
@@ -89,22 +90,44 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
     if (r.offset >= hdr.size)
       Fatal(ctx) << *this << ": relocation offset too large: " << i;
 
-    UnwindEntry &ent = unwind_entries[r.offset / sizeof(CompactUnwindEntry)];
+    i64 idx = r.offset / sizeof(CompactUnwindEntry);
+    CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[idx];
+    UnwindEntry &dst = unwind_entries[idx];
 
     switch (r.offset % sizeof(CompactUnwindEntry)) {
-    case offsetof(CompactUnwindEntry, code_start):
-      ent.code_start = read_reloc(ctx, hdr, r);
+    case offsetof(CompactUnwindEntry, code_start): {
+      if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
+        Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+
+      Subsection *target =
+        sections[r.idx - 1]->find_subsection(ctx, src.code_start);
+      if (!target)
+        Fatal(ctx) << *this << ": __compact_unwind: subsection not found: " << i;
+
+      dst.subsec = target;
+      dst.offset = src.code_start - target->input_addr;
       break;
+    }
     case offsetof(CompactUnwindEntry, personality):
-      ent.personality = read_reloc(ctx, hdr, r);
+      dst.personality = read_reloc(ctx, hdr, r);
       break;
     case offsetof(CompactUnwindEntry, lsda):
-      ent.lsda = read_reloc(ctx, hdr, r);
+      dst.lsda = read_reloc(ctx, hdr, r);
       break;
     default:
-      Fatal(ctx) << *this << ": unsupported relocation: " << i;
+      Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
     }
   }
+
+  for (i64 i = 0; i < num_entries; i++)
+    if (!unwind_entries[i].subsec)
+      Fatal(ctx) << ": __compact_unwind: missing relocation at " << i;
+
+  // Sort unwind entries by offset
+  sort(unwind_entries, [](const UnwindEntry &a, const UnwindEntry &b) {
+    return std::tuple(a.subsec->input_addr, a.offset) <
+           std::tuple(b.subsec->input_addr, b.offset);
+  });
 }
 
 void ObjectFile::resolve_symbols(Context &ctx) {

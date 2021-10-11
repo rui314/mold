@@ -31,7 +31,8 @@ struct Relocation {
 };
 
 struct UnwindEntry {
-  Relocation code_start;
+  Subsection *subsec = nullptr;
+  u32 offset;
   u32 code_len;
   u32 compact_unwind_info;
   Relocation personality;
