@@ -74,12 +74,12 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
     Fatal(ctx) << *this << ": invalid __compact_unwind section size";
 
   i64 num_entries = hdr.size / sizeof(CompactUnwindEntry);
-  unwind_entries.reserve(num_entries);
+  unwind_records.reserve(num_entries);
 
   // Read compact unwind entries
   for (i64 i = 0; i < num_entries; i++) {
     CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[i];
-    unwind_entries.emplace_back(src.code_len, src.compact_unwind_info);
+    unwind_records.emplace_back(src.code_len, src.compact_unwind_info);
   }
 
   // Read relocations
@@ -91,7 +91,7 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
 
     i64 idx = r.offset / sizeof(CompactUnwindEntry);
     CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[idx];
-    UnwindEntry &dst = unwind_entries[idx];
+    UnwindRecord &dst = unwind_records[idx];
 
     switch (r.offset % sizeof(CompactUnwindEntry)) {
     case offsetof(CompactUnwindEntry, code_start): {
@@ -119,22 +119,22 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   }
 
   for (i64 i = 0; i < num_entries; i++)
-    if (!unwind_entries[i].subsec)
+    if (!unwind_records[i].subsec)
       Fatal(ctx) << ": __compact_unwind: missing relocation at " << i;
 
   // Sort unwind entries by offset
-  sort(unwind_entries, [](const UnwindEntry &a, const UnwindEntry &b) {
+  sort(unwind_records, [](const UnwindRecord &a, const UnwindRecord &b) {
     return std::tuple(a.subsec->input_addr, a.offset) <
            std::tuple(b.subsec->input_addr, b.offset);
   });
 
   // Associate unwind entries to subsections
   for (i64 i = 0; i < num_entries;) {
-    Subsection &subsec = *unwind_entries[i].subsec;
+    Subsection &subsec = *unwind_records[i].subsec;
     subsec.unwind_offset = i;
 
     i64 j = i + 1;
-    while (j < num_entries && unwind_entries[j].subsec == &subsec)
+    while (j < num_entries && unwind_records[j].subsec == &subsec)
       j++;
     subsec.nunwind = j - i;
     i = j;

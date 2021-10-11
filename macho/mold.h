@@ -30,8 +30,8 @@ struct Relocation {
   Subsection *subsec = nullptr;
 };
 
-struct UnwindEntry {
-  UnwindEntry(u32 len, u32 info)
+struct UnwindRecord {
+  UnwindRecord(u32 len, u32 info)
     : code_len(len), compact_unwind_info(info) {}
 
   Subsection *subsec = nullptr;
@@ -56,7 +56,7 @@ public:
   std::vector<Symbol *> syms;
   std::span<MachSym> mach_syms;
 
-  std::vector<UnwindEntry> unwind_entries;
+  std::vector<UnwindRecord> unwind_records;
 
 private:
   ObjectFile(Context &ctx, MappedFile<Context> *mf);
@@ -80,7 +80,7 @@ public:
   std::string_view contents;
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
-  std::vector<UnwindEntry> unwind_entries;
+  std::vector<UnwindRecord> unwind_records;
 };
 
 std::ostream &operator<<(std::ostream &out, const InputSection &sec);
