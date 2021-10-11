@@ -545,7 +545,7 @@ struct UnwindPageEntry {
 struct CompactUnwindEntry {
   u64 code_start;
   u32 code_len;
-  u32 compact_unwind_info;
+  u32 encoding;
   u64 personality;
   u64 lsda;
 };

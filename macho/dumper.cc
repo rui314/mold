@@ -156,7 +156,7 @@ void dump_compact_unwind(u8 *buf, MachSection &sec) {
               << "\n   entry: 0x" << (i * sizeof(CompactUnwindEntry))
               << "\n    code_start: 0x" << ent[i].code_start
               << "\n    code_len: 0x" << ent[i].code_len
-              << "\n    compact_unwind_info: 0x" << ent[i].compact_unwind_info
+              << "\n    encoding: 0x" << ent[i].encoding
               << "\n    personality: 0x" << ent[i].personality
               << "\n    lsda: 0x" << ent[i].lsda;
   }

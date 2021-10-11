@@ -719,48 +719,22 @@ UnwindInfoSection::UnwindInfoSection() {
   hdr.size = contents.size();
 }
 
-void UnwindEncoder::add(UnwindRecord &rec) {
-}
-
-void UnwindEncoder::finish() {
-}
-
-i64 UnwindEncoder::get_personality(Context &ctx, Relocation &rel) {
-  if (!rel.sym && !rel.subsec)
-    return 0;
-
-  if (rel.sym) {
-    for (i64 i = 0; i < personalities.size(); i++) {
-      Relocation &p = personalities[i];
-      if (p.sym == rel.sym && p.addend == rel.addend)
-        return i + 1;
-    }
-  } else {
-    for (i64 i = 0; i < personalities.size(); i++) {
-      Relocation &p = personalities[i];
-      if (p.subsec == rel.subsec && p.addend == rel.addend)
-        return i + 1;
-    }
-  }
-
-  if (personalities.size() == 3)
-    Fatal(ctx) << "too many personality functions";
-  personalities.push_back(rel);
-  return personalities.size();
+static std::vector<u8>
+encode_unwind_info(Context &ctx, std::span<UnwindRecord> records) {
+  return {};
 }
 
 static std::vector<u8> construct_unwind_info(Context &ctx) {
-  UnwindEncoder enc;
+  std::vector<UnwindRecord> vec;
 
   for (OutputSegment *seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (chunk->is_regular)
         for (Subsection *subsec : ((OutputSection *)chunk)->members)
           for (UnwindRecord &rec : subsec->get_unwind_records())
-            enc.add(rec);
+            vec.push_back(rec);
 
-  enc.finish();
-  return std::move(enc.buf);
+  return encode_unwind_info(ctx, vec);
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {

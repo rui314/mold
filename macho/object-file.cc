@@ -79,7 +79,7 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   // Read compact unwind entries
   for (i64 i = 0; i < num_entries; i++) {
     CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[i];
-    unwind_records.emplace_back(src.code_len, src.compact_unwind_info);
+    unwind_records.emplace_back(src.code_len, src.encoding);
   }
 
   // Read relocations

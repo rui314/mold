@@ -32,13 +32,12 @@ struct Relocation {
 };
 
 struct UnwindRecord {
-  UnwindRecord(u32 len, u32 info)
-    : code_len(len), compact_unwind_info(info) {}
+  UnwindRecord(u32 len, u32 enc) : code_len(len), encoding(enc) {}
 
   Subsection *subsec = nullptr;
   u32 offset = 0;
   u32 code_len;
-  u32 compact_unwind_info;
+  u32 encoding;
   Symbol *personality = nullptr;
   Subsection *lsda = nullptr;
   u32 lsda_offset = 0;
@@ -82,7 +81,6 @@ public:
   std::string_view contents;
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
-  std::vector<UnwindRecord> unwind_records;
 };
 
 std::ostream &operator<<(std::ostream &out, const InputSection &sec);
@@ -94,7 +92,7 @@ public:
   }
 
   std::span<UnwindRecord> get_unwind_records() {
-    return std::span(isec.unwind_records).subspan(unwind_offset, nunwind);
+    return std::span(isec.file.unwind_records).subspan(unwind_offset, nunwind);
   }
 
   void apply_reloc(Context &ctx, u8 *buf);
@@ -399,20 +397,6 @@ public:
   void copy_buf(Context &ctx) override;
 
   static constexpr char contents[] = "Hello world\n";
-};
-
-class UnwindEncoder {
-public:
-  void add(UnwindRecord &rec);
-  void finish();
-
-  std::vector<u8> buf;
-
-private:
-  i64 get_personality(Context &ctx, Relocation &rel);
-
-  std::unordered_map<u32, u32> encodings;
-  std::vector<Relocation> personalities;
 };
 
 class UnwindInfoSection : public Chunk {
