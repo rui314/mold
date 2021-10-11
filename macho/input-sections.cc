@@ -27,13 +27,47 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   return &*(it - 1);
 }
 
+static Relocation read_reloc(Context &ctx, ObjectFile &file,
+                             const MachSection &hdr, MachRel r) {
+  u8 *buf = (u8 *)file.mf->data + hdr.offset;
+
+  i64 addend;
+  if (r.p2size == 0)
+    addend = *(i8 *)(buf + r.offset);
+  else if (r.p2size == 1)
+    addend = *(i16 *)(buf + r.offset);
+  else if (r.p2size == 2)
+    addend = *(i32 *)(buf + r.offset);
+  else if (r.p2size == 3)
+    addend = *(i64 *)(buf + r.offset);
+  else
+    unreachable();
+
+  if (r.is_extern)
+    return {r.offset, (bool)r.is_pcrel, addend, file.syms[r.idx], nullptr};
+
+  u32 addr;
+  if (r.is_pcrel) {
+    if (r.p2size != 2)
+      Fatal(ctx) << file << ": invalid PC-relative reloc: " << r.offset;
+    addr = hdr.addr + r.offset + 4 + addend;
+  } else {
+    addr = addend;
+  }
+
+  Subsection *target = file.sections[r.idx - 1]->find_subsection(ctx, addr);
+  if (!target)
+    Fatal(ctx) << file << ": bad relocation: " << r.offset;
+  return {r.offset, (bool)r.is_pcrel, addr - target->input_addr, nullptr, target};
+}
+
 void InputSection::parse_relocations(Context &ctx) {
   rels.reserve(hdr.nreloc);
 
   // Parse mach-o relocations to fill `rels` vector
   MachRel *rel = (MachRel *)(file.mf->data + hdr.reloff);
   for (i64 i = 0; i < hdr.nreloc; i++)
-    rels.push_back(file.read_reloc(ctx, hdr, rel[i]));
+    rels.push_back(read_reloc(ctx, file, hdr, rel[i]));
 
   // Sort `rels` vector
   sort(rels, [](const Relocation &a, const Relocation &b) {

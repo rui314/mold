@@ -173,35 +173,4 @@ void ObjectFile::resolve_symbols(Context &ctx) {
   }
 }
 
-static i64 read_addend(u8 *buf, MachRel r) {
-  switch (r.p2size) {
-  case 0: return *(i8 *)(buf + r.offset);
-  case 1: return *(i16 *)(buf + r.offset);
-  case 2: return *(i32 *)(buf + r.offset);
-  case 3: return *(i64 *)(buf + r.offset);
-  }
-  unreachable();
-}
-
-Relocation ObjectFile::read_reloc(Context &ctx, const MachSection &hdr, MachRel r) {
-  i64 addend = read_addend((u8 *)mf->data + hdr.offset, r);
-
-  if (r.is_extern)
-    return {r.offset, (bool)r.is_pcrel, addend, syms[r.idx], nullptr};
-
-  u32 addr;
-  if (r.is_pcrel) {
-    if (r.p2size != 2)
-      Fatal(ctx) << *this << ": invalid PC-relative reloc: " << r.offset;
-    addr = hdr.addr + r.offset + 4 + addend;
-  } else {
-    addr = addend;
-  }
-
-  Subsection *target = sections[r.idx - 1]->find_subsection(ctx, addr);
-  if (!target)
-    Fatal(ctx) << *this << ": bad relocation: " << r.offset;
-  return {r.offset, (bool)r.is_pcrel, addr - target->input_addr, nullptr, target};
-}
-
 } // namespace mold::macho
