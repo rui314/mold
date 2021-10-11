@@ -233,6 +233,7 @@ void OutputLoadCommand::copy_buf(Context &ctx) {
 OutputSection::OutputSection(std::string_view name) {
   assert(name.size() < sizeof(hdr.sectname));
   memcpy(hdr.sectname, name.data(), name.size());
+  is_regular = true;
 }
 
 void OutputSection::compute_size(Context &ctx) {
@@ -715,6 +716,30 @@ void CstringSection::copy_buf(Context &ctx) {
 UnwindInfoSection::UnwindInfoSection() {
   strcpy(hdr.sectname, "__unwind_info");
   hdr.p2align = __builtin_ctz(4);
+  hdr.size = contents.size();
+}
+
+void UnwindEncoder::add(UnwindRecord &rec) {
+}
+
+void UnwindEncoder::finish() {
+}
+
+static std::vector<u8> construct_unwind_info(Context &ctx) {
+  UnwindEncoder enc;
+
+  for (OutputSegment *seg : ctx.segments)
+    for (Chunk *chunk : seg->chunks)
+      if (chunk->is_regular)
+        for (Subsection *subsec : ((OutputSection *)chunk)->members)
+          for (UnwindRecord &rec : subsec->get_unwind_records())
+            enc.add(rec);
+
+  return std::move(enc.contents);
+}
+
+void UnwindInfoSection::compute_size(Context &ctx) {
+  construct_unwind_info(ctx);
   hdr.size = contents.size();
 }
 

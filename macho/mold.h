@@ -91,9 +91,13 @@ public:
     return isec.contents.substr(input_offset, input_size);
   }
 
+  std::span<UnwindRecord> get_unwind_records() {
+    return std::span(isec.unwind_records).subspan(unwind_offset, nunwind);
+  }
+
   void apply_reloc(Context &ctx, u8 *buf);
 
-  const InputSection &isec;
+  InputSection &isec;
   u32 input_offset = 0;
   u32 input_size = 0;
   u32 input_addr = 0;
@@ -149,6 +153,7 @@ public:
   MachSection hdr = {};
   OutputSegment *parent = nullptr;
   bool is_hidden = false;
+  bool is_regular = false;
 };
 
 class OutputMachHeader : public Chunk {
@@ -394,9 +399,18 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
+class UnwindEncoder {
+public:
+  void add(UnwindRecord &rec);
+  void finish();
+
+  std::vector<u8> contents;
+};
+
 class UnwindInfoSection : public Chunk {
 public:
   UnwindInfoSection();
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents = {
