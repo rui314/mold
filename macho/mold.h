@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <tbb/concurrent_hash_map.h>
+#include <unordered_map>
 
 namespace mold::macho {
 
@@ -405,6 +406,12 @@ public:
   void finish();
 
   std::vector<u8> buf;
+
+private:
+  i64 get_personality(Context &ctx, Relocation &rel);
+
+  std::unordered_map<u32, u32> encodings;
+  std::vector<Relocation> personalities;
 };
 
 class UnwindInfoSection : public Chunk {

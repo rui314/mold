@@ -720,10 +720,33 @@ UnwindInfoSection::UnwindInfoSection() {
 }
 
 void UnwindEncoder::add(UnwindRecord &rec) {
-  
 }
 
 void UnwindEncoder::finish() {
+}
+
+i64 UnwindEncoder::get_personality(Context &ctx, Relocation &rel) {
+  if (!rel.sym && !rel.subsec)
+    return 0;
+
+  if (rel.sym) {
+    for (i64 i = 0; i < personalities.size(); i++) {
+      Relocation &p = personalities[i];
+      if (p.sym == rel.sym && p.addend == rel.addend)
+        return i + 1;
+    }
+  } else {
+    for (i64 i = 0; i < personalities.size(); i++) {
+      Relocation &p = personalities[i];
+      if (p.subsec == rel.subsec && p.addend == rel.addend)
+        return i + 1;
+    }
+  }
+
+  if (personalities.size() == 3)
+    Fatal(ctx) << "too many personality functions";
+  personalities.push_back(rel);
+  return personalities.size();
 }
 
 static std::vector<u8> construct_unwind_info(Context &ctx) {

@@ -81,7 +81,7 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
             << "\n   index_offset: 0x"   << hdr.index_offset
             << "\n   index_count: 0x"   << hdr.index_count;
 
-  u32 *enc = (u32 *)(buf + hdr.encoding_offset);
+  u32 *enc = (u32 *)(buf + sec.offset + hdr.encoding_offset);
   std::cout << "\n   encoding:";
   for (i64 i = 0; i < hdr.encoding_count; i++)
     std::cout << std::hex << "\n    0x" << enc[i];
