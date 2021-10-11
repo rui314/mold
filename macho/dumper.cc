@@ -95,6 +95,17 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
               << "\n    page_offset: 0x"   << ent[i].page_offset
               << "\n    lsda_offset: 0x"   << ent[i].lsda_offset;
 
+    if (i != hdr.index_count - 1) {
+      UnwindLsdaIndexEntry *lsda =
+        (UnwindLsdaIndexEntry *)(buf + sec.offset + ent[i].lsda_offset);
+      i64 lsda_size = ent[i + 1].lsda_offset - ent[i].lsda_offset;
+      for (i64 j = 0; j < lsda_size / sizeof(UnwindLsdaIndexEntry); j++)
+        std::cout << std::hex
+                  << "\n    lsda:"
+                  << "\n     func_offset: 0x" << lsda[j].func_offset
+                  << "\n     lsda_offset: 0x" << lsda[j].lsda_offset;
+    }
+
     if (ent[i].page_offset == 0)
       break;
 
@@ -117,7 +128,8 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
       UnwindPageEntry *ent2 = (UnwindPageEntry *)(addr + hdr2.page_offset);
       for (i64 j = 0; j < hdr2.page_count; j++)
         std::cout << std::hex << "\n      ent 0x"  
-                  << ent2[j].func_offset << " 0x" << ent2[j].encoding;
+                  << (ent[i].func_offset + ent2[j].func_offset)
+                  << " 0x" << ent2[j].encoding;
 
       u32 *enc = (u32 *)(addr + hdr2.encoding_offset);
       for (i64 j = 0; j < hdr2.encoding_count; j++)

@@ -404,7 +404,7 @@ public:
   void add(UnwindRecord &rec);
   void finish();
 
-  std::vector<u8> contents;
+  std::vector<u8> buf;
 };
 
 class UnwindInfoSection : public Chunk {

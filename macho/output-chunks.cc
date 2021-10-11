@@ -720,6 +720,7 @@ UnwindInfoSection::UnwindInfoSection() {
 }
 
 void UnwindEncoder::add(UnwindRecord &rec) {
+  
 }
 
 void UnwindEncoder::finish() {
@@ -735,7 +736,8 @@ static std::vector<u8> construct_unwind_info(Context &ctx) {
           for (UnwindRecord &rec : subsec->get_unwind_records())
             enc.add(rec);
 
-  return std::move(enc.contents);
+  enc.finish();
+  return std::move(enc.buf);
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {
