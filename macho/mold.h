@@ -415,7 +415,7 @@ private:
   };
 
   u32 encode_personality(Context &ctx, Symbol *sym);
-  std::vector<std::span<Entry>> split(std::span<Entry> entries);
+  std::vector<std::span<Entry>> split_entries(std::span<Entry> entries);
 
   std::vector<UnwindRecord> src;
   std::vector<Symbol *> personalities;

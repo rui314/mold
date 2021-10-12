@@ -734,7 +734,7 @@ void UnwindEncoder::finish(Context &ctx) {
       src[i].encoding | encode_personality(ctx, src[i].personality);
   }
 
-  std::vector<std::span<Entry>> entries = split(dst);
+  std::vector<std::span<Entry>> entries = split_entries(dst);
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
@@ -753,7 +753,7 @@ u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
 }
 
 std::vector<std::span<UnwindEncoder::Entry>>
-UnwindEncoder::split(std::span<Entry> entries) {
+UnwindEncoder::split_entries(std::span<Entry> entries) {
   std::vector<std::span<Entry>> vec;
 
   for (i64 i = 0; i < entries.size();) {
