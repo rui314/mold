@@ -503,6 +503,7 @@ struct MachRel {
 #define UNWIND_SECTION_VERSION 1
 #define UNWIND_SECOND_LEVEL_REGULAR 2
 #define UNWIND_SECOND_LEVEL_COMPRESSED 3
+#define UNWIND_PERSONALITY_MASK 0x30000000
 
 struct UnwindSectionHeader {
   u32 version;

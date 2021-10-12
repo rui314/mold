@@ -95,6 +95,7 @@ public:
     return std::span(isec.file.unwind_records).subspan(unwind_offset, nunwind);
   }
 
+  inline u64 get_addr(Context &ctx) const;
   void apply_reloc(Context &ctx, u8 *buf);
 
   InputSection &isec;
@@ -524,9 +525,13 @@ int main(int argc, char **argv);
 // Inline functions
 //
 
+u64 Subsection::get_addr(Context &ctx) const {
+  return isec.osec->hdr.addr + output_offset;
+}
+
 u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)
-    return subsec->isec.osec->hdr.addr + subsec->output_offset + value;
+    return subsec->get_addr(ctx) + value;
   if (stub_idx != -1)
     return ctx.stubs.hdr.addr + stub_idx * StubsSection::ENTRY_SIZE;
   return value;
