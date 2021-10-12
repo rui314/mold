@@ -734,7 +734,35 @@ void UnwindEncoder::finish(Context &ctx) {
       src[i].encoding | encode_personality(ctx, src[i].personality);
   }
 
-  std::vector<std::span<Entry>> entries = split_entries(dst);
+  std::vector<Page>> pages = split_entries(dst);
+
+  // Allocate a buffer that is more than large enough to hold the
+  // entire section contents.
+  buf.resize(src.size() * 8 + 1024);
+
+  // Write the section header.
+  UnwindSectionHeader &hdr = *(UnwindSectionHeader *)buf.data();
+  hdr.version = UNWIND_SECTION_VERSION;
+  hdr.encoding_offset = 0;
+  hdr.encoding_count = 0;
+  hdr.personality_offset = sizeof(hdr);
+  hdr.personality_count = personalities.size();
+  hdr.index_offset = sizeof(hdr) + personalities.size() * 4;
+  hdr.index_count = entries.size();
+
+  // Write the personalities
+  u32 *per = (u32 *)(buf.data() + sizeof(hdr));
+  for (Symbol *sym : personalities)
+    *per++ = sym->get_addr(ctx);
+
+  // Write page headers
+  UnwindPageHeader *phdr = (UnwindPageHeader *)per;
+  for (std::span<Entry> ent : entries) {
+    phdr->kind = UNWIND_SECOND_LEVEL_COMPRESSED;
+    phdr->page_offset = sizeof(*phdr);
+    phdr->page_count = ent.size();
+    phdr->encoding_offset = sizeof(*phdr);
+  }
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
