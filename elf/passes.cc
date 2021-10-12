@@ -39,6 +39,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.shdr = std::make_unique<OutputShdr<E>>());
   add(ctx.got = std::make_unique<GotSection<E>>());
   add(ctx.gotplt = std::make_unique<GotPltSection<E>>());
+  add(ctx.reldyn = std::make_unique<RelDynSection<E>>());
   add(ctx.relplt = std::make_unique<RelPltSection<E>>());
   add(ctx.strtab = std::make_unique<StrtabSection<E>>());
   add(ctx.shstrtab = std::make_unique<ShstrtabSection<E>>());
@@ -64,7 +65,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   if (!ctx.arg.version_definitions.empty())
     add(ctx.verdef = std::make_unique<VerdefSection<E>>());
 
-  add(ctx.reldyn = std::make_unique<RelDynSection<E>>());
   add(ctx.dynamic = std::make_unique<DynamicSection<E>>());
   add(ctx.versym = std::make_unique<VersymSection<E>>());
   add(ctx.verneed = std::make_unique<VerneedSection<E>>());
