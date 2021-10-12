@@ -1285,7 +1285,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
     i64 offset = 0;
     for (FdeRecord<E> &fde : file->fdes) {
       fde.output_offset = offset;
-      offset += fde.size();
+      offset += fde.get_size();
     }
     file->fde_size = offset;
   });
@@ -1307,7 +1307,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
       } else {
         cie.output_offset = offset;
         cie.is_leader = true;
-        offset += cie.size();
+        offset += cie.get_size();
         leaders.push_back(&cie);
       }
     }

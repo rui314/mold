@@ -320,17 +320,22 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 rel_idx = 0;
 
   for (std::string_view data = contents; !data.empty();) {
-    i64 size = *(u32 *)data.data();
+    u64 size_of_len = sizeof(u32);
+    u64 size = *(u32 *)data.data();
     if (size == 0) {
-      if (data.size() != 4)
+      if (data.size() != size_of_len)
         Fatal(ctx) << isec << ": garbage at end of section";
       break;
+    } else if (size == 0xffffffff) {
+      // CIE record has an extended length
+      size = *(u64 *)(data.data() + size_of_len);
+      size_of_len += sizeof(u64);
     }
 
     i64 begin_offset = data.data() - contents.data();
-    i64 end_offset = begin_offset + size + 4;
-    i64 id = *(u32 *)(data.data() + 4);
-    data = data.substr(size + 4);
+    i64 end_offset = begin_offset + size + size_of_len;
+    i64 id = *(u32 *)(data.data() + size_of_len);
+    data = data.substr(size + size_of_len);
 
     i64 rel_begin = rel_idx;
     while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
@@ -365,8 +370,8 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   };
 
   for (i64 i = fdes_begin; i < fdes.size(); i++) {
-    i64 cie_offset = *(i32 *)(contents.data() + fdes[i].input_offset + 4);
-    fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
+    i64 cie_offset = *(i32 *)(contents.data() + fdes[i].input_offset + fdes[i].size_of_len);
+    fdes[i].cie_idx = find_cie(fdes[i].input_offset + fdes[i].size_of_len - cie_offset);
   }
 
   auto get_isec = [&](const FdeRecord<E> &fde) -> InputSection<E> * {

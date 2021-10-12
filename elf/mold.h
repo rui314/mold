@@ -112,6 +112,16 @@ inline u64 hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
 }
 
+inline std::pair<u8, u64> decode_size(const char *data, u32 input_offset) {
+  u8 size_of_len = sizeof(u32);
+  u64 size = *(u32 *)(data + input_offset);
+  if (size == 0xffffffff) {
+    size = *(u64 *)(data + input_offset + size_of_len);
+    size_of_len += sizeof(u64);
+  }
+  return std::make_pair(size_of_len, size);
+}
+
 //
 // input-sections.cc
 //
@@ -149,19 +159,23 @@ struct CieRecord {
             InputSection<E> &isec, u32 input_offset, u32 rel_idx)
     : file(file), input_section(isec), input_offset(input_offset),
       rel_idx(rel_idx), rels(isec.get_rels(ctx)),
-      contents(file.get_string(ctx, isec.shdr)) {}
+      contents(file.get_string(ctx, isec.shdr)) {
+    const auto sizes = decode_size(contents.data(), input_offset);
+    size_of_len = sizes.first;
+    size = sizes.second + size_of_len;
+  }
 
-  i64 size() const {
-    return *(u32 *)(contents.data() + input_offset) + 4;
+  i64 get_size() const {
+    return size;
   }
 
   std::string_view get_contents() const {
-    return contents.substr(input_offset, size());
+    return contents.substr(input_offset, get_size());
   }
 
   std::span<ElfRel<E>> get_rels() const {
     i64 end = rel_idx;
-    while (end < rels.size() && rels[end].r_offset < input_offset + size())
+    while (end < rels.size() && rels[end].r_offset < input_offset + get_size())
       end++;
     return rels.subspan(rel_idx, end - rel_idx);
   }
@@ -170,10 +184,12 @@ struct CieRecord {
 
   ObjectFile<E> &file;
   InputSection<E> &input_section;
+  i64 size = -1;
   u32 input_offset = -1;
   u32 output_offset = -1;
   u32 rel_idx = -1;
   u32 icf_idx = -1;
+  u8 size_of_len = sizeof(u32);
   bool is_leader = false;
   std::span<ElfRel<E>> rels;
   std::string_view contents;
@@ -182,34 +198,41 @@ struct CieRecord {
 template <typename E>
 struct FdeRecord {
   FdeRecord(u32 input_offset, u32 rel_idx)
-    : input_offset(input_offset), rel_idx(rel_idx) {}
+    : input_offset(input_offset), rel_idx(rel_idx) {
+    const auto sizes = decode_size(cie->contents.data(), input_offset);
+    size_of_len = sizes.first;
+    size = sizes.second + size_of_len;
+  }
 
   FdeRecord(const FdeRecord &other)
-    : cie(other.cie), input_offset(other.input_offset),
-      output_offset(other.output_offset), rel_idx(other.rel_idx),
+    : cie(other.cie), size(other.size),
+      input_offset(other.input_offset), output_offset(other.output_offset),
+      rel_idx(other.rel_idx), size_of_len(other.size_of_len),
       is_alive(other.is_alive.load()) {}
 
   FdeRecord &operator=(const FdeRecord<E> &other) {
     cie = other.cie;
+    size = other.size;
     input_offset = other.input_offset;
     output_offset = other.output_offset;
     rel_idx = other.rel_idx;
+    size_of_len = other.size_of_len;
     is_alive = other.is_alive.load();
     return *this;
   }
 
-  i64 size() const {
-    return *(u32 *)(cie->contents.data() + input_offset) + 4;
+  i64 get_size() const {
+    return size;
   }
 
   std::string_view get_contents() const {
-    return cie->contents.substr(input_offset, size());
+    return cie->contents.substr(input_offset, get_size());
   }
 
   std::span<ElfRel<E>> get_rels() const {
     std::span<ElfRel<E>> rels = cie->rels;
     i64 end = rel_idx;
-    while (end < rels.size() && rels[end].r_offset < input_offset + size())
+    while (end < rels.size() && rels[end].r_offset < input_offset + get_size())
       end++;
     return rels.subspan(rel_idx, end - rel_idx);
   }
@@ -219,9 +242,11 @@ struct FdeRecord {
     u32 cie_idx;
   };
 
+  i64 size = -1;
   u32 input_offset = -1;
   u32 output_offset = -1;
   u32 rel_idx = -1;
+  u8 size_of_len = sizeof(u32);
   std::atomic_bool is_alive = true;
 };
 
