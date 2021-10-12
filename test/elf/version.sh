@@ -3,7 +3,7 @@ set -e
 cd $(dirname $0)
 mold=`pwd`/../../mold
 echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../..//out/test/elf/$(basename -s .sh $0)
+t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
 $mold -v | grep -q 'mold .*compatible with GNU ld and GNU gold'
