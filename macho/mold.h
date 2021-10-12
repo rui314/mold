@@ -408,13 +408,14 @@ public:
   std::vector<u8> buf;
 
 private:
-  struct Record {
+  struct Entry {
     u32 func_offset = 0;
     u32 lsda_offset = 0;
     u32 encoding = 0;
   };
 
   u32 encode_personality(Context &ctx, Symbol *sym);
+  std::vector<std::span<Entry>> split(std::span<Entry> entries);
 
   std::vector<UnwindRecord> src;
   std::vector<Symbol *> personalities;

@@ -724,7 +724,7 @@ void UnwindEncoder::add(UnwindRecord &rec) {
 }
 
 void UnwindEncoder::finish(Context &ctx) {
-  std::vector<Record> dst(src.size());
+  std::vector<Entry> dst(src.size());
 
   for (i64 i = 0; i < src.size(); i++) {
     dst[i].func_offset = src[i].subsec->get_addr(ctx);
@@ -733,6 +733,8 @@ void UnwindEncoder::finish(Context &ctx) {
     dst[i].encoding =
       src[i].encoding | encode_personality(ctx, src[i].personality);
   }
+
+  std::vector<std::span<Entry>> entries = split(dst);
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
@@ -748,6 +750,21 @@ u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
 
   personalities.push_back(sym);
   return personalities.size() << __builtin_ctz(UNWIND_PERSONALITY_MASK);
+}
+
+std::vector<std::span<UnwindEncoder::Entry>>
+UnwindEncoder::split(std::span<Entry> entries) {
+  std::vector<std::span<Entry>> vec;
+
+  for (i64 i = 0; i < entries.size();) {
+    i64 j = 1;
+    while (j < 65536 && i + j < entries.size() &&
+           entries[i + j].func_offset < entries[i].func_offset + (1 << 24))
+      j++;
+    vec.push_back(entries.subspan(i, j));
+    i += j;
+  }
+  return vec;
 }
 
 static std::vector<u8> construct_unwind_info(Context &ctx) {
