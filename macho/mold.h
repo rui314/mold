@@ -400,6 +400,26 @@ public:
   static constexpr char contents[] = "Hello world\n";
 };
 
+class UnwindEncoder {
+public:
+  void add(UnwindRecord &rec);
+  void finish(Context &ctx);
+
+  std::vector<u8> buf;
+
+private:
+  struct Record {
+    u32 func_offset = 0;
+    u32 lsda_offset = 0;
+    u32 encoding = 0;
+  };
+
+  u32 encode_personality(Context &ctx, Symbol *sym);
+
+  std::vector<UnwindRecord> src;
+  std::vector<Symbol *> personalities;
+};
+
 class UnwindInfoSection : public Chunk {
 public:
   UnwindInfoSection();

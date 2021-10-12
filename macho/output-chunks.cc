@@ -719,55 +719,49 @@ UnwindInfoSection::UnwindInfoSection() {
   hdr.size = contents.size();
 }
 
-static std::vector<u8>
-encode_unwind_info(Context &ctx, std::span<UnwindRecord> src) {
-  struct Record {
-    u32 func_offset = 0;
-    u32 lsda_offset = 0;
-    u32 encoding = 0;
-  };
+void UnwindEncoder::add(UnwindRecord &rec) {
+  src.push_back(rec);
+}
 
-  std::vector<Symbol *> per;
+void UnwindEncoder::finish(Context &ctx) {
+  std::vector<Record> dst(src.size());
 
-  auto encode_personality = [&](Symbol *sym) -> u32 {
-    if (!sym)
-      return 0;
-    for (i64 i = 0; i < per.size(); i++)
-      if (per[i] == sym)
-        return (i + 1) << __builtin_ctz(UNWIND_PERSONALITY_MASK);
-    if (per.size() == 3)
-      Fatal(ctx) << ": too many personality functions";
-    per.push_back(sym);
-    return per.size() << __builtin_ctz(UNWIND_PERSONALITY_MASK);
-  };
-
-  std::vector<Record> dst;
-  dst.reserve(src.size());
-
-  for (UnwindRecord rec : src) {
-    dst.push_back({});
-
-    Record &r = dst.back();
-    r.func_offset = rec.subsec->get_addr(ctx);
-    if (rec.lsda)
-      r.lsda_offset = rec.lsda->get_addr(ctx) + rec.lsda_offset;
-    r.encoding = rec.encoding | encode_personality(rec.personality);
+  for (i64 i = 0; i < src.size(); i++) {
+    dst[i].func_offset = src[i].subsec->get_addr(ctx);
+    if (src[i].lsda)
+      dst[i].lsda_offset = src[i].lsda->get_addr(ctx) + src[i].lsda_offset;
+    dst[i].encoding =
+      src[i].encoding | encode_personality(ctx, src[i].personality);
   }
+}
 
-  return {};
+u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
+  if (!sym)
+    return 0;
+
+  for (i64 i = 0; i < personalities.size(); i++)
+    if (personalities[i] == sym)
+      return (i + 1) << __builtin_ctz(UNWIND_PERSONALITY_MASK);
+
+  if (personalities.size() == 3)
+    Fatal(ctx) << ": too many personality functions";
+
+  personalities.push_back(sym);
+  return personalities.size() << __builtin_ctz(UNWIND_PERSONALITY_MASK);
 }
 
 static std::vector<u8> construct_unwind_info(Context &ctx) {
-  std::vector<UnwindRecord> vec;
+  UnwindEncoder enc;
 
   for (OutputSegment *seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (chunk->is_regular)
         for (Subsection *subsec : ((OutputSection *)chunk)->members)
           for (UnwindRecord &rec : subsec->get_unwind_records())
-            vec.push_back(rec);
+            enc.add(rec);
 
-  return encode_unwind_info(ctx, vec);
+  enc.finish(ctx);
+  return std::move(enc.buf);
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {
