@@ -789,7 +789,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
     UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     for (UnwindRecord &rec : span) {
-      entry->func_addr = rec.get_func_addr(ctx);
+      entry->func_addr = rec.get_func_addr(ctx) - page1->func_addr;
       entry->encoding = map[rec.encoding];
       entry++;
     }
