@@ -78,32 +78,32 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
             << "\n   encoding_count: 0x"   << hdr.encoding_count
             << "\n   personality_offset: 0x"   << hdr.personality_offset
             << "\n   personality_count: 0x"   << hdr.personality_count
-            << "\n   index_offset: 0x"   << hdr.index_offset
-            << "\n   index_count: 0x"   << hdr.index_count;
+            << "\n   page_offset: 0x"   << hdr.page_offset
+            << "\n   page_count: 0x"   << hdr.page_count;
 
   u32 *enc = (u32 *)(buf + sec.offset + hdr.encoding_offset);
   std::cout << "\n   encoding:";
   for (i64 i = 0; i < hdr.encoding_count; i++)
     std::cout << std::hex << "\n    0x" << enc[i];
 
-  UnwindIndexEntry *ent =
-    (UnwindIndexEntry *)(buf + sec.offset + hdr.index_offset);
+  UnwindFirstLevelPage *ent =
+    (UnwindFirstLevelPage *)(buf + sec.offset + hdr.page_offset);
 
-  for (i64 i = 0; i < hdr.index_count; i++) {
+  for (i64 i = 0; i < hdr.page_count; i++) {
     std::cout << std::hex << "\n   function:"  
-              << "\n    func_offset: 0x"   << ent[i].func_offset
+              << "\n    func_addr: 0x"   << ent[i].func_addr
               << "\n    page_offset: 0x"   << ent[i].page_offset
               << "\n    lsda_offset: 0x"   << ent[i].lsda_offset;
 
-    if (i != hdr.index_count - 1) {
+    if (i != hdr.page_count - 1) {
       UnwindLsdaEntry *lsda =
         (UnwindLsdaEntry *)(buf + sec.offset + ent[i].lsda_offset);
       i64 lsda_size = ent[i + 1].lsda_offset - ent[i].lsda_offset;
       for (i64 j = 0; j < lsda_size / sizeof(UnwindLsdaEntry); j++)
         std::cout << std::hex
                   << "\n    lsda:"
-                  << "\n     func_offset: 0x" << lsda[j].func_offset
-                  << "\n     lsda_offset: 0x" << lsda[j].lsda_offset;
+                  << "\n     func_addr: 0x" << lsda[j].func_addr
+                  << "\n     lsda_addr: 0x" << lsda[j].lsda_addr;
     }
 
     if (ent[i].page_offset == 0)
@@ -118,7 +118,7 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
     }
     case UNWIND_SECOND_LEVEL_COMPRESSED: {
       std::cout << "\n    UNWIND_SECOND_LEVEL_COMPRESSED"  ;
-      UnwindPageHeader &hdr2 = *(UnwindPageHeader *)addr;
+      UnwindSecondLevelPage &hdr2 = *(UnwindSecondLevelPage *)addr;
       std::cout << std::hex
                 << "\n     page_offset: 0x"   << hdr2.page_offset
                 << "\n     page_count: 0x"   << hdr2.page_count
@@ -128,7 +128,7 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
       UnwindPageEntry *ent2 = (UnwindPageEntry *)(addr + hdr2.page_offset);
       for (i64 j = 0; j < hdr2.page_count; j++)
         std::cout << std::hex << "\n      ent 0x"  
-                  << (ent[i].func_offset + ent2[j].func_offset)
+                  << (ent[i].func_addr + ent2[j].func_addr)
                   << " 0x" << ent2[j].encoding;
 
       u32 *enc = (u32 *)(addr + hdr2.encoding_offset);

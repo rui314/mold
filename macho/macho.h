@@ -511,22 +511,17 @@ struct UnwindSectionHeader {
   u32 encoding_count;
   u32 personality_offset;
   u32 personality_count;
-  u32 index_offset;
-  u32 index_count;
+  u32 page_offset;
+  u32 page_count;
 };
 
-struct UnwindIndexEntry {
-  u32 func_offset;
+struct UnwindFirstLevelPage {
+  u32 func_addr;
   u32 page_offset;
   u32 lsda_offset;
 };
 
-struct UnwindLsdaEntry {
-  u32 func_offset;
-  u32 lsda_offset;
-};
-
-struct UnwindPageHeader {
+struct UnwindSecondLevelPage {
   u32 kind;
   u16 page_offset;
   u16 page_count;
@@ -534,8 +529,13 @@ struct UnwindPageHeader {
   u16 encoding_count;
 };
 
+struct UnwindLsdaEntry {
+  u32 func_addr;
+  u32 lsda_addr;
+};
+
 struct UnwindPageEntry {
-  u32 func_offset : 24;
+  u32 func_addr : 24;
   u32 encoding : 8;
 };
 

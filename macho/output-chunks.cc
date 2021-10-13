@@ -740,7 +740,7 @@ void UnwindEncoder::finish(Context &ctx) {
   i64 size = sizeof(UnwindSectionHeader) +
              personalities.size() * 4 +
              num_lsda * sizeof(UnwindLsdaEntry) +
-             pages.size() * sizeof(UnwindPageHeader) +
+             pages.size() * sizeof(UnwindSecondLevelPage) +
              records.size() * 4;
 
   buf.resize(size);
@@ -752,8 +752,8 @@ void UnwindEncoder::finish(Context &ctx) {
   hdr.encoding_count = 0;
   hdr.personality_offset = sizeof(hdr);
   hdr.personality_count = personalities.size();
-  hdr.index_offset = sizeof(hdr) + personalities.size() * 4;
-  hdr.index_count = pages.size();
+  hdr.page_offset = sizeof(hdr) + personalities.size() * 4;
+  hdr.page_count = pages.size();
 
   // Write the personalities
   u32 *per = (u32 *)(buf.data() + sizeof(hdr));
@@ -761,9 +761,9 @@ void UnwindEncoder::finish(Context &ctx) {
     *per++ = sym->get_addr(ctx);
 
   // Write first level pages, LSDA and second level pages
-  UnwindIndexEntry *page1 = (UnwindIndexEntry *)per;
+  UnwindFirstLevelPage *page1 = (UnwindFirstLevelPage *)per;
   UnwindLsdaEntry *lsda = (UnwindLsdaEntry *)(page1 + pages.size());
-  UnwindPageHeader *page2 = (UnwindPageHeader *)(lsda + num_lsda);
+  UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
   
 }
 
