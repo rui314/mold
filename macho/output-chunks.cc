@@ -277,6 +277,7 @@ void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
     offset = align_to(offset, 1 << sec->hdr.p2align);
     sec->hdr.addr = vmaddr + offset;
     sec->hdr.offset = fileoff + offset;
+    sec->compute_size(ctx);
     offset += sec->hdr.size;
   }
 
