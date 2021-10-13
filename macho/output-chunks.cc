@@ -763,7 +763,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
   // Write first level pages, LSDA and second level pages
   UnwindFirstLevelPage *page1 = (UnwindFirstLevelPage *)per;
-  UnwindLsdaEntry *lsda = (UnwindLsdaEntry *)(page1 + pages.size());
+  UnwindLsdaEntry *lsda = (UnwindLsdaEntry *)(page1 + (pages.size() + 1));
   UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
 
   for (std::span<UnwindRecord> span : pages) {
@@ -783,11 +783,11 @@ void UnwindEncoder::finish(Context &ctx) {
     for (UnwindRecord &rec : span)
       map.insert({rec.encoding, map.size()});
 
-    UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     page2->kind = UNWIND_SECOND_LEVEL_COMPRESSED;
-    page2->page_offset = (u8 *)entry - buf.data();
+    page2->page_offset = (u8 *)(page2 + 1) - buf.data();
     page2->page_count = span.size();
 
+    UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     for (UnwindRecord &rec : span) {
       entry->func_addr = rec.get_func_addr(ctx);
       entry->encoding = map[rec.encoding];
@@ -803,13 +803,16 @@ void UnwindEncoder::finish(Context &ctx) {
 
     page1++;
     page2 = (UnwindSecondLevelPage *)(encoding + map.size());
+    break;
   }
 
-  // Write a sentinel
+  // Write a terminator
   UnwindRecord &last = records[records.size() - 1];
   page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size;
   page1->page_offset = 0;
   page1->lsda_offset = 0;
+
+  buf.resize((u8 *)page2 - buf.data());
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
@@ -863,7 +866,7 @@ static std::vector<u8> construct_unwind_info(Context &ctx) {
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {
-  construct_unwind_info(ctx);
+  contents = construct_unwind_info(ctx);
   hdr.size = contents.size();
 }
 
