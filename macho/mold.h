@@ -184,6 +184,13 @@ private:
   std::vector<u8> contents;
 };
 
+class OutputPadding : public Chunk {
+public:
+  OutputPadding() {
+    is_hidden = true;
+  }
+};
+
 class OutputSection : public Chunk {
 public:
   OutputSection(std::string_view name);
@@ -516,6 +523,7 @@ struct Context {
 
   OutputMachHeader mach_hdr;
   StubsSection stubs;
+  OutputPadding padding;
   StubHelperSection stub_helper;
   CstringSection cstring;
   UnwindInfoSection unwind_info;

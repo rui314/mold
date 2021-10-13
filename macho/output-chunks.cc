@@ -267,48 +267,17 @@ OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
   cmd.flags = flags;
 }
 
-// Compute the size of the padding after the load commands.
-static i64 compute_text_padding_size(std::span<Chunk *> chunks) {
-  u64 addr = 0;
-
-  // Skip the first two chunks which are the mach-o header and the
-  // load commands.
-  for (i64 i = chunks.size() - 1; i >= 2; i--) {
-    Chunk &sec = *chunks[i];
-    addr -= sec.hdr.size;
-    addr = align_down(addr, 1 << sec.hdr.p2align);
-  }
-
-  addr -= chunks[0]->hdr.size;
-  addr -= chunks[1]->hdr.size;
-  return addr % PAGE_SIZE;
-}
-
 void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
   cmd.fileoff = fileoff;
   cmd.vmaddr = vmaddr;
 
   i64 offset = 0;
 
-  auto set_offset = [&](Chunk &sec) {
-    offset = align_to(offset, 1 << sec.hdr.p2align);
-    sec.hdr.addr = vmaddr + offset;
-    sec.hdr.offset = fileoff + offset;
-    offset += sec.hdr.size;
-  };
-
-  if (fileoff == 0) {
-    // In the __TEXT segment, any extra space is put after the load commands
-    // so that a post-processing tool can add more load commands there.
-    set_offset(*chunks[0]);
-    set_offset(*chunks[1]);
-    offset += compute_text_padding_size(chunks);
-    for (Chunk *sec : std::span(chunks).subspan(2))
-      set_offset(*sec);
-  } else {
-    // In other chunks, any extra space is put at end of segment.
-    for (Chunk *sec : chunks)
-      set_offset(*sec);
+  for (Chunk *sec : chunks) {
+    offset = align_to(offset, 1 << sec->hdr.p2align);
+    sec->hdr.addr = vmaddr + offset;
+    sec->hdr.offset = fileoff + offset;
+    offset += sec->hdr.size;
   }
 
   cmd.vmsize = align_to(offset, PAGE_SIZE);

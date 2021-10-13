@@ -34,6 +34,9 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
+  ctx.text_seg.chunks.push_back(&ctx.padding);
+
+  ctx.padding.hdr.size = 14808;
 
   OutputSection *text = new OutputSection("__text");
   text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
