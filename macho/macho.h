@@ -521,7 +521,7 @@ struct UnwindIndexEntry {
   u32 lsda_offset;
 };
 
-struct UnwindLsdaIndexEntry {
+struct UnwindLsdaEntry {
   u32 func_offset;
   u32 lsda_offset;
 };

@@ -34,6 +34,8 @@ struct Relocation {
 struct UnwindRecord {
   UnwindRecord(u32 len, u32 enc) : code_len(len), encoding(enc) {}
 
+  inline u64 get_func_addr(Context &ctx) const;
+
   Subsection *subsec = nullptr;
   u32 offset = 0;
   u32 code_len;
@@ -408,16 +410,10 @@ public:
   std::vector<u8> buf;
 
 private:
-  struct Entry {
-    u32 func_offset = 0;
-    u32 lsda_offset = 0;
-    u32 encoding = 0;
-  };
-
   u32 encode_personality(Context &ctx, Symbol *sym);
-  std::vector<std::span<Entry>> split_entries(std::span<Entry> entries);
+  std::vector<std::span<UnwindRecord>> split_records(Context &ctx);
 
-  std::vector<UnwindRecord> src;
+  std::vector<UnwindRecord> records;
   std::vector<Symbol *> personalities;
 };
 
@@ -545,6 +541,10 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
+
+u64 UnwindRecord::get_func_addr(Context &ctx) const {
+  return subsec->get_addr(ctx) + offset;
+}
 
 u64 Subsection::get_addr(Context &ctx) const {
   return isec.osec->hdr.addr + output_offset;

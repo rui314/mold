@@ -96,10 +96,10 @@ void dump_unwind_info(u8 *buf, MachSection &sec) {
               << "\n    lsda_offset: 0x"   << ent[i].lsda_offset;
 
     if (i != hdr.index_count - 1) {
-      UnwindLsdaIndexEntry *lsda =
-        (UnwindLsdaIndexEntry *)(buf + sec.offset + ent[i].lsda_offset);
+      UnwindLsdaEntry *lsda =
+        (UnwindLsdaEntry *)(buf + sec.offset + ent[i].lsda_offset);
       i64 lsda_size = ent[i + 1].lsda_offset - ent[i].lsda_offset;
-      for (i64 j = 0; j < lsda_size / sizeof(UnwindLsdaIndexEntry); j++)
+      for (i64 j = 0; j < lsda_size / sizeof(UnwindLsdaEntry); j++)
         std::cout << std::hex
                   << "\n    lsda:"
                   << "\n     func_offset: 0x" << lsda[j].func_offset

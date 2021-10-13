@@ -720,25 +720,30 @@ UnwindInfoSection::UnwindInfoSection() {
 }
 
 void UnwindEncoder::add(UnwindRecord &rec) {
-  src.push_back(rec);
+  records.push_back(rec);
 }
 
 void UnwindEncoder::finish(Context &ctx) {
-  std::vector<Entry> dst(src.size());
+  i64 num_lsda = 0;
 
-  for (i64 i = 0; i < src.size(); i++) {
-    dst[i].func_offset = src[i].subsec->get_addr(ctx);
-    if (src[i].lsda)
-      dst[i].lsda_offset = src[i].lsda->get_addr(ctx) + src[i].lsda_offset;
-    dst[i].encoding =
-      src[i].encoding | encode_personality(ctx, src[i].personality);
+  for (UnwindRecord &rec : records) {
+    if (rec.personality)
+      rec.encoding |= encode_personality(ctx, rec.personality);
+    if (rec.lsda)
+      num_lsda++;
   }
 
-  std::vector<Page>> pages = split_entries(dst);
+  std::vector<std::span<UnwindRecord>> pages = split_records(ctx);
 
   // Allocate a buffer that is more than large enough to hold the
-  // entire section contents.
-  buf.resize(src.size() * 8 + 1024);
+  // entire section.
+  i64 size = sizeof(UnwindSectionHeader) +
+             personalities.size() * 4 +
+             num_lsda * sizeof(UnwindLsdaEntry) +
+             pages.size() * sizeof(UnwindPageHeader) +
+             records.size() * 4;
+
+  buf.resize(size);
 
   // Write the section header.
   UnwindSectionHeader &hdr = *(UnwindSectionHeader *)buf.data();
@@ -748,26 +753,22 @@ void UnwindEncoder::finish(Context &ctx) {
   hdr.personality_offset = sizeof(hdr);
   hdr.personality_count = personalities.size();
   hdr.index_offset = sizeof(hdr) + personalities.size() * 4;
-  hdr.index_count = entries.size();
+  hdr.index_count = pages.size();
 
   // Write the personalities
   u32 *per = (u32 *)(buf.data() + sizeof(hdr));
   for (Symbol *sym : personalities)
     *per++ = sym->get_addr(ctx);
 
-  // Write page headers
-  UnwindPageHeader *phdr = (UnwindPageHeader *)per;
-  for (std::span<Entry> ent : entries) {
-    phdr->kind = UNWIND_SECOND_LEVEL_COMPRESSED;
-    phdr->page_offset = sizeof(*phdr);
-    phdr->page_count = ent.size();
-    phdr->encoding_offset = sizeof(*phdr);
-  }
+  // Write first level pages, LSDA and second level pages
+  UnwindIndexEntry *page1 = (UnwindIndexEntry *)per;
+  UnwindLsdaEntry *lsda = (UnwindLsdaEntry *)(page1 + pages.size());
+  UnwindPageHeader *page2 = (UnwindPageHeader *)(lsda + num_lsda);
+  
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
-  if (!sym)
-    return 0;
+  assert(sym);
 
   for (i64 i = 0; i < personalities.size(); i++)
     if (personalities[i] == sym)
@@ -780,16 +781,23 @@ u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
   return personalities.size() << __builtin_ctz(UNWIND_PERSONALITY_MASK);
 }
 
-std::vector<std::span<UnwindEncoder::Entry>>
-UnwindEncoder::split_entries(std::span<Entry> entries) {
-  std::vector<std::span<Entry>> vec;
+std::vector<std::span<UnwindRecord>>
+UnwindEncoder::split_records(Context &ctx) {
+  constexpr i64 max_group_size = 4096;
 
-  for (i64 i = 0; i < entries.size();) {
+  sort(records, [&](const UnwindRecord &a, const UnwindRecord &b) {
+    return a.get_func_addr(ctx) < b.get_func_addr(ctx);
+  });
+
+  std::vector<std::span<UnwindRecord>> vec;
+
+  for (i64 i = 0; i < records.size();) {
     i64 j = 1;
-    while (j < 65536 && i + j < entries.size() &&
-           entries[i + j].func_offset < entries[i].func_offset + (1 << 24))
+    u64 end_addr = records[i].get_func_addr(ctx) + (1 << 24);
+    while (j < max_group_size && i + j < records.size() &&
+           records[i + j].get_func_addr(ctx) < end_addr)
       j++;
-    vec.push_back(entries.subspan(i, j));
+    vec.push_back(std::span(records).subspan(i, j));
     i += j;
   }
   return vec;
