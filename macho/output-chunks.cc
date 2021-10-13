@@ -810,7 +810,7 @@ void UnwindEncoder::finish(Context &ctx) {
   UnwindRecord &last = records[records.size() - 1];
   page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size;
   page1->page_offset = 0;
-  page1->lsda_offset = 0;
+  page1->lsda_offset = page1[-1].lsda_offset;
 
   buf.resize((u8 *)page2 - buf.data());
 }
