@@ -740,6 +740,7 @@ void UnwindEncoder::finish(Context &ctx) {
   i64 size = sizeof(UnwindSectionHeader) +
              personalities.size() * 4 +
              num_lsda * sizeof(UnwindLsdaEntry) +
+             pages.size() * (sizeof(UnwindFirstLevelPage) + 1) +
              pages.size() * sizeof(UnwindSecondLevelPage) +
              records.size() * 4;
 
@@ -764,7 +765,51 @@ void UnwindEncoder::finish(Context &ctx) {
   UnwindFirstLevelPage *page1 = (UnwindFirstLevelPage *)per;
   UnwindLsdaEntry *lsda = (UnwindLsdaEntry *)(page1 + pages.size());
   UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
-  
+
+  for (std::span<UnwindRecord> span : pages) {
+    page1->func_addr = span[0].get_func_addr(ctx);
+    page1->page_offset = (u8 *)page2 - buf.data();
+    page1->lsda_offset = (u8 *)lsda - buf.data();
+
+    for (UnwindRecord &rec : span) {
+      if (rec.lsda) {
+        lsda->func_addr = rec.get_func_addr(ctx);
+        lsda->lsda_addr = rec.lsda->get_addr(ctx) + rec.lsda_offset;
+        lsda++;
+      }
+    }
+
+    std::unordered_map<u32, u32> map;
+    for (UnwindRecord &rec : span)
+      map.insert({rec.encoding, map.size()});
+
+    UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
+    page2->kind = UNWIND_SECOND_LEVEL_COMPRESSED;
+    page2->page_offset = (u8 *)entry - buf.data();
+    page2->page_count = span.size();
+
+    for (UnwindRecord &rec : span) {
+      entry->func_addr = rec.get_func_addr(ctx);
+      entry->encoding = map[rec.encoding];
+      entry++;
+    }
+
+    page2->encoding_offset = (u8 *)entry - buf.data();
+    page2->encoding_count = map.size();
+
+    u32 *encoding = (u32 *)entry;
+    for (std::pair<u32, u32> kv : map)
+      encoding[kv.first] = kv.second;
+
+    page1++;
+    page2 = (UnwindSecondLevelPage *)(encoding + map.size());
+  }
+
+  // Write a sentinel
+  UnwindRecord &last = records[records.size() - 1];
+  page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size;
+  page1->page_offset = 0;
+  page1->lsda_offset = 0;
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
