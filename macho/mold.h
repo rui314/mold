@@ -303,14 +303,12 @@ class OutputFunctionStartsSection : public Chunk {
 public:
   OutputFunctionStartsSection() {
     is_hidden = true;
-    hdr.size = contents.size();
   }
 
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0xd0, 0x7e, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00
-  };
+  std::vector<u8> contents;
 };
 
 class OutputSymtabSection : public Chunk {
@@ -519,6 +517,7 @@ struct Context {
   OutputSymtabSection symtab;
   OutputIndirectSymtabSection indir_symtab;
   OutputStrtabSection strtab;
+  OutputSection text{"__text"};
 
   std::vector<OutputSegment *> segments;
 };

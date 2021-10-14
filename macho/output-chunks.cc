@@ -544,6 +544,31 @@ void OutputExportSection::copy_buf(Context &ctx) {
   enc.write_trie(ctx.buf + hdr.offset);
 }
 
+void OutputFunctionStartsSection::compute_size(Context &ctx) {
+  std::vector<u64> addrs;
+
+  for (ObjectFile *obj : ctx.objs)
+    for (Symbol *sym : obj->syms)
+      if (sym->file == obj)
+        if (sym->subsec->isec.osec == &ctx.text)
+          addrs.push_back(sym->get_addr(ctx));
+
+  std::sort(addrs.begin(), addrs.end());
+
+  contents.resize(addrs.size() * 5);
+
+  u8 *p = contents.data();
+  u64 last = PAGE_ZERO_SIZE;
+
+  for (u64 val : addrs) {
+    p += write_uleb(p, val - last);
+    last = val;
+  }
+
+  hdr.size = p - contents.data();
+  contents.resize(hdr.size);
+}
+
 void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }

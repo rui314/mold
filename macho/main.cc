@@ -38,11 +38,10 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.padding.hdr.size = 14808;
 
-  OutputSection *text = new OutputSection("__text");
-  text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-  text->hdr.p2align = 4;
-  add_section(ctx, *text, "__TEXT", "__text");
-  ctx.text_seg.chunks.push_back(text);
+  ctx.text.hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+  ctx.text.hdr.p2align = 4;
+  add_section(ctx, ctx.text, "__TEXT", "__text");
+  ctx.text_seg.chunks.push_back(&ctx.text);
 
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
