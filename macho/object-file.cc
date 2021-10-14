@@ -76,11 +76,11 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   i64 num_entries = hdr.size / sizeof(CompactUnwindEntry);
   unwind_records.reserve(num_entries);
 
+  CompactUnwindEntry *src = (CompactUnwindEntry *)(mf->data + hdr.offset);
+
   // Read compact unwind entries
-  for (i64 i = 0; i < num_entries; i++) {
-    CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[i];
-    unwind_records.emplace_back(src.code_len, src.encoding);
-  }
+  for (i64 i = 0; i < num_entries; i++)
+    unwind_records.emplace_back(src[i].code_len, src[i].encoding);
 
   // Read relocations
   MachRel *mach_rels = (MachRel *)(mf->data + hdr.reloff);
@@ -90,7 +90,6 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
       Fatal(ctx) << *this << ": relocation offset too large: " << i;
 
     i64 idx = r.offset / sizeof(CompactUnwindEntry);
-    CompactUnwindEntry &src = ((CompactUnwindEntry *)mf->data)[idx];
     UnwindRecord &dst = unwind_records[idx];
 
     auto error = [&]() {
@@ -103,12 +102,12 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
         error();
 
       Subsection *target =
-        sections[r.idx - 1]->find_subsection(ctx, src.code_start);
+        sections[r.idx - 1]->find_subsection(ctx, src[idx].code_start);
       if (!target)
         error();
 
       dst.subsec = target;
-      dst.offset = src.code_start - target->input_addr;
+      dst.offset = src[idx].code_start - target->input_addr;
       break;
     }
     case offsetof(CompactUnwindEntry, personality):

@@ -712,7 +712,7 @@ void UnwindEncoder::finish(Context &ctx) {
              num_lsda * sizeof(UnwindLsdaEntry) +
              pages.size() * (sizeof(UnwindFirstLevelPage) + 1) +
              pages.size() * sizeof(UnwindSecondLevelPage) +
-             records.size() * 4;
+             records.size() * 8;
 
   buf.resize(size);
 
@@ -769,7 +769,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
     u32 *encoding = (u32 *)entry;
     for (std::pair<u32, u32> kv : map)
-      encoding[kv.first] = kv.second;
+      encoding[kv.second] = kv.first;
 
     page1++;
     page2 = (UnwindSecondLevelPage *)(encoding + map.size());
