@@ -724,7 +724,7 @@ void UnwindEncoder::finish(Context &ctx) {
   hdr.personality_offset = sizeof(hdr);
   hdr.personality_count = personalities.size();
   hdr.page_offset = sizeof(hdr) + personalities.size() * 4;
-  hdr.page_count = pages.size();
+  hdr.page_count = pages.size() + 1;
 
   // Write the personalities
   u32 *per = (u32 *)(buf.data() + sizeof(hdr));
@@ -754,7 +754,7 @@ void UnwindEncoder::finish(Context &ctx) {
       map.insert({rec.encoding, map.size()});
 
     page2->kind = UNWIND_SECOND_LEVEL_COMPRESSED;
-    page2->page_offset = (u8 *)(page2 + 1) - buf.data();
+    page2->page_offset = sizeof(UnwindSecondLevelPage);
     page2->page_count = span.size();
 
     UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
@@ -764,7 +764,7 @@ void UnwindEncoder::finish(Context &ctx) {
       entry++;
     }
 
-    page2->encoding_offset = (u8 *)entry - buf.data();
+    page2->encoding_offset = (u8 *)entry - (u8 *)page2;
     page2->encoding_count = map.size();
 
     u32 *encoding = (u32 *)entry;
@@ -778,7 +778,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
   // Write a terminator
   UnwindRecord &last = records[records.size() - 1];
-  page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size;
+  page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size + 1;
   page1->page_offset = 0;
   page1->lsda_offset = page1[-1].lsda_offset;
 
