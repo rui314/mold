@@ -586,18 +586,6 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-TextSection::TextSection() {
-  strcpy(hdr.sectname, "__text");
-  hdr.p2align = __builtin_ctz(16);
-  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  hdr.size = contents.size();
-}
-
-
-void TextSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
-}
-
 StubsSection::StubsSection() {
   strcpy(hdr.sectname, "__stubs");
   hdr.p2align = __builtin_ctz(2);
