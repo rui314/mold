@@ -401,8 +401,18 @@ void dump_file(std::string path) {
       LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
       std::cout << " dataoff: 0x" << cmd.dataoff
                 << "\n datasize: 0x" << cmd.datasize
-                << "\n data: ";
-      print_bytes(buf + cmd.dataoff, cmd.datasize);
+                << "\n data:";
+
+      u8 *p = buf + cmd.dataoff;
+      u64 addr = 0;
+      for (;;) {
+        u64 delta = read_uleb(p);
+        if (!delta)
+          break;
+        addr += delta;
+        std::cout << std::hex << " 0x" << addr;
+      }
+      std::cout << "\n";
       break;
     }
     case LC_MAIN: {
