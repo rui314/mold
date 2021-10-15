@@ -685,16 +685,6 @@ void StubHelperSection::copy_buf(Context &ctx) {
   }
 }
 
-CstringSection::CstringSection() {
-  strcpy(hdr.sectname, "__cstring");
-  hdr.type = S_CSTRING_LITERALS;
-  hdr.size = sizeof(contents);
-}
-
-void CstringSection::copy_buf(Context &ctx) {
-  memcpy(ctx.buf + hdr.offset, contents, sizeof(contents));
-}
-
 UnwindInfoSection::UnwindInfoSection() {
   strcpy(hdr.sectname, "__unwind_info");
   hdr.p2align = __builtin_ctz(4);

@@ -387,14 +387,6 @@ public:
   static constexpr i64 ENTRY_SIZE = 10;
 };
 
-class CstringSection : public Chunk {
-public:
-  CstringSection();
-  void copy_buf(Context &ctx) override;
-
-  static constexpr char contents[] = "Hello world\n";
-};
-
 class UnwindEncoder {
 public:
   void add(UnwindRecord &rec);
@@ -504,7 +496,6 @@ struct Context {
   StubsSection stubs;
   OutputPadding padding;
   StubHelperSection stub_helper;
-  CstringSection cstring;
   UnwindInfoSection unwind_info;
   GotSection got;
   LazySymbolPtrSection lazy_symbol_ptr;
