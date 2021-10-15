@@ -549,9 +549,8 @@ void OutputFunctionStartsSection::compute_size(Context &ctx) {
 
   for (ObjectFile *obj : ctx.objs)
     for (Symbol *sym : obj->syms)
-      if (sym->file == obj)
-        if (sym->subsec->isec.osec == &ctx.text)
-          addrs.push_back(sym->get_addr(ctx));
+      if (sym->file == obj && sym->subsec && sym->subsec->isec.osec == &ctx.text)
+        addrs.push_back(sym->get_addr(ctx));
 
   std::sort(addrs.begin(), addrs.end());
 

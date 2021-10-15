@@ -13,6 +13,22 @@
 
 namespace mold::macho {
 
+static void create_internal_file(Context &ctx) {
+  ObjectFile *obj = new ObjectFile;
+  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
+  ctx.objs.push_back(obj);
+
+  auto add = [&](std::string_view name) {
+    Symbol *sym = intern(ctx, "__dyld_private");
+    sym->file = obj;
+    obj->syms.push_back(sym);
+  };
+
+  add("__dyld_private");
+  add("__mh_execute_header");
+  add("dyld_stub_binder");
+}
+
 static void add_section(Context &ctx, OutputSection &osec,
                         std::string_view segname, std::string_view sectname) {
   for (ObjectFile *obj : ctx.objs) {
@@ -128,6 +144,7 @@ int main(int argc, char **argv) {
   for (ObjectFile *obj : ctx.objs)
     obj->resolve_symbols(ctx);
 
+  create_internal_file(ctx);
   create_synthetic_chunks(ctx);
   fill_symtab(ctx);
   export_symbols(ctx);

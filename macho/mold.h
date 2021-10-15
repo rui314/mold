@@ -47,6 +47,8 @@ struct UnwindRecord {
 
 class ObjectFile {
 public:
+  ObjectFile() {}
+
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
   void parse(Context &ctx);
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
@@ -54,7 +56,7 @@ public:
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
-  MappedFile<Context> *mf;
+  MappedFile<Context> *mf = nullptr;
   std::vector<std::unique_ptr<InputSection>> sections;
   std::vector<Symbol *> syms;
   std::span<MachSym> mach_syms;
@@ -62,7 +64,7 @@ public:
   std::vector<UnwindRecord> unwind_records;
 
 private:
-  ObjectFile(Context &ctx, MappedFile<Context> *mf);
+  ObjectFile(MappedFile<Context> *mf) : mf(mf) {}
 };
 
 std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
