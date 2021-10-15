@@ -114,7 +114,7 @@ static i64 assign_offsets(Context &ctx) {
 }
 
 static void fix_synthetic_symbol_values(Context &ctx) {
-  intern(ctx, "__dyld_private")->value = ctx.text.hdr.addr;
+  intern(ctx, "__dyld_private")->value = ctx.data.hdr.addr;
 }
 
 void read_file(Context &ctx, MappedFile<Context> *mf) {

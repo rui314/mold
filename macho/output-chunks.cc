@@ -663,8 +663,6 @@ void StubHelperSection::copy_buf(Context &ctx) {
   u8 *start = ctx.buf + hdr.offset;
   u8 *buf = start;
 
-  static constexpr u64 dyld_private_addr = 0x100008008;
-
   u8 insn0[16] = {
     0x4c, 0x8d, 0x1d, 0, 0, 0, 0, // lea $__dyld_private(%rip), %r11
     0x41, 0x53,                   // push %r11
@@ -673,7 +671,7 @@ void StubHelperSection::copy_buf(Context &ctx) {
   };
 
   memcpy(buf, insn0, sizeof(insn0));
-  *(u32 *)(buf + 3) = dyld_private_addr - hdr.addr - 7;
+  *(u32 *)(buf + 3) = intern(ctx, "__dyld_private")->get_addr(ctx) - hdr.addr - 7;
   *(u32 *)(buf + 11) = ctx.got.hdr.addr - hdr.addr - 15;
 
   buf += 16;
