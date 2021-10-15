@@ -238,6 +238,13 @@ OutputSection::OutputSection(std::string_view name) {
 
 void OutputSection::compute_size(Context &ctx) {
   i64 sz = 0;
+
+  if (this == &ctx.data) {
+    // As a special case, we need a word-size padding at the beginning
+    // of __data for dyld. It is located by __dyld_private symbol.
+    sz = 8;
+  }
+
   for (Subsection *subsec : members) {
     subsec->output_offset = sz;
     sz += subsec->input_size;
@@ -867,18 +874,6 @@ void LazySymbolPtrSection::copy_buf(Context &ctx) {
   for (i64 i = 0; i < ctx.stubs.entries.size(); i++)
     buf[i] = ctx.stub_helper.hdr.addr + StubHelperSection::HEADER_SIZE +
              i * StubHelperSection::ENTRY_SIZE;
-}
-
-DataSection::DataSection() {
-  strcpy(hdr.sectname, "__data");
-  hdr.p2align = __builtin_ctz(8);
-
-  contents.resize(8);
-  hdr.size = contents.size();
-}
-
-void DataSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 } // namespace mold::macho

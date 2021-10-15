@@ -424,14 +424,6 @@ public:
   static constexpr i64 ENTRY_SIZE = 8;
 };
 
-class DataSection : public Chunk {
-public:
-  DataSection();
-  void copy_buf(Context &ctx) override;
-
-  std::vector<u8> contents;
-};
-
 //
 // dumper.cc
 //
@@ -499,7 +491,6 @@ struct Context {
   UnwindInfoSection unwind_info;
   GotSection got;
   LazySymbolPtrSection lazy_symbol_ptr;
-  DataSection data;
 
   OutputLoadCommand load_cmd;
   OutputRebaseSection rebase;
@@ -511,6 +502,7 @@ struct Context {
   OutputIndirectSymtabSection indir_symtab;
   OutputStrtabSection strtab;
   OutputSection text{"__text"};
+  OutputSection data{"__data"};
 
   std::vector<OutputSegment *> segments;
 };
