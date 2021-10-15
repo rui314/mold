@@ -18,15 +18,17 @@ static void create_internal_file(Context &ctx) {
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   ctx.objs.push_back(obj);
 
-  auto add = [&](std::string_view name) {
-    Symbol *sym = intern(ctx, "__dyld_private");
+  auto add = [&](std::string_view name, u64 value = 0) {
+    Symbol *sym = intern(ctx, name);
     sym->file = obj;
+    sym->value = value;
     obj->syms.push_back(sym);
   };
 
   add("__dyld_private");
-  add("__mh_execute_header");
-  add("dyld_stub_binder");
+  add("__mh_execute_header", PAGE_ZERO_SIZE);
+
+  obj->syms.push_back(intern(ctx, "dyld_stub_binder"));
 }
 
 static void add_section(Context &ctx, OutputSection &osec,
@@ -111,6 +113,10 @@ static i64 assign_offsets(Context &ctx) {
   return fileoff;
 }
 
+static void fix_synthetic_symbol_values(Context &ctx) {
+  intern(ctx, "__dyld_private")->value = ctx.text.hdr.addr;
+}
+
 void read_file(Context &ctx, MappedFile<Context> *mf) {
   switch (get_file_type(mf)) {
   case FileType::MACH_OBJ:
@@ -149,6 +155,7 @@ int main(int argc, char **argv) {
   fill_symtab(ctx);
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);
+  fix_synthetic_symbol_values(ctx);
 
   ctx.output_file = open_output_file(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
