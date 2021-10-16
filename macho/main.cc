@@ -151,7 +151,7 @@ uuids:
     value:           2E2C6712-8A41-3E2A-8D2D-9D58A9175EC2
 install-name:    '/usr/lib/ACIPCBTLib.dylib'
 )");
-
+    exit(0);
   }
 
   ctx.cmdline_args = expand_response_files(ctx, argv);

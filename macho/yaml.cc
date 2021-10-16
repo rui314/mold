@@ -47,7 +47,8 @@ std::vector<Token> YamlParser::tokenize(Context &ctx) {
 
     if (str.starts_with("- ")) {
       tokens.push_back({'-', str.substr(0, 1)});
-      str = str.substr(str.substr(1).find_first_not_of(' '));
+      str = str.substr(1);
+      str = str.substr(str.find_first_not_of(' '));
       if (!str.starts_with("\n"))
         indents.push_back(get_indent(str));
       continue;
@@ -68,14 +69,21 @@ std::vector<Token> YamlParser::tokenize(Context &ctx) {
       continue;
     }
 
-    if (str.starts_with(',')) {
-      tokens.push_back({',', str.substr(0, 1)});
+    if (str.starts_with(',') || str.starts_with('\n')) {
+      tokens.push_back({(u8)str[0], str.substr(0, 1)});
       str = str.substr(1);
       continue;
     }
 
     if (str.starts_with('#')) {
       str = str.substr(str.find('\n'));
+      continue;
+    }
+
+    if (str.starts_with(':')) {
+      tokens.push_back({':', str.substr(0, 1)});
+      str = str.substr(1);
+      str = str.substr(str.find_first_not_of(' '));
       continue;
     }
 
@@ -165,6 +173,8 @@ YamlParser::tokenize_list(Context &ctx, std::vector<Token> &tokens,
       str = str.substr(1);
       continue;
     }
+
+    str = tokenize_bare_string(ctx, tokens, str);
   }
 
   if (str.empty())
@@ -175,11 +185,12 @@ YamlParser::tokenize_list(Context &ctx, std::vector<Token> &tokens,
 std::string_view
 YamlParser::tokenize_string(Context &ctx, std::vector<Token> &tokens,
                             std::string_view str, char end) {
-  size_t pos = str.substr(1).find(end);
+  str = str.substr(1);
+  size_t pos = str.find(end);
   if (pos == str.npos)
     Fatal(ctx) << "unterminated string literal";
   tokens.push_back({Token::STRING, str.substr(1, pos)});
-  return str.substr(pos);
+  return str.substr(pos + 1);
 }
 
 std::string_view
