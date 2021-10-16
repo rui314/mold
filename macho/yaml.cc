@@ -3,7 +3,7 @@
 namespace mold::macho {
 
 struct Token {
-  enum { STRING = 1, LABEL, INDENT, DEDENT, RESET, END };
+  enum { STRING = 1, INDENT, DEDENT, RESET, END };
 
   u8 kind = 0;
   std::string_view str;
@@ -179,6 +179,7 @@ YamlParser::tokenize_list(Context &ctx, std::vector<Token> &tokens,
 
   if (str.empty())
     Error(ctx) << "unclosed list";
+  tokens.push_back({']', str.substr(0, 1)});
   return str.substr(1);
 }
 
@@ -189,7 +190,7 @@ YamlParser::tokenize_string(Context &ctx, std::vector<Token> &tokens,
   size_t pos = str.find(end);
   if (pos == str.npos)
     Fatal(ctx) << "unterminated string literal";
-  tokens.push_back({Token::STRING, str.substr(1, pos)});
+  tokens.push_back({Token::STRING, str.substr(1, pos - 1)});
   return str.substr(pos + 1);
 }
 
@@ -208,10 +209,7 @@ YamlNode YamlParser::parse(Context &ctx) {
   for (Token &tok : tokens) {
     switch (tok.kind) {
     case Token::STRING:
-      SyncOut(ctx) << "STRING " << tok.str;
-      break;
-    case Token::LABEL:
-      SyncOut(ctx) << "LABEL " << tok.str;
+      SyncOut(ctx) << "\"" << tok.str << "\"";
       break;
     case Token::INDENT:
       SyncOut(ctx) << "INDENT " << tok.str;
@@ -225,17 +223,11 @@ YamlNode YamlParser::parse(Context &ctx) {
     case Token::END:
       SyncOut(ctx) << "END " << tok.str;
       break;
-    case '[':
-      SyncOut(ctx) << "'[' " << tok.str;
+    case '\n':
+      SyncOut(ctx) << "'\\n'";
       break;
-    case ']':
-      SyncOut(ctx) << "']' " << tok.str;
-      break;
-    case ',':
-      SyncOut(ctx) << "',' " << tok.str;
-      break;
-    case '-':
-      SyncOut(ctx) << "'-' " << tok.str;
+    default:
+      SyncOut(ctx) << "'" << (char)tok.kind << "'";
       break;
     }
   }
