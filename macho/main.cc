@@ -137,6 +137,23 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
+  if (argc > 1 && std::string_view(argv[1]) == "-yamltest") {
+    YamlNode node = parse_yaml(ctx, R"(
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos, arm64e-macos ]
+uuids:
+  - target:          x86_64-macos
+    value:           323880D7-388B-314A-8A72-5B3C01709276
+  - target:          arm64-macos
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64e-macos
+    value:           2E2C6712-8A41-3E2A-8D2D-9D58A9175EC2
+install-name:    '/usr/lib/ACIPCBTLib.dylib'
+)");
+
+  }
+
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
