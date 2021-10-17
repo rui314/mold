@@ -235,8 +235,8 @@ exports:
 )");
 
     for (YamlNode &node : nodes) {
-      dump_yaml(ctx, node);
       SyncOut(ctx) << "---";
+      dump_yaml(ctx, node);
     }
     exit(0);
   }

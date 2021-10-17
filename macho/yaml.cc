@@ -286,7 +286,7 @@ YamlNode YamlParser::parse_list(Context &ctx, std::span<Token> &tok) {
 }
 
 YamlNode YamlParser::parse_map(Context &ctx, std::span<Token> &tok) {
-  std::unordered_map<std::string_view, YamlNode> map;
+  std::vector<std::pair<std::string_view, YamlNode>> map;
 
   while (tok[0].kind != Token::END && tok[0].kind != Token::DEDENT) {
     if (tok.size() < 2 || tok[0].kind != Token::STRING || tok[1].kind != ':')
@@ -294,7 +294,7 @@ YamlNode YamlParser::parse_map(Context &ctx, std::span<Token> &tok) {
 
     std::string_view key = tok[0].str;
     tok = tok.subspan(2);
-    map[key] = parse_element(ctx, tok);
+    map.push_back({key, parse_element(ctx, tok)});
   }
   return {map};
 }
@@ -348,11 +348,11 @@ void dump_yaml(Context &ctx, YamlNode &node, i64 depth) {
   }
 
   auto *elem =
-    std::get_if<std::unordered_map<std::string_view, YamlNode>>(&node.data);
+    std::get_if<std::vector<std::pair<std::string_view, YamlNode>>>(&node.data);
   assert(elem);
 
   SyncOut(ctx) << std::string(depth * 2, ' ') << "map:";
-  for (std::pair<const std::string_view, YamlNode> &kv : *elem) {
+  for (std::pair<std::string_view, YamlNode> &kv : *elem) {
     SyncOut(ctx) << std::string(depth * 2 + 2, ' ') << "key: " << kv.first;
     dump_yaml(ctx, kv.second, depth + 1);
   }

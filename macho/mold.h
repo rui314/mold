@@ -438,7 +438,7 @@ void dump_file(std::string path);
 struct YamlNode {
   std::variant<std::string_view,
                std::vector<YamlNode>,
-               std::unordered_map<std::string_view, YamlNode>> data;
+               std::vector<std::pair<std::string_view, YamlNode>>> data;
 };
 
 std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str);
