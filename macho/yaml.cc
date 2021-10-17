@@ -158,8 +158,8 @@ YamlParser::tokenize_list(Context &ctx, std::vector<Token> &tokens,
   str = str.substr(1);
 
   while (!str.empty() && str[0] != ']') {
-    if (str[0] == ' ' || str[0] == '\n') {
-      str = str.substr( str.find_first_not_of(" \n"));
+    if (str[0] == ' ') {
+      str = str.substr(str.find_first_not_of(' '));
       continue;
     }
 
@@ -229,9 +229,6 @@ void YamlParser::dump(Context &ctx) {
       break;
     case Token::END:
       SyncOut(ctx) << "END";
-      break;
-    case '\n':
-      SyncOut(ctx) << "'\\n'";
       break;
     default:
       SyncOut(ctx) << "'" << (char)tok.kind << "'";
@@ -336,12 +333,12 @@ std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str) {
 
 void dump_yaml(Context &ctx, YamlNode &node, i64 depth) {
   if (auto *elem = std::get_if<std::string_view>(&node.data)) {
-    SyncOut(ctx) << std::string(depth * 2, ' ') << '"' << *elem << "\"\n";
+    SyncOut(ctx) << std::string(depth * 2, ' ') << '"' << *elem << '"';
     return;
   }
 
   if (auto *elem = std::get_if<std::vector<YamlNode>>(&node.data)) {
-    SyncOut(ctx) << std::string(depth * 2, ' ') << "vector:\n";
+    SyncOut(ctx) << std::string(depth * 2, ' ') << "vector:";
     for (YamlNode &child : *elem)
       dump_yaml(ctx, child, depth + 1);
     return;
@@ -351,10 +348,9 @@ void dump_yaml(Context &ctx, YamlNode &node, i64 depth) {
     std::get_if<std::unordered_map<std::string_view, YamlNode>>(&node.data);
   assert(elem);
 
-  SyncOut(ctx) << std::string(depth * 2, ' ') << "map:\n";
+  SyncOut(ctx) << std::string(depth * 2, ' ') << "map:";
   for (std::pair<const std::string_view, YamlNode> &kv : *elem) {
-    SyncOut(ctx) << std::string(depth * 2 + 2, ' ')
-                 << "key: " << kv.first << "\n";
+    SyncOut(ctx) << std::string(depth * 2 + 2, ' ') << "key: " << kv.first;
     dump_yaml(ctx, kv.second, depth + 1);
   }
 }
