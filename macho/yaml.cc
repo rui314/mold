@@ -35,7 +35,7 @@ private:
   YamlNode parse_element(Context &ctx, std::span<Token> &tok);
   YamlNode parse_list(Context &ctx, std::span<Token> &tok);
   YamlNode parse_map(Context &ctx, std::span<Token> &tok);
-  YamlNode parse_scalar(Context &ctx, std::span<Token> &tok);
+  YamlNode parse_flow_element(Context &ctx, std::span<Token> &tok);
   YamlNode parse_flow_list(Context &ctx, std::span<Token> &tok);
 
   std::string_view input;
@@ -270,10 +270,7 @@ YamlNode YamlParser::parse_element(Context &ctx, std::span<Token> &tok) {
   if (tok.size() > 2 && tok[0].kind == Token::STRING && tok[1].kind == ':')
     return parse_map(ctx, tok);
 
-  if (tok[0].kind == '[')
-    return parse_flow_list(ctx, tok);
-
-  return parse_scalar(ctx, tok);
+  return parse_flow_element(ctx, tok);
 }
 
 YamlNode YamlParser::parse_list(Context &ctx, std::span<Token> &tok) {
@@ -285,21 +282,81 @@ YamlNode YamlParser::parse_list(Context &ctx, std::span<Token> &tok) {
     tok = tok.subspan(1);
     vec.push_back(parse_element(ctx, tok));
   }
-
   return {vec};
 }
 
 YamlNode YamlParser::parse_map(Context &ctx, std::span<Token> &tok) {
+  std::unordered_map<std::string_view, YamlNode> map;
+
+  while (tok[0].kind != Token::END && tok[0].kind != Token::DEDENT) {
+    if (tok.size() < 2 || tok[0].kind != Token::STRING || tok[1].kind != ':')
+      Fatal(ctx) << "map key expected";
+
+    std::string_view key = tok[0].str;
+    tok = tok.subspan(2);
+    map[key] = parse_element(ctx, tok);
+  }
+  return {map};
 }
 
-YamlNode YamlParser::parse_scalar(Context &ctx, std::span<Token> &tok) {
+YamlNode YamlParser::parse_flow_element(Context &ctx, std::span<Token> &tok) {
+  if (tok[0].kind == '[') {
+    tok = tok.subspan(1);
+    return parse_flow_list(ctx, tok);
+  }
+
+  if (tok[0].kind != Token::STRING)
+    Fatal(ctx) << "scalar expected";
+
+  std::string_view val = tok[0].str;
+  tok = tok.subspan(1);
+  return {val};
 }
 
 YamlNode YamlParser::parse_flow_list(Context &ctx, std::span<Token> &tok) {
+  std::vector<YamlNode> vec;
+  while (tok[0].kind != ']' && tok[0].kind != Token::END) {
+    vec.push_back(parse_flow_element(ctx, tok));
+    if (tok[0].kind == ']')
+      break;
+    if (tok[0].kind != ',')
+      Fatal(ctx) << "comma expected";
+    tok = tok.subspan(1);
+  }
+
+  if (tok[0].kind == Token::END)
+    Fatal(ctx) << "unterminated flow list";
+  tok = tok.subspan(1);
+  return {vec};
 }
 
 std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str) {
   return YamlParser(str).parse(ctx);
+}
+
+void dump_yaml(Context &ctx, YamlNode &node, i64 depth) {
+  if (auto *elem = std::get_if<std::string_view>(&node.data)) {
+    SyncOut(ctx) << std::string(depth * 2, ' ') << '"' << *elem << "\"\n";
+    return;
+  }
+
+  if (auto *elem = std::get_if<std::vector<YamlNode>>(&node.data)) {
+    SyncOut(ctx) << std::string(depth * 2, ' ') << "vector:\n";
+    for (YamlNode &child : *elem)
+      dump_yaml(ctx, child, depth + 1);
+    return;
+  }
+
+  auto *elem =
+    std::get_if<std::unordered_map<std::string_view, YamlNode>>(&node.data);
+  assert(elem);
+
+  SyncOut(ctx) << std::string(depth * 2, ' ') << "map:\n";
+  for (std::pair<const std::string_view, YamlNode> &kv : *elem) {
+    SyncOut(ctx) << std::string(depth * 2 + 2, ' ')
+                 << "key: " << kv.first << "\n";
+    dump_yaml(ctx, kv.second, depth + 1);
+  }
 }
 
 } // namespace mold::macho

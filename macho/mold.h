@@ -437,11 +437,12 @@ void dump_file(std::string path);
 
 struct YamlNode {
   std::variant<std::string_view,
-               std::unordered_map<std::string_view, YamlNode>,
-               std::vector<YamlNode>> data;
+               std::vector<YamlNode>,
+               std::unordered_map<std::string_view, YamlNode>> data;
 };
 
 std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str);
+void dump_yaml(Context &ctx, YamlNode &node, i64 depth = 0);
 
 //
 // cmdline.cc

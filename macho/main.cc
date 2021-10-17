@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
   }
 
   if (argc > 1 && std::string_view(argv[1]) == "-yamltest") {
-    YamlNode node = parse_yaml(ctx, R"(
+    std::vector<YamlNode> nodes = parse_yaml(ctx, R"(
 --- !tapi-tbd
 tbd-version:     4
 targets:         [ x86_64-macos, arm64-macos, arm64e-macos ]
@@ -151,6 +151,9 @@ uuids:
     value:           2E2C6712-8A41-3E2A-8D2D-9D58A9175EC2
 install-name:    '/usr/lib/ACIPCBTLib.dylib'
 )");
+
+    for (YamlNode &node : nodes)
+      dump_yaml(ctx, node);
     exit(0);
   }
 
