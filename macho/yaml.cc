@@ -17,7 +17,8 @@ public:
 
 private:
   std::vector<Token> tokenize(Context &ctx);
-  i64 get_indent(std::string_view str);
+  void tokenize_line(Context &ctx, std::vector<Token> &tokens,
+                     std::string_view line);
 
   std::string_view
   tokenize_bare_string(Context &ctx, std::vector<Token> &tokens,
@@ -35,115 +36,112 @@ private:
 
 std::vector<Token> YamlParser::tokenize(Context &ctx) {
   std::vector<Token> tokens;
-  std::vector<i64> indents;
+  std::vector<i64> indents = {0};
   std::string_view str = input;
 
+  auto indent = [&](i64 depth) {
+    tokens.push_back({Token::INDENT, str});
+    indents.push_back(depth);
+  };
+
+  auto dedent = [&]() {
+    assert(indents.size() > 1);
+    tokens.push_back({Token::DEDENT, str});
+    indents.pop_back();
+  };
+
+  auto tokenize_line = [&](std::string_view line) {
+    if (line.empty())
+      return;
+
+    const char *start = line.data();
+
+    if (line.starts_with("---")) {
+      while (indents.size() > 1)
+        dedent();
+      tokens.push_back({Token::RESET, line.substr(0, 3)});
+      return;
+    }
+
+    size_t pos = line.find_first_not_of(" \t");
+    if (pos == line.npos || line[pos] == '#')
+      return;
+
+    if (indents.back() != pos) {
+      if (indents.back() < pos) {
+        indent(pos);
+      } else {
+        while (indents.back() != pos) {
+          if (pos < indents.back())
+            dedent();
+          else
+            Fatal(ctx) << "bad indentation";
+        }
+      }
+    }
+
+    line = line.substr(pos);
+
+    while (!line.empty()) {
+      if (line.starts_with("- ")) {
+        tokens.push_back({'-', line.substr(0, 1)});
+        size_t pos = line.find_first_not_of(' ', 1);
+        if (pos == line.npos)
+          return;
+        line = line.substr(pos);
+        indent(line.data() - start);
+        continue;
+      }
+
+      if (line.starts_with('[')) {
+        line = tokenize_list(ctx, tokens, line);
+        continue;
+      }
+
+      if (line.starts_with('\'')) {
+        line = tokenize_string(ctx, tokens, line, '\'');
+        continue;
+      }
+
+      if (line.starts_with('"')) {
+        line = tokenize_string(ctx, tokens, line, '"');
+        continue;
+      }
+
+      if (line.starts_with(',')) {
+        tokens.push_back({(u8)line[0], line.substr(0, 1)});
+        line = line.substr(1);
+        continue;
+      }
+
+      if (line.starts_with('#'))
+        return;
+
+      if (line.starts_with(':')) {
+        tokens.push_back({':', line.substr(0, 1)});
+        size_t pos = line.find_first_not_of(' ', 1);
+        if (pos == line.npos)
+          return;
+        line = line.substr(pos);
+        continue;
+      }
+
+      line = tokenize_bare_string(ctx, tokens, line);
+    }
+  };
+
   while (!str.empty()) {
-    if (str.starts_with("---")) {
-      tokens.push_back({Token::RESET, str.substr(0, 3)});
-      str = str.substr(str.find('\n'));
-      continue;
-    }
-
-    if (str.starts_with("- ")) {
-      tokens.push_back({'-', str.substr(0, 1)});
-      str = str.substr(1);
-      str = str.substr(str.find_first_not_of(' '));
-      if (!str.starts_with("\n"))
-        indents.push_back(get_indent(str));
-      continue;
-    }
-
-    if (str.starts_with('[')) {
-      str = tokenize_list(ctx, tokens, str);
-      continue;
-    }
-
-    if (str.starts_with('\'')) {
-      str = tokenize_string(ctx, tokens, str, '\'');
-      continue;
-    }
-
-    if (str.starts_with('"')) {
-      str = tokenize_string(ctx, tokens, str, '"');
-      continue;
-    }
-
-    if (str.starts_with(',') || str.starts_with('\n')) {
-      tokens.push_back({(u8)str[0], str.substr(0, 1)});
-      str = str.substr(1);
-      continue;
-    }
-
-    if (str.starts_with('#')) {
-      str = str.substr(str.find('\n'));
-      continue;
-    }
-
-    if (str.starts_with(':')) {
-      tokens.push_back({':', str.substr(0, 1)});
-      str = str.substr(1);
-      str = str.substr(str.find_first_not_of(' '));
-      continue;
-    }
-
-    if (str.starts_with(' ')) {
-      size_t pos = str.find_first_not_of(' ');
-      if (str[pos] == '#') {
-        str = str.substr(str.find('\n'));
-        continue;
-      }
-
-      if (str[pos] == '\n') {
-        str = str.substr(pos + 1);
-        continue;
-      }
-
-      if (indents.empty() || indents.back() < pos) {
-        tokens.push_back({Token::INDENT, str.substr(0, pos)});
-        str = str.substr(pos);
-        continue;
-      }
-
-      if (indents.back() == pos) {
-        str = str.substr(pos);
-        continue;
-      }
-
-      assert(indents.back() > pos);
-      indents.pop_back();
-
-      tokens.push_back({Token::DEDENT, str.substr(0, pos)});
-      str = str.substr(pos);
-
-      while (!indents.empty()) {
-        if (indents.back() == pos)
-          break;
-        if (indents.back() < pos)
-          Fatal(ctx) << "bad indentation";
-        tokens.push_back(tokens.back());
-      }
-      continue;
-    }
-
-    str = tokenize_bare_string(ctx, tokens, str);
+    size_t pos = str.find('\n');
+    if (pos == str.npos)
+      pos = str.size();
+    tokenize_line(str.substr(0, pos));
+    str = str.substr(pos + 1);
   }
 
+  while (indents.size() > 1)
+    dedent();
   tokens.push_back({Token::END, str});
   return tokens;
-}
-
-i64 YamlParser::get_indent(std::string_view str) {
-  u8 *p = (u8 *)str.data();
-  u8 *begin = (u8 *)input.data();
-
-  assert(begin <= p && p < begin + input.size());
-
-  std::string_view s = input.substr(0, p - begin);
-  size_t pos = s.rfind('\n');
-  if (pos == s.npos)
-    return s.size();
-  return s.size() - pos;
 }
 
 std::string_view
@@ -199,6 +197,8 @@ YamlParser::tokenize_bare_string(Context &ctx, std::vector<Token> &tokens,
                                  std::string_view str) {
   size_t pos = str.find_first_not_of(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-/.");
+  if (pos == str.npos)
+    pos = str.size();
   tokens.push_back({Token::STRING, str.substr(0, pos)});
   return str.substr(pos);
 }
@@ -212,16 +212,16 @@ YamlNode YamlParser::parse(Context &ctx) {
       SyncOut(ctx) << "\"" << tok.str << "\"";
       break;
     case Token::INDENT:
-      SyncOut(ctx) << "INDENT " << tok.str;
+      SyncOut(ctx) << "INDENT";
       break;
     case Token::DEDENT:
-      SyncOut(ctx) << "DEDENT " << tok.str;
+      SyncOut(ctx) << "DEDENT";
       break;
     case Token::RESET:
-      SyncOut(ctx) << "RESET " << tok.str;
+      SyncOut(ctx) << "RESET";
       break;
     case Token::END:
-      SyncOut(ctx) << "END " << tok.str;
+      SyncOut(ctx) << "END";
       break;
     case '\n':
       SyncOut(ctx) << "'\\n'";
@@ -236,9 +236,6 @@ YamlNode YamlParser::parse(Context &ctx) {
 }
 
 YamlNode parse_yaml(Context &ctx, std::string_view str) {
-  assert(!str.empty());
-  assert(str[str.size() - 1] == '\n');
-
   return YamlParser(str).parse(ctx);
 }
 
