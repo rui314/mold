@@ -441,7 +441,7 @@ struct YamlNode {
                std::vector<YamlNode>> data;
 };
 
-YamlNode parse_yaml(Context &ctx, std::string_view str);
+std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str);
 
 //
 // cmdline.cc

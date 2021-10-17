@@ -13,7 +13,8 @@ class YamlParser {
 public:
   YamlParser(std::string_view input) : input(input) {}
 
-  YamlNode parse(Context &ctx);
+  std::vector<YamlNode> parse(Context &ctx);
+  void dump(Context &ctx);
 
 private:
   std::vector<Token> tokenize(Context &ctx);
@@ -30,6 +31,12 @@ private:
   std::string_view
   tokenize_string(Context &ctx, std::vector<Token> &tokens,
                   std::string_view str, char end);
+
+  YamlNode parse_element(Context &ctx, std::span<Token> &tok);
+  YamlNode parse_list(Context &ctx, std::span<Token> &tok);
+  YamlNode parse_map(Context &ctx, std::span<Token> &tok);
+  YamlNode parse_scalar(Context &ctx, std::span<Token> &tok);
+  YamlNode parse_flow_list(Context &ctx, std::span<Token> &tok);
 
   std::string_view input;
 };
@@ -203,7 +210,7 @@ YamlParser::tokenize_bare_string(Context &ctx, std::vector<Token> &tokens,
   return str.substr(pos);
 }
 
-YamlNode YamlParser::parse(Context &ctx) {
+void YamlParser::dump(Context &ctx) {
   std::vector<Token> tokens = tokenize(ctx);
 
   for (Token &tok : tokens) {
@@ -231,11 +238,67 @@ YamlNode YamlParser::parse(Context &ctx) {
       break;
     }
   }
-
-  return {"foo"};
 }
 
-YamlNode parse_yaml(Context &ctx, std::string_view str) {
+std::vector<YamlNode> YamlParser::parse(Context &ctx) {
+  std::vector<Token> tokens = tokenize(ctx);
+  std::span<Token> tok(tokens);
+
+  std::vector<YamlNode> vec;
+
+  while (tok[0].kind != Token::END) {
+    if (tok[0].kind == Token::RESET)
+      tok = tok.subspan(1);
+    else
+      vec.push_back(parse_element(ctx, tok));
+  }
+  return vec;
+}
+
+YamlNode YamlParser::parse_element(Context &ctx, std::span<Token> &tok) {
+  if (tok[0].kind == Token::INDENT) {
+    tok = tok.subspan(1);
+    YamlNode node = parse_element(ctx, tok);
+    assert(tok[0].kind == Token::DEDENT);
+    tok = tok.subspan(1);
+    return node;
+  }
+
+  if (tok[0].kind == '-')
+    return parse_list(ctx, tok);
+
+  if (tok.size() > 2 && tok[0].kind == Token::STRING && tok[1].kind == ':')
+    return parse_map(ctx, tok);
+
+  if (tok[0].kind == '[')
+    return parse_flow_list(ctx, tok);
+
+  return parse_scalar(ctx, tok);
+}
+
+YamlNode YamlParser::parse_list(Context &ctx, std::span<Token> &tok) {
+  std::vector<YamlNode> vec;
+
+  while (tok[0].kind != Token::END && tok[0].kind != Token::DEDENT) {
+    if (tok[0].kind != '-')
+      Fatal(ctx) << "list element expected";
+    tok = tok.subspan(1);
+    vec.push_back(parse_element(ctx, tok));
+  }
+
+  return {vec};
+}
+
+YamlNode YamlParser::parse_map(Context &ctx, std::span<Token> &tok) {
+}
+
+YamlNode YamlParser::parse_scalar(Context &ctx, std::span<Token> &tok) {
+}
+
+YamlNode YamlParser::parse_flow_list(Context &ctx, std::span<Token> &tok) {
+}
+
+std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str) {
   return YamlParser(str).parse(ctx);
 }
 
