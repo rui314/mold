@@ -183,7 +183,7 @@ YamlParser::tokenize_list(Context &ctx, std::vector<Token> &tokens,
   }
 
   if (str.empty())
-    Error(ctx) << "unclosed list";
+    Fatal(ctx) << "unclosed list";
   tokens.push_back({']', str.substr(0, 1)});
   return str.substr(1);
 }
