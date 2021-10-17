@@ -146,11 +146,98 @@ targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatal
 uuids:
   - target:          x86_64-macos
     value:           89E331F9-9A00-3EA4-B49F-FA2B91AE9182
+  - target:          x86_64-maccatalyst
+    value:           89E331F9-9A00-3EA4-B49F-FA2B91AE9182
+  - target:          arm64-macos
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64-maccatalyst
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64e-macos
+    value:           A9F7E132-0FFC-31FC-83C6-3848CA460DF3
+  - target:          arm64e-maccatalyst
+    value:           A9F7E132-0FFC-31FC-83C6-3848CA460DF3
 install-name:    '/usr/lib/libSystem.B.dylib'
+current-version: 1292.100.5
+reexported-libraries:
+  - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst,
+                       arm64e-macos, arm64e-maccatalyst ]
+    libraries:       [ '/usr/lib/system/libcache.dylib', '/usr/lib/system/libcommonCrypto.dylib',
+                       '/usr/lib/system/libcompiler_rt.dylib', '/usr/lib/system/libcopyfile.dylib',
+                       '/usr/lib/system/libcorecrypto.dylib', '/usr/lib/system/libdispatch.dylib',
+                       '/usr/lib/system/libdyld.dylib', '/usr/lib/system/libkeymgr.dylib',
+                       '/usr/lib/system/liblaunch.dylib', '/usr/lib/system/libmacho.dylib',
+                       '/usr/lib/system/libquarantine.dylib', '/usr/lib/system/libremovefile.dylib',
+                       '/usr/lib/system/libsystem_asl.dylib', '/usr/lib/system/libsystem_blocks.dylib',
+                       '/usr/lib/system/libsystem_c.dylib', '/usr/lib/system/libsystem_collections.dylib',
+                       '/usr/lib/system/libsystem_configuration.dylib', '/usr/lib/system/libsystem_containermanager.dylib',
+                       '/usr/lib/system/libsystem_coreservices.dylib', '/usr/lib/system/libsystem_darwin.dylib',
+                       '/usr/lib/system/libsystem_dnssd.dylib', '/usr/lib/system/libsystem_featureflags.dylib',
+                       '/usr/lib/system/libsystem_info.dylib', '/usr/lib/system/libsystem_kernel.dylib',
+                       '/usr/lib/system/libsystem_m.dylib', '/usr/lib/system/libsystem_malloc.dylib',
+                       '/usr/lib/system/libsystem_networkextension.dylib', '/usr/lib/system/libsystem_notify.dylib',
+                       '/usr/lib/system/libsystem_platform.dylib', '/usr/lib/system/libsystem_product_info_filter.dylib',
+                       '/usr/lib/system/libsystem_pthread.dylib', '/usr/lib/system/libsystem_sandbox.dylib',
+                       '/usr/lib/system/libsystem_secinit.dylib', '/usr/lib/system/libsystem_symptoms.dylib',
+                       '/usr/lib/system/libsystem_trace.dylib', '/usr/lib/system/libunwind.dylib',
+                       '/usr/lib/system/libxpc.dylib' ]
+exports:
+  - targets:         [ x86_64-maccatalyst, x86_64-macos ]
+    symbols:         [ 'R8289209$_close', 'R8289209$_fork', 'R8289209$_fsync', 'R8289209$_getattrlist',
+                       'R8289209$_getrlimit', 'R8289209$_getxattr', 'R8289209$_open',
+                       'R8289209$_pthread_attr_destroy', 'R8289209$_pthread_attr_init',
+                       'R8289209$_pthread_attr_setdetachstate', 'R8289209$_pthread_create',
+                       'R8289209$_pthread_mutex_lock', 'R8289209$_pthread_mutex_unlock',
+                       'R8289209$_pthread_self', 'R8289209$_ptrace', 'R8289209$_read',
+                       'R8289209$_setattrlist', 'R8289209$_setrlimit', 'R8289209$_sigaction',
+                       'R8289209$_stat', 'R8289209$_sysctl', 'R8289209$_time', 'R8289209$_unlink',
+                       'R8289209$_write' ]
+  - targets:         [ x86_64-maccatalyst, x86_64-macos, arm64e-maccatalyst, arm64e-macos,
+                       arm64-macos, arm64-maccatalyst ]
+    symbols:         [ ___crashreporter_info__, _libSystem_atfork_child, _libSystem_atfork_parent,
+                       _libSystem_atfork_prepare, _mach_init_routine ]
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst,
+                   arm64e-macos, arm64e-maccatalyst ]
+uuids:
+  - target:          x86_64-macos
+    value:           ED7D7EB4-B248-33A9-9E6A-58F45EAB7602
+  - target:          x86_64-maccatalyst
+    value:           ED7D7EB4-B248-33A9-9E6A-58F45EAB7602
+  - target:          arm64-macos
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64-maccatalyst
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64e-macos
+    value:           758F8B92-8581-3370-9F97-1E3AB045122F
+  - target:          arm64e-maccatalyst
+    value:           758F8B92-8581-3370-9F97-1E3AB045122F
+install-name:    '/usr/lib/system/libcache.dylib'
+current-version: 83
+parent-umbrella:
+  - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst,
+                       arm64e-macos, arm64e-maccatalyst ]
+    umbrella:        System
+exports:
+  - targets:         [ arm64e-macos, x86_64-macos, x86_64-maccatalyst, arm64e-maccatalyst,
+                       arm64-macos, arm64-maccatalyst ]
+    symbols:         [ _cache_create, _cache_destroy, _cache_get, _cache_get_and_retain,
+                       _cache_get_cost_hint, _cache_get_count_hint, _cache_get_info,
+                       _cache_get_info_for_key, _cache_get_info_for_keys, _cache_get_minimum_values_hint,
+                       _cache_get_name, _cache_hash_byte_string, _cache_invoke, _cache_key_hash_cb_cstring,
+                       _cache_key_hash_cb_integer, _cache_key_is_equal_cb_cstring,
+                       _cache_key_is_equal_cb_integer, _cache_print, _cache_print_stats,
+                       _cache_release_cb_free, _cache_release_value, _cache_remove,
+                       _cache_remove_all, _cache_remove_with_block, _cache_set_and_retain,
+                       _cache_set_cost_hint, _cache_set_count_hint, _cache_set_minimum_values_hint,
+                       _cache_set_name, _cache_simulate_memory_warning_event, _cache_value_make_nonpurgeable_cb,
+                       _cache_value_make_purgeable_cb ]
 )");
 
-    for (YamlNode &node : nodes)
+    for (YamlNode &node : nodes) {
       dump_yaml(ctx, node);
+      SyncOut(ctx) << "---";
+    }
     exit(0);
   }
 

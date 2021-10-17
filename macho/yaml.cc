@@ -3,7 +3,7 @@
 namespace mold::macho {
 
 struct Token {
-  enum { STRING = 1, INDENT, DEDENT, RESET, END };
+  enum { STRING = 1, INDENT, DEDENT, END };
 
   u8 kind = 0;
   std::string_view str;
@@ -69,7 +69,7 @@ std::vector<Token> YamlParser::tokenize(Context &ctx) {
     if (str.starts_with("---")) {
       while (indents.size() > 1)
         dedent();
-      tokens.push_back({Token::RESET, str.substr(0, 3)});
+      tokens.push_back({Token::END, str.substr(0, 3)});
       return skip_line(str);
     }
 
@@ -226,9 +226,6 @@ void YamlParser::dump(Context &ctx) {
     case Token::DEDENT:
       SyncOut(ctx) << "DEDENT";
       break;
-    case Token::RESET:
-      SyncOut(ctx) << "RESET";
-      break;
     case Token::END:
       SyncOut(ctx) << "END";
       break;
@@ -245,11 +242,15 @@ std::vector<YamlNode> YamlParser::parse(Context &ctx) {
 
   std::vector<YamlNode> vec;
 
-  while (tok[0].kind != Token::END) {
-    if (tok[0].kind == Token::RESET)
+  while (!tok.empty()) {
+    if (tok[0].kind == Token::END) {
       tok = tok.subspan(1);
-    else
-      vec.push_back(parse_element(ctx, tok));
+      continue;
+    }
+
+    vec.push_back(parse_element(ctx, tok));
+    if (tok[0].kind != Token::END)
+      Fatal(ctx) << "stray token";
   }
   return vec;
 }
