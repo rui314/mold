@@ -68,6 +68,14 @@ std::optional<YamlError> YamlParser::tokenize() {
       return {};
     }
 
+    if (str.starts_with("...")) {
+      while (indents.size() > 1)
+        dedent(str);
+      tokens.push_back({Token::END, str.substr(0, 3)});
+      str = str.substr(str.size());
+      return {};
+    }
+
     size_t pos = str.find_first_not_of(" \t");
     if (pos == str.npos || str[pos] == '#' || str[pos] == '\n') {
       skip_line(str);
@@ -151,10 +159,6 @@ std::optional<YamlError> YamlParser::tokenize() {
   while (!str.empty())
     if (std::optional<YamlError> err = tokenize_line(str))
       return err;
-
-  while (indents.size() > 1)
-    dedent(str);
-  tokens.push_back({Token::END, str});
   return {};
 }
 

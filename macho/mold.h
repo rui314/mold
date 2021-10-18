@@ -450,6 +450,20 @@ std::variant<std::vector<YamlNode>, YamlError>
 parse_yaml(std::string_view str);
 
 //
+// tapi.cc
+//
+
+struct TextBasedDylib {
+  std::string_view uuid;
+  std::string_view install_name;
+  std::string_view parent_umbrella;
+  std::vector<std::string_view> reexported_libs;
+  std::vector<std::string_view> exports;
+};
+
+std::vector<TextBasedDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf);
+
+//
 // cmdline.cc
 //
 
