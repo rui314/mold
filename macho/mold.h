@@ -441,8 +441,13 @@ struct YamlNode {
                std::vector<std::pair<std::string_view, YamlNode>>> data;
 };
 
-std::vector<YamlNode> parse_yaml(Context &ctx, std::string_view str);
-void dump_yaml(Context &ctx, YamlNode &node, i64 depth = 0);
+struct YamlError {
+  std::string msg;
+  i64 pos;
+};
+
+std::variant<std::vector<YamlNode>, YamlError>
+parse_yaml(std::string_view str);
 
 //
 // cmdline.cc

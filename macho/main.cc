@@ -127,6 +127,30 @@ void read_file(Context &ctx, MappedFile<Context> *mf) {
   }
 }
 
+void dump_yaml(Context &ctx, YamlNode &node, i64 depth = 0) {
+  if (auto *elem = std::get_if<std::string_view>(&node.data)) {
+    SyncOut(ctx) << std::string(depth * 2, ' ') << '"' << *elem << '"';
+    return;
+  }
+
+  if (auto *elem = std::get_if<std::vector<YamlNode>>(&node.data)) {
+    SyncOut(ctx) << std::string(depth * 2, ' ') << "vector:";
+    for (YamlNode &child : *elem)
+      dump_yaml(ctx, child, depth + 1);
+    return;
+  }
+
+  auto *elem =
+    std::get_if<std::vector<std::pair<std::string_view, YamlNode>>>(&node.data);
+  assert(elem);
+
+  SyncOut(ctx) << std::string(depth * 2, ' ') << "map:";
+  for (std::pair<std::string_view, YamlNode> &kv : *elem) {
+    SyncOut(ctx) << std::string(depth * 2 + 2, ' ') << "key: " << kv.first;
+    dump_yaml(ctx, kv.second, depth + 1);
+  }
+}
+
 int main(int argc, char **argv) {
   Context ctx;
 
@@ -138,7 +162,7 @@ int main(int argc, char **argv) {
   }
 
   if (argc > 1 && std::string_view(argv[1]) == "-yamltest") {
-    std::vector<YamlNode> nodes = parse_yaml(ctx, R"(
+    std::variant<std::vector<YamlNode>, YamlError> res = parse_yaml(R"(
 --- !tapi-tbd
 tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst,
@@ -234,7 +258,10 @@ exports:
                        _cache_value_make_purgeable_cb ]
 )");
 
-    for (YamlNode &node : nodes) {
+    if (auto *err = std::get_if<YamlError>(&res))
+      Fatal(ctx) << "YAML parse error: " << err->msg;
+
+    for (YamlNode &node : std::get<std::vector<YamlNode>>(res)) {
       SyncOut(ctx) << "---";
       dump_yaml(ctx, node);
     }
