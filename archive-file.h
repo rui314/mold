@@ -22,6 +22,7 @@ enum class FileType {
   MACH_DYLIB,
   AR,
   THIN_AR,
+  TAPI,
   TEXT,
   LLVM_BITCODE,
 };
@@ -61,6 +62,8 @@ FileType get_file_type(MappedFile<C> *mf) {
     return FileType::AR;
   if (data.starts_with("!<thin>\n"))
     return FileType::THIN_AR;
+  if (data.starts_with("--- !tapi-tbd"))
+    return FileType::TAPI;
   if (is_text_file(mf))
     return FileType::TEXT;
   if (data.starts_with("\xDE\xC0\x17\x0B"))
