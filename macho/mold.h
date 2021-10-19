@@ -438,7 +438,7 @@ void dump_file(std::string path);
 struct YamlNode {
   std::variant<std::string_view,
                std::vector<YamlNode>,
-               std::vector<std::pair<std::string_view, YamlNode>>> data;
+               std::unordered_map<std::string_view, YamlNode>> data;
 };
 
 struct YamlError {
@@ -456,6 +456,7 @@ parse_yaml(std::string_view str);
 struct TextBasedDylib {
   std::string_view uuid;
   std::string_view install_name;
+  std::string_view current_version;
   std::string_view parent_umbrella;
   std::vector<std::string_view> reexported_libs;
   std::vector<std::string_view> exports;

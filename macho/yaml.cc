@@ -297,7 +297,7 @@ YamlParser::parse_list(std::span<Token> &tok) {
 
 std::variant<YamlNode, YamlError>
 YamlParser::parse_map(std::span<Token> &tok) {
-  std::vector<std::pair<std::string_view, YamlNode>> map;
+  std::unordered_map<std::string_view, YamlNode> map;
 
   while (tok[0].kind != Token::END && tok[0].kind != Token::DEDENT) {
     if (tok.size() < 2 || tok[0].kind != Token::STRING || tok[1].kind != ':')
@@ -309,7 +309,7 @@ YamlParser::parse_map(std::span<Token> &tok) {
     std::variant<YamlNode, YamlError> elem = parse_element(tok);
     if (YamlError *err = std::get_if<YamlError>(&elem))
       return *err;
-    map.push_back({key, std::get<YamlNode>(elem)});
+    map[key] = std::get<YamlNode>(elem);
   }
   return YamlNode{map};
 }

@@ -142,6 +142,13 @@ int main(int argc, char **argv) {
       "MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.tbd";
     std::vector<TextBasedDylib> tbds =
       parse_tbd(ctx, MappedFile<Context>::must_open(ctx, path));
+
+    for (TextBasedDylib &tbd : tbds) {
+      SyncOut(ctx) << "tbd: uuid=" << tbd.uuid
+                   << " install_name=" << tbd.install_name
+                   << " current_version=" << tbd.current_version
+                   << " parent_umbrella=" << tbd.parent_umbrella;
+    }
     exit(0);
   }
 
