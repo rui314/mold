@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <tbb/concurrent_hash_map.h>
+#include <unordered_map>
 #include <variant>
 
 namespace mold::macho {
