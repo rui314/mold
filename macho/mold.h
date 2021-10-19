@@ -456,7 +456,7 @@ parse_yaml(std::string_view str);
 struct TextBasedDylib {
   std::string_view uuid;
   std::string_view install_name;
-  std::string_view current_version;
+  std::string_view current_version = "1.0";
   std::string_view parent_umbrella;
   std::vector<std::string_view> reexported_libs;
   std::vector<std::string_view> exports;

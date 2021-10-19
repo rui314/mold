@@ -45,17 +45,6 @@ static std::string_view get_line(std::string_view str, i64 pos) {
   return str.substr(begin, end - begin);
 }
 
-static bool match_target(const YamlMap &top) {
-  auto it = top.find("targets");
-  if (it == top.end())
-    return false;
-
-  for (const YamlNode &node : std::get<YamlVector>(it->second.data))
-    if (std::get<std::string_view>(node.data) == "x86_64-macos")
-      return true;
-  return false;
-}
-
 template <typename T>
 static const T *lookup(const YamlNode &node, std::string_view key) {
   if (const YamlMap *map = std::get_if<YamlMap>(&node.data))
@@ -91,6 +80,13 @@ static std::optional<TextBasedDylib> to_tbd(const YamlNode &node) {
 
   if (auto *val = lookup<std::string_view>(node, "current-version"))
     tbd.current_version = *val;
+
+  if (auto *vec = lookup<YamlVector>(node, "parent-umbrella"))
+    for (const YamlNode &mem : *vec)
+      if (auto *targets = lookup<YamlVector>(mem, "targets"))
+        if (contains(*targets, "x86_64-macos"))
+          if (auto *val = lookup<std::string_view>(mem, "umbrella"))
+            tbd.parent_umbrella = *val;
 
   if (auto *vec = lookup<YamlVector>(node, "reexported-libraries"))
     for (const YamlNode &mem : *vec)
