@@ -32,6 +32,6 @@ LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_rdlock"
 LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_unlock"
 LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
-docker run -it --rm -v `pwd`:/mold -u $(id -u):$(id -g) \
+docker run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
   mold-build-ubuntu20 \
   make -C /mold -j$(nproc) EXTRA_LDFLAGS="$LDFLAGS"
