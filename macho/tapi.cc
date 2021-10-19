@@ -7,30 +7,6 @@ namespace mold::macho {
 typedef std::unordered_map<std::string_view, YamlNode> YamlMap;
 typedef std::vector<YamlNode> YamlVector;
 
-static void dump_yaml(Context &ctx, YamlNode &node, i64 depth = 0) {
-  if (auto *elem = std::get_if<std::string_view>(&node.data)) {
-    SyncOut(ctx) << std::string(depth * 2, ' ') << '"' << *elem << '"';
-    return;
-  }
-
-  if (auto *elem = std::get_if<YamlVector>(&node.data)) {
-    SyncOut(ctx) << std::string(depth * 2, ' ') << "vector:";
-    for (YamlNode &child : *elem)
-      dump_yaml(ctx, child, depth + 1);
-    return;
-  }
-
-  auto *elem =
-    std::get_if<std::unordered_map<std::string_view, YamlNode>>(&node.data);
-  assert(elem);
-
-  SyncOut(ctx) << std::string(depth * 2, ' ') << "map:";
-  for (std::pair<const std::string_view, YamlNode> &kv : *elem) {
-    SyncOut(ctx) << std::string(depth * 2 + 2, ' ') << "key: " << kv.first;
-    dump_yaml(ctx, kv.second, depth + 1);
-  }
-}
-
 static std::string_view get_line(std::string_view str, i64 pos) {
   i64 begin = str.substr(0, pos).rfind('\n');
   if (begin == str.npos)
