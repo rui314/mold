@@ -4,7 +4,6 @@
 
 namespace mold::macho {
 
-typedef std::unordered_map<std::string_view, YamlNode> YamlMap;
 typedef std::vector<YamlNode> YamlVector;
 
 static std::string_view get_line(std::string_view str, i64 pos) {
@@ -23,7 +22,7 @@ static std::string_view get_line(std::string_view str, i64 pos) {
 
 template <typename T>
 static const T *lookup(const YamlNode &node, std::string_view key) {
-  if (const YamlMap *map = std::get_if<YamlMap>(&node.data))
+  if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
     if (auto it = map->find(key); it != map->end())
       return std::get_if<T>(&it->second.data);
   return nullptr;

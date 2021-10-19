@@ -3,9 +3,9 @@
 #include "macho.h"
 #include "../mold.h"
 
+#include <map>
 #include <memory>
 #include <tbb/concurrent_hash_map.h>
-#include <unordered_map>
 #include <variant>
 
 namespace mold::macho {
@@ -438,7 +438,7 @@ void dump_file(std::string path);
 struct YamlNode {
   std::variant<std::string_view,
                std::vector<YamlNode>,
-               std::unordered_map<std::string_view, YamlNode>> data;
+               std::map<std::string_view, YamlNode>> data;
 };
 
 struct YamlError {
