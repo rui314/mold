@@ -15,26 +15,6 @@ Options:
   -o FILE                     Set output filename
   -v                          Report version information)";
 
-bool read_arg(Context &ctx, std::span<std::string_view> &args,
-              std::string_view &arg, std::string name) {
-  if (args[0] == name) {
-    if (args.size() == 1)
-      Fatal(ctx) << "option -" << name << ": argument missing";
-    arg = args[1];
-    args = args.subspan(2);
-    return true;
-  }
-  return false;
-}
-
-bool read_flag(std::span<std::string_view> &args, std::string name) {
-  if (args[0] == name) {
-    args = args.subspan(1);
-    return true;
-  }
-  return false;
-}
-
 void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string_view> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
