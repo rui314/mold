@@ -10,6 +10,7 @@ namespace mold::macho {
 
 static const char helpmsg[] = R"(
 Options:
+  -arch ARCH_NAME             Specify target architecture
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
   -help                       Report usage information
@@ -52,7 +53,10 @@ void parse_nonpositional_args(Context &ctx,
       exit(0);
     }
 
-    if (read_flag("-demangle")) {
+    if (read_arg("-arch")) {
+      if (arg != "x86_64")
+        Fatal(ctx) << "unknown -arch: " << arg;
+    } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
