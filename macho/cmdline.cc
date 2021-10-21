@@ -10,9 +10,10 @@ namespace mold::macho {
 
 static const char helpmsg[] = R"(
 Options:
-  --help                      Report usage information
-  -v                          Report version information
-  -o FILE                     Set output filename)";
+  -demangle                   Demangle C++ symbols in log messages (default)
+  -help                       Report usage information
+  -o FILE                     Set output filename
+  -v                          Report version information)";
 
 bool read_arg(Context &ctx, std::span<std::string_view> &args,
               std::string_view &arg, std::string name) {
@@ -69,10 +70,12 @@ void parse_nonpositional_args(Context &ctx,
       exit(0);
     }
 
-    if (read_flag("-v")) {
-      SyncOut(ctx) << mold_version;
+    if (read_flag("-demangle")) {
+      ctx.arg.demangle = true;
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
+    } else if (read_flag("-v")) {
+      SyncOut(ctx) << mold_version;
     } else {
       if (args[0][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[0];
