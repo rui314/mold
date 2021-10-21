@@ -454,7 +454,7 @@ parse_yaml(std::string_view str);
 // tapi.cc
 //
 
-struct TextBasedDylib {
+struct TextDylib {
   std::string_view uuid;
   std::string_view install_name;
   std::string_view current_version = "1.0";
@@ -463,7 +463,7 @@ struct TextBasedDylib {
   std::vector<std::string_view> exports;
 };
 
-std::vector<TextBasedDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf);
+std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf);
 
 //
 // cmdline.cc
@@ -501,6 +501,7 @@ struct Context {
   bool has_error = false;
 
   tbb::concurrent_hash_map<std::string_view, Symbol> symbol_map;
+  std::unordered_map<std::string_view, TextDylib> tbd_map;
 
   std::unique_ptr<OutputFile<Context>> output_file;
   u8 *buf;

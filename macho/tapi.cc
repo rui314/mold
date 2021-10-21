@@ -36,12 +36,12 @@ static bool contains(const Vector &vec, std::string_view key) {
   return false;
 }
 
-static std::optional<TextBasedDylib> to_tbd(const YamlNode &node) {
+static std::optional<TextDylib> to_tbd(const YamlNode &node) {
   const Vector *targets = lookup<Vector>(node, "targets");
   if (!targets || !contains(*targets, "x86_64-macos"))
     return {};
 
-  TextBasedDylib tbd;
+  TextDylib tbd;
 
   if (auto *vec = lookup<Vector>(node, "uuids"))
     for (const YamlNode &mem : *vec)
@@ -84,7 +84,7 @@ static std::optional<TextBasedDylib> to_tbd(const YamlNode &node) {
   return tbd;
 }
 
-std::vector<TextBasedDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf) {
+std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf) {
   std::string_view contents = mf->get_contents();
   std::variant<Vector, YamlError> res = parse_yaml(contents);
 
@@ -96,11 +96,11 @@ std::vector<TextBasedDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf) {
   }
 
   Vector &nodes = std::get<Vector>(res);
-  std::vector<TextBasedDylib> vec;
+  std::vector<TextDylib> vec;
   vec.reserve(nodes.size());
 
   for (YamlNode &node : nodes)
-    if (std::optional<TextBasedDylib> dylib = to_tbd(node))
+    if (std::optional<TextDylib> dylib = to_tbd(node))
       vec.push_back(*dylib);
   return vec;
 }

@@ -140,10 +140,10 @@ int main(int argc, char **argv) {
   if (argc > 1 && std::string_view(argv[1]) == "-yamltest") {
     std::string path = "/Applications/Xcode.app/Contents/Developer/Platforms/"
       "MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.tbd";
-    std::vector<TextBasedDylib> tbds =
+    std::vector<TextDylib> tbds =
       parse_tbd(ctx, MappedFile<Context>::must_open(ctx, path));
 
-    for (TextBasedDylib &tbd : tbds) {
+    for (TextDylib &tbd : tbds) {
       SyncOut(ctx) << "tbd: uuid=" << tbd.uuid
                    << " install_name=" << tbd.install_name
                    << " current_version=" << tbd.current_version
