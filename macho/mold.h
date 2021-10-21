@@ -490,6 +490,7 @@ struct Context {
   // Command-line arguments
   struct {
     bool demangle = false;
+    bool dynamic = true;
     bool fatal_warnings = false;
     i64 filler = -1;
     std::string chroot;

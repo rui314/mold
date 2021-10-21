@@ -11,7 +11,9 @@ namespace mold::macho {
 static const char helpmsg[] = R"(
 Options:
   -demangle                   Demangle C++ symbols in log messages (default)
+  -dynamic                    Link against dylibs (default)
   -help                       Report usage information
+  -lto_library FILE           Ignored
   -o FILE                     Set output filename
   -v                          Report version information)";
 
@@ -52,6 +54,9 @@ void parse_nonpositional_args(Context &ctx,
 
     if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
+    } else if (read_flag("-dynamic")) {
+      ctx.arg.dynamic = true;
+    } else if (read_flag("-lto_library")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
     } else if (read_flag("-v")) {
