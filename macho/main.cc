@@ -117,13 +117,36 @@ static void fix_synthetic_symbol_values(Context &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data.hdr.addr;
 }
 
-void read_file(Context &ctx, MappedFile<Context> *mf) {
+static void read_file(Context &ctx, MappedFile<Context> *mf) {
   switch (get_file_type(mf)) {
   case FileType::MACH_OBJ:
     ctx.objs.push_back(ObjectFile::create(ctx, mf));
     return;
   default:
     Fatal(ctx) << mf->name << ": unknown file type";
+  }
+}
+
+MappedFile<Context> *find_library(Context &ctx, std::string name) {
+  for (std::string dir : ctx.arg.library_paths) {
+    for (std::string ext : {".tbd", ".dylib", ".a"}) {
+      std::string path = path_clean(dir + "/" + name + ext);
+      if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
+        return mf;
+    }
+  }
+  return nullptr;
+}
+
+static void read_input_files(Context &ctx, std::span<std::string> args) {
+  for (std::string &arg : args) {
+    if (arg.starts_with("-l")) {
+      MappedFile<Context> *mf = find_library(ctx, arg.substr(2));
+      if (!mf)
+        Fatal(ctx) << "library not found: " << arg;
+    } else {
+      read_file(ctx, MappedFile<Context>::must_open(ctx, arg));
+    }
   }
 }
 
@@ -156,8 +179,7 @@ int main(int argc, char **argv) {
   std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
-  for (std::string_view arg : file_args)
-    read_file(ctx, MappedFile<Context>::must_open(ctx, std::string(arg)));
+  read_input_files(ctx, file_args);
 
   for (ObjectFile *obj : ctx.objs)
     obj->parse(ctx);
