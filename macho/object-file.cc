@@ -8,7 +8,8 @@ std::ostream &operator<<(std::ostream &out, const ObjectFile &file) {
 }
 
 ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf) {
-  ObjectFile *obj = new ObjectFile(mf);
+  ObjectFile *obj = new ObjectFile;
+  obj->mf = mf;
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   return obj;
 };
@@ -168,5 +169,12 @@ void ObjectFile::resolve_symbols(Context &ctx) {
     }
   }
 }
+
+DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
+  DylibFile *dylib = new DylibFile;
+  dylib->mf = mf;
+  ctx.dylib_pool.push_back(std::unique_ptr<DylibFile>(dylib));
+  return dylib;
+};
 
 } // namespace mold::macho

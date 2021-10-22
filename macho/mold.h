@@ -70,18 +70,16 @@ public:
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
   std::vector<UnwindRecord> unwind_records;
-
-private:
-  ObjectFile(MappedFile<Context> *mf) {
-    this->mf = mf;
-  }
 };
 
 class DylibFile : public InputFile {
 public:
-  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+  static DylibFile *create(Context &ctx, MappedFile<Context> *mf);
   void parse(Context &ctx);
   void resolve_symbols(Context &ctx);
+
+private:
+  DylibFile() = default;
 };
 
 std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
@@ -528,6 +526,7 @@ struct Context {
   u8 *buf;
 
   tbb::concurrent_vector<std::unique_ptr<ObjectFile>> obj_pool;
+  tbb::concurrent_vector<std::unique_ptr<DylibFile>> dylib_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context>>> mf_pool;
 
