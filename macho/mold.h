@@ -470,7 +470,7 @@ std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf);
 //
 
 void parse_nonpositional_args(Context &ctx,
-                              std::vector<std::string_view> &remaining);
+                              std::vector<std::string> &remaining);
 
 //
 // main.cc

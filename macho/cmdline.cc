@@ -16,6 +16,7 @@ Options:
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
   -help                       Report usage information
+  -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
   -o FILE                     Set output filename
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
@@ -61,7 +62,7 @@ static i64 parse_version(Context &ctx, std::string_view arg) {
 }
 
 void parse_nonpositional_args(Context &ctx,
-                              std::vector<std::string_view> &remaining) {
+                              std::vector<std::string> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
 
@@ -96,6 +97,17 @@ void parse_nonpositional_args(Context &ctx,
       return false;
     };
 
+    auto read_joined = [&](std::string name) {
+      if (read_arg(name))
+        return true;
+      if (args[0].starts_with(name)) {
+        arg = args[0].substr(2);
+        args = args.subspan(1);
+        return true;
+      }
+      return false;
+    };
+
     auto read_flag = [&](std::string name) {
       if (args[0] == name) {
         args = args.subspan(1);
@@ -110,11 +122,8 @@ void parse_nonpositional_args(Context &ctx,
       exit(0);
     }
 
-    if (read_arg("-L")) {
+    if (read_joined("-L")) {
       ctx.arg.library_paths.push_back(std::string(arg));
-    } else if (args[0].starts_with("-L")) {
-      ctx.arg.library_paths.push_back(std::string(args[0].substr(2)));
-      args = args.subspan(1);
     } else if (read_arg("-arch")) {
       if (arg != "x86_64")
         Fatal(ctx) << "unknown -arch: " << arg;
@@ -122,6 +131,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.demangle = true;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
+    } else if (read_joined("-l")) {
+      remaining.push_back("-l" + std::string(arg));
     } else if (read_flag("-lto_library")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
@@ -136,7 +147,7 @@ void parse_nonpositional_args(Context &ctx,
     } else {
       if (args[0][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[0];
-      remaining.push_back(args[0]);
+      remaining.push_back(std::string(args[0]));
       args = args.subspan(1);
     }
   }

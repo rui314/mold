@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
   }
 
   ctx.cmdline_args = expand_response_files(ctx, argv);
-  std::vector<std::string_view> file_args;
+  std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
   for (std::string_view arg : file_args)
