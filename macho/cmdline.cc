@@ -11,14 +11,16 @@ namespace mold::macho {
 
 static const char helpmsg[] = R"(
 Options:
-  -arch ARCH_NAME             Specify target architecture
+  -L<PATH>                    Add DIR to library search path
+  -arch <ARCH_NAME>           Specify target architecture
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
   -help                       Report usage information
-  -lto_library FILE           Ignored
+  -lto_library <FILE>         Ignored
   -o FILE                     Set output filename
-  -platform_version PLATFORM MIN_VERSION SDK_VERSION
+  -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
+  -syslibroot <DIR>           Prepend DIR to library search paths
   -v                          Report version information)";
 
 static i64 parse_platform(Context &ctx, std::string_view arg) {
@@ -108,7 +110,12 @@ void parse_nonpositional_args(Context &ctx,
       exit(0);
     }
 
-    if (read_arg("-arch")) {
+    if (read_arg("-L")) {
+      ctx.arg.library_paths.push_back(std::string(arg));
+    } else if (args[0].starts_with("-L")) {
+      ctx.arg.library_paths.push_back(std::string(args[0].substr(2)));
+      args = args.subspan(1);
+    } else if (read_arg("-arch")) {
       if (arg != "x86_64")
         Fatal(ctx) << "unknown -arch: " << arg;
     } else if (read_flag("-demangle")) {
@@ -122,6 +129,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.platform = parse_platform(ctx, arg);
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
+    } else if (read_arg("-syslibroot")) {
+      ctx.arg.syslibroot = arg;
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {

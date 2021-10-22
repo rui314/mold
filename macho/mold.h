@@ -498,6 +498,8 @@ struct Context {
     i64 platform_sdk_version = 0;
     std::string chroot;
     std::string output;
+    std::string syslibroot;
+    std::vector<std::string> library_paths;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
