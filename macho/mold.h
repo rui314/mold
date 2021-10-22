@@ -47,9 +47,18 @@ struct UnwindRecord {
   u32 lsda_offset = 0;
 };
 
-class ObjectFile {
+class InputFile {
 public:
-  ObjectFile() {}
+  MappedFile<Context> *mf = nullptr;
+  std::vector<Symbol *> syms;
+
+protected:
+  InputFile() = default;
+};
+
+class ObjectFile : public InputFile {
+public:
+  ObjectFile() = default;
 
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
   void parse(Context &ctx);
@@ -58,15 +67,21 @@ public:
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
-  MappedFile<Context> *mf = nullptr;
   std::vector<std::unique_ptr<InputSection>> sections;
-  std::vector<Symbol *> syms;
   std::span<MachSym> mach_syms;
-
   std::vector<UnwindRecord> unwind_records;
 
 private:
-  ObjectFile(MappedFile<Context> *mf) : mf(mf) {}
+  ObjectFile(MappedFile<Context> *mf) {
+    this->mf = mf;
+  }
+};
+
+class DylibFile : public InputFile {
+public:
+  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+  void parse(Context &ctx);
+  void resolve_symbols(Context &ctx);
 };
 
 std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
@@ -519,6 +534,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 
   std::vector<ObjectFile *> objs;
+  std::vector<DylibFile *> dylibs;
 
   OutputSegment text_seg{"__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0};
   OutputSegment data_const_seg{"__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
