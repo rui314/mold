@@ -18,16 +18,19 @@ static void create_internal_file(Context &ctx) {
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   ctx.objs.push_back(obj);
 
-  auto add = [&](std::string_view name, bool is_extern, u64 value = 0) {
+  auto add = [&](std::string_view name) {
     Symbol *sym = intern(ctx, name);
     sym->file = obj;
-    sym->value = value;
-    sym->is_extern = is_extern;
     obj->syms.push_back(sym);
+    return sym;
   };
 
-  add("__dyld_private", false);
-  add("__mh_execute_header", true, PAGE_ZERO_SIZE);
+  add("__dyld_private");
+
+  Symbol *sym = add("__mh_execute_header");
+  sym->is_extern = true;
+  sym->referenced_dynamically = true;
+  sym->value = PAGE_ZERO_SIZE;
 
   obj->syms.push_back(intern(ctx, "dyld_stub_binder"));
 }

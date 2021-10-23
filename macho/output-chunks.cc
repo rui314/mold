@@ -584,10 +584,7 @@ void OutputSymtabSection::add(Context &ctx, Symbol *sym, i64 desc) {
   hdr.size += sizeof(msym);
 
   memset(&msym, 0, sizeof(msym));
-
   msym.stroff = ctx.strtab.add_string(sym->name);
-  msym.ext = sym->is_extern;
-  msym.desc = desc;
   syms.push_back(sym);
 }
 
@@ -598,11 +595,17 @@ void OutputSymtabSection::copy_buf(Context &ctx) {
     buf[i] = mach_syms[i];
 
     buf[i].type = (syms[i]->file->is_dylib ? N_UNDF : N_SECT);
+    buf[i].ext = syms[i]->is_extern;
 
     if (!syms[i]->file->is_dylib)
       buf[i].value = syms[i]->get_addr(ctx);
     if (syms[i]->subsec)
       buf[i].sect = syms[i]->subsec->isec.osec->sect_idx;
+
+    if (syms[i]->file->is_dylib)
+      buf[i].desc = ((DylibFile *)syms[i]->file)->dylib_idx << 8;
+    else if (syms[i]->referenced_dynamically)
+      buf[i].desc = REFERENCED_DYNAMICALLY;
   }
 }
 

@@ -155,6 +155,7 @@ struct Symbol {
   tbb::spin_mutex mu;
   std::atomic_bool needs_stub = false;
   u8 is_extern : 1 = false;
+  u8 referenced_dynamically : 1 = false;
 
   inline u64 get_addr(Context &ctx) const;
 };
