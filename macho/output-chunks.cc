@@ -625,12 +625,11 @@ StubsSection::StubsSection() {
   hdr.reserved2 = 6;
 }
 
-void StubsSection::add(Context &ctx, Symbol &sym, i64 dylib_idx,
-                       i64 flags, i64 seg_idx) {
+void StubsSection::add(Context &ctx, Symbol &sym, i64 dylib_idx, i64 flags) {
   assert(sym.stub_idx == -1);
   sym.stub_idx = entries.size();
 
-  entries.push_back({sym, dylib_idx, flags, seg_idx});
+  entries.push_back({sym, dylib_idx, flags});
 
   i64 nsyms = entries.size();
   ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
