@@ -346,7 +346,7 @@ public:
     hdr.p2align = __builtin_ctz(8);
   }
 
-  void add(Context &ctx, Symbol *sym, i64 type, bool is_external,
+  void add(Context &ctx, Symbol *sym, bool is_external,
            i64 sect_idx, i64 lib_idx);
 
   void copy_buf(Context &ctx) override;

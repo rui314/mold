@@ -87,12 +87,12 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void fill_symtab(Context &ctx) {
-  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), N_SECT, false, 8, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), N_SECT, true, 1, 0x10);
-  ctx.symtab.add(ctx, intern(ctx, "_hello"), N_SECT, true, 1, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_main"), N_SECT, true, 1, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_printf"), N_UNDF, true, 0, 0x100);
-  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), N_UNDF, true, 0, 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), false, 8, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), true, 1, 0x10);
+  ctx.symtab.add(ctx, intern(ctx, "_hello"), true, 1, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_main"), true, 1, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_printf"), true, 0, 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), true, 0, 0x100);
 }
 
 static void export_symbols(Context &ctx) {
