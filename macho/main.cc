@@ -187,9 +187,13 @@ int main(int argc, char **argv) {
 
   for (ObjectFile *obj : ctx.objs)
     obj->parse(ctx);
+  for (DylibFile *dylib : ctx.dylibs)
+    dylib->parse(ctx);
 
   for (ObjectFile *obj : ctx.objs)
     obj->resolve_symbols(ctx);
+  for (DylibFile *dylib : ctx.dylibs)
+    dylib->resolve_symbols(ctx);
 
   create_internal_file(ctx);
   create_synthetic_chunks(ctx);

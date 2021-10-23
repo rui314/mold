@@ -121,8 +121,6 @@ TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
     Fatal(ctx) << mf->name << ": malformed TBD file";
 
   std::vector<TextDylib> vec;
-  vec.reserve(nodes.size());
-
   for (YamlNode &node : nodes)
     if (std::optional<TextDylib> dylib = to_tbd(node))
       vec.push_back(*dylib);
