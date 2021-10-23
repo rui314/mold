@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include "../archive-file.h"
+
 namespace mold::macho {
 
 std::ostream &operator<<(std::ostream &out, const ObjectFile &file) {
@@ -176,5 +178,20 @@ DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
   ctx.dylib_pool.push_back(std::unique_ptr<DylibFile>(dylib));
   return dylib;
 };
+
+void DylibFile::parse(Context &ctx) {
+  switch (get_file_type(mf)) {
+  case FileType::TAPI: {
+    std::vector<TextDylib> tbds = parse_tbd(ctx, mf);
+    if (tbds.empty())
+      Fatal(ctx) << "malformed TBD file: " << mf->name;
+    install_name = tbds[0].install_name;
+  }
+  case FileType::MACH_DYLIB:
+    Fatal(ctx) << mf->name << ": .dylib is not supported yet";
+  default:
+    Fatal(ctx) << mf->name << ": is not a dylib";
+  }
+}
 
 } // namespace mold::macho
