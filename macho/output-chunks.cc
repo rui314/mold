@@ -579,17 +579,15 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputSymtabSection::add(Context &ctx, Symbol *sym, bool is_external,
-                              i64 desc) {
+void OutputSymtabSection::add(Context &ctx, Symbol *sym, i64 desc) {
   MachSym &msym = mach_syms.emplace_back();
   hdr.size += sizeof(msym);
 
   memset(&msym, 0, sizeof(msym));
 
   msym.stroff = ctx.strtab.add_string(sym->name);
-  msym.ext = is_external;
+  msym.ext = sym->is_extern;
   msym.desc = desc;
-
   syms.push_back(sym);
 }
 

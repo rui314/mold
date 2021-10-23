@@ -18,15 +18,16 @@ static void create_internal_file(Context &ctx) {
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   ctx.objs.push_back(obj);
 
-  auto add = [&](std::string_view name, u64 value = 0) {
+  auto add = [&](std::string_view name, bool is_extern, u64 value = 0) {
     Symbol *sym = intern(ctx, name);
     sym->file = obj;
     sym->value = value;
+    sym->is_extern = is_extern;
     obj->syms.push_back(sym);
   };
 
-  add("__dyld_private");
-  add("__mh_execute_header", PAGE_ZERO_SIZE);
+  add("__dyld_private", false);
+  add("__mh_execute_header", true, PAGE_ZERO_SIZE);
 
   obj->syms.push_back(intern(ctx, "dyld_stub_binder"));
 }
@@ -87,12 +88,12 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void fill_symtab(Context &ctx) {
-  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), false, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), true, 0x10);
-  ctx.symtab.add(ctx, intern(ctx, "_hello"), true, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_main"), true, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_printf"), true, 0x100);
-  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), true, 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), 0x10);
+  ctx.symtab.add(ctx, intern(ctx, "_hello"), 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_main"), 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_printf"), 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), 0x100);
 }
 
 static void export_symbols(Context &ctx) {

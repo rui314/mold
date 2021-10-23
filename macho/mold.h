@@ -153,7 +153,8 @@ struct Symbol {
   u64 value = 0;
   i32 stub_idx = -1;
   tbb::spin_mutex mu;
-  std::atomic_bool needs_stub{false};
+  std::atomic_bool needs_stub = false;
+  u8 is_extern : 1 = false;
 
   inline u64 get_addr(Context &ctx) const;
 };
@@ -347,7 +348,7 @@ public:
     hdr.p2align = __builtin_ctz(8);
   }
 
-  void add(Context &ctx, Symbol *sym, bool is_external, i64 lib_idx);
+  void add(Context &ctx, Symbol *sym, i64 lib_idx);
 
   void copy_buf(Context &ctx) override;
 
