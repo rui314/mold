@@ -387,7 +387,7 @@ class StubsSection : public Chunk {
 public:
   StubsSection();
 
-  void add(Context &ctx, Symbol &sym, i64 dylib_idx, i64 flags);
+  void add(Context &ctx, Symbol &sym, i64 dylib_idx);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 6;
@@ -395,7 +395,6 @@ public:
   struct Entry {
     Symbol &sym;
     i64 dylib_idx;
-    i64 flags;
   };
 
   std::vector<Entry> entries;
