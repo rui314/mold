@@ -78,7 +78,7 @@ public:
   void parse(Context &ctx);
   void resolve_symbols(Context &ctx);
 
-  std::string install_name;
+  std::string_view install_name;
 
 private:
   DylibFile() = default;

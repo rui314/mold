@@ -168,6 +168,8 @@ int main(int argc, char **argv) {
                  << " install_name=" << tbd.install_name
                  << " current_version=" << tbd.current_version
                  << " parent_umbrella=" << tbd.parent_umbrella;
+    for (std::string_view sym : tbd.exports)
+      SyncOut(ctx) << "  sym=" << sym;
     exit(0);
   }
 

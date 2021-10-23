@@ -183,6 +183,8 @@ void DylibFile::parse(Context &ctx) {
   switch (get_file_type(mf)) {
   case FileType::TAPI: {
     TextDylib tbd = parse_tbd(ctx, mf);
+    for (std::string_view sym : tbd.exports)
+      syms.push_back(intern(ctx, sym));
     install_name = tbd.install_name;
   }
   case FileType::MACH_DYLIB:
