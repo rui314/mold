@@ -579,33 +579,34 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputSymtabSection::add(Context &ctx, Symbol *sym, i64 desc) {
-  MachSym &msym = mach_syms.emplace_back();
-  hdr.size += sizeof(msym);
+void OutputSymtabSection::add(Context &ctx, Symbol *sym) {
+  hdr.size += sizeof(MachSym);
 
-  memset(&msym, 0, sizeof(msym));
-  msym.stroff = ctx.strtab.add_string(sym->name);
   syms.push_back(sym);
+  stroffs.push_back(ctx.strtab.add_string(sym->name));
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + hdr.offset);
+  memset(buf, 0, hdr.size);
 
   for (i64 i = 0; i < syms.size(); i++) {
-    buf[i] = mach_syms[i];
+    MachSym &msym = buf[i];
+    Symbol &sym = *syms[i];
 
-    buf[i].type = (syms[i]->file->is_dylib ? N_UNDF : N_SECT);
-    buf[i].ext = syms[i]->is_extern;
+    msym.stroff = stroffs[i];
+    msym.type = (sym.file->is_dylib ? N_UNDF : N_SECT);
+    msym.ext = sym.is_extern;
 
-    if (!syms[i]->file->is_dylib)
-      buf[i].value = syms[i]->get_addr(ctx);
-    if (syms[i]->subsec)
-      buf[i].sect = syms[i]->subsec->isec.osec->sect_idx;
+    if (!sym.file->is_dylib)
+      msym.value = sym.get_addr(ctx);
+    if (sym.subsec)
+      msym.sect = sym.subsec->isec.osec->sect_idx;
 
-    if (syms[i]->file->is_dylib)
-      buf[i].desc = ((DylibFile *)syms[i]->file)->dylib_idx << 8;
-    else if (syms[i]->referenced_dynamically)
-      buf[i].desc = REFERENCED_DYNAMICALLY;
+    if (sym.file->is_dylib)
+      msym.desc = ((DylibFile *)sym.file)->dylib_idx << 8;
+    else if (sym.referenced_dynamically)
+      msym.desc = REFERENCED_DYNAMICALLY;
   }
 }
 

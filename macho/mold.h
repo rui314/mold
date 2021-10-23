@@ -349,12 +349,12 @@ public:
     hdr.p2align = __builtin_ctz(8);
   }
 
-  void add(Context &ctx, Symbol *sym, i64 lib_idx);
+  void add(Context &ctx, Symbol *sym);
 
   void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> syms;
-  std::vector<MachSym> mach_syms;
+  std::vector<u32> stroffs;
 };
 
 class OutputStrtabSection : public Chunk {
