@@ -190,6 +190,7 @@ void DylibFile::parse(Context &ctx) {
     for (std::string_view sym : tbd.exports)
       syms.push_back(intern(ctx, sym));
     install_name = tbd.install_name;
+    break;
   }
   case FileType::MACH_DYLIB:
     Fatal(ctx) << mf->name << ": .dylib is not supported yet";
@@ -204,7 +205,6 @@ void DylibFile::resolve_symbols(Context &ctx) {
     if (sym->file && sym->file->priority < priority)
       continue;
     sym->file = this;
-    SyncOut(ctx) << "sym=" << *sym << " " << this;
   }
 }
 

@@ -122,7 +122,6 @@ MappedFile<Context> *find_library(Context &ctx, std::string name) {
     for (std::string ext : {".tbd", ".dylib", ".a"}) {
       std::string path =
         path_clean(ctx.arg.syslibroot + dir + "/lib" + name + ext);
-      SyncOut(ctx) << name << " " << path;
       if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
         return mf;
     }
@@ -136,12 +135,12 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
       MappedFile<Context> *mf = find_library(ctx, arg.substr(2));
       if (!mf)
         Fatal(ctx) << "library not found: " << arg;
-      ctx.dylibs.push_back(DylibFile::create(ctx, mf));
+      if (get_file_type(mf) == FileType::TAPI)
+        ctx.dylibs.push_back(DylibFile::create(ctx, mf));
     } else {
       MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, arg);
-      if (get_file_type(mf) != FileType::MACH_OBJ)
-        Fatal(ctx) << mf->name << ": unknown file type";
-      ctx.objs.push_back(ObjectFile::create(ctx, mf));
+      if (get_file_type(mf) == FileType::MACH_OBJ)
+        ctx.objs.push_back(ObjectFile::create(ctx, mf));
     }
   }
 }
@@ -188,10 +187,9 @@ int main(int argc, char **argv) {
 
   for (ObjectFile *obj : ctx.objs)
     obj->resolve_symbols(ctx);
-  for (DylibFile *dylib : ctx.dylibs)
+  for (DylibFile *dylib : ctx.dylibs) {
     dylib->resolve_symbols(ctx);
-
-  SyncOut(ctx) << "file=" << intern(ctx, "_printf")->file;
+  }
 
   create_internal_file(ctx);
   create_synthetic_chunks(ctx);
