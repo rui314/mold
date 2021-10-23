@@ -622,7 +622,7 @@ StubsSection::StubsSection() {
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  hdr.reserved2 = 6;
+  hdr.reserved2 = ENTRY_SIZE;
 }
 
 void StubsSection::add(Context &ctx, Symbol *sym) {
@@ -632,7 +632,8 @@ void StubsSection::add(Context &ctx, Symbol *sym) {
   syms.push_back(sym);
 
   i64 nsyms = syms.size();
-  ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
+  hdr.size = nsyms * ENTRY_SIZE;
+
   ctx.stub_helper.hdr.size =
     StubHelperSection::HEADER_SIZE + nsyms * StubHelperSection::ENTRY_SIZE;
   ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection::ENTRY_SIZE;
@@ -645,6 +646,7 @@ void StubsSection::copy_buf(Context &ctx) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
+    assert(ENTRY_SIZE == 6);
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
