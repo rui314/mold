@@ -579,30 +579,31 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputSymtabSection::add(Context &ctx, std::string_view name,
+void OutputSymtabSection::add(Context &ctx, Symbol *sym,
                               i64 type, bool is_external,
                               i64 sect_idx, i64 desc) {
-  MachSym &sym = symbols.emplace_back();
-  hdr.size += sizeof(sym);
+  MachSym &msym = mach_syms.emplace_back();
+  hdr.size += sizeof(msym);
 
-  memset(&sym, 0, sizeof(sym));
+  memset(&msym, 0, sizeof(msym));
 
-  sym.stroff = ctx.strtab.add_string(name);
-  sym.type = type;
-  sym.ext = is_external;
-  sym.sect = sect_idx;
-  sym.desc = desc;
+  msym.stroff = ctx.strtab.add_string(sym->name);
+  msym.type = type;
+  msym.ext = is_external;
+  msym.sect = sect_idx;
+  msym.desc = desc;
 
-  syms.push_back(intern(ctx, name));
+  syms.push_back(sym);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
-  for (i64 i = 0; i < syms.size(); i++)
-    if (!syms[i]->file->is_dylib)
-      symbols[i].value = syms[i]->get_addr(ctx);
+  MachSym *buf = (MachSym *)(ctx.buf + hdr.offset);
 
-  memcpy(ctx.buf + hdr.offset, symbols.data(),
-         symbols.size() * sizeof(symbols[0]));
+  for (i64 i = 0; i < syms.size(); i++) {
+    buf[i] = mach_syms[i];
+    if (!syms[i]->file->is_dylib)
+      buf[i].value = syms[i]->get_addr(ctx);
+  }
 }
 
 i64 OutputStrtabSection::add_string(std::string_view str) {
