@@ -135,8 +135,8 @@ static std::vector<u8> create_main_cmd(Context &ctx) {
   return buf;
 }
 
-static std::vector<u8> create_load_dylib_cmd(Context &ctx, DylibFile &dylib) {
-  i64 size = sizeof(DylibCommand) + dylib.install_name.size() + 1; // +1 for NUL
+static std::vector<u8> create_load_dylib_cmd(Context &ctx, std::string_view name) {
+  i64 size = sizeof(DylibCommand) + name.size() + 1; // +1 for NUL
   std::vector<u8> buf(align_to(size, 8));
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
@@ -146,7 +146,7 @@ static std::vector<u8> create_load_dylib_cmd(Context &ctx, DylibFile &dylib) {
   cmd.timestamp = 2;
   cmd.current_version = 0x50c6405;
   cmd.compatibility_version = 0x10000;
-  write_string(buf.data() + sizeof(cmd), dylib.install_name);
+  write_string(buf.data() + sizeof(cmd), name);
   return buf;
 }
 
@@ -213,7 +213,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   vec.push_back(create_source_version_cmd(ctx));
   vec.push_back(create_main_cmd(ctx));
   for (DylibFile *dylib : ctx.dylibs)
-    vec.push_back(create_load_dylib_cmd(ctx, *dylib));
+    vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
   vec.push_back(create_function_starts_cmd(ctx));
   vec.push_back(create_data_in_code_cmd(ctx));
   return vec;
