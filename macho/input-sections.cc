@@ -85,6 +85,14 @@ void InputSection::parse_relocations(Context &ctx) {
   }
 }
 
+void InputSection::scan_relocations(Context &ctx) {
+  for (Relocation &rel : rels) {
+    Symbol *sym = rel.sym;
+    if (sym && sym->file && sym->file->is_dylib)
+      sym->needs_stub = true;
+  }
+}
+
 void Subsection::apply_reloc(Context &ctx, u8 *buf) {
   for (const Relocation &rel : std::span(isec.rels).subspan(rel_offset, nrels)) {
     u32 *loc = (u32 *)(buf + rel.offset);

@@ -98,7 +98,15 @@ static void fill_symtab(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
-  ctx.stubs.add(ctx, *intern(ctx, "_printf"), 1, 0, 3);
+  std::vector<Symbol *> syms;
+
+  for (DylibFile *dylib : ctx.dylibs)
+    for (Symbol *sym : dylib->syms)
+      if (sym->file == dylib && sym->needs_stub)
+        syms.push_back(sym);
+
+  for (Symbol *sym : syms)
+    ctx.stubs.add(ctx, *sym, ((DylibFile *)sym->file)->dylib_idx, 0, 3);
 }
 
 static i64 assign_offsets(Context &ctx) {
@@ -181,7 +189,7 @@ int main(int argc, char **argv) {
     dylib->priority = priority++;
 
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
-    ctx.dylibs[i]->idx = i + 1;
+    ctx.dylibs[i]->dylib_idx = i + 1;
 
   for (ObjectFile *obj : ctx.objs)
     obj->parse(ctx);
@@ -195,6 +203,11 @@ int main(int argc, char **argv) {
 
   create_internal_file(ctx);
   create_synthetic_chunks(ctx);
+
+  for (ObjectFile *obj : ctx.objs)
+    for (std::unique_ptr<InputSection> &sec : obj->sections)
+      sec->scan_relocations(ctx);
+
   fill_symtab(ctx);
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);

@@ -53,6 +53,7 @@ public:
   MappedFile<Context> *mf = nullptr;
   std::vector<Symbol *> syms;
   i64 priority = 0;
+  bool is_dylib = false;
 
 protected:
   InputFile() = default;
@@ -81,10 +82,12 @@ public:
   void resolve_symbols(Context &ctx);
 
   std::string_view install_name;
-  i64 idx = 0;
+  i64 dylib_idx = 0;
 
 private:
-  DylibFile() = default;
+  DylibFile() {
+    is_dylib = true;
+  }
 };
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file);
@@ -98,6 +101,7 @@ public:
   InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
   void parse_relocations(Context &ctx);
   Subsection *find_subsection(Context &ctx, u32 addr);
+  void scan_relocations(Context &ctx);
 
   ObjectFile &file;
   const MachSection &hdr;
@@ -149,6 +153,7 @@ struct Symbol {
   u64 value = 0;
   i32 stub_idx = -1;
   tbb::spin_mutex mu;
+  std::atomic_bool needs_stub{false};
 
   inline u64 get_addr(Context &ctx) const;
 };
