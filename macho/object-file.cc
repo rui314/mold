@@ -157,6 +157,10 @@ void ObjectFile::resolve_symbols(Context &ctx) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
 
+    std::lock_guard lock(sym.mu);
+    if (sym.file && sym.file->priority < priority)
+      continue;
+
     switch (msym.type) {
     case N_ABS:
       sym.file = this;
@@ -191,6 +195,15 @@ void DylibFile::parse(Context &ctx) {
     Fatal(ctx) << mf->name << ": .dylib is not supported yet";
   default:
     Fatal(ctx) << mf->name << ": is not a dylib";
+  }
+}
+
+void DylibFile::resolve_symbols(Context &ctx) {
+  for (Symbol *sym : syms) {
+    std::lock_guard lock(sym->mu);
+    if (sym->file && sym->file->priority < priority)
+      continue;
+    sym->file = this;
   }
 }
 

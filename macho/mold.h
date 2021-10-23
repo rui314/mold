@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <tbb/concurrent_hash_map.h>
+#include <tbb/spin_mutex.h>
 #include <unordered_map>
 #include <variant>
 
@@ -51,6 +52,7 @@ class InputFile {
 public:
   MappedFile<Context> *mf = nullptr;
   std::vector<Symbol *> syms;
+  i64 priority = 0;
 
 protected:
   InputFile() = default;
@@ -141,10 +143,11 @@ struct Symbol {
 
   std::string_view name;
 
-  ObjectFile *file = nullptr;
+  InputFile *file = nullptr;
   Subsection *subsec = nullptr;
   u64 value = 0;
   i32 stub_idx = -1;
+  tbb::spin_mutex mu;
 
   inline u64 get_addr(Context &ctx) const;
 };

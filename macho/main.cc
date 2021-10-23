@@ -179,6 +179,12 @@ int main(int argc, char **argv) {
 
   read_input_files(ctx, file_args);
 
+  i64 priority = 1;
+  for (ObjectFile *obj : ctx.objs)
+    obj->priority = priority++;
+  for (DylibFile *dylib : ctx.dylibs)
+    dylib->priority = priority++;
+
   for (ObjectFile *obj : ctx.objs)
     obj->parse(ctx);
 
