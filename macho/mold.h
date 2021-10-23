@@ -478,7 +478,7 @@ struct TextDylib {
   std::vector<std::string_view> exports;
 };
 
-std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf);
+TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf);
 
 //
 // cmdline.cc
@@ -522,7 +522,6 @@ struct Context {
   bool has_error = false;
 
   tbb::concurrent_hash_map<std::string_view, Symbol> symbol_map;
-  std::unordered_map<std::string_view, TextDylib> tbd_map;
 
   std::unique_ptr<OutputFile<Context>> output_file;
   u8 *buf;

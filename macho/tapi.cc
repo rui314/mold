@@ -84,7 +84,28 @@ static std::optional<TextDylib> to_tbd(const YamlNode &node) {
   return tbd;
 }
 
-std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf) {
+static TextDylib squash(Context &ctx, std::span<TextDylib> tbds) {
+  std::unordered_map<std::string_view, TextDylib> map;
+
+  TextDylib main = std::move(tbds[0]);
+  for (TextDylib &tbd : tbds.subspan(1))
+    map[tbd.install_name] = std::move(tbd);
+
+  std::vector<std::string_view> libs;
+
+  for (std::string_view lib : main.reexported_libs) {
+    auto it = map.find(lib);
+    if (it != map.end())
+      append(main.exports, it->second.exports);
+    else
+      libs.push_back(lib);
+  }
+
+  main.reexported_libs = std::move(libs);
+  return main;
+}
+
+TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
   std::string_view contents = mf->get_contents();
   std::variant<Vector, YamlError> res = parse_yaml(contents);
 
@@ -96,13 +117,16 @@ std::vector<TextDylib> parse_tbd(Context &ctx, MappedFile<Context> *mf) {
   }
 
   Vector &nodes = std::get<Vector>(res);
+  if (nodes.empty())
+    Fatal(ctx) << mf->name << ": malformed TBD file";
+
   std::vector<TextDylib> vec;
   vec.reserve(nodes.size());
 
   for (YamlNode &node : nodes)
     if (std::optional<TextDylib> dylib = to_tbd(node))
       vec.push_back(*dylib);
-  return vec;
+  return squash(ctx, vec);
 }
 
 } // namespace mold::macho
