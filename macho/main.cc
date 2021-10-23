@@ -32,7 +32,8 @@ static void create_internal_file(Context &ctx) {
   sym->referenced_dynamically = true;
   sym->value = PAGE_ZERO_SIZE;
 
-  obj->syms.push_back(intern(ctx, "dyld_stub_binder"));
+  sym = add("dyld_stub_binder");
+  sym->needs_stub = true;
 }
 
 static void add_section(Context &ctx, OutputSection &osec,
@@ -91,12 +92,15 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void fill_symtab(Context &ctx) {
-  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"));
-  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"));
-  ctx.symtab.add(ctx, intern(ctx, "_hello"));
-  ctx.symtab.add(ctx, intern(ctx, "_main"));
-  ctx.symtab.add(ctx, intern(ctx, "_printf"));
-  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"));
+  for (ObjectFile *obj : ctx.objs)
+    for (Symbol *sym : obj->syms)
+      if (sym->file == obj)
+        ctx.symtab.add(ctx, sym);
+
+  for (DylibFile *dylib : ctx.dylibs)
+    for (Symbol *sym : dylib->syms)
+      if (sym->file == dylib && sym->needs_stub)
+        ctx.symtab.add(ctx, sym);
 }
 
 static void export_symbols(Context &ctx) {

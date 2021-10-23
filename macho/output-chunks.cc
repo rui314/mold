@@ -581,7 +581,6 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
 
 void OutputSymtabSection::add(Context &ctx, Symbol *sym) {
   hdr.size += sizeof(MachSym);
-
   syms.push_back(sym);
   stroffs.push_back(ctx.strtab.add_string(sym->name));
 }
