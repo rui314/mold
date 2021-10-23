@@ -53,12 +53,16 @@ static i64 parse_platform(Context &ctx, std::string_view arg) {
 }
 
 static i64 parse_version(Context &ctx, std::string_view arg) {
-  static std::regex re(R"(\d+(?:\.\d+(?:\.\d+)))",
+  static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
                        std::regex_constants::ECMAScript);
   std::cmatch m;
   if (!std::regex_match(arg.begin(), arg.end(), m, re))
     Fatal(ctx) << "malformed version number: " << arg;
-  return (stoi(m[1]) << 16) | (stoi(m[2]) << 8) | stoi(m[3]);
+
+  i64 major = (m[1].length() == 0) ? 0 : stoi(m[1]);
+  i64 minor = (m[2].length() == 0) ? 0 : stoi(m[2]);
+  i64 patch = (m[3].length() == 0) ? 0 : stoi(m[3]);
+  return (major << 16) | (minor << 8) | patch;
 }
 
 void parse_nonpositional_args(Context &ctx,
@@ -131,9 +135,9 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.demangle = true;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
+    } else if (read_flag("-lto_library")) {
     } else if (read_joined("-l")) {
       remaining.push_back("-l" + std::string(arg));
-    } else if (read_flag("-lto_library")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
     } else if (read_arg3("-platform_version")) {

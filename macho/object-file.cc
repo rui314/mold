@@ -4,7 +4,7 @@
 
 namespace mold::macho {
 
-std::ostream &operator<<(std::ostream &out, const ObjectFile &file) {
+std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   out << path_clean(file.mf->name);
   return out;
 }

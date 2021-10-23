@@ -117,16 +117,6 @@ static void fix_synthetic_symbol_values(Context &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data.hdr.addr;
 }
 
-static void read_file(Context &ctx, MappedFile<Context> *mf) {
-  switch (get_file_type(mf)) {
-  case FileType::MACH_OBJ:
-    ctx.objs.push_back(ObjectFile::create(ctx, mf));
-    return;
-  default:
-    Fatal(ctx) << mf->name << ": unknown file type";
-  }
-}
-
 MappedFile<Context> *find_library(Context &ctx, std::string name) {
   for (std::string dir : ctx.arg.library_paths) {
     for (std::string ext : {".tbd", ".dylib", ".a"}) {
@@ -144,8 +134,12 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
       MappedFile<Context> *mf = find_library(ctx, arg.substr(2));
       if (!mf)
         Fatal(ctx) << "library not found: " << arg;
+      ctx.dylibs.push_back(DylibFile::create(ctx, mf));
     } else {
-      read_file(ctx, MappedFile<Context>::must_open(ctx, arg));
+      MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, arg);
+      if (get_file_type(mf) != FileType::MACH_OBJ)
+        Fatal(ctx) << mf->name << ": unknown file type";
+      ctx.objs.push_back(ObjectFile::create(ctx, mf));
     }
   }
 }

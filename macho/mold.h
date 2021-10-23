@@ -86,7 +86,7 @@ private:
   DylibFile() = default;
 };
 
-std::ostream &operator<<(std::ostream &out, const ObjectFile &file);
+std::ostream &operator<<(std::ostream &out, const InputFile &file);
 
 //
 // input-sections.cc
