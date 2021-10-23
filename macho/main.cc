@@ -98,7 +98,7 @@ static void fill_symtab(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
-  ctx.stubs.add(ctx, *intern(ctx, "_printf"), 1, 0, 3, 0);
+  ctx.stubs.add(ctx, *intern(ctx, "_printf"), 1, 0, 3);
 }
 
 static i64 assign_offsets(Context &ctx) {
