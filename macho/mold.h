@@ -517,7 +517,7 @@ struct Context {
     std::string chroot;
     std::string output;
     std::string syslibroot;
-    std::vector<std::string> library_paths;
+    std::vector<std::string> library_paths{"/usr/lib", "/usr/local/lib"};
   } arg;
 
   std::vector<std::string_view> cmdline_args;

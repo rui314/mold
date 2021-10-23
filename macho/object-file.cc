@@ -204,6 +204,7 @@ void DylibFile::resolve_symbols(Context &ctx) {
     if (sym->file && sym->file->priority < priority)
       continue;
     sym->file = this;
+    SyncOut(ctx) << "sym=" << *sym << " " << this;
   }
 }
 

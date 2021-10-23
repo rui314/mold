@@ -135,7 +135,7 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.demangle = true;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
-    } else if (read_flag("-lto_library")) {
+    } else if (read_arg("-lto_library")) {
     } else if (read_joined("-l")) {
       remaining.push_back("-l" + std::string(arg));
     } else if (read_arg("-o")) {
@@ -145,7 +145,7 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
     } else if (read_arg("-syslibroot")) {
-      ctx.arg.syslibroot = arg;
+      ctx.arg.syslibroot = std::string(arg) + "/";
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {
