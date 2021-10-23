@@ -91,18 +91,6 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.linkedit_seg.chunks.push_back(&ctx.strtab);
 }
 
-static void fill_symtab(Context &ctx) {
-  for (ObjectFile *obj : ctx.objs)
-    for (Symbol *sym : obj->syms)
-      if (sym->file == obj)
-        ctx.symtab.add(ctx, sym);
-
-  for (DylibFile *dylib : ctx.dylibs)
-    for (Symbol *sym : dylib->syms)
-      if (sym->file == dylib && sym->needs_stub)
-        ctx.symtab.add(ctx, sym);
-}
-
 static void export_symbols(Context &ctx) {
   std::vector<Symbol *> syms;
 
@@ -220,7 +208,6 @@ int main(int argc, char **argv) {
     for (std::unique_ptr<InputSection> &sec : obj->sections)
       sec->scan_relocations(ctx);
 
-  fill_symtab(ctx);
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);
   fix_synthetic_symbol_values(ctx);

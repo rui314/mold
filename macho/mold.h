@@ -349,8 +349,7 @@ public:
     hdr.p2align = __builtin_ctz(8);
   }
 
-  void add(Context &ctx, Symbol *sym);
-
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> syms;

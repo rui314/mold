@@ -579,10 +579,23 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputSymtabSection::add(Context &ctx, Symbol *sym) {
-  hdr.size += sizeof(MachSym);
-  syms.push_back(sym);
-  stroffs.push_back(ctx.strtab.add_string(sym->name));
+void OutputSymtabSection::compute_size(Context &ctx) {
+  auto add = [&](Symbol *sym) {
+    syms.push_back(sym);
+    stroffs.push_back(ctx.strtab.add_string(sym->name));
+  };
+
+  for (ObjectFile *obj : ctx.objs)
+    for (Symbol *sym : obj->syms)
+      if (sym->file == obj)
+        add(sym);
+
+  for (DylibFile *dylib : ctx.dylibs)
+    for (Symbol *sym : dylib->syms)
+      if (sym->file == dylib && sym->needs_stub)
+        add(sym);
+
+  hdr.size = syms.size() * sizeof(MachSym);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
