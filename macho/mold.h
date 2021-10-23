@@ -387,17 +387,12 @@ class StubsSection : public Chunk {
 public:
   StubsSection();
 
-  void add(Context &ctx, Symbol &sym, i64 dylib_idx);
+  void add(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 6;
 
-  struct Entry {
-    Symbol &sym;
-    i64 dylib_idx;
-  };
-
-  std::vector<Entry> entries;
+  std::vector<Symbol *> syms;
 };
 
 class StubHelperSection : public Chunk {

@@ -625,13 +625,13 @@ StubsSection::StubsSection() {
   hdr.reserved2 = 6;
 }
 
-void StubsSection::add(Context &ctx, Symbol &sym, i64 dylib_idx) {
-  assert(sym.stub_idx == -1);
-  sym.stub_idx = entries.size();
+void StubsSection::add(Context &ctx, Symbol *sym) {
+  assert(sym->stub_idx == -1);
+  sym->stub_idx = syms.size();
 
-  entries.push_back({sym, dylib_idx});
+  syms.push_back(sym);
 
-  i64 nsyms = entries.size();
+  i64 nsyms = syms.size();
   ctx.stubs.hdr.size = nsyms * StubsSection::ENTRY_SIZE;
   ctx.stub_helper.hdr.size =
     StubHelperSection::HEADER_SIZE + nsyms * StubHelperSection::ENTRY_SIZE;
@@ -641,7 +641,7 @@ void StubsSection::add(Context &ctx, Symbol &sym, i64 dylib_idx) {
 void StubsSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
 
-  for (i64 i = 0; i < entries.size(); i++) {
+  for (i64 i = 0; i < syms.size(); i++) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
@@ -675,7 +675,7 @@ void StubHelperSection::copy_buf(Context &ctx) {
 
   buf += 16;
 
-  for (i64 i = 0; i < ctx.stubs.entries.size(); i++) {
+  for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
     u8 insn[10] = {
       0x68, 0, 0, 0, 0, // push $idx
       0xe9, 0, 0, 0, 0, // jmp $__stub_helper
@@ -868,7 +868,7 @@ LazySymbolPtrSection::LazySymbolPtrSection() {
 void LazySymbolPtrSection::copy_buf(Context &ctx) {
   u64 *buf = (u64 *)(ctx.buf + hdr.offset);
 
-  for (i64 i = 0; i < ctx.stubs.entries.size(); i++)
+  for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
     buf[i] = ctx.stub_helper.hdr.addr + StubHelperSection::HEADER_SIZE +
              i * StubHelperSection::ENTRY_SIZE;
 }

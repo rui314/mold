@@ -106,7 +106,7 @@ static void export_symbols(Context &ctx) {
         syms.push_back(sym);
 
   for (Symbol *sym : syms)
-    ctx.stubs.add(ctx, *sym, ((DylibFile *)sym->file)->dylib_idx);
+    ctx.stubs.add(ctx, sym);
 }
 
 static i64 assign_offsets(Context &ctx) {
