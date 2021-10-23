@@ -587,7 +587,6 @@ void OutputSymtabSection::add(Context &ctx, Symbol *sym, bool is_external,
   memset(&msym, 0, sizeof(msym));
 
   msym.stroff = ctx.strtab.add_string(sym->name);
-  msym.type = (sym->file->is_dylib ? N_UNDF : N_SECT);
   msym.ext = is_external;
   msym.desc = desc;
 
@@ -599,6 +598,9 @@ void OutputSymtabSection::copy_buf(Context &ctx) {
 
   for (i64 i = 0; i < syms.size(); i++) {
     buf[i] = mach_syms[i];
+
+    buf[i].type = (syms[i]->file->is_dylib ? N_UNDF : N_SECT);
+
     if (!syms[i]->file->is_dylib)
       buf[i].value = syms[i]->get_addr(ctx);
     if (syms[i]->subsec)
