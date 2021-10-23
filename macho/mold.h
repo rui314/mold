@@ -362,6 +362,7 @@ public:
   }
 
   i64 add_string(std::string_view str);
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::string contents;

@@ -93,8 +93,6 @@ static void fill_symtab(Context &ctx) {
   ctx.symtab.add(ctx, "_main", N_SECT, true, 1, 0x0, 0x100003f70);
   ctx.symtab.add(ctx, "_printf", N_UNDF, true, 0, 0x100, 0x0);
   ctx.symtab.add(ctx, "dyld_stub_binder", N_UNDF, true, 0, 0x100, 0x0);
-
-  ctx.strtab.hdr.size = align_to(ctx.strtab.hdr.size, 8);
 }
 
 static void export_symbols(Context &ctx) {

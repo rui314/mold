@@ -609,6 +609,10 @@ i64 OutputStrtabSection::add_string(std::string_view str) {
   return off;
 }
 
+void OutputStrtabSection::compute_size(Context &ctx) {
+  hdr.size = align_to(hdr.size, 8);
+}
+
 void OutputStrtabSection::copy_buf(Context &ctx) {
   memcpy(ctx.buf + hdr.offset, &contents[0], contents.size());
 }
