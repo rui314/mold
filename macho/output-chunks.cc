@@ -581,7 +581,7 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
 
 void OutputSymtabSection::add(Context &ctx, std::string_view name,
                               i64 type, bool is_external,
-                              i64 sect_idx, i64 desc, u64 value) {
+                              i64 sect_idx, i64 desc) {
   MachSym &sym = symbols.emplace_back();
   hdr.size += sizeof(sym);
 
@@ -592,10 +592,15 @@ void OutputSymtabSection::add(Context &ctx, std::string_view name,
   sym.ext = is_external;
   sym.sect = sect_idx;
   sym.desc = desc;
-  sym.value = value;
+
+  syms.push_back(intern(ctx, name));
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
+  for (i64 i = 0; i < syms.size(); i++)
+    if (!syms[i]->file->is_dylib)
+      symbols[i].value = syms[i]->get_addr(ctx);
+
   memcpy(ctx.buf + hdr.offset, symbols.data(),
          symbols.size() * sizeof(symbols[0]));
 }

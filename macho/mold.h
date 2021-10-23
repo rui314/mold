@@ -347,10 +347,11 @@ public:
   }
 
   void add(Context &ctx, std::string_view name, i64 type,
-           bool is_external, i64 sect_idx, i64 lib_idx, u64 value);
+           bool is_external, i64 sect_idx, i64 lib_idx);
 
   void copy_buf(Context &ctx) override;
 
+  std::vector<Symbol *> syms;
   std::vector<MachSym> symbols;
 };
 
