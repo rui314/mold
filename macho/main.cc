@@ -87,12 +87,12 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void fill_symtab(Context &ctx) {
-  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), false, 8, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), true, 1, 0x10);
-  ctx.symtab.add(ctx, intern(ctx, "_hello"), true, 1, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_main"), true, 1, 0x0);
-  ctx.symtab.add(ctx, intern(ctx, "_printf"), true, 0, 0x100);
-  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), true, 0, 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "__dyld_private"), false, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "__mh_execute_header"), true, 0x10);
+  ctx.symtab.add(ctx, intern(ctx, "_hello"), true, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_main"), true, 0x0);
+  ctx.symtab.add(ctx, intern(ctx, "_printf"), true, 0x100);
+  ctx.symtab.add(ctx, intern(ctx, "dyld_stub_binder"), true, 0x100);
 }
 
 static void export_symbols(Context &ctx) {
@@ -108,6 +108,12 @@ static void export_symbols(Context &ctx) {
 }
 
 static i64 assign_offsets(Context &ctx) {
+  i64 sect_idx = 1;
+  for (OutputSegment *seg : ctx.segments)
+    for (Chunk *chunk : seg->chunks)
+      if (!chunk->is_hidden)
+        chunk->sect_idx = sect_idx++;
+
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
 

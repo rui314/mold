@@ -183,6 +183,7 @@ public:
 
   MachSection hdr = {};
   OutputSegment *parent = nullptr;
+  u32 sect_idx = 0;
   bool is_hidden = false;
   bool is_regular = false;
 };
@@ -346,8 +347,7 @@ public:
     hdr.p2align = __builtin_ctz(8);
   }
 
-  void add(Context &ctx, Symbol *sym, bool is_external,
-           i64 sect_idx, i64 lib_idx);
+  void add(Context &ctx, Symbol *sym, bool is_external, i64 lib_idx);
 
   void copy_buf(Context &ctx) override;
 
