@@ -81,6 +81,7 @@ public:
   void resolve_symbols(Context &ctx);
 
   std::string_view install_name;
+  i64 idx = 0;
 
 private:
   DylibFile() = default;

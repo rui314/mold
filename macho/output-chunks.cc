@@ -135,10 +135,9 @@ static std::vector<u8> create_main_cmd(Context &ctx) {
   return buf;
 }
 
-static std::vector<u8> create_load_dylib_cmd(Context &ctx) {
-  static constexpr char path[] = "/usr/lib/libSystem.B.dylib";
-
-  std::vector<u8> buf(align_to(sizeof(DylibCommand) + sizeof(path), 8));
+static std::vector<u8> create_load_dylib_cmd(Context &ctx, DylibFile &dylib) {
+  i64 size = sizeof(DylibCommand) + dylib.install_name.size() + 1; // +1 for NUL
+  std::vector<u8> buf(align_to(size, 8));
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
   cmd.cmd = LC_LOAD_DYLIB;
@@ -147,7 +146,7 @@ static std::vector<u8> create_load_dylib_cmd(Context &ctx) {
   cmd.timestamp = 2;
   cmd.current_version = 0x50c6405;
   cmd.compatibility_version = 0x10000;
-  memcpy(buf.data() + sizeof(cmd), path, sizeof(path));
+  write_string(buf.data() + sizeof(cmd), dylib.install_name);
   return buf;
 }
 
@@ -213,7 +212,8 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   vec.push_back(create_build_version_cmd(ctx));
   vec.push_back(create_source_version_cmd(ctx));
   vec.push_back(create_main_cmd(ctx));
-  vec.push_back(create_load_dylib_cmd(ctx));
+  for (DylibFile *dylib : ctx.dylibs)
+    vec.push_back(create_load_dylib_cmd(ctx, *dylib));
   vec.push_back(create_function_starts_cmd(ctx));
   vec.push_back(create_data_in_code_cmd(ctx));
   return vec;

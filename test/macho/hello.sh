@@ -17,7 +17,7 @@ int main() {
 }
 EOF
 
-$mold -o $t/hello $t/a.o
+$mold -o $t/hello -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -lSystem $t/a.o
 $t/hello | grep -q 'Hello world'
 
 echo OK

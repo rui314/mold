@@ -180,6 +180,9 @@ int main(int argc, char **argv) {
   for (DylibFile *dylib : ctx.dylibs)
     dylib->priority = priority++;
 
+  for (i64 i = 0; i < ctx.dylibs.size(); i++)
+    ctx.dylibs[i]->idx = i + 1;
+
   for (ObjectFile *obj : ctx.objs)
     obj->parse(ctx);
   for (DylibFile *dylib : ctx.dylibs)
@@ -187,9 +190,8 @@ int main(int argc, char **argv) {
 
   for (ObjectFile *obj : ctx.objs)
     obj->resolve_symbols(ctx);
-  for (DylibFile *dylib : ctx.dylibs) {
+  for (DylibFile *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
-  }
 
   create_internal_file(ctx);
   create_synthetic_chunks(ctx);
