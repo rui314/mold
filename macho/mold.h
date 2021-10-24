@@ -176,6 +176,7 @@ public:
 
   std::string_view name;
   SegmentCommand cmd = {};
+  i32 seg_idx = -1;
   std::vector<Chunk *> chunks;
 };
 

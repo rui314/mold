@@ -198,6 +198,9 @@ int main(int argc, char **argv) {
   create_internal_file(ctx);
   create_synthetic_chunks(ctx);
 
+  for (i64 i = 0; i < ctx.segments.size(); i++)
+    ctx.segments[i]->seg_idx = i + 1;
+
   for (ObjectFile *obj : ctx.objs)
     for (std::unique_ptr<InputSection> &sec : obj->sections)
       sec->scan_relocations(ctx);

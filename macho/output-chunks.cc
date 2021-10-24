@@ -419,7 +419,15 @@ void BindEncoder::finish() {
 
 void OutputBindSection::compute_size(Context &ctx) {
   BindEncoder enc(false);
-  enc.add(1, "dyld_stub_binder", 0, 2, 0);
+
+  for (Symbol *sym : ctx.got.syms) {
+    assert(sym->file->is_dylib);
+
+    enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
+            ctx.data_const_seg.seg_idx,
+            sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
+  }
+
   enc.finish();
 
   contents = enc.buf;
