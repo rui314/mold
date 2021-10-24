@@ -594,8 +594,9 @@ void OutputSymtabSection::compute_size(Context &ctx) {
 
   for (DylibFile *dylib : ctx.dylibs)
     for (Symbol *sym : dylib->syms)
-      if (sym->file == dylib && sym->needs_stub)
-        undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
+      if (sym->file == dylib)
+        if (sym->stub_idx != -1 || sym->got_idx != -1)
+          undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
 
   i64 nsyms = locals.size() + globals.size() + undefs.size();
   hdr.size = nsyms * sizeof(MachSym);

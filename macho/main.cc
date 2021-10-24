@@ -31,9 +31,6 @@ static void create_internal_file(Context &ctx) {
   sym->is_extern = true;
   sym->referenced_dynamically = true;
   sym->value = PAGE_ZERO_SIZE;
-
-  sym = add("dyld_stub_binder");
-  sym->needs_stub = true;
 }
 
 static void add_section(Context &ctx, OutputSection &osec,
