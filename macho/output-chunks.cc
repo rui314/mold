@@ -581,8 +581,8 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
 
 void OutputSymtabSection::compute_size(Context &ctx) {
   auto add = [&](Symbol *sym) {
-    syms.push_back(sym);
-    stroffs.push_back(ctx.strtab.add_string(sym->name));
+    u32 stroff = ctx.strtab.add_string(sym->name);
+    entries.push_back({sym, stroff});
   };
 
   for (ObjectFile *obj : ctx.objs)
@@ -595,18 +595,18 @@ void OutputSymtabSection::compute_size(Context &ctx) {
       if (sym->file == dylib && sym->needs_stub)
         add(sym);
 
-  hdr.size = syms.size() * sizeof(MachSym);
+  hdr.size = entries.size() * sizeof(MachSym);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + hdr.offset);
   memset(buf, 0, hdr.size);
 
-  for (i64 i = 0; i < syms.size(); i++) {
+  for (i64 i = 0; i < entries.size(); i++) {
     MachSym &msym = buf[i];
-    Symbol &sym = *syms[i];
+    Symbol &sym = *entries[i].sym;
 
-    msym.stroff = stroffs[i];
+    msym.stroff = entries[i].stroff;
     msym.type = (sym.file->is_dylib ? N_UNDF : N_SECT);
     msym.ext = sym.is_extern;
 

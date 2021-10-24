@@ -352,8 +352,13 @@ public:
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  std::vector<Symbol *> syms;
-  std::vector<u32> stroffs;
+private:
+  struct Entry {
+    Symbol *sym;
+    u32 stroff;
+  };
+
+  std::vector<Entry> entries;
 };
 
 class OutputStrtabSection : public Chunk {
