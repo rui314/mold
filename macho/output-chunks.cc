@@ -598,14 +598,25 @@ void OutputSymtabSection::compute_size(Context &ctx) {
       if (sym->file == obj)
         globals.push_back({sym, ctx.strtab.add_string(sym->name)});
 
-  for (DylibFile *dylib : ctx.dylibs)
-    for (Symbol *sym : dylib->syms)
-      if (sym->file == dylib)
-        if (sym->stub_idx != -1 || sym->got_idx != -1)
+  i64 idx = globals.size();
+
+  for (DylibFile *dylib : ctx.dylibs) {
+    for (Symbol *sym : dylib->syms) {
+      if (sym->file == dylib) {
+        if (sym->stub_idx != -1 || sym->got_idx != -1) {
           undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
 
-  i64 nsyms = locals.size() + globals.size() + undefs.size();
-  hdr.size = nsyms * sizeof(MachSym);
+          if (sym->stub_idx != -1)
+            ctx.indir_symtab.stubs.push_back({sym, idx});
+          else
+            ctx.indir_symtab.gots.push_back({sym, idx});
+          idx++;
+        }
+      }
+    }
+  }
+
+  hdr.size = idx * sizeof(MachSym);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
@@ -656,8 +667,28 @@ void OutputStrtabSection::copy_buf(Context &ctx) {
   memcpy(ctx.buf + hdr.offset, &contents[0], contents.size());
 }
 
+void OutputIndirectSymtabSection::compute_size(Context &ctx) {
+  ctx.stubs.hdr.reserved1 = 0;
+  ctx.got.hdr.reserved1 = stubs.size();
+  ctx.lazy_symbol_ptr.hdr.reserved1 = stubs.size() + gots.size();
+
+  i64 nsyms = stubs.size() * 2 + gots.size();
+  hdr.size = nsyms * ENTRY_SIZE;
+}
+
 void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  u32 *buf = (u32 *)(ctx.buf + hdr.offset);
+
+  for (Entry &ent : stubs)
+    buf[ent.sym->stub_idx] = ent.symtab_idx;
+  buf += stubs.size();
+
+  for (Entry &ent : gots)
+    buf[ent.sym->got_idx] = ent.symtab_idx;
+  buf += gots.size();
+
+  for (Entry &ent : stubs)
+    buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
 StubsSection::StubsSection() {
@@ -900,7 +931,6 @@ GotSection::GotSection() {
   strcpy(hdr.sectname, "__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
-  hdr.reserved1 = 1;
 }
 
 void GotSection::add(Context &ctx, Symbol *sym) {
@@ -914,7 +944,6 @@ LazySymbolPtrSection::LazySymbolPtrSection() {
   strcpy(hdr.sectname, "__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
-  hdr.reserved1 = 2;
 }
 
 void LazySymbolPtrSection::copy_buf(Context &ctx) {

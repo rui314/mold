@@ -387,16 +387,20 @@ class OutputIndirectSymtabSection : public Chunk {
 public:
   OutputIndirectSymtabSection() {
     is_hidden = true;
-    hdr.size = contents.size();
   }
 
   static constexpr i64 ENTRY_SIZE = 4;
 
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  std::vector<u8> contents = {
-    0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+  struct Entry {
+    Symbol *sym;
+    i64 symtab_idx;
   };
+
+  std::vector<Entry> stubs;
+  std::vector<Entry> gots;
 };
 
 class StubsSection : public Chunk {
