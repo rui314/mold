@@ -709,7 +709,8 @@ void StubHelperSection::copy_buf(Context &ctx) {
 
   memcpy(buf, insn0, sizeof(insn0));
   *(u32 *)(buf + 3) = intern(ctx, "__dyld_private")->get_addr(ctx) - hdr.addr - 7;
-  *(u32 *)(buf + 11) = ctx.got.hdr.addr - hdr.addr - 15;
+  *(u32 *)(buf + 11) =
+    intern(ctx, "dyld_stub_binder")->get_got_addr(ctx) - hdr.addr - 15;
 
   buf += 16;
 
@@ -892,8 +893,14 @@ GotSection::GotSection() {
   strcpy(hdr.sectname, "__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
-  hdr.size = 8;
   hdr.reserved1 = 1;
+}
+
+void GotSection::add(Context &ctx, Symbol *sym) {
+  assert(sym->got_idx == -1);
+  sym->got_idx = syms.size();
+  syms.push_back(sym);
+  hdr.size = syms.size() * ENTRY_SIZE;
 }
 
 LazySymbolPtrSection::LazySymbolPtrSection() {

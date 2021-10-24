@@ -92,6 +92,8 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
+  ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
+
   for (DylibFile *dylib : ctx.dylibs)
     for (Symbol *sym : dylib->syms)
       if (sym->file == dylib && sym->needs_stub)

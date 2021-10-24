@@ -152,12 +152,14 @@ struct Symbol {
   Subsection *subsec = nullptr;
   u64 value = 0;
   i32 stub_idx = -1;
+  i32 got_idx = -1;
   tbb::spin_mutex mu;
   std::atomic_bool needs_stub = false;
   u8 is_extern : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
   inline u64 get_addr(Context &ctx) const;
+  inline u64 get_got_addr(Context &ctx) const;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);
@@ -440,6 +442,11 @@ public:
 class GotSection : public Chunk {
 public:
   GotSection();
+  void add(Context &ctx, Symbol *sym);
+
+  std::vector<Symbol *> syms;
+
+  static constexpr i64 ENTRY_SIZE = 8;
 };
 
 class LazySymbolPtrSection : public Chunk {
@@ -596,10 +603,15 @@ u64 Symbol::get_addr(Context &ctx) const {
   return value;
 }
 
+u64 Symbol::get_got_addr(Context &ctx) const {
+  assert(got_idx != -1);
+  return ctx.got.hdr.addr + got_idx * GotSection::ENTRY_SIZE;
+}
+
 inline Symbol *intern(Context &ctx, std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
   ctx.symbol_map.insert(acc, {name, Symbol(name)});
-  return const_cast<Symbol*>(&acc->second);
+  return (Symbol *)(&acc->second);
 }
 
 inline std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
