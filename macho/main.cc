@@ -92,15 +92,10 @@ static void create_synthetic_chunks(Context &ctx) {
 }
 
 static void export_symbols(Context &ctx) {
-  std::vector<Symbol *> syms;
-
   for (DylibFile *dylib : ctx.dylibs)
     for (Symbol *sym : dylib->syms)
       if (sym->file == dylib && sym->needs_stub)
-        syms.push_back(sym);
-
-  for (Symbol *sym : syms)
-    ctx.stubs.add(ctx, sym);
+        ctx.stubs.add(ctx, sym);
 }
 
 static i64 assign_offsets(Context &ctx) {
