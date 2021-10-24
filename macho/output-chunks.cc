@@ -66,11 +66,18 @@ static std::vector<u8> create_dysymtab_cmd(Context &ctx) {
 
   cmd.cmd = LC_DYSYMTAB;
   cmd.cmdsize = buf.size();
-  cmd.nlocalsym = 1;
-  cmd.iextdefsym = 1;
-  cmd.nextdefsym = 3;
-  cmd.iundefsym = 4;
-  cmd.nundefsym = 2;
+
+  i64 locals = ctx.symtab.locals.size();
+  i64 globals = ctx.symtab.globals.size();
+  i64 undefs = ctx.symtab.undefs.size();
+
+  cmd.ilocalsym = 0;
+  cmd.nlocalsym = locals;
+  cmd.iextdefsym = locals;
+  cmd.nextdefsym = globals;
+  cmd.iundefsym = locals + globals;
+  cmd.nundefsym = undefs;
+
   cmd.indirectsymoff = ctx.indir_symtab.hdr.offset;
   cmd.nindirectsyms =
     ctx.indir_symtab.hdr.size / OutputIndirectSymtabSection::ENTRY_SIZE;
@@ -580,33 +587,29 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
 }
 
 void OutputSymtabSection::compute_size(Context &ctx) {
-  auto add = [&](Symbol *sym) {
-    u32 stroff = ctx.strtab.add_string(sym->name);
-    entries.push_back({sym, stroff});
-  };
-
   for (ObjectFile *obj : ctx.objs)
     for (Symbol *sym : obj->syms)
       if (sym->file == obj)
-        add(sym);
+        globals.push_back({sym, ctx.strtab.add_string(sym->name)});
 
   for (DylibFile *dylib : ctx.dylibs)
     for (Symbol *sym : dylib->syms)
       if (sym->file == dylib && sym->needs_stub)
-        add(sym);
+        undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
 
-  hdr.size = entries.size() * sizeof(MachSym);
+  i64 nsyms = locals.size() + globals.size() + undefs.size();
+  hdr.size = nsyms * sizeof(MachSym);
 }
 
 void OutputSymtabSection::copy_buf(Context &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + hdr.offset);
   memset(buf, 0, hdr.size);
 
-  for (i64 i = 0; i < entries.size(); i++) {
-    MachSym &msym = buf[i];
-    Symbol &sym = *entries[i].sym;
+  auto write = [&](Entry &ent) {
+    MachSym &msym = *buf++;
+    Symbol &sym = *ent.sym;
 
-    msym.stroff = entries[i].stroff;
+    msym.stroff = ent.stroff;
     msym.type = (sym.file->is_dylib ? N_UNDF : N_SECT);
     msym.ext = sym.is_extern;
 
@@ -619,7 +622,14 @@ void OutputSymtabSection::copy_buf(Context &ctx) {
       msym.desc = ((DylibFile *)sym.file)->dylib_idx << 8;
     else if (sym.referenced_dynamically)
       msym.desc = REFERENCED_DYNAMICALLY;
-  }
+  };
+
+  for (Entry &ent : locals)
+    write(ent);
+  for (Entry &ent : globals)
+    write(ent);
+  for (Entry &ent : undefs)
+    write(ent);
 }
 
 i64 OutputStrtabSection::add_string(std::string_view str) {
