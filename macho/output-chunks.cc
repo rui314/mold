@@ -417,9 +417,7 @@ void BindEncoder::finish() {
   buf.push_back(BIND_OPCODE_DONE);
 }
 
-OutputBindSection::OutputBindSection() {
-  is_hidden = true;
-
+void OutputBindSection::compute_size(Context &ctx) {
   BindEncoder enc(false);
   enc.add(1, "dyld_stub_binder", 0, 2, 0);
   enc.finish();

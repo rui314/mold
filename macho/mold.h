@@ -275,7 +275,11 @@ private:
 
 class OutputBindSection : public Chunk {
 public:
-  OutputBindSection();
+  OutputBindSection() {
+    is_hidden = true;
+  }
+
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;
