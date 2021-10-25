@@ -820,14 +820,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
   // Allocate a buffer that is more than large enough to hold the
   // entire section.
-  i64 size = sizeof(UnwindSectionHeader) +
-             personalities.size() * 4 +
-             num_lsda * sizeof(UnwindLsdaEntry) +
-             pages.size() * (sizeof(UnwindFirstLevelPage) + 1) +
-             pages.size() * sizeof(UnwindSecondLevelPage) +
-             records.size() * 8;
-
-  buf.resize(size);
+  buf.resize(4096 * 1024);
 
   // Write the section header.
   UnwindSectionHeader &hdr = *(UnwindSectionHeader *)buf.data();
