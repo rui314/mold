@@ -420,6 +420,7 @@ public:
   static constexpr i64 ENTRY_SIZE = 6;
 
   std::vector<Symbol *> syms;
+  std::vector<u32> bind_offsets;
 };
 
 class StubHelperSection : public Chunk {

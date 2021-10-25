@@ -465,7 +465,11 @@ void OutputLazyBindSection::add(i64 dylib_idx, std::string_view sym, i64 flags,
 }
 
 void OutputLazyBindSection::compute_size(Context &ctx) {
+  ctx.stubs.bind_offsets.clear();
+
+  ctx.stubs.bind_offsets.push_back(contents.size());
   add(1, "_printf", 0, 3, 0);
+
   hdr.size = align_to(contents.size(), 8);
 }
 
@@ -774,13 +778,13 @@ void StubHelperSection::copy_buf(Context &ctx) {
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
     u8 insn[10] = {
-      0x68, 0, 0, 0, 0, // push $idx
+      0x68, 0, 0, 0, 0, // push $bind_offset
       0xe9, 0, 0, 0, 0, // jmp $__stub_helper
     };
 
     memcpy(buf, insn, sizeof(insn));
 
-    *(u32 *)(buf + 1) = i;
+    *(u32 *)(buf + 1) = ctx.stubs.bind_offsets[i];
     *(u32 *)(buf + 6) = start - buf - 10;
     buf += 10;
   }
