@@ -543,6 +543,7 @@ struct Context {
     i64 platform = PLATFORM_MACOS;
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;
+    i64 headerpad = 256;
     std::string chroot;
     std::string output;
     std::string syslibroot;
@@ -576,7 +577,7 @@ struct Context {
 
   OutputMachHeader mach_hdr;
   StubsSection stubs;
-  OutputPadding padding;
+  OutputPadding headerpad;
   StubHelperSection stub_helper;
   UnwindInfoSection unwind_info;
   GotSection got;

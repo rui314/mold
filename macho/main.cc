@@ -54,9 +54,9 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
-  ctx.text_seg.chunks.push_back(&ctx.padding);
+  ctx.text_seg.chunks.push_back(&ctx.headerpad);
 
-  ctx.padding.hdr.size = 14808;
+  ctx.headerpad.hdr.size = ctx.arg.headerpad;
 
   ctx.text.hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
   ctx.text.hdr.p2align = 4;
