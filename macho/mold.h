@@ -259,7 +259,7 @@ public:
 
 class BindEncoder {
 public:
-  BindEncoder(bool is_lazy);
+  BindEncoder();
   void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
            i64 offset);
   void finish();
@@ -288,7 +288,14 @@ public:
 
 class OutputLazyBindSection : public Chunk {
 public:
-  OutputLazyBindSection();
+  OutputLazyBindSection() {
+    is_hidden = true;
+  }
+
+  void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
+           i64 offset);
+
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;

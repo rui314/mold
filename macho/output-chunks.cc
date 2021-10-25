@@ -375,9 +375,8 @@ void OutputRebaseSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-BindEncoder::BindEncoder(bool is_lazy) {
-  if (!is_lazy)
-    buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
+BindEncoder::BindEncoder() {
+  buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
 }
 
 void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
@@ -418,7 +417,7 @@ void BindEncoder::finish() {
 }
 
 void OutputBindSection::compute_size(Context &ctx) {
-  BindEncoder enc(false);
+  BindEncoder enc;
 
   for (Symbol *sym : ctx.got.syms) {
     assert(sym->file->is_dylib);
@@ -438,14 +437,35 @@ void OutputBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-OutputLazyBindSection::OutputLazyBindSection() {
-  is_hidden = true;
+void OutputLazyBindSection::add(i64 dylib_idx, std::string_view sym, i64 flags,
+                                i64 seg_idx, i64 offset) {
+  auto emit = [&](u8 byte) {
+    contents.push_back(byte);
+  };
 
-  BindEncoder enc(true);
-  enc.add(1, "_printf", 0, 3, 0);
-  enc.finish();
+  if (dylib_idx < 16) {
+    emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
+  } else {
+    emit(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
+    encode_uleb(contents, dylib_idx);
+  }
 
-  contents = enc.buf;
+  assert(flags < 16);
+  emit(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
+  contents.insert(contents.end(), (u8 *)sym.data(),
+                  (u8 *)(sym.data() + sym.size()));
+  emit('\0');
+
+  assert(seg_idx < 16);
+  emit(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
+  encode_uleb(contents, offset);
+
+  emit(BIND_OPCODE_DO_BIND);
+  emit(BIND_OPCODE_DONE);
+}
+
+void OutputLazyBindSection::compute_size(Context &ctx) {
+  add(1, "_printf", 0, 3, 0);
   hdr.size = align_to(contents.size(), 8);
 }
 
