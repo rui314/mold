@@ -292,8 +292,7 @@ public:
     is_hidden = true;
   }
 
-  void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
-           i64 offset);
+  void add(Symbol &sym, i64 flags, i64 seg_idx, i64 offset);
 
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;

@@ -437,12 +437,12 @@ void OutputBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputLazyBindSection::add(i64 dylib_idx, std::string_view sym, i64 flags,
-                                i64 seg_idx, i64 offset) {
+void OutputLazyBindSection::add(Symbol &sym, i64 flags, i64 seg_idx, i64 offset) {
   auto emit = [&](u8 byte) {
     contents.push_back(byte);
   };
 
+  i64 dylib_idx = ((DylibFile *)sym.file)->dylib_idx;
   if (dylib_idx < 16) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
@@ -452,8 +452,8 @@ void OutputLazyBindSection::add(i64 dylib_idx, std::string_view sym, i64 flags,
 
   assert(flags < 16);
   emit(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-  contents.insert(contents.end(), (u8 *)sym.data(),
-                  (u8 *)(sym.data() + sym.size()));
+  contents.insert(contents.end(), (u8 *)sym.name.data(),
+                  (u8 *)(sym.name.data() + sym.name.size()));
   emit('\0');
 
   assert(seg_idx < 16);
@@ -468,7 +468,7 @@ void OutputLazyBindSection::compute_size(Context &ctx) {
   ctx.stubs.bind_offsets.clear();
 
   ctx.stubs.bind_offsets.push_back(contents.size());
-  add(1, "_printf", 0, 3, 0);
+  add(*intern(ctx, "_printf"), 0, 3, 0);
 
   hdr.size = align_to(contents.size(), 8);
 }
