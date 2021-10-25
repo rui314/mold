@@ -471,8 +471,10 @@ void OutputLazyBindSection::add(Context &ctx, Symbol &sym, i64 flags) {
 void OutputLazyBindSection::compute_size(Context &ctx) {
   ctx.stubs.bind_offsets.clear();
 
-  ctx.stubs.bind_offsets.push_back(contents.size());
-  add(ctx, *intern(ctx, "_printf"), 0);
+  for (Symbol *sym : ctx.stubs.syms) {
+    ctx.stubs.bind_offsets.push_back(contents.size());
+    add(ctx, *sym, 0);
+  }
 
   hdr.size = align_to(contents.size(), 8);
 }
