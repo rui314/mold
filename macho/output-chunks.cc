@@ -437,7 +437,7 @@ void OutputBindSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-void OutputLazyBindSection::add(Context &ctx, Symbol &sym, i64 flags, i64 offset) {
+void OutputLazyBindSection::add(Context &ctx, Symbol &sym, i64 flags) {
   auto emit = [&](u8 byte) {
     contents.push_back(byte);
   };
@@ -458,6 +458,10 @@ void OutputLazyBindSection::add(Context &ctx, Symbol &sym, i64 flags, i64 offset
 
   i64 seg_idx = ctx.data_seg.seg_idx;
   emit(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
+
+  i64 offset = ctx.lazy_symbol_ptr.hdr.addr +
+               sym.stub_idx * LazySymbolPtrSection::ENTRY_SIZE -
+               ctx.data_seg.cmd.vmaddr;
   encode_uleb(contents, offset);
 
   emit(BIND_OPCODE_DO_BIND);
@@ -468,7 +472,7 @@ void OutputLazyBindSection::compute_size(Context &ctx) {
   ctx.stubs.bind_offsets.clear();
 
   ctx.stubs.bind_offsets.push_back(contents.size());
-  add(ctx, *intern(ctx, "_printf"), 0, 0);
+  add(ctx, *intern(ctx, "_printf"), 0);
 
   hdr.size = align_to(contents.size(), 8);
 }

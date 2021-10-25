@@ -292,7 +292,7 @@ public:
     is_hidden = true;
   }
 
-  void add(Context &ctx, Symbol &sym, i64 flags, i64 offset);
+  void add(Context &ctx, Symbol &sym, i64 flags);
 
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
