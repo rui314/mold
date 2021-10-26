@@ -11,7 +11,7 @@ cat <<EOF | cc -o $t/a.o -c -xc -
 
 int main() {
   printf("Hello");
-  fprintf(stdout, " world\n");
+  puts(" world");
 }
 EOF
 

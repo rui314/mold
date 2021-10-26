@@ -251,7 +251,11 @@ private:
 
 class OutputRebaseSection : public Chunk {
 public:
-  OutputRebaseSection();
+  OutputRebaseSection() {
+    is_hidden = true;
+  }
+
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
   std::vector<u8> contents;

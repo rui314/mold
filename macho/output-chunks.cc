@@ -361,11 +361,13 @@ void RebaseEncoder::finish() {
   buf.push_back(REBASE_OPCODE_DONE);
 }
 
-OutputRebaseSection::OutputRebaseSection() {
-  is_hidden = true;
-
+void OutputRebaseSection::compute_size(Context &ctx) {
   RebaseEncoder enc;
-  enc.add(3, 0);
+  for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
+    enc.add(ctx.data_seg.seg_idx,
+            ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection::ENTRY_SIZE -
+            ctx.data_seg.cmd.vmaddr);
+
   enc.finish();
   contents = enc.buf;
   hdr.size = align_to(contents.size(), 8);
@@ -755,7 +757,8 @@ void StubsSection::copy_buf(Context &ctx) {
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
-      (ctx.lazy_symbol_ptr.hdr.addr + i * 10) - (hdr.addr + i * 6 + 6);
+      (ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection::ENTRY_SIZE) -
+      (hdr.addr + i * 6 + 6);
   }
 }
 
