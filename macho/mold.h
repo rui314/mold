@@ -484,6 +484,29 @@ public:
 void dump_file(std::string path);
 
 //
+// output-file.cc
+//
+
+class OutputFile {
+public:
+  static std::unique_ptr<OutputFile>
+  open(Context &ctx, std::string path, i64 filesize, i64 perm);
+
+  virtual void close(Context &ctx) = 0;
+  virtual ~OutputFile() {}
+
+  u8 *buf = nullptr;
+  std::string path;
+  i64 filesize;
+  bool is_mmapped;
+  bool is_unmapped = false;
+
+protected:
+  OutputFile(std::string path, i64 filesize, bool is_mmapped)
+    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
+};
+
+//
 // yaml.cc
 //
 
@@ -560,7 +583,7 @@ struct Context {
 
   tbb::concurrent_hash_map<std::string_view, Symbol> symbol_map;
 
-  std::unique_ptr<OutputFile<Context>> output_file;
+  std::unique_ptr<OutputFile> output_file;
   u8 *buf;
 
   tbb::concurrent_vector<std::unique_ptr<ObjectFile>> obj_pool;

@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
   i64 output_size = assign_offsets(ctx);
   fix_synthetic_symbol_values(ctx);
 
-  ctx.output_file = open_output_file(ctx, ctx.arg.output, output_size, 0777);
+  ctx.output_file = OutputFile::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
   for (OutputSegment *seg : ctx.segments)
