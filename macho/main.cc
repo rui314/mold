@@ -90,10 +90,15 @@ static void create_synthetic_chunks(Context &ctx) {
 static void export_symbols(Context &ctx) {
   ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
 
-  for (DylibFile *dylib : ctx.dylibs)
-    for (Symbol *sym : dylib->syms)
-      if (sym->file == dylib && sym->needs_stub)
-        ctx.stubs.add(ctx, sym);
+  for (DylibFile *dylib : ctx.dylibs) {
+    for (Symbol *sym : dylib->syms) {
+      if (sym->file == dylib)
+        if (sym->flags & NEEDS_STUB)
+          ctx.stubs.add(ctx, sym);
+      if (sym->flags & NEEDS_GOT)
+        ctx.got.add(ctx, sym);
+    }
+  }
 }
 
 static i64 assign_offsets(Context &ctx) {

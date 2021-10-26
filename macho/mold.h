@@ -29,6 +29,7 @@ struct Symbol;
 struct Relocation {
   u32 offset = 0;
   bool is_pcrel = false;
+  bool is_gotref = false;
   i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
@@ -141,6 +142,11 @@ public:
 // Symbol
 //
 
+enum {
+  NEEDS_GOT  = 1 << 0,
+  NEEDS_STUB = 1 << 1,
+};
+
 struct Symbol {
   Symbol() = default;
   Symbol(std::string_view name) : name(name) {}
@@ -154,7 +160,7 @@ struct Symbol {
   i32 stub_idx = -1;
   i32 got_idx = -1;
   tbb::spin_mutex mu;
-  std::atomic_bool needs_stub = false;
+  std::atomic_uint8_t flags = 0;
   u8 is_extern : 1 = false;
   u8 referenced_dynamically : 1 = false;
 

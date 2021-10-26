@@ -43,8 +43,11 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   else
     unreachable();
 
+  bool is_gotref = (r.type == X86_64_RELOC_GOT_LOAD || r.type == X86_64_RELOC_GOT);
+
   if (r.is_extern)
-    return {r.offset, (bool)r.is_pcrel, addend, file.syms[r.idx], nullptr};
+    return {r.offset, (bool)r.is_pcrel, is_gotref, addend, file.syms[r.idx],
+            nullptr};
 
   u32 addr;
   if (r.is_pcrel) {
@@ -58,7 +61,9 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   Subsection *target = file.sections[r.idx - 1]->find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
-  return {r.offset, (bool)r.is_pcrel, addr - target->input_addr, nullptr, target};
+
+  return {r.offset, (bool)r.is_pcrel, is_gotref, addr - target->input_addr,
+          nullptr, target};
 }
 
 void InputSection::parse_relocations(Context &ctx) {
@@ -88,8 +93,12 @@ void InputSection::parse_relocations(Context &ctx) {
 void InputSection::scan_relocations(Context &ctx) {
   for (Relocation &rel : rels) {
     Symbol *sym = rel.sym;
-    if (sym && sym->file && sym->file->is_dylib)
-      sym->needs_stub = true;
+    if (sym && sym->file && sym->file->is_dylib) {
+      if (rel.is_gotref)
+        sym->flags |= NEEDS_GOT;
+      else
+        sym->flags |= NEEDS_STUB;
+    }
   }
 }
 
@@ -97,15 +106,23 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
   for (const Relocation &rel : std::span(isec.rels).subspan(rel_offset, nrels)) {
     u32 *loc = (u32 *)(buf + rel.offset);
 
-    if (rel.sym) {
-      *loc = rel.sym->get_addr(ctx) + rel.addend;
-    } else {
-      *loc = rel.subsec->isec.osec->hdr.addr + rel.subsec->output_offset +
-             rel.addend;
-    }
+#define S (rel.sym ? rel.sym->get_addr(ctx) : \
+           rel.subsec->isec.osec->hdr.addr + rel.subsec->output_offset)
+#define A rel.addend
+#define P (isec.osec->hdr.addr + output_offset + rel.offset)
+#define G rel.sym->get_got_addr(ctx)
 
-    if (rel.is_pcrel)
-      *loc = *loc - isec.osec->hdr.addr - output_offset - rel.offset - 4;
+    if (rel.is_gotref)
+      *loc = G - P - 4;
+    else if (rel.is_pcrel)
+      *loc = S + A - P - 4;
+    else
+      *loc = S + A;
+
+#undef S
+#undef A
+#undef P
+#undef G
   }
 }
 
