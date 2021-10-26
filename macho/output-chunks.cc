@@ -582,11 +582,12 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
     write_trie(start, child);
 }
 
-OutputExportSection::OutputExportSection() {
-  is_hidden = true;
-  enc.add("__mh_execute_header", 0, 0);
-  enc.add("_hello", 0, 0x3f50);
-  enc.add("_main", 0, 0x3f70);
+void OutputExportSection::compute_size(Context &ctx) {
+  for (ObjectFile *file : ctx.objs)
+    for (Symbol *sym : file->syms)
+      if (sym->file == file)
+        enc.add(sym->name, 0, sym->get_addr(ctx) - PAGE_ZERO_SIZE);
+
   hdr.size = align_to(enc.finish(), 8);
 }
 

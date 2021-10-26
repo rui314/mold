@@ -336,7 +336,11 @@ private:
 
 class OutputExportSection : public Chunk {
 public:
-  OutputExportSection();
+  OutputExportSection() {
+    is_hidden = true;
+  }
+
+  void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
 private:
