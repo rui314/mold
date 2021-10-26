@@ -1114,6 +1114,30 @@ template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> void compress_debug_sections(Context<E> &);
 
 //
+// output-file.cc
+//
+
+template <typename E>
+class OutputFile {
+public:
+  static std::unique_ptr<OutputFile<E>>
+  open(Context<E> &ctx, std::string path, i64 filesize, i64 perm);
+
+  virtual void close(Context<E> &ctx) = 0;
+  virtual ~OutputFile() {}
+
+  u8 *buf = nullptr;
+  std::string path;
+  i64 filesize;
+  bool is_mmapped;
+  bool is_unmapped = false;
+
+protected:
+  OutputFile(std::string path, i64 filesize, bool is_mmapped)
+    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
+};
+
+//
 // main.cc
 //
 
@@ -1298,7 +1322,7 @@ struct Context {
   ObjectFile<E> *internal_obj = nullptr;
 
   // Output buffer
-  std::unique_ptr<OutputFile<Context<E>>> output_file;
+  std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf = nullptr;
 
   std::vector<Chunk<E> *> chunks;

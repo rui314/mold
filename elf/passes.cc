@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "../output-file.h"
 
 #include <functional>
 #include <map>

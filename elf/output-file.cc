@@ -1,5 +1,3 @@
-#pragma once
-
 #include "mold.h"
 
 #include <fcntl.h>
@@ -7,27 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-namespace mold {
-
-template <typename C>
-class OutputFile {
-public:
-  virtual void close(C &ctx) = 0;
-  virtual ~OutputFile() {}
-
-  u8 *buf = nullptr;
-  std::string path;
-  i64 filesize;
-  bool is_mmapped;
-  bool is_unmapped = false;
-
-protected:
-  OutputFile(std::string path, i64 filesize, bool is_mmapped)
-    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
-
-  friend std::unique_ptr<OutputFile<C>>
-  open_output_file(C &ctx, std::string path, i64 filesize, i64 perm);
-};
+namespace mold::elf {
 
 inline u32 get_umask() {
   u32 orig_umask = umask(0);
@@ -35,11 +13,11 @@ inline u32 get_umask() {
   return orig_umask;
 }
 
-template <typename C>
-class MemoryMappedOutputFile : public OutputFile<C> {
+template <typename E>
+class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<C>(path, filesize, true) {
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<E>(path, filesize, true) {
     std::string dir(path_dirname(path));
     output_tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
     i64 fd = mkstemp(output_tmpfile);
@@ -72,7 +50,7 @@ public:
     ::close(fd);
   }
 
-  void close(C &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
     if (!this->is_unmapped)
@@ -84,18 +62,18 @@ public:
   }
 };
 
-template <typename C>
-class MallocOutputFile : public OutputFile<C> {
+template <typename E>
+class MallocOutputFile : public OutputFile<E> {
 public:
-  MallocOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<C>(path, filesize, false), perm(perm) {
+  MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<E>(path, filesize, false), perm(perm) {
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << errno_string();
   }
 
-  void close(C &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
     if (this->path == "-") {
@@ -117,9 +95,9 @@ private:
   i64 perm;
 };
 
-template <typename C>
-std::unique_ptr<OutputFile<C>>
-open_output_file(C &ctx, std::string path, i64 filesize, i64 perm) {
+template <typename E>
+std::unique_ptr<OutputFile<E>>
+OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -134,15 +112,22 @@ open_output_file(C &ctx, std::string path, i64 filesize, i64 perm) {
       is_special = true;
   }
 
-  std::unique_ptr<OutputFile<C>> file;
+  std::unique_ptr<OutputFile<E>> file;
   if (is_special)
-    file = std::make_unique<MallocOutputFile<C>>(ctx, path, filesize, perm);
+    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize, perm);
   else
-    file = std::make_unique<MemoryMappedOutputFile<C>>(ctx, path, filesize, perm);
+    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize, perm);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
   return file;
 }
 
-} // namespace mold
+#define INSTANTIATE(E)                          \
+  template class OutputFile<E>;
+
+INSTANTIATE(X86_64);
+INSTANTIATE(I386);
+INSTANTIATE(AARCH64);
+
+} // namespace mold::elf

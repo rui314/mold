@@ -1,7 +1,6 @@
 #include "mold.h"
 #include "../archive-file.h"
 #include "../cmdline.h"
-#include "../output-file.h"
 
 #include <cstdlib>
 #include <fcntl.h>
