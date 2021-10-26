@@ -19,12 +19,6 @@
 
 namespace mold::macho {
 
-inline u32 get_umask() {
-  u32 orig_umask = umask(0);
-  umask(orig_umask);
-  return orig_umask;
-}
-
 class MemoryMappedOutputFile : public OutputFile {
 public:
   MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
@@ -62,7 +56,7 @@ public:
   MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
     : OutputFile(path, filesize, false), perm(perm) {
     buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
-                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << errno_string();
   }
@@ -110,9 +104,6 @@ OutputFile::open(Context &ctx, std::string path, i64 filesize, i64 perm) {
     file = std::make_unique<MallocOutputFile>(ctx, path, filesize, perm);
   else
     file = std::make_unique<MemoryMappedOutputFile>(ctx, path, filesize, perm);
-
-  if (ctx.arg.filler != -1)
-    memset(file->buf, ctx.arg.filler, filesize);
   return file;
 }
 

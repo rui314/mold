@@ -566,7 +566,6 @@ struct Context {
     bool demangle = false;
     bool dynamic = true;
     bool fatal_warnings = false;
-    i64 filler = -1;
     i64 platform = PLATFORM_MACOS;
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;
