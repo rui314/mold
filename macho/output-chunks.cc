@@ -112,9 +112,9 @@ static std::vector<u8> create_build_version_cmd(Context &ctx) {
 
   cmd.cmd = LC_BUILD_VERSION;
   cmd.cmdsize = buf.size();
-  cmd.platform = PLATFORM_MACOS;
-  cmd.minos = 0xb0000;
-  cmd.sdk = 0xb0300;
+  cmd.platform = ctx.arg.platform;
+  cmd.minos = ctx.arg.platform_min_version;
+  cmd.sdk = ctx.arg.platform_sdk_version;
   cmd.ntools = 1;
 
   BuildToolVersion &tool = *(BuildToolVersion *)(buf.data() + sizeof(cmd));
