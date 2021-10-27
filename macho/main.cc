@@ -33,13 +33,21 @@ static void create_internal_file(Context &ctx) {
 }
 
 static void create_synthetic_chunks(Context &ctx) {
-  for (ObjectFile *obj : ctx.objs)
-    for (std::unique_ptr<InputSection> &sec : obj->sections)
-      for (Subsection &subsec : sec->subsections)
-        sec->osec.members.push_back(&subsec);
+  for (ObjectFile *obj : ctx.objs) {
+    for (std::unique_ptr<InputSection> &isec : obj->sections) {
+      for (Subsection &subsec : isec->subsections)
+        isec->osec.members.push_back(&subsec);
+      isec->osec.hdr.attr |= isec->hdr.attr;
+      isec->osec.hdr.p2align =
+        std::max(isec->osec.hdr.p2align, isec->hdr.p2align);
+    }
+  }
 
   ctx.text = OutputSection::get_instance(ctx, "__TEXT", "__text");
   ctx.data = OutputSection::get_instance(ctx, "__DATA", "__data");
+  ctx.cstring = OutputSection::get_instance(ctx, "__TEXT", "__cstring");
+
+  ctx.cstring->hdr.type = S_CSTRING_LITERALS;
 
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
@@ -49,19 +57,10 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
   ctx.text_seg.chunks.push_back(&ctx.load_cmd);
   ctx.text_seg.chunks.push_back(&ctx.headerpad);
-
-  ctx.headerpad.hdr.size = ctx.arg.headerpad;
-
-  ctx.text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-  ctx.text->hdr.p2align = 4;
   ctx.text_seg.chunks.push_back(ctx.text);
-
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
-
-  OutputSection *cstring = OutputSection::get_instance(ctx, "__TEXT", "__cstring");
-  cstring->hdr.type = S_CSTRING_LITERALS;
-  ctx.text_seg.chunks.push_back(cstring);
+  ctx.text_seg.chunks.push_back(ctx.cstring);
   ctx.text_seg.chunks.push_back(&ctx.unwind_info);
 
   ctx.data_const_seg.chunks.push_back(&ctx.got);
@@ -77,6 +76,8 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.linkedit_seg.chunks.push_back(&ctx.symtab);
   ctx.linkedit_seg.chunks.push_back(&ctx.indir_symtab);
   ctx.linkedit_seg.chunks.push_back(&ctx.strtab);
+
+  ctx.headerpad.hdr.size = ctx.arg.headerpad;
 }
 
 static void export_symbols(Context &ctx) {

@@ -634,8 +634,10 @@ struct Context {
   OutputSymtabSection symtab;
   OutputIndirectSymtabSection indir_symtab;
   OutputStrtabSection strtab;
+
   OutputSection *text = nullptr;
   OutputSection *data = nullptr;
+  OutputSection *cstring = nullptr;
 
   std::vector<OutputSegment *> segments;
 };
