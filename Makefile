@@ -18,7 +18,7 @@ SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
 OBJS=$(SRCS:%.cc=out/%.o)
 
-PREFIX ?= /usr
+PREFIX ?= /usr/local
 DEST = $(DESTDIR)$(PREFIX)
 DEBUG ?= 0
 LTO ?= 0
