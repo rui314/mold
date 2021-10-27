@@ -159,19 +159,6 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
-  if (argc > 1 && std::string_view(argv[1]) == "-yamltest") {
-    std::string path = "/Applications/Xcode.app/Contents/Developer/Platforms/"
-      "MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.tbd";
-    TextDylib tbd = parse_tbd(ctx, MappedFile<Context>::must_open(ctx, path));
-    SyncOut(ctx) << "tbd: uuid=" << tbd.uuid
-                 << " install_name=" << tbd.install_name
-                 << " current_version=" << tbd.current_version
-                 << " parent_umbrella=" << tbd.parent_umbrella;
-    for (std::string_view sym : tbd.exports)
-      SyncOut(ctx) << "  sym=" << sym;
-    exit(0);
-  }
-
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
