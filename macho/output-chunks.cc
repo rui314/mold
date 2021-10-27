@@ -299,8 +299,6 @@ void OutputSection::copy_buf(Context &ctx) {
 }
 
 OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
-  assert(name.size() <= sizeof(cmd.segname));
-
   cmd.cmd = LC_SEGMENT_64;
   memcpy(cmd.segname, name.data(), name.size());
   cmd.maxprot = prot;
