@@ -206,9 +206,8 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
 
     for (Chunk *sec : seg->chunks) {
       if (!sec->is_hidden) {
-        MachSection hdr = sec->hdr;
-        memcpy(hdr.segname, cmd.segname, sizeof(cmd.segname));
-        append(buf, hdr);
+        sec->hdr.set_segname(cmd.segname);
+        append(buf, sec->hdr);
       }
     }
   }
@@ -268,11 +267,8 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
 }
 
 OutputSection::OutputSection(std::string_view segname, std::string_view sectname) {
-  assert(segname.size() < sizeof(hdr.segname));
-  assert(sectname.size() < sizeof(hdr.sectname));
-
-  memcpy(hdr.segname, segname.data(), segname.size());
-  memcpy(hdr.sectname, sectname.data(), sectname.size());
+  hdr.set_segname(segname);
+  hdr.set_sectname(sectname);
   is_regular = true;
 }
 
@@ -760,7 +756,7 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
 }
 
 StubsSection::StubsSection() {
-  strcpy(hdr.sectname, "__stubs");
+  hdr.set_sectname("__stubs");
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
@@ -798,7 +794,7 @@ void StubsSection::copy_buf(Context &ctx) {
 }
 
 StubHelperSection::StubHelperSection() {
-  strcpy(hdr.sectname, "__stub_helper");
+  hdr.set_sectname("__stub_helper");
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
 }
@@ -836,7 +832,7 @@ void StubHelperSection::copy_buf(Context &ctx) {
 }
 
 UnwindInfoSection::UnwindInfoSection() {
-  strcpy(hdr.sectname, "__unwind_info");
+  hdr.set_sectname("__unwind_info");
   hdr.p2align = __builtin_ctz(4);
   hdr.size = contents.size();
 }
@@ -990,7 +986,7 @@ void UnwindInfoSection::copy_buf(Context &ctx) {
 }
 
 GotSection::GotSection() {
-  strcpy(hdr.sectname, "__got");
+  hdr.set_sectname("__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
 }
@@ -1010,7 +1006,7 @@ void GotSection::copy_buf(Context &ctx) {
 }
 
 LazySymbolPtrSection::LazySymbolPtrSection() {
-  strcpy(hdr.sectname, "__la_symbol_ptr");
+  hdr.set_sectname("__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
 }

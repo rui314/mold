@@ -336,8 +336,18 @@ struct SegmentCommand {
 };
 
 struct MachSection {
+  void set_segname(std::string_view name) {
+    assert(name.size() <= sizeof(segname));
+    memcpy(segname, name.data(), name.size());
+  }
+
   std::string_view get_segname() const {
     return {segname, strnlen(segname, sizeof(segname))};
+  }
+
+  void set_sectname(std::string_view name) {
+    assert(name.size() <= sizeof(sectname));
+    memcpy(sectname, name.data(), name.size());
   }
 
   std::string_view get_sectname() const {
