@@ -577,6 +577,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    bool deduplicate = true;
     bool demangle = false;
     bool dynamic = true;
     bool fatal_warnings = false;
