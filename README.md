@@ -38,7 +38,7 @@ Here is a side-by-side comparison of per-core CPU usage of lld (left)
 and mold (right). They are linking the same program, Chromium
 executable.
 
-![](docs/htop.gif)
+![CPU usage comparison in htop animation](docs/htop.gif)
 
 As you can see, mold uses all available cores throughout its execution
 and finishes quickly. On the other hand, lld failed to use available
@@ -57,28 +57,45 @@ mold is written in C++20, so you need a very recent version of GCC or
 Clang. I'm using Ubuntu 20.04 as a development platform. In that
 environment, you can build mold by the following commands.
 
+### Install dependencies
+
+#### Ubuntu 20.04 and later / Debian 11 and later
+
+```shell
+sudo apt-get update
+sudo apt-get install -y build-essential git clang cmake libstdc++-10-dev libssl-dev libxxhash-dev zlib1g-dev
 ```
-$ sudo apt-get install build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev git
-$ git clone https://github.com/rui314/mold.git
-$ cd mold
-$ git checkout v0.9.6
-$ make
+
+#### Fedora 34 and later
+
+```shell
+sudo dnf install -y git clang-c++ cmake openssl-devel xxhash-devel zlib-devel
+```
+
+### Compile mold
+
+```shell
+git clone https://github.com/rui314/mold.git
+cd mold
+git checkout v0.9.6
+make -j$(nproc)
+sudo make install
 ```
 
 The last `make` command creates `mold` executable.
 
-If you don't have Ubuntu 20.04, or if for any reason `make` in the
-above commands doesn't work for you, you can use Docker to build it in
+If you don't use a recent enough Linux distribution, or if for any reason `make`
+in the above commands doesn't work for you, you can use Docker to build it in
 a Docker environment. To do so, just run `./build-static.sh` in this
 directory. The script creates a Ubuntu 20.04 Docker image, installs
 necessary tools and libraries to it, and builds mold as a static binary.
 
 `make test` depends on a few more packages. To install, run the following commands:
 
-```
-$ sudo dpkg --add-architecture i386
-$ sudo apt update
-$ sudo apt-get install bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
+```shell
+sudo dpkg --add-architecture i386
+sudo apt update
+sudo apt-get install bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
 ```
 
 ## How to use
@@ -88,6 +105,7 @@ invoked indirectly by `cc` (or `gcc` or `clang`), which is typically
 in turn indirectly invoked by `make` or some other build system command.
 
 A classic way to use `mold`:
+
 - `clang` before 12.0: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
 - clang after 12.0: pass `--ld-path=<absolute-path-to-mold-executable>`;
 - gcc: `--ld-path` patch [has been declined by GCC maintainers](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html), instead they advise to use a [workaround](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573823.html): create directory `<dirname>`, then `ln -s <path-to-mold> <dirname>/ld`, and then pass `-B<dirname>` (`-B` tells GCC to look for `ld` in specified location).
@@ -98,15 +116,15 @@ mold has a feature to intercept all invocations of `ld`, `ld.lld` or
 `ld.gold` and redirect it to itself. To use the feature, run `make`
 (or another build command) as a subcommand of mold as follows:
 
-```
-$ path/to/mold -run make <make-options-if-any>
+```shell
+path/to/mold -run make <make-options-if-any>
 ```
 
 Here's an example showing how to link Rust code when using the
 cargo package manager:
 
-```
-$ path/to/mold -run cargo build
+```shell
+path/to/mold -run cargo build
 ```
 
 Internally, mold invokes a given command with `LD_PRELOAD` environment
@@ -117,8 +135,8 @@ replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
 
-```
-$ readelf -p .comment <executable-file>
+```shell
+readelf -p .comment <executable-file>
 
 String dump of section '.comment':
   [     0]  GCC: (Ubuntu 10.2.0-5ubuntu1~20.04) 10.2.0
@@ -127,13 +145,13 @@ String dump of section '.comment':
 
 If `mold` is in `.comment`, the file is created by mold.
 
-# Design and implementation of mold
+## Design and implementation of mold
 
 For the rest of this documentation, I'll explain the design and the
 implementation of mold. If you are only interested in using mold, you
 don't need to read the below.
 
-## Motivation
+### Motivation
 
 Here is why I'm writing a new linker:
 
@@ -157,7 +175,7 @@ Here is why I'm writing a new linker:
   even think about creating a new one. So there may be lots of low
   hanging fruits there in this area.
 
-## Basic design
+### Basic design
 
 - In order to achieve a `cp`-like performance, the most important
   thing is to fix the layout of an output file as quickly as possible, so
@@ -202,7 +220,7 @@ Here is why I'm writing a new linker:
   the contents of a .got section. This is computationally intensive,
   but this step is parallelizable.
 
-## Compatibility
+### Compatibility
 
 - GNU ld, GNU gold and LLVM lld support essentially the same set of
   command line options and features. mold doesn't have to be
@@ -216,7 +234,7 @@ Here is why I'm writing a new linker:
   Unix-ism when writing code. I don't want to think about portability
   until mold becomes a thing that's worth being ported.
 
-## Linker Script
+### Linker Script
 
 Linker script is an embedded language for the linker. It is mainly
 used to control how input sections are mapped to output sections and
@@ -257,7 +275,7 @@ following features instead of the entire linker script language:
 I believe everything else can be done with a post-link binary editing
 tool.
 
-## Details
+### Details
 
 - As we aim to the 1-second goal for Chromium, every millisecond
   counts. We can't ignore the latency of process exit. If we mmap a
@@ -325,7 +343,7 @@ tool.
   [mimalloc](https://github.com/microsoft/mimalloc) are a little bit
   more scalable than `tbbmalloc`.
 
-## Size of the problem
+### Size of the problem
 
 When linking Chrome, a linker reads 3,430,966,844 bytes of data in
 total. The data contains the following items:
@@ -347,11 +365,11 @@ total. The data contains the following items:
 output file. Sections that contain relocations or symbols are for
 example excluded.
 
-## Internals
+### Internals
 
 In this section, I'll explain the internals of mold linker.
 
-### A brief history of Unix and the Unix linker
+#### A brief history of Unix and the Unix linker
 
 Conceptually, what a linker does is pretty simple. A compiler compiles
 a fragment of a program (a single source file) into a fragment of
@@ -444,7 +462,7 @@ first place.
 
 (This section is incomplete.)
 
-## Concurrency strategy
+### Concurrency strategy
 
 In this section, I'll explain the high-level concurrency strategy of
 mold.
@@ -496,7 +514,7 @@ complexties you often find in complex parallel programs. From high
 level, mold just serially executes the linker's internal passes one by
 one. Each pass is parallelized using parallel for-loops.
 
-## Rejected ideas
+### Rejected ideas
 
 In this section, I'll explain the alternative designs I currently do
 not plan to implement and why I turned them down.
