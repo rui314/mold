@@ -11,7 +11,8 @@ std::ostream &operator<<(std::ostream &out, const InputSection &sec) {
 }
 
 InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr)
-  : file(file), hdr(hdr) {
+  : file(file), hdr(hdr),
+    osec(*OutputSection::get_instance(ctx, hdr.get_segname(), hdr.get_sectname())) {
   contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
   subsections.push_back({*this, 0, (u32)contents.size(), (u32)hdr.addr});
 }
@@ -106,9 +107,9 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     u32 *loc = (u32 *)(buf + rel.offset);
 
 #define S (rel.sym ? rel.sym->get_addr(ctx) : \
-           rel.subsec->isec.osec->hdr.addr + rel.subsec->output_offset)
+           rel.subsec->isec.osec.hdr.addr + rel.subsec->output_offset)
 #define A rel.addend
-#define P (isec.osec->hdr.addr + output_offset + rel.offset)
+#define P (isec.osec.hdr.addr + output_offset + rel.offset)
 #define G rel.sym->get_got_addr(ctx)
 
     if (rel.is_gotref)

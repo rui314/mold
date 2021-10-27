@@ -246,8 +246,8 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
 
   auto find = [&]() -> OutputSection *{
     for (std::unique_ptr<OutputSection> &osec : ctx.output_sections)
-      if (memcmp(osec->hdr.segname, segname.data(), segname.size()) == 0 &&
-          memcmp(osec->hdr.sectname, sectname.data(), sectname.size()) == 0)
+      if (osec->hdr.get_segname() == segname &&
+          osec->hdr.get_sectname() == sectname)
         return osec.get();
     return nullptr;
   };
@@ -279,7 +279,7 @@ OutputSection::OutputSection(std::string_view segname, std::string_view sectname
 void OutputSection::compute_size(Context &ctx) {
   i64 sz = 0;
 
-  if (this == &ctx.data) {
+  if (this == ctx.data) {
     // As a special case, we need a word-size padding at the beginning
     // of __data for dyld. It is located by __dyld_private symbol.
     sz = 8;
@@ -637,7 +637,7 @@ void OutputFunctionStartsSection::compute_size(Context &ctx) {
 
   for (ObjectFile *obj : ctx.objs)
     for (Symbol *sym : obj->syms)
-      if (sym->file == obj && sym->subsec && sym->subsec->isec.osec == &ctx.text)
+      if (sym->file == obj && sym->subsec && &sym->subsec->isec.osec == ctx.text)
         addrs.push_back(sym->get_addr(ctx));
 
   std::sort(addrs.begin(), addrs.end());
@@ -702,7 +702,7 @@ void OutputSymtabSection::copy_buf(Context &ctx) {
     if (!sym.file->is_dylib)
       msym.value = sym.get_addr(ctx);
     if (sym.subsec)
-      msym.sect = sym.subsec->isec.osec->sect_idx;
+      msym.sect = sym.subsec->isec.osec.sect_idx;
 
     if (sym.file->is_dylib)
       msym.desc = ((DylibFile *)sym.file)->dylib_idx << 8;

@@ -32,20 +32,15 @@ static void create_internal_file(Context &ctx) {
   sym->value = PAGE_ZERO_SIZE;
 }
 
-static void add_section(Context &ctx, OutputSection &osec,
-                        std::string_view segname, std::string_view sectname) {
-  for (ObjectFile *obj : ctx.objs) {
-    for (std::unique_ptr<InputSection> &sec : obj->sections) {
-      if (sec->hdr.segname == segname && sec->hdr.sectname == sectname) {
-        for (Subsection &subsec : sec->subsections)
-          osec.members.push_back(&subsec);
-        sec->osec = &osec;
-      }
-    }
-  }
-}
-
 static void create_synthetic_chunks(Context &ctx) {
+  for (ObjectFile *obj : ctx.objs)
+    for (std::unique_ptr<InputSection> &sec : obj->sections)
+      for (Subsection &subsec : sec->subsections)
+        sec->osec.members.push_back(&subsec);
+
+  ctx.text = OutputSection::get_instance(ctx, "__TEXT", "__text");
+  ctx.data = OutputSection::get_instance(ctx, "__DATA", "__data");
+
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
   ctx.segments.push_back(&ctx.data_seg);
@@ -57,27 +52,22 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.headerpad.hdr.size = ctx.arg.headerpad;
 
-  ctx.text.hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-  ctx.text.hdr.p2align = 4;
-  add_section(ctx, ctx.text, "__TEXT", "__text");
-  ctx.text_seg.chunks.push_back(&ctx.text);
+  ctx.text->hdr.attr = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+  ctx.text->hdr.p2align = 4;
+  ctx.text_seg.chunks.push_back(ctx.text);
 
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
 
-  OutputSection *cstring = new OutputSection("__TEXT", "__cstring");
+  OutputSection *cstring = OutputSection::get_instance(ctx, "__TEXT", "__cstring");
   cstring->hdr.type = S_CSTRING_LITERALS;
-  add_section(ctx, *cstring, "__TEXT", "__cstring");
   ctx.text_seg.chunks.push_back(cstring);
-
   ctx.text_seg.chunks.push_back(&ctx.unwind_info);
 
   ctx.data_const_seg.chunks.push_back(&ctx.got);
 
   ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
-
-  add_section(ctx, ctx.data, "__DATA", "__data");
-  ctx.data_seg.chunks.push_back(&ctx.data);
+  ctx.data_seg.chunks.push_back(ctx.data);
 
   ctx.linkedit_seg.chunks.push_back(&ctx.rebase);
   ctx.linkedit_seg.chunks.push_back(&ctx.bind);
@@ -127,7 +117,7 @@ static i64 assign_offsets(Context &ctx) {
 }
 
 static void fix_synthetic_symbol_values(Context &ctx) {
-  intern(ctx, "__dyld_private")->value = ctx.data.hdr.addr;
+  intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
 }
 
 MappedFile<Context> *find_library(Context &ctx, std::string name) {

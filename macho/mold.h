@@ -106,7 +106,7 @@ public:
 
   ObjectFile &file;
   const MachSection &hdr;
-  OutputSection *osec = nullptr;
+  OutputSection &osec;
   std::string_view contents;
   std::vector<Subsection> subsections;
   std::vector<Relocation> rels;
@@ -634,8 +634,8 @@ struct Context {
   OutputSymtabSection symtab;
   OutputIndirectSymtabSection indir_symtab;
   OutputStrtabSection strtab;
-  OutputSection text{"__TEXT", "__text"};
-  OutputSection data{"__DATA", "__data"};
+  OutputSection *text = nullptr;
+  OutputSection *data = nullptr;
 
   std::vector<OutputSegment *> segments;
 };
@@ -651,7 +651,7 @@ u64 UnwindRecord::get_func_addr(Context &ctx) const {
 }
 
 u64 Subsection::get_addr(Context &ctx) const {
-  return isec.osec->hdr.addr + output_offset;
+  return isec.osec.hdr.addr + output_offset;
 }
 
 u64 Symbol::get_addr(Context &ctx) const {
