@@ -73,6 +73,9 @@ FileType get_file_type(MappedFile<C> *mf) {
   return FileType::UNKNOWN;
 }
 
+static bool equal(const char *p, const char *q) {
+  return memcmp(p, q, strlen(q)) == 0;
+}
 
 template <typename C>
 std::vector<MappedFile<C> *>
@@ -92,14 +95,14 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
     u64 size = atol(hdr.ar_size);
 
     // Read a string table.
-    if (!memcmp(hdr.ar_name, "// ", 3)) {
+    if (equal(hdr.ar_name, "// ")) {
       strtab = {(char *)body, size};
       data = body + size;
       continue;
     }
 
     // Skip a symbol table.
-    if (!memcmp(hdr.ar_name, "/ ", 2)) {
+    if (equal(hdr.ar_name, "/ ")) {
       data = body + size;
       continue;
     }
@@ -134,23 +137,38 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
     u64 size = atol(hdr.ar_size);
     data = body + size;
 
-    if (!memcmp(hdr.ar_name, "// ", 3)) {
+    // Read if string table
+    if (equal(hdr.ar_name, "// ")) {
       strtab = {(char *)body, size};
       continue;
     }
 
-    if (!memcmp(hdr.ar_name, "/ ", 2) ||
-        !memcmp(hdr.ar_name, "__.SYMDEF/", 10))
+    // Skip if symbol table
+    if (equal(hdr.ar_name, "/ "))
       continue;
 
+    // Read the name field
     std::string name;
 
-    if (hdr.ar_name[0] == '/') {
+    if (equal(hdr.ar_name, "#1/")) {
+      size_t namelen = (size_t)atoi(hdr.ar_name + 3);
+      name = {(char *)(&hdr + 1), namelen};
+      if (size_t pos = name.find('\0'))
+        name = name.substr(0, pos);
+      body += namelen;
+    } else if (hdr.ar_name[0] == '/') {
       const char *start = strtab.data() + atoi(hdr.ar_name + 1);
       name = {start, (const char *)strstr(start, "/\n")};
     } else {
-      name = {hdr.ar_name, strchr(hdr.ar_name, '/')};
+      char *end = (char *)memchr(hdr.ar_name, '/', sizeof(hdr.ar_name));
+      if (!end)
+        end = hdr.ar_name + sizeof(hdr.ar_name);
+      name = {hdr.ar_name, end};
     }
+
+    // Skip if symbol table
+    if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED")
+      continue;
 
     vec.push_back(mf->slice(ctx, name, body - begin, size));
   }

@@ -9,9 +9,11 @@ std::ostream &operator<<(std::ostream &out, const InputFile &file) {
   return out;
 }
 
-ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf) {
+ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
+                               std::string archive_name) {
   ObjectFile *obj = new ObjectFile;
   obj->mf = mf;
+  obj->archive_name = archive_name;
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   return obj;
 };

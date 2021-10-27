@@ -133,18 +133,33 @@ MappedFile<Context> *find_library(Context &ctx, std::string name) {
   return nullptr;
 }
 
+static void read_file(Context &ctx, MappedFile<Context> *mf) {
+  switch (get_file_type(mf)) {
+  case FileType::TAPI:
+    ctx.dylibs.push_back(DylibFile::create(ctx, mf));
+    break;
+  case FileType::MACH_OBJ:
+    ctx.objs.push_back(ObjectFile::create(ctx, mf, ""));
+    break;
+  case FileType::AR:
+    for (MappedFile<Context> *child : read_archive_members(ctx, mf))
+      if (get_file_type(child) == FileType::MACH_OBJ)
+        ctx.objs.push_back(ObjectFile::create(ctx, child, mf->name));
+    break;
+  default:
+    break;
+  }
+}
+
 static void read_input_files(Context &ctx, std::span<std::string> args) {
   for (std::string &arg : args) {
     if (arg.starts_with("-l")) {
       MappedFile<Context> *mf = find_library(ctx, arg.substr(2));
       if (!mf)
         Fatal(ctx) << "library not found: " << arg;
-      if (get_file_type(mf) == FileType::TAPI)
-        ctx.dylibs.push_back(DylibFile::create(ctx, mf));
+      read_file(ctx, mf);
     } else {
-      MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, arg);
-      if (get_file_type(mf) == FileType::MACH_OBJ)
-        ctx.objs.push_back(ObjectFile::create(ctx, mf));
+      read_file(ctx, MappedFile<Context>::must_open(ctx, arg));
     }
   }
 }

@@ -64,13 +64,15 @@ class ObjectFile : public InputFile {
 public:
   ObjectFile() = default;
 
-  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf);
+  static ObjectFile *create(Context &ctx, MappedFile<Context> *mf,
+                            std::string archive_name);
   void parse(Context &ctx);
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_symbols(Context &ctx);
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
+  std::string archive_name;
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
   std::vector<UnwindRecord> unwind_records;
