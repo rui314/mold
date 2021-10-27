@@ -205,6 +205,7 @@ int main(int argc, char **argv) {
     seg->copy_buf(ctx);
 
   ctx.output_file->close(ctx);
+  ctx.checkpoint();
   return 0;
 }
 

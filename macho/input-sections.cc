@@ -104,6 +104,11 @@ void InputSection::scan_relocations(Context &ctx) {
 
 void Subsection::apply_reloc(Context &ctx, u8 *buf) {
   for (const Relocation &rel : std::span(isec.rels).subspan(rel_offset, nrels)) {
+    if (rel.sym && !rel.sym->file) {
+      Error(ctx) << "undefined symbol: " << isec.file << ": " << *rel.sym;
+      continue;
+    }
+
     u32 *loc = (u32 *)(buf + rel.offset);
 
 #define S (rel.sym ? rel.sym->get_addr(ctx) : \
