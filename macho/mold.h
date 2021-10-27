@@ -473,6 +473,7 @@ class GotSection : public Chunk {
 public:
   GotSection();
   void add(Context &ctx, Symbol *sym);
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> syms;
 

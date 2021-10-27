@@ -92,11 +92,10 @@ void InputSection::parse_relocations(Context &ctx) {
 
 void InputSection::scan_relocations(Context &ctx) {
   for (Relocation &rel : rels) {
-    Symbol *sym = rel.sym;
-    if (sym && sym->file && sym->file->is_dylib) {
+    if (Symbol *sym = rel.sym) {
       if (rel.is_gotref)
         sym->flags |= NEEDS_GOT;
-      else
+      if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_STUB;
     }
   }

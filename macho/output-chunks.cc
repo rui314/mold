@@ -261,13 +261,11 @@ void OutputSection::compute_size(Context &ctx) {
 
 void OutputSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
-  i64 offset = 0;
 
   for (Subsection *subsec : members) {
     std::string_view data = subsec->get_contents();
-    memcpy(buf + offset, data.data(), data.size());
-    subsec->apply_reloc(ctx, buf + offset);
-    offset += data.size();
+    memcpy(buf + subsec->output_offset, data.data(), data.size());
+    subsec->apply_reloc(ctx, buf + subsec->output_offset);
   }
 }
 
@@ -363,10 +361,16 @@ void RebaseEncoder::finish() {
 
 void OutputRebaseSection::compute_size(Context &ctx) {
   RebaseEncoder enc;
+
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
     enc.add(ctx.data_seg.seg_idx,
             ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection::ENTRY_SIZE -
             ctx.data_seg.cmd.vmaddr);
+
+  for (Symbol *sym : ctx.got.syms)
+    if (!sym->file->is_dylib)
+      enc.add(ctx.data_const_seg.seg_idx,
+              sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
 
   enc.finish();
   contents = enc.buf;
@@ -421,13 +425,11 @@ void BindEncoder::finish() {
 void OutputBindSection::compute_size(Context &ctx) {
   BindEncoder enc;
 
-  for (Symbol *sym : ctx.got.syms) {
-    assert(sym->file->is_dylib);
-
-    enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
-            ctx.data_const_seg.seg_idx,
-            sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
-  }
+  for (Symbol *sym : ctx.got.syms)
+    if (sym->file->is_dylib)
+      enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
+              ctx.data_const_seg.seg_idx,
+              sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
 
   enc.finish();
 
@@ -965,6 +967,13 @@ void GotSection::add(Context &ctx, Symbol *sym) {
   sym->got_idx = syms.size();
   syms.push_back(sym);
   hdr.size = syms.size() * ENTRY_SIZE;
+}
+
+void GotSection::copy_buf(Context &ctx) {
+  u64 *buf = (u64 *)(ctx.buf + hdr.offset);
+  for (i64 i = 0; i < syms.size(); i++)
+    if (!syms[i]->file->is_dylib)
+      buf[i] = syms[i]->get_addr(ctx);
 }
 
 LazySymbolPtrSection::LazySymbolPtrSection() {

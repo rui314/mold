@@ -75,6 +75,8 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.data_const_seg.chunks.push_back(&ctx.got);
 
   ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
+
+  add_section(ctx, ctx.data, "__DATA", "__data");
   ctx.data_seg.chunks.push_back(&ctx.data);
 
   ctx.linkedit_seg.chunks.push_back(&ctx.rebase);
@@ -90,9 +92,14 @@ static void create_synthetic_chunks(Context &ctx) {
 static void export_symbols(Context &ctx) {
   ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
 
-  for (DylibFile *dylib : ctx.dylibs) {
-    for (Symbol *sym : dylib->syms) {
-      if (sym->file == dylib)
+  for (ObjectFile *file : ctx.objs)
+    for (Symbol *sym : file->syms)
+      if (sym->file == file && sym->flags & NEEDS_GOT)
+        ctx.got.add(ctx, sym);
+
+  for (DylibFile *file : ctx.dylibs) {
+    for (Symbol *sym : file->syms) {
+      if (sym->file == file)
         if (sym->flags & NEEDS_STUB)
           ctx.stubs.add(ctx, sym);
       if (sym->flags & NEEDS_GOT)
