@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include <shared_mutex>
+
 namespace mold::macho {
 
 void OutputMachHeader::copy_buf(Context &ctx) {
@@ -237,9 +239,40 @@ void OutputLoadCommand::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, flatten(cmds));
 }
 
-OutputSection::OutputSection(std::string_view name) {
-  assert(name.size() < sizeof(hdr.sectname));
-  memcpy(hdr.sectname, name.data(), name.size());
+OutputSection *
+OutputSection::get_instance(Context &ctx, std::string_view segname,
+                            std::string_view sectname) {
+  static std::shared_mutex mu;
+
+  auto find = [&]() -> OutputSection *{
+    for (std::unique_ptr<OutputSection> &osec : ctx.output_sections)
+      if (memcmp(osec->hdr.segname, segname.data(), segname.size()) == 0 &&
+          memcmp(osec->hdr.sectname, sectname.data(), sectname.size()) == 0)
+        return osec.get();
+    return nullptr;
+  };
+
+  {
+    std::shared_lock lock(mu);
+    if (OutputSection *osec = find())
+      return osec;
+  }
+
+  std::unique_lock lock(mu);
+  if (OutputSection *osec = find())
+    return osec;
+
+  OutputSection *osec = new OutputSection(segname, sectname);
+  ctx.output_sections.push_back(std::unique_ptr<OutputSection>(osec));
+  return osec;
+}
+
+OutputSection::OutputSection(std::string_view segname, std::string_view sectname) {
+  assert(segname.size() < sizeof(hdr.segname));
+  assert(sectname.size() < sizeof(hdr.sectname));
+
+  memcpy(hdr.segname, segname.data(), segname.size());
+  memcpy(hdr.sectname, sectname.data(), sectname.size());
   is_regular = true;
 }
 

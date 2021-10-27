@@ -233,7 +233,10 @@ public:
 
 class OutputSection : public Chunk {
 public:
-  OutputSection(std::string_view name);
+  static OutputSection *
+  get_instance(Context &ctx, std::string_view segname, std::string_view sectname);
+
+  OutputSection(std::string_view segname, std::string_view sectname);
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -612,6 +615,8 @@ struct Context {
   OutputSegment data_seg{"__DATA", VM_PROT_READ | VM_PROT_WRITE, 0};
   OutputSegment linkedit_seg{"__LINKEDIT", VM_PROT_READ, 0};
 
+  std::vector<std::unique_ptr<OutputSection>> output_sections;
+
   OutputMachHeader mach_hdr;
   StubsSection stubs;
   OutputPadding headerpad;
@@ -629,8 +634,8 @@ struct Context {
   OutputSymtabSection symtab;
   OutputIndirectSymtabSection indir_symtab;
   OutputStrtabSection strtab;
-  OutputSection text{"__text"};
-  OutputSection data{"__data"};
+  OutputSection text{"__TEXT", "__text"};
+  OutputSection data{"__DATA", "__data"};
 
   std::vector<OutputSegment *> segments;
 };

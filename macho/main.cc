@@ -65,7 +65,7 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.text_seg.chunks.push_back(&ctx.stubs);
   ctx.text_seg.chunks.push_back(&ctx.stub_helper);
 
-  OutputSection *cstring = new OutputSection("__cstring");
+  OutputSection *cstring = new OutputSection("__TEXT", "__cstring");
   cstring->hdr.type = S_CSTRING_LITERALS;
   add_section(ctx, *cstring, "__TEXT", "__cstring");
   ctx.text_seg.chunks.push_back(cstring);
