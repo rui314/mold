@@ -55,6 +55,7 @@ public:
   std::vector<Symbol *> syms;
   i64 priority = 0;
   bool is_dylib = false;
+  std::string archive_name;
 
 protected:
   InputFile() = default;
@@ -73,7 +74,6 @@ public:
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
-  std::string archive_name;
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
   std::vector<UnwindRecord> unwind_records;

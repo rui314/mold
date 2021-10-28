@@ -154,28 +154,59 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   }
 }
 
+// Symbols with higher priorities overwrites symbols with lower priorities.
+// Here is the list of priorities, from the highest to the lowest.
+//
+//  1. Strong defined symbol
+//  2. Weak defined symbol
+//  3. Strong defined symbol in a DSO
+//  4. Weak defined symbol in a DSO
+//  5. Strong or weak defined symbol in an archive
+//  6. Common symbol
+//  7. Unclaimed (nonexistent) symbol
+//
+// Ties are broken by file priority.
+static u64 get_rank(InputFile *file, MachSym &msym, bool is_lazy) {
+  if (is_lazy)
+    return (5 << 24) + file->priority;
+  if (file->is_dylib)
+    return (3 << 24) + file->priority;
+  return (1 << 24) + file->priority;
+}
+
+static u64 get_rank(Symbol &sym) {
+  InputFile *file = sym.file;
+  if (!file)
+    return 7 << 24;
+  if (!file->archive_name.empty())
+    return (5 << 24) + file->priority;
+  if (file->is_dylib)
+    return (3 << 24) + file->priority;
+  return (1 << 24) + file->priority;
+}
+
 void ObjectFile::resolve_regular_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
 
     std::lock_guard lock(sym.mu);
-    if (sym.file && sym.file->priority < priority)
-      continue;
 
-    switch (msym.type) {
-    case N_ABS:
-      sym.file = this;
-      sym.subsec = nullptr;
-      sym.value = msym.value;
-      sym.is_extern = msym.ext;
-      break;
-    case N_SECT:
-      sym.file = this;
-      sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
-      sym.value = msym.value - sym.subsec->input_addr;
-      sym.is_extern = msym.ext;
-      break;
+    if (get_rank(this, msym, false) < get_rank(sym)) {
+      switch (msym.type) {
+      case N_ABS:
+        sym.file = this;
+        sym.subsec = nullptr;
+        sym.value = msym.value;
+        sym.is_extern = msym.ext;
+        break;
+      case N_SECT:
+        sym.file = this;
+        sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
+        sym.value = msym.value - sym.subsec->input_addr;
+        sym.is_extern = msym.ext;
+        break;
+      }
     }
   }
 }
