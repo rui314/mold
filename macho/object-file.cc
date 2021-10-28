@@ -14,6 +14,7 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
   ObjectFile *obj = new ObjectFile;
   obj->mf = mf;
   obj->archive_name = archive_name;
+  obj->is_alive = archive_name.empty();
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
   return obj;
 };
@@ -185,36 +186,77 @@ static u64 get_rank(Symbol &sym) {
   return (1 << 24) + file->priority;
 }
 
+void ObjectFile::override_symbol(Context &ctx, Symbol &sym, MachSym &msym) {
+  switch (msym.type) {
+  case N_ABS:
+    sym.file = this;
+    sym.subsec = nullptr;
+    sym.value = msym.value;
+    sym.is_extern = msym.ext;
+    sym.is_lazy = false;
+    break;
+  case N_SECT:
+    sym.file = this;
+    sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
+    sym.value = msym.value - sym.subsec->input_addr;
+    sym.is_extern = msym.ext;
+    sym.is_lazy = false;
+    break;
+  }
+}
+
 void ObjectFile::resolve_regular_symbols(Context &ctx) {
+  for (i64 i = 0; i < syms.size(); i++) {
+    Symbol &sym = *syms[i];
+    MachSym &msym = mach_syms[i];
+    if (msym.type == N_UNDF)
+      continue;
+
+    std::lock_guard lock(sym.mu);
+    if (get_rank(this, msym, false) < get_rank(sym))
+      override_symbol(ctx, sym, msym);
+  }
+}
+
+void ObjectFile::resolve_lazy_symbols(Context &ctx) {
+  for (i64 i = 0; i < syms.size(); i++) {
+    Symbol &sym = *syms[i];
+    MachSym &msym = mach_syms[i];
+    if (msym.type == N_UNDF)
+      continue;
+
+    std::lock_guard lock(sym.mu);
+
+    if (get_rank(this, msym, false) < get_rank(sym)) {
+      sym.file = this;
+      sym.subsec = nullptr;
+      sym.value = 0;
+      sym.is_extern = false;
+      sym.is_lazy = true;
+    }
+  }
+}
+
+std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {
+  std::vector<ObjectFile *> vec;
+  assert(is_alive);
+
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
 
     std::lock_guard lock(sym.mu);
 
-    if (get_rank(this, msym, false) < get_rank(sym)) {
-      switch (msym.type) {
-      case N_ABS:
-        sym.file = this;
-        sym.subsec = nullptr;
-        sym.value = msym.value;
-        sym.is_extern = msym.ext;
-        sym.is_lazy = false;
-        break;
-      case N_SECT:
-        sym.file = this;
-        sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
-        sym.value = msym.value - sym.subsec->input_addr;
-        sym.is_extern = msym.ext;
-        sym.is_lazy = false;
-        break;
-      }
+    if (msym.type == N_UNDF) {
+      if (sym.file && !sym.file->is_alive.exchange(true))
+        vec.push_back((ObjectFile *)sym.file);
+      continue;
     }
-  }
-}
 
-void ObjectFile::resolve_lazy_symbols(Context &ctx) {
-  resolve_regular_symbols(ctx);
+    if (get_rank(this, msym, false) < get_rank(sym))
+      override_symbol(ctx, sym, msym);
+  }
+  return vec;
 }
 
 DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {

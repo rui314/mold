@@ -55,6 +55,7 @@ public:
   std::vector<Symbol *> syms;
   i64 priority = 0;
   bool is_dylib = false;
+  std::atomic_bool is_alive = false;
   std::string archive_name;
 
 protected:
@@ -71,12 +72,16 @@ public:
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_regular_symbols(Context &ctx);
   void resolve_lazy_symbols(Context &ctx);
+  std::vector<ObjectFile *> mark_live_objects(Context &ctx);
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
   std::vector<UnwindRecord> unwind_records;
+
+private:
+  void override_symbol(Context &ctx, Symbol &sym, MachSym &msym);
 };
 
 class DylibFile : public InputFile {
@@ -91,6 +96,7 @@ public:
 private:
   DylibFile() {
     is_dylib = true;
+    is_alive = true;
   }
 };
 

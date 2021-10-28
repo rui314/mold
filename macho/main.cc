@@ -201,6 +201,14 @@ int main(int argc, char **argv) {
       file->resolve_lazy_symbols(ctx);
   }
 
+  std::vector<ObjectFile *> live_objs;
+  for (ObjectFile *file : ctx.objs)
+    if (file->is_alive)
+      live_objs.push_back(file);
+
+  for (i64 i = 0; i < live_objs.size(); i++)
+    append(live_objs, live_objs[i]->mark_live_objects(ctx));
+
   for (DylibFile *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
