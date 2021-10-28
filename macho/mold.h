@@ -68,7 +68,8 @@ public:
                             std::string archive_name);
   void parse(Context &ctx);
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
-  void resolve_symbols(Context &ctx);
+  void resolve_regular_symbols(Context &ctx);
+  void resolve_lazy_symbols(Context &ctx);
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 

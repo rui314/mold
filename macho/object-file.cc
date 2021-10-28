@@ -154,7 +154,7 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
   }
 }
 
-void ObjectFile::resolve_symbols(Context &ctx) {
+void ObjectFile::resolve_regular_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
@@ -180,6 +180,9 @@ void ObjectFile::resolve_symbols(Context &ctx) {
   }
 }
 
+void ObjectFile::resolve_lazy_symbols(Context &ctx) {
+  resolve_regular_symbols(ctx);
+}
 
 DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
   DylibFile *dylib = new DylibFile;

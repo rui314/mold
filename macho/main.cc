@@ -181,21 +181,26 @@ int main(int argc, char **argv) {
   read_input_files(ctx, file_args);
 
   i64 priority = 1;
-  for (ObjectFile *obj : ctx.objs)
-    obj->priority = priority++;
+  for (ObjectFile *file : ctx.objs)
+    file->priority = priority++;
   for (DylibFile *dylib : ctx.dylibs)
     dylib->priority = priority++;
 
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
     ctx.dylibs[i]->dylib_idx = i + 1;
 
-  for (ObjectFile *obj : ctx.objs)
-    obj->parse(ctx);
+  for (ObjectFile *file : ctx.objs)
+    file->parse(ctx);
   for (DylibFile *dylib : ctx.dylibs)
     dylib->parse(ctx);
 
-  for (ObjectFile *obj : ctx.objs)
-    obj->resolve_symbols(ctx);
+  for (ObjectFile *file : ctx.objs) {
+    if (file->archive_name.empty())
+      file->resolve_regular_symbols(ctx);
+    else
+      file->resolve_lazy_symbols(ctx);
+  }
+
   for (DylibFile *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
@@ -205,8 +210,8 @@ int main(int argc, char **argv) {
   for (i64 i = 0; i < ctx.segments.size(); i++)
     ctx.segments[i]->seg_idx = i + 1;
 
-  for (ObjectFile *obj : ctx.objs)
-    for (std::unique_ptr<InputSection> &sec : obj->sections)
+  for (ObjectFile *file : ctx.objs)
+    for (std::unique_ptr<InputSection> &sec : file->sections)
       sec->scan_relocations(ctx);
 
   export_symbols(ctx);
