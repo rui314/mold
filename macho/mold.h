@@ -156,15 +156,19 @@ struct Symbol {
   Symbol(const Symbol &other) : name(other.name) {}
 
   std::string_view name;
-
   InputFile *file = nullptr;
   Subsection *subsec = nullptr;
   u64 value = 0;
+
   i32 stub_idx = -1;
   i32 got_idx = -1;
+
   tbb::spin_mutex mu;
+
   std::atomic_uint8_t flags = 0;
+
   u8 is_extern : 1 = false;
+  u8 is_lazy : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
   inline u64 get_addr(Context &ctx) const;

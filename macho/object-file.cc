@@ -199,12 +199,14 @@ void ObjectFile::resolve_regular_symbols(Context &ctx) {
         sym.subsec = nullptr;
         sym.value = msym.value;
         sym.is_extern = msym.ext;
+        sym.is_lazy = false;
         break;
       case N_SECT:
         sym.file = this;
         sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
         sym.value = msym.value - sym.subsec->input_addr;
         sym.is_extern = msym.ext;
+        sym.is_lazy = false;
         break;
       }
     }
