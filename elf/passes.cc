@@ -107,8 +107,8 @@ void resolve_symbols(Context<E> &ctx) {
     load(name);
 
   tbb::parallel_for_each(live_objs,
-                   [&](ObjectFile<E> *file,
-                       tbb::feeder<ObjectFile<E> *> &feeder) {
+                         [&](ObjectFile<E> *file,
+                             tbb::feeder<ObjectFile<E> *> &feeder) {
     file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) { feeder.add(obj); });
   });
 
