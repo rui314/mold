@@ -487,6 +487,14 @@ struct DataInCodeEntry {
 
 // This struct is named `n_list` on BSD and macOS.
 struct MachSym {
+  bool is_undef() const {
+    return type == N_UNDF && !is_common();
+  }
+
+  bool is_common() const {
+    return type == N_UNDF && ext && value;
+  }
+
   u32 stroff;
   u8 ext : 1;
   u8 type : 3;

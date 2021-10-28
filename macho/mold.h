@@ -73,6 +73,7 @@ public:
   void resolve_regular_symbols(Context &ctx);
   void resolve_lazy_symbols(Context &ctx);
   std::vector<ObjectFile *> mark_live_objects(Context &ctx);
+  void convert_common_symbols(Context &ctx);
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
@@ -175,6 +176,7 @@ struct Symbol {
 
   u8 is_extern : 1 = false;
   u8 is_lazy : 1 = false;
+  u8 is_common : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
   inline u64 get_addr(Context &ctx) const;
@@ -578,7 +580,14 @@ void parse_nonpositional_args(Context &ctx,
 //
 
 struct Context {
-  Context() = default;
+  Context() {
+    text = OutputSection::get_instance(*this, "__TEXT", "__text");
+    data = OutputSection::get_instance(*this, "__DATA", "__data");
+    cstring = OutputSection::get_instance(*this, "__TEXT", "__cstring");
+    common = OutputSection::get_instance(*this, "__TEXT", "__common");
+    cstring->hdr.type = S_CSTRING_LITERALS;
+  }
+
   Context(const Context &) = delete;
 
   void checkpoint() {
@@ -652,6 +661,7 @@ struct Context {
   OutputSection *text = nullptr;
   OutputSection *data = nullptr;
   OutputSection *cstring = nullptr;
+  OutputSection *common = nullptr;
 
   std::vector<OutputSegment *> segments;
 };

@@ -43,12 +43,6 @@ static void create_synthetic_chunks(Context &ctx) {
     }
   }
 
-  ctx.text = OutputSection::get_instance(ctx, "__TEXT", "__text");
-  ctx.data = OutputSection::get_instance(ctx, "__DATA", "__data");
-  ctx.cstring = OutputSection::get_instance(ctx, "__TEXT", "__cstring");
-
-  ctx.cstring->hdr.type = S_CSTRING_LITERALS;
-
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
   ctx.segments.push_back(&ctx.data_seg);
@@ -213,6 +207,10 @@ int main(int argc, char **argv) {
     dylib->resolve_symbols(ctx);
 
   create_internal_file(ctx);
+
+  for (ObjectFile *file : ctx.objs)
+    file->convert_common_symbols(ctx);
+
   create_synthetic_chunks(ctx);
 
   for (i64 i = 0; i < ctx.segments.size(); i++)

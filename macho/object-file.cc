@@ -168,6 +168,8 @@ void ObjectFile::parse_compact_unwind(Context &ctx, MachSection &hdr) {
 //
 // Ties are broken by file priority.
 static u64 get_rank(InputFile *file, MachSym &msym, bool is_lazy) {
+  if (msym.is_common())
+    return (6 << 24) + file->priority;
   if (is_lazy)
     return (5 << 24) + file->priority;
   if (file->is_dylib)
@@ -179,6 +181,8 @@ static u64 get_rank(Symbol &sym) {
   InputFile *file = sym.file;
   if (!file)
     return 7 << 24;
+  if (sym.is_common)
+    return (6 << 24) + file->priority;
   if (!file->archive_name.empty())
     return (5 << 24) + file->priority;
   if (file->is_dylib)
@@ -209,7 +213,7 @@ void ObjectFile::resolve_regular_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
-    if (msym.type == N_UNDF)
+    if (msym.is_undef())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -222,7 +226,7 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
-    if (msym.type == N_UNDF)
+    if (msym.is_undef())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -257,6 +261,14 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {
       override_symbol(ctx, sym, msym);
   }
   return vec;
+}
+
+void ObjectFile::convert_common_symbols(Context &ctx) {
+  for (Symbol *sym : syms) {
+    if (sym->file == this && sym->is_common) {
+      
+    }
+  }  
 }
 
 DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
