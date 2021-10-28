@@ -14,10 +14,14 @@ void hello() {
 }
 EOF
 
-rm -f $t/b.a
-ar rcs $t/b.a $t/a.o
+cat <<EOF | clang -c -o $t/b.o -xc -
+void foo() {}
+EOF
 
-cat <<EOF | clang -c -o $t/c.o -xc -
+rm -f $t/c.a
+ar rcs $t/c.a $t/a.o $t/b.o
+
+cat <<EOF | clang -c -o $t/d.o -xc -
 void hello();
 
 int main() {
@@ -25,7 +29,10 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld=$mold -o $t/exe $t/c.o $t/b.a
+clang++ -fuse-ld=$mold -o $t/exe $t/c.o $t/c.a
 $t/exe | grep -q 'Hello world'
+
+otool -tv $t/exe | grep -q '^_hello:'
+! otool -tv $t/exe | grep -q '^_foo:' || false
 
 echo OK
