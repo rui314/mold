@@ -273,19 +273,20 @@ OutputSection::OutputSection(std::string_view segname, std::string_view sectname
 }
 
 void OutputSection::compute_size(Context &ctx) {
-  i64 sz = 0;
+  u64 addr = hdr.addr;
 
   if (this == ctx.data) {
     // As a special case, we need a word-size padding at the beginning
     // of __data for dyld. It is located by __dyld_private symbol.
-    sz = 8;
+    addr += 8;
   }
 
   for (Subsection *subsec : members) {
-    subsec->output_offset = sz;
-    sz += subsec->input_size;
+    addr = align_to(addr, 1 << subsec->p2align);
+    subsec->addr = addr;
+    addr += subsec->input_size;
   }
-  hdr.size = sz;
+  hdr.size = addr - hdr.addr;
 }
 
 void OutputSection::copy_buf(Context &ctx) {
@@ -294,8 +295,8 @@ void OutputSection::copy_buf(Context &ctx) {
 
   for (Subsection *subsec : members) {
     std::string_view data = subsec->get_contents();
-    memcpy(buf + subsec->output_offset, data.data(), data.size());
-    subsec->apply_reloc(ctx, buf + subsec->output_offset);
+    memcpy(buf + subsec->addr - hdr.addr, data.data(), data.size());
+    subsec->apply_reloc(ctx, buf + subsec->addr - hdr.addr);
   }
 }
 
@@ -902,7 +903,7 @@ void UnwindEncoder::finish(Context &ctx) {
     for (UnwindRecord &rec : span) {
       if (rec.lsda) {
         lsda->func_addr = rec.get_func_addr(ctx);
-        lsda->lsda_addr = rec.lsda->get_addr(ctx) + rec.lsda_offset;
+        lsda->lsda_addr = rec.lsda->addr + rec.lsda_offset;
         lsda++;
       }
     }
@@ -936,7 +937,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
   // Write a terminator
   UnwindRecord &last = records[records.size() - 1];
-  page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size + 1;
+  page1->func_addr = last.subsec->addr + last.subsec->input_size + 1;
   page1->page_offset = 0;
   page1->lsda_offset = page1[-1].lsda_offset;
 

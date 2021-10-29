@@ -36,12 +36,12 @@ static void create_synthetic_chunks(Context &ctx) {
   for (ObjectFile *obj : ctx.objs) {
     for (std::unique_ptr<InputSection> &isec : obj->sections) {
       for (std::unique_ptr<Subsection> &subsec : isec->subsections)
-        isec->osec.members.push_back(subsec.get());
+        isec->osec.add_subsec(subsec.get());
       isec->osec.hdr.attr |= isec->hdr.attr;
-      isec->osec.hdr.p2align =
-        std::max(isec->osec.hdr.p2align, isec->hdr.p2align);
     }
   }
+
+  ctx.headerpad.hdr.size = ctx.arg.headerpad;
 
   ctx.segments.push_back(&ctx.text_seg);
   ctx.segments.push_back(&ctx.data_const_seg);
@@ -75,8 +75,6 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.linkedit_seg.chunks.push_back(&ctx.symtab);
   ctx.linkedit_seg.chunks.push_back(&ctx.indir_symtab);
   ctx.linkedit_seg.chunks.push_back(&ctx.strtab);
-
-  ctx.headerpad.hdr.size = ctx.arg.headerpad;
 }
 
 static void export_symbols(Context &ctx) {

@@ -139,7 +139,6 @@ public:
     return std::span(isec.file.unwind_records).subspan(unwind_offset, nunwind);
   }
 
-  inline u64 get_addr(Context &ctx) const;
   void apply_reloc(Context &ctx, u8 *buf);
 
   InputSection &isec;
@@ -150,7 +149,8 @@ public:
   u32 nrels = 0;
   u32 unwind_offset = 0;
   u32 nunwind = 0;
-  u32 output_offset = -1;
+  u64 addr = -1;
+  u16 p2align = 0;
 };
 
 //
@@ -259,6 +259,11 @@ public:
   OutputSection(std::string_view segname, std::string_view sectname);
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
+
+  void add_subsec(Subsection *subsec) {
+    members.push_back(subsec);
+    hdr.p2align = std::max<u32>(hdr.p2align, subsec->p2align);
+  }
 
   std::vector<Subsection *> members;
 };
@@ -683,16 +688,12 @@ int main(int argc, char **argv);
 //
 
 u64 UnwindRecord::get_func_addr(Context &ctx) const {
-  return subsec->get_addr(ctx) + offset;
-}
-
-u64 Subsection::get_addr(Context &ctx) const {
-  return isec.osec.hdr.addr + output_offset;
+  return subsec->addr + offset;
 }
 
 u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)
-    return subsec->get_addr(ctx) + value;
+    return subsec->addr + value;
   if (stub_idx != -1)
     return ctx.stubs.hdr.addr + stub_idx * StubsSection::ENTRY_SIZE;
   return value;

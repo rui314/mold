@@ -501,7 +501,14 @@ struct MachSym {
   u8 pext : 1;
   u8 stub : 3;
   u8 sect;
-  u16 desc;
+  union {
+    u16 desc;
+    struct {
+      u16 : 8;
+      u16 p2align : 4;
+      u16 : 4;
+    };
+  };
   u64 value;
 };
 

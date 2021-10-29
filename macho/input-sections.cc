@@ -116,10 +116,9 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
 
     u32 *loc = (u32 *)(buf + rel.offset);
 
-#define S (rel.sym ? rel.sym->get_addr(ctx) : \
-           rel.subsec->isec.osec.hdr.addr + rel.subsec->output_offset)
+#define S (rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->addr)
 #define A rel.addend
-#define P (isec.osec.hdr.addr + output_offset + rel.offset)
+#define P (addr + rel.offset)
 #define G rel.sym->get_got_addr(ctx)
 
     if (rel.is_gotref)

@@ -280,8 +280,10 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
     if (sym.file == this && sym.is_common) {
       InputSection *isec = get_common_sec(ctx);
       Subsection *subsec = new Subsection{*isec, 0, (u32)msym.value};
+      subsec->p2align = msym.p2align;
       isec->subsections.push_back(std::unique_ptr<Subsection>(subsec));
       sym.subsec = subsec;
+      sym.value = 0;
       sym.is_common = false;
     }
   }  
