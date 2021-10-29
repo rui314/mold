@@ -290,13 +290,12 @@ void OutputSection::compute_size(Context &ctx) {
 
 void OutputSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
+  assert(hdr.type != S_ZEROFILL);
 
   for (Subsection *subsec : members) {
-    if (subsec->isec.hdr.type != S_ZEROFILL) {
-      std::string_view data = subsec->get_contents();
-      memcpy(buf + subsec->output_offset, data.data(), data.size());
-      subsec->apply_reloc(ctx, buf + subsec->output_offset);
-    }
+    std::string_view data = subsec->get_contents();
+    memcpy(buf + subsec->output_offset, data.data(), data.size());
+    subsec->apply_reloc(ctx, buf + subsec->output_offset);
   }
 }
 
@@ -346,7 +345,8 @@ void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
 
 void OutputSegment::copy_buf(Context &ctx) {
   for (Chunk *sec : chunks)
-    sec->copy_buf(ctx);
+    if (sec->hdr.type != S_ZEROFILL)
+      sec->copy_buf(ctx);
 }
 
 RebaseEncoder::RebaseEncoder() {
