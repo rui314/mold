@@ -83,6 +83,10 @@ public:
 
 private:
   void override_symbol(Context &ctx, Symbol &sym, MachSym &msym);
+  InputSection *get_common_sec(Context &ctx);
+
+  std::unique_ptr<MachSection> common_hdr;
+  InputSection *common_sec = nullptr;
 };
 
 class DylibFile : public InputFile {
@@ -118,7 +122,7 @@ public:
   const MachSection &hdr;
   OutputSection &osec;
   std::string_view contents;
-  std::vector<Subsection> subsections;
+  std::vector<std::unique_ptr<Subsection>> subsections;
   std::vector<Relocation> rels;
 };
 
@@ -586,10 +590,11 @@ struct Context {
     data = OutputSection::get_instance(*this, "__DATA", "__data");
     bss = OutputSection::get_instance(*this, "__DATA", "__bss");
     cstring = OutputSection::get_instance(*this, "__TEXT", "__cstring");
-    common = OutputSection::get_instance(*this, "__TEXT", "__common");
+    common = OutputSection::get_instance(*this, "__DATA", "__common");
 
     bss->hdr.type = S_ZEROFILL;
     cstring->hdr.type = S_CSTRING_LITERALS;
+    common->hdr.type = S_ZEROFILL;
   }
 
   Context(const Context &) = delete;

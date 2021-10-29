@@ -35,8 +35,8 @@ static void create_internal_file(Context &ctx) {
 static void create_synthetic_chunks(Context &ctx) {
   for (ObjectFile *obj : ctx.objs) {
     for (std::unique_ptr<InputSection> &isec : obj->sections) {
-      for (Subsection &subsec : isec->subsections)
-        isec->osec.members.push_back(&subsec);
+      for (std::unique_ptr<Subsection> &subsec : isec->subsections)
+        isec->osec.members.push_back(subsec.get());
       isec->osec.hdr.attr |= isec->hdr.attr;
       isec->osec.hdr.p2align =
         std::max(isec->osec.hdr.p2align, isec->hdr.p2align);
@@ -62,6 +62,8 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
   ctx.data_seg.chunks.push_back(ctx.data);
 
+  if (!ctx.common->members.empty())
+    ctx.data_seg.chunks.push_back(ctx.common);
   if (!ctx.bss->members.empty())
     ctx.data_seg.chunks.push_back(ctx.bss);
 

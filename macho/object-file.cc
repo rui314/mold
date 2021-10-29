@@ -191,21 +191,29 @@ static u64 get_rank(Symbol &sym) {
 }
 
 void ObjectFile::override_symbol(Context &ctx, Symbol &sym, MachSym &msym) {
+  sym.file = this;
+  sym.is_extern = msym.ext;
+  sym.is_lazy = false;
+
   switch (msym.type) {
-  case N_ABS:
-    sym.file = this;
+  case N_UNDF:
+    assert(msym.is_common());
     sym.subsec = nullptr;
     sym.value = msym.value;
-    sym.is_extern = msym.ext;
-    sym.is_lazy = false;
+    sym.is_common = true;
+    break;
+  case N_ABS:
+    sym.subsec = nullptr;
+    sym.value = msym.value;
+    sym.is_common = false;
     break;
   case N_SECT:
-    sym.file = this;
     sym.subsec = sections[msym.sect - 1]->find_subsection(ctx, msym.value);
     sym.value = msym.value - sym.subsec->input_addr;
-    sym.is_extern = msym.ext;
-    sym.is_lazy = false;
+    sym.is_common = false;
     break;
+  default:
+    Fatal(ctx) << sym << ": unknown symbol type: " << (u64)msym.type;
   }
 }
 
@@ -226,7 +234,7 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
-    if (msym.is_undef())
+    if (msym.is_undef() || msym.is_common())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -237,6 +245,7 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
       sym.value = 0;
       sym.is_extern = false;
       sym.is_lazy = true;
+      sym.is_common = false;
     }
   }
 }
@@ -264,11 +273,34 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {
 }
 
 void ObjectFile::convert_common_symbols(Context &ctx) {
-  for (Symbol *sym : syms) {
-    if (sym->file == this && sym->is_common) {
-      
+  for (i64 i = 0; i < syms.size(); i++) {
+    Symbol &sym = *syms[i];
+    MachSym &msym = mach_syms[i];
+
+    if (sym.file == this && sym.is_common) {
+      InputSection *isec = get_common_sec(ctx);
+      Subsection *subsec = new Subsection{*isec, 0, (u32)msym.value};
+      isec->subsections.push_back(std::unique_ptr<Subsection>(subsec));
+      sym.subsec = subsec;
+      sym.is_common = false;
     }
   }  
+}
+
+InputSection *ObjectFile::get_common_sec(Context &ctx) {
+  if (!common_sec) {
+    MachSection *hdr = new MachSection;
+    common_hdr.reset(hdr);
+
+    memset(hdr, 0, sizeof(*hdr));
+    hdr->set_segname("__DATA");
+    hdr->set_sectname("__common");
+    hdr->type = S_ZEROFILL;
+
+    common_sec = new InputSection(ctx, *this, *hdr);
+    sections.push_back(std::unique_ptr<InputSection>(common_sec));
+  }
+  return common_sec;
 }
 
 DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {

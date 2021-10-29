@@ -15,18 +15,22 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hd
     osec(*OutputSection::get_instance(ctx, hdr.get_segname(), hdr.get_sectname())) {
   if (hdr.type != S_ZEROFILL)
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
-  subsections.push_back({*this, 0, (u32)contents.size(), (u32)hdr.addr});
+
+  Subsection *subsec =
+    new Subsection{*this, 0, (u32)contents.size(), (u32)hdr.addr};
+  subsections.push_back(std::unique_ptr<Subsection>(subsec));
 }
 
 Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   auto it = std::upper_bound(subsections.begin(), subsections.end(), addr,
-                             [&](u32 addr, const Subsection &subsec) {
-    return addr < subsec.input_addr;
+                             [&](u32 addr,
+                                 const std::unique_ptr<Subsection> &subsec) {
+    return addr < subsec->input_addr;
   });
 
   if (it == subsections.begin())
     return nullptr;
-  return &*(it - 1);
+  return it[-1].get();
 }
 
 static Relocation read_reloc(Context &ctx, ObjectFile &file,
@@ -83,12 +87,12 @@ void InputSection::parse_relocations(Context &ctx) {
 
   // Assign each subsection a group of relocations
   i64 i = 0;
-  for (Subsection &subsec : subsections) {
-    subsec.rel_offset = i;
+  for (std::unique_ptr<Subsection> &subsec : subsections) {
+    subsec->rel_offset = i;
     while (i < rels.size() &&
-           rels[i].offset < subsec.input_offset + subsec.input_size)
+           rels[i].offset < subsec->input_offset + subsec->input_size)
       i++;
-    subsec.nrels = i - subsec.rel_offset;
+    subsec->nrels = i - subsec->rel_offset;
   }
 }
 
