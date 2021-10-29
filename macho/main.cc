@@ -62,6 +62,9 @@ static void create_synthetic_chunks(Context &ctx) {
   ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
   ctx.data_seg.chunks.push_back(ctx.data);
 
+  if (!ctx.bss->members.empty())
+    ctx.data_seg.chunks.push_back(ctx.bss);
+
   ctx.linkedit_seg.chunks.push_back(&ctx.rebase);
   ctx.linkedit_seg.chunks.push_back(&ctx.bind);
   ctx.linkedit_seg.chunks.push_back(&ctx.lazy_bind);

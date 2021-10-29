@@ -127,6 +127,7 @@ std::ostream &operator<<(std::ostream &out, const InputSection &sec);
 class Subsection {
 public:
   std::string_view get_contents() {
+    assert(isec.hdr.type != S_ZEROFILL);
     return isec.contents.substr(input_offset, input_size);
   }
 
@@ -583,8 +584,11 @@ struct Context {
   Context() {
     text = OutputSection::get_instance(*this, "__TEXT", "__text");
     data = OutputSection::get_instance(*this, "__DATA", "__data");
+    bss = OutputSection::get_instance(*this, "__DATA", "__bss");
     cstring = OutputSection::get_instance(*this, "__TEXT", "__cstring");
     common = OutputSection::get_instance(*this, "__TEXT", "__common");
+
+    bss->hdr.type = S_ZEROFILL;
     cstring->hdr.type = S_CSTRING_LITERALS;
   }
 
@@ -660,6 +664,7 @@ struct Context {
 
   OutputSection *text = nullptr;
   OutputSection *data = nullptr;
+  OutputSection *bss = nullptr;
   OutputSection *cstring = nullptr;
   OutputSection *common = nullptr;
 

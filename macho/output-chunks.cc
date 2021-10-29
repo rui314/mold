@@ -292,9 +292,11 @@ void OutputSection::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
 
   for (Subsection *subsec : members) {
-    std::string_view data = subsec->get_contents();
-    memcpy(buf + subsec->output_offset, data.data(), data.size());
-    subsec->apply_reloc(ctx, buf + subsec->output_offset);
+    if (subsec->isec.hdr.type != S_ZEROFILL) {
+      std::string_view data = subsec->get_contents();
+      memcpy(buf + subsec->output_offset, data.data(), data.size());
+      subsec->apply_reloc(ctx, buf + subsec->output_offset);
+    }
   }
 }
 
@@ -310,19 +312,36 @@ void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
   cmd.fileoff = fileoff;
   cmd.vmaddr = vmaddr;
 
-  i64 offset = 0;
+  i64 i = 0;
 
-  for (Chunk *sec : chunks) {
-    offset = align_to(offset, 1 << sec->hdr.p2align);
-    sec->hdr.addr = vmaddr + offset;
-    sec->hdr.offset = fileoff + offset;
-    sec->compute_size(ctx);
-    offset += sec->hdr.size;
+  while (i < chunks.size() && chunks[i]->hdr.type != S_ZEROFILL) {
+    Chunk &sec = *chunks[i++];
+    fileoff = align_to(fileoff, 1 << sec.hdr.p2align);
+    vmaddr = align_to(vmaddr, 1 << sec.hdr.p2align);
+
+    sec.hdr.offset = fileoff;
+    sec.hdr.addr = vmaddr;
+
+    sec.compute_size(ctx);
+    fileoff += sec.hdr.size;
+    vmaddr += sec.hdr.size;
   }
 
-  cmd.vmsize = align_to(offset, PAGE_SIZE);
-  cmd.filesize =
-    (this == ctx.segments.back()) ? offset : align_to(offset, PAGE_SIZE);
+  while (i < chunks.size()) {
+    Chunk &sec = *chunks[i++];
+    assert(sec.hdr.type == S_ZEROFILL);
+    vmaddr = align_to(vmaddr, 1 << sec.hdr.p2align);
+    sec.hdr.addr = vmaddr;
+    sec.compute_size(ctx);
+    vmaddr += sec.hdr.size;
+  }
+
+  cmd.vmsize = align_to(vmaddr - cmd.vmaddr, PAGE_SIZE);
+
+  if (this == ctx.segments.back())
+    cmd.filesize = fileoff - cmd.fileoff;
+  else
+    cmd.filesize = align_to(fileoff - cmd.fileoff, PAGE_SIZE);
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
