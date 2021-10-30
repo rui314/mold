@@ -72,14 +72,15 @@ static std::optional<TextDylib> to_tbd(const YamlNode &node) {
               if (auto *lib = std::get_if<std::string_view>(&mem.data))
                 tbd.reexported_libs.push_back(*lib);
 
-  if (auto *vec = lookup<Vector>(node, "exports"))
-    for (const YamlNode &mem : *vec)
-      if (auto *targets = lookup<Vector>(mem, "targets"))
-        if (contains(*targets, "x86_64-macos"))
-          if (auto *syms = lookup<Vector>(mem, "symbols"))
-            for (const YamlNode &mem : *syms)
-              if (auto *sym = std::get_if<std::string_view>(&mem.data))
-                tbd.exports.push_back(*sym);
+  for (std::string_view key : {"exports", "reexports"})
+    if (auto *vec = lookup<Vector>(node, key))
+      for (const YamlNode &mem : *vec)
+        if (auto *targets = lookup<Vector>(mem, "targets"))
+          if (contains(*targets, "x86_64-macos"))
+            if (auto *syms = lookup<Vector>(mem, "symbols"))
+              for (const YamlNode &mem : *syms)
+                if (auto *sym = std::get_if<std::string_view>(&mem.data))
+                  tbd.exports.push_back(*sym);
 
   return tbd;
 }
