@@ -196,7 +196,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol &sym);
 
 class OutputSegment {
 public:
-  OutputSegment(std::string_view name, u32 prot, u32 flags);
+  static OutputSegment *get_instance(Context &ctx, std::string_view name);
   void set_offset(Context &ctx, i64 fileoff, u64 vmaddr);
   void copy_buf(Context &ctx);
 
@@ -204,6 +204,9 @@ public:
   SegmentCommand cmd = {};
   i32 seg_idx = -1;
   std::vector<Chunk *> chunks;
+
+private:
+  OutputSegment(std::string_view name);
 };
 
 class Chunk {
@@ -591,6 +594,22 @@ void parse_nonpositional_args(Context &ctx,
 
 struct Context {
   Context() {
+    text_seg = OutputSegment::get_instance(*this, "__TEXT");
+    data_const_seg = OutputSegment::get_instance(*this, "__DATA_CONST");
+    data_seg = OutputSegment::get_instance(*this, "__DATA");
+    linkedit_seg = OutputSegment::get_instance(*this, "__LINKEDIT");
+
+    auto set = [](OutputSegment &seg, u32 prot, u32 flags) {
+      seg.cmd.initprot = prot;
+      seg.cmd.maxprot = prot;
+      seg.cmd.flags = flags;
+    };
+
+    set(*text_seg, VM_PROT_READ | VM_PROT_EXECUTE, 0);
+    set(*data_const_seg, VM_PROT_READ | VM_PROT_WRITE, SG_READ_ONLY);
+    set(*data_seg, VM_PROT_READ | VM_PROT_WRITE, 0);
+    set(*linkedit_seg, VM_PROT_READ, 0);
+
     text = OutputSection::get_instance(*this, "__TEXT", "__text");
     data = OutputSection::get_instance(*this, "__DATA", "__data");
     bss = OutputSection::get_instance(*this, "__DATA", "__bss");
@@ -646,13 +665,13 @@ struct Context {
   std::vector<ObjectFile *> objs;
   std::vector<DylibFile *> dylibs;
 
-  OutputSegment text_seg{"__TEXT", VM_PROT_READ | VM_PROT_EXECUTE, 0};
-  OutputSegment data_const_seg{"__DATA_CONST", VM_PROT_READ | VM_PROT_WRITE,
-                               SG_READ_ONLY};
-  OutputSegment data_seg{"__DATA", VM_PROT_READ | VM_PROT_WRITE, 0};
-  OutputSegment linkedit_seg{"__LINKEDIT", VM_PROT_READ, 0};
+  OutputSegment *text_seg = nullptr;
+  OutputSegment *data_const_seg = nullptr;
+  OutputSegment *data_seg = nullptr;
+  OutputSegment *linkedit_seg = nullptr;
 
-  std::vector<std::unique_ptr<OutputSection>> output_sections;
+  std::vector<std::unique_ptr<OutputSegment>> segments;
+  std::vector<std::unique_ptr<OutputSection>> sections;
 
   OutputMachHeader mach_hdr;
   StubsSection stubs;
@@ -677,8 +696,6 @@ struct Context {
   OutputSection *bss = nullptr;
   OutputSection *cstring = nullptr;
   OutputSection *common = nullptr;
-
-  std::vector<OutputSegment *> segments;
 };
 
 int main(int argc, char **argv);

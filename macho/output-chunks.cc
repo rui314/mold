@@ -191,7 +191,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
   };
 
   // Add LC_SEGMENT_64 comamnds
-  for (OutputSegment *seg : ctx.segments) {
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments) {
     std::vector<u8> &buf = vec.emplace_back();
 
     i64 nsects = 0;
@@ -244,7 +244,7 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
   static std::shared_mutex mu;
 
   auto find = [&]() -> OutputSection *{
-    for (std::unique_ptr<OutputSection> &osec : ctx.output_sections)
+    for (std::unique_ptr<OutputSection> &osec : ctx.sections)
       if (osec->hdr.get_segname() == segname &&
           osec->hdr.get_sectname() == sectname)
         return osec.get();
@@ -262,7 +262,7 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
     return osec;
 
   OutputSection *osec = new OutputSection(segname, sectname);
-  ctx.output_sections.push_back(std::unique_ptr<OutputSection>(osec));
+  ctx.sections.push_back(std::unique_ptr<OutputSection>(osec));
   return osec;
 }
 
@@ -300,12 +300,34 @@ void OutputSection::copy_buf(Context &ctx) {
   }
 }
 
-OutputSegment::OutputSegment(std::string_view name, u32 prot, u32 flags) {
+OutputSegment *OutputSegment::get_instance(Context &ctx, std::string_view name) {
+  static std::shared_mutex mu;
+
+  auto find = [&]() -> OutputSegment *{
+    for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
+      if (seg->cmd.get_segname() == name)
+        return seg.get();
+    return nullptr;
+  };
+
+  {
+    std::shared_lock lock(mu);
+    if (OutputSegment *seg = find())
+      return seg;
+  }
+
+  std::unique_lock lock(mu);
+  if (OutputSegment *seg = find())
+    return seg;
+
+  OutputSegment *seg = new OutputSegment(name);
+  ctx.segments.push_back(std::unique_ptr<OutputSegment>(seg));
+  return seg;
+}
+
+OutputSegment::OutputSegment(std::string_view name) {
   cmd.cmd = LC_SEGMENT_64;
   memcpy(cmd.segname, name.data(), name.size());
-  cmd.maxprot = prot;
-  cmd.initprot = prot;
-  cmd.flags = flags;
 }
 
 void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
@@ -338,7 +360,7 @@ void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
 
   cmd.vmsize = align_to(vmaddr - cmd.vmaddr, PAGE_SIZE);
 
-  if (this == ctx.segments.back())
+  if (this == ctx.segments.back().get())
     cmd.filesize = fileoff - cmd.fileoff;
   else
     cmd.filesize = align_to(fileoff - cmd.fileoff, PAGE_SIZE);
@@ -410,14 +432,14 @@ void OutputRebaseSection::compute_size(Context &ctx) {
   RebaseEncoder enc;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
-    enc.add(ctx.data_seg.seg_idx,
+    enc.add(ctx.data_seg->seg_idx,
             ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection::ENTRY_SIZE -
-            ctx.data_seg.cmd.vmaddr);
+            ctx.data_seg->cmd.vmaddr);
 
   for (Symbol *sym : ctx.got.syms)
     if (!sym->file->is_dylib)
-      enc.add(ctx.data_const_seg.seg_idx,
-              sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
+      enc.add(ctx.data_const_seg->seg_idx,
+              sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   enc.finish();
   contents = enc.buf;
@@ -475,8 +497,8 @@ void OutputBindSection::compute_size(Context &ctx) {
   for (Symbol *sym : ctx.got.syms)
     if (sym->file->is_dylib)
       enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
-              ctx.data_const_seg.seg_idx,
-              sym->get_got_addr(ctx) - ctx.data_const_seg.cmd.vmaddr);
+              ctx.data_const_seg->seg_idx,
+              sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   enc.finish();
 
@@ -507,12 +529,12 @@ void OutputLazyBindSection::add(Context &ctx, Symbol &sym, i64 flags) {
                   (u8 *)(sym.name.data() + sym.name.size()));
   emit('\0');
 
-  i64 seg_idx = ctx.data_seg.seg_idx;
+  i64 seg_idx = ctx.data_seg->seg_idx;
   emit(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
 
   i64 offset = ctx.lazy_symbol_ptr.hdr.addr +
                sym.stub_idx * LazySymbolPtrSection::ENTRY_SIZE -
-               ctx.data_seg.cmd.vmaddr;
+               ctx.data_seg->cmd.vmaddr;
   encode_uleb(contents, offset);
 
   emit(BIND_OPCODE_DO_BIND);
@@ -983,7 +1005,7 @@ UnwindEncoder::split_records(Context &ctx) {
 static std::vector<u8> construct_unwind_info(Context &ctx) {
   UnwindEncoder enc;
 
-  for (OutputSegment *seg : ctx.segments)
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (chunk->is_regular)
         for (Subsection *subsec : ((OutputSection *)chunk)->members)

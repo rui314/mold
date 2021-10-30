@@ -43,38 +43,33 @@ static void create_synthetic_chunks(Context &ctx) {
 
   ctx.headerpad.hdr.size = ctx.arg.headerpad;
 
-  ctx.segments.push_back(&ctx.text_seg);
-  ctx.segments.push_back(&ctx.data_const_seg);
-  ctx.segments.push_back(&ctx.data_seg);
-  ctx.segments.push_back(&ctx.linkedit_seg);
+  ctx.text_seg->chunks.push_back(&ctx.mach_hdr);
+  ctx.text_seg->chunks.push_back(&ctx.load_cmd);
+  ctx.text_seg->chunks.push_back(&ctx.headerpad);
+  ctx.text_seg->chunks.push_back(ctx.text);
+  ctx.text_seg->chunks.push_back(&ctx.stubs);
+  ctx.text_seg->chunks.push_back(&ctx.stub_helper);
+  ctx.text_seg->chunks.push_back(ctx.cstring);
+  ctx.text_seg->chunks.push_back(&ctx.unwind_info);
 
-  ctx.text_seg.chunks.push_back(&ctx.mach_hdr);
-  ctx.text_seg.chunks.push_back(&ctx.load_cmd);
-  ctx.text_seg.chunks.push_back(&ctx.headerpad);
-  ctx.text_seg.chunks.push_back(ctx.text);
-  ctx.text_seg.chunks.push_back(&ctx.stubs);
-  ctx.text_seg.chunks.push_back(&ctx.stub_helper);
-  ctx.text_seg.chunks.push_back(ctx.cstring);
-  ctx.text_seg.chunks.push_back(&ctx.unwind_info);
+  ctx.data_const_seg->chunks.push_back(&ctx.got);
 
-  ctx.data_const_seg.chunks.push_back(&ctx.got);
-
-  ctx.data_seg.chunks.push_back(&ctx.lazy_symbol_ptr);
-  ctx.data_seg.chunks.push_back(ctx.data);
+  ctx.data_seg->chunks.push_back(&ctx.lazy_symbol_ptr);
+  ctx.data_seg->chunks.push_back(ctx.data);
 
   if (!ctx.common->members.empty())
-    ctx.data_seg.chunks.push_back(ctx.common);
+    ctx.data_seg->chunks.push_back(ctx.common);
   if (!ctx.bss->members.empty())
-    ctx.data_seg.chunks.push_back(ctx.bss);
+    ctx.data_seg->chunks.push_back(ctx.bss);
 
-  ctx.linkedit_seg.chunks.push_back(&ctx.rebase);
-  ctx.linkedit_seg.chunks.push_back(&ctx.bind);
-  ctx.linkedit_seg.chunks.push_back(&ctx.lazy_bind);
-  ctx.linkedit_seg.chunks.push_back(&ctx.export_);
-  ctx.linkedit_seg.chunks.push_back(&ctx.function_starts);
-  ctx.linkedit_seg.chunks.push_back(&ctx.symtab);
-  ctx.linkedit_seg.chunks.push_back(&ctx.indir_symtab);
-  ctx.linkedit_seg.chunks.push_back(&ctx.strtab);
+  ctx.linkedit_seg->chunks.push_back(&ctx.rebase);
+  ctx.linkedit_seg->chunks.push_back(&ctx.bind);
+  ctx.linkedit_seg->chunks.push_back(&ctx.lazy_bind);
+  ctx.linkedit_seg->chunks.push_back(&ctx.export_);
+  ctx.linkedit_seg->chunks.push_back(&ctx.function_starts);
+  ctx.linkedit_seg->chunks.push_back(&ctx.symtab);
+  ctx.linkedit_seg->chunks.push_back(&ctx.indir_symtab);
+  ctx.linkedit_seg->chunks.push_back(&ctx.strtab);
 }
 
 static void export_symbols(Context &ctx) {
@@ -98,7 +93,7 @@ static void export_symbols(Context &ctx) {
 
 static i64 assign_offsets(Context &ctx) {
   i64 sect_idx = 1;
-  for (OutputSegment *seg : ctx.segments)
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (!chunk->is_hidden)
         chunk->sect_idx = sect_idx++;
@@ -106,7 +101,7 @@ static i64 assign_offsets(Context &ctx) {
   i64 fileoff = 0;
   i64 vmaddr = PAGE_ZERO_SIZE;
 
-  for (OutputSegment *seg : ctx.segments) {
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments) {
     seg->set_offset(ctx, fileoff, vmaddr);
     fileoff += seg->cmd.filesize;
     vmaddr += seg->cmd.vmsize;
@@ -230,7 +225,7 @@ int main(int argc, char **argv) {
   ctx.output_file = OutputFile::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
-  for (OutputSegment *seg : ctx.segments)
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     seg->copy_buf(ctx);
 
   ctx.output_file->close(ctx);
