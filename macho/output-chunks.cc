@@ -244,11 +244,15 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
                             std::string_view sectname) {
   static std::shared_mutex mu;
 
-  auto find = [&]() -> OutputSection *{
-    for (std::unique_ptr<OutputSection> &osec : ctx.sections)
-      if (osec->hdr.get_segname() == segname &&
-          osec->hdr.get_sectname() == sectname)
-        return osec.get();
+  auto find = [&]() -> OutputSection * {
+    for (std::unique_ptr<Chunk> &chunk : ctx.chunks) {
+      if (chunk->hdr.get_segname() == segname &&
+          chunk->hdr.get_sectname() == sectname) {
+        if (!chunk->is_regular)
+          Fatal(ctx) << ": reserved name is used: " << segname << "," << sectname;
+        return (OutputSection *)chunk.get();
+      }
+    }
     return nullptr;
   };
 
@@ -263,7 +267,7 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
     return osec;
 
   OutputSection *osec = new OutputSection(segname, sectname);
-  ctx.sections.push_back(std::unique_ptr<OutputSection>(osec));
+  ctx.chunks.push_back(std::unique_ptr<Chunk>(osec));
   return osec;
 }
 

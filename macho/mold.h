@@ -657,7 +657,7 @@ struct Context {
   OutputSegment *linkedit_seg = nullptr;
 
   std::vector<std::unique_ptr<OutputSegment>> segments;
-  std::vector<std::unique_ptr<OutputSection>> sections;
+  std::vector<std::unique_ptr<Chunk>> chunks;
 
   OutputMachHeader mach_hdr;
   StubsSection stubs;
