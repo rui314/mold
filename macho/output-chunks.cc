@@ -267,12 +267,6 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
   return osec;
 }
 
-OutputSection::OutputSection(std::string_view segname, std::string_view sectname) {
-  hdr.set_segname(segname);
-  hdr.set_sectname(sectname);
-  is_regular = true;
-}
-
 void OutputSection::compute_size(Context &ctx) {
   u64 addr = hdr.addr;
 
@@ -796,7 +790,7 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
     buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
-StubsSection::StubsSection() {
+StubsSection::StubsSection() : Chunk("__LINKEDIT", "__stubs") {
   hdr.set_sectname("__stubs");
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
@@ -834,7 +828,7 @@ void StubsSection::copy_buf(Context &ctx) {
   }
 }
 
-StubHelperSection::StubHelperSection() {
+StubHelperSection::StubHelperSection() : Chunk("__LINKEDIT", "__stub_helper") {
   hdr.set_sectname("__stub_helper");
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
@@ -872,7 +866,7 @@ void StubHelperSection::copy_buf(Context &ctx) {
   }
 }
 
-UnwindInfoSection::UnwindInfoSection() {
+UnwindInfoSection::UnwindInfoSection() : Chunk("__LINKEDIT", "__unwind_info") {
   hdr.set_sectname("__unwind_info");
   hdr.p2align = __builtin_ctz(4);
   hdr.size = contents.size();
@@ -1026,7 +1020,7 @@ void UnwindInfoSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-GotSection::GotSection() {
+GotSection::GotSection() : Chunk("__LINKEDIT", "__got") {
   hdr.set_sectname("__got");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
@@ -1046,7 +1040,8 @@ void GotSection::copy_buf(Context &ctx) {
       buf[i] = syms[i]->get_addr(ctx);
 }
 
-LazySymbolPtrSection::LazySymbolPtrSection() {
+LazySymbolPtrSection::LazySymbolPtrSection()
+  : Chunk("__LINKEDIT", "__la_symbol_ptr") {
   hdr.set_sectname("__la_symbol_ptr");
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;

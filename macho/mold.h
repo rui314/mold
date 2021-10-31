@@ -211,12 +211,16 @@ private:
 
 class Chunk {
 public:
+  Chunk(std::string_view segname, std::string_view sectname) {
+    hdr.set_segname(segname);
+    hdr.set_sectname(sectname);
+  }
+
   virtual ~Chunk() = default;
   virtual void compute_size(Context &ctx) {};
   virtual void copy_buf(Context &ctx) {}
 
   MachSection hdr = {};
-  OutputSegment *parent = nullptr;
   u32 sect_idx = 0;
   bool is_hidden = false;
   bool is_regular = false;
@@ -224,7 +228,7 @@ public:
 
 class OutputMachHeader : public Chunk {
 public:
-  OutputMachHeader() {
+  OutputMachHeader() : Chunk("__TEXT", "__mach_header") {
     is_hidden = true;
   }
 
@@ -237,7 +241,11 @@ public:
   static OutputSection *
   get_instance(Context &ctx, std::string_view segname, std::string_view sectname);
 
-  OutputSection(std::string_view segname, std::string_view sectname);
+  OutputSection(std::string_view segname, std::string_view sectname)
+    : Chunk(segname, sectname) {
+    is_regular = true;
+  }
+
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -266,7 +274,7 @@ private:
 
 class OutputRebaseSection : public Chunk {
 public:
-  OutputRebaseSection() {
+  OutputRebaseSection() : Chunk("__LINKEDIT", "__rebase") {
     is_hidden = true;
   }
 
@@ -295,7 +303,7 @@ private:
 
 class OutputBindSection : public Chunk {
 public:
-  OutputBindSection() {
+  OutputBindSection() : Chunk("__LINKEDIT", "__binding") {
     is_hidden = true;
   }
 
@@ -307,7 +315,7 @@ public:
 
 class OutputLazyBindSection : public Chunk {
 public:
-  OutputLazyBindSection() {
+  OutputLazyBindSection() : Chunk("__LINKEDIT", "__lazy_binding") {
     is_hidden = true;
   }
 
@@ -355,7 +363,7 @@ private:
 
 class OutputExportSection : public Chunk {
 public:
-  OutputExportSection() {
+  OutputExportSection() : Chunk("__LINKEDIT", "__export") {
     is_hidden = true;
   }
 
@@ -368,7 +376,7 @@ private:
 
 class OutputFunctionStartsSection : public Chunk {
 public:
-  OutputFunctionStartsSection() {
+  OutputFunctionStartsSection() : Chunk("__LINKEDIT", "__func_starts") {
     is_hidden = true;
   }
 
@@ -380,7 +388,7 @@ public:
 
 class OutputSymtabSection : public Chunk {
 public:
-  OutputSymtabSection() {
+  OutputSymtabSection() : Chunk("__LINKEDIT", "__symbol_table") {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -400,7 +408,7 @@ public:
 
 class OutputStrtabSection : public Chunk {
 public:
-  OutputStrtabSection() {
+  OutputStrtabSection() : Chunk("__LINKEDIT", "__string_table") {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -414,7 +422,7 @@ public:
 
 class OutputIndirectSymtabSection : public Chunk {
 public:
-  OutputIndirectSymtabSection() {
+  OutputIndirectSymtabSection() : Chunk("__LINKEDIT", "__ind_sym_tab") {
     is_hidden = true;
   }
 
