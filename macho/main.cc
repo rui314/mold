@@ -41,11 +41,7 @@ static void create_synthetic_chunks(Context &ctx) {
     }
   }
 
-  ctx.headerpad.hdr.size = ctx.arg.headerpad;
-
   ctx.text_seg->chunks.push_back(&ctx.mach_hdr);
-  ctx.text_seg->chunks.push_back(&ctx.load_cmd);
-  ctx.text_seg->chunks.push_back(&ctx.headerpad);
   ctx.text_seg->chunks.push_back(ctx.text);
   ctx.text_seg->chunks.push_back(&ctx.stubs);
   ctx.text_seg->chunks.push_back(&ctx.stub_helper);

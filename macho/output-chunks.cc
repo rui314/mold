@@ -4,19 +4,6 @@
 
 namespace mold::macho {
 
-void OutputMachHeader::copy_buf(Context &ctx) {
-  MachHeader &mhdr = *(MachHeader *)(ctx.buf + hdr.offset);
-  memset(&mhdr, 0, sizeof(mhdr));
-
-  mhdr.magic = 0xfeedfacf;
-  mhdr.cputype = CPU_TYPE_X86_64;
-  mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
-  mhdr.filetype = MH_EXECUTE;
-  mhdr.ncmds = ctx.load_cmd.ncmds;
-  mhdr.sizeofcmds = ctx.load_cmd.hdr.size;
-  mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
-}
-
 static std::vector<u8> create_page_zero_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)buf.data();
@@ -180,7 +167,7 @@ static std::vector<u8> create_data_in_code_cmd(Context &ctx) {
   return buf;
 }
 
-static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
+static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   std::vector<std::vector<u8>> vec;
   vec.push_back(create_page_zero_cmd(ctx));
 
@@ -224,18 +211,32 @@ static std::vector<std::vector<u8>> create_load_commands(Context &ctx) {
     vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
   vec.push_back(create_function_starts_cmd(ctx));
   vec.push_back(create_data_in_code_cmd(ctx));
-  return vec;
+  return {vec.size(), flatten(vec)};
 }
 
-void OutputLoadCommand::compute_size(Context &ctx) {
-  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
-  ncmds = cmds.size();
-  hdr.size = flatten(cmds).size();
+void OutputMachHeader::compute_size(Context &ctx) {
+  std::vector<u8> cmds;
+  std::tie(std::ignore, cmds) = create_load_commands(ctx);
+  hdr.size = sizeof(MachHeader) + cmds.size() + ctx.arg.headerpad;
 }
 
-void OutputLoadCommand::copy_buf(Context &ctx) {
-  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
-  write_vector(ctx.buf + hdr.offset, flatten(cmds));
+void OutputMachHeader::copy_buf(Context &ctx) {
+  u8 *buf = ctx.buf + hdr.offset;
+
+  i64 ncmds;
+  std::vector<u8> cmds;
+  std::tie(ncmds, cmds) = create_load_commands(ctx);
+
+  MachHeader &mhdr = *(MachHeader *)buf;
+  mhdr.magic = 0xfeedfacf;
+  mhdr.cputype = CPU_TYPE_X86_64;
+  mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+  mhdr.filetype = MH_EXECUTE;
+  mhdr.ncmds = ncmds;
+  mhdr.sizeofcmds = cmds.size();
+  mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
+
+  write_vector(buf + sizeof(mhdr), cmds);
 }
 
 OutputSection *

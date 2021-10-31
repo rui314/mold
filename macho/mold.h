@@ -226,32 +226,10 @@ class OutputMachHeader : public Chunk {
 public:
   OutputMachHeader() {
     is_hidden = true;
-    hdr.size = sizeof(MachHeader);
-  }
-
-  void copy_buf(Context &ctx) override;
-};
-
-class OutputLoadCommand : public Chunk {
-public:
-  OutputLoadCommand() {
-    is_hidden = true;
   }
 
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
-
-  i64 ncmds = 0;
-
-private:
-  std::vector<u8> contents;
-};
-
-class OutputPadding : public Chunk {
-public:
-  OutputPadding() {
-    is_hidden = true;
-  }
 };
 
 class OutputSection : public Chunk {
@@ -675,13 +653,11 @@ struct Context {
 
   OutputMachHeader mach_hdr;
   StubsSection stubs;
-  OutputPadding headerpad;
   StubHelperSection stub_helper;
   UnwindInfoSection unwind_info;
   GotSection got;
   LazySymbolPtrSection lazy_symbol_ptr;
 
-  OutputLoadCommand load_cmd;
   OutputRebaseSection rebase;
   OutputBindSection bind;
   OutputLazyBindSection lazy_bind;
