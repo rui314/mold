@@ -32,6 +32,32 @@ static void create_internal_file(Context &ctx) {
   sym->value = PAGE_ZERO_SIZE;
 }
 
+static bool compare_segments(const std::unique_ptr<OutputSegment> &a,
+                             const std::unique_ptr<OutputSegment> &b) {
+  // We want to sort output segments in the following order:
+  // __TEXT, __DATA_CONST, __DATA, <other segments>, __LINKEDIT
+  auto get_rank = [](std::string_view name) {
+    if (name == "__TEXT")
+      return 0;
+    if (name == "__DATA_CONST")
+      return 1;
+    if (name == "__DATA")
+      return 2;
+    return INT_MAX;
+  };
+
+  std::string_view na = a->cmd.get_segname();
+  std::string_view nb = b->cmd.get_segname();
+  i64 ra = get_rank(na);
+  i64 rb = get_rank(nb);
+  if (ra != INT_MAX || rb != INT_MAX)
+    return ra < rb;
+
+  if (na == "__LINKEDIT" || nb == "__LINKEDIT")
+    return na != "__LINKEDIT";
+  return na < nb;
+}
+
 static bool compare_chunks(const Chunk *a, const Chunk *b) {
   assert(a->hdr.get_segname() == b->hdr.get_segname());
 
@@ -98,6 +124,8 @@ static void create_synthetic_chunks(Context &ctx) {
       OutputSegment::get_instance(ctx, chunk->hdr.get_segname());
     seg->chunks.push_back(chunk);
   }
+
+  sort(ctx.segments, compare_segments);
 
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     sort(seg->chunks, compare_chunks);

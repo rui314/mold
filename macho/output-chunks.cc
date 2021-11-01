@@ -271,7 +271,9 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
   if (OutputSection *osec = find())
     return osec;
 
-  return new OutputSection(ctx, segname, sectname);
+  OutputSection *osec = new OutputSection(ctx, segname, sectname);
+  ctx.osec_pool.push_back(std::unique_ptr<OutputSection>(osec));
+  return osec;
 }
 
 void OutputSection::compute_size(Context &ctx) {

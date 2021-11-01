@@ -650,6 +650,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<DylibFile>> dylib_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context>>> mf_pool;
+  std::vector<std::unique_ptr<OutputSection>> osec_pool;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 
