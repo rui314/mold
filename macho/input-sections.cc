@@ -49,11 +49,8 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   else
     unreachable();
 
-  bool is_gotref = (r.type == X86_64_RELOC_GOT_LOAD || r.type == X86_64_RELOC_GOT);
-
   if (r.is_extern)
-    return {r.offset, (bool)r.is_pcrel, is_gotref, addend, file.syms[r.idx],
-            nullptr};
+    return {r.offset, (u8)r.type, addend, file.syms[r.idx], nullptr};
 
   u32 addr;
   if (r.is_pcrel) {
@@ -68,8 +65,7 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
-  return {r.offset, (bool)r.is_pcrel, is_gotref, addr - target->input_addr,
-          nullptr, target};
+  return {r.offset, (u8)r.type, addr - target->input_addr, nullptr, target};
 }
 
 void InputSection::parse_relocations(Context &ctx) {
@@ -99,7 +95,7 @@ void InputSection::parse_relocations(Context &ctx) {
 void InputSection::scan_relocations(Context &ctx) {
   for (Relocation &rel : rels) {
     if (Symbol *sym = rel.sym) {
-      if (rel.is_gotref)
+      if (rel.type == X86_64_RELOC_GOT_LOAD || rel.type == X86_64_RELOC_GOT)
         sym->flags |= NEEDS_GOT;
       if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_STUB;
@@ -121,12 +117,32 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
 #define P (addr + rel.offset)
 #define G rel.sym->get_got_addr(ctx)
 
-    if (rel.is_gotref)
-      *loc = G - P - 4;
-    else if (rel.is_pcrel)
-      *loc = S + A - P - 4;
-    else
+    switch (rel.type) {
+    case X86_64_RELOC_UNSIGNED:
       *loc = S + A;
+      break;
+    case X86_64_RELOC_GOT_LOAD:
+      *loc = G - P - 4;
+      break;
+    case X86_64_RELOC_GOT:
+      *loc = G - P;
+      break;
+    case X86_64_RELOC_SIGNED:
+    case X86_64_RELOC_BRANCH:
+      *loc = S + A - P - 4;
+      break;
+    case X86_64_RELOC_SIGNED_1:
+      *loc = S + A - P - 5;
+      break;
+    case X86_64_RELOC_SIGNED_2:
+      *loc = S + A - P - 6;
+      break;
+    case X86_64_RELOC_SIGNED_4:
+      *loc = S + A - P - 8;
+      break;
+    default:
+      Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
+    }
 
 #undef S
 #undef A

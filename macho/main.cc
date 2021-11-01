@@ -70,6 +70,7 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
     "__text",
     "__stubs",
     "__stub_helper",
+    "__gcc_except_tab",
     "__cstring",
     "__unwind_info",
     // __DATA_CONST

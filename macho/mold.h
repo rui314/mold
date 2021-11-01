@@ -28,8 +28,7 @@ struct Symbol;
 
 struct Relocation {
   u32 offset = 0;
-  bool is_pcrel = false;
-  bool is_gotref = false;
+  u16 type = -1;
   i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
@@ -483,9 +482,10 @@ public:
 
 private:
   u32 encode_personality(Context &ctx, Symbol *sym);
-  std::vector<std::span<UnwindRecord>> split_records(Context &ctx);
 
-  std::vector<UnwindRecord> records;
+  std::vector<std::span<UnwindRecord>>
+  split_records(Context &ctx, std::span<UnwindRecord>);
+
   std::vector<Symbol *> personalities;
 };
 

@@ -872,7 +872,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
       num_lsda++;
   }
 
-  std::vector<std::span<UnwindRecord>> pages = split_records(ctx);
+  std::vector<std::span<UnwindRecord>> pages = split_records(ctx, records);
 
   // Allocate a buffer that is more than large enough to hold the
   // entire section.
@@ -881,7 +881,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
   // Write the section header.
   UnwindSectionHeader &hdr = *(UnwindSectionHeader *)buf.data();
   hdr.version = UNWIND_SECTION_VERSION;
-  hdr.encoding_offset = 0;
+  hdr.encoding_offset = sizeof(hdr);
   hdr.encoding_count = 0;
   hdr.personality_offset = sizeof(hdr);
   hdr.personality_count = personalities.size();
@@ -942,7 +942,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
   UnwindRecord &last = records[records.size() - 1];
   page1->func_addr = last.subsec->addr + last.subsec->input_size + 1;
   page1->page_offset = 0;
-  page1->lsda_offset = page1[-1].lsda_offset;
+  page1->lsda_offset = (u8 *)lsda - buf.data();
 
   buf.resize((u8 *)page2 - buf.data());
   return buf;
@@ -963,7 +963,7 @@ u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
 }
 
 std::vector<std::span<UnwindRecord>>
-UnwindEncoder::split_records(Context &ctx) {
+UnwindEncoder::split_records(Context &ctx, std::span<UnwindRecord> records) {
   constexpr i64 max_group_size = 4096;
 
   sort(records, [&](const UnwindRecord &a, const UnwindRecord &b) {
