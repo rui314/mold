@@ -4,6 +4,11 @@
 
 namespace mold::macho {
 
+std::ostream &operator<<(std::ostream &out, const Chunk &chunk) {
+  out << chunk.hdr.get_segname() << "," << chunk.hdr.get_sectname();
+  return out;
+}
+
 static std::vector<u8> create_page_zero_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)buf.data();
@@ -245,12 +250,12 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
   static std::shared_mutex mu;
 
   auto find = [&]() -> OutputSection * {
-    for (std::unique_ptr<Chunk> &chunk : ctx.chunks) {
+    for (Chunk *chunk : ctx.chunks) {
       if (chunk->hdr.get_segname() == segname &&
           chunk->hdr.get_sectname() == sectname) {
         if (!chunk->is_regular)
           Fatal(ctx) << ": reserved name is used: " << segname << "," << sectname;
-        return (OutputSection *)chunk.get();
+        return (OutputSection *)chunk;
       }
     }
     return nullptr;
@@ -266,9 +271,7 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
   if (OutputSection *osec = find())
     return osec;
 
-  OutputSection *osec = new OutputSection(segname, sectname);
-  ctx.chunks.push_back(std::unique_ptr<Chunk>(osec));
-  return osec;
+  return new OutputSection(ctx, segname, sectname);
 }
 
 void OutputSection::compute_size(Context &ctx) {
@@ -794,8 +797,8 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
     buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
-StubsSection::StubsSection() : Chunk("__LINKEDIT", "__stubs") {
-  hdr.set_sectname("__stubs");
+StubsSection::StubsSection(Context &ctx)
+  : Chunk(ctx, "__TEXT", "__stubs") {
   hdr.p2align = __builtin_ctz(2);
   hdr.type = S_SYMBOL_STUBS;
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
@@ -832,8 +835,8 @@ void StubsSection::copy_buf(Context &ctx) {
   }
 }
 
-StubHelperSection::StubHelperSection() : Chunk("__LINKEDIT", "__stub_helper") {
-  hdr.set_sectname("__stub_helper");
+StubHelperSection::StubHelperSection(Context &ctx)
+  : Chunk(ctx, "__TEXT", "__stub_helper") {
   hdr.p2align = __builtin_ctz(4);
   hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
 }
@@ -870,8 +873,8 @@ void StubHelperSection::copy_buf(Context &ctx) {
   }
 }
 
-UnwindInfoSection::UnwindInfoSection() : Chunk("__LINKEDIT", "__unwind_info") {
-  hdr.set_sectname("__unwind_info");
+UnwindInfoSection::UnwindInfoSection(Context &ctx)
+  : Chunk(ctx, "__TEXT", "__unwind_info") {
   hdr.p2align = __builtin_ctz(4);
   hdr.size = contents.size();
 }
@@ -1024,8 +1027,7 @@ void UnwindInfoSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-GotSection::GotSection() : Chunk("__LINKEDIT", "__got") {
-  hdr.set_sectname("__got");
+GotSection::GotSection(Context &ctx) : Chunk(ctx, "__DATA_CONST", "__got") {
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
 }
@@ -1044,9 +1046,8 @@ void GotSection::copy_buf(Context &ctx) {
       buf[i] = syms[i]->get_addr(ctx);
 }
 
-LazySymbolPtrSection::LazySymbolPtrSection()
-  : Chunk("__LINKEDIT", "__la_symbol_ptr") {
-  hdr.set_sectname("__la_symbol_ptr");
+LazySymbolPtrSection::LazySymbolPtrSection(Context &ctx)
+  : Chunk(ctx, "__DATA", "__la_symbol_ptr") {
   hdr.p2align = __builtin_ctz(8);
   hdr.type = S_LAZY_SYMBOL_POINTERS;
 }

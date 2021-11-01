@@ -32,6 +32,54 @@ static void create_internal_file(Context &ctx) {
   sym->value = PAGE_ZERO_SIZE;
 }
 
+static bool compare_chunks(const Chunk *a, const Chunk *b) {
+  assert(a->hdr.get_segname() == b->hdr.get_segname());
+
+  if ((a->hdr.type == S_ZEROFILL) != (b->hdr.type == S_ZEROFILL))
+    return a->hdr.type != S_ZEROFILL;
+
+  static const std::string_view rank[] = {
+    // __TEXT
+    "__mach_header",
+    "__text",
+    "__stubs",
+    "__stub_helper",
+    "__cstring",
+    "__unwind_info",
+    // __DATA_CONST
+    "__got",
+    // __DATA
+    "__la_symbol_ptr"
+    "__data",
+    "__common",
+    "__bss",
+    // __LINKEDIT
+    "__rebase",
+    "__binding",
+    "__lazy_binding",
+    "__export",
+    "__func_starts",
+    "__symbol_table",
+    "__ind_sym_tab",
+    "__string_table",
+  };
+
+  auto get_rank = [](const Chunk *chunk) -> i64 {
+    std::string_view name = chunk->hdr.get_sectname();
+    i64 i = 0;
+    for (; i < sizeof(rank) / sizeof(rank[0]); i++)
+      if (name == rank[i])
+        return i;
+    return INT_MAX;
+  };
+
+  i64 ra = get_rank(a);
+  i64 rb = get_rank(b);
+  if (ra == INT_MAX && rb == INT_MAX)
+    return a->hdr.get_sectname() < b->hdr.get_sectname();
+  return ra < rb;
+}
+
 static void create_synthetic_chunks(Context &ctx) {
   for (ObjectFile *obj : ctx.objs) {
     for (std::unique_ptr<InputSection> &isec : obj->sections) {
@@ -41,31 +89,18 @@ static void create_synthetic_chunks(Context &ctx) {
     }
   }
 
-  ctx.text_seg->chunks.push_back(&ctx.mach_hdr);
-  ctx.text_seg->chunks.push_back(ctx.text);
-  ctx.text_seg->chunks.push_back(&ctx.stubs);
-  ctx.text_seg->chunks.push_back(&ctx.stub_helper);
-  ctx.text_seg->chunks.push_back(ctx.cstring);
-  ctx.text_seg->chunks.push_back(&ctx.unwind_info);
+  for (Chunk *chunk : ctx.chunks) {
+    if (chunk != ctx.data && chunk->is_regular &&
+        ((OutputSection *)chunk)->members.empty())
+      continue;
 
-  ctx.data_const_seg->chunks.push_back(&ctx.got);
+    OutputSegment *seg =
+      OutputSegment::get_instance(ctx, chunk->hdr.get_segname());
+    seg->chunks.push_back(chunk);
+  }
 
-  ctx.data_seg->chunks.push_back(&ctx.lazy_symbol_ptr);
-  ctx.data_seg->chunks.push_back(ctx.data);
-
-  if (!ctx.common->members.empty())
-    ctx.data_seg->chunks.push_back(ctx.common);
-  if (!ctx.bss->members.empty())
-    ctx.data_seg->chunks.push_back(ctx.bss);
-
-  ctx.linkedit_seg->chunks.push_back(&ctx.rebase);
-  ctx.linkedit_seg->chunks.push_back(&ctx.bind);
-  ctx.linkedit_seg->chunks.push_back(&ctx.lazy_bind);
-  ctx.linkedit_seg->chunks.push_back(&ctx.export_);
-  ctx.linkedit_seg->chunks.push_back(&ctx.function_starts);
-  ctx.linkedit_seg->chunks.push_back(&ctx.symtab);
-  ctx.linkedit_seg->chunks.push_back(&ctx.indir_symtab);
-  ctx.linkedit_seg->chunks.push_back(&ctx.strtab);
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
+    sort(seg->chunks, compare_chunks);
 }
 
 static void export_symbols(Context &ctx) {

@@ -211,11 +211,7 @@ private:
 
 class Chunk {
 public:
-  Chunk(std::string_view segname, std::string_view sectname) {
-    hdr.set_segname(segname);
-    hdr.set_sectname(sectname);
-  }
-
+  inline Chunk(Context &ctx, std::string_view segname, std::string_view sectname);
   virtual ~Chunk() = default;
   virtual void compute_size(Context &ctx) {};
   virtual void copy_buf(Context &ctx) {}
@@ -226,9 +222,11 @@ public:
   bool is_regular = false;
 };
 
+std::ostream &operator<<(std::ostream &out, const Chunk &chunk);
+
 class OutputMachHeader : public Chunk {
 public:
-  OutputMachHeader() : Chunk("__TEXT", "__mach_header") {
+  OutputMachHeader(Context &ctx) : Chunk(ctx, "__TEXT", "__mach_header") {
     is_hidden = true;
   }
 
@@ -241,8 +239,8 @@ public:
   static OutputSection *
   get_instance(Context &ctx, std::string_view segname, std::string_view sectname);
 
-  OutputSection(std::string_view segname, std::string_view sectname)
-    : Chunk(segname, sectname) {
+  OutputSection(Context &ctx, std::string_view segname, std::string_view sectname)
+    : Chunk(ctx, segname, sectname) {
     is_regular = true;
   }
 
@@ -274,7 +272,8 @@ private:
 
 class OutputRebaseSection : public Chunk {
 public:
-  OutputRebaseSection() : Chunk("__LINKEDIT", "__rebase") {
+  OutputRebaseSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__rebase") {
     is_hidden = true;
   }
 
@@ -303,7 +302,8 @@ private:
 
 class OutputBindSection : public Chunk {
 public:
-  OutputBindSection() : Chunk("__LINKEDIT", "__binding") {
+  OutputBindSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__binding") {
     is_hidden = true;
   }
 
@@ -315,7 +315,8 @@ public:
 
 class OutputLazyBindSection : public Chunk {
 public:
-  OutputLazyBindSection() : Chunk("__LINKEDIT", "__lazy_binding") {
+  OutputLazyBindSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__lazy_binding") {
     is_hidden = true;
   }
 
@@ -363,7 +364,8 @@ private:
 
 class OutputExportSection : public Chunk {
 public:
-  OutputExportSection() : Chunk("__LINKEDIT", "__export") {
+  OutputExportSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__export") {
     is_hidden = true;
   }
 
@@ -376,7 +378,8 @@ private:
 
 class OutputFunctionStartsSection : public Chunk {
 public:
-  OutputFunctionStartsSection() : Chunk("__LINKEDIT", "__func_starts") {
+  OutputFunctionStartsSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__func_starts") {
     is_hidden = true;
   }
 
@@ -388,7 +391,8 @@ public:
 
 class OutputSymtabSection : public Chunk {
 public:
-  OutputSymtabSection() : Chunk("__LINKEDIT", "__symbol_table") {
+  OutputSymtabSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__symbol_table") {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -408,7 +412,8 @@ public:
 
 class OutputStrtabSection : public Chunk {
 public:
-  OutputStrtabSection() : Chunk("__LINKEDIT", "__string_table") {
+  OutputStrtabSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__string_table") {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
   }
@@ -422,7 +427,8 @@ public:
 
 class OutputIndirectSymtabSection : public Chunk {
 public:
-  OutputIndirectSymtabSection() : Chunk("__LINKEDIT", "__ind_sym_tab") {
+  OutputIndirectSymtabSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__ind_sym_tab") {
     is_hidden = true;
   }
 
@@ -442,8 +448,7 @@ public:
 
 class StubsSection : public Chunk {
 public:
-  StubsSection();
-
+  StubsSection(Context &ctx);
   void add(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
@@ -455,7 +460,7 @@ public:
 
 class StubHelperSection : public Chunk {
 public:
-  StubHelperSection();
+  StubHelperSection(Context &ctx);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 HEADER_SIZE = 16;
@@ -479,7 +484,7 @@ private:
 
 class UnwindInfoSection : public Chunk {
 public:
-  UnwindInfoSection();
+  UnwindInfoSection(Context &ctx);
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -488,7 +493,7 @@ public:
 
 class GotSection : public Chunk {
 public:
-  GotSection();
+  GotSection(Context &ctx);
   void add(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
@@ -499,7 +504,7 @@ public:
 
 class LazySymbolPtrSection : public Chunk {
 public:
-  LazySymbolPtrSection();
+  LazySymbolPtrSection(Context &ctx);
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 8;
@@ -657,23 +662,23 @@ struct Context {
   OutputSegment *linkedit_seg = nullptr;
 
   std::vector<std::unique_ptr<OutputSegment>> segments;
-  std::vector<std::unique_ptr<Chunk>> chunks;
+  std::vector<Chunk *> chunks;
 
-  OutputMachHeader mach_hdr;
-  StubsSection stubs;
-  StubHelperSection stub_helper;
-  UnwindInfoSection unwind_info;
-  GotSection got;
-  LazySymbolPtrSection lazy_symbol_ptr;
+  OutputMachHeader mach_hdr{*this};
+  StubsSection stubs{*this};
+  StubHelperSection stub_helper{*this};
+  UnwindInfoSection unwind_info{*this};
+  GotSection got{*this};
+  LazySymbolPtrSection lazy_symbol_ptr{*this};
 
-  OutputRebaseSection rebase;
-  OutputBindSection bind;
-  OutputLazyBindSection lazy_bind;
-  OutputExportSection export_;
-  OutputFunctionStartsSection function_starts;
-  OutputSymtabSection symtab;
-  OutputIndirectSymtabSection indir_symtab;
-  OutputStrtabSection strtab;
+  OutputRebaseSection rebase{*this};
+  OutputBindSection bind{*this};
+  OutputLazyBindSection lazy_bind{*this};
+  OutputExportSection export_{*this};
+  OutputFunctionStartsSection function_starts{*this};
+  OutputSymtabSection symtab{*this};
+  OutputIndirectSymtabSection indir_symtab{*this};
+  OutputStrtabSection strtab{*this};
 
   OutputSection *text = nullptr;
   OutputSection *data = nullptr;
@@ -687,10 +692,6 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
-
-u64 UnwindRecord::get_func_addr(Context &ctx) const {
-  return subsec->addr + offset;
-}
 
 u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)
@@ -714,6 +715,16 @@ inline Symbol *intern(Context &ctx, std::string_view name) {
 inline std::ostream &operator<<(std::ostream &out, const Symbol &sym) {
   out << sym.name;
   return out;
+}
+
+Chunk::Chunk(Context &ctx, std::string_view segname, std::string_view sectname) {
+  ctx.chunks.push_back(this);
+  hdr.set_segname(segname);
+  hdr.set_sectname(sectname);
+}
+
+u64 UnwindRecord::get_func_addr(Context &ctx) const {
+  return subsec->addr + offset;
 }
 
 } // namespace mold::macho

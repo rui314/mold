@@ -29,7 +29,7 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld=$mold -o $t/exe $t/c.o $t/c.a
+clang++ -fuse-ld=$mold -o $t/exe $t/d.o $t/c.a
 $t/exe | grep -q 'Hello world'
 
 otool -tv $t/exe | grep -q '^_hello:'
