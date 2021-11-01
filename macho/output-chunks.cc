@@ -861,11 +861,8 @@ void StubHelperSection::copy_buf(Context &ctx) {
   }
 }
 
-void UnwindEncoder::add(UnwindRecord &rec) {
-  records.push_back(rec);
-}
-
-void UnwindEncoder::finish(Context &ctx) {
+std::vector<u8>
+UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
   i64 num_lsda = 0;
 
   for (UnwindRecord &rec : records) {
@@ -879,7 +876,7 @@ void UnwindEncoder::finish(Context &ctx) {
 
   // Allocate a buffer that is more than large enough to hold the
   // entire section.
-  buf.resize(4096 * 1024);
+  std::vector<u8> buf(4096 * 1024);
 
   // Write the section header.
   UnwindSectionHeader &hdr = *(UnwindSectionHeader *)buf.data();
@@ -948,6 +945,7 @@ void UnwindEncoder::finish(Context &ctx) {
   page1->lsda_offset = page1[-1].lsda_offset;
 
   buf.resize((u8 *)page2 - buf.data());
+  return buf;
 }
 
 u32 UnwindEncoder::encode_personality(Context &ctx, Symbol *sym) {
@@ -987,17 +985,15 @@ UnwindEncoder::split_records(Context &ctx) {
 }
 
 static std::vector<u8> construct_unwind_info(Context &ctx) {
-  UnwindEncoder enc;
+  std::vector<UnwindRecord> records;
 
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (chunk->is_regular)
         for (Subsection *subsec : ((OutputSection *)chunk)->members)
           for (UnwindRecord &rec : subsec->get_unwind_records())
-            enc.add(rec);
-
-  enc.finish(ctx);
-  return std::move(enc.buf);
+            records.push_back(rec);
+  return UnwindEncoder().encode(ctx, records);
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {

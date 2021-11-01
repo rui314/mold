@@ -479,10 +479,7 @@ public:
 
 class UnwindEncoder {
 public:
-  void add(UnwindRecord &rec);
-  void finish(Context &ctx);
-
-  std::vector<u8> buf;
+  std::vector<u8> encode(Context &ctx, std::span<UnwindRecord> records);
 
 private:
   u32 encode_personality(Context &ctx, Symbol *sym);
