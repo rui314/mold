@@ -890,8 +890,10 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
 
   // Write the personalities
   u32 *per = (u32 *)(buf.data() + sizeof(hdr));
-  for (Symbol *sym : personalities)
-    *per++ = sym->get_addr(ctx);
+  for (Symbol *sym : personalities) {
+    assert(sym->got_idx != -1);
+    *per++ = sym->get_got_addr(ctx);
+  }
 
   // Write first level pages, LSDA and second level pages
   UnwindFirstLevelPage *page1 = (UnwindFirstLevelPage *)per;
@@ -997,12 +999,11 @@ static std::vector<u8> construct_unwind_info(Context &ctx) {
 }
 
 void UnwindInfoSection::compute_size(Context &ctx) {
-  contents = construct_unwind_info(ctx);
-  hdr.size = contents.size();
+  hdr.size = construct_unwind_info(ctx).size();
 }
 
 void UnwindInfoSection::copy_buf(Context &ctx) {
-  write_vector(ctx.buf + hdr.offset, contents);
+  write_vector(ctx.buf + hdr.offset, construct_unwind_info(ctx));
 }
 
 void GotSection::add(Context &ctx, Symbol *sym) {
