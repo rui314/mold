@@ -448,7 +448,13 @@ public:
 
 class StubsSection : public Chunk {
 public:
-  StubsSection(Context &ctx);
+  StubsSection(Context &ctx) : Chunk(ctx, "__TEXT", "__stubs") {
+    hdr.p2align = __builtin_ctz(2);
+    hdr.type = S_SYMBOL_STUBS;
+    hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+    hdr.reserved2 = ENTRY_SIZE;
+  }
+
   void add(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
@@ -460,7 +466,11 @@ public:
 
 class StubHelperSection : public Chunk {
 public:
-  StubHelperSection(Context &ctx);
+  StubHelperSection(Context &ctx) : Chunk(ctx, "__TEXT", "__stub_helper") {
+    hdr.p2align = __builtin_ctz(4);
+    hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+  }
+
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 HEADER_SIZE = 16;
@@ -484,7 +494,10 @@ private:
 
 class UnwindInfoSection : public Chunk {
 public:
-  UnwindInfoSection(Context &ctx);
+  UnwindInfoSection(Context &ctx) : Chunk(ctx, "__TEXT", "__unwind_info") {
+    hdr.p2align = __builtin_ctz(4);
+  }
+
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
@@ -493,7 +506,11 @@ public:
 
 class GotSection : public Chunk {
 public:
-  GotSection(Context &ctx);
+  GotSection(Context &ctx) : Chunk(ctx, "__DATA_CONST", "__got") {
+    hdr.p2align = __builtin_ctz(8);
+    hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
+  }
+
   void add(Context &ctx, Symbol *sym);
   void copy_buf(Context &ctx) override;
 
@@ -504,7 +521,11 @@ public:
 
 class LazySymbolPtrSection : public Chunk {
 public:
-  LazySymbolPtrSection(Context &ctx);
+  LazySymbolPtrSection(Context &ctx) : Chunk(ctx, "__DATA", "__la_symbol_ptr") {
+    hdr.p2align = __builtin_ctz(8);
+    hdr.type = S_LAZY_SYMBOL_POINTERS;
+  }
+
   void copy_buf(Context &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = 8;

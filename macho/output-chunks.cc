@@ -799,14 +799,6 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
     buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
-StubsSection::StubsSection(Context &ctx)
-  : Chunk(ctx, "__TEXT", "__stubs") {
-  hdr.p2align = __builtin_ctz(2);
-  hdr.type = S_SYMBOL_STUBS;
-  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-  hdr.reserved2 = ENTRY_SIZE;
-}
-
 void StubsSection::add(Context &ctx, Symbol *sym) {
   assert(sym->stub_idx == -1);
   sym->stub_idx = syms.size();
@@ -835,12 +827,6 @@ void StubsSection::copy_buf(Context &ctx) {
       (ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection::ENTRY_SIZE) -
       (hdr.addr + i * 6 + 6);
   }
-}
-
-StubHelperSection::StubHelperSection(Context &ctx)
-  : Chunk(ctx, "__TEXT", "__stub_helper") {
-  hdr.p2align = __builtin_ctz(4);
-  hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
 }
 
 void StubHelperSection::copy_buf(Context &ctx) {
@@ -873,12 +859,6 @@ void StubHelperSection::copy_buf(Context &ctx) {
     *(u32 *)(buf + 6) = start - buf - 10;
     buf += 10;
   }
-}
-
-UnwindInfoSection::UnwindInfoSection(Context &ctx)
-  : Chunk(ctx, "__TEXT", "__unwind_info") {
-  hdr.p2align = __builtin_ctz(4);
-  hdr.size = contents.size();
 }
 
 void UnwindEncoder::add(UnwindRecord &rec) {
@@ -1029,11 +1009,6 @@ void UnwindInfoSection::copy_buf(Context &ctx) {
   write_vector(ctx.buf + hdr.offset, contents);
 }
 
-GotSection::GotSection(Context &ctx) : Chunk(ctx, "__DATA_CONST", "__got") {
-  hdr.p2align = __builtin_ctz(8);
-  hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
-}
-
 void GotSection::add(Context &ctx, Symbol *sym) {
   assert(sym->got_idx == -1);
   sym->got_idx = syms.size();
@@ -1046,12 +1021,6 @@ void GotSection::copy_buf(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++)
     if (!syms[i]->file->is_dylib)
       buf[i] = syms[i]->get_addr(ctx);
-}
-
-LazySymbolPtrSection::LazySymbolPtrSection(Context &ctx)
-  : Chunk(ctx, "__DATA", "__la_symbol_ptr") {
-  hdr.p2align = __builtin_ctz(8);
-  hdr.type = S_LAZY_SYMBOL_POINTERS;
 }
 
 void LazySymbolPtrSection::copy_buf(Context &ctx) {
