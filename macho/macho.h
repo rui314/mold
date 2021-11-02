@@ -597,6 +597,7 @@ struct CodeSignatureBlobIndex {
 
 struct CodeSignatureDirectory {
   u32 magic;
+  u32 length;
   u32 version;
   u32 flags;
   u32 hash_offset;

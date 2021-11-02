@@ -474,11 +474,31 @@ void dump_file(std::string path) {
     case LC_CODE_SIGNATURE: {
       std::cout << "LC_CODE_SIGNATURE\n";
       LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
+
       CodeSignatureHeader &sig = *(CodeSignatureHeader *)(buf + cmd.dataoff);
       std::cout << " magic: " << read32be((u8 *)&sig.magic)
                 << "\n length: " << read32be((u8 *)&sig.length)
                 << "\n count: " << read32be((u8 *)&sig.count)
                 << "\n";
+
+      for (i64 i = 0; i < read32be((u8 *)&sig.count); i++) {
+        CodeSignatureBlobIndex &idx = *(CodeSignatureBlobIndex *)(&sig + i + 1);
+        std::cout << " idx type: " << read32be((u8 *)&idx.type)
+                  << "\n idx offset: " << read32be((u8 *)&idx.offset)
+                  << "\n";
+
+        CodeSignatureDirectory &dir =
+          *(CodeSignatureDirectory *)((u8 *)&sig + read32be((u8 *)&idx.offset));
+        std::cout << std::hex
+                  << " magic: 0x" << read32be((u8 *)&dir.magic)
+                  << "\n version: 0x" << read32be((u8 *)&dir.version)
+                  << "\n flags: 0x" << read32be((u8 *)&dir.flags)
+                  << "\n hash_offset: 0x" << read32be((u8 *)&dir.hash_offset)
+                  << "\n hash_size: 0x" << read32be((u8 *)&dir.hash_size)
+                  << "\n hash_type: 0x" << read32be((u8 *)&dir.hash_type)
+                  << "\n";
+      }
+
       break;
     }
     default:
