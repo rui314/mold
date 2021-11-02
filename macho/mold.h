@@ -14,6 +14,7 @@ namespace mold::macho {
 
 static constexpr i64 PAGE_SIZE = 0x4000;
 static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
+static constexpr i64 SHA256_SIZE = 32;
 
 class Chunk;
 class OutputSection;
@@ -458,6 +459,8 @@ public:
 
   void compute_size(Context &ctx) override;
   void write_signature(Context &ctx);
+
+  static constexpr i64 BLOCK_SIZE = 4096;
 };
 
 class StubsSection : public Chunk {

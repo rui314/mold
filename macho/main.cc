@@ -288,6 +288,7 @@ int main(int argc, char **argv) {
 
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     seg->copy_buf(ctx);
+  ctx.code_sig.write_signature(ctx);
 
   ctx.output_file->close(ctx);
   ctx.checkpoint();

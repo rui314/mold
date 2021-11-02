@@ -803,6 +803,16 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
 }
 
 void CodeSignatureSection::compute_size(Context &ctx) {
+  i64 num_blocks = align_to(hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
+  hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
+             num_blocks * SHA256_SIZE;
+}
+
+void CodeSignatureSection::write_signature(Context &ctx) {
+  u8 *buf = ctx.buf + hdr.offset;
+
+  CodeSignatureHeader &sighdr = *(CodeSignatureHeader *)buf;
+  write32be(&sighdr.magic, CSMAGIC_EMBEDDED_SIGNATURE);
 }
 
 void StubsSection::add(Context &ctx, Symbol *sym) {
