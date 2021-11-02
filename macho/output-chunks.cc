@@ -162,6 +162,17 @@ static std::vector<u8> create_function_starts_cmd(Context &ctx) {
   return buf;
 }
 
+static std::vector<u8> create_code_signature_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(LinkEditDataCommand));
+  LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
+
+  cmd.cmd = LC_CODE_SIGNATURE;
+  cmd.cmdsize = buf.size();
+  cmd.dataoff = ctx.code_sig.hdr.offset;
+  cmd.datasize = ctx.code_sig.hdr.size;
+  return buf;
+}
+
 static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   std::vector<std::vector<u8>> vec;
   vec.push_back(create_page_zero_cmd(ctx));
@@ -205,6 +216,8 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   for (DylibFile *dylib : ctx.dylibs)
     vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
   vec.push_back(create_function_starts_cmd(ctx));
+  if (ctx.arg.adhoc_codesign)
+    vec.push_back(create_code_signature_cmd(ctx));
   return {vec.size(), flatten(vec)};
 }
 

@@ -12,6 +12,8 @@ namespace mold::macho {
 static const char helpmsg[] = R"(
 Options:
   -L<PATH>                    Add DIR to library search path
+  -adhoc_codesign             Add ad-hoc code signature to the output file
+    -no_adhoc_codesign
   -arch <ARCH_NAME>           Specify target architecture
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
@@ -130,6 +132,10 @@ void parse_nonpositional_args(Context &ctx,
 
     if (read_joined("-L")) {
       ctx.arg.library_paths.push_back(std::string(arg));
+    } else if (read_flag("-adhoc_codesign")) {
+      ctx.arg.adhoc_codesign = true;
+    } else if (read_flag("-no_adhoc_codesign")) {
+      ctx.arg.adhoc_codesign = false;
     } else if (read_arg("-arch")) {
       if (arg != "x86_64")
         Fatal(ctx) << "unknown -arch: " << arg;

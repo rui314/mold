@@ -656,6 +656,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    bool adhoc_codesign = false;
     bool deduplicate = true;
     bool demangle = false;
     bool dynamic = true;
@@ -704,6 +705,7 @@ struct Context {
   UnwindInfoSection unwind_info{*this};
   GotSection got{*this};
   LazySymbolPtrSection lazy_symbol_ptr{*this};
+  CodeSignatureSection code_sig{*this};
 
   OutputRebaseSection rebase{*this};
   OutputBindSection bind{*this};
