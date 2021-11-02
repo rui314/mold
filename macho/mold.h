@@ -37,7 +37,7 @@ struct Relocation {
 struct UnwindRecord {
   UnwindRecord(u32 len, u32 enc) : code_len(len), encoding(enc) {}
 
-  inline u64 get_func_addr(Context &ctx) const;
+  inline u64 get_func_raddr(Context &ctx) const;
 
   Subsection *subsec = nullptr;
   u32 offset = 0;
@@ -746,8 +746,8 @@ Chunk::Chunk(Context &ctx, std::string_view segname, std::string_view sectname) 
   hdr.set_sectname(sectname);
 }
 
-u64 UnwindRecord::get_func_addr(Context &ctx) const {
-  return subsec->get_addr(ctx) + offset;
+u64 UnwindRecord::get_func_raddr(Context &ctx) const {
+  return subsec->raddr + offset;
 }
 
 } // namespace mold::macho

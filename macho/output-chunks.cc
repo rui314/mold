@@ -902,13 +902,13 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
   UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
 
   for (std::span<UnwindRecord> span : pages) {
-    page1->func_addr = span[0].get_func_addr(ctx);
+    page1->func_addr = span[0].get_func_raddr(ctx);
     page1->page_offset = (u8 *)page2 - buf.data();
     page1->lsda_offset = (u8 *)lsda - buf.data();
 
     for (UnwindRecord &rec : span) {
       if (rec.lsda) {
-        lsda->func_addr = rec.get_func_addr(ctx);
+        lsda->func_addr = rec.get_func_raddr(ctx);
         lsda->lsda_addr = rec.lsda->raddr + rec.lsda_offset;
         lsda++;
       }
@@ -924,7 +924,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
 
     UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     for (UnwindRecord &rec : span) {
-      entry->func_addr = rec.get_func_addr(ctx) - page1->func_addr;
+      entry->func_addr = rec.get_func_raddr(ctx) - page1->func_addr;
       entry->encoding = map[rec.encoding];
       entry++;
     }
@@ -970,16 +970,16 @@ UnwindEncoder::split_records(Context &ctx, std::span<UnwindRecord> records) {
   constexpr i64 max_group_size = 4096;
 
   sort(records, [&](const UnwindRecord &a, const UnwindRecord &b) {
-    return a.get_func_addr(ctx) < b.get_func_addr(ctx);
+    return a.get_func_raddr(ctx) < b.get_func_raddr(ctx);
   });
 
   std::vector<std::span<UnwindRecord>> vec;
 
   for (i64 i = 0; i < records.size();) {
     i64 j = 1;
-    u64 end_addr = records[i].get_func_addr(ctx) + (1 << 24);
+    u64 end_addr = records[i].get_func_raddr(ctx) + (1 << 24);
     while (j < max_group_size && i + j < records.size() &&
-           records[i + j].get_func_addr(ctx) < end_addr)
+           records[i + j].get_func_raddr(ctx) < end_addr)
       j++;
     vec.push_back(std::span(records).subspan(i, j));
     i += j;
