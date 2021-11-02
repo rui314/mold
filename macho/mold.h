@@ -455,6 +455,7 @@ public:
   CodeSignatureSection(Context &ctx)
     : Chunk(ctx, "__LINKEDIT", "__code_signature") {
     is_hidden = true;
+    hdr.p2align = __builtin_ctz(16);
   }
 
   void compute_size(Context &ctx) override;
