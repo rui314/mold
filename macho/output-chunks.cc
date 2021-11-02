@@ -287,7 +287,7 @@ void OutputSection::compute_size(Context &ctx) {
 
   for (Subsection *subsec : members) {
     addr = align_to(addr, 1 << subsec->p2align);
-    subsec->addr = addr;
+    subsec->raddr = addr - PAGE_ZERO_SIZE;
     addr += subsec->input_size;
   }
   hdr.size = addr - hdr.addr;
@@ -299,8 +299,9 @@ void OutputSection::copy_buf(Context &ctx) {
 
   for (Subsection *subsec : members) {
     std::string_view data = subsec->get_contents();
-    memcpy(buf + subsec->addr - hdr.addr, data.data(), data.size());
-    subsec->apply_reloc(ctx, buf + subsec->addr - hdr.addr);
+    u8 *loc = buf + subsec->get_addr(ctx) - hdr.addr;
+    memcpy(loc, data.data(), data.size());
+    subsec->apply_reloc(ctx, loc);
   }
 }
 
@@ -908,7 +909,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
     for (UnwindRecord &rec : span) {
       if (rec.lsda) {
         lsda->func_addr = rec.get_func_addr(ctx);
-        lsda->lsda_addr = rec.lsda->addr + rec.lsda_offset;
+        lsda->lsda_addr = rec.lsda->raddr + rec.lsda_offset;
         lsda++;
       }
     }
@@ -942,7 +943,7 @@ UnwindEncoder::encode(Context &ctx, std::span<UnwindRecord> records) {
 
   // Write a terminator
   UnwindRecord &last = records[records.size() - 1];
-  page1->func_addr = last.subsec->addr + last.subsec->input_size + 1;
+  page1->func_addr = last.subsec->raddr + last.subsec->input_size + 1;
   page1->page_offset = 0;
   page1->lsda_offset = (u8 *)lsda - buf.data();
 

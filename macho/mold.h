@@ -129,6 +129,10 @@ std::ostream &operator<<(std::ostream &out, const InputSection &sec);
 
 class Subsection {
 public:
+  u64 get_addr(Context &ctx) const {
+    return PAGE_ZERO_SIZE + raddr;
+  }
+
   std::string_view get_contents() {
     assert(isec.hdr.type != S_ZEROFILL);
     return isec.contents.substr(input_offset, input_size);
@@ -148,7 +152,7 @@ public:
   u32 nrels = 0;
   u32 unwind_offset = 0;
   u32 nunwind = 0;
-  u64 addr = -1;
+  u32 raddr = -1;
   u16 p2align = 0;
 };
 
@@ -714,7 +718,7 @@ int main(int argc, char **argv);
 
 u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)
-    return subsec->addr + value;
+    return subsec->get_addr(ctx) + value;
   if (stub_idx != -1)
     return ctx.stubs.hdr.addr + stub_idx * StubsSection::ENTRY_SIZE;
   return value;
@@ -743,7 +747,7 @@ Chunk::Chunk(Context &ctx, std::string_view segname, std::string_view sectname) 
 }
 
 u64 UnwindRecord::get_func_addr(Context &ctx) const {
-  return subsec->addr + offset;
+  return subsec->get_addr(ctx) + offset;
 }
 
 } // namespace mold::macho
