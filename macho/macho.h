@@ -522,9 +522,7 @@ struct MachRel {
   u32 type : 4;
 };
 
-//
 // __TEXT,__unwind_info section contents
-//
 
 static constexpr u32 UNWIND_SECTION_VERSION = 1;
 static constexpr u32 UNWIND_SECOND_LEVEL_REGULAR = 2;
@@ -565,9 +563,7 @@ struct UnwindPageEntry {
   u32 encoding : 8;
 };
 
-//
 // __LD,__compact_unwind section contents
-//
 
 struct CompactUnwindEntry {
   u64 code_start;
@@ -575,6 +571,51 @@ struct CompactUnwindEntry {
   u32 encoding;
   u64 personality;
   u64 lsda;
+};
+
+// __LINKEDIT,__code_signature
+
+static constexpr u32 CSMAGIC_EMBEDDED_SIGNATURE = 0xfade0cc0;
+static constexpr u32 CS_SUPPORTSEXECSEG = 0x20400;
+static constexpr u32 CSMAGIC_CODEDIRECTORY = 0xfade0c02;
+static constexpr u32 CSSLOT_CODEDIRECTORY = 0;
+static constexpr u32 CS_ADHOC = 0x00000002;
+static constexpr u32 CS_LINKER_SIGNED = 0x00020000;
+static constexpr u32 CS_EXECSEG_MAIN_BINARY = 1;
+static constexpr u32 CS_HASHTYPE_SHA256 = 2;
+
+struct CodeSignatureHeader {
+  u32 magic;
+  u32 length;
+  u32 count;
+};
+
+struct CodeSignatureBlobIndex {
+  u32 type;
+  u32 offset;
+};
+
+struct CodeSignatureDirectory {
+  u32 magic;
+  u32 version;
+  u32 flags;
+  u32 hash_offset;
+  u32 ident_offset;
+  u32 n_special_slots;
+  u32 n_code_slots;
+  u32 code_limit;
+  u8 hash_size;
+  u8 hash_type;
+  u8 platform;
+  u8 page_size;
+  u32 spare2;
+  u32 scatter_offset;
+  u32 team_offset;
+  u32 spare3;
+  u64 code_limit64;
+  u64 exec_seg_base;
+  u64 exec_seg_limit;
+  u64 exec_seg_flags;
 };
 
 } // namespace mold::macho

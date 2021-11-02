@@ -185,6 +185,17 @@ inline u64 read64be(u8 *buf) {
          ((u64)buf[6] << 8)  | (u64)buf[7];
 }
 
+inline u64 read32be(u8 *buf) {
+  u8 *p = (u8 *)buf;
+  return ((u64)buf[0] << 24) | ((u64)buf[1] << 16) |
+         ((u64)buf[2] << 8)  | (u64)buf[3];
+}
+
+inline u64 read16be(u8 *buf) {
+  u8 *p = (u8 *)buf;
+  return ((u64)buf[0] << 8)  | (u64)buf[1];
+}
+
 inline void write64be(u8 *buf, u64 val) {
   buf[0] = val >> 56;
   buf[1] = val >> 48;
@@ -196,11 +207,16 @@ inline void write64be(u8 *buf, u64 val) {
   buf[7] = val;
 }
 
-inline void write32be(u8 *buf, u32 val) {
+inline void write32be(u8 *buf, u64 val) {
   buf[0] = val >> 24;
   buf[1] = val >> 16;
   buf[2] = val >> 8;
   buf[3] = val;
+}
+
+inline void write16be(u8 *buf, u64 val) {
+  buf[0] = val >> 8;
+  buf[1] = val;
 }
 
 inline i64 write_string(u8 *buf, std::string_view str) {

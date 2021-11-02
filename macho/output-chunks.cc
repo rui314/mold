@@ -800,6 +800,9 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
     buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
+void CodeSignatureSection::compute_size(Context &ctx) {
+}
+
 void StubsSection::add(Context &ctx, Symbol *sym) {
   assert(sym->stub_idx == -1);
   sym->stub_idx = syms.size();

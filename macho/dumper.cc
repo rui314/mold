@@ -471,9 +471,16 @@ void dump_file(std::string path) {
                 << "\n";
       break;
     }
-    case LC_CODE_SIGNATURE:
+    case LC_CODE_SIGNATURE: {
       std::cout << "LC_CODE_SIGNATURE\n";
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)&lc;
+      CodeSignatureHeader &sig = *(CodeSignatureHeader *)(buf + cmd.dataoff);
+      std::cout << " magic: " << read32be((u8 *)&sig.magic)
+                << "\n length: " << read32be((u8 *)&sig.length)
+                << "\n count: " << read32be((u8 *)&sig.count)
+                << "\n";
       break;
+    }
     default:
       std::cout << "UNKNOWN (0x" << std::hex << lc.cmd << ")\n";
       break;

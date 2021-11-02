@@ -89,6 +89,7 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
     "__symbol_table",
     "__ind_sym_tab",
     "__string_table",
+    "__code_signature",
   };
 
   auto get_rank = [](const Chunk *chunk) -> i64 {

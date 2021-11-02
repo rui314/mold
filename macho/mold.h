@@ -449,6 +449,17 @@ public:
   std::vector<Entry> gots;
 };
 
+class CodeSignatureSection : public Chunk {
+public:
+  CodeSignatureSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__code_signature") {
+    is_hidden = true;
+  }
+
+  void compute_size(Context &ctx) override;
+  void write_signature(Context &ctx);
+};
+
 class StubsSection : public Chunk {
 public:
   StubsSection(Context &ctx) : Chunk(ctx, "__TEXT", "__stubs") {
