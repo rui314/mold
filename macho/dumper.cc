@@ -494,8 +494,10 @@ void dump_file(std::string path) {
                   << "\n version: 0x" << read32be((u8 *)&dir.version)
                   << "\n flags: 0x" << read32be((u8 *)&dir.flags)
                   << "\n hash_offset: 0x" << read32be((u8 *)&dir.hash_offset)
-                  << "\n hash_size: 0x" << read32be((u8 *)&dir.hash_size)
-                  << "\n hash_type: 0x" << read32be((u8 *)&dir.hash_type)
+                  << "\n n_code_slots: 0x" << read32be((u8 *)&dir.n_code_slots)
+                  << "\n hash_size: 0x" << (u32)dir.hash_size
+                  << "\n hash_type: 0x" << (u32)dir.hash_type
+                  << "\n page_size: 0x" << (1 << dir.page_size)
                   << "\n";
       }
 
