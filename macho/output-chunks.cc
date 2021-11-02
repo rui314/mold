@@ -162,16 +162,6 @@ static std::vector<u8> create_function_starts_cmd(Context &ctx) {
   return buf;
 }
 
-static std::vector<u8> create_data_in_code_cmd(Context &ctx) {
-  std::vector<u8> buf(sizeof(LinkEditDataCommand));
-  LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
-
-  cmd.cmd = LC_DATA_IN_CODE;
-  cmd.cmdsize = buf.size();
-  cmd.dataoff = 0xc070;
-  return buf;
-}
-
 static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   std::vector<std::vector<u8>> vec;
   vec.push_back(create_page_zero_cmd(ctx));
@@ -215,7 +205,6 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   for (DylibFile *dylib : ctx.dylibs)
     vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
   vec.push_back(create_function_starts_cmd(ctx));
-  vec.push_back(create_data_in_code_cmd(ctx));
   return {vec.size(), flatten(vec)};
 }
 
