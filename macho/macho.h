@@ -19,6 +19,8 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+static constexpr u32 FAT_MAGIC = 0xcafebabe;
+
 static constexpr u32 MH_OBJECT = 0x1;
 static constexpr u32 MH_EXECUTE = 0x2;
 static constexpr u32 MH_FVMLIB = 0x3;
@@ -303,6 +305,19 @@ static constexpr u32 X86_64_RELOC_SIGNED_1 = 6;
 static constexpr u32 X86_64_RELOC_SIGNED_2 = 7;
 static constexpr u32 X86_64_RELOC_SIGNED_4 = 8;
 static constexpr u32 X86_64_RELOC_TLV = 9;
+
+struct FatHeader {
+  ubig32 magic;
+  ubig32 nfat_arch;
+};
+
+struct FatArch {
+  ubig32 cputype;
+  ubig32 cpusubtype;
+  ubig32 offset;
+  ubig32 size;
+  ubig32 align;
+};
 
 struct MachHeader {
   u32 magic;

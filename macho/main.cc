@@ -186,7 +186,22 @@ MappedFile<Context> *find_library(Context &ctx, std::string name) {
   return nullptr;
 }
 
+static MappedFile<Context> *
+strip_universal_header(Context &ctx, MappedFile<Context> *mf) {
+  FatHeader &hdr = *(FatHeader *)mf->data;
+  assert(hdr.magic == FAT_MAGIC);
+
+  FatArch *arch = (FatArch *)(mf->data + sizeof(hdr));
+  for (i64 i = 0; i < hdr.nfat_arch; i++)
+    if (arch[i].cputype == CPU_TYPE_X86_64)
+      return mf->slice(ctx, mf->name, arch[i].offset, arch[i].size);
+  Fatal(ctx) << mf->name << ": fat file contains no matching file";
+}
+
 static void read_file(Context &ctx, MappedFile<Context> *mf) {
+  if (get_file_type(mf) == FileType::MACH_UNIVERSAL)
+    mf = strip_universal_header(ctx, mf);
+
   switch (get_file_type(mf)) {
   case FileType::TAPI:
   case FileType::MACH_DYLIB:

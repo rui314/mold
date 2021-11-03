@@ -57,6 +57,8 @@ void ObjectFile::parse(Context &ctx) {
     }
     case LC_DYSYMTAB:
     case LC_BUILD_VERSION:
+    case LC_VERSION_MIN_MACOSX:
+    case LC_DATA_IN_CODE:
       break;
     default:
       Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
@@ -343,7 +345,7 @@ void DylibFile::parse_dylib(Context &ctx) {
     case LC_DYLD_INFO_ONLY: {
       DyldInfoCommand &cmd = *(DyldInfoCommand *)p;
       if (cmd.export_off)
-        read_trie(ctx, mf->data + cmd.export_off);
+        read_trie(ctx, mf->data + cmd.export_off, 0, "");
       break;
     }
     }

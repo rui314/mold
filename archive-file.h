@@ -20,6 +20,7 @@ enum class FileType {
   ELF_DSO,
   MACH_OBJ,
   MACH_DYLIB,
+  MACH_UNIVERSAL,
   AR,
   THIN_AR,
   TAPI,
@@ -64,11 +65,13 @@ FileType get_file_type(MappedFile<C> *mf) {
     return FileType::THIN_AR;
   if (data.starts_with("--- !tapi-tbd"))
     return FileType::TAPI;
+  if (data.starts_with("\xca\xfe\xba\xbe"))
+    return FileType::MACH_UNIVERSAL;
   if (is_text_file(mf))
     return FileType::TEXT;
-  if (data.starts_with("\xDE\xC0\x17\x0B"))
+  if (data.starts_with("\xde\xc0\x17\x0b"))
     return FileType::LLVM_BITCODE;
-  if (data.starts_with("BC\xC0\xDE"))
+  if (data.starts_with("BC\xc0\xde"))
     return FileType::LLVM_BITCODE;
   return FileType::UNKNOWN;
 }

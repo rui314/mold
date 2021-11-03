@@ -100,8 +100,8 @@ public:
 
 private:
   void parse_dylib(Context &ctx);
-  void read_trie(Context &ctx, u8 *start, i64 offset = 0,
-                 const std::string &prefix = "");
+  void read_trie(Context &ctx, u8 *start, i64 offset,
+                 const std::string &prefix);
 
   DylibFile() {
     is_dylib = true;
