@@ -108,7 +108,7 @@ void ZlibCompressor::write_to(u8 *buf) {
   end[-5] = 0;
 
   // Write a checksum
-  write32be(end - 4, checksum);
+  *(ubig32 *)(end - 4) = checksum;
 }
 
 GzipCompressor::GzipCompressor(std::string_view input) {

@@ -134,7 +134,7 @@ ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
     std::string_view data = this->get_string(ctx, shdr);
     if (!data.starts_with("ZLIB") || data.size() <= 12)
       Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
-    u64 size = read64be((u8 *)&data[4]);
+    u64 size = *(ubig64 *)&data[4];
     std::string_view contents = do_uncompress(data.substr(12), size);
 
     ElfShdr<E> *shdr2 = copy_shdr(shdr);

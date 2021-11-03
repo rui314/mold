@@ -1,5 +1,7 @@
 #pragma once
 
+#include "byteorder.h"
+
 #include <atomic>
 #include <cassert>
 #include <cstring>
@@ -176,57 +178,6 @@ inline void erase(std::vector<T> &vec, U pred) {
 template <typename T, typename U>
 inline void sort(T &vec, U less) {
   std::stable_sort(vec.begin(), vec.end(), less);
-}
-
-template <typename T>
-inline u64 read64be(T *buf) {
-  u8 *p = (u8 *)buf;
-  return ((u64)p[0] << 56) | ((u64)p[1] << 48) |
-         ((u64)p[2] << 40) | ((u64)p[3] << 32) |
-         ((u64)p[4] << 24) | ((u64)p[5] << 16) |
-         ((u64)p[6] << 8)  | (u64)p[7];
-}
-
-template <typename T>
-inline u64 read32be(T *buf) {
-  u8 *p = (u8 *)buf;
-  return ((u64)p[0] << 24) | ((u64)p[1] << 16) |
-         ((u64)p[2] << 8)  | (u64)p[3];
-}
-
-template <typename T>
-inline u64 read16be(T *buf) {
-  u8 *p = (u8 *)buf;
-  return ((u64)p[0] << 8) | (u64)p[1];
-}
-
-template <typename T>
-inline void write64be(T *buf, u64 val) {
-  u8 *p = (u8 *)buf;
-  p[0] = val >> 56;
-  p[1] = val >> 48;
-  p[2] = val >> 40;
-  p[3] = val >> 32;
-  p[4] = val >> 24;
-  p[5] = val >> 16;
-  p[6] = val >> 8;
-  p[7] = val;
-}
-
-template <typename T>
-inline void write32be(T *buf, u32 val) {
-  u8 *p = (u8 *)buf;
-  p[0] = val >> 24;
-  p[1] = val >> 16;
-  p[2] = val >> 8;
-  p[3] = val;
-}
-
-template <typename T>
-inline void write16be(T *buf, u32 val) {
-  u8 *p = (u8 *)buf;
-  p[0] = val >> 8;
-  p[1] = val;
 }
 
 inline i64 write_string(u8 *buf, std::string_view str) {

@@ -1793,7 +1793,7 @@ template <typename E>
 void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, "ZLIB", 4);
-  write64be(base + 4, this->original_size);
+  *(ubig64 *)(base + 4) = this->original_size;
   contents->write_to(base + 12);
 }
 
