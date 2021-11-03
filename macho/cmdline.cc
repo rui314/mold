@@ -159,7 +159,7 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
     } else if (read_arg("-syslibroot")) {
-      ctx.arg.syslibroot = std::string(arg) + "/";
+      ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {
@@ -172,6 +172,23 @@ void parse_nonpositional_args(Context &ctx,
 
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
+
+  if (!ctx.arg.syslibroot.empty()) {
+    std::vector<std::string> vec;
+
+    for (std::string &dir : ctx.arg.syslibroot) {
+      for (std::string &path : ctx.arg.library_paths)
+        vec.push_back(path_clean(dir + "/" + path));
+
+      vec.push_back(path_clean(dir + "/usr/lib"));
+      vec.push_back(path_clean(dir + "/usr/lcoal/lib"));
+    }
+
+    ctx.arg.library_paths = vec;
+  }
+
+  ctx.arg.library_paths.push_back("/usr/lib");
+  ctx.arg.library_paths.push_back("/usr/local/lib");
 }
 
 } // namespace mold::macho

@@ -179,8 +179,7 @@ static void fix_synthetic_symbol_values(Context &ctx) {
 MappedFile<Context> *find_library(Context &ctx, std::string name) {
   for (std::string dir : ctx.arg.library_paths) {
     for (std::string ext : {".tbd", ".dylib", ".a"}) {
-      std::string path =
-        path_clean(ctx.arg.syslibroot + dir + "/lib" + name + ext);
+      std::string path = dir + "/lib" + name + ext;
       if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
         return mf;
     }

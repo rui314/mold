@@ -690,8 +690,8 @@ struct Context {
     i64 headerpad = 256;
     std::string chroot;
     std::string output;
-    std::string syslibroot;
-    std::vector<std::string> library_paths{"/usr/lib", "/usr/local/lib"};
+    std::vector<std::string> syslibroot;
+    std::vector<std::string> library_paths;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
