@@ -5,7 +5,10 @@
 namespace mold::macho {
 
 std::ostream &operator<<(std::ostream &out, const InputFile &file) {
-  out << path_clean(file.mf->name);
+  if (file.archive_name.empty())
+    out << path_clean(file.mf->name);
+  else
+    out << path_clean(file.archive_name) << "(" << path_clean(file.mf->name) + ")";
   return out;
 }
 
@@ -58,8 +61,13 @@ void ObjectFile::parse(Context &ctx) {
     case LC_DYSYMTAB:
     case LC_BUILD_VERSION:
     case LC_VERSION_MIN_MACOSX:
-    case LC_DATA_IN_CODE:
       break;
+    case LC_DATA_IN_CODE: {
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)p;
+      data_in_code_entries = {(DataInCodeEntry *)(mf->data + cmd.dataoff),
+                              cmd.datasize / sizeof(DataInCodeEntry)};
+      break;
+    }
     default:
       Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
     }

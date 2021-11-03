@@ -498,7 +498,7 @@ struct SourceVersionCommand {
 
 struct DataInCodeEntry {
   u32 offset;
-  u32 length;
+  u16 length;
   u16 kind;
 };
 

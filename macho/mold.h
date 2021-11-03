@@ -80,6 +80,7 @@ public:
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
   std::vector<UnwindRecord> unwind_records;
+  std::span<DataInCodeEntry> data_in_code_entries;
 
 private:
   void override_symbol(Context &ctx, Symbol &sym, MachSym &msym);
@@ -468,6 +469,20 @@ public:
   static constexpr i64 BLOCK_SIZE = 4096;
 };
 
+class DataInCodeSection : public Chunk {
+public:
+  DataInCodeSection(Context &ctx)
+    : Chunk(ctx, "__LINKEDIT", "__data_in_code") {
+    is_hidden = true;
+    hdr.p2align = __builtin_ctz(alignof(DataInCodeEntry));
+  }
+
+  void compute_size(Context &ctx) override;
+  void copy_buf(Context &ctx) override;
+
+  std::vector<DataInCodeEntry> contents;
+};
+
 class StubsSection : public Chunk {
 public:
   StubsSection(Context &ctx) : Chunk(ctx, "__TEXT", "__stubs") {
@@ -714,6 +729,7 @@ struct Context {
   GotSection got{*this};
   LazySymbolPtrSection lazy_symbol_ptr{*this};
   CodeSignatureSection code_sig{*this};
+  DataInCodeSection data_in_code{*this};
 
   OutputRebaseSection rebase{*this};
   OutputBindSection bind{*this};

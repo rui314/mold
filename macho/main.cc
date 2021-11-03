@@ -83,9 +83,11 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
     // __LINKEDIT
     "__rebase",
     "__binding",
+    "__weak_binding",
     "__lazy_binding",
     "__export",
     "__func_starts",
+    "__data_in_code",
     "__symbol_table",
     "__ind_sym_tab",
     "__string_table",

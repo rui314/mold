@@ -170,6 +170,17 @@ static std::vector<u8> create_function_starts_cmd(Context &ctx) {
   return buf;
 }
 
+static std::vector<u8> create_data_in_code_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(LinkEditDataCommand));
+  LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
+
+  cmd.cmd = LC_DATA_IN_CODE;
+  cmd.cmdsize = buf.size();
+  cmd.dataoff = ctx.data_in_code.hdr.offset;
+  cmd.datasize = ctx.data_in_code.hdr.size;
+  return buf;
+}
+
 static std::vector<u8> create_code_signature_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(LinkEditDataCommand));
   LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
@@ -224,6 +235,8 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   for (DylibFile *dylib : ctx.dylibs)
     vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
   vec.push_back(create_function_starts_cmd(ctx));
+  if (!ctx.data_in_code.contents.empty())
+    vec.push_back(create_data_in_code_cmd(ctx));
   if (ctx.arg.adhoc_codesign)
     vec.push_back(create_code_signature_cmd(ctx));
   return {vec.size(), flatten(vec)};
@@ -865,6 +878,40 @@ void CodeSignatureSection::write_signature(Context &ctx) {
     SHA256(start, end - start, buf);
     buf += SHA256_SIZE;
   }
+}
+
+void DataInCodeSection::compute_size(Context &ctx) {
+  assert(contents.empty());
+
+  for (ObjectFile *file : ctx.objs) {
+    std::span<DataInCodeEntry> entries = file->data_in_code_entries;
+
+    for (i64 i = 0; !entries.empty() && i < file->sections.size(); i++) {
+      InputSection &sec = *file->sections[i];
+
+      for (i64 j = 0; !entries.empty() && j < sec.subsections.size(); j++) {
+        Subsection &subsec = *sec.subsections[j];
+        DataInCodeEntry &ent = entries[0];
+
+        if (subsec.input_addr + subsec.input_size < ent.offset)
+          continue;
+
+        if (ent.offset < subsec.input_addr + subsec.input_size) {
+          u32 offset = subsec.get_addr(ctx) + subsec.input_addr - ent.offset -
+                       ctx.text_seg->cmd.vmaddr;
+          contents.push_back({offset, ent.length, ent.kind});
+        }
+
+        entries = entries.subspan(1);
+      }
+    }
+  }
+
+  hdr.size = contents.size() * sizeof(contents[0]);
+}
+
+void DataInCodeSection::copy_buf(Context &ctx) {
+  write_vector(ctx.buf + hdr.offset, contents);
 }
 
 void StubsSection::add(Context &ctx, Symbol *sym) {
