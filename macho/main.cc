@@ -189,6 +189,7 @@ MappedFile<Context> *find_library(Context &ctx, std::string name) {
 static void read_file(Context &ctx, MappedFile<Context> *mf) {
   switch (get_file_type(mf)) {
   case FileType::TAPI:
+  case FileType::MACH_DYLIB:
     ctx.dylibs.push_back(DylibFile::create(ctx, mf));
     break;
   case FileType::MACH_OBJ:
@@ -201,6 +202,7 @@ static void read_file(Context &ctx, MappedFile<Context> *mf) {
     break;
   default:
     break;
+    // Fatal(ctx) << mf->name << ": unknown file type";
   }
 }
 

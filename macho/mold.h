@@ -99,6 +99,10 @@ public:
   i64 dylib_idx = 0;
 
 private:
+  void parse_dylib(Context &ctx);
+  void read_trie(Context &ctx, u8 *start, i64 offset = 0,
+                 const std::string &prefix = "");
+
   DylibFile() {
     is_dylib = true;
     is_alive = true;

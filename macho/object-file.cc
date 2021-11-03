@@ -312,6 +312,46 @@ DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
   return dylib;
 };
 
+void DylibFile::read_trie(Context &ctx, u8 *start, i64 offset,
+                          const std::string &prefix) {
+  u8 *buf = start + offset;
+
+  if (read_uleb(buf))
+    syms.push_back(intern(ctx, prefix));
+
+  for (i64 i = 0, end = read_uleb(buf); i < end; i++) {
+    std::string suffix((char *)buf);
+    buf += suffix.size() + 1;
+    i64 off = read_uleb(buf);
+    read_trie(ctx, start, off, prefix + suffix);
+  }
+}
+
+void DylibFile::parse_dylib(Context &ctx) {
+  MachHeader &hdr = *(MachHeader *)mf->data;
+  u8 *p = mf->data + sizeof(hdr);
+
+  for (i64 i = 0; i < hdr.ncmds; i++) {
+    LoadCommand &lc = *(LoadCommand *)p;
+
+    switch (lc.cmd) {
+    case LC_ID_DYLIB: {
+      DylibCommand &cmd = *(DylibCommand *)p;
+      install_name = (char *)p + cmd.nameoff;
+      break;
+    }
+    case LC_DYLD_INFO_ONLY: {
+      DyldInfoCommand &cmd = *(DyldInfoCommand *)p;
+      if (cmd.export_off)
+        read_trie(ctx, mf->data + cmd.export_off);
+      break;
+    }
+    }
+
+    p += lc.cmdsize;
+  }
+}
+
 void DylibFile::parse(Context &ctx) {
   switch (get_file_type(mf)) {
   case FileType::TAPI: {
@@ -322,7 +362,8 @@ void DylibFile::parse(Context &ctx) {
     break;
   }
   case FileType::MACH_DYLIB:
-    Fatal(ctx) << mf->name << ": .dylib is not supported yet";
+    parse_dylib(ctx);
+    break;
   default:
     Fatal(ctx) << mf->name << ": is not a dylib";
   }
