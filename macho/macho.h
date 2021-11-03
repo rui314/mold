@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../byteorder.h"
+
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -585,38 +587,38 @@ static constexpr u32 CS_EXECSEG_MAIN_BINARY = 1;
 static constexpr u32 CS_HASHTYPE_SHA256 = 2;
 
 struct CodeSignatureHeader {
-  u32 magic;
-  u32 length;
-  u32 count;
+  ubig32 magic;
+  ubig32 length;
+  ubig32 count;
 };
 
 struct CodeSignatureBlobIndex {
-  u32 type;
-  u32 offset;
+  ubig32 type;
+  ubig32 offset;
 };
 
 struct CodeSignatureDirectory {
-  u32 magic;
-  u32 length;
-  u32 version;
-  u32 flags;
-  u32 hash_offset;
-  u32 ident_offset;
-  u32 n_special_slots;
-  u32 n_code_slots;
-  u32 code_limit;
+  ubig32 magic;
+  ubig32 length;
+  ubig32 version;
+  ubig32 flags;
+  ubig32 hash_offset;
+  ubig32 ident_offset;
+  ubig32 n_special_slots;
+  ubig32 n_code_slots;
+  ubig32 code_limit;
   u8 hash_size;
   u8 hash_type;
   u8 platform;
   u8 page_size;
-  u32 spare2;
-  u32 scatter_offset;
-  u32 team_offset;
-  u32 spare3;
-  u64 code_limit64;
-  u64 exec_seg_base;
-  u64 exec_seg_limit;
-  u64 exec_seg_flags;
+  ubig32 spare2;
+  ubig32 scatter_offset;
+  ubig32 team_offset;
+  ubig32 spare3;
+  ubig64 code_limit64;
+  ubig64 exec_seg_base;
+  ubig64 exec_seg_limit;
+  ubig64 exec_seg_flags;
 };
 
 } // namespace mold::macho

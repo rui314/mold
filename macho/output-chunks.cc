@@ -811,50 +811,50 @@ void OutputIndirectSymtabSection::copy_buf(Context &ctx) {
 }
 
 void CodeSignatureSection::compute_size(Context &ctx) {
-  i64 num_blocks = align_to(hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   i64 filename_size = align_to(path_filename(ctx.arg.output).size() + 1, 16);
+  i64 num_blocks = align_to(hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
-             sizeof(CodeSignatureDirectory) +
-             num_blocks * SHA256_SIZE + filename_size;
+             sizeof(CodeSignatureDirectory) + filename_size +
+             num_blocks * SHA256_SIZE;
 }
 
 void CodeSignatureSection::write_signature(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
 
-  i64 num_blocks = align_to(hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   std::string_view filename = path_filename(ctx.arg.output);
   i64 filename_size = align_to(filename.size() + 1, 16);
+  i64 num_blocks = align_to(hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
 
   CodeSignatureHeader &sighdr = *(CodeSignatureHeader *)buf;
   buf += sizeof(sighdr);
 
-  write32be(&sighdr.magic, CSMAGIC_EMBEDDED_SIGNATURE);
-  write32be(&sighdr.length, hdr.size);
-  write32be(&sighdr.count, 1);
+  sighdr.magic = CSMAGIC_EMBEDDED_SIGNATURE;
+  sighdr.length = hdr.size;
+  sighdr.count = 1;
 
   CodeSignatureBlobIndex &idx = *(CodeSignatureBlobIndex *)buf;
   buf += sizeof(idx);
 
-  write32be(&idx.type, CSSLOT_CODEDIRECTORY);
-  write32be(&idx.offset, sizeof(sighdr) + sizeof(idx));
+  idx.type = CSSLOT_CODEDIRECTORY;
+  idx.offset = sizeof(sighdr) + sizeof(idx);
 
   CodeSignatureDirectory &dir = *(CodeSignatureDirectory *)buf;
   buf += sizeof(dir);
 
-  write32be(&dir.magic, CSMAGIC_CODEDIRECTORY);
-  write32be(&dir.length, ctx.buf + hdr.offset + hdr.size - buf);
-  write32be(&dir.version, CS_SUPPORTSEXECSEG);
-  write32be(&dir.flags, CS_ADHOC | CS_LINKER_SIGNED);
-  write32be(&dir.hash_offset, sizeof(dir) + filename_size);
-  write32be(&dir.ident_offset, sizeof(dir));
-  write32be(&dir.n_code_slots, num_blocks);
-  write32be(&dir.code_limit, hdr.offset);
+  dir.magic = CSMAGIC_CODEDIRECTORY;
+  dir.length = ctx.buf + hdr.offset + hdr.size - buf;
+  dir.version = CS_SUPPORTSEXECSEG;
+  dir.flags = CS_ADHOC | CS_LINKER_SIGNED;
+  dir.hash_offset = sizeof(dir) + filename_size;
+  dir.ident_offset = sizeof(dir);
+  dir.n_code_slots = num_blocks;
+  dir.code_limit = hdr.offset;
   dir.hash_size = SHA256_SIZE;
   dir.hash_type = CS_HASHTYPE_SHA256;
   dir.page_size = __builtin_ctz(BLOCK_SIZE);
-  write64be(&dir.exec_seg_base, ctx.text_seg->cmd.fileoff);
-  write64be(&dir.exec_seg_limit, ctx.text_seg->cmd.filesize);
-  write64be(&dir.exec_seg_flags, CS_EXECSEG_MAIN_BINARY);
+  dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
+  dir.exec_seg_limit = ctx.text_seg->cmd.filesize;
+  dir.exec_seg_flags = CS_EXECSEG_MAIN_BINARY;
 
   memcpy(buf, filename.data(), filename.size());
   buf += filename_size;
