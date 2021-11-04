@@ -646,17 +646,6 @@ struct Context {
     data_seg = OutputSegment::get_instance(*this, "__DATA");
     linkedit_seg = OutputSegment::get_instance(*this, "__LINKEDIT");
 
-    auto set = [](OutputSegment &seg, u32 prot, u32 flags) {
-      seg.cmd.initprot = prot;
-      seg.cmd.maxprot = prot;
-      seg.cmd.flags = flags;
-    };
-
-    set(*text_seg, VM_PROT_READ | VM_PROT_EXECUTE, 0);
-    set(*data_const_seg, VM_PROT_READ | VM_PROT_WRITE, SG_READ_ONLY);
-    set(*data_seg, VM_PROT_READ | VM_PROT_WRITE, 0);
-    set(*linkedit_seg, VM_PROT_READ, 0);
-
     text = OutputSection::get_instance(*this, "__TEXT", "__text");
     data = OutputSection::get_instance(*this, "__DATA", "__data");
     bss = OutputSection::get_instance(*this, "__DATA", "__bss");

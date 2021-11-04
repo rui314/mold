@@ -356,6 +356,18 @@ OutputSegment *OutputSegment::get_instance(Context &ctx, std::string_view name) 
 OutputSegment::OutputSegment(std::string_view name) {
   cmd.cmd = LC_SEGMENT_64;
   memcpy(cmd.segname, name.data(), name.size());
+
+  if (name == "__PAGEZERO")
+    cmd.initprot = cmd.maxprot = 0;
+  else if (name == "__TEXT")
+    cmd.initprot = cmd.maxprot = VM_PROT_READ | VM_PROT_EXECUTE;
+  else if (name == "__LINKEDIT")
+    cmd.initprot = cmd.maxprot = VM_PROT_READ;
+  else
+    cmd.initprot = cmd.maxprot = VM_PROT_READ | VM_PROT_WRITE;
+
+  if (name == "__DATA_CONST")
+    cmd.flags = SG_READ_ONLY;
 }
 
 void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
