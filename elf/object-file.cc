@@ -646,6 +646,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
     if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_MERGE) &&
+        isec->shdr.sh_size && isec->shdr.sh_entsize &&
         isec->relsec_idx == -1) {
       mergeable_sections[i] = split_section(ctx, *isec);
       isec->is_alive = false;
