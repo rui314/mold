@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
 #include <unistd.h>
 #include <unordered_set>
@@ -301,6 +302,13 @@ static void show_stats(Context<E> &ctx) {
   Counter::print();
 }
 
+static i64 get_default_thread_count() {
+  // mold doesn't scale above 32 threads.
+  int n = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  return std::min(n, 32);
+}
+
 template <typename E>
 static int elf_main(int argc, char **argv) {
   Context<E> ctx;
@@ -336,7 +344,12 @@ static int elf_main(int argc, char **argv) {
   if (!ctx.arg.preload)
     try_resume_daemon(ctx);
 
-  set_thread_count(ctx.arg.thread_count);
+  i64 thread_count = ctx.arg.thread_count;
+  if (thread_count == 0)
+    thread_count = get_default_thread_count();
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               thread_count);
+
   install_signal_handler();
 
   if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
