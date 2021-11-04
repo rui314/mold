@@ -659,7 +659,7 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
     if (m)
       for (i64 i = 0; i < m->strings.size(); i++)
         m->subsections.push_back(m->parent->insert(m->strings[i], m->hashes[i],
-                                                 m->shdr.sh_addralign));
+                                                   m->shdr.sh_addralign));
 
   // Initialize rel_subsections
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
@@ -739,7 +739,8 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
 
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
     if (m)
-      subsections.insert(subsections.end(), m->subsections.begin(), m->subsections.end());
+      subsections.insert(subsections.end(), m->subsections.begin(),
+                         m->subsections.end());
 }
 
 template <typename E>
