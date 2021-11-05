@@ -50,7 +50,6 @@ static Map<E> get_map(Context<E> &ctx) {
 
 template <typename E>
 void print_map(Context<E> &ctx) {
-
   std::ostream *out = &std::cout;
   std::unique_ptr<std::ofstream> file;
 
