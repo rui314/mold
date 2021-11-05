@@ -11,9 +11,9 @@ int main() {}
 EOF
 
 clang -fuse-ld=$mold -o $t/exe $t/a.o -Wl,-headerpad,0
-otool -l $t/exe | grep -A5 'sectname __text' | grep -q 'addr 0x00000001000006f8'
+otool -l $t/exe | grep -A5 'sectname __text' | grep -q 'addr 0x0000000100000568'
 
 clang -fuse-ld=$mold -o $t/exe $t/a.o -Wl,-headerpad,0x10000
-otool -l $t/exe | grep -A5 'sectname __text' | grep -q 'addr 0x00000001000106f8'
+otool -l $t/exe | grep -A5 'sectname __text' | grep -q 'addr 0x0000000100010568'
 
 echo OK

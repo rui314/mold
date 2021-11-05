@@ -261,7 +261,7 @@ public:
     members.push_back(subsec);
     hdr.p2align = std::max<u32>(hdr.p2align, subsec->p2align);
     hdr.attr |= subsec->isec.hdr.attr;
-    // hdr.type = subsec->isec.hdr.type;
+    hdr.type = subsec->isec.hdr.type;
   }
 
   std::vector<Subsection *> members;
@@ -682,6 +682,7 @@ struct Context {
     bool demangle = false;
     bool dynamic = true;
     bool fatal_warnings = false;
+    bool trace = false;
     i64 platform = PLATFORM_MACOS;
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;

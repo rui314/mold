@@ -116,7 +116,18 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
       continue;
     }
 
-    u32 *loc = (u32 *)(buf + rel.offset);
+    auto write = [&](u64 val) {
+      if (rel.p2size == 0)
+        *(buf + rel.offset) = val;
+      else if (rel.p2size == 1)
+        *(u16 *)(buf + rel.offset) = val;
+      else if (rel.p2size == 2)
+        *(u32 *)(buf + rel.offset) = val;
+      else if (rel.p2size == 3)
+        *(u64 *)(buf + rel.offset) = val;
+      else
+        unreachable();
+    };
 
 #define S (rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx))
 #define A rel.addend
@@ -125,26 +136,26 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
 
     switch (rel.type) {
     case X86_64_RELOC_UNSIGNED:
-      *loc = S + A;
+      write(S + A);
       break;
     case X86_64_RELOC_GOT_LOAD:
-      *loc = G - P - 4;
+      write(G - P - 4);
       break;
     case X86_64_RELOC_GOT:
-      *loc = G - P;
+      write(G - P);
       break;
     case X86_64_RELOC_SIGNED:
     case X86_64_RELOC_BRANCH:
-      *loc = S + A - P - 4;
+      write(S + A - P - 4);
       break;
     case X86_64_RELOC_SIGNED_1:
-      *loc = S + A - P - 5;
+      write(S + A - P - 5);
       break;
     case X86_64_RELOC_SIGNED_2:
-      *loc = S + A - P - 6;
+      write(S + A - P - 6);
       break;
     case X86_64_RELOC_SIGNED_4:
-      *loc = S + A - P - 8;
+      write(S + A - P - 8);
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;

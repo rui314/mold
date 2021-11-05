@@ -111,8 +111,8 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
 }
 
 static void create_synthetic_chunks(Context &ctx) {
-  for (ObjectFile *obj : ctx.objs) {
-    for (std::unique_ptr<InputSection> &isec : obj->sections) {
+  for (ObjectFile *file : ctx.objs) {
+    for (std::unique_ptr<InputSection> &isec : file->sections) {
       for (std::unique_ptr<Subsection> &subsec : isec->subsections)
         isec->osec.add_subsec(subsec.get());
       isec->osec.hdr.attr |= isec->hdr.attr;
@@ -284,6 +284,16 @@ int main(int argc, char **argv) {
     dylib->resolve_symbols(ctx);
 
   create_internal_file(ctx);
+
+  erase(ctx.objs, [](ObjectFile *file) { return !file->is_alive; });
+  erase(ctx.dylibs, [](DylibFile *file) { return !file->is_alive; });
+
+  if (ctx.arg.trace) {
+    for (ObjectFile *file : ctx.objs)
+      SyncOut(ctx) << *file;
+    for (DylibFile *file : ctx.dylibs)
+      SyncOut(ctx) << *file;
+  }
 
   for (ObjectFile *file : ctx.objs)
     file->convert_common_symbols(ctx);

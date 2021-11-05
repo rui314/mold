@@ -27,6 +27,7 @@ Options:
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
   -syslibroot <DIR>           Prepend DIR to library search paths
+  -t                          Print out each file the linker loads
   -v                          Report version information)";
 
 static i64 parse_platform(Context &ctx, std::string_view arg) {
@@ -163,6 +164,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
     } else if (read_arg("-syslibroot")) {
       ctx.arg.syslibroot.push_back(std::string(arg));
+    } else if (read_flag("-t")) {
+      ctx.arg.trace = true;
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {
