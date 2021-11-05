@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
@@ -574,6 +575,14 @@ public:
 
   std::string_view get_contents() {
     return std::string_view((char *)data, size);
+  }
+
+  bool write_to(std::string path) {
+    FILE *fp = fopen(path.c_str(), "w");
+    if (!fp)
+      return false;
+    fwrite(data, size, 1, fp);
+    return true;
   }
 
   std::string name;

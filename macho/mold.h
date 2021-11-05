@@ -30,6 +30,7 @@ struct Symbol;
 struct Relocation {
   u32 offset = 0;
   u16 type = -1;
+  u8 p2size = 0;
   i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;
@@ -260,6 +261,7 @@ public:
     members.push_back(subsec);
     hdr.p2align = std::max<u32>(hdr.p2align, subsec->p2align);
     hdr.attr |= subsec->isec.hdr.attr;
+    // hdr.type = subsec->isec.hdr.type;
   }
 
   std::vector<Subsection *> members;

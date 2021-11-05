@@ -36,6 +36,7 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
 static Relocation read_reloc(Context &ctx, ObjectFile &file,
                              const MachSection &hdr, MachRel r) {
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
+  Relocation rel{r.offset, (u8)r.type, (u8)r.p2size};
 
   i64 addend;
   if (r.p2size == 0)
@@ -49,8 +50,11 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   else
     unreachable();
 
-  if (r.is_extern)
-    return {r.offset, (u8)r.type, addend, file.syms[r.idx], nullptr};
+  if (r.is_extern) {
+    rel.addend = addend;
+    rel.sym = file.syms[r.idx];
+    return rel;
+  }
 
   u32 addr;
   if (r.is_pcrel) {
@@ -65,7 +69,9 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
-  return {r.offset, (u8)r.type, addr - target->input_addr, nullptr, target};
+  rel.addend = addr - target->input_addr;
+  rel.subsec = target;
+  return rel;
 }
 
 void InputSection::parse_relocations(Context &ctx) {
