@@ -259,6 +259,7 @@ public:
   void add_subsec(Subsection *subsec) {
     members.push_back(subsec);
     hdr.p2align = std::max<u32>(hdr.p2align, subsec->p2align);
+    hdr.attr |= subsec->isec.hdr.attr;
   }
 
   std::vector<Subsection *> members;
