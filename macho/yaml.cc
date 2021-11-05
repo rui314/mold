@@ -213,9 +213,7 @@ std::optional<YamlError> YamlParser::tokenize_list(std::string_view &str) {
 std::optional<YamlError>
 YamlParser::tokenize_string(std::string_view &str, char end) {
   const char *start = str.data();
-  str = str.substr(1);
-
-  size_t pos = str.find(end);
+  size_t pos = str.find(end, 1);
   if (pos == str.npos)
     return YamlError{"unterminated string literal", start - input.data()};
 

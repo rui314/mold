@@ -270,7 +270,7 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {
 
     std::lock_guard lock(sym.mu);
 
-    if (msym.type == N_UNDF) {
+    if (msym.is_undef()) {
       if (sym.file && !sym.file->is_alive.exchange(true))
         vec.push_back((ObjectFile *)sym.file);
       continue;
