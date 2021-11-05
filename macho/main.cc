@@ -310,6 +310,9 @@ int main(int argc, char **argv) {
 
   ctx.output_file->close(ctx);
   ctx.checkpoint();
+
+  if (!ctx.arg.map.empty())
+    print_map(ctx);
   return 0;
 }
 

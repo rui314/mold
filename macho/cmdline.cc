@@ -21,8 +21,9 @@ Options:
   -help                       Report usage information
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
+  -map <FILE>                 Write map file to a given file
   -no_deduplicate             Ignored
-  -o FILE                     Set output filename
+  -o <FILE>                   Set output filename
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
   -syslibroot <DIR>           Prepend DIR to library search paths
@@ -151,6 +152,8 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_arg("-lto_library")) {
     } else if (read_joined("-l")) {
       remaining.push_back("-l" + std::string(arg));
+    } else if (read_arg("-map")) {
+      ctx.arg.map = arg;
     } else if (read_flag("-no_deduplicate")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;

@@ -568,6 +568,12 @@ public:
 };
 
 //
+// mapfile.cc
+//
+
+void print_map(Context &ctx);
+
+//
 // dumper.cc
 //
 
@@ -679,6 +685,7 @@ struct Context {
     i64 platform_sdk_version = 0;
     i64 headerpad = 256;
     std::string chroot;
+    std::string map;
     std::string output;
     std::vector<std::string> syslibroot;
     std::vector<std::string> library_paths;
