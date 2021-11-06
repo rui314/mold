@@ -407,6 +407,10 @@ void OutputSegment::set_offset(Context &ctx, i64 fileoff, u64 vmaddr) {
 }
 
 void OutputSegment::copy_buf(Context &ctx) {
+  // Fill text segment paddings with NOPs
+  if (cmd.get_segname() == "__TEXT")
+    memset(ctx.buf + cmd.fileoff, 0x90, cmd.filesize);
+
   for (Chunk *sec : chunks)
     if (sec->hdr.type != S_ZEROFILL)
       sec->copy_buf(ctx);

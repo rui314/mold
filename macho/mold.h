@@ -428,14 +428,13 @@ public:
     : Chunk(ctx, "__LINKEDIT", "__string_table") {
     is_hidden = true;
     hdr.p2align = __builtin_ctz(8);
-    contents += '\0';
   }
 
   i64 add_string(std::string_view str);
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  std::string contents;
+  std::string contents{"\0"};
 };
 
 class OutputIndirectSymtabSection : public Chunk {
