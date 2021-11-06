@@ -134,7 +134,7 @@ void InputSection::scan_relocations(Context &ctx) {
 }
 
 void Subsection::apply_reloc(Context &ctx, u8 *buf) {
-  for (const Relocation &rel : std::span(isec.rels).subspan(rel_offset, nrels)) {
+  for (const Relocation &rel : get_rels()) {
     if (rel.sym && !rel.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *rel.sym;
       continue;

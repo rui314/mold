@@ -150,6 +150,10 @@ public:
     return std::span(isec.file.unwind_records).subspan(unwind_offset, nunwind);
   }
 
+  std::span<Relocation> get_rels() const {
+    return std::span(isec.rels).subspan(rel_offset, nrels);
+  }
+
   void apply_reloc(Context &ctx, u8 *buf);
 
   InputSection &isec;

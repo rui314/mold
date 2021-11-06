@@ -485,6 +485,15 @@ void OutputRebaseSection::compute_size(Context &ctx) {
       enc.add(ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
+    for (Chunk *chunk : seg->chunks)
+      if (chunk->is_regular)
+        for (Subsection *subsec : ((OutputSection *)chunk)->members)
+          for (Relocation &rel : subsec->get_rels())
+            if (!rel.is_pcrel && rel.p2size == 3)
+              enc.add(seg->seg_idx,
+                      subsec->get_addr(ctx) + rel.offset - seg->cmd.vmaddr);
+
   enc.finish();
   contents = enc.buf;
   hdr.size = align_to(contents.size(), 8);
