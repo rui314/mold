@@ -145,23 +145,21 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
       write(S + A);
       break;
     case X86_64_RELOC_GOT_LOAD:
-      write(G - P - 4);
-      break;
     case X86_64_RELOC_GOT:
-      write(G - P);
+      write(G + A - P - 4);
       break;
     case X86_64_RELOC_SIGNED:
     case X86_64_RELOC_BRANCH:
       write(S + A - P - 4);
       break;
     case X86_64_RELOC_SIGNED_1:
-      write(S + A - P - 5);
+      write(S + A - P - 3);
       break;
     case X86_64_RELOC_SIGNED_2:
-      write(S + A - P - 6);
+      write(S + A - P - 2);
       break;
     case X86_64_RELOC_SIGNED_4:
-      write(S + A - P - 8);
+      write(S + A - P);
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
