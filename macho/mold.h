@@ -29,8 +29,9 @@ struct Symbol;
 
 struct Relocation {
   u32 offset = 0;
-  u16 type = -1;
+  u8 type = -1;
   u8 p2size = 0;
+  bool is_pcrel = false;
   i64 addend = 0;
   Symbol *sym = nullptr;
   Subsection *subsec = nullptr;

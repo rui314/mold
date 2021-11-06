@@ -39,22 +39,40 @@ Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
   return it[-1].get();
 }
 
+static i64 read_addend(u8 *buf, MachRel r) {
+  i64 addend = 0;
+
+  switch (r.type) {
+  case X86_64_RELOC_SIGNED_1:
+    addend = 1;
+    break;
+  case X86_64_RELOC_SIGNED_2:
+    addend = 2;
+    break;
+  case X86_64_RELOC_SIGNED_4:
+    addend = 4;
+    break;
+  }
+
+  switch (r.p2size) {
+  case 0:
+    return buf[r.offset] + addend;
+  case 1:
+    return *(i16 *)(buf + r.offset) + addend;
+  case 2:
+    return *(i32 *)(buf + r.offset) + addend;
+  case 3:
+    return *(i64 *)(buf + r.offset) + addend;
+  }
+
+  unreachable();
+}
+
 static Relocation read_reloc(Context &ctx, ObjectFile &file,
                              const MachSection &hdr, MachRel r) {
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
-  Relocation rel{r.offset, (u8)r.type, (u8)r.p2size};
-
-  i64 addend;
-  if (r.p2size == 0)
-    addend = *(i8 *)(buf + r.offset);
-  else if (r.p2size == 1)
-    addend = *(i16 *)(buf + r.offset);
-  else if (r.p2size == 2)
-    addend = *(i32 *)(buf + r.offset);
-  else if (r.p2size == 3)
-    addend = *(i64 *)(buf + r.offset);
-  else
-    unreachable();
+  Relocation rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
+  i64 addend = read_addend(buf, r);
 
   if (r.is_extern) {
     rel.addend = addend;
@@ -137,29 +155,21 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
 
 #define S (rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx))
 #define A rel.addend
-#define P (get_addr(ctx) + rel.offset)
+#define P (rel.is_pcrel ? get_addr(ctx) + rel.offset + 4 : 0)
 #define G rel.sym->get_got_addr(ctx)
 
     switch (rel.type) {
     case X86_64_RELOC_UNSIGNED:
-      write(S + A);
+    case X86_64_RELOC_SIGNED:
+    case X86_64_RELOC_BRANCH:
+    case X86_64_RELOC_SIGNED_1:
+    case X86_64_RELOC_SIGNED_2:
+    case X86_64_RELOC_SIGNED_4:
+      write(S + A - P);
       break;
     case X86_64_RELOC_GOT_LOAD:
     case X86_64_RELOC_GOT:
-      write(G + A - P - 4);
-      break;
-    case X86_64_RELOC_SIGNED:
-    case X86_64_RELOC_BRANCH:
-      write(S + A - P - 4);
-      break;
-    case X86_64_RELOC_SIGNED_1:
-      write(S + A - P - 3);
-      break;
-    case X86_64_RELOC_SIGNED_2:
-      write(S + A - P - 2);
-      break;
-    case X86_64_RELOC_SIGNED_4:
-      write(S + A - P);
+      write(G + A - P);
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
