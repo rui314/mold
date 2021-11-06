@@ -795,8 +795,6 @@ void OutputSymtabSection::copy_buf(Context &ctx) {
 }
 
 i64 OutputStrtabSection::add_string(std::string_view str) {
-  hdr.size += str.size() + 1;
-
   i64 off = contents.size();
   contents += str;
   contents += '\0';
@@ -804,7 +802,7 @@ i64 OutputStrtabSection::add_string(std::string_view str) {
 }
 
 void OutputStrtabSection::compute_size(Context &ctx) {
-  hdr.size = align_to(hdr.size, 8);
+  hdr.size = align_to(contents.size(), 1 << hdr.p2align);
 }
 
 void OutputStrtabSection::copy_buf(Context &ctx) {

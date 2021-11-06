@@ -16,8 +16,11 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hd
   if (hdr.type != S_ZEROFILL)
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
 
-  Subsection *subsec =
-    new Subsection{*this, 0, (u32)contents.size(), (u32)hdr.addr};
+  Subsection *subsec = new Subsection{*this};
+  subsec->input_offset = 0;
+  subsec->input_size = contents.size();
+  subsec->input_addr = hdr.addr;
+  subsec->p2align = hdr.p2align;
   subsections.push_back(std::unique_ptr<Subsection>(subsec));
 }
 
