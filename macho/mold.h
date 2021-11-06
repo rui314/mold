@@ -276,7 +276,6 @@ class RebaseEncoder {
 public:
   RebaseEncoder();
   void add(i64 seg_idx, i64 offset);
-  void flush();
   void finish();
 
   std::vector<u8> buf;
@@ -335,6 +334,7 @@ public:
   OutputLazyBindSection(Context &ctx)
     : Chunk(ctx, "__LINKEDIT", "__lazy_binding") {
     is_hidden = true;
+    hdr.p2align = __builtin_ctz(8);
   }
 
   void add(Context &ctx, Symbol &sym, i64 flags);
