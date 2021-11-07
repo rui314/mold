@@ -17,7 +17,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o
 $t/exe | grep -q 'Hello world'
 
 echo OK

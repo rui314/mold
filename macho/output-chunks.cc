@@ -434,7 +434,7 @@ void RebaseEncoder::add(i64 seg_idx, i64 offset) {
   flush();
 
   // Advance the cursor
-  if (seg_idx != cur_seg) {
+  if (seg_idx != cur_seg || offset < cur_off) {
     buf.push_back(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
     encode_uleb(buf, offset);
   } else {
