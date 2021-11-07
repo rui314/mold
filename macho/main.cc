@@ -113,9 +113,11 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
 static void create_synthetic_chunks(Context &ctx) {
   for (ObjectFile *file : ctx.objs) {
     for (std::unique_ptr<InputSection> &isec : file->sections) {
-      for (std::unique_ptr<Subsection> &subsec : isec->subsections)
-        isec->osec.add_subsec(subsec.get());
-      isec->osec.hdr.attr |= isec->hdr.attr;
+      if (isec) {
+        for (std::unique_ptr<Subsection> &subsec : isec->subsections)
+          isec->osec.add_subsec(subsec.get());
+        isec->osec.hdr.attr |= isec->hdr.attr;
+      }
     }
   }
 
@@ -300,12 +302,16 @@ int main(int argc, char **argv) {
 
   create_synthetic_chunks(ctx);
 
+  for (ObjectFile *file : ctx.objs)
+    file->check_duplicate_symbols(ctx);
+
   for (i64 i = 0; i < ctx.segments.size(); i++)
     ctx.segments[i]->seg_idx = i + 1;
 
   for (ObjectFile *file : ctx.objs)
-    for (std::unique_ptr<InputSection> &sec : file->sections)
-      sec->scan_relocations(ctx);
+    for (std::unique_ptr<InputSection> &isec : file->sections)
+      if (isec)
+        isec->scan_relocations(ctx);
 
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);

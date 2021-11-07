@@ -76,6 +76,7 @@ public:
   void resolve_lazy_symbols(Context &ctx);
   std::vector<ObjectFile *> mark_live_objects(Context &ctx);
   void convert_common_symbols(Context &ctx);
+  void check_duplicate_symbols(Context &ctx);
 
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 

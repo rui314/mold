@@ -911,10 +911,12 @@ void DataInCodeSection::compute_size(Context &ctx) {
     std::span<DataInCodeEntry> entries = file->data_in_code_entries;
 
     for (i64 i = 0; !entries.empty() && i < file->sections.size(); i++) {
-      InputSection &sec = *file->sections[i];
+      std::unique_ptr<InputSection> &isec = file->sections[i];
+      if (!isec)
+        continue;
 
-      for (i64 j = 0; !entries.empty() && j < sec.subsections.size(); j++) {
-        Subsection &subsec = *sec.subsections[j];
+      for (i64 j = 0; !entries.empty() && j < isec->subsections.size(); j++) {
+        Subsection &subsec = *isec->subsections[j];
         DataInCodeEntry &ent = entries[0];
 
         if (subsec.input_addr + subsec.input_size < ent.offset)

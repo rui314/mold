@@ -40,10 +40,17 @@ void ObjectFile::parse(Context &ctx) {
         if (mach_sec[i].get_segname() == "__LD" &&
             mach_sec[i].get_sectname() == "__compact_unwind") {
           unwind_sec = &mach_sec[i];
-        } else {
-          sections.push_back(
-            std::make_unique<InputSection>(ctx, *this, mach_sec[i]));
+          sections.push_back(nullptr);
+          continue;
         }
+
+        if (mach_sec[i].attr & S_ATTR_DEBUG) {
+          sections.push_back(nullptr);
+          continue;
+        }
+
+        sections.push_back(
+          std::make_unique<InputSection>(ctx, *this, mach_sec[i]));
       }
       break;
     }
@@ -88,7 +95,8 @@ void ObjectFile::parse(Context &ctx) {
   }
 
   for (std::unique_ptr<InputSection> &sec : sections)
-    sec->parse_relocations(ctx);
+    if (sec)
+      sec->parse_relocations(ctx);
 
   if (unwind_sec)
     parse_compact_unwind(ctx, *unwind_sec);
@@ -314,7 +322,17 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
       sym.value = 0;
       sym.is_common = false;
     }
-  }  
+  }
+}
+
+void ObjectFile::check_duplicate_symbols(Context &ctx) {
+  for (i64 i = 0; i < syms.size(); i++) {
+    Symbol &sym = *syms[i];
+    MachSym &msym = mach_syms[i];
+    if (!msym.is_undef() && !msym.is_common() && sym.file != this)
+      Error(ctx) << "duplicate symbol: " << *this << ": " << *sym.file
+                 << ": " << sym;
+  }
 }
 
 InputSection *ObjectFile::get_common_sec(Context &ctx) {
