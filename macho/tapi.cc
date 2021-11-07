@@ -4,8 +4,6 @@
 
 namespace mold::macho {
 
-typedef std::vector<YamlNode> Vector;
-
 static std::string_view get_line(std::string_view str, i64 pos) {
   i64 begin = str.substr(0, pos).rfind('\n');
   if (begin == str.npos)
@@ -20,15 +18,25 @@ static std::string_view get_line(std::string_view str, i64 pos) {
   return str.substr(begin, end - begin);
 }
 
-template <typename T>
-static const T *lookup(const YamlNode &node, std::string_view key) {
+static std::vector<YamlNode>
+get_vector(YamlNode &node, std::string_view key) {
   if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
     if (auto it = map->find(key); it != map->end())
-      return std::get_if<T>(&it->second.data);
-  return nullptr;
+      if (auto *vec = std::get_if<std::vector<YamlNode>>(&it->second.data))
+        return *vec;
+  return {};
 }
 
-static bool contains(const Vector &vec, std::string_view key) {
+static std::optional<std::string_view>
+get_string(YamlNode &node, std::string_view key) {
+  if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
+    if (auto it = map->find(key); it != map->end())
+      if (auto *str = std::get_if<std::string_view>(&it->second.data))
+        return *str;
+  return {};
+}
+
+static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
   for (const YamlNode &mem : vec)
     if (const std::string_view *s = std::get_if<std::string_view>(&mem.data))
       if (*s == key)
@@ -36,51 +44,41 @@ static bool contains(const Vector &vec, std::string_view key) {
   return false;
 }
 
-static std::optional<TextDylib> to_tbd(const YamlNode &node) {
-  const Vector *targets = lookup<Vector>(node, "targets");
-  if (!targets || !contains(*targets, "x86_64-macos"))
+static std::optional<TextDylib> to_tbd(YamlNode &node) {
+  if (!contains(get_vector(node, "targets"), "x86_64-macos"))
     return {};
 
   TextDylib tbd;
 
-  if (auto *vec = lookup<Vector>(node, "uuids"))
-    for (const YamlNode &mem : *vec)
-      if (auto *target = lookup<std::string_view>(mem, "target"))
-        if (*target == "x86_64-macos")
-          if (auto *value = lookup<std::string_view>(mem, "value"))
-            tbd.uuid = *value;
+  for (YamlNode &mem : get_vector(node, "uuids"))
+    if (auto target = get_string(mem, "target"))
+      if (*target == "x86_64-macos")
+        if (auto value = get_string(mem, "value"))
+          tbd.uuid = *value;
 
-  if (auto *val = lookup<std::string_view>(node, "install-name"))
+  if (auto val = get_string(node, "install-name"))
     tbd.install_name = *val;
 
-  if (auto *val = lookup<std::string_view>(node, "current-version"))
+  if (auto val = get_string(node, "current-version"))
     tbd.current_version = *val;
 
-  if (auto *vec = lookup<Vector>(node, "parent-umbrella"))
-    for (const YamlNode &mem : *vec)
-      if (auto *targets = lookup<Vector>(mem, "targets"))
-        if (contains(*targets, "x86_64-macos"))
-          if (auto *val = lookup<std::string_view>(mem, "umbrella"))
-            tbd.parent_umbrella = *val;
+  for (YamlNode &mem : get_vector(node, "parent-umbrella"))
+    if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+      if (auto val = get_string(mem, "umbrella"))
+        tbd.parent_umbrella = *val;
 
-  if (auto *vec = lookup<Vector>(node, "reexported-libraries"))
-    for (const YamlNode &mem : *vec)
-      if (auto *targets = lookup<Vector>(mem, "targets"))
-        if (contains(*targets, "x86_64-macos"))
-          if (auto *libs = lookup<Vector>(mem, "libraries"))
-            for (const YamlNode &mem : *libs)
-              if (auto *lib = std::get_if<std::string_view>(&mem.data))
-                tbd.reexported_libs.push_back(*lib);
+  for (YamlNode &mem : get_vector(node, "reexported-libraries"))
+    if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+      for (YamlNode &mem : get_vector(mem, "libraries"))
+        if (auto *lib = std::get_if<std::string_view>(&mem.data))
+          tbd.reexported_libs.push_back(*lib);
 
   for (std::string_view key : {"exports", "reexports"})
-    if (auto *vec = lookup<Vector>(node, key))
-      for (const YamlNode &mem : *vec)
-        if (auto *targets = lookup<Vector>(mem, "targets"))
-          if (contains(*targets, "x86_64-macos"))
-            if (auto *syms = lookup<Vector>(mem, "symbols"))
-              for (const YamlNode &mem : *syms)
-                if (auto *sym = std::get_if<std::string_view>(&mem.data))
-                  tbd.exports.push_back(*sym);
+    for (YamlNode &mem : get_vector(node, key))
+      if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+        for (YamlNode &mem : get_vector(mem, "symbols"))
+          if (auto *sym = std::get_if<std::string_view>(&mem.data))
+            tbd.exports.push_back(*sym);
 
   return tbd;
 }
@@ -108,7 +106,7 @@ static TextDylib squash(Context &ctx, std::span<TextDylib> tbds) {
 
 TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
   std::string_view contents = mf->get_contents();
-  std::variant<Vector, YamlError> res = parse_yaml(contents);
+  std::variant<std::vector<YamlNode>, YamlError> res = parse_yaml(contents);
 
   if (YamlError *err = std::get_if<YamlError>(&res)) {
     std::string_view line = get_line(contents, err->pos);
@@ -117,7 +115,7 @@ TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
                << ": YAML parse error: " << err->msg;
   }
 
-  Vector &nodes = std::get<Vector>(res);
+  std::vector<YamlNode> &nodes = std::get<std::vector<YamlNode>>(res);
   if (nodes.empty())
     Fatal(ctx) << mf->name << ": malformed TBD file";
 
