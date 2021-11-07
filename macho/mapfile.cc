@@ -64,7 +64,8 @@ void print_map(Context &ctx) {
         << "     0x"
         << std::setw(8) << std::setfill('0') << 0
         << "      ["
-        << std::setw(3) << std::right << std::setfill(' ') << sym.fileidx
+        << std::setw(3) << std::right << std::setfill(' ') << std::dec
+        << sym.fileidx
         << "] " << sym.name << "\n";
   }
 }
