@@ -19,7 +19,7 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hd
   Subsection *subsec = new Subsection{
     .isec = *this,
     .input_offset = 0,
-    .input_size = (u32)contents.size(),
+    .input_size = (u32)hdr.size,
     .input_addr = (u32)hdr.addr,
     .p2align = (u8)hdr.p2align,
   };
