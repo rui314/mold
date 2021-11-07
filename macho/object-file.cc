@@ -52,9 +52,21 @@ void ObjectFile::parse(Context &ctx) {
       mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
       syms.reserve(mach_syms.size());
 
+      i64 nlocal = 0;
+      for (MachSym &msym : mach_syms)
+        if (!msym.ext)
+          nlocal++;
+      local_syms.reserve(nlocal);
+
       for (MachSym &msym : mach_syms) {
         std::string_view name = (char *)(mf->data + cmd.stroff + msym.stroff);
-	syms.push_back(intern(ctx, name));
+        if (msym.ext) {
+          syms.push_back(intern(ctx, name));
+        } else {
+          local_syms.emplace_back(name);
+          override_symbol(ctx, local_syms.back(), msym);
+          syms.push_back(&local_syms.back());
+        }
       }
       break;
     }
@@ -229,11 +241,11 @@ void ObjectFile::override_symbol(Context &ctx, Symbol &sym, MachSym &msym) {
 
 void ObjectFile::resolve_regular_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
-    Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
-    if (msym.is_undef())
+    if (!msym.ext || msym.is_undef())
       continue;
 
+    Symbol &sym = *syms[i];
     std::lock_guard lock(sym.mu);
     if (get_rank(this, msym, false) < get_rank(sym))
       override_symbol(ctx, sym, msym);
@@ -242,11 +254,11 @@ void ObjectFile::resolve_regular_symbols(Context &ctx) {
 
 void ObjectFile::resolve_lazy_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
-    Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
-    if (msym.is_undef() || msym.is_common())
+    if (!msym.ext || msym.is_undef() || msym.is_common())
       continue;
 
+    Symbol &sym = *syms[i];
     std::lock_guard lock(sym.mu);
 
     if (get_rank(this, msym, false) < get_rank(sym)) {
@@ -265,9 +277,11 @@ std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {
   assert(is_alive);
 
   for (i64 i = 0; i < syms.size(); i++) {
-    Symbol &sym = *syms[i];
     MachSym &msym = mach_syms[i];
+    if (!msym.ext)
+      continue;
 
+    Symbol &sym = *syms[i];
     std::lock_guard lock(sym.mu);
 
     if (msym.is_undef()) {

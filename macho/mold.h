@@ -81,6 +81,7 @@ public:
 
   std::vector<std::unique_ptr<InputSection>> sections;
   std::span<MachSym> mach_syms;
+  std::vector<Symbol> local_syms;
   std::vector<UnwindRecord> unwind_records;
   std::span<DataInCodeEntry> data_in_code_entries;
 

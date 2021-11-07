@@ -670,7 +670,7 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
 void OutputExportSection::compute_size(Context &ctx) {
   for (ObjectFile *file : ctx.objs)
     for (Symbol *sym : file->syms)
-      if (sym->file == file)
+      if (sym->is_extern && sym->file == file)
         enc.add(sym->name, 0, sym->get_addr(ctx) - PAGE_ZERO_SIZE);
 
   hdr.size = align_to(enc.finish(), 8);
