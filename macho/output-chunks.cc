@@ -248,6 +248,14 @@ void OutputMachHeader::compute_size(Context &ctx) {
   hdr.size = sizeof(MachHeader) + cmds.size() + ctx.arg.headerpad;
 }
 
+static bool has_tlv(Context &ctx) {
+  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
+    for (Chunk *chunk : seg->chunks)
+      if (chunk->hdr.type == S_THREAD_LOCAL_VARIABLES)
+        return true;
+  return false;
+}
+
 void OutputMachHeader::copy_buf(Context &ctx) {
   u8 *buf = ctx.buf + hdr.offset;
 
@@ -263,6 +271,9 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.ncmds = ncmds;
   mhdr.sizeofcmds = cmds.size();
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
+
+  if (has_tlv(ctx))
+    mhdr.flags |= MH_HAS_TLV_DESCRIPTORS;
 
   write_vector(buf + sizeof(mhdr), cmds);
 }

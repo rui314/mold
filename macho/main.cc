@@ -76,8 +76,12 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
     // __DATA_CONST
     "__got",
     // __DATA
-    "__la_symbol_ptr"
+    "__la_symbol_ptr",
     "__data",
+    "__thread_ptr",
+    "__thread_data",
+    "__thread_vars",
+    "__thread_bss",
     "__common",
     "__bss",
     // __LINKEDIT
@@ -130,6 +134,7 @@ static void create_synthetic_chunks(Context &ctx) {
       OutputSegment::get_instance(ctx, chunk->hdr.get_segname());
     seg->chunks.push_back(chunk);
   }
+
 
   sort(ctx.segments, compare_segments);
 

@@ -149,6 +149,7 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     case X86_64_RELOC_SIGNED_1:
     case X86_64_RELOC_SIGNED_2:
     case X86_64_RELOC_SIGNED_4:
+    case X86_64_RELOC_TLV:
       val = rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx);
       break;
     case X86_64_RELOC_GOT_LOAD:
