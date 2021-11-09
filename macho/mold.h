@@ -175,8 +175,9 @@ public:
 //
 
 enum {
-  NEEDS_GOT  = 1 << 0,
-  NEEDS_STUB = 1 << 1,
+  NEEDS_GOT        = 1 << 0,
+  NEEDS_STUB       = 1 << 1,
+  NEEDS_THREAD_PTR = 1 << 2,
 };
 
 struct Symbol {
@@ -191,6 +192,7 @@ struct Symbol {
 
   i32 stub_idx = -1;
   i32 got_idx = -1;
+  i32 tlv_idx = -1;
 
   tbb::spin_mutex mu;
 
@@ -203,6 +205,7 @@ struct Symbol {
 
   inline u64 get_addr(Context &ctx) const;
   inline u64 get_got_addr(Context &ctx) const;
+  inline u64 get_tlv_addr(Context &ctx) const;
 };
 
 std::ostream &operator<<(std::ostream &out, const Symbol &sym);
@@ -577,6 +580,21 @@ public:
   static constexpr i64 ENTRY_SIZE = 8;
 };
 
+class ThreadPtrsSection : public Chunk {
+public:
+  ThreadPtrsSection(Context &ctx) : Chunk(ctx, "__DATA", "__thread_ptrs") {
+    hdr.p2align = __builtin_ctz(8);
+    hdr.type = S_THREAD_LOCAL_VARIABLE_POINTERS;
+  }
+
+  void add(Context &ctx, Symbol *sym);
+  void copy_buf(Context &ctx) override;
+
+  std::vector<Symbol *> syms;
+
+  static constexpr i64 ENTRY_SIZE = 8;
+};
+
 //
 // mapfile.cc
 //
@@ -738,6 +756,7 @@ struct Context {
   LazySymbolPtrSection lazy_symbol_ptr{*this};
   CodeSignatureSection code_sig{*this};
   DataInCodeSection data_in_code{*this};
+  ThreadPtrsSection thread_ptrs{*this};
 
   OutputRebaseSection rebase{*this};
   OutputBindSection bind{*this};
@@ -772,6 +791,11 @@ u64 Symbol::get_addr(Context &ctx) const {
 u64 Symbol::get_got_addr(Context &ctx) const {
   assert(got_idx != -1);
   return ctx.got.hdr.addr + got_idx * GotSection::ENTRY_SIZE;
+}
+
+u64 Symbol::get_tlv_addr(Context &ctx) const {
+  assert(tlv_idx != -1);
+  return ctx.thread_ptrs.hdr.addr + tlv_idx * ThreadPtrsSection::ENTRY_SIZE;
 }
 
 inline Symbol *intern(Context &ctx, std::string_view name) {

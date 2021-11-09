@@ -497,6 +497,11 @@ void OutputRebaseSection::compute_size(Context &ctx) {
       enc.add(ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
+  for (Symbol *sym : ctx.thread_ptrs.syms)
+    if (!sym->file->is_dylib)
+      enc.add(ctx.data_seg->seg_idx,
+              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
+
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
     for (Chunk *chunk : seg->chunks)
       if (chunk->is_regular)
@@ -564,6 +569,12 @@ void OutputBindSection::compute_size(Context &ctx) {
       enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
               ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
+
+  for (Symbol *sym : ctx.thread_ptrs.syms)
+    if (sym->file->is_dylib)
+      enc.add(((DylibFile *)sym->file)->dylib_idx, sym->name, 0,
+              ctx.data_seg->seg_idx,
+              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
   enc.finish();
 
@@ -1178,6 +1189,20 @@ void LazySymbolPtrSection::copy_buf(Context &ctx) {
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
     buf[i] = ctx.stub_helper.hdr.addr + StubHelperSection::HEADER_SIZE +
              i * StubHelperSection::ENTRY_SIZE;
+}
+
+void ThreadPtrsSection::add(Context &ctx, Symbol *sym) {
+  assert(sym->tlv_idx == -1);
+  sym->tlv_idx = syms.size();
+  syms.push_back(sym);
+  hdr.size = syms.size() * ENTRY_SIZE;
+}
+
+void ThreadPtrsSection::copy_buf(Context &ctx) {
+  u64 *buf = (u64 *)(ctx.buf + hdr.offset);
+  for (i64 i = 0; i < syms.size(); i++)
+    if (!syms[i]->file->is_dylib)
+      buf[i] = syms[i]->get_addr(ctx);
 }
 
 } // namespace mold::macho

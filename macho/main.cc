@@ -145,10 +145,16 @@ static void create_synthetic_chunks(Context &ctx) {
 static void export_symbols(Context &ctx) {
   ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
 
-  for (ObjectFile *file : ctx.objs)
-    for (Symbol *sym : file->syms)
-      if (sym->file == file && sym->flags & NEEDS_GOT)
-        ctx.got.add(ctx, sym);
+  for (ObjectFile *file : ctx.objs) {
+    for (Symbol *sym : file->syms) {
+      if (sym->file == file) {
+        if (sym->flags & NEEDS_GOT)
+          ctx.got.add(ctx, sym);
+        if (sym->flags & NEEDS_THREAD_PTR)
+          ctx.thread_ptrs.add(ctx, sym);
+      }
+    }
+  }
 
   for (DylibFile *file : ctx.dylibs) {
     for (Symbol *sym : file->syms) {
@@ -157,6 +163,8 @@ static void export_symbols(Context &ctx) {
           ctx.stubs.add(ctx, sym);
       if (sym->flags & NEEDS_GOT)
         ctx.got.add(ctx, sym);
+      if (sym->flags & NEEDS_THREAD_PTR)
+        ctx.thread_ptrs.add(ctx, sym);
     }
   }
 }

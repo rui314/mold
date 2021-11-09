@@ -362,10 +362,18 @@ void DylibFile::read_trie(Context &ctx, u8 *start, i64 offset,
                           const std::string &prefix) {
   u8 *buf = start + offset;
 
-  if (read_uleb(buf))
+  if (*buf) {
+    read_uleb(buf); // size
+    read_uleb(buf); // flags
+    read_uleb(buf); // addr
     syms.push_back(intern(ctx, prefix));
+  } else {
+    buf++;
+  }
 
-  for (i64 i = 0, end = read_uleb(buf); i < end; i++) {
+  i64 nchild = *buf++;
+
+  for (i64 i = 0; i < nchild; i++) {
     std::string suffix((char *)buf);
     buf += suffix.size() + 1;
     i64 off = read_uleb(buf);

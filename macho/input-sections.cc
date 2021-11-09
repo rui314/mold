@@ -125,8 +125,16 @@ void InputSection::parse_relocations(Context &ctx) {
 void InputSection::scan_relocations(Context &ctx) {
   for (Relocation &rel : rels) {
     if (Symbol *sym = rel.sym) {
-      if (rel.type == X86_64_RELOC_GOT_LOAD || rel.type == X86_64_RELOC_GOT)
+      switch (rel.type) {
+      case X86_64_RELOC_GOT_LOAD:
+      case X86_64_RELOC_GOT:
         sym->flags |= NEEDS_GOT;
+        break;
+      case X86_64_RELOC_TLV:
+        sym->flags |= NEEDS_THREAD_PTR;
+        break;
+      }
+
       if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_STUB;
     }
@@ -149,12 +157,14 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     case X86_64_RELOC_SIGNED_1:
     case X86_64_RELOC_SIGNED_2:
     case X86_64_RELOC_SIGNED_4:
-    case X86_64_RELOC_TLV:
       val = rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx);
       break;
     case X86_64_RELOC_GOT_LOAD:
     case X86_64_RELOC_GOT:
       val = rel.sym->get_got_addr(ctx);
+      break;
+    case X86_64_RELOC_TLV:
+      val = rel.sym->get_tlv_addr(ctx);
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
