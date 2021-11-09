@@ -124,20 +124,24 @@ void InputSection::parse_relocations(Context &ctx) {
 
 void InputSection::scan_relocations(Context &ctx) {
   for (Relocation &rel : rels) {
-    if (Symbol *sym = rel.sym) {
-      switch (rel.type) {
-      case X86_64_RELOC_GOT_LOAD:
-      case X86_64_RELOC_GOT:
-        sym->flags |= NEEDS_GOT;
-        break;
-      case X86_64_RELOC_TLV:
-        sym->flags |= NEEDS_THREAD_PTR;
-        break;
-      }
+    Symbol *sym = rel.sym;
+    if (!sym)
+      continue;
 
-      if (sym->file && sym->file->is_dylib)
-        sym->flags |= NEEDS_STUB;
+    switch (rel.type) {
+    case X86_64_RELOC_GOT_LOAD:
+    case X86_64_RELOC_GOT:
+      if (sym->file->is_dylib)
+        sym->flags |= NEEDS_GOT;
+      break;
+    case X86_64_RELOC_TLV:
+      if (sym->file->is_dylib)
+        sym->flags |= NEEDS_THREAD_PTR;
+      break;
     }
+
+    if (sym->file && sym->file->is_dylib)
+      sym->flags |= NEEDS_STUB;
   }
 }
 
@@ -160,11 +164,29 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
       val = rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx);
       break;
     case X86_64_RELOC_GOT_LOAD:
+      if (rel.sym->got_idx != -1) {
+        val = rel.sym->get_got_addr(ctx);
+      } else {
+        // Relax MOVQ into LEAQ
+        if (buf[rel.offset - 2] != 0x8b)
+          Error(ctx) << isec << ": invalid GOT_LOAD relocation";
+        buf[rel.offset - 2] = 0x8d;
+        val = rel.sym->get_addr(ctx);
+      }
+      break;
     case X86_64_RELOC_GOT:
       val = rel.sym->get_got_addr(ctx);
       break;
     case X86_64_RELOC_TLV:
-      val = rel.sym->get_tlv_addr(ctx);
+      if (rel.sym->tlv_idx != -1) {
+        val = rel.sym->get_tlv_addr(ctx);
+      } else {
+        // Relax MOVQ into LEAQ
+        if (buf[rel.offset - 2] != 0x8b)
+          Error(ctx) << isec << ": invalid TLV relocation";
+        buf[rel.offset - 2] = 0x8d;
+        val = rel.sym->get_addr(ctx);
+      }
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
