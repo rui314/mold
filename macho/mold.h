@@ -128,7 +128,6 @@ class InputSection {
 public:
   InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
   void parse_relocations(Context &ctx);
-  Subsection *find_subsection(Context &ctx, u32 addr);
 
   ObjectFile &file;
   const MachSection &hdr;

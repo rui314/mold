@@ -17,17 +17,6 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hd
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
 }
 
-Subsection *InputSection::find_subsection(Context &ctx, u32 addr) {
-  auto it = std::upper_bound(subsections.begin(), subsections.end(), addr,
-                             [&](u32 addr, Subsection *subsec) {
-    return addr < subsec->input_addr;
-  });
-
-  if (it == subsections.begin())
-    return nullptr;
-  return it[-1];
-}
-
 static i64 read_addend(u8 *buf, MachRel r) {
   i64 val = 0;
 
