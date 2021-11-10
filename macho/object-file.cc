@@ -60,7 +60,6 @@ void ObjectFile::parse(Context &ctx) {
           .p2align = (u8)mach_sec[i].p2align,
         };
         subsections.push_back(std::unique_ptr<Subsection>(subsec));
-        isec->subsections.push_back(subsec);
       }
       break;
     }
@@ -362,7 +361,6 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
       };
 
       subsections.push_back(std::unique_ptr<Subsection>(subsec));
-      isec->subsections.push_back(subsec);
 
       sym.subsec = subsec;
       sym.value = 0;

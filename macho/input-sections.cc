@@ -67,7 +67,7 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
     addr = addend;
   }
 
-  Subsection *target = file.find_subsection(ctx, addr);;
+  Subsection *target = file.find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
@@ -91,7 +91,11 @@ void InputSection::parse_relocations(Context &ctx) {
 
   // Assign each subsection a group of relocations
   i64 i = 0;
-  for (Subsection *subsec : subsections) {
+  for (std::unique_ptr<Subsection> &subsec : file.subsections) {
+    if (hdr.addr < subsec->input_addr ||
+        subsec->input_addr + subsec->input_size <= hdr.addr)
+      continue;
+
     subsec->rel_offset = i;
     while (i < rels.size() &&
            rels[i].offset < subsec->input_offset + subsec->input_size)
