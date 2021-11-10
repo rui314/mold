@@ -278,7 +278,14 @@ static constexpr u32 REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY = 5;
 
 static constexpr u32 REFERENCED_DYNAMICALLY = 0x0010;
 
-static constexpr u32 N_DESC_DISCARDED = 0x8000;
+static constexpr u32 N_NO_DEAD_STRIP = 0x0020;
+static constexpr u32 N_DESC_DISCARDED = 0x0020;
+static constexpr u32 N_WEAK_REF = 0x0040;
+static constexpr u32 N_WEAK_DEF = 0x0080;
+static constexpr u32 N_REF_TO_WEAK = 0x0080;
+static constexpr u32 N_ARM_THUMB_DEF = 0x0008;
+static constexpr u32 N_SYMBOL_RESOLVER = 0x0100;
+static constexpr u32 N_ALT_ENTRY = 0x0200;
 
 static constexpr u32 PLATFORM_MACOS = 1;
 static constexpr u32 PLATFORM_IOS = 2;

@@ -135,7 +135,6 @@ static void create_synthetic_chunks(Context &ctx) {
     seg->chunks.push_back(chunk);
   }
 
-
   sort(ctx.segments, compare_segments);
 
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
