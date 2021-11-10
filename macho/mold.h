@@ -71,6 +71,8 @@ public:
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf,
                             std::string archive_name);
   void parse(Context &ctx);
+  i64 find_subsection_idx(Context &ctx, u32 addr);
+  Subsection *find_subsection(Context &ctx, u32 addr);
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_regular_symbols(Context &ctx);
   void resolve_lazy_symbols(Context &ctx);
@@ -81,13 +83,15 @@ public:
   Relocation read_reloc(Context &ctx, const MachSection &hdr, MachRel r);
 
   std::vector<std::unique_ptr<InputSection>> sections;
+  std::vector<std::unique_ptr<Subsection>> subsections;
+  std::vector<u32> sym_to_subsec;
   std::span<MachSym> mach_syms;
   std::vector<Symbol> local_syms;
   std::vector<UnwindRecord> unwind_records;
   std::span<DataInCodeEntry> data_in_code_entries;
 
 private:
-  void override_symbol(Context &ctx, Symbol &sym, MachSym &msym);
+  void override_symbol(Context &ctx, i64 symidx);
   InputSection *get_common_sec(Context &ctx);
 
   std::unique_ptr<MachSection> common_hdr;
@@ -125,13 +129,12 @@ public:
   InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr);
   void parse_relocations(Context &ctx);
   Subsection *find_subsection(Context &ctx, u32 addr);
-  void scan_relocations(Context &ctx);
 
   ObjectFile &file;
   const MachSection &hdr;
   OutputSection &osec;
   std::string_view contents;
-  std::vector<std::unique_ptr<Subsection>> subsections;
+  std::vector<Subsection *> subsections;
   std::vector<Relocation> rels;
 };
 
@@ -156,6 +159,7 @@ public:
     return std::span(isec.rels).subspan(rel_offset, nrels);
   }
 
+  void scan_relocations(Context &ctx);
   void apply_reloc(Context &ctx, u8 *buf);
 
   InputSection &isec;

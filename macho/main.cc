@@ -115,15 +115,9 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
 }
 
 static void create_synthetic_chunks(Context &ctx) {
-  for (ObjectFile *file : ctx.objs) {
-    for (std::unique_ptr<InputSection> &isec : file->sections) {
-      if (isec) {
-        for (std::unique_ptr<Subsection> &subsec : isec->subsections)
-          isec->osec.add_subsec(subsec.get());
-        isec->osec.hdr.attr |= isec->hdr.attr;
-      }
-    }
-  }
+  for (ObjectFile *file : ctx.objs)
+    for (std::unique_ptr<Subsection> &subsec : file->subsections)
+      subsec->isec.osec.add_subsec(subsec.get());
 
   for (Chunk *chunk : ctx.chunks) {
     if (chunk != ctx.data && chunk->is_regular &&
@@ -321,9 +315,8 @@ int main(int argc, char **argv) {
     ctx.segments[i]->seg_idx = i + 1;
 
   for (ObjectFile *file : ctx.objs)
-    for (std::unique_ptr<InputSection> &isec : file->sections)
-      if (isec)
-        isec->scan_relocations(ctx);
+    for (std::unique_ptr<Subsection > &subsec : file->subsections)
+      subsec->scan_relocations(ctx);
 
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);

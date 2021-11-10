@@ -315,7 +315,7 @@ void dump_file(std::string path) {
                   << "\n  attr: 0x" << std::hex << sec[j].attr
                   << "\n";
 
-        if (sec[j].size) {
+        if (sec[j].type != S_ZEROFILL) {
           std::cout << "  contents: ";
           print_bytes(buf + sec[j].offset, sec[j].size);
         }
