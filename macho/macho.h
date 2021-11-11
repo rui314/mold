@@ -379,6 +379,10 @@ struct MachSection {
     return {sectname, strnlen(sectname, sizeof(sectname))};
   }
 
+  bool match(std::string_view segname, std::string_view sectname) {
+    return get_segname() == segname && get_sectname() == sectname;
+  }
+
   char sectname[16];
   char segname[16];
   u64 addr;

@@ -285,8 +285,7 @@ OutputSection::get_instance(Context &ctx, std::string_view segname,
 
   auto find = [&]() -> OutputSection * {
     for (Chunk *chunk : ctx.chunks) {
-      if (chunk->hdr.get_segname() == segname &&
-          chunk->hdr.get_sectname() == sectname) {
+      if (chunk->hdr.match(segname, sectname)) {
         if (!chunk->is_regular)
           Fatal(ctx) << ": reserved name is used: " << segname << "," << sectname;
         return (OutputSection *)chunk;

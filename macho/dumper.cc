@@ -334,12 +334,10 @@ void dump_file(std::string path) {
           }
         }
 
-        if (sec[j].get_segname() == "__TEXT" &&
-            sec[j].get_sectname() == "__unwind_info")
+        if (sec[j].match("__TEXT", "__unwind_info"))
           dump_unwind_info(buf, sec[j]);
 
-        if (sec[j].get_segname() == "__LD" &&
-            sec[j].get_sectname() == "__compact_unwind")
+        if (sec[j].match("__LD", "__compact_unwind"))
           dump_compact_unwind(buf, sec[j]);
       }
       break;

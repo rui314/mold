@@ -39,8 +39,7 @@ void ObjectFile::parse(Context &ctx) {
       MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
 
       for (MachSection &msec : std::span(mach_sec, mach_sec + cmd.nsects)) {
-        if (msec.get_segname() == "__LD" &&
-            msec.get_sectname() == "__compact_unwind") {
+        if (msec.match("__LD", "__compact_unwind")) {
           unwind_sec = &msec;
           sections.push_back(nullptr);
           continue;
@@ -62,16 +61,16 @@ void ObjectFile::parse(Context &ctx) {
       sym_strtab = (char *)(mf->data + cmd.stroff);
       break;
     }
-    case LC_DYSYMTAB:
-    case LC_BUILD_VERSION:
-    case LC_VERSION_MIN_MACOSX:
-      break;
     case LC_DATA_IN_CODE: {
       LinkEditDataCommand &cmd = *(LinkEditDataCommand *)p;
       data_in_code_entries = {(DataInCodeEntry *)(mf->data + cmd.dataoff),
                               cmd.datasize / sizeof(DataInCodeEntry)};
       break;
     }
+    case LC_DYSYMTAB:
+    case LC_BUILD_VERSION:
+    case LC_VERSION_MIN_MACOSX:
+      break;
     default:
       Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
     }
