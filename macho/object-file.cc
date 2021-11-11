@@ -38,20 +38,20 @@ void ObjectFile::parse(Context &ctx) {
       SegmentCommand &cmd = *(SegmentCommand *)p;
       MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
 
-      for (i64 i = 0; i < cmd.nsects; i++) {
-        if (mach_sec[i].get_segname() == "__LD" &&
-            mach_sec[i].get_sectname() == "__compact_unwind") {
-          unwind_sec = &mach_sec[i];
+      for (MachSection &msec : std::span(mach_sec, mach_sec + cmd.nsects)) {
+        if (msec.get_segname() == "__LD" &&
+            msec.get_sectname() == "__compact_unwind") {
+          unwind_sec = &msec;
           sections.push_back(nullptr);
           continue;
         }
 
-        if (mach_sec[i].attr & S_ATTR_DEBUG) {
+        if (msec.attr & S_ATTR_DEBUG) {
           sections.push_back(nullptr);
           continue;
         }
 
-        InputSection *isec = new InputSection(ctx, *this, mach_sec[i]);
+        InputSection *isec = new InputSection(ctx, *this, msec);
         sections.push_back(std::unique_ptr<InputSection>(isec));
       }
       break;
