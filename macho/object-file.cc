@@ -23,62 +23,50 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
 };
 
 void ObjectFile::parse(Context &ctx) {
+  parse_sections(ctx);
+  split_subsections(ctx);
+  parse_symtab(ctx);
+  parse_data_in_code(ctx);
+
+  for (std::unique_ptr<InputSection> &isec : sections)
+    if (isec)
+      isec->parse_relocations(ctx);
+
+  if (unwind_sec)
+    parse_compact_unwind(ctx, *unwind_sec);
+}
+
+void ObjectFile::parse_sections(Context &ctx) {
   MachHeader &hdr = *(MachHeader *)mf->data;
   u8 *p = mf->data + sizeof(hdr);
-
-  MachSection *unwind_sec = nullptr;
-  char *sym_strtab = nullptr;
 
   // Read all but a symtab section
   for (i64 i = 0; i < hdr.ncmds; i++) {
     LoadCommand &lc = *(LoadCommand *)p;
-
-    switch (lc.cmd) {
-    case LC_SEGMENT_64: {
-      SegmentCommand &cmd = *(SegmentCommand *)p;
-      MachSection *mach_sec = (MachSection *)(p + sizeof(cmd));
-
-      for (MachSection &msec : std::span(mach_sec, mach_sec + cmd.nsects)) {
-        if (msec.match("__LD", "__compact_unwind")) {
-          unwind_sec = &msec;
-          sections.push_back(nullptr);
-          continue;
-        }
-
-        if (msec.attr & S_ATTR_DEBUG) {
-          sections.push_back(nullptr);
-          continue;
-        }
-
-        InputSection *isec = new InputSection(ctx, *this, msec);
-        sections.push_back(std::unique_ptr<InputSection>(isec));
-      }
-      break;
-    }
-    case LC_SYMTAB: {
-      SymtabCommand &cmd = *(SymtabCommand *)p;
-      mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
-      sym_strtab = (char *)(mf->data + cmd.stroff);
-      break;
-    }
-    case LC_DATA_IN_CODE: {
-      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)p;
-      data_in_code_entries = {(DataInCodeEntry *)(mf->data + cmd.dataoff),
-                              cmd.datasize / sizeof(DataInCodeEntry)};
-      break;
-    }
-    case LC_DYSYMTAB:
-    case LC_BUILD_VERSION:
-    case LC_VERSION_MIN_MACOSX:
-      break;
-    default:
-      Error(ctx) << *this << ": unknown load command: 0x" << std::hex << lc.cmd;
-    }
-
     p += lc.cmdsize;
-  }
+    if (lc.cmd != LC_SEGMENT_64)
+      continue;
 
-  // Split sections into subsections
+    SegmentCommand &cmd = *(SegmentCommand *)&lc;
+    MachSection *mach_sec = (MachSection *)((u8 *)&lc + sizeof(cmd));
+
+    for (MachSection &msec : std::span(mach_sec, mach_sec + cmd.nsects)) {
+      sections.push_back(nullptr);
+
+      if (msec.match("__LD", "__compact_unwind")) {
+        unwind_sec = &msec;
+        continue;
+      }
+
+      if (msec.attr & S_ATTR_DEBUG)
+        continue;
+
+      sections.back().reset(new InputSection(ctx, *this, msec));
+    }
+  }
+}
+
+void ObjectFile::split_subsections(Context &ctx) {
   for (std::unique_ptr<InputSection> &isec : sections) {
     if (!isec)
       continue;
@@ -97,8 +85,14 @@ void ObjectFile::parse(Context &ctx) {
                        const std::unique_ptr<Subsection> &b) {
     return a->input_addr < b->input_addr;
   });
+}
 
-  // Read a symtab section
+void ObjectFile::parse_symtab(Context &ctx) {
+  SymtabCommand *cmd = (SymtabCommand *)find_load_command(ctx, LC_SYMTAB);
+  if (!cmd)
+    return;
+
+  mach_syms = {(MachSym *)(mf->data + cmd->symoff), cmd->nsyms};
   syms.reserve(mach_syms.size());
   sym_to_subsec.reserve(mach_syms.size());
 
@@ -109,7 +103,7 @@ void ObjectFile::parse(Context &ctx) {
   local_syms.reserve(nlocal);
 
   for (MachSym &msym : mach_syms) {
-    std::string_view name = sym_strtab + msym.stroff;
+    std::string_view name = (char *)(mf->data + cmd->stroff + msym.stroff);
 
     if (msym.type == N_SECT)
       sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
@@ -124,15 +118,25 @@ void ObjectFile::parse(Context &ctx) {
       override_symbol(ctx, syms.size() - 1);
     }
   }
+}
 
-  // Read relocations
-  for (std::unique_ptr<InputSection> &isec : sections)
-    if (isec)
-      isec->parse_relocations(ctx);
+void ObjectFile::parse_data_in_code(Context &ctx) {
+  if (auto *cmd = (LinkEditDataCommand *)find_load_command(ctx, LC_DATA_IN_CODE))
+    data_in_code_entries = {(DataInCodeEntry *)(mf->data + cmd->dataoff),
+                            cmd->datasize / sizeof(DataInCodeEntry)};
+}
 
-  // Read __compact_unwindc
-  if (unwind_sec)
-    parse_compact_unwind(ctx, *unwind_sec);
+LoadCommand *ObjectFile::find_load_command(Context &ctx, u32 type) {
+  MachHeader &hdr = *(MachHeader *)mf->data;
+  u8 *p = mf->data + sizeof(hdr);
+
+  for (i64 i = 0; i < hdr.ncmds; i++) {
+    LoadCommand &lc = *(LoadCommand *)p;
+    if (lc.cmd == type)
+      return &lc;
+    p += lc.cmdsize;
+  }
+  return nullptr;
 }
 
 i64 ObjectFile::find_subsection_idx(Context &ctx, u32 addr) {

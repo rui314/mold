@@ -71,7 +71,6 @@ public:
   static ObjectFile *create(Context &ctx, MappedFile<Context> *mf,
                             std::string archive_name);
   void parse(Context &ctx);
-  i64 find_subsection_idx(Context &ctx, u32 addr);
   Subsection *find_subsection(Context &ctx, u32 addr);
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_regular_symbols(Context &ctx);
@@ -91,9 +90,16 @@ public:
   std::span<DataInCodeEntry> data_in_code_entries;
 
 private:
+  void parse_sections(Context &ctx);
+  void split_subsections(Context &ctx);
+  void parse_symtab(Context &ctx);
+  void parse_data_in_code(Context &ctx);
+  LoadCommand *find_load_command(Context &ctx, u32 type);
+  i64 find_subsection_idx(Context &ctx, u32 addr);
   void override_symbol(Context &ctx, i64 symidx);
   InputSection *get_common_sec(Context &ctx);
 
+  MachSection *unwind_sec = nullptr;
   std::unique_ptr<MachSection> common_hdr;
   InputSection *common_sec = nullptr;
 };
