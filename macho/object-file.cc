@@ -93,37 +93,88 @@ void ObjectFile::parse_symtab(Context &ctx) {
 }
 
 void ObjectFile::split_subsections(Context &ctx) {
-  for (std::unique_ptr<InputSection> &isec : sections) {
-    if (!isec)
-      continue;
+  sym_to_subsec.resize(mach_syms.size());
 
-    Subsection *subsec = new Subsection{
-      .isec = *isec,
-      .input_offset = 0,
-      .input_size = (u32)isec->hdr.size,
-      .input_addr = (u32)isec->hdr.addr,
-      .p2align = (u8)isec->hdr.p2align,
-    };
-    subsections.push_back(std::unique_ptr<Subsection>(subsec));
-  }
+  struct Entry {
+    u32 offset;
+    u32 idx : 31;
+    u32 is_alt_entry : 1;
+  };
 
-  sort(subsections, [](const std::unique_ptr<Subsection> &a,
-                       const std::unique_ptr<Subsection> &b) {
-    return a->input_addr < b->input_addr;
-  });
+  struct Section {
+    InputSection *isec = nullptr;
+    std::vector<Entry> syms;
+  };
 
-  sym_to_subsec.reserve(mach_syms.size());
+  std::vector<Section> entries(sections.size());
+  for (i64 i = 0; i < sections.size(); i++)
+    if (sections[i])
+      entries[i].isec = sections[i].get();
 
   for (i64 i = 0; i < mach_syms.size(); i++) {
     MachSym &msym = mach_syms[i];
-    if (msym.type == N_SECT)
-      sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
-    else
-      sym_to_subsec.push_back(-1);
-
-    if (!msym.ext)
-      override_symbol(ctx, i);
+    if (msym.type == N_SECT) {
+      Entry loc;
+      loc.offset = msym.value - sections[msym.sect - 1]->hdr.addr;
+      loc.idx = i;
+      loc.is_alt_entry = (msym.desc & N_ALT_ENTRY);
+      entries[msym.sect - 1].syms.push_back(loc);
+    }
   }
+
+  erase(entries, [](const Section &ent) { return !ent.isec; });
+
+  sort(entries, [](const Section &a, const Section &b) {
+    return a.isec->hdr.addr < b.isec->hdr.addr;
+  });
+
+  for (Section &ent :entries) {
+    sort(ent.syms, [](const Entry &a, const Entry &b) {
+      return a.offset < b.offset;
+    });
+  }
+
+  for (Section &ent :entries) {
+    InputSection &isec = *ent.isec;
+
+    if (ent.syms.empty()) {
+      Subsection *subsec = new Subsection{
+        .isec = isec,
+        .input_offset = 0,
+        .input_size = (u32)isec.hdr.size,
+        .input_addr = (u32)isec.hdr.addr,
+        .p2align = (u8)isec.hdr.p2align,
+      };
+      subsections.push_back(std::unique_ptr<Subsection>(subsec));
+      continue;
+    }
+
+    i64 size = subsections.size();
+
+    for (Entry &loc : ent.syms) {
+      if (!loc.is_alt_entry) {
+        Subsection *subsec = new Subsection{
+          .isec = isec,
+          .input_offset = loc.offset,
+          .input_addr = (u32)(isec.hdr.addr + loc.offset),
+          .p2align = (u8)isec.hdr.p2align,
+        };
+        subsections.push_back(std::unique_ptr<Subsection>(subsec));
+      }
+      sym_to_subsec[loc.idx] = subsections.size() - 1;
+    }
+
+    for (i64 j = size; j < subsections.size() - 1; j++) {
+      subsections[j]->input_size =
+        subsections[j + 1]->input_offset - subsections[j]->input_offset;
+    }
+    subsections.back()->input_size =
+      isec.hdr.size - subsections.back()->input_offset;
+  }
+
+  for (i64 i = 0; i < mach_syms.size(); i++)
+    if (!mach_syms[i].ext)
+      override_symbol(ctx, i);
 }
 
 void ObjectFile::parse_data_in_code(Context &ctx) {

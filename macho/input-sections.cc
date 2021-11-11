@@ -108,8 +108,10 @@ void InputSection::parse_relocations(Context &ctx) {
     Subsection &subsec = **it;
     subsec.rel_offset = i;
     while (i < rels.size() &&
-           rels[i].offset < subsec.input_offset + subsec.input_size)
+           rels[i].offset < subsec.input_offset + subsec.input_size) {
+      rels[i].offset -= subsec.input_offset;
       i++;
+    }
     subsec.nrels = i - subsec.rel_offset;
   }
 }

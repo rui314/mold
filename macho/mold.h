@@ -139,6 +139,7 @@ public:
   const MachSection &hdr;
   OutputSection &osec;
   std::string_view contents;
+  std::vector<Symbol *> syms;
   std::vector<Relocation> rels;
 };
 
