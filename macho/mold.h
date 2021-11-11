@@ -91,8 +91,8 @@ public:
 
 private:
   void parse_sections(Context &ctx);
-  void split_subsections(Context &ctx);
   void parse_symtab(Context &ctx);
+  void split_subsections(Context &ctx);
   void parse_data_in_code(Context &ctx);
   LoadCommand *find_load_command(Context &ctx, u32 type);
   i64 find_subsection_idx(Context &ctx, u32 addr);

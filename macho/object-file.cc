@@ -24,8 +24,8 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
 
 void ObjectFile::parse(Context &ctx) {
   parse_sections(ctx);
-  split_subsections(ctx);
   parse_symtab(ctx);
+  split_subsections(ctx);
   parse_data_in_code(ctx);
 
   for (std::unique_ptr<InputSection> &isec : sections)
@@ -66,6 +66,32 @@ void ObjectFile::parse_sections(Context &ctx) {
   }
 }
 
+void ObjectFile::parse_symtab(Context &ctx) {
+  SymtabCommand *cmd = (SymtabCommand *)find_load_command(ctx, LC_SYMTAB);
+  if (!cmd)
+    return;
+
+  mach_syms = {(MachSym *)(mf->data + cmd->symoff), cmd->nsyms};
+  syms.reserve(mach_syms.size());
+
+  i64 nlocal = 0;
+  for (MachSym &msym : mach_syms)
+    if (!msym.ext)
+      nlocal++;
+  local_syms.reserve(nlocal);
+
+  for (MachSym &msym : mach_syms) {
+    std::string_view name = (char *)(mf->data + cmd->stroff + msym.stroff);
+
+    if (msym.ext) {
+      syms.push_back(intern(ctx, name));
+    } else {
+      local_syms.emplace_back(name);
+      syms.push_back(&local_syms.back());
+    }
+  }
+}
+
 void ObjectFile::split_subsections(Context &ctx) {
   for (std::unique_ptr<InputSection> &isec : sections) {
     if (!isec)
@@ -85,38 +111,18 @@ void ObjectFile::split_subsections(Context &ctx) {
                        const std::unique_ptr<Subsection> &b) {
     return a->input_addr < b->input_addr;
   });
-}
 
-void ObjectFile::parse_symtab(Context &ctx) {
-  SymtabCommand *cmd = (SymtabCommand *)find_load_command(ctx, LC_SYMTAB);
-  if (!cmd)
-    return;
-
-  mach_syms = {(MachSym *)(mf->data + cmd->symoff), cmd->nsyms};
-  syms.reserve(mach_syms.size());
   sym_to_subsec.reserve(mach_syms.size());
 
-  i64 nlocal = 0;
-  for (MachSym &msym : mach_syms)
-    if (!msym.ext)
-      nlocal++;
-  local_syms.reserve(nlocal);
-
-  for (MachSym &msym : mach_syms) {
-    std::string_view name = (char *)(mf->data + cmd->stroff + msym.stroff);
-
+  for (i64 i = 0; i < mach_syms.size(); i++) {
+    MachSym &msym = mach_syms[i];
     if (msym.type == N_SECT)
       sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
     else
       sym_to_subsec.push_back(-1);
 
-    if (msym.ext) {
-      syms.push_back(intern(ctx, name));
-    } else {
-      local_syms.emplace_back(name);
-      syms.push_back(&local_syms.back());
-      override_symbol(ctx, syms.size() - 1);
-    }
+    if (!msym.ext)
+      override_symbol(ctx, i);
   }
 }
 
