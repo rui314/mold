@@ -25,9 +25,9 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
 void ObjectFile::parse(Context &ctx) {
   MachHeader &hdr = *(MachHeader *)mf->data;
   u8 *p = mf->data + sizeof(hdr);
-
   MachSection *unwind_sec = nullptr;
 
+  // Read all but a symtab section
   for (i64 i = 0; i < hdr.ncmds; i++) {
     LoadCommand &lc = *(LoadCommand *)p;
 
@@ -51,54 +51,10 @@ void ObjectFile::parse(Context &ctx) {
 
         InputSection *isec = new InputSection(ctx, *this, mach_sec[i]);
         sections.push_back(std::unique_ptr<InputSection>(isec));
-
-        Subsection *subsec = new Subsection{
-          .isec = *isec,
-          .input_offset = 0,
-          .input_size = (u32)mach_sec[i].size,
-          .input_addr = (u32)mach_sec[i].addr,
-          .p2align = (u8)mach_sec[i].p2align,
-        };
-        subsections.push_back(std::unique_ptr<Subsection>(subsec));
       }
       break;
     }
-    case LC_SYMTAB: {
-      SymtabCommand &cmd = *(SymtabCommand *)p;
-      mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
-
-      syms.reserve(mach_syms.size());
-      sym_to_subsec.reserve(mach_syms.size());
-
-      i64 nlocal = 0;
-      for (MachSym &msym : mach_syms)
-        if (!msym.ext)
-          nlocal++;
-      local_syms.reserve(nlocal);
-
-      sort(subsections, [](const std::unique_ptr<Subsection> &a,
-                           const std::unique_ptr<Subsection> &b) {
-        return a->input_addr < b->input_addr;
-      });
-
-      for (MachSym &msym : mach_syms) {
-        std::string_view name = (char *)(mf->data + cmd.stroff + msym.stroff);
-
-        if (msym.type == N_SECT)
-          sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
-        else
-          sym_to_subsec.push_back(-1);
-
-        if (msym.ext) {
-          syms.push_back(intern(ctx, name));
-        } else {
-          local_syms.emplace_back(name);
-          syms.push_back(&local_syms.back());
-          override_symbol(ctx, syms.size() - 1);
-        }
-      }
-      break;
-    }
+    case LC_SYMTAB:
     case LC_DYSYMTAB:
     case LC_BUILD_VERSION:
     case LC_VERSION_MIN_MACOSX:
@@ -116,9 +72,69 @@ void ObjectFile::parse(Context &ctx) {
     p += lc.cmdsize;
   }
 
-  for (std::unique_ptr<InputSection> &sec : sections)
-    if (sec)
-      sec->parse_relocations(ctx);
+  // Split sections into subsections
+  for (std::unique_ptr<InputSection> &isec : sections) {
+    if (!isec)
+      continue;
+
+    Subsection *subsec = new Subsection{
+      .isec = *isec,
+      .input_offset = 0,
+      .input_size = (u32)isec->hdr.size,
+      .input_addr = (u32)isec->hdr.addr,
+      .p2align = (u8)isec->hdr.p2align,
+    };
+    subsections.push_back(std::unique_ptr<Subsection>(subsec));
+  }
+
+  sort(subsections, [](const std::unique_ptr<Subsection> &a,
+                       const std::unique_ptr<Subsection> &b) {
+    return a->input_addr < b->input_addr;
+  });
+
+  // Read a symtab section
+  p = mf->data + sizeof(hdr);
+  for (i64 i = 0; i < hdr.ncmds; i++) {
+    LoadCommand &lc = *(LoadCommand *)p;
+    if (lc.cmd != LC_SYMTAB) {
+      p += lc.cmdsize;
+      continue;
+    }
+
+    SymtabCommand &cmd = *(SymtabCommand *)p;
+    mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
+
+    syms.reserve(mach_syms.size());
+    sym_to_subsec.reserve(mach_syms.size());
+
+    i64 nlocal = 0;
+    for (MachSym &msym : mach_syms)
+      if (!msym.ext)
+        nlocal++;
+    local_syms.reserve(nlocal);
+
+    for (MachSym &msym : mach_syms) {
+      std::string_view name = (char *)(mf->data + cmd.stroff + msym.stroff);
+
+      if (msym.type == N_SECT)
+        sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
+      else
+        sym_to_subsec.push_back(-1);
+
+      if (msym.ext) {
+        syms.push_back(intern(ctx, name));
+      } else {
+        local_syms.emplace_back(name);
+        syms.push_back(&local_syms.back());
+        override_symbol(ctx, syms.size() - 1);
+      }
+    }
+    break;
+  }
+
+  for (std::unique_ptr<InputSection> &isec : sections)
+    if (isec)
+      isec->parse_relocations(ctx);
 
   if (unwind_sec)
     parse_compact_unwind(ctx, *unwind_sec);

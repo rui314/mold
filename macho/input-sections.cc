@@ -89,18 +89,28 @@ void InputSection::parse_relocations(Context &ctx) {
     return a.offset < b.offset;
   });
 
+  // Find subsections for this section
+  auto begin = std::lower_bound(
+      file.subsections.begin(), file.subsections.end(), hdr.addr,
+      [](std::unique_ptr<Subsection> &subsec, u32 addr) {
+    return subsec->input_addr < addr;
+  });
+
+  auto end = std::upper_bound(
+      begin, file.subsections.end(), hdr.addr,
+      [](u32 addr, std::unique_ptr<Subsection> &subsec) {
+    return subsec->input_addr + subsec->input_size <= addr;
+  });
+
   // Assign each subsection a group of relocations
   i64 i = 0;
-  for (std::unique_ptr<Subsection> &subsec : file.subsections) {
-    if (hdr.addr < subsec->input_addr ||
-        subsec->input_addr + subsec->input_size <= hdr.addr)
-      continue;
-
-    subsec->rel_offset = i;
+  for (auto it = begin; it < end; it++) {
+    Subsection &subsec = **it;
+    subsec.rel_offset = i;
     while (i < rels.size() &&
-           rels[i].offset < subsec->input_offset + subsec->input_size)
+           rels[i].offset < subsec.input_offset + subsec.input_size)
       i++;
-    subsec->nrels = i - subsec->rel_offset;
+    subsec.nrels = i - subsec.rel_offset;
   }
 }
 
