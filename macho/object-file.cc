@@ -25,7 +25,9 @@ ObjectFile *ObjectFile::create(Context &ctx, MappedFile<Context> *mf,
 void ObjectFile::parse(Context &ctx) {
   MachHeader &hdr = *(MachHeader *)mf->data;
   u8 *p = mf->data + sizeof(hdr);
+
   MachSection *unwind_sec = nullptr;
+  char *sym_strtab = nullptr;
 
   // Read all but a symtab section
   for (i64 i = 0; i < hdr.ncmds; i++) {
@@ -54,7 +56,12 @@ void ObjectFile::parse(Context &ctx) {
       }
       break;
     }
-    case LC_SYMTAB:
+    case LC_SYMTAB: {
+      SymtabCommand &cmd = *(SymtabCommand *)p;
+      mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
+      sym_strtab = (char *)(mf->data + cmd.stroff);
+      break;
+    }
     case LC_DYSYMTAB:
     case LC_BUILD_VERSION:
     case LC_VERSION_MIN_MACOSX:
@@ -93,49 +100,38 @@ void ObjectFile::parse(Context &ctx) {
   });
 
   // Read a symtab section
-  p = mf->data + sizeof(hdr);
-  for (i64 i = 0; i < hdr.ncmds; i++) {
-    LoadCommand &lc = *(LoadCommand *)p;
-    if (lc.cmd != LC_SYMTAB) {
-      p += lc.cmdsize;
-      continue;
+  syms.reserve(mach_syms.size());
+  sym_to_subsec.reserve(mach_syms.size());
+
+  i64 nlocal = 0;
+  for (MachSym &msym : mach_syms)
+    if (!msym.ext)
+      nlocal++;
+  local_syms.reserve(nlocal);
+
+  for (MachSym &msym : mach_syms) {
+    std::string_view name = sym_strtab + msym.stroff;
+
+    if (msym.type == N_SECT)
+      sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
+    else
+      sym_to_subsec.push_back(-1);
+
+    if (msym.ext) {
+      syms.push_back(intern(ctx, name));
+    } else {
+      local_syms.emplace_back(name);
+      syms.push_back(&local_syms.back());
+      override_symbol(ctx, syms.size() - 1);
     }
-
-    SymtabCommand &cmd = *(SymtabCommand *)p;
-    mach_syms = {(MachSym *)(mf->data + cmd.symoff), cmd.nsyms};
-
-    syms.reserve(mach_syms.size());
-    sym_to_subsec.reserve(mach_syms.size());
-
-    i64 nlocal = 0;
-    for (MachSym &msym : mach_syms)
-      if (!msym.ext)
-        nlocal++;
-    local_syms.reserve(nlocal);
-
-    for (MachSym &msym : mach_syms) {
-      std::string_view name = (char *)(mf->data + cmd.stroff + msym.stroff);
-
-      if (msym.type == N_SECT)
-        sym_to_subsec.push_back(find_subsection_idx(ctx, msym.value));
-      else
-        sym_to_subsec.push_back(-1);
-
-      if (msym.ext) {
-        syms.push_back(intern(ctx, name));
-      } else {
-        local_syms.emplace_back(name);
-        syms.push_back(&local_syms.back());
-        override_symbol(ctx, syms.size() - 1);
-      }
-    }
-    break;
   }
 
+  // Read relocations
   for (std::unique_ptr<InputSection> &isec : sections)
     if (isec)
       isec->parse_relocations(ctx);
 
+  // Read __compact_unwindc
   if (unwind_sec)
     parse_compact_unwind(ctx, *unwind_sec);
 }
