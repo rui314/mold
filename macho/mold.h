@@ -454,7 +454,7 @@ public:
   void compute_size(Context &ctx) override;
   void copy_buf(Context &ctx) override;
 
-  std::string contents{"\0"};
+  std::string contents{1, '\0'};
 };
 
 class OutputIndirectSymtabSection : public Chunk {
