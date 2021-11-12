@@ -72,11 +72,11 @@ template <typename E>
 static tbb::concurrent_vector<InputSection<E> *>
 collect_root_set(Context<E> &ctx) {
   Timer t(ctx, "collect_root_set");
-  tbb::concurrent_vector<InputSection<E> *> roots;
+  tbb::concurrent_vector<InputSection<E> *> rootset;
 
   auto enqueue_section = [&](InputSection<E> *isec) {
     if (mark_section(isec))
-      roots.push_back(isec);
+      rootset.push_back(isec);
   };
 
   auto enqueue_symbol = [&](Symbol<E> *sym) {
@@ -132,16 +132,16 @@ collect_root_set(Context<E> &ctx) {
         enqueue_symbol(file->symbols[rel.r_sym]);
   });
 
-  return roots;
+  return rootset;
 }
 
 // Mark all reachable sections
 template <typename E>
 static void mark(Context<E> &ctx,
-                 tbb::concurrent_vector<InputSection<E> *> &roots) {
+                 tbb::concurrent_vector<InputSection<E> *> &rootset) {
   Timer t(ctx, "mark");
 
-  tbb::parallel_for_each(roots, [&](InputSection<E> *isec,
+  tbb::parallel_for_each(rootset, [&](InputSection<E> *isec,
                                     tbb::feeder<InputSection<E> *> &feeder) {
     visit(ctx, isec, feeder, 0);
   });
@@ -184,8 +184,8 @@ void gc_sections(Context<E> &ctx) {
 
   mark_nonalloc_subsections(ctx);
 
-  tbb::concurrent_vector<InputSection<E> *> roots = collect_root_set(ctx);
-  mark(ctx, roots);
+  tbb::concurrent_vector<InputSection<E> *> rootset = collect_root_set(ctx);
+  mark(ctx, rootset);
   sweep(ctx);
 }
 
