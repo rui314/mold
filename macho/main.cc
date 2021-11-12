@@ -291,6 +291,9 @@ int main(int argc, char **argv) {
   for (DylibFile *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
+  if (!intern(ctx, ctx.arg.entry)->file)
+    Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;
+
   create_internal_file(ctx);
 
   erase(ctx.objs, [](ObjectFile *file) { return !file->is_alive; });

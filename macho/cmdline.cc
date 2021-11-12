@@ -17,6 +17,7 @@ Options:
   -arch <ARCH_NAME>           Specify target architecture
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
+  -e <SYMBOL>                 Specify the entry point of a main executable
   -headerpad <SIZE>           Allocate the size of padding after load commands
   -help                       Report usage information
   -l<LIB>                     Search for a given library
@@ -150,6 +151,8 @@ void parse_nonpositional_args(Context &ctx,
         Fatal(ctx) << "malformed -headerpad: " << arg;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
+    } else if (read_arg("-e")) {
+      ctx.arg.entry = arg;
     } else if (read_arg("-lto_library")) {
     } else if (read_joined("-l")) {
       remaining.push_back("-l" + std::string(arg));

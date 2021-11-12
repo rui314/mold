@@ -721,6 +721,7 @@ struct Context {
     i64 platform_sdk_version = 0;
     i64 headerpad = 256;
     std::string chroot;
+    std::string entry = "_main";
     std::string map;
     std::string output;
     std::vector<std::string> syslibroot;

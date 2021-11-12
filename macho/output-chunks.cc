@@ -140,7 +140,7 @@ static std::vector<u8> create_main_cmd(Context &ctx) {
 
   cmd.cmd = LC_MAIN;
   cmd.cmdsize = buf.size();
-  cmd.entryoff = intern(ctx, "_main")->get_addr(ctx) - PAGE_ZERO_SIZE;
+  cmd.entryoff = intern(ctx, ctx.arg.entry)->get_addr(ctx) - PAGE_ZERO_SIZE;
   return buf;
 }
 
