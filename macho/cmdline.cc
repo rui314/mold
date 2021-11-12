@@ -15,6 +15,7 @@ Options:
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
   -arch <ARCH_NAME>           Specify target architecture
+  -dead_strip                 Remove unreachable functions and data
   -demangle                   Demangle C++ symbols in log messages (default)
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
@@ -142,6 +143,8 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_arg("-arch")) {
       if (arg != "x86_64")
         Fatal(ctx) << "unknown -arch: " << arg;
+    } else if (read_flag("-dead_strip")) {
+      ctx.arg.dead_strip = true;
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
     } else if (read_arg("-headerpad")) {

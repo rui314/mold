@@ -678,6 +678,12 @@ void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string> &remaining);
 
 //
+// dead-strip.cc
+//
+
+void dead_strip(Context &ctx);
+
+//
 // main.cc
 //
 
@@ -711,6 +717,7 @@ struct Context {
   // Command-line arguments
   struct {
     bool adhoc_codesign = false;
+    bool dead_strip = true;
     bool deduplicate = true;
     bool demangle = false;
     bool dynamic = true;

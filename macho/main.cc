@@ -309,6 +309,9 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : ctx.objs)
     file->convert_common_symbols(ctx);
 
+  if (ctx.arg.dead_strip)
+    dead_strip(ctx);
+
   create_synthetic_chunks(ctx);
 
   for (ObjectFile *file : ctx.objs)
