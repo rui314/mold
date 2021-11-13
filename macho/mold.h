@@ -49,6 +49,7 @@ struct UnwindRecord {
   Symbol *personality = nullptr;
   Subsection *lsda = nullptr;
   u32 lsda_offset = 0;
+  bool is_alive = false;
 };
 
 class InputFile {

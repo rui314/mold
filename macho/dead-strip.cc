@@ -30,6 +30,15 @@ static void visit(Context &ctx, Subsection &subsec) {
       visit(ctx, *rel.subsec);
     }
   }
+
+  for (UnwindRecord &rec : subsec.get_unwind_records()) {
+    rec.is_alive = true;
+    visit(ctx, *rec.subsec);
+    if (rec.lsda)
+      visit(ctx, *rec.lsda);
+    if (Symbol *sym = rec.personality; sym && sym->subsec)
+      visit(ctx, *sym->subsec);
+  }
 }
 
 static void mark(Context &ctx, std::span<Subsection *> rootset) {
