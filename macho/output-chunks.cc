@@ -723,7 +723,7 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
 void OutputExportSection::compute_size(Context &ctx) {
   for (ObjectFile *file : ctx.objs)
     for (Symbol *sym : file->syms)
-      if (sym->is_extern && sym->file == file)
+      if (sym && sym->is_extern && sym->file == file)
         enc.add(sym->name, 0, sym->get_addr(ctx) - PAGE_ZERO_SIZE);
 
   hdr.size = align_to(enc.finish(), 8);
@@ -736,9 +736,10 @@ void OutputExportSection::copy_buf(Context &ctx) {
 void OutputFunctionStartsSection::compute_size(Context &ctx) {
   std::vector<u64> addrs;
 
-  for (ObjectFile *obj : ctx.objs)
-    for (Symbol *sym : obj->syms)
-      if (sym->file == obj && sym->subsec && &sym->subsec->isec.osec == ctx.text)
+  for (ObjectFile *file : ctx.objs)
+    for (Symbol *sym : file->syms)
+      if (sym && sym->file == file && sym->subsec &&
+          &sym->subsec->isec.osec == ctx.text)
         addrs.push_back(sym->get_addr(ctx));
 
   std::sort(addrs.begin(), addrs.end());
@@ -762,16 +763,16 @@ void OutputFunctionStartsSection::copy_buf(Context &ctx) {
 }
 
 void OutputSymtabSection::compute_size(Context &ctx) {
-  for (ObjectFile *obj : ctx.objs)
-    for (Symbol *sym : obj->syms)
-      if (sym->file == obj)
+  for (ObjectFile *file : ctx.objs)
+    for (Symbol *sym : file->syms)
+      if (sym && sym->file == file)
         globals.push_back({sym, ctx.strtab.add_string(sym->name)});
 
   i64 idx = globals.size();
 
   for (DylibFile *dylib : ctx.dylibs) {
     for (Symbol *sym : dylib->syms) {
-      if (sym->file == dylib) {
+      if (sym && sym->file == dylib) {
         if (sym->stub_idx != -1 || sym->got_idx != -1) {
           undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
 

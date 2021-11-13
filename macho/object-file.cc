@@ -443,11 +443,11 @@ void ObjectFile::convert_common_symbols(Context &ctx) {
 
 void ObjectFile::check_duplicate_symbols(Context &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
-    Symbol &sym = *syms[i];
+    Symbol *sym = syms[i];
     MachSym &msym = mach_syms[i];
-    if (!msym.is_undef() && !msym.is_common() && sym.file != this)
-      Error(ctx) << "duplicate symbol: " << *this << ": " << *sym.file
-                 << ": " << sym;
+    if (sym && !msym.is_undef() && !msym.is_common() && sym->file != this)
+      Error(ctx) << "duplicate symbol: " << *this << ": " << *sym->file
+                 << ": " << *sym;
   }
 }
 

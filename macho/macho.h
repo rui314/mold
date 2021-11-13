@@ -379,7 +379,7 @@ struct MachSection {
     return {sectname, strnlen(sectname, sizeof(sectname))};
   }
 
-  bool match(std::string_view segname, std::string_view sectname) {
+  bool match(std::string_view segname, std::string_view sectname) const {
     return get_segname() == segname && get_sectname() == sectname;
   }
 

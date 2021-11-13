@@ -140,7 +140,7 @@ static void export_symbols(Context &ctx) {
 
   for (ObjectFile *file : ctx.objs) {
     for (Symbol *sym : file->syms) {
-      if (sym->file == file) {
+      if (sym && sym->file == file) {
         if (sym->flags & NEEDS_GOT)
           ctx.got.add(ctx, sym);
         if (sym->flags & NEEDS_THREAD_PTR)
@@ -151,6 +151,9 @@ static void export_symbols(Context &ctx) {
 
   for (DylibFile *file : ctx.dylibs) {
     for (Symbol *sym : file->syms) {
+      if (!sym)
+        continue;
+
       if (sym->file == file)
         if (sym->flags & NEEDS_STUB)
           ctx.stubs.add(ctx, sym);
