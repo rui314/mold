@@ -29,7 +29,7 @@ static void create_internal_file(Context &ctx) {
   Symbol *sym = add("__mh_execute_header");
   sym->is_extern = true;
   sym->referenced_dynamically = true;
-  sym->value = PAGE_ZERO_SIZE;
+  sym->value = ctx.arg.pagezero_size;
 }
 
 static bool compare_segments(const std::unique_ptr<OutputSegment> &a,
@@ -173,7 +173,7 @@ static i64 assign_offsets(Context &ctx) {
         chunk->sect_idx = sect_idx++;
 
   i64 fileoff = 0;
-  i64 vmaddr = PAGE_ZERO_SIZE;
+  i64 vmaddr = ctx.arg.pagezero_size;
 
   for (std::unique_ptr<OutputSegment> &seg : ctx.segments) {
     seg->set_offset(ctx, fileoff, vmaddr);

@@ -13,7 +13,6 @@
 namespace mold::macho {
 
 static constexpr i64 PAGE_SIZE = 0x4000;
-static constexpr i64 PAGE_ZERO_SIZE = 0x100000000;
 static constexpr i64 SHA256_SIZE = 32;
 
 class Chunk;
@@ -148,9 +147,7 @@ std::ostream &operator<<(std::ostream &out, const InputSection &sec);
 
 class Subsection {
 public:
-  u64 get_addr(Context &ctx) const {
-    return PAGE_ZERO_SIZE + raddr;
-  }
+  inline u64 get_addr(Context &ctx) const;
 
   std::string_view get_contents() {
     assert(isec.hdr.type != S_ZEROFILL);
@@ -729,6 +726,7 @@ struct Context {
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;
     i64 headerpad = 256;
+    i64 pagezero_size = 0x100000000;
     std::string chroot;
     std::string entry = "_main";
     std::string map;
@@ -796,6 +794,10 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
+
+u64 Subsection::get_addr(Context &ctx) const {
+  return ctx.arg.pagezero_size + raddr;
+}
 
 u64 Symbol::get_addr(Context &ctx) const {
   if (subsec)

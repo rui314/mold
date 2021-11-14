@@ -24,7 +24,7 @@ static std::vector<u8> create_page_zero_cmd(Context &ctx) {
   cmd.cmd = LC_SEGMENT_64;
   cmd.cmdsize = buf.size();
   strcpy(cmd.segname, "__PAGEZERO");
-  cmd.vmsize = PAGE_ZERO_SIZE;
+  cmd.vmsize = ctx.arg.pagezero_size;
   return buf;
 }
 
@@ -140,7 +140,7 @@ static std::vector<u8> create_main_cmd(Context &ctx) {
 
   cmd.cmd = LC_MAIN;
   cmd.cmdsize = buf.size();
-  cmd.entryoff = intern(ctx, ctx.arg.entry)->get_addr(ctx) - PAGE_ZERO_SIZE;
+  cmd.entryoff = intern(ctx, ctx.arg.entry)->get_addr(ctx) - ctx.arg.pagezero_size;
   return buf;
 }
 
@@ -320,7 +320,7 @@ void OutputSection::compute_size(Context &ctx) {
 
   for (Subsection *subsec : members) {
     addr = align_to(addr, 1 << subsec->p2align);
-    subsec->raddr = addr - PAGE_ZERO_SIZE;
+    subsec->raddr = addr - ctx.arg.pagezero_size;
     addr += subsec->input_size;
   }
   hdr.size = addr - hdr.addr;
@@ -724,7 +724,7 @@ void OutputExportSection::compute_size(Context &ctx) {
   for (ObjectFile *file : ctx.objs)
     for (Symbol *sym : file->syms)
       if (sym && sym->is_extern && sym->file == file)
-        enc.add(sym->name, 0, sym->get_addr(ctx) - PAGE_ZERO_SIZE);
+        enc.add(sym->name, 0, sym->get_addr(ctx) - ctx.arg.pagezero_size);
 
   hdr.size = align_to(enc.finish(), 8);
 }
@@ -747,7 +747,7 @@ void OutputFunctionStartsSection::compute_size(Context &ctx) {
   contents.resize(addrs.size() * 5);
 
   u8 *p = contents.data();
-  u64 last = PAGE_ZERO_SIZE;
+  u64 last = ctx.arg.pagezero_size;
 
   for (u64 val : addrs) {
     p += write_uleb(p, val - last);
