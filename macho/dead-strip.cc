@@ -8,13 +8,6 @@ static std::vector<Subsection *> collect_root_set(Context &ctx) {
   if (Symbol *sym = intern(ctx, ctx.arg.entry))
     if (sym->subsec)
       rootset.push_back(sym->subsec);
-
-  for (ObjectFile *file : ctx.objs)
-    for (std::unique_ptr<Subsection> &subsec : file->subsections)
-      if (subsec->isec.hdr.match("__TEXT", "__eh_frame") ||
-          subsec->isec.hdr.match("__TEXT", "__gcc_except_tab"))
-        rootset.push_back(subsec.get());
-
   return rootset;
 }
 
@@ -41,9 +34,37 @@ static void visit(Context &ctx, Subsection &subsec) {
   }
 }
 
+static bool refers_live_subsection(Subsection &subsec) {
+  for (Relocation &rel : subsec.get_rels()) {
+    if (rel.sym) {
+      if (!rel.sym->subsec || rel.sym->subsec->is_visited)
+        return true;
+    } else {
+      if (rel.subsec->is_visited)
+        return true;
+    }
+  }
+  return false;
+}
+
 static void mark(Context &ctx, std::span<Subsection *> rootset) {
   for (Subsection *subsec : rootset)
     visit(ctx, *subsec);
+
+  bool repeat;
+  do {
+    repeat = false;
+    for (ObjectFile *file : ctx.objs) {
+      for (std::unique_ptr<Subsection> &subsec : file->subsections) {
+        if ((subsec->isec.hdr.attr & S_ATTR_LIVE_SUPPORT) &&
+            !subsec->is_visited &&
+            refers_live_subsection(*subsec)) {
+          visit(ctx, *subsec);
+          repeat = true;
+        }
+      }
+    }
+  } while (repeat);
 }
 
 static void sweep(Context &ctx) {
