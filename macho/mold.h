@@ -569,6 +569,7 @@ public:
   }
 
   void add(Context &ctx, Symbol *sym);
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> syms;
 
@@ -595,6 +596,7 @@ public:
   }
 
   void add(Context &ctx, Symbol *sym);
+  void copy_buf(Context &ctx) override;
 
   std::vector<Symbol *> syms;
 

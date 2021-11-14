@@ -124,9 +124,11 @@ void Subsection::scan_relocations(Context &ctx) {
 
     switch (rel.type) {
     case X86_64_RELOC_GOT_LOAD:
-    case X86_64_RELOC_GOT:
       if (sym->file->is_dylib)
         sym->flags |= NEEDS_GOT;
+      break;
+    case X86_64_RELOC_GOT:
+      sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_TLV:
       if (sym->file->is_dylib)
