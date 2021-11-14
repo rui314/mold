@@ -12,7 +12,7 @@ static std::vector<Subsection *> collect_root_set(Context &ctx) {
 }
 
 static void visit(Context &ctx, Subsection &subsec) {
-  if (subsec.is_visited.exchange(true))
+  if (subsec.is_alive.exchange(true))
     return;
 
   for (Relocation &rel : subsec.get_rels()) {
@@ -37,10 +37,10 @@ static void visit(Context &ctx, Subsection &subsec) {
 static bool refers_live_subsection(Subsection &subsec) {
   for (Relocation &rel : subsec.get_rels()) {
     if (rel.sym) {
-      if (!rel.sym->subsec || rel.sym->subsec->is_visited)
+      if (!rel.sym->subsec || rel.sym->subsec->is_alive)
         return true;
     } else {
-      if (rel.subsec->is_visited)
+      if (rel.subsec->is_alive)
         return true;
     }
   }
@@ -57,7 +57,7 @@ static void mark(Context &ctx, std::span<Subsection *> rootset) {
     for (ObjectFile *file : ctx.objs) {
       for (std::unique_ptr<Subsection> &subsec : file->subsections) {
         if ((subsec->isec.hdr.attr & S_ATTR_LIVE_SUPPORT) &&
-            !subsec->is_visited &&
+            !subsec->is_alive &&
             refers_live_subsection(*subsec)) {
           visit(ctx, *subsec);
           repeat = true;
@@ -70,13 +70,13 @@ static void mark(Context &ctx, std::span<Subsection *> rootset) {
 static void sweep(Context &ctx) {
   for (ObjectFile *file : ctx.objs) {
     erase(file->subsections, [](const std::unique_ptr<Subsection> &subsec) {
-      return !subsec->is_visited;
+      return !subsec->is_alive;
     });
   }
 
   for (ObjectFile *file : ctx.objs)
     for (Symbol *&sym : file->syms)
-      if (sym->file == file && sym->subsec && !sym->subsec->is_visited)
+      if (sym->file == file && sym->subsec && !sym->subsec->is_alive)
         sym = nullptr;
 }
 

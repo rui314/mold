@@ -178,7 +178,7 @@ public:
   u32 nunwind = 0;
   u32 raddr = -1;
   u16 p2align = 0;
-  std::atomic_bool is_visited = false;
+  std::atomic_bool is_alive = false;
 };
 
 //
