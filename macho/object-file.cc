@@ -149,6 +149,17 @@ void ObjectFile::split_subsections(Context &ctx) {
       continue;
     }
 
+    if (ent.syms[0].offset) {
+      Subsection *subsec = new Subsection{
+        .isec = isec,
+        .input_offset = 0,
+        .input_size = ent.syms[0].offset,
+        .input_addr = (u32)isec.hdr.addr,
+        .p2align = (u8)isec.hdr.p2align,
+      };
+      subsections.push_back(std::unique_ptr<Subsection>(subsec));
+    }
+
     i64 size = subsections.size();
 
     for (Entry &loc : ent.syms) {

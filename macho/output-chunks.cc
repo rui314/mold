@@ -1154,6 +1154,9 @@ static std::vector<u8> construct_unwind_info(Context &ctx) {
           for (UnwindRecord &rec : subsec->get_unwind_records())
             if (!ctx.arg.dead_strip || rec.is_alive)
               records.push_back(rec);
+
+  if (records.empty())
+    return {};
   return UnwindEncoder().encode(ctx, records);
 }
 

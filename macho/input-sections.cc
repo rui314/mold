@@ -97,9 +97,9 @@ void InputSection::parse_relocations(Context &ctx) {
   });
 
   auto end = std::upper_bound(
-      begin, file.subsections.end(), hdr.addr,
+      begin, file.subsections.end(), hdr.addr + hdr.size,
       [](u32 addr, std::unique_ptr<Subsection> &subsec) {
-    return subsec->input_addr + subsec->input_size <= addr;
+    return addr <= subsec->input_addr;
   });
 
   // Assign each subsection a group of relocations
@@ -124,14 +124,14 @@ void Subsection::scan_relocations(Context &ctx) {
 
     switch (rel.type) {
     case X86_64_RELOC_GOT_LOAD:
-      if (sym->file->is_dylib)
+      if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_GOT:
       sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_TLV:
-      if (sym->file->is_dylib)
+      if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
