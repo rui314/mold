@@ -92,52 +92,58 @@ void ObjectFile::parse_symtab(Context &ctx) {
   }
 }
 
-void ObjectFile::split_subsections(Context &ctx) {
-  sym_to_subsec.resize(mach_syms.size());
-
-  struct Entry {
+struct SplitInfo {
+  struct Region {
     u32 offset;
-    u32 idx : 31;
-    u32 is_alt_entry : 1;
+    u32 symidx;
+    bool is_alt_entry;
   };
 
-  struct Section {
-    InputSection *isec = nullptr;
-    std::vector<Entry> syms;
-  };
+  InputSection *isec = nullptr;
+  std::vector<Region> regions;
+};
 
-  std::vector<Section> entries(sections.size());
-  for (i64 i = 0; i < sections.size(); i++)
-    if (sections[i])
-      entries[i].isec = sections[i].get();
+static std::vector<SplitInfo> split(Context &ctx, ObjectFile &file) {
+  std::vector<SplitInfo> vec(file.sections.size());
 
-  for (i64 i = 0; i < mach_syms.size(); i++) {
-    MachSym &msym = mach_syms[i];
+  for (i64 i = 0; i < file.sections.size(); i++)
+    if (file.sections[i])
+      vec[i].isec = file.sections[i].get();
+
+  for (i64 i = 0; i < file.mach_syms.size(); i++) {
+    MachSym &msym = file.mach_syms[i];
     if (msym.type == N_SECT) {
-      Entry loc;
-      loc.offset = msym.value - sections[msym.sect - 1]->hdr.addr;
-      loc.idx = i;
+      SplitInfo::Region loc;
+      loc.offset = msym.value - file.sections[msym.sect - 1]->hdr.addr;
+      loc.symidx = i;
       loc.is_alt_entry = (msym.desc & N_ALT_ENTRY);
-      entries[msym.sect - 1].syms.push_back(loc);
+      vec[msym.sect - 1].regions.push_back(loc);
     }
   }
 
-  erase(entries, [](const Section &ent) { return !ent.isec; });
+  erase(vec, [](const SplitInfo &ent) { return !ent.isec; });
 
-  sort(entries, [](const Section &a, const Section &b) {
+  sort(vec, [](const SplitInfo &a, const SplitInfo &b) {
     return a.isec->hdr.addr < b.isec->hdr.addr;
   });
 
-  for (Section &ent :entries) {
-    sort(ent.syms, [](const Entry &a, const Entry &b) {
+  for (SplitInfo &ent : vec) {
+    sort(ent.regions, [](const SplitInfo::Region &a, const SplitInfo::Region &b) {
       return a.offset < b.offset;
     });
   }
+  return vec;
+}
 
-  for (Section &ent :entries) {
+void ObjectFile::split_subsections(Context &ctx) {
+  sym_to_subsec.resize(mach_syms.size());
+
+  std::vector<SplitInfo> entries = split(ctx, *this);
+
+  for (SplitInfo &ent : entries) {
     InputSection &isec = *ent.isec;
 
-    if (ent.syms.empty()) {
+    if (ent.regions.empty()) {
       Subsection *subsec = new Subsection{
         .isec = isec,
         .input_offset = 0,
@@ -149,11 +155,11 @@ void ObjectFile::split_subsections(Context &ctx) {
       continue;
     }
 
-    if (ent.syms[0].offset) {
+    if (ent.regions[0].offset) {
       Subsection *subsec = new Subsection{
         .isec = isec,
         .input_offset = 0,
-        .input_size = ent.syms[0].offset,
+        .input_size = ent.regions[0].offset,
         .input_addr = (u32)isec.hdr.addr,
         .p2align = (u8)isec.hdr.p2align,
       };
@@ -162,7 +168,7 @@ void ObjectFile::split_subsections(Context &ctx) {
 
     i64 size = subsections.size();
 
-    for (Entry &loc : ent.syms) {
+    for (SplitInfo::Region &loc : ent.regions) {
       if (!loc.is_alt_entry) {
         Subsection *subsec = new Subsection{
           .isec = isec,
@@ -172,7 +178,7 @@ void ObjectFile::split_subsections(Context &ctx) {
         };
         subsections.push_back(std::unique_ptr<Subsection>(subsec));
       }
-      sym_to_subsec[loc.idx] = subsections.size() - 1;
+      sym_to_subsec[loc.symidx] = subsections.size() - 1;
     }
 
     for (i64 j = size; j < subsections.size() - 1; j++) {
