@@ -95,6 +95,7 @@ void ObjectFile::parse_symtab(Context &ctx) {
 struct SplitInfo {
   struct Region {
     u32 offset;
+    u32 size;
     u32 symidx;
     bool is_alt_entry;
   };
@@ -104,33 +105,46 @@ struct SplitInfo {
 };
 
 static std::vector<SplitInfo> split(Context &ctx, ObjectFile &file) {
-  std::vector<SplitInfo> vec(file.sections.size());
+  std::vector<SplitInfo> vec;
 
-  for (i64 i = 0; i < file.sections.size(); i++)
-    if (file.sections[i])
-      vec[i].isec = file.sections[i].get();
+  for (std::unique_ptr<InputSection> &isec : file.sections)
+    vec.push_back({isec.get()});
 
   for (i64 i = 0; i < file.mach_syms.size(); i++) {
     MachSym &msym = file.mach_syms[i];
     if (msym.type == N_SECT) {
-      SplitInfo::Region loc;
-      loc.offset = msym.value - file.sections[msym.sect - 1]->hdr.addr;
-      loc.symidx = i;
-      loc.is_alt_entry = (msym.desc & N_ALT_ENTRY);
-      vec[msym.sect - 1].regions.push_back(loc);
+      SplitInfo::Region r;
+      r.offset = msym.value - file.sections[msym.sect - 1]->hdr.addr;
+      r.symidx = i;
+      r.is_alt_entry = (msym.desc & N_ALT_ENTRY);
+      vec[msym.sect - 1].regions.push_back(r);
     }
   }
 
-  erase(vec, [](const SplitInfo &ent) { return !ent.isec; });
+  erase(vec, [](const SplitInfo &info) { return !info.isec; });
 
   sort(vec, [](const SplitInfo &a, const SplitInfo &b) {
     return a.isec->hdr.addr < b.isec->hdr.addr;
   });
 
-  for (SplitInfo &ent : vec) {
-    sort(ent.regions, [](const SplitInfo::Region &a, const SplitInfo::Region &b) {
+  for (SplitInfo &info : vec) {
+    std::vector<SplitInfo::Region> &r = info.regions;
+
+    if (r.empty()) {
+      r.push_back({0, (u32)info.isec->hdr.size, (u32)-1, false});
+      continue;
+    }
+
+    sort(r, [](const SplitInfo::Region &a, const SplitInfo::Region &b) {
       return a.offset < b.offset;
     });
+
+    if (r[0].offset > 0)
+      r.insert(r.begin(), {0, r[0].offset, (u32)-1, false});
+
+    for (i64 i = 0; i < r.size() - 1; i++)
+      r[i].size = r[i + 1].offset - r[i].offset;
+    r.back().size = info.isec->hdr.size - r.back().offset;
   }
   return vec;
 }
@@ -138,55 +152,24 @@ static std::vector<SplitInfo> split(Context &ctx, ObjectFile &file) {
 void ObjectFile::split_subsections(Context &ctx) {
   sym_to_subsec.resize(mach_syms.size());
 
-  std::vector<SplitInfo> entries = split(ctx, *this);
+  for (SplitInfo &info : split(ctx, *this)) {
+    InputSection &isec = *info.isec;
 
-  for (SplitInfo &ent : entries) {
-    InputSection &isec = *ent.isec;
-
-    if (ent.regions.empty()) {
-      Subsection *subsec = new Subsection{
-        .isec = isec,
-        .input_offset = 0,
-        .input_size = (u32)isec.hdr.size,
-        .input_addr = (u32)isec.hdr.addr,
-        .p2align = (u8)isec.hdr.p2align,
-      };
-      subsections.push_back(std::unique_ptr<Subsection>(subsec));
-      continue;
-    }
-
-    if (ent.regions[0].offset) {
-      Subsection *subsec = new Subsection{
-        .isec = isec,
-        .input_offset = 0,
-        .input_size = ent.regions[0].offset,
-        .input_addr = (u32)isec.hdr.addr,
-        .p2align = (u8)isec.hdr.p2align,
-      };
-      subsections.push_back(std::unique_ptr<Subsection>(subsec));
-    }
-
-    i64 size = subsections.size();
-
-    for (SplitInfo::Region &loc : ent.regions) {
-      if (!loc.is_alt_entry) {
+    for (SplitInfo::Region &r : info.regions) {
+      if (!r.is_alt_entry) {
         Subsection *subsec = new Subsection{
           .isec = isec,
-          .input_offset = loc.offset,
-          .input_addr = (u32)(isec.hdr.addr + loc.offset),
+          .input_offset = r.offset,
+          .input_size = r.size,
+          .input_addr = (u32)(isec.hdr.addr + r.offset),
           .p2align = (u8)isec.hdr.p2align,
         };
         subsections.push_back(std::unique_ptr<Subsection>(subsec));
       }
-      sym_to_subsec[loc.symidx] = subsections.size() - 1;
-    }
 
-    for (i64 j = size; j < subsections.size() - 1; j++) {
-      subsections[j]->input_size =
-        subsections[j + 1]->input_offset - subsections[j]->input_offset;
+      if (r.symidx != -1)
+        sym_to_subsec[r.symidx] = subsections.size() - 1;
     }
-    subsections.back()->input_size =
-      isec.hdr.size - subsections.back()->input_offset;
   }
 
   for (i64 i = 0; i < mach_syms.size(); i++)

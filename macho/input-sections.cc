@@ -96,10 +96,10 @@ void InputSection::parse_relocations(Context &ctx) {
     return subsec->input_addr < addr;
   });
 
-  auto end = std::upper_bound(
+  auto end = std::lower_bound(
       begin, file.subsections.end(), hdr.addr + hdr.size,
-      [](u32 addr, std::unique_ptr<Subsection> &subsec) {
-    return addr <= subsec->input_addr;
+      [](std::unique_ptr<Subsection> &subsec, u32 addr) {
+    return subsec->input_addr < addr;
   });
 
   // Assign each subsection a group of relocations
