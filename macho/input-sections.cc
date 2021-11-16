@@ -33,21 +33,20 @@ static i64 read_addend(u8 *buf, MachRel r) {
   }
 
   switch (r.p2size) {
-  case 0:
-    return buf[r.offset] + val;
-  case 1:
-    return *(i16 *)(buf + r.offset) + val;
   case 2:
     return *(i32 *)(buf + r.offset) + val;
   case 3:
     return *(i64 *)(buf + r.offset) + val;
+  default:
+    unreachable();
   }
-
-  unreachable();
 }
 
 static Relocation read_reloc(Context &ctx, ObjectFile &file,
                              const MachSection &hdr, MachRel r) {
+  if (r.p2size != 2 && r.p2size != 3)
+    Fatal(ctx) << file << ": invalid r.p2size: " << (u32)r.p2size;
+
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
   Relocation rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
   i64 addend = read_addend(buf, r);
@@ -194,12 +193,6 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
       val -= get_addr(ctx) + rel.offset + 4;
 
     switch (rel.p2size) {
-    case 0:
-      buf[rel.offset] = val;
-      break;
-    case 1:
-      *(u16 *)(buf + rel.offset) = val;
-      break;
     case 2:
       *(u32 *)(buf + rel.offset) = val;
       break;
