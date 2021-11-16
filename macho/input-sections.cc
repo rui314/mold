@@ -17,26 +17,25 @@ InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hd
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
 }
 
-static i64 read_addend(u8 *buf, MachRel r) {
-  i64 val = 0;
-
-  switch (r.type) {
+static i64 get_reloc_addend(u32 type) {
+  switch (type) {
   case X86_64_RELOC_SIGNED_1:
-    val = 1;
-    break;
+    return 1;
   case X86_64_RELOC_SIGNED_2:
-    val = 2;
-    break;
+    return 2;
   case X86_64_RELOC_SIGNED_4:
-    val = 4;
-    break;
+    return 4;
+  default:
+    return 0;
   }
+}
 
+static i64 read_addend(u8 *buf, const MachRel &r) {
   switch (r.p2size) {
   case 2:
-    return *(i32 *)(buf + r.offset) + val;
+    return *(i32 *)(buf + r.offset) + get_reloc_addend(r.type);
   case 3:
-    return *(i64 *)(buf + r.offset) + val;
+    return *(i64 *)(buf + r.offset) + get_reloc_addend(r.type);
   default:
     unreachable();
   }
@@ -190,7 +189,7 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     val += rel.addend;
 
     if (rel.is_pcrel)
-      val -= get_addr(ctx) + rel.offset + 4;
+      val -= get_addr(ctx) + rel.offset + 4 + get_reloc_addend(rel.type);
 
     switch (rel.p2size) {
     case 2:
