@@ -474,8 +474,8 @@ DylibFile *DylibFile::create(Context &ctx, MappedFile<Context> *mf) {
   return dylib;
 };
 
-void DylibFile::read_trie(Context &ctx, u8 *start, i64 offset,
-                          const std::string &prefix) {
+void DylibFile::read_trie(Context &ctx, u8 *start, i64 offset = 0,
+                          const std::string &prefix = "") {
   u8 *buf = start + offset;
 
   if (*buf) {
@@ -513,7 +513,12 @@ void DylibFile::parse_dylib(Context &ctx) {
     case LC_DYLD_INFO_ONLY: {
       DyldInfoCommand &cmd = *(DyldInfoCommand *)p;
       if (cmd.export_off)
-        read_trie(ctx, mf->data + cmd.export_off, 0, "");
+        read_trie(ctx, mf->data + cmd.export_off);
+      break;
+    }
+    case LC_DYLD_EXPORTS_TRIE: {
+      LinkEditDataCommand &cmd = *(LinkEditDataCommand *)p;
+      read_trie(ctx, mf->data + cmd.dataoff);
       break;
     }
     }

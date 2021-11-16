@@ -122,6 +122,8 @@ static constexpr u32 LC_VERSION_MIN_TVOS = 0x2F;
 static constexpr u32 LC_VERSION_MIN_WATCHOS = 0x30;
 static constexpr u32 LC_NOTE = 0x31;
 static constexpr u32 LC_BUILD_VERSION = 0x32;
+static constexpr u32 LC_DYLD_EXPORTS_TRIE = (0x33 | LC_REQ_DYLD);
+static constexpr u32 LC_DYLD_CHAINED_FIXUPS = (0x34 | LC_REQ_DYLD);
 
 static constexpr u32 SG_HIGHVM = 0x1;
 static constexpr u32 SG_FVMLIB = 0x2;
