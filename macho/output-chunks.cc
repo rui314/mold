@@ -506,7 +506,7 @@ void OutputRebaseSection::compute_size(Context &ctx) {
       if (chunk->is_regular)
         for (Subsection *subsec : ((OutputSection *)chunk)->members)
           for (Relocation &rel : subsec->get_rels())
-            if (!rel.is_pcrel && rel.p2size == 3)
+            if (!rel.is_pcrel)
               enc.add(seg->seg_idx,
                       subsec->get_addr(ctx) + rel.offset - seg->cmd.vmaddr);
 

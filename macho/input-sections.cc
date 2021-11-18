@@ -46,6 +46,14 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   if (r.p2size != 2 && r.p2size != 3)
     Fatal(ctx) << file << ": invalid r.p2size: " << (u32)r.p2size;
 
+  if (r.is_pcrel) {
+    if (r.p2size != 2)
+      Fatal(ctx) << file << ": invalid PC-relative reloc: " << r.offset;
+  } else {
+    if (r.p2size != 3)
+      Fatal(ctx) << file << ": invalid non-PC-relative reloc: " << r.offset;
+  }
+
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
   Relocation rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
   i64 addend = read_addend(buf, r);
@@ -57,13 +65,10 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   }
 
   u32 addr;
-  if (r.is_pcrel) {
-    if (r.p2size != 2)
-      Fatal(ctx) << file << ": invalid PC-relative reloc: " << r.offset;
+  if (r.is_pcrel)
     addr = hdr.addr + r.offset + 4 + addend;
-  } else {
+  else
     addr = addend;
-  }
 
   Subsection *target = file.find_subsection(ctx, addr);
   if (!target)
