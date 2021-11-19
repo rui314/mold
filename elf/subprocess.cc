@@ -272,11 +272,13 @@ std::string find_dso(Context<E> &ctx, const std::string &self) {
   if (is_regular_file(path))
     return path;
 
-  // If not exist, mold might be installed as $PREFIX/bin/mold and the
-  // DSO as $PREFIX/lib/mold/mold-wrapper.so.
-  path = path_clean(self + "/../../lib/mold/mold-wrapper.so");
+#ifdef LIBDIR
+  // If not found, search $(LIBDIR)/mold, which is /usr/local/lib/mold
+  // by default.
+  path = path_clean(LIBDIR "/mold/mold-wrapper.so");
   if (is_regular_file(path))
     return path;
+#endif
 
   Fatal(ctx) << "mold-wrapper.so is missing";
 }

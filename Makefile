@@ -1,3 +1,10 @@
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+LIBDIR ?= $(PREFIX)/lib
+MANDIR ?= $(PREFIX)/share/man
+
+D = $(DESTDIR)
+
 ifeq ($(origin CC), default)
   CC = clang
 endif
@@ -10,7 +17,7 @@ OS ?= $(shell uname -s)
 
 CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" \
 	   -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-	   $(EXTRA_CPPFLAGS)
+	   -DLIBDIR="\"$(LIBDIR)\"" $(EXTRA_CPPFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
@@ -18,8 +25,6 @@ SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
 OBJS=$(SRCS:%.cc=out/%.o)
 
-PREFIX ?= /usr/local
-DEST = $(DESTDIR)$(PREFIX)
 DEBUG ?= 0
 LTO ?= 0
 ASAN ?= 0
@@ -113,26 +118,26 @@ test tests check: all
 endif
 
 install: all
-	install -m 755 -d $(DEST)/bin
-	install -m 755 mold $(DEST)/bin
-	strip $(DEST)/bin/mold
+	install -m 755 -d $D$(BINDIR)
+	install -m 755 mold $D$(BINDIR)
+	strip $D$(BINDIR)/mold
 
-	install -m 755 -d $(DEST)/lib/mold
-	install -m 644 mold-wrapper.so $(DEST)/lib/mold
-	strip $(DEST)/lib/mold/mold-wrapper.so
+	install -m 755 -d $D$(LIBDIR)/mold
+	install -m 644 mold-wrapper.so $D$(LIBDIR)/mold
+	strip $D$(LIBDIR)/mold/mold-wrapper.so
 
-	install -m 755 -d $(DEST)/share/man/man1
-	install -m 644 docs/mold.1 $(DEST)/share/man/man1
-	rm -f $(DEST)/share/man/man1/mold.1.gz
-	gzip -9 $(DEST)/share/man/man1/mold.1
+	install -m 755 -d $D$(MANDIR)/man1
+	install -m 644 docs/mold.1 $D$(MANDIR)/man1
+	rm -f $D$(MANDIR)/man1/mold.1.gz
+	gzip -9 $D$(MANDIR)/man1/mold.1
 
-	ln -sf mold $(DEST)/bin/ld.mold
-	ln -sf mold $(DEST)/bin/ld64.mold
+	ln -sf mold $D$(BINDIR)/ld.mold
+	ln -sf mold $D$(BINDIR)/ld64.mold
 
 uninstall:
-	rm -f $(DEST)/bin/mold $(DEST)/bin/ld.mold $(DEST)/bin/ld64.mold
-	rm -f $(DEST)/share/man/man1/mold.1.gz
-	rm -rf $(DEST)/lib/mold
+	rm -f $D$(BINDIR)/mold $D$(BINDIR)/ld.mold $D$(BINDIR)/ld64.mold
+	rm -f $D$(MANDIR)/man1/mold.1.gz
+	rm -rf $D$(LIBDIR)/mold
 
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64.mold

@@ -21,19 +21,4 @@ cp $mold-wrapper.so $t/bin
 
 $t/bin/mold -run bash -c 'echo $LD_PRELOAD' | grep -q '/bin/mold-wrapper.so'
 
-rm -rf $t
-mkdir -p $t/bin $t/lib/mold
-cp $mold $t/bin
-cp $mold-wrapper.so $t/lib/mold
-
-$t/bin/mold -run bash -c 'echo $LD_PRELOAD' | grep -q '/lib/mold/mold-wrapper.so'
-
-rm -rf $t
-mkdir -p $t/bin $t/lib/mold
-cp $mold $t/bin
-cp $mold-wrapper.so $t/bin
-cp $mold-wrapper.so $t/lib/mold
-
-$t/bin/mold -run bash -c 'echo $LD_PRELOAD' | grep -q '/bin/mold-wrapper.so'
-
 echo OK
