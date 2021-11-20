@@ -475,6 +475,12 @@ struct UUIDCommand {
   u8 uuid[16];
 };
 
+struct RpathCommand {
+  u32 cmd;
+  u32 cmdsize;
+  u32 path_off;
+};
+
 struct LinkEditDataCommand {
   u32 cmd;
   u32 cmdsize;

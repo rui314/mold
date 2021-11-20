@@ -159,6 +159,18 @@ static std::vector<u8> create_load_dylib_cmd(Context &ctx, std::string_view name
   return buf;
 }
 
+static std::vector<u8> create_rpath_cmd(Context &ctx, std::string_view name) {
+  i64 size = sizeof(RpathCommand) + name.size() + 1; // +1 for NUL
+  std::vector<u8> buf(align_to(size, 8));
+  RpathCommand &cmd = *(RpathCommand *)buf.data();
+
+  cmd.cmd = LC_RPATH;
+  cmd.cmdsize = buf.size();
+  cmd.path_off = sizeof(cmd);
+  write_string(buf.data() + sizeof(cmd), name);
+  return buf;
+}
+
 static std::vector<u8> create_function_starts_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(LinkEditDataCommand));
   LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
@@ -232,13 +244,20 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   vec.push_back(create_build_version_cmd(ctx));
   vec.push_back(create_source_version_cmd(ctx));
   vec.push_back(create_main_cmd(ctx));
+  vec.push_back(create_function_starts_cmd(ctx));
+
   for (DylibFile *dylib : ctx.dylibs)
     vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
-  vec.push_back(create_function_starts_cmd(ctx));
+
+  for (std::string_view rpath : ctx.arg.rpath)
+    vec.push_back(create_rpath_cmd(ctx, rpath));
+
   if (!ctx.data_in_code.contents.empty())
     vec.push_back(create_data_in_code_cmd(ctx));
+
   if (ctx.arg.adhoc_codesign)
     vec.push_back(create_code_signature_cmd(ctx));
+
   return {vec.size(), flatten(vec)};
 }
 

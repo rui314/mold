@@ -29,6 +29,7 @@ Options:
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
+  -rpath <PATH>               Add PATH to the runpath search path list
   -syslibroot <DIR>           Prepend DIR to library search paths
   -t                          Print out each file the linker loads
   -v                          Report version information)";
@@ -174,6 +175,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.platform = parse_platform(ctx, arg);
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
+    } else if (read_arg("-rpath")) {
+      ctx.arg.rpath.push_back(std::string(arg));
     } else if (read_arg("-syslibroot")) {
       ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-t")) {

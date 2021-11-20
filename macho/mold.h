@@ -733,8 +733,9 @@ struct Context {
     std::string entry = "_main";
     std::string map;
     std::string output;
-    std::vector<std::string> syslibroot;
     std::vector<std::string> library_paths;
+    std::vector<std::string> rpath;
+    std::vector<std::string> syslibroot;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
