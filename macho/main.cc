@@ -233,15 +233,42 @@ static void read_file(Context &ctx, MappedFile<Context> *mf) {
   }
 }
 
+static std::vector<std::string_view> split_lines(std::string_view str) {
+  std::vector<std::string_view> vec;
+
+  while (!str.empty()) {
+    size_t pos = str.find('\n');
+    if (pos == str.npos) {
+      vec.push_back(str);
+      break;
+    }
+    vec.push_back(str.substr(0, pos));
+    str = str.substr(pos + 1);
+  }
+  return vec;
+}
+
 static void read_input_files(Context &ctx, std::span<std::string> args) {
-  for (std::string &arg : args) {
-    if (arg.starts_with("-l")) {
-      MappedFile<Context> *mf = find_library(ctx, arg.substr(2));
+  while (!args.empty()) {
+    if (args[0].starts_with("-filelist")) {
+      MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, args[1]);
+      for (std::string_view path : split_lines(mf->get_contents())) {
+        MappedFile<Context> *mf2 =
+          MappedFile<Context>::must_open(ctx, std::string(path));
+        if (!mf2)
+          Fatal(ctx) << "-filepath " << args[1] << ": cannot open file: " << path;
+        read_file(ctx, mf2);
+      }
+      args = args.subspan(2);
+    } else if (args[0].starts_with("-l")) {
+      MappedFile<Context> *mf = find_library(ctx, args[0].substr(2));
       if (!mf)
-        Fatal(ctx) << "library not found: " << arg;
+        Fatal(ctx) << "library not found: " << args[0];
       read_file(ctx, mf);
+      args = args.subspan(1);
     } else {
-      read_file(ctx, MappedFile<Context>::must_open(ctx, arg));
+      read_file(ctx, MappedFile<Context>::must_open(ctx, args[0]));
+      args = args.subspan(1);
     }
   }
 }
