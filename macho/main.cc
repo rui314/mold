@@ -248,16 +248,35 @@ static std::vector<std::string_view> split_lines(std::string_view str) {
   return vec;
 }
 
+static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
+  std::string path;
+  std::string dir;
+
+  if (size_t pos = arg.find(','); pos != arg.npos) {
+    path = arg.substr(0, pos);
+    dir = arg.substr(pos + 1) + "/";
+  } else {
+    path = arg;
+  }
+
+  MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path);
+  if (!mf)
+    Fatal(ctx) << "-filepath: cannot open " << path;
+
+  std::vector<std::string> vec;
+  for (std::string_view path : split_lines(mf->get_contents()))
+    vec.push_back(path_clean(dir + std::string(path)));
+  return vec;
+}
+
 static void read_input_files(Context &ctx, std::span<std::string> args) {
   while (!args.empty()) {
     if (args[0].starts_with("-filelist")) {
-      MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, args[1]);
-      for (std::string_view path : split_lines(mf->get_contents())) {
-        MappedFile<Context> *mf2 =
-          MappedFile<Context>::must_open(ctx, std::string(path));
-        if (!mf2)
+      for (std::string &path : read_filelist(ctx, args[1])) {
+        MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path);
+        if (!mf)
           Fatal(ctx) << "-filepath " << args[1] << ": cannot open file: " << path;
-        read_file(ctx, mf2);
+        read_file(ctx, mf);
       }
       args = args.subspan(2);
     } else if (args[0].starts_with("-l")) {
