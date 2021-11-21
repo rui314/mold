@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "../cmdline.h"
 
 #include <sstream>
 #include <sys/stat.h>
@@ -78,35 +79,33 @@ static i64 parse_version(Context &ctx, std::string_view arg) {
 
 void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string> &remaining) {
-  std::span<std::string_view> args = ctx.cmdline_args;
-  args = args.subspan(1);
+  std::vector<std::string_view> &args = ctx.cmdline_args;
+  i64 i = 1;
 
-  bool version_shown = false;
-
-  while (!args.empty()) {
+  while (i < args.size()) {
     std::string_view arg;
     std::string_view arg2;
     std::string_view arg3;
 
     auto read_arg = [&](std::string name) {
-      if (args[0] == name) {
-        if (args.size() == 1)
+      if (args[i] == name) {
+        if (args.size() <= i + 1)
           Fatal(ctx) << "option -" << name << ": argument missing";
-        arg = args[1];
-        args = args.subspan(2);
+        arg = args[i + 1];
+        i += 2;
         return true;
       }
       return false;
     };
 
     auto read_arg3 = [&](std::string name) {
-      if (args[0] == name) {
-        if (args.size() == 3)
+      if (args[i] == name) {
+        if (args.size() <= i + 3)
           Fatal(ctx) << "option -" << name << ": argument missing";
-        arg = args[1];
-        arg2 = args[2];
-        arg3 = args[3];
-        args = args.subspan(4);
+        arg = args[i + 1];
+        arg2 = args[i + 2];
+        arg3 = args[i + 3];
+        i += 4;
         return true;
       }
       return false;
@@ -115,24 +114,32 @@ void parse_nonpositional_args(Context &ctx,
     auto read_joined = [&](std::string name) {
       if (read_arg(name))
         return true;
-      if (args[0].starts_with(name)) {
-        arg = args[0].substr(2);
-        args = args.subspan(1);
+      if (args[i].starts_with(name)) {
+        arg = args[i].substr(2);
+        i++;
         return true;
       }
       return false;
     };
 
     auto read_flag = [&](std::string name) {
-      if (args[0] == name) {
-        args = args.subspan(1);
+      if (args[i] == name) {
+        i++;
         return true;
       }
       return false;
     };
 
+    if (args[i].starts_with('@')) {
+      std::vector<std::string_view> vec =
+        read_response_file(ctx, args[i].substr(1));
+      args.erase(args.begin() + i);
+      args.insert(args.begin() + i, vec.begin(), vec.end());
+      continue;
+    }
+
     if (read_flag("-help") || read_flag("--help")) {
-      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
+      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[i]
                    << " [options] file...\n" << helpmsg;
       exit(0);
     }
@@ -188,10 +195,10 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {
-      if (args[0][0] == '-')
-        Fatal(ctx) << "unknown command line option: " << args[0];
-      remaining.push_back(std::string(args[0]));
-      args = args.subspan(1);
+      if (args[i][i] == '-')
+        Fatal(ctx) << "unknown command line option: " << args[i];
+      remaining.push_back(std::string(args[i]));
+      i++;
     }
   }
 

@@ -5,7 +5,7 @@
 namespace mold {
 
 template <typename C>
-static std::vector<std::string_view>
+std::vector<std::string_view>
 read_response_file(C &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
   MappedFile<C> *mf = MappedFile<C>::must_open(ctx, std::string(path));

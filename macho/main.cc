@@ -283,7 +283,9 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
-  ctx.cmdline_args = expand_response_files(ctx, argv);
+  for (i64 i = 0; i < argc; i++)
+    ctx.cmdline_args.push_back(argv[i]);
+
   std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
