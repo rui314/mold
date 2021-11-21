@@ -166,6 +166,7 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.dynamic = true;
     } else if (read_arg("-e")) {
       ctx.arg.entry = arg;
+    } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
       remaining.push_back(std::string(arg));
