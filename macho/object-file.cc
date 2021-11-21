@@ -384,7 +384,7 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
     Symbol &sym = *syms[i];
     std::lock_guard lock(sym.mu);
 
-    if (get_rank(this, msym, false) < get_rank(sym)) {
+    if (get_rank(this, msym, true) < get_rank(sym)) {
       sym.file = this;
       sym.subsec = nullptr;
       sym.value = 0;
@@ -393,6 +393,19 @@ void ObjectFile::resolve_lazy_symbols(Context &ctx) {
       sym.is_common = false;
     }
   }
+}
+
+bool ObjectFile::is_objc_object(Context &ctx) {
+  for (std::unique_ptr<InputSection> &isec : sections)
+    if (isec->hdr.match("__DATA", "__objc_catlist") ||
+        isec->hdr.match("__TEXT", "__swift"))
+      return true;
+
+  for (i64 i = 0; i < syms.size(); i++)
+    if (!mach_syms[i].is_undef() && mach_syms[i].ext &&
+        syms[i]->name.starts_with("_OBJC_CLASS_$_"))
+      return true;
+  return false;
 }
 
 std::vector<ObjectFile *> ObjectFile::mark_live_objects(Context &ctx) {

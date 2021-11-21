@@ -75,6 +75,7 @@ public:
   void parse_compact_unwind(Context &ctx, MachSection &hdr);
   void resolve_regular_symbols(Context &ctx);
   void resolve_lazy_symbols(Context &ctx);
+  bool is_objc_object(Context &ctx);
   std::vector<ObjectFile *> mark_live_objects(Context &ctx);
   void convert_common_symbols(Context &ctx);
   void check_duplicate_symbols(Context &ctx);
@@ -717,6 +718,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    bool ObjC = false;
     bool adhoc_codesign = false;
     bool dead_strip = true;
     bool deduplicate = true;

@@ -305,8 +305,13 @@ int main(int argc, char **argv) {
   for (DylibFile *dylib : ctx.dylibs)
     dylib->parse(ctx);
 
+  if (ctx.arg.ObjC)
+    for (ObjectFile *file : ctx.objs)
+      if (!file->archive_name.empty() && file->is_objc_object(ctx))
+        file->is_alive = true;
+
   for (ObjectFile *file : ctx.objs) {
-    if (file->archive_name.empty())
+    if (file->is_alive)
       file->resolve_regular_symbols(ctx);
     else
       file->resolve_lazy_symbols(ctx);

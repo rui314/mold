@@ -13,6 +13,8 @@ namespace mold::macho {
 static const char helpmsg[] = R"(
 Options:
   -L<PATH>                    Add DIR to library search path
+  -ObjC                       Load all static archive members that implement
+                              an Objective-C class or category
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
   -arch <ARCH_NAME>           Specify target architecture
@@ -146,6 +148,8 @@ void parse_nonpositional_args(Context &ctx,
 
     if (read_joined("-L")) {
       ctx.arg.library_paths.push_back(std::string(arg));
+    } else if (read_flag("-ObjC")) {
+      ctx.arg.ObjC = true;
     } else if (read_flag("-adhoc_codesign")) {
       ctx.arg.adhoc_codesign = true;
     } else if (read_flag("-no_adhoc_codesign")) {
