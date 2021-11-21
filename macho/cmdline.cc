@@ -153,6 +153,8 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_arg("-arch")) {
       if (arg != "x86_64")
         Fatal(ctx) << "unknown -arch: " << arg;
+    } else if (read_flag("-color-diagnostics") ||
+               read_flag("--color-diagnostics")) {
     } else if (read_flag("-dead_strip")) {
       ctx.arg.dead_strip = true;
     } else if (read_flag("-demangle")) {
