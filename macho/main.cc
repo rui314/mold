@@ -12,6 +12,14 @@
 
 namespace mold::macho {
 
+static std::pair<std::string_view, std::string_view>
+split_string(std::string_view str, char sep) {
+  size_t pos = str.find(sep);
+  if (pos == str.npos)
+    return {str, ""};
+  return {str.substr(0, pos), str.substr(pos + 1)};
+}
+
 static void create_internal_file(Context &ctx) {
   ObjectFile *obj = new ObjectFile;
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
@@ -233,21 +241,6 @@ static void read_file(Context &ctx, MappedFile<Context> *mf) {
   }
 }
 
-static std::vector<std::string_view> split_lines(std::string_view str) {
-  std::vector<std::string_view> vec;
-
-  while (!str.empty()) {
-    size_t pos = str.find('\n');
-    if (pos == str.npos) {
-      vec.push_back(str);
-      break;
-    }
-    vec.push_back(str.substr(0, pos));
-    str = str.substr(pos + 1);
-  }
-  return vec;
-}
-
 static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
   std::string path;
   std::string dir;
@@ -264,8 +257,11 @@ static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
     Fatal(ctx) << "-filepath: cannot open " << path;
 
   std::vector<std::string> vec;
-  for (std::string_view path : split_lines(mf->get_contents()))
+  for (std::string_view str = mf->get_contents(); !str.empty();) {
+    std::string_view path;
+    std::tie(path, str) = split_string(str, '\n');
     vec.push_back(path_clean(dir + std::string(path)));
+  }
   return vec;
 }
 
