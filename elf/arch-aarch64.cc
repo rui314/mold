@@ -227,6 +227,12 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
         *(u32 *)loc |= 1;
       }
       continue;
+    case R_AARCH64_CONDBR19: {
+      i64 val = S + A - P;
+      overflow_check(val, -((i64)1 << 20), (i64)1 << 20);
+      *(u32 *)loc |= bits(val, 20, 2) << 5;
+      continue;
+    }
     case R_AARCH64_PREL16: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 15), (i64)1 << 15);
@@ -447,6 +453,7 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
+    case R_AARCH64_CONDBR19:
     case R_AARCH64_LDST16_ABS_LO12_NC:
     case R_AARCH64_LDST32_ABS_LO12_NC:
     case R_AARCH64_LDST64_ABS_LO12_NC:
