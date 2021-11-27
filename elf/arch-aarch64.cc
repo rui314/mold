@@ -227,12 +227,21 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
         *(u32 *)loc |= 1;
       }
       continue;
+    case R_AARCH64_PREL16: {
+      i64 val = S + A - P;
+      overflow_check(val, -((i64)1 << 15), (i64)1 << 15);
+      *(u16 *)loc = val;
+      continue;
+    }
     case R_AARCH64_PREL32: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 31), (i64)1 << 32);
       *(u32 *)loc = val;
       continue;
     }
+    case R_AARCH64_PREL64:
+      *(u64 *)loc = S + A - P;
+      continue;
     case R_AARCH64_LD64_GOT_LO12_NC:
       *(u32 *)loc |= bits(G + GOT + A, 11, 3) << 10;
       continue;
@@ -447,7 +456,9 @@ void InputSection<AARCH64>::scan_relocations(Context<AARCH64> &ctx) {
     case R_AARCH64_MOVW_UABS_G1_NC:
     case R_AARCH64_MOVW_UABS_G2_NC:
     case R_AARCH64_MOVW_UABS_G3:
+    case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
+    case R_AARCH64_PREL64:
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
     case R_AARCH64_TLSGD_ADD_LO12_NC:
