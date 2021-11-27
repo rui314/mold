@@ -223,7 +223,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     }
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
-      if (sym.file) {
+      if (!sym.esym().is_undef_weak()) {
         i64 val = S + A - P;
         overflow_check(val, -((i64)1 << 26), (i64)1 << 26);
         *(u32 *)loc |= (val >> 2) & 0x3ffffff;
