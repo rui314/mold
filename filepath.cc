@@ -9,6 +9,13 @@ std::string get_current_dir() {
   return buf;
 }
 
+std::string get_realpath(std::string_view path) {
+  char buf[8192];
+  if (!realpath(std::string(path).c_str(), buf))
+    return std::string(path);
+  return buf;
+}
+
 // Returns the directory part of a given path.
 // Returns '.' if path doesn't contain '/'.
 std::string_view path_dirname(std::string_view path) {

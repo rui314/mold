@@ -195,6 +195,26 @@ static void fix_synthetic_symbol_values(Context &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
 }
 
+MappedFile<Context> *find_framework(Context &ctx, std::string name) {
+  std::string suffix;
+  std::tie(name, suffix) = split_string(name, ',');
+
+  for (std::string path : ctx.arg.framework_paths) {
+    path = get_realpath(path + "/" + name + ".framework/" + name);
+
+    if (!suffix.empty())
+      if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path + suffix))
+        return mf;
+
+    if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path + ".tbd"))
+      return mf;
+
+    if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
+      return mf;
+  }
+  Fatal(ctx) << "-framework not found: " << name;
+}
+
 MappedFile<Context> *find_library(Context &ctx, std::string name) {
   for (std::string dir : ctx.arg.library_paths) {
     for (std::string ext : {".tbd", ".dylib", ".a"}) {
@@ -274,6 +294,9 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
           Fatal(ctx) << "-filepath " << args[1] << ": cannot open file: " << path;
         read_file(ctx, mf);
       }
+      args = args.subspan(2);
+    } else if (args[0].starts_with("-framework")) {
+      read_file(ctx, find_framework(ctx, args[1]));
       args = args.subspan(2);
     } else if (args[0].starts_with("-l")) {
       MappedFile<Context> *mf = find_library(ctx, args[0].substr(2));

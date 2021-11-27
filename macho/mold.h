@@ -735,6 +735,7 @@ struct Context {
     std::string entry = "_main";
     std::string map;
     std::string output;
+    std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;

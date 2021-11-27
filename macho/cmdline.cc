@@ -12,6 +12,7 @@ namespace mold::macho {
 
 static const char helpmsg[] = R"(
 Options:
+  -F<PATH>                    Add DIR to framework search path
   -L<PATH>                    Add DIR to library search path
   -ObjC                       Load all static archive members that implement
                               an Objective-C class or category
@@ -23,6 +24,8 @@ Options:
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
+  -framework <NAME>,[,<SUFFIX>]
+                              Search for a given framework
   -headerpad <SIZE>           Allocate the size of padding after load commands
   -help                       Report usage information
   -l<LIB>                     Search for a given library
@@ -83,6 +86,9 @@ void parse_nonpositional_args(Context &ctx,
                               std::vector<std::string> &remaining) {
   std::vector<std::string_view> &args = ctx.cmdline_args;
   i64 i = 1;
+
+  std::vector<std::string> framework_paths;
+  std::vector<std::string> library_paths;
 
   while (i < args.size()) {
     std::string_view arg;
@@ -146,8 +152,10 @@ void parse_nonpositional_args(Context &ctx,
       exit(0);
     }
 
-    if (read_joined("-L")) {
-      ctx.arg.library_paths.push_back(std::string(arg));
+    if (read_joined("-F")) {
+      framework_paths.push_back(std::string(arg));
+    } else if (read_joined("-L")) {
+      library_paths.push_back(std::string(arg));
     } else if (read_flag("-ObjC")) {
       ctx.arg.ObjC = true;
     } else if (read_flag("-adhoc_codesign")) {
@@ -175,6 +183,9 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
+      remaining.push_back(std::string(arg));
+    } else if (read_arg("-framework")) {
+      remaining.push_back("-framework");
       remaining.push_back(std::string(arg));
     } else if (read_arg("-lto_library")) {
     } else if (read_joined("-l")) {
@@ -212,22 +223,33 @@ void parse_nonpositional_args(Context &ctx,
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
 
-  if (!ctx.arg.syslibroot.empty()) {
-    std::vector<std::string> vec;
-
-    for (std::string &dir : ctx.arg.syslibroot) {
-      for (std::string &path : ctx.arg.library_paths)
-        vec.push_back(path_clean(dir + "/" + path));
-
-      vec.push_back(path_clean(dir + "/usr/lib"));
-      vec.push_back(path_clean(dir + "/usr/lcoal/lib"));
+  auto add_library_path = [&](std::string path) {
+    if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
+      ctx.arg.library_paths.push_back(path);
+    } else {
+      for (std::string &dir : ctx.arg.syslibroot)
+        ctx.arg.library_paths.push_back(path_clean(dir + "/" + path));
     }
+  };
 
-    ctx.arg.library_paths = vec;
-  }
+  for (std::string &path : library_paths)
+    add_library_path(path);
+  add_library_path("/usr/lib");
+  add_library_path("/usr/local/lib");
 
-  ctx.arg.library_paths.push_back("/usr/lib");
-  ctx.arg.library_paths.push_back("/usr/local/lib");
+  auto add_framework_path = [&](std::string path) {
+    if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
+      ctx.arg.framework_paths.push_back(path);
+    } else {
+      for (std::string &dir : ctx.arg.syslibroot)
+        ctx.arg.framework_paths.push_back(path_clean(dir + "/" + path));
+    }
+  };
+
+  for (std::string &path : framework_paths)
+    add_framework_path(path);
+  add_framework_path("/Library/Frameworks");
+  add_framework_path("/System/Library/Frameworks");
 }
 
 } // namespace mold::macho

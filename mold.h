@@ -420,6 +420,7 @@ private:
 
 // These are various utility functions to deal with file pathnames.
 std::string get_current_dir();
+std::string get_realpath(std::string_view path);
 std::string_view path_dirname(std::string_view path);
 std::string_view path_filename(std::string_view path);
 std::string_view path_basename(std::string_view path);
