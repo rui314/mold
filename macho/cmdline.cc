@@ -225,9 +225,6 @@ void parse_nonpositional_args(Context &ctx,
     }
   }
 
-  if (ctx.arg.output.empty())
-    ctx.arg.output = "a.out";
-
   auto add_library_path = [&](std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
       ctx.arg.library_paths.push_back(path);

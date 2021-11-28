@@ -734,7 +734,7 @@ struct Context {
     std::string chroot;
     std::string entry = "_main";
     std::string map;
-    std::string output;
+    std::string output = "a.out";
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> rpath;
