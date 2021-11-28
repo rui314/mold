@@ -14,6 +14,8 @@ static const char helpmsg[] = R"(
 Options:
   -F<PATH>                    Add DIR to framework search path
   -L<PATH>                    Add DIR to library search path
+  -Z                          Do not search the standard directories when
+                              searching for libraries and frameworks
   -ObjC                       Load all static archive members that implement
                               an Objective-C class or category
   -adhoc_codesign             Add ad-hoc code signature to the output file
@@ -89,6 +91,7 @@ void parse_nonpositional_args(Context &ctx,
 
   std::vector<std::string> framework_paths;
   std::vector<std::string> library_paths;
+  bool nostdlib = false;
 
   while (i < args.size()) {
     std::string_view arg;
@@ -156,6 +159,8 @@ void parse_nonpositional_args(Context &ctx,
       framework_paths.push_back(std::string(arg));
     } else if (read_joined("-L")) {
       library_paths.push_back(std::string(arg));
+    } else if (read_flag("-Z")) {
+      nostdlib = true;
     } else if (read_flag("-ObjC")) {
       ctx.arg.ObjC = true;
     } else if (read_flag("-adhoc_codesign")) {
@@ -234,8 +239,11 @@ void parse_nonpositional_args(Context &ctx,
 
   for (std::string &path : library_paths)
     add_library_path(path);
-  add_library_path("/usr/lib");
-  add_library_path("/usr/local/lib");
+
+  if (!nostdlib) {
+    add_library_path("/usr/lib");
+    add_library_path("/usr/local/lib");
+  }
 
   auto add_framework_path = [&](std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
@@ -248,8 +256,11 @@ void parse_nonpositional_args(Context &ctx,
 
   for (std::string &path : framework_paths)
     add_framework_path(path);
-  add_framework_path("/Library/Frameworks");
-  add_framework_path("/System/Library/Frameworks");
+
+  if (!nostdlib) {
+    add_framework_path("/Library/Frameworks");
+    add_framework_path("/System/Library/Frameworks");
+  }
 }
 
 } // namespace mold::macho
