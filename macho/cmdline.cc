@@ -23,8 +23,10 @@ Options:
   -arch <ARCH_NAME>           Specify target architecture
   -dead_strip                 Remove unreachable functions and data
   -demangle                   Demangle C++ symbols in log messages (default)
+  -dylib                      Produce a dynamic library
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
+  -execute                    Produce an executable (default)
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
   -framework <NAME>,[,<SUFFIX>]
                               Search for a given framework
@@ -176,6 +178,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.dead_strip = true;
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
+    } else if (read_flag("-dylib")) {
+      ctx.output_type = MH_DYLIB;
     } else if (read_arg("-headerpad")) {
       size_t pos;
       ctx.arg.headerpad = std::stoi(std::string(arg), &pos, 16);
@@ -185,6 +189,8 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.dynamic = true;
     } else if (read_arg("-e")) {
       ctx.arg.entry = arg;
+    } else if (read_flag("-execute")) {
+      ctx.output_type = MH_EXECUTE;
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");

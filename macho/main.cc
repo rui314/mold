@@ -34,10 +34,20 @@ static void create_internal_file(Context &ctx) {
 
   add("__dyld_private");
 
-  Symbol *sym = add("__mh_execute_header");
-  sym->is_extern = true;
-  sym->referenced_dynamically = true;
-  sym->value = ctx.arg.pagezero_size;
+  switch (ctx.output_type) {
+  case MH_EXECUTE: {
+    Symbol *sym = add("__mh_execute_header");
+    sym->is_extern = true;
+    sym->referenced_dynamically = true;
+    sym->value = ctx.arg.pagezero_size;
+    break;
+  }
+  case MH_DYLIB:
+    add("__mh_dylib_header");
+    break;
+  default:
+    unreachable();
+  }
 }
 
 static bool compare_segments(const std::unique_ptr<OutputSegment> &a,
@@ -193,6 +203,7 @@ static i64 assign_offsets(Context &ctx) {
 
 static void fix_synthetic_symbol_values(Context &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
+  intern(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
 }
 
 MappedFile<Context> *find_framework(Context &ctx, std::string name) {
@@ -366,7 +377,7 @@ int main(int argc, char **argv) {
   for (DylibFile *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
-  if (!intern(ctx, ctx.arg.entry)->file)
+  if (ctx.output_type == MH_EXECUTE && !intern(ctx, ctx.arg.entry)->file)
     Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;
 
   create_internal_file(ctx);

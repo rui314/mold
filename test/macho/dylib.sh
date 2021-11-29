@@ -6,7 +6,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/../../out/test/macho/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<EOF | cc -shared -o $t/a.dylib -xc -
+cat <<EOF | cc -c -o $t/a.o -xc -
 #include <stdio.h>
 char world[] = "world";
 
@@ -15,7 +15,9 @@ char *hello() {
 }
 EOF
 
-cat <<EOF | cc -o $t/b.o -c -xc -
+clang -fuse-ld=$mold -o $t/b.dylib -shared $t/a.o
+
+cat <<EOF | cc -o $t/c.o -c -xc -
 #include <stdio.h>
 
 char *hello();
@@ -26,7 +28,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/b.o $t/a.dylib
+clang -fuse-ld=$mold -o $t/exe $t/c.o $t/b.dylib
 $t/exe | grep -q 'Hello world'
 
 echo OK

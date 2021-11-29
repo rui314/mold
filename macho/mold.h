@@ -723,14 +723,15 @@ struct Context {
     bool dead_strip = true;
     bool deduplicate = true;
     bool demangle = false;
+    bool dylib = false;
     bool dynamic = true;
     bool fatal_warnings = false;
     bool trace = false;
+    i64 headerpad = 256;
+    i64 pagezero_size = 0x100000000;
     i64 platform = PLATFORM_MACOS;
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;
-    i64 headerpad = 256;
-    i64 pagezero_size = 0x100000000;
     std::string chroot;
     std::string entry = "_main";
     std::string map;
@@ -742,6 +743,7 @@ struct Context {
   } arg;
 
   std::vector<std::string_view> cmdline_args;
+  u32 output_type = MH_EXECUTE;
 
   bool has_error = false;
 

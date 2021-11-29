@@ -193,6 +193,17 @@ static std::vector<u8> create_data_in_code_cmd(Context &ctx) {
   return buf;
 }
 
+static std::vector<u8> create_id_dylib_cmd(Context &ctx) {
+  std::vector<u8> buf(sizeof(DylibCommand) + ctx.arg.output.size() + 1);
+  DylibCommand &cmd = *(DylibCommand *)buf.data();
+
+  cmd.cmd = LC_ID_DYLIB;
+  cmd.cmdsize = buf.size();
+  cmd.nameoff = sizeof(cmd);
+  write_string(buf.data() + sizeof(cmd), ctx.arg.output);
+  return buf;
+}
+
 static std::vector<u8> create_code_signature_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(LinkEditDataCommand));
   LinkEditDataCommand &cmd = *(LinkEditDataCommand *)buf.data();
@@ -239,11 +250,9 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   vec.push_back(create_dyld_info_only_cmd(ctx));
   vec.push_back(create_symtab_cmd(ctx));
   vec.push_back(create_dysymtab_cmd(ctx));
-  vec.push_back(create_dylinker_cmd(ctx));
   vec.push_back(create_uuid_cmd(ctx));
   vec.push_back(create_build_version_cmd(ctx));
   vec.push_back(create_source_version_cmd(ctx));
-  vec.push_back(create_main_cmd(ctx));
   vec.push_back(create_function_starts_cmd(ctx));
 
   for (DylibFile *dylib : ctx.dylibs)
@@ -254,6 +263,18 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
 
   if (!ctx.data_in_code.contents.empty())
     vec.push_back(create_data_in_code_cmd(ctx));
+
+  switch (ctx.output_type) {
+  case MH_EXECUTE:
+    vec.push_back(create_dylinker_cmd(ctx));
+    vec.push_back(create_main_cmd(ctx));
+    break;
+  case MH_DYLIB:
+    vec.push_back(create_id_dylib_cmd(ctx));
+    break;
+  default:
+    unreachable();
+  }
 
   if (ctx.arg.adhoc_codesign)
     vec.push_back(create_code_signature_cmd(ctx));
@@ -286,13 +307,16 @@ void OutputMachHeader::copy_buf(Context &ctx) {
   mhdr.magic = 0xfeedfacf;
   mhdr.cputype = CPU_TYPE_X86_64;
   mhdr.cpusubtype = CPU_SUBTYPE_X86_64_ALL;
-  mhdr.filetype = MH_EXECUTE;
+  mhdr.filetype = ctx.output_type;
   mhdr.ncmds = ncmds;
   mhdr.sizeofcmds = cmds.size();
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 
   if (has_tlv(ctx))
     mhdr.flags |= MH_HAS_TLV_DESCRIPTORS;
+
+  if (ctx.output_type == MH_DYLIB)
+    mhdr.flags |= MH_NO_REEXPORTED_DYLIBS;
 
   write_vector(buf + sizeof(mhdr), cmds);
 }
@@ -659,7 +683,12 @@ i64 ExportEncoder::finish() {
     return a.name < b.name;
   });
 
-  root = construct_trie(entries, 0);
+  TrieNode trie = construct_trie(entries, 0);
+
+  if (trie.prefix.empty())
+    root = std::move(trie);
+  else
+    root.children.push_back(std::move(trie));
 
   i64 size = set_offset(root, 0);
   for (;;) {

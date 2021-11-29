@@ -5,9 +5,19 @@ namespace mold::macho {
 static std::vector<Subsection *> collect_root_set(Context &ctx) {
   std::vector<Subsection *> rootset;
 
-  if (Symbol *sym = intern(ctx, ctx.arg.entry))
-    if (sym->subsec)
+  auto mark = [&](Symbol *sym) {
+    if (sym && sym->subsec)
       rootset.push_back(sym->subsec);
+  };
+
+  mark(intern(ctx, ctx.arg.entry));
+
+  if (ctx.output_type == MH_DYLIB)
+    for (ObjectFile *file : ctx.objs)
+      for (Symbol *sym : file->syms)
+        if (sym->file == file && sym->is_extern)
+          mark(sym);
+
   return rootset;
 }
 
