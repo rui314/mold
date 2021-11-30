@@ -1,5 +1,7 @@
 #include "mold.h"
 
+#include <sys/stat.h>
+
 namespace mold {
 
 std::string get_current_dir() {
@@ -14,6 +16,13 @@ std::string get_realpath(std::string_view path) {
   if (!realpath(std::string(path).c_str(), buf))
     return std::string(path);
   return buf;
+}
+
+bool path_is_dir(std::string_view path) {
+  struct stat st;
+  if (stat(std::string(path).c_str(), &st) == -1)
+    return false;
+  return st.st_mode & S_IFDIR;
 }
 
 // Returns the directory part of a given path.

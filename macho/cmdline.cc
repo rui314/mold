@@ -231,38 +231,39 @@ void parse_nonpositional_args(Context &ctx,
     }
   }
 
-  auto add_library_path = [&](std::string path) {
+  auto add_search_path = [&](std::vector<std::string> &vec, std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
-      ctx.arg.library_paths.push_back(path);
-    } else {
-      for (std::string &dir : ctx.arg.syslibroot)
-        ctx.arg.library_paths.push_back(path_clean(dir + "/" + path));
+      if (path_is_dir(path))
+        vec.push_back(path);
+      return;
     }
+
+    bool found = false;
+    for (std::string &dir : ctx.arg.syslibroot) {
+      std::string str = path_clean(dir + "/" + path);
+      if (path_is_dir(str)) {
+        vec.push_back(str);
+        found = true;
+      }
+    }
+    if (!found && path_is_dir(path))
+      vec.push_back(path);
   };
 
   for (std::string &path : library_paths)
-    add_library_path(path);
+    add_search_path(ctx.arg.library_paths, path);
 
   if (!nostdlib) {
-    add_library_path("/usr/lib");
-    add_library_path("/usr/local/lib");
+    add_search_path(ctx.arg.library_paths, "/usr/lib");
+    add_search_path(ctx.arg.library_paths, "/usr/local/lib");
   }
 
-  auto add_framework_path = [&](std::string path) {
-    if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
-      ctx.arg.framework_paths.push_back(path);
-    } else {
-      for (std::string &dir : ctx.arg.syslibroot)
-        ctx.arg.framework_paths.push_back(path_clean(dir + "/" + path));
-    }
-  };
-
   for (std::string &path : framework_paths)
-    add_framework_path(path);
+    add_search_path(ctx.arg.framework_paths, path);
 
   if (!nostdlib) {
-    add_framework_path("/Library/Frameworks");
-    add_framework_path("/System/Library/Frameworks");
+    add_search_path(ctx.arg.framework_paths, "/Library/Frameworks");
+    add_search_path(ctx.arg.framework_paths, "/System/Library/Frameworks");
   }
 }
 
