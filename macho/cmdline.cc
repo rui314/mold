@@ -35,6 +35,7 @@ Options:
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
   -map <FILE>                 Write map file to a given file
+  -needed-l<LIB>              Search for a given library
   -no_deduplicate             Ignored
   -o <FILE>                   Set output filename
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
@@ -128,7 +129,7 @@ void parse_nonpositional_args(Context &ctx,
       if (read_arg(name))
         return true;
       if (args[i].starts_with(name)) {
-        arg = args[i].substr(2);
+        arg = args[i].substr(name.size());
         i++;
         return true;
       }
@@ -203,6 +204,8 @@ void parse_nonpositional_args(Context &ctx,
       remaining.push_back("-l" + std::string(arg));
     } else if (read_arg("-map")) {
       ctx.arg.map = arg;
+    } else if (read_joined("-needed-l")) {
+      remaining.push_back("-l" + std::string(arg));
     } else if (read_flag("-no_deduplicate")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
