@@ -139,8 +139,10 @@ void Subsection::scan_relocations(Context &ctx) {
       break;
     }
 
-    if (sym->file && sym->file->is_dylib)
+    if (sym->file && sym->file->is_dylib) {
       sym->flags |= NEEDS_STUB;
+      ((DylibFile *)sym->file)->is_needed = true;
+    }
   }
 }
 

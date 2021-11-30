@@ -249,7 +249,8 @@ strip_universal_header(Context &ctx, MappedFile<Context> *mf) {
   Fatal(ctx) << mf->name << ": fat file contains no matching file";
 }
 
-static void read_file(Context &ctx, MappedFile<Context> *mf) {
+static void read_file(Context &ctx, MappedFile<Context> *mf,
+                      bool is_needed = false) {
   if (get_file_type(mf) == FileType::MACH_UNIVERSAL)
     mf = strip_universal_header(ctx, mf);
 
@@ -257,6 +258,8 @@ static void read_file(Context &ctx, MappedFile<Context> *mf) {
   case FileType::TAPI:
   case FileType::MACH_DYLIB:
     ctx.dylibs.push_back(DylibFile::create(ctx, mf));
+    if (is_needed || !ctx.arg.dead_strip_dylibs)
+      ctx.dylibs.back()->is_needed = true;
     break;
   case FileType::MACH_OBJ:
     ctx.objs.push_back(ObjectFile::create(ctx, mf, ""));
@@ -314,6 +317,12 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
       if (!mf)
         Fatal(ctx) << "library not found: " << args[0];
       read_file(ctx, mf);
+      args = args.subspan(1);
+    } else if (args[0].starts_with("-needed-l")) {
+      MappedFile<Context> *mf = find_library(ctx, args[0].substr(9));
+      if (!mf)
+        Fatal(ctx) << "library not found: " << args[0];
+      read_file(ctx, mf, true);
       args = args.subspan(1);
     } else {
       read_file(ctx, MappedFile<Context>::must_open(ctx, args[0]));
@@ -409,6 +418,9 @@ int main(int argc, char **argv) {
   for (ObjectFile *file : ctx.objs)
     for (std::unique_ptr<Subsection > &subsec : file->subsections)
       subsec->scan_relocations(ctx);
+
+  if (ctx.arg.dead_strip_dylibs)
+    erase(ctx.dylibs, [](DylibFile *file) { return !file->is_needed; });
 
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);

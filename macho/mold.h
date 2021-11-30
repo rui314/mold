@@ -113,6 +113,7 @@ public:
 
   std::string_view install_name;
   i64 dylib_idx = 0;
+  std::atomic_bool is_needed = false;
 
 private:
   void parse_dylib(Context &ctx);
@@ -721,6 +722,7 @@ struct Context {
     bool ObjC = false;
     bool adhoc_codesign = false;
     bool dead_strip = true;
+    bool dead_strip_dylibs = false;
     bool deduplicate = true;
     bool demangle = false;
     bool dylib = false;

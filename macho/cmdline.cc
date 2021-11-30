@@ -22,6 +22,7 @@ Options:
     -no_adhoc_codesign
   -arch <ARCH_NAME>           Specify target architecture
   -dead_strip                 Remove unreachable functions and data
+  -dead_strip_dylibs          Remove unreachable dylibs from dependencies
   -demangle                   Demangle C++ symbols in log messages (default)
   -dylib                      Produce a dynamic library
   -dynamic                    Link against dylibs (default)
@@ -177,6 +178,8 @@ void parse_nonpositional_args(Context &ctx,
                read_flag("--color-diagnostics")) {
     } else if (read_flag("-dead_strip")) {
       ctx.arg.dead_strip = true;
+    } else if (read_flag("-dead_strip_dylibs")) {
+      ctx.arg.dead_strip_dylibs = true;
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag("-dylib")) {
@@ -205,7 +208,7 @@ void parse_nonpositional_args(Context &ctx,
     } else if (read_arg("-map")) {
       ctx.arg.map = arg;
     } else if (read_joined("-needed-l")) {
-      remaining.push_back("-l" + std::string(arg));
+      remaining.push_back("-needed-l" + std::string(arg));
     } else if (read_flag("-no_deduplicate")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;

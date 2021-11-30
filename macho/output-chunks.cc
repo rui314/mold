@@ -830,16 +830,15 @@ void OutputSymtabSection::compute_size(Context &ctx) {
 
   for (DylibFile *dylib : ctx.dylibs) {
     for (Symbol *sym : dylib->syms) {
-      if (sym && sym->file == dylib) {
-        if (sym->stub_idx != -1 || sym->got_idx != -1) {
-          undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
+      if (sym && sym->file == dylib &&
+          (sym->stub_idx != -1 || sym->got_idx != -1)) {
+        undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
 
-          if (sym->stub_idx != -1)
-            ctx.indir_symtab.stubs.push_back({sym, idx});
-          else
-            ctx.indir_symtab.gots.push_back({sym, idx});
-          idx++;
-        }
+        if (sym->stub_idx != -1)
+          ctx.indir_symtab.stubs.push_back({sym, idx});
+        else
+          ctx.indir_symtab.gots.push_back({sym, idx});
+        idx++;
       }
     }
   }
