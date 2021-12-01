@@ -19,10 +19,11 @@
 
 namespace mold::macho {
 
-class MemoryMappedOutputFile : public OutputFile {
+template <typename E>
+class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile(path, filesize, true) {
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<E>(path, filesize, true) {
     std::string dir(path_dirname(path));
     output_tmpfile = (char *)save_string(ctx, dir + "/.mold-XXXXXX").data();
 
@@ -35,47 +36,49 @@ public:
     if (fchmod(fd, perm) == -1)
       Fatal(ctx) << "fchmod failed";
 
-    buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (buf == MAP_FAILED)
+    this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, fd, 0);
+    if (this->buf == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
     ::close(fd);
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
-    munmap(buf, filesize);
-    if (rename(output_tmpfile, path.c_str()) == -1)
-      Fatal(ctx) << path << ": rename failed: " << errno_string();
+    munmap(this->buf, this->filesize);
+    if (rename(output_tmpfile, this->path.c_str()) == -1)
+      Fatal(ctx) << this->path << ": rename failed: " << errno_string();
     output_tmpfile = nullptr;
   }
 };
 
-class MallocOutputFile : public OutputFile {
+template <typename E>
+class MallocOutputFile : public OutputFile<E> {
 public:
-  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile(path, filesize, false), perm(perm) {
-    buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (buf == MAP_FAILED)
+  MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<E>(path, filesize, false), perm(perm) {
+    this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (this->buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << errno_string();
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
-    if (path == "-") {
-      fwrite(buf, filesize, 1, stdout);
+    if (this->path == "-") {
+      fwrite(this->buf, this->filesize, 1, stdout);
       fclose(stdout);
       return;
     }
 
-    i64 fd = ::open(path.c_str(), O_RDWR | O_CREAT, perm);
+    i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
     if (fd == -1)
-      Fatal(ctx) << "cannot open " << path << ": " << errno_string();
+      Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
 
     FILE *fp = fdopen(fd, "w");
-    fwrite(buf, filesize, 1, fp);
+    fwrite(this->buf, this->filesize, 1, fp);
     fclose(fp);
   }
 
@@ -83,8 +86,9 @@ private:
   i64 perm;
 };
 
-std::unique_ptr<OutputFile>
-OutputFile::open(Context &ctx, std::string path, i64 filesize, i64 perm) {
+template <typename E>
+std::unique_ptr<OutputFile<E>>
+OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -101,10 +105,15 @@ OutputFile::open(Context &ctx, std::string path, i64 filesize, i64 perm) {
 
   std::unique_ptr<OutputFile> file;
   if (is_special)
-    file = std::make_unique<MallocOutputFile>(ctx, path, filesize, perm);
+    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize, perm);
   else
-    file = std::make_unique<MemoryMappedOutputFile>(ctx, path, filesize, perm);
+    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize, perm);
   return file;
 }
+
+#define INSTANTIATE(E)                          \
+  template class OutputFile<E>
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

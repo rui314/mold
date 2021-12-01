@@ -4,15 +4,19 @@
 
 namespace mold::macho {
 
-std::ostream &operator<<(std::ostream &out, const InputSection &sec) {
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const InputSection<E> &sec) {
   out << sec.file << "(" << sec.hdr.get_segname() << ","
       << sec.hdr.get_sectname() << ")";
   return out;
 }
 
-InputSection::InputSection(Context &ctx, ObjectFile &file, const MachSection &hdr)
+template <typename E>
+InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
+                              const MachSection &hdr)
   : file(file), hdr(hdr),
-    osec(*OutputSection::get_instance(ctx, hdr.get_segname(), hdr.get_sectname())) {
+    osec(*OutputSection<E>::get_instance(ctx, hdr.get_segname(),
+                                         hdr.get_sectname())) {
   if (hdr.type != S_ZEROFILL)
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
 }
@@ -41,8 +45,9 @@ static i64 read_addend(u8 *buf, const MachRel &r) {
   }
 }
 
-static Relocation read_reloc(Context &ctx, ObjectFile &file,
-                             const MachSection &hdr, MachRel r) {
+template <typename E>
+static Relocation<E> read_reloc(Context<E> &ctx, ObjectFile<E> &file,
+                                const MachSection &hdr, MachRel r) {
   if (r.p2size != 2 && r.p2size != 3)
     Fatal(ctx) << file << ": invalid r.p2size: " << (u32)r.p2size;
 
@@ -55,7 +60,7 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   }
 
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
-  Relocation rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
+  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
   i64 addend = read_addend(buf, r);
 
   if (r.is_extern) {
@@ -70,7 +75,7 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   else
     addr = addend;
 
-  Subsection *target = file.find_subsection(ctx, addr);
+  Subsection<E> *target = file.find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
@@ -79,7 +84,8 @@ static Relocation read_reloc(Context &ctx, ObjectFile &file,
   return rel;
 }
 
-void InputSection::parse_relocations(Context &ctx) {
+template <typename E>
+void InputSection<E>::parse_relocations(Context<E> &ctx) {
   rels.reserve(hdr.nreloc);
 
   // Parse mach-o relocations to fill `rels` vector
@@ -88,27 +94,27 @@ void InputSection::parse_relocations(Context &ctx) {
     rels.push_back(read_reloc(ctx, file, hdr, rel[i]));
 
   // Sort `rels` vector
-  sort(rels, [](const Relocation &a, const Relocation &b) {
+  sort(rels, [](const Relocation<E> &a, const Relocation<E> &b) {
     return a.offset < b.offset;
   });
 
   // Find subsections for this section
   auto begin = std::lower_bound(
       file.subsections.begin(), file.subsections.end(), hdr.addr,
-      [](std::unique_ptr<Subsection> &subsec, u32 addr) {
+      [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
     return subsec->input_addr < addr;
   });
 
   auto end = std::lower_bound(
       begin, file.subsections.end(), hdr.addr + hdr.size,
-      [](std::unique_ptr<Subsection> &subsec, u32 addr) {
+      [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
     return subsec->input_addr < addr;
   });
 
   // Assign each subsection a group of relocations
   i64 i = 0;
   for (auto it = begin; it < end; it++) {
-    Subsection &subsec = **it;
+    Subsection<E> &subsec = **it;
     subsec.rel_offset = i;
     while (i < rels.size() &&
            rels[i].offset < subsec.input_offset + subsec.input_size) {
@@ -119,9 +125,10 @@ void InputSection::parse_relocations(Context &ctx) {
   }
 }
 
-void Subsection::scan_relocations(Context &ctx) {
-  for (Relocation &rel : get_rels()) {
-    Symbol *sym = rel.sym;
+template <typename E>
+void Subsection<E>::scan_relocations(Context<E> &ctx) {
+  for (Relocation<E> &rel : get_rels()) {
+    Symbol<E> *sym = rel.sym;
     if (!sym)
       continue;
 
@@ -141,13 +148,14 @@ void Subsection::scan_relocations(Context &ctx) {
 
     if (sym->file && sym->file->is_dylib) {
       sym->flags |= NEEDS_STUB;
-      ((DylibFile *)sym->file)->is_needed = true;
+      ((DylibFile<E> *)sym->file)->is_needed = true;
     }
   }
 }
 
-void Subsection::apply_reloc(Context &ctx, u8 *buf) {
-  for (const Relocation &rel : get_rels()) {
+template <typename E>
+void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
+  for (const Relocation<E> &rel : get_rels()) {
     if (rel.sym && !rel.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *rel.sym;
       continue;
@@ -210,5 +218,11 @@ void Subsection::apply_reloc(Context &ctx, u8 *buf) {
     };
   }
 }
+
+#define INSTANTIATE(E)                          \
+  template class InputSection<E>;               \
+  template class Subsection<E>
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

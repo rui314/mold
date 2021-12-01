@@ -20,13 +20,14 @@ split_string(std::string_view str, char sep) {
   return {str.substr(0, pos), str.substr(pos + 1)};
 }
 
-static void create_internal_file(Context &ctx) {
-  ObjectFile *obj = new ObjectFile;
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile>(obj));
+template <typename E>
+static void create_internal_file(Context<E> &ctx) {
+  ObjectFile<E> *obj = new ObjectFile<E>;
+  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   ctx.objs.push_back(obj);
 
   auto add = [&](std::string_view name) {
-    Symbol *sym = intern(ctx, name);
+    Symbol<E> *sym = intern(ctx, name);
     sym->file = obj;
     obj->syms.push_back(sym);
     return sym;
@@ -36,7 +37,7 @@ static void create_internal_file(Context &ctx) {
 
   switch (ctx.output_type) {
   case MH_EXECUTE: {
-    Symbol *sym = add("__mh_execute_header");
+    Symbol<E> *sym = add("__mh_execute_header");
     sym->is_extern = true;
     sym->referenced_dynamically = true;
     sym->value = ctx.arg.pagezero_size;
@@ -50,8 +51,9 @@ static void create_internal_file(Context &ctx) {
   }
 }
 
-static bool compare_segments(const std::unique_ptr<OutputSegment> &a,
-                             const std::unique_ptr<OutputSegment> &b) {
+template <typename E>
+static bool compare_segments(const std::unique_ptr<OutputSegment<E>> &a,
+                             const std::unique_ptr<OutputSegment<E>> &b) {
   // We want to sort output segments in the following order:
   // __TEXT, __DATA_CONST, __DATA, <other segments>, __LINKEDIT
   auto get_rank = [](std::string_view name) {
@@ -76,7 +78,8 @@ static bool compare_segments(const std::unique_ptr<OutputSegment> &a,
   return na < nb;
 }
 
-static bool compare_chunks(const Chunk *a, const Chunk *b) {
+template <typename E>
+static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
   assert(a->hdr.get_segname() == b->hdr.get_segname());
 
   if ((a->hdr.type == S_ZEROFILL) != (b->hdr.type == S_ZEROFILL))
@@ -116,7 +119,7 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
     "__code_signature",
   };
 
-  auto get_rank = [](const Chunk *chunk) -> i64 {
+  auto get_rank = [](const Chunk<E> *chunk) -> i64 {
     std::string_view name = chunk->hdr.get_sectname();
     i64 i = 0;
     for (; i < sizeof(rank) / sizeof(rank[0]); i++)
@@ -132,32 +135,34 @@ static bool compare_chunks(const Chunk *a, const Chunk *b) {
   return ra < rb;
 }
 
-static void create_synthetic_chunks(Context &ctx) {
-  for (ObjectFile *file : ctx.objs)
-    for (std::unique_ptr<Subsection> &subsec : file->subsections)
+template <typename E>
+static void create_synthetic_chunks(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
       subsec->isec.osec.add_subsec(subsec.get());
 
-  for (Chunk *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk != ctx.data && chunk->is_regular &&
-        ((OutputSection *)chunk)->members.empty())
+        ((OutputSection<E> *)chunk)->members.empty())
       continue;
 
-    OutputSegment *seg =
-      OutputSegment::get_instance(ctx, chunk->hdr.get_segname());
+    OutputSegment<E> *seg =
+      OutputSegment<E>::get_instance(ctx, chunk->hdr.get_segname());
     seg->chunks.push_back(chunk);
   }
 
-  sort(ctx.segments, compare_segments);
+  sort(ctx.segments, compare_segments<E>);
 
-  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
-    sort(seg->chunks, compare_chunks);
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+    sort(seg->chunks, compare_chunks<E>);
 }
 
-static void export_symbols(Context &ctx) {
+template <typename E>
+static void export_symbols(Context<E> &ctx) {
   ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
 
-  for (ObjectFile *file : ctx.objs) {
-    for (Symbol *sym : file->syms) {
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (Symbol<E> *sym : file->syms) {
       if (sym && sym->file == file) {
         if (sym->flags & NEEDS_GOT)
           ctx.got.add(ctx, sym);
@@ -167,8 +172,8 @@ static void export_symbols(Context &ctx) {
     }
   }
 
-  for (DylibFile *file : ctx.dylibs) {
-    for (Symbol *sym : file->syms) {
+  for (DylibFile<E> *file : ctx.dylibs) {
+    for (Symbol<E> *sym : file->syms) {
       if (!sym)
         continue;
 
@@ -183,17 +188,18 @@ static void export_symbols(Context &ctx) {
   }
 }
 
-static i64 assign_offsets(Context &ctx) {
+template <typename E>
+static i64 assign_offsets(Context<E> &ctx) {
   i64 sect_idx = 1;
-  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
-    for (Chunk *chunk : seg->chunks)
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+    for (Chunk<E> *chunk : seg->chunks)
       if (!chunk->is_hidden)
         chunk->sect_idx = sect_idx++;
 
   i64 fileoff = 0;
   i64 vmaddr = ctx.arg.pagezero_size;
 
-  for (std::unique_ptr<OutputSegment> &seg : ctx.segments) {
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
     seg->set_offset(ctx, fileoff, vmaddr);
     fileoff += seg->cmd.filesize;
     vmaddr += seg->cmd.vmsize;
@@ -201,12 +207,14 @@ static i64 assign_offsets(Context &ctx) {
   return fileoff;
 }
 
-static void fix_synthetic_symbol_values(Context &ctx) {
+template <typename E>
+static void fix_synthetic_symbol_values(Context<E> &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
   intern(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
 }
 
-MappedFile<Context> *find_framework(Context &ctx, std::string name) {
+template <typename E>
+MappedFile<Context<E>> *find_framework(Context<E> &ctx, std::string name) {
   std::string suffix;
   std::tie(name, suffix) = split_string(name, ',');
 
@@ -214,31 +222,33 @@ MappedFile<Context> *find_framework(Context &ctx, std::string name) {
     path = get_realpath(path + "/" + name + ".framework/" + name);
 
     if (!suffix.empty())
-      if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path + suffix))
+      if (auto *mf = MappedFile<Context<E>>::open(ctx, path + suffix))
         return mf;
 
-    if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path + ".tbd"))
+    if (auto *mf = MappedFile<Context<E>>::open(ctx, path + ".tbd"))
       return mf;
 
-    if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
+    if (auto *mf = MappedFile<Context<E>>::open(ctx, path))
       return mf;
   }
   Fatal(ctx) << "-framework not found: " << name;
 }
 
-MappedFile<Context> *find_library(Context &ctx, std::string name) {
+template <typename E>
+MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
   for (std::string dir : ctx.arg.library_paths) {
     for (std::string ext : {".tbd", ".dylib", ".a"}) {
       std::string path = dir + "/lib" + name + ext;
-      if (MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path))
+      if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
         return mf;
     }
   }
   return nullptr;
 }
 
-static MappedFile<Context> *
-strip_universal_header(Context &ctx, MappedFile<Context> *mf) {
+template <typename E>
+static MappedFile<Context<E>> *
+strip_universal_header(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   FatHeader &hdr = *(FatHeader *)mf->data;
   assert(hdr.magic == FAT_MAGIC);
 
@@ -249,7 +259,8 @@ strip_universal_header(Context &ctx, MappedFile<Context> *mf) {
   Fatal(ctx) << mf->name << ": fat file contains no matching file";
 }
 
-static void read_file(Context &ctx, MappedFile<Context> *mf,
+template <typename E>
+static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       bool is_needed = false) {
   if (get_file_type(mf) == FileType::MACH_UNIVERSAL)
     mf = strip_universal_header(ctx, mf);
@@ -257,17 +268,17 @@ static void read_file(Context &ctx, MappedFile<Context> *mf,
   switch (get_file_type(mf)) {
   case FileType::TAPI:
   case FileType::MACH_DYLIB:
-    ctx.dylibs.push_back(DylibFile::create(ctx, mf));
+    ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
     if (is_needed || !ctx.arg.dead_strip_dylibs)
       ctx.dylibs.back()->is_needed = true;
     break;
   case FileType::MACH_OBJ:
-    ctx.objs.push_back(ObjectFile::create(ctx, mf, ""));
+    ctx.objs.push_back(ObjectFile<E>::create(ctx, mf, ""));
     break;
   case FileType::AR:
-    for (MappedFile<Context> *child : read_archive_members(ctx, mf))
+    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
       if (get_file_type(child) == FileType::MACH_OBJ)
-        ctx.objs.push_back(ObjectFile::create(ctx, child, mf->name));
+        ctx.objs.push_back(ObjectFile<E>::create(ctx, child, mf->name));
     break;
   default:
     break;
@@ -275,7 +286,9 @@ static void read_file(Context &ctx, MappedFile<Context> *mf,
   }
 }
 
-static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
+template <typename E>
+static std::vector<std::string>
+read_filelist(Context<E> &ctx, std::string arg) {
   std::string path;
   std::string dir;
 
@@ -286,7 +299,7 @@ static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
     path = arg;
   }
 
-  MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path);
+  MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
   if (!mf)
     Fatal(ctx) << "-filepath: cannot open " << path;
 
@@ -299,11 +312,12 @@ static std::vector<std::string> read_filelist(Context &ctx, std::string arg) {
   return vec;
 }
 
-static void read_input_files(Context &ctx, std::span<std::string> args) {
+template <typename E>
+static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   while (!args.empty()) {
     if (args[0].starts_with("-filelist")) {
       for (std::string &path : read_filelist(ctx, args[1])) {
-        MappedFile<Context> *mf = MappedFile<Context>::open(ctx, path);
+        MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
         if (!mf)
           Fatal(ctx) << "-filepath " << args[1] << ": cannot open file: " << path;
         read_file(ctx, mf);
@@ -314,21 +328,22 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
       read_file(ctx, find_framework(ctx, args[1]), needed);
       args = args.subspan(2);
     } else if (args[0] == "-l" || args[0] == "-needed-l") {
-      MappedFile<Context> *mf = find_library(ctx, args[1]);
+      MappedFile<Context<E>> *mf = find_library(ctx, args[1]);
       if (!mf)
         Fatal(ctx) << "library not found: -l" << args[1];
       bool needed = (args[0] == "-needed-l");
       read_file(ctx, mf, needed);
       args = args.subspan(2);
     } else {
-      read_file(ctx, MappedFile<Context>::must_open(ctx, args[0]));
+      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, args[0]));
       args = args.subspan(1);
     }
   }
 }
 
-int main(int argc, char **argv) {
-  Context ctx;
+template <typename E>
+static int do_main(int argc, char **argv) {
+  Context<E> ctx;
 
   if (argc > 1 && std::string_view(argv[1]) == "-dump") {
     if (argc != 3)
@@ -346,40 +361,40 @@ int main(int argc, char **argv) {
   read_input_files(ctx, file_args);
 
   i64 priority = 1;
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     file->priority = priority++;
-  for (DylibFile *dylib : ctx.dylibs)
+  for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->priority = priority++;
 
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
     ctx.dylibs[i]->dylib_idx = i + 1;
 
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     file->parse(ctx);
-  for (DylibFile *dylib : ctx.dylibs)
+  for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->parse(ctx);
 
   if (ctx.arg.ObjC)
-    for (ObjectFile *file : ctx.objs)
+    for (ObjectFile<E> *file : ctx.objs)
       if (!file->archive_name.empty() && file->is_objc_object(ctx))
         file->is_alive = true;
 
-  for (ObjectFile *file : ctx.objs) {
+  for (ObjectFile<E> *file : ctx.objs) {
     if (file->is_alive)
       file->resolve_regular_symbols(ctx);
     else
       file->resolve_lazy_symbols(ctx);
   }
 
-  std::vector<ObjectFile *> live_objs;
-  for (ObjectFile *file : ctx.objs)
+  std::vector<ObjectFile<E> *> live_objs;
+  for (ObjectFile<E> *file : ctx.objs)
     if (file->is_alive)
       live_objs.push_back(file);
 
   for (i64 i = 0; i < live_objs.size(); i++)
     append(live_objs, live_objs[i]->mark_live_objects(ctx));
 
-  for (DylibFile *dylib : ctx.dylibs)
+  for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
   if (ctx.output_type == MH_EXECUTE && !intern(ctx, ctx.arg.entry)->file)
@@ -387,17 +402,17 @@ int main(int argc, char **argv) {
 
   create_internal_file(ctx);
 
-  erase(ctx.objs, [](ObjectFile *file) { return !file->is_alive; });
-  erase(ctx.dylibs, [](DylibFile *file) { return !file->is_alive; });
+  erase(ctx.objs, [](ObjectFile<E> *file) { return !file->is_alive; });
+  erase(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_alive; });
 
   if (ctx.arg.trace) {
-    for (ObjectFile *file : ctx.objs)
+    for (ObjectFile<E> *file : ctx.objs)
       SyncOut(ctx) << *file;
-    for (DylibFile *file : ctx.dylibs)
+    for (DylibFile<E> *file : ctx.dylibs)
       SyncOut(ctx) << *file;
   }
 
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     file->convert_common_symbols(ctx);
 
   if (ctx.arg.dead_strip)
@@ -405,27 +420,27 @@ int main(int argc, char **argv) {
 
   create_synthetic_chunks(ctx);
 
-  for (ObjectFile *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs)
     file->check_duplicate_symbols(ctx);
 
   for (i64 i = 0; i < ctx.segments.size(); i++)
     ctx.segments[i]->seg_idx = i + 1;
 
-  for (ObjectFile *file : ctx.objs)
-    for (std::unique_ptr<Subsection > &subsec : file->subsections)
+  for (ObjectFile<E> *file : ctx.objs)
+    for (std::unique_ptr<Subsection<E> > &subsec : file->subsections)
       subsec->scan_relocations(ctx);
 
   if (ctx.arg.dead_strip_dylibs)
-    erase(ctx.dylibs, [](DylibFile *file) { return !file->is_needed; });
+    erase(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
 
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);
   fix_synthetic_symbol_values(ctx);
 
-  ctx.output_file = OutputFile::open(ctx, ctx.arg.output, output_size, 0777);
+  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
-  for (std::unique_ptr<OutputSegment> &seg : ctx.segments)
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     seg->copy_buf(ctx);
   ctx.code_sig.write_signature(ctx);
 
@@ -435,6 +450,10 @@ int main(int argc, char **argv) {
   if (!ctx.arg.map.empty())
     print_map(ctx);
   return 0;
+}
+
+int main(int argc, char **argv) {
+  return do_main<X86_64>(argc, argv);
 }
 
 }

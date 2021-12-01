@@ -168,8 +168,10 @@ static constexpr u32 S_ATTR_NO_TOC = 0x400000;
 static constexpr u32 S_ATTR_PURE_INSTRUCTIONS = 0x800000;
 
 static constexpr u32 CPU_TYPE_X86_64 = 0x1000007;
+static constexpr u32 CPU_TYPE_ARM64 = 0x1000012;
 
 static constexpr u32 CPU_SUBTYPE_X86_64_ALL = 3;
+static constexpr u32 CPU_SUBTYPE_ARM64_ALL = 0;
 
 static constexpr u32 REBASE_TYPE_POINTER = 1;
 static constexpr u32 REBASE_TYPE_TEXT_ABSOLUTE32 = 2;
@@ -653,6 +655,14 @@ struct CodeSignatureDirectory {
   ubig64 exec_seg_base;
   ubig64 exec_seg_limit;
   ubig64 exec_seg_flags;
+};
+
+struct X86_64 {
+  static constexpr u32 cputype = CPU_TYPE_X86_64;
+  static constexpr u32 cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+};
+
+struct AARCH64 {
 };
 
 } // namespace mold::macho

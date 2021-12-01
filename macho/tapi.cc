@@ -83,7 +83,8 @@ static std::optional<TextDylib> to_tbd(YamlNode &node) {
   return tbd;
 }
 
-static TextDylib squash(Context &ctx, std::span<TextDylib> tbds) {
+template <typename E>
+static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
   std::unordered_map<std::string_view, TextDylib> map;
 
   TextDylib main = std::move(tbds[0]);
@@ -104,7 +105,8 @@ static TextDylib squash(Context &ctx, std::span<TextDylib> tbds) {
   return main;
 }
 
-TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
+template <typename E>
+TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   std::string_view contents = mf->get_contents();
   std::variant<std::vector<YamlNode>, YamlError> res = parse_yaml(contents);
 
@@ -125,5 +127,10 @@ TextDylib parse_tbd(Context &ctx, MappedFile<Context> *mf) {
       vec.push_back(*dylib);
   return squash(ctx, vec);
 }
+
+#define INSTANTIATE(E)                                                  \
+  template TextDylib parse_tbd(Context<E> &, MappedFile<Context<E>> *);
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

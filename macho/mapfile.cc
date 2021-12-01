@@ -12,7 +12,8 @@ struct Sym {
   std::string_view name;
 };
 
-void print_map(Context &ctx) {
+template <typename E>
+void print_map(Context<E> &ctx) {
   std::ofstream out(ctx.arg.map.c_str());
   if (!out.is_open())
     Fatal(ctx) << "cannot open " << ctx.arg.map << ": " << errno_string();
@@ -24,11 +25,11 @@ void print_map(Context &ctx) {
   std::vector<Sym> syms;
 
   for (i64 i = 0; i < ctx.objs.size(); i++){
-    ObjectFile &file = *ctx.objs[i];
+    ObjectFile<E> &file = *ctx.objs[i];
 
     if (file.is_alive) {
       out << "[" << std::setw(3) << i << "] " << file << "\n";
-      for (Symbol *sym : file.syms)
+      for (Symbol<E> *sym : file.syms)
         if (sym->file == &file)
           syms.push_back({sym->get_addr(ctx), 0, (u32)i, sym->name});
     }
@@ -41,8 +42,8 @@ void print_map(Context &ctx) {
   out << "# Sections:\n"
       << "# Address       Size            Segment Section\n";
 
-  for (std::unique_ptr<OutputSegment> &seg : ctx.segments) {
-    for (Chunk *chunk : seg->chunks) {
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
+    for (Chunk<E> *chunk : seg->chunks) {
       if (!chunk->is_hidden) {
         out << "0x" << std::hex
             << std::setw(8) << std::setfill('0') << chunk->hdr.addr
@@ -69,5 +70,10 @@ void print_map(Context &ctx) {
         << "] " << sym.name << "\n";
   }
 }
+
+#define INSTANTIATE(E)                          \
+  template void print_map(Context<E> &)
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

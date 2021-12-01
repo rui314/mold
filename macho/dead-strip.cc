@@ -2,10 +2,11 @@
 
 namespace mold::macho {
 
-static std::vector<Subsection *> collect_root_set(Context &ctx) {
-  std::vector<Subsection *> rootset;
+template <typename E>
+static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
+  std::vector<Subsection<E> *> rootset;
 
-  auto mark = [&](Symbol *sym) {
+  auto mark = [&](Symbol<E> *sym) {
     if (sym && sym->subsec)
       rootset.push_back(sym->subsec);
   };
@@ -13,19 +14,20 @@ static std::vector<Subsection *> collect_root_set(Context &ctx) {
   mark(intern(ctx, ctx.arg.entry));
 
   if (ctx.output_type == MH_DYLIB)
-    for (ObjectFile *file : ctx.objs)
-      for (Symbol *sym : file->syms)
+    for (ObjectFile<E> *file : ctx.objs)
+      for (Symbol<E> *sym : file->syms)
         if (sym->file == file && sym->is_extern)
           mark(sym);
 
   return rootset;
 }
 
-static void visit(Context &ctx, Subsection &subsec) {
+template <typename E>
+static void visit(Context<E> &ctx, Subsection<E> &subsec) {
   if (subsec.is_alive.exchange(true))
     return;
 
-  for (Relocation &rel : subsec.get_rels()) {
+  for (Relocation<E> &rel : subsec.get_rels()) {
     if (rel.sym) {
       if (rel.sym->subsec)
         visit(ctx, *rel.sym->subsec);
@@ -34,18 +36,19 @@ static void visit(Context &ctx, Subsection &subsec) {
     }
   }
 
-  for (UnwindRecord &rec : subsec.get_unwind_records()) {
+  for (UnwindRecord<E> &rec : subsec.get_unwind_records()) {
     rec.is_alive = true;
     visit(ctx, *rec.subsec);
     if (rec.lsda)
       visit(ctx, *rec.lsda);
-    if (Symbol *sym = rec.personality; sym && sym->subsec)
+    if (Symbol<E> *sym = rec.personality; sym && sym->subsec)
       visit(ctx, *sym->subsec);
   }
 }
 
-static bool refers_live_subsection(Subsection &subsec) {
-  for (Relocation &rel : subsec.get_rels()) {
+template <typename E>
+static bool refers_live_subsection(Subsection<E> &subsec) {
+  for (Relocation<E> &rel : subsec.get_rels()) {
     if (rel.sym) {
       if (!rel.sym->subsec || rel.sym->subsec->is_alive)
         return true;
@@ -57,15 +60,16 @@ static bool refers_live_subsection(Subsection &subsec) {
   return false;
 }
 
-static void mark(Context &ctx, std::span<Subsection *> rootset) {
-  for (Subsection *subsec : rootset)
+template <typename E>
+static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
+  for (Subsection<E> *subsec : rootset)
     visit(ctx, *subsec);
 
   bool repeat;
   do {
     repeat = false;
-    for (ObjectFile *file : ctx.objs) {
-      for (std::unique_ptr<Subsection> &subsec : file->subsections) {
+    for (ObjectFile<E> *file : ctx.objs) {
+      for (std::unique_ptr<Subsection<E>> &subsec : file->subsections) {
         if ((subsec->isec.hdr.attr & S_ATTR_LIVE_SUPPORT) &&
             !subsec->is_alive &&
             refers_live_subsection(*subsec)) {
@@ -77,23 +81,30 @@ static void mark(Context &ctx, std::span<Subsection *> rootset) {
   } while (repeat);
 }
 
-static void sweep(Context &ctx) {
-  for (ObjectFile *file : ctx.objs) {
-    erase(file->subsections, [](const std::unique_ptr<Subsection> &subsec) {
+template <typename E>
+static void sweep(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs) {
+    erase(file->subsections, [](const std::unique_ptr<Subsection<E>> &subsec) {
       return !subsec->is_alive;
     });
   }
 
-  for (ObjectFile *file : ctx.objs)
-    for (Symbol *&sym : file->syms)
+  for (ObjectFile<E> *file : ctx.objs)
+    for (Symbol<E> *&sym : file->syms)
       if (sym->file == file && sym->subsec && !sym->subsec->is_alive)
         sym = nullptr;
 }
 
-void dead_strip(Context &ctx) {
-  std::vector<Subsection *> rootset = collect_root_set(ctx);
+template <typename E>
+void dead_strip(Context<E> &ctx) {
+  std::vector<Subsection<E> *> rootset = collect_root_set(ctx);
   mark(ctx, rootset);
   sweep(ctx);
 }
+
+#define INSTANTIATE(E)                          \
+  template void dead_strip(Context<E> &)
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

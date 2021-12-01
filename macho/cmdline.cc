@@ -50,7 +50,8 @@ Options:
   -t                          Print out each file the linker loads
   -v                          Report version information)";
 
-static i64 parse_platform(Context &ctx, std::string_view arg) {
+template <typename E>
+static i64 parse_platform(Context<E> &ctx, std::string_view arg) {
   static std::regex re(R"(\d+)", std::regex_constants::ECMAScript);
   if (std::regex_match(arg.begin(), arg.end(), re))
     return stoi(std::string(arg));
@@ -78,7 +79,8 @@ static i64 parse_platform(Context &ctx, std::string_view arg) {
   Fatal(ctx) << "unknown -platform_version name: " << arg;
 }
 
-static i64 parse_version(Context &ctx, std::string_view arg) {
+template <typename E>
+static i64 parse_version(Context<E> &ctx, std::string_view arg) {
   static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
                        std::regex_constants::ECMAScript);
   std::cmatch m;
@@ -91,7 +93,8 @@ static i64 parse_version(Context &ctx, std::string_view arg) {
   return (major << 16) | (minor << 8) | patch;
 }
 
-void parse_nonpositional_args(Context &ctx,
+template <typename E>
+void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string> &remaining) {
   std::vector<std::string_view> &args = ctx.cmdline_args;
   i64 i = 1;
@@ -290,5 +293,10 @@ void parse_nonpositional_args(Context &ctx,
     ctx.arg.pagezero_size = (ctx.output_type == MH_EXECUTE) ? 0x100000000 : 0;
   }
 }
+
+#define INSTANTIATE(E) \
+  template void parse_nonpositional_args(Context<E> &, std::vector<std::string> &)
+
+INSTANTIATE(X86_64);
 
 } // namespace mold::macho

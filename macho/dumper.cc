@@ -508,4 +508,4 @@ void dump_file(std::string path) {
   }
 }
 
-}
+} // namespace mold::macho
