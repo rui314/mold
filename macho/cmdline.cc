@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../cmdline.h"
 
+#include <optional>
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
