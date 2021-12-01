@@ -1246,7 +1246,7 @@ UnwindEncoder<E>::split_records(Context<E> &ctx,
     while (j < max_group_size && i + j < records.size() &&
            records[i + j].get_func_raddr(ctx) < end_addr)
       j++;
-    vec.push_back(std::span(records).subspan(i, j));
+    vec.push_back(records.subspan(i, j));
     i += j;
   }
   return vec;

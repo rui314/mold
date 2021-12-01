@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <span>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
 #include <unordered_map>
@@ -141,7 +142,7 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 template <typename E>
 class InputSection {
 public:
-  InputSection<E>(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr);
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr);
   void parse_relocations(Context<E> &ctx);
 
   ObjectFile<E> &file;
@@ -166,11 +167,12 @@ public:
   }
 
   std::span<UnwindRecord<E>> get_unwind_records() {
-    return std::span(isec.file.unwind_records).subspan(unwind_offset, nunwind);
+    return std::span<UnwindRecord<E>>(isec.file.unwind_records)
+      .subspan(unwind_offset, nunwind);
   }
 
   std::span<Relocation<E>> get_rels() const {
-    return std::span(isec.rels).subspan(rel_offset, nrels);
+    return std::span<Relocation<E>>(isec.rels).subspan(rel_offset, nrels);
   }
 
   void scan_relocations(Context<E> &ctx);
