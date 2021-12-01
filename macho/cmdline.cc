@@ -37,6 +37,8 @@ Options:
   -lto_library <FILE>         Ignored
   -map <FILE>                 Write map file to a given file
   -needed-l<LIB>              Search for a given library
+  -needed-framework <NAME>[,<SUFFIX>]
+                              Search for a given framework
   -no_deduplicate             Ignored
   -o <FILE>                   Set output filename
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
@@ -209,6 +211,9 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.map = arg;
     } else if (read_joined("-needed-l")) {
       remaining.push_back("-needed-l" + std::string(arg));
+    } else if (read_arg("-needed_framework")) {
+      remaining.push_back("-needed_framework");
+      remaining.push_back(std::string(arg));
     } else if (read_flag("-no_deduplicate")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;

@@ -312,6 +312,9 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
     } else if (args[0].starts_with("-framework")) {
       read_file(ctx, find_framework(ctx, args[1]));
       args = args.subspan(2);
+    } else if (args[0].starts_with("-needed_framework")) {
+      read_file(ctx, find_framework(ctx, args[1]), true);
+      args = args.subspan(2);
     } else if (args[0].starts_with("-l")) {
       MappedFile<Context> *mf = find_library(ctx, args[0].substr(2));
       if (!mf)
