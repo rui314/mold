@@ -309,24 +309,17 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
         read_file(ctx, mf);
       }
       args = args.subspan(2);
-    } else if (args[0].starts_with("-framework")) {
-      read_file(ctx, find_framework(ctx, args[1]));
+    } else if (args[0] == "-framework" || args[0] == "-needed_framework") {
+      bool needed = (args[0] == "-needed_framework");
+      read_file(ctx, find_framework(ctx, args[1]), needed);
       args = args.subspan(2);
-    } else if (args[0].starts_with("-needed_framework")) {
-      read_file(ctx, find_framework(ctx, args[1]), true);
-      args = args.subspan(2);
-    } else if (args[0].starts_with("-l")) {
-      MappedFile<Context> *mf = find_library(ctx, args[0].substr(2));
+    } else if (args[0] == "-l" || args[0] == "-needed-l") {
+      MappedFile<Context> *mf = find_library(ctx, args[1]);
       if (!mf)
         Fatal(ctx) << "library not found: " << args[0];
-      read_file(ctx, mf);
-      args = args.subspan(1);
-    } else if (args[0].starts_with("-needed-l")) {
-      MappedFile<Context> *mf = find_library(ctx, args[0].substr(9));
-      if (!mf)
-        Fatal(ctx) << "library not found: " << args[0];
-      read_file(ctx, mf, true);
-      args = args.subspan(1);
+      bool needed = (args[0] == "-needed-l");
+      read_file(ctx, mf, needed);
+      args = args.subspan(2);
     } else {
       read_file(ctx, MappedFile<Context>::must_open(ctx, args[0]));
       args = args.subspan(1);

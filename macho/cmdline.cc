@@ -206,11 +206,13 @@ void parse_nonpositional_args(Context &ctx,
       remaining.push_back(std::string(arg));
     } else if (read_arg("-lto_library")) {
     } else if (read_joined("-l")) {
-      remaining.push_back("-l" + std::string(arg));
+      remaining.push_back("-l");
+      remaining.push_back(std::string(arg));
     } else if (read_arg("-map")) {
       ctx.arg.map = arg;
     } else if (read_joined("-needed-l")) {
-      remaining.push_back("-needed-l" + std::string(arg));
+      remaining.push_back("-needed-l");
+      remaining.push_back(std::string(arg));
     } else if (read_arg("-needed_framework")) {
       remaining.push_back("-needed_framework");
       remaining.push_back(std::string(arg));
