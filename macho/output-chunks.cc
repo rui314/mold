@@ -17,7 +17,7 @@ std::ostream &operator<<(std::ostream &out, const Chunk &chunk) {
   return out;
 }
 
-static std::vector<u8> create_page_zero_cmd(Context &ctx) {
+static std::vector<u8> create_pagezero_cmd(Context &ctx) {
   std::vector<u8> buf(sizeof(SegmentCommand));
   SegmentCommand &cmd = *(SegmentCommand *)buf.data();
 
@@ -217,7 +217,9 @@ static std::vector<u8> create_code_signature_cmd(Context &ctx) {
 
 static std::pair<i64, std::vector<u8>> create_load_commands(Context &ctx) {
   std::vector<std::vector<u8>> vec;
-  vec.push_back(create_page_zero_cmd(ctx));
+
+  if (ctx.arg.pagezero_size)
+    vec.push_back(create_pagezero_cmd(ctx));
 
   auto append = [&](std::vector<u8> &buf, auto x) {
     i64 off = buf.size();

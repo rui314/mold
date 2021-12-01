@@ -98,6 +98,7 @@ void parse_nonpositional_args(Context &ctx,
   std::vector<std::string> framework_paths;
   std::vector<std::string> library_paths;
   bool nostdlib = false;
+  std::optional<i64> pagezero_size;
 
   while (i < args.size()) {
     std::string_view arg;
@@ -221,7 +222,7 @@ void parse_nonpositional_args(Context &ctx,
       ctx.arg.output = arg;
     } else if (read_arg("-pagezero_size")) {
       size_t pos;
-      ctx.arg.pagezero_size = std::stoi(std::string(arg), &pos, 16);
+      pagezero_size = std::stoi(std::string(arg), &pos, 16);
       if (pos != arg.size())
         Fatal(ctx) << "malformed -pagezero_size: " << arg;
     } else if (read_arg3("-platform_version")) {
@@ -277,6 +278,15 @@ void parse_nonpositional_args(Context &ctx,
   if (!nostdlib) {
     add_search_path(ctx.arg.framework_paths, "/Library/Frameworks");
     add_search_path(ctx.arg.framework_paths, "/System/Library/Frameworks");
+  }
+
+  if (pagezero_size.has_value()) {
+    if (ctx.output_type != MH_EXECUTE)
+      Error(ctx) << "-pagezero_size option can only be used when"
+                 << " linking a main executable";
+    ctx.arg.pagezero_size = *pagezero_size;
+  } else {
+    ctx.arg.pagezero_size = (ctx.output_type == MH_EXECUTE) ? 0x100000000 : 0;
   }
 }
 

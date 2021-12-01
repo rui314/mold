@@ -730,7 +730,7 @@ struct Context {
     bool fatal_warnings = false;
     bool trace = false;
     i64 headerpad = 256;
-    i64 pagezero_size = 0x100000000;
+    i64 pagezero_size = 0;
     i64 platform = PLATFORM_MACOS;
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;

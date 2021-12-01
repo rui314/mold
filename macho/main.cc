@@ -316,7 +316,7 @@ static void read_input_files(Context &ctx, std::span<std::string> args) {
     } else if (args[0] == "-l" || args[0] == "-needed-l") {
       MappedFile<Context> *mf = find_library(ctx, args[1]);
       if (!mf)
-        Fatal(ctx) << "library not found: " << args[0];
+        Fatal(ctx) << "library not found: -l" << args[1];
       bool needed = (args[0] == "-needed-l");
       read_file(ctx, mf, needed);
       args = args.subspan(2);
