@@ -114,6 +114,7 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
 #define INSTANTIATE(E)                          \
   template class OutputFile<E>
 
+INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
 
 } // namespace mold::macho

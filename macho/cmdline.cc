@@ -179,7 +179,11 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag("-no_adhoc_codesign")) {
       ctx.arg.adhoc_codesign = false;
     } else if (read_arg("-arch")) {
-      if (arg != "x86_64")
+      if (arg == "x86_64")
+        ctx.arg.arch = CPU_TYPE_X86_64;
+      else if (arg == "arm64")
+        ctx.arg.arch = CPU_TYPE_ARM64;
+      else
         Fatal(ctx) << "unknown -arch: " << arg;
     } else if (read_flag("-color-diagnostics") ||
                read_flag("--color-diagnostics")) {
@@ -297,6 +301,7 @@ void parse_nonpositional_args(Context<E> &ctx,
 #define INSTANTIATE(E) \
   template void parse_nonpositional_args(Context<E> &, std::vector<std::string> &)
 
+INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
 
 } // namespace mold::macho

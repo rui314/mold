@@ -131,6 +131,7 @@ TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 #define INSTANTIATE(E)                                                  \
   template TextDylib parse_tbd(Context<E> &, MappedFile<Context<E>> *);
 
+INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
 
 } // namespace mold::macho

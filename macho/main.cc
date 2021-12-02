@@ -254,7 +254,7 @@ strip_universal_header(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   FatArch *arch = (FatArch *)(mf->data + sizeof(hdr));
   for (i64 i = 0; i < hdr.nfat_arch; i++)
-    if (arch[i].cputype == CPU_TYPE_X86_64)
+    if (arch[i].cputype == E::cputype)
       return mf->slice(ctx, mf->name, arch[i].offset, arch[i].size);
   Fatal(ctx) << mf->name << ": fat file contains no matching file";
 }
@@ -358,6 +358,9 @@ static int do_main(int argc, char **argv) {
   std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
+  if (ctx.arg.arch == CPU_TYPE_X86_64)
+    return do_main<X86_64>(argc, argv);
+
   read_input_files(ctx, file_args);
 
   i64 priority = 1;
@@ -453,7 +456,7 @@ static int do_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  return do_main<X86_64>(argc, argv);
+  return do_main<ARM64>(argc, argv);
 }
 
 }

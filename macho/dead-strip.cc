@@ -105,6 +105,7 @@ void dead_strip(Context<E> &ctx) {
 #define INSTANTIATE(E)                          \
   template void dead_strip(Context<E> &)
 
+INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
 
 } // namespace mold::macho

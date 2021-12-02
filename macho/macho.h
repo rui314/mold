@@ -168,7 +168,7 @@ static constexpr u32 S_ATTR_NO_TOC = 0x400000;
 static constexpr u32 S_ATTR_PURE_INSTRUCTIONS = 0x800000;
 
 static constexpr u32 CPU_TYPE_X86_64 = 0x1000007;
-static constexpr u32 CPU_TYPE_ARM64 = 0x1000012;
+static constexpr u32 CPU_TYPE_ARM64 = 0x100000c;
 
 static constexpr u32 CPU_SUBTYPE_X86_64_ALL = 3;
 static constexpr u32 CPU_SUBTYPE_ARM64_ALL = 0;
@@ -305,6 +305,18 @@ static constexpr u32 PLATFORM_DRIVERKIT = 10;
 static constexpr u32 TOOL_CLANG = 1;
 static constexpr u32 TOOL_SWIFT = 2;
 static constexpr u32 TOOL_LD = 3;
+
+static constexpr u32 ARM64_RELOC_UNSIGNED = 0;
+static constexpr u32 ARM64_RELOC_SUBTRACTOR = 1;
+static constexpr u32 ARM64_RELOC_BRANCH26 = 2;
+static constexpr u32 ARM64_RELOC_PAGE21 = 3;
+static constexpr u32 ARM64_RELOC_PAGEOFF12 = 4;
+static constexpr u32 ARM64_RELOC_GOT_LOAD_PAGE21 = 5;
+static constexpr u32 ARM64_RELOC_GOT_LOAD_PAGEOFF12 = 6;
+static constexpr u32 ARM64_RELOC_POINTER_TO_GOT = 7;
+static constexpr u32 ARM64_RELOC_TLVP_LOAD_PAGE21 = 8;
+static constexpr u32 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 = 9;
+static constexpr u32 ARM64_RELOC_ADDEND = 10;
 
 static constexpr u32 X86_64_RELOC_UNSIGNED = 0;
 static constexpr u32 X86_64_RELOC_SIGNED = 1;
@@ -657,12 +669,14 @@ struct CodeSignatureDirectory {
   ubig64 exec_seg_flags;
 };
 
+struct ARM64 {
+  static constexpr u32 cputype = CPU_TYPE_ARM64;
+  static constexpr u32 cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+};
+
 struct X86_64 {
   static constexpr u32 cputype = CPU_TYPE_X86_64;
   static constexpr u32 cpusubtype = CPU_SUBTYPE_X86_64_ALL;
-};
-
-struct AARCH64 {
 };
 
 } // namespace mold::macho

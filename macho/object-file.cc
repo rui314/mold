@@ -602,6 +602,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   template class ObjectFile<E>;                                 \
   template class DylibFile<E>
 
+INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
 
 } // namespace mold::macho

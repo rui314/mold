@@ -191,6 +191,10 @@ public:
   std::atomic_bool is_alive = false;
 };
 
+template <typename E>
+Relocation<E> read_reloc(Context<E> &ctx, ObjectFile<E> &file,
+                         const MachSection &hdr, MachRel r);
+
 //
 // Symbol
 //
@@ -781,6 +785,7 @@ struct Context {
     bool dynamic = true;
     bool fatal_warnings = false;
     bool trace = false;
+    i64 arch = CPU_TYPE_ARM64;
     i64 headerpad = 256;
     i64 pagezero_size = 0;
     i64 platform = PLATFORM_MACOS;
@@ -856,6 +861,13 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const InputSection<E> &sec) {
+  out << sec.file << "(" << sec.hdr.get_segname() << ","
+      << sec.hdr.get_sectname() << ")";
+  return out;
+}
 
 template <typename E>
 u64 Subsection<E>::get_addr(Context<E> &ctx) const {
