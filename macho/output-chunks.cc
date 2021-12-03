@@ -563,7 +563,7 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
     enc.add(ctx.data_seg->seg_idx,
-            ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection<E>::ENTRY_SIZE -
+            ctx.lazy_symbol_ptr.hdr.addr + i * E::wordsize -
             ctx.data_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.got.syms)
@@ -686,8 +686,7 @@ void OutputLazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
   i64 seg_idx = ctx.data_seg->seg_idx;
   emit(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
 
-  i64 offset = ctx.lazy_symbol_ptr.hdr.addr +
-               sym.stub_idx * LazySymbolPtrSection<E>::ENTRY_SIZE -
+  i64 offset = ctx.lazy_symbol_ptr.hdr.addr + sym.stub_idx * E::wordsize -
                ctx.data_seg->cmd.vmaddr;
   encode_uleb(contents, offset);
 
@@ -1065,11 +1064,11 @@ void StubsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   syms.push_back(sym);
 
   i64 nsyms = syms.size();
-  this->hdr.size = nsyms * ENTRY_SIZE;
+  this->hdr.size = nsyms * E::stub_size;
 
   ctx.stub_helper.hdr.size =
-    StubHelperSection<E>::HEADER_SIZE + nsyms * StubHelperSection<E>::ENTRY_SIZE;
-  ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection<E>::ENTRY_SIZE;
+    E::stub_helper_hdr_size + nsyms * E::stub_helper_size;
+  ctx.lazy_symbol_ptr.hdr.size = nsyms * E::wordsize;
 }
 
 template <>
@@ -1080,12 +1079,11 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
-    assert(ENTRY_SIZE == 6);
+    assert(ARM64::stub_size == 6);
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
-      ctx.lazy_symbol_ptr.hdr.addr +
-      i * LazySymbolPtrSection<ARM64>::ENTRY_SIZE -
+      ctx.lazy_symbol_ptr.hdr.addr + i * ARM64::wordsize -
       (this->hdr.addr + i * 6 + 6);
   }
 }
@@ -1098,12 +1096,11 @@ void StubsSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
-    assert(ENTRY_SIZE == 6);
+    assert(X86_64::stub_size == 6);
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
-      ctx.lazy_symbol_ptr.hdr.addr +
-      i * LazySymbolPtrSection<X86_64>::ENTRY_SIZE -
+      ctx.lazy_symbol_ptr.hdr.addr + i * X86_64::wordsize -
       (this->hdr.addr + i * 6 + 6);
   }
 }
@@ -1337,7 +1334,7 @@ void GotSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->got_idx == -1);
   sym->got_idx = syms.size();
   syms.push_back(sym);
-  this->hdr.size = syms.size() * ENTRY_SIZE;
+  this->hdr.size = syms.size() * E::wordsize;
 }
 
 template <typename E>
@@ -1353,8 +1350,8 @@ void LazySymbolPtrSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
-    buf[i] = ctx.stub_helper.hdr.addr + StubHelperSection<E>::HEADER_SIZE +
-             i * StubHelperSection<E>::ENTRY_SIZE;
+    buf[i] = ctx.stub_helper.hdr.addr + E::stub_helper_hdr_size +
+             i * E::stub_helper_size;
 }
 
 template <typename E>
@@ -1362,7 +1359,7 @@ void ThreadPtrsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->tlv_idx == -1);
   sym->tlv_idx = syms.size();
   syms.push_back(sym);
-  this->hdr.size = syms.size() * ENTRY_SIZE;
+  this->hdr.size = syms.size() * E::wordsize;
 }
 
 template <typename E>

@@ -553,13 +553,11 @@ public:
     this->hdr.p2align = __builtin_ctz(2);
     this->hdr.type = S_SYMBOL_STUBS;
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
-    this->hdr.reserved2 = ENTRY_SIZE;
+    this->hdr.reserved2 = E::stub_size;
   }
 
   void add(Context<E> &ctx, Symbol<E> *sym);
   void copy_buf(Context<E> &ctx) override;
-
-  static constexpr i64 ENTRY_SIZE = 6;
 
   std::vector<Symbol<E> *> syms;
   std::vector<u32> bind_offsets;
@@ -575,9 +573,6 @@ public:
   }
 
   void copy_buf(Context<E> &ctx) override;
-
-  static constexpr i64 HEADER_SIZE = 16;
-  static constexpr i64 ENTRY_SIZE = 10;
 };
 
 template <typename E>
@@ -620,8 +615,6 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> syms;
-
-  static constexpr i64 ENTRY_SIZE = 8;
 };
 
 template <typename E>
@@ -634,8 +627,6 @@ public:
   }
 
   void copy_buf(Context<E> &ctx) override;
-
-  static constexpr i64 ENTRY_SIZE = 8;
 };
 
 template <typename E>
@@ -651,8 +642,6 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> syms;
-
-  static constexpr i64 ENTRY_SIZE = 8;
 };
 
 //
@@ -879,20 +868,20 @@ u64 Symbol<E>::get_addr(Context<E> &ctx) const {
   if (subsec)
     return subsec->get_addr(ctx) + value;
   if (stub_idx != -1)
-    return ctx.stubs.hdr.addr + stub_idx * StubsSection<E>::ENTRY_SIZE;
+    return ctx.stubs.hdr.addr + stub_idx * E::stub_size;
   return value;
 }
 
 template <typename E>
 u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
   assert(got_idx != -1);
-  return ctx.got.hdr.addr + got_idx * GotSection<E>::ENTRY_SIZE;
+  return ctx.got.hdr.addr + got_idx * E::wordsize;
 }
 
 template <typename E>
 u64 Symbol<E>::get_tlv_addr(Context<E> &ctx) const {
   assert(tlv_idx != -1);
-  return ctx.thread_ptrs.hdr.addr + tlv_idx * ThreadPtrsSection<E>::ENTRY_SIZE;
+  return ctx.thread_ptrs.hdr.addr + tlv_idx * E::wordsize;
 }
 
 template <typename E>
