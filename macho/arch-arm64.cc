@@ -4,60 +4,75 @@
 
 namespace mold::macho {
 
+// Returns [hi:lo] bits of val.
+static u64 bits(u64 val, u64 hi, u64 lo) {
+  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+}
+
 template <>
 void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
-  u8 *buf = ctx.buf + this->hdr.offset;
+  u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
+
+  u32 insn[] = {
+    0x90000010, // adrp x16, $ptr@PAGE
+    0xf9400210, // ldr  x16, [x16, $ptr@PAGEOFF]
+    0xd61f0200, // br   x16
+  };
 
   for (i64 i = 0; i < syms.size(); i++) {
-    // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
-    // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
-    // and jump there.
-    assert(ARM64::stub_size == 6);
-    buf[i * 6] = 0xff;
-    buf[i * 6 + 1] = 0x25;
-    *(u32 *)(buf + i * 6 + 2) =
-      ctx.lazy_symbol_ptr.hdr.addr + i * ARM64::wordsize -
-      (this->hdr.addr + i * 6 + 6);
+    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::wordsize * i;
+    u64 this_addr = this->hdr.addr + ARM64::stub_size * i;
+    i64 val = la_addr - this_addr;
+
+    memcpy(buf, insn, sizeof(insn));
+    buf[0] |= (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
+    buf[1] |= bits(val, 12, 0) << 10;
+    buf += 3;
   }
 }
 
 template <>
 void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
-  u8 *start = ctx.buf + this->hdr.offset;
-  u8 *buf = start;
+  u32 *start = (u32 *)(ctx.buf + this->hdr.offset);
+  u32 *buf = start;
 
-  u8 insn0[16] = {
-    0x4c, 0x8d, 0x1d, 0, 0, 0, 0, // lea $__dyld_private(%rip), %r11
-    0x41, 0x53,                   // push %r11
-    0xff, 0x25, 0, 0, 0, 0,       // jmp *$dyld_stub_binder@GOT(%rip)
-    0x90,                         // nop
+  u32 insn0[] = {
+    0x90000011, // adrp x17, $_dyld_private@PAGE
+    0x91000231, // add  x17, x17, $_dyld_private@PAGEOFF
+    0xa9bf47f0, // stp	x16, x17, [sp, #-16]!
+    0x90000010, // adrp x16, $dyld_stub_binder@PAGE
+    0xf9400210, // ldr  x16, [x16, $dyld_stub_binder@PAGEOFF]
+    0xd61f0200, // br   x16
   };
 
   memcpy(buf, insn0, sizeof(insn0));
-  *(u32 *)(buf + 3) =
-    intern(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr - 7;
-  *(u32 *)(buf + 11) =
-    intern(ctx, "dyld_stub_binder")->get_got_addr(ctx) - this->hdr.addr - 15;
 
-  buf += 16;
+  u64 dyld_private =
+    intern(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr;
+
+  buf[0] |= (bits(dyld_private, 13, 12) << 29) | (bits(dyld_private, 32, 14) << 5);
+  buf[1] |= bits(dyld_private, 12, 0) << 10;
+
+  u64 stub_binder =
+    intern(ctx, "dyld_stub_binder")->get_addr(ctx) - this->hdr.addr - 12;
+
+  buf[3] |= (bits(stub_binder, 13, 12) << 29) | (bits(stub_binder, 32, 14) << 5);
+  buf[4] |= bits(stub_binder, 12, 0) << 10;
+
+  buf += 6;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
-    u8 insn[10] = {
-      0x68, 0, 0, 0, 0, // push $bind_offset
-      0xe9, 0, 0, 0, 0, // jmp $__stub_helper
+    u32 insn[] = {
+      0x18000050, // ldr  w16, addr
+      0x14000000, // b    stubHelperHeader
+      0x00000000, // addr: .long <idx>
     };
 
     memcpy(buf, insn, sizeof(insn));
-
-    *(u32 *)(buf + 1) = ctx.stubs.bind_offsets[i];
-    *(u32 *)(buf + 6) = start - buf - 10;
-    buf += 10;
+    buf[1] |= bits((start - buf - 1) * 4, 27, 2);
+    buf[2] = ctx.stubs.bind_offsets[i];
+    buf += 3;
   }
-}
-
-// Returns [hi:lo] bits of val.
-static u64 bits(u64 val, u64 hi, u64 lo) {
-  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
 }
 
 static i64 read_addend(u8 *buf, const MachRel &r) {

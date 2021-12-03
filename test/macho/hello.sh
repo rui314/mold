@@ -10,6 +10,7 @@ cat <<EOF | cc -o $t/a.o -c -xc -
 #include <stdio.h>
 void hello() {
   printf("Hello world\n");
+  puts("hello");
 }
 EOF
 
