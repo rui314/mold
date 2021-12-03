@@ -17,9 +17,7 @@ void InputSection<E>::parse_relocations(Context<E> &ctx) {
   rels.reserve(hdr.nreloc);
 
   // Parse mach-o relocations to fill `rels` vector
-  MachRel *rel = (MachRel *)(file.mf->data + hdr.reloff);
-  for (i64 i = 0; i < hdr.nreloc; i++)
-    rels.push_back(read_reloc(ctx, file, hdr, rel[i]));
+  rels = read_relocations(ctx, file, hdr);
 
   // Sort `rels` vector
   sort(rels, [](const Relocation<E> &a, const Relocation<E> &b) {

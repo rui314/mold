@@ -28,10 +28,9 @@ static i64 read_addend(u8 *buf, const MachRel &r) {
   }
 }
 
-template <>
-Relocation<X86_64>
+static Relocation<X86_64>
 read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
-           const MachSection &hdr, MachRel r) {
+           const MachSection &hdr, MachRel &r) {
   if (r.p2size != 2 && r.p2size != 3)
     Fatal(ctx) << file << ": invalid r.p2size: " << (u32)r.p2size;
 
@@ -66,6 +65,19 @@ read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
   rel.subsec = target;
   rel.addend = addr - target->input_addr;
   return rel;
+}
+
+template <>
+std::vector<Relocation<X86_64>>
+read_relocations(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
+                 const MachSection &hdr) {
+  std::vector<Relocation<X86_64>> vec;
+  vec.reserve(hdr.nreloc);
+
+  MachRel *rels = (MachRel *)(file.mf->data + hdr.reloff);
+  for (i64 i = 0; i < hdr.nreloc; i++)
+    vec.push_back(read_reloc(ctx, file, hdr, rels[i]));
+  return vec;
 }
 
 template <>

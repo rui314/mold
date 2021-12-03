@@ -1072,8 +1072,8 @@ void StubsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   ctx.lazy_symbol_ptr.hdr.size = nsyms * LazySymbolPtrSection<E>::ENTRY_SIZE;
 }
 
-template <typename E>
-void StubsSection<E>::copy_buf(Context<E> &ctx) {
+template <>
+void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
 
   for (i64 i = 0; i < syms.size(); i++) {
@@ -1084,13 +1084,66 @@ void StubsSection<E>::copy_buf(Context<E> &ctx) {
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
-      (ctx.lazy_symbol_ptr.hdr.addr + i * LazySymbolPtrSection<E>::ENTRY_SIZE) -
+      ctx.lazy_symbol_ptr.hdr.addr +
+      i * LazySymbolPtrSection<ARM64>::ENTRY_SIZE -
       (this->hdr.addr + i * 6 + 6);
   }
 }
 
-template <typename E>
-void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
+template <>
+void StubsSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + this->hdr.offset;
+
+  for (i64 i = 0; i < syms.size(); i++) {
+    // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
+    // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
+    // and jump there.
+    assert(ENTRY_SIZE == 6);
+    buf[i * 6] = 0xff;
+    buf[i * 6 + 1] = 0x25;
+    *(u32 *)(buf + i * 6 + 2) =
+      ctx.lazy_symbol_ptr.hdr.addr +
+      i * LazySymbolPtrSection<X86_64>::ENTRY_SIZE -
+      (this->hdr.addr + i * 6 + 6);
+  }
+}
+
+template <>
+void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+  u8 *start = ctx.buf + this->hdr.offset;
+  u8 *buf = start;
+
+  u8 insn0[16] = {
+    0x4c, 0x8d, 0x1d, 0, 0, 0, 0, // lea $__dyld_private(%rip), %r11
+    0x41, 0x53,                   // push %r11
+    0xff, 0x25, 0, 0, 0, 0,       // jmp *$dyld_stub_binder@GOT(%rip)
+    0x90,                         // nop
+  };
+
+  memcpy(buf, insn0, sizeof(insn0));
+  *(u32 *)(buf + 3) =
+    intern(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr - 7;
+  *(u32 *)(buf + 11) =
+    intern(ctx, "dyld_stub_binder")->get_got_addr(ctx) - this->hdr.addr - 15;
+
+  buf += 16;
+
+  for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
+    u8 insn[10] = {
+      0x68, 0, 0, 0, 0, // push $bind_offset
+      0xe9, 0, 0, 0, 0, // jmp $__stub_helper
+    };
+
+    memcpy(buf, insn, sizeof(insn));
+
+    *(u32 *)(buf + 1) = ctx.stubs.bind_offsets[i];
+    *(u32 *)(buf + 6) = start - buf - 10;
+    buf += 10;
+  }
+}
+
+template <>
+void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *start = ctx.buf + this->hdr.offset;
   u8 *buf = start;
 

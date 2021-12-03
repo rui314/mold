@@ -192,8 +192,8 @@ public:
 };
 
 template <typename E>
-Relocation<E> read_reloc(Context<E> &ctx, ObjectFile<E> &file,
-                         const MachSection &hdr, MachRel r);
+std::vector<Relocation<E>>
+read_relocations(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr);
 
 //
 // Symbol

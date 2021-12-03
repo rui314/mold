@@ -120,7 +120,7 @@ static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
 
   for (i64 i = 0; i < file.mach_syms.size(); i++) {
     MachSym &msym = file.mach_syms[i];
-    if (msym.type == N_SECT) {
+    if (msym.type == N_SECT && file.sections[msym.sect - 1]) {
       SplitRegion r;
       r.offset = msym.value - file.sections[msym.sect - 1]->hdr.addr;
       r.symidx = i;
