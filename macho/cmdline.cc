@@ -197,7 +197,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.output_type = MH_DYLIB;
     } else if (read_arg("-headerpad")) {
       size_t pos;
-      ctx.arg.headerpad = std::stoi(std::string(arg), &pos, 16);
+      ctx.arg.headerpad = std::stol(std::string(arg), &pos, 16);
       if (pos != arg.size())
         Fatal(ctx) << "malformed -headerpad: " << arg;
     } else if (read_flag("-dynamic")) {
@@ -230,7 +230,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.output = arg;
     } else if (read_arg("-pagezero_size")) {
       size_t pos;
-      pagezero_size = std::stoi(std::string(arg), &pos, 16);
+      pagezero_size = std::stol(std::string(arg), &pos, 16);
       if (pos != arg.size())
         Fatal(ctx) << "malformed -pagezero_size: " << arg;
     } else if (read_arg3("-platform_version")) {

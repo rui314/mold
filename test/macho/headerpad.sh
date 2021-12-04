@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/../../out/test/macho/$(basename -s .sh $0)
 mkdir -p $t
 
+[ "`uname -p`" = arm ] && { echo skipped; exit; }
+
 cat <<EOF | cc -o $t/a.o -c -xc -
 int main() {}
 EOF
