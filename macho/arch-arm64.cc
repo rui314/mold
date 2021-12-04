@@ -9,6 +9,14 @@ static u64 bits(u64 val, u64 hi, u64 lo) {
   return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
 }
 
+static u64 page(u64 val) {
+  return val & 0xffff'ffff'ffff'f000;
+}
+
+static u64 encode_page(u64 val) {
+  return (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
+}
+
 template <>
 void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
@@ -24,11 +32,10 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 
     u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::wordsize * i;
     u64 this_addr = this->hdr.addr + ARM64::stub_size * i;
-    i64 val = la_addr - this_addr;
 
     memcpy(buf, insn, sizeof(insn));
-    buf[0] |= (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
-    buf[1] |= bits(val, 12, 0) << 10;
+    buf[0] |= encode_page(page(la_addr) - page(this_addr));
+    buf[1] |= bits(la_addr, 11, 3) << 10;
     buf += 3;
   }
 }
@@ -50,17 +57,13 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   static_assert(sizeof(insn0) == ARM64::stub_helper_hdr_size);
   memcpy(buf, insn0, sizeof(insn0));
 
-  u64 dyld_private =
-    intern(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr;
+  u64 dyld_private = intern(ctx, "__dyld_private")->get_addr(ctx);
+  buf[0] |= encode_page(page(dyld_private) - page(this->hdr.addr));
+  buf[1] |= bits(dyld_private, 11, 0) << 10;
 
-  buf[0] |= (bits(dyld_private, 13, 12) << 29) | (bits(dyld_private, 32, 14) << 5);
-  buf[1] |= bits(dyld_private, 12, 0) << 10;
-
-  u64 stub_binder =
-    intern(ctx, "dyld_stub_binder")->get_addr(ctx) - this->hdr.addr - 12;
-
-  buf[3] |= (bits(stub_binder, 13, 12) << 29) | (bits(stub_binder, 32, 14) << 5);
-  buf[4] |= bits(stub_binder, 12, 0) << 10;
+  u64 stub_binder = intern(ctx, "dyld_stub_binder")->get_addr(ctx);
+  buf[3] |= encode_page(page(stub_binder) - page(this->hdr.addr - 12));
+  buf[4] |= bits(stub_binder, 11, 0) << 10;
 
   buf += 6;
 
@@ -236,8 +239,7 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     case ARM64_RELOC_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
-      *(u32 *)(buf + r.offset) |=
-        (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
+      *(u32 *)(buf + r.offset) |= encode_page(val);
       break;
     case ARM64_RELOC_PAGEOFF12:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
