@@ -150,9 +150,21 @@ static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
     if (r[0].offset > 0)
       r.insert(r.begin(), {0, r[0].offset, (u32)-1, false});
 
-    for (i64 i = 0; i < r.size() - 1; i++)
-      r[i].size = r[i + 1].offset - r[i].offset;
-    r.back().size = info.isec->hdr.size - r.back().offset;
+    for (i64 i = 1; i < r.size(); i++)
+      if (r[i - 1].offset == r[i].offset)
+        r[i++].is_alt_entry = true;
+
+    i64 last = -1;
+    for (i64 i = 0; i < r.size(); i++) {
+      if (!r[i].is_alt_entry) {
+        if (last != -1)
+          r[last].size = r[i].offset - r[last].offset;
+        last = i;
+      }
+    }
+
+    if (last != -1)
+      r[last].size = info.isec->hdr.size - r[last].offset;
   }
   return vec;
 }
