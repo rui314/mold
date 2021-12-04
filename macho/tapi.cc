@@ -44,15 +44,15 @@ static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
   return false;
 }
 
-static std::optional<TextDylib> to_tbd(YamlNode &node) {
-  if (!contains(get_vector(node, "targets"), "x86_64-macos"))
+static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
+  if (!contains(get_vector(node, "targets"), arch))
     return {};
 
   TextDylib tbd;
 
   for (YamlNode &mem : get_vector(node, "uuids"))
     if (auto target = get_string(mem, "target"))
-      if (*target == "x86_64-macos")
+      if (*target == arch)
         if (auto value = get_string(mem, "value"))
           tbd.uuid = *value;
 
@@ -63,19 +63,19 @@ static std::optional<TextDylib> to_tbd(YamlNode &node) {
     tbd.current_version = *val;
 
   for (YamlNode &mem : get_vector(node, "parent-umbrella"))
-    if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+    if (contains(get_vector(mem, "targets"), arch))
       if (auto val = get_string(mem, "umbrella"))
         tbd.parent_umbrella = *val;
 
   for (YamlNode &mem : get_vector(node, "reexported-libraries"))
-    if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+    if (contains(get_vector(mem, "targets"), arch))
       for (YamlNode &mem : get_vector(mem, "libraries"))
         if (auto *lib = std::get_if<std::string_view>(&mem.data))
           tbd.reexported_libs.push_back(*lib);
 
   for (std::string_view key : {"exports", "reexports"})
     for (YamlNode &mem : get_vector(node, key))
-      if (contains(get_vector(mem, "targets"), "x86_64-macos"))
+      if (contains(get_vector(mem, "targets"), arch))
         for (YamlNode &mem : get_vector(mem, "symbols"))
           if (auto *sym = std::get_if<std::string_view>(&mem.data))
             tbd.exports.push_back(*sym);
@@ -106,7 +106,8 @@ static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
 }
 
 template <typename E>
-TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
+                       std::string_view arch) {
   std::string_view contents = mf->get_contents();
   std::variant<std::vector<YamlNode>, YamlError> res = parse_yaml(contents);
 
@@ -123,15 +124,19 @@ TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   std::vector<TextDylib> vec;
   for (YamlNode &node : nodes)
-    if (std::optional<TextDylib> dylib = to_tbd(node))
+    if (std::optional<TextDylib> dylib = to_tbd(node, arch))
       vec.push_back(*dylib);
   return squash(ctx, vec);
 }
 
-#define INSTANTIATE(E)                                                  \
-  template TextDylib parse_tbd(Context<E> &, MappedFile<Context<E>> *);
+template <>
+TextDylib parse_tbd(Context<ARM64> &ctx, MappedFile<Context<ARM64>> *mf) {
+  return parse(ctx, mf, "arm64-macos");
+}
 
-INSTANTIATE(ARM64);
-INSTANTIATE(X86_64);
+template <>
+TextDylib parse_tbd(Context<X86_64> &ctx, MappedFile<Context<X86_64>> *mf) {
+  return parse(ctx, mf, "x86_64-macos");
+}
 
 } // namespace mold::macho
