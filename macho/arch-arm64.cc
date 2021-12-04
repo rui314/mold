@@ -1,7 +1,5 @@
 #include "mold.h"
 
-#include <algorithm>
-
 namespace mold::macho {
 
 // Returns [hi:lo] bits of val.

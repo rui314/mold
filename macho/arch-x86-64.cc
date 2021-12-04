@@ -1,7 +1,5 @@
 #include "mold.h"
 
-#include <algorithm>
-
 namespace mold::macho {
 
 template <>
