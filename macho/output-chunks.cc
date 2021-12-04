@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <shared_mutex>
+#include <sys/mman.h>
 
 #ifdef __APPLE__
 #  define COMMON_DIGEST_FOR_OPENSSL
@@ -1022,6 +1023,9 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     SHA256(start, end - start, buf);
     buf += SHA256_SIZE;
   }
+
+  // A hack borrowed from lld.
+  msync(ctx.buf, ctx.output_file->filesize, MS_INVALIDATE);
 }
 
 template <typename E>
