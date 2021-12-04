@@ -158,6 +158,15 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 }
 
 template <typename E>
+static void scan_unwind_info(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    for (UnwindRecord<E> &rec : file->unwind_records)
+      if (!ctx.arg.dead_strip || rec.is_alive)
+        if (rec.personality)
+          rec.personality->flags |= NEEDS_GOT;
+}
+
+template <typename E>
 static void export_symbols(Context<E> &ctx) {
   ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
 
@@ -432,6 +441,8 @@ static int do_main(int argc, char **argv) {
   for (ObjectFile<E> *file : ctx.objs)
     for (std::unique_ptr<Subsection<E> > &subsec : file->subsections)
       subsec->scan_relocations(ctx);
+
+  scan_unwind_info(ctx);
 
   if (ctx.arg.dead_strip_dylibs)
     erase(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
