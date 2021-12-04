@@ -183,16 +183,14 @@ static void export_symbols(Context<E> &ctx) {
 
   for (DylibFile<E> *file : ctx.dylibs) {
     for (Symbol<E> *sym : file->syms) {
-      if (!sym)
-        continue;
-
-      if (sym->file == file)
+      if (sym && sym->file == file) {
         if (sym->flags & NEEDS_STUB)
           ctx.stubs.add(ctx, sym);
-      if (sym->flags & NEEDS_GOT)
-        ctx.got.add(ctx, sym);
-      if (sym->flags & NEEDS_THREAD_PTR)
-        ctx.thread_ptrs.add(ctx, sym);
+        if (sym->flags & NEEDS_GOT)
+          ctx.got.add(ctx, sym);
+        if (sym->flags & NEEDS_THREAD_PTR)
+          ctx.thread_ptrs.add(ctx, sym);
+      }
     }
   }
 }
