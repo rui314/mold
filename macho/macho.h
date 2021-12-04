@@ -643,6 +643,7 @@ struct CodeSignatureHeader {
 struct CodeSignatureBlobIndex {
   ubig32 type;
   ubig32 offset;
+  u32 padding;
 };
 
 struct CodeSignatureDirectory {

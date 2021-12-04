@@ -21,7 +21,6 @@ int main() {
 EOF
 
 clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
-codesign -s- $t/exe
 $t/exe | grep -q 'Hello world'
 
 echo OK

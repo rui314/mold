@@ -998,7 +998,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   buf += sizeof(dir);
 
   dir.magic = CSMAGIC_CODEDIRECTORY;
-  dir.length = ctx.buf + this->hdr.offset + this->hdr.size - buf;
+  dir.length = sizeof(dir) + filename_size + num_blocks * SHA256_SIZE;
   dir.version = CS_SUPPORTSEXECSEG;
   dir.flags = CS_ADHOC | CS_LINKER_SIGNED;
   dir.hash_offset = sizeof(dir) + filename_size;
@@ -1010,7 +1010,8 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   dir.page_size = __builtin_ctz(BLOCK_SIZE);
   dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
   dir.exec_seg_limit = ctx.text_seg->cmd.filesize;
-  dir.exec_seg_flags = CS_EXECSEG_MAIN_BINARY;
+  if (ctx.output_type == MH_EXECUTE)
+    dir.exec_seg_flags = CS_EXECSEG_MAIN_BINARY;
 
   memcpy(buf, filename.data(), filename.size());
   buf += filename_size;
