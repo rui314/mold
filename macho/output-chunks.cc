@@ -581,12 +581,12 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
       if (chunk->is_regular)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
-            if (!rel.is_pcrel)
+            if (!rel.is_pcrel && rel.type == E::abs_rel)
               enc.add(seg->seg_idx,
                       subsec->get_addr(ctx) + rel.offset - seg->cmd.vmaddr);
 
   enc.finish();
-  contents = enc.buf;
+  contents = std::move(enc.buf);
   this->hdr.size = align_to(contents.size(), 8);
 }
 

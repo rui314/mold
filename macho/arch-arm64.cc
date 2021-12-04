@@ -13,13 +13,15 @@ template <>
 void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
 
-  u32 insn[] = {
-    0x90000010, // adrp x16, $ptr@PAGE
-    0xf9400210, // ldr  x16, [x16, $ptr@PAGEOFF]
-    0xd61f0200, // br   x16
-  };
-
   for (i64 i = 0; i < syms.size(); i++) {
+    static const u32 insn[] = {
+      0x90000010, // adrp x16, $ptr@PAGE
+      0xf9400210, // ldr  x16, [x16, $ptr@PAGEOFF]
+      0xd61f0200, // br   x16
+    };
+
+    static_assert(sizeof(insn) == ARM64::stub_size);
+
     u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::wordsize * i;
     u64 this_addr = this->hdr.addr + ARM64::stub_size * i;
     i64 val = la_addr - this_addr;
@@ -36,7 +38,7 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   u32 *start = (u32 *)(ctx.buf + this->hdr.offset);
   u32 *buf = start;
 
-  u32 insn0[] = {
+  static const u32 insn0[] = {
     0x90000011, // adrp x17, $_dyld_private@PAGE
     0x91000231, // add  x17, x17, $_dyld_private@PAGEOFF
     0xa9bf47f0, // stp	x16, x17, [sp, #-16]!
@@ -45,6 +47,7 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
     0xd61f0200, // br   x16
   };
 
+  static_assert(sizeof(insn0) == ARM64::stub_helper_hdr_size);
   memcpy(buf, insn0, sizeof(insn0));
 
   u64 dyld_private =
@@ -62,11 +65,13 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   buf += 6;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
-    u32 insn[] = {
+    static const u32 insn[] = {
       0x18000050, // ldr  w16, addr
       0x14000000, // b    stubHelperHeader
       0x00000000, // addr: .long <idx>
     };
+
+    static_assert(sizeof(insn) == ARM64::stub_helper_size);
 
     memcpy(buf, insn, sizeof(insn));
     buf[1] |= bits((start - buf - 1) * 4, 27, 2);

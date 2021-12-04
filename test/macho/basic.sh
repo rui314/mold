@@ -7,22 +7,13 @@ t=$(pwd)/../../out/test/macho/$(basename -s .sh $0)
 mkdir -p $t
 
 cat <<EOF | cc -o $t/a.o -c -xc -
-#include <stdio.h>
-void hello() {
-  printf("Hello world\n");
-  puts("hello");
-}
-EOF
-
-cat <<EOF | cc -o $t/b.o -c -xc -
-void hello();
 int main() {
-  hello();
+  return 0;
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
+clang -fuse-ld=$mold -o $t/exe $t/a.o
 codesign -s- $t/exe
-$t/exe | grep -q 'Hello world'
+$t/exe
 
 echo OK

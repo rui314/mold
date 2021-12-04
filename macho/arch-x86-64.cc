@@ -12,7 +12,7 @@ void StubsSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
-    assert(X86_64::stub_size == 6);
+    static_assert(X86_64::stub_size == 6);
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(u32 *)(buf + i * 6 + 2) =
@@ -26,12 +26,14 @@ void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *start = ctx.buf + this->hdr.offset;
   u8 *buf = start;
 
-  u8 insn0[16] = {
+  static const u8 insn0[] = {
     0x4c, 0x8d, 0x1d, 0, 0, 0, 0, // lea $__dyld_private(%rip), %r11
     0x41, 0x53,                   // push %r11
     0xff, 0x25, 0, 0, 0, 0,       // jmp *$dyld_stub_binder@GOT(%rip)
     0x90,                         // nop
   };
+
+  static_assert(sizeof(insn0) == X86_64::stub_helper_hdr_size);
 
   memcpy(buf, insn0, sizeof(insn0));
   *(u32 *)(buf + 3) =
@@ -42,13 +44,14 @@ void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   buf += 16;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
-    u8 insn[10] = {
+    u8 insn[] = {
       0x68, 0, 0, 0, 0, // push $bind_offset
       0xe9, 0, 0, 0, 0, // jmp $__stub_helper
     };
 
-    memcpy(buf, insn, sizeof(insn));
+    static_assert(sizeof(insn) == X86_64::stub_helper_size);
 
+    memcpy(buf, insn, sizeof(insn));
     *(u32 *)(buf + 1) = ctx.stubs.bind_offsets[i];
     *(u32 *)(buf + 6) = start - buf - 10;
     buf += 10;
