@@ -70,14 +70,11 @@ static i64 get_reloc_addend(u32 type) {
 }
 
 static i64 read_addend(u8 *buf, const MachRel &r) {
-  switch (r.p2size) {
-  case 2:
+  if (r.p2size == 2)
     return *(i32 *)(buf + r.offset) + get_reloc_addend(r.type);
-  case 3:
+  if (r.p2size == 3)
     return *(i64 *)(buf + r.offset) + get_reloc_addend(r.type);
-  default:
-    unreachable();
-  }
+  unreachable();
 }
 
 static Relocation<X86_64>
@@ -134,12 +131,12 @@ read_relocations(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
 
 template <>
 void Subsection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
-  for (Relocation<X86_64> &rel : get_rels()) {
-    Symbol<X86_64> *sym = rel.sym;
+  for (Relocation<X86_64> &r : get_rels()) {
+    Symbol<X86_64> *sym = r.sym;
     if (!sym)
       continue;
 
-    switch (rel.type) {
+    switch (r.type) {
     case X86_64_RELOC_GOT_LOAD:
       if (sym->file && sym->file->is_dylib)
         sym->flags |= NEEDS_GOT;
@@ -162,67 +159,63 @@ void Subsection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 
 template <>
 void Subsection<X86_64>::apply_reloc(Context<X86_64> &ctx, u8 *buf) {
-  for (const Relocation<X86_64> &rel : get_rels()) {
-    if (rel.sym && !rel.sym->file) {
-      Error(ctx) << "undefined symbol: " << isec.file << ": " << *rel.sym;
+  for (const Relocation<X86_64> &r : get_rels()) {
+    if (r.sym && !r.sym->file) {
+      Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }
 
     u64 val = 0;
 
-    switch (rel.type) {
+    switch (r.type) {
     case X86_64_RELOC_UNSIGNED:
     case X86_64_RELOC_SIGNED:
     case X86_64_RELOC_BRANCH:
     case X86_64_RELOC_SIGNED_1:
     case X86_64_RELOC_SIGNED_2:
     case X86_64_RELOC_SIGNED_4:
-      val = rel.sym ? rel.sym->get_addr(ctx) : rel.subsec->get_addr(ctx);
+      val = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
     case X86_64_RELOC_GOT_LOAD:
-      if (rel.sym->got_idx != -1) {
-        val = rel.sym->get_got_addr(ctx);
+      if (r.sym->got_idx != -1) {
+        val = r.sym->get_got_addr(ctx);
       } else {
         // Relax MOVQ into LEAQ
-        if (buf[rel.offset - 2] != 0x8b)
+        if (buf[r.offset - 2] != 0x8b)
           Error(ctx) << isec << ": invalid GOT_LOAD relocation";
-        buf[rel.offset - 2] = 0x8d;
-        val = rel.sym->get_addr(ctx);
+        buf[r.offset - 2] = 0x8d;
+        val = r.sym->get_addr(ctx);
       }
       break;
     case X86_64_RELOC_GOT:
-      val = rel.sym->get_got_addr(ctx);
+      val = r.sym->get_got_addr(ctx);
       break;
     case X86_64_RELOC_TLV:
-      if (rel.sym->tlv_idx != -1) {
-        val = rel.sym->get_tlv_addr(ctx);
+      if (r.sym->tlv_idx != -1) {
+        val = r.sym->get_tlv_addr(ctx);
       } else {
         // Relax MOVQ into LEAQ
-        if (buf[rel.offset - 2] != 0x8b)
+        if (buf[r.offset - 2] != 0x8b)
           Error(ctx) << isec << ": invalid TLV relocation";
-        buf[rel.offset - 2] = 0x8d;
-        val = rel.sym->get_addr(ctx);
+        buf[r.offset - 2] = 0x8d;
+        val = r.sym->get_addr(ctx);
       }
       break;
     default:
-      Fatal(ctx) << isec << ": unknown reloc: " << (int)rel.type;
+      Fatal(ctx) << isec << ": unknown reloc: " << (int)r.type;
     }
 
-    val += rel.addend;
+    val += r.addend;
 
-    if (rel.is_pcrel)
-      val -= get_addr(ctx) + rel.offset + 4 + get_reloc_addend(rel.type);
+    if (r.is_pcrel)
+      val -= get_addr(ctx) + r.offset + 4 + get_reloc_addend(r.type);
 
-    switch (rel.p2size) {
-    case 2:
-      *(u32 *)(buf + rel.offset) = val;
-      break;
-    case 3:
-      *(u64 *)(buf + rel.offset) = val;
-      break;
-    default:
+    if (r.p2size == 2)
+      *(u32 *)(buf + r.offset) = val;
+    else if (r.p2size == 3)
+      *(u64 *)(buf + r.offset) = val;
+    else
       unreachable();
-    };
   }
 }
 

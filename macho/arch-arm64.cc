@@ -44,8 +44,8 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   u32 *buf = start;
 
   static const u32 insn0[] = {
-    0x90000011, // adrp x17, $_dyld_private@PAGE
-    0x91000231, // add  x17, x17, $_dyld_private@PAGEOFF
+    0x90000011, // adrp x17, $__dyld_private@PAGE
+    0x91000231, // add  x17, x17, $__dyld_private@PAGEOFF
     0xa9bf47f0, // stp	x16, x17, [sp, #-16]!
     0x90000010, // adrp x16, $dyld_stub_binder@PAGE
     0xf9400210, // ldr  x16, [x16, $dyld_stub_binder@PAGEOFF]
@@ -82,14 +82,11 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 }
 
 static i64 read_addend(u8 *buf, const MachRel &r) {
-  switch (r.p2size) {
-  case 2:
+  if (r.p2size == 2)
     return *(i32 *)(buf + r.offset);
-  case 3:
+  if (r.p2size == 3)
     return *(i64 *)(buf + r.offset);
-  default:
-    unreachable();
-  }
+  unreachable();
 }
 
 static Relocation<ARM64>
@@ -220,16 +217,12 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
       if (r.is_pcrel)
         val -= get_addr(ctx) + r.offset;
 
-      switch (r.p2size) {
-      case 2:
+      if (r.p2size == 2)
         *(i32 *)(buf + r.offset) = val;
-        break;
-      case 3:
+      else if (r.p2size == 3)
         *(i64 *)(buf + r.offset) = val;
-        break;
-      default:
+      else
         unreachable();
-      }
       break;
     case ARM64_RELOC_BRANCH26:
       if (r.is_pcrel)
