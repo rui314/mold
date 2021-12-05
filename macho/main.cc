@@ -46,6 +46,9 @@ static void create_internal_file(Context<E> &ctx) {
   case MH_DYLIB:
     add("__mh_dylib_header");
     break;
+  case MH_BUNDLE:
+    add("__mh_bundle_header");
+    break;
   default:
     unreachable();
   }
@@ -218,6 +221,7 @@ template <typename E>
 static void fix_synthetic_symbol_values(Context<E> &ctx) {
   intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
   intern(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
+  intern(ctx, "__mh_bundle_header")->value = ctx.data->hdr.addr;
 }
 
 template <typename E>

@@ -293,6 +293,8 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context<E> &ctx) {
   case MH_DYLIB:
     vec.push_back(create_id_dylib_cmd(ctx));
     break;
+  case MH_BUNDLE:
+    break;
   default:
     unreachable();
   }

@@ -22,6 +22,7 @@ Options:
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
   -arch <ARCH_NAME>           Specify target architecture
+  -bundle                     Produce a mach-o bundle
   -dead_strip                 Remove unreachable functions and data
   -dead_strip_dylibs          Remove unreachable dylibs from dependencies
   -demangle                   Demangle C++ symbols in log messages (default)
@@ -187,6 +188,8 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.arch = CPU_TYPE_ARM64;
       else
         Fatal(ctx) << "unknown -arch: " << arg;
+    } else if (read_flag("-bundle")) {
+      ctx.output_type = MH_BUNDLE;
     } else if (read_flag("-color-diagnostics") ||
                read_flag("--color-diagnostics")) {
     } else if (read_flag("-dead_strip")) {

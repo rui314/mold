@@ -13,7 +13,7 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
 
   mark(intern(ctx, ctx.arg.entry));
 
-  if (ctx.output_type == MH_DYLIB)
+  if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
     for (ObjectFile<E> *file : ctx.objs)
       for (Symbol<E> *sym : file->syms)
         if (sym->file == file && sym->is_extern)
