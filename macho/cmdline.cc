@@ -33,6 +33,8 @@ Options:
   -framework <NAME>,[,<SUFFIX>]
                               Search for a given framework
   -headerpad <SIZE>           Allocate the size of padding after load commands
+  -headerpad_max_install_names
+                              Allocate MAXPATHLEN byte padding after load commands
   -help                       Report usage information
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
@@ -200,6 +202,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.headerpad = std::stol(std::string(arg), &pos, 16);
       if (pos != arg.size())
         Fatal(ctx) << "malformed -headerpad: " << arg;
+    } else if (read_flag("-headerpad_max_install_names")) {
+      ctx.arg.headerpad = 1024;
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
     } else if (read_arg("-e")) {
