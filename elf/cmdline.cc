@@ -108,6 +108,8 @@ Options:
   --sort-common               Ignored
   --sort-section              Ignored
   --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
+  --start-lib                 Give following object files in-archive-file semantics
+    --end-lib                 End the effect of --start-lib
   --static                    Do not link against shared libraries
   --stats                     Print input statistics
   --sysroot DIR               Set target system root directory
@@ -405,6 +407,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
+    } else if (read_flag(args, "end-lib")) {
+      remaining.push_back("-end-lib");
     } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
       ctx.arg.export_dynamic = true;
     } else if (read_flag(args, "no-export-dynamic")) {
@@ -436,6 +440,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.shared = true;
     } else if (read_arg(ctx, args, arg, "spare-dynamic-tags")) {
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
+    } else if (read_flag(args, "start-lib")) {
+      remaining.push_back("-start-lib");
     } else if (read_flag(args, "demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {

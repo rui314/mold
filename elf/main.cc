@@ -33,7 +33,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *m
   static Counter count("parsed_objs");
   count++;
 
-  bool in_lib = (!archive_name.empty() && !ctx.whole_archive);
+  bool in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, archive_name, in_lib);
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
@@ -147,7 +147,7 @@ template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) {
   Timer t(ctx, "read_input_files");
 
-  std::vector<std::tuple<bool, bool, bool>> state;
+  std::vector<std::tuple<bool, bool, bool, bool>> state;
   ctx.is_static = ctx.arg.is_static;
 
   while (!args.empty()) {
@@ -165,16 +165,22 @@ static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) 
       ctx.is_static = true;
     } else if (read_flag(args, "Bdynamic")) {
       ctx.is_static = false;
+    } else if (read_flag(args, "start-lib")) {
+      ctx.in_lib = true;
+    } else if (read_flag(args, "end-lib")) {
+      ctx.in_lib = false;
     } else if (read_arg(ctx, args, arg, "version-script")) {
       parse_version_script(ctx, std::string(arg));
     } else if (read_arg(ctx, args, arg, "dynamic-list")) {
       parse_dynamic_list(ctx, std::string(arg));
     } else if (read_flag(args, "push-state")) {
-      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static});
+      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
+                       ctx.in_lib});
     } else if (read_flag(args, "pop-state")) {
       if (state.empty())
         Fatal(ctx) << "no state pushed before popping";
-      std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static) = state.back();
+      std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static, ctx.in_lib) =
+        state.back();
       state.pop_back();
     } else if (read_arg(ctx, args, arg, "l")) {
       MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg));

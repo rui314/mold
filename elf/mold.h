@@ -1286,6 +1286,7 @@ struct Context {
   bool as_needed = false;
   bool whole_archive = false;
   bool is_static;
+  bool in_lib = false;
   i64 file_priority = 2;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
