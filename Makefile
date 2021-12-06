@@ -13,6 +13,8 @@ ifeq ($(origin CXX), default)
   CXX = clang++
 endif
 
+STRIP ?= strip
+
 OS ?= $(shell uname -s)
 
 CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" \
@@ -127,11 +129,11 @@ endif
 install: all
 	install -m 755 -d $D$(BINDIR)
 	install -m 755 mold $D$(BINDIR)
-	strip $D$(BINDIR)/mold
+	$(STRIP) $D$(BINDIR)/mold
 
 	install -m 755 -d $D$(LIBDIR)/mold
 	install -m 644 mold-wrapper.so $D$(LIBDIR)/mold
-	strip $D$(LIBDIR)/mold/mold-wrapper.so
+	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
 
 	install -m 755 -d $D$(MANDIR)/man1
 	install -m 644 docs/mold.1 $D$(MANDIR)/man1
