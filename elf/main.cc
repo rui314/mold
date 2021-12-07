@@ -116,8 +116,8 @@ static MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
   i64 type = get_machine_type(ctx, mf);
   if (type == -1 || type == E::e_machine)
     return mf;
-  Warn(ctx) << path << ": skipping incompatible file " << (int)type
-            << " " << (int)E::e_machine;
+  Warn(ctx) << path << ": skipping incompatible file"
+            << " " << (int)type << " " << (int)E::e_machine;
   return nullptr;
 }
 
@@ -396,9 +396,9 @@ static int elf_main(int argc, char **argv) {
   }
 
   {
-    Timer t(ctx, "register_subsections");
+    Timer t(ctx, "register_section_pieces");
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->register_subsections(ctx);
+      file->register_section_pieces(ctx);
     });
   }
 
@@ -450,7 +450,7 @@ static int elf_main(int argc, char **argv) {
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);
 
-  // Put input sections into output sections
+  // ctx input sections into output sections
   bin_sections(ctx);
 
   // Get a list of output sections.
@@ -468,6 +468,10 @@ static int elf_main(int argc, char **argv) {
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
+  //
+  // If we are linking an executable, weak undefs are converted to
+  // weakly imported symbol so that they'll have another chance to be
+  // resolved.
   claim_unresolved_symbols(ctx);
 
   // Beyond this point, no new symbols will be added to the result.
