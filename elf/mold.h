@@ -67,14 +67,14 @@ template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 //
-// Mergeable subsections
+// Mergeable section fragments
 //
 
 template <typename E>
-struct Subsection {
-  Subsection(MergedSection<E> *sec) : output_section(*sec) {}
+struct SectionFragment {
+  SectionFragment(MergedSection<E> *sec) : output_section(*sec) {}
 
-  Subsection(const Subsection &other)
+  SectionFragment(const SectionFragment &other)
     : output_section(other.output_section), offset(other.offset),
       alignment(other.alignment.load()), is_alive(other.is_alive.load()) {}
 
@@ -87,8 +87,8 @@ struct Subsection {
 };
 
 template <typename E>
-struct SubsectionRef {
-  Subsection<E> *subsec = nullptr;
+struct SectionFragmentRef {
+  SectionFragment<E> *frag = nullptr;
   i32 idx = 0;
   i32 addend = 0;
 };
@@ -255,7 +255,7 @@ public:
 
   std::string_view contents;
 
-  std::unique_ptr<SubsectionRef<E>[]> rel_subsections;
+  std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   BitVector needs_dynrel;
   BitVector needs_baserel;
   i32 fde_begin = -1;
@@ -637,7 +637,7 @@ public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
-  Subsection<E> *insert(std::string_view data, u64 hash, i64 alignment);
+  SectionFragment<E> *insert(std::string_view data, u64 hash, i64 alignment);
   void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
@@ -647,7 +647,7 @@ public:
 private:
   MergedSection(std::string_view name, u64 flags, u32 type);
 
-  ConcurrentMap<Subsection<E>> map;
+  ConcurrentMap<SectionFragment<E>> map;
   std::vector<i64> shard_offsets;
   std::once_flag once_flag;
 };
@@ -859,8 +859,8 @@ struct MergeableSection {
   ElfShdr<E> shdr;
   std::vector<std::string_view> strings;
   std::vector<u64> hashes;
-  std::vector<u32> subsec_offsets;
-  std::vector<Subsection<E> *> subsections;
+  std::vector<u32> frag_offsets;
+  std::vector<SectionFragment<E> *> fragments;
 };
 
 // InputFile is the base class of ObjectFile and SharedFile.
@@ -932,8 +932,8 @@ public:
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
-  std::vector<Subsection<E> *> subsections;
-  std::vector<SubsectionRef<E>> sym_subsections;
+  std::vector<SectionFragment<E> *> fragments;
+  std::vector<SectionFragmentRef<E>> sym_fragments;
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool exclude_libs = false;
   u32 features = 0;
@@ -1436,8 +1436,8 @@ public:
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
   u64 get_addr(Context<E> &ctx, bool allow_plt = true) const {
-    if (Subsection<E> *subsec = get_subsec()) {
-      if (!subsec->is_alive) {
+    if (SectionFragment<E> *frag = get_frag()) {
+      if (!frag->is_alive) {
         // This condition is met if a non-alloc section refers an
         // alloc section and if the referenced piece of data is
         // garbage-collected. Typically, this condition is met if a
@@ -1445,7 +1445,7 @@ public:
         return 0;
       }
 
-      return subsec->get_addr(ctx) + value;
+      return frag->get_addr(ctx) + value;
     }
 
     if (has_copyrel) {
@@ -1620,8 +1620,8 @@ public:
   }
 
   bool is_alive() const {
-    if (Subsection<E> *subsec = get_subsec())
-      return subsec->is_alive;
+    if (SectionFragment<E> *frag = get_frag())
+      return frag->is_alive;
     if (input_section)
       return input_section->is_alive;
     return true;
@@ -1634,7 +1634,7 @@ public:
       return esym().is_abs();
     if (is_imported)
       return false;
-    if (get_subsec())
+    if (get_frag())
       return false;
     return input_section == nullptr;
   }
@@ -1661,10 +1661,10 @@ public:
     return ((ObjectFile<E> *)file)->elf_syms[sym_idx];
   }
 
-  Subsection<E> *get_subsec() const {
+  SectionFragment<E> *get_frag() const {
     if (!file || file->is_dso)
       return nullptr;
-    return ((ObjectFile<E> *)file)->sym_subsections[sym_idx].subsec;
+    return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
   }
 
   std::string_view name() const {
@@ -1765,7 +1765,7 @@ operator<<(std::ostream &out, const InputSection<E> &isec) {
 }
 
 template <typename E>
-inline u64 Subsection<E>::get_addr(Context<E> &ctx) const {
+inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
   return output_section.shdr.sh_addr + offset;
 }
 

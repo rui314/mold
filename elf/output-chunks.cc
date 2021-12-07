@@ -1168,7 +1168,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 }
 
 template <typename E>
-Subsection<E> *
+SectionFragment<E> *
 MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
   assert(alignment < UINT16_MAX);
 
@@ -1177,15 +1177,15 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
     map.resize(estimator.get_cardinality() * 3 / 2);
   });
 
-  Subsection<E> *subsec;
+  SectionFragment<E> *frag;
   bool inserted;
-  std::tie(subsec, inserted) = map.insert(data, hash, Subsection(this));
-  assert(subsec);
+  std::tie(frag, inserted) = map.insert(data, hash, SectionFragment(this));
+  assert(frag);
 
-  for (u16 cur = subsec->alignment; cur < alignment;)
-    if (subsec->alignment.compare_exchange_weak(cur, alignment))
+  for (u16 cur = frag->alignment; cur < alignment;)
+    if (frag->alignment.compare_exchange_weak(cur, alignment))
       break;
-  return subsec;
+  return frag;
 }
 
 template <typename E>
@@ -1199,18 +1199,18 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
     struct KeyVal {
       std::string_view key;
-      Subsection<E> *val;
+      SectionFragment<E> *val;
     };
 
-    std::vector<KeyVal> subsections;
-    subsections.reserve(shard_size);
+    std::vector<KeyVal> fragments;
+    fragments.reserve(shard_size);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (Subsection<E> &subsec = map.values[j]; subsec.is_alive)
-        subsections.push_back({{map.keys[j], map.sizes[j]}, &subsec});
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        fragments.push_back({{map.keys[j], map.sizes[j]}, &frag});
 
-    // Sort subsections to make output deterministic.
-    tbb::parallel_sort(subsections.begin(), subsections.end(),
+    // Sort fragments to make output deterministic.
+    tbb::parallel_sort(fragments.begin(), fragments.end(),
                        [](const KeyVal &a, const KeyVal &b) {
       if (a.val->alignment != b.val->alignment)
         return a.val->alignment < b.val->alignment;
@@ -1223,19 +1223,19 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     i64 offset = 0;
     i64 max_alignment = 0;
 
-    for (KeyVal &kv : subsections) {
-      Subsection<E> &subsec = *kv.val;
-      offset = align_to(offset, subsec.alignment);
-      subsec.offset = offset;
+    for (KeyVal &kv : fragments) {
+      SectionFragment<E> &frag = *kv.val;
+      offset = align_to(offset, frag.alignment);
+      frag.offset = offset;
       offset += kv.key.size();
-      max_alignment = std::max<i64>(max_alignment, subsec.alignment);
+      max_alignment = std::max<i64>(max_alignment, frag.alignment);
     }
 
     sizes[i] = offset;
     max_alignments[i] = max_alignment;
 
     static Counter merged_strings("merged_strings");
-    merged_strings += subsections.size();
+    merged_strings += fragments.size();
   });
 
   i64 alignment = 1;
@@ -1248,8 +1248,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (Subsection<E> &subsec = map.values[j]; subsec.is_alive)
-        subsec.offset += shard_offsets[i];
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        frag.offset += shard_offsets[i];
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
@@ -1269,8 +1269,8 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (Subsection<E> &subsec = map.values[j]; subsec.is_alive)
-        memcpy(buf + subsec.offset, map.keys[j], map.sizes[j]);
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+        memcpy(buf + frag.offset, map.keys[j], map.sizes[j]);
   });
 }
 

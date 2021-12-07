@@ -126,7 +126,7 @@ template <>
 void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
   ElfRel<AARCH64> *dynrel = nullptr;
   std::span<ElfRel<AARCH64>> rels = get_rels(ctx);
-  i64 subsec_idx = 0;
+  i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<AARCH64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -140,9 +140,9 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
     Symbol<AARCH64> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SubsectionRef<AARCH64> *ref = nullptr;
-    if (rel_subsections && rel_subsections[subsec_idx].idx == i)
-      ref = &rel_subsections[subsec_idx++];
+    const SectionFragmentRef<AARCH64> *ref = nullptr;
+    if (rel_fragments && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -151,7 +151,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
-#define S   (ref ? ref->subsec->get_addr(ctx) : sym.get_addr(ctx))
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
@@ -341,7 +341,7 @@ void InputSection<AARCH64>::apply_reloc_alloc(Context<AARCH64> &ctx, u8 *base) {
 template <>
 void InputSection<AARCH64>::apply_reloc_nonalloc(Context<AARCH64> &ctx, u8 *base) {
   std::span<ElfRel<AARCH64>> rels = get_rels(ctx);
-  i64 subsec_idx = 0;
+  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<AARCH64> &rel = rels[i];
@@ -356,11 +356,11 @@ void InputSection<AARCH64>::apply_reloc_nonalloc(Context<AARCH64> &ctx, u8 *base
       continue;
     }
 
-    const SubsectionRef<AARCH64> *ref = nullptr;
-    if (rel_subsections && rel_subsections[subsec_idx].idx == i)
-      ref = &rel_subsections[subsec_idx++];
+    const SectionFragmentRef<AARCH64> *ref = nullptr;
+    if (rel_fragments && rel_fragments[frag_idx].idx == i)
+      ref = &rel_fragments[frag_idx++];
 
-#define S   (ref ? ref->subsec->get_addr(ctx) : sym.get_addr(ctx))
+#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (ref ? ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)

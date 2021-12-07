@@ -479,7 +479,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   this->symbols.resize(elf_syms.size());
 
   i64 num_globals = elf_syms.size() - first_global;
-  sym_subsections.resize(elf_syms.size());
+  sym_fragments.resize(elf_syms.size());
   symvers.resize(num_globals);
 
   for (i64 i = 0; i < first_global; i++)
@@ -537,7 +537,7 @@ static size_t find_null(std::string_view data, u64 entsize) {
 // contain fixed-sized read-only records too.
 //
 // This function splits the section contents into small pieces that we
-// call "subsections". Subsection is a unit of merging.
+// call "section fragments". Section fragment is a unit of merging.
 //
 // We do not support mergeable sections that have relocations.
 template <typename E>
@@ -553,7 +553,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   u64 entsize = sec.shdr.sh_entsize;
   HyperLogLog estimator;
 
-  static_assert(sizeof(Subsection<E>::alignment) == 2);
+  static_assert(sizeof(SectionFragment<E>::alignment) == 2);
   if (sec.shdr.sh_addralign >= UINT16_MAX)
     Fatal(ctx) << sec << ": alignment too large";
 
@@ -567,7 +567,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       data = data.substr(end + entsize);
 
       rec->strings.push_back(substr);
-      rec->subsec_offsets.push_back(substr.data() - begin);
+      rec->frag_offsets.push_back(substr.data() - begin);
 
       u64 hash = hash_string(substr);
       rec->hashes.push_back(hash);
@@ -582,7 +582,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       data = data.substr(entsize);
 
       rec->strings.push_back(substr);
-      rec->subsec_offsets.push_back(substr.data() - begin);
+      rec->frag_offsets.push_back(substr.data() - begin);
 
       u64 hash = hash_string(substr);
       rec->hashes.push_back(hash);
@@ -592,8 +592,8 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 
   rec->parent->estimator.merge(estimator);
 
-  static Counter counter("string_subsections");
-  counter += rec->subsections.size();
+  static Counter counter("string_fragments");
+  counter += rec->fragments.size();
   return rec;
 }
 
@@ -659,10 +659,10 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
     if (m)
       for (i64 i = 0; i < m->strings.size(); i++)
-        m->subsections.push_back(m->parent->insert(m->strings[i], m->hashes[i],
-                                                   m->shdr.sh_addralign));
+        m->fragments.push_back(m->parent->insert(m->strings[i], m->hashes[i],
+                                                 m->shdr.sh_addralign));
 
-  // Initialize rel_subsections
+  // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
     if (!isec || !isec->is_alive)
       continue;
@@ -671,7 +671,7 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
     if (rels.empty())
       continue;
 
-    // Compute the size of rel_subsections.
+    // Compute the size of rel_fragments.
     i64 len = 0;
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
@@ -683,10 +683,10 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
     if (len == 0)
       continue;
 
-    isec->rel_subsections.reset(new SubsectionRef<E>[len + 1]);
-    i64 subsec_idx = 0;
+    isec->rel_fragments.reset(new SectionFragmentRef<E>[len + 1]);
+    i64 frag_idx = 0;
 
-    // Fill rel_subsections contents.
+    // Fill rel_fragments contents.
     for (i64 i = 0; i < rels.size(); i++) {
       const ElfRel<E> &rel = rels[i];
       const ElfSym<E> &esym = elf_syms[rel.r_sym];
@@ -699,21 +699,21 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
         continue;
 
       i64 offset = esym.st_value + isec->get_addend(rel);
-      std::span<u32> offsets = m->subsec_offsets;
+      std::span<u32> offsets = m->frag_offsets;
 
       auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
       if (it == offsets.begin())
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
       i64 idx = it - 1 - offsets.begin();
 
-      isec->rel_subsections[subsec_idx++] = {m->subsections[idx], (i32)i,
+      isec->rel_fragments[frag_idx++] = {m->fragments[idx], (i32)i,
                                          (i32)(offset - offsets[idx])};
     }
 
-    isec->rel_subsections[subsec_idx++] = {nullptr, -1, -1};
+    isec->rel_fragments[frag_idx++] = {nullptr, -1, -1};
   }
 
-  // Initialize sym_subsections
+  // Initialize sym_fragments
   for (i64 i = 0; i < elf_syms.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
@@ -724,7 +724,7 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
     if (!m)
       continue;
 
-    std::span<u32> offsets = m->subsec_offsets;
+    std::span<u32> offsets = m->frag_offsets;
 
     auto it = std::upper_bound(offsets.begin(), offsets.end(), esym.st_value);
     if (it == offsets.begin())
@@ -734,14 +734,13 @@ void ObjectFile<E>::register_subsections(Context<E> &ctx) {
     if (i < first_global)
       this->symbols[i]->value = esym.st_value - offsets[idx];
 
-    sym_subsections[i].subsec = m->subsections[idx];
-    sym_subsections[i].addend = esym.st_value - offsets[idx];
+    sym_fragments[i].frag = m->fragments[idx];
+    sym_fragments[i].addend = esym.st_value - offsets[idx];
   }
 
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
     if (m)
-      subsections.insert(subsections.end(), m->subsections.begin(),
-                         m->subsections.end());
+      fragments.insert(fragments.end(), m->fragments.begin(), m->fragments.end());
 }
 
 template <typename E>
@@ -802,7 +801,7 @@ void ObjectFile<E>::override_symbol(Context<E> &ctx, Symbol<E> &sym,
   sym.file = this;
   sym.input_section = esym.is_abs() ? nullptr : get_section(esym);
 
-  if (SubsectionRef<E> &ref = sym_subsections[symidx]; ref.subsec)
+  if (SectionFragmentRef<E> &ref = sym_fragments[symidx]; ref.frag)
     sym.value = ref.addend;
   else
     sym.value = esym.st_value;
