@@ -566,7 +566,7 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
     enc.add(ctx.data_seg->seg_idx,
-            ctx.lazy_symbol_ptr.hdr.addr + i * E::wordsize -
+            ctx.lazy_symbol_ptr.hdr.addr + i * E::word_size -
             ctx.data_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.got.syms)
@@ -689,7 +689,7 @@ void OutputLazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
   i64 seg_idx = ctx.data_seg->seg_idx;
   emit(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
 
-  i64 offset = ctx.lazy_symbol_ptr.hdr.addr + sym.stub_idx * E::wordsize -
+  i64 offset = ctx.lazy_symbol_ptr.hdr.addr + sym.stub_idx * E::word_size -
                ctx.data_seg->cmd.vmaddr;
   encode_uleb(contents, offset);
 
@@ -1075,7 +1075,7 @@ void StubsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
 
   ctx.stub_helper.hdr.size =
     E::stub_helper_hdr_size + nsyms * E::stub_helper_size;
-  ctx.lazy_symbol_ptr.hdr.size = nsyms * E::wordsize;
+  ctx.lazy_symbol_ptr.hdr.size = nsyms * E::word_size;
 }
 
 template <typename E>
@@ -1239,7 +1239,7 @@ void GotSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->got_idx == -1);
   sym->got_idx = syms.size();
   syms.push_back(sym);
-  this->hdr.size = syms.size() * E::wordsize;
+  this->hdr.size = syms.size() * E::word_size;
 }
 
 template <typename E>
@@ -1264,7 +1264,7 @@ void ThreadPtrsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->tlv_idx == -1);
   sym->tlv_idx = syms.size();
   syms.push_back(sym);
-  this->hdr.size = syms.size() * E::wordsize;
+  this->hdr.size = syms.size() * E::word_size;
 }
 
 template <typename E>

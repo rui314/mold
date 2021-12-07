@@ -28,7 +28,7 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 
     static_assert(sizeof(insn) == ARM64::stub_size);
 
-    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::wordsize * i;
+    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::word_size * i;
     u64 this_addr = this->hdr.addr + ARM64::stub_size * i;
 
     memcpy(buf, insn, sizeof(insn));

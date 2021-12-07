@@ -336,7 +336,7 @@ public:
   OutputEhdr() : Chunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -347,7 +347,7 @@ template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() : Chunk<E>(this->HEADER) {
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -360,7 +360,7 @@ class OutputPhdr : public Chunk<E> {
 public:
   OutputPhdr() : Chunk<E>(this->HEADER) {
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -404,7 +404,7 @@ public:
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -431,7 +431,7 @@ public:
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -477,7 +477,7 @@ public:
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -492,7 +492,7 @@ public:
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -553,7 +553,7 @@ public:
     this->name = ".dynamic";
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
     this->shdr.sh_entsize = sizeof(ElfDyn<E>);
   }
 
@@ -568,7 +568,7 @@ public:
     this->name = ".symtab";
     this->shdr.sh_type = SHT_SYMTAB;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -583,7 +583,7 @@ public:
     this->shdr.sh_type = SHT_DYNSYM;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -616,7 +616,7 @@ public:
     this->name = ".gnu.hash";
     this->shdr.sh_type = SHT_GNU_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -625,7 +625,7 @@ public:
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
   static constexpr i64 BLOOM_SHIFT = 26;
-  static constexpr i64 ELFCLASS_BITS = E::wordsize * 8;
+  static constexpr i64 ELFCLASS_BITS = E::word_size * 8;
 
   u32 num_buckets = -1;
   u32 num_bloom = 1;
@@ -659,7 +659,7 @@ public:
     this->name = ".eh_frame";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void construct(Context<E> &ctx);
@@ -725,7 +725,7 @@ public:
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void construct(Context<E> &ctx);
@@ -777,7 +777,7 @@ public:
     this->name = ".note.gnu.property";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = E::wordsize;
+    this->shdr.sh_addralign = E::word_size;
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -1502,27 +1502,27 @@ public:
   }
 
   u64 get_got_addr(Context<E> &ctx) const {
-    return ctx.got->shdr.sh_addr + get_got_idx(ctx) * E::wordsize;
+    return ctx.got->shdr.sh_addr + get_got_idx(ctx) * E::word_size;
   }
 
   u64 get_gotplt_addr(Context<E> &ctx) const {
     assert(get_gotplt_idx(ctx) != -1);
-    return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::wordsize;
+    return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * E::word_size;
   }
 
   u64 get_gottp_addr(Context<E> &ctx) const {
     assert(get_gottp_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::wordsize;
+    return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * E::word_size;
   }
 
   u64 get_tlsgd_addr(Context<E> &ctx) const {
     assert(get_tlsgd_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::wordsize;
+    return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * E::word_size;
   }
 
   u64 get_tlsdesc_addr(Context<E> &ctx) const {
     assert(get_tlsdesc_idx(ctx) != -1);
-    return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::wordsize;
+    return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * E::word_size;
   }
 
   u64 get_plt_addr(Context<E> &ctx) const {
