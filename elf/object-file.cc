@@ -888,7 +888,11 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
-    merge_visibility(ctx, sym, exclude_libs ? STV_HIDDEN : esym.st_visibility);
+
+    u8 visibility = esym.st_visibility;
+    if (esym.is_defined() && exclude_libs)
+      visibility = STV_HIDDEN;
+    merge_visibility(ctx, sym, visibility);
 
     if (sym.traced) {
       if (esym.is_defined())
