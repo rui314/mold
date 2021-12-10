@@ -7,17 +7,13 @@ namespace mold {
 
 std::string_view demangle(std::string_view name) {
   if (name.starts_with("_Z")) {
-    static thread_local char *buf1;
-    static thread_local char *buf2;
-
-    buf1 = (char *)realloc(buf1, name.size() + 1);
-    memcpy(buf1, name.data(), name.size());
-    buf1[name.size()] = '\0';
+    static thread_local char *buf;
+    static thread_local size_t buflen;
 
     int status;
-    char *p = abi::__cxa_demangle(buf1, buf2, NULL, &status);
+    char *p = abi::__cxa_demangle(std::string(name).c_str(), buf, &buflen, &status);
     if (status == 0) {
-      buf2 = p;
+      buf = p;
       return p;
     }
   }
