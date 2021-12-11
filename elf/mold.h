@@ -1828,7 +1828,7 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
 }
 
 template <>
-inline i64 InputSection<AARCH64>::get_addend(const ElfRel<AARCH64> &rel) const {
+inline i64 InputSection<ARM64>::get_addend(const ElfRel<ARM64> &rel) const {
   return rel.r_addend;
 }
 

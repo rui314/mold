@@ -289,7 +289,7 @@ ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
 }
 
 template <>
-ElfRel<AARCH64> reloc<AARCH64>(u64 offset, u32 type, u32 sym, i64 addend) {
+ElfRel<ARM64> reloc<ARM64>(u64 offset, u32 type, u32 sym, i64 addend) {
   return {offset, type, sym, addend};
 }
 
@@ -1863,6 +1863,6 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
-INSTANTIATE(AARCH64);
+INSTANTIATE(ARM64);
 
 } // namespace mold::elf

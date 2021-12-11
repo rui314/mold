@@ -335,7 +335,7 @@ static int elf_main(int argc, char **argv) {
     case EM_386:
       return elf_main<I386>(argc, argv);
     case EM_AARCH64:
-      return elf_main<AARCH64>(argc, argv);
+      return elf_main<ARM64>(argc, argv);
     }
     unreachable();
   }
@@ -670,6 +670,6 @@ int main(int argc, char **argv) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
-INSTANTIATE(AARCH64);
+INSTANTIATE(ARM64);
 
 } // namespace mold::elf

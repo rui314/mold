@@ -184,6 +184,6 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
-INSTANTIATE(AARCH64);
+INSTANTIATE(ARM64);
 
 } // namespace mold::elf
