@@ -12,6 +12,12 @@ on a simulated 8-core 16-threads machine.
 
 ![Link speed comparison](docs/comparison.png)
 
+| Program (linker output size)  | GNU gold | LLVM lld | mold
+|-------------------------------|----------|----------|--------
+| Chrome 96 (1.89 GiB)          | 53.86s   | 11.74s   | 2.21s
+| Clang 13 (3.18 GiB)           | 64.12s   | 5.82s    | 2.90s
+| Firefox 89 libxul (1.64 GiB)  | 32.95s   | 6.80s    | 1.42s
+
 mold is so fast that it is only 2x _slower_ than `cp` on the same
 machine.
 
@@ -59,13 +65,14 @@ make -j$(nproc)
 sudo make install
 ```
 
-The last `make` command creates `mold` executable.
+By default, `mold` is installed to `/usr/local/bin`.
 
 If you don't use a recent enough Linux distribution, or if for any reason `make`
 in the above commands doesn't work for you, you can use Docker to build it in
 a Docker environment. To do so, just run `./build-static.sh` in this
-directory. The script creates a Ubuntu 20.04 Docker image, installs
-necessary tools and libraries to it, and builds mold as a static binary.
+directory instead of running `make -j$(nproc)`. The shell script creates a
+Ubuntu 20.04 Docker image, installs necessary tools and libraries to it,
+and builds mold as a statically-linked executable.
 
 `make test` depends on a few more packages. To install, run the following commands:
 
@@ -94,14 +101,14 @@ mold has a feature to intercept all invocations of `ld`, `ld.lld` or
 (or another build command) as a subcommand of mold as follows:
 
 ```shell
-path/to/mold -run make <make-options-if-any>
+mold -run make <make-options-if-any>
 ```
 
 Here's an example showing how to link Rust code when using the
 cargo package manager:
 
 ```shell
-path/to/mold -run cargo build
+mold -run cargo build
 ```
 
 Internally, mold invokes a given command with `LD_PRELOAD` environment
@@ -124,9 +131,9 @@ If `mold` is in `.comment`, the file is created by mold.
 
 ## Why is mold so fast?
 
-One reason is that it simply uses faster algorithms and efficient data
-structures than other linkers do.  The other reason is that the new
-linker is highly parallelized.
+One reason is because it simply uses faster algorithms and efficient
+data structures than other linkers do. The other reason is that the
+new linker is highly parallelized.
 
 Here is a side-by-side comparison of per-core CPU usage of lld (left)
 and mold (right). They are linking the same program, Chromium
@@ -139,7 +146,7 @@ and finishes quickly. On the other hand, lld failed to use available
 cores most of the time. In this demo, the maximum parallelism is
 artificially capped to 16 so that the bars fit in the GIF.
 
-For details, please read [design note](docs/design.md).
+For details, please read [design notes](docs/design.md).
 
 # Logo
 

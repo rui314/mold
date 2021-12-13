@@ -73,20 +73,6 @@ Here is why I'm writing a new linker:
   the contents of a .got section. This is computationally intensive,
   but this step is parallelizable.
 
-### Compatibility
-
-- GNU ld, GNU gold and LLVM lld support essentially the same set of
-  command line options and features. mold doesn't have to be
-  completely compatible with them. As long as it can be used for
-  linking large user-land programs, I'm fine with that. It is OK to
-  leave some command line options unimplemented; if mold is blazingly
-  fast, other projects would still be happy to adopt it by modifying
-  their projects' build files.
-
-- mold emits Linux executables and runs only on Linux. I won't avoid
-  Unix-ism when writing code. I don't want to think about portability
-  until mold becomes a thing that's worth being ported.
-
 ### Linker Script
 
 Linker script is an embedded language for the linker. It is mainly
