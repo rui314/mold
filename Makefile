@@ -140,8 +140,6 @@ install: all
 
 	install -m 755 -d $D$(MANDIR)/man1
 	install -m 644 docs/mold.1 $D$(MANDIR)/man1
-	rm -f $D$(MANDIR)/man1/mold.1.gz
-	gzip -9 $D$(MANDIR)/man1/mold.1
 
 	ln -sf mold $D$(BINDIR)/ld.mold
 	ln -sf mold $D$(BINDIR)/ld64.mold
