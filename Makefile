@@ -17,10 +17,15 @@ STRIP ?= strip
 
 OS ?= $(shell uname -s)
 
-CPPFLAGS = -pthread -std=c++20 -fPIE -DMOLD_VERSION=\"0.9.6\" \
-	   -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
-	   -DLIBDIR="\"$(LIBDIR)\"" $(EXTRA_CPPFLAGS)
-LDFLAGS += $(EXTRA_LDFLAGS)
+# Used for both C and C++
+COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
+
+CFLAGS ?= -O2
+CFLAGS += $(COMMON_FLAGS)
+
+CXXFLAGS ?= -O2
+CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
+CPPFLAGS += -DMOLD_VERSION=\"0.9.6\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
@@ -38,21 +43,19 @@ ifneq ($(GIT_HASH),)
 endif
 
 ifeq ($(DEBUG), 1)
-  CPPFLAGS += -O0 -g
-else
-  CPPFLAGS += -O2
+  CXXFLAGS += -O0 -g
 endif
 
 ifeq ($(LTO), 1)
-  CPPFLAGS += -flto -O3
+  CXXFLAGS += -flto -O3
   LDFLAGS  += -flto
 endif
 
 ifeq ($(ASAN), 1)
-  CPPFLAGS += -fsanitize=address
+  CXXFLAGS += -fsanitize=address
   LDFLAGS  += -fsanitize=address
 else ifeq ($(TSAN), 1)
-  CPPFLAGS += -fsanitize=thread
+  CXXFLAGS += -fsanitize=thread
   LDFLAGS  += -fsanitize=thread
 else ifneq ($(OS), Darwin)
   # By default, we want to use mimalloc as a memory allocator.
@@ -89,15 +92,15 @@ endif
 all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
-	$(CXX) $(CPPFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LIBS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
-	$(CC) -fPIC -shared -o $@ $< -ldl
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $< -ldl
 
 out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
-	$(CXX) $(CPPFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 out/elf/.keep:
 	mkdir -p out/elf
