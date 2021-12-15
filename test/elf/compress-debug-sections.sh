@@ -6,6 +6,8 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
+which dwarfdump >& /dev/null || { echo skipped; exit; }
+
 cat <<EOF | clang -c -g -o $t/a.o -xc -
 #include <stdio.h>
 

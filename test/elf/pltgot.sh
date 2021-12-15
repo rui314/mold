@@ -29,6 +29,6 @@ $mold --pie -o $t/exe $t/b.o $t/a.so
 
 objdump -d -j .plt.got $t/exe > $t/log
 
-grep -Pq '1020:\s+ff 25 da 0f 00 00\s+jmpq   \*0xfda\(%rip\)\s+# 2000 <ext2>' $t/log
+grep -Pq '1020:\s+ff 25 da 0f 00 00\s+jmp.*# 2000 <ext2>' $t/log
 
 echo OK
