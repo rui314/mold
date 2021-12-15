@@ -146,7 +146,7 @@ install: all
 
 uninstall:
 	rm -f $D$(BINDIR)/mold $D$(BINDIR)/ld.mold $D$(BINDIR)/ld64.mold
-	rm -f $D$(MANDIR)/man1/mold.1.gz
+	rm -f $D$(MANDIR)/man1/mold.1
 	rm -rf $D$(LIBDIR)/mold
 
 clean:
