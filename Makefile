@@ -25,7 +25,7 @@ CFLAGS += $(COMMON_FLAGS)
 
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
-CPPFLAGS += -DMOLD_VERSION=\"0.9.6\" -DLIBDIR="\"$(LIBDIR)\""
+CPPFLAGS += -DMOLD_VERSION=\"1.0.0\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -lxxhash -ldl -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
