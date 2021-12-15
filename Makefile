@@ -26,7 +26,7 @@ CFLAGS += $(COMMON_FLAGS)
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
 CPPFLAGS += -DMOLD_VERSION=\"1.0.0\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz -lxxhash -ldl -lm
+LIBS = -pthread -lz -lxxhash -ldl -lm -lrt
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
