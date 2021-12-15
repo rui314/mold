@@ -134,7 +134,7 @@ If `mold` is in `.comment`, the file is created by mold.
 
 ## Why is mold so fast?
 
-One reason is because it simply uses faster algorithms and efficient
+One reason is because it simply uses faster algorithms and more efficient
 data structures than other linkers do. The other reason is that the
 new linker is highly parallelized.
 
