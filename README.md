@@ -21,6 +21,9 @@ on a simulated 8-core 16-threads machine.
 mold is so fast that it is only 2x _slower_ than `cp` on the same
 machine.
 
+Feel free to [file a bug](https://github.com/rui314/mold/issues) if
+you find mold is not faster than other linkers.
+
 ## Why does the speed of linking matter?
 
 If you are using a compiled language such as C, C++ or Rust, a build
