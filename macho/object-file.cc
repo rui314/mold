@@ -610,9 +610,10 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                                          \
-  template class ObjectFile<E>;                                 \
-  template class DylibFile<E>
+#define INSTANTIATE(E)                                                  \
+  template class ObjectFile<E>;                                         \
+  template class DylibFile<E>;                                          \
+  template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
 INSTANTIATE(ARM64);
 INSTANTIATE(X86_64);
