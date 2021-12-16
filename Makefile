@@ -123,10 +123,10 @@ $(TBB_LIB):
 
 ifeq ($(OS), Darwin)
 test tests check: all
-	$(MAKE) -C test -f Makefile.darwin --no-print-directory
+	LANG=C $(MAKE) -C test -f Makefile.darwin --no-print-directory
 else
 test tests check: all
-	$(MAKE) -C test -f Makefile.linux --no-print-directory --output-sync
+	LANG=C $(MAKE) -C test -f Makefile.linux --no-print-directory --output-sync
 endif
 
 install: all
