@@ -34,4 +34,4 @@ LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
 docker run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
   mold-build-ubuntu20 \
-  make -C /mold -j$(nproc) EXTRA_LDFLAGS="$LDFLAGS"
+  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS"
