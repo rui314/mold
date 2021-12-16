@@ -29,7 +29,9 @@
 #include <vector>
 #include <xxh3.h>
 
-template<> struct tbb::tbb_hash_compare<std::string_view> {
+template<>
+class tbb::tbb_hash_compare<std::string_view> {
+public:
   static size_t hash(const std::string_view &k) {
     return XXH3_64bits(k.data(), k.size());
   }
