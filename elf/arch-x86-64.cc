@@ -631,7 +631,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         Fatal(ctx) << *this
                    << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
       if (sym.is_imported)
-        Fatal(ctx) << *this << ": TLSLD reloc refers external symbol " << sym;
+        Fatal(ctx) << *this << ": TLSLD reloc refers external symbol: " << sym;
 
       if (ctx.arg.relax && !ctx.arg.shared)
         i++;
@@ -641,7 +641,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
       if (sym.is_imported)
-        Fatal(ctx) << *this << ": DTPOFF reloc refers external symbol " << sym;
+        Fatal(ctx) << *this << ": DTPOFF reloc refers external symbol: " << sym;
       break;
     case R_X86_64_GOTTPOFF: {
       ctx.has_gottp_rel = true;
