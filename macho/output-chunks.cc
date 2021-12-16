@@ -484,12 +484,12 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
     vmaddr += sec.hdr.size;
   }
 
-  cmd.vmsize = align_to(vmaddr - cmd.vmaddr, PAGE_SIZE);
+  cmd.vmsize = align_to(vmaddr - cmd.vmaddr, COMMON_PAGE_SIZE);
 
   if (this == ctx.segments.back().get())
     cmd.filesize = fileoff - cmd.fileoff;
   else
-    cmd.filesize = align_to(fileoff - cmd.fileoff, PAGE_SIZE);
+    cmd.filesize = align_to(fileoff - cmd.fileoff, COMMON_PAGE_SIZE);
 }
 
 template <typename E>
