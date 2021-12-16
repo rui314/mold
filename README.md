@@ -55,7 +55,7 @@ sudo apt-get install -y build-essential git clang cmake libstdc++-10-dev libssl-
 #### Fedora 34 and later
 
 ```shell
-sudo dnf install -y git clang-c++ cmake openssl-devel xxhash-devel zlib-devel
+sudo dnf install -y git clang-c++ cmake openssl-devel xxhash-devel zlib-devel libstdc++-devel
 ```
 
 ### Compile mold
