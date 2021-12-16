@@ -31,7 +31,7 @@ If a program is statically-linked, there's no dynamic loader that
 rewrites the GOT entries. Therefore, if a program is
 statically-linked, a libc's startup routine does that on behalf of the
 dynamic loader. Concretely, a startup routine interprets all dynamic
-relocations between `__rela_iplt_start` and `__rela_iplt_start`
+relocations between `__rela_iplt_start` and `__rela_iplt_stop`
 symbols.  It is linker's responsibility to emit dynamic relocations
 for IFUNC symbols even if it is linking a statically-linked program
 and mark the beginning and the ending of a `.rela.dyn` section with
@@ -41,7 +41,7 @@ The bug was my linker didn't define `__rela_iplt_start` and
 `__rela_iplt_stop` symbols. Since these symbols are weak, they are
 initialized to zero. From the point of the initializer function,
 there's no dynamic relocations between `__rela_iplt_start` and
-`__rela_iplt_start` symbols. That left GOT entries for IFUNC symbols
+`__rela_iplt_stop` symbols. That left GOT entries for IFUNC symbols
 untouched.
 
 The proper fix was to emit dynamic relocations for IFUNC symbols and
