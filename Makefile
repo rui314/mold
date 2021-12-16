@@ -26,7 +26,7 @@ CFLAGS += $(COMMON_FLAGS)
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
 CPPFLAGS += -DMOLD_VERSION=\"1.0.0\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz -lxxhash -ldl -lm -lrt
+LIBS = -pthread -lz -lxxhash -ldl -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
@@ -83,6 +83,11 @@ else
   TBB_LIB = out/tbb/libs/libtbb.a
   LIBS += $(TBB_LIB)
   CPPFLAGS += -Ithird-party/tbb/include
+endif
+
+ifeq ($(OS), Linux)
+  # glibc versions before 2.17 need librt for clock_gettime
+  LIBS += -lrt
 endif
 
 ifneq ($(OS), Darwin)
