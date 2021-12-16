@@ -26,7 +26,7 @@ CFLAGS += $(COMMON_FLAGS)
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
 CPPFLAGS += -DMOLD_VERSION=\"1.0.0\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz -lxxhash -ldl -lm
+LIBS = -pthread -lz -lxxhash -ldl -lm -lrt
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
@@ -66,7 +66,7 @@ else ifneq ($(OS), Darwin)
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
     CPPFLAGS += -Ithird-party/mimalloc/include
-    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive -lrt
+    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
 
