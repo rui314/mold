@@ -989,15 +989,13 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     std::lock_guard lock(sym.mu);
 
-    auto claim = [&](bool is_imported) {
+    auto claim = [&]() {
       sym.file = this;
       sym.input_section = nullptr;
       sym.value = 0;
       sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
       sym.is_lazy = false;
       sym.is_weak = false;
-      sym.is_imported = is_imported;
       sym.is_exported = false;
     };
 
@@ -1015,7 +1013,10 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       // (they use this loophole to export symbols from libxul.so).
       if (ctx.arg.shared && (!ctx.arg.z_defs || esym.is_undef_weak())) {
         // Convert remaining undefined symbols to dynamic symbols.
-        claim(!ctx.arg.is_static);
+        claim();
+        sym.ver_idx = 0;
+        sym.is_imported = !ctx.arg.is_static;
+
         if (sym.traced)
           SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
                        << (esym.is_weak() ? " weak" : "")
@@ -1024,7 +1025,10 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
                  esym.is_undef_weak()) {
         // Convert remaining undefined symbols to absolute symbols with
         // value 0.
-        claim(false);
+        claim();
+        sym.ver_idx = ctx.arg.default_version;
+        sym.is_imported = false;
+
         if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
           Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
       }
