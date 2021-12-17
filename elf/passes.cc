@@ -589,26 +589,55 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
-  for (VersionPattern &elem : ctx.arg.version_patterns) {
-    assert(elem.pattern != "*");
+  auto to_regex = [](std::span<std::string_view> vec) -> std::string {
+    switch (vec.size()) {
+    case 0:
+      return "";
+    case 1:
+      return glob_to_regex(vec[0]);
+    default:
+      std::string re = glob_to_regex(vec[0]);
+      for (std::string_view s : vec.subspan(1))
+        re += "|" + glob_to_regex(s);
+      return re;
+    }
+  };
 
-    if (!elem.is_extern_cpp &&
-        elem.pattern.find('*') == elem.pattern.npos) {
-      Symbol<E> *sym = intern(ctx, elem.pattern);
-      if (sym->file && !sym->file->is_dso)
-        sym->ver_idx = elem.ver_idx;
-      continue;
+  for (VersionPattern &elem : ctx.arg.version_patterns) {
+    std::vector<std::string_view> vec;
+
+    for (std::string_view pat : elem.patterns) {
+      if (pat.find('*') == pat.npos) {
+        Symbol<E> *sym = intern(ctx, pat);
+        if (sym->file && !sym->file->is_dso)
+          sym->ver_idx = elem.ver_idx;
+      } else {
+        vec.push_back(pat);
+      }
     }
 
-    std::regex re = glob_to_regex(elem.pattern);
+    if (vec.empty() && elem.cpp_patterns.empty())
+      continue;
+
+    auto flags = std::regex_constants::optimize | std::regex_constants::nosubs;
+    std::regex re(to_regex(vec), flags);
+    std::regex cpp_re(to_regex(elem.cpp_patterns), flags);
 
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->get_global_syms()) {
-        if (sym->file == file) {
-          std::string_view name = sym->name();
-          if (elem.is_extern_cpp)
-            name = demangle(name);
-          if (std::regex_match(name.begin(), name.end(), re))
+        if (sym->file != file)
+          continue;
+
+        std::string_view name = sym->name();
+
+        if (!vec.empty() && std::regex_match(name.begin(), name.end(), re)) {
+          sym->ver_idx = elem.ver_idx;
+          continue;
+        }
+
+        if (!elem.cpp_patterns.empty()) {
+          std::string_view s = demangle(name);
+          if (std::regex_match(s.begin(), s.end(), cpp_re))
             sym->ver_idx = elem.ver_idx;
         }
       }

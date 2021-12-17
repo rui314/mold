@@ -1156,9 +1156,9 @@ typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
 typedef enum { ERROR, WARN, IGNORE } UnresolvedKind;
 
 struct VersionPattern {
-  std::string_view pattern;
   i16 ver_idx;
-  bool is_extern_cpp;
+  std::vector<std::string_view> patterns;
+  std::vector<std::string_view> cpp_patterns;
 };
 
 template <typename E, typename T>
@@ -1403,7 +1403,7 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-std::regex glob_to_regex(std::string_view pat);
+std::string glob_to_regex(std::string_view pat);
 
 int main(int argc, char **argv);
 

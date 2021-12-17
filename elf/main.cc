@@ -16,7 +16,7 @@
 
 namespace mold::elf {
 
-std::regex glob_to_regex(std::string_view pattern) {
+std::string glob_to_regex(std::string_view pattern) {
   std::stringstream ss;
   for (u8 c : pattern) {
     if (c == '*')
@@ -24,7 +24,7 @@ std::regex glob_to_regex(std::string_view pattern) {
     else
       ss << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (int)c;
   }
-  return std::regex(ss.str(), std::regex::optimize);
+  return ss.str();
 }
 
 template <typename E>
