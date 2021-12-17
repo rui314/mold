@@ -1,4 +1,5 @@
 #!/bin/bash
+export LANG=
 set -e
 cd $(dirname $0)
 mold=`pwd`/../../ld64.mold
