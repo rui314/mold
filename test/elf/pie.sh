@@ -16,7 +16,7 @@ int main() {
 EOF
 
 clang -fuse-ld=$mold -pie -o $t/exe $t/a.o
-readelf --file-header $t/exe | grep -q 'Shared object file'
+readelf --file-header $t/exe | grep -q -E '(Shared object file|Position-Independent Executable file)'
 $t/exe | grep -q 'Hello world'
 
 echo OK
