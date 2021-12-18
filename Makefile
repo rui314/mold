@@ -26,7 +26,7 @@ CFLAGS += $(COMMON_FLAGS)
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
 CPPFLAGS += -DMOLD_VERSION=\"1.0.0\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz -lxxhash -ldl -lm
+LIBS = -pthread -lz -ldl -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
@@ -85,6 +85,14 @@ else
   CPPFLAGS += -Ithird-party/tbb/include
 endif
 
+ifdef SYSTEM_XXHASH
+  LIBS += -lxxhash
+else
+  XXHASH_LIB = third-party/xxhash/libxxhash.a
+  LIBS += $(XXHASH_LIB)
+  CPPFLAGS += -Ithird-party/xxhash
+endif
+
 ifeq ($(OS), Linux)
   # glibc versions before 2.17 need librt for clock_gettime
   LIBS += -lrt
@@ -96,7 +104,7 @@ endif
 
 all: mold mold-wrapper.so
 
-mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
@@ -125,6 +133,9 @@ $(TBB_LIB):
 	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS=-D__TBB_DYNAMIC_LOAD_ENABLED=0 -DTBB_STRICT=OFF ../../third-party/tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
+
+$(XXHASH_LIB):
+	$(MAKE) -C third-party/xxhash libxxhash.a
 
 ifeq ($(OS), Darwin)
 test tests check: all
@@ -156,5 +167,6 @@ uninstall:
 
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64.mold
+	$(MAKE) -C third-party/xxhash clean
 
 .PHONY: all test tests check clean
