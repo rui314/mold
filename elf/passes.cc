@@ -205,7 +205,8 @@ template <typename E>
 void add_comment_string(Context<E> &ctx, std::string str) {
   std::string_view buf = save_string(ctx, str);
   MergedSection<E> *sec =
-    MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS, 0);
+    MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS,
+                                   SHF_MERGE | SHF_STRINGS);
   std::string_view data(buf.data(), buf.size() + 1);
   SectionFragment<E> *frag = sec->insert(data, hash_string(data), 1);
   frag->is_alive = true;
