@@ -2,14 +2,11 @@
 
 #include <functional>
 #include <map>
-#include <re2/re2.h>
 #include <regex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/partitioner.h>
 #include <unordered_set>
-
-using re2::RE2;
 
 namespace mold::elf {
 
@@ -622,12 +619,9 @@ void apply_version_script(Context<E> &ctx) {
     if (vec.empty() && elem.cpp_patterns.empty())
       continue;
 
-    RE2::Options opts;
-    opts.set_encoding(RE2::Options::EncodingLatin1);
-    opts.set_never_capture(true);
-
-    RE2 re(to_regex(vec), opts);
-    RE2 cpp_re(to_regex(elem.cpp_patterns), opts);
+    auto flags = std::regex_constants::optimize | std::regex_constants::nosubs;
+    std::regex re(to_regex(vec), flags);
+    std::regex cpp_re(to_regex(elem.cpp_patterns), flags);
 
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->get_global_syms()) {
@@ -636,15 +630,14 @@ void apply_version_script(Context<E> &ctx) {
 
         std::string_view name = sym->name();
 
-        if (!vec.empty() &&
-            RE2::FullMatch({name.data(), name.size()}, re)) {
+        if (!vec.empty() && std::regex_match(name.begin(), name.end(), re)) {
           sym->ver_idx = elem.ver_idx;
           continue;
         }
 
         if (!elem.cpp_patterns.empty()) {
           std::string_view s = demangle(name);
-          if (RE2::FullMatch({s.data(), s.size()}, cpp_re))
+          if (std::regex_match(s.begin(), s.end(), cpp_re))
             sym->ver_idx = elem.ver_idx;
         }
       }
