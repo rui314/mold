@@ -3,6 +3,8 @@ project(mold VERSION 1.0.0)
 
 SET(BUILD_SHARED_LIBS OFF CACHE INTERNAL "BUILD_SHARED_LIBS")
 
+add_definitions(-D__TBB_RESUMABLE_TASKS_USE_THREADS=1)
+
 find_package(Threads)
 include(cmake/pkg.cmake)
 
