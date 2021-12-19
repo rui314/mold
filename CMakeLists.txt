@@ -10,6 +10,9 @@ file(GLOB MOLD_SRC_FILES ./*.cc elf/*.cc macho/*.cc)
 add_executable(mold ${MOLD_SRC_FILES})
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold crypto tbb mimalloc-static mimalloc-static zlibstatic xxhash ${CMAKE_THREAD_LIBS_INIT})
-target_compile_definitions(mold PRIVATE MOLD_VERSION="1.0.0")
+target_compile_definitions(mold PRIVATE
+	MOLD_VERSION="1.0.0"
+	__TBB_RESUMABLE_TASKS_USE_THREADS=1
+)
 target_link_options(mold PRIVATE -flto)
 target_compile_options(mold PRIVATE -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables)
