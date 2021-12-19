@@ -2,9 +2,9 @@ name: Linux Release
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ main ]
   pull_request:
-    branches: [ dev ]
+    branches: [ main ]
   release:
     types:
       - published
