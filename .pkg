@@ -1,0 +1,20 @@
+[mimalloc]
+  url=git@github.com:motis-project/mimalloc.git
+  branch=master
+  commit=076f815cece59e0a0ee08237c8fbba75465452b6
+[tbb]
+  url=git@github.com:oneapi-src/oneTBB.git
+  branch=master
+  commit=883c2e5245c39624b3b5d6d56d5b203cf09eac38
+[xxhash]
+  url=git@github.com:motis-project/xxHash.git
+  branch=dev
+  commit=efe164419041d40ffc583b3d492331253233c19f
+[libressl]
+  url=git@github.com:motis-project/libressl.git
+  branch=master
+  commit=faa48d99b721dfa85fa9cc9695b2eae9dcbda503
+[zlib]
+  url=git@github.com:motis-project/zlib.git
+  branch=master
+  commit=8e7c86d3a0e49101b9a67d74c4a07345dcb0e485

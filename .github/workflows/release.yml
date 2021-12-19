@@ -1,0 +1,93 @@
+name: Linux Release
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ dev ]
+  release:
+    types:
+      - published
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - target: amd64
+            toolchain: x86_64-multilib-linux-musl
+          - target: x86
+            toolchain: x86_64-multilib-linux-musl
+          - target: arm
+            toolchain: arm-unknown-linux-musleabihf
+            emulator: qemu-arm-static
+          - target: arm64
+            toolchain: aarch64-unknown-linux-musl
+            emulator: qemu-aarch64-static
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install Build Dependencies
+        run: sudo apt-get install -y --no-install-recommends ninja-build qemu-user-static
+
+      - name: Install Toolchain
+        if: matrix.config.toolchain
+        run: |
+          wget https://github.com/motis-project/musl-toolchains/releases/latest/download/${{ matrix.config.toolchain }}.tar.xz
+          tar xf ${{ matrix.config.toolchain }}.tar.xz -C /opt
+
+      - name: CMake
+        run: |
+          cmake \
+            -S . -B build \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=/opt/${{ matrix.config.toolchain }}/toolchain-${{ matrix.config.target }}.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --target mold
+
+      - name: Run Tests
+        run: ./build/mold --help
+
+      # ==== DISTRIBUTION ====
+      - name: Upload Distribution
+        uses: actions/upload-artifact@v2
+        with:
+          name: mold-linux-${{ matrix.config.target }}
+          path: ./build/mold
+
+      - name: Upload Distribution (Legacy Naming)
+        uses: actions/upload-artifact@v2
+        with:
+          name: mold
+          path: ./build/mold
+
+      # ==== RELEASE ====
+      - name: Upload Release
+        if: github.event.action == 'published'
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/mold
+          asset_name: mold-linux-${{ matrix.config.target }}
+          asset_content_type: application/x-tar
+
+      - name: Upload Release (Legacy Naming)
+        if: github.event.action == 'published' && matrix.config.target == 'amd64'
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/mold
+          asset_name: mold
+          asset_content_type: application/x-tar

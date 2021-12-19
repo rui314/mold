@@ -1,3 +1,6 @@
+/deps
+/*build*
+/.pkg.mutex
 *.o
 *.so
 *~
