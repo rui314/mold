@@ -116,8 +116,8 @@ static MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
   i64 type = get_machine_type(ctx, mf);
   if (type == -1 || type == E::e_machine)
     return mf;
-  Warn(ctx) << path << ": skipping incompatible file"
-            << " " << (int)type << " " << (int)E::e_machine;
+  Warn(ctx) << path << ": skipping incompatible file " << (int)type
+            << " " << (int)E::e_machine;
   return nullptr;
 }
 
