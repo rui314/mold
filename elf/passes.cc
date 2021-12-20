@@ -551,7 +551,6 @@ void scan_rels(Context<E> &ctx) {
       }
     }
 
-
     if (sym->flags & NEEDS_GOTTP)
       ctx.got->add_gottp_symbol(ctx, sym);
 

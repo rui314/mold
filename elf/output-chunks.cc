@@ -244,7 +244,9 @@ void OutputPhdr<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void OutputPhdr<E>::copy_buf(Context<E> &ctx) {
-  write_vector(ctx.buf + this->shdr.sh_offset, create_phdr(ctx));
+  std::vector<ElfPhdr<E>> vec = create_phdr(ctx);
+  assert(this->shdr.sh_size == vec.size() * sizeof(ElfPhdr<E>));
+  write_vector(ctx.buf + this->shdr.sh_offset, vec);
 }
 
 template <typename E>
