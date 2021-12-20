@@ -113,7 +113,8 @@ Options:
   --static                    Do not link against shared libraries
   --stats                     Print input statistics
   --sysroot DIR               Set target system root directory
-  --thread-count COUNT        Use COUNT number of threads
+  --thread-count COUNT, --threads=COUNT
+                              Use COUNT number of threads
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
@@ -632,6 +633,12 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.thread_count = 0;
     } else if (read_flag(args, "no-threads")) {
       ctx.arg.thread_count = 1;
+    } else if (args[0].starts_with("-threads=")) {
+      ctx.arg.thread_count = parse_number(ctx, "threads=", args[0].substr(9));
+      args = args.subspan(1);
+    } else if (args[0].starts_with("--threads=")) {
+      ctx.arg.thread_count = parse_number(ctx, "threads=", args[0].substr(10));
+      args = args.subspan(1);
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
       ctx.arg.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
