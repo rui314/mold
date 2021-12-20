@@ -629,15 +629,9 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size())
         Fatal(ctx) << *this
-                   << ": TLSLD reloc must be followed by PLT32 or GOTPCREL";
-
-      if (sym.is_imported) {
-        // This should be a fatal error as well, but it looks like GCC 7
-        // wrongly creates such relocations against STB_GNU_UNIQUE symbols.
-        // Other linkers don't have this error check. So, for bug-compatibility,
-        // we only warn about it and create a (possibly corrupted) output file.
-        Warn(ctx) << *this << ": TLSLD reloc refers external symbol: " << sym;
-      }
+                   << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+      if (sym.is_imported)
+        Fatal(ctx) << *this << ": TLSLD reloc refers external symbol: " << sym;
 
       if (ctx.arg.relax && !ctx.arg.shared)
         i++;
