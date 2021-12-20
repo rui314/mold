@@ -358,9 +358,10 @@ static int elf_main(int argc, char **argv) {
 
   install_signal_handler();
 
-  if (!ctx.arg.directory.empty() && chdir(ctx.arg.directory.c_str()) == -1)
-    Fatal(ctx) << "chdir failed: " << ctx.arg.directory
-               << ": " << errno_string();
+  if (!ctx.arg.directory.empty())
+    if (chdir(ctx.arg.directory.c_str()) == -1)
+      Fatal(ctx) << "chdir failed: " << ctx.arg.directory
+                 << ": " << errno_string();
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
@@ -451,7 +452,7 @@ static int elf_main(int argc, char **argv) {
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);
 
-  // ctx input sections into output sections
+  // Bin input sections into output sections.
   bin_sections(ctx);
 
   // Get a list of output sections.
@@ -548,9 +549,7 @@ static int elf_main(int argc, char **argv) {
     ctx.eh_frame->construct(ctx);
   }
 
-  // Now that we have computed sizes for all sections and assigned
-  // section indices to them, so we can fix section header contents
-  // for all output sections.
+  // Update shdr.sh_size for each chunk and remove empty ones.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
@@ -564,6 +563,8 @@ static int elf_main(int argc, char **argv) {
     if (ctx.chunks[i]->kind != Chunk<E>::HEADER)
       ctx.chunks[i]->shndx = shndx++;
 
+  // Some types of section header refer other section by index.
+  // Recompute the section header to fill such fields with correct values.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
@@ -581,12 +582,11 @@ static int elf_main(int argc, char **argv) {
   }
 
   // At this point, file layout is fixed.
-
   // Beyond this, you can assume that symbol addresses including their
   // GOT or PLT addresses have a correct final value.
 
-  // Some types of relocations for TLS symbols need the TLS segment
-  // address. Find it out now.
+  // Some types of TLS relocations are defined relative to the beginning
+  // or the end of the TLS segment address. Find these addresses now.
   for (ElfPhdr<E> phdr : create_phdr(ctx)) {
     if (phdr.p_type == PT_TLS) {
       ctx.tls_begin = phdr.p_vaddr;
@@ -633,7 +633,7 @@ static int elf_main(int argc, char **argv) {
 
   t_copy.stop();
 
-  // Commit
+  // Close the output file. This is the end of the linker's main job.
   ctx.output_file->close(ctx);
 
   t_total.stop();

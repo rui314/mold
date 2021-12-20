@@ -12,10 +12,11 @@ std::string_view errno_string() {
   return buf;
 }
 
-const std::string mold_version =
 #ifdef GIT_HASH
+const std::string mold_version =
   "mold " MOLD_VERSION " (" GIT_HASH "; compatible with GNU ld and GNU gold)";
 #else
+const std::string mold_version =
   "mold " MOLD_VERSION " (compatible with GNU ld and GNU gold)";
 #endif
 
