@@ -307,7 +307,7 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
 
 template <typename E>
 void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
-  i16 next_ver = VER_NDX_LAST_RESERVED + 1;
+  u16 next_ver = VER_NDX_LAST_RESERVED + 1;
 
   while (!tok.empty() && tok[0] != "}") {
     VersionPattern pat;
@@ -351,7 +351,7 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
   std::span<std::string_view> tok = vec;
 
   tok = skip(ctx, tok, "{");
-  i16 ver = VER_NDX_GLOBAL;
+  u16 ver = VER_NDX_GLOBAL;
 
   while (!tok.empty() && tok[0] != "}") {
     if (read_label(tok, "global")) {

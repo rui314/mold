@@ -1156,7 +1156,7 @@ typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
 typedef enum { ERROR, WARN, IGNORE } UnresolvedKind;
 
 struct VersionPattern {
-  i16 ver_idx;
+  u16 ver_idx;
   std::vector<std::string_view> patterns;
   std::vector<std::string_view> cpp_patterns;
 };
@@ -1253,7 +1253,7 @@ struct Context {
     bool z_origin = false;
     bool z_relro = true;
     bool z_text = false;
-    i16 default_version = VER_NDX_GLOBAL;
+    u16 default_version = VER_NDX_GLOBAL;
     i64 emulation = EM_X86_64;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
