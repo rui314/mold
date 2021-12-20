@@ -64,9 +64,6 @@
     <ClCompile Include="..\..\src\init.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\region.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\alloc-override.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -80,6 +77,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\bitmap.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\segment-cache.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

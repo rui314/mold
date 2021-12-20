@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018, Microsoft Research, Daan Leijen
+Copyright (c) 2018-2021, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
@@ -782,6 +782,7 @@ typedef enum mi_option_e {
   mi_option_eager_region_commit, ///< Eagerly commit large (256MiB) memory regions (enabled by default, except on Windows)
   mi_option_large_os_pages,      ///< Use large OS pages (2MiB in size) if possible
   mi_option_reserve_huge_os_pages, ///< The number of huge OS pages (1GiB in size) to reserve at the start of the program.
+  mi_option_reserve_huge_os_pages_at, ///< Reserve huge OS pages at node N.
   mi_option_segment_cache,   ///< The number of segments per thread to keep cached.
   mi_option_page_reset,      ///< Reset page memory after \a mi_option_reset_delay milliseconds when it becomes free.
   mi_option_segment_reset,   ///< Experimental
@@ -1053,6 +1054,8 @@ or via environment variables.
    `MIMALLOC_EAGER_COMMIT_DELAY=N` (`N` is 1 by default) to delay the initial `N` segments (of 4MiB)
    of a thread to not allocate in the huge OS pages; this prevents threads that are short lived
    and allocate just a little to take up space in the huge OS page area (which cannot be reset).
+- `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N`: where N is the numa node. This reserves the huge pages at a specific numa node. 
+   (`N` is -1 by default to reserve huge pages evenly among the given number of numa nodes (or use the available ones as detected))
 
 Use caution when using `fork` in combination with either large or huge OS pages: on a fork, the OS uses copy-on-write
 for all pages in the original process including the huge OS pages. When any memory is now written in that area, the

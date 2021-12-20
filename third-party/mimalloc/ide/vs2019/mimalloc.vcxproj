@@ -92,7 +92,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
@@ -138,7 +138,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <ConformanceMode>true</ConformanceMode>
@@ -166,7 +166,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <ConformanceMode>true</ConformanceMode>
@@ -225,7 +225,6 @@
     </ClCompile>
     <ClCompile Include="..\..\src\heap.c" />
     <ClCompile Include="..\..\src\init.c" />
-    <ClCompile Include="..\..\src\region.c" />
     <ClCompile Include="..\..\src\options.c" />
     <ClCompile Include="..\..\src\page-queue.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
@@ -235,6 +234,7 @@
     </ClCompile>
     <ClCompile Include="..\..\src\page.c" />
     <ClCompile Include="..\..\src\random.c" />
+    <ClCompile Include="..\..\src\segment-cache.c" />
     <ClCompile Include="..\..\src\segment.c" />
     <ClCompile Include="..\..\src\os.c" />
     <ClCompile Include="..\..\src\stats.c" />

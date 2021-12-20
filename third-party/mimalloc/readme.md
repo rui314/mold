@@ -12,13 +12,13 @@ is a general purpose allocator with excellent [performance](#performance) charac
 Initially developed by Daan Leijen for the run-time systems of the
 [Koka](https://koka-lang.github.io) and [Lean](https://github.com/leanprover/lean) languages.
 
-Latest release tag: `v2.0.1` (beta, 2021-04-06).  
-Latest stable  tag: `v1.7.1` (2021-04-06).
+Latest release tag: `v2.0.3` (beta, 2021-11-14).  
+Latest stable  tag: `v1.7.3` (2021-11-14).
 
 mimalloc is a drop-in replacement for `malloc` and can be used in other programs
 without code changes, for example, on dynamically linked ELF-based systems (Linux, BSD, etc.) you can use it as:
 ```
-> LD_PRELOAD=/usr/bin/libmimalloc.so  myprogram
+> LD_PRELOAD=/usr/lib/libmimalloc.so  myprogram
 ```
 It also has an easy way to override the default allocator in [Windows](#override_on_windows). Notable aspects of the design include:
 
@@ -73,12 +73,21 @@ Enjoy!
 
 ### Releases
 
-* 2021-04-06, `v1.7.1`, `v2.0.1` (beta): fix bug in arena allocation for huge pages, improved aslr on large allocations, improved M1 support (still experimental).
-  
-* 2021-01-31, `v2.0.0`: beta release 2.0: new algorithm for managing internal mimalloc pages that tends to use reduce memory usage
-  and fragmentation compared to mimalloc v1 (especially for large workloads). Should otherwise have similar performance
+Note: the `v2.x` beta has a new algorithm for managing internal mimalloc pages that tends to use reduce memory usage
+  and fragmentation compared to mimalloc `v1.x` (especially for large workloads). Should otherwise have similar performance
   (see [below](#performance)); please report if you observe any significant performance regression.
 
+* 2021-11-14, `v1.7.3`, `v2.0.3` (beta): improved WASM support, improved macOS support and performance (including
+  M1), improved performance for v2 for large objects, Python integration improvements, more standard
+  installation directories, various small fixes.
+
+* 2021-06-17, `v1.7.2`, `v2.0.2` (beta): support M1, better installation layout on Linux, fix
+  thread_id on Android, prefer 2-6TiB area for aligned allocation to work better on pre-windows 8, various small fixes.
+
+* 2021-04-06, `v1.7.1`, `v2.0.1` (beta): fix bug in arena allocation for huge pages, improved aslr on large allocations, initial M1 support (still experimental).
+  
+* 2021-01-31, `v2.0.0`: beta release 2.0: new slice algorithm for managing internal mimalloc pages.
+  
 * 2021-01-31, `v1.7.0`: stable release 1.7: support explicit user provided memory regions, more precise statistics,
   improve macOS overriding, initial support for Apple M1, improved DragonFly support, faster memcpy on Windows, various small fixes.
 
@@ -137,7 +146,7 @@ mimalloc is used in various large scale low-latency services and programs, for e
 
 ## Windows
 
-Open `ide/vs2019/mimalloc.sln` in Visual Studio 2019 and build (or `ide/vs2017/mimalloc.sln`).
+Open `ide/vs2019/mimalloc.sln` in Visual Studio 2019 and build.
 The `mimalloc` project builds a static library (in `out/msvc-x64`), while the
 `mimalloc-override` project builds a DLL for overriding malloc
 in the entire program.
@@ -185,6 +194,11 @@ Notes:
 1. Install CMake: `sudo apt-get install cmake`
 2. Install CCMake: `sudo apt-get install cmake-curses-gui`
 
+
+## Single source
+
+You can also directly build the single `src/static.c` file as part of your project without
+needing `cmake` at all. Make sure to also add the mimalloc `include` directory to the include path.
 
 
 # Using the library
@@ -297,6 +311,9 @@ or via environment variables:
    `MIMALLOC_EAGER_COMMIT_DELAY=N` (`N` is 1 by default) to delay the initial `N` segments (of 4MiB)
    of a thread to not allocate in the huge OS pages; this prevents threads that are short lived
    and allocate just a little to take up space in the huge OS page area (which cannot be reset).
+   The huge pages are usually allocated evenly among NUMA nodes.
+   We can use `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N` where `N` is the numa node (starting at 0) to allocate all 
+   the huge pages at a specific numa node instead. 
 
 Use caution when using `fork` in combination with either large or huge OS pages: on a fork, the OS uses copy-on-write
 for all pages in the original process including the huge OS pages. When any memory is now written in that area, the
@@ -332,9 +349,9 @@ When _mimalloc_ is built using debug mode, various checks are done at runtime to
 - Corrupted free-lists and some forms of use-after-free are detected.
 
 
-# Overriding Malloc
+# Overriding Standard Malloc
 
-Overriding the standard `malloc` can be done either _dynamically_ or _statically_.
+Overriding the standard `malloc` (and `new`) can be done either _dynamically_ or _statically_.
 
 ## Dynamic override
 
@@ -365,13 +382,12 @@ On macOS we can also preload the mimalloc shared
 library so all calls to the standard `malloc` interface are
 resolved to the _mimalloc_ library.
 ```
-> env DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES=/usr/lib/libmimalloc.dylib myprogram
+> env DYLD_INSERT_LIBRARIES=/usr/lib/libmimalloc.dylib myprogram
 ```
 
 Note that certain security restrictions may apply when doing this from
 the [shell](https://stackoverflow.com/questions/43941322/dyld-insert-libraries-ignored-when-calling-application-through-bash).
 
-(Note: macOS support for dynamic overriding is recent, please report any issues.)
 
 ### Override on Windows
 
@@ -381,7 +397,7 @@ the (dynamic) C runtime allocator, including those from other DLL's or libraries
 
 The overriding on Windows requires that you link your program explicitly with
 the mimalloc DLL and use the C-runtime library as a DLL (using the `/MD` or `/MDd` switch).
-Also, the `mimalloc-redirect.dll` (or `mimalloc-redirect32.dll`) must be available
+Also, the `mimalloc-redirect.dll` (or `mimalloc-redirect32.dll`) must be put
 in the same folder as the main `mimalloc-override.dll` at runtime (as it is a dependency).
 The redirection DLL ensures that all calls to the C runtime malloc API get redirected to
 mimalloc (in `mimalloc-override.dll`).

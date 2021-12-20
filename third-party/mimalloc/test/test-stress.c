@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018,2019 Microsoft Research, Daan Leijen
+Copyright (c) 2018-2020 Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license.
 -----------------------------------------------------------------------------*/
@@ -25,7 +25,7 @@ terms of the MIT license.
 //
 // argument defaults
 static int THREADS = 32;      // more repeatable if THREADS <= #processors
-static int SCALE   = 10;      // scaling factor
+static int SCALE   = 25;      // scaling factor
 static int ITER    = 50;      // N full iterations destructing and re-creating all threads
 
 // static int THREADS = 8;    // more repeatable if THREADS <= #processors
@@ -37,13 +37,14 @@ static bool   allow_large_objects = true;    // allow very large objects?
 static size_t use_one_size = 0;              // use single object size of `N * sizeof(uintptr_t)`?
 
 
+// #define USE_STD_MALLOC
 #ifdef USE_STD_MALLOC
-#define custom_calloc(n,s)    calloc(n,s)
+#define custom_calloc(n,s)    malloc(n*s)
 #define custom_realloc(p,s)   realloc(p,s)
 #define custom_free(p)        free(p)
 #else
 #include <mimalloc.h>
-#define custom_calloc(n,s)    mi_calloc(n,s)
+#define custom_calloc(n,s)    mi_malloc(n*s)
 #define custom_realloc(p,s)   mi_realloc(p,s)
 #define custom_free(p)        mi_free(p)
 #endif
@@ -181,14 +182,15 @@ static void run_os_threads(size_t nthreads, void (*entry)(intptr_t tid));
 static void test_stress(void) {
   uintptr_t r = rand();
   for (int n = 0; n < ITER; n++) {
-    run_os_threads(THREADS, &stress);
+    run_os_threads(THREADS, &stress);    
     for (int i = 0; i < TRANSFERS; i++) {
       if (chance(50, &r) || n + 1 == ITER) { // free all on last run, otherwise free half of the transfers
         void* p = atomic_exchange_ptr(&transfer[i], NULL);
         free_items(p);
       }
     }
-    // mi_collect(false);
+    //mi_collect(false);
+    //mi_debug_show_arenas();    
 #if !defined(NDEBUG) || defined(MI_TSAN)
     if ((n + 1) % 10 == 0) { printf("- iterations left: %3d\n", ITER - (n + 1)); }
 #endif
@@ -243,15 +245,24 @@ int main(int argc, char** argv) {
 
   // Run ITER full iterations where half the objects in the transfer buffer survive to the next round.
   srand(0x7feb352d);
-  // mi_stats_reset();
-#ifdef STRESS
-    test_stress();
-#else
-    test_leak();
+  
+  //mi_reserve_os_memory(512ULL << 20, true, true);
+
+#if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
+  mi_stats_reset();
 #endif
 
-  // mi_collect(true);
+#ifdef STRESS
+  test_stress();
+#else
+  test_leak();
+#endif
+
 #ifndef USE_STD_MALLOC
+  #ifndef NDEBUG
+  mi_collect(true);
+  //mi_debug_show_arenas();
+  #endif
   mi_stats_print(NULL);
 #endif
   //bench_end_program();
