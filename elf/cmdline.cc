@@ -740,6 +740,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "rpath-link")) {
     } else if (read_z_flag(args, "combreloc")) {
     } else if (read_z_flag(args, "nocombreloc")) {
+    } else if (read_z_flag(args, "nodefaultlib")) {
     } else if (read_arg(ctx, args, arg, "version-script")) {
       remaining.push_back("--version-script");
       remaining.push_back(arg);
