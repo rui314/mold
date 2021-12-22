@@ -77,6 +77,12 @@ ifneq ($(wildcard /opt/homebrew/.),)
   LIBS += -L/opt/homebrew/lib
 endif
 
+# Alpine puts the libraries in /lib instead of /user/local/lib
+ifneq ($(cat /etc/os-release | grep ID  | grep alpine), "ID=alpine")
+  CPPFLAGS += -I/lib
+  LIBS += -L/
+endif
+
 ifdef SYSTEM_TBB
   LIBS += -ltbb
 else
