@@ -263,6 +263,9 @@ template <typename E>
 void bin_sections(Context<E> &ctx) {
   Timer t(ctx, "bin_sections");
 
+  if (ctx.objs.empty())
+    return;
+
   static constexpr i64 num_shards = 128;
   i64 unit = (ctx.objs.size() + num_shards - 1) / num_shards;
   std::vector<std::span<ObjectFile<E> *>> slices = split(ctx.objs, unit);
