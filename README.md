@@ -37,11 +37,18 @@ mold can make it faster, saving your time and keeping you from being
 distracted while waiting for a long build to finish. The difference is
 most noticeable when you are in rapid debug-edit-rebuild cycles.
 
+## Install
+
+Binary packages for the following distros are currently available.
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/mold.svg)](https://repology.org/project/mold/versions)
+
 ## How to build
 
-mold is written in C++20, so you need a very recent version of GCC or
-Clang. I'm using Ubuntu 20.04 as a development platform. In that
-environment, you can build mold by the following commands.
+mold is written in C++20, so if you build mold yourself, you need a
+very recent version of GCC or Clang. I'm using Ubuntu 20.04 as a
+development platform. In that environment, you can build mold by the
+following commands.
 
 ### Install dependencies
 
