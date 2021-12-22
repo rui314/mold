@@ -304,6 +304,9 @@ private:
 template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
+template <typename E>
+bool separate_page(Context<E> &ctx, Chunk<E> *a, Chunk<E> *b);
+
 // Chunk represents a contiguous region in an output file.
 template <typename E>
 class Chunk {
@@ -322,7 +325,6 @@ public:
   std::string_view name;
   i64 shndx = 0;
   Kind kind;
-  bool new_page = false;
   ElfShdr<E> shdr = {};
 
 protected:
@@ -1155,6 +1157,12 @@ struct BuildId {
 typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
 typedef enum { ERROR, WARN, IGNORE } UnresolvedKind;
 
+typedef enum {
+  SEPARATE_LOADABLE_SEGMENTS,
+  SEPARATE_CODE,
+  NOSEPARATE_CODE,
+} SeparateCodeKind;
+
 struct VersionPattern {
   u16 ver_idx;
   std::vector<std::string_view> patterns;
@@ -1206,6 +1214,7 @@ struct Context {
   struct {
     BuildId build_id;
     CompressKind compress_debug_sections = COMPRESS_NONE;
+    SeparateCodeKind z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     UnresolvedKind unresolved_symbols = UnresolvedKind::ERROR;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;

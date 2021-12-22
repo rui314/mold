@@ -146,6 +146,10 @@ Options:
   -z nodump                   Mark DSO not available to dldump
   -z now                      Disable lazy function resolution
   -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
+  -z separate-loadable-segments
+                              Separate all loadable segments to different pages
+    -z separate-code          Separate code and data into different pages
+    -z noseparate-code        Allow overlap in pages
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
   -z text                     Report error if DT_TEXTREL is set
@@ -589,6 +593,12 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_origin = true;
     } else if (read_z_flag(args, "nodefaultlib")) {
       ctx.arg.z_nodefaultlib = true;
+    } else if (read_z_flag(args, "separate-loadable-segments")) {
+      ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+    } else if (read_z_flag(args, "separate-code")) {
+      ctx.arg.z_separate_code = SEPARATE_CODE;
+    } else if (read_z_flag(args, "noseparate-code")) {
+      ctx.arg.z_separate_code = NOSEPARATE_CODE;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {

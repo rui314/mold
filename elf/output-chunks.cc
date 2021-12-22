@@ -76,11 +76,12 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 to_phdr_flags(Chunk<E> *chunk) {
+static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   i64 ret = PF_R;
   if (chunk->shdr.sh_flags & SHF_WRITE)
     ret |= PF_W;
-  if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+  if ((chunk->shdr.sh_flags & SHF_EXECINSTR) ||
+      (ctx.arg.z_separate_code == NOSEPARATE_CODE))
     ret |= PF_X;
   return ret;
 }
@@ -111,6 +112,22 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
         chunk->name.ends_with(".rel.ro"))
       return true;
   return false;
+}
+
+template <typename E>
+bool separate_page(Context<E> &ctx, Chunk<E> *x, Chunk<E> *y) {
+  if (ctx.arg.z_relro && is_relro(ctx, x) != is_relro(ctx, y))
+    return true;
+
+  switch (ctx.arg.z_separate_code) {
+  case SEPARATE_LOADABLE_SEGMENTS:
+    return to_phdr_flags(ctx, x) != to_phdr_flags(ctx, y);
+  case SEPARATE_CODE:
+    return (x->shdr.sh_flags & SHF_EXECINSTR) != (y->shdr.sh_flags & SHF_EXECINSTR);
+  case NOSEPARATE_CODE:
+    return false;
+  }
+  unreachable();
 }
 
 template <typename E>
@@ -164,36 +181,32 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (!is_note(first))
       continue;
 
-    i64 flags = to_phdr_flags(first);
+    i64 flags = to_phdr_flags(ctx, first);
     i64 alignment = first->shdr.sh_addralign;
     define(PT_NOTE, flags, alignment, first);
 
     while (i < end && is_note(ctx.chunks[i]) &&
-           to_phdr_flags(ctx.chunks[i]) == flags &&
+           to_phdr_flags(ctx, ctx.chunks[i]) == flags &&
            ctx.chunks[i]->shdr.sh_addralign == alignment)
       append(ctx.chunks[i++]);
   }
 
   // Create PT_LOAD segments.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->new_page = false;
-
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
     Chunk<E> *first = ctx.chunks[i++];
     if (!(first->shdr.sh_flags & SHF_ALLOC))
       break;
 
-    i64 flags = to_phdr_flags(first);
+    i64 flags = to_phdr_flags(ctx, first);
     define(PT_LOAD, flags, COMMON_PAGE_SIZE, first);
-    first->new_page = true;
 
     if (!is_bss(first))
       while (i < end && !is_bss(ctx.chunks[i]) &&
-             to_phdr_flags(ctx.chunks[i]) == flags)
+             to_phdr_flags(ctx, ctx.chunks[i]) == flags)
         append(ctx.chunks[i++]);
 
     while (i < end && is_bss(ctx.chunks[i]) &&
-           to_phdr_flags(ctx.chunks[i]) == flags)
+           to_phdr_flags(ctx, ctx.chunks[i]) == flags)
       append(ctx.chunks[i++]);
   }
 
@@ -202,7 +215,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (!(ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       continue;
 
-    define(PT_TLS, to_phdr_flags(ctx.chunks[i]), 1, ctx.chunks[i]);
+    define(PT_TLS, to_phdr_flags(ctx, ctx.chunks[i]), 1, ctx.chunks[i]);
     i++;
     while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       append(ctx.chunks[i++]);
@@ -230,12 +243,9 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
         continue;
 
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i]);
-      ctx.chunks[i]->new_page = true;
       i++;
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
-      if (i < ctx.chunks.size())
-        ctx.chunks[i]->new_page = true;
     }
   }
 
@@ -1832,41 +1842,42 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   contents->write_to(ctx.buf + this->shdr.sh_offset);
 }
 
-#define INSTANTIATE(E)                                          \
-  template class Chunk<E>;                                      \
-  template class OutputEhdr<E>;                                 \
-  template class OutputShdr<E>;                                 \
-  template class OutputPhdr<E>;                                 \
-  template class InterpSection<E>;                              \
-  template class OutputSection<E>;                              \
-  template class GotSection<E>;                                 \
-  template class GotPltSection<E>;                              \
-  template class PltSection<E>;                                 \
-  template class PltGotSection<E>;                              \
-  template class RelPltSection<E>;                              \
-  template class RelDynSection<E>;                              \
-  template class StrtabSection<E>;                              \
-  template class ShstrtabSection<E>;                            \
-  template class DynstrSection<E>;                              \
-  template class DynamicSection<E>;                             \
-  template class SymtabSection<E>;                              \
-  template class DynsymSection<E>;                              \
-  template class HashSection<E>;                                \
-  template class GnuHashSection<E>;                             \
-  template class MergedSection<E>;                              \
-  template class EhFrameSection<E>;                             \
-  template class EhFrameHdrSection<E>;                          \
-  template class DynbssSection<E>;                              \
-  template class VersymSection<E>;                              \
-  template class VerneedSection<E>;                             \
-  template class VerdefSection<E>;                              \
-  template class BuildIdSection<E>;                             \
-  template class NotePropertySection<E>;                        \
-  template class GabiCompressedSection<E>;                      \
-  template class GnuCompressedSection<E>;                       \
-  template class ReproSection<E>;                               \
-  template i64 BuildId::size(Context<E> &) const;               \
-  template bool is_relro(Context<E> &, Chunk<E> *);             \
+#define INSTANTIATE(E)                                                  \
+  template class Chunk<E>;                                              \
+  template class OutputEhdr<E>;                                         \
+  template class OutputShdr<E>;                                         \
+  template class OutputPhdr<E>;                                         \
+  template class InterpSection<E>;                                      \
+  template class OutputSection<E>;                                      \
+  template class GotSection<E>;                                         \
+  template class GotPltSection<E>;                                      \
+  template class PltSection<E>;                                         \
+  template class PltGotSection<E>;                                      \
+  template class RelPltSection<E>;                                      \
+  template class RelDynSection<E>;                                      \
+  template class StrtabSection<E>;                                      \
+  template class ShstrtabSection<E>;                                    \
+  template class DynstrSection<E>;                                      \
+  template class DynamicSection<E>;                                     \
+  template class SymtabSection<E>;                                      \
+  template class DynsymSection<E>;                                      \
+  template class HashSection<E>;                                        \
+  template class GnuHashSection<E>;                                     \
+  template class MergedSection<E>;                                      \
+  template class EhFrameSection<E>;                                     \
+  template class EhFrameHdrSection<E>;                                  \
+  template class DynbssSection<E>;                                      \
+  template class VersymSection<E>;                                      \
+  template class VerneedSection<E>;                                     \
+  template class VerdefSection<E>;                                      \
+  template class BuildIdSection<E>;                                     \
+  template class NotePropertySection<E>;                                \
+  template class GabiCompressedSection<E>;                              \
+  template class GnuCompressedSection<E>;                               \
+  template class ReproSection<E>;                                       \
+  template i64 BuildId::size(Context<E> &) const;                       \
+  template bool is_relro(Context<E> &, Chunk<E> *);                     \
+  template bool separate_page(Context<E> &, Chunk<E> *, Chunk<E> *);    \
   template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)
 
 INSTANTIATE(X86_64);

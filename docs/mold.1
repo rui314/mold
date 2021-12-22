@@ -633,6 +633,26 @@ after it finishes its job.
 By default, \fBmold\fR generates a relro segment. \fB\-z
 norelro\fR disables the feature.
 
+.IP "\fB\-z separate\-loadable\-segments\fR"
+.PD 0
+.IP "\fB\-z separate\-code\fR"
+.PD 0
+.IP "\fB\-z noseparate\-code\fR"
+.PD
+If one memory page contains multiple segments, the page protection
+bits are set in such a way that needed attributes (writable or
+executable) are satisifed for all segments. This usually happens at a
+boundary of two segments with two different attributes.
+
+\fBseparate\-loadable\-segments\fR adds paddings between segments with
+different attributes so that they do not share the same page. This is
+the default.
+
+\fBseparate\-code\fR adds paddings only between executable and
+non-executable segments.
+
+\fBnoseparate\-code\fR does not add any paddings between segments.
+
 .IP "\fB\-z defs\fR"
 .PD 0
 .IP "\fB\-z nodefs\fR"

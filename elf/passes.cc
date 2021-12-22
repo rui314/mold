@@ -819,7 +819,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
       Chunk<E> &chunk = *ctx.chunks[i];
       u64 prev_vaddr = vaddr;
 
-      if (chunk.new_page)
+      if (i > 0 && separate_page(ctx, ctx.chunks[i - 1], &chunk))
         vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
       vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
       fileoff += vaddr - prev_vaddr;
@@ -834,7 +834,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     for (; i < end && ctx.chunks[i]->shdr.sh_type == SHT_NOBITS; i++) {
       Chunk<E> &chunk = *ctx.chunks[i];
 
-      if (chunk.new_page)
+      if (i > 0 && separate_page(ctx, ctx.chunks[i - 1], &chunk))
         vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
       vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
       fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr % COMMON_PAGE_SIZE);
