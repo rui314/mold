@@ -234,9 +234,6 @@ static bool reload_input_files(Context<E> &ctx) {
 
   // Reload updated .so files
   for (SharedFile<E> *file : ctx.dsos) {
-    MappedFile<Context<E>> *mf =
-      MappedFile<Context<E>>::must_open(ctx, file->mf->name);
-
     if (get_mtime(ctx, file->mf->name) == file->mf->mtime) {
       dsos.push_back(file);
     } else {

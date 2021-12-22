@@ -130,7 +130,7 @@ void InputSection<ARM64>::apply_reloc_alloc(Context<ARM64> &ctx, u8 *base) {
 
   if (ctx.reldyn)
     dynrel = (ElfRel<ARM64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                 file.reldyn_offset + this->reldyn_offset);
+                               file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<ARM64> &rel = rels[i];
@@ -393,7 +393,6 @@ void InputSection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<ARM64>);
   std::span<ElfRel<ARM64>> rels = get_rels(ctx);
-  bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -402,7 +401,6 @@ void InputSection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
       continue;
 
     Symbol<ARM64> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       report_undef(ctx, sym);

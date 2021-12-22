@@ -367,7 +367,6 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<I386>);
   std::span<ElfRel<I386>> rels = get_rels(ctx);
-  bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -376,7 +375,6 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
       continue;
 
     Symbol<I386> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       report_undef(ctx, sym);

@@ -28,8 +28,8 @@ template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               const ElfShdr<E> &shdr, std::string_view name,
                               std::string_view contents, i64 section_idx)
-  : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
-    contents(contents), section_idx(section_idx) {
+  : file(file), shdr(shdr), contents(contents), nameptr(name.data()),
+    namelen(name.size()), section_idx(section_idx) {
   // As a special case, we want to map .ctors and .dtors to
   // .init_array and .fini_array, respectively. However, old CRT
   // object files are not compatible with this translation, so we need
@@ -179,7 +179,7 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 #define INSTANTIATE(E)                          \
-  template class CieRecord<E>;                  \
+  template struct CieRecord<E>;                 \
   template class InputSection<E>;
 
 INSTANTIATE(X86_64);

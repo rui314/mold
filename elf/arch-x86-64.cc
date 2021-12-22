@@ -434,18 +434,8 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       *loc = val;
     };
 
-    auto write8s = [&](u64 val) {
-      overflow_check(val, -(1 << 7), 1 << 7);
-      *loc = val;
-    };
-
     auto write16 = [&](u64 val) {
       overflow_check(val, 0, 1 << 16);
-      *(u16 *)loc = val;
-    };
-
-    auto write16s = [&](u64 val) {
-      overflow_check(val, -(1 << 15), 1 << 15);
       *(u16 *)loc = val;
     };
 
@@ -512,7 +502,6 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
   std::span<ElfRel<X86_64>> rels = get_rels(ctx);
-  bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {

@@ -76,10 +76,6 @@ FileType get_file_type(MappedFile<C> *mf) {
   return FileType::UNKNOWN;
 }
 
-static bool equal(const char *p, const char *q) {
-  return memcmp(p, q, strlen(q)) == 0;
-}
-
 template <typename C>
 std::vector<MappedFile<C> *>
 read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
@@ -98,14 +94,14 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
     u64 size = atol(hdr.ar_size);
 
     // Read a string table.
-    if (equal(hdr.ar_name, "// ")) {
+    if (memcmp(hdr.ar_name, "// ", 3) == 0) {
       strtab = {(char *)body, size};
       data = body + size;
       continue;
     }
 
     // Skip a symbol table.
-    if (equal(hdr.ar_name, "/ ")) {
+    if (memcmp(hdr.ar_name, "/ ", 2) == 0) {
       data = body + size;
       continue;
     }
@@ -141,19 +137,19 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
     data = body + size;
 
     // Read if string table
-    if (equal(hdr.ar_name, "// ")) {
+    if (memcmp(hdr.ar_name, "// ", 3) == 0) {
       strtab = {(char *)body, size};
       continue;
     }
 
     // Skip if symbol table
-    if (equal(hdr.ar_name, "/ "))
+    if (memcmp(hdr.ar_name, "/ ", 2) == 0)
       continue;
 
     // Read the name field
     std::string name;
 
-    if (equal(hdr.ar_name, "#1/")) {
+    if (memcmp(hdr.ar_name, "#1/", 3) == 0) {
       size_t namelen = (size_t)atoi(hdr.ar_name + 3);
       name = {(char *)(&hdr + 1), namelen};
       if (size_t pos = name.find('\0'))

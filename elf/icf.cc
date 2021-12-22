@@ -230,8 +230,6 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   SHA256_CTX sha;
   SHA256_Init(&sha);
 
-  u8 *buf = (u8 *)isec.contents.data();
-
   auto hash = [&](auto val) {
     SHA256_Update(&sha, &val, sizeof(val));
   };

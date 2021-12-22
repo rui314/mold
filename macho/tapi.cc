@@ -4,20 +4,6 @@
 
 namespace mold::macho {
 
-static std::string_view get_line(std::string_view str, i64 pos) {
-  i64 begin = str.substr(0, pos).rfind('\n');
-  if (begin == str.npos)
-    begin = 0;
-  else
-    begin++;
-
-  i64 end = str.substr(pos).find('\n');
-  if (end == str.npos)
-    end = str.size();
-
-  return str.substr(begin, end - begin);
-}
-
 static std::vector<YamlNode>
 get_vector(YamlNode &node, std::string_view key) {
   if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
@@ -112,7 +98,6 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
   std::variant<std::vector<YamlNode>, YamlError> res = parse_yaml(contents);
 
   if (YamlError *err = std::get_if<YamlError>(&res)) {
-    std::string_view line = get_line(contents, err->pos);
     i64 lineno = std::count(contents.begin(), contents.begin() + err->pos, '\n');
     Fatal(ctx) << mf->name << ":" << (lineno + 1)
                << ": YAML parse error: " << err->msg;

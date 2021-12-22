@@ -17,10 +17,10 @@ static constexpr i64 COMMON_PAGE_SIZE = 0x4000;
 static constexpr i64 SHA256_SIZE = 32;
 
 template <typename E> class Chunk;
+template <typename E> class InputSection;
 template <typename E> class OutputSection;
+template <typename E> class Subsection;
 template <typename E> struct Context;
-template <typename E> struct InputSection;
-template <typename E> struct Subsection;
 template <typename E> struct Symbol;
 
 //

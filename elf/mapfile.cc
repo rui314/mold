@@ -93,7 +93,7 @@ void print_map(Context<E> &ctx) {
              << "          0     0                 "
              << *sym << "\n";
 
-      bufs[i] = std::move(ss.str());
+      bufs[i] = ss.str();
     });
 
     for (std::string &str : bufs)
