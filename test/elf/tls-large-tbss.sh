@@ -1,13 +1,13 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -c -o $t/a.o -x assembler -
+cat <<EOF | cc -c -o "$t"/a.o -x assembler -
 .globl x, y
 .section .tbss,"awT",@nobits
 x:
@@ -17,7 +17,7 @@ y:
 .zero 1024
 EOF
 
-cat <<EOF | cc -c -o $t/b.o -xc -
+cat <<EOF | cc -c -o "$t"/b.o -xc -
 #include <stdio.h>
 
 extern _Thread_local char x[1024000];
@@ -30,7 +30,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q '^3 0 5 0 0 0$'
+clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+"$t"/exe | grep -q '^3 0 5 0 0 0$'
 
 echo OK

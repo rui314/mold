@@ -1,19 +1,19 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
 # Skip if libc is musl
-echo 'int main() {}' | cc -o $t/exe -xc -
-ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
+echo 'int main() {}' | cc -o "$t"/exe -xc -
+ldd "$t"/exe | grep -q ld-musl && { echo OK; exit; }
 
-cat <<'EOF' | clang -c -o $t/a.o -x assembler -
+cat <<'EOF' | clang -c -o "$t"/a.o -x assembler -
 .L0:
   mov $0, %edi
   call print
@@ -64,7 +64,7 @@ cat <<'EOF' | clang -c -o $t/a.o -x assembler -
 .quad .L7
 EOF
 
-cat <<'EOF' | clang -c -o $t/b.o -x assembler -
+cat <<'EOF' | clang -c -o "$t"/b.o -x assembler -
 .L8:
   mov $8, %edi
   call print
@@ -115,7 +115,7 @@ cat <<'EOF' | clang -c -o $t/b.o -x assembler -
 .quad .Lf
 EOF
 
-cat <<EOF | clang -c -o $t/c.o -xc -
+cat <<EOF | clang -c -o "$t"/c.o -xc -
 #include <stdio.h>
 
 void print(int n) {
@@ -125,7 +125,7 @@ void print(int n) {
 int main() {}
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep -q '^013289baefdc6754$'
+clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o "$t"/c.o
+"$t"/exe | grep -q '^013289baefdc6754$'
 
 echo OK

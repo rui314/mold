@@ -1,13 +1,13 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -fno-PIC -o $t/a.o -c -xc -
+cat <<EOF | cc -fno-PIC -o "$t"/a.o -c -xc -
 #include <stdio.h>
 
 extern int foo;
@@ -19,7 +19,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | cc -o $t/b.o -c -x assembler -
+cat <<EOF | cc -o "$t"/b.o -c -x assembler -
   .globl foo, bar
   .data;
 foo:
@@ -27,7 +27,7 @@ bar:
   .long 42
 EOF
 
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q '42 42 1'
+clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/a.o "$t"/b.o
+"$t"/exe | grep -q '42 42 1'
 
 echo OK

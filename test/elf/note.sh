@@ -1,13 +1,13 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -o $t/a.o -c -x assembler -
+cat <<EOF | cc -o "$t"/a.o -c -x assembler -
 .text
 .globl _start
 _start:
@@ -30,16 +30,16 @@ _start:
 .quad 42
 EOF
 
-$mold -static -o $t/exe $t/a.o
-readelf -W --sections $t/exe > $t/log
+"$mold" -static -o "$t"/exe "$t"/a.o
+readelf -W --sections "$t"/exe > "$t"/log
 
-grep -Pq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log
-grep -Pq '.note.baz\s+NOTE.+000008 00   A  0   0  8' $t/log
-grep -Pq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log
+grep -Pq '.note.bar\s+NOTE.+000008 00   A  0   0  4' "$t"/log
+grep -Pq '.note.baz\s+NOTE.+000008 00   A  0   0  8' "$t"/log
+grep -Pq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' "$t"/log
 
-readelf --segments $t/exe > $t/log
-fgrep -q '01     .note.bar' $t/log
-fgrep -q '02     .note.baz .note.foo' $t/log
-! grep -q 'NOTE.*0x0000000000000000 0x0000000000000000' $t/log || false
+readelf --segments "$t"/exe > "$t"/log
+fgrep -q '01     .note.bar' "$t"/log
+fgrep -q '02     .note.baz .note.foo' "$t"/log
+! grep -q 'NOTE.*0x0000000000000000 0x0000000000000000' "$t"/log || false
 
 echo OK

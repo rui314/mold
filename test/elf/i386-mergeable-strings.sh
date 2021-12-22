@@ -1,15 +1,15 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-[ $(uname -m) = x86_64 ] || { echo skipped; exit; }
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<'EOF' | cc -o $t/a.o -c -x assembler -m32 -
+cat <<'EOF' | cc -o "$t"/a.o -c -x assembler -m32 -
   .text
   .globl main
 main:
@@ -29,7 +29,7 @@ main:
   .string "foo world\n"
 EOF
 
-clang -m32 -fuse-ld=$mold -static -o $t/exe $t/a.o
-$t/exe | grep -q 'Hello world'
+clang -m32 -fuse-ld="$mold" -static -o "$t"/exe "$t"/a.o
+"$t"/exe | grep -q 'Hello world'
 
 echo OK

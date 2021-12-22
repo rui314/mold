@@ -1,23 +1,23 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../ld64.mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/macho/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/macho/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -o $t/a.o -fcommon -c -xc -
+cat <<EOF | cc -o "$t"/a.o -fcommon -c -xc -
 int foo;
 int bar;
 EOF
 
-cat <<EOF | cc -o $t/b.o -fcommon -c -xc -
+cat <<EOF | cc -o "$t"/b.o -fcommon -c -xc -
 int foo;
 int bar = 5;
 EOF
 
-cat <<EOF | cc -o $t/c.o -c -xc -
+cat <<EOF | cc -o "$t"/c.o -c -xc -
 #include <stdio.h>
 
 extern int foo;
@@ -29,7 +29,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep -q '^0 5 0$'
+clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o "$t"/c.o
+"$t"/exe | grep -q '^0 5 0$'
 
 echo OK

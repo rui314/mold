@@ -41,4 +41,4 @@ fi
 
 docker run -it --rm "${docker_args[@]}" \
   mold-build-ubuntu20 \
-  make -C /mold -j$(nproc) EXTRA_LDFLAGS="$EXTRA_LDFLAGS" "$@"
+  make -C /mold -j"$(nproc)" EXTRA_LDFLAGS="$EXTRA_LDFLAGS" "$@"

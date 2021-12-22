@@ -1,13 +1,13 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -o $t/a.so -fPIC -shared -xc -
+cat <<EOF | cc -o "$t"/a.so -fPIC -shared -xc -
 void *foo() {
   return foo;
 }
@@ -17,7 +17,7 @@ void *bar() {
 }
 EOF
 
-cat <<EOF | cc -o $t/b.o -c -xc - -fPIC
+cat <<EOF | cc -o "$t"/b.o -c -xc - -fPIC
 void *bar();
 
 void *baz() {
@@ -25,7 +25,7 @@ void *baz() {
 }
 EOF
 
-cat <<EOF | cc -o $t/c.o -c -xc - -fno-PIC
+cat <<EOF | cc -o "$t"/c.o -c -xc - -fno-PIC
 #include <stdio.h>
 
 void *foo();
@@ -37,7 +37,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/a.so $t/b.o $t/c.o
-$t/exe | grep -q '^1 1 1$'
+clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/a.so "$t"/b.o "$t"/c.o
+"$t"/exe | grep -q '^1 1 1$'
 
 echo OK

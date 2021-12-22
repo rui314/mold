@@ -1,22 +1,22 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-ldd $mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
+ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
-cat <<'EOF' > $t/a.sh
+cat <<'EOF' > "$t"/a.sh
 #!/bin/bash
 echo "$0" "$@"
 EOF
 
-chmod 755 $t/a.sh
+chmod 755 "$t"/a.sh
 
-cat <<'EOF' | cc -xc -o $t/exe -
+cat <<'EOF' | cc -xc -o "$t"/exe -
 #define _GNU_SOURCE 1
 
 #include <assert.h>
@@ -69,11 +69,11 @@ int main(int argc, char **argv) {
 }
 EOF
 
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execl | grep -q 'a.sh execl'
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execlp | grep -q 'a.sh execlp'
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execle | grep -q 'a.sh execle'
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execv | grep -q 'a.sh execv'
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvp | grep -q 'a.sh execvp'
-LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvpe | grep -q 'a.sh execvpe'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execl | grep -q 'a.sh execl'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execlp | grep -q 'a.sh execlp'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execle | grep -q 'a.sh execle'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execv | grep -q 'a.sh execv'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execvp | grep -q 'a.sh execvp'
+LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh "$t"/exe execvpe | grep -q 'a.sh execvpe'
 
 echo OK
