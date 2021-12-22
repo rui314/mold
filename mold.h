@@ -526,6 +526,8 @@ public:
     ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
   }
 
+  Timer(const Timer &) = delete;
+
   ~Timer() {
     record->stop();
   }
