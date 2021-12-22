@@ -17,8 +17,9 @@ cat <<EOF | docker build -t mold-build-ubuntu20 -
 FROM ubuntu:20.04
 RUN apt-get update && \
   TZ=Europe/London apt-get install -y tzdata && \
-  apt-get install -y build-essential git clang lld cmake \
-    libstdc++-10-dev libxxhash-dev zlib1g-dev libssl-dev && \
+  apt-get install -y --no-install-recommends build-essential clang lld \
+    cmake libstdc++-10-dev zlib1g-dev libssl-dev && \
+  apt clean && \
   rm -rf /var/lib/apt/lists/*
 EOF
 
