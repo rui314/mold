@@ -33,6 +33,11 @@ EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_rdlock"
 EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_unlock"
 EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
-docker run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
+docker_args=(-v "`pwd`:/mold:Z" -u "$(id -u)":"$(id -g)")
+if docker --version | grep -q podman; then
+  docker_args+=(--userns=keep-id)
+fi
+
+docker run -it --rm "${docker_args[@]}" \
   mold-build-ubuntu20 \
   make -C /mold -j$(nproc) EXTRA_LDFLAGS="$EXTRA_LDFLAGS"
