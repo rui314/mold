@@ -586,14 +586,6 @@ public:
     return std::string_view((char *)data, size);
   }
 
-  bool write_to(std::string path) {
-    FILE *fp = fopen(path.c_str(), "w");
-    if (!fp)
-      return false;
-    fwrite(data, size, 1, fp);
-    return true;
-  }
-
   std::string name;
   u8 *data = nullptr;
   i64 size = 0;
