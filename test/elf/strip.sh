@@ -7,7 +7,7 @@ echo -n "Testing $(basename -s .sh $0) ... "
 t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
 mkdir -p $t
 
-cat <<'EOF' | cc -x assembler -c -o $t/a.o -Wa,--keep-locals -
+cat <<'EOF' | cc -x assembler -c -o $t/a.o -Wa,-L -
 .globl _start, foo
 _start:
 foo:
