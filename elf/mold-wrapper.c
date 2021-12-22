@@ -81,6 +81,7 @@ int execl(const char *path, const char *arg0, ...) {
   va_start(ap, arg0);
   char *argv[4096] = {(char *)arg0};
   get_args(&ap, 4096, argv);
+  va_end(ap);
   return execve(path, argv, environ);
 }
 
@@ -89,6 +90,7 @@ int execlp(const char *file, const char *arg0, ...) {
   va_start(ap, arg0);
   char *argv[4096] = {(char *)arg0};
   get_args(&ap, 4096, argv);
+  va_end(ap);
   return execvpe(file, argv, environ);
 }
 
@@ -98,6 +100,7 @@ int execle(const char *path, const char *arg0, ...) {
   char *argv[4096] = {(char *)arg0};
   get_args(&ap, 4096, argv);
   char **env = va_arg(ap, char **);
+  va_end(ap);
   return execve(path, argv, env);
 }
 
