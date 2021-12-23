@@ -9,6 +9,8 @@
 
 set -e
 
+
+# Required so that users of non Docker desktop on macos can run this
 export _BINARY="docker"
 
 if [ -x "$(command -v lima)" ]; then
@@ -37,4 +39,4 @@ LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
 $_BINARY run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
   mold-build-alpine-3.15 \
-  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS" && ls -al
+  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS"
