@@ -140,6 +140,7 @@ Options:
     -z nokeep-text-section-prefix
   -z lazy                     Enable lazy function resolution (default)
   -z nocopyreloc              Do not create copy relocations
+  -z nodefaultlib             Make the dynamic loader to ignore default search paths
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nodlopen                 Mark DSO not available to dlopen
   -z nodump                   Mark DSO not available to dldump
@@ -586,6 +587,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_text = false;
     } else if (read_z_flag(args, "origin")) {
       ctx.arg.z_origin = true;
+    } else if (read_z_flag(args, "nodefaultlib")) {
+      ctx.arg.z_nodefaultlib = true;
     } else if (read_flag(args, "no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag(args, "fatal-warnings")) {
@@ -740,7 +743,6 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "rpath-link")) {
     } else if (read_z_flag(args, "combreloc")) {
     } else if (read_z_flag(args, "nocombreloc")) {
-    } else if (read_z_flag(args, "nodefaultlib")) {
     } else if (read_arg(ctx, args, arg, "version-script")) {
       remaining.push_back("--version-script");
       remaining.push_back(arg);

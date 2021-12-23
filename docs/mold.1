@@ -637,19 +637,21 @@ norelro\fR disables the feature.
 .PD 0
 .IP "\fB\-z nodefs\fR"
 .PD
-Report undefined symbols (even with \fI\-\-shared\fR)
-.IP "\fB\-z nocopyreloc\fR"
-Do not create copy relocations
+Report undefined symbols (even with \fI\-\-shared\fR).
+.IP "\fB\-z nodefaultlib\fR"
+Make the dynamic loader to ignore default search paths.
 .IP "\fB\-z nodelete\fR"
-Mark DSO non-deletable at runtime
+Mark DSO non-deletable at runtime.
 .IP "\fB\-z nodlopen\fR"
-Mark DSO not available to dlopen
+Mark DSO not available to dlopen.
 .IP "\fB\-z nodump\fR"
-Mark DSO not available to dldump
+Mark DSO not available to dldump.
+.IP "\fB\-z nocopyreloc\fR"
+Do not create copy relocations.
 .IP "\fB\-z initfirst\fR"
-Mark DSO to be initialized first at runtime
+Mark DSO to be initialized first at runtime.
 .IP "\fB\-z interpose\fR"
-Mark object to interpose all DSOs but executable
+Mark object to interpose all DSOs but executable.
 
 .IP "\fB\-(\fR"
 .PD 0

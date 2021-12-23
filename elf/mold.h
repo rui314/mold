@@ -1249,6 +1249,7 @@ struct Context {
     bool z_initfirst = false;
     bool z_interpose = false;
     bool z_keep_text_section_prefix = false;
+    bool z_nodefaultlib = false;
     bool z_now = false;
     bool z_origin = false;
     bool z_relro = true;
