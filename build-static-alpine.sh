@@ -9,6 +9,7 @@
 
 set -e
 
+echo "Warning, run `make clean` before changing building OS"
 
 # Required so that users of non Docker desktop on macos can run this
 export _BINARY="docker"
@@ -39,4 +40,5 @@ LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
 $_BINARY run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
   mold-build-alpine-3.15 \
-  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS"
+  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS" && \
+  chmod +x /mold/mold

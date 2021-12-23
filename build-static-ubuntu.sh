@@ -9,19 +9,24 @@
 
 set -e
 
+echo "Warning, run `make clean` before changing building OS"
+
+# Required so that users of non Docker desktop on macos can run this
+export _BINARY="docker"
+
+if [ -x "$(command -v lima)" ]; then
+  echo 'lima is installed so using it instead' >&2
+  _BINARY="lima nerdctl "
+elif [ -x "$(command -v nerdctl)" ]; then
+  echo 'nerdctl is installed so using it instead' >&2
+  _BINARY="nerdctl "
+fi
+
 # If the existing file is not statically-linked, remove it.
 [ -f mold ] && ! ldd mold 2>&1 | grep -q 'not a dynamic executable' && \
   rm mold
 
-cat <<EOF | docker build -t mold-build-ubuntu20 -
-FROM ubuntu:20.04
-RUN apt-get update && \
-  TZ=Europe/London apt-get install -y tzdata && \
-  apt-get install -y --no-install-recommends build-essential clang lld \
-    cmake libstdc++-10-dev zlib1g-dev libssl-dev && \
-  apt clean && \
-  rm -rf /var/lib/apt/lists/*
-EOF
+$_BINARY build -t mold-build-ubuntu-3.15 -f ./Dockerfiles/Dockerfile-static-ubuntu .
 
 LDFLAGS='-fuse-ld=lld -static'
 
@@ -33,6 +38,7 @@ LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_rdlock"
 LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_unlock"
 LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
-docker run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
-  mold-build-ubuntu20 \
-  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS"
+$_BINARY run -it --rm -v "`pwd`:/mold" -u $(id -u):$(id -g) \
+  mold-build-ubuntu-3.15 \
+  make -C /mold -j$(nproc) LDFLAGS="$LDFLAGS" && \
+  chmod +x /mold/mold
