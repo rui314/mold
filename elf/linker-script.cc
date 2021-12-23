@@ -146,9 +146,9 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
 
 template <typename E>
 static bool is_in_sysroot(Context<E> &ctx, std::string path) {
-  std::string sysroot = path_clean(path_to_absolute(ctx.arg.sysroot));
-  path = path_clean(path_to_absolute(path));
-  return path_dirname(path).starts_with(sysroot);
+  std::string dir(path_dirname(path_clean(path_to_absolute(path))));
+  std::string sysroot(path_clean(path_to_absolute(ctx.arg.sysroot)));
+  return dir == sysroot || dir.starts_with(sysroot + "/");
 }
 
 template <typename E>
@@ -159,6 +159,15 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
   // script being processed is in the sysroot. We do the same.
   if (str.starts_with('/') && is_in_sysroot(ctx, current_file<E>->name))
     return MappedFile<Context<E>>::must_open(ctx, ctx.arg.sysroot + str);
+
+  if (str.starts_with('=')) {
+    std::string path;
+    if (ctx.arg.sysroot.empty())
+      path = str.substr(1);
+    else
+      path = ctx.arg.sysroot + str.substr(1);
+    return MappedFile<Context<E>>::must_open(ctx, path);
+  }
 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));

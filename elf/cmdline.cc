@@ -784,9 +784,9 @@ void parse_nonpositional_args(Context<E> &ctx,
   if (!ctx.arg.sysroot.empty()) {
     for (std::string &path : ctx.arg.library_paths) {
       if (std::string_view(path).starts_with('='))
-        path = std::string(ctx.arg.sysroot) + path.substr(1);
+        path = ctx.arg.sysroot + path.substr(1);
       else if (std::string_view(path).starts_with("$SYSROOT"))
-        path = std::string(ctx.arg.sysroot) + path.substr(8);
+        path = ctx.arg.sysroot + path.substr(8);
     }
   }
 
