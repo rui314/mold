@@ -145,6 +145,11 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
            !(chunk->shdr.sh_flags & SHF_TLS);
   };
 
+  auto is_note = [](Chunk<E> *chunk) {
+    ElfShdr<E> &shdr = chunk->shdr;
+    return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
+  };
+
   // Create a PT_PHDR for the program header itself.
   define(PT_PHDR, PF_R, E::word_size, ctx.phdr);
 
@@ -156,14 +161,14 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // alignment requirement.
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
     Chunk<E> *first = ctx.chunks[i++];
-    if (first->shdr.sh_type != SHT_NOTE)
+    if (!is_note(first))
       continue;
 
     i64 flags = to_phdr_flags(first);
     i64 alignment = first->shdr.sh_addralign;
     define(PT_NOTE, flags, alignment, first);
 
-    while (i < end && ctx.chunks[i]->shdr.sh_type == SHT_NOTE &&
+    while (i < end && is_note(ctx.chunks[i]) &&
            to_phdr_flags(ctx.chunks[i]) == flags &&
            ctx.chunks[i]->shdr.sh_addralign == alignment)
       append(ctx.chunks[i++]);

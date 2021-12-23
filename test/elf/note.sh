@@ -40,5 +40,6 @@ grep -Pq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log
 readelf --segments $t/exe > $t/log
 fgrep -q '01     .note.bar' $t/log
 fgrep -q '02     .note.baz .note.foo' $t/log
+! grep -q 'NOTE.*0x0000000000000000 0x0000000000000000' $t/log || false
 
 echo OK
