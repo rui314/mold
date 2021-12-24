@@ -992,6 +992,22 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     std::lock_guard lock(sym.mu);
 
+    if (sym.file &&
+        (!sym.esym().is_undef() || sym.file->priority <= this->priority))
+      continue;
+
+    // If a symbol name is in the form of "foo@version", search for
+    // symbol "foo" and check if the symbol has version "version".
+    std::string_view key = symbol_strtab.data() + esym.st_name;
+    if (i64 pos = key.find('@'); pos != key.npos) {
+      Symbol<E> *sym2 = intern(ctx, key.substr(0, pos));
+      if (sym2->file && sym2->file->is_dso &&
+          sym2->get_version() == key.substr(pos + 1)) {
+        this->symbols[i] = sym2;
+        continue;
+      }
+    }
+
     auto claim = [&]() {
       sym.file = this;
       sym.input_section = nullptr;
@@ -1002,23 +1018,11 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       sym.is_exported = false;
     };
 
-    if (!sym.file ||
-        (sym.esym().is_undef() && this->priority < sym.file->priority)) {
-      std::string_view key = symbol_strtab.data() + esym.st_name;
+    if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
+      Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
 
-      // If a symbol name is in the form of "foo@version", search for
-      // symbol "foo" and check if the symbol has version "version".
-      if (i64 pos = key.find('@'); pos != key.npos) {
-        Symbol<E> *sym2 = intern(ctx, key.substr(0, pos));
-        if (sym2->file && sym2->file->is_dso &&
-            sym2->get_version() == key.substr(pos + 1)) {
-          this->symbols[i] = sym2;
-          continue;
-        }
-      }
-
-      // Convert remaining undefined symbols to dynamic symbols.
-      //
+    // Convert remaining undefined symbols to dynamic symbols.
+    if (ctx.arg.shared) {
       // Traditionally, remaining undefined symbols cause a link failure
       // only when we are creating an executable. Undefined symbols in
       // shared objects are promoted to dynamic symbols, so that they'll
@@ -1029,10 +1033,11 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       // promoted to dynamic symbols for compatibility with other linkers.
       // Some major programs, notably Firefox, depend on the behavior
       // (they use this loophole to export symbols from libxul.so).
-      if (ctx.arg.shared && (!ctx.arg.z_defs || esym.is_undef_weak())) {
+      if (!ctx.arg.z_defs || esym.is_undef_weak() ||
+          ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
         claim();
         sym.ver_idx = 0;
-        sym.is_imported = !ctx.arg.is_static;
+        sym.is_imported = true;
 
         if (sym.traced)
           SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
@@ -1040,17 +1045,14 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
                        << " symbol " << sym;
         continue;
       }
+    }
 
-      // Convert remaining undefined symbols to absolute symbols with value 0.
-      if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
-          esym.is_undef_weak()) {
-        claim();
-        sym.ver_idx = ctx.arg.default_version;
-        sym.is_imported = false;
-
-        if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
-          Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
-      }
+    // Convert remaining undefined symbols to absolute symbols with value 0.
+    if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
+        esym.is_undef_weak()) {
+      claim();
+      sym.ver_idx = ctx.arg.default_version;
+      sym.is_imported = false;
     }
   }
 }
