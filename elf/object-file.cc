@@ -1003,7 +1003,22 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     };
 
     if (!sym.file ||
-        (sym.esym().is_undef() && sym.file->priority < this->priority)) {
+        (sym.esym().is_undef() && this->priority < sym.file->priority)) {
+      std::string_view key = symbol_strtab.data() + esym.st_name;
+
+      // If a symbol name is in the form of "foo@version", search for
+      // symbol "foo" and check if the symbol has version "version".
+      if (i64 pos = key.find('@'); pos != key.npos) {
+        Symbol<E> *sym2 = intern(ctx, key.substr(0, pos));
+        if (sym2->file && sym2->file->is_dso &&
+            sym2->get_version() == key.substr(pos + 1)) {
+          this->symbols[i] = sym2;
+          continue;
+        }
+      }
+
+      // Convert remaining undefined symbols to dynamic symbols.
+      //
       // Traditionally, remaining undefined symbols cause a link failure
       // only when we are creating an executable. Undefined symbols in
       // shared objects are promoted to dynamic symbols, so that they'll
@@ -1015,7 +1030,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       // Some major programs, notably Firefox, depend on the behavior
       // (they use this loophole to export symbols from libxul.so).
       if (ctx.arg.shared && (!ctx.arg.z_defs || esym.is_undef_weak())) {
-        // Convert remaining undefined symbols to dynamic symbols.
         claim();
         sym.ver_idx = 0;
         sym.is_imported = !ctx.arg.is_static;
@@ -1024,10 +1038,12 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
           SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
                        << (esym.is_weak() ? " weak" : "")
                        << " symbol " << sym;
-      } else if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
-                 esym.is_undef_weak()) {
-        // Convert remaining undefined symbols to absolute symbols with
-        // value 0.
+        continue;
+      }
+
+      // Convert remaining undefined symbols to absolute symbols with value 0.
+      if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
+          esym.is_undef_weak()) {
         claim();
         sym.ver_idx = ctx.arg.default_version;
         sym.is_imported = false;

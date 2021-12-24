@@ -26,33 +26,23 @@ echo 'VER1 { local: *; }; VER2 { local: *; }; VER3 { local: *; };' > $t/b.ver
 clang -fuse-ld=$mold -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
 
 cat <<EOF | cc -c -o $t/d.o -xc -
+#include <stdio.h>
+
 int foo1();
 int foo2();
+int foo3();
+int foo();
 
 __asm__(".symver foo1, foo@VER1");
 __asm__(".symver foo2, foo@VER2");
-
-int bar1() {
-  return foo1();
-}
-
-int bar2() {
-  return foo2();
-}
-EOF
-
-cat <<EOF | cc -c -o $t/e.o -xc -
-#include <stdio.h>
-
-int bar1();
-int bar2();
+__asm__(".symver foo3, foo@VER3");
 
 int main() {
-  printf("%d %d\n", bar1(), bar2());
+  printf("%d %d %d %d\n", foo1(), foo2(), foo3(), foo());
 }
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/d.o $t/e.o $t/c.so
-$t/exe | grep -q '^1 2$'
+clang -fuse-ld=$mold -o $t/exe $t/d.o $t/c.so
+$t/exe | grep -q '^1 2 3 3$'
 
 echo OK
