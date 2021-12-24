@@ -759,23 +759,25 @@ void clear_padding(Context<E> &ctx) {
 //   alloc writable non-RELRO bss
 //   nonalloc
 //   section header
+//
+// .note sections are sorted by their alignments.
 template <typename E>
 i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
   u64 flags = chunk->shdr.sh_flags;
 
   if (chunk == ctx.ehdr.get())
-    return -4;
+    return 0;
   if (chunk == ctx.phdr.get())
-    return -3;
+    return 1;
   if (chunk == ctx.interp.get())
-    return -2;
+    return 2;
   if (type == SHT_NOTE && (flags & SHF_ALLOC))
-    return -1;
+    return (1 << 10) + chunk->shdr.sh_addralign;
   if (chunk == ctx.shdr.get())
-    return 1 << 6;
+    return 1 << 30;
   if (!(flags & SHF_ALLOC))
-    return 1 << 5;
+    return (1 << 30) - 1;
 
   bool writable = (flags & SHF_WRITE);
   bool exec = (flags & SHF_EXECINSTR);
@@ -783,8 +785,8 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   bool relro = is_relro(ctx, chunk);
   bool is_bss = (type == SHT_NOBITS);
 
-  return (writable << 4) | (exec << 3) | (!tls << 2) |
-         (!relro << 1) | is_bss;
+  return (1 << 20) | (writable << 19) | (exec << 18) | (!tls << 17) |
+         (!relro << 16) | (is_bss << 15);
 }
 
 // Returns the smallest number n such that
