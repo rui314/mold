@@ -447,7 +447,10 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
   // Initialize local symbols
   this->local_syms.reset(new Symbol<E>[first_global]);
+
   new (&this->local_syms[0]) Symbol<E>;
+  this->local_syms[0].file = this;
+  this->local_syms[0].sym_idx = 0;
 
   for (i64 i = 1; i < first_global; i++) {
     const ElfSym<E> &esym = elf_syms[i];
@@ -714,7 +717,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
   }
 
   // Initialize sym_fragments
-  for (i64 i = 0; i < elf_syms.size(); i++) {
+  for (i64 i = 1; i < elf_syms.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
