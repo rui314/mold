@@ -102,7 +102,11 @@ template <typename C>
 class Error {
 public:
   Error(C &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
+    if (ctx.arg.color_diagnostics)
+      out << "mold: \033[0;1;31merror:\033[0m ";
+    else
+      out << "mold: error: ";
+
     ctx.has_error = true;
   }
 
@@ -119,9 +123,18 @@ template <typename C>
 class Warn {
 public:
   Warn(C &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
-    if (ctx.arg.fatal_warnings)
+    if (ctx.arg.fatal_warnings) {
+      if (ctx.arg.color_diagnostics)
+        out << "mold: \033[0;1;31merror:\033[0m ";
+      else
+        out << "mold: error: ";
       ctx.has_error = true;
+    } else {
+      if (ctx.arg.color_diagnostics)
+        out << "mold: \033[0;1;35warning:\033[0m ";
+      else
+        out << "mold: warning: ";
+    }
   }
 
   template <class T> Warn &operator<<(T &&val) {

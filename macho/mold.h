@@ -766,6 +766,7 @@ struct Context {
   struct {
     bool ObjC = false;
     bool adhoc_codesign = true;
+    bool color_diagnostics = false;
     bool dead_strip = true;
     bool dead_strip_dylibs = false;
     bool deduplicate = true;

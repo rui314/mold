@@ -55,7 +55,9 @@ Options:
                               Generate build ID
     --no-build-id
   --chroot DIR                Set a given path to root directory
-  --color-diagnostics         Ignored
+  --color-diagnostics=[auto,always,never]
+                              Use colors in diagnostics
+  --color-diagnostics         Alias for --color-diagnostics=always
   --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu]
                               Compress .debug_* sections
   --demangle                  Demangle C++ symbols in log messages (default)
@@ -376,6 +378,7 @@ void parse_nonpositional_args(Context<E> &ctx,
   args = args.subspan(1);
 
   bool version_shown = false;
+  ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
 
   while (!args.empty()) {
     std::string_view arg;
@@ -528,6 +531,20 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.directory = arg;
     } else if (read_arg(ctx, args, arg, "chroot")) {
       ctx.arg.chroot = arg;
+    } else if (args[0] == "-color-diagnostics=auto" ||
+               args[0] == "--color-diagnostics=auto") {
+      ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+      args = args.subspan(1);
+    } else if (args[0] == "-color-diagnostics=always" ||
+               args[0] == "--color-diagnostics=always") {
+      ctx.arg.color_diagnostics = true;
+      args = args.subspan(1);
+    } else if (args[0] == "-color-diagnostics=never" ||
+               args[0] == "--color-diagnostics=never") {
+      ctx.arg.color_diagnostics = false;
+      args = args.subspan(1);
+    } else if (read_flag(args, "color-diagnostics")) {
+      ctx.arg.color_diagnostics = true;
     } else if (read_flag(args, "warn-common")) {
       ctx.arg.warn_common = true;
     } else if (read_flag(args, "no-warn-common")) {

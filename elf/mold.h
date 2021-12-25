@@ -1219,6 +1219,7 @@ struct Context {
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
+    bool color_diagnostics = false;
     bool demangle = true;
     bool discard_all = false;
     bool discard_locals = false;
