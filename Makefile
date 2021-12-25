@@ -144,6 +144,7 @@ else
 test tests check: all
 	$(MAKE) -C test -f Makefile.linux --no-print-directory --output-sync
 endif
+	@echo "Passed all tests"
 
 install: all
 	install -m 755 -d $D$(BINDIR)
