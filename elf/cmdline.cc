@@ -720,6 +720,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.preload = true;
     } else if (read_flag(args, "no-preload")) {
       ctx.arg.preload = false;
+    } else if (read_flag(args, "apply-dynamic-relocs")) {
     } else if (read_arg(ctx, args, arg, "O")) {
     } else if (read_flag(args, "O0")) {
     } else if (read_flag(args, "O1")) {
