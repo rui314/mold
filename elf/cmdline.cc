@@ -829,6 +829,11 @@ void parse_nonpositional_args(Context<E> &ctx,
   if (ctx.arg.output.empty())
     ctx.arg.output = "a.out";
 
+  if (ctx.arg.shared || ctx.arg.export_dynamic)
+    ctx.arg.default_version = VER_NDX_GLOBAL;
+  else
+    ctx.arg.default_version = VER_NDX_LOCAL;
+
   ctx.arg.undefined.push_back(ctx.arg.entry);
 
   // TLSDESC relocs must be always relaxed for statically-linked

@@ -358,26 +358,14 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
     tokenize(ctx, current_file<E>->get_contents());
 
   std::span<std::string_view> tok = vec;
-
   tok = skip(ctx, tok, "{");
-  u16 ver = VER_NDX_GLOBAL;
 
   while (!tok.empty() && tok[0] != "}") {
-    if (read_label(tok, "global")) {
-      ver = VER_NDX_GLOBAL;
-      continue;
-    }
-
-    if (read_label(tok, "local")) {
-      ver = VER_NDX_LOCAL;
-      continue;
-    }
-
     if (tok[0] == "*") {
-      ctx.arg.default_version = ver;
+      ctx.arg.default_version = VER_NDX_GLOBAL;
     } else {
       VersionPattern pat;
-      pat.ver_idx = ver;
+      pat.ver_idx = VER_NDX_GLOBAL;
       pat.patterns.push_back(tok[0]);
       ctx.arg.version_patterns.push_back(pat);
     }

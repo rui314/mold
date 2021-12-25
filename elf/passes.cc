@@ -706,25 +706,20 @@ void compute_import_export(Context<E> &ctx) {
     });
   }
 
-  // Global symbols are exported from DSO by default.
-  if (ctx.arg.shared || ctx.arg.export_dynamic) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->get_global_syms()) {
-        if (sym->file != file)
-          continue;
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms()) {
+      if (sym->file != file || sym->visibility == STV_HIDDEN ||
+          sym->ver_idx == VER_NDX_LOCAL)
+        continue;
 
-        if (sym->visibility == STV_HIDDEN || sym->ver_idx == VER_NDX_LOCAL)
-          continue;
+      sym->is_exported = true;
 
-        sym->is_exported = true;
-
-        if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
-            !ctx.arg.Bsymbolic &&
-            !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
-          sym->is_imported = true;
-      }
-    });
-  }
+      if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
+          !ctx.arg.Bsymbolic &&
+          !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+        sym->is_imported = true;
+    }
+  });
 }
 
 template <typename E>
