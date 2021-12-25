@@ -622,7 +622,8 @@ void apply_version_script(Context<E> &ctx) {
     if (vec.empty() && elem.cpp_patterns.empty())
       continue;
 
-    auto flags = std::regex_constants::optimize | std::regex_constants::nosubs;
+    auto flags = std::regex_constants::extended | std::regex_constants::optimize |
+                 std::regex_constants::nosubs;
     std::regex re(to_regex(vec), flags);
     std::regex cpp_re(to_regex(elem.cpp_patterns), flags);
 

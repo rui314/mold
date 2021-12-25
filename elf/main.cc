@@ -18,11 +18,20 @@ namespace mold::elf {
 
 std::string glob_to_regex(std::string_view pattern) {
   std::stringstream ss;
-  for (u8 c : pattern) {
-    if (c == '*')
+  for (char c : pattern) {
+    switch (c) {
+    case '.': case '[': case ']': case '^':
+    case '$': case '\\': case '(': case ')':
+    case '+': case '?': case '|':
+      ss << "\\" << c;
+      break;
+    case '*':
       ss << ".*";
-    else
-      ss << "\\x" << std::hex << std::setw(2) << std::setfill('0') << (int)c;
+      break;
+    default:
+      ss << c;
+      break;
+    }
   }
   return ss.str();
 }
