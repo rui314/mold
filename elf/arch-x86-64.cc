@@ -618,7 +618,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_TLSLD:
       if (i + 1 == rels.size())
         Fatal(ctx) << *this
-                   << ": TLSGD reloc must be followed by PLT32 or GOTPCREL";
+                   << ": TLSLD reloc must be followed by PLT32 or GOTPCREL";
 
       if (ctx.arg.relax && !ctx.arg.shared)
         i++;
