@@ -22,11 +22,14 @@ std::string glob_to_regex(std::string_view pattern) {
     switch (c) {
     case '.': case '[': case ']': case '^':
     case '$': case '\\': case '(': case ')':
-    case '+': case '?': case '|':
+    case '+': case '|':
       ss << "\\" << c;
       break;
     case '*':
       ss << ".*";
+      break;
+    case '?':
+      ss << ".";
       break;
     default:
       ss << c;
