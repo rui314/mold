@@ -609,9 +609,8 @@ void apply_version_script(Context<E> &ctx) {
   for (VersionPattern &elem : ctx.arg.version_patterns) {
     std::vector<std::string_view> vec;
 
-    std::regex re_glob("[*?]", std::regex_constants::optimize | std::regex_constants::nosubs);
     for (std::string_view pat : elem.patterns) {
-      if (!std::regex_search(pat.begin(), pat.end(), re_glob)) {
+      if (pat.find_first_of("*?") == pat.npos) {
         Symbol<E> *sym = intern(ctx, pat);
         if (sym->file && !sym->file->is_dso)
           sym->ver_idx = elem.ver_idx;
