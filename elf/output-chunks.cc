@@ -819,7 +819,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   n += tlsdesc_syms.size();
 
   for (Symbol<E> *sym : gottp_syms)
-    if (sym->is_imported)
+    if (sym->is_imported || ctx.arg.shared)
       n++;
 
   if (tlsld_idx != -1)
@@ -869,6 +869,9 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     if (sym->is_imported) {
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
                         sym->get_dynsym_idx(ctx));
+    } else if (ctx.arg.shared) {
+      *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF, 0,
+                        sym->get_addr(ctx) - ctx.tls_begin);
     } else if (E::e_machine == EM_386 || E::e_machine == EM_X86_64) {
       buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
     } else {
