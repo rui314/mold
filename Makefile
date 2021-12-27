@@ -1,6 +1,7 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 LIBDIR ?= $(PREFIX)/lib
+LIBEXECDIR ?= $(PREFIX)/libexec
 MANDIR ?= $(PREFIX)/share/man
 
 D = $(DESTDIR)
@@ -154,6 +155,9 @@ install: all
 	install -m 755 -d $D$(LIBDIR)/mold
 	install -m 644 mold-wrapper.so $D$(LIBDIR)/mold
 	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
+
+	install -m 755 -d $D$(LIBEXECDIR)/mold
+	ln -sf $(BINDIR)/mold $D$(LIBEXECDIR)/mold/ld
 
 	install -m 755 -d $D$(MANDIR)/man1
 	install -m 644 docs/mold.1 $D$(MANDIR)/man1
