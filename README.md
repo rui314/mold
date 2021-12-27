@@ -94,15 +94,49 @@ sudo apt-get install bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libst
 
 ## How to use
 
+<details><summary>A classic way to use mold</summary>
+
 On Unix, the linker command (which is usually `/usr/bin/ld`) is
-invoked indirectly by `cc` (or `gcc` or `clang`), which is typically
-in turn indirectly invoked by `make` or some other build system command.
+invoked indirectly by the compiler driver (which is usually `cc`,
+`gcc` or `clang`), which is typically in turn indirectly invoked by
+`make` or some other build system command.
 
-A classic way to use `mold`:
+If you can specify an additional command line option to your compiler
+driver by modifying build system's config files, add one of the
+following flags to use `mold` instead of `/usr/bin/ld`:
 
-- `clang` before 12.0: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+- clang before 12.0: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+
 - clang after 12.0: pass `--ld-path=<absolute-path-to-mold-executable>`;
-- gcc: `--ld-path` patch [has been declined by GCC maintainers](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html), instead they advise to use a [workaround](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573823.html): create directory `<dirname>`, then `ln -s <path-to-mold> <dirname>/ld`, and then pass `-B<dirname>` (`-B` tells GCC to look for `ld` in specified location).
+
+- gcc: `--ld-path` patch [has been declined by GCC
+  maintainers](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html),
+  instead they advise to use a
+  [workaround](https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573823.html):
+  create directory `<dirname>`, then `ln -s <path-to-mold>
+  <dirname>/ld`, and then pass `-B<dirname>` (`-B` tells GCC to look
+  for `ld` in specified location).
+
+</details>
+
+<details><summary>If you are using Rust</summary>
+
+Create `.cargo/config.toml` in your project directory with the following:
+
+```
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
+```
+
+where `/path/to/mold` is an absolute path to `mold` exectuable.
+
+If you want to use mold for all projects, put the above snippet to
+`~/.cargo/config.toml`.
+
+</details>
+
+<details><summary>mold -run</summary>
 
 It is sometimes very hard to pass an appropriate command line option
 to `cc` to specify an alternative linker.  To deal with the situation,
@@ -125,6 +159,8 @@ Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
 file intercepts all function calls to `exec(3)`-family functions to
 replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
+
+</details>
 
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
