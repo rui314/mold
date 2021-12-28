@@ -131,7 +131,7 @@ public:
       ctx.has_error = true;
     } else {
       if (ctx.arg.color_diagnostics)
-        out << "mold: \033[0;1;35warning:\033[0m ";
+        out << "mold: \033[0;1;35mwarning:\033[0m ";
       else
         out << "mold: warning: ";
     }
