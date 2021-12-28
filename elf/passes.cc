@@ -837,7 +837,8 @@ i64 set_osec_offsets(Context<E> &ctx) {
 
       chunk.shdr.sh_addr = vaddr;
       chunk.shdr.sh_offset = fileoff;
-      vaddr += chunk.shdr.sh_size;
+      if (!(chunk.shdr.sh_flags & SHF_TLS))
+        vaddr += chunk.shdr.sh_size;
     }
   }
 
