@@ -726,7 +726,7 @@ void parse_nonpositional_args(Context<E> &ctx,
           << "mold does not suppor `-b binary`. If you want to convert a binary"
           " file into an object file, use `objcopy -I binary -O elf64-x86-64"
           << " <input-file> <output-file.o>` instead.";
-      Fatal(ctx) << "mold: unknown command line option: -b " << arg;
+      Fatal(ctx) << "unknown command line option: -b " << arg;
     } else if (read_arg(ctx, args, arg, "auxiliary") ||
                read_arg(ctx, args, arg, "f")) {
       ctx.arg.auxiliary.push_back(arg);
@@ -799,14 +799,14 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "pop-state")) {
       remaining.push_back("-pop-state");
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
-      Warn(ctx) << "mold: unknown command line option: " << args[0];
+      Warn(ctx) << "unknown command line option: " << args[0];
       args = args.subspan(1);
     } else if (args[0] == "-z" && args.size() >= 2) {
-      Warn(ctx) << "mold: unknown command line option: -z " << args[1];
+      Warn(ctx) << "unknown command line option: -z " << args[1];
       args = args.subspan(2);
     } else {
       if (args[0][0] == '-')
-        Fatal(ctx) << "mold: unknown command line option: " << args[0];
+        Fatal(ctx) << "unknown command line option: " << args[0];
       remaining.push_back(args[0]);
       args = args.subspan(1);
     }
