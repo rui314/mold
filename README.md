@@ -105,9 +105,9 @@ If you can specify an additional command line option to your compiler
 driver by modifying build system's config files, add one of the
 following flags to use `mold` instead of `/usr/bin/ld`:
 
-- Clang: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+- Clang: pass `-fuse-ld=mold`
 
-- GCC 12.1.0 or later: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+- GCC 12.1.0 or later: pass `-fuse-ld=mold`
 
 - GCC before 12.1.0: `-fuse-ld` does not accept `mold` as a valid
   argument, so you need to use `-B` option instead. `-B` is an option
@@ -118,6 +118,10 @@ following flags to use `mold` instead of `/usr/bin/ld`:
   depending on your $PREFIX), and `ld` command should be there. The
   `ld` is actually a symlink to `mold`. So, all you need is to pass
   `-B/usr/libexec/mold` (or `-B/usr/local/libexec/mold`) to GCC.
+
+If you haven't installed `mold` to any `$PATH`, you can still pass
+`-fuse-ld=/absolute/path/to/mold` to clang to use mold. GCC does not
+take an absolute path as an argument for `-fuse-ld` though.
 
 </details>
 
