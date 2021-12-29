@@ -17,6 +17,7 @@ endif
 STRIP ?= strip
 
 OS ?= $(shell uname -s)
+OS2 ?= $(shell uname -o)
 
 # Used for both C and C++
 COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
@@ -59,15 +60,17 @@ else ifeq ($(TSAN), 1)
   CXXFLAGS += -fsanitize=thread
   LDFLAGS  += -fsanitize=thread
 else ifneq ($(OS), Darwin)
-  # By default, we want to use mimalloc as a memory allocator.
-  # Since replacing the standard malloc is not compatible with ASAN,
-  # we do that only when ASAN is not enabled.
-  ifdef SYSTEM_MIMALLOC
-    LIBS += -lmimalloc
-  else
-    MIMALLOC_LIB = out/mimalloc/libmimalloc.a
-    CPPFLAGS += -Ithird-party/mimalloc/include
-    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
+  ifneq ($(OS2), Android)
+    # By default, we want to use mimalloc as a memory allocator.
+    # Since replacing the standard malloc is not compatible with ASAN,
+    # we do that only when ASAN is not enabled.
+    ifdef SYSTEM_MIMALLOC
+      LIBS += -lmimalloc
+    else
+      MIMALLOC_LIB = out/mimalloc/libmimalloc.a
+      CPPFLAGS += -Ithird-party/mimalloc/include
+      LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
+    endif
   endif
 endif
 
