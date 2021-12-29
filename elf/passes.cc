@@ -812,7 +812,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
       continue;
 
     if (i > 0 && separate_page(ctx, chunks[i - 1], chunks[i]))
-      addr = align_to(addr, COMMON_PAGE_SIZE);
+      addr = align_to(addr, ctx.page_size);
 
     if (is_tbss(chunks[i])) {
       chunks[i]->shdr.sh_addr = addr;
@@ -851,7 +851,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     if (chunk->shdr.sh_type == SHT_NOBITS) {
       chunk->shdr.sh_offset = fileoff;
     } else {
-      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, chunk->shdr.sh_addr);
+      fileoff = align_with_skew(fileoff, ctx.page_size, chunk->shdr.sh_addr);
       chunk->shdr.sh_offset = fileoff;
       fileoff += chunk->shdr.sh_size;
     }

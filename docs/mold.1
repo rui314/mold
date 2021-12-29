@@ -658,6 +658,16 @@ non-executable segments.
 .IP "\fB\-z nodefs\fR"
 .PD
 Report undefined symbols (even with \fI\-\-shared\fR).
+
+.IP "\fB\-z max\-page\-size\fR"
+Some CPU ISAs support multiple different memory page sizes.
+This option specifies the maximum page size that an output binary
+can run on. If you specify a large value, the output can run on
+both large and small page systems, but it wastes a bit of memory at
+page boundaries on systems with small pages.
+
+The default value is 4 KiB for i386 and x86-64, and 64 KiB for ARM64.
+
 .IP "\fB\-z nodefaultlib\fR"
 Make the dynamic loader to ignore default search paths.
 .IP "\fB\-z nodelete\fR"
@@ -701,6 +711,7 @@ Mark object to interpose all DSOs but executable.
 .IP "\fB\-\-warn\-once\fR"
 .IP "\fB\-z combreloc\fR"
 .IP "\fB\-z nocombreloc\fR"
+.IP "\fB\-z common\-page\-size\fR"
 .PD
 Ignored
 

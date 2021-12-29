@@ -43,8 +43,6 @@ public:
 
 namespace mold::elf {
 
-static constexpr i32 SECTOR_SIZE = 512;
-static constexpr i32 COMMON_PAGE_SIZE = 4096;
 static constexpr i32 SHA256_SIZE = 32;
 
 template <typename E> class InputFile;
@@ -1305,6 +1303,7 @@ struct Context {
   tbb::task_group tg;
 
   bool has_error = false;
+  i64 page_size = -1;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;

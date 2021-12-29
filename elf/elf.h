@@ -873,6 +873,7 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
@@ -909,6 +910,7 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr u32 word_size = 4;
+  static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
@@ -945,6 +947,7 @@ struct ARM64 {
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;

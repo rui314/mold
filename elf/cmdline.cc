@@ -134,6 +134,7 @@ Options:
   --wrap SYMBOL               Use wrapper function for a given symbol
   -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
+  -z common-page-size=VALUE   Ignored
   -z execstack                Require executable stack
     -z noexecstack
   -z initfirst                Mark DSO to be initialized first at runtime
@@ -141,6 +142,7 @@ Options:
   -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
     -z nokeep-text-section-prefix
   -z lazy                     Enable lazy function resolution (default)
+  -z max-page-size=VALUE      Use VALUE as the memory page size
   -z nocopyreloc              Do not create copy relocations
   -z nodefaultlib             Make the dynamic loader to ignore default search paths
   -z nodelete                 Mark DSO non-deletable at runtime
@@ -227,6 +229,24 @@ static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
   }
 
   if (!args.empty() && args[0] == "-z" + name) {
+    args = args.subspan(1);
+    return true;
+  }
+
+  return false;
+}
+
+template <typename E>
+bool read_z_arg(Context<E> &ctx, std::span<std::string_view> &args,
+                std::string_view &arg, std::string name) {
+  if (args.size() >= 2 && args[0] == "-z" && args[1].starts_with(name + "=")) {
+    arg = args[1].substr(name.size() + 1);
+    args = args.subspan(2);
+    return true;
+  }
+
+  if (!args.empty() && args[0].starts_with("-z" + name + "=")) {
+    arg = args[0].substr(name.size() + 3);
     args = args.subspan(1);
     return true;
   }
@@ -377,8 +397,10 @@ void parse_nonpositional_args(Context<E> &ctx,
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
 
-  bool version_shown = false;
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+  ctx.page_size = E::page_size;
+
+  bool version_shown = false;
 
   while (!args.empty()) {
     std::string_view arg;
@@ -575,6 +597,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_now = false;
     } else if (read_z_flag(args, "execstack")) {
       ctx.arg.z_execstack = true;
+    } else if (read_z_arg(ctx, args, arg, "max-page-size")) {
+      ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
+      if (__builtin_popcountll(ctx.page_size) != 1)
+        Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
     } else if (read_z_flag(args, "noexecstack")) {
       ctx.arg.z_execstack = false;
     } else if (read_z_flag(args, "relro")) {
@@ -774,6 +800,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "rpath-link")) {
     } else if (read_z_flag(args, "combreloc")) {
     } else if (read_z_flag(args, "nocombreloc")) {
+    } else if (read_z_arg(ctx, args, arg, "common-page-size")) {
     } else if (read_arg(ctx, args, arg, "version-script")) {
       remaining.push_back("--version-script");
       remaining.push_back(arg);
@@ -843,6 +870,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     if (!ctx.arg.auxiliary.empty())
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
+
+  if (ctx.arg.image_base % ctx.page_size)
+    Fatal(ctx) << "-image-base msut be a multiple of -max-page-size";
 
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;

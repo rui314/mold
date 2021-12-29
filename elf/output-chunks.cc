@@ -206,7 +206,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
         break;
 
       i64 flags = to_phdr_flags(ctx, first);
-      define(PT_LOAD, flags, COMMON_PAGE_SIZE, first);
+      define(PT_LOAD, flags, ctx.page_size, first);
 
       if (!is_bss(first))
         while (i < end && !is_bss(chunks[i]) &&
