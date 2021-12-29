@@ -251,7 +251,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
 template <typename E>
 static std::string get_self_path(Context<E> &ctx) {
-  char buf[4096];
+  char buf[PATH_MAX];
   size_t n = readlink("/proc/self/exe", buf, sizeof(buf));
   if (n == -1)
     Fatal(ctx) << "readlink(\"/proc/self/exe\") failed: " << errno_string();
