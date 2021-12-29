@@ -4,17 +4,15 @@
 
 namespace mold {
 
-constexpr size_t pathmax = PATH_MAX;
-
 std::string get_current_dir() {
-  std::string buf(pathmax, '\0');
+  std::string buf(PATH_MAX, '\0');
   getcwd(buf.data(), buf.size());
   buf.resize(buf.find_first_of('\0'));
   return buf;
 }
 
 std::string get_realpath(std::string_view path) {
-  std::string buf(pathmax, '\0');
+  std::string buf(PATH_MAX, '\0');
   if (!realpath(std::string(path).c_str(), buf.data()))
     return std::string(path);
   return buf;
