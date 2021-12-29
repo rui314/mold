@@ -1,22 +1,22 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-if [ $(uname -m) = x86_64 ]; then
+if [ "$(uname -m)" = x86_64 ]; then
   dialect=gnu
-elif [ $(uname -m) = aarch64 ]; then
+elif [ "$(uname -m)" = aarch64 ]; then
   dialect=trad
 else
   echo skipped
   exit 0
 fi
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
+cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o "$t"/a.o -xc -
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -33,11 +33,11 @@ int main() {
 }
 EOF
 
-cat <<EOF | cc -xc -c -o $t/b.o -
+cat <<EOF | cc -xc -c -o "$t"/b.o -
 _Thread_local int foo = 3;
 EOF
 
-clang -fuse-ld=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q '3 5 3 5'
+clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+"$t"/exe | grep -q '3 5 3 5'
 
 echo OK

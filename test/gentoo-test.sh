@@ -51,20 +51,20 @@ build() {
   docker="docker run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold -v /var/cache/ccache-gentoo:/ccache mold-gentoo timeout -v -k 15s 1h"
   dir=gentoo/$git_hash
 
-  mkdir -p $dir/success $dir/failure
+  mkdir -p "$dir"/success "$dir"/failure
 
-  $docker nice -n 19 bash -c "$cmd1 && $cmd2 && $cmd3" >& $dir/$filename.mold
+  $docker nice -n 19 bash -c "$cmd1 && $cmd2 && $cmd3" >& "$dir"/"$filename".mold
   if [ $? = 0 ]; then
-    mv $dir/$filename.mold $dir/success
+    mv "$dir"/"$filename".mold "$dir"/success
   else
-    mv $dir/$filename.mold $dir/failure
+    mv "$dir"/"$filename".mold "$dir"/failure
   fi
 
-  $docker nice -n 19 bash -c "$cmd2 && $cmd3" >& $dir/$filename.ld
+  $docker nice -n 19 bash -c "$cmd2 && $cmd3" >& "$dir"/"$filename".ld
   if [ $? = 0 ]; then
-    mv $dir/$filename.ld $dir/success
+    mv "$dir"/"$filename".ld "$dir"/success
   else
-    mv $dir/$filename.ld $dir/failure
+    mv "$dir"/"$filename".ld "$dir"/failure
   fi
 }
 

@@ -1,13 +1,13 @@
 #!/bin/bash
 export LANG=
 set -e
-cd $(dirname $0)
+cd "$(dirname "$0")"
 mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh $0) ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh $0)
-mkdir -p $t
+echo -n "Testing $(basename -s .sh "$0") ... "
+t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+mkdir -p "$t"
 
-cat <<EOF | cc -c -o $t/a.o -fPIC -xc -
+cat <<EOF | cc -c -o "$t"/a.o -fPIC -xc -
 int foo = 4;
 
 int get_foo() {
@@ -19,9 +19,9 @@ void *bar() {
 }
 EOF
 
-clang -fuse-ld=$mold -shared -o $t/b.so $t/a.o -Wl,-Bsymbolic-functions
+clang -fuse-ld="$mold" -shared -o "$t"/b.so "$t"/a.o -Wl,-Bsymbolic-functions
 
-cat <<EOF | cc -c -o $t/c.o -xc - -fno-PIE
+cat <<EOF | cc -c -o "$t"/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 extern int foo;
@@ -34,7 +34,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=$mold -no-pie -o $t/exe $t/c.o $t/b.so
-$t/exe | grep -q '3 3 0'
+clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/c.o "$t"/b.so
+"$t"/exe | grep -q '3 3 0'
 
 echo OK
