@@ -105,16 +105,13 @@ If you can specify an additional command line option to your compiler
 driver by modifying build system's config files, add one of the
 following flags to use `mold` instead of `/usr/bin/ld`:
 
-- Clang before 12: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
+- Clang: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
 
-- Clang 12 or later: pass `--ld-path=<absolute-path-to-mold-executable>`;
+- GCC 12.1.0 or later: pass `-fuse-ld=<absolute-path-to-mold-executable>`;
 
-- GCC: GCC does not accept `mold` as an argument neither for
-  `-fuse-ld` or `--ld-path` (a patch to support `--ld-path` [has been
-  declined by GCC maintainers](
-  https://gcc.gnu.org/pipermail/gcc-patches/2021-June/573833.html)).
-  However, there's still a way to use mold with GCC, as GCC looks for
-  `ld` command from a path given with `-B`.
+- GCC before 12.1.0: `-fuse-ld` does not accept `mold` as a valid
+  argument, so you need to use `-B` option instead. `-B` is an option
+  to tell GCC where to look for external commands such as `ld`.
 
   If you have installed mold with `make install`, there should be a
   directory named `/usr/libexec/mold` (or `/usr/local/libexec/mold`,
