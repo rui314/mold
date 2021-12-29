@@ -1,21 +1,16 @@
 #include "mold.h"
 
+#include <filesystem>
 #include <sys/stat.h>
 
 namespace mold {
 
 std::string get_current_dir() {
-  std::string buf(8192, '\0');
-  getcwd(buf.data(), buf.size());
-  buf.resize(buf.find_first_of('\0'));
-  return buf;
+  return std::filesystem::current_path();
 }
 
 std::string get_realpath(std::string_view path) {
-  char buf[8192];
-  if (!realpath(std::string(path).c_str(), buf))
-    return std::string(path);
-  return buf;
+  return std::filesystem::canonical(path);
 }
 
 bool path_is_dir(std::string_view path) {
