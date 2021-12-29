@@ -151,15 +151,19 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   auto append = [&](Chunk<E> *chunk) {
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
-    phdr.p_filesz = (chunk->shdr.sh_type == SHT_NOBITS)
-      ? chunk->shdr.sh_offset - phdr.p_offset
-      : chunk->shdr.sh_offset + chunk->shdr.sh_size - phdr.p_offset;
+    if (!(chunk->shdr.sh_type == SHT_NOBITS))
+      phdr.p_filesz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
     phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
   };
 
   auto is_bss = [](Chunk<E> *chunk) {
     return chunk->shdr.sh_type == SHT_NOBITS &&
            !(chunk->shdr.sh_flags & SHF_TLS);
+  };
+
+  auto is_tbss = [](Chunk<E> *chunk) {
+    return chunk->shdr.sh_type == SHT_NOBITS &&
+           (chunk->shdr.sh_flags & SHF_TLS);
   };
 
   auto is_note = [](Chunk<E> *chunk) {
@@ -192,22 +196,27 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Create PT_LOAD segments.
-  for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
-    Chunk<E> *first = ctx.chunks[i++];
-    if (!(first->shdr.sh_flags & SHF_ALLOC))
-      break;
+  {
+    std::vector<Chunk<E> *> chunks = ctx.chunks;
+    erase(chunks, is_tbss);
 
-    i64 flags = to_phdr_flags(ctx, first);
-    define(PT_LOAD, flags, COMMON_PAGE_SIZE, first);
+    for (i64 i = 0, end = chunks.size(); i < end;) {
+      Chunk<E> *first = chunks[i++];
+      if (!(first->shdr.sh_flags & SHF_ALLOC))
+        break;
 
-    if (!is_bss(first))
-      while (i < end && !is_bss(ctx.chunks[i]) &&
-             to_phdr_flags(ctx, ctx.chunks[i]) == flags)
-        append(ctx.chunks[i++]);
+      i64 flags = to_phdr_flags(ctx, first);
+      define(PT_LOAD, flags, COMMON_PAGE_SIZE, first);
 
-    while (i < end && is_bss(ctx.chunks[i]) &&
-           to_phdr_flags(ctx, ctx.chunks[i]) == flags)
-      append(ctx.chunks[i++]);
+      if (!is_bss(first))
+        while (i < end && !is_bss(chunks[i]) &&
+               to_phdr_flags(ctx, chunks[i]) == flags)
+          append(chunks[i++]);
+
+      while (i < end && is_bss(chunks[i]) &&
+             to_phdr_flags(ctx, chunks[i]) == flags)
+        append(chunks[i++]);
+    }
   }
 
   // Create a PT_TLS.

@@ -728,15 +728,16 @@ void clear_padding(Context<E> &ctx) {
   Timer t(ctx, "clear_padding");
 
   auto zero = [&](Chunk<E> *chunk, i64 next_start) {
-    i64 pos = chunk->shdr.sh_offset;
-    if (chunk->shdr.sh_type != SHT_NOBITS)
-      pos += chunk->shdr.sh_size;
+    i64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;
     memset(ctx.buf + pos, 0, next_start - pos);
   };
 
-  for (i64 i = 1; i < ctx.chunks.size(); i++)
-    zero(ctx.chunks[i - 1], ctx.chunks[i]->shdr.sh_offset);
-  zero(ctx.chunks.back(), ctx.output_file->filesize);
+  std::vector<Chunk<E> *> chunks = ctx.chunks;
+  erase(chunks, [](Chunk<E> *chunk) { return chunk->shdr.sh_type == SHT_NOBITS; });
+
+  for (i64 i = 1; i < chunks.size(); i++)
+    zero(chunks[i - 1], chunks[i]->shdr.sh_offset);
+  zero(chunks.back(), ctx.output_file->filesize);
 }
 
 // We want to sort output chunks in the following order.
@@ -792,63 +793,68 @@ inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
   return align_to(val + align - skew, align) - align + skew;
 }
 
+template <typename E>
+static bool is_tbss(Chunk<E> *chunk) {
+  return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
+}
+
 // Assign virtual addresses and file offsets to output sections.
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
-  Timer t(ctx, "osec_offset");
+  Timer t(ctx, "set_osec_offsets");
 
-  u64 fileoff = 0;
-  u64 vaddr = ctx.arg.image_base;
+  std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
-  i64 i = 0;
-  i64 end = 0;
-  while (ctx.chunks[end]->shdr.sh_flags & SHF_ALLOC)
-    end++;
+  // Assign virtual addresses
+  u64 addr = ctx.arg.image_base;
+  for (i64 i = 0; i < chunks.size(); i++) {
+    if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
+      continue;
 
-  while (i < end) {
-    fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr);
+    if (i > 0 && separate_page(ctx, chunks[i - 1], chunks[i]))
+      addr = align_to(addr, COMMON_PAGE_SIZE);
 
-    // Each group consists of zero or more non-BSS sections followed
-    // by zero or more BSS sections. Virtual addresses of non-BSS
-    // sections need to be congruent to file offsets modulo the page size.
-    // BSS sections don't increment file offsets.
-    for (; i < end && ctx.chunks[i]->shdr.sh_type != SHT_NOBITS; i++) {
-      Chunk<E> &chunk = *ctx.chunks[i];
-      u64 prev_vaddr = vaddr;
-
-      if (i > 0 && separate_page(ctx, ctx.chunks[i - 1], &chunk))
-        vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
-      vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
-      fileoff += vaddr - prev_vaddr;
-
-      chunk.shdr.sh_addr = vaddr;
-      vaddr += chunk.shdr.sh_size;
-
-      chunk.shdr.sh_offset = fileoff;
-      fileoff += chunk.shdr.sh_size;
+    if (is_tbss(chunks[i])) {
+      chunks[i]->shdr.sh_addr = addr;
+      continue;
     }
 
-    for (; i < end && ctx.chunks[i]->shdr.sh_type == SHT_NOBITS; i++) {
-      Chunk<E> &chunk = *ctx.chunks[i];
+    addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+    chunks[i]->shdr.sh_addr = addr;
+    addr += chunks[i]->shdr.sh_size;
+  }
 
-      if (i > 0 && separate_page(ctx, ctx.chunks[i - 1], &chunk))
-        vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
-      vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
-      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr);
-
-      chunk.shdr.sh_addr = vaddr;
-      chunk.shdr.sh_offset = fileoff;
-      if (!(chunk.shdr.sh_flags & SHF_TLS))
-        vaddr += chunk.shdr.sh_size;
+  // Fix tbss virtual addresses. tbss sections are laid out as if they
+  // were overlapping to suceeding non-tbss sections. This is fine
+  // because no one will actually access the TBSS part of a TLS
+  // template image at runtime.
+  //
+  // We can lay out tbss sections in the same way as regular bss
+  // sections, but that would need one more extra PT_LOAD segment.
+  // Having fewer PT_LOAD segments is generally desirable, so we do this.
+  for (i64 i = 0; i < chunks.size();) {
+    if (is_tbss(chunks[i])) {
+      u64 addr = chunks[i]->shdr.sh_addr;
+      for (; i < chunks.size() && is_tbss(chunks[i]); i++) {
+        addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+        chunks[i]->shdr.sh_addr = addr;
+        addr += chunks[i]->shdr.sh_size;
+      }
+    } else {
+      i++;
     }
   }
 
-  for (; i < ctx.chunks.size(); i++) {
-    Chunk<E> &chunk = *ctx.chunks[i];
-    assert(!(chunk.shdr.sh_flags & SHF_ALLOC));
-    fileoff = align_to(fileoff, chunk.shdr.sh_addralign);
-    chunk.shdr.sh_offset = fileoff;
-    fileoff += chunk.shdr.sh_size;
+  // Assign file offsets
+  u64 fileoff = 0;
+  for (Chunk<E> *chunk : chunks) {
+    if (chunk->shdr.sh_type == SHT_NOBITS) {
+      chunk->shdr.sh_offset = fileoff;
+    } else {
+      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, chunk->shdr.sh_addr);
+      chunk->shdr.sh_offset = fileoff;
+      fileoff += chunk->shdr.sh_size;
+    }
   }
   return fileoff;
 }
