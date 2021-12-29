@@ -786,8 +786,9 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
 }
 
 // Returns the smallest number n such that
-// n >= val and n % align == skew.
+// n >= val and n % align == skew % align.
 inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
+  skew = skew % align;
   return align_to(val + align - skew, align) - align + skew;
 }
 
@@ -805,7 +806,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     end++;
 
   while (i < end) {
-    fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr % COMMON_PAGE_SIZE);
+    fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr);
 
     // Each group consists of zero or more non-BSS sections followed
     // by zero or more BSS sections. Virtual addresses of non-BSS
@@ -833,7 +834,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
       if (i > 0 && separate_page(ctx, ctx.chunks[i - 1], &chunk))
         vaddr = align_to(vaddr, COMMON_PAGE_SIZE);
       vaddr = align_to(vaddr, chunk.shdr.sh_addralign);
-      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr % COMMON_PAGE_SIZE);
+      fileoff = align_with_skew(fileoff, COMMON_PAGE_SIZE, vaddr);
 
       chunk.shdr.sh_addr = vaddr;
       chunk.shdr.sh_offset = fileoff;
