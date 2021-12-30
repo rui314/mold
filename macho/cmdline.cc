@@ -96,6 +96,11 @@ static i64 parse_version(Context<E> &ctx, std::string_view arg) {
   return (major << 16) | (minor << 8) | patch;
 }
 
+static bool is_directory(std::filesystem::path path) {
+  std::error_code ec;
+  return std::filesystem::is_directory(path, ec) && !ec;
+}
+
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string> &remaining) {
@@ -265,7 +270,7 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   auto add_search_path = [&](std::vector<std::string> &vec, std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {
-      if (path_is_dir(path))
+      if (is_directory(path))
         vec.push_back(path);
       return;
     }
@@ -273,12 +278,12 @@ void parse_nonpositional_args(Context<E> &ctx,
     bool found = false;
     for (std::string &dir : ctx.arg.syslibroot) {
       std::string str = path_clean(dir + "/" + path);
-      if (path_is_dir(str)) {
+      if (is_directory(str)) {
         vec.push_back(str);
         found = true;
       }
     }
-    if (!found && path_is_dir(path))
+    if (!found && is_directory(path))
       vec.push_back(path);
   };
 

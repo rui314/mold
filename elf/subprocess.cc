@@ -260,17 +260,18 @@ static bool is_regular_file(const std::string &path) {
 }
 
 template <typename E>
-std::string find_dso(Context<E> &ctx, const std::string &self) {
+std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   // Look for mold-wrapper.so from the same directory as the executable is.
-  std::string path = std::string(path_dirname(self)) + "/mold-wrapper.so";
-  if (is_regular_file(path))
+  std::filesystem::path path = self.parent_path() / "mold-wrapper.so";
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(path, ec) && !ec)
     return path;
 
 #ifdef LIBDIR
   // If not found, search $(LIBDIR)/mold, which is /usr/local/lib/mold
   // by default.
-  path = path_clean(LIBDIR "/mold/mold-wrapper.so");
-  if (is_regular_file(path))
+  path = LIBDIR "/mold/mold-wrapper.so";
+  if (std::filesystem::is_regular_file(path, ec) && !ec)
     return path;
 #endif
 
@@ -294,7 +295,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   putenv(strdup(("MOLD_PATH=" + self).c_str()));
 
   // If ld, ld.lld or ld.gold is specified, run mold itself
-  if (std::string_view cmd = path_basename(argv[2]);
+  if (std::string cmd = filepath(argv[2]).filename();
       cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold") {
     std::vector<char *> args;
     args.push_back(argv[0]);

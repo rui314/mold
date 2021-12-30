@@ -990,7 +990,7 @@ public:
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
-  std::string_view soname;
+  std::string soname;
   std::vector<std::string_view> version_strings;
   std::vector<Symbol<E> *> globals;
   std::vector<const ElfSym<E> *> elf_syms;
@@ -998,7 +998,7 @@ public:
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-  std::string_view get_soname(Context<E> &ctx);
+  std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
   std::vector<std::string_view> read_verdef(Context<E> &ctx);
 

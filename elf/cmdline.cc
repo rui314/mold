@@ -260,7 +260,7 @@ std::string create_response_file(Context<E> &ctx) {
   std::string buf;
   std::stringstream out;
 
-  std::string cwd = get_current_dir();
+  std::string cwd = std::filesystem::current_path();
   out << "-C " << cwd.substr(1) << "\n";
 
   if (cwd != "/") {
