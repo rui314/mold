@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <regex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
