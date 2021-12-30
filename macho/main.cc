@@ -369,8 +369,10 @@ static int do_main(int argc, char **argv) {
   std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
-  if (ctx.arg.arch == CPU_TYPE_X86_64)
-    return do_main<X86_64>(argc, argv);
+  if (ctx.arg.arch != E::cputype) {
+    if (ctx.arg.arch == CPU_TYPE_X86_64)
+      return do_main<X86_64>(argc, argv);
+  }
 
   read_input_files(ctx, file_args);
 
