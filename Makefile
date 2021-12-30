@@ -154,14 +154,18 @@ $(TBB_LIB):
 $(XXHASH_LIB):
 	$(MAKE) -C third-party/xxhash libxxhash.a
 
-ifeq ($(OS), Darwin)
 test tests check: all
+ifeq ($(OS), Darwin)
 	$(MAKE) -C test -f Makefile.darwin --no-print-directory
 else
-test tests check: all
 	$(MAKE) -C test -f Makefile.linux --no-print-directory --output-sync
 endif
-	@echo "Passed all tests"
+
+	@if test -t 1; then \
+	  printf '\e[32mPassed all tests\e[0m\n'; \
+	else \
+	  echo 'Passed all tests'; \
+	fi
 
 install: all
 	install -m 755 -d $D$(BINDIR)
