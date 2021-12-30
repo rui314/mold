@@ -396,6 +396,13 @@ Set \fIdir\fR to root directory.
 Compress DWARF debug info (\fB.debug_*\fR sections) using the zlib
 compression algorithm.
 
+.IP "\fB\-\-defsym\\fR=\fIsymbol\fR=\fIvalue\fR"
+
+Define \fIsymbol\fR as an alias for \fIvalue\fR. \fIvalue\fR is either
+an integer (in decimal or hexadecimal with 0x prefix) or a symbol name.
+If an integer is given as a value, \fIsymbol\fR is defined as an absolute
+symbol with the given value.
+
 .IP "\fB\-\-demangle\fR"
 .PD 0
 .IP "\fB\-\-no\-demangle\fR"
