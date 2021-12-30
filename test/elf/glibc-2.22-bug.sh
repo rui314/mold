@@ -1,10 +1,11 @@
 #!/bin/bash
 export LANG=
 set -e
-cd "$(dirname "$0")"
-mold=`pwd`/../../mold
-echo -n "Testing $(basename -s .sh "$0") ... "
-t=$(pwd)/../../out/test/elf/$(basename -s .sh "$0")
+testname=$(basename -s .sh "$0")
+echo -n "Testing $testname ... "
+cd "$(dirname "$0")"/../..
+mold="$(pwd)/mold"
+t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
 # glibc 2.22 or prior have a bug that ld-linux.so.2 crashes on dlopen()

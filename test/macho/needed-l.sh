@@ -1,10 +1,11 @@
 #!/bin/bash
 export LANG=
 set -e
-cd "$(dirname "$0")"
-mold=`pwd`/../../ld64.mold
-echo -n "Testing $(basename -s .sh "$0") ... "
-t=$(pwd)/../../out/test/macho/$(basename -s .sh "$0")
+testname=$(basename -s .sh "$0")
+echo -n "Testing $testname ... "
+cd "$(dirname "$0")"/../..
+mold="$(pwd)/ld64.mold"
+t="$(pwd)/out/test/macho/$testname"
 mkdir -p "$t"
 
 cat <<EOF | cc -o "$t"/libfoo.dylib -shared -xc -
