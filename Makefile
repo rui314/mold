@@ -87,13 +87,6 @@ ifeq ($(TSAN), 1)
   LDFLAGS  += -fsanitize=thread
 endif
 
-# Homebrew on macOS/ARM installs packages under /opt/homebrew
-# instead of /usr/local
-ifneq ($(wildcard /opt/homebrew/.),)
-  CPPFLAGS += -I/opt/homebrew/include
-  LIBS += -L/opt/homebrew/lib
-endif
-
 ifdef SYSTEM_TBB
   LIBS += -ltbb
 else
