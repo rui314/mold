@@ -10,7 +10,11 @@ std::string get_current_dir() {
 }
 
 std::string get_realpath(std::string_view path) {
-  return std::filesystem::canonical(path);
+  std::error_code ec;
+  std::string ret = std::filesystem::canonical(path, ec);
+  if (ec)
+    return std::string(path);
+  return ret;
 }
 
 bool path_is_dir(std::string_view path) {
