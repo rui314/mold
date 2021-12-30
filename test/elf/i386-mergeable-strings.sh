@@ -8,7 +8,9 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-echo 'int main() {}' | cc -m32 -o "$t"/exe -xc - >& /dev/null \
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
+
+echo 'int main() {}' | cc -m32 -o /dev/null -xc - >& /dev/null \
   || { echo skipped; exit; }
 
 cat <<'EOF' | cc -o "$t"/a.o -c -x assembler -m32 -
