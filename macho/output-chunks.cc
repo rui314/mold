@@ -969,8 +969,7 @@ void OutputIndirectSymtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
-  std::string filename = filepath(ctx.arg.output).filename();
-  i64 filename_size = align_to(filename.size() + 1, 16);
+  i64 filename_size = align_to(path_filename(ctx.arg.output).size() + 1, 16);
   i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   this->hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
                    sizeof(CodeSignatureDirectory) + filename_size +
@@ -981,7 +980,7 @@ template <typename E>
 void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
 
-  std::string filename = filepath(ctx.arg.output).filename();
+  std::string_view filename = path_filename(ctx.arg.output);
   i64 filename_size = align_to(filename.size() + 1, 16);
   i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
 

@@ -1258,16 +1258,14 @@ SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
 }
 
 template <typename E>
-std::string SharedFile<E>::get_soname(Context<E> &ctx) {
+std::string_view SharedFile<E>::get_soname(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
         return symbol_strtab.data() + dyn.d_val;
-
   if (this->mf->given_fullpath)
     return this->filename;
-
-  return filepath(this->filename).filename();
+  return path_filename(this->filename);
 }
 
 template <typename E>
