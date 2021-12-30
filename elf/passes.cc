@@ -310,12 +310,12 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   obj->is_alive = true;
   obj->priority = 1;
 
-  auto add = [&](std::string_view name) {
+  auto add = [&](std::string_view name, u8 visibility = STV_HIDDEN) {
     ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = STV_HIDDEN;
+    esym.st_visibility = visibility;
     esyms->push_back(esym);
 
     Symbol<E> *sym = intern(ctx, name);
@@ -360,6 +360,9 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     add(save_string(ctx, "__start_" + std::string(chunk->name)));
     add(save_string(ctx, "__stop_" + std::string(chunk->name)));
   }
+
+  for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms)
+    add(defsym.first, STV_DEFAULT);
 
   obj->elf_syms = *esyms;
   obj->sym_fragments.resize(obj->elf_syms.size());
@@ -868,6 +871,20 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
   return n;
 }
 
+static std::optional<u64> parse_defsym_addr(std::string_view s) {
+  if (s.starts_with("0x") || s.starts_with("0X")) {
+    size_t nread;
+    u64 addr = std::stoull(std::string(s), &nread, 16);
+    if (s.size() != nread)
+      return {};
+    return addr;
+  }
+
+  if (s.find_first_not_of("0123456789") == s.npos)
+    return std::stoull(std::string(s), nullptr, 10);
+  return {};
+}
+
 template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk) {
@@ -973,6 +990,29 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       start(intern(ctx, sym1), chunk);
       stop(intern(ctx, sym2), chunk);
     }
+  }
+
+  // --defsym=sym=value symbols
+  for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms) {
+    Symbol<E> *sym = intern(ctx, defsym.first);
+    sym->input_section = nullptr;
+
+    if (std::optional<u64> addr = parse_defsym_addr(defsym.second)) {
+      sym->value = *addr;
+      continue;
+    }
+
+    Symbol<E> *sym2 = intern(ctx, defsym.second);
+    if (!sym2->file) {
+      Error(ctx) << "--defsym: undefined symbol: " << *sym2;
+      continue;
+    }
+
+    sym->value = sym2->get_addr(ctx);
+    sym->visibility = sym2->visibility.load();
+
+    if (InputSection<E> *isec = sym2->input_section)
+      sym->shndx = isec->output_section->shndx;
   }
 }
 

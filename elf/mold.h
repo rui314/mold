@@ -1282,6 +1282,7 @@ struct Context {
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<VersionPattern> version_patterns;
+    std::vector<std::pair<std::string_view, std::string_view>> defsyms;
     std::vector<std::string> library_paths;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;

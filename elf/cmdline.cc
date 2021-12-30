@@ -60,6 +60,7 @@ Options:
   --color-diagnostics         Alias for --color-diagnostics=always
   --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu]
                               Compress .debug_* sections
+  --defsym=SYMBOL=VALUE       Define a symbol alias
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
   --disable-new-dtags         Ignored
@@ -473,6 +474,11 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
     } else if (read_flag(args, "start-lib")) {
       remaining.push_back("-start-lib");
+    } else if (read_arg(ctx, args, arg, "defsym")) {
+      size_t pos = arg.find('=');
+      if (pos == arg.npos || pos == arg.size() - 1)
+        Fatal(ctx) << "-defsym: syntax error: " << arg;
+      ctx.arg.defsyms.push_back({arg.substr(0, pos), arg.substr(pos + 1)});
     } else if (read_flag(args, "demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {
