@@ -59,8 +59,10 @@ endif
 USE_MIMALLOC = 1
 ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
-else ifneq (, $(findstring android, $(shell uname -r)))
-  USE_MIMALLOC = 0
+else ifeq ($(OS), Linux)
+  ifeq ($(shell uname -o), Android)
+    USE_MIMALLOC = 0
+  endif
 else ifeq ($(ASAN), 1)
   USE_MIMALLOC = 0
 else ifeq ($(TSAN), 1)
