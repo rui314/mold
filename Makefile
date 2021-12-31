@@ -110,8 +110,9 @@ ifeq ($(OS), Linux)
   LIBS += -lrt
 endif
 
+# Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
-  LIBS += -lcrypto
+  LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
 endif
 
 all: mold mold-wrapper.so
