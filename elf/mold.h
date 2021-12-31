@@ -1476,18 +1476,11 @@ public:
         // .eh_frame contents are parsed and reconstructed by the linker,
         // so pointing to a specific location in a source .eh_frame
         // section doesn't make much sense. However, CRT files contain
-        // symbols pointing to the very beginning and ending of the
-        // section.
-        if (name() == "__EH_FRAME_BEGIN__" || esym().st_type == STT_SECTION)
+        // symbols pointing to the very beginning and ending of the section.
+        if (name() == "__EH_FRAME_BEGIN__" || name() == "__EH_FRAME_LIST__" ||
+            esym().st_type == STT_SECTION)
           return ctx.eh_frame->shdr.sh_addr;
-        if (name() == "__FRAME_END__")
-          return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
-
-        // LLVM compiler-rt's crtbegin.o and crtend.o contain these symbols
-        // instead.
-        if (name() == "__EH_FRAME_LIST__")
-          return ctx.eh_frame->shdr.sh_addr;
-        if (name() == "__EH_FRAME_LIST_END__")
+        if (name() == "__FRAME_END__" || name() == "__EH_FRAME_LIST_END__")
           return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
 
         // ARM object files contain "$d" local symbol at the beginning
