@@ -112,7 +112,7 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
     const char *start = strtab.data() + atoi(hdr.ar_name + 1);
     std::string name(start, (const char *)strstr(start, "/\n"));
     std::string path = name.starts_with('/') ?
-      name : std::string(path_dirname(mf->name)) + "/" + name;
+      name : (filepath(mf->name).parent_path() / name).string();
     vec.push_back(MappedFile<C>::must_open(ctx, path));
     data = body;
   }

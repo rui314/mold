@@ -146,9 +146,9 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
 
 template <typename E>
 static bool is_in_sysroot(Context<E> &ctx, std::string path) {
-  std::string dir(path_dirname(path_clean(path_to_absolute(path))));
-  std::string sysroot(path_clean(path_to_absolute(ctx.arg.sysroot)));
-  return dir == sysroot || dir.starts_with(sysroot + "/");
+  std::string rel =
+    to_abs_path(path).lexically_relative(to_abs_path(ctx.arg.sysroot));
+  return rel != "." && !rel.starts_with("../");
 }
 
 template <typename E>

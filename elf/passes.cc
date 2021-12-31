@@ -21,11 +21,12 @@ void apply_exclude_libs(Context<E> &ctx) {
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
-  for (ObjectFile<E> *file : ctx.objs)
+  for (ObjectFile<E> *file : ctx.objs) {
     if (!file->archive_name.empty())
       if (set.contains("ALL") ||
-          set.contains(path_filename(file->archive_name)))
+          set.contains(filepath(file->archive_name).filename().string()))
         file->exclude_libs = true;
+  }
 }
 
 template <typename E>

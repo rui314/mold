@@ -41,14 +41,15 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   // former, but as it is often the case, the former still lingers
   // around, so we need to keep this code to conver the old mechanism
   // to the new one.
-  std::string_view stem = path_filename(file.filename);
-  if (stem != "crtbegin.o" && stem != "crtend.o" &&
-      stem != "crtbeginS.o" && stem != "crtendS.o" &&
-      stem != "crtbeginT.o" && stem != "crtendT.o") {;
-    if (name == ".ctors" || name.starts_with(".ctors."))
+  std::string s = filepath(file.filename).filename();
+  if (s != "crtbegin.o" && s != "crtend.o" &&
+      s != "crtbeginS.o" && s != "crtendS.o" &&
+      s != "crtbeginT.o" && s != "crtendT.o") {;
+    if (name == ".ctors" || name.starts_with(".ctors.")) {
       name = ".init_array";
-    else if (name == ".dtors" || name.starts_with(".dtors."))
+    } else if (name == ".dtors" || name.starts_with(".dtors.")) {
       name = ".fini_array";
+    }
   }
 
   output_section =

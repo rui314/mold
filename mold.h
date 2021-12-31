@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <span>
@@ -431,15 +432,19 @@ private:
 // filepath.cc
 //
 
-// These are various utility functions to deal with file pathnames.
-std::string get_current_dir();
+template <typename T>
+std::filesystem::path filepath(const T &path) {
+#if __APPLE__
+  // Xcode 13.1 does not seem to define `generic_format`.
+  return {path};
+#else
+  return {path, std::filesystem::path::generic_format};
+#endif
+}
+
 std::string get_realpath(std::string_view path);
-bool path_is_dir(std::string_view path);
-std::string_view path_dirname(std::string_view path);
-std::string_view path_filename(std::string_view path);
-std::string_view path_basename(std::string_view path);
-std::string path_to_absolute(std::string_view path);
 std::string path_clean(std::string_view path);
+std::filesystem::path to_abs_path(std::filesystem::path path);
 
 //
 // demangle.cc

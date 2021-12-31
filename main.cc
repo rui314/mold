@@ -40,7 +40,7 @@ void install_signal_handler() {
 } // namespace mold
 
 int main(int argc, char **argv) {
-  std::string_view cmd = mold::path_filename(argv[0]);
+  std::string cmd = mold::filepath(argv[0]).filename();
 
   if (cmd == "ld64" || cmd == "ld64.mold")
     return mold::macho::main(argc, argv);
