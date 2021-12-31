@@ -350,6 +350,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       args = args.subspan(1);
     }
   }
+
+  if (ctx.objs.empty())
+    Fatal(ctx) << "no input files";
 }
 
 template <typename E>
