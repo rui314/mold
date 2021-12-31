@@ -78,7 +78,7 @@ struct SectionFragment {
     : output_section(other.output_section), offset(other.offset),
       alignment(other.alignment.load()), is_alive(other.is_alive.load()) {}
 
-  inline u64 get_addr(Context<E> &ctx) const;
+  u64 get_addr(Context<E> &ctx) const;
 
   MergedSection<E> &output_section;
   u32 offset = -1;
@@ -237,17 +237,17 @@ public:
   void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
-  inline void kill();
+  void kill();
 
-  inline std::string_view name() const {
+  std::string_view name() const {
     return {nameptr, (size_t)namelen};
   }
 
-  inline i64 get_priority() const;
-  inline u64 get_addr() const;
-  inline i64 get_addend(const ElfRel<E> &rel) const;
-  inline std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
-  inline std::span<FdeRecord<E>> get_fdes() const;
+  i64 get_priority() const;
+  u64 get_addr() const;
+  i64 get_addend(const ElfRel<E> &rel) const;
+  std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
+  std::span<FdeRecord<E>> get_fdes() const;
 
   ObjectFile<E> &file;
   const ElfShdr<E> &shdr;
@@ -873,13 +873,13 @@ public:
   InputFile() : filename("<internal>") {}
 
   template<typename T> std::span<T>
-  inline get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
+  get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
 
   template<typename T> std::span<T>
-  inline get_data(Context<E> &ctx, i64 idx);
+  get_data(Context<E> &ctx, i64 idx);
 
-  inline std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
-  inline std::string_view get_string(Context<E> &ctx, i64 idx);
+  std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
+  std::string_view get_string(Context<E> &ctx, i64 idx);
 
   ElfShdr<E> *find_section(i64 type);
 
@@ -922,9 +922,9 @@ public:
   void compute_symtab(Context<E> &ctx);
   void write_symtab(Context<E> &ctx);
 
-  inline i64 get_shndx(const ElfSym<E> &esym);
-  inline InputSection<E> *get_section(const ElfSym<E> &esym);
-  inline std::span<Symbol<E> *> get_global_syms();
+  i64 get_shndx(const ElfSym<E> &esym);
+  InputSection<E> *get_section(const ElfSym<E> &esym);
+  std::span<Symbol<E> *> get_global_syms();
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
@@ -1715,7 +1715,7 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 }
 
 template <typename E>
-std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
+inline std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
   return std::span<Symbol<E> *>(this->symbols).subspan(first_global);
 }
 
