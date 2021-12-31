@@ -424,15 +424,15 @@ static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
                                 std::string_view key, std::string_view name) {
   if (esym.is_undef() && name.starts_with("__real_") &&
       ctx.arg.wrap.count(name.substr(7))) {
-    return intern(ctx, key.substr(7), name.substr(7));
+    return get_symbol(ctx, key.substr(7), name.substr(7));
   }
 
-  Symbol<E> *sym = intern(ctx, key, name);
+  Symbol<E> *sym = get_symbol(ctx, key, name);
 
   if (esym.is_undef() && sym->wrap) {
     key = save_string(ctx, "__wrap_" + std::string(key));
     name = save_string(ctx, "__wrap_" + std::string(name));
-    return intern(ctx, key, name);
+    return get_symbol(ctx, key, name);
   }
   return sym;
 }
@@ -1000,7 +1000,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     // symbol "foo" and check if the symbol has version "version".
     std::string_view key = symbol_strtab.data() + esym.st_name;
     if (i64 pos = key.find('@'); pos != key.npos) {
-      Symbol<E> *sym2 = intern(ctx, key.substr(0, pos));
+      Symbol<E> *sym2 = get_symbol(ctx, key.substr(0, pos));
       if (sym2->file && sym2->file->is_dso &&
           sym2->get_version() == key.substr(pos + 1)) {
         this->symbols[i] = sym2;
@@ -1292,14 +1292,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   for (i64 i = first_global; i < esyms.size(); i++) {
     std::string_view name = symbol_strtab.data() + esyms[i].st_name;
 
-    globals.push_back(intern(ctx, name));
+    globals.push_back(get_symbol(ctx, name));
     if (esyms[i].is_undef())
       continue;
 
     if (vers.empty()) {
       elf_syms.push_back(&esyms[i]);
       versyms.push_back(VER_NDX_GLOBAL);
-      this->symbols.push_back(intern(ctx, name));
+      this->symbols.push_back(get_symbol(ctx, name));
     } else {
       u16 ver = vers[i] & ~VERSYM_HIDDEN;
       if (ver == VER_NDX_LOCAL)
@@ -1311,9 +1311,9 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       if (vers[i] & VERSYM_HIDDEN) {
         std::string_view mangled_name = save_string(
           ctx, std::string(name) + "@" + std::string(version_strings[ver]));
-        this->symbols.push_back(intern(ctx, mangled_name, name));
+        this->symbols.push_back(get_symbol(ctx, mangled_name, name));
       } else {
-        this->symbols.push_back(intern(ctx, name));
+        this->symbols.push_back(get_symbol(ctx, name));
       }
     }
   }

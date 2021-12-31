@@ -1548,16 +1548,16 @@ public:
 // of Symbol and returns it. Otherwise, returns the previously-
 // instantiated object. `key` is usually the same as `name`.
 template <typename E>
-Symbol<E> *intern(Context<E> &ctx, std::string_view key,
-                  std::string_view name) {
+Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
+                      std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
   ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
   return const_cast<Symbol<E> *>(&acc->second);
 }
 
 template <typename E>
-Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
-  return intern(ctx, name, name);
+Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
+  return get_symbol(ctx, name, name);
 }
 
 template <typename E>

@@ -886,7 +886,7 @@ u64 Symbol<E>::get_tlv_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-inline Symbol<E> *intern(Context<E> &ctx, std::string_view name) {
+inline Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
   ctx.symbol_map.insert(acc, {name, Symbol<E>(name)});
   return (Symbol<E> *)(&acc->second);

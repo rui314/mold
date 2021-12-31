@@ -98,7 +98,7 @@ void resolve_symbols(Context<E> &ctx) {
   erase(live_objs, [](InputFile<E> *file) { return !file->is_alive; });
 
   auto load = [&](std::string_view name) {
-    if (InputFile<E> *file = intern(ctx, name)->file)
+    if (InputFile<E> *file = get_symbol(ctx, name)->file)
       if (!file->is_alive.exchange(true) && !file->is_dso)
         live_objs.push_back((ObjectFile<E> *)file);
   };
@@ -167,7 +167,7 @@ void resolve_symbols(Context<E> &ctx) {
     file->resolve_common_symbols(ctx);
   });
 
-  if (Symbol<E> *sym = intern(ctx, "__gnu_lto_slim"); sym->file)
+  if (Symbol<E> *sym = get_symbol(ctx, "__gnu_lto_slim"); sym->file)
     Fatal(ctx) << *sym->file << ": looks like this file contains a GCC "
                << "intermediate code, but mold does not support LTO";
 }
@@ -320,7 +320,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     esym.st_visibility = visibility;
     esyms->push_back(esym);
 
-    Symbol<E> *sym = intern(ctx, name);
+    Symbol<E> *sym = get_symbol(ctx, name);
     obj->symbols.push_back(sym);
     return sym;
   };
@@ -348,11 +348,11 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
 
-  if (!intern(ctx, "end")->file)
+  if (!get_symbol(ctx, "end")->file)
     ctx.end = add("end");
-  if (!intern(ctx, "etext")->file)
+  if (!get_symbol(ctx, "etext")->file)
     ctx.etext = add("etext");
-  if (!intern(ctx, "edata")->file)
+  if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
 
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -616,7 +616,7 @@ void apply_version_script(Context<E> &ctx) {
 
     for (std::string_view pat : elem.patterns) {
       if (pat.find_first_of("*?") == pat.npos) {
-        Symbol<E> *sym = intern(ctx, pat);
+        Symbol<E> *sym = get_symbol(ctx, pat);
         if (sym->file && !sym->file->is_dso)
           sym->ver_idx = elem.ver_idx;
       } else {
@@ -989,14 +989,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       std::string_view sym2 =
         save_string(ctx, "__stop_" + std::string(chunk->name));
 
-      start(intern(ctx, sym1), chunk);
-      stop(intern(ctx, sym2), chunk);
+      start(get_symbol(ctx, sym1), chunk);
+      stop(get_symbol(ctx, sym2), chunk);
     }
   }
 
   // --defsym=sym=value symbols
   for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms) {
-    Symbol<E> *sym = intern(ctx, defsym.first);
+    Symbol<E> *sym = get_symbol(ctx, defsym.first);
     sym->input_section = nullptr;
 
     if (std::optional<u64> addr = parse_defsym_addr(defsym.second)) {
@@ -1004,7 +1004,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       continue;
     }
 
-    Symbol<E> *sym2 = intern(ctx, defsym.second);
+    Symbol<E> *sym2 = get_symbol(ctx, defsym.second);
     if (!sym2->file) {
       Error(ctx) << "--defsym: undefined symbol: " << *sym2;
       continue;

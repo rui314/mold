@@ -35,9 +35,9 @@ void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
 
   memcpy(buf, insn0, sizeof(insn0));
   *(u32 *)(buf + 3) =
-    intern(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr - 7;
+    get_symbol(ctx, "__dyld_private")->get_addr(ctx) - this->hdr.addr - 7;
   *(u32 *)(buf + 11) =
-    intern(ctx, "dyld_stub_binder")->get_got_addr(ctx) - this->hdr.addr - 15;
+    get_symbol(ctx, "dyld_stub_binder")->get_got_addr(ctx) - this->hdr.addr - 15;
 
   buf += 16;
 

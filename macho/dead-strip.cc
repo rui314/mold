@@ -11,7 +11,7 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
       rootset.push_back(sym->subsec);
   };
 
-  mark(intern(ctx, ctx.arg.entry));
+  mark(get_symbol(ctx, ctx.arg.entry));
 
   if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
     for (ObjectFile<E> *file : ctx.objs)

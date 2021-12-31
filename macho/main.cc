@@ -27,7 +27,7 @@ static void create_internal_file(Context<E> &ctx) {
   ctx.objs.push_back(obj);
 
   auto add = [&](std::string_view name) {
-    Symbol<E> *sym = intern(ctx, name);
+    Symbol<E> *sym = get_symbol(ctx, name);
     sym->file = obj;
     obj->syms.push_back(sym);
     return sym;
@@ -171,7 +171,7 @@ static void scan_unwind_info(Context<E> &ctx) {
 
 template <typename E>
 static void export_symbols(Context<E> &ctx) {
-  ctx.got.add(ctx, intern(ctx, "dyld_stub_binder"));
+  ctx.got.add(ctx, get_symbol(ctx, "dyld_stub_binder"));
 
   for (ObjectFile<E> *file : ctx.objs) {
     for (Symbol<E> *sym : file->syms) {
@@ -219,9 +219,9 @@ static i64 assign_offsets(Context<E> &ctx) {
 
 template <typename E>
 static void fix_synthetic_symbol_values(Context<E> &ctx) {
-  intern(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
-  intern(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
-  intern(ctx, "__mh_bundle_header")->value = ctx.data->hdr.addr;
+  get_symbol(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
+  get_symbol(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
+  get_symbol(ctx, "__mh_bundle_header")->value = ctx.data->hdr.addr;
 }
 
 template <typename E>
@@ -416,7 +416,7 @@ static int do_main(int argc, char **argv) {
   for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 
-  if (ctx.output_type == MH_EXECUTE && !intern(ctx, ctx.arg.entry)->file)
+  if (ctx.output_type == MH_EXECUTE && !get_symbol(ctx, ctx.arg.entry)->file)
     Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;
 
   create_internal_file(ctx);

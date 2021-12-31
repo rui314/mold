@@ -374,12 +374,12 @@ static int elf_main(int argc, char **argv) {
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
-    intern(ctx, name)->wrap = true;
+    get_symbol(ctx, name)->wrap = true;
 
   // Handle --retain-symbols-file options if any.
   if (ctx.arg.retain_symbols_file)
     for (std::string_view name : *ctx.arg.retain_symbols_file)
-      intern(ctx, name)->write_to_symtab = true;
+      get_symbol(ctx, name)->write_to_symtab = true;
 
   // Preload input files
   std::function<void()> on_complete;
@@ -391,7 +391,7 @@ static int elf_main(int argc, char **argv) {
     on_complete = fork_child();
 
   for (std::string_view arg : ctx.arg.trace_symbol)
-    intern(ctx, arg)->traced = true;
+    get_symbol(ctx, arg)->traced = true;
 
   // Parse input files
   read_input_files(ctx, file_args);
@@ -492,7 +492,7 @@ static int elf_main(int argc, char **argv) {
     check_duplicate_symbols(ctx);
 
   for (std::string_view name : ctx.arg.require_defined)
-    if (!intern(ctx, name)->file)
+    if (!get_symbol(ctx, name)->file)
       Error(ctx) << "--require-defined: undefined symbol: " << name;
 
   // .init_array and .fini_array contents have to be sorted by

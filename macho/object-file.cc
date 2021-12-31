@@ -90,7 +90,7 @@ void ObjectFile<E>::parse_symtab(Context<E> &ctx) {
     std::string_view name = (char *)(this->mf->data + cmd->stroff + msym.stroff);
 
     if (msym.ext) {
-      this->syms.push_back(intern(ctx, name));
+      this->syms.push_back(get_symbol(ctx, name));
     } else {
       local_syms.emplace_back(name);
       this->syms.push_back(&local_syms.back());
@@ -535,7 +535,7 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     read_uleb(buf); // size
     read_uleb(buf); // flags
     read_uleb(buf); // addr
-    this->syms.push_back(intern(ctx, prefix));
+    this->syms.push_back(get_symbol(ctx, prefix));
   } else {
     buf++;
   }
@@ -587,7 +587,7 @@ void DylibFile<E>::parse(Context<E> &ctx) {
   case FileType::TAPI: {
     TextDylib tbd = parse_tbd(ctx, this->mf);
     for (std::string_view sym : tbd.exports)
-      this->syms.push_back(intern(ctx, sym));
+      this->syms.push_back(get_symbol(ctx, sym));
     install_name = tbd.install_name;
     break;
   }
