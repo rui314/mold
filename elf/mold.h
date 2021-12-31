@@ -1456,14 +1456,14 @@ public:
   u64 get_tlsdesc_addr(Context<E> &ctx) const;
   u64 get_plt_addr(Context<E> &ctx) const;
 
-  void set_got_idx(Context<E> &ctx, i32 idx) const;
-  void set_gotplt_idx(Context<E> &ctx, i32 idx) const;
-  void set_gottp_idx(Context<E> &ctx, i32 idx) const;
-  void set_tlsgd_idx(Context<E> &ctx, i32 idx) const;
-  void set_tlsdesc_idx(Context<E> &ctx, i32 idx) const;
-  void set_plt_idx(Context<E> &ctx, i32 idx) const;
-  void set_pltgot_idx(Context<E> &ctx, i32 idx) const;
-  void set_dynsym_idx(Context<E> &ctx, i32 idx) const;
+  void set_got_idx(Context<E> &ctx, i32 idx);
+  void set_gotplt_idx(Context<E> &ctx, i32 idx);
+  void set_gottp_idx(Context<E> &ctx, i32 idx);
+  void set_tlsgd_idx(Context<E> &ctx, i32 idx);
+  void set_tlsdesc_idx(Context<E> &ctx, i32 idx);
+  void set_plt_idx(Context<E> &ctx, i32 idx);
+  void set_pltgot_idx(Context<E> &ctx, i32 idx);
+  void set_dynsym_idx(Context<E> &ctx, i32 idx);
 
   i32 get_got_idx(Context<E> &ctx) const;
   i32 get_gotplt_idx(Context<E> &ctx) const;
@@ -1816,56 +1816,56 @@ inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].got_idx < 0);
   ctx.symbol_aux[aux_idx].got_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_gotplt_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_gotplt_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].gotplt_idx < 0);
   ctx.symbol_aux[aux_idx].gotplt_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_gottp_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_gottp_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].gottp_idx < 0);
   ctx.symbol_aux[aux_idx].gottp_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_tlsgd_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_tlsgd_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].tlsgd_idx < 0);
   ctx.symbol_aux[aux_idx].tlsgd_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_tlsdesc_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_tlsdesc_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].tlsdesc_idx < 0);
   ctx.symbol_aux[aux_idx].tlsdesc_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_plt_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_plt_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].plt_idx < 0);
   ctx.symbol_aux[aux_idx].plt_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_pltgot_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_pltgot_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
   ctx.symbol_aux[aux_idx].pltgot_idx = idx;
 }
 
 template <typename E>
-inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) const {
+inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
   ctx.symbol_aux[aux_idx].dynsym_idx = idx;
