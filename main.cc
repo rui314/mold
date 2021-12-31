@@ -8,8 +8,15 @@ namespace mold {
 
 std::string_view errno_string() {
   static thread_local char buf[200];
-  strerror_r(errno, buf, sizeof(buf));
-  return buf;
+#if _GNU_SOURCE
+  // The GNU version of strerror_r() returns a char * and may completely ignore
+  // buf
+  return strerror_r(errno, buf, sizeof(buf));
+#else
+  // The POSIX.1-2001-compliant version of strerror_r() returns an int and
+  // writes the string into buf
+  return !strerror_r(errno, buf, sizeof(buf)) ? buf : "Unknown error";
+#endif
 }
 
 #ifdef GIT_HASH
