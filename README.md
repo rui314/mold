@@ -70,7 +70,7 @@ sudo dnf install -y git clang cmake openssl-devel xxhash-devel zlib-devel libstd
 ```shell
 git clone https://github.com/rui314/mold.git
 cd mold
-git checkout v1.0.0
+git checkout v1.0.1
 make -j$(nproc)
 sudo make install
 ```
