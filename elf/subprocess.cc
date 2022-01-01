@@ -300,6 +300,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     std::vector<char *> args;
     args.push_back(argv[0]);
     args.insert(args.end(), argv + 3, argv + argc);
+    args.push_back(nullptr);
     execv(self.c_str(), args.data());
     Fatal(ctx) << "mold -run failed: " << self << ": " << errno_string();
   }

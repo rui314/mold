@@ -434,12 +434,7 @@ private:
 
 template <typename T>
 std::filesystem::path filepath(const T &path) {
-#if __APPLE__
-  // Xcode 13.1 does not seem to define `generic_format`.
-  return {path};
-#else
-  return {path, std::filesystem::path::generic_format};
-#endif
+  return {path, std::filesystem::path::format::generic_format};
 }
 
 std::string get_realpath(std::string_view path);
