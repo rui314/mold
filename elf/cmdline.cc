@@ -678,10 +678,6 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.icf = false;
     } else if (read_arg(ctx, args, arg, "image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
-    } else if (read_flag(args, "quick-exit")) {
-      ctx.arg.quick_exit = true;
-    } else if (read_flag(args, "no-quick-exit")) {
-      ctx.arg.quick_exit = false;
     } else if (read_flag(args, "print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
     } else if (read_flag(args, "no-print-icf-sections")) {
