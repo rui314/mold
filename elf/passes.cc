@@ -651,69 +651,36 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
-  auto to_regex = [&](std::string_view pat) {
-    if (std::optional<std::string> re = glob_to_regex(pat))
-      return *re;
-    Error(ctx) << "invalid version pattern: " << pat;
-    return ""s;
-  };
-
-  auto vec_to_regex = [&](std::span<std::string_view> vec) -> std::string {
-    switch (vec.size()) {
-    case 0:
-      return "";
-    case 1:
-      return to_regex(vec[0]);
-    default:
-      std::string re = to_regex(vec[0]);
-      for (std::string_view s : vec.subspan(1))
-        re += "|" + to_regex(s);
-      return re;
-    }
-  };
+  VersionMatcher matcher;
+  VersionMatcher cpp_matcher;
 
   for (VersionPattern &elem : ctx.version_patterns) {
-    std::vector<std::string_view> vec;
+    for (std::string_view pat : elem.patterns)
+      if (!matcher.add(pat, elem.ver_idx))
+        Fatal(ctx) << "invalid version pattern: " << pat;
 
-    for (std::string_view pat : elem.patterns) {
-      if (pat.find_first_of("*?[") == pat.npos) {
-        Symbol<E> *sym = get_symbol(ctx, pat);
-        if (sym->file && !sym->file->is_dso)
-          sym->ver_idx = elem.ver_idx;
-      } else {
-        vec.push_back(pat);
-      }
-    }
-
-    if (vec.empty() && elem.cpp_patterns.empty())
-      continue;
-
-    auto flags = std::regex_constants::extended | std::regex_constants::optimize |
-                 std::regex_constants::nosubs;
-
-    std::regex re(vec_to_regex(vec), flags);
-    std::regex cpp_re(vec_to_regex(elem.cpp_patterns), flags);
-
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->get_global_syms()) {
-        if (sym->file != file)
-          continue;
-
-        std::string_view name = sym->name();
-
-        if (!vec.empty() && std::regex_match(name.begin(), name.end(), re)) {
-          sym->ver_idx = elem.ver_idx;
-          continue;
-        }
-
-        if (!elem.cpp_patterns.empty()) {
-          std::string_view s = demangle(name);
-          if (std::regex_match(s.begin(), s.end(), cpp_re))
-            sym->ver_idx = elem.ver_idx;
-        }
-      }
-    });
+    for (std::string_view pat : elem.cpp_patterns)
+      if (!cpp_matcher.add(pat, elem.ver_idx))
+        Fatal(ctx) << "invalid version pattern: " << pat;
   }
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms()) {
+      if (sym->file != file)
+        continue;
+
+      std::string_view name = sym->name();
+
+      if (std::optional<u16> ver = matcher.find(name)) {
+        sym->ver_idx = *ver;
+        continue;
+      }
+
+      if (!cpp_matcher.empty())
+        if (std::optional<u16> ver = cpp_matcher.find(demangle(name)))
+          sym->ver_idx = *ver;
+    }
+  });
 }
 
 template <typename E>

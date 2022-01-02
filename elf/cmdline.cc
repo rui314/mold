@@ -518,11 +518,10 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg(ctx, args, arg, "unique")) {
-      std::optional<std::string> re = glob_to_regex(arg);
+      std::optional<std::regex> re = glob_to_regex(arg);
       if (!re)
         Fatal(ctx) << "-unique: invalid glob pattern: " << arg;
-      auto flags = std::regex_constants::extended | std::regex_constants::optimize;
-      ctx.arg.unique.reset(new std::regex(*re, flags));
+      ctx.arg.unique.reset(new std::regex(*re));
     } else if (read_arg(ctx, args, arg, "unresolved-symbols")) {
       if (arg == "report-all" || arg == "ignore-in-shared-libs")
         ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;

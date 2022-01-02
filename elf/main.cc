@@ -16,7 +16,7 @@
 
 namespace mold::elf {
 
-std::optional<std::string> glob_to_regex(std::string_view pat) {
+std::optional<std::regex> glob_to_regex(std::string_view pat) {
   std::stringstream ss;
   for (i64 i = 0; i < pat.size(); i++) {
     switch (pat[i]) {
@@ -53,7 +53,10 @@ std::optional<std::string> glob_to_regex(std::string_view pat) {
       break;
     }
   }
-  return ss.str();
+
+  auto flags = std::regex_constants::extended | std::regex_constants::optimize |
+               std::regex_constants::nosubs;
+  return {std::regex{ss.str(), flags}};
 }
 
 template <typename E>

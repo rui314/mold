@@ -1093,6 +1093,35 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
+// version-matcher.cc
+//
+
+class VersionMatcher {
+public:
+  bool add(std::string_view pat, u16 ver);
+  bool empty() const { return !root && regexes.empty(); }
+  std::optional<u16> find(std::string_view str);
+
+private:
+  struct TrieNode {
+    u32 value = -1;
+    TrieNode *suffix_link = nullptr;
+    std::unique_ptr<TrieNode> children[256];
+  };
+
+  void compile();
+  void fix_suffix_links(TrieNode &node);
+  void fix_value();
+
+  std::vector<std::string> strings;
+  std::unique_ptr<TrieNode> root;
+  std::vector<std::pair<std::regex, u32>> regexes;
+  std::vector<u16> versions;
+  std::once_flag once_flag;
+  bool compiled = false;
+};
+
+//
 // gc-sections.cc
 //
 
@@ -1517,7 +1546,7 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-std::optional<std::string> glob_to_regex(std::string_view pat);
+std::optional<std::regex> glob_to_regex(std::string_view pat);
 
 int main(int argc, char **argv);
 

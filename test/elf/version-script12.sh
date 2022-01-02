@@ -11,20 +11,26 @@ t=out/test/elf/$testname
 mkdir -p $t
 
 cat <<'EOF' > $t/a.ver
-VER_X1 { global: *; local: b*; };
+{
+global:
+  *;
+  *foo_*;
+local:
+  *foo*;
+};
 EOF
 
 cat <<EOF | $CXX -fPIC -c -o $t/b.o -xc -
-void foo() {}
-void bar() {}
-void baz() {}
+void xyz() {}
+void foo_bar() {}
+void foo123() {}
 EOF
 
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q 'foo@@VER_X1$' $t/log
-! grep -q ' bar$' $t/log || false
-! grep -q ' baz$' $t/log || false
+grep -q ' xyz$' $t/log
+grep -q ' foo_bar$' $t/log
+! grep -q ' foo$' $t/log || false
 
 echo OK
