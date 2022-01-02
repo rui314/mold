@@ -185,16 +185,17 @@ clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s
 # GOTPCREL64
 cat <<'EOF' > "$t"/e.c
 extern long ext_var;
+static long arr[50000] = {1, 2, 3};
 void print64(long);
 
 int main() {
-  print64(ext_var);
+  print64(ext_var * 1000000 + arr[2]);
 }
 EOF
 
 clang -c -o "$t"/e.o "$t"/e.c -mcmodel=large -fPIC
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/e.o
-"$t"/exe | grep -q '^56$'
+"$t"/exe | grep -q '^56000003$'
 
 # R_X86_64_32 against non-alloc section
 cat <<'EOF' > "$t"/f.s

@@ -260,6 +260,9 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     case R_X86_64_GOT64:
       *(u64 *)loc = G + A;
       continue;
+    case R_X86_64_GOTOFF64:
+      *(u64 *)loc = S + A - GOT;
+      continue;
     case R_X86_64_GOTPC32:
       write32s(GOT + A - P);
       continue;
@@ -644,6 +647,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     }
+    case R_X86_64_GOTOFF64:
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
     case R_X86_64_TPOFF32:
