@@ -1,734 +1,949 @@
-.TH MOLD 1
-.SH NAME
-mold \- A Modern Linker
-
-.SH SYNOPSIS
-mold [\fBoptions\fR] \fIobjfile\fR \fB...\fR
-
-.SH DESCRIPTION
-\fBmold\fR is a multi-threaded, high-performance linker that is
-several times faster than the industry-standard ones, namely, GNU ld,
-GNU gold or LLVM lld. It is developed as a drop-in replacement for
-these linkers and command-line compatible with them with a few
-exceptions.
-.PP
-Note that even though \fBmold\fR can build many userland programs,
-including large ones such as Chrome and Firefox, it is still very
-experimental. Do not use \fBmold\fR for production unless you know
-what you are doing. \fBmold\fR supports Linux/x86-64 and Linux/i386.
-
-.SS "How to use mold"
-On Unix, \fBcc\fR (or \fBgcc\fR or \fBclang\fR, depending on what
-compiler you use) is not just a C compiler but is actually a compiler
-driver for various kinds of input files. \fBcc\fR dispatches based
-on input file extensions. If you pass object files (\fB.o\fR files) to
-a compiler driver, the linker command, which is usually installed as
-\fB/usr/bin/ld\fR, is invoked as a backend.
-.PP
+.\"
+.\" This manpage is written in mdoc(7).
+.\"
+.\" * Language reference:
+.\"   https://man.openbsd.org/mdoc.7
+.\"
+.\" * Atom editor support:
+.\"   https://atom.io/packages/language-roff
+.\"
+.\" * Linting changes:
+.\"   mandoc -Wall -Tlint /path/to/this.file  # BSD
+.\"   groff -w all -z /path/to/this.file      # GNU/Linux, macOS
+.\"
+.\"
+.\" When making changes, please keep the following in mind:
+.\"
+.\" * In Roff, each new sentence should begin on a new line. This gives
+.\"   the Roff formatter better control over text-spacing, line-wrapping,
+.\"   and paragraph justification.
+.\"
+.\" * If a line exceeds the maximum length enforced by a project's \
+.\"   coding style, prefer line-continuation instead of hard-wrapping; \
+.\"   that is, end each incomplete (physical) line with a backslash, \
+.\"   like in this paragraph.
+.\"
+.\" * Do not leave blank lines in the markup. If whitespace is desired
+.\"   for readability, put a dot in the first column to indicate a null/empty
+.\"   command. Comments and horizontal whitespace may optionally follow: each
+.\"   of these lines are an example of a null command immediately followed by
+.\"   a comment.
+.\"
+.\"=============================================================================
+.
+.Dd $Mdocdate$
+.Dt MOLD 1
+.Os
+.Sh NAME
+.Nm mold
+.Nd a modern linker
+.
+.\"=============================================================================
+.Sh SYNOPSIS
+.Nm
+.Op Fl options
+.Ar arguments
+.
+.\"=============================================================================
+.Sh DESCRIPTION
+.Nm
+is a multi-threaded, high-performance linker that is
+several times faster than the industry-standard ones, namely, GNU
+.Xr ld 1 ,
+GNU
+.Xr gold 1 ,
+or LLVM
+.Xr lld 1 .
+It is developed as a drop-in replacement for these linkers and command-line \
+compatible with them with a few exceptions.
+.Pp
+Note that even though
+.Nm
+can build many userland programs,
+including large ones such as Chrome and Firefox, it is still very experimental.
+Do not use
+.Nm
+for production unless you know what you are doing.
+.Nm
+supports Linux/x86-64 and Linux/i386.
+.
+.\"-----------------------------------------------------------------------------
+.Ss How to use Nm
+On Unix,
+.Xr cc 1
+(or
+.Xr gcc 1
+or
+.Xr clang 1 ,
+depending on what compiler you use) is not just a C compiler but is actually \
+a compiler driver for various kinds of input files.
+.Xr cc 1
+dispatches based on input file extensions.
+If you pass object files
+.Pf ( Li \.o
+files) to a compiler driver, the linker command, which is usually installed as
+.Pa /usr/bin/ld ,
+is invoked as a backend.
+.
+.Pp
 To use an alternative linker, you have to modify a build config file
-such as \fBMakefile\fR or \fBcargo.toml\fR to pass an appropriate
-option to a compiler driver which invokes a linker. The problem is
-that it is not always clear how to do that. In a complicated build
-system, it can be very hard to figure out how to convince a system to
-use a non-standard linker.
-.PP
-To deal with the situation, \fBmold\fR provides a convenient option to
-force any build system to use \fBmold\fR. To use the feature, invoke
-\fBmake\fR or a build command of your choice (such as \fBcargo
-build\fR) as follows:
-.PP
-.Vb 1
-\&        mold \-run make <make arguments if any>
-.Ve
-.PP
-If you run a build command like above, the command runs under the
-influence of \fBmold\fR so that when the command tries to run
-\fB/usr/bin/ld\fR, \fB/usr/bin/ld.gold\fR or \fB/usr/bin/ld.lld\fR,
-\fBmold\fR is silently invoked instead.
-.PP
-Internally, \fBmold\fR invokes a given command with the
-\fBLD_PRELOAD\fR environment variable set to its companion shared
-object file. The shared object file intercepts all \fBexec()\fR-family
-functions to run \fBmold\fR if other linker is attempted to be run.
-.PP
-If you don't want to use the \fB\-run\fR option, and if you are using
-\fBclang\fR, you can pass \fB\-fuse\-ld\fR=\fI/absolute/path/to/mold\fR to
-\fBclang\fR to used \fBmold\fR. If you are using \fBgcc\fR, it looks
-like there's unfortunately no easy way (other than \fB\-run\fR) to
-force it to use \fBmold\fR, as \fBgcc\fR doesn't take an arbitrary
-pathname as an argument for \fB\-fuse\-ld\fR.
-.PP
-I do not recommend installing \fBmold\fR as \fB/usr/bin/ld\fR
+such as
+.Pa Makefile
+or
+.Pa cargo.toml
+to pass an appropriate option to a compiler driver which invokes a linker.
+The problem is that it is not always clear how to do that.
+In a complicated build system, it can be very hard to figure out how to \
+convince a system to use a non-standard linker.
+.
+.Pp
+To deal with the situation,
+.Nm
+provides a convenient option to force any build system to use
+.Nm .
+To use the feature, invoke
+.Xr make 1
+or a build command of your choice (such as
+.Ql cargo build )
+as follows:
+.Dl mold -run make Ar make-arguments-if-any
+.
+.Pp
+If you run a build command like above, the command runs under the influence of
+.Nm
+so that when the command tries to run
+.Pa /usr/bin/ld ,
+.Pa /usr/bin/ld.gold
+or
+.Pa /usr/bin/ld.lld ,
+.Nm
+is silently invoked instead.
+.
+.Pp
+Internally,
+.Nm
+invokes a given command with the
+.Ev LD_PRELOAD
+environment variable set to its companion shared object file.
+The shared object file intercepts all
+.Xr exec 3 Ns -family
+functions to run
+.Nm
+if another linker is attempted to be run.
+.Pp
+If you don't want to use the
+.Fl -run
+option, and if you are using
+.Xr clang 1 ,
+you can pass
+.Fl -fuse-ld Ns = Ns Ar /absolute/path/to/mold
+to
+.Xr clang 1
+to use
+.Nm .
+If you are using
+.Xr gcc 1 ,
+it looks like there's unfortunately no easy way (other than
+.Fl -run )
+to force it to use
+.Nm ,
+as
+.Xr gcc 1
+doesn't take an arbitrary pathname as an argument for
+.Fl -fuse-ld .
+.
+.Pp
+I do not recommend installing
+.Nm
+as
+.Pa /usr/bin/ld
 unless you know what you are doing.
-
-.SS Compatibility
-\fBmold\fR is designed to be a drop-in replacement for the GNU linkers
-for linking user-land programs. If your user-land program cannot be
-built due to missing command-line options, please file a bug at
-\fBhttps://github.com/rui314/mold/issues\fR.
-.PP
-\fBmold\fR supports a very limited set of linker script features,
+.
+.\"-----------------------------------------------------------------------------
+.Ss Compatibility
+.Nm
+is designed to be a drop-in replacement for the GNU linkers for linking user\
+-land programs.
+If your user-land program cannot be built due to missing command-line options, \
+please file a bug at
+.Lk https://github.com/rui314/mold/issues .
+.
+.Pp
+.Nm
+supports a very limited set of linker script features,
 which is just sufficient to read
-\fB/usr/lib/x86_64-linux-gnu/libc.so\fR on Linux systems (on Linux,
-that file is despite its name not a shared library but an ASCII linker
-script that loads a real \fBlibc.so\fR file!)
+.Pa /usr/lib/x86_64-linux-gnu/libc.so
+on Linux systems (on Linux, that file is despite its name not a shared \
+library but an ASCII linker script that loads a real
+.Pa libc.so
+file!)
 Beyond that, I have no plan to support any linker script features.
-The linker script is an ad-hoc, over-designed, complex language which
-I believe needs to be disrupted by a simpler mechanism. I have a plan
-to add a replacement for the linker script to \fBmold\fR instead.
-
-.SS Archive symbol resolution
-Traditionally, Unix linkers are sensitive to the order in which input
-files appear on command line. They process input files from the first
-(leftmost) file to the last (rightmost) file one by one. While reading
-input files, they maintain sets of defined and undefined symbols.
-When visiting an archive file (\fB.a\fR files), they pull out object
-files to resolve as many undefined symbols as possible and go on to
-the next input file. Object files that weren't pulled out will never
-have a chance for a second look.
-.PP
-Due to this semantics, you usually have to add archive files at the end
-of a command line, so that when a linker reaches archive files, it
-knows what symbols are remain undefined. If you put archive files at
-the beginning of a command line, a linker doesn't have any undefined
-symbol, and thus no object files will be pulled out from archives.
-.PP
-You can change the processing order by \fB\-\-start\-group\fR and
-\fB\-\-end\-group\fR options, though they make a linker slower.
-.PP
-\fBmold\fR as well as LLVM \fBlld\fR linker take a different
-approach. They memorize what symbols can be resolved from archive
-files instead of forgetting it after processing each
-archive. Therefore, \fBmold\fR and \fBlld\fR can "go back" in a
-command line to pull out object files from archives, if they are
-needed to resolve remaining undefined symbols. They are not sensitive
-to the input file order.
-.PP
-\fB\-\-start\-group\fR and \fB\-\-end\-group\fR are still accepted
-by \fBmold\fR and \fBlld\fR for compatibility with traditional linkers,
+The linker script is an ad-hoc, over-designed, complex language which \
+I believe needs to be disrupted by a simpler mechanism.
+I have a plan to add a replacement for the linker script to
+.Nm
+instead.
+.
+.\"-----------------------------------------------------------------------------
+.Ss Archive symbol resolution
+Traditionally, Unix linkers are sensitive to the order in which input files \
+appear on command line.
+They process input files from the first (left-most) file to the \
+last (right-most) file one-by-one.
+While reading input files, they maintain sets of defined and \
+undefined symbols.
+When visiting an archive file
+.Pf ( Li \.a
+files), they pull out object files to resolve as many undefined symbols as \
+possible and go on to the next input file.
+Object files that weren't pulled out will never have a chance for a second look.
+.
+.Pp
+Due to this semantics, you usually have to add archive files at the end of a \
+command line, so that when a linker reaches archive files, it knows what \
+symbols are remain undefined.
+If you put archive files at the beginning of a command line, a linker doesn't \
+have any undefined symbol, and thus no object files will be pulled out from \
+archives.
+.
+.Pp
+You can change the processing order by
+.Fl -start-group
+and
+.Fl -end-group
+options, though they make a linker slower.
+.
+.Pp
+.Nm
+as well as LLVM
+.Xr lld 1
+linker take a different approach.
+They memorize what symbols can be resolved from archive files instead of \
+forgetting it after processing each archive.
+Therefore,
+.Nm
+and
+.Xr lld 1
+can "go back" in a command line to pull out object files from archives,
+if they are needed to resolve remaining undefined symbols.
+They are not sensitive to the input file order.
+.
+.Pp
+.Fl -start-group
+and
+.Fl -end-group
+are still accepted by
+.Nm
+and
+.Xr lld 1
+for compatibility with traditional linkers,
 but they are silently ignored.
-
-.SS Dynamic symbol resolution
-Some of Unix linker's features are unable to be understood without
-understanding the semantics of dynamic symbol resolution. Therefore,
-even though that's not specific to \fBmold\fR, we'll explain it here.
-.PP
+.
+.\"-----------------------------------------------------------------------------
+.Ss Dynamic symbol resolution
+Some Unix linker features are unable to be understood without understanding \
+the semantics of dynamic symbol resolution.
+Therefore, even though that's not specific to
+.Nm ,
+we'll explain it here.
+.Pp
 We use "ELF module" or just "module" as a collective term to refer an
 executable or a shared library file in the ELF format.
-.PP
+.Pp
 An ELF module may have lists of imported symbols and exported symbols,
 as well as a list of shared library names from which imported symbols
-should be imported. The point is that imported symbols are not bound
-to any specific shared library until runtime. This is contrary to
-systems such as Windows that have the two-level namespace for dynamic
-symbols. On Windows, for example, dynamic symbols are represented as a
-tuple of (symbol name, shared library name), so that each dynamic
-symbol is guaranteed to be resolved from its corresponding library.
-.PP
-Here is how the Unix dynamic linker resolves dynamic symbols. Upon the
-start of an ELF program, the dynamic linker construct a list of ELF
-modules which as a whole consists of a complete program. The
-executable file is always at the beginning of the list, which is
-followed by its depending shared libraries. An imported symbol is
-searched from the beginning of the list to the end. If two or more
-modules define the same symbol, the one that appears first in the list
-takes precedence over the others.
-.PP
-Typically, a module that exports a symbol also imports the same
-symbol. Such symbol is usually resolved to itself, but that's not the
-case if a module that appears before in the symbol search list
-provides another definition of the same symbol.
-.PP
-Let me take \fBmalloc\fR as an example. Assume that you define your
-version of \fBmalloc\fR in your main executable file. Then, all
-\fBmalloc\fR calls from any module are resolved to your function
-instead of the one in libc, because the executable is at the beginning
-of the dynamic symbol search list. Note that even \fBmalloc\fR calls
-within libc are resolved to your definition since libc exports and
-imports \fBmalloc\fR. Therefore, by defining \fBmalloc\fR yourself,
-You can overwrite a library function, and the \fBmalloc\fR in libc
-becomes dead code.
-.PP
-This Unix's semantics is tricky and sometimes considered harmful. For
-example, assume that you accidentally define \fBatoi\fR as a global
-function in your executable that behaves completely different from the
-one in the C standard. Then, all \fBatoi\fR function calls from any
-modules (even function calls within libc) are redirected to your
-function instead of the one in libc which obviously causes a problem.
-That is a somewhat surprising consequence for an accidental name
-conflict. On the other hand, this semantics is sometimes considered
-useful because it allows users to overwrite library functions without
-recompiling modules containing them. Whether good or bad, you should
-this semantics in your mind to understand Unix linkers behaviors.
-
-.SS Build reproducibility
-\fBmold\fR's output is deterministic. That is, if you pass the same
-object files and the same command line options to \fBmold\fR, it is
-guaranteed that the output is always bit-wise the same. The linker's
-internal randomness, such as the timing of thread scheduling or
+should be imported.
+The point is that imported symbols are not bound to any specific shared \
+library until runtime.
+This is contrary to systems such as Windows that have the two-level namespace \
+for dynamic symbols.
+On Windows, for example, dynamic symbols are represented as a tuple of
+.Pq Sy symbol-name , shared-library-name ,
+so that each dynamic symbol is guaranteed to be resolved from its \
+corresponding library.
+.Pp
+Here is how the Unix dynamic linker resolves dynamic symbols.
+Upon the start of an ELF program, the dynamic linker construct a list of ELF \
+modules which as a whole consists of a complete program.
+The executable file is always at the beginning of the list, which is followed \
+by its depending shared libraries.
+An imported symbol is searched from the beginning of the list to the end.
+If two or more modules define the same symbol, the one that appears first in \
+the list takes precedence over the others.
+.Pp
+Typically, a module that exports a symbol also imports the same symbol.
+Such a symbol is usually resolved to itself, but that's not the case if a \
+module that appears before in the symbol search list provides another \
+definition of the same symbol.
+.Pp
+Let me take
+.Xr malloc 3
+as an example.
+Assume that you define your version of
+.Xr malloc 3
+in your main executable file.
+Then, all
+.Sy malloc
+calls from any module are resolved to your function instead of that in in libc,
+because the executable is at the beginning of the dynamic symbol search list.
+Note that even
+.Xr malloc 3
+calls within libc are resolved to your definition since libc exports and imports
+.Sy malloc .
+Therefore, by defining
+.Sy malloc
+yourself, you can overwrite a library function, and the
+.Xr malloc 3
+in libc becomes dead code.
+.Pp
+Thess Unix semantics are tricky and sometimes considered harmful.
+For example, assume that you accidentally define
+.Xr atoi 3
+as a global function in your executable that behaves completely different from \
+the one in the C standard.
+Then, all
+.Sy atoi
+function calls from any modules (even function calls within libc) are \
+redirected to your function instead of the one in libc which obviously causes \
+a problem.
+That is a somewhat surprising consequence for an accidental name conflict.
+On the other hand, this semantic is sometimes considered useful because it \
+allows users to overwrite library functions without recompiling modules \
+containing them.
+Whether good or bad, you should keep this semantic in mind to understand Unix \
+linkers behaviors.
+.
+.\"-----------------------------------------------------------------------------
+.Ss Build reproducibility
+.Nm Ap s
+output is deterministic.
+That is, if you pass the same object files and the same command-line options to
+.Nm ,
+it is guaranteed that the output is always bit-wise the same.
+The linker's internal randomness, such as the timing of thread scheduling or \
 iteration orders of hash tables, doesn't affect the output.
-.PP
-\fBmold\fR does not have any host-specific default settings. This is
-contrary to the GNU linkers to which some configurable values, such as
-system-dependent library search paths, are hard-coded. Therefore,
-\fBmold\fR depends only on its command-line arguments.
-
-.SH OPTIONS
-.IP "\fB\-\-help\fR"
+.
+.Pp
+.Nm
+does not have any host-specific default settings.
+This is contrary to the GNU linkers to which some configurable values, \
+such as system-dependent library search paths, are hard-coded.
+Therefore,
+.Nm
+depends only on its command-line arguments.
+.
+.\"=============================================================================
+.Sh OPTIONS
+.Bl -tag -width 6n
+.It Fl -help
 Report usage information to stdout and exit.
-.IP "\fB\-v\fR"
-.PD 0
-.IP "\fB\-\-version\fR"
-.PD
+.
+.It Fl v , Fl -version
 Report version information to stdout.
-
-.IP "\fB\-V\fR"
+.
+.It Fl V
 Report version and target information to stdout.
-
-.IP "\fB\-C\fR \fIdir\fR"
-.PD 0
-.IP "\fB\-\-directory\fR \fIdir\fR"
-.PD
-Change to \fIdir\fR before doing anything.
-
-.IP "\fB\-E\fR"
-.PD 0
-.IP "\fB\-\-export\-dynamic\fR"
-.IP "\fB\-\-no\-export\-dynamic\fR"
-.PD
-When creating an executable, using \fB\-E\fI option causes all global
-symbols to be put into the dynamic symbol table, so that the symbols
-are visible from other ELF modules at runtime.
-.PP
-By default, or if \fB\-\-no\-export\-dynamic\fR is given, only symbols
+.
+.It Fl C Ar dir , Fl -directory Ar dir
+Change to
+.Ar dir
+before doing anything.
+.
+.It Fl E , Fl -export-dynamic , Fl -no-export-dynamic
+When creating an executable, using the
+.Fl E
+option causes all global symbols to be put into the dynamic symbol table,
+so that the symbols are visible from other ELF modules at runtime.
+.Pp
+By default, or if
+.Fl -no-export-dynamic
+is given, only symbols
 that are referenced by DSOs at link-time are exported from an executable.
-
-.IP "\fB\-F\fR \fIlibname\fR"
-.PD 0
-.IP "\fB\-\-filter\fR=\fIlibname\fR"
-.PD
-Set the \fBDT_FILTER\fR dynamic section field to \fIlibname\fR.
-
-.IP "\fB\-I\fR\fIfile\fR"
-.PD 0
-.IP "\fB\-\-dynamic\-linker\fR=\fIfile\fR"
-.PD 0
-.IP "\fB\-\-no\-dynamic\-linker\fR"
-.PD
-Set the dynamic linker path to \fIfile\fR. If no \fB-I\fR option is
-given, or if \fB\-\-no\-dynamic\-linker\fR is given, no dynamic linker
-path is set to an output file. This is contrary to the GNU linkers
-which sets a default dynamic linker path in that case.
-However, this difference doesn't usually make any difference because
-the compiler driver always passes \fB-I\fR to a linker.
-
-.IP "\fB\-L\fR\fIdir\fR"
-.PD 0
-.IP "\fB\-\-library\-path\fR=\fIdir\fR"
-.PD
-Add \fIdir\fR to the list of library search paths from which
-\fBmold\fR searches libraries for the \fB-l\fR option.
-
-Unlike the GNU linkers, \fBmold\fR does not have the default search
-paths. This difference doesn't usually make any difference because the
+.
+.It Fl F Ar libname , Fl -filter Ns = Ns Ar libname
+Set the
+.Dv DT_FILTER
+dynamic section field to
+.Ar libname .
+.
+.It Fl I Ns Ar file , Fl -dynamic-linker Ns = Ns Ar file , Fl -no-dynamic-linker
+Set the dynamic linker path to
+.Ar file .
+If no
+.Fl I
+option is given, or if
+.Fl -no-dynamic-linker
+is given, no dynamic linker path is set to an output file.
+This is contrary to the GNU linkers which sets a default dynamic linker path \
+in that case.
+However, this difference doesn't usually make any difference because the \
+compiler driver always passes
+.Fl I
+to a linker.
+.
+.It Fl L Ns Ar dir , Fl -library-path Ns = Ns Ar dir
+Add
+.Ar dir
+to the list of library search paths from which
+.Nm
+searches libraries for the \fB-l\fR option.
+.Pp
+Unlike the GNU linkers,
+.Nm
+does not have the default search paths.
+This difference doesn't usually make any difference because the
 compiler driver always passes all necessary search paths to a linker.
-
-.IP "\fB\-M\fR"
-.PD 0
-.IP "\fB\-\-print\-map\fR"
-.PD
+.
+.It Fl M , Fl -print-map
 Write a map file to stdout.
-
-.IP "\fB\-N\fR"
-.PD 0
-.IP "\fB\-\-omagic\fR"
-.IP "\fB\-\-no\-omagic\fR"
-.PD
-Force \fBmold\fR to emit an output file with an old-fashioned memory
-layout. First, it makes the first data segment to not be aligned to a
-page boundary. Second, text segments are marked as writable if the
-option is given.
-.RE
-
-.IP "\fB\-S\fR"
-.PD 0
-.IP "\fB\-\-strip\-debug\fR"
-.PD
-Omit \fB.debug_*\fR sections from the output file.
-
-.IP "\fB\-T\fR \fIfile\fR"
-.PD 0
-.IP "\fB\-\-script\fR=\fIfile\fR"
-.PD
-Read linker script from \fIfile\fR.
-
-.IP "\fB\-X\fR"
-.PD 0
-.IP "\fB\-\-discard\-locals\fR"
-.PD
-Discard temporary local symbols to reduce the sizes of the symbol
-table and the string table. Temporary local symbols are local symbols
-starting with \fB.L\fR. Compilers usually generate such symbols for
-unnamed program elements such as string literals or floating-point
-literals.
-
-.IP "\fB\-e \fR\fIsymbol\fR"
-.PD 0
-.IP "\fB\-\-entry\fR=\fIsymbol\fR"
-.PD
-Use \fIsymbol\fR as the entry point symbol instead of the default
-entry point symbol \fB_start\fR.
-
-.IP "\fB\-f\fR \fIshlib\fR"
-.PD 0
-.IP "\fB\-\-auxiliary\fR=\fIshlib\fR"
-.PD
-Set the \fBDT_AUXILIARY\fR dynamic section field to \fIshlib\fR.
-
-.IP "\fB\-h\fR \fIlibname\fR"
-.PD 0
-.IP "\fB\-\-soname\fR\fIlibname\fR"
-.PD
-Set the \fBDT_SONAME\fR dynamic section field to \fIlibname\fR.  This
-option is used when creating a shared object file. Typically, when you
-create lib\fIfoo\fR.so, you want to pass \fB\-\-soname\fR=\fIfoo\fR to
-a linker.
-
-.IP "\fB\-l\fR\fIlibname\fR"
-Search for lib\fIlibname\fR.so or lib\fIlibname\fR.a from library
-search paths.
-
-.IP "\fB\-m\fR \fI[\fIelf_x86_64\fR,\fIelf_i386\fR\fR]"
-.PD 0
-.PD
+.
+.It Fl N , Fl -omagic , Fl -no-omagic
+Force
+.Nm
+to emit an output file with an old-fashioned memory layout.
+First, it makes the first data segment to not be aligned to a page boundary.
+Second, text segments are marked as writable if the option is given.
+.
+.It Fl S , Fl -strip-debug
+Omit
+.Sy \.debug_*
+sections from the output file.
+.
+.It Fl T Ar file , Fl -script Ns = Ns Ar file
+Read linker script from
+.Ar file .
+.
+.It Fl X , Fl -discard-locals
+Discard temporary local symbols to reduce the sizes of the \
+symbol table and the string table.
+Temporary local symbols are local symbols starting with
+.Li \.L .
+Compilers usually generate such symbols for unnamed program elements such as \
+string literals or floating-point literals.
+.
+.It Fl e Ar symbol , Fl -entry Ns = Ns Ar symbol
+Use
+.Ar symbol
+as the entry point symbol instead of the default
+entry point symbol
+.Sy _start .
+.
+.It Fl f Ar shlib , Fl -auxiliary Ns = Ns Ar shlib
+Set the
+.Dv DT_AUXILIARY
+dynamic section field to
+.Ar shlib .
+.
+.It Fl h Ar libname , Fl -soname Ns Ar libname
+Set the
+.Dv DT_SONAME
+dynamic section field to
+.Ar libname .
+This option is used when creating a shared object file.
+Typically, when you create
+.Pf Sy lib Ar foo Ns Sy .so ,
+you want to pass
+.Fl -soname Ns = Ns Ar foo
+to a linker.
+.
+.It Fl l Ns Ar libname
+Search for
+.Pf Sy lib Ar libname Ns Sy \.so
+or
+.Pf Sy lib Ar libname Ns Sy \.a
+from library search paths.
+.
+.It Fl m Op Sy elf_x86_64 | elf_i386
 Choose a target.
-
-.IP "\fB\-o\fR \fIfile\fR"
-.PD 0
-.IP "\fB\-\-output\fR=\fIfile\fR"
-.PD
-Use \fIfile\fR as the output file name instead of the default name
-\fBa.out\fR.
-
-.IP "\fB\-r\fR"
-.PD 0
-.IP "\fB\-\-relocatable\fR"
-.PD
+.
+.It Fl o Ar file , Fl -output Ns = Ns Ar file
+Use
+.Ar file
+as the output file name instead of the default name
+.Sy a.out .
+.
+.It Fl r , Fl -relocatable
 Instead of generating an executable or a shared object file, combine
 input object files to generate another object file that can be used as
 an input to a linker.
-
-.IP "\fB\-s\fR"
-.PD 0
-.IP "\fB\-\-strip\-all\fR"
-.PD
-Omit \fB.symtab\fR section from the output file.
-
-.IP "\fB\-u\fR \fIsymbol\fR"
-.PD 0
-.IP "\fB\-\-undefined\fR=\fIsymbol\fR"
-.PD
-If \fIsymbol\fR remains as an undefined symbol after reading all
-object files, and if there is an static archive that contains an
-object file defining \fIsymbol\fR, pull out the object file and link
-it so that the output file contains a definition of \fIsymbol\fR.
-
-.IP "\fB\-\-Bdynamic\fR"
+.
+.It Fl s , FL -strip-all
+Omit
+.Dv \.symtab
+section from the output file.
+.
+.It Fl u Ar symbol , Fl -undefined Ns = Ns Ar symbol
+If
+.Ar symbol
+remains as an undefined symbol after reading all object files,
+and if there is an static archive that contains an object file defining
+.Ar symbol ,
+pull out the object file and link it so that the \
+output file contains a definition of
+.Ar symbol .
+.
+.It Fl -Bdynamic
 Link against shared libraries.
-
-.IP "\fB\-\-Bstatic\fR"
+.
+.It Fl -Bstatic
 Do not link against shared libraries.
-
-.IP "\fB\-\-Bsymbolic\fR"
+.
+.It Fl -Bsymbolic
 When creating a shared library, make global symbols export-only
-(i.e. do not import the same symbol). As a result, references within a
-shared library is always resolved locally, negating symbol override at
-runtime. See \fB\s-1Dynamic symbol resolution\s0\fR for more
-information about symbol imports and exports.
-
-.IP "\fB\-\-Bsymbolic\-functions\fR"
-Have the same effect as \fB\-\-Bsymbolic\fR but works only for
-function symbols. Data symbols remains both imported and exported.
-
-.IP "\fB\-Bno\-symbolic\fR"
-Cancel \fB\-\-Bsymbolic\fR and \fB\-\-Bsymbolic\-functions\fR.
-
-.IP "\fB\-\-Map\fR=\fIfile\fR"
-Write map file to \fIfile\fR.
-
-.IP "\fB\-\-allow\-multiple\-definition\fR"
-Normally, the linker reports an error if there are more than one
-definition of a symbol. This option changes the default behavior so
-that it doesn't report an error for duplicate definitions and instead
-use the first definition.
-
-.IP "\fB\-\-as\-needed\fR"
-.PD 0
-.IP "\fB\-\-no\-as\-needed\fR"
-.PD
-By default, shared libraries given to a linker are unconditionally
-added to the list of required libraries in an output file. However,
-shared libraries after \fB\-\-as\-needed\fR are added to the list only
-when at least one symbol is actually used by an object file. In other
-words, shared libraries after \fB\-\-as\-needed\fR are not added to the
-list if they are not needed by a program.
-
-The \fB\-\-no\-as\-needed\fR option restores the default behavior
-for subsequent files.
-
-.IP "\fB\-\-build\-id\fR"
-.PD 0
-.IP "\fB\-\-build\-id\fR=[\fInone\fR,\fImd5\fR,\fIsha1\fR,\fIsha256\fR,\fIuuid\fR,0x\fIhexstring\fR]"
-.IP "\fB\-\-no\-build\-id\fR"
-.PD
-Create a \fB.note.gnu.build-id\fR section containing a byte string to
-uniquely identify an output file. \fB\-\-build\-id\fR and
-\fB\-\-build\-id=sha256\fR compute a 256 bits cryptographic hash of an
-output file and set it to build-id. \fBmd5\fR and \fBsha1\fR compute
-the same hash but truncate it to 128 and 160 bits, respectively,
-before setting it to build-id. \fBuuid\fR sets a random 128 bits UUID.
-0x\fIhexstring\fR sets \fIhexstring\fR.
-
-.IP "\fB\-\-chroot\fR=\fIdir\fR"
-Set \fIdir\fR to root directory.
-
-.IP "\fB\-\-compress\-debug\-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib\-gabi\fR,\fIzlib\-gnu\fR]"
-Compress DWARF debug info (\fB.debug_*\fR sections) using the zlib
-compression algorithm.
-
-.IP "\fB\-\-defsym\\fR=\fIsymbol\fR=\fIvalue\fR"
-
-Define \fIsymbol\fR as an alias for \fIvalue\fR. \fIvalue\fR is either
-an integer (in decimal or hexadecimal with 0x prefix) or a symbol name.
-If an integer is given as a value, \fIsymbol\fR is defined as an absolute
-symbol with the given value.
-
-.IP "\fB\-\-demangle\fR"
-.PD 0
-.IP "\fB\-\-no\-demangle\fR"
-.PD
+(i.e. do not import the same symbol).
+As a result, references within a shared library is always resolved locally, \
+negating symbol override at runtime.
+See
+.Sx Dynamic symbol resolution
+for more information about symbol imports and exports.
+.
+.It Fl -Bsymbolic-functions
+Have the same effect as
+.Fl -Bsymbolic
+but works only for function symbols.
+Data symbols remains both imported and exported.
+.
+.It Fl -Bno-symbolic
+Cancel
+.Fl -Bsymbolic
+and
+.Fl -Bsymbolic-functions .
+.
+.It Fl -Map Ns = Ns Ar file
+Write map file to
+.Ar file .
+.
+.It Fl -allow-multiple-definition
+Normally, the linker reports an error if there are more than one \
+definition of a symbol.
+This option changes the default behavior so that it doesn't report an error \
+for duplicate definitions and instead use the first definition.
+.
+.It Fl -as-needed , -no-as-needed
+By default, shared libraries given to a linker are unconditionally added to \
+the list of required libraries in an output file.
+However, shared libraries after
+.Fl -as-needed
+are added to the list only when at least one symbol is actually used by an \
+object file.
+In other words, shared libraries after
+.Fl -as-needed
+are not added to the list if they are not needed by a program.
+.Pp
+The
+.Fl -no-as-needed
+option restores the default behavior for subsequent files.
+.
+.It Fl -build-id , Fl -no-build-id , Fl -build-id Ns = Ns Op Sy none | md5 | sha1 | sha256 | uuid | 0x Ns Ar hexstring
+Create a
+.Dv .note.gnu.build-id
+section containing a byte string to
+uniquely identify an output file.
+.Fl -build-id
+and
+.Fl -build-id Ns = Ns Sy sha256
+compute a 256-bit cryptographic hash of an output file and set it to build-id.
+.Sy md5
+and
+.Sy sha1
+compute the same hash but truncate it to 128 and 160 bits, respectively, \
+before setting it to build-id.
+.Sy uuid
+sets a random 128-bit UUID.
+.Sy 0x Ns Ar hexstring
+sets
+.Ar hexstring .
+.
+.It Fl -chroot Ns = Ns Ar dir
+Set
+.Ar dir
+to root directory.
+.
+.It Fl -compress-debug-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib-gabi\fR,\fIzlib-gnu\fR]"
+Compress DWARF debug info
+.Pf ( Sy .debug_*
+sections) using the zlib compression algorithm.
+.
+.It Fl -defsym\ Ns = Ns Ar symbol Ns = Ns Ar value
+Define
+.Ar symbol
+as an alias for
+.Ar value .
+.Pp
+.Ar value
+is either
+an integer (in decimal or hexadecimal with
+.Sq 0x
+prefix) or a symbol name.
+If an integer is given as a value,
+.Ar symbol
+is defined as an absolute symbol with the given value.
+.
+.It Fl -demangle , -no-demangle
 Demangle C++ symbols in log messages.
-
-.IP "\fB\-\-dynamic\-list\fR=\fIfile\fR"
-Read a list of dynamic symbols from \fIfile\fR.
-
-.IP "\fB\-\-eh\-frame\-hdr\fR"
-.PD 0
-.IP "\fB\-\-no\-eh\-frame\-hdr\fR"
-.PD
-Create \fB.eh_frame_hdr\fR section.
-
-.IP "\fB\-\-exclude\-libs\fR=\fIlib,lib,..\fR"
-Mark all symbols in given libraries hidden.
-
-.IP "\fB\-\-fini\fR=\fIsymbol\fR"
-Call \fIsymbol\fR at unload-time.
-
-.IP "\fB\-\-fork\fR"
-.PD 0
-.IP "\fB\-\-no\-fork\fR"
-.PD
-Spawn a child process and let it do the actual linking. When linking a
-large program, the OS kernel can take a few hundred milliseconds to
-terminate a mold process. \fB\-\-fork\fR hides that latency.
-
-.IP "\fB\-\-gc\-sections\fR"
-.PD 0
-.IP "\fB\-\-no\-gc\-sections\fR"
-.PD
-Remove unreferenced sections
-
-.IP "\fB\-\-hash\-style\fR=[\fIsysv\fR,\fIgnu\fR,\fIboth\fR]"
-Set hash style
-
-.IP "\fB\-\-icf=all\fR"
-.PD 0
-.IP "\fB\-\-no\-icf\fR"
-.PD
+.
+.It Fl -dynamic-list Ns = Ns Ar file
+Read a list of dynamic symbols from
+.Ar file .
+.
+.It Fl -eh-frame-hdr , -no-eh-frame-hdr
+Create
+.Dv .eh_frame_hdr
+section.
+.
+.It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
+Mark all symbols in the given
+.Ar libraries
+hidden.
+.
+.It Fl -fini Ns = Ns Ar symbol
+Call
+.Ar symbol
+at unload-time.
+.
+.It Fl -fork , -no-fork
+Spawn a child process and let it do the actual linking.
+When linking a large program, the OS kernel can take a few hundred \
+milliseconds to terminate a
+.Nm
+process.
+.Fl -fork
+hides that latency.
+.
+.It Fl -gc-sections , -no-gc-sections
+Remove unreferenced sections.
+.
+.It Fl -hash-style Ns = Ns Op Sy sysv | gnu | both
+Set hash style.
+.
+.It Fl -icf Ns = Ns Sy all , Fl -no-icf
 Fold identical code.
-
-.IP "\fB\-\-image\-base\fR=\fIaddr\fR"
-Set the base address to \fIaddr\fR
-
-.IP "\fB\-\-init\fR=\fIsymbol\fR"
-Call \fIsymbol\fR at load-time
-
-.IP "\fB\-\-no\-undefined\fR"
-Report undefined symbols (even with \fB\-\-shared\fR)
-
-.IP "\fB\-\-perf\fR"
-Print performance statistics
-
-.IP "\fB\-\-pie\fR"
-.PD 0
-.IP "\fB\-\-pic\-executable\fR"
-.IP "\fB\-\-no\-pie\fR"
-.IP "\fB\-\-no\-pic\-executable\fR"
-.PD
-Create a position independent executable
-
-.IP "\fB\-\-pop\-state\fR"
+.
+.It Fl -image-base Ns = Ns Ar addr
+Set the base address to
+.Ar addr .
+.
+.It Fl -init Ns = Ns Ar symbol
+Call
+.Ar symbol
+at load-time.
+.
+.It Fl -no-undefined
+Report undefined symbols (even with
+.Fl -shared ) .
+.
+.It Fl -perf
+Print performance statistics.
+.
+.It Fl -pie , -pic-executable , -no-pie , -no-pic-executable
+Create a position-independent executable.
+.
+.It Fl -pop-state
+Pop state of flags governing input file handling.
+.
+.It Fl -preload
+Preload object files.
+.
+.It Fl -print-gc-sections , -no-print-gc-sections
+Print removed unreferenced sections.
+.
+.It Fl -print-icf-sections , -no-print-icf-sections
+Print folded identical sections.
+.
+.It Fl -push-state
 Pop state of flags governing input file handling
-
-.IP "\fB\-\-preload\fR"
-Preload object files
-
-.IP "\fB\-\-print\-gc\-sections\fR"
-.PD 0
-.IP "\fB\-\-no\-print\-gc\-sections\fR"
-.PD
-Print removed unreferenced sections
-
-.IP "\fB\-\-print\-icf\-sections\fR"
-.PD 0
-.IP "\fB\-\-no\-print\-icf\-sections\fR"
-.PD
-Print folded identical sections
-
-.IP "\fB\-\-push\-state\fR"
-Pop state of flags governing input file handling
-
-.IP "\fB\-\-quick\-exit\fR"
-.PD 0
-.IP "\fB\-\-no\-quick\-exit\fR"
-.PD
-Use quick_exit to exit.
-
-.IP "\fB\-\-relax\fR"
-.PD 0
-.IP "\fB\-\-no\-relax\fR"
-.PD
-Rewrite machine instructions with more efficient ones for some
-relocations. The feature is enabled by default.
-
-.IP "\fB\-\-require-defined\fR=\fIsymbol\fR"
-It's like \fB\-\-undefined\fR except the new symbol must be defined by
-the end of the link.
-
-.IP "\fB\-\-repro\fR"
-Embed input files to .repro section
-
-.IP "\fB\-\-retain\-symbols\-file\fR=\fIfile\fR"
-Keep only symbols listed in \fIfile\fR. \fIfile\fR is a text file
-containing a symbol name on each line. \fBmold\fR discards all local
-symbols as well as global sybmol that are not in \fIfile\fR. Note that
-this option removes symbols only from \fB.symtab\fR section and does
-not affect \fB.dynsym\fR section, which is used for dynamic linking.
-
-.IP "\fB\-\-rpath\fR=\fIdir\fR"
-Add \fIdir\fR to runtime search path
-.IP "\fB\-\-run\fR \fIcommand arg ...\fR"
-Run \fIcommand\fR with mold as \fB/usr/bin/ld\fR
-.IP "\fB\-\-shared\fR"
-.PD 0
-.IP "\fB\-\-Bshareable\fR"
-.PD
-Create a share library
-.IP "\fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR"
-Reserve give number of tags in .dynamic section
-.IP "\fB\-\-static\fR"
-Do not link against shared libraries
-
-.IP "\fB\-\-stats\fR"
+.
+.It Fl -quick-exit , -no-quick-exit
+Use
+.Dv quick_exit
+to exit.
+.
+.It Fl -relax , -no-relax
+Rewrite machine instructions with more efficient ones for some relocations.
+The feature is enabled by default.
+.
+.It Fl -require-defined Ns = Ns Ar symbol
+Like
+.Fl -undefined ,
+except the new symbol must be defined by the end of the link.
+.
+.It Fl -repro
+Embed input files into
+.Dv .repro
+section.
+.
+.It Fl -retain-symbols-file Ns = Ns Ar file
+Keep only symbols listed in
+.Ar file .
+.Pp
+.Ar file
+is a text file
+containing a symbol name on each line.
+.Nm
+discards all local
+symbols as well as global sybmol that are not in
+.Ar file .
+Note that this option removes symbols only from
+.Dv .symtab
+section and does not affect
+.Dv .dynsym
+section, which is used for dynamic linking.
+.
+.It Fl -rpath Ns = Ns Ar dir
+Add
+.Ar dir
+to runtime search path.
+.
+.It Fl -run Cm command Ar arg Ar
+Run
+.Cm command
+with
+.Nm
+as
+.Pa /usr/bin/ld .
+.
+.It Fl -shared , -Bshareable
+Create a share library.
+.
+.It Fl -spare-dynamic-tags Ns = Ns Ar number
+Reserve given
+.Ar number
+of tags in
+.Dv .dynamic
+section.
+.
+.It Fl -static
+Do not link against shared libraries.
+.
+.It Fl -stats
 Print input statistics.
-
-.IP "\fB\-\-sysroot\fR=\fIdir\fR"
-Set target system root directory
-
-.IP "\fB\-\-thread\-count=\fIcount\fR\fR"
-Use \fIcount\fR number of threads.
-
-.IP "\fB\-\-threads\fR"
-.PD 0
-.IP "\fB\-\-no\-threads\fR"
-.PD
-Use multiple threads. By default, \fBmold\fR uses as many threads as
-the number of cores or 32, whichever is the smallest. The reason why
-it is capped to 32 is because \fBmold\fR doesn't scale well beyond
-that point. To use only one thread, pass \fB\-\-no\-threads\fR or
-\fB\-\-thread-count=1\fR.
-
-.IP "\fB\-\-trace\fR"
+.
+.It Fl -sysroot Ns = Ns Ar dir
+Set target system root directory to
+.Ar dir .
+.
+.It Fl -thread-count Ns = Ns Ar count
+Use
+.Ar count
+number of threads.
+.
+.It Fl -threads , -no-threads
+Use multiple threads.
+By default,
+.Nm
+uses as many threads as the number of cores or 32, whichever is the smallest.
+The reason why it is capped to 32 is because
+.Nm
+doesn't scale well beyond that point.
+To use only one thread, pass
+.Fl -no-threads
+or
+.Fl -thread-count Ns = Ns Sy 1 .
+.
+.It Fl -trace
 Print name of each input file.
-
-.IP "\fB\-\-unique=\fIpattern\fR"
-Don't merge input sections that match \fIpattern\fR.
-
-.IP "\fB\-\-unresolved\-symbols=[\fIreport\-all\fR,\fIignore\-all\fR,\fIignore\-in\-object\-files\fR,\fIignore\-in\-shared\-libs\fR]\fR"
+.
+.It Fl -unique Ns = Ns Ar pattern
+Don't merge input sections that match
+.Ar pattern .
+.
+.It Fl -unresolved-symbols Ns = Ns Op Sy \
+report-all | ignore-all | ignore-in-object-files | ignore-in-shared-libs
 How to handle undefined symbols.
-
-.IP "\fB\-\-version\-script\fR=\fIfile\fR"
-Read version script from \fIfile\fR.
-
-.IP "\fB\-\-warn\-common\fR"
-.PD 0
-.IP "\fB\-\-no\-warn\-common\fR"
-.PD
-Warn about common symbols
-
-.IP "\fB\-\-warn\-unresolved\-symbols\fR"
-.PD 0
-.IP "\fB\-\-error\-unresolved\-symbols\fR"
-.PD
+.
+.It Fl -version-script Ns = Ns Ar file
+Read version script from
+.Ar file .
+.
+.It Fl -warn-common
+.It Fl -no-warn-common
+Warn about common symbols.
+.
+.It Fl -warn-unresolved-symbols , -error-unresolved-symbols
 Normally, the linker reports an error for unresolved symbols.
-\fB\-\-warn\-unresolved\-symbols\fR option turns it into a warning.
-\fB\-\-error\-unresolved\-symbols\fR option restores the default
-behavior.
-
-.IP "\fB\-\-whole\-archive\fR"
-.PD 0
-.IP "\fB\-\-no\-whole\-archive\fR"
-.PD
-When archive files (\fB.a\fR files) are given to a linker, only object
+.Fl -warn-unresolved-symbols
+option turns it into a warning.
+.Fl -error-unresolved-symbols
+option restores the default behavior.
+.
+.It Fl -whole-archive , -no-whole-archive
+When archive files
+.Pf ( Sy .a
+files) are given to a linker, only object
 files that are needed to resolve undefined symbols are extracted from
-them and linked to an output file. \fB\-\-whole\-archive\fR changes
-that behavior for subsequent archives so that a linker extracts all
-object files and link them to an output. For example, if you are
-creating a shared object file and you want to include all archive
-members to the output, you should pass \fB\-\-whole\-archive\fR.
-\fB\-\-no\-whole\-archive\fR restores the default behavior for
-subsequent archives.
-
-.IP "\fB\-\-wrap\fR=\fIsymbol\fR"
-Make \fIsymbol\fR to be resolved to \fB__wrap_\fIsymbol\fR. The
-original symbol can be resolved as \fB__real_\fIsymbol\fR. This
-option is typically used for wrapping an existing function.
-
-.IP "\fB\-z now\fR"
-.PD 0
-.IP "\fB\-z lazy\fR"
-.PD
+them and linked to an output file.
+.Fl -whole-archive
+changes that behavior for subsequent archives so that a linker extracts all
+object files and link them to an output.
+For example, if you are creating a shared object file and you want to include \
+all archive members to the output, you should pass
+.Fl -whole-archive .
+.Fl -no-whole-archive
+restores the default behavior for subsequent archives.
+.
+.It Fl -wrap Ns = Ns Ar symbol
+Make
+.Ar symbol
+to be resolved to
+.Sy __wrap_ Ns Ar symbol .
+The original symbol can be resolved as
+.Sy __real_ Ns Ar symbol .
+This option is typically used for wrapping an existing function.
+.
+.It Fl z Cm now , Fl z Cm lazy
 By default, functions referring other ELF modules are resolved by the
-dynamic linker when they are called for the first time. \fB\-z now\fR
+dynamic linker when they are called for the first time.
+.Fl z Cm now
 marks an executable or a shared library file so that all dynamic
-symbols are loaded when a file is loaded to memory. \fB\-z lazy\fR
+symbols are loaded when a file is loaded to memory.
+.Fl z Cm lazy
 restores the default behavior.
-
-.IP "\fB\-z origin\fR"
-Mark object requiring immediate \fB$ORIGIN\fR processing at runtime.
-
-.IP "\fB\-z execstack\fR"
-.PD 0
-.IP "\fB\-z noexecstack\fR"
-.PD
+.
+.It Fl z Cm origin
+Mark object requiring immediate
+.Dv $ORIGIN
+processing at runtime.
+.
+.It Fl z Cm execstack , Fl z Cm noexecstack
 By default, the pages for the stack area (i.e. the pages where local
-variables reside) are not executable for security reasons. \fB\-z
-execstack\fR makes it executable. \fB\-z noexecstack\fR restores the
-default behavior.
-
-.IP "\fB\-z keep\-text\-section\-prefix\fR"
-.PD 0
-.IP "\fB\-z nokeep\-text\-section\-prefix\fR"
-.PD
-Keep .text.hot, .text.unknown, .text.unlikely, .text.startup
-and .text.exit as separate sections in the final binary.
-
-.IP "\fB\-z relro\fR"
-.PD 0
-.IP "\fB\-z norelro\fR"
-.PD
-Some sections such as \fB.dynamic\fR have to be writable only during
-an executable or a shared library file is being loaded to memory.
-Once the dynamic linker finishes its job, such sections won't be
-mutated by anyone. As a security mitigation, it is preferred to make
-such segments read-only during program execution.
-
-\fB\-z relro\fR puts such sections into a special section called
-\fIrelro\fR. The dynamic linker make a relro segment read-only
-after it finishes its job.
-
-By default, \fBmold\fR generates a relro segment. \fB\-z
-norelro\fR disables the feature.
-
-.IP "\fB\-z separate\-loadable\-segments\fR"
-.PD 0
-.IP "\fB\-z separate\-code\fR"
-.PD 0
-.IP "\fB\-z noseparate\-code\fR"
-.PD
-If one memory page contains multiple segments, the page protection
-bits are set in such a way that needed attributes (writable or
-executable) are satisifed for all segments. This usually happens at a
-boundary of two segments with two different attributes.
-
-\fBseparate\-loadable\-segments\fR adds paddings between segments with
-different attributes so that they do not share the same page. This is
-the default.
-
-\fBseparate\-code\fR adds paddings only between executable and
-non-executable segments.
-
-\fBnoseparate\-code\fR does not add any paddings between segments.
-
-.IP "\fB\-z defs\fR"
-.PD 0
-.IP "\fB\-z nodefs\fR"
-.PD
-Report undefined symbols (even with \fI\-\-shared\fR).
-
-.IP "\fB\-z max\-page\-size\fR"
+variables reside) are not executable for security reasons.
+.Fl z Cm execstack
+makes it executable.
+.Fl z Cm noexecstack
+restores the default behavior.
+.
+.It Fl z Cm keep-text-section-prefix , Fl z Cm nokeep-text-section-prefix
+Keep
+.Dv .text.hot ,
+.Dv .text.unknown ,
+.Dv .text.unlikely ,
+.Dv .text.startup
+and
+.Dv .text.exit
+as separate sections in the final binary.
+.
+.It Fl z Cm relro , Fl z Cm norelro
+Some sections such as
+.Dv .dynamic
+have to be writable only during an executable or \
+a shared library file is being loaded to memory.
+Once the dynamic linker finishes its job,
+such sections won't be mutated by anyone.
+As a security mitigation,
+it is preferred to make such segments read-only during program execution.
+.Pp
+.Fl z Cm relro
+puts such sections into a special section called
+.Dv relro .
+The dynamic linker make a relro segment read-only after it finishes its job.
+.Pp
+By default,
+.Nm
+generates a
+.Sy relro
+segment.
+.Fl z Cm norelro
+disables the feature.
+.
+.It Fl z Cm separate-loadable-segments , Fl z Cm separate-code , Fl z Cm noseparate-code
+If one memory page contains multiple segments,
+the page protection bits are set in such a way that needed attributes \
+(writable or executable) are satisifed for all segments.
+This usually happens at a boundary of two segments with two different \
+attributes.
+.Pp
+.Cm separate-loadable-segments
+adds paddings between segments with different attributes so that they \
+do not share the same page.
+This is the default.
+.Pp
+.Cm separate-code
+adds paddings only between executable and non-executable segments.
+.Pp
+.Cm noseparate-code
+does not add any paddings between segments.
+.
+.It Fl z Cm defs , Fl z Cm nodefs
+Report undefined symbols (even with
+.Fl -shared ) .
+.
+.It Fl z Cm max-page-size
 Some CPU ISAs support multiple different memory page sizes.
-This option specifies the maximum page size that an output binary
-can run on. If you specify a large value, the output can run on
-both large and small page systems, but it wastes a bit of memory at
-page boundaries on systems with small pages.
-
+This option specifies the maximum page size that an output binary can run on.
+If you specify a large value, the output can run on both large and small page \
+systems, but it wastes a bit of memory at page boundaries on systems with \
+small pages.
+.Pp
 The default value is 4 KiB for i386 and x86-64, and 64 KiB for ARM64.
-
-.IP "\fB\-z nodefaultlib\fR"
+.
+.It Fl z Cm nodefaultlib
 Make the dynamic loader to ignore default search paths.
-.IP "\fB\-z nodelete\fR"
+.
+.It Fl z Cm nodelete
 Mark DSO non-deletable at runtime.
-.IP "\fB\-z nodlopen\fR"
-Mark DSO not available to dlopen.
-.IP "\fB\-z nodump\fR"
-Mark DSO not available to dldump.
-.IP "\fB\-z nocopyreloc\fR"
+.
+.It Fl z Cm nodlopen
+Mark DSO not available to
+.Xr dlopen 3 .
+.
+.It Fl z Cm nodump
+Mark DSO not available to
+.Xr dldump 3 .
+.
+.It Fl z Cm nocopyreloc
 Do not create copy relocations.
-.IP "\fB\-z initfirst\fR"
+.
+.It Fl z Cm initfirst
 Mark DSO to be initialized first at runtime.
-.IP "\fB\-z interpose\fR"
+.
+.It Fl z Cm interpose
 Mark object to interpose all DSOs but executable.
-
-.IP "\fB\-(\fR"
-.PD 0
-.IP "\fB\-)\fR"
-.IP "\fB\-EL\fR"
-.IP "\fB\-O\fR\fInumber\fR"
-.IP "\fB\-\-allow\-shlib\-undefined\fR"
-.IP "\fB\-\-color\-diagnostics\fR"
-.IP "\fB\-\-disable\-new\-dtags\fR"
-.IP "\fB\-\-enable\-new\-dtags\fR"
-.IP "\fB\-\-end\-group\fR"
-.IP "\fB\-\-fatal\-warnings\fR"
-.IP "\fB\-\-gdb\-index\fR"
-.IP "\fB\-\-no\-add\-needed\fR"
-.IP "\fB\-\-no\-allow\-shlib\-undefined\fR"
-.IP "\fB\-\-no\-copy\-dt\-needed\-entries\fR"
-.IP "\fB\-\-no\-fatal\-warnings\fR"
-.IP "\fB\-\-no\-undefined\-version\fR"
-.IP "\fB\-\-nostdlib\fR"
-.IP "\fB\-\-plugin\-opt\fR"
-.IP "\fB\-\-plugin\fR"
-.IP "\fB\-\-rpath\-link\fR=\fIdir\fR"
-.IP "\fB\-\-sort\-common\fR"
-.IP "\fB\-\-sort\-section\fR"
-.IP "\fB\-\-start\-group\fR"
-.IP "\fB\-\-warn\-constructors\fR"
-.IP "\fB\-\-warn\-once\fR"
-.IP "\fB\-z combreloc\fR"
-.IP "\fB\-z nocombreloc\fR"
-.IP "\fB\-z common\-page\-size\fR"
-.PD
+.
+.ig
+.It Fl (
+.It Fl )
+.It Fl EL
+.It Fl O Ns Ar number
+.It Fl -allow-shlib-undefined
+.It Fl -color-diagnostics
+.It Fl -disable-new-dtags
+.It Fl -enable-new-dtags
+.It Fl -end-group
+.It Fl -fatal-warnings
+.It Fl -gdb-index
+.It Fl -no-add-needed
+.It Fl -no-allow-shlib-undefined
+.It Fl -no-copy-dt-needed-entries
+.It Fl -no-fatal-warnings
+.It Fl -no-undefined-version
+.It Fl -nostdlib
+.It Fl -plugin-opt
+.It Fl -plugin
+.It Fl -rpath-link Ns = Ns Ar dir
+.It Fl -sort-common
+.It Fl -sort-section
+.It Fl -start-group
+.It Fl -warn-constructors
+.It Fl -warn-once
+.It Fl z combreloc
+.It Fl z nocombreloc
+.It Fl z common-page-size
 Ignored
-
-.SH BUGS
-Report bugs at \fBhttps://github.com/rui314/mold/issues\fR.
-
-.SH AUTHOR
-Rui Ueyama <\fBruiu@cs\&.stanford\&.edu\fR>
-
-.SH "SEE ALSO"
-.BR ld (1),
-.BR gold (1),
-.BR ld.so (8)
+..
+.
+.El \" End of options list
+.
+.\"=============================================================================
+.Sh SEE ALSO
+.Xr gold 1 ,
+.Xr ld 1 ,
+.Xr ld.so 8
+.
+.\"=============================================================================
+.Sh AUTHORS
+.An Rui Ueyama Aq Mt ruiu@cs.stanford.edu
+.
+.\"=============================================================================
+.Sh BUGS
+Report bugs to
+.Lk  https://github.com/rui314/mold/issues .
