@@ -7,16 +7,12 @@
 namespace mold {
 
 std::string_view errno_string() {
-  static thread_local char buf[200];
-#if _GNU_SOURCE
-  // The GNU version of strerror_r() returns a char * and may completely ignore
-  // buf
-  return strerror_r(errno, buf, sizeof(buf));
-#else
-  // The POSIX.1-2001-compliant version of strerror_r() returns an int and
-  // writes the string into buf
-  return !strerror_r(errno, buf, sizeof(buf)) ? buf : "Unknown error";
-#endif
+  // There's a thread-safe version of strerror() (strerror_r()), but
+  // GNU and POSIX define that function differently. To avoid the mess,
+  // we simply use strerror() with a lock.
+  static std::mutex mu;
+  std::lock_guard lock(mu);
+  return strerror(errno);
 }
 
 #ifdef GIT_HASH
