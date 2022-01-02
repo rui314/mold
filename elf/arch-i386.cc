@@ -167,6 +167,10 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       *(u16 *)loc = val;
     };
 
+    auto write32 = [&](u64 val) {
+      *(u32 *)loc = val;
+    };
+
 #define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A      (ref ? ref->addend : this->get_addend(rel))
 #define P      (output_section->shdr.sh_addr + offset + rel.r_offset)
@@ -175,13 +179,13 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 
     if (needs_dynrel[i]) {
       *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
-      *(u32 *)loc = A;
+      write32(A);
       continue;
     }
 
     if (needs_baserel[i]) {
       *dynrel++ = {P, R_386_RELATIVE, 0};
-      *(u32 *)loc = S + A;
+      write32(S + A);
       continue;
     }
 
@@ -193,7 +197,7 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       write16(S + A);
       continue;
     case R_386_32:
-      *(u32 *)loc = S + A;
+      write32(S + A);
       continue;
     case R_386_PC8:
       write8s(S + A);
@@ -203,38 +207,38 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
       continue;
     case R_386_PC32:
     case R_386_PLT32:
-      *(u32 *)loc = S + A - P;
+      write32(S + A - P);
       continue;
     case R_386_GOT32:
     case R_386_GOT32X:
-      *(u32 *)loc = sym.get_got_addr(ctx) + A - GOTPLT;
+      write32(sym.get_got_addr(ctx) + A - GOTPLT);
       continue;
     case R_386_GOTOFF:
-      *(u32 *)loc = S + A - GOTPLT;
+      write32(S + A - GOTPLT);
       continue;
     case R_386_GOTPC:
-      *(u32 *)loc = GOTPLT + A - P;
+      write32(GOTPLT + A - P);
       continue;
     case R_386_TLS_GOTIE:
-      *(u32 *)loc = sym.get_gottp_addr(ctx) + A - GOTPLT;
+      write32(sym.get_gottp_addr(ctx) + A - GOTPLT);
       continue;
     case R_386_TLS_LE:
-      *(u32 *)loc = S + A - ctx.tls_end;
+      write32(S + A - ctx.tls_end);
       continue;
     case R_386_TLS_IE:
-      *(u32 *)loc = sym.get_gottp_addr(ctx) + A;
+      write32(sym.get_gottp_addr(ctx) + A);
       continue;
     case R_386_TLS_GD:
-      *(u32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOTPLT;
+      write32(sym.get_tlsgd_addr(ctx) + A - GOTPLT);
       continue;
     case R_386_TLS_LDM:
-      *(u32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOTPLT;
+      write32(ctx.got->get_tlsld_addr(ctx) + A - GOTPLT);
       continue;
     case R_386_TLS_LDO_32:
-      *(u32 *)loc = S + A - ctx.tls_begin;
+      write32(S + A - ctx.tls_begin);
       continue;
     case R_386_SIZE32:
-      *(u32 *)loc = sym.esym().st_size + A;
+      write32(sym.esym().st_size + A);
       continue;
     case R_386_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
@@ -242,9 +246,9 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
           0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
         };
         memcpy(loc - 2, insn, sizeof(insn));
-        *(u32 *)loc = S + A - ctx.tls_end;
+        write32(S + A - ctx.tls_end);
       } else {
-        *(u32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOTPLT;
+        write32(sym.get_tlsdesc_addr(ctx) + A - GOTPLT);
       }
       continue;
     case R_386_TLS_DESC_CALL:
