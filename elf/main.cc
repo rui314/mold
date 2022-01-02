@@ -69,7 +69,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   if (ctx.visited.contains(mf->name))
     return;
 
-  switch (get_file_type(mf)) {
+  FileType type = get_file_type(mf);
+  switch (type) {
   case FileType::ELF_OBJ:
     ctx.objs.push_back(new_object_file(ctx, mf, ""));
     return;
@@ -91,7 +92,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     Fatal(ctx) << mf->name << ": looks like this is an LLVM bitcode, "
                << "but mold does not support LTO";
   default:
-    Fatal(ctx) << mf->name << ": unknown file type";
+    Fatal(ctx) << mf->name << ": unknown file type: " << type;
   }
 }
 
