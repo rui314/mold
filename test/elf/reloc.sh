@@ -50,9 +50,9 @@ main:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
-"$t"/exe | grep -q 42
+"$t"/exe | grep -q '^42$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 42
+"$t"/exe | grep -q '^42$'
 
 # GOT
 cat <<'EOF' > "$t"/d.s
@@ -67,9 +67,9 @@ main:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 
 # Copyrel
 cat <<'EOF' > "$t"/d.s
@@ -84,9 +84,9 @@ EOF
 
 clang -c -o "$t"/d.o "$t"/d.s
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.o -no-pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 
 # Copyrel
 cat <<'EOF' > "$t"/d.s
@@ -105,9 +105,9 @@ foo:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 
 # PLT
 cat <<'EOF' > "$t"/d.s
@@ -121,9 +121,9 @@ main:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
-"$t"/exe | grep -q 76
+"$t"/exe | grep -q '^76$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 76
+"$t"/exe | grep -q '^76$'
 
 # PLT
 cat <<'EOF' > "$t"/d.s
@@ -138,9 +138,9 @@ main:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
-"$t"/exe | grep -q 76
+"$t"/exe | grep -q '^76$'
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
-"$t"/exe | grep -q 76
+"$t"/exe | grep -q '^76$'
 
 # SIZE32
 cat <<'EOF' > "$t"/d.s
@@ -160,7 +160,7 @@ foo:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s
-"$t"/exe | grep -q 26
+"$t"/exe | grep -q '^26$'
 
 # SIZE64
 cat <<'EOF' > "$t"/d.s
@@ -180,7 +180,7 @@ foo:
 EOF
 
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s
-"$t"/exe | grep -q 61
+"$t"/exe | grep -q '^61$'
 
 # GOTPCREL64
 cat <<'EOF' > "$t"/e.c
@@ -194,7 +194,7 @@ EOF
 
 clang -c -o "$t"/e.o "$t"/e.c -mcmodel=large -fPIC
 clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/e.o
-"$t"/exe | grep -q 56
+"$t"/exe | grep -q '^56$'
 
 # R_X86_64_32 against non-alloc section
 cat <<'EOF' > "$t"/f.s
