@@ -417,7 +417,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "dynamic-linker") ||
                read_arg(ctx, args, arg, "I")) {
       ctx.arg.dynamic_linker = arg;
-    } else if (read_arg(ctx, args, arg, "no-dynamic-linker")) {
+    } else if (read_flag(args, "no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
     } else if (read_flag(args, "v")) {
       SyncOut(ctx) << mold_version;
