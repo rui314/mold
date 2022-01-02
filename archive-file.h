@@ -34,7 +34,7 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
 
     // Read a string table.
     if (memcmp(hdr.ar_name, "// ", 3) == 0) {
-      strtab = {(char *)body, size};
+      strtab = {(char *)body, (size_t)size};
       data = body + size;
       continue;
     }
@@ -77,7 +77,7 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
 
     // Read if string table
     if (memcmp(hdr.ar_name, "// ", 3) == 0) {
-      strtab = {(char *)body, size};
+      strtab = {(char *)body, (size_t)size};
       continue;
     }
 
