@@ -147,6 +147,10 @@
 #  define ITT_ARCH_IA32E 2
 #endif /* ITT_ARCH_IA32E */
 
+#ifndef ITT_ARCH_IA64
+#  define ITT_ARCH_IA64 3
+#endif /* ITT_ARCH_IA64 */
+
 #ifndef ITT_ARCH_ARM
 #  define ITT_ARCH_ARM  4
 #endif /* ITT_ARCH_ARM */

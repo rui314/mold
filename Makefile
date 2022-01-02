@@ -17,6 +17,7 @@ endif
 STRIP ?= strip
 
 OS ?= $(shell uname -s)
+ARCH ?= $(shell uname -m)
 
 # Used for both C and C++
 COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
@@ -112,6 +113,13 @@ endif
 
 ifneq ($(OS), Darwin)
   LIBS += -lcrypto
+endif
+
+# '-latomic' flag is needed building on riscv64 system
+# RV32 system doesn't tested yet
+# seems like '-atomic' would be better but not working.
+ifeq ($(ARCH), riscv64)
+  LIBS += -latomic
 endif
 
 all: mold mold-wrapper.so
