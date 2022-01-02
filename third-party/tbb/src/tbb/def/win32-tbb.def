@@ -1,0 +1,150 @@
+; Copyright (c) 2005-2021 Intel Corporation
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
+; This file is organized with a section for each .cpp file.
+
+EXPORTS
+
+; Assertions (assert.cpp)
+?assertion_failure@r1@detail@tbb@@YAXPBDH00@Z
+
+; ITT (tbb_profiling.cpp)
+?call_itt_notify@r1@detail@tbb@@YAXHPAX@Z
+?create_itt_sync@r1@detail@tbb@@YAXPAXPB_W1@Z
+?itt_make_task_group@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_K12W4string_resource_index@d0@23@@Z
+?itt_task_begin@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_K12W4string_resource_index@d0@23@@Z
+?itt_task_end@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@@Z
+?itt_metadata_str_add@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_KW4string_resource_index@d0@23@PBD@Z
+?itt_relation_add@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_KW4itt_relation@d0@23@12@Z
+?itt_region_begin@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_K12W4string_resource_index@d0@23@@Z
+?itt_region_end@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_K@Z
+?itt_set_sync_name@r1@detail@tbb@@YAXPAXPB_W@Z
+?itt_metadata_ptr_add@r1@detail@tbb@@YAXW4itt_domain_enum@d1@23@PAX_KW4string_resource_index@d0@23@1@Z
+
+; Allocators (tbb_allocator.cpp)
+?cache_aligned_allocate@r1@detail@tbb@@YAPAXI@Z
+?cache_aligned_deallocate@r1@detail@tbb@@YAXPAX@Z
+?cache_line_size@r1@detail@tbb@@YAIXZ
+?allocate_memory@r1@detail@tbb@@YAPAXI@Z
+?deallocate_memory@r1@detail@tbb@@YAXPAX@Z
+?is_tbbmalloc_used@r1@detail@tbb@@YA_NXZ
+
+; Small object pool (small_object_pool.cpp)
+?allocate@r1@detail@tbb@@YAPAXAAPAVsmall_object_pool@d1@23@IABUexecution_data@523@@Z
+?allocate@r1@detail@tbb@@YAPAXAAPAVsmall_object_pool@d1@23@I@Z
+?deallocate@r1@detail@tbb@@YAXAAVsmall_object_pool@d1@23@PAXIABUexecution_data@523@@Z
+?deallocate@r1@detail@tbb@@YAXAAVsmall_object_pool@d1@23@PAXI@Z
+
+; Error handling (exception.cpp)
+?throw_exception@r1@detail@tbb@@YAXW4exception_id@d0@23@@Z
+?what@bad_last_alloc@r1@detail@tbb@@UBEPBDXZ
+?what@user_abort@r1@detail@tbb@@UBEPBDXZ
+?what@missing_wait@r1@detail@tbb@@UBEPBDXZ
+
+; RTM Mutex (rtm_mutex.cpp)
+?acquire@r1@detail@tbb@@YAXAAVrtm_mutex@d1@23@AAVscoped_lock@4523@_N@Z
+?release@r1@detail@tbb@@YAXAAVscoped_lock@rtm_mutex@d1@23@@Z
+?try_acquire@r1@detail@tbb@@YA_NAAVrtm_mutex@d1@23@AAVscoped_lock@4523@@Z
+
+; RTM RW Mutex (rtm_rw_mutex.cpp)
+?acquire_reader@r1@detail@tbb@@YAXAAVrtm_rw_mutex@d1@23@AAVscoped_lock@4523@_N@Z
+?acquire_writer@r1@detail@tbb@@YAXAAVrtm_rw_mutex@d1@23@AAVscoped_lock@4523@_N@Z
+?downgrade@r1@detail@tbb@@YA_NAAVscoped_lock@rtm_rw_mutex@d1@23@@Z
+?release@r1@detail@tbb@@YAXAAVscoped_lock@rtm_rw_mutex@d1@23@@Z
+?try_acquire_reader@r1@detail@tbb@@YA_NAAVrtm_rw_mutex@d1@23@AAVscoped_lock@4523@@Z
+?try_acquire_writer@r1@detail@tbb@@YA_NAAVrtm_rw_mutex@d1@23@AAVscoped_lock@4523@@Z
+?upgrade@r1@detail@tbb@@YA_NAAVscoped_lock@rtm_rw_mutex@d1@23@@Z
+
+; Tasks and partitioners (task.cpp)
+?current_suspend_point@r1@detail@tbb@@YAPAUsuspend_point_type@123@XZ
+?resume@r1@detail@tbb@@YAXPAUsuspend_point_type@123@@Z
+?suspend@r1@detail@tbb@@YAXP6AXPAXPAUsuspend_point_type@123@@Z0@Z
+?notify_waiters@r1@detail@tbb@@YAXI@Z
+
+; Task dispatcher (task_dispatcher.cpp)
+?spawn@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@G@Z
+?spawn@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@@Z
+?execute_and_wait@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@AAVwait_context@523@1@Z
+?execution_slot@r1@detail@tbb@@YAGPBUexecution_data@d1@23@@Z
+?wait@r1@detail@tbb@@YAXAAVwait_context@d1@23@AAVtask_group_context@523@@Z
+?submit@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@PAVarena@123@I@Z
+?current_context@r1@detail@tbb@@YAPAVtask_group_context@d1@23@XZ
+
+; Task group context (task_group_context.cpp)
+?cancel_group_execution@r1@detail@tbb@@YA_NAAVtask_group_context@d1@23@@Z
+?capture_fp_settings@r1@detail@tbb@@YAXAAVtask_group_context@d1@23@@Z
+?destroy@r1@detail@tbb@@YAXAAVtask_group_context@d1@23@@Z
+?initialize@r1@detail@tbb@@YAXAAVtask_group_context@d1@23@@Z
+?is_group_execution_cancelled@r1@detail@tbb@@YA_NAAVtask_group_context@d1@23@@Z
+?reset@r1@detail@tbb@@YAXAAVtask_group_context@d1@23@@Z
+
+; Task arena (arena.cpp)
+?attach@r1@detail@tbb@@YA_NAAVtask_arena_base@d1@23@@Z
+?enqueue@r1@detail@tbb@@YAXAAVtask@d1@23@PAVtask_arena_base@523@@Z
+?execute@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@AAVdelegate_base@523@@Z
+?initialize@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@@Z
+?isolate_within_arena@r1@detail@tbb@@YAXAAVdelegate_base@d1@23@H@Z
+?max_concurrency@r1@detail@tbb@@YAHPBVtask_arena_base@d1@23@@Z
+?terminate@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@@Z
+?wait@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@@Z
+?enqueue@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@PAVtask_arena_base@523@@Z
+
+; System topology parsing and threads pinning (governor.cpp)
+?numa_node_count@r1@detail@tbb@@YAIXZ
+?fill_numa_indices@r1@detail@tbb@@YAXPAH@Z
+?core_type_count@r1@detail@tbb@@YAIH@Z
+?fill_core_type_indices@r1@detail@tbb@@YAXPAHH@Z
+?numa_default_concurrency@r1@detail@tbb@@YAHH@Z
+?constraints_default_concurrency@r1@detail@tbb@@YAHABUconstraints@d1@23@H@Z
+?constraints_threads_per_core@r1@detail@tbb@@YAHABUconstraints@d1@23@H@Z
+
+; Observer (observer_proxy.cpp)
+?observe@r1@detail@tbb@@YAXAAVtask_scheduler_observer@d1@23@_N@Z
+
+; Queuing RW Mutex (queuing_rw_mutex.cpp)
+?acquire@r1@detail@tbb@@YAXAAVqueuing_rw_mutex@d1@23@AAVscoped_lock@4523@_N@Z
+?construct@r1@detail@tbb@@YAXAAVqueuing_rw_mutex@d1@23@@Z
+?downgrade_to_reader@r1@detail@tbb@@YA_NAAVscoped_lock@queuing_rw_mutex@d1@23@@Z
+?release@r1@detail@tbb@@YAXAAVscoped_lock@queuing_rw_mutex@d1@23@@Z
+?try_acquire@r1@detail@tbb@@YA_NAAVqueuing_rw_mutex@d1@23@AAVscoped_lock@4523@_N@Z
+?upgrade_to_writer@r1@detail@tbb@@YA_NAAVscoped_lock@queuing_rw_mutex@d1@23@@Z
+?is_writer@r1@detail@tbb@@YA_NABVscoped_lock@queuing_rw_mutex@d1@23@@Z
+
+; Global control (global_control.cpp)
+?create@r1@detail@tbb@@YAXAAVglobal_control@d1@23@@Z
+?destroy@r1@detail@tbb@@YAXAAVglobal_control@d1@23@@Z
+?global_control_active_value@r1@detail@tbb@@YAIH@Z
+?get@r1@detail@tbb@@YAXAAVtask_scheduler_handle@d1@23@@Z
+?finalize@r1@detail@tbb@@YA_NAAVtask_scheduler_handle@d1@23@H@Z
+
+; Parallel pipeline (parallel_pipeline.cpp)
+?parallel_pipeline@r1@detail@tbb@@YAXAAVtask_group_context@d1@23@IABVfilter_node@523@@Z
+?set_end_of_input@r1@detail@tbb@@YAXAAVbase_filter@d1@23@@Z
+
+; Concurrent bounded queue (concurrent_bounded_queue.cpp)
+?abort_bounded_queue_monitors@r1@detail@tbb@@YAXPAVconcurrent_monitor@123@@Z
+?allocate_bounded_queue_rep@r1@detail@tbb@@YAPAEI@Z
+?deallocate_bounded_queue_rep@r1@detail@tbb@@YAXPAEI@Z
+?notify_bounded_queue_monitor@r1@detail@tbb@@YAXPAVconcurrent_monitor@123@II@Z
+?wait_bounded_queue_monitor@r1@detail@tbb@@YAXPAVconcurrent_monitor@123@IHAAVdelegate_base@d1@23@@Z
+
+; Concurrent monitor (address_waiter.cpp)
+?wait_on_address@r1@detail@tbb@@YAXPAXAAVdelegate_base@d1@23@I@Z
+?notify_by_address@r1@detail@tbb@@YAXPAXI@Z
+?notify_by_address_one@r1@detail@tbb@@YAXPAX@Z
+?notify_by_address_all@r1@detail@tbb@@YAXPAX@Z
+
+;; Versioning (version.cpp)
+TBB_runtime_interface_version
+TBB_runtime_version

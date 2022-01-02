@@ -1,0 +1,2 @@
+# LSAN suppression for ltdl library known issue.
+leak:libltdl.so
