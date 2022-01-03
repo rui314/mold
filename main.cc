@@ -7,12 +7,21 @@
 namespace mold {
 
 std::string_view errno_string() {
-  // There's a thread-safe version of strerror() (strerror_r()), but
-  // GNU and POSIX define that function differently. To avoid the mess,
-  // we simply use strerror() with a lock.
-  static std::mutex mu;
-  std::lock_guard lock(mu);
-  return strerror(errno);
+  static thread_local char buf[200];
+
+  // There are two incompatible strerror_r implementations as follows.
+  //
+  //   GNU:    char *strerror_r(int, char *, size_t)
+  //   POSIX:  int   strerror_r(int, char *, size_t)
+  //
+  // GNU version may write an error message to a buffer other than the
+  // given one and returns a pointer to the error message. POSIX version
+  // always write an error message to a given buffer.
+
+  if (std::is_same<decltype(strerror_r(errno, buf, sizeof(buf))), char *>::value)
+    return strerror_r(errno, buf, sizeof(buf));
+  strerror_r(errno, buf, sizeof(buf));
+  return buf;
 }
 
 #ifdef GIT_HASH
