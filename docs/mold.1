@@ -42,123 +42,18 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl options
-.Ar arguments
+.Ar objfile ...
 .
 .\"=============================================================================
 .Sh DESCRIPTION
 .Nm
-is a multi-threaded, high-performance linker that is
-several times faster than the industry-standard ones, namely, GNU
-.Xr ld 1 ,
-GNU
-.Xr gold 1 ,
-or LLVM
-.Xr lld 1 .
-It is developed as a drop-in replacement for these linkers and command-line \
-compatible with them with a few exceptions.
-.Pp
-Note that even though
-.Nm
-can build many userland programs,
-including large ones such as Chrome and Firefox, it is still very experimental.
-Do not use
-.Nm
-for production unless you know what you are doing.
-.Nm
-supports Linux/x86-64 and Linux/i386.
+is a faster drop-in replacement for the default GNU
+.Xr ld 1 .
 .
 .\"-----------------------------------------------------------------------------
 .Ss How to use Nm
-On Unix,
-.Xr cc 1
-(or
-.Xr gcc 1
-or
-.Xr clang 1 ,
-depending on what compiler you use) is not just a C compiler but is actually \
-a compiler driver for various kinds of input files.
-.Xr cc 1
-dispatches based on input file extensions.
-If you pass object files
-.Pf ( Li \.o
-files) to a compiler driver, the linker command, which is usually installed as
-.Pa /usr/bin/ld ,
-is invoked as a backend.
-.
-.Pp
-To use an alternative linker, you have to modify a build config file
-such as
-.Pa Makefile
-or
-.Pa cargo.toml
-to pass an appropriate option to a compiler driver which invokes a linker.
-The problem is that it is not always clear how to do that.
-In a complicated build system, it can be very hard to figure out how to \
-convince a system to use a non-standard linker.
-.
-.Pp
-To deal with the situation,
-.Nm
-provides a convenient option to force any build system to use
-.Nm .
-To use the feature, invoke
-.Xr make 1
-or a build command of your choice (such as
-.Ql cargo build )
-as follows:
-.Dl mold -run make Ar make-arguments-if-any
-.
-.Pp
-If you run a build command like above, the command runs under the influence of
-.Nm
-so that when the command tries to run
-.Pa /usr/bin/ld ,
-.Pa /usr/bin/ld.gold
-or
-.Pa /usr/bin/ld.lld ,
-.Nm
-is silently invoked instead.
-.
-.Pp
-Internally,
-.Nm
-invokes a given command with the
-.Ev LD_PRELOAD
-environment variable set to its companion shared object file.
-The shared object file intercepts all
-.Xr exec 3 Ns -family
-functions to run
-.Nm
-if another linker is attempted to be run.
-.Pp
-If you don't want to use the
-.Fl -run
-option, and if you are using
-.Xr clang 1 ,
-you can pass
-.Fl -fuse-ld Ns = Ns Ar /absolute/path/to/mold
-to
-.Xr clang 1
-to use
-.Nm .
-If you are using
-.Xr gcc 1 ,
-it looks like there's unfortunately no easy way (other than
-.Fl -run )
-to force it to use
-.Nm ,
-as
-.Xr gcc 1
-doesn't take an arbitrary pathname as an argument for
-.Fl -fuse-ld .
-.
-.Pp
-I do not recommend installing
-.Nm
-as
-.Pa /usr/bin/ld
-unless you know what you are doing.
-.
+See
+.Lk https://github.com/rui314/mold#how-to-use .
 .\"-----------------------------------------------------------------------------
 .Ss Compatibility
 .Nm
@@ -176,11 +71,11 @@ which is just sufficient to read
 on Linux systems (on Linux, that file is despite its name not a shared \
 library but an ASCII linker script that loads a real
 .Pa libc.so
-file!)
-Beyond that, I have no plan to support any linker script features.
+file.)
+Beyond that, we have no plan to support any linker script features.
 The linker script is an ad-hoc, over-designed, complex language which \
-I believe needs to be disrupted by a simpler mechanism.
-I have a plan to add a replacement for the linker script to
+we believe needs to be disrupted by a simpler mechanism.
+We have a plan to add a replacement for the linker script to
 .Nm
 instead.
 .
@@ -255,23 +150,24 @@ as well as a list of shared library names from which imported symbols
 should be imported.
 The point is that imported symbols are not bound to any specific shared \
 library until runtime.
-This is contrary to systems such as Windows that have the two-level namespace \
-for dynamic symbols.
-On Windows, for example, dynamic symbols are represented as a tuple of
-.Pq Sy symbol-name , shared-library-name ,
-so that each dynamic symbol is guaranteed to be resolved from its \
-corresponding library.
 .Pp
 Here is how the Unix dynamic linker resolves dynamic symbols.
 Upon the start of an ELF program, the dynamic linker construct a list of ELF \
-modules which as a whole consists of a complete program.
-The executable file is always at the beginning of the list, which is followed \
+modules which as a whole consist of a complete program.
+The executable file is always at the beginning of the list followed \
 by its depending shared libraries.
 An imported symbol is searched from the beginning of the list to the end.
 If two or more modules define the same symbol, the one that appears first in \
 the list takes precedence over the others.
 .Pp
-Typically, a module that exports a symbol also imports the same symbol.
+This Unix semantics are contrary to systems such as Windows that have the \
+two-level namespace for dynamic symbols.
+On Windows, for example, dynamic symbols are represented as a tuple of
+.Pq Sy symbol-name , shared-library-name ,
+so that each dynamic symbol is guaranteed to be resolved from some specific \
+library.
+.Pp
+Typically, an ELF module that exports a symbol also imports the same symbol.
 Such a symbol is usually resolved to itself, but that's not the case if a \
 module that appears before in the symbol search list provides another \
 definition of the same symbol.
@@ -284,7 +180,7 @@ Assume that you define your version of
 in your main executable file.
 Then, all
 .Sy malloc
-calls from any module are resolved to your function instead of that in in libc,
+calls from any module are resolved to your function instead of that in libc,
 because the executable is at the beginning of the dynamic symbol search list.
 Note that even
 .Xr malloc 3
@@ -299,8 +195,8 @@ in libc becomes dead code.
 Thess Unix semantics are tricky and sometimes considered harmful.
 For example, assume that you accidentally define
 .Xr atoi 3
-as a global function in your executable that behaves completely different from \
-the one in the C standard.
+as a global function in your executable that behaves completely differently \
+from the one in the C standard.
 Then, all
 .Sy atoi
 function calls from any modules (even function calls within libc) are \
@@ -310,14 +206,15 @@ That is a somewhat surprising consequence for an accidental name conflict.
 On the other hand, this semantic is sometimes considered useful because it \
 allows users to overwrite library functions without recompiling modules \
 containing them.
-Whether good or bad, you should keep this semantic in mind to understand Unix \
-linkers behaviors.
+Whether good or bad, you should keep this semantic in mind to understand the \
+Unix linkers behaviors.
 .
 .\"-----------------------------------------------------------------------------
 .Ss Build reproducibility
 .Nm Ap s
 output is deterministic.
 That is, if you pass the same object files and the same command-line options to
+the same version of
 .Nm ,
 it is guaranteed that the output is always bit-wise the same.
 The linker's internal randomness, such as the timing of thread scheduling or \
@@ -328,7 +225,6 @@ iteration orders of hash tables, doesn't affect the output.
 does not have any host-specific default settings.
 This is contrary to the GNU linkers to which some configurable values, \
 such as system-dependent library search paths, are hard-coded.
-Therefore,
 .Nm
 depends only on its command-line arguments.
 .
