@@ -19,7 +19,7 @@ std::string_view errno_string() {
   // always write an error message to a given buffer.
 
   if (std::is_same<decltype(strerror_r(errno, buf, sizeof(buf))), char *>::value)
-    return (char *)(uintptr_t)strerror_r(errno, buf, sizeof(buf));
+    return reinterpret_cast<char *>(strerror_r(errno, buf, sizeof(buf)));
   strerror_r(errno, buf, sizeof(buf));
   return buf;
 }
