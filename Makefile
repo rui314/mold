@@ -125,6 +125,11 @@ ifeq ($(ARCH), riscv64)
   LIBS += -latomic
 endif
 
+# -Wc++11-narrowing is a fatal error on Android, so disable it.
+ifeq ($(IS_ANDROID), 1)
+  CXXFLAGS += -Wno-c++11-narrowing
+endif
+
 all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
