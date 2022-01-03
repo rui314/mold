@@ -19,6 +19,11 @@ STRIP ?= strip
 OS ?= $(shell uname -s)
 ARCH ?= $(shell uname -m)
 
+IS_ANDROID = 0
+ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
+  IS_ANDROID = 1
+endif
+
 # Used for both C and C++
 COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
 
@@ -60,10 +65,8 @@ endif
 USE_MIMALLOC = 1
 ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
-else ifeq ($(OS), Linux)
-  ifeq ($(shell uname -o), Android)
-    USE_MIMALLOC = 0
-  endif
+else ifeq ($(IS_ANDROID), 1)
+  USE_MIMALLOC = 0
 else ifeq ($(ASAN), 1)
   USE_MIMALLOC = 0
 else ifeq ($(TSAN), 1)
