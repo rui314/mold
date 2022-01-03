@@ -315,7 +315,7 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
 
 template <typename E>
 void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
-  u16 next_ver = VER_NDX_LAST_RESERVED + 1;
+  u16 next_ver = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size() + 1;
 
   while (!tok.empty() && tok[0] != "}") {
     VersionPattern pat;
@@ -324,7 +324,7 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
       pat.ver_idx = VER_NDX_GLOBAL;
     } else {
       pat.ver_idx = next_ver++;
-      ctx.arg.version_definitions.push_back(tok[0]);
+      ctx.arg.version_definitions.push_back(std::string(tok[0]));
       tok = tok.subspan(1);
     }
 

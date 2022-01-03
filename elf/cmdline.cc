@@ -483,6 +483,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {
       ctx.arg.demangle = false;
+    } else if (read_flag(args, "default-symver")) {
+      ctx.arg.default_symver = true;
     } else if (read_arg(ctx, args, arg, "y") ||
                read_arg(ctx, args, arg, "trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);
@@ -886,6 +888,13 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.default_version = VER_NDX_GLOBAL;
   else
     ctx.arg.default_version = VER_NDX_LOCAL;
+
+  if (ctx.arg.default_symver) {
+    std::string ver = ctx.arg.soname.empty() ?
+      filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
+    ctx.arg.version_definitions.push_back(ver);
+    ctx.arg.default_version = VER_NDX_LAST_RESERVED + 1;
+  }
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 

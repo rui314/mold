@@ -1218,6 +1218,7 @@ struct Context {
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
     bool color_diagnostics = false;
+    bool default_symver = false;
     bool demangle = true;
     bool discard_all = false;
     bool discard_locals = false;
@@ -1284,13 +1285,13 @@ struct Context {
     std::vector<VersionPattern> version_patterns;
     std::vector<std::pair<std::string_view, std::string_view>> defsyms;
     std::vector<std::string> library_paths;
+    std::vector<std::string> version_definitions;
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
     std::vector<std::string_view> require_defined;
     std::vector<std::string_view> trace_symbol;
     std::vector<std::string_view> undefined;
-    std::vector<std::string_view> version_definitions;
     u64 image_base = 0x200000;
   } arg;
 
