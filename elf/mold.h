@@ -1305,6 +1305,9 @@ struct Context {
   tbb::task_group tg;
 
   bool has_error = false;
+  bool gcc_lto = false;
+  bool llvm_lto = false;
+
   i64 page_size = -1;
 
   // Symbol table

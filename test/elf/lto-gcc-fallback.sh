@@ -9,10 +9,14 @@ t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
 cat <<EOF | gcc -flto -c -o "$t"/a.o -xc -
-int main() {}
+#include <stdio.h>
+int main() {
+  printf("Hello world\n");
+}
 EOF
 
-! clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o &> "$t"/log
-grep -q '.*/a.o: .*mold does not support LTO' "$t"/log
+gcc -B"$(pwd)" -o "$t"/exe "$t"/a.o >& "$t"/log
+grep -q 'falling back' "$t"/log
+"$t"/exe | grep -q 'Hello world'
 
 echo OK

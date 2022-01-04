@@ -89,8 +89,10 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     parse_linker_script(ctx, mf);
     return;
   case FileType::LLVM_BITCODE:
-    Fatal(ctx) << mf->name << ": looks like this is an LLVM bitcode, "
-               << "but mold does not support LTO";
+    Warn(ctx) << mf->name << ": looks like this is an LLVM bitcode, "
+              << "but mold does not support LTO";
+    ctx.llvm_lto = true;
+    return;
   default:
     Fatal(ctx) << mf->name << ": unknown file type: " << type;
   }
@@ -435,6 +437,23 @@ static int elf_main(int argc, char **argv) {
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_symbols(ctx);
+
+  // We currently do not natively support LTO.
+  // If LLVM LTO is in use, fallback to the lld linker by invoking
+  // it with the exact same command line arguments as we got.
+  if (ctx.llvm_lto) {
+    Warn(ctx) << "LLVM LTO is detected, so falling back to ld.lld";
+    argv[0] = (char *)"ld.lld";
+    execvp("ld.lld", argv);
+    Fatal(ctx) << "execvp failed: ld.lld: " << errno_string();
+  }
+
+  // Do the same for GCC LTO.
+  if (ctx.gcc_lto) {
+    Warn(ctx) << "GCC LTO is detected, so falling back to ld.bfd";
+    execvp("ld.bfd", argv);
+    Fatal(ctx) << "execvp failed: ld.bfd: " << errno_string();
+  }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
   eliminate_comdats(ctx);
