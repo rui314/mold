@@ -8,6 +8,8 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
+which ld.lld >& /dev/null || { echo skipped; exit 0; }
+
 cat <<EOF | clang -flto -c -o "$t"/a.o -xc -
 #include <stdio.h>
 int main() {
