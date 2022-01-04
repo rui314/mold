@@ -110,8 +110,10 @@ else
 endif
 
 ifeq ($(OS), Linux)
-  # glibc versions before 2.17 need librt for clock_gettime
-  LIBS += -lrt
+  ifeq ($(IS_ANDROID), 0)
+    # glibc before 2.17 need librt for clock_gettime
+    LIBS += -lrt
+  endif
 endif
 
 ifneq ($(OS), Darwin)
