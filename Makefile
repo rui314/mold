@@ -116,8 +116,9 @@ ifeq ($(OS), Linux)
   endif
 endif
 
+# Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
-  LIBS += -lcrypto
+  LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
 endif
 
 # '-latomic' flag is needed building on riscv64 system
