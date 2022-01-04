@@ -58,6 +58,14 @@ ifeq ($(LTO), 1)
   LDFLAGS  += -flto
 endif
 
+# Allow overriding the default ELF emulation and the default Mach-O architecture
+ifdef DEFAULT_ELF_EMULATION
+  CPPFLAGS += -DDEFAULT_ELF_EMULATION=$(DEFAULT_ELF_EMULATION)
+endif
+ifdef DEFAULT_MACHO_ARCH
+  CPPFLAGS += -DDEFAULT_MACHO_ARCH=$(DEFAULT_MACHO_ARCH)
+endif
+
 # By default, we want to use mimalloc as a memory allocator. mimalloc
 # is disabled when ASAN or TSAN is on, as they are not compatible.
 # It's also disabled on macOS and Android because it didn't work on

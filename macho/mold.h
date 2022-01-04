@@ -11,6 +11,10 @@
 #include <unordered_map>
 #include <variant>
 
+#ifndef DEFAULT_MACHO_ARCH
+#  define DEFAULT_MACHO_ARCH CPU_TYPE_ARM64
+#endif
+
 namespace mold::macho {
 
 static constexpr i64 COMMON_PAGE_SIZE = 0x4000;
@@ -775,7 +779,7 @@ struct Context {
     bool dynamic = true;
     bool fatal_warnings = false;
     bool trace = false;
-    i64 arch = CPU_TYPE_ARM64;
+    i64 arch = DEFAULT_MACHO_ARCH;
     i64 headerpad = 256;
     i64 pagezero_size = 0;
     i64 platform = PLATFORM_MACOS;

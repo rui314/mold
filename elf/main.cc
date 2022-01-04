@@ -346,6 +346,8 @@ static int elf_main(int argc, char **argv) {
     switch (ctx.arg.emulation) {
     case EM_386:
       return elf_main<I386>(argc, argv);
+    case EM_X86_64:
+      return elf_main<X86_64>(argc, argv);
     case EM_AARCH64:
       return elf_main<ARM64>(argc, argv);
     }

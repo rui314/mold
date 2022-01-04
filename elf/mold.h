@@ -29,6 +29,10 @@
 #include <vector>
 #include <xxh3.h>
 
+#ifndef DEFAULT_ELF_EMULATION
+#  define DEFAULT_ELF_EMULATION EM_X86_64
+#endif
+
 template<>
 class tbb::tbb_hash_compare<std::string_view> {
 public:
@@ -1264,7 +1268,7 @@ struct Context {
     bool z_relro = true;
     bool z_text = false;
     u16 default_version = VER_NDX_GLOBAL;
-    i64 emulation = EM_X86_64;
+    i64 emulation = DEFAULT_ELF_EMULATION;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
