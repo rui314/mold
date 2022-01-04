@@ -8,8 +8,21 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
+case "$(uname -m)" in
+i386 | i686 | x86_64)
+  jump=jmp
+  ;;
+aarch64)
+  jump=b
+  ;;
+*)
+  echo skipped
+  exit 0
+  ;;
+esac
+
 cat <<EOF | cc -o "$t"/a.o -c -x assembler -
-foo: jmp 0
+foo: $jump 0
 EOF
 
 cat <<EOF | cc -o "$t"/b.o -c -xc -
