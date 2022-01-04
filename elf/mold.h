@@ -1687,7 +1687,7 @@ InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
   u8 *begin = mf->data + shdr.sh_offset;
   u8 *end = begin + shdr.sh_size;
   if (mf->data + mf->size < end)
-    Fatal(ctx) << *this << ": shdr corrupted";
+    Fatal(ctx) << *this << ": section header is out of range: " << shdr.sh_offset;
   return {(char *)begin, (size_t)(end - begin)};
 }
 
