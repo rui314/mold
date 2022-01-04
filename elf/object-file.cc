@@ -342,7 +342,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
       cies.push_back(CieRecord<E>(ctx, *this, isec, begin_offset, rel_begin));
     } else {
       // This is FDE.
-      if (rel_begin == rel_idx) {
+      if (rel_begin == rel_idx || rels[rel_begin].r_sym == 0) {
         // FDE has no valid relocation, which means FDE is dead from
         // the beginning. Compilers usually don't create such FDE, but
         // `ld -r` tend to generate such dead FDEs.
