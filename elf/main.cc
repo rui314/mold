@@ -103,6 +103,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 template <typename E>
 static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   switch (get_file_type(mf)) {
+  case FileType::ELF_OBJ:
   case FileType::ELF_DSO:
     return ((ElfEhdr<E> *)mf->data)->e_machine;
   case FileType::AR:
@@ -120,6 +121,17 @@ static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   default:
     return -1;
   }
+}
+
+template <typename E>
+static i64
+deduce_machine_type(Context<E> &ctx, std::span<std::string_view> args) {
+  for (std::string_view arg : args)
+    if (!arg.starts_with('-'))
+      if (auto *mf = MappedFile<Context<E>>::open(ctx, std::string(arg)))
+        if (i64 type = get_machine_type(ctx, mf); type != -1)
+          return type;
+  Fatal(ctx) << "-m option is missing";
 }
 
 template <typename E>
@@ -340,6 +352,10 @@ static int elf_main(int argc, char **argv) {
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
+
+  // If no -m option is given, deduce it from input files.
+  if (ctx.arg.emulation == -1)
+    ctx.arg.emulation = deduce_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
   if (ctx.arg.emulation != E::e_machine) {
