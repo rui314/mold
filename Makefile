@@ -28,10 +28,10 @@ endif
 COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
 
 CFLAGS ?= -O2
-CFLAGS += $(COMMON_FLAGS)
+CFLAGS += $(COMMON_FLAGS) $(EXTRA_CFLAGS)
 
 CXXFLAGS ?= -O2
-CXXFLAGS += $(COMMON_FLAGS) -std=c++20 -fno-exceptions
+CXXFLAGS += $(COMMON_FLAGS) $(EXTRA_CXXFLAGS) -std=c++20 -fno-exceptions
 CPPFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -ldl -lm
 
