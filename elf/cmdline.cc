@@ -161,8 +161,8 @@ Options:
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64
-mold: supported emulations: elf_i386 elf_x86_64)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf64-littleaarch64
+mold: supported emulations: elf_i386 elf_x86_64 aarch64linux aarch64elf)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Multi-letter linker options can be preceded by either a single
