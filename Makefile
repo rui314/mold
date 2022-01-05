@@ -112,6 +112,7 @@ endif
 
 # Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
+  CPPFLAGS += $(shell pkg-config --cflags-only-I openssl)
   LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
 endif
 
