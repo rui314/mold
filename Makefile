@@ -14,6 +14,8 @@ ifeq ($(origin CXX), default)
   CXX = clang++
 endif
 
+# If you want to keep symbols in the installed binary, run make with
+# `STRIP=true` to run /bin/true instead of the strip command.
 STRIP ?= strip
 
 OS ?= $(shell uname -s)
