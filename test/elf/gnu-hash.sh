@@ -8,14 +8,12 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | c++ -o "$t"/exe -Wl,-hash-style=gnu -xc++ -
-#include <iostream>
-
-int main() {
-  std::cout << "foo\n";
-}
+cat <<EOF | cc -c -o "$t"/a.o -xc -
+void foo() {}
+void bar() {}
+static void baz() {}
 EOF
 
-"$t"/exe | grep -q foo
+clang -fuse-ld="$mold" -o "$t"/b.so "$t"/a.o -Wl,-hash-style=gnu -shared
 
 echo OK

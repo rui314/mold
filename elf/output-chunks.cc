@@ -950,14 +950,20 @@ template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
 
-  // In any symtab, local symbols must precede global symbols.
-  auto first_global = std::stable_partition(symbols.begin() + 1, symbols.end(),
-                                            [](Symbol<E> *sym) {
+  auto is_local = [](Symbol<E> *sym) {
     return !sym->is_imported && !sym->is_exported;
+  };
+
+  // In any symtab, local symbols must precede global symbols.
+  // We also place undefined symbols before defined symbols for .gnu.hash.
+  sort(symbols.begin() + 1, symbols.end(), [&](Symbol<E> *a, Symbol<E> *b) {
+    if (auto x = (is_local(a) <=> is_local(b)); x != 0)
+      return x > 0;
+    return a->is_exported < b->is_exported;
   });
 
-  i64 global_offset = first_global - symbols.begin();
-  i64 num_globals = symbols.end() - first_global;
+  auto first_global = std::partition_point(symbols.begin() + 1, symbols.end(),
+                                           is_local);
 
   // If we have .gnu.hash section, we need to sort .dynsym contents by
   // symbol hashes.
@@ -970,11 +976,17 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
       i32 idx;
     };
 
-    std::vector<T> vec(num_globals);
-    ctx.gnu_hash->num_buckets = num_globals / ctx.gnu_hash->LOAD_FACTOR + 1;
+    auto first_exported = std::partition_point(
+      first_global, symbols.end(), [](Symbol<E> *x) { return !x->is_exported; });
 
-    tbb::parallel_for((i64)0, num_globals, [&](i64 i) {
-      Symbol<E> *sym = symbols[global_offset + i];
+    i64 base_offset = first_exported - symbols.begin();
+    i64 num_exported = symbols.end() - first_exported;
+
+    std::vector<T> vec(num_exported);
+    ctx.gnu_hash->num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
+
+    tbb::parallel_for((i64)0, num_exported, [&](i64 i) {
+      Symbol<E> *sym = symbols[base_offset + i];
       vec[i].sym = sym;
       vec[i].hash = djb_hash(sym->name()) % ctx.gnu_hash->num_buckets;
       vec[i].idx = i;
@@ -984,8 +996,8 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
       return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
     });
 
-    for (i64 i = 0; i < num_globals; i++)
-      symbols[global_offset + i] = vec[i].sym;
+    for (i64 i = 0; i < num_exported; i++)
+      symbols[base_offset + i] = vec[i].sym;
   }
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
@@ -996,7 +1008,7 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
   }
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
-  this->shdr.sh_info = global_offset;
+  this->shdr.sh_info = first_global - symbols.begin();
 }
 
 template <typename E>
@@ -1089,23 +1101,34 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+std::span<Symbol<E> *>
+GnuHashSection<E>::get_exported_symbols(Context<E> &ctx) {
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
+  auto it = std::partition_point(syms.begin() + 1, syms.end(), [](Symbol<E> *sym) {
+    return !sym->is_exported;
+  });
+
+  return {it, syms.end()};
+}
+
+template <typename E>
 void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.dynsym->symbols.empty())
     return;
 
   this->shdr.sh_link = ctx.dynsym->shndx;
 
-  i64 num_globals = ctx.dynsym->symbols.size() - ctx.dynsym->shdr.sh_info;
-  if (num_globals) {
+  i64 num_exported = get_exported_symbols(ctx).size();
+  if (num_exported) {
     // We allocate 12 bits for each symbol in the bloom filter.
-    i64 num_bits = num_globals * 12;
+    i64 num_bits = num_exported * 12;
     num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
   }
 
-  this->shdr.sh_size = HEADER_SIZE;              // Header
+  this->shdr.sh_size = HEADER_SIZE;               // Header
   this->shdr.sh_size += num_bloom * E::word_size; // Bloom filter
-  this->shdr.sh_size += num_buckets * 4;         // Hash buckets
-  this->shdr.sh_size += num_globals * 4;         // Hash values
+  this->shdr.sh_size += num_buckets * 4;          // Hash buckets
+  this->shdr.sh_size += num_exported * 4;         // Hash values
 }
 
 template <typename E>
@@ -1113,18 +1136,17 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memset(base, 0, this->shdr.sh_size);
 
-  i64 symoffset = ctx.dynsym->shdr.sh_info;
+  std::span<Symbol<E> *> syms = get_exported_symbols(ctx);
+  i64 exported_offset = ctx.dynsym->symbols.size() - syms.size();
+
   *(u32 *)base = num_buckets;
-  *(u32 *)(base + 4) = symoffset;
+  *(u32 *)(base + 4) = exported_offset;
   *(u32 *)(base + 8) = num_bloom;
   *(u32 *)(base + 12) = BLOOM_SHIFT;
 
-  std::span<Symbol<E> *> symbols =
-    std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(symoffset);
-
-  std::vector<u32> hashes(symbols.size());
-  for (i64 i = 0; i < symbols.size(); i++)
-    hashes[i] = djb_hash(symbols[i]->name());
+  std::vector<u32> hashes(syms.size());
+  for (i64 i = 0; i < syms.size(); i++)
+    hashes[i] = djb_hash(syms[i]->name());
 
   // Write a bloom filter
   typename E::WordTy *bloom = (typename E::WordTy *)(base + HEADER_SIZE);
@@ -1139,14 +1161,14 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 0; i < hashes.size(); i++) {
     i64 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
-      buckets[idx] = i + symoffset;
+      buckets[idx] = i + exported_offset;
   }
 
   // Write a hash table
   u32 *table = buckets + num_buckets;
-  for (i64 i = 0; i < symbols.size(); i++) {
+  for (i64 i = 0; i < syms.size(); i++) {
     bool is_last = false;
-    if (i == symbols.size() - 1 ||
+    if (i == syms.size() - 1 ||
         (hashes[i] % num_buckets) != (hashes[i + 1] % num_buckets))
       is_last = true;
 

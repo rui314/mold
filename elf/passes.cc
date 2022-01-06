@@ -509,14 +509,6 @@ void scan_rels(Context<E> &ctx) {
   // Exit if there was a relocation that refers an undefined symbol.
   ctx.checkpoint();
 
-  // Add symbol aliases for COPYREL.
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols)
-      if (sym->file == file && (sym->flags & NEEDS_COPYREL))
-        for (Symbol<E> *alias : file->find_aliases(sym))
-          alias->is_imported = true;
-  });
-
   // Aggregate dynamic symbols to a single vector.
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
@@ -546,15 +538,19 @@ void scan_rels(Context<E> &ctx) {
       ctx.got->add_got_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_PLT) {
-      if (sym->flags & NEEDS_GOT) {
+      bool is_canonical = (!ctx.arg.pic && sym->is_imported);
+
+      // If a symbol needs a canonical PLT, it is considered both
+      // imported and exported.
+      if (is_canonical)
+        sym->is_exported = true;
+
+      if ((sym->flags & NEEDS_GOT) && !is_canonical) {
+        ctx.pltgot->add_symbol(ctx, sym);
+      } else{
         // If we need to create a canonical PLT, we can't use .plt.got
         // because otherwise .plt.got and .got would refer each other,
         // resulting in an infinite loop at runtime.
-        if (!ctx.arg.pic && sym->is_imported)
-          ctx.plt->add_symbol(ctx, sym);
-        else
-          ctx.pltgot->add_symbol(ctx, sym);
-      } else {
         ctx.plt->add_symbol(ctx, sym);
       }
     }
@@ -581,7 +577,15 @@ void scan_rels(Context<E> &ctx) {
       else
         ctx.dynbss->add_symbol(ctx, sym);
 
+      // If a symbol needs copyrel, it is considered both imported
+      // and exported.
+      sym->is_exported = true;
+
+      // Aliases of this symbol are also copied so that they will be
+      // resolved to the same address at runtime.
       for (Symbol<E> *alias : file->find_aliases(sym)) {
+        alias->is_imported = true;
+        alias->is_exported = true;
         alias->has_copyrel = true;
         alias->value = sym->value;
         alias->copyrel_readonly = sym->copyrel_readonly;

@@ -15,7 +15,7 @@ clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o
 readelf --dynamic "$t"/exe > "$t"/log
 grep -Pq 'Shared library:.*\blibc.so\b' "$t"/log
 
-readelf -W --symbols --use-dynamic "$t"/exe > "$t"/log2
+readelf -W --dyn-syms --use-dynamic "$t"/exe > "$t"/log2
 grep -Pq 'FUNC\s+GLOBAL\s+DEFAULT\s+UND\s+__libc_start_main' "$t"/log2
 
 cat <<EOF | clang -c -fPIC -o "$t"/b.o -xc -
