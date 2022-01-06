@@ -1364,7 +1364,7 @@ void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
       sym.is_weak = true;
-      sym.is_imported = true;
+      sym.is_imported = false;
       sym.is_exported = false;
 
       if (sym.traced)

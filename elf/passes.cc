@@ -514,7 +514,7 @@ void scan_rels(Context<E> &ctx) {
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file && (sym->flags & NEEDS_COPYREL))
         for (Symbol<E> *alias : file->find_aliases(sym))
-          alias->flags |= NEEDS_DYNSYM;
+          alias->is_imported = true;
   });
 
   // Aggregate dynamic symbols to a single vector.
@@ -525,12 +525,10 @@ void scan_rels(Context<E> &ctx) {
   std::vector<std::vector<Symbol<E> *>> vec(files.size());
 
   tbb::parallel_for((i64)0, (i64)files.size(), [&](i64 i) {
-    for (Symbol<E> *sym : files[i]->symbols) {
-      if (!files[i]->is_dso && (sym->is_imported || sym->is_exported))
-        sym->flags |= NEEDS_DYNSYM;
-      if (sym->file == files[i] && sym->flags)
-        vec[i].push_back(sym);
-    }
+    for (Symbol<E> *sym : files[i]->symbols)
+      if (sym->file == files[i])
+        if (sym->flags || sym->is_imported || sym->is_exported)
+          vec[i].push_back(sym);
   });
 
   std::vector<Symbol<E> *> syms = flatten(vec);
@@ -541,7 +539,7 @@ void scan_rels(Context<E> &ctx) {
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    if (sym->flags & NEEDS_DYNSYM)
+    if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_GOT)
@@ -716,16 +714,23 @@ void compute_import_export(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
-      if (sym->file != file || sym->visibility == STV_HIDDEN ||
+      if (!sym->file || sym->visibility == STV_HIDDEN ||
           sym->ver_idx == VER_NDX_LOCAL)
         continue;
 
-      sym->is_exported = true;
-
-      if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
-          !ctx.arg.Bsymbolic &&
-          !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+      if (sym->file != file && sym->file->is_dso) {
         sym->is_imported = true;
+        continue;
+      }
+
+      if (sym->file == file) {
+        sym->is_exported = true;
+
+        if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
+            !ctx.arg.Bsymbolic &&
+            !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+          sym->is_imported = true;
+      }
     }
   });
 }

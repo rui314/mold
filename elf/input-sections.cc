@@ -126,12 +126,14 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       error();
       return;
     }
+
     if (sym.esym().st_visibility == STV_PROTECTED) {
       Error(ctx) << *this
                  << ": cannot make copy relocation for protected symbol '"
                  << sym << "', defined in " << *sym.file;
       return;
     }
+
     sym.flags |= NEEDS_COPYREL;
     return;
   case PLT:
@@ -145,7 +147,8 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       }
       ctx.has_textrel = true;
     }
-    sym.flags |= NEEDS_DYNSYM;
+
+    assert(sym.is_imported);
     needs_dynrel[i] = true;
     file.num_dynrel++;
     return;
@@ -157,6 +160,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       }
       ctx.has_textrel = true;
     }
+
     needs_baserel[i] = true;
     file.num_dynrel++;
     return;

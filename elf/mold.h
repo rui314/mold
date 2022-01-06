@@ -1436,8 +1436,7 @@ enum {
   NEEDS_TLSGD    = 1 << 3,
   NEEDS_TLSLD    = 1 << 4,
   NEEDS_COPYREL  = 1 << 5,
-  NEEDS_DYNSYM   = 1 << 6,
-  NEEDS_TLSDESC  = 1 << 7,
+  NEEDS_TLSDESC  = 1 << 6,
 };
 
 // Symbol class represents a defined symbol.
