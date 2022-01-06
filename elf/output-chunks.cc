@@ -771,9 +771,6 @@ void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_got_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size;
   got_syms.push_back(sym);
-
-  if (sym->is_imported)
-    ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -781,9 +778,6 @@ void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_gottp_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size;
   gottp_syms.push_back(sym);
-
-  if (sym->is_imported)
-    ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
