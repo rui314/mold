@@ -1185,6 +1185,7 @@ MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
   name = get_output_name(ctx, name);
+  flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
 
   auto find = [&]() -> MergedSection * {
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
