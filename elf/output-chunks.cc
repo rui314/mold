@@ -1101,8 +1101,7 @@ GnuHashSection<E>::get_exported_symbols(Context<E> &ctx) {
   auto it = std::partition_point(syms.begin() + 1, syms.end(), [](Symbol<E> *sym) {
     return !sym->is_exported;
   });
-
-  return {it, syms.end()};
+  return syms.subspan(it - syms.begin());
 }
 
 template <typename E>
