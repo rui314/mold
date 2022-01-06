@@ -1419,7 +1419,7 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-std::string glob_to_regex(std::string_view pat);
+std::optional<std::string> glob_to_regex(std::string_view pat);
 
 int main(int argc, char **argv);
 

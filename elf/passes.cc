@@ -600,16 +600,23 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
-  auto to_regex = [](std::span<std::string_view> vec) -> std::string {
+  auto to_regex = [&](std::string_view pat) {
+    if (std::optional<std::string> re = glob_to_regex(pat))
+      return *re;
+    Error(ctx) << "invalid version pattern: " << pat;
+    return ""s;
+  };
+
+  auto vec_to_regex = [&](std::span<std::string_view> vec) -> std::string {
     switch (vec.size()) {
     case 0:
       return "";
     case 1:
-      return glob_to_regex(vec[0]);
+      return to_regex(vec[0]);
     default:
-      std::string re = glob_to_regex(vec[0]);
+      std::string re = to_regex(vec[0]);
       for (std::string_view s : vec.subspan(1))
-        re += "|" + glob_to_regex(s);
+        re += "|" + to_regex(s);
       return re;
     }
   };
@@ -618,7 +625,7 @@ void apply_version_script(Context<E> &ctx) {
     std::vector<std::string_view> vec;
 
     for (std::string_view pat : elem.patterns) {
-      if (pat.find_first_of("*?") == pat.npos) {
+      if (pat.find_first_of("*?[") == pat.npos) {
         Symbol<E> *sym = get_symbol(ctx, pat);
         if (sym->file && !sym->file->is_dso)
           sym->ver_idx = elem.ver_idx;
@@ -632,8 +639,9 @@ void apply_version_script(Context<E> &ctx) {
 
     auto flags = std::regex_constants::extended | std::regex_constants::optimize |
                  std::regex_constants::nosubs;
-    std::regex re(to_regex(vec), flags);
-    std::regex cpp_re(to_regex(elem.cpp_patterns), flags);
+
+    std::regex re(vec_to_regex(vec), flags);
+    std::regex cpp_re(vec_to_regex(elem.cpp_patterns), flags);
 
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       for (Symbol<E> *sym : file->get_global_syms()) {

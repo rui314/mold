@@ -16,23 +16,40 @@
 
 namespace mold::elf {
 
-std::string glob_to_regex(std::string_view pattern) {
+std::optional<std::string> glob_to_regex(std::string_view pat) {
   std::stringstream ss;
-  for (char c : pattern) {
-    switch (c) {
-    case '.': case '[': case ']': case '^':
-    case '$': case '\\': case '(': case ')':
+  for (i64 i = 0; i < pat.size(); i++) {
+    switch (pat[i]) {
+    case '.': case '^': case '$': case '\\': case '(': case ')':
     case '+': case '|':
-      ss << "\\" << c;
+      ss << '\\' << pat[i];
       break;
     case '*':
       ss << ".*";
       break;
     case '?':
-      ss << ".";
+      ss << '.';
       break;
+    case '[': {
+      ss << '[';
+      for (i++; i < pat.size(); i++) {
+        if (pat[i] == ']') {
+          ss << ']';
+          break;
+        }
+        if (pat[i] == '\\') {
+          i++;
+          if (pat.size() <= i)
+            return {};
+        }
+        ss << pat[i];
+      }
+      if (i == pat.size())
+        return {};
+      break;
+    }
     default:
-      ss << c;
+      ss << pat[i];
       break;
     }
   }
