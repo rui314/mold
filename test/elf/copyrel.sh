@@ -20,15 +20,14 @@ int main() {
 }
 EOF
 
-cat <<EOF | cc -o "$t"/b.o -c -x assembler -
-  .globl foo, bar
-  .data;
-foo:
-bar:
-  .long 42
+cat <<EOF | cc -fPIC -o "$t"/b.o -c -xc -
+int foo = 42;
+extern int bar __attribute__((alias("foo")));
+extern int baz __attribute__((alias("foo")));
 EOF
 
-clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/a.o "$t"/b.o
+clang -fuse-ld="$mold" -shared -o "$t"/c.so "$t"/b.o
+clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/a.o "$t"/c.so
 "$t"/exe | grep -q '42 42 1'
 
 echo OK

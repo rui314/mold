@@ -523,13 +523,21 @@ void scan_rels(Context<E> &ctx) {
   });
 
   std::vector<Symbol<E> *> syms = flatten(vec);
+  ctx.symbol_aux.reserve(syms.size());
 
-  ctx.symbol_aux.resize(syms.size());
-  for (i64 i = 0; i < syms.size(); i++)
-    syms[i]->aux_idx = i;
+  auto add_aux = [&](Symbol<E> *sym) {
+    if (sym->aux_idx == -1) {
+      i64 sz = ctx.symbol_aux.size();
+      sym->aux_idx = sz;
+      ctx.symbol_aux.resize(sz + 1);
+    }
+  };
+
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
+    add_aux(sym);
+
     if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
 
@@ -583,6 +591,7 @@ void scan_rels(Context<E> &ctx) {
       // Aliases of this symbol are also copied so that they will be
       // resolved to the same address at runtime.
       for (Symbol<E> *alias : file->find_aliases(sym)) {
+        add_aux(alias);
         alias->is_imported = true;
         alias->is_exported = true;
         alias->has_copyrel = true;
