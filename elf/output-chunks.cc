@@ -814,7 +814,7 @@ template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (Symbol<E> *sym : got_syms)
-    if (sym->is_imported || (ctx.arg.pic && sym->is_relative(ctx)) ||
+    if (sym->is_imported || (ctx.arg.pic && sym->is_relative()) ||
         sym->get_type() == STT_GNU_IFUNC)
       n++;
 
@@ -852,7 +852,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
         buf[sym->get_got_idx(ctx)] = resolver_addr;
     } else {
       buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
-      if (ctx.arg.pic && sym->is_relative(ctx))
+      if (ctx.arg.pic && sym->is_relative())
         *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
     }
   }

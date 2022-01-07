@@ -1483,8 +1483,8 @@ public:
   bool has_got(Context<E> &ctx) const;
 
   bool is_alive() const;
-  bool is_absolute(Context<E> &ctx) const;
-  bool is_relative(Context<E> &ctx) const;
+  bool is_absolute() const;
+  bool is_relative() const;
 
   u32 get_type() const;
   std::string_view get_version() const;
@@ -1936,15 +1936,15 @@ inline bool Symbol<E>::is_alive() const {
 }
 
 template <typename E>
-inline bool Symbol<E>::is_absolute(Context<E> &ctx) const {
+inline bool Symbol<E>::is_absolute() const {
   if (file->is_dso)
     return esym().is_abs();
   return !is_imported && !get_frag() && !shndx && !input_section;
 }
 
 template <typename E>
-inline bool Symbol<E>::is_relative(Context<E> &ctx) const {
-  return !is_absolute(ctx);
+inline bool Symbol<E>::is_relative() const {
+  return !is_absolute();
 }
 
 template <typename E>

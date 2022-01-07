@@ -596,7 +596,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
       bool do_relax = ctx.arg.relax && !sym.is_imported &&
-                      sym.is_relative(ctx) && relax_gotpcrelx(loc - 2);
+                      sym.is_relative() && relax_gotpcrelx(loc - 2);
       if (!do_relax)
         sym.flags |= NEEDS_GOT;
       break;
@@ -606,7 +606,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
       bool do_relax = ctx.arg.relax && !sym.is_imported &&
-                      sym.is_relative(ctx) && relax_rex_gotpcrelx(loc - 3);
+                      sym.is_relative() && relax_rex_gotpcrelx(loc - 3);
       if (!do_relax)
         sym.flags |= NEEDS_GOT;
       break;

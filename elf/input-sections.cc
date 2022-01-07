@@ -59,8 +59,8 @@ static i64 get_output_type(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
-  if (sym.is_absolute(ctx))
+static i64 get_sym_type(Symbol<E> &sym) {
+  if (sym.is_absolute())
     return 0;
   if (!sym.is_imported)
     return 1;
@@ -72,7 +72,7 @@ static i64 get_sym_type(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                                const ElfRel<E> &rel, Symbol<E> &sym) {
-  Action action = table[get_output_type(ctx)][get_sym_type(ctx, sym)];
+  Action action = table[get_output_type(ctx)][get_sym_type(sym)];
   bool is_code = (shdr.sh_flags & SHF_EXECINSTR);
   bool is_writable = (shdr.sh_flags & SHF_WRITE);
 
