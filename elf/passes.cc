@@ -919,11 +919,9 @@ i64 set_osec_offsets(Context<E> &ctx) {
 
 template <typename E>
 static i64 get_num_irelative_relocs(Context<E> &ctx) {
-  i64 n = 0;
-  for (Symbol<E> *sym : ctx.got->got_syms)
-    if (sym->get_type() == STT_GNU_IFUNC)
-      n++;
-  return n;
+  return std::count_if(
+    ctx.got->got_syms.begin(), ctx.got->got_syms.end(),
+    [](Symbol<E> *sym) { return sym->get_type() == STT_GNU_IFUNC; });
 }
 
 template <typename E>
