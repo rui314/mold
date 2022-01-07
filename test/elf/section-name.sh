@@ -58,11 +58,6 @@ _start:
 .ascii ".rodata "
 .section .rodata.foo
 .ascii ".rodata.foo "
-
-.section .gcc_except_table
-.ascii ".gcc_except_table "
-.section .gcc_except_table.foo,"a"
-.ascii ".gcc_except_table.foo "
 EOF
 
 "$mold" -o "$t"/exe "$t"/a.o -z keep-text-section-prefix
@@ -76,7 +71,6 @@ readelf -p .text "$t"/exe | fgrep -q '.text .text.foo'
 readelf -p .data.rel.ro "$t"/exe | fgrep -q '.data.rel.ro .data.rel.ro.foo'
 readelf -p .data "$t"/exe | fgrep -q '.data .data.foo'
 readelf -p .rodata "$t"/exe | fgrep -q '.rodata .rodata.foo'
-readelf -p .gcc_except_table "$t"/exe | fgrep -q '.gcc_except_table .gcc_except_table.foo'
 
 "$mold" -o "$t"/exe "$t"/a.o
 ! readelf --sections "$t"/exe | fgrep -q .text.hot || false
