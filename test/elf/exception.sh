@@ -31,6 +31,9 @@ clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -Wl,--gc-sections
 clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -static -Wl,--gc-sections
 "$t"/exe
 
+clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -mcmodel=large
+"$t"/exe
+
 clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -static -mcmodel=large
 "$t"/exe
 

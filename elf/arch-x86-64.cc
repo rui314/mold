@@ -258,6 +258,9 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     case R_X86_64_PLT32:
       write32s(S + A - P);
       continue;
+    case R_X86_64_PLTOFF64:
+      write64(S + A - GOT);
+      break;
     case R_X86_64_GOT32:
       write32s(G + A);
       continue;
@@ -609,6 +612,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
       break;
     }
     case R_X86_64_PLT32:
+    case R_X86_64_PLTOFF64:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
