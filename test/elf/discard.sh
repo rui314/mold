@@ -8,7 +8,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/a.o -c -x assembler -Wa,--keep-locals -
+cat <<EOF | cc -o "$t"/a.o -c -x assembler -Wa,-L -
   .text
   .globl _start
 _start:

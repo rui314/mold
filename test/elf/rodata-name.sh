@@ -18,7 +18,7 @@ val1:
 .section .rodata.str4.4,"aMS",@progbits,4
 .align 4
 val2:
-.ascii "world  \0\0\0\0"
+.ascii "world   \0\0\0\0"
 
 .section .rodata.cst8,"aM",@progbits,8
 .align 8

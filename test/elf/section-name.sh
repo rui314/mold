@@ -61,7 +61,7 @@ _start:
 
 .section .gcc_except_table
 .ascii ".gcc_except_table "
-.section .gcc_except_table.foo
+.section .gcc_except_table.foo,"a"
 .ascii ".gcc_except_table.foo "
 EOF
 

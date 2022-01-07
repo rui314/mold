@@ -18,7 +18,7 @@ cat <<EOF | cc -shared -o "$t"/b.so -xc -
 void expfn1();
 void expfn2() {}
 
-int foo() {
+void foo() {
   expfn1();
 }
 EOF

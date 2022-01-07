@@ -8,27 +8,35 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -c -o "$t"/a.o -x assembler -Wa,-no-warn -
-.globl init1, init2, fini1, fini2
+cat <<EOF | cc -c -o "$t"/a.o -x assembler -
+.globl init1, fini1
 
-.section .init_array,"aw",@progbits
+.section .INIT_ARRAY,"aw",@progbits
 .p2align 3
 .quad init1
+
+.section .FINI_ARRAY,"aw",@progbits
+.p2align 3
+.quad fini1
+EOF
+
+# GNU as complains if we set PROGBITS to .{init,fini}_array, so we
+# rewrite the section names after GNU as generates an object file.
+sed -i 's/INIT_ARRAY/init_array/g; s/FINI_ARRAY/fini_array/g;' "$t"/a.o
+
+cat <<EOF | cc -c -o "$t"/b.o -x assembler -
+.globl init2, fini2
 
 .section .init_array,"aw",@init_array
 .p2align 3
 .quad init2
-
-.section .fini_array,"aw",@progbits
-.p2align 3
-.quad fini1
 
 .section .fini_array,"aw",@fini_array
 .p2align 3
 .quad fini2
 EOF
 
-cat <<EOF | cc -c -o "$t"/b.o -xc -
+cat <<EOF | cc -c -o "$t"/c.o -xc -
 #include <stdio.h>
 
 void init1() { printf("init1 "); }
@@ -41,7 +49,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o "$t"/c.o
 "$t"/exe | grep -q 'init1 init2 fini2 fini1'
 
 echo OK
