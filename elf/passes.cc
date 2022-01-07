@@ -299,6 +299,20 @@ void bin_sections(Context<E> &ctx) {
   });
 }
 
+static std::optional<u64> parse_defsym_addr(std::string_view s) {
+  if (s.starts_with("0x") || s.starts_with("0X")) {
+    size_t nread;
+    u64 addr = std::stoull(std::string(s), &nread, 16);
+    if (s.size() != nread)
+      return {};
+    return addr;
+  }
+
+  if (s.find_first_not_of("0123456789") == s.npos)
+    return std::stoull(std::string(s), nullptr, 10);
+  return {};
+}
+
 // Create a dummy object file containing linker-synthesized
 // symbols.
 template <typename E>
@@ -313,15 +327,16 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   obj->is_alive = true;
   obj->priority = 1;
 
-  auto add = [&](std::string_view name, u8 visibility = STV_HIDDEN) {
+  auto add = [&](std::string_view name) {
     ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = visibility;
+    esym.st_visibility = STV_HIDDEN;
     esyms->push_back(esym);
 
     Symbol<E> *sym = get_symbol(ctx, name);
+    sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
     return sym;
   };
@@ -364,8 +379,19 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     add(save_string(ctx, "__stop_" + std::string(chunk->name)));
   }
 
-  for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms)
-    add(defsym.first, STV_DEFAULT);
+  for (std::pair<std::string_view, std::string_view> pair : ctx.arg.defsyms) {
+    ElfSym<E> esym = {};
+    esym.st_type = STT_NOTYPE;
+    esym.st_shndx = SHN_ABS;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = STV_DEFAULT;
+    esyms->push_back(esym);
+
+    Symbol<E> *sym = get_symbol(ctx, pair.first);
+    if (!parse_defsym_addr(pair.second))
+      sym->shndx = 1; // dummy value to make it a relative symbol
+    obj->symbols.push_back(sym);
+  };
 
   obj->elf_syms = *esyms;
   obj->sym_fragments.resize(obj->elf_syms.size());
@@ -898,20 +924,6 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
     if (sym->get_type() == STT_GNU_IFUNC)
       n++;
   return n;
-}
-
-static std::optional<u64> parse_defsym_addr(std::string_view s) {
-  if (s.starts_with("0x") || s.starts_with("0X")) {
-    size_t nread;
-    u64 addr = std::stoull(std::string(s), &nread, 16);
-    if (s.size() != nread)
-      return {};
-    return addr;
-  }
-
-  if (s.find_first_not_of("0123456789") == s.npos)
-    return std::stoull(std::string(s), nullptr, 10);
-  return {};
 }
 
 template <typename E>

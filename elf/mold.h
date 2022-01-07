@@ -1937,15 +1937,9 @@ inline bool Symbol<E>::is_alive() const {
 
 template <typename E>
 inline bool Symbol<E>::is_absolute(Context<E> &ctx) const {
-  if (file == ctx.internal_obj)
-    return false;
   if (file->is_dso)
     return esym().is_abs();
-  if (is_imported)
-    return false;
-  if (get_frag())
-    return false;
-  return input_section == nullptr;
+  return !is_imported && !get_frag() && !shndx && !input_section;
 }
 
 template <typename E>
