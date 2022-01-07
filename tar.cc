@@ -20,6 +20,7 @@ struct UstarHeader {
     int sum = 0;
     for (i64 i = 0; i < sizeof(*this); i++)
       sum += ((u8 *)this)[i];
+    assert(sum < 1000000);
     sprintf(checksum, "%06o", sum);
   }
 
