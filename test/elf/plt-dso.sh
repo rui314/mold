@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -fPIC -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 void world() {
@@ -27,9 +27,9 @@ void hello() {
 }
 EOF
 
-$CC -B. -shared -o "$t"/b.so "$t"/a.o
+$CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $CC -c -o "$t"/c.o -xc -
+cat <<EOF | $CC -c -o $t/c.o -xc -
 #include <stdio.h>
 
 void world() {
@@ -43,7 +43,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o "$t"/exe -Wl,-rpath="$t" "$t"/c.o "$t"/b.so
-"$t"/exe | grep -q 'Hello WORLD'
+$CC -B. -o $t/exe -Wl,-rpath=$t $t/c.o $t/b.so
+$t/exe | grep -q 'Hello WORLD'
 
 echo OK

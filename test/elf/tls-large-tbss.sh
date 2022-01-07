@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -c -o "$t"/a.o -x assembler -
+cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .globl x, y
 .section .tbss,"awT",@nobits
 x:
@@ -20,7 +20,7 @@ y:
 .zero 1024
 EOF
 
-cat <<EOF | $CC -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -c -o $t/b.o -xc -
 #include <stdio.h>
 
 extern _Thread_local char x[1024000];
@@ -33,7 +33,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
-"$t"/exe | grep -q '^3 0 5 0 0 0$'
+$CC -B. -o $t/exe $t/a.o $t/b.o
+$t/exe | grep -q '^3 0 5 0 0 0$'
 
 echo OK

@@ -7,14 +7,14 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -shared -o "$t"/a.so -xc -
+cat <<EOF | $CC -shared -o $t/a.so -xc -
 void fn() {}
 EOF
 
-cat <<EOF | $CC -o "$t"/b.o -c -xc -fno-PIC -
+cat <<EOF | $CC -o $t/b.o -c -xc -fno-PIC -
 #include <stdio.h>
 
 typedef void Func();
@@ -27,7 +27,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o "$t"/exe -no-pie "$t"/b.o "$t"/a.so
-"$t"/exe | grep -q 1
+$CC -B. -o $t/exe -no-pie $t/b.o $t/a.so
+$t/exe | grep -q 1
 
 echo OK

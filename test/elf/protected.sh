@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -fPIC -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 int foo() __attribute__((visibility("protected")));
 int bar() __attribute__((visibility("protected")));
 void *baz() __attribute__((visibility("protected")));
@@ -28,9 +28,9 @@ void *baz() {
 }
 EOF
 
-$CC -B. -o "$t"/b.so -shared "$t"/a.o
+$CC -B. -o $t/b.so -shared $t/a.o
 
-cat <<EOF | $CC -c -o "$t"/c.o -xc - -fno-PIE
+cat <<EOF | $CC -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 int foo() {
@@ -45,7 +45,7 @@ int main() {
 }
 EOF
 
-$CC -B. -no-pie -o "$t"/exe "$t"/c.o "$t"/b.so
-"$t"/exe | grep -q '3 4 0'
+$CC -B. -no-pie -o $t/exe $t/c.o $t/b.so
+$t/exe | grep -q '3 4 0'
 
 echo OK

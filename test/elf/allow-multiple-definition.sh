@@ -7,14 +7,14 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-echo 'int main() { return 0; }' > "$t"/a.c
-echo 'int main() { return 0; }' > "$t"/b.c
+echo 'int main() { return 0; }' > $t/a.c
+echo 'int main() { return 0; }' > $t/b.c
 
-! $CC -B. -o "$t"/exe "$t"/a.c "$t"/b.c 2> /dev/null || false
-$CC -B. -o "$t"/exe "$t"/a.c "$t"/b.c -Wl,-allow-multiple-definition
-$CC -B. -o "$t"/exe "$t"/a.c "$t"/b.c -Wl,-z,muldefs
+! $CC -B. -o $t/exe $t/a.c $t/b.c 2> /dev/null || false
+$CC -B. -o $t/exe $t/a.c $t/b.c -Wl,-allow-multiple-definition
+$CC -B. -o $t/exe $t/a.c $t/b.c -Wl,-z,muldefs
 
 echo OK

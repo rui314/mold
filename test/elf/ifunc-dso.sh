@@ -7,14 +7,14 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
 # Skip if libc is musl because musl does not support GNU FUNC
-echo 'int main() {}' | $CC -o "$t"/exe -xc -
-ldd "$t"/exe | grep -q ld-musl && { echo OK; exit; }
+echo 'int main() {}' | $CC -o $t/exe -xc -
+ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
 
-cat <<EOF | $CC -fPIC -o "$t"/a.o -c -xc -
+cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 void foobar(void);
 
 int main() {
@@ -22,7 +22,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fPIC -shared -o "$t"/b.so -xc -
+cat <<EOF | $CC -fPIC -shared -o $t/b.so -xc -
 #include <stdio.h>
 
 __attribute__((ifunc("resolve_foobar")))
@@ -39,7 +39,7 @@ static Func *resolve_foobar(void) {
 }
 EOF
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.so
-"$t"/exe | grep -q 'Hello world'
+$CC -B. -o $t/exe $t/a.o $t/b.so
+$t/exe | grep -q 'Hello world'
 
 echo OK

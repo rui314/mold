@@ -7,23 +7,23 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -c -o $t/a.o -xc -
 int foo();
 int main() {
   foo();
 }
 EOF
 
-! $CC -B. -o "$t"/exe "$t"/a.o 2>&1 \
+! $CC -B. -o $t/exe $t/a.o 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 
-$CC -B. -o "$t"/exe "$t"/a.o -Wl,-warn-unresolved-symbols 2>&1 \
+$CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 
-! $CC -B. -o "$t"/exe "$t"/a.o -Wl,-warn-unresolved-symbols \
+! $CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols \
   --error-unresolved-symbols 2>&1 \
   | grep -q 'undefined symbol:.*foo'
 

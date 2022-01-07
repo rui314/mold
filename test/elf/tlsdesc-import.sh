@@ -7,8 +7,8 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
 if [ "$(uname -m)" = x86_64 ]; then
   dialect=gnu2
@@ -19,7 +19,7 @@ else
   exit 0
 fi
 
-cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -c -o "$t"/a.o -xc -
+cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -31,12 +31,12 @@ int main() {
 }
 EOF
 
-cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -shared -o "$t"/b.so -xc -
+cat <<EOF | gcc -fPIC -mtls-dialect=$dialect -shared -o $t/b.so -xc -
 _Thread_local int foo = 5;
 _Thread_local int bar;
 EOF
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.so
-"$t"/exe | grep -q '5 7'
+$CC -B. -o $t/exe $t/a.o $t/b.so
+$t/exe | grep -q '5 7'
 
 echo OK

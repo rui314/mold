@@ -7,33 +7,33 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/ld64.mold"
-t="$(pwd)/out/test/macho/$testname"
-mkdir -p "$t"
+t=out/test/macho/$testname
+mkdir -p $t
 
-mkdir -p "$t"/Foo.framework
+mkdir -p $t/Foo.framework
 
-cat <<EOF | $CC -o "$t"/Foo.framework/Foo -shared -xc -
+cat <<EOF | $CC -o $t/Foo.framework/Foo -shared -xc -
 #include <stdio.h>
 void hello() {
   printf("Hello world\n");
 }
 EOF
 
-cat <<EOF | $CC -o "$t"/a.o -c -xc -
+cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() {
   printf("Hello world\n");
 }
 EOF
 
-cd "$t"
+cd $t
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o -Wl,-F. -Wl,-framework,Foo
-otool -l "$t"/exe | grep -A3 'cmd LC_LOAD_DYLIB' | fgrep -q Foo.framework/Foo
+clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-F. -Wl,-framework,Foo
+otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' | fgrep -q Foo.framework/Foo
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o -Wl,-F. -Wl,-framework,Foo \
+clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-F. -Wl,-framework,Foo \
   -Wl,-dead_strip_dylibs
-otool -l "$t"/exe | grep -A3 'cmd LC_LOAD_DYLIB' >& "$t"/log
-! fgrep -q Foo.framework/Foo "$t"/log || false
+otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' >& $t/log
+! fgrep -q Foo.framework/Foo $t/log || false
 
 echo OK

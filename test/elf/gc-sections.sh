@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF > "$t"/a.cc
+cat <<EOF > $t/a.cc
 #include <stdio.h>
 
 int two() { return 2; }
@@ -31,30 +31,30 @@ int main() {
 }
 EOF
 
-$CXX -B. -o "$t"/exe1 "$t"/a.cc -ffunction-sections -fdata-sections
+$CXX -B. -o $t/exe1 $t/a.cc -ffunction-sections -fdata-sections
 
-readelf --symbols "$t"/exe1 > "$t"/log.1
-grep -qv live_fn1 "$t"/log.1
-grep -qv live_fn2 "$t"/log.1
-grep -qv dead_fn1 "$t"/log.1
-grep -qv dead_fn2 "$t"/log.1
-grep -qv live_var1 "$t"/log.1
-grep -qv live_var2 "$t"/log.1
-grep -qv dead_var1 "$t"/log.1
-grep -qv dead_var2 "$t"/log.1
-"$t"/exe1 | grep -q '1 2'
+readelf --symbols $t/exe1 > $t/log.1
+grep -qv live_fn1 $t/log.1
+grep -qv live_fn2 $t/log.1
+grep -qv dead_fn1 $t/log.1
+grep -qv dead_fn2 $t/log.1
+grep -qv live_var1 $t/log.1
+grep -qv live_var2 $t/log.1
+grep -qv dead_var1 $t/log.1
+grep -qv dead_var2 $t/log.1
+$t/exe1 | grep -q '1 2'
 
-$CXX -B. -o "$t"/exe2 "$t"/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
+$CXX -B. -o $t/exe2 $t/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
 
-readelf --symbols "$t"/exe2 > "$t"/log.2
-grep -q  live_fn1 "$t"/log.2
-grep -q  live_fn2 "$t"/log.2
-grep -qv dead_fn1 "$t"/log.2
-grep -qv dead_fn2 "$t"/log.2
-grep -q  live_var1 "$t"/log.2
-grep -q  live_var2 "$t"/log.2
-grep -qv dead_var1 "$t"/log.2
-grep -qv dead_var2 "$t"/log.2
-"$t"/exe2 | grep -q '1 2'
+readelf --symbols $t/exe2 > $t/log.2
+grep -q  live_fn1 $t/log.2
+grep -q  live_fn2 $t/log.2
+grep -qv dead_fn1 $t/log.2
+grep -qv dead_fn2 $t/log.2
+grep -q  live_var1 $t/log.2
+grep -q  live_var2 $t/log.2
+grep -qv dead_var1 $t/log.2
+grep -qv dead_var2 $t/log.2
+$t/exe2 | grep -q '1 2'
 
 echo OK

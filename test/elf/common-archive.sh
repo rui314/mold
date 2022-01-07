@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -fcommon -xc -c -o "$t"/a.o -
+cat <<EOF | $CC -fcommon -xc -c -o $t/a.o -
 #include <stdio.h>
 
 int foo;
@@ -22,30 +22,30 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fcommon -xc -c -o "$t"/b.o -
+cat <<EOF | $CC -fcommon -xc -c -o $t/b.o -
 int foo = 5;
 EOF
 
-cat <<EOF | $CC -fcommon -xc -c -o "$t"/c.o -
+cat <<EOF | $CC -fcommon -xc -c -o $t/c.o -
 int bar;
 int two() { return 2; }
 EOF
 
-rm -f "$t"/d.a
-ar rcs "$t"/d.a "$t"/b.o "$t"/c.o
+rm -f $t/d.a
+ar rcs $t/d.a $t/b.o $t/c.o
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/d.a
-"$t"/exe | grep -q '5 0 -1'
+$CC -B. -o $t/exe $t/a.o $t/d.a
+$t/exe | grep -q '5 0 -1'
 
-cat <<EOF | $CC -fcommon -xc -c -o "$t"/e.o -
+cat <<EOF | $CC -fcommon -xc -c -o $t/e.o -
 int bar = 0;
 int two() { return 2; }
 EOF
 
-rm -f "$t"/e.a
-ar rcs "$t"/e.a "$t"/b.o "$t"/e.o
+rm -f $t/e.a
+ar rcs $t/e.a $t/b.o $t/e.o
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/e.a
-"$t"/exe | grep -q '5 0 2'
+$CC -B. -o $t/exe $t/a.o $t/e.a
+$t/exe | grep -q '5 0 2'
 
 echo OK

@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/ld64.mold"
-t="$(pwd)/out/test/macho/$testname"
-mkdir -p "$t"
+t=out/test/macho/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -o "$t"/a.o -c -xc -
+cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 
 char msg1[] = "Hello world";
@@ -29,10 +29,10 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o -Wl,-dead_strip
-"$t"/exe | grep -q 'Hello world'
-otool -tVj "$t"/exe > "$t"/log
-grep -q 'hello:' "$t"/log
-! grep -q 'howdy:' "$t"/log || false
+clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-dead_strip
+$t/exe | grep -q 'Hello world'
+otool -tVj $t/exe > $t/log
+grep -q 'hello:' $t/log
+! grep -q 'howdy:' $t/log || false
 
 echo OK

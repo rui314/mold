@@ -7,15 +7,15 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -shared -o "$t"/a.so -xc -
+cat <<EOF | $CC -shared -o $t/a.so -xc -
 int foo = 3;
 int bar = 5;
 EOF
 
-cat <<EOF | $CC -fno-PIC -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -fno-PIC -c -o $t/b.o -xc -
 #include <stdio.h>
 
 extern int foo;
@@ -27,12 +27,12 @@ int main() {
 }
 EOF
 
-$CC -B. -no-pie -o "$t"/exe "$t"/a.so "$t"/b.o
-"$t"/exe | grep -q '3 5'
+$CC -B. -no-pie -o $t/exe $t/a.so $t/b.o
+$t/exe | grep -q '3 5'
 
-! $CC -B. -o "$t"/exe "$t"/a.so "$t"/b.o \
-  -Wl,-z,nocopyreloc 2> "$t"/log || false
+! $CC -B. -o $t/exe $t/a.so $t/b.o \
+  -Wl,-z,nocopyreloc 2> $t/log || false
 
-grep -q 'recompile with -fPIC' "$t"/log
+grep -q 'recompile with -fPIC' $t/log
 
 echo OK

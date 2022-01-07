@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/ld64.mold"
-t="$(pwd)/out/test/macho/$testname"
-mkdir -p "$t"
+t=out/test/macho/$testname
+mkdir -p $t
 
-cat <<EOF | clang++ -c -o "$t"/a.o -xc++ -
+cat <<EOF | clang++ -c -o $t/a.o -xc++ -
 int main() {
   try {
     throw 0;
@@ -21,7 +21,7 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.o
-"$t"/exe
+clang++ -fuse-ld="$mold" -o $t/exe $t/a.o
+$t/exe
 
 echo OK

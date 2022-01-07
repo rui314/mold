@@ -7,10 +7,10 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
-cat <<EOF | $CC -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 void foo() {
@@ -18,7 +18,7 @@ void foo() {
 }
 EOF
 
-cat <<EOF | $CC -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -c -o $t/b.o -xc -
 #include <stdio.h>
 
 void foo();
@@ -32,7 +32,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -c -o "$t"/c.o -xc -
+cat <<EOF | $CC -c -o $t/c.o -xc -
 #include <stdio.h>
 
 void __real_foo();
@@ -42,13 +42,13 @@ int main() {
 }
 EOF
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
-"$t"/exe | grep -q '^foo$'
+$CC -B. -o $t/exe $t/a.o $t/b.o
+$t/exe | grep -q '^foo$'
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o -Wl,-wrap,foo
-"$t"/exe | grep -q '^wrap_foo$'
+$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-wrap,foo
+$t/exe | grep -q '^wrap_foo$'
 
-$CC -B. -o "$t"/exe "$t"/a.o "$t"/c.o -Wl,-wrap,foo
-"$t"/exe | grep -q '^foo$'
+$CC -B. -o $t/exe $t/a.o $t/c.o -Wl,-wrap,foo
+$t/exe | grep -q '^foo$'
 
 echo OK

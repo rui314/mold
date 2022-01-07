@@ -7,12 +7,12 @@ testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
-t="$(pwd)/out/test/elf/$testname"
-mkdir -p "$t"
+t=out/test/elf/$testname
+mkdir -p $t
 
 which dwarfdump >& /dev/null || { echo skipped; exit; }
 
-cat <<EOF | $CC -c -g -o "$t"/a.o -xc -
+cat <<EOF | $CC -c -g -o $t/a.o -xc -
 #include <stdio.h>
 
 int main() {
@@ -21,14 +21,14 @@ int main() {
 }
 EOF
 
-$CC -B. -o "$t"/exe "$t"/a.o -Wl,--compress-debug-sections=zlib
-dwarfdump "$t"/exe > "$t"/log
-fgrep -q '.debug_info SHF_COMPRESSED' "$t"/log
-fgrep -q '.debug_str SHF_COMPRESSED' "$t"/log
+$CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib
+dwarfdump $t/exe > $t/log
+fgrep -q '.debug_info SHF_COMPRESSED' $t/log
+fgrep -q '.debug_str SHF_COMPRESSED' $t/log
 
-$CC -B. -o "$t"/exe "$t"/a.o -Wl,--compress-debug-sections=zlib-gnu
-dwarfdump "$t"/exe > "$t"/log
-fgrep -q .zdebug_info "$t"/log
-fgrep -q .zdebug_str "$t"/log
+$CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib-gnu
+dwarfdump $t/exe > $t/log
+fgrep -q .zdebug_info $t/log
+fgrep -q .zdebug_str $t/log
 
 echo OK
