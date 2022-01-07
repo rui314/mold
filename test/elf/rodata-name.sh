@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<'EOF' | cc -c -o "$t"/a.o -x assembler -
+cat <<'EOF' | $CC -c -o "$t"/a.o -x assembler -
 .globl val1, val2, val3
 
 .section .rodata.str1.1,"aMS",@progbits,1
@@ -26,7 +28,7 @@ val3:
 .ascii "abcdefgh"
 EOF
 
-cat <<'EOF' | cc -c -o "$t"/b.o -xc -
+cat <<'EOF' | $CC -c -o "$t"/b.o -xc -
 #include <stdio.h>
 
 extern char val1, val2, val3;
@@ -36,7 +38,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
 
 readelf -p .rodata.str "$t"/exe | grep -q Hello
 readelf -p .rodata.str "$t"/exe | grep -q world

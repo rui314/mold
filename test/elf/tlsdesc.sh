@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -46,18 +48,18 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
 "$t"/exe | grep -q '42 5'
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o -Wl,-no-relax
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o -Wl,-no-relax
 "$t"/exe | grep -q '42 5'
 
-clang -fuse-ld="$mold" -shared -o "$t"/c.so "$t"/a.o
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/b.o "$t"/c.so
+$CC -B. -shared -o "$t"/c.so "$t"/a.o
+$CC -B. -o "$t"/exe "$t"/b.o "$t"/c.so
 "$t"/exe | grep -q '42 5'
 
-clang -fuse-ld="$mold" -shared -o "$t"/c.so "$t"/a.o -Wl,-no-relax
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/b.o "$t"/c.so -Wl,-no-relax
+$CC -B. -shared -o "$t"/c.so "$t"/a.o -Wl,-no-relax
+$CC -B. -o "$t"/exe "$t"/b.o "$t"/c.so -Wl,-no-relax
 "$t"/exe | grep -q '42 5'
 
 echo OK

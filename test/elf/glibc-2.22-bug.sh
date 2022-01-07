@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -12,14 +14,14 @@ mkdir -p "$t"
 # if .rela.dyn and .rela.plt are not contiguous in a given DSO.
 # This test verifies that these sections are contiguous in mold's output.
 
-cat <<EOF | cc -o "$t"/a.o -fPIC -c -xc -
+cat <<EOF | $CC -o "$t"/a.o -fPIC -c -xc -
 #include <stdio.h>
 int main() {
   printf("Hello world\n");
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/b.so -shared "$t"/a.o
+$CC -B. -o "$t"/b.so -shared "$t"/a.o
 readelf -W --sections "$t"/b.so | fgrep -A1 .rela.dyn | fgrep -q .rela.plt
 
 echo OK

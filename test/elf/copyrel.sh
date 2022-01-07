@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -fno-PIC -o "$t"/a.o -c -xc -
+cat <<EOF | $CC -fno-PIC -o "$t"/a.o -c -xc -
 #include <stdio.h>
 
 extern int foo;
@@ -20,19 +22,19 @@ int main() {
 }
 EOF
 
-cat <<EOF | cc -fno-PIC -o "$t"/b.o -c -xc -
+cat <<EOF | $CC -fno-PIC -o "$t"/b.o -c -xc -
 extern int bar;
 int *get_bar() { return &bar; }
 EOF
 
-cat <<EOF | cc -fPIC -o "$t"/c.o -c -xc -
+cat <<EOF | $CC -fPIC -o "$t"/c.o -c -xc -
 int foo = 42;
 extern int bar __attribute__((alias("foo")));
 extern int baz __attribute__((alias("foo")));
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/c.so "$t"/c.o
-clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/a.o "$t"/b.o "$t"/c.so
+$CC -B. -shared -o "$t"/c.so "$t"/c.o
+$CC -B. -no-pie -o "$t"/exe "$t"/a.o "$t"/b.o "$t"/c.so
 "$t"/exe | grep -q '42 42 1'
 
 echo OK

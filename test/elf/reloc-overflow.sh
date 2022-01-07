@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +12,7 @@ mkdir -p "$t"
 
 [ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | cc -o "$t"/a.o -c -x assembler -
+cat <<EOF | $CC -o "$t"/a.o -c -x assembler -
   .globl foo
   .data
 foo:

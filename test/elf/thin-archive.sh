@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,19 +10,19 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/long-long-long-filename.o -c -xc -
+cat <<EOF | $CC -o "$t"/long-long-long-filename.o -c -xc -
 int three() { return 3; }
 EOF
 
-cat <<EOF | cc -o "$t"/b.o -c -xc -
+cat <<EOF | $CC -o "$t"/b.o -c -xc -
 int five() { return 5; }
 EOF
 
-cat <<EOF | cc -o "$t"/c.o -c -xc -
+cat <<EOF | $CC -o "$t"/c.o -c -xc -
 int seven() { return 7; }
 EOF
 
-cat <<EOF | cc -o "$t"/d.o -c -xc -
+cat <<EOF | $CC -o "$t"/d.o -c -xc -
 #include <stdio.h>
 
 int three();
@@ -35,7 +37,7 @@ EOF
 rm -f "$t"/d.a
 (cd "$t"; ar rcsT d.a long-long-long-filename.o b.o "`pwd`"/c.o)
 
-clang -fuse-ld="$mold" -Wl,--trace -o "$t"/exe "$t"/d.o "$t"/d.a > "$t"/log
+$CC -B. -Wl,--trace -o "$t"/exe "$t"/d.o "$t"/d.a > "$t"/log
 
 grep -Pq 'thin-archive/d.a\(.*long-long-long-filename.o\)' "$t"/log
 grep -Pq 'thin-archive/d.a\(.*b.o\)' "$t"/log

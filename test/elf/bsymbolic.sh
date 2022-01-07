@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -c -fPIC -o"$t"/a.o -xc -
+cat <<EOF | $CC -c -fPIC -o"$t"/a.o -xc -
 int foo = 4;
 
 int get_foo() {
@@ -20,9 +22,9 @@ void *bar() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -fPIC -o "$t"/b.so "$t"/a.o -Wl,-Bsymbolic
+$CC -B. -shared -fPIC -o "$t"/b.so "$t"/a.o -Wl,-Bsymbolic
 
-cat <<EOF | cc -c -o "$t"/c.o -xc - -fno-PIE
+cat <<EOF | $CC -c -o "$t"/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 extern int foo;
@@ -35,7 +37,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -no-pie -o "$t"/exe "$t"/c.o "$t"/b.so
+$CC -B. -no-pie -o "$t"/exe "$t"/c.o "$t"/b.so
 "$t"/exe | grep -q '3 4 0'
 
 echo OK

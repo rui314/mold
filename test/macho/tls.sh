@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,11 +10,11 @@ mold="$(pwd)/ld64.mold"
 t="$(pwd)/out/test/macho/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -shared -o "$t"/a.dylib -xc -
+cat <<EOF | $CC -shared -o "$t"/a.dylib -xc -
 _Thread_local int a;
 EOF
 
-cat <<EOF | cc -o "$t"/b.o -c -xc -
+cat <<EOF | $CC -o "$t"/b.o -c -xc -
 #include <stdio.h>
 
 extern _Thread_local int a;

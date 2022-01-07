@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -fPIC -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o "$t"/a.o -xc -
 #include <stdio.h>
 
 void world() {
@@ -25,9 +27,9 @@ void hello() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/b.so "$t"/a.o
+$CC -B. -shared -o "$t"/b.so "$t"/a.o
 
-cat <<EOF | cc -c -o "$t"/c.o -xc -
+cat <<EOF | $CC -c -o "$t"/c.o -xc -
 #include <stdio.h>
 
 void world() {
@@ -41,7 +43,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe -Wl,-rpath="$t" "$t"/c.o "$t"/b.so
+$CC -B. -o "$t"/exe -Wl,-rpath="$t" "$t"/c.o "$t"/b.so
 "$t"/exe | grep -q 'Hello WORLD'
 
 echo OK

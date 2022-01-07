@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -11,7 +13,10 @@ mkdir -p "$t"
 # ASAN doesn't work with LD_PRELOAD
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
-cat <<'EOF' | cc -xc -c -o "$t"/a.o -
+which gcc >& /dev/null || { echo skipped; exit 0; }
+which $CC >& /dev/null || { echo skipped; exit 0; }
+
+cat <<'EOF' | $CC -xc -c -o "$t"/a.o -
 #include <stdio.h>
 
 int main() {

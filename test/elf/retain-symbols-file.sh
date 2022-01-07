@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | clang -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -c -o "$t"/a.o -xc -
 static void foo() {}
 void bar() {}
 void baz() {}
@@ -20,7 +22,7 @@ foo
 baz
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o \
+$CC -B. -o "$t"/exe "$t"/a.o \
   -Wl,--retain-symbols-file="$t"/symbols
 readelf --symbols "$t"/exe > "$t"/log
 

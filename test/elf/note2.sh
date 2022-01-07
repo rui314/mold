@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,25 +10,25 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/a.o -c -x assembler -
+cat <<EOF | $CC -o "$t"/a.o -c -x assembler -
 .section .note.a, "a", @note
 .p2align 3
 .quad 42
 EOF
 
-cat <<EOF | cc -o "$t"/b.o -c -x assembler -
+cat <<EOF | $CC -o "$t"/b.o -c -x assembler -
 .section .note.b, "a", @note
 .p2align 2
 .quad 42
 EOF
 
-cat <<EOF | cc -o "$t"/c.o -c -x assembler -
+cat <<EOF | $CC -o "$t"/c.o -c -x assembler -
 .section .note.c, "a", @note
 .p2align 3
 .quad 42
 EOF
 
-cat <<EOF | cc -o "$t"/d.o -c -xc -
+cat <<EOF | $CC -o "$t"/d.o -c -xc -
 int main() {}
 EOF
 

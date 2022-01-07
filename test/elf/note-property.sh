@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -11,11 +13,11 @@ mkdir -p "$t"
 # Skip if target is not x86-64
 [ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | clang -fcf-protection=branch -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -fcf-protection=branch -c -o "$t"/a.o -xc -
 void _start() {}
 EOF
 
-cat <<EOF | clang -fcf-protection=none -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -fcf-protection=none -c -o "$t"/b.o -xc -
 void _start() {}
 EOF
 

@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -12,12 +14,12 @@ cat <<'EOF' > "$t"/a.ver
 VER_X1 { *; };
 EOF
 
-cat <<EOF | c++ -fPIC -c -o "$t"/b.o -xc -
+cat <<EOF | $CXX -fPIC -c -o "$t"/b.o -xc -
 extern int foo;
 int bar() { return foo; }
 EOF
 
-clang -fuse-ld="$mold" -shared -Wl,--version-script="$t"/a.ver -o "$t"/c.so "$t"/b.o
+$CC -B. -shared -Wl,--version-script="$t"/a.ver -o "$t"/c.so "$t"/b.o
 
 readelf --dyn-syms "$t"/c.so > "$t"/log
 grep -q 'foo$' "$t"/log

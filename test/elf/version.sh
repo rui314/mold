@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -15,7 +17,7 @@ mkdir -p "$t"
 "$mold" -V | grep -q elf_x86_64
 "$mold" -V | grep -q elf_i386
 
-cat <<EOF | clang -c -xc -o "$t"/a.o -
+cat <<EOF | $CC -c -xc -o "$t"/a.o -
 #include <stdio.h>
 
 int main() {
@@ -24,10 +26,10 @@ int main() {
 EOF
 
 rm -f "$t"/exe
-clang -fuse-ld="$mold" -Wl,--version -o "$t"/exe "$t"/a.o | grep -q mold
+$CC -B. -Wl,--version -o "$t"/exe "$t"/a.o 2>&1 | grep -q mold
 ! [ -f "$t"/exe ] || false
 
-clang -fuse-ld="$mold" -Wl,-v -o "$t"/exe "$t"/a.o | grep -q mold
+$CC -B. -Wl,-v -o "$t"/exe "$t"/a.o 2>&1 | grep -q mold
 "$t"/exe | grep -q 'Hello world'
 
 echo OK

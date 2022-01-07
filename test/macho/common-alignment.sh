@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,12 +10,12 @@ mold="$(pwd)/ld64.mold"
 t="$(pwd)/out/test/macho/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/a.o -fcommon -c -xc -
+cat <<EOF | $CC -o "$t"/a.o -fcommon -c -xc -
 int foo;
 __attribute__((aligned(4096))) int bar;
 EOF
 
-cat <<EOF | cc -o "$t"/b.o -c -xc -
+cat <<EOF | $CC -o "$t"/b.o -c -xc -
 #include <stdio.h>
 #include <stdint.h>
 

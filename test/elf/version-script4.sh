@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -19,7 +21,7 @@ cat <<EOF > "$t"/a.ver
 };
 EOF
 
-cat <<EOF | c++ -fPIC -c -o "$t"/b.o -x c++ -
+cat <<EOF | $CXX -fPIC -c -o "$t"/b.o -xc++ -
 int bar = 5;
 namespace foo {
 int bar = 7;
@@ -30,7 +32,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/c.so -Wl,-version-script,"$t"/a.ver "$t"/b.o
+$CC -B. -shared -o "$t"/c.so -Wl,-version-script,"$t"/a.ver "$t"/b.o
 
 readelf --dyn-syms "$t"/c.so > "$t"/log
 fgrep -q _ZN3foo3barE "$t"/log

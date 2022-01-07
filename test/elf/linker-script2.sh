@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/a.o -c -xc -
+cat <<EOF | $CC -o "$t"/a.o -c -xc -
 int main() {}
 EOF
 
@@ -20,6 +22,6 @@ cat <<EOF > "$t"/b.script
 INPUT(-lfoo)
 EOF
 
-clang -o "$t"/exe -L"$t"/foo/bar "$t"/b.script
+$CC -o "$t"/exe -L"$t"/foo/bar "$t"/b.script
 
 echo OK

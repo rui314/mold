@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -38,10 +40,10 @@ cat <<EOF | gcc -ftls-model=local-dynamic -mtls-dialect=$dialect  -fPIC -c -o "$
 _Thread_local int foo = 3;
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
 "$t"/exe | grep -q '3 5 3 5'
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o -Wl,-no-relax
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o -Wl,-no-relax
 "$t"/exe | grep -q '3 5 3 5'
 
 echo OK

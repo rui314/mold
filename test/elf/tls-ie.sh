@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -33,7 +35,7 @@ void print() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/b.so "$t"/a.o
+$CC -B. -shared -o "$t"/b.so "$t"/a.o
 
 cat <<EOF | gcc -c -o "$t"/c.o -xc -
 #include <stdio.h>
@@ -52,10 +54,10 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/b.so "$t"/c.o
+$CC -B. -o "$t"/exe "$t"/b.so "$t"/c.o
 "$t"/exe | grep -q '^0 0 3 5 7$'
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/b.so "$t"/c.o -Wl,-no-relax
+$CC -B. -o "$t"/exe "$t"/b.so "$t"/c.o -Wl,-no-relax
 "$t"/exe | grep -q '^0 0 3 5 7$'
 
 echo OK

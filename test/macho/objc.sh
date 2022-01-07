@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/ld64.mold"
 t="$(pwd)/out/test/macho/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -o "$t"/a.o -c -xobjective-c -
+cat <<EOF | $CC -o "$t"/a.o -c -xobjective-c -
 #import <Foundation/NSObject.h>
 @interface MyClass : NSObject
 @end
@@ -18,7 +20,7 @@ EOF
 
 ar rcs "$t"/b.a "$t"/a.o
 
-cat <<EOF | cc -o "$t"/c.o -c -xc -
+cat <<EOF | $CC -o "$t"/c.o -c -xc -
 int main() {}
 EOF
 

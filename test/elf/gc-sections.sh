@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -29,9 +31,8 @@ int main() {
 }
 EOF
 
-cflags=(-ffunction-sections -fdata-sections -fuse-ld="$mold")
+$CXX -B. -o "$t"/exe1 "$t"/a.cc -ffunction-sections -fdata-sections
 
-clang++ -o "$t"/exe1 "$t"/a.cc "${cflags[@]}"
 readelf --symbols "$t"/exe1 > "$t"/log.1
 grep -qv live_fn1 "$t"/log.1
 grep -qv live_fn2 "$t"/log.1
@@ -43,7 +44,8 @@ grep -qv dead_var1 "$t"/log.1
 grep -qv dead_var2 "$t"/log.1
 "$t"/exe1 | grep -q '1 2'
 
-clang++ -o "$t"/exe2 "$t"/a.cc "${cflags[@]}" -Wl,-gc-sections
+$CXX -B. -o "$t"/exe2 "$t"/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
+
 readelf --symbols "$t"/exe2 > "$t"/log.2
 grep -q  live_fn1 "$t"/log.2
 grep -q  live_fn2 "$t"/log.2

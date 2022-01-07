@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -12,7 +14,7 @@ mkdir -p "$t"
 # in the output. The resulting executable doesn't contain any
 # meaningful code or data, so this is an edge case, though.
 
-cat <<EOF | cc -x assembler -c -o "$t"/a.o -
+cat <<EOF | $CC -x assembler -c -o "$t"/a.o -
 .globl foo
 foo:
 EOF

@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -c -o "$t"/a.o -x assembler -
+cat <<EOF | $CC -c -o "$t"/a.o -x assembler -
 .globl init1, init2, fini1, fini2
 
 .section .init_array,"aw",@init_array
@@ -28,7 +30,7 @@ cat <<EOF | cc -c -o "$t"/a.o -x assembler -
 .quad fini2
 EOF
 
-cat <<EOF | cc -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -c -o "$t"/b.o -xc -
 #include <stdio.h>
 
 void init1() { printf("init1 "); }
@@ -41,7 +43,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/b.o
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/b.o
 "$t"/exe | grep -q 'init1 init2 fini2 fini1'
 
 echo OK

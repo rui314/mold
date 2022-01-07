@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | clang -c -o "$t"/a.o -xc -
+cat <<EOF | $CC -c -o "$t"/a.o -xc -
 #include <stdio.h>
 
 int main() {
@@ -17,11 +19,11 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o
+$CC -B. -o "$t"/exe "$t"/a.o
 ! readelf --sections "$t"/exe | fgrep -q .repro || false
 
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o -Wl,-repro
+$CC -B. -o "$t"/exe "$t"/a.o -Wl,-repro
 objcopy --dump-section .repro="$t"/repro.tar.gz "$t"/exe
 
 tar -C "$t" -xzf "$t"/repro.tar.gz
@@ -29,7 +31,7 @@ fgrep -q /a.o  "$t"/repro/response.txt
 fgrep -q mold "$t"/repro/version.txt
 
 
-MOLD_REPRO=1 clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o
+MOLD_REPRO=1 $CC -B. -o "$t"/exe "$t"/a.o
 objcopy --dump-section .repro="$t"/repro.tar.gz "$t"/exe
 
 tar -C "$t" -xzf "$t"/repro.tar.gz

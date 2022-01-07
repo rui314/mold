@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -17,7 +19,7 @@ EOF
 
 chmod 755 "$t"/a.sh
 
-cat <<'EOF' | cc -xc -o "$t"/exe -
+cat <<'EOF' | $CC -xc -o "$t"/exe -
 #define _GNU_SOURCE 1
 
 #include <assert.h>

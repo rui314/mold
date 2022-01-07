@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -19,22 +21,22 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -static
+$CXX -B. -o "$t"/exe "$t"/a.cc -static
 "$t"/exe
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc
+$CXX -B. -o "$t"/exe "$t"/a.cc
 "$t"/exe
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -Wl,--gc-sections
+$CXX -B. -o "$t"/exe "$t"/a.cc -Wl,--gc-sections
 "$t"/exe
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -static -Wl,--gc-sections
+$CXX -B. -o "$t"/exe "$t"/a.cc -static -Wl,--gc-sections
 "$t"/exe
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -mcmodel=large
+$CXX -B. -o "$t"/exe "$t"/a.cc -mcmodel=large
 "$t"/exe
 
-clang++ -fuse-ld="$mold" -o "$t"/exe "$t"/a.cc -static -mcmodel=large
+$CXX -B. -o "$t"/exe "$t"/a.cc -static -mcmodel=large
 "$t"/exe
 
 echo OK

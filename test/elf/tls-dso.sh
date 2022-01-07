@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -8,7 +10,7 @@ mold="$(pwd)/mold"
 t="$(pwd)/out/test/elf/$testname"
 mkdir -p "$t"
 
-cat <<EOF | cc -fPIC -shared -o "$t"/a.so -xc -
+cat <<EOF | $CC -fPIC -shared -o "$t"/a.so -xc -
 extern _Thread_local int foo;
 _Thread_local int bar;
 
@@ -16,7 +18,7 @@ int get_foo1() { return foo; }
 int get_bar1() { return bar; }
 EOF
 
-cat <<EOF | cc -c -o "$t"/b.o -xc -
+cat <<EOF | $CC -c -o "$t"/b.o -xc -
 #include <stdio.h>
 
 _Thread_local int foo;
@@ -39,7 +41,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.so "$t"/b.o
+$CC -B. -o "$t"/exe "$t"/a.so "$t"/b.o
 "$t"/exe | grep -q '5 3 5 3 5 3'
 
 echo OK

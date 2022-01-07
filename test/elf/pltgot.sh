@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +12,7 @@ mkdir -p "$t"
 
 [ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | cc -fPIC -shared -o "$t"/a.so -x assembler -
+cat <<EOF | $CC -fPIC -shared -o "$t"/a.so -x assembler -
 .globl ext1, ext2
 ext1:
   nop
@@ -18,7 +20,7 @@ ext2:
   nop
 EOF
 
-cat <<EOF | cc -c -o "$t"/b.o -x assembler -
+cat <<EOF | $CC -c -o "$t"/b.o -x assembler -
 .globl _start
 _start:
   call ext1@PLT

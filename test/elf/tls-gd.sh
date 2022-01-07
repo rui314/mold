@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -48,13 +50,13 @@ static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/d.so "$t"/b.o
-clang -fuse-ld="$mold" -shared -o "$t"/e.so "$t"/c.o -Wl,--no-relax
+$CC -B. -shared -o "$t"/d.so "$t"/b.o
+$CC -B. -shared -o "$t"/e.so "$t"/c.o -Wl,--no-relax
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/d.so "$t"/e.so
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/d.so "$t"/e.so
 "$t"/exe | grep -q '1 2 3 4 5 6'
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o "$t"/d.so "$t"/e.so -Wl,-no-relax
+$CC -B. -o "$t"/exe "$t"/a.o "$t"/d.so "$t"/e.so -Wl,-no-relax
 "$t"/exe | grep -q '1 2 3 4 5 6'
 
 echo OK

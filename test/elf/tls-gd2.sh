@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -27,7 +29,7 @@ int bar() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -o "$t"/c.so "$t"/b.o -Wl,--version-script="$t"/a.ver \
+$CC -B. -shared -o "$t"/c.so "$t"/b.o -Wl,--version-script="$t"/a.ver \
   -Wl,--no-relax
 
 readelf -W --dyn-syms "$t"/c.so | grep -Pq 'TLS     LOCAL  DEFAULT   \d+ foo'

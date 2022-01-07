@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +12,7 @@ mkdir -p "$t"
 
 rm -f $t/a.o
 touch $t/a.o
-! clang -fuse-ld="$mold" -o "$t"/exe "$t"/a.o &> $t/log || false
+! $CC -B. -o "$t"/exe "$t"/a.o &> $t/log || false
 grep -q 'unknown file type: EMPTY' $t/log
 
 echo OK

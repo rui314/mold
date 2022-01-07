@@ -1,6 +1,8 @@
 #!/bin/bash
 export LANG=
 set -e
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 testname=$(basename -s .sh "$0")
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +12,7 @@ mkdir -p "$t"
 
 [ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<'EOF' | cc -fPIC -c -o "$t"/a.o -x assembler -
+cat <<'EOF' | $CC -fPIC -c -o "$t"/a.o -x assembler -
 .data
 .globl ext_var
 .type ext_var, @object
@@ -19,7 +21,7 @@ ext_var:
   .long 56
 EOF
 
-cat <<'EOF' | cc -fPIC -c -o "$t"/b.o -xc -
+cat <<'EOF' | $CC -fPIC -c -o "$t"/b.o -xc -
 #include <stdio.h>
 
 int print(int x) {
@@ -33,7 +35,7 @@ int print64(long x) {
 }
 EOF
 
-cc -shared -o "$t"/c.so "$t"/a.o "$t"/b.o
+$CC -shared -o "$t"/c.so "$t"/a.o "$t"/b.o
 
 # Absolute symbol
 cat <<'EOF' > "$t"/d.s
@@ -49,9 +51,9 @@ main:
   ret
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
 "$t"/exe | grep -q '^42$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^42$'
 
 # GOT
@@ -66,9 +68,9 @@ main:
   ret
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
 "$t"/exe | grep -q '^56$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^56$'
 
 # Copyrel
@@ -82,10 +84,10 @@ main:
   ret
 EOF
 
-clang -c -o "$t"/d.o "$t"/d.s
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.o -no-pie
+$CC -c -o "$t"/d.o "$t"/d.s
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.o -no-pie
 "$t"/exe | grep -q '^56$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^56$'
 
 # Copyrel
@@ -104,9 +106,9 @@ foo:
   .quad ext_var
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
 "$t"/exe | grep -q '^56$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^56$'
 
 # PLT
@@ -120,9 +122,9 @@ main:
   ret
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
 "$t"/exe | grep -q '^76$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^76$'
 
 # PLT
@@ -137,9 +139,9 @@ main:
   ret
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -no-pie
 "$t"/exe | grep -q '^76$'
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s -pie
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s -pie
 "$t"/exe | grep -q '^76$'
 
 # SIZE32
@@ -159,7 +161,7 @@ main:
 foo:
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s
 "$t"/exe | grep -q '^26$'
 
 # SIZE64
@@ -179,7 +181,7 @@ main:
 foo:
 EOF
 
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/d.s
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/d.s
 "$t"/exe | grep -q '^61$'
 
 # GOTPCREL64
@@ -193,8 +195,8 @@ int main() {
 }
 EOF
 
-clang -c -o "$t"/e.o "$t"/e.c -mcmodel=large -fPIC
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/c.so "$t"/e.o
+$CC -c -o "$t"/e.o "$t"/e.c -mcmodel=large -fPIC
+$CC -B. -o "$t"/exe "$t"/c.so "$t"/e.o
 "$t"/exe | grep -q '^56000003$'
 
 # R_X86_64_32 against non-alloc section
@@ -216,8 +218,8 @@ bar:
 .quad foo
 EOF
 
-clang -c -o "$t"/f.o "$t"/f.s
-clang -fuse-ld="$mold" -o "$t"/exe "$t"/f.o
+$CC -c -o "$t"/f.o "$t"/f.s
+$CC -B. -o "$t"/exe "$t"/f.o
 readelf -x .foo -x .bar "$t"/exe > "$t"/log
 
 fgrep -q '0x00000010 00000000 00000000 10000000 00000000' "$t"/log
