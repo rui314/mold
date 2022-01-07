@@ -30,28 +30,6 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               std::string_view contents, i64 section_idx)
   : file(file), shdr(shdr), contents(contents), nameptr(name.data()),
     namelen(name.size()), section_idx(section_idx) {
-  // As a special case, we want to map .ctors and .dtors to
-  // .init_array and .fini_array, respectively. However, old CRT
-  // object files are not compatible with this translation, so we need
-  // to keep them as-is if a section came from crtbegin.o or crtend.o.
-  //
-  // Yeah, this is an ugly hack, but the fundamental problem is that
-  // we have two different mechanism, ctors/dtors and init_array/fini_array
-  // for the same purpose. The latter was introduced to replace the
-  // former, but as it is often the case, the former still lingers
-  // around, so we need to keep this code to conver the old mechanism
-  // to the new one.
-  std::string s = filepath(file.filename).filename();
-  if (s != "crtbegin.o" && s != "crtend.o" &&
-      s != "crtbeginS.o" && s != "crtendS.o" &&
-      s != "crtbeginT.o" && s != "crtendT.o") {;
-    if (name == ".ctors" || name.starts_with(".ctors.")) {
-      name = ".init_array";
-    } else if (name == ".dtors" || name.starts_with(".dtors.")) {
-      name = ".fini_array";
-    }
-  }
-
   output_section =
     OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
 }
@@ -69,18 +47,6 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     apply_reloc_alloc(ctx, buf);
   else
     apply_reloc_nonalloc(ctx, buf);
-
-  // As a special case, .ctors and .dtors section contents are
-  // reversed. These sections are now obsolete and mapped to
-  // .init_array and .fini_array, but they have to be reversed to
-  // maintain the original semantics.
-  bool init_fini = output_section->name == ".init_array" ||
-                   output_section->name == ".fini_array";
-  bool ctors_dtors = name().starts_with(".ctors") ||
-                     name().starts_with(".dtors");
-  if (init_fini && ctors_dtors)
-    std::reverse((typename E::WordTy *)buf,
-                 (typename E::WordTy *)(buf + shdr.sh_size));
 }
 
 template <typename E>
