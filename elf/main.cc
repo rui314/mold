@@ -59,6 +59,9 @@ std::optional<std::string> glob_to_regex(std::string_view pat) {
 template <typename E>
 static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                       std::string archive_name) {
+  if (i64 type = ((ElfEhdr<E> *)mf->data)->e_machine; type != E::e_machine)
+    Fatal(ctx) << mf->name << ": incompatible file type: " << type;
+
   static Counter count("parsed_objs");
   count++;
 
@@ -72,7 +75,11 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *m
 }
 
 template <typename E>
-static SharedFile<E> *new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+static SharedFile<E> *
+new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  if (i64 type = ((ElfEhdr<E> *)mf->data)->e_machine; type != E::e_machine)
+    Fatal(ctx) << mf->name << ": incompatible file type: " << type;
+
   SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx]() { file->parse(ctx); });
