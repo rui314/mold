@@ -27,7 +27,7 @@ fn1:
   ret
 EOF
 
-cat <<EOF | $CC -c -o $t/b.o -xc -
+cat <<EOF | $CC -c -o $t/b.o -fPIC -xc -
 #include <stdio.h>
 
 int fn1();
