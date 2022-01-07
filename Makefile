@@ -6,12 +6,10 @@ MANDIR ?= $(PREFIX)/share/man
 
 D = $(DESTDIR)
 
-ifeq ($(origin CC), default)
-  CC = clang
-endif
-
+# CXX defaults to `g++`. Rewrite it with a vendor-neutral compiler
+# name `c++`.
 ifeq ($(origin CXX), default)
-  CXX = clang++
+  CXX = c++
 endif
 
 # If you want to keep symbols in the installed binary, run make with

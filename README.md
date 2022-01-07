@@ -71,9 +71,13 @@ sudo dnf install -y git clang cmake openssl-devel xxhash-devel zlib-devel libstd
 git clone https://github.com/rui314/mold.git
 cd mold
 git checkout v1.0.1
-make -j$(nproc)
+make -j$(nproc) CXX=clang++
 sudo make install
 ```
+
+You may need to pass a C++20 compiler command name to `make`.
+In the above case, `clang++` is passed. If it doesn't work for you,
+try a specific version of a compiler such as `g++-10` or `clang++-12`.
 
 By default, `mold` is installed to `/usr/local/bin`.
 
