@@ -16,7 +16,7 @@ jobs:
     - name: make
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-        make DEBUG=1 -j$(nproc)
+        make CC=clang CXX=clang++ DEBUG=1 -j$(nproc)
     - name: make test
       run: |
         export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
