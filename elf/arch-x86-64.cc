@@ -17,6 +17,24 @@ void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
 }
 
+// The compact PLT format is used when `-z now` is given. If the flag
+// is given, all PLT symbols are resolved eagerly on startup, so we
+// can omit code for lazy symbol resolution from PLT in that case.
+static void write_compact_plt(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+
+  static const u8 data[] = {
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmp *foo@GOT
+    0x90,                         // nop
+  };
+
+  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+    u8 *ent = buf + sym->get_plt_idx(ctx) * ctx.plt_size;
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 3) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 7;
+  }
+}
+
 // The IBTPLT is a security-enhanced version of the regular PLT.
 // It uses Intel MPX instructions to protect the control flow integirty.
 // IBTPLT is slightly larger than the regular PLT (24 bytes vs 16 bytes
@@ -96,7 +114,9 @@ static void write_plt(Context<X86_64> &ctx) {
 
 template <>
 void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
-  if (ctx.arg.z_ibtplt)
+  if (ctx.arg.z_now)
+    write_compact_plt(ctx);
+  else if (ctx.arg.z_ibtplt)
     write_ibtplt(ctx);
   else
     write_plt(ctx);

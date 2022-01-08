@@ -903,8 +903,16 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   switch (E::e_machine) {
   case EM_X86_64:
-    ctx.plt_hdr_size = 16;
-    ctx.plt_size = ctx.arg.z_ibtplt ? 24 : 16;
+    if (ctx.arg.z_now) {
+      ctx.plt_hdr_size = 0;
+      ctx.plt_size = 8;
+    } else if (ctx.arg.z_ibtplt) {
+      ctx.plt_hdr_size = 16;
+      ctx.plt_size = 24;
+    } else {
+      ctx.plt_hdr_size = 16;
+      ctx.plt_size = 16;
+    }
     break;
   case EM_386:
     ctx.plt_hdr_size = 16;
