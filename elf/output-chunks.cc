@@ -896,7 +896,7 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
     ctx.gotplt->shdr.sh_size = E::word_size * 3;
   }
 
-  sym->set_plt_idx(ctx, this->shdr.sh_size / E::plt_size);
+  sym->set_plt_idx(ctx, symbols.size());
   this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
 

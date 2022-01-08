@@ -37,7 +37,7 @@ static void write_plt_header(Context<I386> &ctx, u8 *buf) {
 
 static void write_plt_entry(Context<I386> &ctx, u8 *buf, Symbol<I386> &sym,
                             i64 idx) {
-  u8 *ent = buf + sym.get_plt_idx(ctx) * I386::plt_size;
+  u8 *ent = buf + I386::plt_hdr_size + sym.get_plt_idx(ctx) * I386::plt_size;
 
   if (ctx.arg.pic) {
     static const u8 data[] = {

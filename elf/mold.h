@@ -1816,7 +1816,7 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
 template <typename E>
 inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
   if (i32 idx = get_plt_idx(ctx); idx != -1)
-    return ctx.plt->shdr.sh_addr + idx * E::plt_size;
+    return ctx.plt->shdr.sh_addr + E::plt_hdr_size + idx * E::plt_size;
   return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::pltgot_size;
 }
 
