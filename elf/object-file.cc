@@ -850,7 +850,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = elf_syms[i];
-    if (esym.is_undef() || esym.is_common())
+    if (esym.is_undef())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -908,8 +908,24 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
     std::lock_guard lock(sym.mu);
 
-    if (esym.is_undef() || esym.is_common()) {
+    if (esym.is_undef()) {
       if (!esym.is_weak() && sym.file && !sym.file->is_alive.exchange(true)) {
+        feeder((ObjectFile<E> *)sym.file);
+        if (sym.traced)
+          SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                       << " for " << sym;
+      }
+      continue;
+    }
+
+    // A common symbol pulls in other object file from an archive if and
+    // only if doing so makes it to be resolved to a non-common symbol.
+    // In other words, we don't pull out an object file from an archive
+    // if doing so would end up overwriting a common symbol with a
+    // common symbol.
+    if (esym.is_common()) {
+      if (sym.file && !sym.esym().is_common() &&
+          !sym.file->is_alive.exchange(true)) {
         feeder((ObjectFile<E> *)sym.file);
         if (sym.traced)
           SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
