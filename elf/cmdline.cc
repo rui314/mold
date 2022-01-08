@@ -392,6 +392,24 @@ static bool is_file(std::string_view path) {
          (st.st_mode & S_IFMT) != S_IFDIR;
 }
 
+// Returns a PLT header size and a PLT entry size.
+template <typename E>
+static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
+  switch (E::e_machine) {
+  case EM_X86_64:
+    if (ctx.arg.z_now)
+      return {0, 8};
+    if (ctx.arg.z_ibtplt)
+      return {16, 24};
+    return {16, 16};
+  case EM_386:
+    return {16, 16};
+  case EM_AARCH64:
+    return {32, 16};
+  }
+  unreachable();
+}
+
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining) {
@@ -901,30 +919,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.default_version = VER_NDX_LAST_RESERVED + 1;
   }
 
-  switch (E::e_machine) {
-  case EM_X86_64:
-    if (ctx.arg.z_now) {
-      ctx.plt_hdr_size = 0;
-      ctx.plt_size = 8;
-    } else if (ctx.arg.z_ibtplt) {
-      ctx.plt_hdr_size = 16;
-      ctx.plt_size = 24;
-    } else {
-      ctx.plt_hdr_size = 16;
-      ctx.plt_size = 16;
-    }
-    break;
-  case EM_386:
-    ctx.plt_hdr_size = 16;
-    ctx.plt_size = 16;
-    break;
-  case EM_AARCH64:
-    ctx.plt_hdr_size = 32;
-    ctx.plt_size = 16;
-    break;
-  default:
-    unreachable();
-  }
+  std::tie(ctx.plt_hdr_size, ctx.plt_size) = get_plt_size(ctx);
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 
