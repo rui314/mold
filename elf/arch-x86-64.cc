@@ -17,9 +17,53 @@ void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
 }
 
-template <>
-void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+// The IBTPLT is a security-enhanced version of the regular PLT.
+// It uses Intel MPX instructions to protect the control flow integirty.
+// IBTPLT is slightly larger than the regular PLT (24 bytes vs 16 bytes
+// for each entry).
+//
+// Note that our IBTPLT instruction sequence is different from the one
+// used in GNU ld. GNU's IBTPLT implementation uses two separate
+// sections (.plt and .plt.sec) in which one PLT entry takes 32 bytes
+// in total.
+static void write_ibtplt(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+
+  // Write PLT header
+  static const u8 plt0[] = {
+    0xff, 0x35, 0, 0, 0, 0,       // pushq GOTPLT+8(%rip)
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmpq *GOTPLT+16(%rip)
+    0x0f, 0x1f, 0x0,              // nop
+  };
+
+  memcpy(buf, plt0, sizeof(plt0));
+  *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 2;
+  *(u32 *)(buf + 9) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 3;
+
+  // Write PLT entries
+  i64 relplt_idx = 0;
+
+  static const u8 data[] = {
+    0xf3, 0x0f, 0x1e, 0xfa,       // endbr64
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmpq *foo@GOTPLT
+    0x68, 0, 0, 0, 0,             // pushq $index_in_relplt
+    0xf2, 0xe9, 0, 0, 0, 0,       // bnd PLT[0]
+    0x66, 0x90,                   // nop
+  };
+
+  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+    u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
+    memcpy(ent, data, sizeof(data));
+    *(u32 *)(ent + 7) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 11;
+    *(u32 *)(ent + 12) = relplt_idx++;
+    *(u32 *)(ent + 18) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 22;
+  }
+}
+
+// The regular PLT. Unless `-z ibtplt` is given (which is rare), this
+// version will be used.
+static void write_plt(Context<X86_64> &ctx) {
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   // Write PLT header
   static const u8 plt0[] = {
@@ -29,8 +73,8 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   };
 
   memcpy(buf, plt0, sizeof(plt0));
-  *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 2;
-  *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr + 4;
+  *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 2;
+  *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4;
 
   // Write PLT entries
   i64 relplt_idx = 0;
@@ -41,28 +85,38 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
   };
 
-  for (Symbol<X86_64> *sym : symbols) {
-    u8 *ent = buf + X86_64::plt_hdr_size + sym->get_plt_idx(ctx) * X86_64::plt_size;
+  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+    u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
     *(u32 *)(ent + 7) = relplt_idx++;
-    *(u32 *)(ent + 12) = this->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
+    *(u32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
   }
+}
+
+template <>
+void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+  if (ctx.arg.z_ibtplt)
+    write_ibtplt(ctx);
+  else
+    write_plt(ctx);
 }
 
 template <>
 void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
+  // We always write a IBT-enabled PLTGOT. If a processor does not
+  // support Intel MPX, the BND prefix just behaves as a nop.
   static const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
-    0x66, 0x90,             // nop
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmp *foo@GOT
+    0x90,                         // nop
   };
 
   for (Symbol<X86_64> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * X86_64::pltgot_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(u32 *)(ent + 3) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 7;
   }
 }
 

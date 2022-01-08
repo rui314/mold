@@ -447,7 +447,7 @@ public:
     this->name = ".plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = E::plt_hdr_size;
+    this->shdr.sh_addralign = 16;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -1257,6 +1257,7 @@ struct Context {
     bool z_dlopen = true;
     bool z_dump = true;
     bool z_execstack = false;
+    bool z_ibtplt = false;
     bool z_initfirst = false;
     bool z_interpose = false;
     bool z_keep_text_section_prefix = false;
@@ -1311,6 +1312,8 @@ struct Context {
   bool llvm_lto = false;
 
   i64 page_size = -1;
+  i64 plt_hdr_size = -1;
+  i64 plt_size = -1;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;
@@ -1816,7 +1819,7 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
 template <typename E>
 inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
   if (i32 idx = get_plt_idx(ctx); idx != -1)
-    return ctx.plt->shdr.sh_addr + E::plt_hdr_size + idx * E::plt_size;
+    return ctx.plt->shdr.sh_addr + ctx.plt_hdr_size + idx * ctx.plt_size;
   return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::pltgot_size;
 }
 

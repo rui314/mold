@@ -892,12 +892,12 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
 
   if (this->shdr.sh_size == 0) {
-    this->shdr.sh_size = E::plt_hdr_size;
+    this->shdr.sh_size = ctx.plt_hdr_size;
     ctx.gotplt->shdr.sh_size = E::word_size * 3;
   }
 
   sym->set_plt_idx(ctx, symbols.size());
-  this->shdr.sh_size += E::plt_size;
+  this->shdr.sh_size += ctx.plt_size;
   symbols.push_back(sym);
 
   sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / E::word_size);

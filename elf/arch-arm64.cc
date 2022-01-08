@@ -53,7 +53,7 @@ static void write_plt_header(Context<ARM64> &ctx, u8 *buf) {
 }
 
 static void write_plt_entry(Context<ARM64> &ctx, u8 *buf, Symbol<ARM64> &sym) {
-  u8 *ent = buf + ARM64::plt_hdr_size + sym.get_plt_idx(ctx) * ARM64::plt_size;
+  u8 *ent = buf + ctx.plt_hdr_size + sym.get_plt_idx(ctx) * ctx.plt_size;
 
   static const u8 data[] = {
     0x10, 0x00, 0x00, 0x90, // adrp x16, .got.plt[n]

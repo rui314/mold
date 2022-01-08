@@ -634,6 +634,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_initfirst = true;
     } else if (read_z_flag(args, "interpose")) {
       ctx.arg.z_interpose = true;
+    } else if (read_z_flag(args, "ibtplt")) {
+      ctx.arg.z_ibtplt = true;
     } else if (read_z_flag(args, "muldefs")) {
       ctx.arg.allow_multiple_definition = true;
     } else if (read_z_flag(args, "keep-text-section-prefix")) {
@@ -897,6 +899,23 @@ void parse_nonpositional_args(Context<E> &ctx,
       filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
     ctx.arg.version_definitions.push_back(ver);
     ctx.arg.default_version = VER_NDX_LAST_RESERVED + 1;
+  }
+
+  switch (E::e_machine) {
+  case EM_X86_64:
+    ctx.plt_hdr_size = 16;
+    ctx.plt_size = ctx.arg.z_ibtplt ? 24 : 16;
+    break;
+  case EM_386:
+    ctx.plt_hdr_size = 16;
+    ctx.plt_size = 16;
+    break;
+  case EM_AARCH64:
+    ctx.plt_hdr_size = 32;
+    ctx.plt_size = 16;
+    break;
+  default:
+    unreachable();
   }
 
   ctx.arg.undefined.push_back(ctx.arg.entry);

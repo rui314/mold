@@ -33,6 +33,6 @@ EOF
 
 objdump -d -j .plt.got $t/exe > $t/log
 
-grep -Pq '1020:\s+ff 25 da 0f 00 00\s+jmp.*# 2000 <ext2>' $t/log
+grep -Pq '1020:.*jmp.*# 2000 <ext2>' $t/log
 
 echo OK
