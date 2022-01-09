@@ -1111,29 +1111,29 @@ void compress_debug_sections(Context<E> &ctx) {
 }
 
 #define INSTANTIATE(E)                                                  \
-  template void apply_exclude_libs(Context<E> &ctx);                    \
-  template void create_synthetic_sections(Context<E> &ctx);             \
-  template void resolve_symbols(Context<E> &ctx);                       \
-  template void eliminate_comdats(Context<E> &ctx);                     \
-  template void convert_common_symbols(Context<E> &ctx);                \
-  template void compute_merged_section_sizes(Context<E> &ctx);          \
-  template void bin_sections(Context<E> &ctx);                          \
-  template ObjectFile<E> *create_internal_file(Context<E> &ctx);        \
-  template void check_cet_errors(Context<E> &ctx);                      \
-  template void check_duplicate_symbols(Context<E> &ctx);               \
-  template void sort_init_fini(Context<E> &ctx);                        \
-  template std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx); \
-  template void compute_section_sizes(Context<E> &ctx);                 \
-  template void claim_unresolved_symbols(Context<E> &ctx);              \
-  template void scan_rels(Context<E> &ctx);                             \
-  template void apply_version_script(Context<E> &ctx);                  \
-  template void parse_symbol_version(Context<E> &ctx);                  \
-  template void compute_import_export(Context<E> &ctx);                 \
-  template void clear_padding(Context<E> &ctx);                         \
-  template i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk);      \
-  template i64 set_osec_offsets(Context<E> &ctx);                       \
-  template void fix_synthetic_symbols(Context<E> &ctx);                 \
-  template void compress_debug_sections(Context<E> &ctx);
+  template void apply_exclude_libs(Context<E> &);                       \
+  template void create_synthetic_sections(Context<E> &);                \
+  template void resolve_symbols(Context<E> &);                          \
+  template void eliminate_comdats(Context<E> &);                        \
+  template void convert_common_symbols(Context<E> &);                   \
+  template void compute_merged_section_sizes(Context<E> &);             \
+  template void bin_sections(Context<E> &);                             \
+  template ObjectFile<E> *create_internal_file(Context<E> &);           \
+  template void check_cet_errors(Context<E> &);                         \
+  template void check_duplicate_symbols(Context<E> &);                  \
+  template void sort_init_fini(Context<E> &);                           \
+  template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
+  template void compute_section_sizes(Context<E> &);                    \
+  template void claim_unresolved_symbols(Context<E> &);                 \
+  template void scan_rels(Context<E> &);                                \
+  template void apply_version_script(Context<E> &);                     \
+  template void parse_symbol_version(Context<E> &);                     \
+  template void compute_import_export(Context<E> &);                    \
+  template void clear_padding(Context<E> &);                            \
+  template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
+  template i64 set_osec_offsets(Context<E> &);                          \
+  template void fix_synthetic_symbols(Context<E> &);                    \
+  template void compress_debug_sections(Context<E> &);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
