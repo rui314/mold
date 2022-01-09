@@ -13,8 +13,12 @@ void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   buf[1] = 0;
   buf[2] = 0;
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols)
-    buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
+  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+    if (ctx.arg.z_ibtplt)
+      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 11;
+    else
+      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
+  }
 }
 
 // The compact PLT format is used when `-z now` is given. If the flag
@@ -50,7 +54,7 @@ static void write_ibtplt(Context<X86_64> &ctx) {
   // Write PLT header
   static const u8 plt0[] = {
     0xff, 0x35, 0, 0, 0, 0,       // pushq GOTPLT+8(%rip)
-    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmpq *GOTPLT+16(%rip)
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmp *GOTPLT+16(%rip)
     0x0f, 0x1f, 0x0,              // nop
   };
 
@@ -63,9 +67,9 @@ static void write_ibtplt(Context<X86_64> &ctx) {
 
   static const u8 data[] = {
     0xf3, 0x0f, 0x1e, 0xfa,       // endbr64
-    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmpq *foo@GOTPLT
+    0xf2, 0xff, 0x25, 0, 0, 0, 0, // bnd jmp *foo@GOTPLT
     0x68, 0, 0, 0, 0,             // pushq $index_in_relplt
-    0xf2, 0xe9, 0, 0, 0, 0,       // bnd PLT[0]
+    0xf2, 0xe9, 0, 0, 0, 0,       // jmp PLT[0]
     0x66, 0x90,                   // nop
   };
 
