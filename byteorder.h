@@ -5,11 +5,11 @@
 namespace mold {
 
 template <typename T>
-class Int {
+class BigEndian {
 public:
-  Int() : Int(0) {}
+  BigEndian() : BigEndian(0) {}
 
-  Int(T x) {
+  BigEndian(T x) {
     *this = x;
   }
 
@@ -20,41 +20,41 @@ public:
     return ret;
   }
 
-  Int &operator=(T x) {
+  BigEndian &operator=(T x) {
     for (int i = 0; i < sizeof(T); i++)
       val[sizeof(T) - 1 - i] = x >> (i * 8);
     return *this;
   }
 
-  Int &operator++() {
+  BigEndian &operator++() {
     return *this = *this + 1;
   }
 
-  Int operator++(int) {
+  BigEndian operator++(int) {
     T ret = *this;
     *this = *this + 1;
     return ret;
   }
 
-  Int &operator--() {
+  BigEndian &operator--() {
     return *this = *this - 1;
   }
 
-  Int operator--(int) {
+  BigEndian operator--(int) {
     T ret = *this;
     *this = *this - 1;
     return ret;
   }
 
-  Int &operator+=(T x) {
+  BigEndian &operator+=(T x) {
     return *this = *this + x;
   }
 
-  Int &operator&=(T x) {
+  BigEndian &operator&=(T x) {
     return *this = *this & x;
   }
 
-  Int &operator|=(T x) {
+  BigEndian &operator|=(T x) {
     return *this = *this | x;
   }
 
@@ -62,11 +62,11 @@ private:
   uint8_t val[sizeof(T)];
 };
 
-class ibig16 : public Int<int16_t> { using Int::Int; };
-class ibig32 : public Int<int32_t> { using Int::Int; };
-class ibig64 : public Int<int64_t> { using Int::Int; };
-class ubig16 : public Int<uint16_t> { using Int::Int; };
-class ubig32 : public Int<uint32_t> { using Int::Int; };
-class ubig64 : public Int<uint64_t> { using Int::Int; };
+using ibig16 = BigEndian<int16_t>;
+using ibig32 = BigEndian<int32_t>;
+using ibig64 = BigEndian<int64_t>;
+using ubig16 = BigEndian<uint16_t>;
+using ubig32 = BigEndian<uint32_t>;
+using ubig64 = BigEndian<uint64_t>;
 
 } // namespace mold
