@@ -1270,6 +1270,7 @@ struct Context {
     bool z_dlopen = true;
     bool z_dump = true;
     bool z_execstack = false;
+    bool z_ibt = false;
     bool z_ibtplt = false;
     bool z_initfirst = false;
     bool z_interpose = false;

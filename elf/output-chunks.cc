@@ -1768,6 +1768,8 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     features &= file->features;
 
+  if (ctx.arg.z_ibt)
+    features |= GNU_PROPERTY_X86_FEATURE_1_IBT;
   if (ctx.arg.z_shstk)
     features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
 

@@ -658,6 +658,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_initfirst = true;
     } else if (read_z_flag(args, "interpose")) {
       ctx.arg.z_interpose = true;
+    } else if (read_z_flag(args, "ibt")) {
+      ctx.arg.z_ibt = true;
+      ctx.arg.z_ibtplt = true;
     } else if (read_z_flag(args, "ibtplt")) {
       ctx.arg.z_ibtplt = true;
     } else if (read_z_flag(args, "muldefs")) {
