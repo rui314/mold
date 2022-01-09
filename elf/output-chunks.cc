@@ -1766,8 +1766,7 @@ template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   features = -1;
   for (ObjectFile<E> *file : ctx.objs)
-    if (file != ctx.internal_obj)
-      features &= file->features;
+    features &= file->features;
 
   if (ctx.arg.z_shstk)
     features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;

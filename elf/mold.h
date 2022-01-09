@@ -1101,6 +1101,7 @@ template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
 template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
+template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
@@ -1168,6 +1169,12 @@ typedef enum {
   NOSEPARATE_CODE,
 } SeparateCodeKind;
 
+typedef enum {
+  CET_REPORT_NONE,
+  CET_REPORT_WARNING,
+  CET_REPORT_ERROR,
+} CetReportKind;
+
 struct VersionPattern {
   u16 ver_idx;
   std::vector<std::string_view> patterns;
@@ -1218,6 +1225,7 @@ struct Context {
   // Command-line arguments
   struct {
     BuildId build_id;
+    CetReportKind z_cet_report = CET_REPORT_NONE;
     CompressKind compress_debug_sections = COMPRESS_NONE;
     SeparateCodeKind z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;

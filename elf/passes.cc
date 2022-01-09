@@ -325,6 +325,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
   obj->is_alive = true;
+  obj->features = -1;
   obj->priority = 1;
 
   auto add = [&](std::string_view name) {
@@ -405,6 +406,33 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   });
 
   return obj;
+}
+
+template <typename E>
+void check_cet_errors(Context<E> &ctx) {
+  bool warning = (ctx.arg.z_cet_report == CET_REPORT_WARNING);
+  bool error = (ctx.arg.z_cet_report == CET_REPORT_ERROR);
+  assert(warning || error);
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (!(file->features & GNU_PROPERTY_X86_FEATURE_1_IBT)) {
+      if (warning)
+        Warn(ctx) << *file << ": -cet-report=warning: "
+                  << "missing GNU_PROPERTY_X86_FEATURE_1_IBT";
+      else
+        Error(ctx) << *file << ": -cet-report=error: "
+                   << "missing GNU_PROPERTY_X86_FEATURE_1_IBT";
+    }
+
+    if (!(file->features & GNU_PROPERTY_X86_FEATURE_1_SHSTK)) {
+      if (warning)
+        Warn(ctx) << *file << ": -cet-report=warning: "
+                  << "missing GNU_PROPERTY_X86_FEATURE_1_SHSTK";
+      else
+        Error(ctx) << *file << ": -cet-report=error: "
+                   << "missing GNU_PROPERTY_X86_FEATURE_1_SHSTK";
+    }
+  }
 }
 
 template <typename E>
@@ -1091,6 +1119,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void compute_merged_section_sizes(Context<E> &ctx);          \
   template void bin_sections(Context<E> &ctx);                          \
   template ObjectFile<E> *create_internal_file(Context<E> &ctx);        \
+  template void check_cet_errors(Context<E> &ctx);                      \
   template void check_duplicate_symbols(Context<E> &ctx);               \
   template void sort_init_fini(Context<E> &ctx);                        \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx); \

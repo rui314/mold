@@ -536,6 +536,10 @@ static int elf_main(int argc, char **argv) {
   // Beyond this point, no new files will be added to ctx.objs
   // or ctx.dsos.
 
+  // Handle `-z cet-report`.
+  if (ctx.arg.z_cet_report != CET_REPORT_NONE)
+    check_cet_errors(ctx);
+
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
@@ -551,6 +555,7 @@ static int elf_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  // Handle --require-defined
   for (std::string_view name : ctx.arg.require_defined)
     if (!get_symbol(ctx, name)->file)
       Error(ctx) << "--require-defined: undefined symbol: " << name;

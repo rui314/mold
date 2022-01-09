@@ -624,6 +624,12 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_now = true;
     } else if (read_z_flag(args, "lazy")) {
       ctx.arg.z_now = false;
+    } else if (read_z_flag(args, "cet-report=none")) {
+      ctx.arg.z_cet_report = CET_REPORT_NONE;
+    } else if (read_z_flag(args, "cet-report=warning")) {
+      ctx.arg.z_cet_report = CET_REPORT_WARNING;
+    } else if (read_z_flag(args, "cet-report=error")) {
+      ctx.arg.z_cet_report = CET_REPORT_ERROR;
     } else if (read_z_flag(args, "execstack")) {
       ctx.arg.z_execstack = true;
     } else if (read_z_arg(ctx, args, arg, "max-page-size")) {
