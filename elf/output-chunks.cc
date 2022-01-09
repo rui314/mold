@@ -1769,6 +1769,9 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     if (file != ctx.internal_obj)
       features &= file->features;
 
+  if (ctx.arg.z_shstk)
+    features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+
   if (features != 0 && features != -1)
     this->shdr.sh_size = (E::word_size == 8) ? 32 : 28;
 }

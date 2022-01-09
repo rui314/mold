@@ -660,6 +660,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_keep_text_section_prefix = true;
     } else if (read_z_flag(args, "nokeep-text-section-prefix")) {
       ctx.arg.z_keep_text_section_prefix = false;
+    } else if (read_z_flag(args, "shstk")) {
+      ctx.arg.z_shstk = true;
     } else if (read_z_flag(args, "text")) {
       ctx.arg.z_text = true;
     } else if (read_z_flag(args, "notext") || read_z_flag(args, "textoff")) {

@@ -227,6 +227,9 @@ static constexpr u32 NT_GNU_PROPERTY_TYPE_0 = 5;
 static constexpr u32 GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xc0000000;
 static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_AND = 0xc0000002;
 
+static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_IBT = 1;
+static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_SHSTK = 2;
+
 static constexpr u32 ELFCOMPRESS_ZLIB = 1;
 
 static constexpr u32 R_X86_64_NONE = 0;

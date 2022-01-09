@@ -1265,6 +1265,7 @@ struct Context {
     bool z_now = false;
     bool z_origin = false;
     bool z_relro = true;
+    bool z_shstk = false;
     bool z_text = false;
     u16 default_version = VER_NDX_GLOBAL;
     i64 emulation = -1;
