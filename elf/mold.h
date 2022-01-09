@@ -1155,7 +1155,12 @@ struct BuildId {
 };
 
 typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
-typedef enum { ERROR, WARN, IGNORE } UnresolvedKind;
+
+typedef enum {
+  UNRESOLVED_ERROR,
+  UNRESOLVED_WARN,
+  UNRESOLVED_IGNORE,
+} UnresolvedKind;
 
 typedef enum {
   SEPARATE_LOADABLE_SEGMENTS,
@@ -1215,7 +1220,7 @@ struct Context {
     BuildId build_id;
     CompressKind compress_debug_sections = COMPRESS_NONE;
     SeparateCodeKind z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
-    UnresolvedKind unresolved_symbols = UnresolvedKind::ERROR;
+    UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;

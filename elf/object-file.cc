@@ -1034,7 +1034,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       sym.is_exported = false;
     };
 
-    if (ctx.arg.unresolved_symbols == UnresolvedKind::WARN)
+    if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
       Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
 
     // Convert remaining undefined symbols to dynamic symbols.
@@ -1050,7 +1050,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       // Some major programs, notably Firefox, depend on the behavior
       // (they use this loophole to export symbols from libxul.so).
       if (!ctx.arg.z_defs || esym.is_undef_weak() ||
-          ctx.arg.unresolved_symbols != UnresolvedKind::ERROR) {
+          ctx.arg.unresolved_symbols != UNRESOLVED_ERROR) {
         claim();
         sym.ver_idx = 0;
         sym.is_imported = true;
@@ -1064,7 +1064,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     }
 
     // Convert remaining undefined symbols to absolute symbols with value 0.
-    if (ctx.arg.unresolved_symbols != UnresolvedKind::ERROR ||
+    if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR ||
         esym.is_undef_weak()) {
       claim();
       sym.ver_idx = ctx.arg.default_version;

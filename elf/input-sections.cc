@@ -138,13 +138,13 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
 template <typename E>
 void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
   switch (ctx.arg.unresolved_symbols) {
-  case UnresolvedKind::ERROR:
+  case UNRESOLVED_ERROR:
     Error(ctx) << "undefined symbol: " << file << ": " << sym;
     break;
-  case UnresolvedKind::WARN:
+  case UNRESOLVED_WARN:
     Warn(ctx) << "undefined symbol: " << file << ": " << sym;
     break;
-  case UnresolvedKind::IGNORE:
+  case UNRESOLVED_IGNORE:
     break;
   }
 }

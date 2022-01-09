@@ -521,9 +521,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.unique.reset(new std::regex(*re, flags));
     } else if (read_arg(ctx, args, arg, "unresolved-symbols")) {
       if (arg == "report-all" || arg == "ignore-in-shared-libs")
-        ctx.arg.unresolved_symbols = UnresolvedKind::ERROR;
+        ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
       else if (arg == "ignore-all" || arg == "ignore-in-object-files")
-        ctx.arg.unresolved_symbols = UnresolvedKind::IGNORE;
+        ctx.arg.unresolved_symbols = UNRESOLVED_IGNORE;
       else
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
     } else if (read_arg(ctx, args, arg, "u") ||
@@ -734,9 +734,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
       ctx.arg.strip_all = true;
     } else if (read_flag(args, "warn-unresolved-symbols")) {
-      ctx.arg.unresolved_symbols = UnresolvedKind::WARN;
+      ctx.arg.unresolved_symbols = UNRESOLVED_WARN;
     } else if (read_flag(args, "error-unresolved-symbols")) {
-      ctx.arg.unresolved_symbols = UnresolvedKind::ERROR;
+      ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
     } else if (read_arg(ctx, args, arg, "rpath")) {
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
