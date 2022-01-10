@@ -587,7 +587,6 @@ void scan_rels(Context<E> &ctx) {
     }
   };
 
-
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
     add_aux(sym);
@@ -831,7 +830,7 @@ void clear_padding(Context<E> &ctx) {
 //   ELF header
 //   program header
 //   .interp
-//   note
+//   alloc note
 //   alloc readonly data
 //   alloc readonly code
 //   alloc writable tdata
