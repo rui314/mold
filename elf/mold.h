@@ -885,6 +885,12 @@ public:
 
   ElfShdr<E> *find_section(i64 type);
 
+  virtual void
+  mark_live_objects(Context<E> &ctx,
+                    std::function<void(InputFile<E> *)> feeder) = 0;
+
+  virtual std::span<Symbol<E> *> get_global_syms() = 0;
+
   MappedFile<Context<E>> *mf;
   std::span<ElfShdr<E>> elf_sections;
   std::vector<Symbol<E> *> symbols;
@@ -910,11 +916,9 @@ public:
 
   void parse(Context<E> &ctx);
   void register_section_pieces(Context<E> &ctx);
-  void resolve_lazy_symbols(Context<E> &ctx);
-  void resolve_regular_symbols(Context<E> &ctx);
+  void resolve_obj_symbols(Context<E> &ctx, bool register_common);
   void mark_live_objects(Context<E> &ctx,
-                         std::function<void(ObjectFile<E> *)> feeder);
-  void resolve_common_symbols(Context<E> &ctx);
+                         std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
   void eliminate_duplicate_comdat_groups();
@@ -926,7 +930,7 @@ public:
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
-  std::span<Symbol<E> *> get_global_syms();
+  std::span<Symbol<E> *> get_global_syms() override;
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
@@ -991,6 +995,13 @@ public:
   void resolve_dso_symbols(Context<E> &ctx);
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
+
+  void mark_live_objects(Context<E> &ctx,
+                         std::function<void(InputFile<E> *)> feeder) override;
+
+  std::span<Symbol<E> *> get_global_syms() override {
+    return globals;
+  }
 
   std::string soname;
   std::vector<std::string_view> version_strings;
@@ -1534,7 +1545,6 @@ public:
   tbb::spin_mutex mu;
   std::atomic_uint8_t visibility = STV_DEFAULT;
 
-  u8 is_lazy : 1 = false;
   u8 is_weak : 1 = false;
   u8 write_to_symtab : 1 = false;
   u8 traced : 1 = false;

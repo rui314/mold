@@ -768,20 +768,17 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 //
 //  1. Strong defined symbol
 //  2. Weak defined symbol
-//  3. Strong defined symbol in a DSO
-//  4. Weak defined symbol in a DSO
-//  5. Strong or weak defined symbol in an archive
-//  6. Common symbol
-//  7. Unclaimed (nonexistent) symbol
+//  3. Strong defined symbol in a DSO/archive
+//  4. Weak Defined symbol in a DSO/archive
+//  5. Common symbol
+//  6. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 template <typename E>
 static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
   if (esym.is_common())
-    return (6 << 24) + file->priority;
-  if (is_lazy)
     return (5 << 24) + file->priority;
-  if (file->is_dso) {
+  if (file->is_dso || is_lazy) {
     if (esym.is_weak())
       return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
@@ -794,27 +791,8 @@ static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
 template <typename E>
 static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
-    return 7 << 24;
-  return get_rank(sym.file, sym.esym(), sym.is_lazy);
-}
-
-template <typename E>
-void ObjectFile<E>::override_symbol(Context<E> &ctx, Symbol<E> &sym,
-                                    const ElfSym<E> &esym, i64 symidx) {
-  sym.file = this;
-  sym.input_section = esym.is_abs() ? nullptr : get_section(esym);
-
-  if (SectionFragmentRef<E> &ref = sym_fragments[symidx]; ref.frag)
-    sym.value = ref.addend;
-  else
-    sym.value = esym.st_value;
-
-  sym.sym_idx = symidx;
-  sym.ver_idx = ctx.arg.default_version;
-  sym.is_lazy = false;
-  sym.is_weak = esym.is_weak();
-  sym.is_imported = false;
-  sym.is_exported = false;
+    return 6 << 24;
+  return get_rank(sym.file, sym.esym(), !sym.file->is_alive);
 }
 
 template <typename E>
@@ -844,58 +822,53 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
-void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
-  assert(is_in_lib);
-
+void ObjectFile<E>::resolve_obj_symbols(Context<E> &ctx, bool register_common) {
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = elf_syms[i];
+
     if (esym.is_undef())
       continue;
-
-    std::lock_guard lock(sym.mu);
-    if (get_rank(this, esym, true) < get_rank(sym)) {
-      sym.file = this;
-      sym.sym_idx = i;
-      sym.is_lazy = true;
-      sym.is_weak = false;
-      if (sym.traced)
-        SyncOut(ctx) << "trace-symbol: " << *this
-                     << ": lazy definition of " << sym;
-    }
-  }
-}
-
-template <typename E>
-void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
-  assert(!is_in_lib);
-
-  for (i64 i = first_global; i < this->symbols.size(); i++) {
-    Symbol<E> &sym = *this->symbols[i];
-    const ElfSym<E> &esym = elf_syms[i];
-    if (esym.is_undef() || esym.is_common())
+    if (!register_common && esym.is_common())
       continue;
 
     std::lock_guard lock(sym.mu);
-    if (get_rank(this, esym, false) < get_rank(sym))
-      override_symbol(ctx, sym, esym, i);
+    if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
+      sym.file = this;
+
+      if (esym.is_abs() || esym.is_common())
+        sym.input_section = nullptr;
+      else
+        sym.input_section = get_section(esym);
+
+      if (SectionFragmentRef<E> &ref = sym_fragments[i]; ref.frag)
+        sym.value = ref.addend;
+      else
+        sym.value = esym.st_value;
+
+      sym.sym_idx = i;
+      sym.ver_idx = ctx.arg.default_version;
+      sym.is_weak = esym.is_weak();
+      sym.is_imported = false;
+      sym.is_exported = false;
+    }
   }
 }
 
 template <typename E>
 void
 ObjectFile<E>::mark_live_objects(Context<E> &ctx,
-                                 std::function<void(ObjectFile<E> *)> feeder) {
+                                 std::function<void(InputFile<E> *)> feeder) {
   assert(this->is_alive);
 
   for (i64 i = first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
 
-    u8 visibility = esym.st_visibility;
     if (esym.is_defined() && exclude_libs)
-      visibility = STV_HIDDEN;
-    merge_visibility(ctx, sym, visibility);
+      merge_visibility(ctx, sym, STV_HIDDEN);
+    else
+      merge_visibility(ctx, sym, esym.st_visibility);
 
     if (sym.traced) {
       if (esym.is_defined())
@@ -906,66 +879,20 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
         SyncOut(ctx) << "trace-symbol: " << *this << ": reference to " << sym;
     }
 
+    if (esym.is_weak())
+      continue;
+
     std::lock_guard lock(sym.mu);
-
-    if (esym.is_undef()) {
-      if (!esym.is_weak() && sym.file && !sym.file->is_alive.exchange(true)) {
-        feeder((ObjectFile<E> *)sym.file);
-        if (sym.traced)
-          SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                       << " for " << sym;
-      }
-      continue;
-    }
-
-    // A common symbol pulls in other object file from an archive if and
-    // only if doing so makes it to be resolved to a non-common symbol.
-    // In other words, we don't pull out an object file from an archive
-    // if doing so would end up overwriting a common symbol with a
-    // common symbol.
-    if (esym.is_common()) {
-      if (sym.file && !sym.esym().is_common() &&
-          !sym.file->is_alive.exchange(true)) {
-        feeder((ObjectFile<E> *)sym.file);
-        if (sym.traced)
-          SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                       << " for " << sym;
-      }
-      continue;
-    }
-
-    if (get_rank(this, esym, false) < get_rank(sym))
-      override_symbol(ctx, sym, esym, i);
-  }
-}
-
-template <typename E>
-void ObjectFile<E>::resolve_common_symbols(Context<E> &ctx) {
-  if (!has_common_symbol)
-    return;
-
-  for (i64 i = first_global; i < this->symbols.size(); i++) {
-    const ElfSym<E> &esym = elf_syms[i];
-    if (!esym.is_common())
+    if (!sym.file)
       continue;
 
-    Symbol<E> &sym = *this->symbols[i];
-    std::lock_guard lock(sym.mu);
-
-    if (get_rank(this, esym, false) < get_rank(sym)) {
-      sym.file = this;
-      sym.input_section = nullptr;
-      sym.value = esym.st_value;
-      sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
-      sym.is_lazy = false;
-      sym.is_weak = false;
-      sym.is_imported = false;
-      sym.is_exported = false;
+    bool keep = esym.is_undef() || (esym.is_common() && !sym.esym().is_common());
+    if (keep && !sym.file->is_alive.exchange(true)) {
+      feeder(sym.file);
 
       if (sym.traced)
-        SyncOut(ctx) << "trace-symbol: " << *this
-                     << ": common definition of " << sym;
+        SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                     << " for " << sym;
     }
   }
 }
@@ -1029,7 +956,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       sym.input_section = nullptr;
       sym.value = 0;
       sym.sym_idx = i;
-      sym.is_lazy = false;
       sym.is_weak = false;
       sym.is_exported = false;
     };
@@ -1135,7 +1061,6 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     sym.value = 0;
     sym.sym_idx = i;
     sym.ver_idx = ctx.arg.default_version;
-    sym.is_lazy = false;
     sym.is_weak = false;
     sym.is_imported = false;
     sym.is_exported = false;
@@ -1373,19 +1298,38 @@ void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
 
     std::lock_guard lock(sym.mu);
 
-    if (!sym.file || this->priority < sym.file->priority) {
+    if (get_rank(this, esym, false) <= get_rank(sym)) {
       sym.file = this;
       sym.input_section = nullptr;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
-      sym.is_weak = true;
+      sym.is_weak = false;
       sym.is_imported = false;
       sym.is_exported = false;
+    }
+  }
+}
+
+template <typename E>
+void
+SharedFile<E>::mark_live_objects(Context<E> &ctx,
+                                 std::function<void(InputFile<E> *)> feeder) {
+  i64 first_global = symtab_sec->sh_info;
+  std::span<ElfSym<E>> esyms =
+    this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
+
+  for (i64 i = first_global; i < esyms.size(); i++) {
+    Symbol<E> &sym = *globals[i - first_global];
+    const ElfSym<E> &esym = esyms[i];
+
+    if (esym.is_undef() && sym.file && sym.file != this &&
+        !sym.file->is_alive.exchange(true)) {
+      feeder(sym.file);
 
       if (sym.traced)
-        SyncOut(ctx) << "trace-symbol: " << *sym.file << ": definition of "
-                     << sym;
+        SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                     << " for " << sym;
     }
   }
 }

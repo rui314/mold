@@ -77,94 +77,68 @@ void create_synthetic_sections(Context<E> &ctx) {
 
 template <typename E>
 void resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "resolve_obj_symbols");
+  Timer t(ctx, "resolve_symbols");
 
-  // Register object symbols
+  // Register symbols
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->is_in_lib)
-      file->resolve_lazy_symbols(ctx);
-    else
-      file->resolve_regular_symbols(ctx);
+    file->resolve_obj_symbols(ctx, file->is_in_lib);
   });
 
-  // Register DSO symbols
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     file->resolve_dso_symbols(ctx);
   });
 
   // Mark reachable objects to decide which files to include
   // into an output.
-  std::vector<ObjectFile<E> *> live_objs = ctx.objs;
-  erase(live_objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::vector<InputFile<E> *> live_set;
 
-  auto load = [&](std::string_view name) {
+  for (InputFile<E> *file : ctx.objs)
+    if (file->is_alive)
+      live_set.push_back(file);
+  for (InputFile<E> *file : ctx.dsos)
+    if (file->is_alive)
+      live_set.push_back(file);
+
+  auto mark_symbol = [&](std::string_view name) {
     if (InputFile<E> *file = get_symbol(ctx, name)->file)
-      if (!file->is_alive.exchange(true) && !file->is_dso)
-        live_objs.push_back((ObjectFile<E> *)file);
+      if (!file->is_alive.exchange(true))
+        live_set.push_back(file);
   };
 
   for (std::string_view name : ctx.arg.undefined)
-    load(name);
+    mark_symbol(name);
   for (std::string_view name : ctx.arg.require_defined)
-    load(name);
+    mark_symbol(name);
 
-  tbb::parallel_for_each(live_objs,
-                         [&](ObjectFile<E> *file,
-                             tbb::feeder<ObjectFile<E> *> &feeder) {
-    file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) { feeder.add(obj); });
+  tbb::parallel_for_each(live_set, [&](InputFile<E> *file,
+                                       tbb::feeder<InputFile<E> *> &feeder) {
+    file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
   });
 
-  // Remove symbols of eliminated objects.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+  // Remove symbols of eliminated files.
+  auto clear_syms = [&](InputFile<E> *file) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
           new (sym) Symbol<E>(sym->name());
-  });
+  };
 
-  // Eliminate unused archive members.
+  tbb::parallel_for_each(ctx.objs, clear_syms);
+  tbb::parallel_for_each(ctx.dsos, clear_syms);
+
+  // Remove unused files
   erase(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-
-  // Mark live DSOs
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ElfSym<E> &esym = file->elf_syms[i];
-      Symbol<E> &sym = *file->symbols[i];
-      if (esym.is_undef_strong() && sym.file && sym.file->is_dso) {
-        std::lock_guard lock(sym.mu);
-        sym.file->is_alive = true;
-        sym.is_weak = false;
-      }
-    }
-  });
-
-  // DSOs referenced by live DSOs are also alive.
-  std::vector<SharedFile<E> *> live_dsos = ctx.dsos;
-  erase(live_dsos, [](SharedFile<E> *file) { return !file->is_alive; });
-
-  tbb::parallel_for_each(live_dsos,
-                         [&](SharedFile<E> *file,
-                             tbb::feeder<SharedFile<E> *> &feeder) {
-    for (Symbol<E> *sym : file->globals)
-      if (sym->file && sym->file != file && sym->file->is_dso &&
-          !sym->file->is_alive.exchange(true))
-        feeder.add(file);
-  });
-
-  // Remove symbols of unreferenced DSOs.
-  tbb::parallel_for_each(ctx.dsos, [](SharedFile<E> *file) {
-    if (!file->is_alive)
-      for (Symbol<E> *sym : file->symbols)
-        if (sym->file == file)
-          new (sym) Symbol<E>(sym->name());
-  });
-
-  // Remove unreferenced DSOs
   erase(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 
-  // Register common symbols
+  // clear_syms may have cleared symbols referenced by live files, so
+  // register symbols again. In this step, we also resolve all common
+  // symbols.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->resolve_common_symbols(ctx);
+    file->resolve_obj_symbols(ctx, true);
+  });
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    file->resolve_dso_symbols(ctx);
   });
 
   if (Symbol<E> *sym = get_symbol(ctx, "__gnu_lto_slim"); sym->file) {
@@ -437,7 +411,7 @@ void check_cet_errors(Context<E> &ctx) {
 
 template <typename E>
 void check_duplicate_symbols(Context<E> &ctx) {
-  Timer t(ctx, "check_dup_syms");
+  Timer t(ctx, "check_duplicate_symbols");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
