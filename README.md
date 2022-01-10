@@ -19,10 +19,10 @@ on a simulated 8-core 16-threads machine.
 | Firefox 89 libxul (1.64 GiB)  | 32.95s   | 6.80s    | 1.42s
 
 mold is so fast that it is only 2x _slower_ than `cp` on the same
-machine.
+machine. Feel free to [file a bug](https://github.com/rui314/mold/issues)
+if you find mold is not faster than other linkers.
 
-Feel free to [file a bug](https://github.com/rui314/mold/issues) if
-you find mold is not faster than other linkers.
+mold currently supports x86-64, i386 and ARM64.
 
 ## Why does the speed of linking matter?
 
