@@ -140,12 +140,6 @@ void resolve_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     file->resolve_dso_symbols(ctx);
   });
-
-  if (Symbol<E> *sym = get_symbol(ctx, "__gnu_lto_slim"); sym->file) {
-    Warn(ctx) << *sym->file << ": looks like this file contains a GCC "
-              << "intermediate code, but mold does not support LTO";
-    ctx.gcc_lto = true;
-  }
 }
 
 template <typename E>
