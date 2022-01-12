@@ -10,10 +10,10 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-"$mold" -v | grep -q 'mold .*compatible with GNU ld and GNU gold'
-"$mold" --version | grep -q 'mold .*compatible with GNU ld and GNU gold'
+"$mold" -v | grep -q 'mold .*compatible with GNU ld'
+"$mold" --version | grep -q 'mold .*compatible with GNU ld'
 
-"$mold" -V | grep -q 'mold .*compatible with GNU ld and GNU gold'
+"$mold" -V | grep -q 'mold .*compatible with GNU ld'
 "$mold" -V | grep -q elf_x86_64
 "$mold" -V | grep -q elf_i386
 
