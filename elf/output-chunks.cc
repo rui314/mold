@@ -599,7 +599,11 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
   if (flags1)
     define(DT_FLAGS_1, flags1);
 
-  define(DT_DEBUG, 0);
+  // GDB needs a DT_DEBUG entry in an executable to store a word-size
+  // data for its own purpose. Its content is not important.
+  if (!ctx.arg.shared)
+    define(DT_DEBUG, 0);
+
   define(DT_NULL, 0);
 
   for (i64 i = 0; i < ctx.arg.spare_dynamic_tags; i++)
