@@ -46,9 +46,11 @@ Binary packages for the following distros are currently available.
 ## How to build
 
 mold is written in C++20, so if you build mold yourself, you need a
-very recent version of GCC or Clang. I'm using Ubuntu 20.04 as a
-development platform. In that environment, you can build mold by the
-following commands.
+recent version of a C++ compiler and a C++ standard library. GCC 10.2
+or Clang 12.0.0 as well as libstdc++ 10 or libc++ 7 are recommended.
+
+I'm using Ubuntu 20.04 as a development platform. In that environment,
+you can build mold by the following commands.
 
 ### Install dependencies
 
