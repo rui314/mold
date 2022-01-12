@@ -426,7 +426,7 @@ void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
     case R_386_PC32: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  BASEREL,  NONE,  ERROR,         ERROR },      // DSO
+        {  BASEREL,  NONE,  DYNREL,        DYNREL },     // DSO
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };

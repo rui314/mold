@@ -82,8 +82,7 @@ static void write_ibtplt(Context<X86_64> &ctx) {
   }
 }
 
-// The regular PLT. Unless `-z ibtplt` is given (which is rare), this
-// version will be used.
+// The regular PLT.
 static void write_plt(Context<X86_64> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
@@ -654,7 +653,7 @@ void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
     case R_X86_64_PC64: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  BASEREL,  NONE,  ERROR,         ERROR },      // DSO
+        {  BASEREL,  NONE,  DYNREL,        DYNREL },     // DSO
         {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
