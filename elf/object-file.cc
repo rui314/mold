@@ -1297,7 +1297,7 @@ void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
 
     std::lock_guard lock(sym.mu);
 
-    if (get_rank(this, esym, false) <= get_rank(sym)) {
+    if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
       sym.input_section = nullptr;
       sym.value = esym.st_value;
