@@ -607,6 +607,7 @@ void scan_rels(Context<E> &ctx) {
 
       // If a symbol needs copyrel, it is considered both imported
       // and exported.
+      assert(sym->is_imported);
       sym->is_exported = true;
 
       // Aliases of this symbol are also copied so that they will be

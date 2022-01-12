@@ -601,11 +601,11 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 }
 
 // Usually a section is an atomic unit of inclusion and exclusion.
-// the Linker doesn't care its contents. However, if a section is a
+// The linker doesn't care its contents. However, if a section is a
 // mergeable section (a section with SHF_MERGE bit set), the linker
-// is expected split it into smaller pieces and merge each piece with
-// other pieces from different object files. In mold, we call the
-// atomic unit of mergeable section "section pieces".
+// is expected to split it into smaller pieces and merge each piece
+// with other pieces from different object files. In mold, we call
+// the atomic unit of mergeable section "section pieces".
 //
 // This feature is typically used for string literals. String literals
 // are usually put into a mergeable section by a compiler. If the same
