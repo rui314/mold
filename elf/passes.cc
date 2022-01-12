@@ -79,25 +79,19 @@ template <typename E>
 void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
 
-  // Register symbols
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->resolve_obj_symbols(ctx, file->is_in_lib);
-  });
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->resolve_dso_symbols(ctx);
+  // Register symbols
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
   });
 
   // Mark reachable objects to decide which files to include
   // into an output.
-  std::vector<InputFile<E> *> live_set;
-
-  for (InputFile<E> *file : ctx.objs)
-    if (file->is_alive)
-      live_set.push_back(file);
-  for (InputFile<E> *file : ctx.dsos)
-    if (file->is_alive)
-      live_set.push_back(file);
+  std::vector<InputFile<E> *> live_set = files;
+  erase(live_set, [](InputFile<E> *file) { return !file->is_alive; });
 
   auto mark_symbol = [&](std::string_view name) {
     if (InputFile<E> *file = get_symbol(ctx, name)->file)
@@ -116,30 +110,24 @@ void resolve_symbols(Context<E> &ctx) {
   });
 
   // Remove symbols of eliminated files.
-  auto clear_syms = [&](InputFile<E> *file) {
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
     if (!file->is_alive)
       for (Symbol<E> *sym : file->get_global_syms())
         if (sym->file == file)
           new (sym) Symbol<E>(sym->name());
-  };
+  });
 
-  tbb::parallel_for_each(ctx.objs, clear_syms);
-  tbb::parallel_for_each(ctx.dsos, clear_syms);
+  // Since we have turned on object files live bits, their symbols
+  // may now have higher priority than before. So run the symbol
+  // resolution pass again to get the final resolution result.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    if (file->is_alive)
+      file->resolve_symbols(ctx);
+  });
 
   // Remove unused files
   erase(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   erase(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
-
-  // clear_syms may have cleared symbols referenced by live files, so
-  // register symbols again. In this step, we also resolve all common
-  // symbols.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->resolve_obj_symbols(ctx, true);
-  });
-
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->resolve_dso_symbols(ctx);
-  });
 }
 
 template <typename E>

@@ -771,13 +771,18 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 //  3. Strong defined symbol in a DSO/archive
 //  4. Weak Defined symbol in a DSO/archive
 //  5. Common symbol
-//  6. Unclaimed (nonexistent) symbol
+//  6. Common symbol in an archive
+//  7. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 template <typename E>
 static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
-  if (esym.is_common())
+  if (esym.is_common()) {
+    assert(!file->is_dso);
+    if (is_lazy)
+      return (6 << 24) + file->priority;
     return (5 << 24) + file->priority;
+  }
   if (file->is_dso || is_lazy) {
     if (esym.is_weak())
       return (4 << 24) + file->priority;
@@ -791,7 +796,7 @@ static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
 template <typename E>
 static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
-    return 6 << 24;
+    return 7 << 24;
   return get_rank(sym.file, sym.esym(), !sym.file->is_alive);
 }
 
@@ -822,14 +827,12 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
-void ObjectFile<E>::resolve_obj_symbols(Context<E> &ctx, bool register_common) {
+void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];
 
     if (esym.is_undef())
-      continue;
-    if (!register_common && esym.is_common())
       continue;
 
     std::lock_guard lock(sym.mu);
@@ -1293,7 +1296,7 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
 }
 
 template <typename E>
-void SharedFile<E>::resolve_dso_symbols(Context<E> &ctx) {
+void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];

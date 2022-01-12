@@ -885,6 +885,8 @@ public:
 
   ElfShdr<E> *find_section(i64 type);
 
+  virtual void resolve_symbols(Context<E> &ctx) = 0;
+
   virtual void
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
@@ -918,7 +920,7 @@ public:
 
   void parse(Context<E> &ctx);
   void register_section_pieces(Context<E> &ctx);
-  void resolve_obj_symbols(Context<E> &ctx, bool register_common);
+  void resolve_symbols(Context<E> &ctx) override;
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);
@@ -991,7 +993,7 @@ public:
   static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
   void parse(Context<E> &ctx);
-  void resolve_dso_symbols(Context<E> &ctx);
+  void resolve_symbols(Context<E> &ctx) override;
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
