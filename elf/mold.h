@@ -834,7 +834,7 @@ template <typename E>
 std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx);
 
 //
-// object-file.cc
+// input-files.cc
 //
 
 // A comdat section typically represents an inline function,
