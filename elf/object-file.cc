@@ -856,6 +856,17 @@ void ObjectFile<E>::resolve_obj_symbols(Context<E> &ctx, bool register_common) {
 }
 
 template <typename E>
+static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
+                               const ElfSym<E> &esym, Symbol<E> &sym) {
+  if (esym.is_defined())
+    SyncOut(ctx) << "trace-symbol: " << file << ": definition of " << sym;
+  else if (esym.is_weak())
+    SyncOut(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
+  else
+    SyncOut(ctx) << "trace-symbol: " << file << ": reference to " << sym;
+}
+
+template <typename E>
 void
 ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(InputFile<E> *)> feeder) {
@@ -870,14 +881,8 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     else
       merge_visibility(ctx, sym, esym.st_visibility);
 
-    if (sym.traced) {
-      if (esym.is_defined())
-        SyncOut(ctx) << "trace-symbol: " << *this << ": definition of " << sym;
-      else if (esym.is_weak())
-        SyncOut(ctx) << "trace-symbol: " << *this << ": weak reference to " << sym;
-      else
-        SyncOut(ctx) << "trace-symbol: " << *this << ": reference to " << sym;
-    }
+    if (sym.traced)
+      print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_weak())
       continue;
@@ -1317,6 +1322,9 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
   for (i64 i = 0; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
+
+    if (sym.traced)
+      print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_undef() && sym.file && sym.file != this &&
         !sym.file->is_alive.exchange(true)) {
