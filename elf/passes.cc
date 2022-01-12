@@ -745,7 +745,7 @@ void compute_import_export(Context<E> &ctx) {
   // Export symbols referenced by DSOs.
   if (!ctx.arg.shared) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      for (Symbol<E> *sym : file->globals) {
+      for (Symbol<E> *sym : file->symbols) {
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
           std::lock_guard lock(sym->mu);
           sym->is_exported = true;

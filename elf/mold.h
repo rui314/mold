@@ -889,11 +889,13 @@ public:
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
-  virtual std::span<Symbol<E> *> get_global_syms() = 0;
+  std::span<Symbol<E> *> get_global_syms();
 
   MappedFile<Context<E>> *mf;
   std::span<ElfShdr<E>> elf_sections;
+  std::span<ElfSym<E>> elf_syms;
   std::vector<Symbol<E> *> symbols;
+  i64 first_global = 0;
 
   std::string filename;
   bool is_dso = false;
@@ -930,12 +932,9 @@ public:
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
-  std::span<Symbol<E> *> get_global_syms() override;
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
-  std::span<ElfSym<E>> elf_syms;
-  i64 first_global = 0;
   const bool is_in_lib = false;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
@@ -999,14 +998,9 @@ public:
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
 
-  std::span<Symbol<E> *> get_global_syms() override {
-    return globals;
-  }
-
   std::string soname;
   std::vector<std::string_view> version_strings;
-  std::vector<Symbol<E> *> globals;
-  std::vector<const ElfSym<E> *> elf_syms;
+  std::vector<ElfSym<E>> elf_syms2;
 
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
@@ -1732,23 +1726,23 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 }
 
 template <typename E>
+inline std::span<Symbol<E> *> InputFile<E>::get_global_syms() {
+  return std::span<Symbol<E> *>(this->symbols).subspan(this->first_global);
+}
+
+template <typename E>
 inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
-  assert(&elf_syms[0] <= &esym);
-  assert(&esym <= &elf_syms[elf_syms.size() - 1]);
+  assert(&this->elf_syms[0] <= &esym);
+  assert(&esym <= &this->elf_syms[this->elf_syms.size() - 1]);
 
   if (esym.st_shndx == SHN_XINDEX)
-    return symtab_shndx_sec[&esym - &elf_syms[0]];
+    return symtab_shndx_sec[&esym - &this->elf_syms[0]];
   return esym.st_shndx;
 }
 
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)].get();
-}
-
-template <typename E>
-inline std::span<Symbol<E> *> ObjectFile<E>::get_global_syms() {
-  return std::span<Symbol<E> *>(this->symbols).subspan(first_global);
 }
 
 template <typename E>
@@ -1990,9 +1984,7 @@ inline std::string_view Symbol<E>::get_version() const {
 
 template <typename E>
 inline const ElfSym<E> &Symbol<E>::esym() const {
-  if (file->is_dso)
-    return *((SharedFile<E> *)file)->elf_syms[sym_idx];
-  return ((ObjectFile<E> *)file)->elf_syms[sym_idx];
+  return file->elf_syms[sym_idx];
 }
 
 template <typename E>
