@@ -147,7 +147,11 @@ private:
   SyncOut<C> out;
 };
 
-#define unreachable() assert(0 && "unreachable")
+#ifdef NDEBUG
+#  define unreachable() __builtin_unreachable()
+#else
+#  define unreachable() assert(0 && "unreachable")
+#endif
 
 //
 // Utility functions
