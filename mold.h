@@ -22,6 +22,12 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef NDEBUG
+#  define unreachable() __builtin_unreachable()
+#else
+#  define unreachable() assert(0 && "unreachable")
+#endif
+
 namespace mold {
 
 using namespace std::literals::string_literals;
@@ -146,12 +152,6 @@ public:
 private:
   SyncOut<C> out;
 };
-
-#ifdef NDEBUG
-#  define unreachable() __builtin_unreachable()
-#else
-#  define unreachable() assert(0 && "unreachable")
-#endif
 
 //
 // Utility functions
