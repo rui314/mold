@@ -112,9 +112,7 @@ void resolve_symbols(Context<E> &ctx) {
   // Remove symbols of eliminated files.
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {
     if (!file->is_alive)
-      for (Symbol<E> *sym : file->get_global_syms())
-        if (sym->file == file)
-          new (sym) Symbol<E>(sym->name());
+      file->clear_symbols(ctx);
   });
 
   // Since we have turned on object files live bits, their symbols

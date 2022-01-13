@@ -48,6 +48,24 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
+void InputFile<E>::clear_symbols(Context<E> &ctx) {
+  assert(!is_alive);
+
+  for (Symbol<E> *sym : get_global_syms()) {
+    if (sym->file == this) {
+      sym->file = nullptr;
+      sym->input_section = nullptr;
+      sym->value = -1;
+      sym->sym_idx = -1;
+      sym->ver_idx = 0;
+      sym->is_weak = false;
+      sym->is_imported = false;
+      sym->is_exported = false;
+    }
+  }
+}
+
+template <typename E>
 ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
                           std::string archive_name, bool is_in_lib)
   : InputFile<E>(ctx, mf), archive_name(archive_name), is_in_lib(is_in_lib) {

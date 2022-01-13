@@ -889,6 +889,7 @@ public:
   ElfShdr<E> *find_section(i64 type);
 
   virtual void resolve_symbols(Context<E> &ctx) = 0;
+  virtual void clear_symbols(Context<E> &ctx);
 
   virtual void
   mark_live_objects(Context<E> &ctx,
