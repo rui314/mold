@@ -356,15 +356,12 @@ void InputSection<ARM64>::apply_reloc_nonalloc(Context<ARM64> &ctx, u8 *base) {
       continue;
     }
 
-    const SectionFragmentRef<ARM64> *ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      ref = &rel_fragments[frag_idx++];
+    SectionFragment<ARM64> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (ref ? ref->addend : rel.r_addend)
-#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
-#define GOT ctx.got->shdr.sh_addr
+#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A (frag ? addend : rel.r_addend)
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
@@ -381,9 +378,6 @@ void InputSection<ARM64>::apply_reloc_nonalloc(Context<ARM64> &ctx, u8 *base) {
 
 #undef S
 #undef A
-#undef P
-#undef G
-#undef GOT
   }
 }
 

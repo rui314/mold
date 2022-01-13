@@ -288,9 +288,9 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
       continue;
     }
 
-    const SectionFragmentRef<I386> *ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      ref = &rel_fragments[frag_idx++];
+    SectionFragment<I386> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -319,8 +319,8 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
       *(u16 *)loc = val;
     };
 
-#define S      (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A      (ref ? ref->addend : this->get_addend(rel))
+#define S      (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A      (frag ? addend : this->get_addend(rel))
 #define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 

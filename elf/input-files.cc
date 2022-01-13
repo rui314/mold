@@ -667,7 +667,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
   // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
-    if (!isec || !isec->is_alive)
+    if (!isec || !isec->is_alive || !(isec->shdr.sh_flags & SHF_ALLOC))
       continue;
 
     std::span<ElfRel<E>> rels = isec->get_rels(ctx);

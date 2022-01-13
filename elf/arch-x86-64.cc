@@ -490,7 +490,6 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 template <>
 void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
   std::span<ElfRel<X86_64>> rels = get_rels(ctx);
-  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<X86_64> &rel = rels[i];
@@ -505,9 +504,9 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       continue;
     }
 
-    const SectionFragmentRef<X86_64> *ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      ref = &rel_fragments[frag_idx++];
+    SectionFragment<X86_64> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -536,8 +535,8 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       *(u32 *)loc = val;
     };
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (ref ? ref->addend : rel.r_addend)
+#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A (frag ? addend : rel.r_addend)
 
     switch (rel.r_type) {
     case R_X86_64_8:

@@ -294,6 +294,9 @@ private:
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                 const ElfRel<E> &rel, Symbol<E> &sym);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
+
+  std::pair<SectionFragment<E> *, i64>
+  get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 };
 
 //
@@ -1691,6 +1694,30 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
     return {};
   std::span<FdeRecord<E>> span(file.fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
+}
+
+template <typename E>
+std::pair<SectionFragment<E> *, i64>
+InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
+  assert(!(shdr.sh_flags & SHF_ALLOC));
+
+  const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
+  if (esym.st_type != STT_SECTION)
+    return {nullptr, 0};
+
+  std::unique_ptr<MergeableSection<E>> &m =
+    file.mergeable_sections[file.get_shndx(esym)];
+  if (!m)
+    return {nullptr, 0};
+
+  i64 offset = esym.st_value + get_addend(rel);
+  std::span<u32> offsets = m->frag_offsets;
+
+  auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
+  if (it == offsets.begin())
+    Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
+  i64 idx = it - 1 - offsets.begin();
+  return {m->fragments[idx], offset - offsets[idx]};
 }
 
 template <typename E>
