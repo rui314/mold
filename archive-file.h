@@ -96,6 +96,8 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
       body += namelen;
     } else if (hdr.ar_name[0] == '/') {
       const char *start = strtab.data() + atoi(hdr.ar_name + 1);
+      if (!start)
+        continue;
       name = {start, (const char *)strstr(start, "/\n")};
     } else {
       char *end = (char *)memchr(hdr.ar_name, '/', sizeof(hdr.ar_name));
