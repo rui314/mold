@@ -82,7 +82,8 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
     }
 
     // Skip if symbol table
-    if (memcmp(hdr.ar_name, "/ ", 2) == 0)
+    if (memcmp(hdr.ar_name, "/ ", 2) == 0 ||
+        memcmp(hdr.ar_name, "/SYM64/ ", 8) == 0)
       continue;
 
     // Read the name field
