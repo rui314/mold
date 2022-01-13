@@ -172,9 +172,11 @@ static void mark_nonalloc_fragments(Context<E> &ctx) {
   Timer t(ctx, "mark_nonalloc_fragments");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (SectionFragment<E> *frag : file->fragments)
-      if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
-        frag->is_alive.store(true, std::memory_order_relaxed);
+    for (std::unique_ptr<MergeableSection<E>> &m : file->mergeable_sections)
+      if (m)
+        for (SectionFragment<E> *frag : m->fragments)
+          if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
+            frag->is_alive.store(true, std::memory_order_relaxed);
   });
 }
 

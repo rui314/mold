@@ -178,8 +178,10 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   // Mark section fragments referenced by live objects.
   if (!ctx.arg.gc_sections) {
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (SectionFragment<E> *frag : file->fragments)
-        frag->is_alive.store(true, std::memory_order_relaxed);
+      for (std::unique_ptr<MergeableSection<E>> &m : file->mergeable_sections)
+        if (m)
+          for (SectionFragment<E> *frag : m->fragments)
+            frag->is_alive.store(true, std::memory_order_relaxed);
     });
   }
 

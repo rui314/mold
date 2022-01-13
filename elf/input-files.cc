@@ -740,10 +740,6 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     sym_fragments[i].frag = m->fragments[idx];
     sym_fragments[i].addend = esym.st_value - offsets[idx];
   }
-
-  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
-    if (m)
-      fragments.insert(fragments.end(), m->fragments.begin(), m->fragments.end());
 }
 
 template <typename E>

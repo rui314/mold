@@ -937,11 +937,11 @@ public:
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
+  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   const bool is_in_lib = false;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
-  std::vector<SectionFragment<E> *> fragments;
   std::vector<SectionFragmentRef<E>> sym_fragments;
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool exclude_libs = false;
@@ -983,7 +983,6 @@ private:
   std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
   std::span<u32> symtab_shndx_sec;
-  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
 };
 
 // SharedFile represents an input .so file.
