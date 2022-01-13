@@ -172,12 +172,12 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
-  if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, str))
+  if (MappedFile<Context<E>> *mf = open_library(ctx, str))
     return mf;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string path = std::string(dir) + "/" + str;
-    if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
+    if (MappedFile<Context<E>> *mf = open_library(ctx, path))
       return mf;
   }
 

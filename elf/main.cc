@@ -159,7 +159,7 @@ deduce_machine_type(Context<E> &ctx, std::span<std::string_view> args) {
 }
 
 template <typename E>
-static MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
+MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
   MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
   if (!mf)
     return nullptr;

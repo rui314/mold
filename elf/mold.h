@@ -1439,6 +1439,9 @@ struct Context {
 };
 
 template <typename E>
+MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path);
+
+template <typename E>
 MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
