@@ -6,24 +6,6 @@
 
 namespace mold {
 
-std::string_view errno_string() {
-  static thread_local char buf[200];
-
-  // There are two incompatible strerror_r implementations as follows.
-  //
-  //   GNU:    char *strerror_r(int, char *, size_t)
-  //   POSIX:  int   strerror_r(int, char *, size_t)
-  //
-  // GNU version may write an error message to a buffer other than the
-  // given one and returns a pointer to the error message. POSIX version
-  // always write an error message to a given buffer.
-
-  if (std::is_same<decltype(strerror_r(errno, buf, sizeof(buf))), char *>::value)
-    return reinterpret_cast<char *>(strerror_r(errno, buf, sizeof(buf)));
-  strerror_r(errno, buf, sizeof(buf));
-  return buf;
-}
-
 #ifdef GIT_HASH
 const std::string mold_version =
   "mold " MOLD_VERSION " (" GIT_HASH "; compatible with GNU ld)";
