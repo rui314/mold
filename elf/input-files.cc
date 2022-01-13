@@ -823,10 +823,28 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
+static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
+                               const ElfSym<E> &esym, Symbol<E> &sym) {
+  if (esym.is_defined())
+    SyncOut(ctx) << "trace-symbol: " << file << ": definition of " << sym;
+  else if (esym.is_weak())
+    SyncOut(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
+  else
+    SyncOut(ctx) << "trace-symbol: " << file << ": reference to " << sym;
+}
+
+template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];
+
+    if (this->is_alive) {
+      if (esym.is_defined() && exclude_libs)
+        merge_visibility(ctx, sym, STV_HIDDEN);
+      else
+        merge_visibility(ctx, sym, esym.st_visibility);
+    }
 
     if (esym.is_undef())
       continue;
@@ -855,17 +873,6 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
-                               const ElfSym<E> &esym, Symbol<E> &sym) {
-  if (esym.is_defined())
-    SyncOut(ctx) << "trace-symbol: " << file << ": definition of " << sym;
-  else if (esym.is_weak())
-    SyncOut(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
-  else
-    SyncOut(ctx) << "trace-symbol: " << file << ": reference to " << sym;
-}
-
-template <typename E>
 void
 ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(InputFile<E> *)> feeder) {
@@ -874,11 +881,6 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
-
-    if (esym.is_defined() && exclude_libs)
-      merge_visibility(ctx, sym, STV_HIDDEN);
-    else
-      merge_visibility(ctx, sym, esym.st_visibility);
 
     if (sym.traced)
       print_trace_symbol(ctx, *this, esym, sym);
