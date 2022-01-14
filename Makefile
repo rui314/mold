@@ -16,12 +16,11 @@ endif
 # `STRIP=true` to run /bin/true instead of the strip command.
 STRIP ?= strip
 
-OS ?= $(shell uname -s)
+OS   ?= $(shell uname -s)
 ARCH ?= $(shell uname -m)
 
-IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
-  IS_ANDROID = 1
+  OS = Android
 endif
 
 # Used for both C and C++
@@ -65,7 +64,7 @@ endif
 USE_MIMALLOC = 1
 ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
-else ifeq ($(IS_ANDROID), 1)
+else ifeq ($(OS), Android)
   USE_MIMALLOC = 0
 else ifeq ($(ASAN), 1)
   USE_MIMALLOC = 0
@@ -110,16 +109,14 @@ else
 endif
 
 ifeq ($(OS), Linux)
-  ifeq ($(IS_ANDROID), 0)
-    # glibc before 2.17 need librt for clock_gettime
-    LIBS += -lrt
-  endif
+  # glibc before 2.17 need librt for clock_gettime
+  LIBS += -lrt
 endif
 
 # Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
   CPPFLAGS += $(shell pkg-config --cflags-only-I openssl)
-  LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
+  LIBS     += $(shell pkg-config --libs-only-L   openssl) -lcrypto
 endif
 
 # '-latomic' flag is needed building on riscv64 system
@@ -130,7 +127,7 @@ ifeq ($(ARCH), riscv64)
 endif
 
 # -Wc++11-narrowing is a fatal error on Android, so disable it.
-ifeq ($(IS_ANDROID), 1)
+ifeq ($(OS), Android)
   CXXFLAGS += -Wno-c++11-narrowing
 endif
 
