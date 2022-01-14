@@ -13,6 +13,42 @@ struct ArHdr {
   char ar_mode[8];
   char ar_size[10];
   char ar_fmag[2];
+
+  bool starts_with(std::string_view s) const {
+    return std::string_view(ar_name, s.size()) == s;
+  }
+
+  bool is_strtab() const {
+    return starts_with("// ");
+  }
+
+  bool is_symtab() const {
+    return starts_with("/ ") || starts_with("/SYM64/ ");
+  }
+
+  std::string read_name(std::string_view strtab, u8 *&ptr) const {
+    // BSD-style long filename
+    if (starts_with("#1/")) {
+      int namelen = atoi(ar_name + 3);
+      std::string name{(char *)ptr, (size_t)namelen};
+      ptr += namelen;
+
+      if (size_t pos = name.find('\0'))
+        name = name.substr(0, pos);
+      return name;
+    }
+
+    // SysV-style long filename
+    if (starts_with("/")) {
+      const char *start = strtab.data() + atoi(ar_name + 1);
+      return {start, (const char *)strstr(start, "/\n")};
+    }
+
+    // Short fileanme
+    if (const char *end = (char *)memchr(ar_name, '/', sizeof(ar_name)))
+      return {ar_name, end};
+    return {ar_name, sizeof(ar_name)};
+  }
 };
 
 template <typename C>
@@ -33,24 +69,27 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
     u64 size = atol(hdr.ar_size);
 
     // Read a string table.
-    if (memcmp(hdr.ar_name, "// ", 3) == 0) {
+    if (hdr.is_strtab()) {
       strtab = {(char *)body, (size_t)size};
       data = body + size;
       continue;
     }
 
     // Skip a symbol table.
-    if (memcmp(hdr.ar_name, "/ ", 2) == 0 ||
-        memcmp(hdr.ar_name, "/SYM64/ ", 8)) {
+    if (hdr.is_symtab()) {
       data = body + size;
       continue;
     }
 
-    if (hdr.ar_name[0] != '/')
+    if (!hdr.starts_with("#1/") && !hdr.starts_with("/"))
       Fatal(ctx) << mf->name << ": filename is not stored as a long filename";
 
-    const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-    std::string name(start, (const char *)strstr(start, "/\n"));
+    std::string name = hdr.read_name(strtab, body);
+
+    // Skip if symbol table
+    if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED")
+      continue;
+
     std::string path = name.starts_with('/') ?
       name : (filepath(mf->name).parent_path() / name).string();
     vec.push_back(MappedFile<C>::must_open(ctx, path));
@@ -77,40 +116,23 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
     data = body + size;
 
     // Read if string table
-    if (memcmp(hdr.ar_name, "// ", 3) == 0) {
+    if (hdr.is_strtab()) {
       strtab = {(char *)body, (size_t)size};
       continue;
     }
 
     // Skip if symbol table
-    if (memcmp(hdr.ar_name, "/ ", 2) == 0 ||
-        memcmp(hdr.ar_name, "/SYM64/ ", 8) == 0)
+    if (hdr.is_symtab())
       continue;
 
     // Read the name field
-    std::string name;
-
-    if (memcmp(hdr.ar_name, "#1/", 3) == 0) {
-      size_t namelen = (size_t)atoi(hdr.ar_name + 3);
-      name = {(char *)(&hdr + 1), namelen};
-      if (size_t pos = name.find('\0'))
-        name = name.substr(0, pos);
-      body += namelen;
-    } else if (hdr.ar_name[0] == '/') {
-      const char *start = strtab.data() + atoi(hdr.ar_name + 1);
-      name = {start, (const char *)strstr(start, "/\n")};
-    } else {
-      char *end = (char *)memchr(hdr.ar_name, '/', sizeof(hdr.ar_name));
-      if (!end)
-        end = hdr.ar_name + sizeof(hdr.ar_name);
-      name = {hdr.ar_name, end};
-    }
+    std::string name = hdr.read_name(strtab, body);
 
     // Skip if symbol table
     if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED")
       continue;
 
-    vec.push_back(mf->slice(ctx, name, body - begin, size));
+    vec.push_back(mf->slice(ctx, name, body - begin, data - body));
   }
   return vec;
 }
