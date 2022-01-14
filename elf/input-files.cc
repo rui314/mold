@@ -857,13 +857,6 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];
 
-    if (this->is_alive) {
-      if (esym.is_defined() && exclude_libs)
-        merge_visibility(ctx, sym, STV_HIDDEN);
-      else
-        merge_visibility(ctx, sym, esym.st_visibility);
-    }
-
     if (esym.is_undef())
       continue;
 
@@ -899,6 +892,11 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
+
+    if (esym.is_defined() && exclude_libs)
+      merge_visibility(ctx, sym, STV_HIDDEN);
+    else
+      merge_visibility(ctx, sym, esym.st_visibility);
 
     if (sym.traced)
       print_trace_symbol(ctx, *this, esym, sym);
