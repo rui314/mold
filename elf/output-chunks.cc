@@ -355,6 +355,28 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
 }
 
 template <typename E>
+void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
+  this->shdr.sh_link = ctx.dynsym->shndx;
+
+  i64 n = ctx.got->relr.size();
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+    n += osec->relr.size();
+  this->shdr.sh_size = n * E::word_size;
+}
+
+template <typename E>
+void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
+  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+
+  for (u64 val : ctx.got->relr)
+    *buf++ = (val & 1) ? val : (ctx.got->shdr.sh_addr + val);
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+    for (u64 val : osec->relr)
+      *buf++ = (val & 1) ? val : (osec->shdr.sh_addr + val);
+}
+
+template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = 1;
   for (ObjectFile<E> *file : ctx.objs) {
@@ -770,6 +792,66 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   });
 }
 
+template <typename T>
+static std::vector<T> compress_relr(const std::vector<T> &pos) {
+  std::vector<T> vec;
+  u64 num_bits = sizeof(T) * 8 - 1;
+  u64 max_delta = num_bits * sizeof(T);
+
+  for (i64 i = 0; i < pos.size();) {
+    vec.push_back(pos[i]);
+    u64 base = pos[i] + sizeof(T);
+    i++;
+
+    for (;;) {
+      u64 bits = 0;
+      for (; i < pos.size() && pos[i] - base < max_delta; i++)
+        bits |= (u64)1 << ((pos[i] - base) % sizeof(T));
+
+      if (!bits)
+        break;
+
+      vec.push_back((bits << 1) | 1);
+      base += max_delta;
+    }
+  }
+  return vec;
+}
+
+template <typename E>
+void OutputSection<E>::construct_relr(Context<E> &ctx) {
+  if (!(this->shdr.sh_flags & SHF_ALLOC))
+    return;
+  if (this->shdr.sh_addralign % E::word_size)
+    return;
+
+  // Collect base relocations
+  std::vector<typename E::WordTy> pos;
+  std::mutex mu;
+
+  tbb::parallel_for_each(members, [&](InputSection<E> *isec) {
+    if (isec->shdr.sh_addralign % E::word_size)
+      return;
+
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    std::vector<typename E::WordTy> vec;
+
+    for (i64 i = 0; i < rels.size(); i++)
+      if (isec->needs_baserel[i] && (rels[i].r_offset % E::word_size) == 0)
+        vec.push_back(isec->offset + rels[i].r_offset);
+
+    if (!vec.empty()) {
+      std::lock_guard lock(mu);
+      append(pos, vec);
+    }
+  });
+
+  tbb::parallel_sort(pos.begin(), pos.end());
+
+  // Compress them
+  relr = compress_relr(pos);
+}
+
 template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_got_idx(ctx, this->shdr.sh_size / E::word_size);
@@ -818,8 +900,9 @@ template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (Symbol<E> *sym : got_syms)
-    if (sym->is_imported || (ctx.arg.pic && sym->is_relative()) ||
-        sym->get_type() == STT_GNU_IFUNC)
+    if (sym->is_imported ||
+        sym->get_type() == STT_GNU_IFUNC ||
+        (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr))
       n++;
 
   n += tlsgd_syms.size() * 2;
@@ -856,7 +939,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
         buf[sym->get_got_idx(ctx)] = resolver_addr;
     } else {
       buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
-      if (ctx.arg.pic && sym->is_relative())
+      if (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr)
         *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
     }
   }
@@ -889,6 +972,18 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   if (tlsld_idx != -1)
     *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0);
+}
+
+template <typename E>
+void GotSection<E>::construct_relr(Context<E> &ctx) {
+  std::vector<typename E::WordTy> pos;
+
+  for (Symbol<E> *sym : got_syms)
+    if (!sym->is_imported && sym->get_type() != STT_GNU_IFUNC &&
+        ctx.arg.pic && sym->is_relative())
+      pos.push_back(sym->get_got_addr(ctx) - this->shdr.sh_addr);
+
+  relr = compress_relr(pos);
 }
 
 template <typename E>
@@ -1891,6 +1986,7 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   template class PltGotSection<E>;                                      \
   template class RelPltSection<E>;                                      \
   template class RelDynSection<E>;                                      \
+  template class RelrDynSection<E>;                                     \
   template class StrtabSection<E>;                                      \
   template class ShstrtabSection<E>;                                    \
   template class DynstrSection<E>;                                      \

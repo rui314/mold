@@ -164,7 +164,8 @@ void InputSection<ARM64>::apply_reloc_alloc(Context<ARM64> &ctx, u8 *base) {
     }
 
     if (needs_baserel[i]) {
-      *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
+      if (!is_relr(ctx, rel))
+        *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
       *(u64 *)loc = S + A;
       continue;
     }

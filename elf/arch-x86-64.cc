@@ -299,7 +299,8 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
     }
 
     if (needs_baserel[i]) {
-      *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
+      if (!is_relr(ctx, rel))
+        *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
       write64(S + A);
       continue;
     }

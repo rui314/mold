@@ -591,6 +591,12 @@ static int elf_main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels(ctx);
 
+  // If --packed_dyn_relocs=relr was given, base relocations are stored
+  // to a .relr.dyn section in a compressed form. Construct a compressed
+  // relocations now so that we can fix section sizes and file layout.
+  if (ctx.arg.pack_dyn_relocs_relr)
+    construct_relr(ctx);
+
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.

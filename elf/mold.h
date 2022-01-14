@@ -297,6 +297,8 @@ private:
 
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
+
+  bool is_relr(Context<E> &ctx, const ElfRel<E> &rel);
 };
 
 //
@@ -399,6 +401,9 @@ public:
   std::vector<InputSection<E> *> members;
   u32 idx;
 
+  void construct_relr(Context<E> &ctx);
+  std::vector<typename E::WordTy> relr;
+
 private:
   OutputSection(std::string_view name, u32 type, u64 flags, u32 idx);
 };
@@ -428,6 +433,9 @@ public:
   std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> tlsdesc_syms;
   u32 tlsld_idx = -1;
+
+  void construct_relr(Context<E> &ctx);
+  std::vector<typename E::WordTy> relr;
 };
 
 template <typename E>
@@ -506,6 +514,21 @@ public:
   void sort(Context<E> &ctx);
 
   i64 relcount = 0;
+};
+
+template <typename E>
+class RelrDynSection : public Chunk<E> {
+public:
+  RelrDynSection() : Chunk<E>(this->SYNTHETIC) {
+    this->name = ".relr.dyn";
+    this->shdr.sh_type = SHT_RELR;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = E::word_size;
+    this->shdr.sh_addralign = E::word_size;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 };
 
 template <typename E>
@@ -1119,6 +1142,7 @@ collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
+template <typename E> void construct_relr(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -1257,6 +1281,7 @@ struct Context {
     bool icf = false;
     bool is_static = false;
     bool omagic = false;
+    bool pack_dyn_relocs_relr = false;
     bool perf = false;
     bool pic = false;
     bool pie = false;
@@ -1385,6 +1410,7 @@ struct Context {
   std::unique_ptr<GotPltSection<E>> gotplt;
   std::unique_ptr<RelPltSection<E>> relplt;
   std::unique_ptr<RelDynSection<E>> reldyn;
+  std::unique_ptr<RelrDynSection<E>> relrdyn;
   std::unique_ptr<DynamicSection<E>> dynamic;
   std::unique_ptr<StrtabSection<E>> strtab;
   std::unique_ptr<DynstrSection<E>> dynstr;
@@ -1719,6 +1745,13 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
     Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
   i64 idx = it - 1 - offsets.begin();
   return {m->fragments[idx], offset - offsets[idx]};
+}
+
+template <typename E>
+bool InputSection<E>::is_relr(Context<E> &ctx, const ElfRel<E> &rel) {
+  return ctx.arg.pack_dyn_relocs_relr &&
+         (shdr.sh_addralign % E::word_size) == 0 &&
+         (rel.r_offset % E::word_size) == 0;
 }
 
 template <typename E>

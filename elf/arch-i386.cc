@@ -184,7 +184,8 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
     }
 
     if (needs_baserel[i]) {
-      *dynrel++ = {P, R_386_RELATIVE, 0};
+      if (!is_relr(ctx, rel))
+        *dynrel++ = {P, R_386_RELATIVE, 0};
       write32(S + A);
       continue;
     }

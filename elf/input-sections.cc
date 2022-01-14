@@ -128,7 +128,8 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     }
 
     needs_baserel[i] = true;
-    file.num_dynrel++;
+    if (!is_relr(ctx, rel))
+      file.num_dynrel++;
     return;
   default:
     unreachable();

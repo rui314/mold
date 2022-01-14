@@ -42,6 +42,10 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.gotplt = std::make_unique<GotPltSection<E>>());
   add(ctx.reldyn = std::make_unique<RelDynSection<E>>());
   add(ctx.relplt = std::make_unique<RelPltSection<E>>());
+
+  if (ctx.arg.pack_dyn_relocs_relr)
+    add(ctx.relrdyn = std::make_unique<RelrDynSection<E>>());
+
   add(ctx.strtab = std::make_unique<StrtabSection<E>>());
   add(ctx.shstrtab = std::make_unique<ShstrtabSection<E>>());
   add(ctx.plt = std::make_unique<PltSection<E>>());
@@ -616,6 +620,18 @@ void scan_rels(Context<E> &ctx) {
 }
 
 template <typename E>
+void construct_relr(Context<E> &ctx) {
+  Timer t(ctx, "construct_relr");
+
+  tbb::parallel_for_each(ctx.output_sections,
+                         [&](std::unique_ptr<OutputSection<E>> &osec) {
+    osec->construct_relr(ctx);
+  });
+
+  ctx.got->construct_relr(ctx);
+}
+
+template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
@@ -1082,6 +1098,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void compute_section_sizes(Context<E> &);                    \
   template void claim_unresolved_symbols(Context<E> &);                 \
   template void scan_rels(Context<E> &);                                \
+  template void construct_relr(Context<E> &);                           \
   template void apply_version_script(Context<E> &);                     \
   template void parse_symbol_version(Context<E> &);                     \
   template void compute_import_export(Context<E> &);                    \

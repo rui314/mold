@@ -84,6 +84,8 @@ Options:
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
+  --pack-dyn-relocs=[relr,none]
+                              Pack dynamic relocations
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position independent executable
     --no-pie, --no-pic-executable
@@ -574,6 +576,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.relocatable = true;
     } else if (read_flag(args, "perf")) {
       ctx.arg.perf = true;
+    } else if (read_flag(args, "pack-dyn-relocs=relr")) {
+      ctx.arg.pack_dyn_relocs_relr = true;
+    } else if (read_flag(args, "pack-dyn-relocs=none")) {
+      ctx.arg.pack_dyn_relocs_relr = false;
     } else if (read_flag(args, "stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
