@@ -32,7 +32,7 @@ CFLAGS += $(COMMON_FLAGS) $(EXTRA_CFLAGS)
 
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) $(EXTRA_CXXFLAGS) -std=c++20 -fno-exceptions
-CPPFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
+CXXFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -ldl -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
@@ -46,7 +46,7 @@ TSAN ?= 0
 
 GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)
-  CPPFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
+  CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
 endif
 
 ifeq ($(DEBUG), 1)
@@ -78,7 +78,7 @@ ifeq ($(USE_MIMALLOC), 1)
     LIBS += -lmimalloc
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
-    CPPFLAGS += -Ithird-party/mimalloc/include
+    CXXFLAGS += -Ithird-party/mimalloc/include
     LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
@@ -98,7 +98,7 @@ ifdef SYSTEM_TBB
 else
   TBB_LIB = out/tbb/libs/libtbb.a
   LIBS += $(TBB_LIB)
-  CPPFLAGS += -Ithird-party/tbb/include
+  CXXFLAGS += -Ithird-party/tbb/include
 endif
 
 ifdef SYSTEM_XXHASH
@@ -106,7 +106,7 @@ ifdef SYSTEM_XXHASH
 else
   XXHASH_LIB = third-party/xxhash/libxxhash.a
   LIBS += $(XXHASH_LIB)
-  CPPFLAGS += -Ithird-party/xxhash
+  CXXFLAGS += -Ithird-party/xxhash
 endif
 
 ifeq ($(OS), Linux)
@@ -118,7 +118,7 @@ endif
 
 # Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
-  CPPFLAGS += $(shell pkg-config --cflags-only-I openssl)
+  CXXFLAGS += $(shell pkg-config --cflags-only-I openssl)
   LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
 endif
 
@@ -137,15 +137,15 @@ endif
 all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(EXTRA_LDFLAGS) $(OBJS) -o $@ $(LIBS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(EXTRA_LDFLAGS) $(OBJS) -o $@ $(LIBS)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $< -ldl
+	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $< -ldl
 
 out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 out/elf/.keep:
 	mkdir -p out/elf
