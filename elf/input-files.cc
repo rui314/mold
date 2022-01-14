@@ -235,6 +235,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
+      // Ignore these sections for compatibility with old glibc i386
+      // CRT files.
+      if (name == ".gnu.linkonce.t.__x86.get_pc_thunk.bx" ||
+          name == ".gnu.linkonce.t.__i686.get_pc_thunk.bx")
+        continue;
+
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))
         continue;
