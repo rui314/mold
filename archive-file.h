@@ -40,7 +40,8 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
     }
 
     // Skip a symbol table.
-    if (memcmp(hdr.ar_name, "/ ", 2) == 0) {
+    if (memcmp(hdr.ar_name, "/ ", 2) == 0 ||
+        memcmp(hdr.ar_name, "/SYM64/ ", 8)) {
       data = body + size;
       continue;
     }
