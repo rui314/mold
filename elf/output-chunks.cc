@@ -810,7 +810,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename T>
-static std::vector<T> compress_relr(const std::vector<T> &pos) {
+static std::vector<T> encode_relr(const std::vector<T> &pos) {
   std::vector<T> vec;
   u64 num_bits = sizeof(T) * 8 - 1;
   u64 max_delta = num_bits * sizeof(T);
@@ -866,7 +866,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   tbb::parallel_sort(pos.begin(), pos.end());
 
   // Compress them
-  relr = compress_relr(pos);
+  relr = encode_relr(pos);
 }
 
 template <typename E>
@@ -1000,7 +1000,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
         ctx.arg.pic && sym->is_relative())
       pos.push_back(sym->get_got_addr(ctx) - this->shdr.sh_addr);
 
-  relr = compress_relr(pos);
+  relr = encode_relr(pos);
 }
 
 template <typename E>
