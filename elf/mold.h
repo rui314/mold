@@ -1648,11 +1648,9 @@ inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
 
 template <typename E>
 inline void InputSection<E>::kill() {
-  if (is_alive.exchange(false)) {
-    is_alive = false;
+  if (is_alive.exchange(false))
     for (FdeRecord<E> &fde : get_fdes())
       fde.is_alive = false;
-  }
 }
 
 template <typename E>
