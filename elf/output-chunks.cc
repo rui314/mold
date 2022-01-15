@@ -792,6 +792,23 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   });
 }
 
+// .relr.dyn contains base relocations encoded in a space-efficient form.
+// The contents of the section is essentially just a list of addresses
+// that have to be fixed up at runtime.
+//
+// Here is the encoding scheme (we assume 64-bit ELF in this description
+// for the sake of simplicity): .relr.dyn contains zero or more address
+// groups. Each address group consists of a 64-bit start address followed
+// by zero or more 63-bit bitmaps. Let A be the address of a start
+// address. Then, the loader fixes address A. If Nth bit in the following
+// bitmap is on, the loader also fixes address A + N * 8. In this scheme,
+// one address and one bitmap can represent up to 64 base relocations in a
+// 512 bytes range.
+//
+// A start address and a bitmap is distinguished by the lowest significant
+// bit. An address must be even and thus its LSB is 0 (odd address is not
+// representable in this encoding and such relocation must be stored to
+// the .rel.dyn section). A bitmap has LSB 1.
 template <typename T>
 static std::vector<T> compress_relr(const std::vector<T> &pos) {
   std::vector<T> vec;
