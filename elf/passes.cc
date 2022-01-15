@@ -469,16 +469,13 @@ template <typename E>
 void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
+  struct T {
+    i64 offset;
+    i64 align;
+  };
+
   tbb::parallel_for_each(ctx.output_sections,
                          [&](std::unique_ptr<OutputSection<E>> &osec) {
-    if (osec->members.empty())
-      return;
-
-    struct T {
-      i64 offset;
-      i64 align;
-    };
-
     T sum = tbb::parallel_scan(
       tbb::blocked_range<i64>(0, osec->members.size(), 10000),
       T{0, 1},
