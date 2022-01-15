@@ -408,8 +408,11 @@ void check_duplicate_symbols(Context<E> &ctx) {
           esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
         continue;
 
-      if (!esym.is_abs() && !file->get_section(esym)->is_alive)
-        continue;
+      if (!esym.is_abs()) {
+        InputSection<E> *isec = file->get_section(esym);
+        if (!isec || !isec->is_alive)
+          continue;
+      }
 
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
                  << ": " << sym;

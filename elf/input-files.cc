@@ -866,14 +866,17 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     if (esym.is_undef())
       continue;
 
+    InputSection<E> *isec = nullptr;
+    if (!esym.is_abs() && !esym.is_common()) {
+      isec = get_section(esym);
+      if (!isec)
+        continue;
+    }
+
     std::lock_guard lock(sym.mu);
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
-
-      if (esym.is_abs() || esym.is_common())
-        sym.input_section = nullptr;
-      else
-        sym.input_section = get_section(esym);
+      sym.input_section = isec;
 
       if (SectionFragmentRef<E> &ref = sym_fragments[i]; ref.frag)
         sym.value = ref.addend;
