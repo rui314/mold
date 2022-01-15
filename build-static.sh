@@ -18,7 +18,7 @@ FROM ubuntu:20.04
 RUN apt-get update && \
   TZ=Europe/London apt-get install -y tzdata && \
   apt-get install -y --no-install-recommends build-essential clang lld \
-    bsdmainutils file gcc-multilib \
+    bsdmainutils file gcc-multilib git pkg-config \
     cmake libstdc++-10-dev zlib1g-dev libssl-dev && \
   apt clean && \
   rm -rf /var/lib/apt/lists/*
