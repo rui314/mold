@@ -2,8 +2,10 @@
 
 namespace mold::elf {
 
+using E = X86_64;
+
 template <>
-void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -13,7 +15,7 @@ void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
   buf[1] = 0;
   buf[2] = 0;
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     if (ctx.arg.z_ibtplt)
       buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 11;
     else
@@ -24,7 +26,7 @@ void GotPltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
 // The compact PLT format is used when `-z now` is given. If the flag
 // is given, all PLT symbols are resolved eagerly on startup, so we
 // can omit code for lazy symbol resolution from PLT in that case.
-static void write_compact_plt(Context<X86_64> &ctx) {
+static void write_compact_plt(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   static const u8 data[] = {
@@ -32,7 +34,7 @@ static void write_compact_plt(Context<X86_64> &ctx) {
     0x90,                         // nop
   };
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 3) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 7;
@@ -48,7 +50,7 @@ static void write_compact_plt(Context<X86_64> &ctx) {
 // used in GNU ld. GNU's IBTPLT implementation uses two separate
 // sections (.plt and .plt.sec) in which one PLT entry takes 32 bytes
 // in total.
-static void write_ibtplt(Context<X86_64> &ctx) {
+static void write_ibtplt(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   // Write PLT header
@@ -73,7 +75,7 @@ static void write_ibtplt(Context<X86_64> &ctx) {
     0x66, 0x90,                   // nop
   };
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 7) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 11;
@@ -83,7 +85,7 @@ static void write_ibtplt(Context<X86_64> &ctx) {
 }
 
 // The regular PLT.
-static void write_plt(Context<X86_64> &ctx) {
+static void write_plt(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   // Write PLT header
@@ -106,7 +108,7 @@ static void write_plt(Context<X86_64> &ctx) {
     0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
   };
 
-  for (Symbol<X86_64> *sym : ctx.plt->symbols) {
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
@@ -116,7 +118,7 @@ static void write_plt(Context<X86_64> &ctx) {
 }
 
 template <>
-void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+void PltSection<E>::copy_buf(Context<E> &ctx) {
   if (ctx.arg.z_now)
     write_compact_plt(ctx);
   else if (ctx.arg.z_ibtplt)
@@ -126,7 +128,7 @@ void PltSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
 }
 
 template <>
-void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   // We always write a IBT-enabled PLTGOT. If a processor does not
@@ -136,7 +138,7 @@ void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     0x90,                         // nop
   };
 
-  for (Symbol<X86_64> *sym : symbols) {
+  for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * X86_64::pltgot_size;
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 3) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 7;
@@ -144,9 +146,8 @@ void PltGotSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
 }
 
 template <>
-void EhFrameSection<X86_64>::apply_reloc(Context<X86_64> &ctx,
-                                         ElfRel<X86_64> &rel,
-                                         u64 loc, u64 val) {
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
+                                    u64 loc, u64 val) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   switch (rel.r_type) {
@@ -224,24 +225,24 @@ static u32 relax_gottpoff(u8 *loc) {
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
 template <>
-void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
-  ElfRel<X86_64> *dynrel = nullptr;
-  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
+  ElfRel<E> *dynrel = nullptr;
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   i64 frag_idx = 0;
 
   if (ctx.reldyn)
-    dynrel = (ElfRel<X86_64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                 file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<X86_64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
       continue;
 
-    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<X86_64> *ref = nullptr;
+    const SectionFragmentRef<E> *ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
@@ -489,15 +490,15 @@ void InputSection<X86_64>::apply_reloc_alloc(Context<X86_64> &ctx, u8 *base) {
 // Relocations against non-SHF_ALLOC sections are not scanned by
 // scan_relocations.
 template <>
-void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) {
-  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+  std::span<ElfRel<E>> rels = get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<X86_64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
       continue;
 
-    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
@@ -505,7 +506,7 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
       continue;
     }
 
-    SectionFragment<X86_64> *frag;
+    SectionFragment<E> *frag;
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
@@ -584,19 +585,19 @@ void InputSection<X86_64>::apply_reloc_nonalloc(Context<X86_64> &ctx, u8 *base) 
 // or in .plt for that symbol. In order to fix the file layout, we
 // need to scan relocations.
 template <>
-void InputSection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
+void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<X86_64>);
-  std::span<ElfRel<X86_64>> rels = get_rels(ctx);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<X86_64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
       continue;
 
-    Symbol<X86_64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {

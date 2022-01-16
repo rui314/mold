@@ -2,6 +2,8 @@
 
 namespace mold::elf {
 
+using E = ARM64;
+
 static void write_adr(u8 *buf, u64 val) {
   u32 hi = (val & 0x1ffffc) << 3;
   u32 lo = (val & 3) << 29;
@@ -18,7 +20,7 @@ static u64 page(u64 val) {
 }
 
 template <>
-void GotPltSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC.
@@ -26,11 +28,11 @@ void GotPltSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   buf[1] = 0;
   buf[2] = 0;
 
-  for (Symbol<ARM64> *sym : ctx.plt->symbols)
+  for (Symbol<E> *sym : ctx.plt->symbols)
     buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
 }
 
-static void write_plt_header(Context<ARM64> &ctx, u8 *buf) {
+static void write_plt_header(Context<E> &ctx, u8 *buf) {
   // Write PLT header
   static const u8 plt0[] = {
     0xf0, 0x7b, 0xbf, 0xa9, // stp    x16, x30, [sp,#-16]!
@@ -52,7 +54,7 @@ static void write_plt_header(Context<ARM64> &ctx, u8 *buf) {
   *(u32 *)(buf + 12) |= ((gotplt) & 0xfff) << 10;
 }
 
-static void write_plt_entry(Context<ARM64> &ctx, u8 *buf, Symbol<ARM64> &sym) {
+static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u8 *ent = buf + ctx.plt_hdr_size + sym.get_plt_idx(ctx) * ctx.plt_size;
 
   static const u8 data[] = {
@@ -72,18 +74,18 @@ static void write_plt_entry(Context<ARM64> &ctx, u8 *buf, Symbol<ARM64> &sym) {
 }
 
 template <>
-void PltSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   write_plt_header(ctx, buf);
-  for (Symbol<ARM64> *sym : symbols)
+  for (Symbol<E> *sym : symbols)
     write_plt_entry(ctx, buf, *sym);
 }
 
 template <>
-void PltGotSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  for (Symbol<ARM64> *sym : symbols) {
+  for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * ARM64::pltgot_size;
 
     static const u8 data[] = {
@@ -103,9 +105,8 @@ void PltGotSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 }
 
 template <>
-void EhFrameSection<ARM64>::apply_reloc(Context<ARM64> &ctx,
-                                        ElfRel<ARM64> &rel,
-                                        u64 loc, u64 val) {
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
+                                    u64 loc, u64 val) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   switch (rel.r_type) {
@@ -123,24 +124,24 @@ void EhFrameSection<ARM64>::apply_reloc(Context<ARM64> &ctx,
 }
 
 template <>
-void InputSection<ARM64>::apply_reloc_alloc(Context<ARM64> &ctx, u8 *base) {
-  ElfRel<ARM64> *dynrel = nullptr;
-  std::span<ElfRel<ARM64>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
+  ElfRel<E> *dynrel = nullptr;
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   i64 frag_idx = 0;
 
   if (ctx.reldyn)
-    dynrel = (ElfRel<ARM64> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<ARM64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
       continue;
 
-    Symbol<ARM64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<ARM64> *ref = nullptr;
+    const SectionFragmentRef<E> *ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
@@ -340,16 +341,16 @@ void InputSection<ARM64>::apply_reloc_alloc(Context<ARM64> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<ARM64>::apply_reloc_nonalloc(Context<ARM64> &ctx, u8 *base) {
-  std::span<ElfRel<ARM64>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<ARM64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
       continue;
 
-    Symbol<ARM64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
@@ -357,7 +358,7 @@ void InputSection<ARM64>::apply_reloc_nonalloc(Context<ARM64> &ctx, u8 *base) {
       continue;
     }
 
-    SectionFragment<ARM64> *frag;
+    SectionFragment<E> *frag;
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
@@ -383,19 +384,19 @@ void InputSection<ARM64>::apply_reloc_nonalloc(Context<ARM64> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
+void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<ARM64>);
-  std::span<ElfRel<ARM64>> rels = get_rels(ctx);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<ARM64> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
       continue;
 
-    Symbol<ARM64> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, sym);

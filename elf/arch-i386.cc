@@ -2,8 +2,10 @@
 
 namespace mold::elf {
 
+using E = I386;
+
 template <>
-void GotPltSection<I386>::copy_buf(Context<I386> &ctx) {
+void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC.
@@ -11,11 +13,11 @@ void GotPltSection<I386>::copy_buf(Context<I386> &ctx) {
   buf[1] = 0;
   buf[2] = 0;
 
-  for (Symbol<I386> *sym : ctx.plt->symbols)
+  for (Symbol<E> *sym : ctx.plt->symbols)
     buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
 }
 
-static void write_plt_header(Context<I386> &ctx, u8 *buf) {
+static void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 plt0[] = {
       0xff, 0xb3, 0x04, 0, 0, 0, // pushl 4(%ebx)
@@ -35,7 +37,7 @@ static void write_plt_header(Context<I386> &ctx, u8 *buf) {
   }
 }
 
-static void write_plt_entry(Context<I386> &ctx, u8 *buf, Symbol<I386> &sym,
+static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym,
                             i64 idx) {
   u8 *ent = buf + ctx.plt_hdr_size + sym.get_plt_idx(ctx) * ctx.plt_size;
 
@@ -57,12 +59,12 @@ static void write_plt_entry(Context<I386> &ctx, u8 *buf, Symbol<I386> &sym,
     *(u32 *)(ent + 2) = sym.get_gotplt_addr(ctx);
   }
 
-  *(u32 *)(ent + 7) = idx * sizeof(ElfRel<I386>);
+  *(u32 *)(ent + 7) = idx * sizeof(ElfRel<E>);
   *(u32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 16;
 }
 
 template <>
-void PltSection<I386>::copy_buf(Context<I386> &ctx) {
+void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   write_plt_header(ctx, buf);
 
@@ -71,7 +73,7 @@ void PltSection<I386>::copy_buf(Context<I386> &ctx) {
 }
 
 template <>
-void PltGotSection<I386>::copy_buf(Context<I386> &ctx) {
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   if (ctx.arg.pic) {
@@ -100,9 +102,8 @@ void PltGotSection<I386>::copy_buf(Context<I386> &ctx) {
 }
 
 template <>
-void EhFrameSection<I386>::apply_reloc(Context<I386> &ctx,
-                                       ElfRel<I386> &rel,
-                                       u64 loc, u64 val) {
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
+                                    u64 loc, u64 val) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   switch (rel.r_type) {
@@ -119,24 +120,24 @@ void EhFrameSection<I386>::apply_reloc(Context<I386> &ctx,
 }
 
 template <>
-void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
-  ElfRel<I386> *dynrel = nullptr;
-  std::span<ElfRel<I386>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
+  ElfRel<E> *dynrel = nullptr;
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   i64 frag_idx = 0;
 
   if (ctx.reldyn)
-    dynrel = (ElfRel<I386> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                               file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<I386> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
       continue;
 
-    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<I386> *ref = nullptr;
+    const SectionFragmentRef<E> *ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       ref = &rel_fragments[frag_idx++];
 
@@ -272,16 +273,16 @@ void InputSection<I386>::apply_reloc_alloc(Context<I386> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
-  std::span<ElfRel<I386>> rels = get_rels(ctx);
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<I386> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
       continue;
 
-    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
@@ -289,7 +290,7 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
       continue;
     }
 
-    SectionFragment<I386> *frag;
+    SectionFragment<E> *frag;
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
@@ -367,19 +368,19 @@ void InputSection<I386>::apply_reloc_nonalloc(Context<I386> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<I386>::scan_relocations(Context<I386> &ctx) {
+void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr.sh_flags & SHF_ALLOC);
 
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<I386>);
-  std::span<ElfRel<I386>> rels = get_rels(ctx);
+  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<I386> &rel = rels[i];
+    const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
       continue;
 
-    Symbol<I386> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, sym);
