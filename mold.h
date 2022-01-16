@@ -176,6 +176,22 @@ inline u64 next_power_of_two(u64 val) {
   return (u64)1 << (64 - __builtin_clzl(val - 1));
 }
 
+template <typename T, typename Compare = std::less<T>>
+void update_minimum(std::atomic<T> &atomic, u64 new_val,
+                    Compare cmp = {}) {
+  T old_val = atomic;
+  while (cmp(new_val, old_val) &&
+         !atomic.compare_exchange_weak(old_val, new_val));
+}
+
+template <typename T, typename Compare = std::less<T>>
+void update_maximum(std::atomic<T> &atomic, u64 new_val,
+                    Compare cmp = {}) {
+  T old_val = atomic;
+  while (cmp(old_val, new_val) &&
+         !atomic.compare_exchange_weak(old_val, new_val));
+}
+
 template <typename T, typename U>
 inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
   vec1.insert(vec1.end(), vec2.begin(), vec2.end());
@@ -412,18 +428,15 @@ public:
   HyperLogLog() : buckets(NBUCKETS) {}
 
   void insert(u32 hash) {
-    merge_one(hash & (NBUCKETS - 1), __builtin_clz(hash) + 1);
-  }
-
-  void merge_one(i64 idx, u8 newval) {
-    u8 cur = buckets[idx];
-    while (cur < newval)
-      if (buckets[idx].compare_exchange_strong(cur, newval))
-        break;
+    update_maximum(buckets[hash & (NBUCKETS - 1)], __builtin_clz(hash) + 1);
   }
 
   i64 get_cardinality() const;
-  void merge(const HyperLogLog &other);
+
+  void merge(const HyperLogLog &other) {
+    for (i64 i = 0; i < NBUCKETS; i++)
+      update_maximum(buckets[i], other.buckets[i]);
+  }
 
 private:
   static constexpr i64 NBUCKETS = 2048;

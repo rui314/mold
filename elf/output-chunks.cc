@@ -1332,8 +1332,6 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 template <typename E>
 SectionFragment<E> *
 MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
-  assert(alignment < UINT16_MAX);
-
   std::call_once(once_flag, [&]() {
     // We aim 2/3 occupation ratio
     map.resize(estimator.get_cardinality() * 3 / 2);
@@ -1344,9 +1342,8 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
   std::tie(frag, inserted) = map.insert(data, hash, SectionFragment(this));
   assert(frag);
 
-  for (u16 cur = frag->alignment; cur < alignment;)
-    if (frag->alignment.compare_exchange_weak(cur, alignment))
-      break;
+  assert(alignment < UINT16_MAX);
+  update_maximum(frag->alignment, alignment);
   return frag;
 }
 

@@ -839,11 +839,9 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
     Fatal(ctx) << *this << ": unknown symbol visibility: " << sym;
   };
 
-  u8 val = sym.visibility;
-
-  while (priority(visibility) < priority(val))
-    if (sym.visibility.compare_exchange_weak(val, visibility))
-      break;
+  update_minimum(sym.visibility, visibility, [&](u8 a, u8 b) {
+    return priority(a) < priority(b);
+  });
 }
 
 template <typename E>
@@ -932,10 +930,7 @@ template <typename E>
 void ObjectFile<E>::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
     ComdatGroup *group = pair.first;
-    u32 cur = group->owner;
-    while (cur == -1 || cur > this->priority)
-      if (group->owner.compare_exchange_weak(cur, this->priority))
-        break;
+    update_minimum(group->owner, this->priority);
   }
 }
 

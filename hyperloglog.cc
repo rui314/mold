@@ -17,9 +17,4 @@ i64 HyperLogLog::get_cardinality() const {
   return ALPHA * NBUCKETS * NBUCKETS / z;
 }
 
-void HyperLogLog::merge(const HyperLogLog &other) {
-  for (i64 i = 0; i < NBUCKETS; i++)
-    merge_one(i, other.buckets[i]);
-}
-
 } // namespace mold
