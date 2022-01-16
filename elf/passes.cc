@@ -5,7 +5,6 @@
 #include <optional>
 #include <regex>
 #include <tbb/parallel_for_each.h>
-#include <tbb/parallel_scan.h>
 #include <tbb/partitioner.h>
 #include <unordered_set>
 
@@ -203,7 +202,6 @@ void compute_merged_section_sizes(Context<E> &ctx) {
 
 template <typename T>
 static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
-  assert(input.size() > 0);
   std::span<T> span(input);
   std::vector<std::span<T>> vec;
 
@@ -469,36 +467,54 @@ template <typename E>
 void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
-  struct T {
-    i64 offset;
-    i64 align;
+  struct Group {
+    i64 size = 0;
+    i64 alignment = 1;
+    i64 offset = 0;
+    std::span<InputSection<E> *> members;
   };
 
   tbb::parallel_for_each(ctx.output_sections,
                          [&](std::unique_ptr<OutputSection<E>> &osec) {
-    T sum = tbb::parallel_scan(
-      tbb::blocked_range<i64>(0, osec->members.size(), 10000),
-      T{0, 1},
-      [&](const tbb::blocked_range<i64> &r, T sum, bool is_final) {
-        for (i64 i = r.begin(); i < r.end(); i++) {
-          InputSection<E> &isec = *osec->members[i];
-          sum.offset = align_to(sum.offset, isec.shdr.sh_addralign);
-          if (is_final)
-            isec.offset = sum.offset;
-          sum.offset += isec.shdr.sh_size;
-          sum.align = std::max<i64>(sum.align, isec.shdr.sh_addralign);
-        }
-        return sum;
-      },
-      [](T lhs, T rhs) {
-        i64 offset = align_to(lhs.offset, rhs.align) + rhs.offset;
-        i64 align = std::max(lhs.align, rhs.align);
-        return T{offset, align};
-      },
-      tbb::simple_partitioner());
+    // Since one output section may contain millions of input sections,
+    // we first split input sections into groups and assign offsets to
+    // groups.
+    std::vector<Group> groups;
+    constexpr i64 group_size = 10000;
 
-    osec->shdr.sh_size = sum.offset;
-    osec->shdr.sh_addralign = sum.align;
+    for (std::span<InputSection<E> *> span : split(osec->members, group_size))
+      groups.push_back(Group{.members = span});
+
+    tbb::parallel_for_each(groups, [](Group &group) {
+      for (InputSection<E> *isec : group.members) {
+        group.size = align_to(group.size, isec->shdr.sh_addralign) +
+                     isec->shdr.sh_size;
+        group.alignment = std::max<i64>(group.alignment, isec->shdr.sh_addralign);
+      }
+    });
+
+    i64 offset = 0;
+    i64 align = 1;
+
+    for (i64 i = 0; i < groups.size(); i++) {
+      offset = align_to(offset, groups[i].alignment);
+      groups[i].offset = offset;
+      offset += groups[i].size;
+      align = std::max(align, groups[i].alignment);
+    }
+
+    osec->shdr.sh_size = offset;
+    osec->shdr.sh_addralign = align;
+
+    // Assign offsets to input sections.
+    tbb::parallel_for_each(groups, [](Group &group) {
+      i64 offset = group.offset;
+      for (InputSection<E> *isec : group.members) {
+        offset = align_to(offset, isec->shdr.sh_addralign);
+        isec->offset = offset;
+        offset += isec->shdr.sh_size;
+      }
+    });
   });
 }
 
