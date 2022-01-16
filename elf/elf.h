@@ -30,12 +30,7 @@ template <typename E> struct ElfEhdr;
 template <typename E> struct ElfPhdr;
 template <typename E> struct ElfRel;
 template <typename E> struct ElfDyn;
-template <typename E> struct ElfVerneed;
-template <typename E> struct ElfVernaux;
-template <typename E> struct ElfVerdef;
-template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
-template <typename E> struct ElfNhdr;
 
 template <typename E>
 std::string rel_to_string(u32 r_type);
@@ -812,7 +807,7 @@ struct Elf32Dyn {
   u32 d_val;
 };
 
-struct Elf64Verneed {
+struct ElfVerneed {
   u16 vn_version;
   u16 vn_cnt;
   u32 vn_file;
@@ -820,7 +815,7 @@ struct Elf64Verneed {
   u32 vn_next;
 };
 
-struct Elf64Vernaux {
+struct ElfVernaux {
   u32 vna_hash;
   u16 vna_flags;
   u16 vna_other;
@@ -828,7 +823,7 @@ struct Elf64Vernaux {
   u32 vna_next;
 };
 
-struct Elf64Verdef {
+struct ElfVerdef {
   u16 vd_version;
   u16 vd_flags;
   u16 vd_ndx;
@@ -838,7 +833,7 @@ struct Elf64Verdef {
   u32 vd_next;
 };
 
-struct Elf64Verdaux {
+struct ElfVerdaux {
   u32 vda_name;
   u32 vda_next;
 };
@@ -856,7 +851,7 @@ struct Elf32Chdr {
   u32 ch_addralign;
 };
 
-struct Elf64Nhdr {
+struct ElfNhdr {
   u32 n_namesz;
   u32 n_descsz;
   u32 n_type;
@@ -890,12 +885,7 @@ template <> struct ElfEhdr<X86_64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<X86_64> : public Elf64Phdr {};
 template <> struct ElfRel<X86_64> : public Elf64Rela {};
 template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
-template <> struct ElfVerneed<X86_64> : public Elf64Verneed {};
-template <> struct ElfVernaux<X86_64> : public Elf64Vernaux {};
-template <> struct ElfVerdef<X86_64> : public Elf64Verdef {};
-template <> struct ElfVerdaux<X86_64> : public Elf64Verdaux {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
-template <> struct ElfNhdr<X86_64> : public Elf64Nhdr {};
 
 struct I386 {
   using WordTy = u32;
@@ -925,12 +915,7 @@ template <> struct ElfEhdr<I386> : public Elf32Ehdr {};
 template <> struct ElfPhdr<I386> : public Elf32Phdr {};
 template <> struct ElfRel<I386> : public Elf32Rel {};
 template <> struct ElfDyn<I386> : public Elf32Dyn {};
-template <> struct ElfVerneed<I386> : public Elf64Verneed {};
-template <> struct ElfVernaux<I386> : public Elf64Vernaux {};
-template <> struct ElfVerdef<I386> : public Elf64Verdef {};
-template <> struct ElfVerdaux<I386> : public Elf64Verdaux {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
-template <> struct ElfNhdr<I386> : public Elf64Nhdr {};
 
 struct ARM64 {
   using WordTy = u64;
@@ -960,11 +945,6 @@ template <> struct ElfEhdr<ARM64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<ARM64> : public Elf64Phdr {};
 template <> struct ElfRel<ARM64> : public Elf64Rela {};
 template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
-template <> struct ElfVerneed<ARM64> : public Elf64Verneed {};
-template <> struct ElfVernaux<ARM64> : public Elf64Vernaux {};
-template <> struct ElfVerdef<ARM64> : public Elf64Verdef {};
-template <> struct ElfVerdaux<ARM64> : public Elf64Verdaux {};
 template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
-template <> struct ElfNhdr<ARM64> : public Elf64Nhdr {};
 
 } // namespace mold::elf
