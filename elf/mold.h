@@ -1748,6 +1748,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 template <typename E>
 bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
   return ctx.arg.pack_dyn_relocs_relr &&
+         !(shdr.sh_flags & SHF_EXECINSTR) &&
          (shdr.sh_addralign % E::word_size) == 0 &&
          (rel.r_offset % E::word_size) == 0;
 }

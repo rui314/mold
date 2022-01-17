@@ -842,6 +842,11 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   if (this->shdr.sh_addralign % E::word_size)
     return;
 
+  // Skip it if it is a text section because .text doesn't usually
+  // contain any dynamic relocations.
+  if (this->shdr.sh_flags & SHF_EXECINSTR)
+    return;
+
   // Collect base relocations
   std::vector<typename E::WordTy> pos;
   std::mutex mu;
