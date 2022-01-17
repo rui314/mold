@@ -298,7 +298,7 @@ private:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
-  bool is_relr(Context<E> &ctx, const ElfRel<E> &rel);
+  bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 };
 
 //
@@ -1746,7 +1746,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 }
 
 template <typename E>
-bool InputSection<E>::is_relr(Context<E> &ctx, const ElfRel<E> &rel) {
+bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
   return ctx.arg.pack_dyn_relocs_relr &&
          (shdr.sh_addralign % E::word_size) == 0 &&
          (rel.r_offset % E::word_size) == 0;

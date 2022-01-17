@@ -128,7 +128,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     }
 
     needs_baserel[i] = true;
-    if (!is_relr(ctx, rel))
+    if (!is_relr_reloc(ctx, rel))
       file.num_dynrel++;
     return;
   default:

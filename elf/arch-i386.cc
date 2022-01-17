@@ -185,7 +185,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
 
     if (needs_baserel[i]) {
-      if (!is_relr(ctx, rel))
+      if (!is_relr_reloc(ctx, rel))
         *dynrel++ = {P, R_386_RELATIVE, 0};
       write32(S + A);
       continue;
