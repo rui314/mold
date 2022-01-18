@@ -32,9 +32,9 @@ public:
       Fatal(ctx) << "cannot open " << output_tmpfile <<  ": " << errno_string();
 
     if (ftruncate(fd, filesize))
-      Fatal(ctx) << "ftruncate failed";
+      Fatal(ctx) << "ftruncate failed: " << errno_string();
     if (fchmod(fd, perm) == -1)
-      Fatal(ctx) << "fchmod failed";
+      Fatal(ctx) << "fchmod failed: " << errno_string();
 
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED, fd, 0);
