@@ -13,36 +13,44 @@ inline u32 get_umask() {
   return orig_umask;
 }
 
+template <typename C>
+static std::pair<i64, char *>
+open_or_create_file(C &ctx, std::string path, i64 filesize, i64 perm) {
+  std::string tmpl = filepath(path).parent_path() / ".mold-XXXXXX";
+  char *path2 = (char *)save_string(ctx, tmpl).data();
+
+  i64 fd = mkstemp(path2);
+  if (fd == -1)
+    Fatal(ctx) << "cannot open " << path2 <<  ": " << errno_string();
+
+  // Reuse an existing file if exists and writable.
+  if (rename(path.c_str(), path2) == 0) {
+    ::close(fd);
+    fd = ::open(path2, O_RDWR | O_CREAT, perm);
+    if (fd != -1 && !ftruncate(fd, filesize) && !fchmod(fd, perm & ~get_umask()))
+      return {fd, path2};
+
+    unlink(path2);
+    fd = ::open(path2, O_RDWR | O_CREAT, perm);
+    if (fd == -1)
+      Fatal(ctx) << "cannot open " << path2 << ": " << errno_string();
+  }
+
+  if (ftruncate(fd, filesize))
+    Fatal(ctx) << "ftruncate failed: " << errno_string();
+
+  if (fchmod(fd, (perm & ~get_umask())) == -1)
+    Fatal(ctx) << "fchmod failed: " << errno_string();
+  return {fd, path2};
+}
+
 template <typename E>
 class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
     : OutputFile<E>(path, filesize, true) {
-    std::string tmp_path = filepath(path).parent_path() / ".mold-XXXXXX";
-    output_tmpfile = (char *)save_string(ctx, tmp_path).data();
-
-    i64 fd = mkstemp(output_tmpfile);
-    if (fd == -1)
-      Fatal(ctx) << "cannot open " << output_tmpfile <<  ": " << errno_string();
-
-    if (rename(path.c_str(), output_tmpfile) == 0) {
-      ::close(fd);
-      fd = ::open(output_tmpfile, O_RDWR | O_CREAT, perm);
-      if (fd == -1) {
-        if (errno != ETXTBSY)
-          Fatal(ctx) << "cannot open " << path << ": " << errno_string();
-        unlink(output_tmpfile);
-        fd = ::open(output_tmpfile, O_RDWR | O_CREAT, perm);
-        if (fd == -1)
-          Fatal(ctx) << "cannot open " << path << ": " << errno_string();
-      }
-    }
-
-    if (ftruncate(fd, filesize))
-      Fatal(ctx) << "ftruncate failed: " << errno_string();
-
-    if (fchmod(fd, (perm & ~get_umask())) == -1)
-      Fatal(ctx) << "fchmod failed: " << errno_string();
+    i64 fd;
+    std::tie(fd, output_tmpfile) = open_or_create_file(ctx, path, filesize, perm);
 
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED, fd, 0);
