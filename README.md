@@ -58,7 +58,7 @@ you can build mold by the following commands.
 
 ```shell
 sudo apt-get update
-sudo apt-get install -y build-essential git clang cmake libstdc++-10-dev libssl-dev libxxhash-dev zlib1g-dev
+sudo apt-get install -y build-essential git clang cmake libstdc++-10-dev libssl-dev libxxhash-dev zlib1g-dev pkg-config
 ```
 
 #### Fedora 34 and later
