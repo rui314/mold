@@ -10,6 +10,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
+
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 #include <stdio.h>
 void hello() {

@@ -14,7 +14,7 @@ mkdir -p $t
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
 which gcc >& /dev/null || { echo skipped; exit 0; }
-which $CC >& /dev/null || { echo skipped; exit 0; }
+which clang >& /dev/null || { echo skipped; exit 0; }
 
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>

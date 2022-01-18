@@ -19,7 +19,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -shared -o $t/b.so -xc -
+cat <<EOF | $CC -fPIC -shared -o $t/b.so -xc -
 const char readonly[100] = "abc";
 char readwrite[100] = "abc";
 EOF
