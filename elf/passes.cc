@@ -672,7 +672,7 @@ void apply_version_script(Context<E> &ctx) {
     }
   };
 
-  for (VersionPattern &elem : ctx.arg.version_patterns) {
+  for (VersionPattern &elem : ctx.version_patterns) {
     std::vector<std::string_view> vec;
 
     for (std::string_view pat : elem.patterns) {

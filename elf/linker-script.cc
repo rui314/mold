@@ -299,7 +299,7 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
     }
 
     if (tok[0] == "*")
-      ctx.arg.default_version = (is_global ? pat.ver_idx : VER_NDX_LOCAL);
+      ctx.default_version = (is_global ? pat.ver_idx : VER_NDX_LOCAL);
     else if (is_cpp)
       pat.cpp_patterns.push_back(unquote(tok[0]));
     else
@@ -335,7 +335,7 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
       tok = tok.subspan(1);
     tok = skip(ctx, tok, ";");
 
-    ctx.arg.version_patterns.push_back(pat);
+    ctx.version_patterns.push_back(pat);
   }
 }
 
@@ -375,7 +375,7 @@ void read_dynamic_list_commands(Context<E> &ctx,
     }
 
     if (tok[0] == "*")
-      ctx.arg.default_version = VER_NDX_GLOBAL;
+      ctx.default_version = VER_NDX_GLOBAL;
     else if (is_cpp)
       pat.cpp_patterns.push_back(unquote(tok[0]));
     else
@@ -397,7 +397,7 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
   VersionPattern pat;
   pat.ver_idx = VER_NDX_GLOBAL;
   read_dynamic_list_commands(ctx, tok, pat, false);
-  ctx.arg.version_patterns.push_back(pat);
+  ctx.version_patterns.push_back(pat);
 
   tok = skip(ctx, tok, "}");
   tok = skip(ctx, tok, ";");

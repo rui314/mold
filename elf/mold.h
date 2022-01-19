@@ -1316,7 +1316,6 @@ struct Context {
     bool z_relro = true;
     bool z_shstk = false;
     bool z_text = false;
-    u16 default_version = VER_NDX_GLOBAL;
     i64 emulation = -1;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
@@ -1335,7 +1334,6 @@ struct Context {
     std::unique_ptr<std::regex> unique;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
-    std::vector<VersionPattern> version_patterns;
     std::vector<std::pair<std::string_view, std::string_view>> defsyms;
     std::vector<std::string> library_paths;
     std::vector<std::string> version_definitions;
@@ -1348,6 +1346,12 @@ struct Context {
     u64 image_base = 0x200000;
   } arg;
 
+  std::vector<VersionPattern> version_patterns;
+  u16 default_version = VER_NDX_GLOBAL;
+  i64 page_size = -1;
+  i64 plt_hdr_size = -1;
+  i64 plt_size = -1;
+
   // Reader context
   bool as_needed = false;
   bool whole_archive = false;
@@ -1359,10 +1363,6 @@ struct Context {
 
   bool has_error = false;
   bool llvm_lto = false;
-
-  i64 page_size = -1;
-  i64 plt_hdr_size = -1;
-  i64 plt_size = -1;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;

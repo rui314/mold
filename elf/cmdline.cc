@@ -929,15 +929,15 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.output = "a.out";
 
   if (ctx.arg.shared || ctx.arg.export_dynamic)
-    ctx.arg.default_version = VER_NDX_GLOBAL;
+    ctx.default_version = VER_NDX_GLOBAL;
   else
-    ctx.arg.default_version = VER_NDX_LOCAL;
+    ctx.default_version = VER_NDX_LOCAL;
 
   if (ctx.arg.default_symver) {
     std::string ver = ctx.arg.soname.empty() ?
       filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
     ctx.arg.version_definitions.push_back(ver);
-    ctx.arg.default_version = VER_NDX_LAST_RESERVED + 1;
+    ctx.default_version = VER_NDX_LAST_RESERVED + 1;
   }
 
   std::tie(ctx.plt_hdr_size, ctx.plt_size) = get_plt_size(ctx);

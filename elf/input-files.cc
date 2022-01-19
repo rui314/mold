@@ -879,7 +879,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
         sym.value = esym.st_value;
 
       sym.sym_idx = i;
-      sym.ver_idx = ctx.arg.default_version;
+      sym.ver_idx = ctx.default_version;
       sym.is_weak = esym.is_weak();
       sym.is_imported = false;
       sym.is_exported = false;
@@ -1016,7 +1016,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR ||
         esym.is_undef_weak()) {
       claim();
-      sym.ver_idx = ctx.arg.default_version;
+      sym.ver_idx = ctx.default_version;
       sym.is_imported = false;
     }
   }
@@ -1083,7 +1083,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     sym.input_section = isec.get();
     sym.value = 0;
     sym.sym_idx = i;
-    sym.ver_idx = ctx.arg.default_version;
+    sym.ver_idx = ctx.default_version;
     sym.is_weak = false;
     sym.is_imported = false;
     sym.is_exported = false;
