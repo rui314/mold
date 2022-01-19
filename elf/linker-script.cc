@@ -266,7 +266,8 @@ static bool read_label(std::span<std::string_view> &tok,
 template <typename E>
 static void
 read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
-                             VersionPattern &pat, bool is_cpp) {
+                             VersionPattern &pat, VersionPattern &local_pat,
+                             bool is_cpp) {
   bool is_global = true;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -286,11 +287,11 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
         tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, pat, false);
+        read_version_script_commands(ctx, tok, pat, local_pat, false);
       } else {
         tok = skip(ctx, tok, "\"C++\"");
         tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, pat, true);
+        read_version_script_commands(ctx, tok, pat, local_pat, true);
       }
 
       tok = skip(ctx, tok, "}");
@@ -298,12 +299,19 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
       continue;
     }
 
-    if (tok[0] == "*")
+    if (tok[0] == "*") {
       ctx.default_version = (is_global ? pat.ver_idx : VER_NDX_LOCAL);
-    else if (is_cpp)
-      pat.cpp_patterns.push_back(unquote(tok[0]));
-    else
-      pat.patterns.push_back(unquote(tok[0]));
+    } else if (is_global) {
+      if (is_cpp)
+        pat.cpp_patterns.push_back(unquote(tok[0]));
+      else
+        pat.patterns.push_back(unquote(tok[0]));
+    } else {
+      if (is_cpp)
+        local_pat.cpp_patterns.push_back(unquote(tok[0]));
+      else
+        local_pat.patterns.push_back(unquote(tok[0]));
+    }
 
     tok = tok.subspan(1);
 
@@ -328,14 +336,20 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
       tok = tok.subspan(1);
     }
 
+    VersionPattern local_pat;
+    local_pat.ver_idx = VER_NDX_LOCAL;
+
     tok = skip(ctx, tok, "{");
-    read_version_script_commands(ctx, tok, pat, false);
+    read_version_script_commands(ctx, tok, pat, local_pat, false);
     tok = skip(ctx, tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
     tok = skip(ctx, tok, ";");
 
     ctx.version_patterns.push_back(pat);
+
+    if (!local_pat.patterns.empty() || !local_pat.cpp_patterns.empty())
+      ctx.version_patterns.push_back(local_pat);
   }
 }
 
