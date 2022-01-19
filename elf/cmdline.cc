@@ -60,10 +60,12 @@ Options:
   --color-diagnostics         Alias for --color-diagnostics=always
   --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu]
                               Compress .debug_* sections
+  --dc                        Ignored
   --defsym=SYMBOL=VALUE       Define a symbol alias
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
   --disable-new-dtags         Ignored
+  --dp                        Ignored
   --dynamic-list              Read a list of dynamic symbols
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
@@ -834,6 +836,8 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "no-undefined-version")) {
     } else if (read_arg(ctx, args, arg, "sort-section")) {
     } else if (read_flag(args, "sort-common")) {
+    } else if (read_flag(args, "dc")) {
+    } else if (read_flag(args, "dp")) {
     } else if (read_flag(args, "fix-cortex-a53-843419")) {
     } else if (read_flag(args, "EL")) {
     } else if (read_flag(args, "warn-once")) {
