@@ -490,10 +490,16 @@ static int elf_main(int argc, char **argv) {
 
   // Do the same for GCC LTO.
   if (Symbol<E> *sym = get_symbol(ctx, "__gnu_lto_slim"); sym->file) {
+    std::string gnu_ld;
+    if (access("/bin/ld.gold", F_OK) == 0){
+      gnu_ld = "ld.gold";
+    } else{
+      gnu_ld = "ld.bfd";
+    }
     Warn(ctx) << *sym->file
-              << "GCC LTO is detected, so falling back to ld.bfd";
-    execvp("ld.bfd", argv);
-    Fatal(ctx) << "execvp failed: ld.bfd: " << errno_string();
+              << "GCC LTO is detected, so falling back to " << gnu_ld;
+    execvp(gnu_ld.c_str(), argv);
+    Fatal(ctx) << "execvp failed: " << gnu_ld << ": " << errno_string();
   }
 
   // Remove redundant comdat sections (e.g. duplicate inline functions).
