@@ -345,10 +345,8 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
   for (std::string_view data = contents; !data.empty();) {
     i64 size = *(u32 *)data.data();
-    if (size == 0) {
-      data = data.substr(4);
-      continue;
-    }
+    if (size == 0)
+      break;
 
     i64 begin_offset = data.data() - contents.data();
     i64 end_offset = begin_offset + size + 4;
