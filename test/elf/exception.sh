@@ -33,10 +33,16 @@ $t/exe
 $CXX -B. -o $t/exe $t/a.cc -static -Wl,--gc-sections
 $t/exe
 
-$CXX -B. -o $t/exe $t/a.cc -mcmodel=large
+if [ "$(uname -m)" = aarch64 ]; then
+  # The -mcmodel=large option is incompatible with -fPIC on aarch64, see
+  # https://gcc.gnu.org/onlinedocs/gcc/AArch64-Options.html#index-mcmodel_003dlarge
+  pic=-fno-PIC
+fi
+
+$CXX -B. -o $t/exe $t/a.cc -mcmodel=large $pic
 $t/exe
 
-$CXX -B. -o $t/exe $t/a.cc -static -mcmodel=large
+$CXX -B. -o $t/exe $t/a.cc -static -mcmodel=large $pic
 $t/exe
 
 echo OK
