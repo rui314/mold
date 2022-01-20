@@ -134,8 +134,8 @@ ifeq ($(IS_ANDROID), 1)
   CXXFLAGS += -Wno-c++11-narrowing
 endif
 
-ifneq ($(OS), NetBSD)
-  MOLD_WRAPPER_LDFLAGS = -ldl
+ifeq ($(OS), Linux)
+  MOLD_WRAPPER_LDFLAGS = -Wl,-push-state -Wl,-no-as-needed -ldl -Wl,-pop-state
 endif
 
 all: mold mold-wrapper.so
