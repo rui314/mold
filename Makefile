@@ -33,7 +33,7 @@ CFLAGS += $(COMMON_FLAGS) $(EXTRA_CFLAGS)
 CXXFLAGS ?= -O2
 CXXFLAGS += $(COMMON_FLAGS) $(EXTRA_CXXFLAGS) -std=c++20 -fno-exceptions
 CXXFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz $(DL_LIBS) -lm
+LIBS = -pthread -lz -lm
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
@@ -134,10 +134,8 @@ ifeq ($(IS_ANDROID), 1)
   CXXFLAGS += -Wno-c++11-narrowing
 endif
 
-ifeq ($(OS), NetBSD)
-DL_LIBS =
-else
-DL_LIBS = -ldl
+ifneq ($(OS), NetBSD)
+  MOLD_WRAPPER_LDFLAGS = -ldl
 endif
 
 all: mold mold-wrapper.so
@@ -148,7 +146,7 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
 	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
-	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $< $(DL_LIBS)
+	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $(MOLD_WRAPPER_LDFLAGS) $<
 
 out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
