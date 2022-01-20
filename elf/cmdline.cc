@@ -838,6 +838,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "sort-common")) {
     } else if (read_flag(args, "dc")) {
     } else if (read_flag(args, "dp")) {
+    } else if (read_flag(args, "fix-cortex-a53-835769")) {
     } else if (read_flag(args, "fix-cortex-a53-843419")) {
     } else if (read_flag(args, "EL")) {
     } else if (read_flag(args, "warn-once")) {
