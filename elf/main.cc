@@ -353,6 +353,13 @@ static void show_stats(Context<E> &ctx) {
   static Counter num_objs("num_objs", ctx.objs.size());
   static Counter num_dsos("num_dsos", ctx.dsos.size());
 
+  if constexpr (E::e_machine == EM_AARCH64) {
+    static Counter num_thunks("num_thunks");
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+      for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
+        num_thunks += thunk->symbols.size();
+  }
+
   Counter::print();
 }
 
@@ -652,6 +659,9 @@ static int elf_main(int argc, char **argv) {
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx);
 
+  if constexpr (E::e_machine == EM_AARCH64)
+    filesize = create_range_extension_thunks(ctx);
+
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(ctx);
 
@@ -699,6 +709,9 @@ static int elf_main(int argc, char **argv) {
 
     ctx.checkpoint();
   }
+
+  if constexpr (E::e_machine == EM_AARCH64)
+    write_thunks(ctx);
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.

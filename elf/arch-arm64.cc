@@ -1,5 +1,8 @@
 #include "mold.h"
 
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
+
 namespace mold::elf {
 
 using E = ARM64;
@@ -127,11 +130,12 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<ElfRel<E>> rels = get_rels(ctx);
+
   i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                               file.reldyn_offset + this->reldyn_offset);
+                           file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -224,17 +228,29 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     }
     case R_AARCH64_CALL26:
-    case R_AARCH64_JUMP26:
-      if (!sym.esym().is_undef_weak()) {
-        i64 val = S + A - P;
-        overflow_check(val, -((i64)1 << 26), (i64)1 << 26);
-        *(u32 *)loc |= (val >> 2) & 0x3ffffff;
-      } else {
+    case R_AARCH64_JUMP26: {
+      if (sym.esym().is_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(u32 *)loc |= 1;
+        continue;
       }
+
+      i64 val = S + A - P;
+      i64 lo = -((i64)1 << 27);
+      i64 hi = 1 << 27;
+      i64 old_val = val;
+
+      if (val <= lo || hi <= val) {
+        RangeExtensionThunk<E> &t =
+          *output_section->thunks[range_extn[i].thunk_idx];
+        val = t.get_addr(range_extn[i].sym_idx) + A - P;
+        assert(lo <= val && val < hi);
+      }
+
+      *(u32 *)loc |= (val >> 2) & 0x3ffffff;
       continue;
+    }
     case R_AARCH64_CONDBR19: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 20), (i64)1 << 20);
@@ -476,6 +492,305 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+}
+
+static void reset_thunk(RangeExtensionThunk<E> &thunk) {
+  for (Symbol<E> *sym : thunk.symbols) {
+    sym->thunk_idx = -1;
+    sym->thunk_sym_idx = -1;
+    sym->flags &= (u8)~NEEDS_THUNK;
+  }
+}
+
+static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
+                         InputSection<E> &isec, const ElfRel<E> &rel) {
+  // We always create a thunk for an absolute symbol conservatively
+  // because `shrink_sections` may increase a distance between a
+  // branch instruction and an absolute symbol. Branching to an
+  // absolute location is extremely rare in real code, though.
+  if (sym.is_absolute())
+    return false;
+
+  // Compute a distance between the relocated place and the symbol
+  // and check if they are within reach.
+  i64 S = sym.get_addr(ctx);
+  i64 A = rel.r_addend;
+  i64 P = isec.get_addr() + rel.r_offset;
+  i64 val = S + A - P;
+  return -((i64)1 << 27) <= val && val < ((i64)1 << 27);
+}
+
+// We create a thunk no further than 100 MiB from any section.
+constexpr i64 MAX_DISTANCE = 100 * 1024 * 1024;
+
+// We create a thunk for each 10 MiB input sections.
+static constexpr i64 GROUP_SIZE = 10 * 1024 * 1024;
+
+static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
+  std::span<InputSection<E> *> members = osec.members;
+  members[0]->offset = 0;
+
+  // Initialize input sections with very large dummy offsets so that
+  // sections that have got real offsets are separated from the ones
+  // without in the virtual address space.
+  tbb::parallel_for((i64)1, (i64)members.size(), [&](i64 i) {
+    members[i]->offset = 1 << 31;
+  });
+
+  // We create thunks from the beginning of the section to the end.
+  // We manage progress using four offsets which increase monotonically.
+  // The locations they point to are always A <= B <= C <= D.
+  i64 a = 0;
+  i64 b = 0;
+  i64 c = 0;
+  i64 d = 0;
+  i64 offset = 0;
+
+  while (b < members.size()) {
+    // Move D foward as far as we can jump from B to D.
+    while (d < members.size() && offset - members[b]->offset < MAX_DISTANCE) {
+      offset = align_to(offset, members[d]->shdr.sh_addralign);
+      members[d]->offset = offset;
+      offset += members[d]->shdr.sh_size;
+      d++;
+    }
+
+    // Move C forward so that C is apart from B by GROUP_SIZE.
+    while (c < members.size() &&
+           members[c]->offset - members[b]->offset < GROUP_SIZE)
+      c++;
+
+    // Move A forward so that A is reachable from C.
+    if (c > 0) {
+      i64 c_end = members[c - 1]->offset + members[c - 1]->shdr.sh_size;
+      while (a < osec.thunks.size() &&
+             osec.thunks[a]->offset < c_end - MAX_DISTANCE)
+        reset_thunk(*osec.thunks[a++]);
+    }
+
+    // Create a thunk for input sections between B and C and place it at D.
+    osec.thunks.emplace_back(new RangeExtensionThunk<E>{osec});
+
+    RangeExtensionThunk<E> &thunk = *osec.thunks.back();
+    thunk.thunk_idx = osec.thunks.size() - 1;
+    thunk.offset = offset;
+
+    // Scan relocations between B and C to collect symbols that need thunks.
+    tbb::parallel_for_each(&members[b], &members[c], [&](InputSection<E> *isec) {
+      std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+      isec->range_extn.resize(rels.size());
+
+      for (i64 i = 0; i < rels.size(); i++) {
+        const ElfRel<E> &rel = rels[i];
+        if (rel.r_type != R_AARCH64_CALL26 && rel.r_type != R_AARCH64_JUMP26)
+          continue;
+
+        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+
+        // Skip if the destination is within reach.
+        if (is_reachable(ctx, sym, *isec, rel))
+          continue;
+
+        // If the symbol is already in another thunk, reuse it.
+        if (sym.thunk_idx != -1) {
+          isec->range_extn[i] = {sym.thunk_idx, sym.thunk_sym_idx};
+          continue;
+        }
+
+        // Otherwise, add the symbol to this thunk if it's not added already.
+        isec->range_extn[i] = {thunk.thunk_idx, -1};
+
+        if (!(sym.flags.fetch_or(NEEDS_THUNK) & NEEDS_THUNK)) {
+          std::lock_guard lock(thunk.mu);
+          thunk.symbols.push_back(&sym);
+        }
+      }
+    });
+
+    // Now that we know the number of symbols in the thunk, we can compute
+    // its size.
+    offset += thunk.size();
+
+    // Sort symbols added to the thunk to make the output deterministic.
+    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) { return *a < *b; });
+
+    // Assign offsets within the thunk to the symbols.
+    for (i64 i = 0; Symbol<E> *sym : thunk.symbols) {
+      sym->thunk_idx = thunk.thunk_idx;
+      sym->thunk_sym_idx = i++;
+    }
+
+    // Scan relocations again to fix symbol offsets in the last thunk.
+    tbb::parallel_for_each(&members[b], &members[c], [&](InputSection<E> *isec) {
+      std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+
+      for (i64 i = 0; i < rels.size(); i++) {
+        RangeExtensionRef &ref = isec->range_extn[i];
+
+        if (ref.thunk_idx == thunk.thunk_idx) {
+          Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
+          ref.sym_idx = sym.thunk_sym_idx;
+        }
+      }
+    });
+
+    // Move B forward to point to the begining of the next group.
+    b = c;
+  }
+
+  while (a < osec.thunks.size())
+    reset_thunk(*osec.thunks[a++]);
+
+  osec.shdr.sh_size = offset;
+}
+
+static void mark_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
+  for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec.thunks) {
+    i64 sz = thunk->symbols.size();
+    thunk->symbol_map.resize(sz);
+    thunk->used.reset(new std::atomic_bool[sz]{});
+  }
+
+  // Mark referenced thunk symbols
+  tbb::parallel_for_each(osec.members, [&](InputSection<E> *isec) {
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+
+    for (i64 i = 0; i < rels.size(); i++) {
+      RangeExtensionRef &ref = isec->range_extn[i];
+      if (ref.thunk_idx == -1)
+        continue;
+
+      Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
+      if (!is_reachable(ctx, sym, *isec, rels[i]))
+        osec.thunks[ref.thunk_idx]->used[ref.sym_idx] = true;
+    }
+  });
+
+  // Remove unreferenced thunk symbols
+  tbb::parallel_for_each(osec.thunks,
+                         [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
+    i64 i = 0;
+    for (i64 j = 0; j < thunk->symbols.size(); j++) {
+      if (thunk->used[j]) {
+        thunk->symbol_map[j] = i;
+        thunk->symbols[i] = thunk->symbols[j];
+        i++;
+      }
+    }
+    thunk->symbols.resize(i);
+  });
+}
+
+static void shrink_section(Context<E> &ctx, OutputSection<E> &osec) {
+  std::span<std::unique_ptr<RangeExtensionThunk<E>>> thunks = osec.thunks;
+  std::span<InputSection<E> *> members = osec.members;
+
+  i64 offset = 0;
+
+  auto add_thunk = [&]() {
+    thunks[0]->offset = offset;
+    offset += thunks[0]->size();
+    thunks = thunks.subspan(1);
+  };
+
+  auto add_isec = [&]() {
+    offset = align_to(offset, members[0]->shdr.sh_addralign);
+    members[0]->offset = offset;
+    offset += members[0]->shdr.sh_size;
+    members = members.subspan(1);
+  };
+
+  while (!thunks.empty() && !members.empty()) {
+    if (thunks[0]->offset < members[0]->offset)
+      add_thunk();
+    else
+      add_isec();
+  }
+
+  while (!thunks.empty())
+    add_thunk();
+  while (!members.empty())
+    add_isec();
+
+  assert(offset <= osec.shdr.sh_size);
+  osec.shdr.sh_size = offset;
+}
+
+// ARM64's call/jump instructions take 27 bits displacement, so they
+// can refer only up to ±128 MiB. If a branch target is further than
+// that, we need to let it branch to a linker-synthesized code
+// sequence that construct a full 32 bit address in a register and
+// jump there. That linker-synthesized code is called "thunk".
+i64 create_range_extension_thunks(Context<E> &ctx) {
+  Timer t(ctx, "create_range_extension_thunks");
+
+  // First, we create thunks with a pessimistic assumption that all
+  // out-of-section relocations would need thunks. To do so, we start
+  // with an initial layout in which output sections are separated far
+  // apart.
+  for (i64 i = 0; Chunk<E> *chunk : ctx.chunks)
+    chunk->shdr.sh_addr = i++ << 31;
+
+  std::vector<OutputSection<E> *> sections;
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+    if (!osec->members.empty() && (osec->shdr.sh_flags & SHF_EXECINSTR))
+      sections.push_back(osec.get());
+
+  for (OutputSection<E> *osec : sections)
+    create_thunks(ctx, *osec);
+
+  // Recompute file layout.
+  set_osec_offsets(ctx);
+
+  // Based on the current file layout, remove thunk symbols that turned
+  // to be unnecessary.
+  tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
+    mark_thunk_symbols(ctx, *osec);
+  });
+
+  // Recompute output section sizes that contain thunks. New section
+  // sizes must be equal to or smaller than previous values, so all
+  // relocations that were previously reachable will still be reachable
+  // after this step.
+  for (OutputSection<E> *osec : sections)
+    shrink_section(ctx, *osec);
+
+  // Compute the final layout.
+  return set_osec_offsets(ctx);
+}
+
+void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+
+  static const u8 insn[] = {
+    0x10, 0x00, 0x00, 0x90, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
+    0x10, 0x02, 0x00, 0x91, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
+    0x00, 0x02, 0x1f, 0xd6, // br   x16
+  };
+
+  static_assert(ENTRY_SIZE == sizeof(insn));
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    u64 S = symbols[i]->get_addr(ctx);
+    u64 P = output_section.shdr.sh_addr + offset + i * ENTRY_SIZE;
+
+    u8 *loc = buf + i * ENTRY_SIZE;
+    memcpy(loc , insn, sizeof(insn));
+    write_adr(loc, bits(page(S) - page(P), 32, 12));
+    *(u32 *)(loc + 4) |= bits(S, 11, 0) << 10;
+  }
+}
+
+void write_thunks(Context<E> &ctx) {
+  Timer t(ctx, "write_thunks");
+
+  tbb::parallel_for_each(ctx.output_sections,
+                         [&](std::unique_ptr<OutputSection<E>> &osec) {
+    tbb::parallel_for_each(osec->thunks,
+                           [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
+      thunk->copy_buf(ctx);
+    });
+  });
 }
 
 } // namespace mold::elf

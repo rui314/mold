@@ -410,7 +410,7 @@ public:
   }
 
 private:
-  std::unique_ptr<u8[]> vec;
+  std::unique_ptr<u8[]> vec = nullptr;
 };
 
 //
