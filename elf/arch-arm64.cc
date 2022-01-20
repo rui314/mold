@@ -236,10 +236,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         continue;
       }
 
-      i64 val = S + A - P;
-      i64 lo = -((i64)1 << 27);
+      i64 lo = -(1 << 27);
       i64 hi = 1 << 27;
-      i64 old_val = val;
+      i64 val = S + A - P;
 
       if (val <= lo || hi <= val) {
         RangeExtensionRef ref = range_extn[i];
@@ -516,7 +515,7 @@ static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
   i64 A = rel.r_addend;
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
-  return -((i64)1 << 27) <= val && val < ((i64)1 << 27);
+  return -(1 << 27) <= val && val < (1 << 27);
 }
 
 // We create a thunk no further than 100 MiB from any section.
