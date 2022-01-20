@@ -36,7 +36,9 @@ CXXFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -lm
 
 # A workaround for https://github.com/rui314/mold/issues/281
-LDFLAGS ?= -Wl,-allow-shlib-undefined
+ifeq ($(OS), Linux)
+  LDFLAGS += -Wl,-allow-shlib-undefined
+endif
 
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
