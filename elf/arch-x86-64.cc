@@ -242,9 +242,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<E> *ref = nullptr;
+    const SectionFragmentRef<E> *frag_ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      ref = &rel_fragments[frag_idx++];
+      frag_ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -287,8 +287,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(u64 *)loc = val;
     };
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (ref ? ref->addend : rel.r_addend)
+#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A   (frag_ref ? frag_ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr)
 #define GOT ctx.gotplt->shdr.sh_addr

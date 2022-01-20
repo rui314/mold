@@ -145,9 +145,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<E> *ref = nullptr;
+    const SectionFragmentRef<E> *frag_ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      ref = &rel_fragments[frag_idx++];
+      frag_ref = &rel_fragments[frag_idx++];
 
     auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -156,8 +156,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
-#define S   (ref ? ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (ref ? ref->addend : rel.r_addend)
+#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A   (frag_ref ? frag_ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
@@ -242,9 +242,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 old_val = val;
 
       if (val <= lo || hi <= val) {
-        RangeExtensionThunk<E> &t =
-          *output_section->thunks[range_extn[i].thunk_idx];
-        val = t.get_addr(range_extn[i].sym_idx) + A - P;
+        RangeExtensionRef ref = range_extn[i];
+        val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
         assert(lo <= val && val < hi);
       }
 
