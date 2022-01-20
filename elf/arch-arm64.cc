@@ -240,7 +240,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 hi = 1 << 27;
       i64 val = S + A - P;
 
-      if (val <= lo || hi <= val) {
+      if (val < lo || hi <= val) {
         RangeExtensionRef ref = range_extn[i];
         val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
         assert(lo <= val && val < hi);
