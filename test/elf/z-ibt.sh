@@ -24,6 +24,5 @@ readelf --notes $t/exe > $t/log
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,ibt
 readelf --notes $t/exe | grep -qw IBT
-objdump -d  -j .plt $t/exe | grep -q 'bnd jmp'
 
 echo OK
