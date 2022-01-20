@@ -235,10 +235,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
-      // Ignore these sections for compatibility with old glibc i386
-      // CRT files.
+      // Ignore these sections for compatibility with old glibc i386 CRT files.
       if (name == ".gnu.linkonce.t.__x86.get_pc_thunk.bx" ||
           name == ".gnu.linkonce.t.__i686.get_pc_thunk.bx")
+        continue;
+
+      // Also ignore this for compatibility with ICC
+      if (name == ".gnu.linkonce.d.DW.ref.__gxx_personality_v0")
         continue;
 
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
