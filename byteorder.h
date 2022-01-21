@@ -14,6 +14,9 @@ public:
   }
 
   operator T() const {
+    // We don't need to optimize this code because compilers are
+    // usually smart enough to compile this loop into a single
+    // byte-swap instruction such as x86's bswap.
     T ret = 0;
     for (int i = 0; i < sizeof(T); i++)
       ret = (ret << 8) | val[i];
