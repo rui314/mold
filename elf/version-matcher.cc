@@ -13,8 +13,8 @@
 // patterns and have to match them against millions of symbol strings.
 //
 // Aho-Corasick cannot handle complex patterns such as `*foo*bar*`.
-// We convert such patterns into regexes. Regexes are slow, but
-// complex patterns are rare in practice, so it should be OK.
+// We handle such patterns with GlobPattern. GlobPattern is relatively
+// slow, but complex patterns are rare in practice, so it should be OK.
 
 #include "mold.h"
 
@@ -53,9 +53,9 @@ std::optional<u16> VersionMatcher::find(std::string_view str) {
   }
 
   // Match against complex glob patterns
-  for (std::pair<std::regex, u32> &re : regexes)
-    if (std::regex_match(str.begin(), str.end(), re.first))
-      idx = std::min(idx, re.second);
+  for (std::pair<GlobPattern, u32> &glob : globs)
+    if (glob.first.match(str))
+      idx = std::min(idx, glob.second);
 
   if (idx == UINT32_MAX)
     return {};
@@ -89,8 +89,8 @@ bool VersionMatcher::add(std::string_view pat, u16 ver) {
 
   // Complex glob pattern
   if (!is_simple_pattern(pat)) {
-    if (std::optional<std::regex> re = glob_to_regex(pat)) {
-      regexes.push_back({*re, idx});
+    if (std::optional<GlobPattern> glob = GlobPattern::compile(pat)) {
+      globs.push_back({std::move(*glob), idx});
       return true;
     }
     return false;

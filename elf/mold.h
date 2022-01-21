@@ -1093,13 +1093,37 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
+// glob.cc
+//
+
+class GlobPattern {
+  typedef enum { STRING, STAR, QUESTION, BRACKET } Kind;
+
+  struct Element {
+    Kind kind;
+    std::string str;
+    std::vector<bool> bitmap;
+  };
+
+public:
+  static std::optional<GlobPattern> compile(std::string_view pat);
+  bool match(std::string_view str);
+
+private:
+  GlobPattern(std::vector<Element> &&vec) : elements(vec) {}
+  static bool do_match(std::string_view str, std::span<Element> elements);
+
+  std::vector<Element> elements;
+};
+
+//
 // version-matcher.cc
 //
 
 class VersionMatcher {
 public:
   bool add(std::string_view pat, u16 ver);
-  bool empty() const { return !root && regexes.empty(); }
+  bool empty() const { return !root && globs.empty(); }
   std::optional<u16> find(std::string_view str);
 
 private:
@@ -1115,7 +1139,7 @@ private:
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
-  std::vector<std::pair<std::regex, u32>> regexes;
+  std::vector<std::pair<GlobPattern, u32>> globs;
   std::vector<u16> versions;
   std::once_flag once_flag;
   bool compiled = false;
@@ -1390,6 +1414,7 @@ struct Context {
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
+    std::optional<GlobPattern> unique;
     std::string Map;
     std::string chroot;
     std::string directory;
@@ -1401,7 +1426,6 @@ struct Context {
     std::string rpaths;
     std::string soname;
     std::string sysroot;
-    std::unique_ptr<std::regex> unique;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<std::pair<std::string_view, std::string_view>> defsyms;
@@ -1545,8 +1569,6 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
-
-std::optional<std::regex> glob_to_regex(std::string_view pat);
 
 int main(int argc, char **argv);
 

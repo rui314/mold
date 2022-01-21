@@ -16,49 +16,6 @@
 
 namespace mold::elf {
 
-std::optional<std::regex> glob_to_regex(std::string_view pat) {
-  std::stringstream ss;
-  for (i64 i = 0; i < pat.size(); i++) {
-    switch (pat[i]) {
-    case '.': case '^': case '$': case '\\': case '(': case ')':
-    case '+': case '|':
-      ss << '\\' << pat[i];
-      break;
-    case '*':
-      ss << ".*";
-      break;
-    case '?':
-      ss << '.';
-      break;
-    case '[': {
-      ss << '[';
-      for (i++; i < pat.size(); i++) {
-        if (pat[i] == ']') {
-          ss << ']';
-          break;
-        }
-        if (pat[i] == '\\') {
-          i++;
-          if (pat.size() <= i)
-            return {};
-        }
-        ss << pat[i];
-      }
-      if (i == pat.size())
-        return {};
-      break;
-    }
-    default:
-      ss << pat[i];
-      break;
-    }
-  }
-
-  auto flags = std::regex_constants::extended | std::regex_constants::optimize |
-               std::regex_constants::nosubs;
-  return {std::regex{ss.str(), flags}};
-}
-
 template <typename E>
 static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                       std::string archive_name) {

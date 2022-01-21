@@ -654,8 +654,7 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 static std::string_view get_output_name(Context<E> &ctx, std::string_view name) {
-  if (ctx.arg.unique &&
-      std::regex_match(name.begin(), name.end(), *ctx.arg.unique))
+  if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
 
   if (ctx.arg.z_keep_text_section_prefix) {
