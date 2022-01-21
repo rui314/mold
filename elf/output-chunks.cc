@@ -198,7 +198,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // Create PT_LOAD segments.
   {
     std::vector<Chunk<E> *> chunks = ctx.chunks;
-    erase(chunks, is_tbss);
+    std::erase_if(chunks, is_tbss);
 
     for (i64 i = 0, end = chunks.size(); i < end;) {
       Chunk<E> *first = chunks[i++];
@@ -1443,7 +1443,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    erase(file->fdes, [](FdeRecord<E> &fde) { return !fde.is_alive; });
+    std::erase_if(file->fdes, [](FdeRecord<E> &fde) { return !fde.is_alive; });
 
     i64 offset = 0;
     for (FdeRecord<E> &fde : file->fdes) {
@@ -1630,7 +1630,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   std::vector<Symbol<E> *> syms(ctx.dynsym->symbols.begin() + 1,
                                 ctx.dynsym->symbols.end());
 
-  erase(syms, [](Symbol<E> *sym) {
+  std::erase_if(syms, [](Symbol<E> *sym) {
     return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
   });
 

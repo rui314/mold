@@ -84,7 +84,8 @@ static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
 template <typename E>
 static void sweep(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
-    erase(file->subsections, [](const std::unique_ptr<Subsection<E>> &subsec) {
+    std::erase_if(file->subsections,
+                  [](const std::unique_ptr<Subsection<E>> &subsec) {
       return !subsec->is_alive;
     });
   }

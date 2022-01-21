@@ -421,8 +421,8 @@ static int do_main(int argc, char **argv) {
 
   create_internal_file(ctx);
 
-  erase(ctx.objs, [](ObjectFile<E> *file) { return !file->is_alive; });
-  erase(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_alive; });
 
   if (ctx.arg.trace) {
     for (ObjectFile<E> *file : ctx.objs)
@@ -452,7 +452,7 @@ static int do_main(int argc, char **argv) {
   scan_unwind_info(ctx);
 
   if (ctx.arg.dead_strip_dylibs)
-    erase(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
+    std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
 
   export_symbols(ctx);
   i64 output_size = assign_offsets(ctx);

@@ -94,7 +94,7 @@ void resolve_symbols(Context<E> &ctx) {
   // Mark reachable objects to decide which files to include
   // into an output.
   std::vector<InputFile<E> *> live_set = files;
-  erase(live_set, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(live_set, [](InputFile<E> *file) { return !file->is_alive; });
 
   auto mark_symbol = [&](std::string_view name) {
     if (InputFile<E> *file = get_symbol(ctx, name)->file)
@@ -127,8 +127,8 @@ void resolve_symbols(Context<E> &ctx) {
   });
 
   // Remove unused files
-  erase(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-  erase(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 }
 
 template <typename E>
@@ -807,7 +807,10 @@ void clear_padding(Context<E> &ctx) {
   };
 
   std::vector<Chunk<E> *> chunks = ctx.chunks;
-  erase(chunks, [](Chunk<E> *chunk) { return chunk->shdr.sh_type == SHT_NOBITS; });
+
+  std::erase_if(chunks, [](Chunk<E> *chunk) {
+    return chunk->shdr.sh_type == SHT_NOBITS;
+  });
 
   for (i64 i = 1; i < chunks.size(); i++)
     zero(chunks[i - 1], chunks[i]->shdr.sh_offset);

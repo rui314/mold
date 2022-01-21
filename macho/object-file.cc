@@ -129,7 +129,7 @@ static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
     }
   }
 
-  erase(vec, [](const SplitInfo<E> &info) { return !info.isec; });
+  std::erase_if(vec, [](const SplitInfo<E> &info) { return !info.isec; });
 
   sort(vec, [](const SplitInfo<E> &a, const SplitInfo<E> &b) {
     return a.isec->hdr.addr < b.isec->hdr.addr;

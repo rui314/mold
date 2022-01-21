@@ -511,11 +511,9 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
       break;
   }
 
-  files.erase(std::remove_if(files.begin(), files.end(),
-                             [](std::unique_ptr<RObjectFile<E>> &file) {
-                               return !file->is_alive;
-                             }),
-              files.end());
+  std::erase_if(files, [](std::unique_ptr<RObjectFile<E>> &file) {
+    return !file->is_alive;
+  });
 
   // Remove duplicate comdat groups
   std::unordered_set<std::string_view> comdat_groups;

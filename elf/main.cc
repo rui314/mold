@@ -466,7 +466,7 @@ static int elf_main(int argc, char **argv) {
   // Uniquify shared object files by soname
   {
     std::unordered_set<std::string_view> seen;
-    erase(ctx.dsos, [&](SharedFile<E> *file) {
+    std::erase_if(ctx.dsos, [&](SharedFile<E> *file) {
       return !seen.insert(file->soname).second;
     });
   }
@@ -630,7 +630,7 @@ static int elf_main(int argc, char **argv) {
   // section to the special EHFrameSection.
   {
     Timer t(ctx, "eh_frame");
-    erase(ctx.chunks, [](Chunk<E> *chunk) {
+    std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
       return chunk->kind == Chunk<E>::REGULAR &&
              chunk->name == ".eh_frame";
     });
@@ -641,7 +641,7 @@ static int elf_main(int argc, char **argv) {
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
-  erase(ctx.chunks, [](Chunk<E> *chunk) {
+  std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
     return chunk->kind == Chunk<E>::SYNTHETIC &&
            chunk->shdr.sh_size == 0;
   });
