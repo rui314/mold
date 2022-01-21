@@ -651,6 +651,25 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
+  // If all patterns are simple (i.e. not containing any meta-
+  // characters and is not a C++ name), we can simply look up
+  // symbols.
+  auto is_simple = [&]() {
+    for (VersionPattern &v : ctx.version_patterns)
+      if (v.is_cpp || v.pattern.find_first_of("*?[") != v.pattern.npos)
+        return false;
+    return true;
+  };
+
+  if (is_simple()) {
+    for (VersionPattern &v : ctx.version_patterns)
+      if (Symbol<E> *sym = get_symbol(ctx, v.pattern);
+          sym->file && !sym->file->is_dso)
+        sym->ver_idx = v.ver_idx;
+    return;
+  }
+
+  // Otherwise, use glob pattern matchers.
   VersionMatcher matcher;
   VersionMatcher cpp_matcher;
 
