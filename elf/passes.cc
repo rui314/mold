@@ -654,14 +654,14 @@ void apply_version_script(Context<E> &ctx) {
   VersionMatcher matcher;
   VersionMatcher cpp_matcher;
 
-  for (VersionPattern &elem : ctx.version_patterns) {
-    for (std::string_view pat : elem.patterns)
-      if (!matcher.add(pat, elem.ver_idx))
-        Fatal(ctx) << "invalid version pattern: " << pat;
-
-    for (std::string_view pat : elem.cpp_patterns)
-      if (!cpp_matcher.add(pat, elem.ver_idx))
-        Fatal(ctx) << "invalid version pattern: " << pat;
+  for (VersionPattern &v : ctx.version_patterns) {
+    if (v.is_cpp) {
+      if (!cpp_matcher.add(v.pattern, v.ver_idx))
+        Fatal(ctx) << "invalid version pattern: " << v.pattern;
+    } else {
+      if (!matcher.add(v.pattern, v.ver_idx))
+        Fatal(ctx) << "invalid version pattern: " << v.pattern;
+    }
   }
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {

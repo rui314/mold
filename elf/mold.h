@@ -1280,9 +1280,9 @@ typedef enum {
 } CetReportKind;
 
 struct VersionPattern {
-  u16 ver_idx;
-  std::vector<std::string_view> patterns;
-  std::vector<std::string_view> cpp_patterns;
+  std::string_view pattern;
+  u16 ver_idx = -1;
+  bool is_cpp = false;
 };
 
 template <typename E, typename T>

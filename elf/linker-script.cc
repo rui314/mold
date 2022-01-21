@@ -266,8 +266,7 @@ static bool read_label(std::span<std::string_view> &tok,
 template <typename E>
 static void
 read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
-                             VersionPattern &pat, VersionPattern &local_pat,
-                             bool is_cpp) {
+                             u16 ver_idx, bool is_cpp) {
   bool is_global = true;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -287,11 +286,11 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
         tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, pat, local_pat, false);
+        read_version_script_commands( ctx, tok, ver_idx, false);
       } else {
         tok = skip(ctx, tok, "\"C++\"");
         tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, pat, local_pat, true);
+        read_version_script_commands(ctx, tok, ver_idx, true);
       }
 
       tok = skip(ctx, tok, "}");
@@ -300,17 +299,11 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
     }
 
     if (tok[0] == "*") {
-      ctx.default_version = (is_global ? pat.ver_idx : VER_NDX_LOCAL);
+      ctx.default_version = (is_global ? ver_idx : VER_NDX_LOCAL);
     } else if (is_global) {
-      if (is_cpp)
-        pat.cpp_patterns.push_back(unquote(tok[0]));
-      else
-        pat.patterns.push_back(unquote(tok[0]));
+      ctx.version_patterns.push_back({unquote(tok[0]), ver_idx, is_cpp});
     } else {
-      if (is_cpp)
-        local_pat.cpp_patterns.push_back(unquote(tok[0]));
-      else
-        local_pat.patterns.push_back(unquote(tok[0]));
+      ctx.version_patterns.push_back({unquote(tok[0]), VER_NDX_LOCAL, is_cpp});
     }
 
     tok = tok.subspan(1);
@@ -326,30 +319,21 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
   u16 next_ver = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size() + 1;
 
   while (!tok.empty() && tok[0] != "}") {
-    VersionPattern pat;
-
+    u16 ver_idx;
     if (tok[0] == "{") {
-      pat.ver_idx = VER_NDX_GLOBAL;
+      ver_idx = VER_NDX_GLOBAL;
     } else {
-      pat.ver_idx = next_ver++;
+      ver_idx = next_ver++;
       ctx.arg.version_definitions.push_back(std::string(tok[0]));
       tok = tok.subspan(1);
     }
 
-    VersionPattern local_pat;
-    local_pat.ver_idx = VER_NDX_LOCAL;
-
     tok = skip(ctx, tok, "{");
-    read_version_script_commands(ctx, tok, pat, local_pat, false);
+    read_version_script_commands(ctx, tok, ver_idx, false);
     tok = skip(ctx, tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
     tok = skip(ctx, tok, ";");
-
-    ctx.version_patterns.push_back(pat);
-
-    if (!local_pat.patterns.empty() || !local_pat.cpp_patterns.empty())
-      ctx.version_patterns.push_back(local_pat);
   }
 }
 
@@ -365,9 +349,7 @@ void parse_version_script(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-void read_dynamic_list_commands(Context<E> &ctx,
-                                std::span<std::string_view> &tok,
-                                VersionPattern &pat,
+void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &tok,
                                 bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "extern") {
@@ -376,11 +358,11 @@ void read_dynamic_list_commands(Context<E> &ctx,
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
         tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, tok, pat, false);
+        read_dynamic_list_commands(ctx, tok, false);
       } else {
         tok = skip(ctx, tok, "\"C++\"");
         tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, tok, pat, true);
+        read_dynamic_list_commands(ctx, tok, true);
       }
 
       tok = skip(ctx, tok, "}");
@@ -390,10 +372,8 @@ void read_dynamic_list_commands(Context<E> &ctx,
 
     if (tok[0] == "*")
       ctx.default_version = VER_NDX_GLOBAL;
-    else if (is_cpp)
-      pat.cpp_patterns.push_back(unquote(tok[0]));
     else
-      pat.patterns.push_back(unquote(tok[0]));
+      ctx.version_patterns.push_back({unquote(tok[0]), VER_NDX_GLOBAL, is_cpp});
 
     tok = skip(ctx, tok.subspan(1), ";");
   }
@@ -407,12 +387,7 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 
   std::span<std::string_view> tok = vec;
   tok = skip(ctx, tok, "{");
-
-  VersionPattern pat;
-  pat.ver_idx = VER_NDX_GLOBAL;
-  read_dynamic_list_commands(ctx, tok, pat, false);
-  ctx.version_patterns.push_back(pat);
-
+  read_dynamic_list_commands(ctx, tok, false);
   tok = skip(ctx, tok, "}");
   tok = skip(ctx, tok, ";");
 
