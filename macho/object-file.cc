@@ -401,7 +401,7 @@ void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *this->syms[i];
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
     if (get_rank(this, msym, false) < get_rank(sym))
       override_symbol(ctx, i);
   }
@@ -415,7 +415,7 @@ void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *this->syms[i];
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
 
     if (get_rank(this, msym, true) < get_rank(sym)) {
       sym.file = this;
@@ -453,7 +453,7 @@ std::vector<ObjectFile<E> *> ObjectFile<E>::mark_live_objects(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *this->syms[i];
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
 
     if (msym.is_undef()) {
       if (sym.file && !sym.file->is_alive.exchange(true))
@@ -602,7 +602,7 @@ void DylibFile<E>::parse(Context<E> &ctx) {
 template <typename E>
 void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : this->syms) {
-    std::lock_guard lock(sym->mu);
+    std::scoped_lock lock(sym->mu);
     if (sym->file && sym->file->priority < this->priority)
       continue;
     sym->file = this;

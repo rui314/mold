@@ -599,7 +599,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
         isec->range_extn[i] = {thunk.thunk_idx, -1};
 
         if (!(sym.flags.fetch_or(NEEDS_THUNK) & NEEDS_THUNK)) {
-          std::lock_guard lock(thunk.mu);
+          std::scoped_lock lock(thunk.mu);
           thunk.symbols.push_back(&sym);
         }
       }

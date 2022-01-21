@@ -67,7 +67,7 @@ public:
   }
 
   ~SyncOut() {
-    std::lock_guard lock(mu);
+    std::scoped_lock lock(mu);
     out << ss.str() << "\n";
   }
 
@@ -495,7 +495,7 @@ class Counter {
 public:
   Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
     static std::mutex mu;
-    std::lock_guard lock(mu);
+    std::scoped_lock lock(mu);
     instances.push_back(this);
   }
 

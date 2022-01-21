@@ -863,7 +863,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
         vec.push_back(isec->offset + rels[i].r_offset);
 
     if (!vec.empty()) {
-      std::lock_guard lock(mu);
+      std::scoped_lock lock(mu);
       append(pos, vec);
     }
   });

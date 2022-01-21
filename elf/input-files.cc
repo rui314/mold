@@ -871,7 +871,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
         continue;
     }
 
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
       sym.input_section = isec;
@@ -911,7 +911,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     if (esym.is_weak())
       continue;
 
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
     if (!sym.file)
       continue;
 
@@ -959,7 +959,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     if (!esym.is_undef())
       continue;
 
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
 
     if (sym.file &&
         (!sym.esym().is_undef() || sym.file->priority <= this->priority))
@@ -1321,7 +1321,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
     if (esym.is_undef())
       continue;
 
-    std::lock_guard lock(sym.mu);
+    std::scoped_lock lock(sym.mu);
 
     if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
