@@ -73,10 +73,10 @@ static std::string handle_stars(std::string_view pat) {
   if (str.starts_with('*') && str.ends_with('*'))
     return str.substr(1, str.size() - 2);
   if (str.starts_with('*'))
-    return str.substr(1) + "\0";
+    return str.substr(1) + "\0"s;
   if (str.ends_with('*'))
-    return "\0" + str.substr(0, str.size() - 1);
-  return "\0" + str + "\0";
+    return "\0"s + str.substr(0, str.size() - 1);
+  return "\0"s + str + "\0"s;
 }
 
 bool VersionMatcher::add(std::string_view pat, u16 ver) {
