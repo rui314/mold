@@ -35,11 +35,6 @@ CXXFLAGS += $(COMMON_FLAGS) $(EXTRA_CXXFLAGS) -std=c++20 -fno-exceptions
 CXXFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
 LIBS = -pthread -lz -lm
 
-# A workaround for https://github.com/rui314/mold/issues/281
-ifeq ($(OS), Linux)
-  LDFLAGS += -Wl,-allow-shlib-undefined
-endif
-
 SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
 OBJS=$(SRCS:%.cc=out/%.o)
