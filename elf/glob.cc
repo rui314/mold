@@ -7,25 +7,72 @@ namespace mold::elf {
 std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
   std::vector<Element> vec;
 
-  for (i64 i = 0; i < pat.size(); i++) {
-    switch (pat[i]) {
+  while (!pat.empty()) {
+    u8 c = pat[0];
+    pat = pat.substr(1);
+
+    switch (c) {
     case '[': {
+      // Here are a few bracket pattern examples:
+      //
+      // [abc]: a, b or c
+      // [$\]!]: $, ] or !
+      // [a-czg-i]: a, b, c, z, g, h, or i
+      // [^a-z]: Any character except lowercase letters
       vec.push_back({BRACKET});
       std::vector<bool> &bitmap = vec.back().bitmap;
       bitmap.resize(256);
 
-      for (i++; i < pat.size(); i++) {
-        if (pat[i] == ']')
+      bool negate = false;
+      if (!pat.empty() && pat[0] == '^') {
+        negate = true;
+        pat = pat.substr(1);
+      }
+
+      bool closed = false;
+
+      while (!pat.empty()) {
+        if (pat[0] == ']') {
+          pat = pat.substr(1);
+          closed = true;
           break;
-        if (pat[i] == '\\') {
-          i++;
-          if (i == pat.size())
+        }
+
+        if (pat[0] == '\\') {
+          pat = pat.substr(1);
+          if (pat.empty())
             return {};
         }
-        bitmap[(u8)pat[i]] = true;
+
+        if (pat.size() >= 3 && pat[1] == '-') {
+          u8 start = pat[0];
+          u8 end = pat[2];
+          pat = pat.substr(3);
+
+          if (end == '\\') {
+            if (pat.empty())
+              return {};
+            end = pat[0];
+            pat = pat.substr(1);
+          }
+
+          if (end < start)
+            return {};
+
+          for (i64 i = start; i <= end; i++)
+            bitmap[i] = true;
+        } else {
+          bitmap[(u8)pat[0]] = true;
+          pat = pat.substr(1);
+        }
       }
-      if (i == pat.size())
+
+      if (!closed)
         return {};
+
+      if (negate)
+        for (i64 i = 0; i < 256; i++)
+          bitmap[i] = !bitmap[i];
       break;
     }
     case '?':
@@ -37,7 +84,7 @@ std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
     default:
       if (vec.empty() || vec.back().kind != STRING)
         vec.push_back({STRING});
-      vec.back().str += pat[i];
+      vec.back().str += c;
       break;
     }
   }
