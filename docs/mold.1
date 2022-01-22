@@ -534,20 +534,20 @@ Report undefined symbols (even with
 If
 .Sy relr
 is specified, all
-.Lt R_*_RELATIVE
+.Li R_*_RELATIVE
 relocations are put into
-.Lt .relr.dyn
+.Li .relr.dyn
 section instead of
-.Lt .rel.dyn
+.Li .rel.dyn
 or
-.Lt .rela.dyn
+.Li .rela.dyn
 section. Since
-.Lt .relr.dyn
+.Li .relr.dyn
 section uses a space-efficient encoding scheme, specifying that flag \
 can reduce the size of the output. This is typically most effective \
 for position-independent executable. Note that a runtime loader has to \
 support
-.Lt .relr.dyn
+.Li .relr.dyn
 to run executables or shared libraries linked with
 .Fl -pack-dyn-relocs=relr ,
 and only ChromeOS, Android and Fuchsia support it as of now in 2022.
@@ -851,7 +851,7 @@ Enforce shadow stack by turning GNU_PROPERTY_X86_FEATURE_1_SHSTK bit in
 output section. Shadow stack is part of Intel Control-flow Enforcement \
 Technology (CET), which is available since Tiger Lake (2020).
 .
-.It Fl Fl z Cm notext , Fl z Cm textoff , Fl z Cm text
+.It Fl z Cm notext , Fl z Cm textoff , Fl z Cm text
 .Nm
 by default reports an error if dynamic relocations are created in read-only \
 sections.
