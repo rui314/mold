@@ -63,11 +63,15 @@ bool GlobPattern::do_match(std::string_view str, std::span<Element> elements) {
     case STAR:
       if (elements.empty())
         return true;
+
+      // Patterns like "*foo*bar*" should be much more common than more
+      // complex ones like "*foo*[abc]*" or "*foo**?bar*", so we optimize
+      // the former case here.
       if (elements[0].kind == STRING) {
         for (;;) {
           size_t pos = str.find(elements[0].str);
           if (pos == str.npos)
-            return false;
+            break;
           if (do_match(str.substr(pos + elements[0].str.size()),
                        elements.subspan(1)))
             return true;
@@ -75,6 +79,8 @@ bool GlobPattern::do_match(std::string_view str, std::span<Element> elements) {
         }
         return false;
       }
+
+      // Other cases are handled here.
       for (i64 j = 0; j < str.size(); j++)
         if (do_match(str.substr(j), elements))
           return true;
