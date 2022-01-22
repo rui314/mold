@@ -181,8 +181,8 @@ in your main executable file.
 Then, all
 .Sy malloc
 calls from any module are resolved to your function instead of that in libc,
-because the executable is at the beginning of the dynamic symbol search list.
-Note that even
+because the executable is always at the beginning of the dynamic symbol \
+search list. Note that even
 .Xr malloc 3
 calls within libc are resolved to your definition since libc exports and imports
 .Sy malloc .
@@ -192,7 +192,7 @@ yourself, you can overwrite a library function, and the
 .Xr malloc 3
 in libc becomes dead code.
 .Pp
-Thess Unix semantics are tricky and sometimes considered harmful.
+These Unix semantics are tricky and sometimes considered harmful.
 For example, assume that you accidentally define
 .Xr atoi 3
 as a global function in your executable that behaves completely differently \
@@ -216,7 +216,7 @@ output is deterministic.
 That is, if you pass the same object files and the same command-line options to
 the same version of
 .Nm ,
-it is guaranteed that the output is always bit-wise the same.
+it is guaranteed to always produce the same output.
 The linker's internal randomness, such as the timing of thread scheduling or \
 iteration orders of hash tables, doesn't affect the output.
 .
@@ -302,7 +302,7 @@ Second, text segments are marked as writable if the option is given.
 .
 .It Fl S , Fl -strip-debug
 Omit
-.Sy \.debug_*
+.Li \.debug_*
 sections from the output file.
 .
 .It Fl T Ar file , Fl -script Ns = Ns Ar file
@@ -365,7 +365,7 @@ an input to a linker.
 .
 .It Fl s , FL -strip-all
 Omit
-.Dv \.symtab
+.Li \.symtab
 section from the output file.
 .
 .It Fl u Ar symbol , Fl -undefined Ns = Ns Ar symbol
@@ -432,7 +432,7 @@ option restores the default behavior for subsequent files.
 .
 .It Fl -build-id , Fl -no-build-id , Fl -build-id Ns = Ns Op Sy none | md5 | sha1 | sha256 | uuid | 0x Ns Ar hexstring
 Create a
-.Dv .note.gnu.build-id
+.Li .note.gnu.build-id
 section containing a byte string to
 uniquely identify an output file.
 .Fl -build-id
@@ -455,12 +455,12 @@ Set
 .Ar dir
 to root directory.
 .
-.It Fl -compress-debug-sections\fR=[\fInone\fR,\fIzlib\fR,\fIzlib-gabi\fR,\fIzlib-gnu\fR]"
+.It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zlib-gnu
 Compress DWARF debug info
 .Pf ( Sy .debug_*
 sections) using the zlib compression algorithm.
 .
-.It Fl -defsym\ Ns = Ns Ar symbol Ns = Ns Ar value
+.It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
 Define
 .Ar symbol
 as an alias for
@@ -475,6 +475,8 @@ If an integer is given as a value,
 .Ar symbol
 is defined as an absolute symbol with the given value.
 .
+.It Fl -default-symver
+Use soname as a symbol version and append that version to all symbols.
 .It Fl -demangle , -no-demangle
 Demangle C++ symbols in log messages.
 .
@@ -484,7 +486,7 @@ Read a list of dynamic symbols from
 .
 .It Fl -eh-frame-hdr , -no-eh-frame-hdr
 Create
-.Dv .eh_frame_hdr
+.Li .eh_frame_hdr
 section.
 .
 .It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
@@ -527,6 +529,28 @@ at load-time.
 .It Fl -no-undefined
 Report undefined symbols (even with
 .Fl -shared ) .
+.
+.It Fl -pack-dyn-relocs Ns = Ns Op Sy none | relr
+If
+.Sy relr
+is specified, all
+.Lt R_*_RELATIVE
+relocations are put into
+.Lt .relr.dyn
+section instead of
+.Lt .rel.dyn
+or
+.Lt .rela.dyn
+section. Since
+.Lt .relr.dyn
+section uses a space-efficient encoding scheme, specifying that flag \
+can reduce the size of the output. This is typically most effective \
+for position-independent executable. Note that a runtime loader has to \
+support
+.Lt .relr.dyn
+to run executables or shared libraries linked with
+.Fl -pack-dyn-relocs=relr ,
+and only ChromeOS, Android and Fuchsia support it as of now in 2022.
 .
 .It Fl -perf
 Print performance statistics.
@@ -686,6 +710,37 @@ The original symbol can be resolved as
 .Sy __real_ Ns Ar symbol .
 This option is typically used for wrapping an existing function.
 .
+.It Fl z Cm cet-report Ns = Ns Sy none | warning | error
+Intel Control-flow Enforcement Technology (CET) is a new x86 feature \
+available since Tiger Lake which is released in 2020.
+It defines new instructions to harden security to protect programs from \
+control hijacking attacks. You can tell compiler to use the feature by \
+specifying the
+.Fl fcf-protection
+flag.
+.Pp
+.Fl z Cm cet-report
+flag is used to make sure that all object files were compiled with a correct
+.Fl fcf-protection
+flag. If
+.Sy warning
+or
+.Sy error
+are given,
+.Nm
+prints out a warning or an error message if an object file was not compiled \
+with the compiler flag.
+.Pp
+.Nm
+looks for
+.Li GNU_PROPERTY_X86_FEATURE_1_IBT
+bit and
+.Li GNU_PROPERTY_X86_FEATURE_1_SHSTK
+bit in
+.Li .note.gnu.property
+section to determine whether or not an object file was compiled with
+.Fl fcf-protection .
+.
 .It Fl z Cm now , Fl z Cm lazy
 By default, functions referring other ELF modules are resolved by the
 dynamic linker when they are called for the first time.
@@ -699,6 +754,33 @@ restores the default behavior.
 Mark object requiring immediate
 .Dv $ORIGIN
 processing at runtime.
+.
+.It Fl z Cm ibt
+Turn on
+.Li GNU_PROPERTY_X86_FEATURE_1_IBT
+bit in
+.Li .note.gnu.property
+section to indicate that the output uses IBT-enabled PLT. This option implies
+.Fl z Cm ibtplt .
+.
+.It Fl z Cm ibtplt
+Generate Intel Branch Tracking (IBT)-enabled PLT.
+.Pp
+IBT is part of Intel Control-flow Enforcement Technology (CET).
+IBT is a new x86 feature available since Tiger Lake which is released in 2020.
+If IBT is enabled, all indirect branch instructions have to branch to a \
+so-called "landing pad" instruction. Landing pad itself is a no-op, but \
+it works as a marker that branching to that instruction is expected.
+If there's no landing pad after branch, the CPU raises an exception.
+This mechanism makes ROP attacks difficult.
+.Pp
+Since PLT can be used as an indirect branch target, we need a different \
+instruction sequence for IBT-enabled PLT. If
+.Sy -z ibtplt
+is specified,
+.Nm
+generates PLT entries that start with a landing pad. The size of IBT-enabled \
+PLT is 24 bytes as opposed to 16 bytes regular PLT.
 .
 .It Fl z Cm execstack , Fl z Cm noexecstack
 By default, the pages for the stack area (i.e. the pages where local
@@ -763,6 +845,26 @@ does not add any paddings between segments.
 Report undefined symbols (even with
 .Fl -shared ) .
 .
+.It Fl z Cm shstk
+Enforce shadow stack by turning GNU_PROPERTY_X86_FEATURE_1_SHSTK bit in
+.Li .note.gnu.property
+output section. Shadow stack is part of Intel Control-flow Enforcement \
+Technology (CET), which is available since Tiger Lake (2020).
+.
+.It Fl Fl z Cm notext , Fl z Cm textoff , Fl z Cm text
+.Nm
+by default reports an error if dynamic relocations are created in read-only \
+sections.
+If
+.Fl z Cm notext
+or
+.Fl z Cm textoff
+are given,
+.Nm
+creates such dynamic relocations without reporting an error.
+.Fl z Cm text
+restores the default behavior.
+.
 .It Fl z Cm max-page-size
 Some CPU ISAs support multiple different memory page sizes.
 This option specifies the maximum page size that an output binary can run on.
@@ -815,17 +917,19 @@ Mark object to interpose all DSOs but executable.
 .It Fl -no-fatal-warnings
 .It Fl -no-undefined-version
 .It Fl -nostdlib
-.It Fl -plugin-opt
 .It Fl -plugin
+.It Fl -plugin-opt
 .It Fl -rpath-link Ns = Ns Ar dir
 .It Fl -sort-common
 .It Fl -sort-section
 .It Fl -start-group
 .It Fl -warn-constructors
 .It Fl -warn-once
+.It Fl fix-cortex-a53-835769
+.It Fl fix-cortex-a53-843419
 .It Fl z combreloc
-.It Fl z nocombreloc
 .It Fl z common-page-size
+.It Fl z nocombreloc
 Ignored
 ..
 .
