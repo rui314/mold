@@ -828,7 +828,7 @@ static std::vector<T> encode_relr(const std::vector<T> &pos) {
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) % sizeof(T));
+        bits |= (u64)1 << ((pos[i] - base) / sizeof(T));
 
       if (!bits)
         break;
