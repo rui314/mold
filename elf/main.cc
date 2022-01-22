@@ -591,8 +591,7 @@ static int elf_main(int argc, char **argv) {
   {
     Timer t(ctx, "eh_frame");
     std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-      return chunk->kind == Chunk<E>::REGULAR &&
-             chunk->name == ".eh_frame";
+      return chunk->kind == Chunk<E>::REGULAR && chunk->name == ".eh_frame";
     });
     ctx.eh_frame->construct(ctx);
   }
@@ -602,8 +601,7 @@ static int elf_main(int argc, char **argv) {
     chunk->update_shdr(ctx);
 
   std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-    return chunk->kind == Chunk<E>::SYNTHETIC &&
-           chunk->shdr.sh_size == 0;
+    return chunk->kind == Chunk<E>::SYNTHETIC && chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
@@ -619,6 +617,9 @@ static int elf_main(int argc, char **argv) {
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx);
 
+  // On ARM64, we may need to create so-called "range extension thunks"
+  // to extend branch instructions reach, as they can jump only to
+  // ±128 MiB.
   if constexpr (E::e_machine == EM_AARCH64)
     filesize = create_range_extension_thunks(ctx);
 
