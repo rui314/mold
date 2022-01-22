@@ -29,21 +29,11 @@ std::optional<u16> VersionMatcher::find(std::string_view str) {
     std::call_once(once_flag, [&]() { compile(); });
 
     // Match against simple glob patterns
-    TrieNode *node = root.get();
+    DfaState *dfa = &dfa_states[0];
 
     auto walk = [&](u8 c) {
-      for (;;) {
-        if (node->children[c]) {
-          node = node->children[c].get();
-          idx = std::min(idx, node->value);
-          return;
-        }
-
-        if (!node->suffix_link)
-          return;
-        node = node->suffix_link;
-        idx = std::min(idx, node->value);
-      }
+      dfa = &dfa_states[dfa->children[c]];
+      idx = std::min(idx, dfa->value);
     };
 
     walk('\0');
@@ -117,6 +107,7 @@ bool VersionMatcher::add(std::string_view pat, u16 ver) {
 void VersionMatcher::compile() {
   fix_suffix_links(*root);
   fix_value();
+  encode(*root);
   compiled = true;
 }
 
@@ -161,6 +152,24 @@ void VersionMatcher::fix_value() {
       queue.push(child.get());
     }
   } while (!queue.empty());
+}
+
+void VersionMatcher::encode(TrieNode &node) {
+  if (node.dfa_idx != -1)
+    return;
+
+  node.dfa_idx = dfa_states.size();
+  dfa_states.push_back({node.value});
+
+  for (i64 i = 0; i < 256; i++) {
+    for (TrieNode *t = &node; t; t = t->suffix_link) {
+      if (std::unique_ptr<TrieNode> &next = t->children[i]) {
+        encode(*next);
+        dfa_states[node.dfa_idx].children[i] = next->dfa_idx;
+        break;
+      }
+    }
+  }
 }
 
 } // namespace mold::elf

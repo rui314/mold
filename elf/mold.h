@@ -1131,14 +1131,22 @@ private:
     u32 value = -1;
     TrieNode *suffix_link = nullptr;
     std::unique_ptr<TrieNode> children[256];
+    u32 dfa_idx = -1;
+  };
+
+  struct DfaState {
+    u32 value = -1;
+    u32 children[256] = {};
   };
 
   void compile();
   void fix_suffix_links(TrieNode &node);
   void fix_value();
+  void encode(TrieNode &node);
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
+  std::vector<DfaState> dfa_states;
   std::vector<std::pair<GlobPattern, u32>> globs;
   std::vector<u16> versions;
   std::once_flag once_flag;
