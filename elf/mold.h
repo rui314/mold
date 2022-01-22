@@ -13,7 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <regex>
 #include <span>
 #include <sstream>
 #include <string>

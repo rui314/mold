@@ -19,6 +19,7 @@
 #include "mold.h"
 
 #include <queue>
+#include <regex>
 
 namespace mold::elf {
 
