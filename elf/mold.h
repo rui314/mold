@@ -1134,7 +1134,7 @@ private:
 
   void compile();
   void fix_suffix_links(TrieNode &node);
-  void fix_value();
+  void fix_values();
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;

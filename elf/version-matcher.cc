@@ -43,7 +43,6 @@ std::optional<u16> VersionMatcher::find(std::string_view str) {
         if (!node->suffix_link)
           return;
         node = node->suffix_link;
-        idx = std::min(idx, node->value);
       }
     };
 
@@ -117,7 +116,7 @@ bool VersionMatcher::add(std::string_view pat, u16 ver) {
 
 void VersionMatcher::compile() {
   fix_suffix_links(*root);
-  fix_value();
+  fix_values();
   compiled = true;
 }
 
@@ -147,7 +146,7 @@ void VersionMatcher::fix_suffix_links(TrieNode &node) {
   }
 }
 
-void VersionMatcher::fix_value() {
+void VersionMatcher::fix_values() {
   std::queue<TrieNode *> queue;
   queue.push(root.get());
 
