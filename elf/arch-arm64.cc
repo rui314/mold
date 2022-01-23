@@ -574,7 +574,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     thunk.offset = offset;
 
     // Scan relocations between B and C to collect symbols that need thunks.
-    tbb::parallel_for_each(&members[b], &members[c], [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(members.begin() + b, members.begin() + c, [&](InputSection<E> *isec) {
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
       isec->range_extn.resize(rels.size());
 
@@ -619,7 +619,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
-    tbb::parallel_for_each(&members[b], &members[c], [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(members.begin() + b, members.begin() + c, [&](InputSection<E> *isec) {
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
 
       for (i64 i = 0; i < rels.size(); i++) {
