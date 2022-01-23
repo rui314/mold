@@ -1,8 +1,12 @@
-PREFIX ?= /usr/local
-BINDIR ?= $(PREFIX)/bin
-LIBDIR ?= $(PREFIX)/lib
-LIBEXECDIR ?= $(PREFIX)/libexec
-MANDIR ?= $(PREFIX)/share/man
+PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
+LIBDIR = $(PREFIX)/lib
+LIBEXECDIR = $(PREFIX)/libexec
+MANDIR = $(PREFIX)/share/man
+
+INSTALL = install
+INSTALL_PROGRAM = $(INSTALL)
+INSTALL_DATA = $(INSTALL) -m 644
 
 D = $(DESTDIR)
 
@@ -14,44 +18,37 @@ endif
 
 # If you want to keep symbols in the installed binary, run make with
 # `STRIP=true` to run /bin/true instead of the strip command.
-STRIP ?= strip
+STRIP = strip
 
-OS ?= $(shell uname -s)
-ARCH ?= $(shell uname -m)
+SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
+HEADERS=$(wildcard *.h elf/*.h macho/*.h)
+OBJS=$(SRCS:%.cc=out/%.o)
+
+OS = $(shell uname -s)
+ARCH = $(shell uname -m)
 
 IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
   IS_ANDROID = 1
 endif
 
-# Used for both C and C++
-COMMON_FLAGS = -pthread -fPIE -fno-unwind-tables -fno-asynchronous-unwind-tables
+# If you want to compile mold for debugging, invoke make as
+# `make CXXFLAGS="-g -O0"`.
+CFLAGS = -O2
+CXXFLAGS = -O2
 
-CFLAGS ?= -O2
-CFLAGS += $(COMMON_FLAGS) $(EXTRA_CFLAGS)
+MOLD_CXXFLAGS = -std=c++20 -fno-exceptions -fno-unwind-tables -fPIE \
+                -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.1\" \
+                -DLIBDIR="\"$(LIBDIR)\""
 
-CXXFLAGS ?= -O2
-CXXFLAGS += $(COMMON_FLAGS) $(EXTRA_CXXFLAGS) -std=c++20 -fno-exceptions
-CXXFLAGS += -DMOLD_VERSION=\"1.0.1\" -DLIBDIR="\"$(LIBDIR)\""
-LIBS = -pthread -lz -lm
+MOLD_LDFLAGS = -pthread -lz -lm -pie
 
-SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
-HEADERS=$(wildcard *.h elf/*.h macho/*.h)
-OBJS=$(SRCS:%.cc=out/%.o)
-
-DEBUG ?= 0
-LTO ?= 0
-ASAN ?= 0
-TSAN ?= 0
-
-GIT_HASH ?= $(shell [ -d .git ] && git rev-parse HEAD)
+GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)
-  CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
+  MOLD_CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
 endif
 
-ifeq ($(DEBUG), 1)
-  CXXFLAGS += -O0 -g
-endif
+LTO = 0
 
 ifeq ($(LTO), 1)
   CXXFLAGS += -flto -O3
@@ -59,79 +56,63 @@ ifeq ($(LTO), 1)
 endif
 
 # By default, we want to use mimalloc as a memory allocator. mimalloc
-# is disabled when ASAN or TSAN is on, as they are not compatible.
-# It's also disabled on macOS and Android because it didn't work on
-# those hosts.
+# is disabled on macOS and Android because it didn't work on those hosts.
 USE_MIMALLOC = 1
 ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
 else ifeq ($(IS_ANDROID), 1)
   USE_MIMALLOC = 0
-else ifeq ($(ASAN), 1)
-  USE_MIMALLOC = 0
-else ifeq ($(TSAN), 1)
-  USE_MIMALLOC = 0
 endif
 
 ifeq ($(USE_MIMALLOC), 1)
   ifdef SYSTEM_MIMALLOC
-    LIBS += -lmimalloc
+    MOLD_LDFLAGS += -lmimalloc
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
-    CXXFLAGS += -Ithird-party/mimalloc/include
-    LIBS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
+    MOLD_CXXFLAGS += -Ithird-party/mimalloc/include
+    MOLD_LDFLAGS += -Wl,-whole-archive $(MIMALLOC_LIB) -Wl,-no-whole-archive
   endif
 endif
 
-ifeq ($(ASAN), 1)
-  CXXFLAGS += -fsanitize=address
-  LDFLAGS  += -fsanitize=address
-endif
-
-ifeq ($(TSAN), 1)
-  CXXFLAGS += -fsanitize=thread
-  LDFLAGS  += -fsanitize=thread
-endif
-
 ifdef SYSTEM_TBB
-  LIBS += -ltbb
+  MOLD_LDFLAGS += -ltbb
 else
   TBB_LIB = out/tbb/libs/libtbb.a
-  LIBS += $(TBB_LIB)
-  CXXFLAGS += -Ithird-party/tbb/include
+  MOLD_LDFLAGS += $(TBB_LIB)
+  MOLD_CXXFLAGS += -Ithird-party/tbb/include
 endif
 
 ifdef SYSTEM_XXHASH
-  LIBS += -lxxhash
+  MOLD_LDFLAGS += -lxxhash
 else
   XXHASH_LIB = third-party/xxhash/libxxhash.a
-  LIBS += $(XXHASH_LIB)
-  CXXFLAGS += -Ithird-party/xxhash
+  MOLD_LDFLAGS += $(XXHASH_LIB)
+  MOLD_CXXFLAGS += -Ithird-party/xxhash
 endif
 
 ifeq ($(OS), Linux)
   ifeq ($(IS_ANDROID), 0)
     # glibc before 2.17 need librt for clock_gettime
-    LIBS += -lrt
+    MOLD_LDFLAGS += -lrt
   endif
 endif
 
 # Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
-  CXXFLAGS += $(shell pkg-config --cflags-only-I openssl)
-  LIBS += $(shell pkg-config --libs-only-L openssl) -lcrypto
+  MOLD_CXXFLAGS += $(shell pkg-config --cflags-only-I openssl)
+  MOLD_LDFLAGS += $(shell pkg-config --libs-only-L openssl) -lcrypto
 endif
 
 # '-latomic' flag is needed building on riscv64 system
 # RV32 system doesn't tested yet
 # seems like '-atomic' would be better but not working.
 ifeq ($(ARCH), riscv64)
-  LIBS += -latomic
+  MOLD_LDFLAGS += -latomic
 endif
 
 # -Wc++11-narrowing is a fatal error on Android, so disable it.
 ifeq ($(IS_ANDROID), 1)
-  CXXFLAGS += -Wno-c++11-narrowing
+  MOLD_CXXFLAGS += -Wno-c++11-narrowing
 endif
 
 ifeq ($(OS), Linux)
@@ -141,15 +122,15 @@ endif
 all: mold mold-wrapper.so
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(EXTRA_LDFLAGS) $(OBJS) -o $@ $(LIBS)
+	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
-	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(LDFLAGS) $(MOLD_WRAPPER_LDFLAGS) $<
+	$(CC) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
 
 out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 out/elf/.keep:
 	mkdir -p out/elf
@@ -187,19 +168,19 @@ endif
 	fi
 
 install: all
-	install -m 755 -d $D$(BINDIR)
-	install -m 755 mold $D$(BINDIR)
+	$(INSTALL) -d $D$(BINDIR)
+	$(INSTALL_PROGRAM) mold $D$(BINDIR)
 	$(STRIP) $D$(BINDIR)/mold
 
-	install -m 755 -d $D$(LIBDIR)/mold
-	install -m 644 mold-wrapper.so $D$(LIBDIR)/mold
+	$(INSTALL) -d $D$(LIBDIR)/mold
+	$(INSTALL_DATA) mold-wrapper.so $D$(LIBDIR)/mold
 	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
 
-	install -m 755 -d $D$(LIBEXECDIR)/mold
+	$(INSTALL) -d $D$(LIBEXECDIR)/mold
 	ln -sf $(BINDIR)/mold $D$(LIBEXECDIR)/mold/ld
 
-	install -m 755 -d $D$(MANDIR)/man1
-	install -m 644 docs/mold.1 $D$(MANDIR)/man1
+	$(INSTALL) -d $D$(MANDIR)/man1
+	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
 
 	ln -sf mold $D$(BINDIR)/ld.mold
 	ln -sf mold $D$(BINDIR)/ld64.mold
