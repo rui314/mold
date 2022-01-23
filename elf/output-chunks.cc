@@ -524,6 +524,12 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(E::is_rel ? DT_RELENT : DT_RELAENT, sizeof(ElfRel<E>));
   }
 
+  if (ctx.relrdyn) {
+    define(DT_RELR, ctx.relrdyn->shdr.sh_addr);
+    define(DT_RELRSZ, ctx.relrdyn->shdr.sh_size);
+    define(DT_RELRENT, ctx.relrdyn->shdr.sh_entsize);
+  }
+
   if (ctx.relplt->shdr.sh_size) {
     define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
     define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
@@ -822,7 +828,7 @@ static std::vector<T> encode_relr(const std::vector<T> &pos) {
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) % sizeof(T));
+        bits |= (u64)1 << ((pos[i] - base) / sizeof(T));
 
       if (!bits)
         break;
