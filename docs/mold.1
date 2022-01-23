@@ -330,14 +330,14 @@ Set the
 dynamic section field to
 .Ar shlib .
 .
-.It Fl h Ar libname , Fl -soname Ns Ar libname
+.It Fl h Ar libname , Fl -soname Ns = Ns Ar libname
 Set the
 .Dv DT_SONAME
 dynamic section field to
 .Ar libname .
 This option is used when creating a shared object file.
 Typically, when you create
-.Pf Sy lib Ar foo Ns Sy .so ,
+.Pf Sy XXX lib Ar foo Ns Sy .so ,
 you want to pass
 .Fl -soname Ns = Ns Ar foo
 to a linker.
@@ -349,7 +349,7 @@ or
 .Pf Sy lib Ar libname Ns Sy \.a
 from library search paths.
 .
-.It Fl m Op Sy elf_x86_64 | elf_i386
+.It Fl m Op Sy elf_x86_64 | elf_i386 | aarch64linux
 Choose a target.
 .
 .It Fl o Ar file , Fl -output Ns = Ns Ar file
@@ -363,7 +363,7 @@ Instead of generating an executable or a shared object file, combine
 input object files to generate another object file that can be used as
 an input to a linker.
 .
-.It Fl s , FL -strip-all
+.It Fl s , Fl -strip-all
 Omit
 .Li \.symtab
 section from the output file.
@@ -397,7 +397,7 @@ for more information about symbol imports and exports.
 Have the same effect as
 .Fl -Bsymbolic
 but works only for function symbols.
-Data symbols remains both imported and exported.
+Data symbols remains being both imported and exported.
 .
 .It Fl -Bno-symbolic
 Cancel
@@ -424,7 +424,7 @@ are added to the list only when at least one symbol is actually used by an \
 object file.
 In other words, shared libraries after
 .Fl -as-needed
-are not added to the list if they are not needed by a program.
+are not added to the list of needed libraries if they are not needed by a program.
 .Pp
 The
 .Fl -no-as-needed
@@ -543,10 +543,11 @@ or
 .Li .rela.dyn
 section. Since
 .Li .relr.dyn
-section uses a space-efficient encoding scheme, specifying that flag \
+section uses a space-efficient encoding scheme, specifying this flag \
 can reduce the size of the output. This is typically most effective \
-for position-independent executable. Note that a runtime loader has to \
-support
+for position-independent executable.
+.Pp
+Note that a runtime loader has to support
 .Li .relr.dyn
 to run executables or shared libraries linked with
 .Fl -pack-dyn-relocs=relr ,
