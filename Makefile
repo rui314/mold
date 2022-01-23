@@ -33,15 +33,15 @@ ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
 endif
 
 # If you want to compile mold for debugging, invoke make as
-# `make CXXFLAGS="-g -O0"`.
+# `make CXXFLAGS=-g`.
 CFLAGS = -O2
 CXXFLAGS = -O2
 
-MOLD_CXXFLAGS = -std=c++20 -fno-exceptions -fno-unwind-tables -fPIE \
+MOLD_CXXFLAGS = -std=c++20 -fno-exceptions -fno-unwind-tables \
                 -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.1\" \
                 -DLIBDIR="\"$(LIBDIR)\""
 
-MOLD_LDFLAGS = -pthread -lz -lm -pie
+MOLD_LDFLAGS = -pthread -lz -lm
 
 GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)
