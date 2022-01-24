@@ -2,7 +2,7 @@
 // In this file, we explicitly undefine _GNU_SOURCE to always
 // use the POSIX version.
 
-#define _POSIX_C_SOURCE 200112L
+#define _POSIX_C_SOURCE 200809L
 #undef _GNU_SOURCE
 
 #include <cstring>
