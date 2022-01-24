@@ -255,6 +255,12 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       i++;
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
+
+      // RELRO works on page granularity, so align it up to the next
+      // page boundary.
+      assert(i == ctx.chunks.size() ||
+             ctx.chunks[i]->shdr.sh_addr % ctx.page_size == 0);
+      vec.back().p_memsz = align_to(vec.back().p_memsz, ctx.page_size);
     }
   }
 
