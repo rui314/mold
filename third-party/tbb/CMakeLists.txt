@@ -59,6 +59,7 @@ unset(_tbb_ver_major)
 unset(_tbb_ver_minor)
 
 include(CheckCXXCompilerFlag)
+include(CheckSymbolExists)
 include(GNUInstallDirs)
 
 # ---------------------------------------------------------------------------------------------------------
@@ -269,6 +270,9 @@ if (ANDROID_PLATFORM)
     add_custom_target(device_environment_cleanup COMMAND ${CMAKE_COMMAND}
                       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/android/device_environment_cleanup.cmake)
 endif()
+
+# These functions or flags are glibc-specific.
+check_symbol_exists(getcontext ucontext.h HAVE_GETCONTEXT)
 
 if (TBB4PY_BUILD)
     add_subdirectory(python)
