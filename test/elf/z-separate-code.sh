@@ -10,6 +10,10 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+# musl doesn't work with `-z noseparate-code`
+echo 'int main() {}' | $CC -o $t/exe -xc -
+ldd $t/exe | grep -q ld-musl && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() {

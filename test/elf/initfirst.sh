@@ -19,6 +19,6 @@ void foo() {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,initfirst
-readelf --dynamic $t/b.so | grep -q 'Flags: INITFIRST'
+readelf --dynamic $t/b.so | grep -q 'Flags:.*INITFIRST'
 
 echo OK
