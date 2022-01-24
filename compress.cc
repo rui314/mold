@@ -35,12 +35,13 @@ static std::vector<std::string_view> split(std::string_view input) {
 
 static std::vector<u8> do_compress(std::string_view input) {
   // Initialize zlib stream. Since debug info is generally compressed
-  // pretty well, we chose compression level 3.
+  // pretty well with lower compression levels, we chose compression
+  // level 1.
   z_stream strm;
   strm.zalloc = Z_NULL;
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
-  int r = deflateInit2(&strm, 3, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
+  int r = deflateInit2(&strm, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
   assert(r == Z_OK);
 
   // Set an input buffer
