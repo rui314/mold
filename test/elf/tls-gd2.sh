@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -32,6 +32,6 @@ EOF
 $CC -B. -shared -o $t/c.so $t/b.o -Wl,--version-script=$t/a.ver \
   -Wl,--no-relax
 
-readelf -W --dyn-syms $t/c.so | grep -Pq 'TLS     LOCAL  DEFAULT   \d+ foo'
+readelf -W --dyn-syms $t/c.so | grep -Eq 'TLS     LOCAL  DEFAULT .* foo'
 
 echo OK

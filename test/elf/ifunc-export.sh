@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -32,6 +32,6 @@ Func *resolve_foobar(void) {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-readelf --dyn-syms $t/b.so | grep -Pq '(IFUNC|<OS specific>: 10)\s+GLOBAL DEFAULT   \d+ foobar'
+readelf --dyn-syms $t/b.so | grep -Eq '(IFUNC|<OS specific>: 10)\s+GLOBAL DEFAULT   .* foobar'
 
 echo OK

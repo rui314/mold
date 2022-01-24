@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -21,10 +21,10 @@ EOF
 grep -q 'undefined symbol: .*: _Z3fooii' $t/log
 
 ! $CC -B. -o $t/exe $t/a.o -Wl,-demangle 2> $t/log || false
-grep -Pq 'undefined symbol: .*: foo\(int, int\)' $t/log
+grep -Eq 'undefined symbol: .*: foo\(int, int\)' $t/log
 
 ! $CC -B. -o $t/exe $t/a.o 2> $t/log || false
-grep -Pq 'undefined symbol: .*: foo\(int, int\)' $t/log
+grep -Eq 'undefined symbol: .*: foo\(int, int\)' $t/log
 
 cat <<EOF | $CC -c -o $t/b.o -xc -
 extern int Pi;

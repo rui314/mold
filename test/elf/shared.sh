@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -21,7 +21,7 @@ $CC -B. -shared -o $t/b.so $t/a.o
 readelf --dyn-syms $t/b.so > $t/log
 
 grep -q '0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND fn2' $t/log
-grep -Pq 'FUNC    GLOBAL DEFAULT   \d+ fn1' $t/log
+grep -Eq 'FUNC    GLOBAL DEFAULT .* fn1' $t/log
 
 cat <<EOF | $CC -fPIC -c -o $t/c.o -xc -
 #include <stdio.h>

@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -36,9 +36,9 @@ EOF
 "$mold" -static -o $t/exe $t/a.o
 readelf -W --sections $t/exe > $t/log
 
-grep -Pq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log
-grep -Pq '.note.baz\s+NOTE.+000008 00   A  0   0  8' $t/log
-grep -Pq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log
+grep -Eq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log
+grep -Eq '.note.baz\s+NOTE.+000008 00   A  0   0  8' $t/log
+grep -Eq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log
 
 readelf --segments $t/exe > $t/log
 fgrep -q '01     .note.bar' $t/log

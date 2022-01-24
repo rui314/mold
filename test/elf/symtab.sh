@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -33,11 +33,11 @@ echo '{ local: module_local; };' > $t/c.map
 
 readelf --symbols $t/exe > $t/log
 
-grep -Pq '0 NOTYPE  LOCAL  DEFAULT    \d+ local1' $t/log
-grep -Pq '0 NOTYPE  LOCAL  DEFAULT    \d+ local2' $t/log
-grep -Pq '0 NOTYPE  GLOBAL DEFAULT    \d+ foo' $t/log
-grep -Pq '0 NOTYPE  GLOBAL DEFAULT    \d+ bar' $t/log
-grep -Pq '0 NOTYPE  GLOBAL DEFAULT    \d+ this_is_global' $t/log
-grep -Pq '0 NOTYPE  GLOBAL DEFAULT    \d+ module_local' $t/log
+grep -Eq '0 NOTYPE  LOCAL  DEFAULT .* local1' $t/log
+grep -Eq '0 NOTYPE  LOCAL  DEFAULT .* local2' $t/log
+grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* foo' $t/log
+grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* bar' $t/log
+grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* this_is_global' $t/log
+grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* module_local' $t/log
 
 echo OK

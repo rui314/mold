@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -22,6 +22,6 @@ int main() {
 EOF
 
 ! $CC -B. -o $t/exe $t/a.o -pie >& $t/log
-grep -Pq 'relocation against symbol .+ can not be used; recompile with -fPIC' $t/log
+grep -Eq 'relocation against symbol .+ can not be used; recompile with -fPIC' $t/log
 
 echo OK

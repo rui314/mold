@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -29,7 +29,7 @@ $CC -B. -o $t/exe $t/b.o -L $t -lfoo
 readelf --dynamic $t/exe | fgrep -q 'Shared library: [libfoo]'
 
 $CC -B. -o $t/exe $t/b.o $t/libbar.so
-readelf --dynamic $t/exe | grep -Pq 'Shared library: \[.*dt-needed/libbar\.so\]'
+readelf --dynamic $t/exe | grep -Eq 'Shared library: \[.*dt-needed/libbar\.so\]'
 
 $CC -B. -o $t/exe $t/b.o -L$t -lbar
 readelf --dynamic $t/exe | fgrep -q 'Shared library: [libbar.so]'

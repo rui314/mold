@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -33,7 +33,7 @@ int main() {
   int x = segv;
 
   if (setjmp(buf) == 0)
-    *(char *)(readonly) = 5;
+    *(char *)readonly = 5;
   int y = segv;
 
   printf("sigsegv %d %d\n", x, y);

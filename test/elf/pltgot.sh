@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -33,6 +33,6 @@ EOF
 
 objdump -d -j .plt.got $t/exe > $t/log
 
-grep -Pq '1020:.*jmp.*# 2000 <ext2>' $t/log
+grep -Eq '1020:.*jmp.*# 2000 <ext2>' $t/log
 
 echo OK

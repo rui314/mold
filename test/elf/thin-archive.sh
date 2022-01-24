@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -39,8 +39,8 @@ rm -f $t/d.a
 
 $CC -B. -Wl,--trace -o $t/exe $t/d.o $t/d.a > $t/log
 
-grep -Pq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
-grep -Pq 'thin-archive/d.a\(.*/b.o\)' $t/log
+grep -Eq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
+grep -Eq 'thin-archive/d.a\(.*/b.o\)' $t/log
 fgrep -q thin-archive/d.o $t/log
 
 $t/exe | grep -q 15

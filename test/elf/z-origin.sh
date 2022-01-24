@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -20,7 +20,7 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,origin
 
-readelf --dynamic $t/exe | grep -Pq '\(FLAGS\)\s+ORIGIN'
-readelf --dynamic $t/exe | grep -Pq 'Flags:.*ORIGIN'
+readelf --dynamic $t/exe | grep -Eq '\(FLAGS\)\s+ORIGIN'
+readelf --dynamic $t/exe | grep -Eq 'Flags:.*ORIGIN'
 
 echo OK

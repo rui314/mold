@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -47,43 +47,43 @@ EOF
 $CC -B. -o $t/exe $t/a.o $t/b.o
 objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
-grep -Pq 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rdx .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rbx .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rbp .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rsi .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%rdi .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r8  .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r9  .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r10 .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r11 .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r12 .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r13 .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r14 .*<foo>' $t/log
-grep -Pq 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
-grep -Pq 'call.*<foo>' $t/log
-grep -Pq 'jmp.*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rdx .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rbx .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rbp .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rsi .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%rdi .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r8  .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r9  .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r10 .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r11 .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r12 .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r13 .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r14 .*<foo>' $t/log
+grep -Eq 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
+grep -Eq 'call.*<foo>' $t/log
+grep -Eq 'jmp.*<foo>' $t/log
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
 objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
-grep -Pq 'mov \s*0x.+\(%rip\),%rax' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rcx' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rdx' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rbx' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rbp' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rsi' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%rdi' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r8 ' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r9 ' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r10' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r11' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r12' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r13' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r14' $t/log
-grep -Pq 'mov \s*0x.+\(%rip\),%r15' $t/log
-grep -Pq 'call.*\(%rip\)' $t/log
-grep -Pq 'jmp.*\(%rip\)' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rax' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rcx' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rdx' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rbx' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rbp' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rsi' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%rdi' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r8 ' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r9 ' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r10' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r11' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r12' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r13' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r14' $t/log
+grep -Eq 'mov \s*0x.+\(%rip\),%r15' $t/log
+grep -Eq 'call.*\(%rip\)' $t/log
+grep -Eq 'jmp.*\(%rip\)' $t/log
 
 echo OK

@@ -3,7 +3,7 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
@@ -29,7 +29,7 @@ aarch64-linux-gnu-gcc -B"`dirname "$mold"`" -o $t/exe $t/a.o -static
 readelf -p .comment $t/exe | grep -qw mold
 
 readelf -a $t/exe > $t/log
-grep -Pq 'Machine:\s+AArch64' $t/log
+grep -Eq 'Machine:\s+AArch64' $t/log
 qemu-aarch64 -L /usr/aarch64-linux-gnu $t/exe | grep -q 'Hello world'
 
 echo OK

@@ -3,35 +3,48 @@ export LANG=
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
-testname=$(basename -s .sh "$0")
+testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
 mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -c -o $t/a.o -x assembler -
-.globl main, init, fini
-main:
-  ret
-init:
-  ret
-fini:
-  ret
+cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
+void keep();
+
+int main() {
+  keep();
+}
 EOF
 
-$CC -B. -o $t/exe $t/a.o
-readelf -a $t/exe > $t/log
+cat <<EOF | $CC -c -fPIC -o $t/b.o -xc -
+#include <stdio.h>
 
-grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 \w+\s+GLOBAL \w+\s+\d+ _init\b' $t/log
+void init() {
+  printf("init\n");
+}
 
-grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 \w+\s+GLOBAL \w+\s+\d+ _fini\b' $t/log
+void fini() {
+  printf("fini\n");
+}
 
-$CC -B. -o $t/exe $t/a.o -Wl,-init,init -Wl,-fini,fini
-readelf -a $t/exe > $t/log
+void keep() {}
+EOF
 
-grep -Pqz '(?s)\(INIT\)\s+0x([0-9a-f]+)\b.*\1\s+0 NOTYPE  GLOBAL DEFAULT\s+\d+ init\b' $t/log
+$CC -B. -o $t/c.so -shared $t/b.o
+$CC -B. -o $t/d.so -shared $t/b.o -Wl,-init,init -Wl,-fini,fini
 
-grep -Pqz '(?s)\(FINI\)\s+0x([0-9a-f]+)\b.*\1\s+0 NOTYPE  GLOBAL DEFAULT\s+\d+ fini\b' $t/log
+$CC -o $t/exe1 $t/a.o $t/c.so
+$CC -o $t/exe2 $t/a.o $t/d.so
+
+$t/exe1 > $t/log1
+$t/exe2 > $t/log2
+
+! grep -q init $t/log1 || false
+! grep -q fini $t/log1 || false
+
+grep -q init $t/log2
+grep -q fini $t/log2
 
 echo OK
