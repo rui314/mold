@@ -1011,7 +1011,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   dir.code_limit = this->hdr.offset;
   dir.hash_size = SHA256_SIZE;
   dir.hash_type = CS_HASHTYPE_SHA256;
-  dir.page_size = __builtin_ctz(BLOCK_SIZE);
+  dir.page_size = std::countr_zero<u64>(BLOCK_SIZE);
   dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
   dir.exec_seg_limit = ctx.text_seg->cmd.filesize;
   if (ctx.output_type == MH_EXECUTE)
@@ -1175,13 +1175,13 @@ u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, Symbol<E> *sym) {
 
   for (i64 i = 0; i < personalities.size(); i++)
     if (personalities[i] == sym)
-      return (i + 1) << __builtin_ctz(UNWIND_PERSONALITY_MASK);
+      return (i + 1) << std::countr_zero(UNWIND_PERSONALITY_MASK);
 
   if (personalities.size() == 3)
     Fatal(ctx) << ": too many personality functions";
 
   personalities.push_back(sym);
-  return personalities.size() << __builtin_ctz(UNWIND_PERSONALITY_MASK);
+  return personalities.size() << std::countr_zero(UNWIND_PERSONALITY_MASK);
 }
 
 template <typename E>

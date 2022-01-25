@@ -382,7 +382,7 @@ public:
   OutputLazyBindSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__lazy_binding") {
     this->is_hidden = true;
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
   }
 
   void add(Context<E> &ctx, Symbol<E> &sym, i64 flags);
@@ -462,7 +462,7 @@ public:
   OutputSymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__symbol_table") {
     this->is_hidden = true;
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -484,7 +484,7 @@ public:
   OutputStrtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
   }
 
   i64 add_string(std::string_view str);
@@ -522,7 +522,7 @@ public:
   CodeSignatureSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__code_signature") {
     this->is_hidden = true;
-    this->hdr.p2align = __builtin_ctz(16);
+    this->hdr.p2align = std::countr_zero(16U);
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -537,7 +537,7 @@ public:
   DataInCodeSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__data_in_code") {
     this->is_hidden = true;
-    this->hdr.p2align = __builtin_ctz(alignof(DataInCodeEntry));
+    this->hdr.p2align = std::countr_zero(alignof(DataInCodeEntry));
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -550,7 +550,7 @@ template <typename E>
 class StubsSection : public Chunk<E> {
 public:
   StubsSection(Context<E> &ctx) : Chunk<E>(ctx, "__TEXT", "__stubs") {
-    this->hdr.p2align = __builtin_ctz(2);
+    this->hdr.p2align = std::countr_zero(2U);
     this->hdr.type = S_SYMBOL_STUBS;
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
     this->hdr.reserved2 = E::stub_size;
@@ -568,7 +568,7 @@ class StubHelperSection : public Chunk<E> {
 public:
   StubHelperSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__TEXT", "__stub_helper") {
-    this->hdr.p2align = __builtin_ctz(4);
+    this->hdr.p2align = std::countr_zero(4U);
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
   }
 
@@ -594,7 +594,7 @@ class UnwindInfoSection : public Chunk<E> {
 public:
   UnwindInfoSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__TEXT", "__unwind_info") {
-    this->hdr.p2align = __builtin_ctz(4);
+    this->hdr.p2align = std::countr_zero(4U);
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -607,7 +607,7 @@ template <typename E>
 class GotSection : public Chunk<E> {
 public:
   GotSection(Context<E> &ctx) : Chunk<E>(ctx, "__DATA_CONST", "__got") {
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
     this->hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
   }
 
@@ -622,7 +622,7 @@ class LazySymbolPtrSection : public Chunk<E> {
 public:
   LazySymbolPtrSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__DATA", "__la_symbol_ptr") {
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
     this->hdr.type = S_LAZY_SYMBOL_POINTERS;
   }
 
@@ -634,7 +634,7 @@ class ThreadPtrsSection : public Chunk<E> {
 public:
   ThreadPtrsSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__DATA", "__thread_ptrs") {
-    this->hdr.p2align = __builtin_ctz(8);
+    this->hdr.p2align = std::countr_zero(8U);
     this->hdr.type = S_THREAD_LOCAL_VARIABLE_POINTERS;
   }
 
