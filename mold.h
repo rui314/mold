@@ -292,7 +292,7 @@ public:
   ~ConcurrentMap() {
     if (keys) {
       free((void *)keys);
-      free((void *)sizes);
+      free((void *)key_sizes);
       free((void *)values);
     }
   }
@@ -304,7 +304,7 @@ public:
 
     this->nbuckets = nbuckets;
     keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(keys[0]));
-    sizes = (u32 *)calloc(nbuckets, sizeof(sizes[0]));
+    key_sizes = (u32 *)calloc(nbuckets, sizeof(key_sizes[0]));
     values = (T *)calloc(nbuckets, sizeof(values[0]));
   }
 
@@ -318,7 +318,7 @@ public:
 
     while (retry < MAX_RETRY) {
       const char *ptr = keys[idx];
-      if (ptr == locked) {
+      if (ptr == marker) {
 #ifdef __x86_64__
         asm volatile("pause" ::: "memory");
 #endif
@@ -326,15 +326,16 @@ public:
       }
 
       if (ptr == nullptr) {
-        if (!keys[idx].compare_exchange_weak(ptr, locked))
+        if (!keys[idx].compare_exchange_weak(ptr, marker))
           continue;
         new (values + idx) T(val);
-        sizes[idx] = key.size();
+        key_sizes[idx] = key.size();
         keys[idx] = key.data();
         return {values + idx, true};
       }
 
-      if (key.size() == sizes[idx] && memcmp(ptr, key.data(), sizes[idx]) == 0)
+      if (key.size() == key_sizes[idx] &&
+          memcmp(ptr, key.data(), key_sizes[idx]) == 0)
         return {values + idx, false};
 
       u64 mask = nbuckets / NUM_SHARDS - 1;
@@ -356,11 +357,11 @@ public:
 
   i64 nbuckets = 0;
   std::atomic<const char *> *keys = nullptr;
-  u32 *sizes = nullptr;
+  u32 *key_sizes = nullptr;
   T *values = nullptr;
 
 private:
-  static constexpr const char *locked = "marker";
+  static constexpr const char *marker = "marker";
 };
 
 //
