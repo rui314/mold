@@ -23,6 +23,7 @@ typedef int64_t i64;
 struct X86_64;
 struct I386;
 struct ARM64;
+struct RISCV64;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -145,6 +146,7 @@ static constexpr u32 EV_CURRENT = 1;
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_X86_64 = 62;
 static constexpr u32 EM_AARCH64 = 183;
+static constexpr u32 EM_RISCV = 243;
 
 static constexpr u32 EI_CLASS = 4;
 static constexpr u32 EI_DATA = 5;
@@ -230,6 +232,17 @@ static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_IBT = 1;
 static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_SHSTK = 2;
 
 static constexpr u32 ELFCOMPRESS_ZLIB = 1;
+
+static constexpr u32 EF_RISCV_RVC = 1;
+static constexpr u32 EF_RISCV_FLOAT_ABI = 6;
+static constexpr u32 EF_RISCV_FLOAT_ABI_SOFT = 0;
+static constexpr u32 EF_RISCV_FLOAT_ABI_SINGLE = 2;
+static constexpr u32 EF_RISCV_FLOAT_ABI_DOUBLE = 4;
+static constexpr u32 EF_RISCV_FLOAT_ABI_QUAD = 6;
+static constexpr u32 EF_RISCV_RVE = 8;
+static constexpr u32 EF_RISCV_TSO = 16;
+
+static constexpr u32 STO_RISCV_VARIANT_CC = 0x80;
 
 static constexpr u32 R_X86_64_NONE = 0;
 static constexpr u32 R_X86_64_64 = 1;
@@ -627,6 +640,116 @@ inline std::string rel_to_string<ARM64>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static constexpr u32 R_RISCV_NONE = 0;
+static constexpr u32 R_RISCV_32 = 1;
+static constexpr u32 R_RISCV_64 = 2;
+static constexpr u32 R_RISCV_RELATIVE = 3;
+static constexpr u32 R_RISCV_COPY = 4;
+static constexpr u32 R_RISCV_JUMP_SLOT = 5;
+static constexpr u32 R_RISCV_TLS_DTPMOD32 = 6;
+static constexpr u32 R_RISCV_TLS_DTPMOD64 = 7;
+static constexpr u32 R_RISCV_TLS_DTPREL32 = 8;
+static constexpr u32 R_RISCV_TLS_DTPREL64 = 9;
+static constexpr u32 R_RISCV_TLS_TPREL32 = 10;
+static constexpr u32 R_RISCV_TLS_TPREL64 = 11;
+static constexpr u32 R_RISCV_BRANCH = 16;
+static constexpr u32 R_RISCV_JAL = 17;
+static constexpr u32 R_RISCV_CALL = 18;
+static constexpr u32 R_RISCV_CALL_PLT = 19;
+static constexpr u32 R_RISCV_GOT_HI20 = 20;
+static constexpr u32 R_RISCV_TLS_GOT_HI20 = 21;
+static constexpr u32 R_RISCV_TLS_GD_HI20 = 22;
+static constexpr u32 R_RISCV_PCREL_HI20 = 23;
+static constexpr u32 R_RISCV_PCREL_LO12_I = 24;
+static constexpr u32 R_RISCV_PCREL_LO12_S = 25;
+static constexpr u32 R_RISCV_HI20 = 26;
+static constexpr u32 R_RISCV_LO12_I = 27;
+static constexpr u32 R_RISCV_LO12_S = 28;
+static constexpr u32 R_RISCV_TPREL_HI20 = 29;
+static constexpr u32 R_RISCV_TPREL_LO12_I = 30;
+static constexpr u32 R_RISCV_TPREL_LO12_S = 31;
+static constexpr u32 R_RISCV_TPREL_ADD = 32;
+static constexpr u32 R_RISCV_ADD8 = 33;
+static constexpr u32 R_RISCV_ADD16 = 34;
+static constexpr u32 R_RISCV_ADD32 = 35;
+static constexpr u32 R_RISCV_ADD64 = 36;
+static constexpr u32 R_RISCV_SUB8 = 37;
+static constexpr u32 R_RISCV_SUB16 = 38;
+static constexpr u32 R_RISCV_SUB32 = 39;
+static constexpr u32 R_RISCV_SUB64 = 40;
+static constexpr u32 R_RISCV_GNU_VTINHERIT = 41;
+static constexpr u32 R_RISCV_GNU_VTENTRY = 42;
+static constexpr u32 R_RISCV_ALIGN = 43;
+static constexpr u32 R_RISCV_RVC_BRANCH = 44;
+static constexpr u32 R_RISCV_RVC_JUMP = 45;
+static constexpr u32 R_RISCV_RVC_LUI = 46;
+static constexpr u32 R_RISCV_RELAX = 51;
+static constexpr u32 R_RISCV_SUB6 = 52;
+static constexpr u32 R_RISCV_SET6 = 53;
+static constexpr u32 R_RISCV_SET8 = 54;
+static constexpr u32 R_RISCV_SET16 = 55;
+static constexpr u32 R_RISCV_SET32 = 56;
+static constexpr u32 R_RISCV_32_PCREL = 57;
+static constexpr u32 R_RISCV_IRELATIVE = 58;
+
+template <>
+inline std::string rel_to_string<RISCV64>(u32 r_type) {
+  switch (r_type) {
+  case R_RISCV_NONE: return "R_RISCV_NONE";
+  case R_RISCV_32: return "R_RISCV_32";
+  case R_RISCV_64: return "R_RISCV_64";
+  case R_RISCV_RELATIVE: return "R_RISCV_RELATIVE";
+  case R_RISCV_COPY: return "R_RISCV_COPY";
+  case R_RISCV_JUMP_SLOT: return "R_RISCV_JUMP_SLOT";
+  case R_RISCV_TLS_DTPMOD32: return "R_RISCV_TLS_DTPMOD32";
+  case R_RISCV_TLS_DTPMOD64: return "R_RISCV_TLS_DTPMOD64";
+  case R_RISCV_TLS_DTPREL32: return "R_RISCV_TLS_DTPREL32";
+  case R_RISCV_TLS_DTPREL64: return "R_RISCV_TLS_DTPREL64";
+  case R_RISCV_TLS_TPREL32: return "R_RISCV_TLS_TPREL32";
+  case R_RISCV_TLS_TPREL64: return "R_RISCV_TLS_TPREL64";
+  case R_RISCV_BRANCH: return "R_RISCV_BRANCH";
+  case R_RISCV_JAL: return "R_RISCV_JAL";
+  case R_RISCV_CALL: return "R_RISCV_CALL";
+  case R_RISCV_CALL_PLT: return "R_RISCV_CALL_PLT";
+  case R_RISCV_GOT_HI20: return "R_RISCV_GOT_HI20";
+  case R_RISCV_TLS_GOT_HI20: return "R_RISCV_TLS_GOT_HI20";
+  case R_RISCV_TLS_GD_HI20: return "R_RISCV_TLS_GD_HI20";
+  case R_RISCV_PCREL_HI20: return "R_RISCV_PCREL_HI20";
+  case R_RISCV_PCREL_LO12_I: return "R_RISCV_PCREL_LO12_I";
+  case R_RISCV_PCREL_LO12_S: return "R_RISCV_PCREL_LO12_S";
+  case R_RISCV_HI20: return "R_RISCV_HI20";
+  case R_RISCV_LO12_I: return "R_RISCV_LO12_I";
+  case R_RISCV_LO12_S: return "R_RISCV_LO12_S";
+  case R_RISCV_TPREL_HI20: return "R_RISCV_TPREL_HI20";
+  case R_RISCV_TPREL_LO12_I: return "R_RISCV_TPREL_LO12_I";
+  case R_RISCV_TPREL_LO12_S: return "R_RISCV_TPREL_LO12_S";
+  case R_RISCV_TPREL_ADD: return "R_RISCV_TPREL_ADD";
+  case R_RISCV_ADD8: return "R_RISCV_ADD8";
+  case R_RISCV_ADD16: return "R_RISCV_ADD16";
+  case R_RISCV_ADD32: return "R_RISCV_ADD32";
+  case R_RISCV_ADD64: return "R_RISCV_ADD64";
+  case R_RISCV_SUB8: return "R_RISCV_SUB8";
+  case R_RISCV_SUB16: return "R_RISCV_SUB16";
+  case R_RISCV_SUB32: return "R_RISCV_SUB32";
+  case R_RISCV_SUB64: return "R_RISCV_SUB64";
+  case R_RISCV_GNU_VTINHERIT: return "R_RISCV_GNU_VTINHERIT";
+  case R_RISCV_GNU_VTENTRY: return "R_RISCV_GNU_VTENTRY";
+  case R_RISCV_ALIGN: return "R_RISCV_ALIGN";
+  case R_RISCV_RVC_BRANCH: return "R_RISCV_RVC_BRANCH";
+  case R_RISCV_RVC_JUMP: return "R_RISCV_RVC_JUMP";
+  case R_RISCV_RVC_LUI: return "R_RISCV_RVC_LUI";
+  case R_RISCV_RELAX: return "R_RISCV_RELAX";
+  case R_RISCV_SUB6: return "R_RISCV_SUB6";
+  case R_RISCV_SET6: return "R_RISCV_SET6";
+  case R_RISCV_SET8: return "R_RISCV_SET8";
+  case R_RISCV_SET16: return "R_RISCV_SET16";
+  case R_RISCV_SET32: return "R_RISCV_SET32";
+  case R_RISCV_32_PCREL: return "R_RISCV_32_PCREL";
+  case R_RISCV_IRELATIVE: return "R_RISCV_IRELATIVE";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
 static constexpr u32 DW_EH_PE_uleb128 = 0x01;
@@ -949,5 +1072,34 @@ template <> struct ElfPhdr<ARM64> : public Elf64Phdr {};
 template <> struct ElfRel<ARM64> : public Elf64Rela {};
 template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
 template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
+
+struct RISCV64 {
+  using WordTy = u64;
+
+  static constexpr u32 R_NONE = R_RISCV_NONE;
+  static constexpr u32 R_COPY = R_RISCV_COPY;
+  static constexpr u32 R_GLOB_DAT = R_RISCV_64;
+  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
+  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
+  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
+  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
+
+  static constexpr u32 word_size = 8;
+  static constexpr u32 page_size = 65536;
+  static constexpr u32 e_machine = EM_RISCV;
+  static constexpr u32 pltgot_size = 16;
+  static constexpr bool is_rel = false;
+  static constexpr bool is_le = true;
+};
+
+template <> struct ElfSym<RISCV64> : public Elf64Sym {};
+template <> struct ElfShdr<RISCV64> : public Elf64Shdr {};
+template <> struct ElfEhdr<RISCV64> : public Elf64Ehdr {};
+template <> struct ElfPhdr<RISCV64> : public Elf64Phdr {};
+template <> struct ElfRel<RISCV64> : public Elf64Rela {};
+template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
+template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
 
 } // namespace mold::elf
