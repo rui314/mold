@@ -160,13 +160,6 @@ mold has a feature to intercept all invocations of `ld`, `ld.lld` or
 mold -run make <make-options-if-any>
 ```
 
-Here's an example showing how to link Rust code when using the
-cargo package manager:
-
-```shell
-mold -run cargo build
-```
-
 Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
 file intercepts all function calls to `exec(3)`-family functions to
