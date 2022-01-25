@@ -122,7 +122,11 @@ ifeq ($(OS), Linux)
   MOLD_WRAPPER_LDFLAGS = -Wl,-push-state -Wl,-no-as-needed -ldl -Wl,-pop-state
 endif
 
+DEPFLAGS = -MT $@ -MMD -MP -MF out/$*.d
+
 all: mold mold-wrapper.so
+
+-include $(SRCS:%.cc=out/%.d)
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
 	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
@@ -130,17 +134,13 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
 	ln -sf mold ld64.mold
 
 mold-wrapper.so: elf/mold-wrapper.c Makefile
-	$(CC) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
+	$(CC) $(DEPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
 
-out/%.o: %.cc $(HEADERS) Makefile out/elf/.keep out/macho/.keep
-	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
+out/%.o: %.cc out/elf/.keep out/macho/.keep
+	$(CXX) $(MOLD_CXXFLAGS) $(DEPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
-out/elf/.keep:
-	mkdir -p out/elf
-	touch $@
-
-out/macho/.keep:
-	mkdir -p out/macho
+out/elf/.keep out/macho/.keep:
+	mkdir -p $(@D)
 	touch $@
 
 $(MIMALLOC_LIB):
