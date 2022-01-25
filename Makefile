@@ -1,4 +1,6 @@
-PREFIX = /usr/local
+ifndef PREFIX
+  PREFIX = /usr/local
+endif
 BINDIR = $(PREFIX)/bin
 LIBDIR = $(PREFIX)/lib
 LIBEXECDIR = $(PREFIX)/libexec
