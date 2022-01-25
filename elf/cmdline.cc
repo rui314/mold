@@ -873,6 +873,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       remaining.push_back("-push-state");
     } else if (read_flag(args, "pop-state")) {
       remaining.push_back("-pop-state");
+    } else if (args[0].starts_with("--warn-") && args[0].size() > 7) {
+      Warn(ctx) << "unknown command line option: --warn-* " << args[0];
+      args = args.subspan(1);
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
       Warn(ctx) << "unknown command line option: " << args[0];
       args = args.subspan(1);
