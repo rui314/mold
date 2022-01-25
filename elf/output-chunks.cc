@@ -1450,6 +1450,18 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
+void MergedSection<E>::print_stats(Context<E> &ctx) {
+  i64 used = 0;
+  for (i64 i = 0; i < map.nbuckets; i++)
+    if (map.keys[i])
+      used++;
+
+  SyncOut(ctx) << this->name
+               << " estimation=" << estimator.get_cardinality()
+               << " actual=" << used;
+}
+
+template <typename E>
 void EhFrameSection<E>::construct(Context<E> &ctx) {
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.

@@ -704,6 +704,7 @@ public:
   void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
+  void print_stats(Context<E> &ctx);
 
   HyperLogLog estimator;
 

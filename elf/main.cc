@@ -321,6 +321,9 @@ static void show_stats(Context<E> &ctx) {
   }
 
   Counter::print();
+
+  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+    sec->print_stats(ctx);
 }
 
 static i64 get_default_thread_count() {
