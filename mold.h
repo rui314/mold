@@ -319,9 +319,7 @@ public:
     while (retry < MAX_RETRY) {
       const char *ptr = keys[idx];
       if (ptr == marker) {
-#ifdef __x86_64__
-        asm volatile("pause" ::: "memory");
-#endif
+        pause();
         continue;
       }
 
@@ -361,6 +359,14 @@ public:
   T *values = nullptr;
 
 private:
+  static void pause() {
+#if defined(__x86_64__)
+    asm volatile("pause");
+#elif defined(__aarch64__)
+    asm volatile("yield");
+#endif
+  }
+
   static constexpr const char *marker = "marker";
 };
 
