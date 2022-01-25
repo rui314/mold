@@ -485,22 +485,6 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static bool has_init_array(Context<E> &ctx) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->shdr.sh_type == SHT_INIT_ARRAY)
-      return true;
-  return false;
-}
-
-template <typename E>
-static bool has_fini_array(Context<E> &ctx) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->shdr.sh_type == SHT_FINI_ARRAY)
-      return true;
-  return false;
-}
-
-template <typename E>
 static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
   std::vector<typename E::WordTy> vec;
 
@@ -555,13 +539,13 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (has_init_array(ctx)) {
+  if (ctx.__init_array_start->shndx) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (has_fini_array(ctx)) {
+  if (ctx.__fini_array_start->shndx) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
