@@ -170,16 +170,14 @@ inline u64 align_down(u64 val, u64 align) {
 }
 
 template <typename T, typename Compare = std::less<T>>
-void update_minimum(std::atomic<T> &atomic, u64 new_val,
-                    Compare cmp = {}) {
+void update_minimum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   T old_val = atomic;
   while (cmp(new_val, old_val) &&
          !atomic.compare_exchange_weak(old_val, new_val));
 }
 
 template <typename T, typename Compare = std::less<T>>
-void update_maximum(std::atomic<T> &atomic, u64 new_val,
-                    Compare cmp = {}) {
+void update_maximum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   T old_val = atomic;
   while (cmp(old_val, new_val) &&
          !atomic.compare_exchange_weak(old_val, new_val));
@@ -273,6 +271,11 @@ std::string_view save_string(C &ctx, const std::string &str) {
 // Concurrent Map
 //
 
+// This is an implementation of a fast concurrent hash map. Unlike
+// ordinary hash tables, this impl just aborts if it becomes full.
+// So you need to give a correct estimation of the final size before
+// using it. We use this hash map to uniquify pieces of data in
+// mergeable sections.
 template <typename T>
 class ConcurrentMap {
 public:
