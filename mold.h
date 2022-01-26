@@ -3,6 +3,7 @@
 #include "byteorder.h"
 
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
