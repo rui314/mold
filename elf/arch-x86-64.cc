@@ -4,25 +4,6 @@ namespace mold::elf {
 
 using E = X86_64;
 
-template <>
-void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
-
-  // The first slot of .got.plt points to _DYNAMIC, as requested by
-  // the x86-64 psABI. The second and the third slots are reserved by
-  // the psABI.
-  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
-  buf[1] = 0;
-  buf[2] = 0;
-
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    if (ctx.arg.z_ibtplt)
-      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 10;
-    else
-      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
-  }
-}
-
 // The compact PLT format is used when `-z now` is given. If the flag
 // is given, all PLT symbols are resolved eagerly on startup, so we
 // can omit code for lazy symbol resolution from PLT in that case.

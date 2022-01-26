@@ -22,19 +22,6 @@ static u64 page(u64 val) {
   return val & ~(u64)0xfff;
 }
 
-template <>
-void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  u64 *buf = (u64 *)(ctx.buf + this->shdr.sh_offset);
-
-  // The first slot of .got.plt points to _DYNAMIC.
-  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
-  buf[1] = 0;
-  buf[2] = 0;
-
-  for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
-}
-
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   // Write PLT header
   static const u8 plt0[] = {

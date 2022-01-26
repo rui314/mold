@@ -8,9 +8,6 @@ namespace mold::elf {
 using E = RISCV64;
 
 template <>
-void GotPltSection<E>::copy_buf(Context<E> &ctx) {}
-
-template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {}
 
 template <>

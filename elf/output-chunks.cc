@@ -885,6 +885,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(E::e_machine != EM_RISCV);
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size * 2;
   tlsdesc_syms.push_back(sym);
@@ -994,6 +995,30 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
       pos.push_back(sym->get_got_addr(ctx) - this->shdr.sh_addr);
 
   relr = encode_relr(pos);
+}
+
+template <typename E>
+void GotPltSection<E>::copy_buf(Context<E> &ctx) {
+  auto *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+
+  // The first slot of .got.plt points to _DYNAMIC, as requested by
+  // the psABI. The second and the third slots are reserved by the psABI.
+  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[1] = 0;
+  buf[2] = 0;
+
+  auto get_plt_resolver_addr = [&](Symbol<E> &sym) -> u64 {
+    if constexpr (E::e_machine == EM_AARCH64 || E::e_machine == EM_RISCV)
+      return ctx.plt->shdr.sh_addr;
+    if constexpr (E::e_machine == EM_X86_64)
+      return sym.get_plt_addr(ctx) + (ctx.arg.z_ibtplt ? 10 : 6);
+    if constexpr (E::e_machine == EM_386)
+      return sym.get_plt_addr(ctx) + 6;
+    unreachable();
+  };
+
+  for (Symbol<E> *sym : ctx.plt->symbols)
+    buf[sym->get_gotplt_idx(ctx)] = get_plt_resolver_addr(*sym);
 }
 
 template <typename E>
