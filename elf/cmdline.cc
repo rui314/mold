@@ -641,7 +641,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_execstack = true;
     } else if (read_z_arg(ctx, args, arg, "max-page-size")) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
-      if (std::popcount<u64>(ctx.page_size) != 1)
+      if (!std::has_single_bit<u64>(ctx.page_size))
         Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
     } else if (read_z_flag(args, "noexecstack")) {
       ctx.arg.z_execstack = false;
