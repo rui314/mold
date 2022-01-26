@@ -160,12 +160,12 @@ private:
 inline u64 align_to(u64 val, u64 align) {
   if (align == 0)
     return val;
-  assert(__builtin_popcount(align) == 1);
+  assert(std::popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
 }
 
 inline u64 align_down(u64 val, u64 align) {
-  assert(__builtin_popcount(align) == 1);
+  assert(std::popcount(align) == 1);
   return val & ~(align - 1);
 }
 
@@ -173,7 +173,7 @@ inline u64 next_power_of_two(u64 val) {
   assert(val >> 63 == 0);
   if (val == 0 || val == 1)
     return 1;
-  return (u64)1 << (64 - __builtin_clzl(val - 1));
+  return (u64)1 << (64 - std::countl_zero(val - 1));
 }
 
 template <typename T, typename Compare = std::less<T>>
@@ -312,7 +312,7 @@ public:
     if (!keys)
       return {nullptr, false};
 
-    assert(__builtin_popcount(nbuckets) == 1);
+    assert(std::popcount<u64>(nbuckets) == 1);
     i64 idx = hash & (nbuckets - 1);
     i64 retry = 0;
 
@@ -430,7 +430,7 @@ public:
   HyperLogLog() : buckets(NBUCKETS) {}
 
   void insert(u32 hash) {
-    update_maximum(buckets[hash & (NBUCKETS - 1)], __builtin_clz(hash) + 1);
+    update_maximum(buckets[hash & (NBUCKETS - 1)], std::countl_zero(hash) + 1);
   }
 
   i64 get_cardinality() const;
