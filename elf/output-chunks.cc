@@ -308,21 +308,13 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 }
 
 template <typename E>
-static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0);
-
-template <>
-ElfRel<X86_64> reloc<X86_64>(u64 offset, u32 type, u32 sym, i64 addend) {
+static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
   return {offset, type, sym, addend};
 }
 
 template <>
 ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
   return {(u32)offset, type, sym};
-}
-
-template <>
-ElfRel<ARM64> reloc<ARM64>(u64 offset, u32 type, u32 sym, i64 addend) {
-  return {offset, type, sym, addend};
 }
 
 template <typename E>
@@ -968,9 +960,10 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     *rel++ = reloc<E>(addr + E::word_size, E::R_DTPOFF, dynsym_idx);
   }
 
-  for (Symbol<E> *sym : tlsdesc_syms)
-    *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
-                      sym->get_dynsym_idx(ctx));
+  if constexpr (E::e_machine != EM_RISCV)
+    for (Symbol<E> *sym : tlsdesc_syms)
+      *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
+                        sym->get_dynsym_idx(ctx));
 
   for (Symbol<E> *sym : gottp_syms) {
     if (sym->is_imported) {
@@ -2040,5 +2033,6 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

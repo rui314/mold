@@ -1761,8 +1761,8 @@ inline i64 InputSection<E>::get_priority() const {
   return ((i64)file.priority << 32) | section_idx;
 }
 
-template <>
-inline i64 InputSection<X86_64>::get_addend(const ElfRel<X86_64> &rel) const {
+template <typename E>
+inline i64 InputSection<E>::get_addend(const ElfRel<E> &rel) const {
   return rel.r_addend;
 }
 
@@ -1797,11 +1797,6 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
     return *(u32 *)loc;
   }
   unreachable();
-}
-
-template <>
-inline i64 InputSection<ARM64>::get_addend(const ElfRel<ARM64> &rel) const {
-  return rel.r_addend;
 }
 
 template <typename E>

@@ -410,6 +410,8 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
     return {16, 16};
   case EM_AARCH64:
     return {32, 16};
+  case EM_RISCV:
+    return {32, 16};
   }
   unreachable();
 }
@@ -969,5 +971,6 @@ void parse_nonpositional_args(Context<E> &ctx,
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(RISCV64);
 
 } // namespace mold::elf
