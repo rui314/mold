@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "../sha.h"
 
 #include <filesystem>
 #include <signal.h>
@@ -10,13 +11,6 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#else
-#  include <openssl/sha.h>
-#endif
 
 #define DAEMON_TIMEOUT 30
 

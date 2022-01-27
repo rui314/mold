@@ -53,6 +53,7 @@
 // thread and even better with multiple threads.
 
 #include "mold.h"
+#include "../sha.h"
 
 #include <array>
 #include <tbb/concurrent_unordered_map.h>
@@ -61,13 +62,6 @@
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
-
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#else
-#  include <openssl/sha.h>
-#endif
 
 static constexpr int64_t HASH_SIZE = 16;
 
