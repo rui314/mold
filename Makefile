@@ -27,8 +27,8 @@ SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
 HEADERS=$(wildcard *.h elf/*.h macho/*.h)
 OBJS=$(SRCS:%.cc=out/%.o)
 
-OS = $(shell uname -s)
-ARCH = $(shell uname -m)
+OS := $(shell uname -s)
+ARCH := $(shell uname -m)
 
 IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
@@ -40,13 +40,13 @@ endif
 CFLAGS = -O2
 CXXFLAGS = -O2
 
-MOLD_CXXFLAGS = -std=c++20 -fno-exceptions -fno-unwind-tables \
-                -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.2\" \
-                -DLIBDIR="\"$(LIBDIR)\""
+MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
+                 -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.2\" \
+                 -DLIBDIR="\"$(LIBDIR)\""
 
-MOLD_LDFLAGS = -pthread -lz -lm
+MOLD_LDFLAGS := -pthread -lz -lm
 
-GIT_HASH = $(shell [ -d .git ] && git rev-parse HEAD)
+GIT_HASH := $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)
   MOLD_CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
 endif
