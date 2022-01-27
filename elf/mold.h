@@ -727,7 +727,7 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void apply_reloc(Context<E> &ctx, ElfRel<E> &rel, u64 loc, u64 val);
+  void apply_reloc(Context<E> &ctx, ElfRel<E> &rel, u64 offset, u64 val);
   void copy_buf(Context<E> &ctx) override;
 };
 

@@ -90,17 +90,17 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
-                                    u64 loc, u64 val) {
-  u8 *base = ctx.buf + this->shdr.sh_offset;
+                                    u64 offset, u64 val) {
+  u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
   case R_386_NONE:
     return;
   case R_386_32:
-    *(u32 *)(base + loc) = val;
+    *(u32 *)loc = val;
     return;
   case R_386_PC32:
-    *(u32 *)(base + loc) = val - this->shdr.sh_addr - loc;
+    *(u32 *)loc = val - this->shdr.sh_addr - offset;
     return;
   }
   unreachable();
