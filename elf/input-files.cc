@@ -301,6 +301,22 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
     fde.cie = &cies[fde.cie_idx];
 }
 
+template <typename E>
+static std::span<ElfRel<E>>
+sort_rels(Context<E> &ctx, std::span<ElfRel<E>> rels) {
+  auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+    return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
+           a.r_offset < b.r_offset;
+  };
+
+  if (std::is_sorted(rels.begin(), rels.end(), less))
+    return rels;
+
+  std::vector<ElfRel<E>> vec(rels.begin(), rels.end());
+  sort(vec, less);
+  return *ctx.rel_pool.push_back(std::move(vec));
+}
+
 // .eh_frame contains data records explaining how to handle exceptions.
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
@@ -332,15 +348,9 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+  std::span<ElfRel<E>> rels = sort_rels(ctx, isec.get_rels(ctx));
   i64 cies_begin = cies.size();
   i64 fdes_begin = fdes.size();
-
-  // Verify relocations.
-  for (i64 i = 1; i < rels.size(); i++)
-    if (rels[i].r_type != E::R_NONE &&
-        rels[i].r_offset <= rels[i - 1].r_offset)
-      Fatal(ctx) << isec << ": relocation offsets must increase monotonically";
 
   // Read CIEs and FDEs until empty.
   std::string_view contents = this->get_string(ctx, isec.shdr);
@@ -363,7 +373,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
 
     if (id == 0) {
       // This is CIE.
-      cies.push_back(CieRecord<E>(ctx, *this, isec, begin_offset, rel_begin));
+      cies.emplace_back(ctx, *this, isec, begin_offset, rels, rel_begin);
     } else {
       // This is FDE.
       if (rel_begin == rel_idx || rels[rel_begin].r_sym == 0) {
@@ -376,7 +386,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
       if (rels[rel_begin].r_offset - begin_offset != 8)
         Fatal(ctx) << isec << ": FDE's first relocation should have offset 8";
 
-      fdes.push_back(FdeRecord<E>(begin_offset, rel_begin));
+      fdes.emplace_back(begin_offset, rel_begin);
     }
   }
 

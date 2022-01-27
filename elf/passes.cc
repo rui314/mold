@@ -330,6 +330,9 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
 
+  if (E::e_machine == EM_RISCV)
+    ctx.__global_pointer = add("__global_pointer$");
+
   for (Chunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
       continue;
@@ -1015,13 +1018,26 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // _GLOBAL_OFFSET_TABLE_
   if (E::e_machine == EM_X86_64 || E::e_machine == EM_386)
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
-  else if (E::e_machine == EM_AARCH64)
+  else if (E::e_machine == EM_AARCH64 || E::e_machine == EM_RISCV)
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
   else
     unreachable();
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
+
+  // RISC-V's __global_pointer$
+  if (E::e_machine == EM_RISCV) {
+    ctx.__global_pointer->shndx = 1;
+    ctx.__global_pointer->value = 0x800;
+
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->name == ".sdata") {
+        ctx.__global_pointer->shndx = chunk->shndx;
+        break;
+      }
+    }
+  }
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : ctx.chunks) {

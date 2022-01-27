@@ -460,6 +460,8 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.emulation = EM_386;
       } else if (arg == "aarch64linux") {
         ctx.arg.emulation = EM_AARCH64;
+      } else if (arg == "elf64lriscv") {
+        ctx.arg.emulation = EM_RISCV;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }

@@ -145,11 +145,10 @@ inline u64 hash_string(std::string_view str) {
 // always points to the function that the FDE is associated to.
 template <typename E>
 struct CieRecord {
-  CieRecord(Context<E> &ctx, ObjectFile<E> &file,
-            InputSection<E> &isec, u32 input_offset, u32 rel_idx)
+  CieRecord(Context<E> &ctx, ObjectFile<E> &file, InputSection<E> &isec,
+            u32 input_offset, std::span<ElfRel<E>> rels, u32 rel_idx)
     : file(file), input_section(isec), input_offset(input_offset),
-      rel_idx(rel_idx), rels(isec.get_rels(ctx)),
-      contents(file.get_string(ctx, isec.shdr)) {}
+      rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr)) {}
 
   i64 size() const {
     return *(u32 *)(contents.data() + input_offset) + 4;
@@ -1475,6 +1474,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> shdr_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
+  tbb::concurrent_vector<std::vector<ElfRel<E>>> rel_pool;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
@@ -1547,6 +1547,7 @@ struct Context {
   Symbol<E> *__executable_start = nullptr;
   Symbol<E> *__fini_array_end = nullptr;
   Symbol<E> *__fini_array_start = nullptr;
+  Symbol<E> *__global_pointer = nullptr;
   Symbol<E> *__init_array_end = nullptr;
   Symbol<E> *__init_array_start = nullptr;
   Symbol<E> *__preinit_array_end = nullptr;
