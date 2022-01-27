@@ -62,12 +62,7 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#else
-#  include <openssl/sha.h>
-#endif
+#include "../sha256.h"
 
 static constexpr int64_t HASH_SIZE = 16;
 
@@ -125,8 +120,7 @@ static bool is_eligible(InputSection<E> &isec) {
 
 static Digest digest_final(SHA256_CTX &sha) {
   u8 buf[SHA256_SIZE];
-  int res = SHA256_Final(buf, &sha);
-  assert(res == 1);
+  SHA256_Final(buf, &sha);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);

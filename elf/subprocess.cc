@@ -11,12 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#else
-#  include <openssl/sha.h>
-#endif
+#include "../sha256.h"
 
 #define DAEMON_TIMEOUT 30
 

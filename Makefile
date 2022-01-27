@@ -102,8 +102,8 @@ endif
 
 # Use pkg-config to know where libcrypto resides.
 ifneq ($(OS), Darwin)
-  MOLD_CXXFLAGS += $(shell $(PKG_CONFIG) --cflags-only-I openssl)
-  MOLD_LDFLAGS += $(shell $(PKG_CONFIG) --libs-only-L openssl) -lcrypto
+  MOLD_CXXFLAGS += $(shell $(PKG_CONFIG) --cflags nettle)
+  MOLD_LDFLAGS += $(shell $(PKG_CONFIG) --libs nettle)
 endif
 
 # '-latomic' flag is needed building on riscv64 system

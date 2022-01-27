@@ -3,13 +3,7 @@
 #include <shared_mutex>
 #include <sys/mman.h>
 
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#  define SHA256(data, len, md) CC_SHA256(data, len, md)
-#else
-#  include <openssl/sha.h>
-#endif
+#include "../sha256.h"
 
 namespace mold::macho {
 
@@ -1023,7 +1017,10 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   for (i64 i = 0; i < num_blocks; i++) {
     u8 *start = ctx.buf + i * BLOCK_SIZE;
     u8 *end = ctx.buf + std::min<i64>((i + 1) * BLOCK_SIZE, this->hdr.offset);
-    SHA256(start, end - start, buf);
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, start, end - start);
+    SHA256_Final(buf, &ctx);
     buf += SHA256_SIZE;
   }
 

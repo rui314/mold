@@ -5,13 +5,7 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 
-#ifdef __APPLE__
-#  define COMMON_DIGEST_FOR_OPENSSL
-#  include <CommonCrypto/CommonDigest.h>
-#  define SHA256(data, len, md) CC_SHA256(data, len, md)
-#else
-#  include <openssl/sha.h>
-#endif
+#include "../sha256.h"
 
 namespace mold::elf {
 
@@ -1828,6 +1822,7 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 static void compute_sha256(Context<E> &ctx, i64 offset) {
+  SHA256_CTX sha_ctx;
   u8 *buf = ctx.buf;
   i64 bufsize = ctx.output_file->filesize;
 
@@ -1838,7 +1833,9 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
     i64 sz = (i < num_shards - 1) ? shard_size : (bufsize % shard_size);
-    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
+    SHA256_Init(&sha_ctx);
+    SHA256_Update(&sha_ctx, begin, sz);
+    SHA256_Final(shards.data() + i * SHA256_SIZE, &sha_ctx);
 
     // We call munmap early for each chunk so that the last munmap
     // gets cheaper. We assume that the .note.build-id section is
@@ -1851,7 +1848,9 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
 
   u8 digest[SHA256_SIZE];
-  SHA256(shards.data(), shards.size(), digest);
+  SHA256_Init(&sha_ctx);
+  SHA256_Update(&sha_ctx, shards.data(), shards.size());
+  SHA256_Final(digest, &sha_ctx);
   memcpy(buf + offset, digest, ctx.arg.build_id.size(ctx));
 
   if (ctx.output_file->is_mmapped) {
