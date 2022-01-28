@@ -24,15 +24,15 @@ RUN apt-get update && \
   rm -rf /var/lib/apt/lists/*
 EOF
 
-EXTRA_LDFLAGS='-fuse-ld=lld -static'
+LDFLAGS='-fuse-ld=lld -static'
 
 # libstdc++'s `std::__glibcxx_rwlock_rdlock` refers these symbols
 # as weak symbols, although they need to be defined. Otherwise,
 # the program crashes after juping to address 0.
 # So, we force loading symbols as a workaround.
-EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_rdlock"
-EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_unlock"
-EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
+LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_rdlock"
+LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_unlock"
+LDFLAGS="$LDFLAGS -Wl,-u,pthread_rwlock_wrlock"
 
 docker_args=(-v "`pwd`:/mold:Z" -u "$(id -u)":"$(id -g)")
 if docker --version | grep -q podman; then
@@ -41,5 +41,4 @@ fi
 
 docker run -it --rm "${docker_args[@]}" \
   mold-build-ubuntu20 \
-  make -C /mold -j"$(nproc)" CC=clang CXX=clang++ \
-    EXTRA_LDFLAGS="$EXTRA_LDFLAGS" "$@"
+  make -C /mold -j"$(nproc)" CC=clang CXX=clang++ LDFLAGS="$LDFLAGS" "$@"
