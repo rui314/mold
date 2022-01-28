@@ -273,11 +273,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL_PLT: {
       u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
       write_utype((u32 *)loc, val);
-      write_itype((u32 *)(loc + 4), val); // errata
+      write_itype((u32 *)(loc + 4), val);
       break;
     }
     case R_RISCV_GOT_HI20:
-      *(u32 *)loc = G + GOT + A - P; // errata
+      *(u32 *)loc = G + GOT + A - P;
       break;
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20:
@@ -383,14 +383,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     const ElfRel<E> &r = rels[i];
     u32 *loc = (u32 *)(base + r.r_offset);
 
-    switch (r.r_type) {
-    case R_RISCV_GOT_HI20:
-    case R_RISCV_PCREL_HI20: {
+    if (r.r_type == R_RISCV_GOT_HI20 || r.r_type == R_RISCV_PCREL_HI20) {
       u32 val = *loc;
       *loc = *(u32 *)&contents[r.r_offset];
       write_utype(loc, val);
-      break;
-    }
     }
   }
 }
