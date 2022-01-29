@@ -1087,7 +1087,7 @@ struct RISCV64 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
   static constexpr u32 word_size = 8;
-  static constexpr u32 page_size = 65536;
+  static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = false;
