@@ -954,18 +954,27 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : got_syms) {
     u64 addr = sym->get_got_addr(ctx);
+
+    // If the symbol may not be defined within our output, let the
+    // dynamic linker to resolve it.
     if (sym->is_imported) {
       *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx));
-    } else if (sym->get_type() == STT_GNU_IFUNC) {
-      u64 resolver_addr = sym->input_section->get_addr() + sym->value;
-      *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
-      if (E::is_rel)
-        buf[sym->get_got_idx(ctx)] = resolver_addr;
-    } else {
-      buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
-      if (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr)
-        *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
+      continue;
     }
+
+    // IFUNC always needs to be fixed up by the dynamic linker.
+    if (sym->get_type() == STT_GNU_IFUNC) {
+      u64 resolver_addr = sym->get_addr(ctx, false);
+      *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
+      buf[sym->get_got_idx(ctx)] = resolver_addr;
+      continue;
+    }
+
+    // If we know the address at address at link-time, fill that GOT entry
+    // now. It may need a base relocation, though.
+    buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
+    if (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr)
+      *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
   }
 
   for (Symbol<E> *sym : tlsgd_syms) {
@@ -981,18 +990,28 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
                         sym->get_dynsym_idx(ctx));
 
   for (Symbol<E> *sym : gottp_syms) {
+    // If we know nothing about the symbol, let the dynamic linker
+    // to fill the GOT entry.
     if (sym->is_imported) {
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
                         sym->get_dynsym_idx(ctx));
-    } else if (ctx.arg.shared) {
+      continue;
+    }
+
+    // If we know the offset within the current thread vector,
+    // let the dynamic linker to adjust it.
+    if (ctx.arg.shared) {
       *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF, 0,
                         sym->get_addr(ctx) - ctx.tls_begin);
-    } else if (E::e_machine == EM_386 || E::e_machine == EM_X86_64) {
-      buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_end;
-    } else {
-      assert(E::e_machine == EM_AARCH64);
-      buf[sym->get_gottp_idx(ctx)] = sym->get_addr(ctx) - ctx.tls_begin + 16;
+      continue;
     }
+
+    // Otherwise, we know the offset at link-time, so fill the GOT entry.
+    i64 idx = sym->get_gottp_idx(ctx);
+    if (E::tcb_size == -1)
+      buf[idx] = sym->get_addr(ctx) - ctx.tls_end;
+    else
+      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + E::tcb_size;
   }
 
   if (tlsld_idx != -1)
