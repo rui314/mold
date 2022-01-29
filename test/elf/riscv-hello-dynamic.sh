@@ -22,12 +22,12 @@ int main() {
 }
 EOF
 
-riscv64-linux-gnu-gcc-10 -B. -o $t/exe $t/a.o -static
+riscv64-linux-gnu-gcc-10 -B. -o $t/exe $t/a.o
 riscv64-linux-gnu-readelf -p .comment $t/exe | grep -qw mold
 riscv64-linux-gnu-readelf -a $t/exe >& $t/log
 
 grep -iqE 'Machine:.*RISC-?V' $t/log
-! grep -q 'Shared library:.*libc.so' $t/log || false
+grep -q 'Shared library:.*libc.so' $t/log
 
 qemu-riscv64 -L /usr/riscv64-linux-gnu $t/exe | grep -q 'Hello world'
 
