@@ -285,9 +285,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_PCREL_HI20:
       if (sym.esym().is_undef_weak()) {
-        // On RISC-V, calling an undefined weak symbol jumps to the same
-        // instruction, which effectively hangs up the running program.
-        // This should help debugging of a faulty program.
+        // Calling an undefined weak symbol doens't make sense.
+        // We make such call into an infinite loop. This should
+        // help debugging of a faulty program.
         *(u32 *)loc = P;
       } else {
         *(u32 *)loc = S + A - P;
