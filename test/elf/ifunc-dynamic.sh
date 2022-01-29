@@ -10,6 +10,9 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+# IFUNC is not supported on RISC-V yet
+[ "$(uname -m)" = riscv64 ] && { echo skipped; exit; }
+
 # Skip if libc is musl because musl does not support GNU FUNC
 echo 'int main() {}' | $CC -o $t/exe -xc -
 ldd $t/exe | grep -q ld-musl && { echo OK; exit; }

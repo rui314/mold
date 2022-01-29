@@ -10,6 +10,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ "$(uname -m)" = riscv64 ] && { echo skipped; exit; }
+
 echo 'int main() {}' | riscv64-linux-gnu-gcc-10 -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 

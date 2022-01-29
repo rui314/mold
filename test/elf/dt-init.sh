@@ -10,6 +10,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ "$(uname -m)" = riscv64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
 void keep();
 

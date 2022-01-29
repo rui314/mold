@@ -1093,7 +1093,7 @@ struct RISCV64 {
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tcb_size = 16;
+  static constexpr u32 tcb_size = 0;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
 };

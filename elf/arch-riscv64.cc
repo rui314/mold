@@ -280,8 +280,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(u32 *)loc = G + GOT + A - P;
       break;
     case R_RISCV_TLS_GOT_HI20:
+      *(u32 *)loc = sym.get_gottp_addr(ctx) + A - P;
+      break;
     case R_RISCV_TLS_GD_HI20:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
+      *(u32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
       break;
     case R_RISCV_PCREL_HI20:
       if (sym.esym().is_undef_weak()) {
@@ -379,14 +381,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   // instructions with full 32-bit values to allow their corresponding
   // PCREL_LO12 relocations to read their values. This loop restore
   // the original instructions.
-  for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &r = rels[i];
-    u32 *loc = (u32 *)(base + r.r_offset);
-
-    if (r.r_type == R_RISCV_GOT_HI20 || r.r_type == R_RISCV_PCREL_HI20) {
+  for (ElfRel<E> &r : rels) {
+    switch (r.r_type) {
+    case R_RISCV_GOT_HI20:
+    case R_RISCV_PCREL_HI20:
+    case R_RISCV_TLS_GOT_HI20:
+    case R_RISCV_TLS_GD_HI20: {
+      u32 *loc = (u32 *)(base + r.r_offset);
       u32 val = *loc;
       *loc = *(u32 *)&contents[r.r_offset];
       write_utype(loc, val);
+    }
     }
   }
 }
@@ -461,8 +466,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT;
       break;
     case R_RISCV_TLS_GOT_HI20:
+      ctx.has_gottp_rel = true;
+      sym.flags |= NEEDS_GOTTP;
+      break;
     case R_RISCV_TLS_GD_HI20:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
+      sym.flags |= NEEDS_TLSGD;
       break;
     case R_RISCV_PCREL_HI20:
     case R_RISCV_PCREL_LO12_I:
