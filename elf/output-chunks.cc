@@ -27,6 +27,23 @@ u64 get_entry_addr(Context<E> &ctx) {
 }
 
 template <typename E>
+u64 get_eflags(Context<E> &ctx) {
+  return 0;
+}
+
+template <>
+u64 get_eflags<RISCV64>(Context<RISCV64> &ctx) {
+  std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
+  std::erase(objs, ctx.internal_obj);
+
+  u32 ret = objs[0]->get_ehdr().e_flags;
+  for (ObjectFile<RISCV64> *file : std::span(objs).subspan(1))
+    if (file->get_ehdr().e_flags & EF_RISCV_RVC)
+      ret |= EF_RISCV_RVC;
+  return ret;
+}
+
+template <typename E>
 void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
@@ -41,6 +58,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_entry = get_entry_addr(ctx);
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
+  hdr.e_flags = get_eflags(ctx);
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
   hdr.e_phentsize = sizeof(ElfPhdr<E>);
   hdr.e_phnum = ctx.phdr->shdr.sh_size / sizeof(ElfPhdr<E>);

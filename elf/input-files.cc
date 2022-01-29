@@ -1381,11 +1381,10 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
-  ElfEhdr<E> *ehdr = (ElfEhdr<E> *)this->mf->data;
-  ElfPhdr<E> *phdr = (ElfPhdr<E> *)(this->mf->data + ehdr->e_phoff);
+  ElfPhdr<E> *phdr = this->get_phdr();
   u64 val = sym->esym().st_value;
 
-  for (i64 i = 0; i < ehdr->e_phnum; i++)
+  for (i64 i = 0; i < this->get_ehdr().e_phnum; i++)
     if (phdr[i].p_type == PT_LOAD && !(phdr[i].p_flags & PF_W) &&
         phdr[i].p_vaddr <= val && val < phdr[i].p_vaddr + phdr[i].p_memsz)
       return true;

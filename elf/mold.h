@@ -942,6 +942,9 @@ public:
   std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   std::string_view get_string(Context<E> &ctx, i64 idx);
 
+  ElfEhdr<E> &get_ehdr() { return *(ElfEhdr<E> *)mf->data; }
+  ElfPhdr<E> *get_phdr() { return (ElfPhdr<E> *)(mf->data + get_ehdr().e_phoff); }
+
   ElfShdr<E> *find_section(i64 type);
 
   virtual void resolve_symbols(Context<E> &ctx) = 0;
