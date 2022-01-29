@@ -330,7 +330,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
 
-  if (E::e_machine == EM_RISCV)
+  if (E::e_machine == EM_RISCV && !ctx.arg.shared)
     ctx.__global_pointer = add("__global_pointer$");
 
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -1027,7 +1027,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // RISC-V's __global_pointer$
-  if (E::e_machine == EM_RISCV) {
+  if (E::e_machine == EM_RISCV && !ctx.arg.shared) {
     ctx.__global_pointer->shndx = 1;
     ctx.__global_pointer->value = 0x800;
 
