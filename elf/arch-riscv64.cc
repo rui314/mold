@@ -181,10 +181,10 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
     *(u32 *)loc -= val;
     return;
   case R_RISCV_SUB6:
-    *loc = (*loc - val) & 0b11'1111;
+    *loc = (*loc & 0b1100'0000) | ((*loc - val) & 0b0011'1111);
     return;
   case R_RISCV_SET6:
-    *loc = (*loc + val) & 0b11'1111;
+    *loc = (*loc & 0b1100'0000) | (val & 0b0011'1111);
     return;
   case R_RISCV_SET8:
     *loc = val;
