@@ -36,6 +36,9 @@ u64 get_eflags<RISCV64>(Context<RISCV64> &ctx) {
   std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
   std::erase(objs, ctx.internal_obj);
 
+  if (objs.empty())
+    return 0;
+
   u32 ret = objs[0]->get_ehdr().e_flags;
   for (ObjectFile<RISCV64> *file : std::span(objs).subspan(1))
     if (file->get_ehdr().e_flags & EF_RISCV_RVC)
