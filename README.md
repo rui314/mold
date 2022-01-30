@@ -142,6 +142,7 @@ rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
 
 where `/path/to/mold` is an absolute path to `mold` exectuable.
+Please make sure you have installed `clang`.
 
 If you want to use mold for all projects, put the above snippet to
 `~/.cargo/config.toml`.
