@@ -93,7 +93,7 @@ struct SectionFragmentRef {
   i32 addend = 0;
 };
 
-// Additinal class members for dynamic symbols. Because most symbols
+// Additional class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
 // for large programs, we separate them from `Symbol` class to save
 // memory.
@@ -1700,7 +1700,7 @@ public:
   // If is_imported is false and is_exported is true, there are two
   // possible cases. If we are creating an executable, we know that
   // exported symbols cannot be interposed by any DSO (because the
-  // dynamic loader searches a dynamic symbol from an exectuable
+  // dynamic loader searches a dynamic symbol from an executable
   // before examining any DSOs), so any exported symbol is export-only.
   // If we are creating a DSO, export-only symbols represent a
   // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
