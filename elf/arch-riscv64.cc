@@ -142,7 +142,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + ctx.plt->shdr.sh_offset);
+  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
 
   static const u32 data[] = {
     0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
