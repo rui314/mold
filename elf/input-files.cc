@@ -232,22 +232,6 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
     fde.cie = &cies[fde.cie_idx];
 }
 
-template <typename E>
-static std::span<ElfRel<E>>
-sort_rels(Context<E> &ctx, std::span<ElfRel<E>> rels) {
-  auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
-           a.r_offset < b.r_offset;
-  };
-
-  if (std::is_sorted(rels.begin(), rels.end(), less))
-    return rels;
-
-  std::vector<ElfRel<E>> vec(rels.begin(), rels.end());
-  sort(vec, less);
-  return *ctx.rel_pool.push_back(std::move(vec));
-}
-
 // .eh_frame contains data records explaining how to handle exceptions.
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
@@ -279,7 +263,7 @@ sort_rels(Context<E> &ctx, std::span<ElfRel<E>> rels) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRel<E>> rels = sort_rels(ctx, isec.get_rels(ctx));
+  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
   i64 cies_begin = cies.size();
   i64 fdes_begin = fdes.size();
 
@@ -477,6 +461,35 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     this->symbols[i] = insert_symbol(ctx, esym, key, name);
     if (esym.is_common())
       has_common_symbol = true;
+  }
+}
+
+// Relocations are usually sorted by r_offset in relocation tables,
+// but for some reason only RISC-V does not follow that convention.
+// We expect them to be sorted, so sort them if necessary.
+template <typename E>
+void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
+  if (E::e_machine != EM_RISCV)
+    return;
+
+  auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+    return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
+           a.r_offset < b.r_offset;
+  };
+
+  sorted_rels.resize(sections.size());
+
+  for (i64 i = 1; i < sections.size(); i++) {
+    std::unique_ptr<InputSection<E>> &isec = sections[i];;
+    if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
+      continue;
+
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    if (std::is_sorted(rels.begin(), rels.end(), less))
+      continue;
+
+    sorted_rels[isec->section_idx] = {rels.begin(), rels.end()};
+    sort(sorted_rels[isec->section_idx], less);
   }
 }
 
@@ -726,6 +739,7 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 
   initialize_sections(ctx);
   initialize_symbols(ctx);
+  sort_relocations(ctx);
   initialize_mergeable_sections(ctx);
   initialize_ehframe_sections(ctx);
 }

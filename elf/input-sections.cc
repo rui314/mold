@@ -56,24 +56,6 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
 }
 
 template <typename E>
-void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
-  if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
-    return;
-
-  // Copy data
-  if (is_compressed())
-    uncompress(ctx, buf);
-  else
-    memcpy(buf, contents.data(), contents.size());
-
-  // Apply relocations
-  if (shdr().sh_flags & SHF_ALLOC)
-    apply_reloc_alloc(ctx, buf);
-  else
-    apply_reloc_nonalloc(ctx, buf);
-}
-
-template <typename E>
 bool InputSection<E>::is_compressed() {
   return name().starts_with(".zdebug") || (shdr().sh_flags & SHF_COMPRESSED);
 }
@@ -193,6 +175,32 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
   default:
     unreachable();
   }
+}
+
+template <typename E>
+void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
+  if (is_compressed())
+    uncompress(ctx, buf);
+  else
+    memcpy(buf, contents.data(), contents.size());
+}
+
+extern template
+void InputSection<RISCV64>::copy_contents(Context<RISCV64> &, u8 *);
+
+template <typename E>
+void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
+  if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
+    return;
+
+  // Copy data
+  copy_contents(ctx, buf);
+
+  // Apply relocations
+  if (shdr().sh_flags & SHF_ALLOC)
+    apply_reloc_alloc(ctx, buf);
+  else
+    apply_reloc_nonalloc(ctx, buf);
 }
 
 template <typename E>

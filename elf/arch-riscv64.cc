@@ -203,6 +203,7 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<i32> r_deltas = get_r_deltas();
 
   i64 frag_idx = 0;
 
@@ -212,11 +213,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE)
+    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = base + rel.r_offset;
+    i64 r_offset = rel.r_offset + r_deltas[i];
+    u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
@@ -224,7 +226,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (frag_ref ? frag_ref->addend : rel.r_addend)
-#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define P   (output_section->shdr.sh_addr + offset + r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
@@ -264,9 +266,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
-      write_utype((u32 *)loc, val);
-      write_itype((u32 *)(loc + 4), val);
+      if (r_deltas[i + 1] - r_deltas[i] != 0) {
+        // auipc + jalr -> jal
+        assert(r_deltas[i + 1] - r_deltas[i] == -4);
+        u32 jalr = *(u32 *)&contents[rels[i].r_offset + 4];
+        *(u32 *)loc = (0b11111'000000 & jalr) | 0b101111;
+        write_jtype((u32 *)loc, S + A - P);
+      } else {
+        u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
+        write_utype((u32 *)loc, val);
+        write_itype((u32 *)(loc + 4), val);
+      }
       break;
     }
     case R_RISCV_GOT_HI20:
@@ -290,7 +300,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_PCREL_LO12_I:
       assert(sym.input_section == this);
-      assert(sym.value < rel.r_offset);
+      assert(sym.value < r_offset);
       write_itype((u32 *)loc, *(u32 *)(base + sym.value));
       break;
     case R_RISCV_LO12_I:
@@ -299,7 +309,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_PCREL_LO12_S:
       assert(sym.input_section == this);
-      assert(sym.value < rel.r_offset);
+      assert(sym.value < r_offset);
       write_stype((u32 *)loc, *(u32 *)(base + sym.value));
       break;
     case R_RISCV_LO12_S:
@@ -374,15 +384,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   // instructions with full 32-bit values to allow their corresponding
   // PCREL_LO12 relocations to read their values. This loop restore
   // the original instructions.
-  for (ElfRel<E> &r : rels) {
-    switch (r.r_type) {
+  for (i64 i = 0; i < rels.size(); i++) {
+    switch (rels[i].r_type) {
     case R_RISCV_GOT_HI20:
     case R_RISCV_PCREL_HI20:
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20: {
-      u32 *loc = (u32 *)(base + r.r_offset);
+      u32 *loc = (u32 *)(base + rels[i].r_offset + r_deltas[i]);
       u32 val = *loc;
-      *loc = *(u32 *)&contents[r.r_offset];
+      *loc = *(u32 *)&contents[rels[i].r_offset];
       write_utype(loc, val);
     }
     }
@@ -465,6 +475,44 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 #undef S
 #undef A
   }
+}
+
+template <>
+void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
+  // A non-alloc section isn't relaxed, so just copy it as one big chunk.
+  if (!(shdr().sh_flags & SHF_ALLOC)) {
+    if (is_compressed())
+      uncompress(ctx, buf);
+    else
+      memcpy(buf, contents.data(), contents.size());
+    return;
+  }
+
+  // Memory-allocated sections may be relaxed, so copy each segment
+  // individually.
+  std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<i32> r_deltas = get_r_deltas();
+  i64 pos = 0;
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    i64 delta = r_deltas[i + 1] - r_deltas[i];
+    if (delta == 0)
+      continue;
+
+    const ElfRel<E> &r = rels[i];
+    memcpy(buf, contents.data() + pos, r.r_offset - pos);
+    buf += r.r_offset - pos;
+    pos = r.r_offset;
+
+    if (delta < 0) {
+      pos -= delta;
+    } else {
+      memset(buf, 0, delta);
+      buf += delta;
+    }
+  }
+
+  memcpy(buf, contents.data() + pos, contents.size() - pos);
 }
 
 template <>
@@ -588,6 +636,208 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+}
+
+static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
+  return isec && (isec->shdr().sh_flags & SHF_ALLOC);
+}
+
+// Initializes r_deltas and sorted_symbols.
+static void initialize_storage(Context<E> &ctx) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->r_deltas.resize(file->sections.size());
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(ctx, isec.get()))
+        isec->get_r_deltas().resize(isec->get_rels(ctx).size() + 1);
+
+    file->sorted_symbols.resize(file->sections.size());
+
+    for (Symbol<E> *sym : file->symbols)
+      if (sym->file == file)
+        if (InputSection<E> *isec = sym->input_section)
+          file->sorted_symbols[isec->section_idx].push_back(sym);
+
+    for (std::vector<Symbol<E> *> &vec : file->sorted_symbols)
+      sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
+  });
+}
+
+// Interpret R_RISCV_ALIGN relocations and align them if necessary.
+// This function may enlarge input sections but never shrinks.
+static void align_contents(Context<E> &ctx, InputSection<E> &isec) {
+  std::span<i32> r_deltas = isec.get_r_deltas();
+  std::span<Symbol<E> *> syms = isec.get_sorted_symbols();
+  i64 delta = 0;
+
+  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &r = rels[i];
+    r_deltas[i] = delta;
+
+    if (r.r_type != R_RISCV_ALIGN)
+      continue;
+
+    i64 delta2 = align_to(r.r_offset, r.r_addend) - r.r_offset;
+    if (delta2 == 0)
+      continue;
+
+    while (!syms.empty() && syms[0]->value <= r.r_offset) {
+      syms[0]->value += delta;
+      syms = syms.subspan(1);
+    }
+
+    delta += delta2;
+  }
+
+  for (Symbol<E> *sym : syms)
+    sym->value += delta;
+  r_deltas[rels.size()] = delta;
+
+  isec.sh_size += delta;
+}
+
+// Returns the distance between a relocated place and a symbol.
+static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
+                            InputSection<E> &isec, const ElfRel<E> &rel) {
+  // We handle absolute symbols as if they were infinitely far away
+  // because `relax_call` may increase a distance between a branch
+  // instruction and an absolute symbol. Branching to an absolute
+  // location is extremely rare in real code, though.
+  if (sym.is_absolute())
+    return 0xffffffff;
+
+  // Likewise, relocations against weak undefined symbols won't be relaxed.
+  if (sym.esym().is_undef_weak())
+    return 0xffffffff;
+
+  // Compute a distance between the relocated place and the symbol.
+  i64 S = sym.get_addr(ctx);
+  i64 A = rel.r_addend;
+  i64 P = isec.get_addr() + rel.r_offset;
+  return S + A - P;
+}
+
+// Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
+static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
+  std::span<i32> r_deltas = isec.get_r_deltas();
+  std::span<Symbol<E> *> syms = isec.get_sorted_symbols();
+  i64 delta = 0;
+
+  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &r = rels[i];
+    i64 delta2 = 0;
+
+    r_deltas[i] += delta;
+
+    switch (r.r_type) {
+    case R_RISCV_ALIGN:
+      delta2 = align_to(r.r_offset, r.r_addend) - r.r_offset;
+      break;
+    case R_RISCV_CALL:
+    case R_RISCV_CALL_PLT: {
+      if (i == rels.size() - 1 || rels[i + 1].r_type != R_RISCV_RELAX)
+        break;
+
+      // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
+      // with JAL, saving 4 bytes.
+      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+      i64 dist = compute_distance(ctx, sym, isec, r);
+      if (dist % 2 == 0 && -(1 << 20) <= dist && dist < (1 << 20))
+        delta2 = -4;
+    }
+    }
+
+    if (delta2 == 0)
+      continue;
+
+    while (!syms.empty() && syms[0]->value <= r.r_offset) {
+      syms[0]->value += delta;
+      syms = syms.subspan(1);
+    }
+
+    delta += delta2;
+  }
+
+  for (Symbol<E> *sym : syms)
+    sym->value += delta;
+  r_deltas[rels.size()] += delta;
+
+  isec.sh_size += delta;
+}
+
+// RISC-V instructions are 16 or 32 bits long, so immediates encoded
+// in instructions can't be 32 bits long. Therefore, branch and load
+// instructions cann't refer 4 GiB address space unlike x86-64. In
+// fact, JAL (jump and return) instruction can jump to only within ±1
+// MiB as they have an 21 bits immediate.
+//
+// If you want to jump to somewhere further than that, you need to
+// construct a full 32-bit offset using multiple instruction and
+// branch to that place (e.g. AUIPC and JALR instead of JAL).
+//
+// In this comment, we refer instructions such as JAL as the short
+// encoding and ones such as AUIPC+JALR as the long encoding.
+//
+// By default, compiler always uses the long encoding so that branch
+// targets are always representable. This is a safe bet for them but
+// may result in inefficient code. Therefore, the RISC-V psABI defines
+// a mechanism for the linker to replace long encoding instructions
+// with short ones, shrinking the section and increasing the code
+// density.
+//
+// This is contrary to the psABIs for other RISC processors such as
+// ARM64. Typically, they use short instructions by default, and a
+// linker creates so-called "thunks" to extend ranges of short jumps.
+// On RISC-V, instructions are in the long encoding by default, and
+// the linker shrinks them if they can.
+//
+// When we shrink a section, we need to adjust relocation offsets and
+// symbol values. For example, if we replace AUIPC+JALR with JAL
+// (which saves 4 bytes), all relocations pointing to anywhere after
+// that location need to be shifted by 4. In addition to that, any
+// symbol that refers anywhere after that locatioin need to be shifted
+// by 4 bytes as well.
+//
+// For relocations, we use `r_deltas` array to memorize how many bytes
+// have be adjusted. For symbols, we directly mutate their `value`
+// member.
+//
+// This operation seems to be optional, as by default instructions are
+// using the long encoding, but calling this function is actually
+// mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN relocation is a
+// directive to the linker to align the location referred to by the
+// relocation to a specified byte boundary. We at least have to
+// interpret them satisfy the constraints imposed by R_RISCV_ALIGN,
+// and that means we may change section sizes anyway.
+i64 riscv_resize_sections(Context<E> &ctx) {
+  initialize_storage(ctx);
+
+  // First, interpret R_RISCV_ALIGN relocations. This may enlarge
+  // sections.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(ctx, isec.get()))
+        align_contents(ctx, *isec);
+  });
+
+  // Re-compute section offset.
+  compute_section_sizes(ctx);
+  set_osec_offsets(ctx);
+
+  // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
+  // This step should only shrink sections.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(ctx, isec.get()))
+        relax_call(ctx, *isec);
+  });
+
+  // Re-compute section offset again to finalize them.
+  compute_section_sizes(ctx);
+  return set_osec_offsets(ctx);
 }
 
 } // namespace mold::elf

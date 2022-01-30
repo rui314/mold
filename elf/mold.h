@@ -278,7 +278,13 @@ public:
   const ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
+
+  // For ARM64 range extension thunks
   std::vector<RangeExtensionRef> &get_range_extn() const;
+
+  // For RISC-V section resizing
+  std::vector<i32> &get_r_deltas() const;
+  std::vector<Symbol<E> *> &get_sorted_symbols() const;
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
@@ -321,6 +327,7 @@ private:
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                 const ElfRel<E> &rel, Symbol<E> &sym);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
+  void copy_contents(Context<E> &ctx, u8 *buf);
 
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
@@ -1010,8 +1017,13 @@ public:
   u64 fde_offset = 0;
   u64 fde_size = 0;
 
-  // For range extension thunks
+  // For ARM64 range extension thunks
   std::vector<std::vector<RangeExtensionRef>> range_extn;
+
+  // For RISC-V section resizing
+  std::vector<std::vector<i32>> r_deltas;
+  std::vector<std::vector<ElfRel<E>>> sorted_rels;
+  std::vector<std::vector<Symbol<E> *>> sorted_symbols;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
@@ -1019,6 +1031,7 @@ private:
 
   void initialize_sections(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
+  void sort_relocations(Context<E> &ctx);
   void initialize_mergeable_sections(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
   u32 read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr);
@@ -1238,6 +1251,12 @@ template <typename E> void compress_debug_sections(Context<E> &);
 
 i64 create_range_extension_thunks(Context<ARM64> &ctx);
 void write_thunks(Context<ARM64> &ctx);
+
+//
+// arch-riscv64.cc
+//
+
+i64 riscv_resize_sections(Context<RISCV64> &ctx);
 
 //
 // output-file.cc
@@ -1803,6 +1822,8 @@ template <typename E>
 inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
+  if (!file.sorted_rels.empty() && !file.sorted_rels[section_idx].empty())
+    return file.sorted_rels[section_idx];
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
 }
 
@@ -1817,6 +1838,16 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
 template <typename E>
 inline std::vector<RangeExtensionRef> &InputSection<E>::get_range_extn() const {
   return file.range_extn[section_idx];
+}
+
+template <typename E>
+inline std::vector<i32> &InputSection<E>::get_r_deltas() const {
+  return file.r_deltas[section_idx];
+}
+
+template <typename E>
+inline std::vector<Symbol<E> *> &InputSection<E>::get_sorted_symbols() const {
+  return file.sorted_symbols[section_idx];
 }
 
 template <typename E>

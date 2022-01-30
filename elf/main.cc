@@ -632,6 +632,13 @@ static int elf_main(int argc, char **argv) {
   if constexpr (E::e_machine == EM_AARCH64)
     filesize = create_range_extension_thunks(ctx);
 
+  // On RISC-V, branches are encode using multiple instructions so
+  // that they can jump to anywhere in ±2 GiB by default. They may
+  // be replaced with shorter instruction sequences if destinations
+  // are close enough. Do this optimization.
+  if constexpr (E::e_machine == EM_RISCV)
+    filesize = riscv_resize_sections(ctx);
+
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(ctx);
 
