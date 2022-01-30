@@ -117,6 +117,7 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<RangeExtensionRef> range_extn = get_range_extn();
 
   i64 frag_idx = 0;
 
@@ -564,7 +565,8 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-      isec->range_extn.resize(rels.size());
+      std::vector<RangeExtensionRef> &range_extn = isec->get_range_extn();
+      range_extn.resize(rels.size());
 
       for (i64 i = 0; i < rels.size(); i++) {
         const ElfRel<E> &rel = rels[i];
@@ -579,12 +581,12 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
         // If the symbol is already in another thunk, reuse it.
         if (sym.thunk_idx != -1) {
-          isec->range_extn[i] = {sym.thunk_idx, sym.thunk_sym_idx};
+          range_extn[i] = {sym.thunk_idx, sym.thunk_sym_idx};
           continue;
         }
 
         // Otherwise, add the symbol to this thunk if it's not added already.
-        isec->range_extn[i] = {thunk.thunk_idx, -1};
+        range_extn[i] = {thunk.thunk_idx, -1};
 
         if (!(sym.flags.fetch_or(NEEDS_THUNK) & NEEDS_THUNK)) {
           std::scoped_lock lock(thunk.mu);
@@ -610,13 +612,12 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+      std::span<RangeExtensionRef> range_extn = isec->get_range_extn();
 
       for (i64 i = 0; i < rels.size(); i++) {
-        RangeExtensionRef &ref = isec->range_extn[i];
-
-        if (ref.thunk_idx == thunk.thunk_idx) {
+        if (range_extn[i].thunk_idx == thunk.thunk_idx) {
           Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
-          ref.sym_idx = sym.thunk_sym_idx;
+          range_extn[i].sym_idx = sym.thunk_sym_idx;
         }
       }
     });
@@ -641,9 +642,10 @@ static void mark_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
   // Mark referenced thunk symbols
   tbb::parallel_for_each(osec.members, [&](InputSection<E> *isec) {
     std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    std::span<RangeExtensionRef> range_extn = isec->get_range_extn();
 
     for (i64 i = 0; i < rels.size(); i++) {
-      RangeExtensionRef &ref = isec->range_extn[i];
+      RangeExtensionRef &ref = range_extn[i];
       if (ref.thunk_idx == -1)
         continue;
 
@@ -710,6 +712,9 @@ static void shrink_section(Context<E> &ctx, OutputSection<E> &osec) {
 // jump there. That linker-synthesized code is called "thunk".
 i64 create_range_extension_thunks(Context<E> &ctx) {
   Timer t(ctx, "create_range_extension_thunks");
+
+  for (ObjectFile<E> *file : ctx.objs)
+    file->range_extn.resize(file->sections.size());
 
   // First, we create thunks with a pessimistic assumption that all
   // out-of-section relocations would need thunks. To do so, we start

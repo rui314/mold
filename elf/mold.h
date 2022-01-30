@@ -276,6 +276,7 @@ public:
   i64 get_addend(const ElfRel<E> &rel) const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
+  std::vector<RangeExtensionRef> &get_range_extn() const;
 
   ObjectFile<E> &file;
   const ElfShdr<E> &shdr;
@@ -310,9 +311,6 @@ public:
   bool icf_leaf = false;
 
   bool is_ehframe = false;
-
-  // For range extension thunks
-  std::vector<RangeExtensionRef> range_extn;
 
 private:
   typedef enum : u8 { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
@@ -1022,6 +1020,9 @@ public:
   u64 fde_idx = 0;
   u64 fde_offset = 0;
   u64 fde_size = 0;
+
+  // For range extension thunks
+  std::vector<std::vector<RangeExtensionRef>> range_extn;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
@@ -1816,6 +1817,11 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
     return {};
   std::span<FdeRecord<E>> span(file.fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
+}
+
+template <typename E>
+inline std::vector<RangeExtensionRef> &InputSection<E>::get_range_extn() const {
+  return file.range_extn[section_idx];
 }
 
 template <typename E>
