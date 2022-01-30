@@ -397,7 +397,82 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {}
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+  std::span<ElfRel<E>> rels = get_rels(ctx);
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &rel = rels[i];
+    if (rel.r_type == R_RISCV_NONE)
+      continue;
+
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = base + rel.r_offset;
+
+    if (!sym.file) {
+      report_undef(ctx, sym);
+      continue;
+    }
+
+    SectionFragment<E> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
+
+#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A (frag ? addend : rel.r_addend)
+
+    switch (rel.r_type) {
+    case R_RISCV_32:
+      *(u32 *)loc = S + A;
+      break;
+    case R_RISCV_64:
+      *(u64 *)loc = S + A;
+      break;
+    case R_RISCV_ADD8:
+      *loc += S + A;
+      break;
+    case R_RISCV_ADD16:
+      *(u16 *)loc += S + A;
+      break;
+    case R_RISCV_ADD32:
+      *(u32 *)loc += S + A;
+      break;
+    case R_RISCV_ADD64:
+      *(u64 *)loc += S + A;
+      break;
+    case R_RISCV_SUB8:
+      *loc -= S + A;
+      break;
+    case R_RISCV_SUB16:
+      *(u16 *)loc -= S + A;
+      break;
+    case R_RISCV_SUB32:
+      *(u32 *)loc -= S + A;
+      break;
+    case R_RISCV_SUB64:
+      *(u64 *)loc -= S + A;
+      break;
+    case R_RISCV_SUB6:
+      *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
+      break;
+    case R_RISCV_SET6:
+      *loc = (*loc & 0b1100'0000) | ((S + A) & 0b0011'1111);
+      break;
+    case R_RISCV_SET8:
+      *loc = S + A;
+      break;
+    case R_RISCV_SET16:
+      *(u16 *)loc = S + A;
+      break;
+    default:
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel;
+      break;
+    }
+
+#undef S
+#undef A
+  }
+}
 
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
