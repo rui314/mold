@@ -19,7 +19,7 @@ RUN apt-get update && \
   TZ=Europe/London apt-get install -y tzdata && \
   apt-get install -y --no-install-recommends build-essential clang lld \
     bsdmainutils file gcc-multilib git pkg-config \
-    cmake libstdc++-10-dev zlib1g-dev libssl-dev && \
+    cmake libstdc++-10-dev zlib1g-dev libssl-dev libc++-dev && \
   apt clean && \
   rm -rf /var/lib/apt/lists/*
 EOF
