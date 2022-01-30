@@ -250,11 +250,6 @@ static std::string get_self_path() {
   return std::filesystem::read_symlink("/proc/self/exe");
 }
 
-static bool is_regular_file(const std::string &path) {
-  struct stat st;
-  return !stat(path.c_str(), &st) && (st.st_mode & S_IFMT) == S_IFREG;
-}
-
 template <typename E>
 std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   // Look for mold-wrapper.so from the same directory as the executable is.

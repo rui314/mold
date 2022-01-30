@@ -222,13 +222,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       frag_ref = &rel_fragments[frag_idx++];
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (frag_ref ? frag_ref->addend : rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
