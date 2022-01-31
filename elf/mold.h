@@ -1112,6 +1112,8 @@ class GlobPattern {
     Kind kind;
     std::string str;
     std::vector<bool> bitmap;
+
+    Element(Kind k) : kind(k), str(std::string()), bitmap({}) {}
   };
 
 public:
