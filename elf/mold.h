@@ -93,7 +93,7 @@ struct SectionFragmentRef {
   i32 addend = 0;
 };
 
-// Additinal class members for dynamic symbols. Because most symbols
+// Additional class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
 // for large programs, we separate them from `Symbol` class to save
 // memory.
@@ -931,6 +931,8 @@ public:
   InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
   InputFile() : filename("<internal>") {}
 
+  virtual ~InputFile() = default;
+
   template<typename T> std::span<T>
   get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
 
@@ -975,6 +977,8 @@ template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
   ObjectFile();
+
+  ~ObjectFile() = default;
 
   static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                std::string archive_name, bool is_in_lib);
@@ -1054,6 +1058,8 @@ template <typename E>
 class SharedFile : public InputFile<E> {
 public:
   static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
+
+  ~SharedFile() = default;
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1700,7 +1706,7 @@ public:
   // If is_imported is false and is_exported is true, there are two
   // possible cases. If we are creating an executable, we know that
   // exported symbols cannot be interposed by any DSO (because the
-  // dynamic loader searches a dynamic symbol from an exectuable
+  // dynamic loader searches a dynamic symbol from an executable
   // before examining any DSOs), so any exported symbol is export-only.
   // If we are creating a DSO, export-only symbols represent a
   // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
