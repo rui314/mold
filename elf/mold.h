@@ -1109,11 +1109,10 @@ class GlobPattern {
   typedef enum { STRING, STAR, QUESTION, BRACKET } Kind;
 
   struct Element {
+    Element(Kind k) : kind(k) {}
     Kind kind;
     std::string str;
     std::vector<bool> bitmap;
-
-    Element(Kind k) : kind(k), str(std::string()), bitmap({}) {}
   };
 
 public:

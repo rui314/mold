@@ -107,10 +107,9 @@ struct SplitRegion {
 
 template <typename E>
 struct SplitInfo {
-  InputSection<E> *isec = nullptr;
+  SplitInfo(InputSection<E> *isec) : isec(isec) {}
+  InputSection<E> *isec;
   std::vector<SplitRegion> regions;
-
-  SplitInfo(InputSection<E> *i) : isec(i), regions({}) {}
 };
 
 template <typename E>
