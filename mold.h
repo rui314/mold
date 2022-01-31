@@ -161,12 +161,12 @@ private:
 inline u64 align_to(u64 val, u64 align) {
   if (align == 0)
     return val;
-  assert(std::has_single_bit(align));
+  assert(std::popcount(align) == 1);
   return (val + align - 1) & ~(align - 1);
 }
 
 inline u64 align_down(u64 val, u64 align) {
-  assert(std::has_single_bit(align));
+  assert(std::popcount(align) == 1);
   return val & ~(align - 1);
 }
 
@@ -309,7 +309,7 @@ public:
     if (!keys)
       return {nullptr, false};
 
-    assert(std::has_single_bit<u64>(nbuckets));
+    assert(std::popcount<u64>(nbuckets) == 1);
     i64 idx = hash & (nbuckets - 1);
     i64 retry = 0;
 
