@@ -170,6 +170,13 @@ inline u64 align_down(u64 val, u64 align) {
   return val & ~(align - 1);
 }
 
+inline u64 next_power_of_two(u64 val) {
+  assert(val >> 63 == 0);
+  if (val == 0 || val == 1)
+    return 1;
+  return (u64)1 << (64 - std::countl_zero(val - 1));
+}
+
 template <typename T, typename Compare = std::less<T>>
 void update_minimum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   T old_val = atomic;
@@ -297,7 +304,7 @@ public:
   void resize(i64 nbuckets) {
     this->~ConcurrentMap();
 
-    nbuckets = std::max<i64>(MIN_NBUCKETS, std::bit_ceil<u64>(nbuckets));
+    nbuckets = std::max<i64>(MIN_NBUCKETS, next_power_of_two(nbuckets));
 
     this->nbuckets = nbuckets;
     keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(keys[0]));

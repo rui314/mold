@@ -1282,7 +1282,7 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
   if (num_exported) {
     // We allocate 12 bits for each symbol in the bloom filter.
     i64 num_bits = num_exported * 12;
-    num_bloom = std::bit_ceil<u64>(num_bits / ELFCLASS_BITS);
+    num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
   }
 
   this->shdr.sh_size = HEADER_SIZE;               // Header
