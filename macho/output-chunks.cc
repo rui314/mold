@@ -1,8 +1,8 @@
 #include "mold.h"
-#include "../sha.h"
 
 #include <shared_mutex>
 #include <sys/mman.h>
+#include <sodium.h>
 
 namespace mold::macho {
 
@@ -967,7 +967,7 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
   i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   this->hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
                    sizeof(CodeSignatureDirectory) + filename_size +
-                   num_blocks * SHA256_SIZE;
+                   num_blocks * crypto_hash_sha256_BYTES;
 }
 
 template <typename E>
@@ -995,14 +995,14 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   buf += sizeof(dir);
 
   dir.magic = CSMAGIC_CODEDIRECTORY;
-  dir.length = sizeof(dir) + filename_size + num_blocks * SHA256_SIZE;
+  dir.length = sizeof(dir) + filename_size + num_blocks * crypto_hash_sha256_BYTES;
   dir.version = CS_SUPPORTSEXECSEG;
   dir.flags = CS_ADHOC | CS_LINKER_SIGNED;
   dir.hash_offset = sizeof(dir) + filename_size;
   dir.ident_offset = sizeof(dir);
   dir.n_code_slots = num_blocks;
   dir.code_limit = this->hdr.offset;
-  dir.hash_size = SHA256_SIZE;
+  dir.hash_size = crypto_hash_sha256_BYTES;
   dir.hash_type = CS_HASHTYPE_SHA256;
   dir.page_size = std::countr_zero<u64>(BLOCK_SIZE);
   dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
@@ -1017,7 +1017,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     u8 *start = ctx.buf + i * BLOCK_SIZE;
     u8 *end = ctx.buf + std::min<i64>((i + 1) * BLOCK_SIZE, this->hdr.offset);
     SHA256(start, end - start, buf);
-    buf += SHA256_SIZE;
+    buf += crypto_hash_sha256_BYTES;
   }
 
   // A hack borrowed from lld.

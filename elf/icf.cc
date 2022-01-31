@@ -53,7 +53,6 @@
 // thread and even better with multiple threads.
 
 #include "mold.h"
-#include "../sha.h"
 
 #include <array>
 #include <tbb/concurrent_unordered_map.h>
@@ -62,6 +61,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+#include <sodium.h>
 
 static constexpr int64_t HASH_SIZE = 16;
 
@@ -117,9 +117,9 @@ static bool is_eligible(InputSection<E> &isec) {
          !is_empty && !is_init && !is_fini && !is_enumerable;
 }
 
-static Digest digest_final(SHA256_CTX &sha) {
-  u8 buf[SHA256_SIZE];
-  int res = SHA256_Final(buf, &sha);
+static Digest digest_final(crypto_hash_sha256_state &state) {
+  u8 buf[crypto_hash_sha256_BYTES];
+  int res = crypto_hash_sha256_final(&state, buf);
   assert(res == 1);
 
   Digest digest;
@@ -221,16 +221,16 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
 template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
-  SHA256_CTX sha;
-  SHA256_Init(&sha);
+  crypto_hash_sha256_state state;
+  crypto_hash_sha256_init(&state);
 
   auto hash = [&](auto val) {
-    SHA256_Update(&sha, &val, sizeof(val));
+    crypto_hash_sha256_update(&state, &val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
     hash(str.size());
-    SHA256_Update(&sha, str.data(), str.size());
+    crypto_hash_sha256_update(&state, str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol<E> &sym) {
@@ -296,7 +296,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
-  return digest_final(sha);
+  return digest_final(state);
 }
 
 template <typename E>
@@ -411,17 +411,17 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (digests[slot][i] == digests[!slot][i])
       return;
 
-    SHA256_CTX sha;
-    SHA256_Init(&sha);
-    SHA256_Update(&sha, digests[2][i].data(), HASH_SIZE);
+    crypto_hash_sha256_state state;
+    crypto_hash_sha256_init(&state);
+    crypto_hash_sha256_update(&state, digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j : edges.subspan(begin, end - begin))
-      SHA256_Update(&sha, digests[slot][j].data(), HASH_SIZE);
+      crypto_hash_sha256_update(&state, digests[slot][j].data(), HASH_SIZE);
 
-    digests[!slot][i] = digest_final(sha);
+    digests[!slot][i] = digest_final(state);
 
     if (digests[slot][i] != digests[!slot][i])
       changed.local()++;

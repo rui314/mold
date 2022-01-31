@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <signal.h>
+#include <sodium.h>
 
 namespace mold {
 
@@ -34,6 +35,7 @@ void install_signal_handler() {
 } // namespace mold
 
 int main(int argc, char **argv) {
+  sodium_init();
   std::string cmd = mold::filepath(argv[0]).filename();
 
   if (cmd == "ld64" || cmd == "ld64.mold")

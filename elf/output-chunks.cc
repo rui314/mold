@@ -1,10 +1,10 @@
 #include "mold.h"
-#include "../sha.h"
 
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+#include <sodium.h>
 
 namespace mold::elf {
 
@@ -1866,12 +1866,12 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
 
   i64 shard_size = 4096 * 1024;
   i64 num_shards = bufsize / shard_size + 1;
-  std::vector<u8> shards(num_shards * SHA256_SIZE);
+  std::vector<u8> shards(num_shards * crypto_hash_sha256_BYTES);
 
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
     i64 sz = (i < num_shards - 1) ? shard_size : (bufsize % shard_size);
-    SHA256(begin, sz, shards.data() + i * SHA256_SIZE);
+    SHA256(begin, sz, shards.data() + i * crypto_hash_sha256_BYTES);
 
     // We call munmap early for each chunk so that the last munmap
     // gets cheaper. We assume that the .note.build-id section is
@@ -1881,9 +1881,9 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
       munmap(begin, sz);
   });
 
-  assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
+  assert(ctx.arg.build_id.size(ctx) <= crypto_hash_sha256_BYTES);
 
-  u8 digest[SHA256_SIZE];
+  u8 digest[crypto_hash_sha256_BYTES];
   SHA256(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size(ctx));
 

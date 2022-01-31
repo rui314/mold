@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "../sha.h"
 
 #include <filesystem>
 #include <signal.h>
@@ -11,6 +10,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sodium.h>
 
 #define DAEMON_TIMEOUT 30
 
@@ -85,20 +85,20 @@ static std::string base64(u8 *data, u64 size) {
 }
 
 static std::string compute_sha256(std::span<std::string_view> argv) {
-  SHA256_CTX sha;
-  SHA256_Init(&sha);
+  crypto_hash_sha256_state state;
+  crypto_hash_sha256_init(&state);
 
   for (std::string_view arg : argv) {
     if (arg != "-preload" && arg != "--preload") {
-      SHA256_Update(&sha, arg.data(), arg.size());
+      crypto_hash_sha256_update(&state, arg.data(), arg.size());
       char buf[] = {0};
-      SHA256_Update(&sha, buf, 1);
+      crypto_hash_sha256_update(&state, buf, 1);
     }
   }
 
-  u8 digest[SHA256_SIZE];
-  SHA256_Final(digest, &sha);
-  return base64(digest, SHA256_SIZE);
+  u8 digest[crypto_hash_sha256_BYTES];
+  crypto_hash_sha256_final(&state, digest);
+  return base64(digest, crypto_hash_sha256_BYTES);
 }
 
 template <typename E>

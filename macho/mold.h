@@ -14,7 +14,7 @@
 namespace mold::macho {
 
 static constexpr i64 COMMON_PAGE_SIZE = 0x4000;
-static constexpr i64 SHA256_SIZE = 32;
+static constexpr i64 crypto_hash_sha256_BYTES = 32;
 
 template <typename E> class Chunk;
 template <typename E> class InputSection;

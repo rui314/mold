@@ -43,7 +43,7 @@ public:
 
 namespace mold::elf {
 
-static constexpr i32 SHA256_SIZE = 32;
+static constexpr i32 crypto_hash_sha256_BYTES = 32;
 
 template <typename E> class InputFile;
 template <typename E> class InputSection;
