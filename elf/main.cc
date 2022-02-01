@@ -524,6 +524,10 @@ static int elf_main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
+  // Handle -repro
+  if (ctx.arg.repro)
+    write_repro_file(ctx);
+
   // Make sure that all symbols have been resolved.
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);

@@ -73,9 +73,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.versym = std::make_unique<VersymSection<E>>());
   add(ctx.verneed = std::make_unique<VerneedSection<E>>());
   add(ctx.note_property = std::make_unique<NotePropertySection<E>>());
-
-  if (ctx.arg.repro)
-    add(ctx.repro = std::make_unique<ReproSection<E>>());
 }
 
 template <typename E>
@@ -392,6 +389,51 @@ void check_cet_errors(Context<E> &ctx) {
       else
         Error(ctx) << *file << ": -cet-report=error: "
                    << "missing GNU_PROPERTY_X86_FEATURE_1_SHSTK";
+    }
+  }
+}
+
+template <typename E>
+static std::string create_response_file(Context<E> &ctx) {
+  std::string buf;
+  std::stringstream out;
+
+  std::string cwd = std::filesystem::current_path();
+  out << "-C " << cwd.substr(1) << "\n";
+
+  if (cwd != "/") {
+    out << "--chroot ..";
+    i64 depth = std::count(cwd.begin(), cwd.end(), '/');
+    for (i64 i = 1; i < depth; i++)
+      out << "/..";
+    out << "\n";
+  }
+
+  for (std::string_view arg : std::span(ctx.cmdline_args).subspan(1))
+    if (arg != "-repro" && arg != "--repro")
+      out << arg << "\n";
+
+  return out.str();
+}
+
+template <typename E>
+void write_repro_file(Context<E> &ctx) {
+  std::string path = ctx.arg.output + ".repro.tar";
+
+  std::unique_ptr<TarWriter> tar =
+    TarWriter::open(path, filepath(ctx.arg.output).filename().string() + ".repro");
+  if (!tar)
+    Fatal(ctx) << "cannot open " << path << ": " << errno_string();
+
+  tar->append("response.txt", save_string(ctx, create_response_file(ctx)));
+  tar->append("version.txt", save_string(ctx, mold_version + "\n"));
+
+  std::unordered_set<std::string> seen;
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
+    if (!mf->parent) {
+      std::string path = to_abs_path(mf->name);
+      if (seen.insert(path).second)
+        tar->append(path, mf->get_contents());
     }
   }
 }
@@ -1113,6 +1155,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void bin_sections(Context<E> &);                             \
   template ObjectFile<E> *create_internal_file(Context<E> &);           \
   template void check_cet_errors(Context<E> &);                         \
+  template void write_repro_file(Context<E> &);                         \
   template void check_duplicate_symbols(Context<E> &);                  \
   template void sort_init_fini(Context<E> &);                           \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \

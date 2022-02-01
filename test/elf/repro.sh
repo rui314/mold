@@ -19,23 +19,22 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o
-! readelf --sections $t/exe | fgrep -q .repro || false
+rm -rf $t/exe.repro $t/exe.repro.tar
 
+$CC -B. -o $t/exe $t/a.o
+! [ -f $t/exe.repro.tar ] || false
 
 $CC -B. -o $t/exe $t/a.o -Wl,-repro
-objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
 
-tar -C $t -xzf $t/repro.tar.gz
-fgrep -q /a.o  $t/repro/response.txt
-fgrep -q mold $t/repro/version.txt
+tar -C $t -xf $t/exe.repro.tar
+fgrep -q /a.o  $t/exe.repro/response.txt
+fgrep -q mold $t/exe.repro/version.txt
 
+rm -rf $t/exe.repro $t/exe.repro.tar
 
 MOLD_REPRO=1 $CC -B. -o $t/exe $t/a.o
-objcopy --dump-section .repro=$t/repro.tar.gz $t/exe
-
-tar -C $t -xzf $t/repro.tar.gz
-fgrep -q /a.o  $t/repro/response.txt
-fgrep -q mold $t/repro/version.txt
+tar -C $t -xf $t/exe.repro.tar
+fgrep -q /a.o  $t/exe.repro/response.txt
+fgrep -q mold $t/exe.repro/version.txt
 
 echo OK

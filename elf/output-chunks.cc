@@ -2022,33 +2022,6 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   contents->write_to(base + 12);
 }
 
-template <typename E>
-void ReproSection<E>::update_shdr(Context<E> &ctx) {
-  if (contents)
-    return;
-  TarFile tar("repro");
-
-  tar.append("response.txt", save_string(ctx, create_response_file(ctx)));
-  tar.append("version.txt", save_string(ctx, mold_version + "\n"));
-
-  std::unordered_set<std::string> seen;
-  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
-    std::string path = to_abs_path(mf->name);
-    if (seen.insert(path).second)
-      tar.append(path, mf->get_contents());
-  }
-
-  std::vector<u8> buf(tar.size());
-  tar.write_to(&buf[0]);
-  contents.reset(new GzipCompressor({(char *)&buf[0], buf.size()}));
-  this->shdr.sh_size = contents->size();
-}
-
-template <typename E>
-void ReproSection<E>::copy_buf(Context<E> &ctx) {
-  contents->write_to(ctx.buf + this->shdr.sh_offset);
-}
-
 #define INSTANTIATE(E)                                                  \
   template class Chunk<E>;                                              \
   template class OutputEhdr<E>;                                         \
@@ -2082,7 +2055,6 @@ void ReproSection<E>::copy_buf(Context<E> &ctx) {
   template class NotePropertySection<E>;                                \
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
-  template class ReproSection<E>;                                       \
   template i64 BuildId::size(Context<E> &) const;                       \
   template bool is_relro(Context<E> &, Chunk<E> *);                     \
   template bool separate_page(Context<E> &, Chunk<E> *, Chunk<E> *);    \

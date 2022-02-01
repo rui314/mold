@@ -582,24 +582,24 @@ private:
 
 // TarFile is a class to create a tar file.
 //
-// If you pass `--reproduce=repro.tar` to mold, mold collects all
-// input files and put them into `repro.tar`, so that it is easy to
+// If you pass `--repro` to mold, mold collects all input files and
+// put them into `<output-file-path>.repro.tar`, so that it is easy to
 // run the same command with the same command line arguments.
-class TarFile {
+class TarWriter {
 public:
-  TarFile(std::string basedir) : basedir(basedir) {}
+  static std::unique_ptr<TarWriter>
+  open(std::string output_path, std::string basedir);
+
+  ~TarWriter();
   void append(std::string path, std::string_view data);
-  void write_to(u8 *buf);
-  i64 size() const { return size_; }
 
 private:
   static constexpr i64 BLOCK_SIZE = 512;
 
-  std::string encode_path(std::string path);
+  TarWriter(FILE *out, std::string basedir) : out(out), basedir(basedir) {}
 
+  FILE *out = nullptr;
   std::string basedir;
-  std::vector<std::pair<std::string, std::string_view>> contents;
-  i64 size_ = BLOCK_SIZE * 2;
 };
 
 //
@@ -635,14 +635,14 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   MappedFile *mf = new MappedFile;
   mf->name = path;
 
-  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
-
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
   i64 fd = ::open(path.c_str(), O_RDONLY);
   if (fd == -1)
     return nullptr;
+
+  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
 
   struct stat st;
   if (fstat(fd, &st) == -1)

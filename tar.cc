@@ -11,7 +11,11 @@ namespace mold {
 //
 // For simplicity, we always emit a PAX header even for a short filename.
 struct UstarHeader {
-  void flush() {
+  UstarHeader() {
+    memset(this, 0, sizeof(*this));
+  }
+
+  void finalize() {
     memset(checksum, ' ', sizeof(checksum));
     memcpy(magic, "ustar", 5);
     memcpy(version, "00", 2);
@@ -43,7 +47,7 @@ struct UstarHeader {
   char pad[12];
 };
 
-std::string TarFile::encode_path(std::string path) {
+static std::string encode_path(std::string basedir, std::string path) {
   path = path_clean(basedir + "/" + path);
 
   // Construct a string which contains something like
@@ -55,50 +59,51 @@ std::string TarFile::encode_path(std::string path) {
   return std::to_string(total) + " path=" + path + "\n";
 }
 
-void TarFile::append(std::string path, std::string_view data) {
-  contents.push_back({path, data});
-
-  size_ += BLOCK_SIZE * 2;
-  size_ += align_to(encode_path(path).size(), BLOCK_SIZE);
-  size_ += align_to(data.size(), BLOCK_SIZE);
+std::unique_ptr<TarWriter>
+TarWriter::open(std::string output_path, std::string basedir) {
+  FILE *out = fopen(output_path.c_str(), "w");
+  if (!out)
+    return nullptr;
+  return std::unique_ptr<TarWriter>(new TarWriter(out, basedir));
 }
 
-void TarFile::write_to(u8 *buf) {
-  u8 *start = buf;
-  memset(buf, 0, size_);
+TarWriter::~TarWriter() {
+  fclose(out);
+}
 
-  for (i64 i = 0; i < contents.size(); i++) {
-    assert(buf - start <= size_);
+void TarWriter::append(std::string path, std::string_view data) {
+  // Write PAX header
+  static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
+  UstarHeader pax;
 
-    const std::string &path = contents[i].first;
-    std::string_view data = contents[i].second;
+  std::string attr = encode_path(basedir, path);
+  sprintf(pax.size, "%011zo", attr.size());
+  pax.typeflag[0] = 'x';
+  pax.finalize();
+  fwrite(&pax, sizeof(pax), 1, out);
 
-    // Write PAX header
-    static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
-    UstarHeader &pax = *(UstarHeader *)buf;
-    buf += BLOCK_SIZE;
+  // Write pathname
+  fwrite(attr.data(), attr.size(), 1, out);
+  fseek(out, align_to(ftell(out), BLOCK_SIZE), SEEK_SET);
 
-    std::string attr = encode_path(path);
-    sprintf(pax.size, "%011zo", attr.size());
-    pax.typeflag[0] = 'x';
-    pax.flush();
+  // Write Ustar header
+  UstarHeader ustar;
+  memcpy(ustar.mode, "0000664", 8);
+  sprintf(ustar.size, "%011zo", data.size());
+  ustar.finalize();
+  fwrite(&ustar, sizeof(ustar), 1, out);
 
-    // Write pathname
-    memcpy(buf, attr.data(), attr.size());
-    buf += align_to(attr.size(), BLOCK_SIZE);
+  // Write file contents
+  fwrite(data.data(), data.size(), 1, out);
+  fseek(out, align_to(ftell(out), BLOCK_SIZE), SEEK_SET);
 
-    // Write Ustar header
-    UstarHeader &ustar = *(UstarHeader *)buf;
-    buf += BLOCK_SIZE;
+  // A tar file must ends with two empty blocks, so write such
+  // terminator and seek back.
+  u8 terminator[BLOCK_SIZE * 2] = {};
+  fwrite(&terminator, BLOCK_SIZE * 2, 1, out);
+  fseek(out, -BLOCK_SIZE * 2, SEEK_END);
 
-    memcpy(ustar.mode, "0000664", 8);
-    sprintf(ustar.size, "%011zo", data.size());
-    ustar.flush();
-
-    // Write file contents
-    memcpy(buf, data.data(), data.size());
-    buf += align_to(data.size(), BLOCK_SIZE);
-  }
+  assert(ftell(out) % BLOCK_SIZE == 0);
 }
 
 } // namespace mold

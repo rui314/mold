@@ -870,21 +870,6 @@ private:
   std::unique_ptr<ZlibCompressor> contents;
 };
 
-template <typename E>
-class ReproSection : public Chunk<E> {
-public:
-  ReproSection() : Chunk<E>(this->SYNTHETIC) {
-    this->name = ".repro";
-    this->shdr.sh_type = SHT_PROGBITS;
-  }
-
-  void update_shdr(Context<E> &ctx) override;
-  void copy_buf(Context<E> &ctx) override;
-
-private:
-  std::unique_ptr<GzipCompressor> contents;
-};
-
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -1212,9 +1197,6 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
               std::string name);
 
 template <typename E>
-std::string create_response_file(Context<E> &ctx);
-
-template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
                               std::vector<std::string_view> &remaining);
 
@@ -1232,6 +1214,7 @@ template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
 template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
+template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
@@ -1535,7 +1518,6 @@ struct Context {
   std::unique_ptr<VerdefSection<E>> verdef;
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
-  std::unique_ptr<ReproSection<E>> repro;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;

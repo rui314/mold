@@ -260,36 +260,6 @@ bool read_z_arg(Context<E> &ctx, std::span<std::string_view> &args,
 }
 
 template <typename E>
-std::string create_response_file(Context<E> &ctx) {
-  std::string buf;
-  std::stringstream out;
-
-  std::string cwd = std::filesystem::current_path();
-  out << "-C " << cwd.substr(1) << "\n";
-
-  if (cwd != "/") {
-    out << "--chroot ..";
-    i64 depth = std::count(cwd.begin(), cwd.end(), '/');
-    for (i64 i = 1; i < depth; i++)
-      out << "/..";
-    out << "\n";
-  }
-
-  for (i64 i = 1; i < ctx.cmdline_args.size(); i++) {
-    std::string_view arg = ctx.cmdline_args[i];
-
-    if (arg == "-repro" || arg == "--repro") {
-      i++;
-      continue;
-    }
-
-    out << arg << "\n";
-  }
-
-  return out.str();
-}
-
-template <typename E>
 static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
   if (!value.starts_with("0x") && !value.starts_with("0X"))
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
@@ -963,8 +933,6 @@ void parse_nonpositional_args(Context<E> &ctx,
   bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,     \
                 std::string_view &arg,                                  \
                 std::string name);                                      \
-                                                                        \
-  template std::string create_response_file(Context<E> &ctx);           \
                                                                         \
   template                                                              \
   void parse_nonpositional_args(Context<E> &ctx,                        \
