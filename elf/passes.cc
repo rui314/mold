@@ -409,10 +409,11 @@ static std::string create_response_file(Context<E> &ctx) {
     out << "\n";
   }
 
-  for (std::string_view arg : std::span(ctx.cmdline_args).subspan(1))
+  for (i64 i = 1; i < ctx.cmdline_args.size(); i++) {
+    std::string_view arg = ctx.cmdline_args[i];
     if (arg != "-repro" && arg != "--repro")
       out << arg << "\n";
-
+  }
   return out.str();
 }
 
