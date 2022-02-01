@@ -3,7 +3,6 @@
 #include <cstring>
 #include <regex>
 #include <unistd.h>
-#include <zlib.h>
 
 namespace mold::elf {
 
@@ -122,68 +121,6 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
 }
 
 template <typename E>
-std::pair<std::string_view, const ElfShdr<E> *>
-ObjectFile<E>::uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
-                                   std::string_view name) {
-  if (shdr.sh_type == SHT_NOBITS)
-    return {{}, &shdr};
-
-  auto do_uncompress = [&](std::string_view data, u64 size) {
-    u8 *buf = new u8[size];
-    ctx.string_pool.push_back(std::unique_ptr<u8[]>(buf));
-
-    unsigned long size2 = size;
-    if (uncompress(buf, &size2, (u8 *)&data[0], data.size()) != Z_OK)
-      Fatal(ctx) << *this << ": " << name << ": uncompress failed";
-    if (size != size2)
-      Fatal(ctx) << *this << ": " << name << ": uncompress: invalid size";
-    return std::string_view((char *)buf, size);
-  };
-
-  auto copy_shdr = [&](const ElfShdr<E> &shdr) {
-    ElfShdr<E> *ret = new ElfShdr<E>;
-    ctx.shdr_pool.push_back(std::unique_ptr<ElfShdr<E>>(ret));
-    *ret = shdr;
-    return ret;
-  };
-
-  if (name.starts_with(".zdebug")) {
-    // Old-style compressed section
-    std::string_view data = this->get_string(ctx, shdr);
-    if (!data.starts_with("ZLIB") || data.size() <= 12)
-      Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
-    u64 size = *(ubig64 *)&data[4];
-    std::string_view contents = do_uncompress(data.substr(12), size);
-
-    ElfShdr<E> *shdr2 = copy_shdr(shdr);
-    shdr2->sh_size = size;
-    return {contents, shdr2};
-  }
-
-  if (shdr.sh_flags & SHF_COMPRESSED) {
-    // New-style compressed section
-    std::string_view data = this->get_string(ctx, shdr);
-    if (data.size() < sizeof(ElfChdr<E>))
-      Fatal(ctx) << *this << ": " << name << ": corrupted compressed section";
-    ElfChdr<E> &hdr = *(ElfChdr<E> *)&data[0];
-    data = data.substr(sizeof(ElfChdr<E>));
-
-    if (hdr.ch_type != ELFCOMPRESS_ZLIB)
-      Fatal(ctx) << *this << ": " << name << ": unsupported compression type";
-
-    ElfShdr<E> *shdr2 = copy_shdr(shdr);
-    shdr2->sh_flags &= ~(u64)(SHF_COMPRESSED);
-    shdr2->sh_size = hdr.ch_size;
-    shdr2->sh_addralign = hdr.ch_addralign;
-
-    std::string_view contents = do_uncompress(data, hdr.ch_size);
-    return {contents, shdr2};
-  }
-
-  return {this->get_string(ctx, shdr), &shdr};
-}
-
-template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
@@ -248,13 +185,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
-      std::string_view contents;
-      const ElfShdr<E> *shdr2;
-      std::tie(contents, shdr2) = uncompress_contents(ctx, shdr, name);
-
       this->sections[i] =
-        std::make_unique<InputSection<E>>(ctx, *this, *shdr2, name,
-                                          contents, i);
+        std::make_unique<InputSection<E>>(ctx, *this, shdr, name, i);
 
       static Counter counter("regular_sections");
       counter++;
@@ -583,17 +515,23 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
   rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr.sh_type,
                                                sec.shdr.sh_flags);
-  rec->shdr = sec.shdr;
+  rec->p2align = sec.p2align;
 
   std::string_view data = sec.contents;
+
+  // If thes section contents are compressed, uncompress them.
+  if (sec.is_compressed()) {
+    u8 *buf = new u8[sec.sh_size];
+    sec.uncompress(ctx, buf);
+    data = {(char *)buf, sec.sh_size};
+    ctx.string_pool.emplace_back(buf);
+  }
+
   const char *begin = data.data();
   u64 entsize = sec.shdr.sh_entsize;
   HyperLogLog estimator;
 
-  static_assert(sizeof(SectionFragment<E>::alignment) == 2);
-  if (sec.shdr.sh_addralign >= UINT16_MAX)
-    Fatal(ctx) << sec << ": alignment too large";
-
+  // Split sections
   if (sec.shdr.sh_flags & SHF_STRINGS) {
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
@@ -683,7 +621,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
     if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_MERGE) &&
-        isec->shdr.sh_size && isec->shdr.sh_entsize &&
+        isec->sh_size && isec->shdr.sh_entsize &&
         isec->relsec_idx == -1) {
       mergeable_sections[i] = split_section(ctx, *isec);
       isec->is_alive = false;
@@ -697,7 +635,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     if (m)
       for (i64 i = 0; i < m->strings.size(); i++)
         m->fragments.push_back(m->parent->insert(m->strings[i], m->hashes[i],
-                                                 m->shdr.sh_addralign));
+                                                 m->p2align));
 
   // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
@@ -1089,7 +1027,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
     std::unique_ptr<InputSection<E>> isec =
       std::make_unique<InputSection<E>>(ctx, *this, *shdr, ".common",
-                                        std::string_view(), sections.size());
+                                        sections.size());
     isec->output_section = osec;
 
     sym.file = this;

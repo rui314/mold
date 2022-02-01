@@ -82,8 +82,8 @@ void print_map(Context<E> &ctx) {
       opt_demangle = ctx.arg.demangle;
 
       ss << std::setw(16) << (osec->shdr.sh_addr + mem->offset)
-         << std::setw(11) << (u64)mem->shdr.sh_size
-         << std::setw(6) << (u64)mem->shdr.sh_addralign
+         << std::setw(11) << (u64)mem->sh_size
+         << std::setw(6) << (1 << (u64)mem->p2align)
          << "         " << *mem << "\n";
 
       typename Map<E>::const_accessor acc;

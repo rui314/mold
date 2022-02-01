@@ -534,9 +534,9 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   while (b < members.size()) {
     // Move D foward as far as we can jump from B to D.
     while (d < members.size() && offset - members[b]->offset < MAX_DISTANCE) {
-      offset = align_to(offset, members[d]->shdr.sh_addralign);
+      offset = align_to(offset, 1 << members[d]->p2align);
       members[d]->offset = offset;
-      offset += members[d]->shdr.sh_size;
+      offset += members[d]->sh_size;
       d++;
     }
 
@@ -547,7 +547,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Move A forward so that A is reachable from C.
     if (c > 0) {
-      i64 c_end = members[c - 1]->offset + members[c - 1]->shdr.sh_size;
+      i64 c_end = members[c - 1]->offset + members[c - 1]->sh_size;
       while (a < osec.thunks.size() &&
              osec.thunks[a]->offset < c_end - MAX_DISTANCE)
         reset_thunk(*osec.thunks[a++]);
@@ -682,9 +682,9 @@ static void shrink_section(Context<E> &ctx, OutputSection<E> &osec) {
   };
 
   auto add_isec = [&]() {
-    offset = align_to(offset, members[0]->shdr.sh_addralign);
+    offset = align_to(offset, 1 << members[0]->p2align);
     members[0]->offset = offset;
-    offset += members[0]->shdr.sh_size;
+    offset += members[0]->sh_size;
     members = members.subspan(1);
   };
 

@@ -165,7 +165,7 @@ void add_comment_string(Context<E> &ctx, std::string str) {
   MergedSection<E> *sec =
     MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS, 0);
   std::string_view data(buf.data(), buf.size() + 1);
-  SectionFragment<E> *frag = sec->insert(data, hash_string(data), 1);
+  SectionFragment<E> *frag = sec->insert(data, hash_string(data), 0);
   frag->is_alive = true;
 }
 
@@ -515,7 +515,7 @@ void compute_section_sizes(Context<E> &ctx) {
 
   struct Group {
     i64 size = 0;
-    i64 alignment = 1;
+    i64 p2align = 0;
     i64 offset = 0;
     std::span<InputSection<E> *> members;
   };
@@ -533,32 +533,31 @@ void compute_section_sizes(Context<E> &ctx) {
 
     tbb::parallel_for_each(groups, [](Group &group) {
       for (InputSection<E> *isec : group.members) {
-        group.size = align_to(group.size, isec->shdr.sh_addralign) +
-                     isec->shdr.sh_size;
-        group.alignment = std::max<i64>(group.alignment, isec->shdr.sh_addralign);
+        group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
+        group.p2align = std::max<i64>(group.p2align, isec->p2align);
       }
     });
 
     i64 offset = 0;
-    i64 align = 1;
+    i64 p2align = 0;
 
     for (i64 i = 0; i < groups.size(); i++) {
-      offset = align_to(offset, groups[i].alignment);
+      offset = align_to(offset, 1 << groups[i].p2align);
       groups[i].offset = offset;
       offset += groups[i].size;
-      align = std::max(align, groups[i].alignment);
+      p2align = std::max(p2align, groups[i].p2align);
     }
 
     osec->shdr.sh_size = offset;
-    osec->shdr.sh_addralign = align;
+    osec->shdr.sh_addralign = 1 << p2align;
 
     // Assign offsets to input sections.
     tbb::parallel_for_each(groups, [](Group &group) {
       i64 offset = group.offset;
       for (InputSection<E> *isec : group.members) {
-        offset = align_to(offset, isec->shdr.sh_addralign);
+        offset = align_to(offset, 1 << isec->p2align);
         isec->offset = offset;
-        offset += isec->shdr.sh_size;
+        offset += isec->sh_size;
       }
     });
   });

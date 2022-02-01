@@ -76,13 +76,13 @@ struct SectionFragment {
 
   SectionFragment(const SectionFragment &other)
     : output_section(other.output_section), offset(other.offset),
-      alignment(other.alignment.load()), is_alive(other.is_alive.load()) {}
+      p2align(other.p2align.load()), is_alive(other.is_alive.load()) {}
 
   u64 get_addr(Context<E> &ctx) const;
 
   MergedSection<E> &output_section;
   u32 offset = -1;
-  std::atomic_uint16_t alignment = 1;
+  std::atomic_uint16_t p2align = 0;
   std::atomic_bool is_alive = false;
 };
 
@@ -258,9 +258,10 @@ template <typename E>
 class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
-               std::string_view name, std::string_view contents,
-               i64 section_idx);
+               std::string_view name, i64 section_idx);
 
+  bool is_compressed();
+  void uncompress(Context<E> &ctx, u8 *buf);
   void scan_relocations(Context<E> &ctx);
   void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
@@ -297,6 +298,7 @@ public:
   u32 section_idx = -1;
   u32 relsec_idx = -1;
   u32 reldyn_offset = 0;
+  u32 sh_size = -1;
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
@@ -311,13 +313,10 @@ public:
   bool icf_leaf = false;
 
   bool is_ehframe = false;
+  u8 p2align = 0;
 
 private:
   typedef enum : u8 { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
-
-  void uncompress_old_style(Context<E> &ctx);
-  void uncompress_new_style(Context<E> &ctx);
-  void do_uncompress(Context<E> &ctx, std::string_view data, u64 size);
 
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                 const ElfRel<E> &rel, Symbol<E> &sym);
@@ -697,7 +696,7 @@ public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
-  SectionFragment<E> *insert(std::string_view data, u64 hash, i64 alignment);
+  SectionFragment<E> *insert(std::string_view data, u64 hash, i64 p2align);
   void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
@@ -902,7 +901,7 @@ struct ComdatGroup {
 template <typename E>
 struct MergeableSection {
   MergedSection<E> *parent;
-  ElfShdr<E> shdr;
+  u16 p2align = -1;
   std::vector<std::string_view> strings;
   std::vector<u64> hashes;
   std::vector<u32> frag_offsets;

@@ -786,7 +786,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     isec.write_to(ctx, buf + isec.offset);
 
     // Zero-clear trailing padding
-    u64 this_end = isec.offset + isec.shdr.sh_size;
+    u64 this_end = isec.offset + isec.sh_size;
     u64 next_start = (i == members.size() - 1) ?
       this->shdr.sh_size : members[i + 1]->offset;
     memset(buf + this_end, 0, next_start - this_end);
@@ -853,7 +853,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   std::mutex mu;
 
   tbb::parallel_for_each(members, [&](InputSection<E> *isec) {
-    if (isec->shdr.sh_addralign % E::word_size)
+    if ((1 << isec->p2align) < E::word_size)
       return;
 
     std::span<ElfRel<E>> rels = isec->get_rels(ctx);
@@ -1352,7 +1352,7 @@ MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
   name = get_output_name(ctx, name);
-  flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS;
+  flags = flags & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS & ~(u64)SHF_COMPRESSED;
 
   auto find = [&]() -> MergedSection * {
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
@@ -1382,7 +1382,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 
 template <typename E>
 SectionFragment<E> *
-MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
+MergedSection<E>::insert(std::string_view data, u64 hash, i64 p2align) {
   std::call_once(once_flag, [&]() {
     // We aim 2/3 occupation ratio
     map.resize(estimator.get_cardinality() * 3 / 2);
@@ -1393,15 +1393,14 @@ MergedSection<E>::insert(std::string_view data, u64 hash, i64 alignment) {
   std::tie(frag, inserted) = map.insert(data, hash, SectionFragment(this));
   assert(frag);
 
-  assert(alignment < UINT16_MAX);
-  update_maximum(frag->alignment, alignment);
+  update_maximum(frag->p2align, p2align);
   return frag;
 }
 
 template <typename E>
 void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   std::vector<i64> sizes(map.NUM_SHARDS);
-  std::vector<i64> max_alignments(map.NUM_SHARDS);
+  std::vector<i64> max_p2aligns(map.NUM_SHARDS);
   shard_offsets.resize(map.NUM_SHARDS + 1);
 
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
@@ -1422,8 +1421,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
                        [](const KeyVal &a, const KeyVal &b) {
-      if (a.val->alignment != b.val->alignment)
-        return a.val->alignment < b.val->alignment;
+      if (a.val->p2align != b.val->p2align)
+        return a.val->p2align < b.val->p2align;
       if (a.key.size() != b.key.size())
         return a.key.size() < b.key.size();
       return a.key < b.key;
@@ -1431,30 +1430,30 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
     // Assign offsets.
     i64 offset = 0;
-    i64 max_alignment = 0;
+    i64 p2align = 0;
 
     for (KeyVal &kv : fragments) {
       SectionFragment<E> &frag = *kv.val;
-      offset = align_to(offset, frag.alignment);
+      offset = align_to(offset, 1 << frag.p2align);
       frag.offset = offset;
       offset += kv.key.size();
-      max_alignment = std::max<i64>(max_alignment, frag.alignment);
+      p2align = std::max<i64>(p2align, frag.p2align);
     }
 
     sizes[i] = offset;
-    max_alignments[i] = max_alignment;
+    max_p2aligns[i] = p2align;
 
     static Counter merged_strings("merged_strings");
     merged_strings += fragments.size();
   });
 
-  i64 alignment = 1;
-  for (i64 x : max_alignments)
-    alignment = std::max(alignment, x);
+  i64 p2align = 0;
+  for (i64 x : max_p2aligns)
+    p2align = std::max(p2align, x);
 
   for (i64 i = 1; i < map.NUM_SHARDS + 1; i++)
     shard_offsets[i] =
-      align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
+      align_to(shard_offsets[i - 1] + sizes[i - 1], 1 << p2align);
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
@@ -1463,7 +1462,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
-  this->shdr.sh_addralign = alignment;
+  this->shdr.sh_addralign = 1 << p2align;
 }
 
 template <typename E>

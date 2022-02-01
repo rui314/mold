@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <limits>
+#include <zlib.h>
 
 namespace mold::elf {
 
@@ -24,29 +25,87 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
   return true;
 }
 
+static inline i64 to_p2align(u64 alignment) {
+  if (alignment == 0)
+    return 0;
+  return std::countr_zero(alignment);
+}
+
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               const ElfShdr<E> &shdr, std::string_view name,
-                              std::string_view contents, i64 section_idx)
-  : file(file), shdr(shdr), contents(contents), nameptr(name.data()),
-    namelen(name.size()), section_idx(section_idx) {
+                              i64 section_idx)
+  : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
+    section_idx(section_idx) {
+  if (section_idx < file.elf_sections.size())
+    contents = {(char *)file.mf->data + shdr.sh_offset, shdr.sh_size};
+
+  if (name.starts_with(".zdebug")) {
+    sh_size = *(ubig64 *)&contents[4];
+    p2align = to_p2align(shdr.sh_addralign);
+  } else if (shdr.sh_flags & SHF_COMPRESSED) {
+    ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
+    sh_size = chdr.ch_size;
+    p2align = to_p2align(chdr.ch_addralign);
+  } else {
+    sh_size = shdr.sh_size;
+    p2align = to_p2align(shdr.sh_addralign);
+  }
+
   output_section =
     OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
 }
 
 template <typename E>
 void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
-  if (shdr.sh_type == SHT_NOBITS || shdr.sh_size == 0)
+  if (shdr.sh_type == SHT_NOBITS || sh_size == 0)
     return;
 
   // Copy data
-  memcpy(buf, contents.data(), contents.size());
+  if (is_compressed())
+    uncompress(ctx, buf);
+  else
+    memcpy(buf, contents.data(), contents.size());
 
   // Apply relocations
   if (shdr.sh_flags & SHF_ALLOC)
     apply_reloc_alloc(ctx, buf);
   else
     apply_reloc_nonalloc(ctx, buf);
+}
+
+template <typename E>
+bool InputSection<E>::is_compressed() {
+  return name().starts_with(".zdebug") || (shdr.sh_flags & SHF_COMPRESSED);
+}
+
+template <typename E>
+void InputSection<E>::uncompress(Context<E> &ctx, u8 *buf) {
+  auto do_uncompress = [&](std::string_view data) {
+    unsigned long size = sh_size;
+    if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
+      Fatal(ctx) << *this << ": uncompress failed";
+    assert(size == sh_size);
+  };
+
+  if (name().starts_with(".zdebug")) {
+    // Old-style compressed section
+    if (!contents.starts_with("ZLIB") || contents.size() <= 12)
+      Fatal(ctx) << *this << ": corrupted compressed section";
+    do_uncompress(contents.substr(12));
+    return;
+  }
+
+  assert(shdr.sh_flags & SHF_COMPRESSED);
+
+  // New-style compressed section
+  if (contents.size() < sizeof(ElfChdr<E>))
+    Fatal(ctx) << *this << ": corrupted compressed section";
+
+  ElfChdr<E> &hdr = *(ElfChdr<E> *)&contents[0];
+  if (hdr.ch_type != ELFCOMPRESS_ZLIB)
+    Fatal(ctx) << *this << ": unsupported compression type";
+  do_uncompress(contents.substr(sizeof(ElfChdr<E>)));
 }
 
 template <typename E>

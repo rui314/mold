@@ -605,7 +605,7 @@ static int elf_main(int argc, char **argv) {
     ctx.eh_frame->construct(ctx);
   }
 
-  // Update shdr.sh_size for each chunk and remove empty ones.
+  // Update sh_size for each chunk and remove empty ones.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
