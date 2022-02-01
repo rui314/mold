@@ -89,6 +89,7 @@ a Docker environment. To do so, just run `./build-static.sh` in this
 directory instead of running `make -j$(nproc)`. The shell script creates a
 Ubuntu 20.04 Docker image, installs necessary tools and libraries to it,
 and builds mold as a statically-linked executable.
+(If `build-static.sh` script didn't work, please apply [3232c1f8](https://github.com/rui314/mold/commit/3232c1f8840885e5656c8cee7fab5f8e52926bd8).)
 
 `make test` depends on a few more packages. To install, run the following commands:
 
