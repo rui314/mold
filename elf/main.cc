@@ -275,7 +275,7 @@ static void show_stats(Context<E> &ctx) {
       static Counter alloc("reloc_alloc");
       static Counter nonalloc("reloc_nonalloc");
 
-      if (sec->shdr.sh_flags & SHF_ALLOC)
+      if (sec->shdr().sh_flags & SHF_ALLOC)
         alloc += sec->get_rels(ctx).size();
       else
         nonalloc += sec->get_rels(ctx).size();
@@ -327,7 +327,7 @@ static void show_stats(Context<E> &ctx) {
 }
 
 static i64 get_default_thread_count() {
-  // mold doesn't scale above 32 threads.
+  // mold doesn't scale well above 32 threads.
   int n = tbb::global_control::active_value(
     tbb::global_control::max_allowed_parallelism);
   return std::min(n, 32);

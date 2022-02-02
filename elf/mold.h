@@ -148,7 +148,7 @@ struct CieRecord {
   CieRecord(Context<E> &ctx, ObjectFile<E> &file, InputSection<E> &isec,
             u32 input_offset, std::span<ElfRel<E>> rels, u32 rel_idx)
     : file(file), input_section(isec), input_offset(input_offset),
-      rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr)) {}
+      rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
   i64 size() const {
     return *(u32 *)(contents.data() + input_offset) + 4;
@@ -257,8 +257,8 @@ struct RangeExtensionRef {
 template <typename E>
 class InputSection {
 public:
-  InputSection(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr,
-               std::string_view name, i64 section_idx);
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, std::string_view name,
+               i64 section_idx);
 
   bool is_compressed();
   void uncompress(Context<E> &ctx, u8 *buf);
@@ -275,12 +275,12 @@ public:
   i64 get_priority() const;
   u64 get_addr() const;
   i64 get_addend(const ElfRel<E> &rel) const;
+  const ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::vector<RangeExtensionRef> &get_range_extn() const;
 
   ObjectFile<E> &file;
-  const ElfShdr<E> &shdr;
   OutputSection<E> *output_section = nullptr;
 
   std::string_view contents;
@@ -988,6 +988,7 @@ public:
   std::vector<std::unique_ptr<InputSection<E>>> sections;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   const bool is_in_lib = false;
+  std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
@@ -1465,7 +1466,6 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
-  tbb::concurrent_vector<std::unique_ptr<ElfShdr<E>>> shdr_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
   tbb::concurrent_vector<std::vector<ElfRel<E>>> rel_pool;
 
@@ -1793,6 +1793,13 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
 }
 
 template <typename E>
+inline const ElfShdr<E> &InputSection<E>::shdr() const {
+  if (section_idx < file.elf_sections.size())
+    return file.elf_sections[section_idx];
+  return file.elf_sections2[section_idx - file.elf_sections.size()];
+}
+
+template <typename E>
 inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
@@ -1815,7 +1822,7 @@ inline std::vector<RangeExtensionRef> &InputSection<E>::get_range_extn() const {
 template <typename E>
 std::pair<SectionFragment<E> *, i64>
 InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
-  assert(!(shdr.sh_flags & SHF_ALLOC));
+  assert(!(shdr().sh_flags & SHF_ALLOC));
 
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
   if (esym.st_type != STT_SECTION)
@@ -1839,8 +1846,8 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 template <typename E>
 bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
   return ctx.arg.pack_dyn_relocs_relr &&
-         !(shdr.sh_flags & SHF_EXECINSTR) &&
-         (shdr.sh_addralign % E::word_size) == 0 &&
+         !(shdr().sh_flags & SHF_EXECINSTR) &&
+         (shdr().sh_addralign % E::word_size) == 0 &&
          (rel.r_offset % E::word_size) == 0;
 }
 

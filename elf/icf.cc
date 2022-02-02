@@ -99,7 +99,7 @@ static void uniquify_cies(Context<E> &ctx) {
 
 template <typename E>
 static bool is_eligible(InputSection<E> &isec) {
-  const ElfShdr<E> &shdr = isec.shdr;
+  const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = isec.name();
 
   bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
@@ -257,7 +257,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   };
 
   hash_string(isec.contents);
-  hash(isec.shdr.sh_flags);
+  hash(isec.shdr().sh_flags);
   hash(isec.get_fdes().size());
   hash(isec.get_rels(ctx).size());
 

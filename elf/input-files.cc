@@ -185,8 +185,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
-      this->sections[i] =
-        std::make_unique<InputSection<E>>(ctx, *this, shdr, name, i);
+      this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
       static Counter counter("regular_sections");
       counter++;
@@ -209,7 +208,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       assert(target->relsec_idx == -1);
       target->relsec_idx = i;
 
-      if (target->shdr.sh_flags & SHF_ALLOC) {
+      if (target->shdr().sh_flags & SHF_ALLOC) {
         i64 size = shdr.sh_size / sizeof(ElfRel<E>);
         target->needs_dynrel.resize(size);
         target->needs_baserel.resize(size);
@@ -285,7 +284,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 fdes_begin = fdes.size();
 
   // Read CIEs and FDEs until empty.
-  std::string_view contents = this->get_string(ctx, isec.shdr);
+  std::string_view contents = this->get_string(ctx, isec.shdr());
   i64 rel_idx = 0;
 
   for (std::string_view data = contents; !data.empty();) {
@@ -376,7 +375,7 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
       return false;
 
     if (InputSection<E> *isec = sym.input_section)
-      if (isec->shdr.sh_flags & SHF_MERGE)
+      if (isec->shdr().sh_flags & SHF_MERGE)
         return false;
   }
 
@@ -513,8 +512,8 @@ template <typename E>
 static std::unique_ptr<MergeableSection<E>>
 split_section(Context<E> &ctx, InputSection<E> &sec) {
   std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
-  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr.sh_type,
-                                               sec.shdr.sh_flags);
+  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr().sh_type,
+                                               sec.shdr().sh_flags);
   rec->p2align = sec.p2align;
 
   std::string_view data = sec.contents;
@@ -528,11 +527,11 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   }
 
   const char *begin = data.data();
-  u64 entsize = sec.shdr.sh_entsize;
+  u64 entsize = sec.shdr().sh_entsize;
   HyperLogLog estimator;
 
   // Split sections
-  if (sec.shdr.sh_flags & SHF_STRINGS) {
+  if (sec.shdr().sh_flags & SHF_STRINGS) {
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
       if (end == data.npos)
@@ -620,8 +619,8 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
 
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
-    if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_MERGE) &&
-        isec->sh_size && isec->shdr.sh_entsize &&
+    if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_MERGE) &&
+        isec->sh_size && isec->shdr().sh_entsize &&
         isec->relsec_idx == -1) {
       mergeable_sections[i] = split_section(ctx, *isec);
       isec->is_alive = false;
@@ -639,7 +638,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
   // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
-    if (!isec || !isec->is_alive || !(isec->shdr.sh_flags & SHF_ALLOC))
+    if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
       continue;
 
     std::span<ElfRel<E>> rels = isec->get_rels(ctx);
@@ -977,7 +976,7 @@ template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
   for (std::unique_ptr<InputSection<E>> &isec : sections)
-    if (isec && isec->is_alive && (isec->shdr.sh_flags & SHF_ALLOC))
+    if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames
@@ -1016,18 +1015,18 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       continue;
     }
 
-    auto *shdr = new ElfShdr<E>;
-    ctx.shdr_pool.push_back(std::unique_ptr<ElfShdr<E>>(shdr));
+    elf_sections2.push_back({});
+    ElfShdr<E> &shdr = elf_sections2.back();
 
-    memset(shdr, 0, sizeof(*shdr));
-    shdr->sh_flags = SHF_ALLOC;
-    shdr->sh_type = SHT_NOBITS;
-    shdr->sh_size = this->elf_syms[i].st_size;
-    shdr->sh_addralign = this->elf_syms[i].st_value;
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_type = SHT_NOBITS;
+    shdr.sh_size = this->elf_syms[i].st_size;
+    shdr.sh_addralign = this->elf_syms[i].st_value;
 
+    i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
     std::unique_ptr<InputSection<E>> isec =
-      std::make_unique<InputSection<E>>(ctx, *this, *shdr, ".common",
-                                        sections.size());
+      std::make_unique<InputSection<E>>(ctx, *this, ".common", idx);
     isec->output_section = osec;
 
     sym.file = this;

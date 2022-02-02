@@ -469,7 +469,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
-  assert(shdr.sh_flags & SHF_ALLOC);
+  assert(shdr().sh_flags & SHF_ALLOC);
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<ElfRel<E>> rels = get_rels(ctx);

@@ -33,32 +33,31 @@ static inline i64 to_p2align(u64 alignment) {
 
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
-                              const ElfShdr<E> &shdr, std::string_view name,
-                              i64 section_idx)
-  : file(file), shdr(shdr), nameptr(name.data()), namelen(name.size()),
+                              std::string_view name, i64 section_idx)
+  : file(file), nameptr(name.data()), namelen(name.size()),
     section_idx(section_idx) {
   if (section_idx < file.elf_sections.size())
-    contents = {(char *)file.mf->data + shdr.sh_offset, shdr.sh_size};
+    contents = {(char *)file.mf->data + shdr().sh_offset, shdr().sh_size};
 
   if (name.starts_with(".zdebug")) {
     sh_size = *(ubig64 *)&contents[4];
-    p2align = to_p2align(shdr.sh_addralign);
-  } else if (shdr.sh_flags & SHF_COMPRESSED) {
+    p2align = to_p2align(shdr().sh_addralign);
+  } else if (shdr().sh_flags & SHF_COMPRESSED) {
     ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
     sh_size = chdr.ch_size;
     p2align = to_p2align(chdr.ch_addralign);
   } else {
-    sh_size = shdr.sh_size;
-    p2align = to_p2align(shdr.sh_addralign);
+    sh_size = shdr().sh_size;
+    p2align = to_p2align(shdr().sh_addralign);
   }
 
   output_section =
-    OutputSection<E>::get_instance(ctx, name, shdr.sh_type, shdr.sh_flags);
+    OutputSection<E>::get_instance(ctx, name, shdr().sh_type, shdr().sh_flags);
 }
 
 template <typename E>
 void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
-  if (shdr.sh_type == SHT_NOBITS || sh_size == 0)
+  if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
     return;
 
   // Copy data
@@ -68,7 +67,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memcpy(buf, contents.data(), contents.size());
 
   // Apply relocations
-  if (shdr.sh_flags & SHF_ALLOC)
+  if (shdr().sh_flags & SHF_ALLOC)
     apply_reloc_alloc(ctx, buf);
   else
     apply_reloc_nonalloc(ctx, buf);
@@ -76,7 +75,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
 template <typename E>
 bool InputSection<E>::is_compressed() {
-  return name().starts_with(".zdebug") || (shdr.sh_flags & SHF_COMPRESSED);
+  return name().starts_with(".zdebug") || (shdr().sh_flags & SHF_COMPRESSED);
 }
 
 template <typename E>
@@ -96,7 +95,7 @@ void InputSection<E>::uncompress(Context<E> &ctx, u8 *buf) {
     return;
   }
 
-  assert(shdr.sh_flags & SHF_COMPRESSED);
+  assert(shdr().sh_flags & SHF_COMPRESSED);
 
   // New-style compressed section
   if (contents.size() < sizeof(ElfChdr<E>))
@@ -132,8 +131,8 @@ template <typename E>
 void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                                const ElfRel<E> &rel, Symbol<E> &sym) {
   Action action = table[get_output_type(ctx)][get_sym_type(sym)];
-  bool is_code = (shdr.sh_flags & SHF_EXECINSTR);
-  bool is_writable = (shdr.sh_flags & SHF_WRITE);
+  bool is_code = (shdr().sh_flags & SHF_EXECINSTR);
+  bool is_writable = (shdr().sh_flags & SHF_WRITE);
 
   auto error = [&]() {
     Error(ctx) << *this << ": " << rel << " relocation against symbol `"

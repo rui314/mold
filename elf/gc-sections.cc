@@ -11,9 +11,9 @@ namespace mold::elf {
 
 template <typename E>
 static bool is_init_fini(const InputSection<E> &isec) {
-  return isec.shdr.sh_type == SHT_INIT_ARRAY ||
-         isec.shdr.sh_type == SHT_FINI_ARRAY ||
-         isec.shdr.sh_type == SHT_PREINIT_ARRAY ||
+  return isec.shdr().sh_type == SHT_INIT_ARRAY ||
+         isec.shdr().sh_type == SHT_FINI_ARRAY ||
+         isec.shdr().sh_type == SHT_PREINIT_ARRAY ||
          isec.name().starts_with(".ctors") ||
          isec.name().starts_with(".dtors") ||
          isec.name().starts_with(".init") ||
@@ -98,11 +98,11 @@ collect_root_set(Context<E> &ctx) {
       // reduce the amount of non-memory-mapped segments, you should
       // use `strip` command, compile without debug info or use
       // -strip-all linker option.
-      if (!(isec->shdr.sh_flags & SHF_ALLOC))
+      if (!(isec->shdr().sh_flags & SHF_ALLOC))
         isec->is_visited = true;
 
       if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
-          isec->shdr.sh_type == SHT_NOTE)
+          isec->shdr().sh_type == SHT_NOTE)
         enqueue_section(isec.get());
     }
   });
