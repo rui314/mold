@@ -362,12 +362,22 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_RELAX:
       break;
     case R_RISCV_SUB6:
+      *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
+      break;
     case R_RISCV_SET6:
+      *loc = (*loc & 0b1100'0000) | ((S + A) & 0b0011'1111);
+      break;
     case R_RISCV_SET8:
+      *loc = S + A;
+      break;
     case R_RISCV_SET16:
+      *(u16 *)loc = S + A;
+      break;
     case R_RISCV_SET32:
+      *(u32 *)loc = S + A;
+      break;
     case R_RISCV_32_PCREL:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
+      *(u32 *)loc = S + A - P;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
@@ -465,6 +475,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_SET16:
       *(u16 *)loc = S + A;
+      break;
+    case R_RISCV_SET32:
+      *(u32 *)loc = S + A;
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
@@ -614,13 +627,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unsupported relocation: " << rel;
       break;
     case R_RISCV_RELAX:
-      break;
     case R_RISCV_SUB6:
     case R_RISCV_SET6:
     case R_RISCV_SET8:
     case R_RISCV_SET16:
     case R_RISCV_SET32:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
       break;
     case R_RISCV_32_PCREL: {
       Action table[][4] = {
