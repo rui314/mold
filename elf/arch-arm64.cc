@@ -481,8 +481,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 static void reset_thunk(RangeExtensionThunk<E> &thunk) {
   for (Symbol<E> *sym : thunk.symbols) {
-    sym->thunk_idx = -1;
-    sym->thunk_sym_idx = -1;
+    sym->extra.thunk_idx = -1;
+    sym->extra.thunk_sym_idx = -1;
     sym->flags &= (u8)~NEEDS_THUNK;
   }
 }
@@ -579,8 +579,8 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
           continue;
 
         // If the symbol is already in another thunk, reuse it.
-        if (sym.thunk_idx != -1) {
-          range_extn[i] = {sym.thunk_idx, sym.thunk_sym_idx};
+        if (sym.extra.thunk_idx != -1) {
+          range_extn[i] = {sym.extra.thunk_idx, sym.extra.thunk_sym_idx};
           continue;
         }
 
@@ -603,8 +603,8 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Assign offsets within the thunk to the symbols.
     for (i64 i = 0; Symbol<E> *sym : thunk.symbols) {
-      sym->thunk_idx = thunk.thunk_idx;
-      sym->thunk_sym_idx = i++;
+      sym->extra.thunk_idx = thunk.thunk_idx;
+      sym->extra.thunk_sym_idx = i++;
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
@@ -616,7 +616,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       for (i64 i = 0; i < rels.size(); i++) {
         if (range_extn[i].thunk_idx == thunk.thunk_idx) {
           Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
-          range_extn[i].sym_idx = sym.thunk_sym_idx;
+          range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
         }
       }
     });

@@ -82,7 +82,7 @@ struct SectionFragment {
 
   MergedSection<E> &output_section;
   u32 offset = -1;
-  std::atomic_uint16_t p2align = 0;
+  std::atomic_uint8_t p2align = 0;
   std::atomic_bool is_alive = false;
 };
 
@@ -908,7 +908,7 @@ struct ComdatGroup {
 template <typename E>
 struct MergeableSection {
   MergedSection<E> *parent;
-  u16 p2align = -1;
+  u8 p2align = 0;
   std::vector<std::string_view> strings;
   std::vector<u64> hashes;
   std::vector<u32> frag_offsets;
@@ -1602,6 +1602,17 @@ enum {
   NEEDS_THUNK    = 1 << 7,
 };
 
+// A struct to hold taret-dependent symbol members;
+template <typename E>
+struct SymbolExtras {};
+
+template <>
+struct SymbolExtras<ARM64> {
+  // For range extension thunks
+  i32 thunk_idx = -1;
+  i32 thunk_sym_idx = -1;
+};
+
 // Symbol class represents a defined symbol.
 //
 // A symbol has not only one but several different addresses if it
@@ -1673,10 +1684,6 @@ public:
   u16 shndx = 0;
   u16 ver_idx = 0;
 
-  // For range extension thunks
-  i32 thunk_idx = -1;
-  i32 thunk_sym_idx = -1;
-
   // `flags` has NEEDS_ flags.
   std::atomic_uint8_t flags = 0;
 
@@ -1713,6 +1720,9 @@ public:
   // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
+
+  // Target-dependent extra members.
+  SymbolExtras<E> extra;
 };
 
 // If we haven't seen the same `key` before, create a new instance
