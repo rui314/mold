@@ -716,11 +716,11 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
   // instruction and an absolute symbol. Branching to an absolute
   // location is extremely rare in real code, though.
   if (sym.is_absolute())
-    return 0xffffffff;
+    return INT32_MAX;
 
   // Likewise, relocations against weak undefined symbols won't be relaxed.
   if (sym.esym().is_undef_weak())
-    return 0xffffffff;
+    return INT32_MAX;
 
   // Compute a distance between the relocated place and the symbol.
   i64 S = sym.get_addr(ctx);
@@ -781,29 +781,28 @@ static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
 
 // RISC-V instructions are 16 or 32 bits long, so immediates encoded
 // in instructions can't be 32 bits long. Therefore, branch and load
-// instructions cann't refer 4 GiB address space unlike x86-64. In
-// fact, JAL (jump and return) instruction can jump to only within ±1
-// MiB as they have an 21 bits immediate.
+// instructions can't refer the 4 GiB address space unlike x86-64.
+// In fact, JAL (jump and link) instruction can jump to only within
+// ±1 MiB as their immediate is only 21 bits long.
 //
 // If you want to jump to somewhere further than that, you need to
 // construct a full 32-bit offset using multiple instruction and
 // branch to that place (e.g. AUIPC and JALR instead of JAL).
-//
 // In this comment, we refer instructions such as JAL as the short
 // encoding and ones such as AUIPC+JALR as the long encoding.
 //
 // By default, compiler always uses the long encoding so that branch
-// targets are always representable. This is a safe bet for them but
+// targets are always encodable. This is a safe bet for them but
 // may result in inefficient code. Therefore, the RISC-V psABI defines
 // a mechanism for the linker to replace long encoding instructions
 // with short ones, shrinking the section and increasing the code
 // density.
 //
-// This is contrary to the psABIs for other RISC processors such as
+// This is contrary to the psABIs for the other RISC processors such as
 // ARM64. Typically, they use short instructions by default, and a
 // linker creates so-called "thunks" to extend ranges of short jumps.
 // On RISC-V, instructions are in the long encoding by default, and
-// the linker shrinks them if they can.
+// the linker shrinks them if it can.
 //
 // When we shrink a section, we need to adjust relocation offsets and
 // symbol values. For example, if we replace AUIPC+JALR with JAL
