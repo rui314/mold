@@ -1117,7 +1117,8 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
 
   // In any symtab, local symbols must precede global symbols.
   // We also place undefined symbols before defined symbols for .gnu.hash.
-  sort(symbols.begin() + 1, symbols.end(), [&](Symbol<E> *a, Symbol<E> *b) {
+  tbb::parallel_sort(symbols.begin() + 1, symbols.end(),
+                     [&](Symbol<E> *a, Symbol<E> *b) {
     if (auto x = (is_local(a) <=> is_local(b)); x != 0)
       return x > 0;
     return a->is_exported < b->is_exported;
