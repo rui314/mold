@@ -1111,65 +1111,59 @@ template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
 
+  // We need a stable sort for build reproducibility, but parallel_sort
+  // isn't stable, so we use this struct to make it stable.
+  struct T {
+    Symbol<E> *sym = nullptr;
+    u32 hash = 0;
+    i32 idx = 0;
+  };
+
+  // Sort symbols. In any symtab, local symbols must precede global symbols.
+  // We also place undefined symbols before defined symbols for .gnu.hash.
+  // Defined symbols are sorted by their hashes for .gnu.hash.
+  std::vector<T> vec(symbols.size());
+  i64 num_buckets = 0;
+
+  if (ctx.gnu_hash) {
+    // Count the number of exported symbols to compute the size of .gnu.hash.
+    i64 num_exported = 0;
+    for (i64 i = 1; i < symbols.size(); i++)
+      if (symbols[i]->is_exported)
+        num_exported++;
+
+    num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
+    ctx.gnu_hash->num_buckets = num_buckets;
+  }
+
+  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
+    Symbol<E> *sym = symbols[i];
+    vec[i].sym = sym;
+    if (ctx.gnu_hash && sym->is_exported)
+      vec[i].hash = djb_hash(sym->name()) % num_buckets;
+    vec[i].idx = i;
+  });
+
   auto is_local = [](Symbol<E> *sym) {
     return !sym->is_imported && !sym->is_exported;
   };
 
-  // In any symtab, local symbols must precede global symbols.
-  // We also place undefined symbols before defined symbols for .gnu.hash.
-  tbb::parallel_sort(symbols.begin() + 1, symbols.end(),
-                     [&](Symbol<E> *a, Symbol<E> *b) {
-    if (auto x = (is_local(a) <=> is_local(b)); x != 0)
-      return x > 0;
-    return a->is_exported < b->is_exported;
+  tbb::parallel_sort(vec.begin() + 1, vec.end(), [&](const T &a, const T &b) {
+    return std::tuple(!is_local(a.sym), (bool)a.sym->is_exported, a.hash, a.idx) <
+           std::tuple(!is_local(b.sym), (bool)b.sym->is_exported, b.hash, b.idx);
   });
-
-  auto first_global = std::partition_point(symbols.begin() + 1, symbols.end(),
-                                           is_local);
-
-  // If we have .gnu.hash section, we need to sort .dynsym contents by
-  // symbol hashes.
-  if (ctx.gnu_hash) {
-    // We need a stable sort for build reproducibility, but parallel_sort
-    // isn't stable, so we use this struct to make it stable.
-    struct T {
-      Symbol<E> *sym;
-      u32 hash;
-      i32 idx;
-    };
-
-    auto first_exported = std::partition_point(
-      first_global, symbols.end(), [](Symbol<E> *x) { return !x->is_exported; });
-
-    i64 base_offset = first_exported - symbols.begin();
-    i64 num_exported = symbols.end() - first_exported;
-
-    std::vector<T> vec(num_exported);
-    ctx.gnu_hash->num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
-
-    tbb::parallel_for((i64)0, num_exported, [&](i64 i) {
-      Symbol<E> *sym = symbols[base_offset + i];
-      vec[i].sym = sym;
-      vec[i].hash = djb_hash(sym->name()) % ctx.gnu_hash->num_buckets;
-      vec[i].idx = i;
-    });
-
-    tbb::parallel_sort(vec.begin(), vec.end(), [&](const T &a, const T &b) {
-      return std::tuple(a.hash, a.idx) < std::tuple(b.hash, b.idx);
-    });
-
-    for (i64 i = 0; i < num_exported; i++)
-      symbols[base_offset + i] = vec[i].sym;
-  }
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
   for (i64 i = 1; i < symbols.size(); i++) {
+    symbols[i] = vec[i].sym;
     symbols[i]->set_dynsym_idx(ctx, i);
     ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
   }
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
+  auto first_global =
+    std::partition_point(symbols.begin() + 1, symbols.end(), is_local);
   this->shdr.sh_info = first_global - symbols.begin();
 }
 
