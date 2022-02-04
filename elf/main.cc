@@ -585,12 +585,7 @@ static int elf_main(int argc, char **argv) {
   ctx.verneed->construct(ctx);
 
   // Compute .symtab and .strtab sizes for each file.
-  {
-    Timer t(ctx, "compute_symtab");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->compute_symtab(ctx);
-    });
-  }
+  create_output_symtab(ctx);
 
   // .eh_frame is a special section from the linker's point of view,
   // as its contents are parsed and reconstructed by the linker,

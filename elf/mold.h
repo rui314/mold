@@ -1236,6 +1236,7 @@ template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
+template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -1656,7 +1657,6 @@ public:
   bool has_plt(Context<E> &ctx) const;
   bool has_got(Context<E> &ctx) const;
 
-  bool is_alive() const;
   bool is_absolute() const;
   bool is_relative() const;
 
@@ -2161,15 +2161,6 @@ inline bool Symbol<E>::has_plt(Context<E> &ctx) const {
 template <typename E>
 inline bool Symbol<E>::has_got(Context<E> &ctx) const {
   return get_got_idx(ctx) != -1;
-}
-
-template <typename E>
-inline bool Symbol<E>::is_alive() const {
-  if (SectionFragment<E> *frag = get_frag())
-    return frag->is_alive;
-  if (input_section)
-    return input_section->is_alive;
-  return true;
 }
 
 template <typename E>

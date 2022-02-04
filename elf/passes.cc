@@ -693,6 +693,15 @@ void construct_relr(Context<E> &ctx) {
 }
 
 template <typename E>
+void create_output_symtab(Context<E> &ctx) {
+  Timer t(ctx, "compute_symtab");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->compute_symtab(ctx);
+  });
+}
+
+template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
@@ -1163,6 +1172,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void claim_unresolved_symbols(Context<E> &);                 \
   template void scan_rels(Context<E> &);                                \
   template void construct_relr(Context<E> &);                           \
+  template void create_output_symtab(Context<E> &);                     \
   template void apply_version_script(Context<E> &);                     \
   template void parse_symbol_version(Context<E> &);                     \
   template void compute_import_export(Context<E> &);                    \

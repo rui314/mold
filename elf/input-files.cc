@@ -341,31 +341,6 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   }
 }
 
-template <typename E>
-static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
-  if (ctx.arg.discard_all || ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return false;
-  if (sym.get_type() == STT_SECTION)
-    return false;
-
-  // Local symbols are discarded if --discard-local is given or they
-  // are not in a mergeable section. I *believe* we exclude symbols in
-  // mergeable sections because (1) they are too many and (2) they are
-  // merged, so their origins shouldn't matter, but I dont' really
-  // know the rationale. Anyway, this is the behavior of the
-  // traditional linkers.
-  if (sym.name().starts_with(".L")) {
-    if (ctx.arg.discard_locals)
-      return false;
-
-    if (InputSection<E> *isec = sym.input_section)
-      if (isec->shdr().sh_flags & SHF_MERGE)
-        return false;
-  }
-
-  return true;
-}
-
 // Returns a symbol object for a given key. This function handles
 // the -wrap option.
 template <typename E>
@@ -419,12 +394,6 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
       if (esym.is_common())
         Fatal(ctx) << *this << ": common local symbol?";
       sym.input_section = get_section(esym);
-    }
-
-    if (should_write_to_local_symtab(ctx, sym)) {
-      sym.write_to_symtab = true;
-      strtab_size += sym.name().size() + 1;
-      num_local_symtab++;
     }
   }
 
@@ -1057,36 +1026,53 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-static bool should_write_to_global_symtab(Symbol<E> &sym) {
-  return sym.get_type() != STT_SECTION && sym.is_alive();
+static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.get_type() == STT_SECTION)
+    return false;
+
+  // Local symbols are discarded if --discard-local is given or they
+  // are not in a mergeable section. I *believe* we exclude symbols in
+  // mergeable sections because (1) they are too many and (2) they are
+  // merged, so their origins shouldn't matter, but I dont' really
+  // know the rationale. Anyway, this is the behavior of the
+  // traditional linkers.
+  if (sym.name().starts_with(".L")) {
+    if (ctx.arg.discard_locals)
+      return false;
+
+    if (InputSection<E> *isec = sym.input_section)
+      if (isec->shdr().sh_flags & SHF_MERGE)
+        return false;
+  }
+
+  return true;
 }
 
 template <typename E>
 void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
-  if (ctx.arg.retain_symbols_file) {
-    std::span<Symbol<E> *> syms(this->symbols);
-    for (Symbol<E> *sym : syms.subspan(this->first_global)) {
-      if (sym->file == this && sym->write_to_symtab) {
-        strtab_size += sym->name().size() + 1;
-        num_global_symtab++;
-      }
-    }
-    return;
-  }
-
   if (ctx.arg.strip_all)
     return;
 
-  if (ctx.arg.gc_sections && !ctx.arg.discard_all) {
-    // Detect symbols pointing to sections discarded by -gc-sections
-    // to not copy them to symtab.
+  auto is_alive = [&](Symbol<E> &sym) -> bool {
+    if (!ctx.arg.gc_sections)
+      return true;
+
+    if (SectionFragment<E> *frag = sym.get_frag())
+      return frag->is_alive;
+    if (sym.input_section)
+      return sym.input_section->is_alive;
+    return true;
+  };
+
+  // Compute the size of global symbols
+  if (!ctx.arg.discard_all && !ctx.arg.strip_all && !ctx.arg.retain_symbols_file) {
     for (i64 i = 1; i < this->first_global; i++) {
       Symbol<E> &sym = *this->symbols[i];
 
-      if (sym.write_to_symtab && !sym.is_alive()) {
-        strtab_size -= sym.name().size() + 1;
-        num_local_symtab--;
-        sym.write_to_symtab = false;
+      if (is_alive(sym) && should_write_to_local_symtab(ctx, sym)) {
+        strtab_size += sym.name().size() + 1;
+        num_local_symtab++;
+        sym.write_to_symtab = true;
       }
     }
   }
@@ -1095,10 +1081,11 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
 
-    if (sym.file == this && should_write_to_global_symtab(sym)) {
+    if (sym.file == this && is_alive(sym) &&
+        (!ctx.arg.retain_symbols_file || sym.write_to_symtab)) {
       strtab_size += sym.name().size() + 1;
-      sym.write_to_symtab = true;
       num_global_symtab++;
+      sym.write_to_symtab = true;
     }
   }
 }
