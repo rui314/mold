@@ -38,6 +38,7 @@ Options:
   -l LIBNAME                  Search for a given library
   -m TARGET                   Set target
   -o FILE, --output FILE      Set output filename
+  -q, --emit-relocs           Leaves relocation sections in the output
   -r, --relocatable           Generate relocatable output
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
@@ -450,6 +451,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.Bsymbolic_functions = false;
     } else if (read_arg(ctx, args, arg, "exclude-libs")) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
+    } else if (read_flag(args, "q") || read_flag(args, "emit-relocs")) {
+      ctx.arg.emit_relocs = true;
     } else if (read_arg(ctx, args, arg, "e") ||
                read_arg(ctx, args, arg, "entry")) {
       ctx.arg.entry = arg;

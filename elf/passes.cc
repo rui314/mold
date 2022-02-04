@@ -681,6 +681,36 @@ void scan_rels(Context<E> &ctx) {
 }
 
 template <typename E>
+void create_reloc_sections(Context<E> &ctx) {
+  Timer t(ctx, "create_reloc_sections");
+
+  // Create .rela.* sections
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
+    ctx.chunks.push_back(r);
+    ctx.output_chunks.push_back(std::unique_ptr<Chunk<E>>(r));
+  }
+
+  // Create a table to map input symbol indices to output symbol indices
+  auto set_indices = [&](InputFile<E> *file) {
+    file->output_sym_indices.resize(file->symbols.size(), -1);
+
+    for (i64 i = 1, j = 0; i < file->first_global; i++)
+      if (Symbol<E> &sym = *file->symbols[i];
+          sym.file == file && sym.write_to_symtab)
+        file->output_sym_indices[i] = j++;
+
+    for (i64 i = file->first_global, j = 0; i < file->symbols.size(); i++)
+      if (Symbol<E> &sym = *file->symbols[i];
+          sym.file == file && sym.write_to_symtab)
+        file->output_sym_indices[i] = j++;
+  };
+
+  tbb::parallel_for_each(ctx.objs, set_indices);
+  tbb::parallel_for_each(ctx.dsos, set_indices);
+}
+
+template <typename E>
 void construct_relr(Context<E> &ctx) {
   Timer t(ctx, "construct_relr");
 
@@ -1175,6 +1205,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void compute_section_sizes(Context<E> &);                    \
   template void claim_unresolved_symbols(Context<E> &);                 \
   template void scan_rels(Context<E> &);                                \
+  template void create_reloc_sections(Context<E> &);                    \
   template void construct_relr(Context<E> &);                           \
   template void create_output_symtab(Context<E> &);                     \
   template void apply_version_script(Context<E> &);                     \

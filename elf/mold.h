@@ -876,6 +876,21 @@ private:
   std::unique_ptr<ZlibCompressor> contents;
 };
 
+template <typename E>
+class RelocSection : public Chunk<E> {
+public:
+  RelocSection(Context<E> &ctx, OutputSection<E> &osec);
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  using RelaTy =
+    typename std::conditional<E::word_size == 4, Elf32Rela, Elf64Rela>::type;
+
+  OutputSection<E> &output_section;
+  std::vector<i64> offsets;
+};
+
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -966,6 +981,10 @@ public:
   u64 num_global_symtab = 0;
   u64 strtab_offset = 0;
   u64 strtab_size = 0;
+
+  // For --emit-relocs
+  i64 get_output_sym_idx(i64 idx) const;
+  std::vector<i32> output_sym_indices;
 
 protected:
   std::unique_ptr<Symbol<E>[]> local_syms;
@@ -1242,6 +1261,7 @@ template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
+template <typename E> void create_reloc_sections(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -1384,6 +1404,7 @@ struct Context {
     bool discard_all = false;
     bool discard_locals = false;
     bool eh_frame_hdr = true;
+    bool emit_relocs = false;
     bool export_dynamic = false;
     bool fatal_warnings = false;
     bool fork = true;
@@ -1941,6 +1962,16 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 template <typename E>
 inline std::span<Symbol<E> *> InputFile<E>::get_global_syms() {
   return std::span<Symbol<E> *>(this->symbols).subspan(this->first_global);
+}
+
+template <typename E>
+inline i64 InputFile<E>::get_output_sym_idx(i64 idx) const {
+  i64 idx2 = output_sym_indices[idx];
+  assert(idx2 != -1);
+
+  if (idx < this->first_global)
+    return local_symtab_idx + idx2;
+  return global_symtab_idx + idx2;
 }
 
 template <typename E>

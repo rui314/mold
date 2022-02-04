@@ -600,6 +600,11 @@ static int elf_main(int argc, char **argv) {
     ctx.eh_frame->construct(ctx);
   }
 
+  // If --emit-relocs is given, we'll copy relocation sections from input
+  // files to an output file.
+  if (ctx.arg.emit_relocs)
+    create_reloc_sections(ctx);
+
   // Update sh_size for each chunk and remove empty ones.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);

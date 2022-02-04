@@ -4,6 +4,7 @@
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
 
 namespace mold::elf {
@@ -2048,6 +2049,77 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   contents->write_to(base + 12);
 }
 
+template <typename E>
+RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
+  : Chunk<E>(this->SYNTHETIC), output_section(osec) {
+  this->name = save_string(ctx, ".rela" + std::string(osec.name));
+  this->shdr.sh_type = SHT_RELA;
+  this->shdr.sh_addralign = E::word_size;
+  this->shdr.sh_entsize = sizeof(RelaTy);
+
+  // Compute an offset for each input section
+  offsets.resize(osec.members.size());
+
+  auto scan = [&](const tbb::blocked_range<i64> &r, i64 sum, bool is_final) {
+    for (i64 i = r.begin(); i < r.end(); i++) {
+      InputSection<E> &isec = *osec.members[i];
+      if (is_final)
+        offsets[i] = sum;
+      sum += isec.get_rels(ctx).size();
+    }
+    return sum;
+  };
+
+  i64 num_entries = tbb::parallel_scan(
+    tbb::blocked_range<i64>(0, osec.members.size(), 10000), 0, scan, std::plus());
+
+  this->shdr.sh_size = num_entries * sizeof(RelaTy);
+}
+
+template <typename E>
+void RelocSection<E>::update_shdr(Context<E> &ctx) {
+  this->shdr.sh_link = ctx.symtab->shndx;
+  this->shdr.sh_info = output_section.shndx;
+}
+
+template <typename E>
+void RelocSection<E>::copy_buf(Context<E> &ctx) {
+  tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
+    RelaTy *buf = (RelaTy *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
+
+    InputSection<E> &isec = *output_section.members[i];
+    std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+
+    for (i64 j = 0; j < rels.size(); j++) {
+      ElfRel<E> &r = rels[j];
+      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+      memset(buf + j, 0, sizeof(RelaTy));
+
+      if (sym.esym().st_type == STT_SECTION) {
+        OutputSection<E> &osec = *sym.input_section->output_section;
+        buf[j].r_offset = sym.get_addr(ctx, false) - osec.shdr.sh_addr;
+        buf[j].r_type = STT_SECTION;
+        buf[j].r_sym = sym.input_section->output_section->shndx;
+        buf[j].r_addend = isec.get_addend(r);
+        continue;
+      }
+
+      if (!sym.write_to_symtab) {
+        buf[j].r_type = E::R_NONE;
+        continue;
+      }
+
+      buf[j].r_offset = output_section.shdr.sh_offset + isec.offset + r.r_offset;
+      if constexpr (E::e_machine == EM_RISCV)
+        buf[j].r_offset += isec.get_r_deltas()[j];
+
+      buf[j].r_type = r.r_type;
+      buf[j].r_sym = sym.file->get_output_sym_idx(sym.sym_idx);
+      buf[j].r_addend = isec.get_addend(r);
+    }
+  });
+}
+
 #define INSTANTIATE(E)                                                  \
   template class Chunk<E>;                                              \
   template class OutputEhdr<E>;                                         \
@@ -2081,6 +2153,7 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   template class NotePropertySection<E>;                                \
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
+  template class RelocSection<E>;                                        \
   template i64 BuildId::size(Context<E> &) const;                       \
   template bool is_relro(Context<E> &, Chunk<E> *);                     \
   template bool separate_page(Context<E> &, Chunk<E> *, Chunk<E> *);    \
