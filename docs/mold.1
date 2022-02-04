@@ -488,6 +488,21 @@ Read a list of dynamic symbols from
 Create
 .Li .eh_frame_hdr
 section.
+.Pp
+.It Fl -emit-relocs
+A linker usually "consumes" relocation sections. That is, a linker \
+applies relocations to other sections, and relocation sections themselves \
+are discarded.
+.Pp
+The
+.Fl -emit-relocs
+instructs the linker to leave relocation sections in the output file. \
+Some post-link binary analysis or optimization tools such as LLVM Bolt \
+need them.
+.Pp
+.Nm
+always creates RELA-type relocation sections even if the native \
+ELF format is REL-type so that it is easy to read addends.
 .
 .It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
 Mark all symbols in the given
