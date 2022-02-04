@@ -984,7 +984,6 @@ public:
   u64 strtab_size = 0;
 
   // For --emit-relocs
-  i64 get_output_sym_idx(i64 idx) const;
   std::vector<i32> output_sym_indices;
 
 protected:
@@ -1963,16 +1962,6 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 template <typename E>
 inline std::span<Symbol<E> *> InputFile<E>::get_global_syms() {
   return std::span<Symbol<E> *>(this->symbols).subspan(this->first_global);
-}
-
-template <typename E>
-inline i64 InputFile<E>::get_output_sym_idx(i64 idx) const {
-  i64 idx2 = output_sym_indices[idx];
-  assert(idx2 != -1);
-
-  if (idx < this->first_global)
-    return local_symtab_idx + idx2;
-  return global_symtab_idx + idx2;
 }
 
 template <typename E>

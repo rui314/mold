@@ -2071,7 +2071,7 @@ RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
   };
 
   i64 num_entries = tbb::parallel_scan(
-    tbb::blocked_range<i64>(0, osec.members.size(), 10000), 0, scan, std::plus());
+    tbb::blocked_range<i64>(0, osec.members.size()), 0, scan, std::plus());
 
   this->shdr.sh_size = num_entries * sizeof(RelaTy);
 }
@@ -2080,6 +2080,16 @@ template <typename E>
 void RelocSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.symtab->shndx;
   this->shdr.sh_info = output_section.shndx;
+}
+
+template <typename E>
+static i64 get_output_sym_idx(Symbol<E> &sym) {
+  i64 idx2 = sym.file->output_sym_indices[sym.sym_idx];
+  assert(idx2 != -1);
+
+  if (sym.sym_idx < sym.file->first_global)
+    return sym.file->local_symtab_idx + idx2;
+  return sym.file->global_symtab_idx + idx2;
 }
 
 template <typename E>
@@ -2095,25 +2105,23 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       Symbol<E> &sym = *isec.file.symbols[r.r_sym];
       memset(buf + j, 0, sizeof(RelaTy));
 
-      if (sym.esym().st_type == STT_SECTION) {
-        buf[j].r_offset =
-          isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
-        buf[j].r_type = STT_SECTION;
-        buf[j].r_sym = sym.input_section->output_section->shndx;
-        buf[j].r_addend = isec.get_addend(r) + isec.offset;
-        continue;
-      }
-
-      if (!sym.write_to_symtab) {
+      if (sym.esym().st_type != STT_SECTION && !sym.write_to_symtab) {
         buf[j].r_type = E::R_NONE;
         continue;
       }
 
       buf[j].r_offset =
-          isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
-      buf[j].r_type = r.r_type;
-      buf[j].r_sym = sym.file->get_output_sym_idx(sym.sym_idx);
-      buf[j].r_addend = isec.get_addend(r);
+        isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
+
+      if (sym.esym().st_type == STT_SECTION) {
+        buf[j].r_type = STT_SECTION;
+        buf[j].r_sym = sym.input_section->output_section->shndx;
+        buf[j].r_addend = isec.get_addend(r) + isec.offset;
+      } else {
+        buf[j].r_type = r.r_type;
+        buf[j].r_sym = get_output_sym_idx(sym);
+        buf[j].r_addend = isec.get_addend(r);
+      }
     }
   });
 }
