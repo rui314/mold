@@ -491,7 +491,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
+void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   // A non-alloc section isn't relaxed, so just copy it as one big chunk.
   if (!(shdr().sh_flags & SHF_ALLOC)) {
     if (is_compressed())

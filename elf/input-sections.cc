@@ -178,23 +178,19 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
 }
 
 template <typename E>
-void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
-  if (is_compressed())
-    uncompress(ctx, buf);
-  else
-    memcpy(buf, contents.data(), contents.size());
-}
-
-extern template
-void InputSection<RISCV64>::copy_contents(Context<RISCV64> &, u8 *);
-
-template <typename E>
 void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
     return;
 
   // Copy data
-  copy_contents(ctx, buf);
+  if constexpr (E::e_machine == EM_RISCV) {
+    copy_contents_riscv(ctx, buf);
+  } else {
+    if (is_compressed())
+      uncompress(ctx, buf);
+    else
+      memcpy(buf, contents.data(), contents.size());
+  }
 
   // Apply relocations
   if (shdr().sh_flags & SHF_ALLOC)

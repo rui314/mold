@@ -328,6 +328,7 @@ private:
                 const ElfRel<E> &rel, Symbol<E> &sym);
   void report_undef(Context<E> &ctx, Symbol<E> &sym);
   void copy_contents(Context<E> &ctx, u8 *buf);
+  void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
