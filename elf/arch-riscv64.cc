@@ -823,15 +823,20 @@ static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
 // interpret them satisfy the constraints imposed by R_RISCV_ALIGN,
 // and that means we may change section sizes anyway.
 i64 riscv_resize_sections(Context<E> &ctx) {
+  Timer t(ctx, "riscv_resize_sections");
+
   initialize_storage(ctx);
 
   // First, interpret R_RISCV_ALIGN relocations. This may enlarge
   // sections.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(ctx, isec.get()))
-        align_contents(ctx, *isec);
-  });
+  {
+    Timer t(ctx, "align_contents");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+        if (is_resizable(ctx, isec.get()))
+          align_contents(ctx, *isec);
+    });
+  }
 
   // Re-compute section offset.
   compute_section_sizes(ctx);
@@ -839,11 +844,14 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(ctx, isec.get()))
-        relax_call(ctx, *isec);
-  });
+  {
+    Timer t(ctx, "relax_call");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+        if (is_resizable(ctx, isec.get()))
+          relax_call(ctx, *isec);
+    });
+  }
 
   // Re-compute section offset again to finalize them.
   compute_section_sizes(ctx);
