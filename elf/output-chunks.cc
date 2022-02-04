@@ -2096,11 +2096,11 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       memset(buf + j, 0, sizeof(RelaTy));
 
       if (sym.esym().st_type == STT_SECTION) {
-        OutputSection<E> &osec = *sym.input_section->output_section;
-        buf[j].r_offset = sym.get_addr(ctx, false) - osec.shdr.sh_addr;
+        buf[j].r_offset =
+          isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
         buf[j].r_type = STT_SECTION;
         buf[j].r_sym = sym.input_section->output_section->shndx;
-        buf[j].r_addend = isec.get_addend(r);
+        buf[j].r_addend = isec.get_addend(r) + isec.offset;
         continue;
       }
 
@@ -2109,10 +2109,8 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         continue;
       }
 
-      buf[j].r_offset = output_section.shdr.sh_offset + isec.offset + r.r_offset;
-      if constexpr (E::e_machine == EM_RISCV)
-        buf[j].r_offset += isec.get_r_deltas()[j];
-
+      buf[j].r_offset =
+          isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
       buf[j].r_type = r.r_type;
       buf[j].r_sym = sym.file->get_output_sym_idx(sym.sym_idx);
       buf[j].r_addend = isec.get_addend(r);
