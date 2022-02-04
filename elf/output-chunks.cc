@@ -391,7 +391,13 @@ void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = 1;
+
   for (ObjectFile<E> *file : ctx.objs) {
+    file->strtab_offset = this->shdr.sh_size;
+    this->shdr.sh_size += file->strtab_size;
+  }
+
+  for (SharedFile<E> *file : ctx.dsos) {
     file->strtab_offset = this->shdr.sh_size;
     this->shdr.sh_size += file->strtab_size;
   }
@@ -477,6 +483,11 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
     nsyms += file->num_global_symtab;
   }
 
+  for (SharedFile<E> *file : ctx.dsos) {
+    file->global_symtab_idx = nsyms;
+    nsyms += file->num_global_symtab;
+  }
+
   this->shdr.sh_info = ctx.objs[0]->global_symtab_idx;
   this->shdr.sh_link = ctx.strtab->shndx;
   this->shdr.sh_size = (nsyms == 1) ? 0 : nsyms * sizeof(ElfSym<E>);
@@ -503,6 +514,10 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
   // Copy symbols and symbol names from input files
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->write_symtab(ctx);
+  });
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     file->write_symtab(ctx);
   });
 }

@@ -699,6 +699,10 @@ void create_output_symtab(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->compute_symtab(ctx);
   });
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    file->compute_symtab(ctx);
+  });
 }
 
 template <typename E>

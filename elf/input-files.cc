@@ -1064,7 +1064,7 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
     return true;
   };
 
-  // Compute the size of global symbols
+  // Compute the size of local symbols
   if (!ctx.arg.discard_all && !ctx.arg.strip_all && !ctx.arg.retain_symbols_file) {
     for (i64 i = 1; i < this->first_global; i++) {
       Symbol<E> &sym = *this->symbols[i];
@@ -1327,6 +1327,50 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
         phdr[i].p_vaddr <= val && val < phdr[i].p_vaddr + phdr[i].p_memsz)
       return true;
   return false;
+}
+
+template <typename E>
+void SharedFile<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.strip_all)
+    return;
+
+  // Compute the size of global symbols.
+  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+
+    if (sym.file == this && (sym.is_imported || sym.is_exported) &&
+        (!ctx.arg.retain_symbols_file || sym.write_to_symtab)) {
+      strtab_size += sym.name().size() + 1;
+      num_global_symtab++;
+      sym.write_to_symtab = true;
+    }
+  }
+}
+
+template <typename E>
+void SharedFile<E>::write_symtab(Context<E> &ctx) {
+  ElfSym<E> *symtab =
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + global_symtab_idx;
+
+  u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset + strtab_offset;
+
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    if (sym.file != this || !sym.write_to_symtab)
+      continue;
+
+    ElfSym<E> &esym = *symtab++;
+    esym.st_name = strtab - (ctx.buf + ctx.strtab->shdr.sh_offset);
+    esym.st_value = 0;
+    esym.st_size = 0;
+    esym.st_type = STT_NOTYPE;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = sym.visibility;
+    esym.st_shndx = SHN_UNDEF;
+
+    write_string(strtab, sym.name());
+    strtab += sym.name().size() + 1;
+  }
 }
 
 #define INSTANTIATE(E)                                                  \

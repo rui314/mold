@@ -1067,9 +1067,17 @@ public:
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
 
+  void compute_symtab(Context<E> &ctx);
+  void write_symtab(Context<E> &ctx);
+
   std::string soname;
   std::vector<std::string_view> version_strings;
   std::vector<ElfSym<E>> elf_syms2;
+
+  u64 global_symtab_idx = 0;
+  u64 num_global_symtab = 0;
+  u64 strtab_offset = 0;
+  u64 strtab_size = 0;
 
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
