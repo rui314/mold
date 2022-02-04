@@ -13,11 +13,11 @@ mkdir -p $t
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() {
-  printf("Hello world\n");
+  puts("Hello world");
 }
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-nm $t/exe | grep -q 'U printf$'
+nm $t/exe | grep -q 'U puts$'
 
 echo OK
