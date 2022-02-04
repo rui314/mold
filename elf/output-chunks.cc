@@ -458,26 +458,21 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void SymtabSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = sizeof(ElfSym<E>);
+  i64 nsyms = 1;
 
   for (ObjectFile<E> *file : ctx.objs) {
-    file->local_symtab_offset = this->shdr.sh_size;
-    this->shdr.sh_size += file->num_local_symtab * sizeof(ElfSym<E>);
+    file->local_symtab_idx = nsyms;
+    nsyms += file->num_local_symtab;
   }
 
   for (ObjectFile<E> *file : ctx.objs) {
-    file->global_symtab_offset = this->shdr.sh_size;
-    this->shdr.sh_size += file->num_global_symtab * sizeof(ElfSym<E>);
+    file->global_symtab_idx = nsyms;
+    nsyms += file->num_global_symtab;
   }
 
-  this->shdr.sh_info = ctx.objs[0]->global_symtab_offset / sizeof(ElfSym<E>);
+  this->shdr.sh_info = ctx.objs[0]->global_symtab_idx;
   this->shdr.sh_link = ctx.strtab->shndx;
-
-  if (this->shdr.sh_size == sizeof(ElfSym<E>))
-    this->shdr.sh_size = 0;
-
-  static Counter counter("symtab");
-  counter += this->shdr.sh_size / sizeof(ElfSym<E>);
+  this->shdr.sh_size = (nsyms == 1) ? 0 : nsyms * sizeof(ElfSym<E>);
 }
 
 template <typename E>

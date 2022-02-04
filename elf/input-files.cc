@@ -1092,14 +1092,14 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::write_symtab(Context<E> &ctx) {
-  u8 *symtab_base = ctx.buf + ctx.symtab->shdr.sh_offset;
+  ElfSym<E> *symtab_base = (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset);
+  i64 symtab_idx;
+
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = strtab_offset;
-  i64 symtab_off;
 
   auto write_sym = [&](Symbol<E> &sym) {
-    ElfSym<E> &esym = *(ElfSym<E> *)(symtab_base + symtab_off);
-    symtab_off += sizeof(esym);
+    ElfSym<E> &esym = symtab_base[symtab_idx++];
 
     esym = sym.esym();
     esym.st_name = strtab_off;
@@ -1122,14 +1122,14 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
     strtab_off += sym.name().size() + 1;
   };
 
-  symtab_off = local_symtab_offset;
+  symtab_idx = local_symtab_idx;
   for (i64 i = 1; i < this->first_global; i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.write_to_symtab)
       write_sym(sym);
   }
 
-  symtab_off = global_symtab_offset;
+  symtab_idx = global_symtab_idx;
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.file == this && sym.write_to_symtab)
