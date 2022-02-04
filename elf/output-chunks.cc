@@ -460,11 +460,18 @@ template <typename E>
 void SymtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 nsyms = 1;
 
+  // Section symbols
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC))
+      nsyms++;
+
+  // Local symbols
   for (ObjectFile<E> *file : ctx.objs) {
     file->local_symtab_idx = nsyms;
     nsyms += file->num_local_symtab;
   }
 
+  // Global symbols
   for (ObjectFile<E> *file : ctx.objs) {
     file->global_symtab_idx = nsyms;
     nsyms += file->num_global_symtab;
@@ -477,9 +484,24 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void SymtabSection<E>::copy_buf(Context<E> &ctx) {
-  memset(ctx.buf + this->shdr.sh_offset, 0, sizeof(ElfSym<E>));
+  ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, sizeof(ElfSym<E>));
+
+  // Write the initial NUL byte to .strtab.
   ctx.buf[ctx.strtab->shdr.sh_offset] = '\0';
 
+  // Create section symbols
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC)) {
+      ElfSym<E> &sym = buf[chunk->shndx];
+      memset(&sym, 0, sizeof(sym));
+      sym.st_type = STT_SECTION;
+      sym.st_value = chunk->shdr.sh_addr;
+      sym.st_shndx = chunk->shndx;
+    }
+  }
+
+  // Copy symbols and symbol names from input files
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->write_symtab(ctx);
   });
