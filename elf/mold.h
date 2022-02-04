@@ -959,6 +959,14 @@ public:
   std::atomic_bool is_alive = false;
   std::string_view shstrtab;
 
+  // To create an output .symtab
+  u64 local_symtab_idx = 0;
+  u64 global_symtab_idx = 0;
+  u64 num_local_symtab = 0;
+  u64 num_global_symtab = 0;
+  u64 strtab_offset = 0;
+  u64 strtab_size = 0;
+
 protected:
   std::unique_ptr<Symbol<E>[]> local_syms;
 };
@@ -1007,12 +1015,6 @@ public:
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
 
-  u64 local_symtab_idx = 0;
-  u64 global_symtab_idx = 0;
-  u64 num_local_symtab = 0;
-  u64 num_global_symtab = 0;
-  u64 strtab_offset = 0;
-  u64 strtab_size = 0;
   u64 fde_idx = 0;
   u64 fde_offset = 0;
   u64 fde_size = 0;
@@ -1073,11 +1075,6 @@ public:
   std::string soname;
   std::vector<std::string_view> version_strings;
   std::vector<ElfSym<E>> elf_syms2;
-
-  u64 global_symtab_idx = 0;
-  u64 num_global_symtab = 0;
-  u64 strtab_offset = 0;
-  u64 strtab_size = 0;
 
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
