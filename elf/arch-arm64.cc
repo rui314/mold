@@ -24,15 +24,15 @@ static u64 page(u64 val) {
 
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   // Write PLT header
-  static const u8 plt0[] = {
-    0xf0, 0x7b, 0xbf, 0xa9, // stp    x16, x30, [sp,#-16]!
-    0x10, 0x00, 0x00, 0x90, // adrp   x16, .got.plt[2]
-    0x11, 0x02, 0x40, 0xf9, // ldr    x17, [x16, .got.plt[2]]
-    0x10, 0x02, 0x00, 0x91, // add    x16, x16, .got.plt[2]
-    0x20, 0x02, 0x1f, 0xd6, // br     x17
-    0x1f, 0x20, 0x03, 0xd5, // nop
-    0x1f, 0x20, 0x03, 0xd5, // nop
-    0x1f, 0x20, 0x03, 0xd5, // nop
+  static const u32 plt0[] = {
+    0xa9bf7bf0, // stp  x16, x30, [sp,#-16]!
+    0x90000010, // adrp x16, .got.plt[2]
+    0xf9400211, // ldr  x17, [x16, .got.plt[2]]
+    0x91000210, // add  x16, x16, .got.plt[2]
+    0xd61f0220, // br   x17
+    0xd503201f, // nop
+    0xd503201f, // nop
+    0xd503201f, // nop
   };
 
   u64 gotplt = ctx.gotplt->shdr.sh_addr + 16;
@@ -47,11 +47,11 @@ static void write_plt_header(Context<E> &ctx, u8 *buf) {
 static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u8 *ent = buf + ctx.plt_hdr_size + sym.get_plt_idx(ctx) * ctx.plt_size;
 
-  static const u8 data[] = {
-    0x10, 0x00, 0x00, 0x90, // adrp x16, .got.plt[n]
-    0x11, 0x02, 0x40, 0xf9, // ldr  x17, [x16, .got.plt[n]]
-    0x10, 0x02, 0x00, 0x91, // add  x16, x16, .got.plt[n]
-    0x20, 0x02, 0x1f, 0xd6, // br   x17
+  static const u32 data[] = {
+    0x90000010, // adrp x16, .got.plt[n]
+    0xf9400211, // ldr  x17, [x16, .got.plt[n]]
+    0x91000210, // add  x16, x16, .got.plt[n]
+    0xd61f0220, // br   x17
   };
 
   u64 gotplt = sym.get_gotplt_addr(ctx);
@@ -78,11 +78,11 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * ARM64::pltgot_size;
 
-    static const u8 data[] = {
-      0x10, 0x00, 0x00, 0x90, // adrp x16, GOT[n]
-      0x11, 0x02, 0x40, 0xf9, // ldr  x17, [x16, GOT[n]]
-      0x20, 0x02, 0x1f, 0xd6, // br   x17
-      0x1f, 0x20, 0x03, 0xd5, // nop
+    static const u32 data[] = {
+      0x90000010, // adrp x16, GOT[n]
+      0xf9400211, // ldr  x17, [x16, GOT[n]]
+      0xd61f0220, // br   x17
+      0xd503201f, // nop
     };
 
     u64 got = sym->get_got_addr(ctx);
@@ -753,20 +753,20 @@ i64 create_range_extension_thunks(Context<E> &ctx) {
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  static const u8 insn[] = {
-    0x10, 0x00, 0x00, 0x90, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
-    0x10, 0x02, 0x00, 0x91, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
-    0x00, 0x02, 0x1f, 0xd6, // br   x16
+  static const u32 data[] = {
+    0x90000010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
+    0x91000210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
+    0xd61f0200, // br   x16
   };
 
-  static_assert(ENTRY_SIZE == sizeof(insn));
+  static_assert(ENTRY_SIZE == sizeof(data));
 
   for (i64 i = 0; i < symbols.size(); i++) {
     u64 S = symbols[i]->get_addr(ctx);
     u64 P = output_section.shdr.sh_addr + offset + i * ENTRY_SIZE;
 
     u8 *loc = buf + i * ENTRY_SIZE;
-    memcpy(loc , insn, sizeof(insn));
+    memcpy(loc , data, sizeof(data));
     write_adr(loc, bits(page(S) - page(P), 32, 12));
     *(u32 *)(loc + 4) |= bits(S, 11, 0) << 10;
   }
