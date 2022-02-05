@@ -850,6 +850,8 @@ static std::vector<T> encode_relr(const std::vector<T> &pos) {
   u64 max_delta = num_bits * sizeof(T);
 
   for (i64 i = 0; i < pos.size();) {
+    assert(i == 0 || pos[i - 1] <= pos[i]);
+
     vec.push_back(pos[i]);
     u64 base = pos[i] + sizeof(T);
     i++;
@@ -882,29 +884,21 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
     return;
 
   // Collect base relocations
-  std::vector<typename E::WordTy> pos;
-  std::mutex mu;
+  std::vector<std::vector<typename E::WordTy>> shards(members.size());
 
-  tbb::parallel_for_each(members, [&](InputSection<E> *isec) {
-    if ((1 << isec->p2align) < E::word_size)
+  tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
+    InputSection<E> &isec = *members[i];
+    if ((1 << isec.p2align) < E::word_size)
       return;
 
-    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-    std::vector<typename E::WordTy> vec;
-
-    for (i64 i = 0; i < rels.size(); i++)
-      if (isec->needs_baserel[i] && (rels[i].r_offset % E::word_size) == 0)
-        vec.push_back(isec->offset + rels[i].r_offset);
-
-    if (!vec.empty()) {
-      std::scoped_lock lock(mu);
-      append(pos, vec);
-    }
+    std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+    for (i64 j = 0; j < rels.size(); j++)
+      if (isec.needs_baserel[j] && (rels[j].r_offset % E::word_size) == 0)
+        shards[i].push_back(isec.offset + rels[j].r_offset);
   });
 
-  tbb::parallel_sort(pos.begin(), pos.end());
-
   // Compress them
+  std::vector<typename E::WordTy> pos = flatten(shards);
   relr = encode_relr(pos);
 }
 
