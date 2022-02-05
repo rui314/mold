@@ -326,7 +326,6 @@ private:
 
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                 const ElfRel<E> &rel, Symbol<E> &sym);
-  void report_undef(Context<E> &ctx, Symbol<E> &sym);
   void copy_contents(Context<E> &ctx, u8 *buf);
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 
@@ -335,6 +334,9 @@ private:
 
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 };
+
+template <typename E>
+void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym);
 
 //
 // output-chunks.cc
@@ -1432,6 +1434,7 @@ struct Context {
     bool strip_debug = false;
     bool trace = false;
     bool warn_common = false;
+    bool warn_once = false;
     bool z_copyreloc = true;
     bool z_defs = false;
     bool z_delete = true;
@@ -1534,6 +1537,9 @@ struct Context {
   std::atomic_bool needs_tlsld = false;
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
+
+  // For --warn-once
+  tbb::concurrent_hash_map<void *, int> warned;
 
   // Output chunks
   std::unique_ptr<OutputEhdr<E>> ehdr;

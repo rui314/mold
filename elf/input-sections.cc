@@ -200,7 +200,10 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
-void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
+void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
+  if (ctx.arg.warn_once && !ctx.warned.insert({(void *)&sym, 1}))
+    return;
+
   switch (ctx.arg.unresolved_symbols) {
   case UNRESOLVED_ERROR:
     Error(ctx) << "undefined symbol: " << file << ": " << sym;
@@ -213,9 +216,11 @@ void InputSection<E>::report_undef(Context<E> &ctx, Symbol<E> &sym) {
   }
 }
 
-#define INSTANTIATE(E)                          \
-  template struct CieRecord<E>;                 \
-  template class InputSection<E>;
+#define INSTANTIATE(E)                                                  \
+  template struct CieRecord<E>;                                         \
+  template class InputSection<E>;                                       \
+  template void report_undef(Context<E> &, InputFile<E> &, Symbol<E> &)
+
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

@@ -917,7 +917,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     };
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      Warn(ctx) << "undefined symbol: " << *this << ": " << sym;
+      report_undef(ctx, *this, sym);
 
     // Convert remaining undefined symbols to dynamic symbols.
     if (ctx.arg.shared) {
