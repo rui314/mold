@@ -1531,6 +1531,7 @@ struct Context {
   u8 *buf = nullptr;
 
   std::vector<Chunk<E> *> chunks;
+  std::atomic_bool needs_tlsld = false;
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
@@ -1623,10 +1624,9 @@ enum {
   NEEDS_PLT      = 1 << 1,
   NEEDS_GOTTP    = 1 << 2,
   NEEDS_TLSGD    = 1 << 3,
-  NEEDS_TLSLD    = 1 << 4,
-  NEEDS_COPYREL  = 1 << 5,
-  NEEDS_TLSDESC  = 1 << 6,
-  NEEDS_THUNK    = 1 << 7,
+  NEEDS_COPYREL  = 1 << 4,
+  NEEDS_TLSDESC  = 1 << 5,
+  NEEDS_THUNK    = 1 << 6,
 };
 
 // A struct to hold taret-dependent symbol members;

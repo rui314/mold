@@ -691,7 +691,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (ctx.arg.relax && !ctx.arg.shared)
         i++;
       else
-        sym.flags |= NEEDS_TLSLD;
+        ctx.needs_tlsld = true;
       break;
     case R_X86_64_GOTTPOFF: {
       ctx.has_gottp_rel = true;

@@ -645,9 +645,6 @@ void scan_rels(Context<E> &ctx) {
     if (sym->flags & NEEDS_TLSDESC)
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
-    if (sym->flags & NEEDS_TLSLD)
-      ctx.got->add_tlsld(ctx);
-
     if (sym->flags & NEEDS_COPYREL) {
       assert(sym->file->is_dso);
       SharedFile<E> *file = (SharedFile<E> *)sym->file;
@@ -678,6 +675,9 @@ void scan_rels(Context<E> &ctx) {
 
     sym->flags = 0;
   }
+
+  if (ctx.needs_tlsld)
+    ctx.got->add_tlsld(ctx);
 }
 
 template <typename E>

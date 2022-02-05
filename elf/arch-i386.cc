@@ -439,7 +439,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_386_TLS_LDM:
-      sym.flags |= NEEDS_TLSLD;
+      ctx.needs_tlsld = true;
       break;
     case R_386_TLS_GOTDESC:
       if (!ctx.arg.relax || ctx.arg.shared)
