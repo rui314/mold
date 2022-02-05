@@ -679,8 +679,8 @@ void scan_rels(Context<E> &ctx) {
   if (ctx.needs_tlsld)
     ctx.got->add_tlsld(ctx);
 
-  if (ctx.arg.shared && ctx.arg.warn_shared_textrel && ctx.has_textrel)
-    Warn(ctx) << "--warn-shared-textrel: creating a DT_TEXTREL in a shared object";
+  if (ctx.has_textrel && ctx.arg.warn_textrel)
+    Warn(ctx) << "creating a DT_TEXTREL in an output file";
 }
 
 template <typename E>

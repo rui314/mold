@@ -1435,7 +1435,7 @@ struct Context {
     bool trace = false;
     bool warn_common = false;
     bool warn_once = false;
-    bool warn_shared_textrel = false;
+    bool warn_textrel = false;
     bool z_copyreloc = true;
     bool z_defs = false;
     bool z_delete = true;

@@ -122,7 +122,7 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
   };
 
   auto warn_textrel = [&]() {
-    if (ctx.arg.shared && ctx.arg.warn_shared_textrel)
+    if (ctx.arg.warn_textrel)
       Warn(ctx) << *this << ": relocation against symbol `" << sym
                 << "' in read-only section";
   };

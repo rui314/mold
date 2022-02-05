@@ -399,6 +399,7 @@ void parse_nonpositional_args(Context<E> &ctx,
   ctx.page_size = E::page_size;
 
   bool version_shown = false;
+  bool warn_shared_textrel = false;
 
   while (!args.empty()) {
     std::string_view arg;
@@ -589,7 +590,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "warn-once")) {
       ctx.arg.warn_once = true;
     } else if (read_flag(args, "warn-shared-textrel")) {
-      ctx.arg.warn_shared_textrel = true;
+      warn_shared_textrel = true;
+    } else if (read_flag(args, "warn-textrel")) {
+      ctx.arg.warn_textrel = true;
     } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_GABI;
@@ -922,6 +925,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.version_definitions.push_back(ver);
     ctx.default_version = VER_NDX_LAST_RESERVED + 1;
   }
+
+  if (ctx.arg.shared && warn_shared_textrel)
+    ctx.arg.warn_textrel = true;
 
   std::tie(ctx.plt_hdr_size, ctx.plt_size) = get_plt_size(ctx);
 
