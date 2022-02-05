@@ -133,6 +133,7 @@ Options:
   --warn-common               Warn about common symbols
     --no-warn-common
   --warn-once                 Only warn once for each undefined symbol
+  --warn-shared-textrel       Warn if the output .so needs text relocations
   --warn-unresolved-symbols   Report unresolved symbols as warnings
     --error-unresolved-symbols
                               Report unresolved symbols as errors (default)
@@ -587,6 +588,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.warn_common = false;
     } else if (read_flag(args, "warn-once")) {
       ctx.arg.warn_once = true;
+    } else if (read_flag(args, "warn-shared-textrel")) {
+      ctx.arg.warn_shared_textrel = true;
     } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_GABI;

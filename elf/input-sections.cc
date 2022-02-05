@@ -121,6 +121,12 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                << sym << "' can not be used; recompile with -fPIC";
   };
 
+  auto warn_textrel = [&]() {
+    if (ctx.arg.shared && ctx.arg.warn_shared_textrel)
+      Warn(ctx) << *this << ": relocation against symbol `" << sym
+                << "' in read-only section";
+  };
+
   switch (action) {
   case NONE:
     return;
@@ -148,10 +154,11 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     return;
   case DYNREL:
     if (!is_writable) {
-      if (!is_code || ctx.arg.z_text) {
+      if (ctx.arg.z_text) {
         error();
         return;
       }
+      warn_textrel();
       ctx.has_textrel = true;
     }
 
@@ -161,10 +168,11 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     return;
   case BASEREL:
     if (!is_writable) {
-      if (!is_code || ctx.arg.z_text) {
+      if (ctx.arg.z_text) {
         error();
         return;
       }
+      warn_textrel();
       ctx.has_textrel = true;
     }
 
