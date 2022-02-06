@@ -891,6 +891,14 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     std::scoped_lock lock(sym.mu);
 
+    // If a protected/hidden undefined symbol is resolved to an
+    // imported symbol, it's handled as if no symbols were found.
+    if (sym.file && sym.file->is_dso &&
+        (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
+      report_undef(ctx, *this, sym);
+      continue;
+    }
+
     if (sym.file &&
         (!sym.esym().is_undef() || sym.file->priority <= this->priority))
       continue;
