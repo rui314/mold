@@ -23,9 +23,8 @@ PKG_CONFIG = pkg-config
 # `STRIP=true` to run /bin/true instead of the strip command.
 STRIP = strip
 
-SRCS=$(wildcard *.cc elf/*.cc macho/*.cc)
-HEADERS=$(wildcard *.h elf/*.h macho/*.h)
-OBJS=$(SRCS:%.cc=out/%.o)
+SRCS = $(wildcard *.cc elf/*.cc macho/*.cc)
+OBJS = $(SRCS:%.cc=out/%.o)
 
 OS := $(shell uname -s)
 ARCH := $(shell uname -m)
@@ -52,7 +51,6 @@ ifneq ($(GIT_HASH),)
 endif
 
 LTO = 0
-
 ifeq ($(LTO), 1)
   CXXFLAGS += -flto -O3
   LDFLAGS  += -flto
@@ -133,7 +131,7 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
 
-mold-wrapper.so: elf/mold-wrapper.c Makefile
+mold-wrapper.so: elf/mold-wrapper.c
 	$(CC) $(DEPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
 
 out/%.o: %.cc out/elf/.keep out/macho/.keep
