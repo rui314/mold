@@ -84,7 +84,7 @@ else
 endif
 
 ifdef SYSTEM_XXHASH
-  MOLD_LDFLAGS += -lxxhash
+  MOLD_LDFLAGS += -Wl,-push-state -Wl,-as-needed -lxxhash -Wl,-pop-state
 else
   XXHASH_LIB = third-party/xxhash/libxxhash.a
   MOLD_LDFLAGS += $(XXHASH_LIB)
