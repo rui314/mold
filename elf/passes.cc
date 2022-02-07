@@ -1057,7 +1057,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // __bss_start
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind == Chunk<E>::REGULAR && chunk->name == ".bss") {
+    if (chunk->is_output_section() && chunk->name == ".bss") {
       start(ctx.__bss_start, chunk);
       break;
     }
@@ -1099,7 +1099,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // _end, _etext, _edata and the like
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind == Chunk<E>::HEADER)
+    if (chunk->is_header())
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC) {

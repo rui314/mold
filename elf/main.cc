@@ -599,7 +599,7 @@ static int elf_main(int argc, char **argv) {
   {
     Timer t(ctx, "eh_frame");
     std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-      return chunk->kind == Chunk<E>::REGULAR && chunk->name == ".eh_frame";
+      return chunk->is_output_section() && chunk->name == ".eh_frame";
     });
     ctx.eh_frame->construct(ctx);
   }
@@ -614,12 +614,12 @@ static int elf_main(int argc, char **argv) {
     chunk->update_shdr(ctx);
 
   std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-    return chunk->kind == Chunk<E>::SYNTHETIC && chunk->shdr.sh_size == 0;
+    return !chunk->is_output_section() && chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
   for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
-    if (ctx.chunks[i]->kind != Chunk<E>::HEADER)
+    if (!ctx.chunks[i]->is_header())
       ctx.chunks[i]->shndx = shndx++;
 
   // Some types of section header refer other section by index.

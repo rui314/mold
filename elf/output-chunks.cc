@@ -749,15 +749,6 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
   return name;
 }
 
-template <typename E>
-OutputSection<E>::OutputSection(std::string_view name, u32 type,
-                                u64 flags, u32 idx)
-  : Chunk<E>(Chunk<E>::REGULAR), idx(idx) {
-  this->name = name;
-  this->shdr.sh_type = type;
-  this->shdr.sh_flags = flags;
-}
-
 static u64 canonicalize_type(std::string_view name, u64 type) {
   if (type == SHT_PROGBITS) {
     if (name == ".init_array" || name.starts_with(".init_array."))
@@ -1363,8 +1354,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-MergedSection<E>::MergedSection(std::string_view name, u64 flags, u32 type)
-  : Chunk<E>(this->SYNTHETIC) {
+MergedSection<E>::MergedSection(std::string_view name, u64 flags, u32 type) {
   this->name = name;
   this->shdr.sh_flags = flags;
   this->shdr.sh_type = type;
@@ -1990,8 +1980,7 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
-                                                Chunk<E> &chunk)
-  : Chunk<E>(this->SYNTHETIC) {
+                                                Chunk<E> &chunk) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
 
@@ -2020,8 +2009,7 @@ void GabiCompressedSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
-                                              Chunk<E> &chunk)
-  : Chunk<E>(this->SYNTHETIC) {
+                                              Chunk<E> &chunk) {
   assert(chunk.name.starts_with(".debug"));
   this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
 
@@ -2046,7 +2034,7 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
-  : Chunk<E>(this->SYNTHETIC), output_section(osec) {
+  : output_section(osec) {
   this->name = save_string(ctx, ".rela" + std::string(osec.name));
   this->shdr.sh_type = SHT_RELA;
   this->shdr.sh_addralign = E::word_size;

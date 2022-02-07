@@ -354,38 +354,34 @@ bool separate_page(Context<E> &ctx, Chunk<E> *a, Chunk<E> *b);
 template <typename E>
 class Chunk {
 public:
-  // There are three types of Chunks:
-  //  - HEADER: the ELF, section or segment headers
-  //  - REGULAR: output sections containing input sections
-  //  - SYNTHETIC: linker-synthesized sections such as .got or .plt
-  enum Kind : u8 { HEADER, REGULAR, SYNTHETIC };
-
   virtual ~Chunk() = default;
+
+  virtual bool is_header() const { return false; }
+  virtual bool is_output_section() const { return false; }
+
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf);
   virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
   i64 shndx = 0;
-  Kind kind;
   ElfShdr<E> shdr = {};
 
 protected:
-  Chunk(Kind kind) : kind(kind) {
-    shdr.sh_addralign = 1;
-  }
+  Chunk() { shdr.sh_addralign = 1; }
 };
 
 // ELF header
 template <typename E>
 class OutputEhdr : public Chunk<E> {
 public:
-  OutputEhdr() : Chunk<E>(this->HEADER) {
+  OutputEhdr() {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
     this->shdr.sh_addralign = E::word_size;
   }
 
+  bool is_header() const override { return true; }
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -393,10 +389,11 @@ public:
 template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
-  OutputShdr() : Chunk<E>(this->HEADER) {
+  OutputShdr() {
     this->shdr.sh_addralign = E::word_size;
   }
 
+  bool is_header() const override { return true; }
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 };
@@ -405,11 +402,12 @@ public:
 template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
-  OutputPhdr() : Chunk<E>(this->HEADER) {
+  OutputPhdr() {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_addralign = E::word_size;
   }
 
+  bool is_header() const override { return true; }
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 };
@@ -417,7 +415,7 @@ public:
 template <typename E>
 class InterpSection : public Chunk<E> {
 public:
-  InterpSection() : Chunk<E>(this->SYNTHETIC) {
+  InterpSection() {
     this->name = ".interp";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -434,6 +432,7 @@ public:
   static OutputSection *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
+  bool is_output_section() const override { return true; }
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 
@@ -446,13 +445,18 @@ public:
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
 
 private:
-  OutputSection(std::string_view name, u32 type, u64 flags, u32 idx);
+  OutputSection(std::string_view name, u32 type, u64 flags, u32 idx)
+    : idx(idx) {
+    this->name = name;
+    this->shdr.sh_type = type;
+    this->shdr.sh_flags = flags;
+  }
 };
 
 template <typename E>
 class GotSection : public Chunk<E> {
 public:
-  GotSection() : Chunk<E>(this->SYNTHETIC) {
+  GotSection() {
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -482,7 +486,7 @@ public:
 template <typename E>
 class GotPltSection : public Chunk<E> {
 public:
-  GotPltSection() : Chunk<E>(this->SYNTHETIC) {
+  GotPltSection() {
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -495,7 +499,7 @@ public:
 template <typename E>
 class PltSection : public Chunk<E> {
 public:
-  PltSection() : Chunk<E>(this->SYNTHETIC) {
+  PltSection() {
     this->name = ".plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
@@ -511,7 +515,7 @@ public:
 template <typename E>
 class PltGotSection : public Chunk<E> {
 public:
-  PltGotSection() : Chunk<E>(this->SYNTHETIC) {
+  PltGotSection() {
     this->name = ".plt.got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
@@ -527,7 +531,7 @@ public:
 template <typename E>
 class RelPltSection : public Chunk<E> {
 public:
-  RelPltSection() : Chunk<E>(this->SYNTHETIC) {
+  RelPltSection() {
     this->name = E::is_rel ? ".rel.plt" : ".rela.plt";
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -542,7 +546,7 @@ public:
 template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
-  RelDynSection() : Chunk<E>(this->SYNTHETIC) {
+  RelDynSection() {
     this->name = E::is_rel ? ".rel.dyn" : ".rela.dyn";
     this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -560,7 +564,7 @@ public:
 template <typename E>
 class RelrDynSection : public Chunk<E> {
 public:
-  RelrDynSection() : Chunk<E>(this->SYNTHETIC) {
+  RelrDynSection() {
     this->name = ".relr.dyn";
     this->shdr.sh_type = SHT_RELR;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -575,7 +579,7 @@ public:
 template <typename E>
 class StrtabSection : public Chunk<E> {
 public:
-  StrtabSection() : Chunk<E>(this->SYNTHETIC) {
+  StrtabSection() {
     this->name = ".strtab";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_size = 1;
@@ -587,7 +591,7 @@ public:
 template <typename E>
 class ShstrtabSection : public Chunk<E> {
 public:
-  ShstrtabSection() : Chunk<E>(this->SYNTHETIC) {
+  ShstrtabSection() {
     this->name = ".shstrtab";
     this->shdr.sh_type = SHT_STRTAB;
   }
@@ -599,7 +603,7 @@ public:
 template <typename E>
 class DynstrSection : public Chunk<E> {
 public:
-  DynstrSection() : Chunk<E>(this->SYNTHETIC) {
+  DynstrSection() {
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -619,7 +623,7 @@ private:
 template <typename E>
 class DynamicSection : public Chunk<E> {
 public:
-  DynamicSection() : Chunk<E>(this->SYNTHETIC) {
+  DynamicSection() {
     this->name = ".dynamic";
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -634,7 +638,7 @@ public:
 template <typename E>
 class SymtabSection : public Chunk<E> {
 public:
-  SymtabSection() : Chunk<E>(this->SYNTHETIC) {
+  SymtabSection() {
     this->name = ".symtab";
     this->shdr.sh_type = SHT_SYMTAB;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
@@ -648,7 +652,7 @@ public:
 template <typename E>
 class DynsymSection : public Chunk<E> {
 public:
-  DynsymSection() : Chunk<E>(this->SYNTHETIC) {
+  DynsymSection() {
     this->name = ".dynsym";
     this->shdr.sh_type = SHT_DYNSYM;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -667,7 +671,7 @@ public:
 template <typename E>
 class HashSection : public Chunk<E> {
 public:
-  HashSection() : Chunk<E>(this->SYNTHETIC) {
+  HashSection() {
     this->name = ".hash";
     this->shdr.sh_type = SHT_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -682,7 +686,7 @@ public:
 template <typename E>
 class GnuHashSection : public Chunk<E> {
 public:
-  GnuHashSection() : Chunk<E>(this->SYNTHETIC) {
+  GnuHashSection() {
     this->name = ".gnu.hash";
     this->shdr.sh_type = SHT_GNU_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -727,7 +731,7 @@ private:
 template <typename E>
 class EhFrameSection : public Chunk<E> {
 public:
-  EhFrameSection() : Chunk<E>(this->SYNTHETIC) {
+  EhFrameSection() {
     this->name = ".eh_frame";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -742,7 +746,7 @@ public:
 template <typename E>
 class EhFrameHdrSection : public Chunk<E> {
 public:
-  EhFrameHdrSection() : Chunk<E>(this->SYNTHETIC) {
+  EhFrameHdrSection() {
     this->name = ".eh_frame_hdr";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -761,7 +765,7 @@ public:
 template <typename E>
 class DynbssSection : public Chunk<E> {
 public:
-  DynbssSection(bool is_relro) : Chunk<E>(this->SYNTHETIC) {
+  DynbssSection(bool is_relro) {
     this->name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -776,7 +780,7 @@ public:
 template <typename E>
 class VersymSection : public Chunk<E> {
 public:
-  VersymSection() : Chunk<E>(this->SYNTHETIC) {
+  VersymSection() {
     this->name = ".gnu.version";
     this->shdr.sh_type = SHT_GNU_VERSYM;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -793,7 +797,7 @@ public:
 template <typename E>
 class VerneedSection : public Chunk<E> {
 public:
-  VerneedSection() : Chunk<E>(this->SYNTHETIC) {
+  VerneedSection() {
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -810,7 +814,7 @@ public:
 template <typename E>
 class VerdefSection : public Chunk<E> {
 public:
-  VerdefSection() : Chunk<E>(this->SYNTHETIC) {
+  VerdefSection() {
     this->name = ".gnu.version_d";
     this->shdr.sh_type = SHT_GNU_VERDEF;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -827,7 +831,7 @@ public:
 template <typename E>
 class BuildIdSection : public Chunk<E> {
 public:
-  BuildIdSection() : Chunk<E>(this->SYNTHETIC) {
+  BuildIdSection() {
     this->name = ".note.gnu.build-id";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;
@@ -845,7 +849,7 @@ public:
 template <typename E>
 class NotePropertySection : public Chunk<E> {
 public:
-  NotePropertySection() : Chunk<E>(this->SYNTHETIC) {
+  NotePropertySection() {
     this->name = ".note.gnu.property";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;

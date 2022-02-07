@@ -70,7 +70,7 @@ void print_map(Context<E> &ctx) {
          << std::setw(6) << (u64)osec->shdr.sh_addralign
          << " " << osec->name << "\n";
 
-    if (osec->kind != Chunk<E>::REGULAR)
+    if (!osec->is_output_section())
       continue;
 
     std::span<InputSection<E> *> members = ((OutputSection<E> *)osec)->members;
