@@ -9,6 +9,25 @@
 
 namespace mold::elf {
 
+static u32 elf_hash(std::string_view name) {
+  u32 h = 0;
+  for (u8 c : name) {
+    h = (h << 4) + c;
+    u32 g = h & 0xf0000000;
+    if (g != 0)
+      h ^= g >> 24;
+    h &= ~g;
+  }
+  return h;
+}
+
+static u32 djb_hash(std::string_view name) {
+  u32 h = 5381;
+  for (u8 c : name)
+    h = (h << 5) + h + c;
+  return h;
+}
+
 template <typename E>
 void Chunk<E>::write_to(Context<E> &ctx, u8 *buf) {
   Fatal(ctx) << name << ": write_to is called on an invalid section";
