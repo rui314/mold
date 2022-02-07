@@ -40,8 +40,8 @@ CFLAGS = -O2
 CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
-                 -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.3\" \
-                 -DLIBDIR="\"$(LIBDIR)\""
+                 -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
+                 -DMOLD_VERSION=\"1.0.3\" -DLIBDIR="\"$(LIBDIR)\""
 
 MOLD_LDFLAGS := -pthread -lz -lm
 
@@ -83,14 +83,6 @@ else
   MOLD_CXXFLAGS += -Ithird-party/tbb/include
 endif
 
-ifdef SYSTEM_XXHASH
-  MOLD_LDFLAGS += -Wl,-push-state -Wl,-as-needed -lxxhash -Wl,-pop-state
-else
-  XXHASH_LIB = third-party/xxhash/libxxhash.a
-  MOLD_LDFLAGS += $(XXHASH_LIB)
-  MOLD_CXXFLAGS += -Ithird-party/xxhash
-endif
-
 ifeq ($(OS), Linux)
   ifeq ($(IS_ANDROID), 0)
     # glibc before 2.17 need librt for clock_gettime
@@ -126,7 +118,7 @@ all: mold mold-wrapper.so
 
 -include $(SRCS:%.cc=out/%.d)
 
-mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(XXHASH_LIB)
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
 	ln -sf mold ld64.mold
@@ -151,9 +143,6 @@ $(TBB_LIB):
 	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -D__TBB_DYNAMIC_LOAD_ENABLED=0" -DTBB_STRICT=OFF ../../third-party/tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
-
-$(XXHASH_LIB):
-	$(MAKE) -C third-party/xxhash libxxhash.a
 
 test tests check: all
 ifeq ($(OS), Darwin)
@@ -193,6 +182,5 @@ uninstall:
 
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64.mold
-	$(MAKE) -C third-party/xxhash clean
 
 .PHONY: all test tests check clean

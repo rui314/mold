@@ -27,7 +27,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <xxh3.h>
+
+#define XXH_INLINE_ALL 1
+#include <xxhash.h>
 
 template<>
 class tbb::tbb_hash_compare<std::string_view> {
