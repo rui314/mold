@@ -40,8 +40,8 @@ CFLAGS = -O2
 CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
-                 -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
-                 -DMOLD_VERSION=\"1.0.3\" -DLIBDIR="\"$(LIBDIR)\""
+                 -fno-asynchronous-unwind-tables -DMOLD_VERSION=\"1.0.3\" \
+                 -DLIBDIR="\"$(LIBDIR)\""
 
 MOLD_LDFLAGS := -pthread -lz -lm
 
@@ -81,6 +81,10 @@ else
   TBB_LIB = out/tbb/libs/libtbb.a
   MOLD_LDFLAGS += $(TBB_LIB)
   MOLD_CXXFLAGS += -Ithird-party/tbb/include
+endif
+
+ifndef SYSTEM_XXHASH
+  MOLD_CXXFLAGS += -Ithird-party/xxhash
 endif
 
 ifeq ($(OS), Linux)
