@@ -394,6 +394,23 @@ void check_cet_errors(Context<E> &ctx) {
 }
 
 template <typename E>
+void print_dependencies(Context<E> &ctx) {
+  auto print = [&](InputFile<E> *file) {
+    for (i64 i = file->first_global; i < file->symbols.size(); i++) {
+      ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+      if (esym.is_undef() && sym.file && sym.file != file)
+        SyncOut(ctx) << *file << "\t" << *sym.file << "\t" << sym;
+    }
+  };
+
+  for (InputFile<E> *file : ctx.objs)
+    print(file);
+  for (InputFile<E> *file : ctx.dsos)
+    print(file);
+}
+
+template <typename E>
 static std::string create_response_file(Context<E> &ctx) {
   std::string buf;
   std::stringstream out;
@@ -1203,6 +1220,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void bin_sections(Context<E> &);                             \
   template ObjectFile<E> *create_internal_file(Context<E> &);           \
   template void check_cet_errors(Context<E> &);                         \
+  template void print_dependencies(Context<E> &);                       \
   template void write_repro_file(Context<E> &);                         \
   template void check_duplicate_symbols(Context<E> &);                  \
   template void sort_init_fini(Context<E> &);                           \

@@ -1253,6 +1253,7 @@ template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
 template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
+template <typename E> void print_dependencies(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
@@ -1421,6 +1422,7 @@ struct Context {
     bool pic = false;
     bool pie = false;
     bool preload = false;
+    bool print_dependencies = false;
     bool print_gc_sections = false;
     bool print_icf_sections = false;
     bool print_map = false;

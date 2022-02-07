@@ -513,6 +513,10 @@ static int elf_main(int argc, char **argv) {
   if (ctx.arg.z_cet_report != CET_REPORT_NONE)
     check_cet_errors(ctx);
 
+  // Handle --print-dependencies
+  if (ctx.arg.print_dependencies)
+    print_dependencies(ctx);
+
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
