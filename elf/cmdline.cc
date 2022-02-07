@@ -781,7 +781,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       if (arg == "binary")
         Fatal(ctx)
           << "mold does not suppor `-b binary`. If you want to convert a binary"
-          " file into an object file, use `objcopy -I binary -O elf64-x86-64"
+          << " file into an object file, use `objcopy -I binary -O default"
           << " <input-file> <output-file.o>` instead.";
       Fatal(ctx) << "unknown command line option: -b " << arg;
     } else if (read_arg(ctx, args, arg, "auxiliary") ||
