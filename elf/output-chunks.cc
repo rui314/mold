@@ -124,6 +124,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
     if ((flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
         type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
         chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
+        (ctx.arg.z_now && chunk == ctx.gotplt.get()) ||
         chunk->name.ends_with(".rel.ro"))
       return true;
   return false;
