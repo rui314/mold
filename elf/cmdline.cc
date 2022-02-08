@@ -401,6 +401,11 @@ void parse_nonpositional_args(Context<E> &ctx,
   bool version_shown = false;
   bool warn_shared_textrel = false;
 
+  // RISC-V object files contains lots of local symbols, so by default
+  // we discard them. This is compatible with GNU ld.
+  if (E::e_machine == EM_RISCV)
+    ctx.arg.discard_locals = true;
+
   while (!args.empty()) {
     std::string_view arg;
 
