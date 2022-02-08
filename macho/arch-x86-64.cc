@@ -138,19 +138,19 @@ void Subsection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 
     switch (r.type) {
     case X86_64_RELOC_GOT_LOAD:
-      if (sym->file && sym->file->is_dylib)
+      if (sym->file && sym->file->is_dylib())
         sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_GOT:
       sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_TLV:
-      if (sym->file && sym->file->is_dylib)
+      if (sym->file && sym->file->is_dylib())
         sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
 
-    if (sym->file && sym->file->is_dylib) {
+    if (sym->file && sym->file->is_dylib()) {
       sym->flags |= NEEDS_STUB;
       ((DylibFile<X86_64> *)sym->file)->is_needed = true;
     }

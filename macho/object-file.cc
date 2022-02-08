@@ -344,7 +344,7 @@ static u64 get_rank(InputFile<E> *file, MachSym &msym, bool is_lazy) {
     return (6 << 24) + file->priority;
   if (is_lazy)
     return (5 << 24) + file->priority;
-  if (file->is_dylib)
+  if (file->is_dylib())
     return (3 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
@@ -358,7 +358,7 @@ static u64 get_rank(Symbol<E> &sym) {
     return (6 << 24) + file->priority;
   if (!file->archive_name.empty())
     return (5 << 24) + file->priority;
-  if (file->is_dylib)
+  if (file->is_dylib())
     return (3 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
