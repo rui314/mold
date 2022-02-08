@@ -765,7 +765,7 @@ public:
 template <typename E>
 class CopyrelSection : public Chunk<E> {
 public:
-  CopyrelSection(bool is_relro) {
+  CopyrelSection(bool is_relro) : is_relro(is_relro) {
     this->name = is_relro ? ".copyrel.rel.ro" : ".copyrel";
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
@@ -773,7 +773,10 @@ public:
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
 
+  bool is_relro;
   std::vector<Symbol<E> *> symbols;
 };
 
