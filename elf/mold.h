@@ -763,10 +763,10 @@ public:
 };
 
 template <typename E>
-class DynbssSection : public Chunk<E> {
+class CopyrelSection : public Chunk<E> {
 public:
-  DynbssSection(bool is_relro) {
-    this->name = is_relro ? ".dynbss.rel.ro" : ".dynbss";
+  CopyrelSection(bool is_relro) {
+    this->name = is_relro ? ".copyrel.rel.ro" : ".copyrel";
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = 64;
@@ -1572,8 +1572,8 @@ struct Context {
   std::unique_ptr<DynsymSection<E>> dynsym;
   std::unique_ptr<EhFrameSection<E>> eh_frame;
   std::unique_ptr<EhFrameHdrSection<E>> eh_frame_hdr;
-  std::unique_ptr<DynbssSection<E>> dynbss;
-  std::unique_ptr<DynbssSection<E>> dynbss_relro;
+  std::unique_ptr<CopyrelSection<E>> copyrel;
+  std::unique_ptr<CopyrelSection<E>> copyrel_relro;
   std::unique_ptr<VersymSection<E>> versym;
   std::unique_ptr<VerneedSection<E>> verneed;
   std::unique_ptr<VerdefSection<E>> verdef;
@@ -2018,8 +2018,8 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
 
   if (has_copyrel) {
     return copyrel_readonly
-      ? ctx.dynbss_relro->shdr.sh_addr + value
-      : ctx.dynbss->shdr.sh_addr + value;
+      ? ctx.copyrel_relro->shdr.sh_addr + value
+      : ctx.copyrel->shdr.sh_addr + value;
   }
 
   if (allow_plt && has_plt(ctx))

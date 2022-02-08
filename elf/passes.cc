@@ -53,8 +53,8 @@ void create_synthetic_sections(Context<E> &ctx) {
   add(ctx.dynsym = std::make_unique<DynsymSection<E>>());
   add(ctx.dynstr = std::make_unique<DynstrSection<E>>());
   add(ctx.eh_frame = std::make_unique<EhFrameSection<E>>());
-  add(ctx.dynbss = std::make_unique<DynbssSection<E>>(false));
-  add(ctx.dynbss_relro = std::make_unique<DynbssSection<E>>(true));
+  add(ctx.copyrel = std::make_unique<CopyrelSection<E>>(false));
+  add(ctx.copyrel_relro = std::make_unique<CopyrelSection<E>>(true));
 
   if (!ctx.arg.dynamic_linker.empty())
     add(ctx.interp = std::make_unique<InterpSection<E>>());
@@ -668,9 +668,9 @@ void scan_rels(Context<E> &ctx) {
       sym->copyrel_readonly = file->is_readonly(ctx, sym);
 
       if (sym->copyrel_readonly)
-        ctx.dynbss_relro->add_symbol(ctx, sym);
+        ctx.copyrel_relro->add_symbol(ctx, sym);
       else
-        ctx.dynbss->add_symbol(ctx, sym);
+        ctx.copyrel->add_symbol(ctx, sym);
 
       // If a symbol needs copyrel, it is considered both imported
       // and exported.

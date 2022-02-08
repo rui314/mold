@@ -332,8 +332,8 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   // InputSection::apply_reloc_alloc().
   i64 offset = ctx.got->get_reldyn_size(ctx);
 
-  offset += ctx.dynbss->symbols.size() * sizeof(ElfRel<E>);
-  offset += ctx.dynbss_relro->symbols.size() * sizeof(ElfRel<E>);
+  offset += ctx.copyrel->symbols.size() * sizeof(ElfRel<E>);
+  offset += ctx.copyrel_relro->symbols.size() * sizeof(ElfRel<E>);
 
   for (ObjectFile<E> *file : ctx.objs) {
     file->reldyn_offset = offset;
@@ -357,10 +357,10 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset +
                                  ctx.got->get_reldyn_size(ctx));
 
-  for (Symbol<E> *sym : ctx.dynbss->symbols)
+  for (Symbol<E> *sym : ctx.copyrel->symbols)
     *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 
-  for (Symbol<E> *sym : ctx.dynbss_relro->symbols)
+  for (Symbol<E> *sym : ctx.copyrel_relro->symbols)
     *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
 }
 
@@ -1240,7 +1240,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
 
     if (sym.has_copyrel) {
       esym.st_shndx = sym.copyrel_readonly
-        ? ctx.dynbss_relro->shndx : ctx.dynbss->shndx;
+        ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
       esym.st_value = sym.get_addr(ctx);
     } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
@@ -1682,7 +1682,7 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void DynbssSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (sym->has_copyrel)
     return;
 
@@ -2153,7 +2153,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class MergedSection<E>;                                      \
   template class EhFrameSection<E>;                                     \
   template class EhFrameHdrSection<E>;                                  \
-  template class DynbssSection<E>;                                      \
+  template class CopyrelSection<E>;                                     \
   template class VersymSection<E>;                                      \
   template class VerneedSection<E>;                                     \
   template class VerdefSection<E>;                                      \
@@ -2161,7 +2161,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class NotePropertySection<E>;                                \
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
-  template class RelocSection<E>;                                        \
+  template class RelocSection<E>;                                       \
   template i64 BuildId::size(Context<E> &) const;                       \
   template bool is_relro(Context<E> &, Chunk<E> *);                     \
   template bool separate_page(Context<E> &, Chunk<E> *, Chunk<E> *);    \
