@@ -947,7 +947,7 @@ template <typename E>
 class InputFile {
 public:
   InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
-  InputFile() : filename("<internal>") {}
+  InputFile() : mf(nullptr), filename("<internal>") {}
 
   virtual ~InputFile() = default;
 
@@ -960,8 +960,10 @@ public:
   std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   std::string_view get_string(Context<E> &ctx, i64 idx);
 
-  ElfEhdr<E> &get_ehdr() { return *(ElfEhdr<E> *)mf->data; }
-  ElfPhdr<E> *get_phdr() { return (ElfPhdr<E> *)(mf->data + get_ehdr().e_phoff); }
+  ElfEhdr<E> &get_ehdr() const { return *(ElfEhdr<E> *)mf->data; }
+  ElfPhdr<E> *get_phdr() const {
+    return (ElfPhdr<E> *)(mf->data + get_ehdr().e_phoff);
+  }
 
   ElfShdr<E> *find_section(i64 type);
 
@@ -972,6 +974,8 @@ public:
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
+  virtual bool is_dso() const = 0;
+
   std::span<Symbol<E> *> get_global_syms();
 
   MappedFile<Context<E>> *mf;
@@ -981,7 +985,6 @@ public:
   i64 first_global = 0;
 
   std::string filename;
-  bool is_dso = false;
   u32 priority;
   std::atomic_bool is_alive = false;
   std::string_view shstrtab;
@@ -1057,6 +1060,12 @@ public:
   std::vector<std::vector<ElfRel<E>>> sorted_rels;
   std::vector<std::vector<Symbol<E> *>> sorted_symbols;
 
+  inline virtual bool is_dso() const override {
+    if (this->mf)
+      assert(this->get_ehdr().e_type == ET_REL);
+    return false;
+  }
+
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
              std::string archive_name, bool is_in_lib);
@@ -1105,6 +1114,11 @@ public:
   std::string soname;
   std::vector<std::string_view> version_strings;
   std::vector<ElfSym<E>> elf_syms2;
+
+  inline virtual bool is_dso() const override {
+    assert(this->get_ehdr().e_type == ET_DYN);
+    return true;
+  }
 
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
@@ -2209,7 +2223,7 @@ inline bool Symbol<E>::has_got(Context<E> &ctx) const {
 
 template <typename E>
 inline bool Symbol<E>::is_absolute() const {
-  if (file->is_dso)
+  if (file->is_dso())
     return esym().is_abs();
   return !is_imported && !get_frag() && !shndx && !input_section;
 }
@@ -2221,14 +2235,14 @@ inline bool Symbol<E>::is_relative() const {
 
 template <typename E>
 inline u32 Symbol<E>::get_type() const {
-  if (esym().st_type == STT_GNU_IFUNC && file->is_dso)
+  if (esym().st_type == STT_GNU_IFUNC && file->is_dso())
     return STT_FUNC;
   return esym().st_type;
 }
 
 template <typename E>
 inline std::string_view Symbol<E>::get_version() const {
-  if (file->is_dso)
+  if (file->is_dso())
     return ((SharedFile<E> *)file)->version_strings[ver_idx];
   return "";
 }
@@ -2240,7 +2254,7 @@ inline const ElfSym<E> &Symbol<E>::esym() const {
 
 template <typename E>
 inline SectionFragment<E> *Symbol<E>::get_frag() const {
-  if (!file || file->is_dso)
+  if (!file || file->is_dso())
     return nullptr;
   return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
 }
