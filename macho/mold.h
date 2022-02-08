@@ -60,9 +60,10 @@ public:
   MappedFile<Context<E>> *mf = nullptr;
   std::vector<Symbol<E> *> syms;
   i64 priority = 0;
-  bool is_dylib = false;
   std::atomic_bool is_alive = false;
   std::string archive_name;
+
+  virtual bool is_dylib() const = 0;
 
 protected:
   InputFile() = default;
@@ -75,6 +76,7 @@ public:
 
   static ObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                             std::string archive_name);
+  bool is_dylib() const override { return false; }
   void parse(Context<E> &ctx);
   Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
@@ -121,13 +123,14 @@ public:
   i64 dylib_idx = 0;
   std::atomic_bool is_needed = false;
 
+  bool is_dylib() const override { return true; }
+
 private:
   void parse_dylib(Context<E> &ctx);
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
                  const std::string &prefix = "");
 
   DylibFile() {
-    this->is_dylib = true;
     this->is_alive = true;
   }
 };

@@ -159,7 +159,7 @@ void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
       break;
     }
 
-    if (sym->file && sym->file->is_dylib) {
+    if (sym->file && sym->file->is_dylib()) {
       sym->flags |= NEEDS_STUB;
       ((DylibFile<ARM64> *)sym->file)->is_needed = true;
     }
