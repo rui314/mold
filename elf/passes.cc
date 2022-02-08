@@ -395,6 +395,13 @@ void check_cet_errors(Context<E> &ctx) {
 
 template <typename E>
 void print_dependencies(Context<E> &ctx) {
+  SyncOut(ctx) <<
+R"(# This is an output of the mold linker's --print-dependencies option.
+#
+# Each line consists of three fields, <input-file>, <output-file> and
+# <symbol> separated by tab characters. It indicates that <input-file>
+# depends on <output-file> to use <symbol>.)";
+
   auto print = [&](InputFile<E> *file) {
     for (i64 i = file->first_global; i < file->symbols.size(); i++) {
       ElfSym<E> &esym = file->elf_syms[i];
@@ -408,6 +415,61 @@ void print_dependencies(Context<E> &ctx) {
     print(file);
   for (InputFile<E> *file : ctx.dsos)
     print(file);
+}
+
+template <typename E>
+void print_dependencies_full(Context<E> &ctx) {
+  SyncOut(ctx) <<
+R"(# This is an output of the mold linker's --print-dependencies=full option.
+#
+# Each line consists of 4 fields, <input-section>, <output-section>,
+# <symbol-type> and <symbol>, separated by tab characters. It indicates that
+# <input-section> depends on <output-section> to use <symbol>. <symbol-type>
+# is either "u" or "w" for regular or weak undefined, respectively.
+#
+# If you want to obtain dependency information per function granularity,
+# compile source files with the -ffunction-sections compiler flag.)";
+
+  auto println = [&](auto &src, Symbol<E> &sym, ElfSym<E> &esym) {
+    if (sym.input_section)
+      SyncOut(ctx) << src << "\t" << *sym.input_section
+                   << "\t" << (esym.is_weak() ? 'w' : 'u')
+                   << "\t" << sym;
+    else
+      SyncOut(ctx) << src << "\t" << *sym.file
+                   << "\t" << (esym.is_weak() ? 'w' : 'u')
+                   << "\t" << sym;
+  };
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (!isec)
+        continue;
+
+      std::unordered_set<void *> visited;
+
+      for (ElfRel<E> &r : isec->get_rels(ctx)) {
+        if (r.r_type == E::R_NONE)
+          continue;
+
+        ElfSym<E> &esym = file->elf_syms[r.r_sym];
+        Symbol<E> &sym = *file->symbols[r.r_sym];
+
+        if (esym.is_undef() && sym.file && sym.file != file &&
+            visited.insert((void *)&sym).second)
+          println(*isec, sym, esym);
+      }
+    }
+  }
+
+  for (SharedFile<E> *file : ctx.dsos) {
+    for (i64 i = file->first_global; i < file->symbols.size(); i++) {
+      ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+      if (esym.is_undef() && sym.file && sym.file != file)
+        println(*file, sym, esym);
+    }
+  }
 }
 
 template <typename E>
@@ -1222,6 +1284,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template ObjectFile<E> *create_internal_file(Context<E> &);           \
   template void check_cet_errors(Context<E> &);                         \
   template void print_dependencies(Context<E> &);                       \
+  template void print_dependencies_full(Context<E> &);                  \
   template void write_repro_file(Context<E> &);                         \
   template void check_duplicate_symbols(Context<E> &);                  \
   template void sort_init_fini(Context<E> &);                           \

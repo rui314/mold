@@ -468,7 +468,9 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
     } else if (read_flag(args, "print-dependencies")) {
-      ctx.arg.print_dependencies = true;
+      ctx.arg.print_dependencies = 1;
+    } else if (read_flag(args, "print-dependencies=full")) {
+      ctx.arg.print_dependencies = 2;
     } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
       ctx.arg.print_map = true;
     } else if (read_flag(args, "static") || read_flag(args, "Bstatic")) {

@@ -1267,6 +1267,8 @@ template <typename E> void bin_sections(Context<E> &);
 template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
+template <typename E> void print_dependencies(Context<E> &);
+template <typename E> void print_dependencies_full(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
@@ -1435,7 +1437,6 @@ struct Context {
     bool pic = false;
     bool pie = false;
     bool preload = false;
-    bool print_dependencies = false;
     bool print_gc_sections = false;
     bool print_icf_sections = false;
     bool print_map = false;
@@ -1470,6 +1471,7 @@ struct Context {
     bool z_text = false;
     i64 emulation = -1;
     i64 filler = -1;
+    i64 print_dependencies = 0;
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
     std::optional<GlobPattern> unique;
