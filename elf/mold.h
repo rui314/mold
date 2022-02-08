@@ -947,9 +947,11 @@ template <typename E>
 class InputFile {
 public:
   InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
-  InputFile() : mf(nullptr), filename("<internal>") {}
+  InputFile() : filename("<internal>") {}
 
   virtual ~InputFile() = default;
+
+  virtual bool is_dso() const = 0;
 
   template<typename T> std::span<T>
   get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
@@ -974,11 +976,9 @@ public:
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
-  virtual bool is_dso() const = 0;
-
   std::span<Symbol<E> *> get_global_syms();
 
-  MappedFile<Context<E>> *mf;
+  MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
   std::vector<Symbol<E> *> symbols;
@@ -1009,12 +1009,12 @@ template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
   ObjectFile();
-
   ~ObjectFile() = default;
 
   static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                std::string archive_name, bool is_in_lib);
 
+  bool is_dso() const override { return false; }
   void parse(Context<E> &ctx);
   void register_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1060,12 +1060,6 @@ public:
   std::vector<std::vector<ElfRel<E>>> sorted_rels;
   std::vector<std::vector<Symbol<E> *>> sorted_symbols;
 
-  inline virtual bool is_dso() const override {
-    if (this->mf)
-      assert(this->get_ehdr().e_type == ET_REL);
-    return false;
-  }
-
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
              std::string archive_name, bool is_in_lib);
@@ -1100,6 +1094,7 @@ public:
 
   ~SharedFile() = default;
 
+  bool is_dso() const override { return true; }
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
@@ -1114,11 +1109,6 @@ public:
   std::string soname;
   std::vector<std::string_view> version_strings;
   std::vector<ElfSym<E>> elf_syms2;
-
-  inline virtual bool is_dso() const override {
-    assert(this->get_ehdr().e_type == ET_DYN);
-    return true;
-  }
 
 private:
   SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
