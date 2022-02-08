@@ -353,6 +353,9 @@ static void gather_edges(Context<E> &ctx,
                          std::vector<u32> &edge_indices) {
   Timer t(ctx, "gather_edges");
 
+  if (sections.empty())
+    return;
+
   std::vector<i64> num_edges(sections.size());
   edge_indices.resize(sections.size());
 
