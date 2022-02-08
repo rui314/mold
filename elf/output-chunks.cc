@@ -1704,7 +1704,7 @@ void CopyrelSection<E>::update_shdr(Context<E> &ctx) {
   // segment for it. We turn a .coyprel.rel.ro into a regular section
   // if it is very small to avoid the cost of the extra segment.
   constexpr i64 threshold = 4096;
-  if (is_relro && this->shdr.sh_size < threshold)
+  if (is_relro && ctx.arg.z_relro && this->shdr.sh_size < threshold)
     this->shdr.sh_type = SHT_PROGBITS;
 }
 
