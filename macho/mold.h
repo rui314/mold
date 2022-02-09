@@ -67,6 +67,7 @@ public:
 
 protected:
   InputFile() = default;
+  virtual ~InputFile() = default;
 };
 
 template <typename E>
