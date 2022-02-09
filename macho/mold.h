@@ -806,8 +806,6 @@ struct Context {
   std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf;
 
-  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
-  tbb::concurrent_vector<std::unique_ptr<DylibFile<E>>> dylib_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
   std::vector<std::unique_ptr<OutputSection<E>>> osec_pool;

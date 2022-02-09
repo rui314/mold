@@ -1530,8 +1530,6 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;
 
-  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
-  tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
   tbb::concurrent_vector<std::vector<ElfRel<E>>> rel_pool;

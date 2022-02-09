@@ -21,7 +21,6 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
   obj->mf = mf;
   obj->archive_name = archive_name;
   obj->is_alive = archive_name.empty();
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   return obj;
 };
 
@@ -523,7 +522,6 @@ template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>;
   dylib->mf = mf;
-  ctx.dylib_pool.push_back(std::unique_ptr<DylibFile<E>>(dylib));
   return dylib;
 };
 

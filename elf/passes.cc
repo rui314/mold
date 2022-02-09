@@ -273,7 +273,6 @@ static std::optional<u64> parse_defsym_addr(std::string_view s) {
 template <typename E>
 ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
 
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym<E>>(1);

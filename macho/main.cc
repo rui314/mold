@@ -23,7 +23,6 @@ split_string(std::string_view str, char sep) {
 template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
   ctx.objs.push_back(obj);
 
   auto add = [&](std::string_view name) {
