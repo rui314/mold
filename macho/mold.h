@@ -57,6 +57,8 @@ struct UnwindRecord {
 template <typename E>
 class InputFile {
 public:
+  virtual ~InputFile() = default;
+
   MappedFile<Context<E>> *mf = nullptr;
   std::vector<Symbol<E> *> syms;
   i64 priority = 0;
@@ -67,7 +69,6 @@ public:
 
 protected:
   InputFile() = default;
-  virtual ~InputFile() = default;
 };
 
 template <typename E>
