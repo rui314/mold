@@ -72,6 +72,11 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   case FileType::TEXT:
     parse_linker_script(ctx, mf);
     return;
+  case FileType::GCC_LTO_OBJ:
+    Warn(ctx) << mf->name << ": looks like this is an GCC LTO object, "
+              << "but mold does not support LTO";
+    ctx.gcc_lto = true;
+    return;
   case FileType::LLVM_BITCODE:
     Warn(ctx) << mf->name << ": looks like this is an LLVM bitcode, "
               << "but mold does not support LTO";
@@ -461,9 +466,8 @@ static int elf_main(int argc, char **argv) {
   }
 
   // Do the same for GCC LTO.
-  if (Symbol<E> *sym = get_symbol(ctx, "__gnu_lto_slim"); sym->file) {
-    Warn(ctx) << *sym->file
-              << "GCC LTO is detected, so falling back to ld.bfd";
+  if (ctx.gcc_lto) {
+    Warn(ctx) << "GCC LTO is detected, so falling back to ld.bfd";
     execvp("ld.bfd", argv);
     Fatal(ctx) << "execvp failed: ld.bfd: " << errno_string();
   }

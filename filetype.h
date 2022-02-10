@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mold.h"
+#include "elf/elf.h"
 
 namespace mold {
 
@@ -16,6 +17,7 @@ enum class FileType {
   THIN_AR,
   TAPI,
   TEXT,
+  GCC_LTO_OBJ,
   LLVM_BITCODE,
 };
 
@@ -24,6 +26,40 @@ bool is_text_file(MappedFile<C> *mf) {
   u8 *data = mf->data;
   return mf->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
          isprint(data[2]) && isprint(data[3]);
+}
+
+template <typename E, typename C>
+inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
+  using namespace mold::elf;
+
+  const char *data = mf->get_contents().data();
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
+  std::span<ElfShdr<E>> shdrs{(ElfShdr<E> *)(data + ehdr.e_shoff), ehdr.e_shnum};
+
+  for (ElfShdr<E> &sec : shdrs) {
+    if (sec.sh_type != SHT_SYMTAB)
+      continue;
+
+    std::span<ElfSym<E>> elf_syms{(ElfSym<E> *)(data + sec.sh_offset),
+                                  sec.sh_size / sizeof(ElfSym<E>)};
+
+    // GCC LTO object contains only sections symbols followed by a common
+    // symbol whose name is `__gnu_lto_v1` or `__gnu_lto_slim`.
+    i64 i = 1;
+    while (i < elf_syms.size() &&
+           (elf_syms[i].st_type == STT_FILE || elf_syms[i].st_type == STT_SECTION))
+      i++;
+
+    if (i < elf_syms.size() && elf_syms[i].st_shndx == SHN_COMMON) {
+      std::string_view name =
+        data + shdrs[sec.sh_link].sh_offset + elf_syms[i].st_name;
+      if (name.starts_with("__gnu_lto_"))
+        return true;
+    }
+    break;
+  }
+
+  return false;
 }
 
 template <typename C>
@@ -35,8 +71,20 @@ FileType get_file_type(MappedFile<C> *mf) {
 
   if (data.starts_with("\177ELF")) {
     switch (*(u16 *)(data.data() + 16)) {
-    case 1: // ET_REL
+    case 1: {
+      // ET_REL
+      elf::Elf32Ehdr &ehdr = *(elf::Elf32Ehdr *)data.data();
+
+      if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
+        if (is_gcc_lto_obj<elf::I386>(mf))
+          return FileType::GCC_LTO_OBJ;
+      } else {
+        if (is_gcc_lto_obj<elf::X86_64>(mf))
+          return FileType::GCC_LTO_OBJ;
+      }
+
       return FileType::ELF_OBJ;
+    }
     case 3: // ET_DYN
       return FileType::ELF_DSO;
     }
@@ -83,6 +131,7 @@ inline std::string filetype_to_string(FileType type) {
   case FileType::THIN_AR: return "THIN_AR";
   case FileType::TAPI: return "TAPI";
   case FileType::TEXT: return "TEXT";
+  case FileType::GCC_LTO_OBJ: return "GCC_LTO_OBJ";
   case FileType::LLVM_BITCODE: return "LLVM_BITCODE";
   }
   return "UNKNOWN";
