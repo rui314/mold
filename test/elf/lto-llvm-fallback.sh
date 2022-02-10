@@ -10,17 +10,16 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-which ld.lld >& /dev/null || { echo skipped; exit 0; }
+which clang >& /dev/null || { echo skipped; exit 0; }
 
-cat <<EOF | $CC -flto -c -o $t/a.o -xc -
+cat <<EOF | clang -flto -c -o $t/a.o -xc -
 #include <stdio.h>
 int main() {
   printf("Hello world\n");
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o &> $t/log
-grep -q 'falling back' $t/log
+clang -B. -o $t/exe -flto $t/a.o
 $t/exe | grep -q 'Hello world'
 
 echo OK

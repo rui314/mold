@@ -1034,7 +1034,7 @@ public:
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
-  const bool is_in_lib = false;
+  bool is_in_lib = false;
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
@@ -1043,6 +1043,7 @@ public:
   std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
   bool exclude_libs = false;
   u32 features = 0;
+  bool is_lto_obj = false;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -1190,6 +1191,19 @@ private:
   std::once_flag once_flag;
   bool compiled = false;
 };
+
+//
+// lto.cc
+//
+
+template <typename E>
+ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mb);
+
+template <typename E>
+void do_lto(Context<E> &ctx);
+
+template <typename E>
+void lto_cleanup(Context<E> &ctx);
 
 //
 // gc-sections.cc
@@ -1482,6 +1496,7 @@ struct Context {
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output;
+    std::string plugin;
     std::string rpaths;
     std::string soname;
     std::string sysroot;
@@ -1493,6 +1508,7 @@ struct Context {
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
+    std::vector<std::string_view> plugin_opt;
     std::vector<std::string_view> require_defined;
     std::vector<std::string_view> trace_symbol;
     std::vector<std::string_view> undefined;
@@ -1510,13 +1526,12 @@ struct Context {
   bool whole_archive = false;
   bool is_static;
   bool in_lib = false;
-  i64 file_priority = 2;
+  i64 file_priority = 10000;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 
   bool has_error = false;
-  bool gcc_lto = false;
-  bool llvm_lto = false;
+  bool has_lto_object = false;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;

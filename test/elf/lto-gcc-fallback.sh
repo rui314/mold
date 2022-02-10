@@ -10,7 +10,7 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-which ld.bfd >& /dev/null || { echo skipped; exit 0; }
+which gcc >& /dev/null || { echo skipped; exit 0; }
 
 cat <<EOF | gcc -flto -c -o $t/a.o -xc -
 #include <stdio.h>
@@ -19,8 +19,7 @@ int main() {
 }
 EOF
 
-gcc -B"$(pwd)" -o $t/exe $t/a.o >& $t/log
-grep -q 'falling back' $t/log
+gcc -B"$(pwd)" -o $t/exe -flto $t/a.o
 $t/exe | grep -q 'Hello world'
 
 echo OK

@@ -47,7 +47,7 @@ MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
                  -DMOLD_VERSION=\"1.0.3\" -DLIBDIR="\"$(LIBDIR)\""
 
-MOLD_LDFLAGS := -pthread -lz -lm
+MOLD_LDFLAGS := -pthread -lz -lm -ldl
 
 GIT_HASH := $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)

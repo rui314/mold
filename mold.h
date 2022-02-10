@@ -622,6 +622,10 @@ public:
     return std::string_view((char *)data, size);
   }
 
+  i64 get_offset() const {
+    return parent ? (data - parent->data + parent->get_offset()) : 0;
+  }
+
   std::string name;
   u8 *data = nullptr;
   i64 size = 0;

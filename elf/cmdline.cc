@@ -724,6 +724,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.quick_exit = true;
     } else if (read_flag(args, "no-quick-exit")) {
       ctx.arg.quick_exit = false;
+    } else if (read_arg(ctx, args, arg, "plugin")) {
+      ctx.arg.plugin = arg;
+    } else if (read_arg(ctx, args, arg, "plugin-opt")) {
+      ctx.arg.plugin_opt.push_back(arg);
     } else if (read_arg(ctx, args, arg, "thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
     } else if (read_flag(args, "threads")) {
@@ -809,8 +813,6 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "O1")) {
     } else if (read_flag(args, "O2")) {
     } else if (read_flag(args, "verbose")) {
-    } else if (read_arg(ctx, args, arg, "plugin")) {
-    } else if (read_arg(ctx, args, arg, "plugin-opt")) {
     } else if (read_flag(args, "color-diagnostics")) {
     } else if (read_flag(args, "gdb-index")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
