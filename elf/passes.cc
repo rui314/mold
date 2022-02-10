@@ -358,7 +358,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   i64 num_globals = obj->elf_syms.size() - obj->first_global;
   obj->symvers.resize(num_globals);
 
-  ctx.on_exit.push_back([=]() {
+  ctx.on_exit.push_back([=] {
     delete esyms;
     delete obj->symbols[0];
   });
@@ -824,7 +824,7 @@ void apply_version_script(Context<E> &ctx) {
   // If all patterns are simple (i.e. not containing any meta-
   // characters and is not a C++ name), we can simply look up
   // symbols.
-  auto is_simple = [&]() {
+  auto is_simple = [&] {
     for (VersionPattern &v : ctx.version_patterns)
       if (v.is_cpp || v.pattern.find_first_of("*?[") != v.pattern.npos)
         return false;

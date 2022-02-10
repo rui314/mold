@@ -924,7 +924,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       }
     }
 
-    auto claim = [&]() {
+    auto claim = [&] {
       sym.file = this;
       sym.input_section = nullptr;
       sym.value = 0;

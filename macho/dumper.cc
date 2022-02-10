@@ -194,7 +194,7 @@ void dump_file(std::string path) {
     LoadCommand &lc = *(LoadCommand *)p;
     p += lc.cmdsize;
 
-    auto print_dylib = [&]() {
+    auto print_dylib = [&] {
       DylibCommand &cmd = *(DylibCommand *)&lc;
       std::cout << " cmdsize: 0x" << cmd.cmdsize
                 << "\n nameoff: 0x" << cmd.nameoff

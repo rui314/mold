@@ -27,7 +27,7 @@ std::optional<u16> VersionMatcher::find(std::string_view str) {
   u32 idx = UINT32_MAX;
 
   if (root) {
-    std::call_once(once_flag, [&]() { compile(); });
+    std::call_once(once_flag, [&] { compile(); });
 
     // Match against simple glob patterns
     TrieNode *node = root.get();

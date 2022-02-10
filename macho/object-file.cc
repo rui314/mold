@@ -265,7 +265,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
     i64 idx = r.offset / sizeof(CompactUnwindEntry);
     UnwindRecord<E> &dst = unwind_records[idx];
 
-    auto error = [&]() {
+    auto error = [&] {
       Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
     };
 

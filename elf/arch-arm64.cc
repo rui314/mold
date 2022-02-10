@@ -675,13 +675,13 @@ static void shrink_section(Context<E> &ctx, OutputSection<E> &osec) {
 
   i64 offset = 0;
 
-  auto add_thunk = [&]() {
+  auto add_thunk = [&] {
     thunks[0]->offset = offset;
     offset += thunks[0]->size();
     thunks = thunks.subspan(1);
   };
 
-  auto add_isec = [&]() {
+  auto add_isec = [&] {
     offset = align_to(offset, 1 << members[0]->p2align);
     members[0]->offset = offset;
     offset += members[0]->sh_size;

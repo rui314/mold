@@ -556,7 +556,7 @@ void icf_sections(Context<E> &ctx) {
     });
 
     // Since free'ing the map is slow, postpone it.
-    ctx.on_exit.push_back([=]() { delete map; });
+    ctx.on_exit.push_back([=] { delete map; });
   }
 
   if (ctx.arg.print_icf_sections)

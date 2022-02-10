@@ -28,7 +28,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *m
   bool in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, archive_name, in_lib);
   file->priority = ctx.file_priority++;
-  ctx.tg.run([file, &ctx]() { file->parse(ctx); });
+  ctx.tg.run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
   return file;
@@ -42,7 +42,7 @@ new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
   file->priority = ctx.file_priority++;
-  ctx.tg.run([file, &ctx]() { file->parse(ctx); });
+  ctx.tg.run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
   return file;

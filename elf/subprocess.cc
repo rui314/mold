@@ -53,7 +53,7 @@ std::function<void()> fork_child() {
   // Child
   close(pipefd[0]);
 
-  return [=]() {
+  return [=] {
     char buf[] = {1};
     int n = write(pipefd[1], buf, 1);
     assert(n == 1);
@@ -212,7 +212,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
 
   static i64 conn = -1;
 
-  *wait_for_client = [=, &ctx]() {
+  *wait_for_client = [=, &ctx] {
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(sock, &rfds);
@@ -239,7 +239,7 @@ void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
     dup2(recv_fd(ctx, conn), STDERR_FILENO);
   };
 
-  *on_complete = [=]() {
+  *on_complete = [=] {
     char buf[] = {1};
     int n = write(conn, buf, 1);
     assert(n == 1);
