@@ -31,18 +31,6 @@
 #define XXH_INLINE_ALL 1
 #include <xxhash.h>
 
-template<>
-class tbb::tbb_hash_compare<std::string_view> {
-public:
-  static size_t hash(const std::string_view &k) {
-    return XXH3_64bits(k.data(), k.size());
-  }
-
-  static bool equal(const std::string_view &k1, const std::string_view &k2) {
-    return k1 == k2;
-  }
-};
-
 namespace mold::elf {
 
 static constexpr i32 SHA256_SIZE = 32;
@@ -67,6 +55,17 @@ template <typename E> class RSymtabSection;
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
+
+class HashCmp {
+public:
+  static size_t hash(const std::string_view &k) {
+    return XXH3_64bits(k.data(), k.size());
+  }
+
+  static bool equal(const std::string_view &k1, const std::string_view &k2) {
+    return k1 == k2;
+  }
+};
 
 //
 // Mergeable section fragments
@@ -1519,8 +1518,8 @@ struct Context {
   bool llvm_lto = false;
 
   // Symbol table
-  tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;
-  tbb::concurrent_hash_map<std::string_view, ComdatGroup> comdat_groups;
+  tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
+  tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
