@@ -1,3 +1,7 @@
+# If you want to enable ASAN, run `make` with the following options:
+#
+# make CXXFLAGS=-fsanitize=address LDFLAGS=-fsanitize=address USE_MIMALLOC=0
+
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 LIBDIR = $(PREFIX)/lib
