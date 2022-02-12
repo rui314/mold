@@ -163,6 +163,7 @@ static PluginStatus add_input_file(const char *path) {
   file->is_alive = true;
   file->parse(ctx);
   file->resolve_symbols(ctx);
+  file->mark_live_objects(ctx, [](InputFile<E> *) { unreachable(); });
   return LDPS_OK;
 }
 
@@ -257,8 +258,9 @@ get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
 // non-IR object, it has to keep the symbol in the LTO result.
 template <typename E>
 static PluginStatus
-get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
+get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
   ObjectFile<E> &file = *(ObjectFile<E> *)handle;
+  assert(file.is_lto_obj);
 
   // If file is an archive member which was not chose to be included in
   // to the final result, we need to make the plugin to ignore all
@@ -266,7 +268,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
   if (!file.is_alive) {
     for (int i = 0; i < nsyms; i++)
       psyms[i].resolution = LDPR_PREEMPTED_REG;
-    return LDPS_NO_SYMS;
+    return is_v2 ? LDPS_OK : LDPS_NO_SYMS;
   }
 
   auto get_resolution = [&](ElfSym<E> &esym, Symbol<E> &sym) {
@@ -277,7 +279,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
       if (sym.referenced_by_regular_obj)
         return LDPR_PREVAILING_DEF;
       if (sym.is_exported)
-        return LDPR_PREVAILING_DEF_IRONLY_EXP;
+        return is_v2 ? LDPR_PREVAILING_DEF : LDPR_PREVAILING_DEF_IRONLY_EXP;
       return LDPR_PREVAILING_DEF_IRONLY;
     }
 
@@ -301,15 +303,14 @@ template <typename E>
 static PluginStatus
 get_symbols_v2(const void *handle, int nsyms, PluginSymbol *psyms) {
   LOG << "get_symbols_v2\n";
-  PluginStatus st = get_symbols<E>(handle, nsyms, psyms);
-  return (st == LDPS_NO_SYMS) ? LDPS_OK : st;
+  return get_symbols<E>(handle, nsyms, psyms, true);
 }
 
 template <typename E>
 static PluginStatus
 get_symbols_v3(const void *handle, int nsyms, PluginSymbol *psyms) {
   LOG << "get_symbols_v3\n";
-  return get_symbols<E>(handle, nsyms, psyms);
+  return get_symbols<E>(handle, nsyms, psyms, false);
 }
 
 static PluginStatus allow_unique_segment_for_sections() {
