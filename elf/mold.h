@@ -1789,6 +1789,10 @@ public:
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 
+  // For LTO. True if the symbol is referenced by a regular object (as
+  // opposed to IR object).
+  u8 referenced_by_regular_obj : 1 = false;
+
   // Target-dependent extra members.
   SymbolExtras<E> extra;
 };

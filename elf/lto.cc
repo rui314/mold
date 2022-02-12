@@ -252,22 +252,30 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
     return LDPS_NO_SYMS;
   }
 
-  auto get_resolution = [&](PluginSymbol &psym, Symbol<E> &sym) -> int {
+  auto get_resolution = [&](PluginSymbol &psym, ElfSym<E> &esym, Symbol<E> &sym) {
     if (!sym.file)
       return LDPR_UNDEF;
-    if (sym.file == &file)
-      return LDPR_PREVAILING_DEF;
+
+    if (sym.file == &file) {
+      if (sym.referenced_by_regular_obj)
+        return LDPR_PREVAILING_DEF;
+      if (sym.is_exported)
+        return LDPR_PREVAILING_DEF_IRONLY_EXP;
+      return LDPR_PREVAILING_DEF_IRONLY;
+    }
+
     if (sym.file->is_dso())
       return LDPR_RESOLVED_DYN;
     if (((ObjectFile<E> *)sym.file)->is_lto_obj)
-      return LDPR_RESOLVED_IR;
-    return LDPR_RESOLVED_EXEC;
+      return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
+    return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };
 
   for (i64 i = 0; i < nsyms; i++) {
     PluginSymbol &psym = psyms[i];
+    ElfSym<E> &esym = file.elf_syms[i + 1];
     Symbol<E> &sym = *file.symbols[i + 1];
-    psym.resolution = get_resolution(psym, sym);
+    psym.resolution = get_resolution(psym, esym, sym);
   }
   return LDPS_OK;
 }
@@ -504,6 +512,23 @@ void do_lto(Context<E> &ctx) {
 
   assert(phase == 1);
   phase = 2;
+
+  // Set `referenced_by_regular_obj` bit.
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->is_lto_obj)
+      continue;
+
+    for (i64 i = file->first_global; i < file->symbols.size(); i++) {
+      ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+
+      if (esym.is_undef() && sym.file && sym.file != file &&
+          !sym.file->is_dso() && ((ObjectFile<E> *)sym.file)->is_lto_obj) {
+        std::scoped_lock lock(sym.mu);
+        sym.referenced_by_regular_obj = true;
+      }
+    }
+  }
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";
