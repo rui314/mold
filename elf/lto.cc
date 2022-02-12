@@ -490,7 +490,7 @@ get_wrap_symbols(uint64_t *num_symbols, const char ***wrap_symbols) {
 }
 
 template <typename E>
-static void do_load_plugin(Context<E> &ctx) {
+static void load_plugin(Context<E> &ctx) {
   assert(phase == 0);
   phase = 1;
   gctx<E> = &ctx;
@@ -555,12 +555,6 @@ static void do_load_plugin(Context<E> &ctx) {
 }
 
 template <typename E>
-static void load_plugin(Context<E> &ctx) {
-  static std::once_flag flag;
-  std::call_once(flag, [&] { do_load_plugin(ctx); });
-}
-
-template <typename E>
 static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
   ElfSym<E> esym = {};
 
@@ -617,7 +611,13 @@ template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   LOG << "read_lto_object: " << mf->name << "\n";
 
-  load_plugin(ctx);
+  if (ctx.arg.plugin.empty())
+    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file"
+               << " because no -plugin option was given";
+
+  // dlopen the linker plugin file
+  static std::once_flag flag;
+  std::call_once(flag, [&] { load_plugin(ctx); });
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;
