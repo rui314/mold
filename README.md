@@ -1,10 +1,10 @@
 # mold: A Modern Linker
 
 mold is a faster drop-in replacement for existing Unix linkers.
-It is several times faster than LLVM lld linker, the second-fastest
+It is several times faster than the LLVM lld linker, the second-fastest
 open-source linker which I originally created a few years ago.
-mold is created for increasing developer productivity by reducing
-build time especially in rapid debug-edit-rebuild cycles.
+mold is designed to increase developer productivity by reducing
+build time, especially in rapid debug-edit-rebuild cycles.
 
 Here is a performance comparison of GNU gold, LLVM lld, and mold for
 linking final debuginfo-enabled executables of major large programs
