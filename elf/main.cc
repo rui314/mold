@@ -558,6 +558,10 @@ static int elf_main(int argc, char **argv) {
   // a special rule. Sort them.
   sort_init_fini(ctx);
 
+  // Handle --shuffle-sections
+  if (ctx.arg.shuffle_sections)
+    shuffle_sections(ctx);
+
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.
   compute_section_sizes(ctx);

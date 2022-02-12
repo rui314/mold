@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <random>
 #include <regex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
@@ -565,6 +566,48 @@ void sort_init_fini(Context<E> &ctx) {
       });
     }
   }
+}
+
+template <typename T>
+static void shuffle(std::vector<T> &vec, u64 seed) {
+  if (vec.empty())
+    return;
+
+  // Xorshift random number generator. We use this RNG because it is
+  // measurably faster than MT19937.
+  auto rand = [&]() {
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
+    return seed;
+  };
+
+  // The Fisher-Yates shuffling algorithm.
+  //
+  // We don't want to use std::shuffle for build reproducibility. That is,
+  // std::shuffle's implementation is not guaranteed to be the same across
+  // platform, so even though the result is guaranteed to be randomly
+  // shuffled, the exact order may be different across implementations.
+  //
+  // We are not using std::uniform_int_distribution for the same reason.
+  for (i64 i = 0; i < vec.size() - 1; i++)
+    std::swap(vec[i], vec[i + rand() % (vec.size() - i)]);
+}
+
+template <typename E>
+void shuffle_sections(Context<E> &ctx) {
+  Timer t(ctx, "shuffle_sections");
+
+  u64 seed = *ctx.arg.shuffle_sections;
+  if (seed == 0)
+    seed = std::random_device()();
+
+  tbb::parallel_for_each(ctx.output_sections,
+                         [&](std::unique_ptr<OutputSection<E>> &osec) {
+    if (osec->name != ".init" && osec->name != ".fini" &&
+        osec->name != ".init_array" && osec->name != ".fini_array")
+      shuffle(osec->members, seed + hash_string(osec->name));
+  });
 }
 
 template <typename E>
@@ -1288,6 +1331,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void write_repro_file(Context<E> &);                         \
   template void check_duplicate_symbols(Context<E> &);                  \
   template void sort_init_fini(Context<E> &);                           \
+  template void shuffle_sections(Context<E> &);                         \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
   template void compute_section_sizes(Context<E> &);                    \
   template void claim_unresolved_symbols(Context<E> &);                 \

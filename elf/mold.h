@@ -1285,6 +1285,7 @@ template <typename E> void print_dependencies_full(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
+template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
@@ -1488,6 +1489,7 @@ struct Context {
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
     std::optional<GlobPattern> unique;
+    std::optional<i64> shuffle_sections;
     std::string Map;
     std::string chroot;
     std::string directory;
