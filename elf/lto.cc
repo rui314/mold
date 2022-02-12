@@ -80,10 +80,10 @@
 
 #include "mold.h"
 
+#include <cstdarg>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sstream>
-#include <stdarg.h>
 
 #if 0
 # define LOG std::cerr
@@ -254,7 +254,6 @@ static std::vector<PluginSymbol> plugin_symbols;
 static ClaimFileHandler *claim_file_hook;
 static AllSymbolsReadHandler *all_symbols_read_hook;
 static CleanupHandler *cleanup_hook;
-static NewInputHandler *new_input_hook;
 
 // Event handlers
 
@@ -295,12 +294,6 @@ add_symbols(void *handle, int nsyms, const PluginSymbol *psyms) {
   LOG << "add_symbols: " << nsyms << "\n";
   assert(phase == 1);
   plugin_symbols = {psyms, psyms + nsyms};
-  return LDPS_OK;
-}
-
-static PluginStatus
-get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
-  LOG << "get_symbols_v1\n";
   return LDPS_OK;
 }
 
@@ -394,6 +387,11 @@ static PluginStatus allow_section_ordering() {
   return LDPS_OK;
 }
 
+static PluginStatus
+get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
+  unreachable();
+}
+
 template <typename E>
 static PluginStatus
 get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
@@ -433,6 +431,13 @@ get_symbols_v2(const void *handle, int nsyms, PluginSymbol *psyms) {
   return (st == LDPS_NO_SYMS) ? LDPS_OK : st;
 }
 
+template <typename E>
+static PluginStatus
+get_symbols_v3(const void *handle, int nsyms, PluginSymbol *psyms) {
+  LOG << "get_symbols_v3\n";
+  return get_symbols<E>(handle, nsyms, psyms);
+}
+
 static PluginStatus allow_unique_segment_for_sections() {
   LOG << "allow_unique_segment_for_sections\n";
   return LDPS_OK;
@@ -446,13 +451,6 @@ unique_segment_for_sections(const char *segment_name,
 			    int num_sections) {
   LOG << "unique_segment_for_sections\n";
   return LDPS_OK;
-}
-
-template <typename E>
-static PluginStatus
-get_symbols_v3(const void *handle, int nsyms, PluginSymbol *psyms) {
-  LOG << "get_symbols_v3\n";
-  return get_symbols<E>(handle, nsyms, psyms);
 }
 
 static PluginStatus
@@ -472,7 +470,6 @@ template <typename E>
 static PluginStatus
 register_new_input_hook(NewInputHandler fn) {
   LOG << "register_new_input_hook\n";
-  new_input_hook = fn;
   return LDPS_OK;
 }
 
@@ -640,11 +637,8 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   std::vector<ElfSym<E>> *esyms = new std::vector<ElfSym<E>>(1);
 
   for (PluginSymbol &psym : plugin_symbols) {
-    ElfSym<E> esym = to_elf_sym<E>(psym);
-    esyms->push_back(esym);
-
-    Symbol<E> *sym = get_symbol(ctx, save_string(ctx, psym.name));
-    obj->symbols.push_back(sym);
+    esyms->push_back(to_elf_sym<E>(psym));
+    obj->symbols.push_back(get_symbol(ctx, save_string(ctx, psym.name)));
   }
 
   obj->elf_syms = *esyms;
@@ -666,6 +660,7 @@ void do_lto(Context<E> &ctx) {
   LOG << "all symbols read\n";
   all_symbols_read_hook();
 
+  // Remove IR object files
   for (ObjectFile<E> *file : ctx.objs)
     if (file->is_lto_obj)
       file->is_alive = false;
