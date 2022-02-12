@@ -175,6 +175,12 @@ get_input_file(const void *handle, struct PluginInputFile *file) {
 template <typename E>
 static PluginStatus release_input_file(const void *handle) {
   LOG << "release_input_file\n";
+
+  ObjectFile<E> &file = *(ObjectFile<E> *)handle;
+  if (file.mf->fd != -1) {
+    close(file.mf->fd);
+    file.mf->fd = -1;
+  }
   return LDPS_OK;
 }
 
@@ -486,10 +492,15 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // Create plugin's object instance
   PluginInputFile *file = new PluginInputFile;
-  file->name = save_string(ctx, mf->parent ? mf->parent->name : mf->name).data();
-  file->fd = open(file->name, O_RDONLY);
+
+  MappedFile<Context<E>> *mf2 = mf->parent ? mf->parent : mf;
+  file->name = save_string(ctx, mf2->name).data();
+  if (mf2->fd == -1)
+    mf2->fd = open(file->name, O_RDONLY);
+  file->fd = mf2->fd;
   if (file->fd == -1)
     Fatal(ctx) << "cannot open " << file->name << ": " << errno_string();
+
   file->offset = mf->get_offset();
   file->filesize = mf->size;
   file->handle = (void *)obj;

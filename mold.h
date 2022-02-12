@@ -632,6 +632,7 @@ public:
   i64 mtime = 0;
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
+  int fd = -1;
 };
 
 template <typename C>
