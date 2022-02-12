@@ -241,18 +241,29 @@ get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
   unreachable();
 }
 
+// get_symbols teaches the LTO plugin as to how we resolved symbols.
+// The plugin uses the symbol resolution info to optimizes the program.
+//
+// For example, if a definition in an IR file is not referenced by
+// non-IR objects at all, the plugin may choose to completely inline
+// that definition within the IR objects and remove the symbol from the
+// LTO result. On the other hand, if a definition is referenced by a
+// non-IR object, it has to keep the symbol in the LTO result.
 template <typename E>
 static PluginStatus
 get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
   ObjectFile<E> &file = *(ObjectFile<E> *)handle;
 
+  // If file is an archive member which was not chose to be included in
+  // to the final result, we need to make the plugin to ignore all
+  // symbols.
   if (!file.is_alive) {
     for (int i = 0; i < nsyms; i++)
       psyms[i].resolution = LDPR_PREEMPTED_REG;
     return LDPS_NO_SYMS;
   }
 
-  auto get_resolution = [&](PluginSymbol &psym, ElfSym<E> &esym, Symbol<E> &sym) {
+  auto get_resolution = [&](ElfSym<E> &esym, Symbol<E> &sym) {
     if (!sym.file)
       return LDPR_UNDEF;
 
@@ -271,11 +282,11 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms) {
     return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };
 
+  // Set the symbol resolution results to psyms.
   for (i64 i = 0; i < nsyms; i++) {
-    PluginSymbol &psym = psyms[i];
     ElfSym<E> &esym = file.elf_syms[i + 1];
     Symbol<E> &sym = *file.symbols[i + 1];
-    psym.resolution = get_resolution(psym, esym, sym);
+    psyms[i].resolution = get_resolution(esym, sym);
   }
   return LDPS_OK;
 }
