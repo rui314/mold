@@ -43,11 +43,14 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
     std::span<ElfSym<E>> elf_syms{(ElfSym<E> *)(data + sec.sh_offset),
                                   sec.sh_size / sizeof(ElfSym<E>)};
 
+    auto skip = [](u8 type) {
+      return type == STT_NOTYPE || type == STT_FILE || type == STT_SECTION;
+    };
+
     // GCC LTO object contains only sections symbols followed by a common
     // symbol whose name is `__gnu_lto_v1` or `__gnu_lto_slim`.
     i64 i = 1;
-    while (i < elf_syms.size() &&
-           (elf_syms[i].st_type == STT_FILE || elf_syms[i].st_type == STT_SECTION))
+    while (i < elf_syms.size() && skip(elf_syms[i].st_type))
       i++;
 
     if (i < elf_syms.size() && elf_syms[i].st_shndx == SHN_COMMON) {

@@ -251,8 +251,6 @@ static int phase = 0;
 
 static void *dlopen_handle;
 static std::vector<PluginSymbol> plugin_symbols;
-static std::vector<std::unique_ptr<PluginInputFile>> plugin_files;
-
 static ClaimFileHandler *claim_file_hook;
 static AllSymbolsReadHandler *all_symbols_read_hook;
 static CleanupHandler *cleanup_hook;
@@ -336,10 +334,6 @@ get_input_file(const void *handle, struct PluginInputFile *file) {
 template <typename E>
 static PluginStatus release_input_file(const void *handle) {
   LOG << "release_input_file\n";
-  i64 idx = (i64)handle;
-  if (idx < 0 || plugin_files.size() <= idx)
-    return LDPS_BAD_HANDLE;
-  close(plugin_files[idx]->fd);
   return LDPS_OK;
 }
 
