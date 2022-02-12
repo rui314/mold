@@ -34,6 +34,6 @@ diff $t/exe3 $t/exe4
 $CC -B. -o $t/exe5 $t/a.o -Wl,-shuffle-sections=101
 $t/exe5 | grep -q 'Hello world'
 
-! diff $t/exe3 $t/exe4 >& /dev/null || false
+! diff $t/exe3 $t/exe5 >& /dev/null || false
 
 echo OK
