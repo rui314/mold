@@ -321,7 +321,6 @@ static PluginStatus add_input_file(const char *path) {
   file->is_alive = true;
   file->parse(ctx);
   file->resolve_symbols(ctx);
-  file->register_section_pieces(ctx);
   return LDPS_OK;
 }
 

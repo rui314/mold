@@ -130,6 +130,15 @@ void resolve_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+void register_section_pieces(Context<E> &ctx) {
+  Timer t(ctx, "register_section_pieces");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->register_section_pieces(ctx);
+  });
+}
+
+template <typename E>
 void eliminate_comdats(Context<E> &ctx) {
   Timer t(ctx, "eliminate_comdats");
 
@@ -1320,6 +1329,7 @@ void compress_debug_sections(Context<E> &ctx) {
   template void apply_exclude_libs(Context<E> &);                       \
   template void create_synthetic_sections(Context<E> &);                \
   template void resolve_symbols(Context<E> &);                          \
+  template void register_section_pieces(Context<E> &);                  \
   template void eliminate_comdats(Context<E> &);                        \
   template void convert_common_symbols(Context<E> &);                   \
   template void compute_merged_section_sizes(Context<E> &);             \
