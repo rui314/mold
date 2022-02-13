@@ -486,6 +486,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;
+  obj->filename = mf->name;
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
   obj->is_lto_obj = true;
@@ -563,6 +564,12 @@ void do_lto(Context<E> &ctx) {
       file->is_alive = false;
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
+
+  // Re-compute symbol versions and import/export information
+  // because `resolve_symbols` may have overwrite them.
+  apply_version_script(ctx);
+  parse_symbol_version(ctx);
+  compute_import_export(ctx);
 }
 
 template <typename E>

@@ -469,6 +469,15 @@ static int elf_main(int argc, char **argv) {
   // included to the final output.
   resolve_symbols(ctx);
 
+  // Apply version scripts.
+  apply_version_script(ctx);
+
+  // Parse symbol version suffixes (e.g. "foo@ver1").
+  parse_symbol_version(ctx);
+
+  // Set is_import and is_export bits for each symbol.
+  compute_import_export(ctx);
+
   // Do LTO
   if (ctx.has_lto_object)
     do_lto(ctx);
@@ -481,15 +490,6 @@ static int elf_main(int argc, char **argv) {
 
   // Create .bss sections for common symbols.
   convert_common_symbols(ctx);
-
-  // Apply version scripts.
-  apply_version_script(ctx);
-
-  // Parse symbol version suffixes (e.g. "foo@ver1").
-  parse_symbol_version(ctx);
-
-  // Set is_import and is_export bits for each symbol.
-  compute_import_export(ctx);
 
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
