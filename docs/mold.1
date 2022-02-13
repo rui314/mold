@@ -574,9 +574,6 @@ Print performance statistics.
 .It Fl -pie , -pic-executable , -no-pie , -no-pic-executable
 Create a position-independent executable.
 .
-.It Fl -pop-state
-Pop state of flags governing input file handling.
-.
 .It Fl -preload
 Preload object files.
 .
@@ -586,9 +583,29 @@ Print removed unreferenced sections.
 .It Fl -print-icf-sections , -no-print-icf-sections
 Print folded identical sections.
 .
-.It Fl -push-state
-Pop state of flags governing input file handling
+.It Fl -push-state , Fl -pop-state
+.Fl -push-state
+saves the current values of
+.Fl -as-needed ,
+.Fl -whole-archive ,
+.Fl -static ,
+and
+.Fl -start-lib .
+The saved values can be restored by
+.Fl -pop-state .
 .
+.Fl -push-state
+and
+.Fl -pop-state
+pairs can nest.
+.Pp
+These options are useful when you want to construct linker command line \
+options programmatically. For example, if you want to link
+.Ar libfoo.so
+by as-needed basis but don't want to change the global state of
+.Fl -as-needed ,
+you can append "--push-state --as-needed -lfoo --pop-state" to the \
+linker command line options.
 .It Fl -quick-exit , -no-quick-exit
 Use
 .Dv quick_exit
@@ -647,6 +664,17 @@ Reserve given
 of tags in
 .Dv .dynamic
 section.
+.
+.It Fl -start-lib , Fl -end-lib
+Handle object files between
+.Fl -start-lib
+and
+.Fl -end-lib
+as if they were in an archive file. That means object files between them \
+are linked only when they are needed to resolve undefined symbols. \
+The options are useful if you want to link object files only when they are \
+needed but want to avoid the overhead of running
+.Xr ar 3 .
 .
 .It Fl -static
 Do not link against shared libraries.
