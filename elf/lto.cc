@@ -537,6 +537,12 @@ void do_lto(Context<E> &ctx) {
   assert(phase == 1);
   phase = 2;
 
+  // Compute import/export information early because `get_symbols`
+  // function needs them.
+  apply_version_script(ctx);
+  parse_symbol_version(ctx);
+  compute_import_export(ctx);
+
   // Set `referenced_by_regular_obj` bit.
   for (ObjectFile<E> *file : ctx.objs) {
     if (file->is_lto_obj)
@@ -564,12 +570,6 @@ void do_lto(Context<E> &ctx) {
       file->is_alive = false;
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
-
-  // Re-compute symbol versions and import/export information
-  // because `resolve_symbols` may have overwrite them.
-  apply_version_script(ctx);
-  parse_symbol_version(ctx);
-  compute_import_export(ctx);
 }
 
 template <typename E>
