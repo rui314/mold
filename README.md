@@ -169,6 +169,8 @@ replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
 
 </details>
 
+<details><summary>Verify that you are using mold</summary>
+
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
 
@@ -181,6 +183,8 @@ String dump of section '.comment':
 ```
 
 If `mold` is in `.comment`, the file is created by mold.
+
+</details>
 
 ## Why is mold so fast?
 
