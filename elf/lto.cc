@@ -511,8 +511,9 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
   int claimed = false;
-  PluginStatus st = claim_file_hook(file, &claimed);
-  assert(claimed);
+  claim_file_hook(file, &claimed);
+  if (!claimed)
+    Fatal(ctx) << mf->name << ": not claimed by the LTO plugin";
 
   // Initialize object symbols
   std::vector<ElfSym<E>> *esyms = new std::vector<ElfSym<E>>(1);
