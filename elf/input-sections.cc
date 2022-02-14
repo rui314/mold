@@ -113,7 +113,6 @@ template <typename E>
 void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                                const ElfRel<E> &rel, Symbol<E> &sym) {
   Action action = table[get_output_type(ctx)][get_sym_type(sym)];
-  bool is_code = (shdr().sh_flags & SHF_EXECINSTR);
   bool is_writable = (shdr().sh_flags & SHF_WRITE);
 
   auto error = [&] {
