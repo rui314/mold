@@ -675,7 +675,7 @@ template <typename C>
 MappedFile<C> *MappedFile<C>::must_open(C &ctx, std::string path) {
   if (MappedFile *mf = MappedFile::open(ctx, path))
     return mf;
-  Fatal(ctx) << "cannot open " << path;
+  Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 }
 
 template <typename C>
