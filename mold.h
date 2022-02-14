@@ -543,12 +543,12 @@ struct TimerRecord {
 
   std::string name;
   TimerRecord *parent;
+  std::once_flag once;
   tbb::concurrent_vector<TimerRecord *> children;
   i64 start;
   i64 end;
   i64 user;
   i64 sys;
-  bool stopped = false;
 };
 
 void
