@@ -1454,11 +1454,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
                        [](const KeyVal &a, const KeyVal &b) {
-      if (a.val->p2align != b.val->p2align)
-        return a.val->p2align < b.val->p2align;
-      if (a.key.size() != b.key.size())
-        return a.key.size() < b.key.size();
-      return a.key < b.key;
+      return std::tuple{a.val->p2align.load(), a.key.size(), a.key} <
+             std::tuple{b.val->p2align.load(), b.key.size(), b.key};
     });
 
     // Assign offsets.
