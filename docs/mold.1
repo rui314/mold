@@ -230,22 +230,23 @@ depends only on its command-line arguments.
 .
 .\"=============================================================================
 .Sh OPTIONS
-.Bl -tag -width 6n
+.Bl -tag -width 6n -compact
 .It Fl -help
 Report usage information to stdout and exit.
-.
+.Pp
 .It Fl v , Fl -version
 Report version information to stdout.
-.
+.Pp
 .It Fl V
 Report version and target information to stdout.
-.
+.Pp
 .It Fl C Ar dir , Fl -directory Ar dir
 Change to
 .Ar dir
 before doing anything.
-.
-.It Fl E , Fl -export-dynamic , Fl -no-export-dynamic
+.Pp
+.It Fl E , Fl -export-dynamic
+.It Fl -no-export-dynamic
 When creating an executable, using the
 .Fl E
 option causes all global symbols to be put into the dynamic symbol table,
@@ -255,14 +256,15 @@ By default, or if
 .Fl -no-export-dynamic
 is given, only symbols
 that are referenced by DSOs at link-time are exported from an executable.
-.
+.Pp
 .It Fl F Ar libname , Fl -filter Ns = Ns Ar libname
 Set the
 .Dv DT_FILTER
 dynamic section field to
 .Ar libname .
-.
-.It Fl I Ns Ar file , Fl -dynamic-linker Ns = Ns Ar file , Fl -no-dynamic-linker
+.Pp
+.It Fl I Ns Ar file , Fl -dynamic-linker Ns = Ns Ar file
+.It Fl -no-dynamic-linker
 Set the dynamic linker path to
 .Ar file .
 If no
@@ -276,7 +278,7 @@ However, this difference doesn't usually make any difference because the \
 compiler driver always passes
 .Fl I
 to a linker.
-.
+.Pp
 .It Fl L Ns Ar dir , Fl -library-path Ns = Ns Ar dir
 Add
 .Ar dir
@@ -289,26 +291,27 @@ Unlike the GNU linkers,
 does not have the default search paths.
 This difference doesn't usually make any difference because the
 compiler driver always passes all necessary search paths to a linker.
-.
+.Pp
 .It Fl M , Fl -print-map
 Write a map file to stdout.
-.
-.It Fl N , Fl -omagic , Fl -no-omagic
+.Pp
+.It Fl N , Fl -omagic
+.It Fl -no-omagic
 Force
 .Nm
 to emit an output file with an old-fashioned memory layout.
 First, it makes the first data segment to not be aligned to a page boundary.
 Second, text segments are marked as writable if the option is given.
-.
+.Pp
 .It Fl S , Fl -strip-debug
 Omit
 .Li \.debug_*
 sections from the output file.
-.
+.Pp
 .It Fl T Ar file , Fl -script Ns = Ns Ar file
 Read linker script from
 .Ar file .
-.
+.Pp
 .It Fl X , Fl -discard-locals
 Discard temporary local symbols to reduce the sizes of the \
 symbol table and the string table.
@@ -316,20 +319,20 @@ Temporary local symbols are local symbols starting with
 .Li \.L .
 Compilers usually generate such symbols for unnamed program elements such as \
 string literals or floating-point literals.
-.
+.Pp
 .It Fl e Ar symbol , Fl -entry Ns = Ns Ar symbol
 Use
 .Ar symbol
 as the entry point symbol instead of the default
 entry point symbol
 .Sy _start .
-.
+.Pp
 .It Fl f Ar shlib , Fl -auxiliary Ns = Ns Ar shlib
 Set the
 .Dv DT_AUXILIARY
 dynamic section field to
 .Ar shlib .
-.
+.Pp
 .It Fl h Ar libname , Fl -soname Ns = Ns Ar libname
 Set the
 .Dv DT_SONAME
@@ -341,33 +344,33 @@ Typically, when you create
 you want to pass
 .Fl -soname Ns = Ns Ar foo
 to a linker.
-.
+.Pp
 .It Fl l Ns Ar libname
 Search for
 .Pf Sy lib Ar libname Ns Sy \.so
 or
 .Pf Sy lib Ar libname Ns Sy \.a
 from library search paths.
-.
+.Pp
 .It Fl m Op Sy elf_x86_64 | elf_i386 | aarch64linux
 Choose a target.
-.
+.Pp
 .It Fl o Ar file , Fl -output Ns = Ns Ar file
 Use
 .Ar file
 as the output file name instead of the default name
 .Sy a.out .
-.
+.Pp
 .It Fl r , Fl -relocatable
 Instead of generating an executable or a shared object file, combine
 input object files to generate another object file that can be used as
 an input to a linker.
-.
+.Pp
 .It Fl s , Fl -strip-all
 Omit
 .Li \.symtab
 section from the output file.
-.
+.Pp
 .It Fl u Ar symbol , Fl -undefined Ns = Ns Ar symbol
 If
 .Ar symbol
@@ -377,13 +380,13 @@ and if there is an static archive that contains an object file defining
 pull out the object file and link it so that the \
 output file contains a definition of
 .Ar symbol .
-.
+.Pp
 .It Fl -Bdynamic
 Link against shared libraries.
-.
+.Pp
 .It Fl -Bstatic
 Do not link against shared libraries.
-.
+.Pp
 .It Fl -Bsymbolic
 When creating a shared library, make global symbols export-only
 (i.e. do not import the same symbol).
@@ -392,30 +395,31 @@ negating symbol override at runtime.
 See
 .Sx Dynamic symbol resolution
 for more information about symbol imports and exports.
-.
+.Pp
 .It Fl -Bsymbolic-functions
 Have the same effect as
 .Fl -Bsymbolic
 but works only for function symbols.
 Data symbols remains being both imported and exported.
-.
+.Pp
 .It Fl -Bno-symbolic
 Cancel
 .Fl -Bsymbolic
 and
 .Fl -Bsymbolic-functions .
-.
+.Pp
 .It Fl -Map Ns = Ns Ar file
 Write map file to
 .Ar file .
-.
+.Pp
 .It Fl -allow-multiple-definition
 Normally, the linker reports an error if there are more than one \
 definition of a symbol.
 This option changes the default behavior so that it doesn't report an error \
 for duplicate definitions and instead use the first definition.
-.
-.It Fl -as-needed , -no-as-needed
+.Pp
+.It Fl -as-needed
+.It Fl -no-as-needed
 By default, shared libraries given to a linker are unconditionally added to \
 the list of required libraries in an output file.
 However, shared libraries after
@@ -429,8 +433,10 @@ are not added to the list of needed libraries if they are not needed by a progra
 The
 .Fl -no-as-needed
 option restores the default behavior for subsequent files.
-.
-.It Fl -build-id , Fl -no-build-id , Fl -build-id Ns = Ns Op Sy none | md5 | sha1 | sha256 | uuid | 0x Ns Ar hexstring
+.Pp
+.It Fl -build-id
+.It Fl -build-id Ns = Ns Op Sy none | md5 | sha1 | sha256 | uuid | 0x Ns Ar hexstring
+.It Fl -no-build-id
 Create a
 .Li .note.gnu.build-id
 section containing a byte string to
@@ -449,17 +455,17 @@ sets a random 128-bit UUID.
 .Sy 0x Ns Ar hexstring
 sets
 .Ar hexstring .
-.
+.Pp
 .It Fl -chroot Ns = Ns Ar dir
 Set
 .Ar dir
 to root directory.
-.
+.Pp
 .It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zlib-gnu
 Compress DWARF debug info
 .Pf ( Sy .debug_*
 sections) using the zlib compression algorithm.
-.
+.Pp
 .It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
 Define
 .Ar symbol
@@ -474,17 +480,20 @@ prefix) or a symbol name.
 If an integer is given as a value,
 .Ar symbol
 is defined as an absolute symbol with the given value.
-.
+.Pp
 .It Fl -default-symver
 Use soname as a symbol version and append that version to all symbols.
-.It Fl -demangle , -no-demangle
+.Pp
+.It Fl -demangle
+.It Fl -no-demangle
 Demangle C++ symbols in log messages.
-.
+.Pp
 .It Fl -dynamic-list Ns = Ns Ar file
 Read a list of dynamic symbols from
 .Ar file .
-.
-.It Fl -eh-frame-hdr , -no-eh-frame-hdr
+.Pp
+.It Fl -eh-frame-hdr
+.It Fl -no-eh-frame-hdr
 Create
 .Li .eh_frame_hdr
 section.
@@ -503,18 +512,19 @@ need them.
 .Nm
 always creates RELA-type relocation sections even if the native \
 ELF format is REL-type so that it is easy to read addends.
-.
+.Pp
 .It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
 Mark all symbols in the given
 .Ar libraries
 hidden.
-.
+.Pp
 .It Fl -fini Ns = Ns Ar symbol
 Call
 .Ar symbol
 at unload-time.
-.
-.It Fl -fork , -no-fork
+.Pp
+.It Fl -fork
+.It Fl -no-fork
 Spawn a child process and let it do the actual linking.
 When linking a large program, the OS kernel can take a few hundred \
 milliseconds to terminate a
@@ -522,29 +532,31 @@ milliseconds to terminate a
 process.
 .Fl -fork
 hides that latency.
-.
-.It Fl -gc-sections , -no-gc-sections
+.Pp
+.It Fl -gc-sections
+.It Fl -no-gc-sections
 Remove unreferenced sections.
-.
+.Pp
 .It Fl -hash-style Ns = Ns Op Sy sysv | gnu | both
 Set hash style.
-.
-.It Fl -icf Ns = Ns Sy all , Fl -no-icf
+.Pp
+.It Fl -icf Ns = Ns Sy all
+.It Fl -no-icf
 Fold identical code.
-.
+.Pp
 .It Fl -image-base Ns = Ns Ar addr
 Set the base address to
 .Ar addr .
-.
+.Pp
 .It Fl -init Ns = Ns Ar symbol
 Call
 .Ar symbol
 at load-time.
-.
+.Pp
 .It Fl -no-undefined
 Report undefined symbols (even with
 .Fl -shared ) .
-.
+.Pp
 .It Fl -pack-dyn-relocs Ns = Ns Op Sy none | relr
 If
 .Sy relr
@@ -567,23 +579,27 @@ Note that a runtime loader has to support
 to run executables or shared libraries linked with
 .Fl -pack-dyn-relocs=relr ,
 and only ChromeOS, Android and Fuchsia support it as of now in 2022.
-.
+.Pp
 .It Fl -perf
 Print performance statistics.
-.
-.It Fl -pie , -pic-executable , -no-pie , -no-pic-executable
+.Pp
+.It Fl -pie , -pic-executable
+.It Fl -no-pie , -no-pic-executable
 Create a position-independent executable.
-.
+.Pp
 .It Fl -preload
 Preload object files.
-.
-.It Fl -print-gc-sections , -no-print-gc-sections
+.Pp
+.It Fl -print-gc-sections
+.It Fl -no-print-gc-sections
 Print removed unreferenced sections.
-.
-.It Fl -print-icf-sections , -no-print-icf-sections
+.Pp
+.It Fl -print-icf-sections
+.It Fl -no-print-icf-sections
 Print folded identical sections.
-.
-.It Fl -push-state , Fl -pop-state
+.Pp
+.It Fl -push-state
+.It Fl -pop-state
 .Fl -push-state
 saves the current values of
 .Fl -as-needed ,
@@ -593,7 +609,7 @@ and
 .Fl -start-lib .
 The saved values can be restored by
 .Fl -pop-state .
-.
+.Pp
 .Fl -push-state
 and
 .Fl -pop-state
@@ -606,25 +622,28 @@ by as-needed basis but don't want to change the global state of
 .Fl -as-needed ,
 you can append "--push-state --as-needed -lfoo --pop-state" to the \
 linker command line options.
-.It Fl -quick-exit , -no-quick-exit
+.Pp
+.It Fl -quick-exit
+.It Fl -no-quick-exit
 Use
 .Dv quick_exit
 to exit.
-.
-.It Fl -relax , -no-relax
+.Pp
+.It Fl -relax
+.It Fl -no-relax
 Rewrite machine instructions with more efficient ones for some relocations.
 The feature is enabled by default.
-.
+.Pp
 .It Fl -require-defined Ns = Ns Ar symbol
 Like
 .Fl -undefined ,
 except the new symbol must be defined by the end of the link.
-.
+.Pp
 .It Fl -repro
 Embed input files into
 .Dv .repro
 section.
-.
+.Pp
 .It Fl -retain-symbols-file Ns = Ns Ar file
 Keep only symbols listed in
 .Ar file .
@@ -641,12 +660,12 @@ Note that this option removes symbols only from
 section and does not affect
 .Dv .dynsym
 section, which is used for dynamic linking.
-.
+.Pp
 .It Fl -rpath Ns = Ns Ar dir
 Add
 .Ar dir
 to runtime search path.
-.
+.Pp
 .It Fl -run Cm command Ar arg Ar
 Run
 .Cm command
@@ -654,18 +673,19 @@ with
 .Nm
 as
 .Pa /usr/bin/ld .
-.
+.Pp
 .It Fl -shared , -Bshareable
 Create a share library.
-.
+.Pp
 .It Fl -spare-dynamic-tags Ns = Ns Ar number
 Reserve given
 .Ar number
 of tags in
 .Dv .dynamic
 section.
-.
-.It Fl -start-lib , Fl -end-lib
+.Pp
+.It Fl -start-lib
+.It Fl -end-lib
 Handle object files between
 .Fl -start-lib
 and
@@ -675,23 +695,24 @@ are linked only when they are needed to resolve undefined symbols. \
 The options are useful if you want to link object files only when they are \
 needed but want to avoid the overhead of running
 .Xr ar 3 .
-.
+.Pp
 .It Fl -static
 Do not link against shared libraries.
-.
+.Pp
 .It Fl -stats
 Print input statistics.
-.
+.Pp
 .It Fl -sysroot Ns = Ns Ar dir
 Set target system root directory to
 .Ar dir .
-.
+.Pp
 .It Fl -thread-count Ns = Ns Ar count
 Use
 .Ar count
 number of threads.
-.
-.It Fl -threads , -no-threads
+.Pp
+.It Fl -threads
+.It Fl -no-threads
 Use multiple threads.
 By default,
 .Nm
@@ -703,34 +724,36 @@ To use only one thread, pass
 .Fl -no-threads
 or
 .Fl -thread-count Ns = Ns Sy 1 .
-.
+.Pp
 .It Fl -trace
 Print name of each input file.
-.
+.Pp
 .It Fl -unique Ns = Ns Ar pattern
 Don't merge input sections that match
 .Ar pattern .
-.
+.Pp
 .It Fl -unresolved-symbols Ns = Ns Op Sy \
 report-all | ignore-all | ignore-in-object-files | ignore-in-shared-libs
 How to handle undefined symbols.
-.
+.Pp
 .It Fl -version-script Ns = Ns Ar file
 Read version script from
 .Ar file .
-.
+.Pp
 .It Fl -warn-common
 .It Fl -no-warn-common
 Warn about common symbols.
-.
-.It Fl -warn-unresolved-symbols , -error-unresolved-symbols
+.Pp
+.It Fl -warn-unresolved-symbols
+.It Fl -error-unresolved-symbols
 Normally, the linker reports an error for unresolved symbols.
 .Fl -warn-unresolved-symbols
 option turns it into a warning.
 .Fl -error-unresolved-symbols
 option restores the default behavior.
-.
-.It Fl -whole-archive , -no-whole-archive
+.Pp
+.It Fl -whole-archive
+.It Fl -no-whole-archive
 When archive files
 .Pf ( Sy .a
 files) are given to a linker, only object
@@ -744,7 +767,7 @@ all archive members to the output, you should pass
 .Fl -whole-archive .
 .Fl -no-whole-archive
 restores the default behavior for subsequent archives.
-.
+.Pp
 .It Fl -wrap Ns = Ns Ar symbol
 Make
 .Ar symbol
@@ -753,8 +776,8 @@ to be resolved to
 The original symbol can be resolved as
 .Sy __real_ Ns Ar symbol .
 This option is typically used for wrapping an existing function.
-.
-.It Fl z Cm cet-report Ns = Ns Sy none | warning | error
+.Pp
+.It Fl z Cm cet-report Ns = Ns Op Sy none | warning | error
 Intel Control-flow Enforcement Technology (CET) is a new x86 feature \
 available since Tiger Lake which is released in 2020.
 It defines new instructions to harden security to protect programs from \
@@ -784,8 +807,9 @@ bit in
 .Li .note.gnu.property
 section to determine whether or not an object file was compiled with
 .Fl fcf-protection .
-.
-.It Fl z Cm now , Fl z Cm lazy
+.Pp
+.It Fl z Cm now
+.It Fl z Cm lazy
 By default, functions referring other ELF modules are resolved by the
 dynamic linker when they are called for the first time.
 .Fl z Cm now
@@ -793,12 +817,12 @@ marks an executable or a shared library file so that all dynamic
 symbols are loaded when a file is loaded to memory.
 .Fl z Cm lazy
 restores the default behavior.
-.
+.Pp
 .It Fl z Cm origin
 Mark object requiring immediate
 .Dv $ORIGIN
 processing at runtime.
-.
+.Pp
 .It Fl z Cm ibt
 Turn on
 .Li GNU_PROPERTY_X86_FEATURE_1_IBT
@@ -806,7 +830,7 @@ bit in
 .Li .note.gnu.property
 section to indicate that the output uses IBT-enabled PLT. This option implies
 .Fl z Cm ibtplt .
-.
+.Pp
 .It Fl z Cm ibtplt
 Generate Intel Branch Tracking (IBT)-enabled PLT.
 .Pp
@@ -820,21 +844,23 @@ This mechanism makes ROP attacks difficult.
 .Pp
 Since PLT can be used as an indirect branch target, we need a different \
 instruction sequence for IBT-enabled PLT. If
-.Sy -z ibtplt
+.Sy -z Cm ibtplt
 is specified,
 .Nm
 generates PLT entries that start with a landing pad. The size of IBT-enabled \
 PLT is 24 bytes as opposed to 16 bytes regular PLT.
-.
-.It Fl z Cm execstack , Fl z Cm noexecstack
+.Pp
+.It Fl z Cm execstack
+.It Fl z Cm noexecstack
 By default, the pages for the stack area (i.e. the pages where local
 variables reside) are not executable for security reasons.
 .Fl z Cm execstack
 makes it executable.
 .Fl z Cm noexecstack
 restores the default behavior.
-.
-.It Fl z Cm keep-text-section-prefix , Fl z Cm nokeep-text-section-prefix
+.Pp
+.It Fl z Cm keep-text-section-prefix
+.It Fl z Cm nokeep-text-section-prefix
 Keep
 .Dv .text.hot ,
 .Dv .text.unknown ,
@@ -843,8 +869,9 @@ Keep
 and
 .Dv .text.exit
 as separate sections in the final binary.
-.
-.It Fl z Cm relro , Fl z Cm norelro
+.Pp
+.It Fl z Cm relro
+.It Fl z Cm norelro
 Some sections such as
 .Dv .dynamic
 have to be writable only during an executable or \
@@ -866,8 +893,10 @@ generates a
 segment.
 .Fl z Cm norelro
 disables the feature.
-.
-.It Fl z Cm separate-loadable-segments , Fl z Cm separate-code , Fl z Cm noseparate-code
+.Pp
+.It Fl z Cm separate-loadable-segments
+.It Fl z Cm separate-code
+.It Fl z Cm noseparate-code
 If one memory page contains multiple segments,
 the page protection bits are set in such a way that needed attributes \
 (writable or executable) are satisifed for all segments.
@@ -884,18 +913,20 @@ adds paddings only between executable and non-executable segments.
 .Pp
 .Cm noseparate-code
 does not add any paddings between segments.
-.
-.It Fl z Cm defs , Fl z Cm nodefs
+.Pp
+.It Fl z Cm defs
+.It Fl z Cm nodefs
 Report undefined symbols (even with
 .Fl -shared ) .
-.
+.Pp
 .It Fl z Cm shstk
 Enforce shadow stack by turning GNU_PROPERTY_X86_FEATURE_1_SHSTK bit in
 .Li .note.gnu.property
 output section. Shadow stack is part of Intel Control-flow Enforcement \
 Technology (CET), which is available since Tiger Lake (2020).
-.
-.It Fl z Cm notext , Fl z Cm textoff , Fl z Cm text
+.Pp
+.It Fl z Cm text
+.It Fl z Cm notext  , Fl z Cm textoff
 .Nm
 by default reports an error if dynamic relocations are created in read-only \
 sections.
@@ -908,7 +939,7 @@ are given,
 creates such dynamic relocations without reporting an error.
 .Fl z Cm text
 restores the default behavior.
-.
+.Pp
 .It Fl z Cm max-page-size
 Some CPU ISAs support multiple different memory page sizes.
 This option specifies the maximum page size that an output binary can run on.
@@ -917,30 +948,30 @@ systems, but it wastes a bit of memory at page boundaries on systems with \
 small pages.
 .Pp
 The default value is 4 KiB for i386, x86-64 and RISC-V, and 64 KiB for ARM64.
-.
+.Pp
 .It Fl z Cm nodefaultlib
 Make the dynamic loader to ignore default search paths.
-.
+.Pp
 .It Fl z Cm nodelete
 Mark DSO non-deletable at runtime.
-.
+.Pp
 .It Fl z Cm nodlopen
 Mark DSO not available to
 .Xr dlopen 3 .
-.
+.Pp
 .It Fl z Cm nodump
 Mark DSO not available to
 .Xr dldump 3 .
-.
+.Pp
 .It Fl z Cm nocopyreloc
 Do not create copy relocations.
-.
+.Pp
 .It Fl z Cm initfirst
 Mark DSO to be initialized first at runtime.
-.
+.Pp
 .It Fl z Cm interpose
 Mark object to interpose all DSOs but executable.
-.
+.Pp
 .ig
 .It Fl (
 .It Fl )
