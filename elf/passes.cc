@@ -777,7 +777,7 @@ void scan_rels(Context<E> &ctx) {
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_COPYREL) {
-      assert(sym->file->is_dso());
+      assert(sym->file->is_dso);
       SharedFile<E> *file = (SharedFile<E> *)sym->file;
       sym->copyrel_readonly = file->is_readonly(ctx, sym);
 
@@ -886,7 +886,7 @@ void apply_version_script(Context<E> &ctx) {
   if (is_simple()) {
     for (VersionPattern &v : ctx.version_patterns)
       if (Symbol<E> *sym = get_symbol(ctx, v.pattern);
-          sym->file && !sym->file->is_dso())
+          sym->file && !sym->file->is_dso)
         sym->ver_idx = v.ver_idx;
     return;
   }
@@ -974,8 +974,7 @@ void compute_import_export(Context<E> &ctx) {
   if (!ctx.arg.shared) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
-        if (sym->file && !sym->file->is_dso() &&
-            sym->visibility != STV_HIDDEN) {
+        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
           std::scoped_lock lock(sym->mu);
           sym->is_exported = true;
         }
@@ -989,7 +988,7 @@ void compute_import_export(Context<E> &ctx) {
           sym->ver_idx == VER_NDX_LOCAL)
         continue;
 
-      if (sym->file != file && sym->file->is_dso()) {
+      if (sym->file != file && sym->file->is_dso) {
         sym->is_imported = true;
         continue;
       }

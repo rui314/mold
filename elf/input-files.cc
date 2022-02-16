@@ -15,6 +15,8 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
     Fatal(ctx) << *this << ": not an ELF file";
 
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mf->data;
+  is_dso = (ehdr.e_type == ET_DYN);
+
   ElfShdr<E> *sh_begin = (ElfShdr<E> *)(mf->data + ehdr.e_shoff);
 
   // e_shnum contains the total number of sections in an object file.
@@ -726,7 +728,7 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 template <typename E>
 static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
   if (esym.is_common()) {
-    assert(!file->is_dso());
+    assert(!file->is_dso);
     if (is_lazy)
       return (6 << 24) + file->priority;
     return (5 << 24) + file->priority;
@@ -742,7 +744,7 @@ static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
   // often disabled by default though.
   bool is_weak = (esym.st_bind == STB_WEAK || esym.st_bind == STB_GNU_UNIQUE);
 
-  if (file->is_dso() || is_lazy) {
+  if (file->is_dso || is_lazy) {
     if (is_weak)
       return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
@@ -902,7 +904,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     // If a protected/hidden undefined symbol is resolved to an
     // imported symbol, it's handled as if no symbols were found.
-    if (sym.file && sym.file->is_dso() &&
+    if (sym.file && sym.file->is_dso &&
         (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
       report_undef(ctx, *this, sym);
       continue;
@@ -917,7 +919,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     std::string_view key = symbol_strtab.data() + esym.st_name;
     if (i64 pos = key.find('@'); pos != key.npos) {
       Symbol<E> *sym2 = get_symbol(ctx, key.substr(0, pos));
-      if (sym2->file && sym2->file->is_dso() &&
+      if (sym2->file && sym2->file->is_dso &&
           sym2->get_version() == key.substr(pos + 1)) {
         this->symbols[i] = sym2;
         continue;
@@ -1162,7 +1164,7 @@ bool is_c_identifier(std::string_view name) {
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
-  if (file.is_dso()) {
+  if (file.is_dso) {
     out << path_clean(file.filename);
     return out;
   }

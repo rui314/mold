@@ -1230,7 +1230,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       esym.st_bind = STB_LOCAL;
     else if (sym.is_weak)
       esym.st_bind = STB_WEAK;
-    else if (sym.file->is_dso())
+    else if (sym.file->is_dso)
       esym.st_bind = STB_GLOBAL;
     else
       esym.st_bind = sym.esym().st_bind;
@@ -1242,7 +1242,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
       esym.st_shndx = sym.copyrel_readonly
         ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
       esym.st_value = sym.get_addr(ctx);
-    } else if (sym.file->is_dso() || sym.esym().is_undef()) {
+    } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
       if (sym.has_plt(ctx) && !ctx.arg.pic && sym.is_imported) {
@@ -1688,7 +1688,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
     return;
 
   assert(!ctx.arg.shared);
-  assert(sym->file->is_dso());
+  assert(sym->file->is_dso);
 
   this->shdr.sh_size = align_to(this->shdr.sh_size, this->shdr.sh_addralign);
   sym->value = this->shdr.sh_size;
@@ -1738,7 +1738,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
                                 ctx.dynsym->symbols.end());
 
   std::erase_if(syms, [](Symbol<E> *sym) {
-    return !sym->file->is_dso() || sym->ver_idx <= VER_NDX_LAST_RESERVED;
+    return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
   });
 
   if (syms.empty())

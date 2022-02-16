@@ -283,7 +283,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
       return LDPR_PREVAILING_DEF_IRONLY;
     }
 
-    if (sym.file->is_dso())
+    if (sym.file->is_dso)
       return LDPR_RESOLVED_DYN;
     if (((ObjectFile<E> *)sym.file)->is_lto_obj)
       return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
@@ -554,7 +554,7 @@ void do_lto(Context<E> &ctx) {
       Symbol<E> &sym = *file->symbols[i];
 
       if (esym.is_undef() && sym.file && sym.file != file &&
-          !sym.file->is_dso() && ((ObjectFile<E> *)sym.file)->is_lto_obj) {
+          !sym.file->is_dso && ((ObjectFile<E> *)sym.file)->is_lto_obj) {
         std::scoped_lock lock(sym.mu);
         sym.referenced_by_regular_obj = true;
       }
