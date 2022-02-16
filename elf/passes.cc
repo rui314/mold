@@ -607,9 +607,7 @@ template <typename E>
 void shuffle_sections(Context<E> &ctx) {
   Timer t(ctx, "shuffle_sections");
 
-  u64 seed = *ctx.arg.shuffle_sections;
-  if (seed == 0)
-    seed = std::random_device()();
+  u64 seed = std::random_device()();
 
   tbb::parallel_for_each(ctx.output_sections,
                          [&](std::unique_ptr<OutputSection<E>> &osec) {

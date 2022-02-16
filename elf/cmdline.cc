@@ -498,9 +498,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "default-symver")) {
       ctx.arg.default_symver = true;
     } else if (read_flag(args, "shuffle-sections")) {
-      ctx.arg.shuffle_sections = 0;
-    } else if (read_arg(ctx, args, arg, "shuffle-sections")) {
-      ctx.arg.shuffle_sections = parse_number(ctx, "shuffle-sections", arg);
+      ctx.arg.shuffle_sections = true;
     } else if (read_arg(ctx, args, arg, "y") ||
                read_arg(ctx, args, arg, "trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);

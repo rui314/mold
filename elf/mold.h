@@ -1455,6 +1455,7 @@ struct Context {
     bool relocatable = false;
     bool repro = false;
     bool shared = false;
+    bool shuffle_sections = false;
     bool stats = false;
     bool strip_all = false;
     bool strip_debug = false;
@@ -1485,7 +1486,6 @@ struct Context {
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
     std::optional<GlobPattern> unique;
-    std::optional<i64> shuffle_sections;
     std::string Map;
     std::string chroot;
     std::string directory;
