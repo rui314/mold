@@ -171,12 +171,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     }
 
-    if (needs_baserel[i]) {
-      if (!is_relr_reloc(ctx, rel))
-        *dynrel++ = {P, R_386_RELATIVE, 0};
-      write32(S + A);
-      continue;
-    }
+    if (needs_baserel[i] && !is_relr_reloc(ctx, rel))
+      *dynrel++ = {P, R_386_RELATIVE, 0};
 
     switch (rel.r_type) {
     case R_386_8:

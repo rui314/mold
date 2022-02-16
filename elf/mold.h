@@ -1737,7 +1737,7 @@ public:
   InputSection<E> *input_section = nullptr;
   const char *nameptr = nullptr;
 
-  u64 value = -1;
+  u64 value = 0;
 
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
