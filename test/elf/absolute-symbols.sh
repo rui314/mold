@@ -12,14 +12,14 @@ mkdir -p $t
 
 [ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | $CC -o $t/a.o -c -x assembler -
+cat <<EOF | $CC -o $t/a.o -c -fno-PIC -x assembler -
 .globl foo, main
 foo = 0x8080
 main:
   call foo
 EOF
 
-$CC -B. -o $t/exe $t/a.o
+$CC -B. -o $t/exe -no-pie $t/a.o
 objdump -d $t/exe | grep -qE 'callq\s+8080'
 
 echo OK
