@@ -816,12 +816,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
       sym.input_section = isec;
-
-      if (SectionFragmentRef<E> &ref = sym_fragments[i]; ref.frag)
-        sym.value = ref.addend;
-      else
-        sym.value = esym.st_value;
-
+      sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;
       sym.is_weak = esym.is_weak();

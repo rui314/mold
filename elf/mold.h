@@ -2030,16 +2030,20 @@ inline bool Symbol<E>::operator<(const Symbol &other) const {
 
 template <typename E>
 inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
-  if (SectionFragment<E> *frag = get_frag()) {
-    if (!frag->is_alive) {
-      // This condition is met if a non-alloc section refers an
-      // alloc section and if the referenced piece of data is
-      // garbage-collected. Typically, this condition is met if a
-      // debug info section referring a string constant in .rodata.
-      return 0;
-    }
+  if (file && !file->is_dso) {
+    SectionFragmentRef<E> &ref = ((ObjectFile<E> *)file)->sym_fragments[sym_idx];
 
-    return frag->get_addr(ctx) + value;
+    if (ref.frag) {
+      if (!ref.frag->is_alive) {
+        // This condition is met if a non-alloc section refers an
+        // alloc section and if the referenced piece of data is
+        // garbage-collected. Typically, this condition is met if a
+        // debug info section referring a string constant in .rodata.
+        return 0;
+      }
+
+      return ref.frag->get_addr(ctx) + ref.addend;
+    }
   }
 
   if (has_copyrel) {
