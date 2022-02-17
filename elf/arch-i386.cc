@@ -391,7 +391,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       PLT },        // PDE
+        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
       };
       dispatch(ctx, table, i, rel, sym);
       break;
@@ -411,8 +411,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
         {  BASEREL,  NONE,  DYNREL,        DYNREL },     // DSO
-        {  BASEREL,  NONE,  COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
+        {  BASEREL,  NONE,  COPYREL,       PLT    },     // PIE
+        {  NONE,     NONE,  COPYREL,       PLT    },     // PDE
       };
       dispatch(ctx, table, i, rel, sym);
       break;
