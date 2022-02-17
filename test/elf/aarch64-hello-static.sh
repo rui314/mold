@@ -24,7 +24,7 @@ int main() {
 }
 EOF
 
-aarch64-linux-gnu-gcc -B"`dirname "$mold"`" -o $t/exe $t/a.o -static
+aarch64-linux-gnu-gcc -B. -o $t/exe $t/a.o -static
 
 readelf -p .comment $t/exe | grep -qw mold
 

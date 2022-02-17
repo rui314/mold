@@ -19,7 +19,7 @@ int main() {
 }
 EOF
 
-gcc -B"$(pwd)" -o $t/exe -flto $t/a.o
+gcc -B. -o $t/exe -flto $t/a.o
 $t/exe | grep -q 'Hello world'
 
 echo OK
