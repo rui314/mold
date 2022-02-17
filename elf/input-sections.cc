@@ -116,8 +116,12 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
   bool is_writable = (shdr().sh_flags & SHF_WRITE);
 
   auto error = [&] {
-    Error(ctx) << *this << ": " << rel << " relocation against symbol `"
-               << sym << "' can not be used; recompile with -fPIC";
+    if (sym.is_absolute())
+      Error(ctx) << *this << ": " << rel << " relocation against symbol `"
+                 << sym << "' can not be used; recompile with -fno-PIC";
+    else
+      Error(ctx) << *this << ": " << rel << " relocation against symbol `"
+                 << sym << "' can not be used; recompile with -fPIC";
   };
 
   auto warn_textrel = [&] {

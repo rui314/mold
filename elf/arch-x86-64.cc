@@ -629,8 +629,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_PC64: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  BASEREL,  NONE,  DYNREL,        DYNREL },     // DSO
-        {  BASEREL,  NONE,  COPYREL,       PLT    },     // PIE
+        {  ERROR,    NONE,  DYNREL,        DYNREL },     // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT    },     // PIE
         {  NONE,     NONE,  COPYREL,       PLT    },     // PDE
       };
       dispatch(ctx, table, i, rel, sym);
@@ -665,10 +665,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_PLT32:
-    case R_X86_64_PLTOFF64:
-      if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
+    case R_X86_64_PLTOFF64: {
+      Action table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  ERROR,    NONE,  PLT,           PLT    },     // DSO
+        {  ERROR,    NONE,  PLT,           PLT    },     // PIE
+        {  NONE,     NONE,  PLT,           PLT    },     // PDE
+      };
+      dispatch(ctx, table, i, rel, sym);
       break;
+    }
     case R_X86_64_TLSGD:
       if (i + 1 == rels.size())
         Fatal(ctx) << *this
