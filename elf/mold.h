@@ -1441,6 +1441,7 @@ struct Context {
     bool hash_style_sysv = true;
     bool icf = false;
     bool is_static = false;
+    bool lto_pass2 = false;
     bool omagic = false;
     bool pack_dyn_relocs_relr = false;
     bool perf = false;
@@ -1499,6 +1500,7 @@ struct Context {
     std::string soname;
     std::string sysroot;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
+    std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<std::pair<std::string_view, std::string_view>> defsyms;
     std::vector<std::string> library_paths;

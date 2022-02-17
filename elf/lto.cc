@@ -82,9 +82,11 @@
 #include "../lto.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sstream>
+#include <unistd.h>
 
 #if 0
 # define LOG std::cerr
@@ -113,6 +115,7 @@ static PluginStatus message(int level, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
   return LDPS_OK;
 }
 
@@ -265,9 +268,10 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
   // to the final result, we need to make the plugin to ignore all
   // symbols.
   if (!file.is_alive) {
+    assert(!is_v2);
     for (int i = 0; i < nsyms; i++)
       psyms[i].resolution = LDPR_PREEMPTED_REG;
-    return is_v2 ? LDPS_OK : LDPS_NO_SYMS;
+    return LDPS_NO_SYMS;
   }
 
   auto get_resolution = [&](ElfSym<E> &esym, Symbol<E> &sym) {
@@ -485,6 +489,8 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;
+  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+
   obj->filename = mf->name;
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
@@ -501,6 +507,9 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   file->fd = mf2->fd;
   if (file->fd == -1)
     Fatal(ctx) << "cannot open " << file->name << ": " << errno_string();
+
+  if (mf->parent)
+    obj->archive_name = mf->parent->name;
 
   file->offset = mf->get_offset();
   file->filesize = mf->size;
@@ -529,10 +538,60 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   return obj;
 }
 
+// Returns true if a given linker plugin supports the get_symbols_v3 API.
+// Currently, we simply assume that LLVM supports it and GCC does not.
+template <typename E>
+static bool suppots_v3_api(Context<E> &ctx) {
+  return ctx.arg.plugin.ends_with("LLVMgold.so");
+}
+
+// This function restarts mold itself with `--:lto-pass2` and
+// `--:ignore-ir-file` flags. We do this as a workaround for the old
+// linker plugins that do not support the get_symbols_v3 API.
+//
+// get_symbols_v1 and get_symbols_v2 don't provide a way to ignore an
+// object file we previously passed to the linker plugin. So we can't
+// "unload" object files in archives that we ended up not choosing to
+// include into the final output.
+//
+// As a around, we restart the linker with a list of object files the
+// linker has to ignore, so that it won't read object files from
+// archives next time.
+//
+// This is an ugly hack and should be removed once GCC adopts the v3 API.
+template <typename E>
+static void restart_process(Context<E> &ctx) {
+  std::vector<const char *> args;
+
+  for (std::string_view arg : ctx.cmdline_args)
+    args.push_back(strdup(std::string(arg).c_str()));
+
+  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool) {
+    if (file->is_lto_obj && !file->is_alive) {
+      args.push_back("--:ignore-ir-file");
+      args.push_back(strdup(file->mf->get_identifier().c_str()));
+    }
+  }
+
+  args.push_back("--:lto-pass2");
+  args.push_back(nullptr);
+
+  std::string self = std::filesystem::read_symlink("/proc/self/exe");
+
+  std::cout << std::flush;
+  std::cerr << std::flush;
+  execv(self.c_str(), (char * const *)args.data());
+  std::cerr << "execv failed: " << errno_string() << "\n";
+  _exit(1);
+}
+
 // Entry point
 template <typename E>
 void do_lto(Context<E> &ctx) {
   Timer t(ctx, "do_lto");
+
+  if (!ctx.arg.lto_pass2 && !suppots_v3_api(ctx))
+    restart_process(ctx);
 
   assert(phase == 1);
   phase = 2;

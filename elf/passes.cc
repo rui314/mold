@@ -88,60 +88,78 @@ static void mark_live_objects(Context<E> &ctx) {
   for (std::string_view name : ctx.arg.require_defined)
     mark_symbol(name);
 
-  auto mark_file = [&](InputFile<E> *file, tbb::feeder<InputFile<E> *> &feeder) {
+  std::vector<InputFile<E> *> roots;
+
+  for (InputFile<E> *file : ctx.objs)
+    if (file->is_alive)
+      roots.push_back(file);
+
+  for (InputFile<E> *file : ctx.dsos)
+    if (file->is_alive)
+      roots.push_back(file);
+
+  tbb::parallel_for_each(roots, [&](InputFile<E> *file,
+                                    tbb::feeder<InputFile<E> *> &feeder) {
     if (file->is_alive)
       file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
-  };
-
-  tbb::parallel_for_each(ctx.objs, mark_file);
-  tbb::parallel_for_each(ctx.dsos, mark_file);
+  });
 }
 
 template <typename E>
 void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
 
-  // Register symbols
-  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
+  auto resolve = [&](InputFile<E> *file) {
     file->resolve_symbols(ctx);
-  });
+  };
 
-  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
+  auto clear = [&](InputFile<E> *file) {
+    if (!file->is_alive)
+      file->clear_symbols(ctx);
+  };
+
+  // Register symbols
+  tbb::parallel_for_each(ctx.objs, resolve);
+  tbb::parallel_for_each(ctx.dsos, resolve);
 
   // Do link-time optimization. We pass all IR object files to the
   // compiler backend to compile them into a few ELF object files.
   if (ctx.has_lto_object) {
-    Timer t(ctx, "do_lto");
-
     // The compiler backend needs to know how symbols are resolved,
     // so compute symbolvisibility, import/export bits, etc early.
     mark_live_objects(ctx);
     apply_version_script(ctx);
     parse_symbol_version(ctx);
     compute_import_export(ctx);
+
     do_lto(ctx);
+
+    // Redo name resolution from scratch. We probably don't have to clear
+    // all symbols, but we do this to keep it simple.
+    tbb::parallel_for_each(ctx.objs, clear);
+    tbb::parallel_for_each(ctx.dsos, clear);
+
+    tbb::parallel_for_each(ctx.objs, resolve);
+    tbb::parallel_for_each(ctx.dsos, resolve);
   }
 
   // Mark reachable objects to decide which files to include into an output.
   // This also merges symbol visibility.
   mark_live_objects(ctx);
 
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dsos);
-
   // Remove symbols of eliminated files.
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    if (!file->is_alive)
-      file->clear_symbols(ctx);
-  });
+  tbb::parallel_for_each(ctx.objs, clear);
+  tbb::parallel_for_each(ctx.dsos, clear);
 
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
+    if (file->is_alive)
+      file->resolve_symbols(ctx);
+  });
+
+  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
     if (file->is_alive)
       file->resolve_symbols(ctx);
   });

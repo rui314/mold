@@ -626,6 +626,17 @@ public:
     return parent ? (data - parent->data + parent->get_offset()) : 0;
   }
 
+  // Returns a string that uniquely identify a file that is possibly
+  // in an archive.
+  std::string get_identifier() const {
+    if (parent) {
+      // We use the file offset within an archive as an identifier
+      // because archive members may have the same name.
+      return parent->name + ":" + std::to_string(get_offset());
+    }
+    return name;
+  }
+
   std::string name;
   u8 *data = nullptr;
   i64 size = 0;

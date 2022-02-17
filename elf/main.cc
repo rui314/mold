@@ -40,6 +40,9 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
   static Counter count("parsed_lto_objs");
   count++;
 
+  if (ctx.arg.ignore_ir_file.count(mf->get_identifier()))
+    return new ObjectFile<E>;
+
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   file->priority = ctx.file_priority++;
   file->is_in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);

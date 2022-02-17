@@ -490,6 +490,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       if (pos == arg.npos || pos == arg.size() - 1)
         Fatal(ctx) << "-defsym: syntax error: " << arg;
       ctx.arg.defsyms.push_back({arg.substr(0, pos), arg.substr(pos + 1)});
+    } else if (read_flag(args, ":lto-pass2")) {
+      ctx.arg.lto_pass2 = true;
+    } else if (read_arg(ctx, args, arg, ":ignore-ir-file")) {
+      ctx.arg.ignore_ir_file.insert(arg);
     } else if (read_flag(args, "demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag(args, "no-demangle")) {
