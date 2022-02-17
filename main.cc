@@ -1,12 +1,12 @@
-#if defined(SYSTEM_MIMALLOC)
-#include <mimalloc-new-delete.h>
-#endif
-
 #include "elf/mold.h"
 #include "macho/mold.h"
 
 #include <cstring>
 #include <signal.h>
+
+#ifdef USE_SYSTEM_MIMALLOC
+#include <mimalloc-new-delete.h>
+#endif
 
 namespace mold {
 

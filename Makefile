@@ -71,7 +71,7 @@ endif
 
 ifeq ($(USE_MIMALLOC), 1)
   ifdef SYSTEM_MIMALLOC
-    MOLD_CXXFLAGS += -DSYSTEM_MIMALLOC=1
+    MOLD_CXXFLAGS += -DUSE_SYSTEM_MIMALLOC
     MOLD_LDFLAGS += -lmimalloc
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
