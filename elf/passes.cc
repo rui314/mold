@@ -77,27 +77,10 @@ void create_synthetic_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "resolve_symbols");
-
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dsos);
-
-  // Register symbols
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
-
-  // Mark reachable objects to decide which files to include
-  // into an output.
-  std::vector<InputFile<E> *> live_set = files;
-  std::erase_if(live_set, [](InputFile<E> *file) { return !file->is_alive; });
-
+static void mark_live_objects(Context<E> &ctx) {
   auto mark_symbol = [&](std::string_view name) {
     if (InputFile<E> *file = get_symbol(ctx, name)->file)
-      if (!file->is_alive.exchange(true))
-        live_set.push_back(file);
+      file->is_alive = true;
   };
 
   for (std::string_view name : ctx.arg.undefined)
@@ -105,10 +88,49 @@ void resolve_symbols(Context<E> &ctx) {
   for (std::string_view name : ctx.arg.require_defined)
     mark_symbol(name);
 
-  tbb::parallel_for_each(live_set, [&](InputFile<E> *file,
-                                       tbb::feeder<InputFile<E> *> &feeder) {
-    file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
+  auto mark_file = [&](InputFile<E> *file, tbb::feeder<InputFile<E> *> &feeder) {
+    if (file->is_alive)
+      file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
+  };
+
+  tbb::parallel_for_each(ctx.objs, mark_file);
+  tbb::parallel_for_each(ctx.dsos, mark_file);
+}
+
+template <typename E>
+void resolve_symbols(Context<E> &ctx) {
+  Timer t(ctx, "resolve_symbols");
+
+  // Register symbols
+  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
   });
+
+  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
+
+  // Do link-time optimization. We pass all IR object files to the
+  // compiler backend to compile them into a few ELF object files.
+  if (ctx.has_lto_object) {
+    Timer t(ctx, "do_lto");
+
+    // The compiler backend needs to know how symbols are resolved,
+    // so compute symbolvisibility, import/export bits, etc early.
+    mark_live_objects(ctx);
+    apply_version_script(ctx);
+    parse_symbol_version(ctx);
+    compute_import_export(ctx);
+    do_lto(ctx);
+  }
+
+  // Mark reachable objects to decide which files to include into an output.
+  // This also merges symbol visibility.
+  mark_live_objects(ctx);
+
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
   // Remove symbols of eliminated files.
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {

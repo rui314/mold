@@ -163,7 +163,6 @@ static PluginStatus add_input_file(const char *path) {
   file->is_alive = true;
   file->parse(ctx);
   file->resolve_symbols(ctx);
-  file->mark_live_objects(ctx, [](InputFile<E> *) { unreachable(); });
   return LDPS_OK;
 }
 
@@ -537,12 +536,6 @@ void do_lto(Context<E> &ctx) {
 
   assert(phase == 1);
   phase = 2;
-
-  // Compute import/export information early because `get_symbols`
-  // function needs them.
-  apply_version_script(ctx);
-  parse_symbol_version(ctx);
-  compute_import_export(ctx);
 
   // Set `referenced_by_regular_obj` bit.
   for (ObjectFile<E> *file : ctx.objs) {

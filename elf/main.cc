@@ -469,10 +469,6 @@ static int elf_main(int argc, char **argv) {
   // included to the final output.
   resolve_symbols(ctx);
 
-  // Do LTO
-  if (ctx.has_lto_object)
-    do_lto(ctx);
-
   // Resolve mergeable section pieces to merge them.
   register_section_pieces(ctx);
 
