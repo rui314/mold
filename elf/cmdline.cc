@@ -172,7 +172,7 @@ Options:
 mold: supported targets: elf32-i386 elf64-x86-64 elf64-littleaarch64
 mold: supported emulations: elf_i386 elf_x86_64 aarch64linux aarch64elf)";
 
-static std::vector<std::string> add_dashes(std::string name) {
+static std::vector<std::string> add_dashes(std::string &name) {
   // Multi-letter linker options can be preceded by either a single
   // dash or double dashes except ones starting with "o", which must
   // be preceded by double dashes. For example, "-omagic" is
@@ -203,7 +203,7 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
     return false;
   }
 
-  for (std::string opt : add_dashes(name)) {
+  for (std::string &opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
         Fatal(ctx) << "option -" << name << ": argument missing";
@@ -222,7 +222,7 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
 }
 
 bool read_flag(std::span<std::string_view> &args, std::string name) {
-  for (std::string opt : add_dashes(name)) {
+  for (std::string &opt : add_dashes(name)) {
     if (args[0] == opt) {
       args = args.subspan(1);
       return true;
