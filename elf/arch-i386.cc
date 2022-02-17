@@ -425,8 +425,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_386_PLT32: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  PLT,           PLT    },     // DSO
-        {  ERROR,    NONE,  PLT,           PLT    },     // PIE
+        {  NONE,     NONE,  PLT,           PLT    },     // DSO
+        {  NONE,     NONE,  PLT,           PLT    },     // PIE
         {  NONE,     NONE,  PLT,           PLT    },     // PDE
       };
       dispatch(ctx, table, i, rel, sym);
