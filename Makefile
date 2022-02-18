@@ -2,6 +2,8 @@
 #
 # make CXXFLAGS=-fsanitize=address LDFLAGS=-fsanitize=address USE_MIMALLOC=0
 
+VERSION = 1.0.3
+
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 LIBDIR = $(PREFIX)/lib
@@ -45,7 +47,7 @@ CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
-                 -DMOLD_VERSION=\"1.0.3\" -DLIBDIR="\"$(LIBDIR)\""
+                 -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
 MOLD_LDFLAGS := -pthread -lz -lm -ldl
 
