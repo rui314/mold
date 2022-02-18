@@ -109,18 +109,13 @@ template <typename E>
 void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
 
-  auto resolve = [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  };
-
-  auto clear = [&](InputFile<E> *file) {
-    if (!file->is_alive)
-      file->clear_symbols(ctx);
+  auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
+    tbb::parallel_for_each(ctx.objs, fn);
+    tbb::parallel_for_each(ctx.dsos, fn);
   };
 
   // Register symbols
-  tbb::parallel_for_each(ctx.objs, resolve);
-  tbb::parallel_for_each(ctx.dsos, resolve);
+  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 
   // Do link-time optimization. We pass all IR object files to the
   // compiler backend to compile them into a few ELF object files.
@@ -136,11 +131,12 @@ void resolve_symbols(Context<E> &ctx) {
 
     // Redo name resolution from scratch. We probably don't have to clear
     // all symbols, but we do this to keep it simple.
-    tbb::parallel_for_each(ctx.objs, clear);
-    tbb::parallel_for_each(ctx.dsos, clear);
+    for_each_file([&](InputFile<E> *file) {
+      if (!file->is_alive)
+        file->clear_symbols(ctx);
+    });
 
-    tbb::parallel_for_each(ctx.objs, resolve);
-    tbb::parallel_for_each(ctx.dsos, resolve);
+    for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
   }
 
   // Mark reachable objects to decide which files to include into an output.
@@ -148,18 +144,15 @@ void resolve_symbols(Context<E> &ctx) {
   mark_live_objects(ctx);
 
   // Remove symbols of eliminated files.
-  tbb::parallel_for_each(ctx.objs, clear);
-  tbb::parallel_for_each(ctx.dsos, clear);
+  for_each_file([&](InputFile<E> *file) {
+    if (!file->is_alive)
+      file->clear_symbols(ctx);
+  });
 
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
-  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
-    if (file->is_alive)
-      file->resolve_symbols(ctx);
-  });
-
-  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
+  for_each_file([&](InputFile<E> *file) {
     if (file->is_alive)
       file->resolve_symbols(ctx);
   });
