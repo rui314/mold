@@ -1046,10 +1046,10 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
     // Otherwise, we know the offset at link-time, so fill the GOT entry.
     i64 idx = sym->get_gottp_idx(ctx);
-    if (E::tcb_size == -1)
+    if (E::tls_offset == -1)
       buf[idx] = sym->get_addr(ctx) - ctx.tls_end;
     else
-      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + E::tcb_size;
+      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + E::tls_offset;
   }
 
   if (tlsld_idx != -1)
