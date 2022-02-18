@@ -145,7 +145,7 @@ $(MIMALLOC_LIB):
 
 $(TBB_LIB):
 	mkdir -p out/tbb
-	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -D__TBB_DYNAMIC_LOAD_ENABLED=0" -DTBB_STRICT=OFF ../../third-party/tbb)
+	(cd out/tbb; cmake -G'Unix Makefiles' -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -D__TBB_DYNAMIC_LOAD_ENABLED=0 -D__TBB_WEAK_SYMBOLS_PRESENT=0" -DTBB_STRICT=OFF ../../third-party/tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
 
