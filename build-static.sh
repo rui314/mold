@@ -39,6 +39,9 @@ if docker --version | grep -q podman; then
   docker_args+=(--userns=keep-id)
 fi
 
+make clean
+
 docker run -it --rm "${docker_args[@]}" \
   mold-build-ubuntu20 \
-  make -C /mold -j"$(nproc)" CC=clang CXX=clang++ LDFLAGS="$LDFLAGS" "$@"
+  make -C /mold -j"$(nproc)" CC=clang CXX=clang++ LDFLAGS="$LDFLAGS" \
+  CXXFLAGS=-D__TBB_WEAK_SYMBOLS_PRESENT=0 "$@"
