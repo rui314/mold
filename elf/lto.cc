@@ -101,6 +101,8 @@ namespace mold::elf {
 // as the LTO plugin is not thread-safe by design anyway.
 
 template <typename E> static Context<E> *gctx;
+template <typename E> static std::vector<ObjectFile<E> *> lto_objects;
+
 static int phase = 0;
 static void *dlopen_handle;
 static std::vector<PluginSymbol> plugin_symbols;
@@ -160,7 +162,7 @@ static PluginStatus add_input_file(const char *path) {
 
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, "", false);
   ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(file));
-  ctx.objs.push_back(file);
+  lto_objects<E>.push_back(file);
 
   file->priority = file_priority++;
   file->is_alive = true;
@@ -587,7 +589,7 @@ static void restart_process(Context<E> &ctx) {
 
 // Entry point
 template <typename E>
-void do_lto(Context<E> &ctx) {
+std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   Timer t(ctx, "do_lto");
 
   if (!ctx.arg.lto_pass2 && !suppots_v3_api(ctx))
@@ -616,13 +618,7 @@ void do_lto(Context<E> &ctx) {
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";
   all_symbols_read_hook();
-
-  // Remove IR object files
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_lto_obj)
-      file->is_alive = false;
-
-  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
+  return lto_objects<E>;
 }
 
 template <typename E>
@@ -636,7 +632,7 @@ void lto_cleanup(Context<E> &ctx) {
 #define INSTANTIATE(E)                                                  \
   template ObjectFile<E> *                                              \
     read_lto_object(Context<E> &, MappedFile<Context<E>> *);            \
-  template void do_lto(Context<E> &);                                   \
+  template std::vector<ObjectFile<E> *> do_lto(Context<E> &);           \
   template void lto_cleanup(Context<E> &)
 
 INSTANTIATE(X86_64);

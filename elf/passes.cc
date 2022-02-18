@@ -106,8 +106,8 @@ static void mark_live_objects(Context<E> &ctx) {
 }
 
 template <typename E>
-void resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "resolve_symbols");
+void do_resolve_symbols(Context<E> &ctx) {
+  Timer t(ctx, "do_resolve_symbols");
 
   auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
     tbb::parallel_for_each(ctx.objs, fn);
@@ -116,28 +116,6 @@ void resolve_symbols(Context<E> &ctx) {
 
   // Register symbols
   for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
-
-  // Do link-time optimization. We pass all IR object files to the
-  // compiler backend to compile them into a few ELF object files.
-  if (ctx.has_lto_object) {
-    // The compiler backend needs to know how symbols are resolved,
-    // so compute symbolvisibility, import/export bits, etc early.
-    mark_live_objects(ctx);
-    apply_version_script(ctx);
-    parse_symbol_version(ctx);
-    compute_import_export(ctx);
-
-    do_lto(ctx);
-
-    // Redo name resolution from scratch. We probably don't have to clear
-    // all symbols, but we do this to keep it simple.
-    for_each_file([&](InputFile<E> *file) {
-      if (!file->is_alive)
-        file->clear_symbols(ctx);
-    });
-
-    for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
-  }
 
   // Mark reachable objects to decide which files to include into an output.
   // This also merges symbol visibility.
@@ -160,6 +138,59 @@ void resolve_symbols(Context<E> &ctx) {
   // Remove unused files
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+}
+
+template <typename E>
+void resolve_symbols(Context<E> &ctx) {
+  Timer t(ctx, "do_resolve_symbols");
+
+  std::vector<ObjectFile<E> *> objs = ctx.objs;
+  std::vector<SharedFile<E> *> dsos = ctx.dsos;
+
+  do_resolve_symbols(ctx);
+
+  if (ctx.has_lto_object) {
+    // Do link-time optimization. We pass all IR object files to the
+    // compiler backend to compile them into a few ELF object files.
+    //
+    // The compiler backend needs to know how symbols are resolved,
+    // so compute symbol visibility, import/export bits, etc early.
+    mark_live_objects(ctx);
+    apply_version_script(ctx);
+    parse_symbol_version(ctx);
+    compute_import_export(ctx);
+
+    // Do LTO. It compiles IR object files into a few big ELF files.
+    std::vector<ObjectFile<E> *> lto_objs = do_lto(ctx);
+
+    // Restore the original files because do_resolve_symbols may have
+    // removed some of them.
+    ctx.objs = objs;
+    ctx.dsos = dsos;
+
+    append(ctx.objs, lto_objs);
+
+    // Remove IR object files.
+    for (ObjectFile<E> *file : ctx.objs)
+      if (file->is_lto_obj)
+        file->is_alive = false;
+
+    std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
+
+    // Now that we have additional object files, so redo name resolution
+    // from scratch.
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      file->clear_symbols(ctx);
+      file->is_alive = !file->is_in_lib;
+    });
+
+    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+      file->clear_symbols(ctx);
+      file->is_alive = true;
+    });
+
+    do_resolve_symbols(ctx);
+  }
 }
 
 template <typename E>

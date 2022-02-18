@@ -1195,7 +1195,7 @@ template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mb);
 
 template <typename E>
-void do_lto(Context<E> &ctx);
+std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx);
 
 template <typename E>
 void lto_cleanup(Context<E> &ctx);
