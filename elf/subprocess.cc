@@ -266,6 +266,11 @@ std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
     return path;
 #endif
 
+  // Look for ../lib/mold/mold-wrapper.so
+  path = self.parent_path() / "../lib/mold/mold-wrapper.so";
+  if (std::filesystem::is_regular_file(path, ec) && !ec)
+    return path;
+
   Fatal(ctx) << "mold-wrapper.so is missing";
 }
 

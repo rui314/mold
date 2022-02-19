@@ -97,8 +97,12 @@ ifeq ($(OS), Linux)
   endif
 endif
 
-# Use pkg-config to know where libcrypto resides.
+NEEDS_LIBCRYPTO = 0
 ifneq ($(OS), Darwin)
+  NEEDS_LIBCRYPTO = 1
+endif
+
+ifeq ($(NEEDS_LIBCRYPTO), 1)
   MOLD_CXXFLAGS += $(shell $(PKG_CONFIG) --cflags-only-I openssl)
   MOLD_LDFLAGS += $(shell $(PKG_CONFIG) --libs-only-L openssl) -lcrypto
 endif
