@@ -615,7 +615,9 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";
-  all_symbols_read_hook();
+  if (PluginStatus st = all_symbols_read_hook(); st != LDPS_OK)
+    Fatal(ctx) << "LTO: all_symbols_read_hook returns " << st;
+
   return lto_objects<E>;
 }
 
