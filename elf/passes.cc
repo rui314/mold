@@ -163,8 +163,9 @@ void resolve_symbols(Context<E> &ctx) {
     // Do LTO. It compiles IR object files into a few big ELF files.
     std::vector<ObjectFile<E> *> lto_objs = do_lto(ctx);
 
-    // Restore the original files because do_resolve_symbols may have
-    // removed some of them.
+    // do_resolve_symbols() have removed unreferenced files. Restore the
+    // original files here because some of them may have to be resurrected
+    // because they are referenced by the ELF files returned from do_lto().
     ctx.objs = objs;
     ctx.dsos = dsos;
 
@@ -177,8 +178,7 @@ void resolve_symbols(Context<E> &ctx) {
 
     std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
 
-    // Now that we have additional object files, so redo name resolution
-    // from scratch.
+    // Redo name resolution from scratch.
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       file->clear_symbols(ctx);
       file->is_alive = !file->is_in_lib;

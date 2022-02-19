@@ -556,9 +556,9 @@ static bool suppots_v3_api(Context<E> &ctx) {
 // "unload" object files in archives that we ended up not choosing to
 // include into the final output.
 //
-// As a around, we restart the linker with a list of object files the
-// linker has to ignore, so that it won't read object files from
-// archives next time.
+// As a workaround, we restart the linker with a list of object files
+// the linker has to ignore, so that it won't read the object files
+// from archives next time.
 //
 // This is an ugly hack and should be removed once GCC adopts the v3 API.
 template <typename E>
