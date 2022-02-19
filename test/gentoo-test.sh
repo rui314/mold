@@ -33,11 +33,8 @@ EOF
   set +e
 fi
 
-# Build mold as a statically-linked executable
-if ! [ -f mold ] || ! ldd mold 2>&1 | grep -Pq 'statically linked|not a dynamic executable'; then
-  make clean
-  ./build-static.sh
-fi
+# Build mold as a portable executable
+./dist.sh
 
 git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 
