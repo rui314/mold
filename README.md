@@ -83,13 +83,14 @@ try a specific version of a compiler such as `g++-10` or `clang++-12`.
 
 By default, `mold` is installed to `/usr/local/bin`.
 
-If you don't use a recent enough Linux distribution, or if for any reason `make`
-in the above commands doesn't work for you, you can use Docker to build it in
-a Docker environment. To do so, just run `./build-static.sh` in this
+If you don't use a recent enough Linux distribution, or if for any reason
+`make` in the above commands doesn't work for you, you can use Docker to
+build it in a Docker environment. To do so, just run `./dist.sh` in this
 directory instead of running `make -j$(nproc)`. The shell script creates a
-Ubuntu 20.04 Docker image, installs necessary tools and libraries to it,
-and builds mold as a statically-linked executable.
-(If `build-static.sh` script didn't work, please apply [3232c1f8](https://github.com/rui314/mold/commit/3232c1f8840885e5656c8cee7fab5f8e52926bd8).)
+Ubuntu 18.04 Docker image, installs necessary tools and libraries to it,
+builds mold and auxiliary files, and packs them into a single tar file
+`mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere
+and use `mold` executable in it.
 
 `make test` depends on a few more packages. To install, run the following commands:
 
