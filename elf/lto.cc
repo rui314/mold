@@ -568,12 +568,10 @@ static void restart_process(Context<E> &ctx) {
   for (std::string_view arg : ctx.cmdline_args)
     args.push_back(strdup(std::string(arg).c_str()));
 
-  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool) {
-    if (file->is_lto_obj && !file->is_alive) {
-      args.push_back("--:ignore-ir-file");
-      args.push_back(strdup(file->mf->get_identifier().c_str()));
-    }
-  }
+  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool)
+    if (file->is_lto_obj && !file->is_alive)
+      args.push_back(strdup(("--:ignore-ir-file=" +
+                             file->mf->get_identifier()).c_str()));
 
   args.push_back("--:lto-pass2");
   args.push_back(nullptr);
