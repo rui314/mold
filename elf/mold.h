@@ -1004,7 +1004,7 @@ protected:
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
-  ObjectFile();
+  ObjectFile() = default;
 
   static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                std::string archive_name, bool is_in_lib);
@@ -1320,7 +1320,7 @@ public:
   open(Context<E> &ctx, std::string path, i64 filesize, i64 perm);
 
   virtual void close(Context<E> &ctx) = 0;
-  virtual ~OutputFile() {}
+  virtual ~OutputFile() = default;
 
   u8 *buf = nullptr;
   std::string path;

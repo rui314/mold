@@ -70,9 +70,6 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile() {}
-
-template <typename E>
 ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name, bool is_in_lib) {
