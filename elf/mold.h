@@ -1005,7 +1005,6 @@ template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
   ObjectFile();
-  ~ObjectFile() = default;
 
   static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                std::string archive_name, bool is_in_lib);
@@ -1087,8 +1086,6 @@ template <typename E>
 class SharedFile : public InputFile<E> {
 public:
   static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
-
-  ~SharedFile() = default;
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
