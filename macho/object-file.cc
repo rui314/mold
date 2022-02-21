@@ -21,7 +21,7 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
   obj->mf = mf;
   obj->archive_name = archive_name;
   obj->is_alive = archive_name.empty();
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.emplace_back(obj);
   return obj;
 };
 
@@ -186,7 +186,7 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
           .input_addr = (u32)(isec.hdr.addr + r.offset),
           .p2align = (u8)isec.hdr.p2align,
         };
-        subsections.push_back(std::unique_ptr<Subsection<E>>(subsec));
+        subsections.emplace_back(subsec);
       }
 
       if (r.symidx != -1)
@@ -482,7 +482,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
         .p2align = (u8)msym.p2align,
       };
 
-      subsections.push_back(std::unique_ptr<Subsection<E>>(subsec));
+      subsections.emplace_back(subsec);
 
       sym.subsec = subsec;
       sym.value = 0;
@@ -514,7 +514,7 @@ InputSection<E> *ObjectFile<E>::get_common_sec(Context<E> &ctx) {
     hdr->type = S_ZEROFILL;
 
     common_sec = new InputSection<E>(ctx, *this, *hdr);
-    sections.push_back(std::unique_ptr<InputSection<E>>(common_sec));
+    sections.emplace_back(common_sec);
   }
   return common_sec;
 }
@@ -523,7 +523,7 @@ template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>;
   dylib->mf = mf;
-  ctx.dylib_pool.push_back(std::unique_ptr<DylibFile<E>>(dylib));
+  ctx.dylib_pool.emplace_back(dylib);
   return dylib;
 };
 

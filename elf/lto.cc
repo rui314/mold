@@ -161,7 +161,7 @@ static PluginStatus add_input_file(const char *path) {
   MappedFile<Context<E>> *mf = MappedFile<Context<E>>::must_open(ctx, path);
 
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, "", false);
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(file));
+  ctx.obj_pool.emplace_back(file);
   lto_objects<E>.push_back(file);
 
   file->priority = file_priority++;
@@ -491,7 +491,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.emplace_back(obj);
 
   obj->filename = mf->name;
   obj->symbols.push_back(new Symbol<E>);

@@ -812,7 +812,7 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 
   OutputSection<E> *osec = new OutputSection(name, type, flags,
                                              ctx.output_sections.size());
-  ctx.output_sections.push_back(std::unique_ptr<OutputSection<E>>(osec));
+  ctx.output_sections.emplace_back(osec);
   return osec;
 }
 
@@ -1408,8 +1408,8 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   if (MergedSection *osec = find())
     return osec;
 
-  auto *osec = new MergedSection(name, flags, type);
-  ctx.merged_sections.push_back(std::unique_ptr<MergedSection>(osec));
+  MergedSection *osec = new MergedSection(name, flags, type);
+  ctx.merged_sections.emplace_back(osec);
   return osec;
 }
 

@@ -74,7 +74,7 @@ ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name, bool is_in_lib) {
   ObjectFile<E> *obj = new ObjectFile<E>(ctx, mf, archive_name, is_in_lib);
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.emplace_back(obj);
   return obj;
 }
 
@@ -1171,7 +1171,7 @@ template <typename E>
 SharedFile<E> *
 SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   SharedFile<E> *obj = new SharedFile(ctx, mf);
-  ctx.dso_pool.push_back(std::unique_ptr<SharedFile<E>>(obj));
+  ctx.dso_pool.emplace_back(obj);
   return obj;
 }
 

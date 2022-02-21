@@ -368,7 +368,7 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
     return osec;
 
   OutputSection<E> *osec = new OutputSection<E>(ctx, segname, sectname);
-  ctx.osec_pool.push_back(std::unique_ptr<OutputSection<E>>(osec));
+  ctx.osec_pool.emplace_back(osec);
   return osec;
 }
 
@@ -426,7 +426,7 @@ OutputSegment<E>::get_instance(Context<E> &ctx, std::string_view name) {
     return seg;
 
   OutputSegment<E> *seg = new OutputSegment<E>(name);
-  ctx.segments.push_back(std::unique_ptr<OutputSegment<E>>(seg));
+  ctx.segments.emplace_back(seg);
   return seg;
 }
 

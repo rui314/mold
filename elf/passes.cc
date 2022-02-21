@@ -347,7 +347,7 @@ static std::optional<u64> parse_defsym_addr(std::string_view s) {
 template <typename E>
 ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.obj_pool.push_back(std::unique_ptr<ObjectFile<E>>(obj));
+  ctx.obj_pool.emplace_back(obj);
 
   // Create linker-synthesized symbols.
   auto *esyms = new std::vector<ElfSym<E>>(1);
@@ -884,7 +884,7 @@ void create_reloc_sections(Context<E> &ctx) {
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
     ctx.chunks.push_back(r);
-    ctx.output_chunks.push_back(std::unique_ptr<Chunk<E>>(r));
+    ctx.output_chunks.emplace_back(r);
   }
 
   // Create a table to map input symbol indices to output symbol indices
@@ -1377,7 +1377,7 @@ void compress_debug_sections(Context<E> &ctx) {
       comp = new GnuCompressedSection<E>(ctx, chunk);
     assert(comp);
 
-    ctx.output_chunks.push_back(std::unique_ptr<Chunk<E>>(comp));
+    ctx.output_chunks.emplace_back(comp);
     ctx.chunks[i] = comp;
   });
 
