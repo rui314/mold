@@ -42,8 +42,8 @@ endif
 
 # If you want to compile mold for debugging, invoke make as
 # `make CXXFLAGS=-g`.
-CFLAGS = -O2
-CXXFLAGS = -O2
+CFLAGS ?= -O2
+CXXFLAGS ?= -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
