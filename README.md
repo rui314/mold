@@ -90,7 +90,9 @@ directory instead of running `make -j$(nproc)`. The shell script creates a
 Ubuntu 18.04 Docker image, installs necessary tools and libraries to it,
 builds mold and auxiliary files, and packs them into a single tar file
 `mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere
-and use `mold` executable in it.
+and use `mold` executable in it. (For v1.1, you may want to apply
+[16bdf400](https://github.com/rui314/mold/commit/16bdf4009ac2d3453c3eb311416dec80c81dd468)
+to `dist.sh` to produce an optimized binary.)
 
 `make test` depends on a few more packages. To install, run the following commands:
 
