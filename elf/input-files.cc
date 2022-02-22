@@ -857,6 +857,16 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
   }
 }
 
+// Comdat groups are used to de-duplicate functions and data that may
+// be included into multiple object files. C++ compiler uses comdat
+// groups to de-duplicate instantiated templates.
+//
+// For example, if a compiler decides to instantiate `std::vector<int>`,
+// it generates code and data for `std::vector<int>` and put them into a
+// comdat group whose name is the mangled name of `std::vector<int>`.
+// The instantiation may happen multiple times for different translation
+// units. Then linker de-duplicates them so that the resulting executable
+// contains only a single copy of `std::vector<int>`.
 template <typename E>
 void ObjectFile<E>::resolve_comdat_groups() {
   for (auto &pair : comdat_groups) {
