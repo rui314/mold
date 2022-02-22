@@ -635,6 +635,9 @@ void sort_init_fini(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     if (osec->name == ".init_array" || osec->name == ".fini_array") {
+      if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
+        std::reverse(osec->members.begin(), osec->members.end());
+
       sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
         return get_priority(a) < get_priority(b);
       });
@@ -672,14 +675,32 @@ template <typename E>
 void shuffle_sections(Context<E> &ctx) {
   Timer t(ctx, "shuffle_sections");
 
-  u64 seed = std::random_device()();
+  auto is_eligible = [](OutputSection<E> &osec) {
+    return osec.name != ".init" && osec.name != ".fini" &&
+           osec.name != ".init_array" && osec.name != ".fini_array";
+  };
 
-  tbb::parallel_for_each(ctx.output_sections,
-                         [&](std::unique_ptr<OutputSection<E>> &osec) {
-    if (osec->name != ".init" && osec->name != ".fini" &&
-        osec->name != ".init_array" && osec->name != ".fini_array")
-      shuffle(osec->members, seed + hash_string(osec->name));
-  });
+  switch (ctx.arg.shuffle_sections) {
+  case SHUFFLE_SECTIONS_NONE:
+    unreachable();
+  case SHUFFLE_SECTIONS_SHUFFLE: {
+    u64 seed = std::random_device()();
+
+    tbb::parallel_for_each(ctx.output_sections,
+                           [&](std::unique_ptr<OutputSection<E>> &osec) {
+      if (is_eligible(*osec))
+        shuffle(osec->members, seed + hash_string(osec->name));
+    });
+    break;
+  }
+  case SHUFFLE_SECTIONS_REVERSE:
+    tbb::parallel_for_each(ctx.output_sections,
+                           [&](std::unique_ptr<OutputSection<E>> &osec) {
+      if (is_eligible(*osec))
+        std::reverse(osec->members.begin(), osec->members.end());
+    });
+    break;
+  }
 }
 
 template <typename E>

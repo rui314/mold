@@ -1367,6 +1367,12 @@ typedef enum {
   CET_REPORT_ERROR,
 } CetReportKind;
 
+typedef enum {
+  SHUFFLE_SECTIONS_NONE,
+  SHUFFLE_SECTIONS_SHUFFLE,
+  SHUFFLE_SECTIONS_REVERSE,
+} ShuffleSectionsKind;
+
 struct VersionPattern {
   std::string_view pattern;
   u16 ver_idx = -1;
@@ -1420,6 +1426,7 @@ struct Context {
     CetReportKind z_cet_report = CET_REPORT_NONE;
     CompressKind compress_debug_sections = COMPRESS_NONE;
     SeparateCodeKind z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+    ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
     UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
@@ -1454,7 +1461,6 @@ struct Context {
     bool relocatable = false;
     bool repro = false;
     bool shared = false;
-    bool shuffle_sections = false;
     bool stats = false;
     bool strip_all = false;
     bool strip_debug = false;

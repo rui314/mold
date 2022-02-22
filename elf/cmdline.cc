@@ -110,11 +110,12 @@ Options:
   --repro                     Embed input files to .repro section
   --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
+  --reverse-sections          Reverses input sections in the output file
   --rpath DIR                 Add DIR to runtime search path
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
   --shared, --Bshareable      Create a share library
-  --shuffle-sections[=SEED]   Randomize the output by shuffling input sections
+  --shuffle-sections          Randomize the output by shuffling input sections
   --sort-common               Ignored
   --sort-section              Ignored
   --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
@@ -504,7 +505,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "default-symver")) {
       ctx.arg.default_symver = true;
     } else if (read_flag(args, "shuffle-sections")) {
-      ctx.arg.shuffle_sections = true;
+      ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
+    } else if (read_flag(args, "reverse-sections")) {
+      ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_REVERSE;
     } else if (read_arg(ctx, args, arg, "y") ||
                read_arg(ctx, args, arg, "trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);

@@ -555,7 +555,7 @@ static int elf_main(int argc, char **argv) {
   sort_init_fini(ctx);
 
   // Handle --shuffle-sections
-  if (ctx.arg.shuffle_sections)
+  if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_NONE)
     shuffle_sections(ctx);
 
   // Compute sizes of output sections while assigning offsets
