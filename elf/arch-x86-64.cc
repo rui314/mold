@@ -24,8 +24,8 @@ static void write_compact_plt(Context<E> &ctx) {
 
 // The IBTPLT is a security-enhanced version of the regular PLT.
 // It uses Indirect Branch Tracking (IBT) feature which is part of
-// Intel Control-Flow Enforcement (CET). IBTPLT is slightly larger
-// than the regular PLT (24 bytes vs 16 bytes for each entry).
+// Intel Control-Flow Enforcement (CET). IBTPLT is larger than the
+// regular PLT (32 bytes vs 16 bytes for each entry).
 //
 // Note that our IBTPLT instruction sequence is different from the one
 // used in GNU ld. GNU's IBTPLT implementation uses two separate
@@ -48,12 +48,18 @@ static void write_ibtplt(Context<E> &ctx) {
   // Write PLT entries
   i64 relplt_idx = 0;
 
+  // The last 11 bytes are padding, so we could have shrunk each PLT
+  // entry to 24 bytes. We don't do that because according to the Intel
+  // optimization manual, all branch targets should be 16-byte aligned
+  // for optimal performance.
   static const u8 data[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
     0x68, 0, 0, 0, 0,       // push $index_in_relplt
     0xf2, 0xe9, 0, 0, 0, 0, // jmp PLT[0]
     0x0f, 0x1f, 0x00,       // nop
+    0x0f, 0x1f, 0x40, 0x00, // nop
+    0x0f, 0x1f, 0x40, 0x00, // nop
   };
 
   for (Symbol<E> *sym : ctx.plt->symbols) {

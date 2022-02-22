@@ -14,9 +14,8 @@ mkdir -p $t
 
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 #include <stdio.h>
-void hello() {
-  printf("Hello");
-}
+void hello() { printf("Hello"); }
+void world() { printf("world"); }
 EOF
 
 $CC -B. -o $t/b.so -shared $t/a.o -Wl,-z,ibtplt
@@ -25,10 +24,13 @@ cat <<EOF | $CC -o $t/c.o -c -xc -
 #include <stdio.h>
 
 void hello();
+void world();
 
 int main() {
   hello();
-  puts(" world");
+  printf(" ");
+  world();
+  printf("\n");
 }
 EOF
 
