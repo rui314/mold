@@ -36,7 +36,7 @@ make -j$(nproc) &&
 cp -r /mold /tmp/mold &&
 cd /tmp/mold &&
 make clean &&
-make -j$(nproc) CXX=clang++-14 CXXFLAGS=-I/tmp/openssl-3.0.1/include LDFLAGS='-static-libstdc++ /tmp/openssl-3.0.1/libcrypto.a' NEEDS_LIBCRYPTO=0 &&
+make -j$(nproc) CXX=clang++-14 CXXFLAGS='-I/tmp/openssl-3.0.1/include -O2' LDFLAGS='-static-libstdc++ /tmp/openssl-3.0.1/libcrypto.a' NEEDS_LIBCRYPTO=0 &&
 make install PREFIX=/ DESTDIR=$dest &&
 ln -sfr $dest/bin/mold $dest/libexec/mold/ld &&
 tar czf /mold/$dest.tar.gz $dest &&
