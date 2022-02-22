@@ -1295,6 +1295,7 @@ template <typename E> i64 get_section_rank(Context<E> &, Chunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> void compress_debug_sections(Context<E> &);
+template <typename E> void write_dependency_file(Context<E> &);
 
 //
 // arch-arm64.cc
@@ -1486,6 +1487,7 @@ struct Context {
     std::optional<GlobPattern> unique;
     std::string Map;
     std::string chroot;
+    std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
     std::string entry = "_start";

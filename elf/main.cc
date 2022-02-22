@@ -724,6 +724,9 @@ static int elf_main(int argc, char **argv) {
   // Close the output file. This is the end of the linker's main job.
   ctx.output_file->close(ctx);
 
+  if (!ctx.arg.dependency_file.empty())
+    write_dependency_file(ctx);
+
   if (ctx.has_lto_object)
     lto_cleanup(ctx);
 

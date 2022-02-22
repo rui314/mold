@@ -62,6 +62,7 @@ Options:
   --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu]
                               Compress .debug_* sections
   --dc                        Ignored
+  --dependency-file=FILE      Write Makefile-style dependency rules to FILE
   --defsym=SYMBOL=VALUE       Define a symbol alias
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
@@ -485,6 +486,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
     } else if (read_flag(args, "start-lib")) {
       remaining.push_back("-start-lib");
+    } else if (read_arg(ctx, args, arg, "dependency-file")) {
+      ctx.arg.dependency_file = arg;
     } else if (read_arg(ctx, args, arg, "defsym")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)

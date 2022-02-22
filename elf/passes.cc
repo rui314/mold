@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <fstream>
 #include <functional>
 #include <map>
 #include <optional>
@@ -1386,6 +1387,34 @@ void compress_debug_sections(Context<E> &ctx) {
   ctx.shdr->update_shdr(ctx);
 }
 
+// Write Makefile-style dependency rules to a file specified by
+// --dependency-file. This is analogous to the compiler's -M flag.
+template <typename E>
+void write_dependency_file(Context<E> &ctx) {
+  std::vector<std::string> deps;
+  std::unordered_set<std::string> seen;
+
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool)
+    if (!mf->parent)
+      if (std::string path = path_clean(mf->name); seen.insert(path).second)
+        deps.push_back(path);
+
+  std::ofstream out;
+  out.open(ctx.arg.dependency_file);
+  if (out.fail())
+    Fatal(ctx) << "--dependency-file: cannot open " << ctx.arg.dependency_file
+               << ": " << errno_string();
+
+  out << ctx.arg.output << ":";
+  for (std::string &s : deps)
+    out << " " << s;
+  out << "\n";
+
+  for (std::string &s : deps)
+    out << "\n" << s << ":\n";
+  out.close();
+}
+
 #define INSTANTIATE(E)                                                  \
   template void apply_exclude_libs(Context<E> &);                       \
   template void create_synthetic_sections(Context<E> &);                \
@@ -1417,7 +1446,8 @@ void compress_debug_sections(Context<E> &ctx) {
   template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
   template i64 set_osec_offsets(Context<E> &);                          \
   template void fix_synthetic_symbols(Context<E> &);                    \
-  template void compress_debug_sections(Context<E> &);
+  template void compress_debug_sections(Context<E> &);                  \
+  template void write_dependency_file(Context<E> &);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
