@@ -405,10 +405,29 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
         switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32: {
+        case R_X86_64_PLT32:
+        case R_X86_64_GOTPCREL: {
           static const u8 insn[] = {
             0x66, 0x66, 0x66,                         // (padding)
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+          };
+          memcpy(loc - 3, insn, sizeof(insn));
+          break;
+        }
+        case R_X86_64_GOTPCRELX: {
+          static const u8 insn[] = {
+            0x66, 0x66, 0x66,                         // (padding)
+            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+            0x90,                                     // nop
+          };
+          memcpy(loc - 3, insn, sizeof(insn));
+          break;
+        }
+        case R_X86_64_REX_GOTPCRELX: {
+          static const u8 insn[] = {
+            0x66, 0x66, 0x66,                         // (padding)
+            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+            0x60, 0x90,                               // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
           break;
@@ -737,7 +756,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       bool can_relax = false;
       if (ctx.arg.relax && !ctx.arg.shared && i + 1 < rels.size())
         if (u32 ty = rels[i + 1].r_type;
-            ty == R_X86_64_PLT32 || ty == R_X86_64_PLTOFF64)
+            ty == R_X86_64_PLT32 || ty == R_X86_64_PLTOFF64 ||
+            ty == R_X86_64_GOTPCREL || ty == R_X86_64_GOTPCRELX ||
+            ty == R_X86_64_REX_GOTPCRELX)
           can_relax = true;
 
       if (can_relax)
