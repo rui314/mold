@@ -39,16 +39,31 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   if (section_idx < file.elf_sections.size())
     contents = {(char *)file.mf->data + shdr().sh_offset, shdr().sh_size};
 
+  bool compressed;
+
   if (name.starts_with(".zdebug")) {
     sh_size = *(ubig64 *)&contents[4];
     p2align = to_p2align(shdr().sh_addralign);
+    compressed = true;
   } else if (shdr().sh_flags & SHF_COMPRESSED) {
     ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
     sh_size = chdr.ch_size;
     p2align = to_p2align(chdr.ch_addralign);
+    compressed = true;
   } else {
     sh_size = shdr().sh_size;
     p2align = to_p2align(shdr().sh_addralign);
+    compressed = false;
+  }
+
+  // Uncompress early if the relocation is REL-type so that we can read
+  // addends from section contents. If RELA-type, we don't need to do this
+  // because addends are in relocations.
+  if (compressed && E::is_rel) {
+    u8 *buf = new u8[sh_size];
+    uncompress(ctx, buf);
+    contents = {(char *)buf, sh_size};
+    ctx.string_pool.emplace_back(buf);
   }
 
   output_section =
@@ -57,7 +72,8 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
 
 template <typename E>
 bool InputSection<E>::is_compressed() {
-  return name().starts_with(".zdebug") || (shdr().sh_flags & SHF_COMPRESSED);
+  return !E::is_rel &&
+         (name().starts_with(".zdebug") || (shdr().sh_flags & SHF_COMPRESSED));
 }
 
 template <typename E>
