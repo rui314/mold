@@ -196,11 +196,10 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   // Copy data
   if constexpr (E::e_machine == EM_RISCV) {
     copy_contents_riscv(ctx, buf);
+  } else if (is_compressed()) {
+    uncompress(ctx, buf);
   } else {
-    if (is_compressed())
-      uncompress(ctx, buf);
-    else
-      memcpy(buf, contents.data(), contents.size());
+    memcpy(buf, contents.data(), contents.size());
   }
 
   // Apply relocations
