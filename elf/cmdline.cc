@@ -382,7 +382,7 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
     if (ctx.arg.z_now)
       return {0, 8};
     if (ctx.arg.z_ibtplt)
-      return {16, 32};
+      return {64, 16};
     return {16, 16};
   case EM_386:
     return {16, 16};
