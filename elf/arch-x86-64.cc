@@ -366,16 +366,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
+        i64 val = S - ctx.tls_end + A + 4;
+        overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
+
         switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32: {
+        case R_X86_64_PLT32:
+        case R_X86_64_GOTPCREL:
+        case R_X86_64_GOTPCRELX: {
           static const u8 insn[] = {
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
             0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
           };
           memcpy(loc - 4, insn, sizeof(insn));
-
-          i64 val = S - ctx.tls_end + A + 4;
-          overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
           *(u32 *)(loc + 8) = val;
           break;
         }
@@ -386,9 +388,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
-
-          i64 val = S - ctx.tls_end + A + 4;
-          overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
           *(u32 *)(loc + 9) = val;
           break;
         }
@@ -405,8 +404,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
         switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32:
-        case R_X86_64_GOTPCREL: {
+        case R_X86_64_PLT32: {
           static const u8 insn[] = {
             0x66, 0x66, 0x66,                         // (padding)
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
@@ -414,20 +412,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           memcpy(loc - 3, insn, sizeof(insn));
           break;
         }
+        case R_X86_64_GOTPCREL:
         case R_X86_64_GOTPCRELX: {
           static const u8 insn[] = {
             0x66, 0x66, 0x66,                         // (padding)
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
             0x90,                                     // nop
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          break;
-        }
-        case R_X86_64_REX_GOTPCRELX: {
-          static const u8 insn[] = {
-            0x66, 0x66, 0x66,                         // (padding)
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x60, 0x90,                               // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
           break;
@@ -739,29 +729,30 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_TLSGD: {
-      bool can_relax = false;
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported &&
-          i + 1 < rels.size())
-        if (u32 ty = rels[i + 1].r_type;
-            ty == R_X86_64_PLT32 || ty == R_X86_64_PLTOFF64)
-          can_relax = true;
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
-      if (can_relax)
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_X86_64_PLT32 && ty != R_X86_64_PLTOFF64 &&
+          ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
+        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
+
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
         i++;
       else
         sym.flags |= NEEDS_TLSGD;
       break;
     }
     case R_X86_64_TLSLD: {
-      bool can_relax = false;
-      if (ctx.arg.relax && !ctx.arg.shared && i + 1 < rels.size())
-        if (u32 ty = rels[i + 1].r_type;
-            ty == R_X86_64_PLT32 || ty == R_X86_64_PLTOFF64 ||
-            ty == R_X86_64_GOTPCREL || ty == R_X86_64_GOTPCRELX ||
-            ty == R_X86_64_REX_GOTPCRELX)
-          can_relax = true;
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
-      if (can_relax)
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_X86_64_PLT32 && ty != R_X86_64_PLTOFF64 &&
+          ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
+        Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
+
+      if (ctx.arg.relax && !ctx.arg.shared)
         i++;
       else
         ctx.needs_tlsld = true;
