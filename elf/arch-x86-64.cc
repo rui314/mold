@@ -47,18 +47,19 @@ static void write_ibtplt(Context<E> &ctx) {
     0x4d, 0x31, 0xdb,                   // xor %r11, %r11
     0xf3, 0x49, 0x0f, 0x1e, 0xcb,       // rdssp %r11
     0x4d, 0x85, 0xdb,                   // test %r11, %r11
-    0x74, 0x0b,                         // je 1f
-    0x41, 0xbb, 0x01, 0x00, 0x00, 0x00, // mov $1, %r11d
+    0x74, 0x08,                         // je 1f
+    0x41, 0xb3, 0x01,                   // mov $1, %r11b
     0xf3, 0x49, 0x0f, 0xae, 0xeb,       // incssp %r11
     // Jump to the resolver
     0xff, 0x35, 0, 0, 0, 0,             // 1: push GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0,             // jmp *GOTPLT+16(%rip)
-    0x0f, 0x1f, 0x44, 0x00, 0x00        // nop
+    0x0f, 0x1f, 0x40, 0x00,             // nop
+    0x0f, 0x1f, 0x40, 0x00,             // nop
   };
 
   memcpy(buf, plt0, sizeof(plt0));
-  *(u32 *)(buf + 49) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 45;
-  *(u32 *)(buf + 55) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 43;
+  *(u32 *)(buf + 46) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 42;
+  *(u32 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 40;
 
   // Write PLT entries
   static const u8 data[] = {
