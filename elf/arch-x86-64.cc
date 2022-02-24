@@ -56,8 +56,8 @@ static void write_ibtplt(Context<E> &ctx) {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
     0x68, 0, 0, 0, 0,       // push $index_in_relplt
-    0xf2, 0xe9, 0, 0, 0, 0, // jmp PLT[0]
-    0x0f, 0x1f, 0x00,       // nop
+    0xe9, 0, 0, 0, 0,       // jmp PLT[0]
+    0x0f, 0x1f, 0x40, 0x00, // nop
     0x0f, 0x1f, 0x40, 0x00, // nop
     0x0f, 0x1f, 0x40, 0x00, // nop
   };
@@ -67,7 +67,7 @@ static void write_ibtplt(Context<E> &ctx) {
     memcpy(ent, data, sizeof(data));
     *(u32 *)(ent + 6) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 10;
     *(u32 *)(ent + 11) = relplt_idx++;
-    *(u32 *)(ent + 17) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 21;
+    *(u32 *)(ent + 16) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 20;
   }
 }
 
