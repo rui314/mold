@@ -1081,8 +1081,13 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   auto get_plt_resolver_addr = [&](Symbol<E> &sym) -> u64 {
     if constexpr (E::e_machine == EM_AARCH64 || E::e_machine == EM_RISCV)
       return ctx.plt->shdr.sh_addr;
-    if constexpr (E::e_machine == EM_X86_64)
-      return sym.get_plt_addr(ctx) + (ctx.arg.z_ibtplt ? 10 : 6);
+
+    if constexpr (E::e_machine == EM_X86_64) {
+      if (ctx.arg.z_ibtplt)
+        return ctx.plt->shdr.sh_addr;
+      return sym.get_plt_addr(ctx) + 6;
+    }
+
     if constexpr (E::e_machine == EM_386)
       return sym.get_plt_addr(ctx) + 6;
     unreachable();

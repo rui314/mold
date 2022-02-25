@@ -29,51 +29,44 @@ static void write_compact_plt(Context<E> &ctx) {
 // Note that our IBTPLT instruction sequence is different from the one
 // used in GNU ld. GNU's IBTPLT implementation uses two separate
 // sections (.plt and .plt.sec) in which one PLT entry takes 32 bytes
-// in total. Our PLT entry size is 16 bytes.
+// in total. Our PLT consists of just .plt and each entry is 16 bytes
+// long.
+//
+// Our PLT entry clobbers r11, but that's fine because the resolver
+// function (_dl_runtime_resolve) does not preserve r11 anyway.
 static void write_ibtplt(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
-  // Write PLT header. r11 can be clobbered because the resolver
-  // function (_dl_runtime_resolve) doesn't preverse r11 anyway.
+  // Write PLT header
   static const u8 plt0[] = {
-    // Compute the PLT entry index
-    0x41, 0x5b,                         // pop %r11
-    0xe8, 0x00, 0x00, 0x00, 0x00,       // call 1f
-    0x4c, 0x2b, 0x1c, 0x24,             // 1: sub (%rsp), %r11
-    0x49, 0xc1, 0xeb, 0x04,             // shr $4, %r11
-    0x49, 0x83, 0xeb, 0x04,             // sub $4, %r11
-    0x4c, 0x89, 0x1c, 0x24,             // mov %r11, (%rsp)
-    // Unwind the shadow stack by one if the shadow stack is enabled
-    0x4d, 0x31, 0xdb,                   // xor %r11, %r11
-    0xf3, 0x49, 0x0f, 0x1e, 0xcb,       // rdssp %r11
-    0x4d, 0x85, 0xdb,                   // test %r11, %r11
-    0x74, 0x08,                         // je 1f
-    0x41, 0xb3, 0x01,                   // mov $1, %r11b
-    0xf3, 0x49, 0x0f, 0xae, 0xeb,       // incssp %r11
-    // Jump to the resolver
-    0xff, 0x35, 0, 0, 0, 0,             // 1: push GOTPLT+8(%rip)
-    0xff, 0x25, 0, 0, 0, 0,             // jmp *GOTPLT+16(%rip)
-    0x0f, 0x1f, 0x40, 0x00,             // nop
-    0x0f, 0x1f, 0x40, 0x00,             // nop
+    0xf3, 0x0f, 0x1e, 0xfa, // endbr64
+    0x41, 0x53,             // push %r11
+    0xff, 0x35, 0, 0, 0, 0, // push GOTPLT+8(%rip)
+    0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
+    0x0f, 0x1f, 0x40, 0x00, // nop
+    0x0f, 0x1f, 0x40, 0x00, // nop
+    0x0f, 0x1f, 0x40, 0x00, // nop
+    0x66, 0x90,             // nop
   };
 
   memcpy(buf, plt0, sizeof(plt0));
-  *(u32 *)(buf + 46) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 42;
-  *(u32 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 40;
+  *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 4;
+  *(u32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 2;
 
   // Write PLT entries
+  i64 relplt_idx = 0;
+
   static const u8 data[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
+    0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
-    0xe8, 0, 0, 0, 0,       // call PLT[0]
-    0x90,                   // nop
   };
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 6) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 10;
-    *(u32 *)(ent + 11) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 15;
+    *(u32 *)(ent + 6) = relplt_idx++;
+    *(u32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 16;
   }
 }
 
