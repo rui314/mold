@@ -788,6 +788,12 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   type = canonicalize_type(name, type);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
+  // .init_array is usually writable. We don't want to create multiple
+  // .init_array output sections, so make it always writable.
+  // So is .fini_array.
+  if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
+    flags |= SHF_WRITE;
+
   auto find = [&]() -> OutputSection<E> * {
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       if (name == osec->name && type == osec->shdr.sh_type &&
