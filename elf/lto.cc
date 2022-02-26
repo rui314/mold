@@ -500,28 +500,28 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   obj->mf = mf;
 
   // Create plugin's object instance
-  PluginInputFile *file = new PluginInputFile;
+  PluginInputFile file = {};
 
   MappedFile<Context<E>> *mf2 = mf->parent ? mf->parent : mf;
-  file->name = save_string(ctx, mf2->name).data();
+  file.name = save_string(ctx, mf2->name).data();
   if (mf2->fd == -1)
-    mf2->fd = open(file->name, O_RDONLY);
-  file->fd = mf2->fd;
-  if (file->fd == -1)
-    Fatal(ctx) << "cannot open " << file->name << ": " << errno_string();
+    mf2->fd = open(file.name, O_RDONLY);
+  file.fd = mf2->fd;
+  if (file.fd == -1)
+    Fatal(ctx) << "cannot open " << file.name << ": " << errno_string();
 
   if (mf->parent)
     obj->archive_name = mf->parent->name;
 
-  file->offset = mf->get_offset();
-  file->filesize = mf->size;
-  file->handle = (void *)obj;
+  file.offset = mf->get_offset();
+  file.filesize = mf->size;
+  file.handle = (void *)obj;
 
   LOG << "read_lto_symbols: "<< mf->name << "\n";
 
   // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
   int claimed = false;
-  claim_file_hook(file, &claimed);
+  claim_file_hook(&file, &claimed);
   if (!claimed)
     Fatal(ctx) << mf->name << ": not claimed by the LTO plugin";
 
