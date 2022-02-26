@@ -477,6 +477,20 @@ static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
   return esym;
 }
 
+// Returns true if a given linker plugin looks like LLVM's one.
+// Returns false if it's GCC.
+template <typename E>
+static bool is_llvm(Context<E> &ctx) {
+  return ctx.arg.plugin.ends_with("LLVMgold.so");
+}
+
+// Returns true if a given linker plugin supports the get_symbols_v3 API.
+// Currently, we simply assume that LLVM supports it and GCC does not.
+template <typename E>
+static bool suppots_v3_api(Context<E> &ctx) {
+  return is_llvm(ctx);
+}
+
 template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   LOG << "read_lto_object: " << mf->name << "\n";
@@ -525,6 +539,14 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   if (!claimed)
     Fatal(ctx) << mf->name << ": not claimed by the LTO plugin";
 
+  // It looks like GCC doesn't need fd after claim_file_hook() while
+  // LLVM needs it and takes the ownership of fd. To prevent "too many
+  // open files" issue, we close fd only for GCC. This is ugly, though.
+  if (!is_llvm(ctx)) {
+    close(mf2->fd);
+    mf2->fd = -1;
+  }
+
   // Initialize object symbols
   std::vector<ElfSym<E>> *esyms = new std::vector<ElfSym<E>>(1);
 
@@ -538,13 +560,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   obj->symvers.resize(esyms->size());
   plugin_symbols.clear();
   return obj;
-}
-
-// Returns true if a given linker plugin supports the get_symbols_v3 API.
-// Currently, we simply assume that LLVM supports it and GCC does not.
-template <typename E>
-static bool suppots_v3_api(Context<E> &ctx) {
-  return ctx.arg.plugin.ends_with("LLVMgold.so");
 }
 
 // This function restarts mold itself with `--:lto-pass2` and
