@@ -575,10 +575,8 @@ static int elf_main(int argc, char **argv) {
     ctx.dynstr->add_string(str);
   for (std::string_view str : ctx.arg.filter)
     ctx.dynstr->add_string(str);
-  if (!ctx.arg.rpaths.empty())
-    ctx.dynstr->add_string(ctx.arg.rpaths);
-  if (!ctx.arg.soname.empty())
-    ctx.dynstr->add_string(ctx.arg.soname);
+  ctx.dynstr->add_string(ctx.arg.rpaths);
+  ctx.dynstr->add_string(ctx.arg.soname);
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
@@ -659,16 +657,15 @@ static int elf_main(int argc, char **argv) {
   // Fix linker-synthesized symbol addresses.
   fix_synthetic_symbols(ctx);
 
-  // If --compress-debug-sections is given, compress .debug_* sections
-  // using zlib.
-  if (ctx.arg.compress_debug_sections != COMPRESS_NONE) {
-    compress_debug_sections(ctx);
-    filesize = set_osec_offsets(ctx);
-  }
-
-  // At this point, file layout is fixed.
   // Beyond this, you can assume that symbol addresses including their
   // GOT or PLT addresses have a correct final value.
+
+  // If --compress-debug-sections is given, compress .debug_* sections
+  // using zlib.
+  if (ctx.arg.compress_debug_sections != COMPRESS_NONE)
+    filesize = compress_debug_sections(ctx);
+
+  // At this point, file layout is fixed.
 
   // Some types of TLS relocations are defined relative to the beginning
   // or the end of the TLS segment address. Find these addresses now.
@@ -693,11 +690,9 @@ static int elf_main(int argc, char **argv) {
     Timer t(ctx, "copy_buf");
 
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      std::string name(chunk->name);
-      if (name.empty())
-        name = "(header)";
+      std::string name =
+        chunk->name.empty() ? "(header)" : std::string(chunk->name);
       Timer t2(ctx, name, &t);
-
       chunk->copy_buf(ctx);
     });
 

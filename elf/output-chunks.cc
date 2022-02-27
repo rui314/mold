@@ -452,6 +452,9 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 DynstrSection<E>::add_string(std::string_view str) {
+  if (str.empty())
+    return 0;
+
   auto [it, inserted] = strings.insert({str, this->shdr.sh_size});
   if (inserted)
     this->shdr.sh_size += str.size() + 1;
@@ -460,6 +463,9 @@ i64 DynstrSection<E>::add_string(std::string_view str) {
 
 template <typename E>
 i64 DynstrSection<E>::find_string(std::string_view str) {
+  if (str.empty())
+    return 0;
+
   auto it = strings.find(str);
   assert(it != strings.end());
   return it->second;

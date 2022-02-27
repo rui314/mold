@@ -502,7 +502,7 @@ static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
 }
 
 // We create a thunk no further than 100 MiB from any section.
-constexpr i64 MAX_DISTANCE = 100 * 1024 * 1024;
+static constexpr i64 MAX_DISTANCE = 100 * 1024 * 1024;
 
 // We create a thunk for each 10 MiB input sections.
 static constexpr i64 GROUP_SIZE = 10 * 1024 * 1024;
@@ -627,7 +627,7 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   osec.shdr.sh_size = offset;
 }
 
-static void mark_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
+static void gc_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
   for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec.thunks) {
     i64 sz = thunk->symbols.size();
     thunk->symbol_map.resize(sz);
@@ -732,7 +732,7 @@ i64 create_range_extension_thunks(Context<E> &ctx) {
   // Based on the current file layout, remove thunk symbols that turned
   // out to be unnecessary.
   tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
-    mark_thunk_symbols(ctx, *osec);
+    gc_thunk_symbols(ctx, *osec);
   });
 
   // Recompute output section sizes that contain thunks. New section

@@ -1386,7 +1386,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-void compress_debug_sections(Context<E> &ctx) {
+i64 compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
@@ -1410,6 +1410,7 @@ void compress_debug_sections(Context<E> &ctx) {
   ctx.shstrtab->update_shdr(ctx);
   ctx.ehdr->update_shdr(ctx);
   ctx.shdr->update_shdr(ctx);
+  return set_osec_offsets(ctx);
 }
 
 // Write Makefile-style dependency rules to a file specified by
@@ -1471,7 +1472,7 @@ void write_dependency_file(Context<E> &ctx) {
   template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
   template i64 set_osec_offsets(Context<E> &);                          \
   template void fix_synthetic_symbols(Context<E> &);                    \
-  template void compress_debug_sections(Context<E> &);                  \
+  template i64 compress_debug_sections(Context<E> &);                   \
   template void write_dependency_file(Context<E> &);
 
 INSTANTIATE(X86_64);
