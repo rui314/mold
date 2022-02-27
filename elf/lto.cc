@@ -116,6 +116,7 @@ static PluginStatus message(int level, const char *fmt, ...) {
   LOG << "message\n";
   va_list ap;
   va_start(ap, fmt);
+  fprintf(stderr, "mold: ");
   vfprintf(stderr, fmt, ap);
   fprintf(stderr, "\n");
   return LDPS_OK;

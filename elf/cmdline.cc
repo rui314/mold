@@ -93,8 +93,6 @@ Options:
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position independent executable
     --no-pie, --no-pic-executable
-  --plugin                    Ignored
-  --plugin-opt                Ignored
   --pop-state                 Pop state of flags governing input file handling
   --preload
     --no-preload
@@ -742,7 +740,61 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_arg(ctx, args, arg, "plugin")) {
       ctx.arg.plugin = arg;
     } else if (read_arg(ctx, args, arg, "plugin-opt")) {
-      ctx.arg.plugin_opt.push_back(arg);
+      ctx.arg.plugin_opt.push_back(std::string(arg));
+    } else if (read_flag(args, "lto-cs-profile-generate")) {
+      ctx.arg.plugin_opt.push_back("cs-profile-generate");
+    } else if (read_arg(ctx, args, arg, "lto-cs-profile-file")) {
+      ctx.arg.plugin_opt.push_back("cs-profile-path=" + std::string(arg));
+    } else if (read_flag(args, "lto-debug-pass-manager")) {
+      ctx.arg.plugin_opt.push_back("debug-pass-manager");
+    } else if (read_flag(args, "disable-verify")) {
+      ctx.arg.plugin_opt.push_back("disable-verify");
+    } else if (read_flag(args, "lto-emit-asm")) {
+      ctx.arg.plugin_opt.push_back("emit-asm");
+    } else if (read_arg(ctx, args, arg, "thinlto-jobs")) {
+      ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
+    } else if (read_flag(args, "no-legacy-pass-manager")) {
+      ctx.arg.plugin_opt.push_back("legacy-pass-manager");
+    } else if (read_arg(ctx, args, arg, "lto-partitions")) {
+      ctx.arg.plugin_opt.push_back("lto-partitions=" + std::string(arg));
+    } else if (read_flag(args, "no-lto-legacy-pass-manager")) {
+      ctx.arg.plugin_opt.push_back("new-pass-manager");
+    } else if (read_arg(ctx, args, arg, "lto-obj-path")) {
+      ctx.arg.plugin_opt.push_back("obj-path=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "opt-remarks-filename")) {
+      ctx.arg.plugin_opt.push_back("opt-remarks-filename=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "opt-remarks-format")) {
+      ctx.arg.plugin_opt.push_back("opt-remarks-format=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "opt-remarks-hotness-threshold")) {
+      ctx.arg.plugin_opt.push_back("opt-remarks-hotness-threshold=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "opt-remarks-passes")) {
+      ctx.arg.plugin_opt.push_back("opt-remarks-passes=" + std::string(arg));
+    } else if (read_flag(args, "opt-remarks-with_hotness")) {
+      ctx.arg.plugin_opt.push_back("opt-remarks-with-hotness");
+    } else if (args[0].starts_with("-lto-O")) {
+      ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(6)));
+      args = args.subspan(1);
+    } else if (args[0].starts_with("--lto-O")) {
+      ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(7)));
+      args = args.subspan(1);
+    } else if (read_arg(ctx, args, arg, "lto-pseudo-probe-for-profiling")) {
+      ctx.arg.plugin_opt.push_back("pseudo-probe-for-profiling=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "lto-sample-profile")) {
+      ctx.arg.plugin_opt.push_back("sample-profile=" + std::string(arg));
+    } else if (read_flag(args, "save-temps")) {
+      ctx.arg.plugin_opt.push_back("save-temps");
+    } else if (read_flag(args, "thinlto-emit-imports-files")) {
+      ctx.arg.plugin_opt.push_back("thinlto-emit-imports-files");
+    } else if (read_arg(ctx, args, arg, "thinlto-index-only")) {
+      ctx.arg.plugin_opt.push_back("thinlto-index-only=" + std::string(arg));
+    } else if (read_flag(args, "thinlto-index-only")) {
+      ctx.arg.plugin_opt.push_back("thinlto-index-only");
+    } else if (read_arg(ctx, args, arg, "thinlto-object-suffix-replace")) {
+      ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "thinlto-prefix-replace")) {
+      ctx.arg.plugin_opt.push_back("thinlto-prefix-replace=" + std::string(arg));
+    } else if (read_arg(ctx, args, arg, "thinlto-jobs=")) {
+      ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
     } else if (read_flag(args, "threads")) {
