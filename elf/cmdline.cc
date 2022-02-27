@@ -223,6 +223,19 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
   return false;
 }
 
+template <typename E>
+bool read_eq(Context<E> &ctx, std::span<std::string_view> &args,
+             std::string_view &arg, std::string name) {
+  for (std::string opt : add_dashes(name)) {
+    if (args[0].starts_with(opt + "=")) {
+      arg = args[0].substr(opt.size() + 1);
+      args = args.subspan(1);
+      return true;
+    }
+  }
+  return false;
+}
+
 bool read_flag(std::span<std::string_view> &args, std::string name) {
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
@@ -793,7 +806,7 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thinlto-prefix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-prefix-replace=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-jobs=")) {
+    } else if (read_arg(ctx, args, arg, "thinlto-jobs")) {
       ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
@@ -801,12 +814,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.thread_count = 0;
     } else if (read_flag(args, "no-threads")) {
       ctx.arg.thread_count = 1;
-    } else if (args[0].starts_with("-threads=")) {
-      ctx.arg.thread_count = parse_number(ctx, "threads=", args[0].substr(9));
-      args = args.subspan(1);
-    } else if (args[0].starts_with("--threads=")) {
-      ctx.arg.thread_count = parse_number(ctx, "threads=", args[0].substr(10));
-      args = args.subspan(1);
+    } else if (read_eq(ctx, args, arg, "threads")) {
+      ctx.arg.thread_count = parse_number(ctx, "threads", arg);
     } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
       ctx.arg.discard_all = true;
     } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
