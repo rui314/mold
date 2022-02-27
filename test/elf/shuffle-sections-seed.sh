@@ -25,13 +25,13 @@ for i in `seq 1 1000`; do echo "void fn$i() {}"; done | \
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
 $t/exe1 | grep -q 'Hello world'
 
-$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-shuffle-sections -Wl,-shuffle-sections-seed=42
+$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-shuffle-sections=42
 $t/exe2 | grep -q 'Hello world'
 
-$CC -B. -o $t/exe3 $t/a.o $t/b.o -Wl,-shuffle-sections -Wl,-shuffle-sections-seed=42
+$CC -B. -o $t/exe3 $t/a.o $t/b.o -Wl,-shuffle-sections=42
 $t/exe3 | grep -q 'Hello world'
 
-$CC -B. -o $t/exe4 $t/a.o $t/b.o -Wl,-shuffle-sections -Wl,-shuffle-sections-seed=5
+$CC -B. -o $t/exe4 $t/a.o $t/b.o -Wl,-shuffle-sections=5
 $t/exe4 | grep -q 'Hello world'
 
 ! diff $t/exe1 $t/exe2 >& /dev/null || false
