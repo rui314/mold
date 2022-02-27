@@ -104,7 +104,6 @@ template <typename E> static Context<E> *gctx;
 template <typename E> static std::vector<ObjectFile<E> *> lto_objects;
 
 static int phase = 0;
-static void *dlopen_handle;
 static std::vector<PluginSymbol> plugin_symbols;
 static ClaimFileHandler *claim_file_hook;
 static AllSymbolsReadHandler *all_symbols_read_hook;
@@ -366,11 +365,11 @@ static void load_plugin(Context<E> &ctx) {
   phase = 1;
   gctx<E> = &ctx;
 
-  dlopen_handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_GLOBAL);
-  if (!dlopen_handle)
+  void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_GLOBAL);
+  if (!handle)
     Fatal(ctx) << "could not open plugin file: " << dlerror();
 
-  OnloadFn *onload = (OnloadFn *)dlsym(dlopen_handle, "onload");
+  OnloadFn *onload = (OnloadFn *)dlsym(handle, "onload");
   if (!onload)
     Fatal(ctx) << "failed to load plugin " << ctx.arg.plugin << ": "
                << dlerror();
