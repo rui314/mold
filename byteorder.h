@@ -1,31 +1,24 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 namespace mold {
 
 template <typename T>
 class BigEndian {
 public:
-  BigEndian() : BigEndian(0) {}
-
-  BigEndian(T x) {
-    *this = x;
-  }
+  BigEndian() = delete;
 
   operator T() const {
-    // We don't need to optimize this code because compilers are
-    // usually smart enough to compile this loop into a single
-    // byte-swap instruction such as x86's bswap.
-    T ret = 0;
-    for (int i = 0; i < sizeof(T); i++)
-      ret = (ret << 8) | val[i];
-    return ret;
+    T x;
+    memcpy(&x, val, sizeof(T));
+    return bswap(x);
   }
 
   BigEndian &operator=(T x) {
-    for (int i = 0; i < sizeof(T); i++)
-      val[sizeof(T) - 1 - i] = x >> (i * 8);
+    x = bswap(x);
+    memcpy(&val, &x, sizeof(T));
     return *this;
   }
 
@@ -63,6 +56,15 @@ public:
 
 private:
   uint8_t val[sizeof(T)];
+
+  static T bswap(T x) {
+    if constexpr (sizeof(T) == 2)
+      return __builtin_bswap16(x);
+    else if constexpr (sizeof(T) == 4)
+      return __builtin_bswap32(x);
+    else
+      return __builtin_bswap64(x);
+  }
 };
 
 using ibig16 = BigEndian<int16_t>;
