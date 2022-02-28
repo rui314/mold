@@ -1698,8 +1698,6 @@ public:
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
-  bool operator<(const Symbol &other) const;
-
   u64 get_addr(Context<E> &ctx, bool allow_plt = true) const;
   u64 get_got_addr(Context<E> &ctx) const;
   u64 get_gotplt_addr(Context<E> &ctx) const;
@@ -2032,9 +2030,9 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 // This operator defines a total order over symbols. This is used to
 // make the output deterministic.
 template <typename E>
-inline bool Symbol<E>::operator<(const Symbol &other) const {
-  return std::tuple{file->priority, sym_idx} <
-         std::tuple{other.file->priority, other.sym_idx};
+inline bool operator<(const Symbol<E> &a, const Symbol<E> &b) {
+  return std::tuple{a.file->priority, a.sym_idx} <
+         std::tuple{b.file->priority, b.sym_idx};
 }
 
 template <typename E>
