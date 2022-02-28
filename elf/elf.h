@@ -4,10 +4,6 @@
 #include <ostream>
 #include <string>
 
-#ifdef __BIG_ENDIAN__
-#error "mold does not support big-endian hosts"
-#endif
-
 namespace mold::elf {
 
 typedef uint8_t u8;

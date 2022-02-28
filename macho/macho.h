@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../byteorder.h"
+#include "../big-endian.h"
 
 #include <cassert>
 #include <cstdint>

@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <cstring>
 
+#ifdef __BIG_ENDIAN__
+#error "mold does not support big-endian hosts"
+#endif
+
 namespace mold {
 
 template <typename T>
