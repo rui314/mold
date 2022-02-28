@@ -51,8 +51,8 @@ void InputFile<E>::clear_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : get_global_syms()) {
     if (sym->file == this) {
       sym->file = nullptr;
-      sym->input_section = nullptr;
-      sym->value = -1;
+      sym->input_shndx = 0;
+      sym->value = 0;
       sym->sym_idx = -1;
       sym->ver_idx = 0;
       sym->is_weak = false;
@@ -373,8 +373,10 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
   for (i64 i = 1; i < this->first_global; i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
-    std::string_view name = symbol_strtab.data() + esym.st_name;
+    if (esym.is_common())
+      Fatal(ctx) << *this << ": common local symbol?";
 
+    std::string_view name = symbol_strtab.data() + esym.st_name;
     if (name.empty() && esym.st_type == STT_SECTION)
       if (InputSection<E> *sec = get_section(esym))
         name = sec->name();
@@ -384,12 +386,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     sym.file = this;
     sym.value = esym.st_value;
     sym.sym_idx = i;
-
-    if (!esym.is_abs()) {
-      if (esym.is_common())
-        Fatal(ctx) << *this << ": common local symbol?";
-      sym.input_section = get_section(esym);
-    }
+    sym.input_shndx = esym.is_abs() ? 0 : esym.st_shndx;
   }
 
   this->symbols.resize(this->elf_syms.size());
@@ -810,7 +807,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     std::scoped_lock lock(sym.mu);
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
-      sym.input_section = isec;
+      sym.input_shndx = esym.is_abs() ? 0 : esym.st_shndx;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;
@@ -928,7 +925,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     auto claim = [&] {
       sym.file = this;
-      sym.input_section = nullptr;
+      sym.input_shndx = esym.is_abs() ? 0 : esym.st_shndx;
       sym.value = 0;
       sym.sym_idx = i;
       sym.is_weak = false;
@@ -1032,7 +1029,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     isec->output_section = osec;
 
     sym.file = this;
-    sym.input_section = isec.get();
+    sym.input_shndx = idx;
     sym.value = 0;
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
@@ -1059,7 +1056,7 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
     if (ctx.arg.discard_locals)
       return false;
 
-    if (InputSection<E> *isec = sym.input_section)
+    if (InputSection<E> *isec = sym.get_input_section())
       if (isec->shdr().sh_flags & SHF_MERGE)
         return false;
   }
@@ -1078,8 +1075,8 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
 
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
-    if (sym.input_section)
-      return sym.input_section->is_alive;
+    if (InputSection<E> *isec = sym.get_input_section())
+      return isec->is_alive;
     return true;
   };
 
@@ -1128,10 +1125,10 @@ void ObjectFile<E>::write_symtab(Context<E> &ctx) {
     else
       esym.st_value = sym.get_addr(ctx);
 
-    if (sym.input_section)
-      esym.st_shndx = sym.input_section->output_section->shndx;
-    else if (sym.shndx)
-      esym.st_shndx = sym.shndx;
+    if (InputSection<E> *isec = sym.get_input_section())
+      esym.st_shndx = isec->output_section->shndx;
+    else if (sym.output_shndx)
+      esym.st_shndx = sym.output_shndx;
     else if (esym.is_undef())
       esym.st_shndx = SHN_UNDEF;
     else
@@ -1292,7 +1289,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
-      sym.input_section = nullptr;
+      sym.input_shndx = esym.is_abs() ? 0 : esym.st_shndx;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
