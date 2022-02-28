@@ -85,10 +85,17 @@ private:
 };
 
 template <typename C>
+static std::string add_color(C &ctx, std::string msg) {
+  if (ctx.arg.color_diagnostics)
+    return "mold: \033[0;1;31m" + msg + ":\033[0m ";
+  return "mold: " + msg + ": ";
+}
+
+template <typename C>
 class Fatal {
 public:
   Fatal(C &ctx) : out(ctx, std::cerr) {
-    out << "mold: ";
+    out << add_color(ctx, "fatal");
   }
 
   [[noreturn]] ~Fatal() {
@@ -110,12 +117,12 @@ template <typename C>
 class Error {
 public:
   Error(C &ctx) : out(ctx, std::cerr) {
-    if (ctx.arg.color_diagnostics)
-      out << "mold: \033[0;1;31merror:\033[0m ";
-    else
-      out << "mold: error: ";
-
-    ctx.has_error = true;
+    if (ctx.arg.noinhibit_exec) {
+      out << add_color(ctx, "warning");
+    } else {
+      out << add_color(ctx, "error");
+      ctx.has_error = true;
+    }
   }
 
   template <class T> Error &operator<<(T &&val) {
@@ -132,16 +139,10 @@ class Warn {
 public:
   Warn(C &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.fatal_warnings) {
-      if (ctx.arg.color_diagnostics)
-        out << "mold: \033[0;1;31merror:\033[0m ";
-      else
-        out << "mold: error: ";
+      out << add_color(ctx, "error");
       ctx.has_error = true;
     } else {
-      if (ctx.arg.color_diagnostics)
-        out << "mold: \033[0;1;35mwarning:\033[0m ";
-      else
-        out << "mold: warning: ";
+      out << add_color(ctx, "warning");
     }
   }
 

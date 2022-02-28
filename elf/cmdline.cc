@@ -88,6 +88,7 @@ Options:
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
+  --noinhibit-exec            Create an output file even if errors occur
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
   --perf                      Print performance statistics
@@ -515,6 +516,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.demangle = false;
     } else if (read_flag(args, "default-symver")) {
       ctx.arg.default_symver = true;
+    } else if (read_flag(args, "noinhibit-exec")) {
+      ctx.arg.noinhibit_exec = true;
     } else if (read_flag(args, "shuffle-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
     } else if (read_eq(ctx, args, arg, "shuffle-sections")) {
