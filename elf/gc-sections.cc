@@ -43,8 +43,8 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   for (FdeRecord<E> &fde : isec->get_fdes())
     for (ElfRel<E> &rel : fde.get_rels().subspan(1))
       if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
-        if (mark_section(sym->get_input_section()))
-          feeder.add(sym->get_input_section());
+        if (mark_section(sym->input_section))
+          feeder.add(sym->input_section);
 
   for (ElfRel<E> &rel : isec->get_rels(ctx)) {
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
@@ -56,15 +56,15 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
       continue;
     }
 
-    if (!mark_section(sym.get_input_section()))
+    if (!mark_section(sym.input_section))
       continue;
 
     // Mark a section alive. For better performacne, we don't call
     // `feeder.add` too often.
     if (depth < 3)
-      visit(ctx, sym.get_input_section(), feeder, depth + 1);
+      visit(ctx, sym.input_section, feeder, depth + 1);
     else
-      feeder.add(sym.get_input_section());
+      feeder.add(sym.input_section);
   }
 }
 
@@ -84,7 +84,7 @@ collect_root_set(Context<E> &ctx) {
       if (SectionFragment<E> *frag = sym->get_frag())
         frag->is_alive.store(true, std::memory_order_relaxed);
       else
-        enqueue_section(sym->get_input_section());
+        enqueue_section(sym->input_section);
     }
   };
 

@@ -367,8 +367,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     esyms->push_back(esym);
 
     Symbol<E> *sym = get_symbol(ctx, name);
-    sym->input_shndx = 0;
-    sym->output_shndx = 1; // dummy value to make it a relative symbol
+    sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
     return sym;
   };
@@ -424,7 +423,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
 
     Symbol<E> *sym = get_symbol(ctx, pair.first);
     if (!parse_defsym_addr(pair.second))
-      sym->output_shndx = 1; // dummy value to make it a relative symbol
+      sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
   };
 
@@ -507,8 +506,8 @@ R"(# This is an output of the mold linker's --print-dependencies=full option.
 # compile source files with the -ffunction-sections compiler flag.)";
 
   auto println = [&](auto &src, Symbol<E> &sym, ElfSym<E> &esym) {
-    if (InputSection<E> *isec = sym.get_input_section())
-      SyncOut(ctx) << src << "\t" << *isec
+    if (sym.input_section)
+      SyncOut(ctx) << src << "\t" << *sym.input_section
                    << "\t" << (esym.is_weak() ? 'w' : 'u')
                    << "\t" << sym;
     else
@@ -1246,14 +1245,14 @@ template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
-      sym->output_shndx = chunk->shndx;
+      sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
   auto stop = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
-      sym->output_shndx = chunk->shndx;
+      sym->shndx = chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
     }
   };
@@ -1269,10 +1268,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // __ehdr_start and __executable_start
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk->shndx == 1) {
-      ctx.__ehdr_start->output_shndx = 1;
+      ctx.__ehdr_start->shndx = 1;
       ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
 
-      ctx.__executable_start->output_shndx = 1;
+      ctx.__executable_start->shndx = 1;
       ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
       break;
     }
@@ -1282,7 +1281,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__rel_iplt_start, ctx.reldyn);
 
   // __rel_iplt_end
-  ctx.__rel_iplt_end->output_shndx = ctx.reldyn->shndx;
+  ctx.__rel_iplt_end->shndx = ctx.reldyn->shndx;
   ctx.__rel_iplt_end->value = ctx.reldyn->shdr.sh_addr +
     get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
 
@@ -1338,12 +1337,12 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // RISC-V's __global_pointer$
   if (E::e_machine == EM_RISCV && !ctx.arg.shared) {
-    ctx.__global_pointer->output_shndx = 1;
+    ctx.__global_pointer->shndx = 1;
     ctx.__global_pointer->value = 0x800;
 
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->name == ".sdata") {
-        ctx.__global_pointer->output_shndx = chunk->shndx;
+        ctx.__global_pointer->shndx = chunk->shndx;
         break;
       }
     }
@@ -1365,7 +1364,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // --defsym=sym=value symbols
   for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms) {
     Symbol<E> *sym = get_symbol(ctx, defsym.first);
-    sym->input_shndx = 0;
+    sym->input_section = nullptr;
 
     if (std::optional<u64> addr = parse_defsym_addr(defsym.second)) {
       sym->value = *addr;
@@ -1381,8 +1380,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     sym->value = sym2->get_addr(ctx);
     sym->visibility = sym2->visibility.load();
 
-    if (InputSection<E> *isec = sym2->get_input_section())
-      sym->output_shndx = isec->output_section->shndx;
+    if (InputSection<E> *isec = sym2->input_section)
+      sym->shndx = isec->output_section->shndx;
   }
 }
 

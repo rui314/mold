@@ -1698,7 +1698,6 @@ public:
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
-  InputSection<E> *get_input_section() const;
   u64 get_addr(Context<E> &ctx, bool allow_plt = true) const;
   u64 get_got_addr(Context<E> &ctx) const;
   u64 get_gotplt_addr(Context<E> &ctx) const;
@@ -1742,17 +1741,17 @@ public:
   // If `file` is null, the symbol is equivalent to nonexistent.
   InputFile<E> *file = nullptr;
 
+  InputSection<E> *input_section = nullptr;
   const char *nameptr = nullptr;
 
   u64 value = 0;
-  i64 input_shndx : 20 = 0;
 
   // Index into the symbol table of the owner file.
-  i64 sym_idx : 20 = -1;
+  i32 sym_idx = -1;
 
-  i64 namelen : 20 = 0;
+  i32 namelen = 0;
   i32 aux_idx = -1;
-  u16 output_shndx = 0;
+  u16 shndx = 0;
   u16 ver_idx = 0;
 
   // `flags` has NEEDS_ flags.
@@ -2064,8 +2063,8 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
     if (is_imported || esym().st_type == STT_GNU_IFUNC)
       return get_plt_addr(ctx);
 
-  if (InputSection<E> *isec = get_input_section()) {
-    if (isec->is_ehframe) {
+  if (input_section) {
+    if (input_section->is_ehframe) {
       // .eh_frame contents are parsed and reconstructed by the linker,
       // so pointing to a specific location in a source .eh_frame
       // section doesn't make much sense. However, CRT files contain
@@ -2086,7 +2085,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
                  << *this << " " << *file;
     }
 
-    if (!isec->is_alive) {
+    if (!input_section->is_alive) {
       // The control can reach here if there's a relocation that refers
       // a local symbol belonging to a comdat group section. This is a
       // violation of the spec, as all relocations should use only global
@@ -2094,17 +2093,10 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
       // relocations.
       return 0;
     }
-    return isec->get_addr() + value;
+    return input_section->get_addr() + value;
   }
 
   return value;
-}
-
-template <typename E>
-InputSection<E> *Symbol<E>::get_input_section() const {
-  if (input_shndx == 0 || output_shndx != 0 || file->is_dso)
-    return nullptr;
-  return ((ObjectFile<E> *)file)->sections[input_shndx].get();
 }
 
 template <typename E>
@@ -2253,7 +2245,7 @@ template <typename E>
 inline bool Symbol<E>::is_absolute() const {
   if (file->is_dso)
     return esym().is_abs();
-  return !is_imported && !get_frag() && !output_shndx && !input_shndx;
+  return !is_imported && !get_frag() && !shndx && !input_section;
 }
 
 template <typename E>

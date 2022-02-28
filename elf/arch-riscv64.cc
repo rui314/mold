@@ -295,7 +295,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_RISCV_PCREL_LO12_I:
-      assert(sym.get_input_section() == this);
+      assert(sym.input_section == this);
       assert(sym.value < r_offset);
       write_itype((u32 *)loc, *(u32 *)(base + sym.value));
       break;
@@ -304,7 +304,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_itype((u32 *)loc, S + A);
       break;
     case R_RISCV_PCREL_LO12_S:
-      assert(sym.get_input_section() == this);
+      assert(sym.input_section == this);
       assert(sym.value < r_offset);
       write_stype((u32 *)loc, *(u32 *)(base + sym.value));
       break;
@@ -661,7 +661,7 @@ static void initialize_storage(Context<E> &ctx) {
 
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
-        if (InputSection<E> *isec = sym->get_input_section())
+        if (InputSection<E> *isec = sym->input_section)
           file->sorted_symbols[isec->section_idx].push_back(sym);
 
     for (std::vector<Symbol<E> *> &vec : file->sorted_symbols)
