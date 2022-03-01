@@ -255,6 +255,25 @@ struct RangeExtensionRef {
   i32 sym_idx = -1;
 };
 
+template <typename E>
+struct InputSectionExtra {
+  InputSectionExtra() = default;
+
+  InputSectionExtra(const InputSectionExtra &other)
+    : is_visited(other.is_visited.load()), leader(other.leader),
+      icf_idx(other.icf_idx), icf_eligible(other.icf_eligible),
+      icf_leaf(other.icf_leaf) {}
+
+  // For garbage collection
+  std::atomic_bool is_visited = false;
+
+  // For ICF
+  InputSection<E> *leader = nullptr;
+  u32 icf_idx = -1;
+  bool icf_eligible = false;
+  bool icf_leaf = false;
+};
+
 // InputSection represents a section in an input object file.
 template <typename E>
 class InputSection {
@@ -270,10 +289,8 @@ public:
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   void kill();
 
-  std::string_view name() const {
-    return {nameptr, (size_t)namelen};
-  }
-
+  std::string_view name() const;
+  InputSectionExtra<E> &extra() const;
   i64 get_priority() const;
   u64 get_addr() const;
   i64 get_addend(const ElfRel<E> &rel) const;
@@ -299,9 +316,6 @@ public:
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
-  const char *nameptr = nullptr;
-  i32 namelen = 0;
-
   u32 offset = -1;
   u32 shndx = -1;
   u32 relsec_idx = -1;
@@ -310,15 +324,6 @@ public:
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
-
-  // For garbage collection
-  std::atomic_bool is_visited = false;
-
-  // For ICF
-  InputSection *leader = nullptr;
-  u32 icf_idx = -1;
-  bool icf_eligible = false;
-  bool icf_leaf = false;
 
   bool is_ehframe = false;
   u8 p2align = 0;
@@ -1029,6 +1034,7 @@ public:
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
+  std::vector<InputSectionExtra<E>> extras;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   bool is_in_lib = false;
   std::vector<ElfShdr<E>> elf_sections2;
@@ -1858,8 +1864,20 @@ inline u64 InputSection<E>::get_addr() const {
 }
 
 template <typename E>
+inline std::string_view InputSection<E>::name() const {
+  if (file.elf_sections.size() <= shndx)
+    return ".common";
+  return file.shstrtab.data() + file.elf_sections[shndx].sh_name;
+}
+
+template <typename E>
 inline i64 InputSection<E>::get_priority() const {
   return ((i64)file.priority << 32) | shndx;
+}
+
+template <typename E>
+inline InputSectionExtra<E> &InputSection<E>::extra() const {
+  return file.extras[shndx];
 }
 
 template <typename E>

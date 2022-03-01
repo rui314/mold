@@ -22,13 +22,13 @@ static bool is_init_fini(const InputSection<E> &isec) {
 
 template <typename E>
 static bool mark_section(InputSection<E> *isec) {
-  return isec && isec->is_alive && !isec->is_visited.exchange(true);
+  return isec && isec->is_alive && !isec->extra().is_visited.exchange(true);
 }
 
 template <typename E>
 static void visit(Context<E> &ctx, InputSection<E> *isec,
                   tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
-  assert(isec->is_visited);
+  assert(isec->extra().is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all
@@ -99,7 +99,7 @@ collect_root_set(Context<E> &ctx) {
       // use `strip` command, compile without debug info or use
       // -strip-all linker option.
       if (!(isec->shdr().sh_flags & SHF_ALLOC))
-        isec->is_visited = true;
+        isec->extra().is_visited = true;
 
       if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
           isec->shdr().sh_type == SHT_NOTE)
@@ -155,7 +155,7 @@ static void sweep(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive && !isec->is_visited) {
+      if (isec && isec->is_alive && !isec->extra().is_visited) {
         if (ctx.arg.print_gc_sections)
           SyncOut(ctx) << "removing unused section " << *isec;
         isec->kill();
@@ -183,6 +183,9 @@ static void mark_nonalloc_fragments(Context<E> &ctx) {
 template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
+
+  for (ObjectFile<E> *file : ctx.objs)
+    file->extras.resize(file->sections.size());
 
   mark_nonalloc_fragments(ctx);
 

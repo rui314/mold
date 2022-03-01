@@ -197,23 +197,23 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
       if (is_leaf(ctx, *isec)) {
         leaf++;
-        isec->icf_leaf = true;
+        isec->extra().icf_leaf = true;
         auto [it, inserted] = map.insert({isec.get(), isec.get()});
         if (!inserted && isec->get_priority() < it->second->get_priority())
           it->second = isec.get();
       } else {
         eligible++;
-        isec->icf_eligible = true;
+        isec->extra().icf_eligible = true;
       }
     }
   });
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
-      if (isec && isec->is_alive && isec->icf_leaf) {
+      if (isec && isec->is_alive && isec->extra().icf_leaf) {
         auto it = map.find(isec.get());
         assert(it != map.end());
-        isec->leader = it->second;
+        isec->extra().leader = it->second;
       }
     }
   });
@@ -244,10 +244,10 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash((u64)frag);
     } else if (!isec) {
       hash('3');
-    } else if (isec->leader) {
+    } else if (isec->extra().leader) {
       hash('4');
-      hash((u64)isec->leader);
-    } else if (isec->icf_eligible) {
+      hash((u64)isec->extra().leader);
+    } else if (isec->extra().icf_eligible) {
       hash('5');
     } else {
       hash('6');
@@ -308,7 +308,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_eligible)
+      if (isec && isec->is_alive && isec->extra().icf_eligible)
         num_sections[i]++;
   });
 
@@ -323,12 +323,12 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_eligible)
+      if (isec && isec->is_alive && isec->extra().icf_eligible)
         sections[idx++] = isec.get();
   });
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    sections[i]->icf_idx = i;
+    sections[i]->extra().icf_idx = i;
   });
 
   return sections;
@@ -361,7 +361,7 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    assert(isec.icf_eligible);
+    assert(isec.extra().icf_eligible);
     i64 frag_idx = 0;
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
@@ -372,7 +372,7 @@ static void gather_edges(Context<E> &ctx,
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag())
           if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->icf_eligible)
+            if (isec->extra().icf_eligible)
               num_edges[i]++;
       }
     }
@@ -395,8 +395,8 @@ static void gather_edges(Context<E> &ctx,
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag())
           if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->icf_eligible)
-              edges[idx++] = isec->icf_idx;
+            if (isec->extra().icf_eligible)
+              edges[idx++] = isec->extra().icf_idx;
       }
     }
   });
@@ -457,11 +457,11 @@ static void print_icf_sections(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive && isec->leader) {
-        if (isec.get() == isec->leader)
+      if (isec && isec->is_alive && isec->extra().leader) {
+        if (isec.get() == isec->extra().leader)
           leaders.push_back(isec.get());
         else
-          map.insert({isec->leader, isec.get()});
+          map.insert({isec->extra().leader, isec.get()});
       }
     }
   });
@@ -494,6 +494,9 @@ static void print_icf_sections(Context<E> &ctx) {
 template <typename E>
 void icf_sections(Context<E> &ctx) {
   Timer t(ctx, "icf");
+
+  for (ObjectFile<E> *file : ctx.objs)
+    file->extras.resize(file->sections.size());
 
   uniquify_cies(ctx);
   merge_leaf_nodes(ctx);
@@ -554,7 +557,7 @@ void icf_sections(Context<E> &ctx) {
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       auto it = map->find(digest[i]);
       assert(it != map->end());
-      sections[i]->leader = it->second;
+      sections[i]->extra().leader = it->second;
     });
 
     // Since free'ing the map is slow, postpone it.
@@ -572,9 +575,9 @@ void icf_sections(Context<E> &ctx) {
         if (sym->file != file)
           continue;
         InputSection<E> *isec = sym->get_input_section();
-        if (isec && isec->leader && isec->leader != isec) {
-          sym->file = &isec->leader->file;
-          sym->shndx = isec->leader->shndx;
+        if (isec && isec->extra().leader && isec->extra().leader != isec) {
+          sym->file = &isec->extra().leader->file;
+          sym->shndx = isec->extra().leader->shndx;
           isec->kill();
         }
       }
