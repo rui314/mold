@@ -234,7 +234,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   };
 
   auto hash_symbol = [&](Symbol<E> &sym) {
-    InputSection<E> *isec = sym.input_section;
+    InputSection<E> *isec = sym.get_input_section();
 
     if (!sym.file) {
       hash('1');
@@ -370,9 +370,10 @@ static void gather_edges(Context<E> &ctx,
       } else {
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section &&
-            sym.input_section->icf_eligible)
-          num_edges[i]++;
+        if (!sym.get_frag())
+          if (InputSection<E> *isec = sym.get_input_section())
+            if (isec->icf_eligible)
+              num_edges[i]++;
       }
     }
   });
@@ -392,9 +393,10 @@ static void gather_edges(Context<E> &ctx,
         frag_idx++;
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag() && sym.input_section &&
-            sym.input_section->icf_eligible)
-          edges[idx++] = sym.input_section->icf_idx;
+        if (!sym.get_frag())
+          if (InputSection<E> *isec = sym.get_input_section())
+            if (isec->icf_eligible)
+              edges[idx++] = isec->icf_idx;
       }
     }
   });
@@ -569,9 +571,10 @@ void icf_sections(Context<E> &ctx) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file != file)
           continue;
-        InputSection<E> *isec = sym->input_section;
+        InputSection<E> *isec = sym->get_input_section();
         if (isec && isec->leader && isec->leader != isec) {
-          sym->input_section = isec->leader;
+          sym->file = &isec->leader->file;
+          sym->shndx = isec->leader->section_idx;
           isec->kill();
         }
       }

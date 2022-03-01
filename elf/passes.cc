@@ -353,7 +353,6 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     esyms->push_back(esym);
 
     Symbol<E> *sym = get_symbol(ctx, name);
-    sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
     return sym;
   };
@@ -399,20 +398,16 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     add(save_string(ctx, "__stop_" + std::string(chunk->name)));
   }
 
+  i64 first_defsym = obj->symbols.size();
+
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
-    std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
-
     ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = STV_DEFAULT;
     esyms->push_back(esym);
-
-    if (Symbol<E> **sym2 = std::get_if<Symbol<E> *>(&val))
-      if ((*sym2)->is_relative())
-        sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
   };
 
@@ -421,6 +416,20 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
 
   i64 num_globals = obj->elf_syms.size() - obj->first_global;
   obj->symvers.resize(num_globals);
+
+  obj->resolve_symbols(ctx);
+
+  for (i64 i = obj->first_global; i < first_defsym; i++)
+    obj->symbols[i]->shndx = -1; // dummy value to make it a relative symbol
+
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
+
+    if (Symbol<E> **sym2 = std::get_if<Symbol<E> *>(&val))
+      if ((*sym2)->is_relative())
+        sym->shndx = -1; // dummy value to make it a relative symbol
+  }
 
   ctx.on_exit.push_back([=] {
     delete esyms;
@@ -495,8 +504,8 @@ R"(# This is an output of the mold linker's --print-dependencies=full option.
 # compile source files with the -ffunction-sections compiler flag.)";
 
   auto println = [&](auto &src, Symbol<E> &sym, ElfSym<E> &esym) {
-    if (sym.input_section)
-      SyncOut(ctx) << src << "\t" << *sym.input_section
+    if (InputSection<E> *isec = sym.get_input_section())
+      SyncOut(ctx) << src << "\t" << *isec
                    << "\t" << (esym.is_weak() ? 'w' : 'u')
                    << "\t" << sym;
     else
@@ -1234,14 +1243,14 @@ template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
-      sym->shndx = chunk->shndx;
+      sym->shndx = -chunk->shndx;
       sym->value = chunk->shdr.sh_addr;
     }
   };
 
   auto stop = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
-      sym->shndx = chunk->shndx;
+      sym->shndx = -chunk->shndx;
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
     }
   };
@@ -1257,10 +1266,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // __ehdr_start and __executable_start
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk->shndx == 1) {
-      ctx.__ehdr_start->shndx = 1;
+      ctx.__ehdr_start->shndx = -1;
       ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
 
-      ctx.__executable_start->shndx = 1;
+      ctx.__executable_start->shndx = -1;
       ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
       break;
     }
@@ -1270,7 +1279,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__rel_iplt_start, ctx.reldyn);
 
   // __rel_iplt_end
-  ctx.__rel_iplt_end->shndx = ctx.reldyn->shndx;
+  ctx.__rel_iplt_end->shndx = -ctx.reldyn->shndx;
   ctx.__rel_iplt_end->value = ctx.reldyn->shdr.sh_addr +
     get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
 
@@ -1331,7 +1340,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->name == ".sdata") {
-        ctx.__global_pointer->shndx = chunk->shndx;
+        ctx.__global_pointer->shndx = -chunk->shndx;
         break;
       }
     }
@@ -1355,7 +1364,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
-    sym->input_section = nullptr;
+    sym->shndx = 0;
 
     if (u64 *addr = std::get_if<u64>(&val)) {
       sym->value = *addr;
@@ -1371,8 +1380,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     sym->value = sym2->get_addr(ctx);
     sym->visibility = sym2->visibility.load();
 
-    if (InputSection<E> *isec = sym2->input_section)
-      sym->shndx = isec->output_section->shndx;
+    if (InputSection<E> *isec = sym2->get_input_section())
+      sym->shndx = -isec->output_section->shndx;
   }
 }
 

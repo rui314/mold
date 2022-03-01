@@ -604,13 +604,13 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (ctx.__init_array_start->shndx) {
+  if (ctx.__init_array_start->shndx < 0) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (ctx.__fini_array_start->shndx) {
+  if (ctx.__fini_array_start->shndx < 0) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
@@ -1266,16 +1266,19 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
         // Emit an address for a canonical PLT
         esym.st_value = sym.get_plt_addr(ctx);
       }
-    } else if (!sym.input_section) {
-      esym.st_shndx = SHN_ABS;
-      esym.st_value = sym.get_addr(ctx);
-    } else if (sym.get_type() == STT_TLS) {
-      esym.st_shndx = sym.input_section->output_section->shndx;
-      esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     } else {
-      esym.st_shndx = sym.input_section->output_section->shndx;
-      esym.st_value = sym.get_addr(ctx, false);
-      esym.st_visibility = sym.visibility;
+      InputSection<E> *isec = sym.get_input_section();
+      if (!isec) {
+        esym.st_shndx = SHN_ABS;
+        esym.st_value = sym.get_addr(ctx);
+      } else if (sym.get_type() == STT_TLS) {
+        esym.st_shndx = isec->output_section->shndx;
+        esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
+      } else {
+        esym.st_shndx = isec->output_section->shndx;
+        esym.st_value = sym.get_addr(ctx, false);
+        esym.st_visibility = sym.visibility;
+      }
     }
   }
 }
@@ -2149,7 +2152,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
 
       if (sym.esym().st_type == STT_SECTION) {
         buf[j].r_type = STT_SECTION;
-        buf[j].r_sym = sym.input_section->output_section->shndx;
+        buf[j].r_sym = sym.get_input_section()->output_section->shndx;
         buf[j].r_addend = isec.get_addend(r) + isec.offset;
       } else {
         buf[j].r_type = r.r_type;
