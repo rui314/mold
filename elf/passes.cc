@@ -329,20 +329,6 @@ void bin_sections(Context<E> &ctx) {
   });
 }
 
-static std::optional<u64> parse_defsym_addr(std::string_view s) {
-  if (s.starts_with("0x") || s.starts_with("0X")) {
-    size_t nread;
-    u64 addr = std::stoull(std::string(s), &nread, 16);
-    if (s.size() != nread)
-      return {};
-    return addr;
-  }
-
-  if (s.find_first_not_of("0123456789") == s.npos)
-    return std::stoull(std::string(s), nullptr, 10);
-  return {};
-}
-
 // Create a dummy object file containing linker-synthesized
 // symbols.
 template <typename E>
@@ -413,7 +399,10 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     add(save_string(ctx, "__stop_" + std::string(chunk->name)));
   }
 
-  for (std::pair<std::string_view, std::string_view> pair : ctx.arg.defsyms) {
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
+
     ElfSym<E> esym = {};
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
@@ -421,9 +410,9 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     esym.st_visibility = STV_DEFAULT;
     esyms->push_back(esym);
 
-    Symbol<E> *sym = get_symbol(ctx, pair.first);
-    if (!parse_defsym_addr(pair.second))
-      sym->shndx = 1; // dummy value to make it a relative symbol
+    if (Symbol<E> **sym2 = std::get_if<Symbol<E> *>(&val))
+      if ((*sym2)->is_relative())
+        sym->shndx = 1; // dummy value to make it a relative symbol
     obj->symbols.push_back(sym);
   };
 
@@ -1362,16 +1351,18 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // --defsym=sym=value symbols
-  for (std::pair<std::string_view, std::string_view> defsym : ctx.arg.defsyms) {
-    Symbol<E> *sym = get_symbol(ctx, defsym.first);
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
+
     sym->input_section = nullptr;
 
-    if (std::optional<u64> addr = parse_defsym_addr(defsym.second)) {
+    if (u64 *addr = std::get_if<u64>(&val)) {
       sym->value = *addr;
       continue;
     }
 
-    Symbol<E> *sym2 = get_symbol(ctx, defsym.second);
+    Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
     if (!sym2->file) {
       Error(ctx) << "--defsym: undefined symbol: " << *sym2;
       continue;

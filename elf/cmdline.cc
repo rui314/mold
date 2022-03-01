@@ -384,6 +384,22 @@ static bool is_file(std::string_view path) {
          (st.st_mode & S_IFMT) != S_IFDIR;
 }
 
+template <typename E>
+static std::variant<Symbol<E> *, u64>
+parse_defsym_value(Context<E> &ctx, std::string_view s) {
+  if (s.starts_with("0x") || s.starts_with("0X")) {
+    size_t nread;
+    u64 addr = std::stoull(std::string(s), &nread, 16);
+    if (s.size() != nread)
+      return {};
+    return addr;
+  }
+
+  if (s.find_first_not_of("0123456789") == s.npos)
+    return (u64)std::stoull(std::string(s), nullptr, 10);
+  return get_symbol(ctx, s);
+}
+
 // Returns a PLT header size and a PLT entry size.
 template <typename E>
 static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
@@ -505,7 +521,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
         Fatal(ctx) << "-defsym: syntax error: " << arg;
-      ctx.arg.defsyms.push_back({arg.substr(0, pos), arg.substr(pos + 1)});
+      ctx.arg.defsyms.emplace_back(get_symbol(ctx, arg.substr(0, pos)),
+                                   parse_defsym_value(ctx, arg.substr(pos + 1)));
     } else if (read_flag(args, ":lto-pass2")) {
       ctx.arg.lto_pass2 = true;
     } else if (read_arg(ctx, args, arg, ":ignore-ir-file")) {

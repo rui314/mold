@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #define XXH_INLINE_ALL 1
@@ -1509,7 +1510,7 @@ struct Context {
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
-    std::vector<std::pair<std::string_view, std::string_view>> defsyms;
+    std::vector<std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>>> defsyms;
     std::vector<std::string> library_paths;
     std::vector<std::string> plugin_opt;
     std::vector<std::string> version_definitions;
