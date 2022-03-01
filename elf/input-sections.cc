@@ -33,10 +33,10 @@ static inline i64 to_p2align(u64 alignment) {
 
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
-                              std::string_view name, i64 section_idx)
+                              std::string_view name, i64 shndx)
   : file(file), nameptr(name.data()), namelen(name.size()),
-    section_idx(section_idx) {
-  if (section_idx < file.elf_sections.size())
+    shndx(shndx) {
+  if (shndx < file.elf_sections.size())
     contents = {(char *)file.mf->data + shdr().sh_offset, shdr().sh_size};
 
   bool compressed;

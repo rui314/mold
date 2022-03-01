@@ -574,7 +574,7 @@ void icf_sections(Context<E> &ctx) {
         InputSection<E> *isec = sym->get_input_section();
         if (isec && isec->leader && isec->leader != isec) {
           sym->file = &isec->leader->file;
-          sym->shndx = isec->leader->section_idx;
+          sym->shndx = isec->leader->shndx;
           isec->kill();
         }
       }

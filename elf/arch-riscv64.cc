@@ -662,7 +662,7 @@ static void initialize_storage(Context<E> &ctx) {
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
         if (InputSection<E> *isec = sym->get_input_section())
-          file->sorted_symbols[isec->section_idx].push_back(sym);
+          file->sorted_symbols[isec->shndx].push_back(sym);
 
     for (std::vector<Symbol<E> *> &vec : file->sorted_symbols)
       sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });

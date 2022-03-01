@@ -451,8 +451,8 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
     if (std::is_sorted(rels.begin(), rels.end(), less))
       continue;
 
-    sorted_rels[isec->section_idx] = {rels.begin(), rels.end()};
-    sort(sorted_rels[isec->section_idx], less);
+    sorted_rels[isec->shndx] = {rels.begin(), rels.end()};
+    sort(sorted_rels[isec->shndx], less);
   }
 }
 
@@ -809,7 +809,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     std::scoped_lock lock(sym.mu);
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
-      sym.shndx = isec ? isec->section_idx : 0;
+      sym.shndx = isec ? isec->shndx : 0;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;

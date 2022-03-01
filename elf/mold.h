@@ -260,7 +260,7 @@ template <typename E>
 class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, std::string_view name,
-               i64 section_idx);
+               i64 shndx);
 
   bool is_compressed();
   void uncompress(Context<E> &ctx, u8 *buf);
@@ -303,7 +303,7 @@ public:
   i32 namelen = 0;
 
   u32 offset = -1;
-  u32 section_idx = -1;
+  u32 shndx = -1;
   u32 relsec_idx = -1;
   u32 reldyn_offset = 0;
   u32 sh_size = -1;
@@ -1859,7 +1859,7 @@ inline u64 InputSection<E>::get_addr() const {
 
 template <typename E>
 inline i64 InputSection<E>::get_priority() const {
-  return ((i64)file.priority << 32) | section_idx;
+  return ((i64)file.priority << 32) | shndx;
 }
 
 template <typename E>
@@ -1902,17 +1902,17 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
 
 template <typename E>
 inline const ElfShdr<E> &InputSection<E>::shdr() const {
-  if (section_idx < file.elf_sections.size())
-    return file.elf_sections[section_idx];
-  return file.elf_sections2[section_idx - file.elf_sections.size()];
+  if (shndx < file.elf_sections.size())
+    return file.elf_sections[shndx];
+  return file.elf_sections2[shndx - file.elf_sections.size()];
 }
 
 template <typename E>
 inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
-  if (!file.sorted_rels.empty() && !file.sorted_rels[section_idx].empty())
-    return file.sorted_rels[section_idx];
+  if (!file.sorted_rels.empty() && !file.sorted_rels[shndx].empty())
+    return file.sorted_rels[shndx];
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
 }
 
@@ -1926,17 +1926,17 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
 
 template <typename E>
 inline std::vector<RangeExtensionRef> &InputSection<E>::get_range_extn() const {
-  return file.range_extn[section_idx];
+  return file.range_extn[shndx];
 }
 
 template <typename E>
 inline std::vector<i32> &InputSection<E>::get_r_deltas() const {
-  return file.r_deltas[section_idx];
+  return file.r_deltas[shndx];
 }
 
 template <typename E>
 inline std::vector<Symbol<E> *> &InputSection<E>::get_sorted_symbols() const {
-  return file.sorted_symbols[section_idx];
+  return file.sorted_symbols[shndx];
 }
 
 template <typename E>
