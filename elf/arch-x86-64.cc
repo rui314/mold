@@ -277,15 +277,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G   (sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr)
 #define GOT ctx.gotplt->shdr.sh_addr
 
-    if (needs_dynrel[i]) {
-      *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
-      write64(A);
-      continue;
-    }
-
-    if (needs_baserel[i] && !is_relr_reloc(ctx, rel))
-      *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
-
     switch (rel.r_type) {
     case R_X86_64_8:
       write8(S + A);
@@ -300,7 +291,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(S + A);
       continue;
     case R_X86_64_64:
-      write64(S + A);
+      if (sym.is_absolute() || !ctx.arg.pic) {
+        write64(S + A);
+      } else if (sym.is_imported) {
+        *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
+        write64(A);
+      } else {
+        if (!is_relr_reloc(ctx, rel))
+          *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
+        write64(S + A);
+      }
       continue;
     case R_X86_64_PC8:
       write8s(S + A - P);
@@ -312,7 +312,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(S + A - P);
       continue;
     case R_X86_64_PC64:
-      write64(S + A - P);
+      if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
+        write64(S + A - P);
+      } else {
+        *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
+        write64(A);
+      }
       continue;
     case R_X86_64_PLT32:
       write32s(S + A - P);

@@ -150,18 +150,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
-    if (needs_dynrel[i]) {
-      *dynrel++ = {P, R_AARCH64_ABS64, (u32)sym.get_dynsym_idx(ctx), A};
-      *(u64 *)loc = A;
-      continue;
-    }
-
-    if (needs_baserel[i] && !is_relr_reloc(ctx, rel))
-      *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
-
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
-      *(u64 *)loc = S + A;
+      if (sym.is_absolute() || !ctx.arg.pic) {
+        *(u64 *)loc = S + A;
+      } else if (sym.is_imported) {
+        *dynrel++ = {P, R_AARCH64_ABS64, (u32)sym.get_dynsym_idx(ctx), A};
+        *(u64 *)loc = A;
+      } else {
+        if (!is_relr_reloc(ctx, rel))
+          *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
+        *(u64 *)loc = S + A;
+      }
       continue;
     case R_AARCH64_LDST8_ABS_LO12_NC:
       *(u32 *)loc |= bits(S + A, 11, 0) << 10;

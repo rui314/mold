@@ -295,8 +295,6 @@ public:
   std::string_view contents;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
-  BitVector needs_dynrel;
-  BitVector needs_baserel;
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
@@ -1985,7 +1983,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 }
 
 template <typename E>
-bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
+inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
   return ctx.arg.pack_dyn_relocs_relr &&
          !(shdr().sh_flags & SHF_EXECINSTR) &&
          (shdr().sh_addralign % E::word_size) == 0 &&

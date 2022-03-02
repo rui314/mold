@@ -896,6 +896,8 @@ static std::vector<T> encode_relr(const std::vector<T> &pos) {
 
 template <typename E>
 void OutputSection<E>::construct_relr(Context<E> &ctx) {
+  if (!ctx.arg.pic)
+    return;
   if (!(this->shdr.sh_flags & SHF_ALLOC))
     return;
   if (this->shdr.sh_addralign % E::word_size)
@@ -914,10 +916,11 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
     if ((1 << isec.p2align) < E::word_size)
       return;
 
-    std::span<ElfRel<E>> rels = isec.get_rels(ctx);
-    for (i64 j = 0; j < rels.size(); j++)
-      if (isec.needs_baserel[j] && (rels[j].r_offset % E::word_size) == 0)
-        shards[i].push_back(isec.offset + rels[j].r_offset);
+    for (ElfRel<E> &r : isec.get_rels(ctx))
+      if (r.r_type == E::R_ABS && (r.r_offset % E::word_size) == 0)
+        if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+            !sym.is_absolute() && !sym.is_imported)
+          shards[i].push_back(isec.offset + r.r_offset);
   });
 
   // Compress them

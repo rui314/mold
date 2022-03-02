@@ -165,15 +165,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G      (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOTPLT ctx.gotplt->shdr.sh_addr
 
-    if (needs_dynrel[i]) {
-      *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
-      write32(A);
-      continue;
-    }
-
-    if (needs_baserel[i] && !is_relr_reloc(ctx, rel))
-      *dynrel++ = {P, R_386_RELATIVE, 0};
-
     switch (rel.r_type) {
     case R_386_8:
       write8(S + A);
@@ -182,7 +173,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write16(S + A);
       continue;
     case R_386_32:
-      write32(S + A);
+      if (sym.is_absolute() || !ctx.arg.pic) {
+        write32(S + A);
+      } else if (sym.is_imported) {
+        *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
+        write32(A);
+      } else {
+        if (!is_relr_reloc(ctx, rel))
+          *dynrel++ = {P, R_386_RELATIVE, 0};
+        write32(S + A);
+      }
       continue;
     case R_386_PC8:
       write8s(S + A);
@@ -191,6 +191,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write16s(S + A);
       continue;
     case R_386_PC32:
+      if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
+        write32(S + A - P);
+      } else {
+        *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
+        write32(A);
+      }
+      continue;
     case R_386_PLT32:
       write32(S + A - P);
       continue;

@@ -181,7 +181,6 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
     }
 
     assert(sym.is_imported);
-    needs_dynrel[i] = true;
     file.num_dynrel++;
     return;
   case BASEREL:
@@ -194,7 +193,6 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
       ctx.has_textrel = true;
     }
 
-    needs_baserel[i] = true;
     if (!is_relr_reloc(ctx, rel))
       file.num_dynrel++;
     return;
