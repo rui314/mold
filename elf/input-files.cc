@@ -222,9 +222,6 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
       isec->is_alive = false;
     }
   }
-
-  for (FdeRecord<E> &fde : fdes)
-    fde.cie = &cies[fde.cie_idx];
 }
 
 // .eh_frame contains data records explaining how to handle exceptions.

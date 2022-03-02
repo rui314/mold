@@ -1555,7 +1555,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
     i64 offset = 0;
     for (FdeRecord<E> &fde : file->fdes) {
       fde.output_offset = offset;
-      offset += fde.size();
+      offset += fde.size(*file);
     }
     file->fde_size = offset;
   });
@@ -1625,18 +1625,19 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     for (FdeRecord<E> &fde : file->fdes) {
       i64 offset = file->fde_offset + fde.output_offset;
 
-      std::string_view contents = fde.get_contents();
+      std::string_view contents = fde.get_contents(*file);
       memcpy(base + offset, contents.data(), contents.size());
 
-      *(u32 *)(base + offset + 4) = offset + 4 - fde.cie->output_offset;
+      CieRecord<E> &cie = file->cies[fde.cie_idx];
+      *(u32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
 
-      for (ElfRel<E> &rel : fde.get_rels()) {
+      for (ElfRel<E> &rel : fde.get_rels(*file)) {
         if (rel.r_type == E::R_NONE)
           continue;
         assert(rel.r_offset - fde.input_offset < contents.size());
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
-        u64 addend = fde.cie->input_section.get_addend(rel);
+        u64 addend = cie.input_section.get_addend(rel);
         apply_reloc(ctx, rel, loc, val + addend);
       }
     }
@@ -1679,10 +1680,11 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
 
     for (i64 i = 0; i < file->fdes.size(); i++) {
       FdeRecord<E> &fde = file->fdes[i];
+      CieRecord<E> &cie = file->cies[fde.cie_idx];
 
-      ElfRel<E> &rel = fde.cie->rels[fde.rel_idx];
+      ElfRel<E> &rel = cie.rels[fde.rel_idx];
       u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
-      u64 addend = fde.cie->input_section.get_addend(rel);
+      u64 addend = cie.input_section.get_addend(rel);
       i64 offset = file->fde_offset + fde.output_offset;
 
       entries[i].init_addr = val + addend - this->shdr.sh_addr;

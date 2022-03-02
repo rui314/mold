@@ -133,7 +133,7 @@ static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
     return false;
 
   for (FdeRecord<E> &fde : isec.get_fdes())
-    if (fde.get_rels().size() > 1)
+    if (fde.get_rels(isec.file).size() > 1)
       return false;
 
   return true;
@@ -145,10 +145,10 @@ static u64 combine_hash(u64 a, u64 b) {
 
 template <typename E>
 struct LeafHasher {
-  size_t operator()(const InputSection<E> *isec) const {
+  size_t operator()(InputSection<E> *isec) const {
     u64 h = hash_string(isec->contents);
     for (FdeRecord<E> &fde : isec->get_fdes()) {
-      u64 h2 = hash_string(fde.get_contents().substr(8));
+      u64 h2 = hash_string(fde.get_contents(isec->file).substr(8));
       h = combine_hash(h, h2);
     }
     return h;
@@ -157,7 +157,7 @@ struct LeafHasher {
 
 template <typename E>
 struct LeafEq {
-  bool operator()(const InputSection<E> *a, const InputSection<E> *b) const {
+  bool operator()(InputSection<E> *a, InputSection<E> *b) const {
     if (a->contents != b->contents)
       return false;
 
@@ -168,7 +168,8 @@ struct LeafEq {
       return false;
 
     for (i64 i = 0; i < x.size(); i++)
-      if (x[i].get_contents().substr(8) != y[i].get_contents().substr(8))
+      if (x[i].get_contents(a->file).substr(8) !=
+          y[i].get_contents(b->file).substr(8))
         return false;
     return true;
   }
@@ -262,19 +263,19 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   hash(isec.get_rels(ctx).size());
 
   for (FdeRecord<E> &fde : isec.get_fdes()) {
-    hash(fde.cie->icf_idx);
+    hash(isec.file.cies[fde.cie_idx].icf_idx);
 
     // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
-    hash_string(fde.get_contents().substr(8));
+    hash_string(fde.get_contents(isec.file).substr(8));
 
-    hash(fde.get_rels().size());
+    hash(fde.get_rels(isec.file).size());
 
-    for (ElfRel<E> &rel : fde.get_rels().subspan(1)) {
+    for (ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1)) {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
-      hash(fde.cie->input_section.get_addend(rel));
+      hash(isec.file.cies[fde.cie_idx].input_section.get_addend(rel));
     }
   }
 

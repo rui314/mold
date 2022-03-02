@@ -186,43 +186,27 @@ struct FdeRecord {
     : input_offset(input_offset), rel_idx(rel_idx) {}
 
   FdeRecord(const FdeRecord &other)
-    : cie(other.cie), input_offset(other.input_offset),
-      output_offset(other.output_offset), rel_idx(other.rel_idx),
+    : input_offset(other.input_offset), output_offset(other.output_offset),
+      rel_idx(other.rel_idx), cie_idx(other.cie_idx),
       is_alive(other.is_alive.load()) {}
 
   FdeRecord &operator=(const FdeRecord<E> &other) {
-    cie = other.cie;
     input_offset = other.input_offset;
     output_offset = other.output_offset;
     rel_idx = other.rel_idx;
+    cie_idx = other.cie_idx;
     is_alive = other.is_alive.load();
     return *this;
   }
 
-  i64 size() const {
-    return *(u32 *)(cie->contents.data() + input_offset) + 4;
-  }
-
-  std::string_view get_contents() const {
-    return cie->contents.substr(input_offset, size());
-  }
-
-  std::span<ElfRel<E>> get_rels() const {
-    std::span<ElfRel<E>> rels = cie->rels;
-    i64 end = rel_idx;
-    while (end < rels.size() && rels[end].r_offset < input_offset + size())
-      end++;
-    return rels.subspan(rel_idx, end - rel_idx);
-  }
-
-  union {
-    CieRecord<E> *cie = nullptr;
-    u32 cie_idx;
-  };
+  i64 size(ObjectFile<E> &file) const;
+  std::string_view get_contents(ObjectFile<E> &file) const;
+  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
 
   u32 input_offset = -1;
   u32 output_offset = -1;
   u32 rel_idx = -1;
+  u16 cie_idx = -1;
   std::atomic_bool is_alive = true;
 };
 
@@ -1838,6 +1822,25 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 //
 // Inline objects and functions
 //
+
+template <typename E>
+inline i64 FdeRecord<E>::size(ObjectFile<E> &file) const {
+  return *(u32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
+}
+
+template <typename E>
+inline std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
+  return file.cies[cie_idx].contents.substr(input_offset, size(file));
+}
+
+template <typename E>
+inline std::span<ElfRel<E>> FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
+  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
+  i64 end = rel_idx;
+  while (end < rels.size() && rels[end].r_offset < input_offset + size(file))
+    end++;
+  return rels.subspan(rel_idx, end - rel_idx);
+}
 
 template <typename E>
 inline std::ostream &
