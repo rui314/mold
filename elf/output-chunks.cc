@@ -37,7 +37,7 @@ template <typename E>
 u64 get_entry_addr(Context<E> &ctx) {
   if (!ctx.arg.entry.empty())
     if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry))
-      if (sym->file)
+      if (sym->file && !sym->file->is_dso)
         return sym->get_addr(ctx);
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
@@ -629,9 +629,11 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_VERDEFNUM, ctx.verdef->shdr.sh_info);
   }
 
-  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.init); sym->file)
+  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.init);
+      sym->file && !sym->file->is_dso)
     define(DT_INIT, sym->get_addr(ctx));
-  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.fini); sym->file)
+  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.fini);
+      sym->file && !sym->file->is_dso)
     define(DT_FINI, sym->get_addr(ctx));
 
   if (ctx.hash)
