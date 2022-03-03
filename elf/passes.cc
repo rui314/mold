@@ -1323,12 +1323,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx._DYNAMIC, ctx.dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
-  if (E::e_machine == EM_X86_64 || E::e_machine == EM_386)
-    start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
-  else if (E::e_machine == EM_AARCH64 || E::e_machine == EM_RISCV)
-    start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
-  else
-    unreachable();
+  start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
