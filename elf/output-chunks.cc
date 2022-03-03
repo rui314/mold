@@ -1602,9 +1602,19 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
   this->shdr.sh_size = offset + 4;
 }
 
+// Write to .eh_frame and .eh_frame_hdr.
 template <typename E>
 void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
+
+  struct HdrEntry {
+    i32 init_addr;
+    i32 fde_addr;
+  };
+
+  HdrEntry *eh_hdr_begin =
+    (HdrEntry *)(ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset +
+                 EhFrameHdrSection<E>::HEADER_SIZE);
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Copy CIEs.
@@ -1627,7 +1637,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     }
 
     // Copy FDEs.
-    for (FdeRecord<E> &fde : file->fdes) {
+    for (i64 i = 0; i < file->fdes.size(); i++) {
+      FdeRecord<E> &fde = file->fdes[i];
       i64 offset = file->fde_offset + fde.output_offset;
 
       std::string_view contents = fde.get_contents(*file);
@@ -1635,21 +1646,38 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
 
       CieRecord<E> &cie = file->cies[fde.cie_idx];
       *(u32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
+      bool is_first = true;
 
       for (ElfRel<E> &rel : fde.get_rels(*file)) {
         if (rel.r_type == E::R_NONE)
           continue;
+
         assert(rel.r_offset - fde.input_offset < contents.size());
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
         u64 addend = cie.input_section.get_addend(rel);
         apply_reloc(ctx, rel, loc, val + addend);
+
+        if (is_first) {
+          // Write to .eh_frame_hdr
+          HdrEntry &ent = eh_hdr_begin[file->fde_idx + i];
+          u64 sh_addr = ctx.eh_frame_hdr->shdr.sh_addr;
+          ent.init_addr = val + addend - sh_addr;
+          ent.fde_addr = this->shdr.sh_addr + offset - sh_addr;
+          is_first = false;
+        }
       }
     }
   });
 
   // Write a terminator.
   *(u32 *)(base + this->shdr.sh_size - 4) = 0;
+
+  // Sort .eh_frame_hdr contents.
+  tbb::parallel_sort(eh_hdr_begin, eh_hdr_begin + ctx.eh_frame_hdr->num_fdes,
+                     [](const HdrEntry &a, const HdrEntry &b) {
+    return a.init_addr < b.init_addr;
+  });
 }
 
 template <typename E>
@@ -1663,47 +1691,15 @@ void EhFrameHdrSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
-  u64 eh_frame_addr = ctx.eh_frame->shdr.sh_addr;
 
-  // Write a header
+  // Write a header. The actual table is written by EhFrameHdr<E>::copy_buf.
   base[0] = 1;
   base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
   base[2] = DW_EH_PE_udata4;
   base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
 
-  *(u32 *)(base + 4) = eh_frame_addr - this->shdr.sh_addr - 4;
+  *(u32 *)(base + 4) = ctx.eh_frame->shdr.sh_addr - this->shdr.sh_addr - 4;
   *(u32 *)(base + 8) = num_fdes;
-
-  // Fill contents
-  struct Entry {
-    i32 init_addr;
-    i32 fde_addr;
-  };
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    Entry *entries = (Entry *)(base + HEADER_SIZE) + file->fde_idx;
-
-    for (i64 i = 0; i < file->fdes.size(); i++) {
-      FdeRecord<E> &fde = file->fdes[i];
-      CieRecord<E> &cie = file->cies[fde.cie_idx];
-
-      ElfRel<E> &rel = cie.rels[fde.rel_idx];
-      u64 val = file->symbols[rel.r_sym]->get_addr(ctx);
-      u64 addend = cie.input_section.get_addend(rel);
-      i64 offset = file->fde_offset + fde.output_offset;
-
-      entries[i].init_addr = val + addend - this->shdr.sh_addr;
-      entries[i].fde_addr = eh_frame_addr + offset - this->shdr.sh_addr;
-    }
-  });
-
-  // Sort contents
-  Entry *begin = (Entry *)(base + HEADER_SIZE);
-  Entry *end = begin + num_fdes;
-
-  tbb::parallel_sort(begin, end, [](const Entry &a, const Entry &b) {
-    return a.init_addr < b.init_addr;
-  });
 }
 
 template <typename E>
