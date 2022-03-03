@@ -599,11 +599,18 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
-  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections)
-    if (m)
+  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections) {
+    if (m) {
+      m->fragments.reserve(m->strings.size());
       for (i64 i = 0; i < m->strings.size(); i++)
         m->fragments.push_back(m->parent->insert(m->strings[i], m->hashes[i],
                                                  m->p2align));
+
+      // Shrink vectors that we will never use again to reclaim memory.
+      m->strings.clear();
+      m->hashes.clear();
+    }
+  }
 
   // Initialize rel_fragments
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
