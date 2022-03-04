@@ -488,6 +488,18 @@ Use soname as a symbol version and append that version to all symbols.
 .It Fl -no-demangle
 Demangle C++ symbols in log messages.
 .Pp
+.It Fl -dependency-file Ns = Ns Ar file
+Write a dependency file to
+.Ar file .
+The contents of the written file is readable by
+.Cm make ,
+which defines only one rule with the linker's output file as a target \
+and all input fiels as its prerequisite. Users are expected to include \
+the generated dependency file into a Makefile to automate the \
+dependency management. This option is analogous to the compiler's
+.Fl MM Fl MF
+options.
+.Pp
 .It Fl -dynamic-list Ns = Ns Ar file
 Read a list of dynamic symbols from
 .Ar file .
@@ -661,6 +673,10 @@ section and does not affect
 .Dv .dynsym
 section, which is used for dynamic linking.
 .Pp
+.It Fl -reverse-sections
+Reverses the order of input sections before assigning them the offsets \
+in the output file.
+.Pp
 .It Fl -rpath Ns = Ns Ar dir
 Add
 .Ar dir
@@ -676,6 +692,15 @@ as
 .Pp
 .It Fl -shared , -Bshareable
 Create a share library.
+.Pp
+.It Fl -shuffle-sections
+.It Fl -shuffle-sections Ns = Ns Ar number
+Randomizes the output by shuffleing the order of input sections before \
+assigning them the offsets in the output file. If
+.Ar number
+is given, it's used as a seed for the random number generator, so that \
+the linker produces the same output as for the same seed. If no seed \
+is given, it uses a random number as a seed.
 .Pp
 .It Fl -spare-dynamic-tags Ns = Ns Ar number
 Reserve given
