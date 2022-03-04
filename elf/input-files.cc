@@ -202,8 +202,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
       assert(target->relsec_idx == -1);
       target->relsec_idx = i;
-      if (target->shdr().sh_flags & SHF_ALLOC)
-        i64 size = shdr.sh_size / sizeof(ElfRel<E>);
     }
   }
 }
