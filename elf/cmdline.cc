@@ -135,6 +135,7 @@ Options:
   --warn-common               Warn about common symbols
     --no-warn-common
   --warn-once                 Only warn once for each undefined symbol
+  --warn-shared-textrel       Warn if the output .so needs text relocations
   --warn-textrel              Warn if the output file needs text relocations
   --warn-unresolved-symbols   Report unresolved symbols as warnings
     --error-unresolved-symbols
@@ -430,6 +431,7 @@ void parse_nonpositional_args(Context<E> &ctx,
   ctx.page_size = E::page_size;
 
   bool version_shown = false;
+  bool warn_shared_textrel = false;
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -644,6 +646,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.warn_common = false;
     } else if (read_flag(args, "warn-once")) {
       ctx.arg.warn_once = true;
+    } else if (read_flag(args, "warn-shared-textrel")) {
+      warn_shared_textrel = true;
     } else if (read_flag(args, "warn-textrel")) {
       ctx.arg.warn_textrel = true;
     } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
@@ -1030,6 +1034,9 @@ void parse_nonpositional_args(Context<E> &ctx,
     ctx.arg.version_definitions.push_back(ver);
     ctx.default_version = VER_NDX_LAST_RESERVED + 1;
   }
+
+  if (ctx.arg.shared && warn_shared_textrel)
+    ctx.arg.warn_textrel = true;
 
   std::tie(ctx.plt_hdr_size, ctx.plt_size) = get_plt_size(ctx);
 
