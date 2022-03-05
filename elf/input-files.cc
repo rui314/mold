@@ -47,7 +47,7 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 }
 
 template <typename E>
-void InputFile<E>::clear_symbols(Context<E> &ctx) {
+void InputFile<E>::clear_symbols() {
   for (Symbol<E> *sym : get_global_syms()) {
     if (sym->file == this) {
       sym->file = nullptr;

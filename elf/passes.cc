@@ -124,9 +124,9 @@ void do_resolve_symbols(Context<E> &ctx) {
   mark_live_objects(ctx);
 
   // Remove symbols of eliminated files.
-  for_each_file([&](InputFile<E> *file) {
+  for_each_file([](InputFile<E> *file) {
     if (!file->is_alive)
-      file->clear_symbols(ctx);
+      file->clear_symbols();
   });
 
   // Since we have turned on object files live bits, their symbols
@@ -182,12 +182,12 @@ void resolve_symbols(Context<E> &ctx) {
 
     // Redo name resolution from scratch.
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->clear_symbols(ctx);
+      file->clear_symbols();
       file->is_alive = !file->is_in_lib;
     });
 
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      file->clear_symbols(ctx);
+      file->clear_symbols();
       file->is_alive = true;
     });
 
