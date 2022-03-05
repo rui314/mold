@@ -32,49 +32,50 @@ void apply_exclude_libs(Context<E> &ctx) {
 
 template <typename E>
 void create_synthetic_sections(Context<E> &ctx) {
-  auto add = [&](auto &chunk) {
-    ctx.chunks.push_back(chunk.get());
+  auto push = [&]<typename T>(T *x) {
+    ctx.chunks.push_back(x);
+    return std::unique_ptr<T>(x);
   };
 
-  add(ctx.ehdr = std::make_unique<OutputEhdr<E>>());
-  add(ctx.phdr = std::make_unique<OutputPhdr<E>>());
-  add(ctx.shdr = std::make_unique<OutputShdr<E>>());
-  add(ctx.got = std::make_unique<GotSection<E>>());
-  add(ctx.gotplt = std::make_unique<GotPltSection<E>>());
-  add(ctx.reldyn = std::make_unique<RelDynSection<E>>());
-  add(ctx.relplt = std::make_unique<RelPltSection<E>>());
+  ctx.ehdr = push(new OutputEhdr<E>);
+  ctx.phdr = push(new OutputPhdr<E>);
+  ctx.shdr = push(new OutputShdr<E>);
+  ctx.got = push(new GotSection<E>);
+  ctx.gotplt = push(new GotPltSection<E>);
+  ctx.reldyn = push(new RelDynSection<E>);
+  ctx.relplt = push(new RelPltSection<E>);
 
   if (ctx.arg.pack_dyn_relocs_relr)
-    add(ctx.relrdyn = std::make_unique<RelrDynSection<E>>());
+    ctx.relrdyn = push(new RelrDynSection<E>);
 
-  add(ctx.strtab = std::make_unique<StrtabSection<E>>());
-  add(ctx.shstrtab = std::make_unique<ShstrtabSection<E>>());
-  add(ctx.plt = std::make_unique<PltSection<E>>());
-  add(ctx.pltgot = std::make_unique<PltGotSection<E>>());
-  add(ctx.symtab = std::make_unique<SymtabSection<E>>());
-  add(ctx.dynsym = std::make_unique<DynsymSection<E>>());
-  add(ctx.dynstr = std::make_unique<DynstrSection<E>>());
-  add(ctx.eh_frame = std::make_unique<EhFrameSection<E>>());
-  add(ctx.copyrel = std::make_unique<CopyrelSection<E>>(false));
-  add(ctx.copyrel_relro = std::make_unique<CopyrelSection<E>>(true));
+  ctx.strtab = push(new StrtabSection<E>);
+  ctx.shstrtab = push(new ShstrtabSection<E>);
+  ctx.plt = push(new PltSection<E>);
+  ctx.pltgot = push(new PltGotSection<E>);
+  ctx.symtab = push(new SymtabSection<E>);
+  ctx.dynsym = push(new DynsymSection<E>);
+  ctx.dynstr = push(new DynstrSection<E>);
+  ctx.eh_frame = push(new EhFrameSection<E>);
+  ctx.copyrel = push(new CopyrelSection<E>(false));
+  ctx.copyrel_relro = push(new CopyrelSection<E>(true));
 
   if (!ctx.arg.dynamic_linker.empty())
-    add(ctx.interp = std::make_unique<InterpSection<E>>());
+    ctx.interp = push(new InterpSection<E>);
   if (ctx.arg.build_id.kind != BuildId::NONE)
-    add(ctx.buildid = std::make_unique<BuildIdSection<E>>());
+    ctx.buildid = push(new BuildIdSection<E>);
   if (ctx.arg.eh_frame_hdr)
-    add(ctx.eh_frame_hdr = std::make_unique<EhFrameHdrSection<E>>());
+    ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.hash_style_sysv)
-    add(ctx.hash = std::make_unique<HashSection<E>>());
+    ctx.hash = push(new HashSection<E>);
   if (ctx.arg.hash_style_gnu)
-    add(ctx.gnu_hash = std::make_unique<GnuHashSection<E>>());
+    ctx.gnu_hash = push(new GnuHashSection<E>);
   if (!ctx.arg.version_definitions.empty())
-    add(ctx.verdef = std::make_unique<VerdefSection<E>>());
+    ctx.verdef = push(new VerdefSection<E>);
 
-  add(ctx.dynamic = std::make_unique<DynamicSection<E>>());
-  add(ctx.versym = std::make_unique<VersymSection<E>>());
-  add(ctx.verneed = std::make_unique<VerneedSection<E>>());
-  add(ctx.note_property = std::make_unique<NotePropertySection<E>>());
+  ctx.dynamic = push(new DynamicSection<E>);
+  ctx.versym = push(new VersymSection<E>);
+  ctx.verneed = push(new VerneedSection<E>);
+  ctx.note_property = push(new NotePropertySection<E>);
 }
 
 template <typename E>
