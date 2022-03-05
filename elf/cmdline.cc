@@ -991,6 +991,10 @@ void parse_nonpositional_args(Context<E> &ctx,
     }
   }
 
+  // Remove redundant `/..` or `/.` from library paths.
+  for (std::string &path : ctx.arg.library_paths)
+    path = path_clean(path);
+
   if (ctx.arg.shared) {
     ctx.arg.pic = true;
     ctx.arg.dynamic_linker = "";
