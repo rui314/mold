@@ -554,8 +554,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_HI20: {
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
-        {  NONE,     NONE,    ERROR,         ERROR },      // DSO
-        {  NONE,     NONE,    COPYREL,       PLT   },      // PIE
+        {  NONE,     ERROR,   ERROR,         ERROR },      // DSO
+        {  NONE,     ERROR,   ERROR,         ERROR },      // PIE
         {  NONE,     NONE,    COPYREL,       PLT   },      // PDE
       };
       dispatch(ctx, table, i, rel, sym);
