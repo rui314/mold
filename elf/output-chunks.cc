@@ -371,6 +371,21 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
   ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
+  // This is the reason why we sort dynamic relocations. Quote from
+  // https://www.airs.com/blog/archives/186:
+  //
+  //   The dynamic linker in glibc uses a one element cache when processing
+  //   relocs: if a relocation refers to the same symbol as the previous
+  //   relocation, then the dynamic linker reuses the value rather than
+  //   looking up the symbol again. Thus the dynamic linker gets the best
+  //   results if the dynamic relocations are sorted so that all dynamic
+  //   relocations for a given dynamic symbol are adjacent.
+  //
+  //   Other than that, the linker sorts together all relative relocations,
+  //   which don't have symbols. Two relative relocations, or two relocations
+  //   against the same symbol, are sorted by the address in the output
+  //   file. This tends to optimize paging and caching when there are two
+  //   references from the same page.
   tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
     return std::tuple(a.r_type != E::R_RELATIVE, a.r_sym, a.r_offset) <
            std::tuple(b.r_type != E::R_RELATIVE, b.r_sym, b.r_offset);
