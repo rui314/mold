@@ -1789,7 +1789,7 @@ public:
   u8 referenced_by_regular_obj : 1 = false;
 
   // Target-dependent extra members.
-  SymbolExtras<E> extra;
+  [[no_unique_address]] SymbolExtras<E> extra;
 };
 
 // If we haven't seen the same `key` before, create a new instance
