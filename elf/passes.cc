@@ -472,9 +472,9 @@ void print_dependencies(Context<E> &ctx) {
   SyncOut(ctx) <<
 R"(# This is an output of the mold linker's --print-dependencies option.
 #
-# Each line consists of three fields, <input-file>, <output-file> and
-# <symbol> separated by tab characters. It indicates that <input-file>
-# depends on <output-file> to use <symbol>.)";
+# Each line consists of three fields, <file1>, <file2> and <symbol>
+# separated by tab characters. It indicates that <file1> depends on
+# <file2> to use <symbol>.)";
 
   auto print = [&](InputFile<E> *file) {
     for (i64 i = file->first_global; i < file->symbols.size(); i++) {
@@ -496,10 +496,10 @@ void print_dependencies_full(Context<E> &ctx) {
   SyncOut(ctx) <<
 R"(# This is an output of the mold linker's --print-dependencies=full option.
 #
-# Each line consists of 4 fields, <input-section>, <output-section>,
-# <symbol-type> and <symbol>, separated by tab characters. It indicates that
-# <input-section> depends on <output-section> to use <symbol>. <symbol-type>
-# is either "u" or "w" for regular or weak undefined, respectively.
+# Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and
+# <symbol>, separated by tab characters. It indicates that <section1> depends
+# on <section2> to use <symbol>. <symbol-type> is either "u" or "w" for
+# regular undefined or weak undefined, respectively.
 #
 # If you want to obtain dependency information per function granularity,
 # compile source files with the -ffunction-sections compiler flag.)";

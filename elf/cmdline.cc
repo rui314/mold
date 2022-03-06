@@ -1019,7 +1019,7 @@ void parse_nonpositional_args(Context<E> &ctx,
   }
 
   if (ctx.arg.image_base % ctx.page_size)
-    Fatal(ctx) << "-image-base msut be a multiple of -max-page-size";
+    Fatal(ctx) << "-image-base must be a multiple of -max-page-size";
 
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;
