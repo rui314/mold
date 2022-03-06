@@ -519,12 +519,6 @@ static int elf_main(int argc, char **argv) {
   if (ctx.arg.z_cet_report != CET_REPORT_NONE)
     check_cet_errors(ctx);
 
-  // Handle --print-dependencies
-  if (ctx.arg.print_dependencies == 1)
-    print_dependencies(ctx);
-  else if (ctx.arg.print_dependencies == 2)
-    print_dependencies_full(ctx);
-
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.
@@ -718,8 +712,15 @@ static int elf_main(int argc, char **argv) {
   // Close the output file. This is the end of the linker's main job.
   ctx.output_file->close(ctx);
 
+  // Handle --dependency-file
   if (!ctx.arg.dependency_file.empty())
     write_dependency_file(ctx);
+
+  // Handle --print-dependencies
+  if (ctx.arg.print_dependencies == 1)
+    print_dependencies(ctx);
+  else if (ctx.arg.print_dependencies == 2)
+    print_dependencies_full(ctx);
 
   if (ctx.has_lto_object)
     lto_cleanup(ctx);
