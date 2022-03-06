@@ -1276,13 +1276,23 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   }
 
-  // __rel_iplt_start
-  start(ctx.__rel_iplt_start, ctx.reldyn);
+  // __rel_iplt_start and __rel_iplt_end. These symbols need to be
+  // defined in a statically-linked non-relocatable executable because
+  // such executable lacks the .dynamic section and thus there's no way
+  // to find ifunc relocations other than these symbols.
+  //
+  // We don't want to set values to these symbols if we are creating a
+  // static PIE due to a glibc bug. If we set values to these symbols in
+  // a static PIE, glibc attempts to run ifunc initializers twice, with
+  // the second attempt with wrong function addresses, causing a
+  // segmentation fault.
+  if (ctx.reldyn && ctx.arg.is_static && !ctx.arg.pie) {
+    start(ctx.__rel_iplt_start, ctx.reldyn);
 
-  // __rel_iplt_end
-  ctx.__rel_iplt_end->shndx = -ctx.reldyn->shndx;
-  ctx.__rel_iplt_end->value = ctx.reldyn->shdr.sh_addr +
-    get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
+    ctx.__rel_iplt_end->shndx = -ctx.reldyn->shndx;
+    ctx.__rel_iplt_end->value = ctx.reldyn->shdr.sh_addr +
+      get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
+  }
 
   // __{init,fini}_array_{start,end}
   for (Chunk<E> *chunk : ctx.chunks) {

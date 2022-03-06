@@ -371,6 +371,14 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
   ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
+  auto get_rank = [](u32 r_type) {
+    switch (r_type) {
+    case E::R_IRELATIVE: return 0;
+    case E::R_RELATIVE: return 1;
+    default: return 2;
+    }
+  };
+
   // This is the reason why we sort dynamic relocations. Quote from
   // https://www.airs.com/blog/archives/186:
   //
@@ -386,9 +394,12 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   //   against the same symbol, are sorted by the address in the output
   //   file. This tends to optimize paging and caching when there are two
   //   references from the same page.
-  tbb::parallel_sort(begin, end, [](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return std::tuple(a.r_type != E::R_RELATIVE, a.r_sym, a.r_offset) <
-           std::tuple(b.r_type != E::R_RELATIVE, b.r_sym, b.r_offset);
+  //
+  // We place IFUNC relocations at the beginning of .rel.dyn because
+  // we set `__rel_iplt_start` to that address.
+  tbb::parallel_sort(begin, end, [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+    return std::tuple(get_rank(a.r_type), a.r_sym, a.r_offset) <
+           std::tuple(get_rank(b.r_type), b.r_sym, b.r_offset);
   });
 }
 
@@ -702,9 +713,7 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
 
 template <typename E>
 void DynamicSection<E>::update_shdr(Context<E> &ctx) {
-  if (ctx.arg.is_static)
-    return;
-  if (!ctx.arg.pic && ctx.dsos.empty())
+  if (ctx.arg.is_static && !ctx.arg.pie)
     return;
 
   this->shdr.sh_size = create_dynamic_section(ctx).size() * E::word_size;
