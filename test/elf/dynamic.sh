@@ -28,8 +28,4 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe -pie $t/b.o
-count=$(readelf -W --relocs $t/exe | grep -E 'R_[a-zA-Z0-9_]+_RELATIVE' | wc -l)
-readelf -W --dynamic $t/exe | grep -q "RELACOUNT.*\b$count\b"
-
 echo OK
