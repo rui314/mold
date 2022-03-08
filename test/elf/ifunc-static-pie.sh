@@ -18,7 +18,7 @@ echo 'int main() {}' | $CC -o $t/exe -xc -
 ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
 
 # -static-pie works only with a newer version of glibc
-ldd --version | grep -Pq 'Copyright \(C\) 202[1-9]' || { echo skipped; exit; }
+ldd --version | grep -Pq 'Copyright \(C\) 202[2-9]' || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
