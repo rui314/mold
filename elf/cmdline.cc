@@ -44,7 +44,7 @@ Options:
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
   --Bdynamic, --dy            Link against shared libraries (default)
-  --Bstatic, --dn             Do not link against shared libraries
+  --Bstatic, --dn, --static   Do not link against shared libraries
   --Bsymbolic                 Bind global symbols locally
   --Bsymbolic-functions       Bind global functions locally
   --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
@@ -120,7 +120,6 @@ Options:
   --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
   --start-lib                 Give following object files in-archive-file semantics
     --end-lib                 End the effect of --start-lib
-  --static                    Do not link against shared libraries
   --stats                     Print input statistics
   --sysroot DIR               Set target system root directory
   --thread-count COUNT, --threads=COUNT
