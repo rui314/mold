@@ -43,8 +43,8 @@ Options:
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
-  --Bdynamic                  Link against shared libraries (default)
-  --Bstatic                   Do not link against shared libraries
+  --Bdynamic, --dy            Link against shared libraries (default)
+  --Bstatic, --dn             Do not link against shared libraries
   --Bsymbolic                 Bind global symbols locally
   --Bsymbolic-functions       Bind global functions locally
   --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
@@ -505,10 +505,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.print_dependencies = 2;
     } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
       ctx.arg.print_map = true;
-    } else if (read_flag(args, "static") || read_flag(args, "Bstatic")) {
+    } else if (read_flag(args, "Bstatic") || read_flag(args, "dn") || read_flag(args, "static")) {
       ctx.arg.is_static = true;
       remaining.push_back("-Bstatic");
-    } else if (read_flag(args, "Bdynamic")) {
+    } else if (read_flag(args, "Bdynamic") || read_flag(args, "dy")) {
       ctx.arg.is_static = false;
       remaining.push_back("-Bdynamic");
     } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
