@@ -716,7 +716,8 @@ i64 create_range_extension_thunks(Context<E> &ctx) {
   // with an initial layout in which output sections are separated far
   // apart.
   for (i64 i = 0; Chunk<E> *chunk : ctx.chunks)
-    chunk->shdr.sh_addr = i++ << 31;
+    if (chunk->shdr.sh_flags & SHF_ALLOC)
+      chunk->shdr.sh_addr = i++ << 31;
 
   std::vector<OutputSection<E> *> sections;
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
