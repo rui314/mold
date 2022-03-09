@@ -223,13 +223,72 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32(sym.get_gottp_addr(ctx) + A);
       continue;
     case R_386_TLS_GD:
-      write32(sym.get_tlsgd_addr(ctx) + A - GOT);
+      if (sym.get_tlsgd_idx(ctx) == -1) {
+        // Relax GD to LE
+        switch (rels[i + 1].r_type) {
+        case R_386_PLT32: {
+          static const u8 insn[] = {
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
+            0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
+          };
+          memcpy(loc - 3, insn, sizeof(insn));
+          *(u32 *)(loc + 5) = ctx.tls_end - S - A;
+          break;
+        }
+        case R_386_GOT32: {
+          static const u8 insn[] = {
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
+            0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
+          };
+          memcpy(loc - 2, insn, sizeof(insn));
+          *(u32 *)(loc + 6) = ctx.tls_end - S - A;
+          break;
+        }
+        default:
+          unreachable();
+        }
+
+        i++;
+      } else {
+        write32(sym.get_tlsgd_addr(ctx) + A - GOT);
+      }
       continue;
     case R_386_TLS_LDM:
-      write32(ctx.got->get_tlsld_addr(ctx) + A - GOT);
+      if (ctx.got->tlsld_idx == -1) {
+        // Relax LD to LE
+        switch (rels[i + 1].r_type) {
+        case R_386_PLT32: {
+          static const u8 insn[] = {
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+            0x8d, 0x74, 0x26, 0x00, // lea (%esi,1), %esi
+            0x90,                   // nop
+          };
+          memcpy(loc - 2, insn, sizeof(insn));
+          break;
+        }
+        case R_386_GOT32: {
+          static const u8 insn[] = {
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+            0x8d, 0x74, 0x26, 0x00, // lea (%esi,1), %esi
+            0x66, 0x90,
+          };
+          memcpy(loc - 2, insn, sizeof(insn));
+          break;
+        }
+        default:
+          unreachable();
+        }
+
+        i++;
+      } else {
+        write32(ctx.got->get_tlsld_addr(ctx) + A - GOT);
+      }
       continue;
     case R_386_TLS_LDO_32:
-      write32(S + A - ctx.tls_begin);
+      if (ctx.got->tlsld_idx == -1)
+        write32(S + A - ctx.tls_end);
+      else
+        write32(S + A - ctx.tls_begin);
       continue;
     case R_386_SIZE32:
       write32(sym.esym().st_size + A);
@@ -447,10 +506,30 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_386_TLS_GD:
-      sym.flags |= NEEDS_TLSGD;
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
+
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_386_PLT32 && ty != R_386_GOT32)
+        Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
+
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
+        i++;
+      else
+        sym.flags |= NEEDS_TLSGD;
       break;
     case R_386_TLS_LDM:
-      ctx.needs_tlsld = true;
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
+
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_386_PLT32 && ty != R_386_GOT32)
+        Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
+
+      if (ctx.arg.relax && !ctx.arg.shared)
+        i++;
+      else
+        ctx.needs_tlsld = true;
       break;
     case R_386_TLS_GOTDESC:
       if (!ctx.arg.relax || ctx.arg.shared)

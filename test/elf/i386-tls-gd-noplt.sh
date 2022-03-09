@@ -13,7 +13,7 @@ mkdir -p $t
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 
-cat <<EOF | $CC -fPIC -c -o $t/a.o -xc - -m32
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc - -m32 -fno-plt
 #include <stdio.h>
 
 static _Thread_local int x1 = 1;
@@ -31,14 +31,14 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fPIC -c -o $t/b.o -xc - -m32
+cat <<EOF | $CC -fPIC -c -o $t/b.o -xc - -m32 -fno-plt
 _Thread_local int x3 = 3;
 static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
 
-cat <<EOF | $CC -fPIC -c -o $t/c.o -xc - -m32
+cat <<EOF | $CC -fPIC -c -o $t/c.o -xc - -m32 -fno-plt
 _Thread_local int x4 = 4;
 static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
