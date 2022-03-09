@@ -963,7 +963,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     // Convert remaining undefined symbols to absolute symbols with value 0.
     if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR ||
-        esym.is_undef_weak()) {
+        ctx.arg.noinhibit_exec || esym.is_undef_weak()) {
       claim();
       sym.ver_idx = ctx.default_version;
       sym.is_imported = false;
