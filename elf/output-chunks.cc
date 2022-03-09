@@ -373,9 +373,9 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
 
   auto get_rank = [](u32 r_type) {
     switch (r_type) {
-    case E::R_IRELATIVE: return 0;
-    case E::R_RELATIVE: return 1;
-    default: return 2;
+    case E::R_RELATIVE: return 0;
+    case E::R_IRELATIVE: return 2;
+    default: return 1;
     }
   };
 

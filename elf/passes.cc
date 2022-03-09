@@ -1287,10 +1287,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // the second attempt with wrong function addresses, causing a
   // segmentation fault.
   if (ctx.reldyn && ctx.arg.is_static && !ctx.arg.pie) {
-    start(ctx.__rel_iplt_start, ctx.reldyn);
+    stop(ctx.__rel_iplt_start, ctx.reldyn);
+    stop(ctx.__rel_iplt_end, ctx.reldyn);
 
-    ctx.__rel_iplt_end->shndx = -ctx.reldyn->shndx;
-    ctx.__rel_iplt_end->value = ctx.reldyn->shdr.sh_addr +
+    ctx.__rel_iplt_start->value -=
       get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
   }
 
