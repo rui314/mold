@@ -1,5 +1,5 @@
 #!/bin/bash
-export LANG=
+export LC_ALL=C
 set -e
 cd $(dirname $0)
 mold=`pwd`/../../mold
