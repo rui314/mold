@@ -28,7 +28,7 @@ readelf -n $t/exe | grep -q 'GNU.*0x00000014.*NT_GNU_BUILD_ID'
 $CC -B. -o $t/exe $t/a.c -Wl,-build-id=sha256
 readelf -n $t/exe | grep -q 'GNU.*0x00000020.*NT_GNU_BUILD_ID'
 
-$CC -B. -o $t/exe $t/a.c -Wl,-build-id=0xdeadbeef
-readelf -n $t/exe | grep -q 'Build ID: deadbeef'
+$CC -B. -o $t/exe $t/a.c -Wl,-build-id=0xdeadbeefdeadbeef
+readelf -n $t/exe | grep -q 'Build ID: deadbeefdeadbeef'
 
 echo OK
