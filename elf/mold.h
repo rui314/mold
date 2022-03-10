@@ -1919,6 +1919,11 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
   unreachable();
 }
 
+template <>
+inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
+  unreachable();
+}
+
 template <typename E>
 inline const ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())

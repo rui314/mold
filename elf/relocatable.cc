@@ -591,6 +591,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

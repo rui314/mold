@@ -344,12 +344,10 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
-  return {offset, type, sym, addend};
-}
-
-template <>
-ElfRel<I386> reloc<I386>(u64 offset, u32 type, u32 sym, i64 addend) {
-  return {(u32)offset, type, sym};
+  if constexpr (E::e_machine == EM_386 || E::e_machine == EM_ARM)
+    return {(u32)offset, type, sym};
+  else
+    return {offset, type, sym, addend};
 }
 
 template <typename E>
@@ -2220,6 +2218,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

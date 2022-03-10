@@ -414,6 +414,8 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
     return {16, 16};
   case EM_AARCH64:
     return {32, 16};
+  case EM_ARM:
+    return {16, 16};
   case EM_RISCV:
     return {32, 16};
   }
@@ -470,6 +472,8 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.emulation = EM_386;
       } else if (arg == "aarch64linux") {
         ctx.arg.emulation = EM_AARCH64;
+      } else if (arg == "armelf_linux_eabi") {
+        ctx.arg.emulation = EM_ARM;
       } else if (arg == "elf64lriscv") {
         ctx.arg.emulation = EM_RISCV;
       } else {
@@ -1068,6 +1072,7 @@ void parse_nonpositional_args(Context<E> &ctx,
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

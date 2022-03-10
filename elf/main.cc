@@ -387,6 +387,8 @@ static int elf_main(int argc, char **argv) {
       return elf_main<I386>(argc, argv);
     case EM_AARCH64:
       return elf_main<ARM64>(argc, argv);
+    case EM_ARM:
+      return elf_main<ARM32>(argc, argv);
     case EM_RISCV:
       return elf_main<RISCV64>(argc, argv);
     }
@@ -761,6 +763,7 @@ int main(int argc, char **argv) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

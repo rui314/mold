@@ -138,6 +138,7 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf

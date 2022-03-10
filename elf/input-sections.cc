@@ -248,6 +248,7 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);
 INSTANTIATE(ARM64);
+INSTANTIATE(ARM32);
 INSTANTIATE(RISCV64);
 
 } // namespace mold::elf
