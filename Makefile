@@ -178,7 +178,7 @@ install: all
 	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
 
 	$(INSTALL) -d $D$(LIBEXECDIR)/mold
-	ln -sf $(BINDIR)/mold $D$(LIBEXECDIR)/mold/ld
+	ln -rsf $D$(BINDIR)/mold $D$(LIBEXECDIR)/mold/ld
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
