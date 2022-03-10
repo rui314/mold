@@ -496,8 +496,10 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   LOG << "read_lto_object: " << mf->name << "\n";
 
   if (ctx.arg.plugin.empty())
-    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file"
-               << " because no -plugin option was given";
+    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file "
+               << "because no -plugin option was given. Please make sure you "
+               << "added -flto not only for creating object files but also for "
+               << "creating the final executable.";
 
   // dlopen the linker plugin file
   static std::once_flag flag;
