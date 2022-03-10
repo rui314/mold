@@ -1113,7 +1113,8 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   auto get_plt_resolver_addr = [&](Symbol<E> &sym) -> u64 {
-    if constexpr (E::e_machine == EM_AARCH64 || E::e_machine == EM_RISCV)
+    if constexpr (E::e_machine == EM_AARCH64 || E::e_machine == EM_ARM ||
+                  E::e_machine == EM_RISCV)
       return ctx.plt->shdr.sh_addr;
 
     if constexpr (E::e_machine == EM_X86_64) {

@@ -415,7 +415,7 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
   case EM_AARCH64:
     return {32, 16};
   case EM_ARM:
-    return {16, 16};
+    return {20, 16};
   case EM_RISCV:
     return {32, 16};
   }

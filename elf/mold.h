@@ -1921,6 +1921,116 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
 
 template <>
 inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
+  u8 *loc = (u8 *)contents.data() + rel.r_offset;
+
+  auto bit = [](u32 val, i64 pos) -> i32 {
+    return (val >> pos) & 1;
+  };
+
+  // Returns [hi:lo] bits of val.
+  auto bits = [](u64 val, i64 hi, i64 lo) -> i32 {
+    return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+  };
+
+  auto sign_extend = [](u64 val, i64 size) -> i32 {
+    return (i64)(val << (63 - size)) >> (63 - size);
+  };
+
+  auto write_thm_mov_imm = [&]() -> i32 {
+    u32 imm4 = bits(*(u16 *)loc, 3, 0);
+    u32 i = bit(*(u16 *)loc, 10);
+    u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
+    u32 imm8 = bits(*(u16 *)(loc + 2), 7, 0);
+    return (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
+  };
+
+  switch (rel.r_type) {
+  case R_ARM_NONE:
+  case R_ARM_PC24:
+    return 0;
+  case R_ARM_ABS32:
+  case R_ARM_REL32:
+    return *(i32 *)loc;
+  case R_ARM_LDR_PC_G0:
+  case R_ARM_SBREL32:
+    return 0;
+  case R_ARM_THM_CALL: {
+    u32 S = bit(*(u16 *)loc, 10);
+    u32 J1 = bit(*(u16 *)(loc + 2), 13);
+    u32 J2 = bit(*(u16 *)(loc + 2), 11);
+    u32 I1 = !(J1 ^ S);
+    u32 I2 = !(J2 ^ S);
+    u32 imm10 = bits(*(u16 *)loc, 9, 0);
+    u32 imm11 = bits(*(u16 *)(loc + 2), 10, 0);
+    u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
+    return sign_extend(val, 25);
+  }
+  case R_ARM_THM_PC8:
+  case R_ARM_TLS_DESC:
+  case R_ARM_TLS_DTPMOD32:
+  case R_ARM_TLS_DTPOFF32:
+  case R_ARM_TLS_TPOFF32:
+  case R_ARM_GOTOFF32:
+    return 0;
+  case R_ARM_BASE_PREL:
+  case R_ARM_GOT_BREL:
+    return *(i32 *)loc;
+  case R_ARM_CALL:
+  case R_ARM_JUMP24:
+    return sign_extend(*(u32 *)loc & 0x00ff'ffff, 23) << 2;
+  case R_ARM_THM_JUMP24:
+  case R_ARM_BASE_ABS:
+  case R_ARM_TARGET1:
+  case R_ARM_SBREL31:
+  case R_ARM_V4BX:
+  case R_ARM_TARGET2:
+  case R_ARM_PREL31:
+  case R_ARM_MOVW_ABS_NC:
+  case R_ARM_MOVT_ABS:
+  case R_ARM_MOVW_PREL_NC:
+  case R_ARM_MOVT_PREL:
+    return 0;
+  case R_ARM_THM_MOVW_ABS_NC:
+    return write_thm_mov_imm();
+  case R_ARM_THM_MOVT_ABS:
+    return write_thm_mov_imm() << 16;
+  case R_ARM_THM_MOVW_PREL_NC:
+  case R_ARM_THM_MOVT_PREL:
+  case R_ARM_THM_JUMP19:
+  case R_ARM_THM_JUMP6:
+  case R_ARM_THM_ALU_PREL_11_0:
+  case R_ARM_THM_PC12:
+  case R_ARM_ALU_PC_G0_NC:
+  case R_ARM_ALU_PC_G0:
+  case R_ARM_ALU_PC_G1_NC:
+  case R_ARM_ALU_PC_G1:
+  case R_ARM_ALU_PC_G2:
+  case R_ARM_LDR_PC_G1:
+  case R_ARM_LDR_PC_G2:
+  case R_ARM_LDRS_PC_G0:
+  case R_ARM_LDRS_PC_G1:
+  case R_ARM_LDRS_PC_G2:
+  case R_ARM_MOVW_BREL_NC:
+  case R_ARM_MOVT_BREL:
+  case R_ARM_MOVW_BREL:
+  case R_ARM_THM_MOVW_BREL_NC:
+  case R_ARM_THM_MOVT_BREL:
+  case R_ARM_THM_MOVW_BREL:
+  case R_ARM_TLS_GOTDESC:
+  case R_ARM_TLS_CALL:
+  case R_ARM_TLS_DESCSEQ:
+  case R_ARM_THM_TLS_CALL:
+  case R_ARM_GOT_PREL:
+  case R_ARM_THM_JUMP11:
+  case R_ARM_THM_JUMP8:
+  case R_ARM_TLS_GD32:
+  case R_ARM_TLS_LDM32:
+  case R_ARM_TLS_LDO32:
+  case R_ARM_TLS_IE32:
+  case R_ARM_TLS_LE32:
+  case R_ARM_TLS_LDO12:
+    return 0;
+  }
   unreachable();
 }
 
