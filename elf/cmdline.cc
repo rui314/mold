@@ -83,7 +83,7 @@ Options:
   --gdb-index                 Ignored
   --hash-style [sysv,gnu,both]
                               Set hash style
-  --icf                       Fold identical code
+  --icf=[all,none]            Fold identical code
     --no-icf
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
