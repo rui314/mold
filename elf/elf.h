@@ -1278,7 +1278,6 @@ struct X86_64 {
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 pltgot_size = 8;
-  static constexpr u32 tls_offset = -1;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
 };
@@ -1309,7 +1308,6 @@ struct I386 {
   static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
-  static constexpr u32 tls_offset = -1;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
   static constexpr bool is_le = true;
@@ -1341,7 +1339,6 @@ struct ARM64 {
   static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
-  static constexpr u32 tls_offset = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
@@ -1373,7 +1370,6 @@ struct ARM32 {
   static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
-  static constexpr u32 tls_offset = 0;
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
   static constexpr bool is_le = true;
@@ -1405,7 +1401,6 @@ struct RISCV64 {
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_offset = 0;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
 };

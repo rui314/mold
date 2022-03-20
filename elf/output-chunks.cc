@@ -1049,10 +1049,12 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     *rel++ = reloc<E>(addr + E::word_size, E::R_DTPOFF, dynsym_idx);
   }
 
-  if constexpr (E::e_machine != EM_RISCV)
+  if constexpr (E::e_machine != EM_RISCV) {
+    // TLSDESC is not defined for the RISC-V psABI.
     for (Symbol<E> *sym : tlsdesc_syms)
       *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
                         sym->get_dynsym_idx(ctx));
+  }
 
   for (Symbol<E> *sym : gottp_syms) {
     // If we know nothing about the symbol, let the dynamic linker
@@ -1073,10 +1075,15 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
     // Otherwise, we know the offset at link-time, so fill the GOT entry.
     i64 idx = sym->get_gottp_idx(ctx);
-    if (E::tls_offset == -1)
+    if constexpr (E::e_machine == EM_X86_64 || E::e_machine == EM_386) {
       buf[idx] = sym->get_addr(ctx) - ctx.tls_end;
-    else
-      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + E::tls_offset;
+    } else if constexpr (E::e_machine == EM_AARCH64) {
+      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + 16;
+    } else if constexpr (E::e_machine == EM_RISCV || E::e_machine == EM_ARM) {
+      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin;
+    } else {
+      unreachable();
+    }
   }
 
   if (tlsld_idx != -1)
