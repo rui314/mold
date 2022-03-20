@@ -12,10 +12,10 @@ mkdir -p $t
 
 [ "$(uname -m)" = riscv64 ] && { echo skipped; exit; }
 
-echo 'int main() {}' | riscv64-linux-gnu-gcc-10 -o $t/exe -xc - >& /dev/null \
+echo 'int main() {}' | riscv64-linux-gnu-gcc -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 
-cat <<EOF | riscv64-linux-gnu-gcc-10 -o $t/a.o -c -g -xc -
+cat <<EOF | riscv64-linux-gnu-gcc -o $t/a.o -c -g -xc -
 #include <stdio.h>
 
 int main() {
@@ -24,7 +24,7 @@ int main() {
 }
 EOF
 
-riscv64-linux-gnu-gcc-10 -B. -o $t/exe $t/a.o -static
+riscv64-linux-gnu-gcc -B. -o $t/exe $t/a.o -static
 riscv64-linux-gnu-readelf -p .comment $t/exe | grep -qw mold
 riscv64-linux-gnu-readelf -a $t/exe >& $t/log
 
