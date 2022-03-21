@@ -10,16 +10,9 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-if [ "$(uname -m)" = x86_64 ]; then
-  dialect=gnu
-elif [ "$(uname -m)" = aarch64 ]; then
-  dialect=trad
-else
-  echo skipped
-  exit 0
-fi
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
+cat <<EOF | gcc -mtls-dialect=gnu -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 static _Thread_local int x1 = 1;
@@ -37,14 +30,14 @@ int main() {
 }
 EOF
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/b.o -xc -
+cat <<EOF | gcc -mtls-dialect=gnu -fPIC -c -o $t/b.o -xc -
 _Thread_local int x3 = 3;
 static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/c.o -xc -
+cat <<EOF | gcc -mtls-dialect=gnu -fPIC -c -o $t/c.o -xc -
 _Thread_local int x4 = 4;
 static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
