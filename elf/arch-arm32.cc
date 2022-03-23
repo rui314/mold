@@ -204,7 +204,43 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {}
+void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
+  std::span<ElfRel<E>> rels = get_rels(ctx);
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &rel = rels[i];
+    if (rel.r_type == R_ARM_NONE)
+      continue;
+
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = base + rel.r_offset;
+
+    if (!sym.file) {
+      report_undef(ctx, file, sym);
+      continue;
+    }
+
+    SectionFragment<E> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
+
+#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A (frag ? addend : this->get_addend(rel))
+
+    switch (rel.r_type) {
+    case R_ARM_ABS32:
+      *(u32 *)loc = S + A;
+      break;
+    default:
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel;
+      break;
+    }
+
+#undef S
+#undef A
+  }
+}
 
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
