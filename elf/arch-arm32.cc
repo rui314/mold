@@ -131,7 +131,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.esym().is_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        val = P + 4;
+        val = 4;
         is_thumb = true;
       } else {
         val = S + A - P;
@@ -301,8 +301,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ARM_PREL31:
     case R_ARM_THM_MOVW_ABS_NC:
-    case R_ARM_THM_MOVT_ABS:
       break;
+    case R_ARM_THM_MOVT_ABS: {
+      Action table[][4] = {
+        // Absolute  Local    Imported data  Imported code
+        {  ERROR,    NONE,    ERROR,         ERROR },      // DSO
+        {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,    COPYREL,       PLT   },      // PDE
+      };
+      dispatch(ctx, table, i, rel, sym);
+      break;
+    }
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
