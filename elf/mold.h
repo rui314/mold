@@ -1936,7 +1936,7 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     return (i64)(val << (63 - size)) >> (63 - size);
   };
 
-  auto write_thm_mov_imm = [&]() -> i32 {
+  auto read_thm_mov_imm = [&]() -> i32 {
     u32 imm4 = bits(*(u16 *)loc, 3, 0);
     u32 i = bit(*(u16 *)loc, 10);
     u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
@@ -1991,9 +1991,9 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
   case R_ARM_MOVT_PREL:
     return 0;
   case R_ARM_THM_MOVW_ABS_NC:
-    return write_thm_mov_imm();
+    return read_thm_mov_imm();
   case R_ARM_THM_MOVT_ABS:
-    return write_thm_mov_imm() << 16;
+    return read_thm_mov_imm() << 16;
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_JUMP19:

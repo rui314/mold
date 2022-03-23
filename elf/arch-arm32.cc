@@ -17,6 +17,7 @@ static u32 bits(u32 val, i64 hi, i64 lo) {
 }
 
 static void write_thm_mov_imm(u8 *loc, u32 val) {
+  // https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/MOVT
   u32 imm4 = bits(val, 15, 12);
   u32 i = bit(val, 11);
   u32 imm3 = bits(val, 10, 8);
@@ -43,10 +44,10 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     static const u32 plt[] = {
-      0xe59fc004, // ldr ip, 2f
-      0xe08cc00f, // 1: add ip, ip, pc
+      0xe59fc004, // 1: ldr ip, 2f
+      0xe08cc00f, // add ip, ip, pc
       0xe59cf000, // ldr pc, [ip]
-      0x00000000, // 2: .word sym@PLTGOT - 1b - 8
+      0x00000000, // 2: .word sym@PLTGOT - 1b
     };
 
     u8 *ent = buf + sizeof(plt0) + sym->get_plt_idx(ctx) * sizeof(plt);
@@ -61,10 +62,10 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     static const u32 plt[] = {
-      0xe59fc004, // ldr ip, 2f
-      0xe08cc00f, // 1: add ip, ip, pc
+      0xe59fc004, // 1: ldr ip, 2f
+      0xe08cc00f, // add ip, ip, pc
       0xe59cf000, // ldr pc, [ip]
-      0x00000000, // 2: .word sym@GOT - 1b - 8
+      0x00000000, // 2: .word sym@GOT - 1b
     };
 
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * sizeof(plt);
