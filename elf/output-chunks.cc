@@ -1570,6 +1570,8 @@ void MergedSection<E>::print_stats(Context<E> &ctx) {
 
 template <typename E>
 void EhFrameSection<E>::construct(Context<E> &ctx) {
+  Timer t(ctx, "eh_frame");
+
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {

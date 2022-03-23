@@ -600,15 +600,8 @@ static int elf_main(int argc, char **argv) {
   // .eh_frame is a special section from the linker's point of view,
   // as its contents are parsed and reconstructed by the linker,
   // unlike other sections that are regarded as opaque bytes.
-  // Here, we transplant .eh_frame sections from a regular output
-  // section to the special EHFrameSection.
-  {
-    Timer t(ctx, "eh_frame");
-    std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-      return chunk->is_output_section() && chunk->name == ".eh_frame";
-    });
-    ctx.eh_frame->construct(ctx);
-  }
+  // Here, we construct output .eh_frame contents.
+  ctx.eh_frame->construct(ctx);
 
   // If --emit-relocs is given, we'll copy relocation sections from input
   // files to an output file.
