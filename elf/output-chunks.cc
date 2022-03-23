@@ -52,6 +52,11 @@ u64 get_eflags(Context<E> &ctx) {
 }
 
 template <>
+u64 get_eflags<ARM32>(Context<ARM32> &ctx) {
+  return EF_ARM_EABI_VER5;
+}
+
+template <>
 u64 get_eflags<RISCV64>(Context<RISCV64> &ctx) {
   std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
   std::erase(objs, ctx.internal_obj);
