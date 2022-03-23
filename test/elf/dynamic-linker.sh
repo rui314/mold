@@ -13,7 +13,6 @@ mkdir -p $t
 cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .globl _start
 _start:
-  ret
 EOF
 
 "$mold" -o $t/exe $t/a.o
