@@ -158,6 +158,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_NULL:
       break;
     default: {
+      if (E::e_machine == EM_ARM && shdr.sh_type == SHT_ARM_ATTRIBUTES)
+        continue;
+
       std::string_view name = this->shstrtab.data() + shdr.sh_name;
       if (name == ".note.GNU-stack" || name.starts_with(".gnu.warning."))
         continue;

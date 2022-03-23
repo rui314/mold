@@ -67,6 +67,7 @@ static constexpr u32 SHT_GNU_VERDEF = 0x6ffffffd;
 static constexpr u32 SHT_GNU_VERNEED = 0x6ffffffe;
 static constexpr u32 SHT_GNU_VERSYM = 0x6fffffff;
 static constexpr u32 SHT_X86_64_UNWIND = 0x70000001;
+static constexpr u32 SHT_ARM_ATTRIBUTES = 0x70000003;
 
 static constexpr u32 SHF_WRITE = 0x1;
 static constexpr u32 SHF_ALLOC = 0x2;
