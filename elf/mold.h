@@ -1963,7 +1963,7 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     u32 imm10 = bits(*(u16 *)loc, 9, 0);
     u32 imm11 = bits(*(u16 *)(loc + 2), 10, 0);
     u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
-    return sign_extend(val, 25);
+    return sign_extend(val, 24);
   }
   case R_ARM_THM_PC8:
   case R_ARM_TLS_DESC:

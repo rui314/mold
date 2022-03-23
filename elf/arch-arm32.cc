@@ -16,6 +16,28 @@ static u32 bits(u32 val, i64 hi, i64 lo) {
   return (val >> lo) & ((1LL << (hi - lo + 1)) - 1);
 }
 
+static void write_thm_bl_imm(u8 *loc, u32 val, bool is_blx) {
+  // https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/BL--BLX--immediate-
+  u32 sign = bit(val, 24);
+  u32 I1 = bit(val, 23);
+  u32 I2 = bit(val, 22);
+  u32 J1 = !I1 ^ sign;
+  u32 J2 = !I2 ^ sign;
+  u32 imm10H = bits(val, 21, 12);
+  u32 imm10L = bits(val, 11, 2);
+  u32 imm11 = bits(val, 11, 1);
+
+  *(u16 *)loc = (*(u16 *)loc & 0xf800) | (sign << 10) | imm10H;
+
+  // R_ARM_THUM_CALL is used for BL or BLX instructions. BL and BLX
+  // differ only at bit 12. We need to use BLX if we are switching
+  // from THUMB to ARM.
+  if (is_blx)
+    *(u16 *)(loc + 2) = 0xc000 | (J1 << 13) | (J2 << 11) | (imm10L << 1);
+  else
+    *(u16 *)(loc + 2) = 0xd000 | (J1 << 13) | (1 << 12) | (J2 << 11) | imm11;
+}
+
 static void write_thm_mov_imm(u8 *loc, u32 val) {
   // https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/MOVT
   u32 imm4 = bits(val, 15, 12);
@@ -104,7 +126,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (frag_ref ? frag_ref->addend : this->get_addend(rel))
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define T   (sym.esym().st_type == STT_FUNC && (sym.get_addr(ctx) & 1))
+#define T   (sym.get_addr(ctx) & 1)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
@@ -124,40 +146,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_REL32:
       *(u32 *)loc = S + A - P;
       continue;
-    case R_ARM_THM_CALL: {
-      u32 val;
-      bool is_thumb;
-
+    case R_ARM_THM_CALL:
       if (sym.esym().is_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        val = 4;
-        is_thumb = true;
+        write_thm_bl_imm(loc, 4, false);
+      } else if (T) {
+        write_thm_bl_imm(loc, S + A - P, false);
       } else {
-        val = S + A - P;
-        is_thumb = T;
+        write_thm_bl_imm(loc, align_to(S + A - P, 4), true);
       }
-
-      u32 sign = bit(val, 24);
-      u32 I1 = bit(val, 23);
-      u32 I2 = bit(val, 22);
-      u32 J1 = !I1 ^ sign;
-      u32 J2 = !I2 ^ sign;
-      u32 imm10H = bits(val, 21, 12);
-      u32 imm10L = bits(val, 11, 2);
-      u32 imm11 = bits(val, 11, 1);
-
-      *(u16 *)loc = (*(u16 *)loc & 0xf800) | (sign << 10) | imm10H;
-
-      // R_ARM_THUM_CALL is used for BL or BLX instructions. BL and BLX
-      // differ only at bit 12. We need to use BLX if we are switching
-      // from THUMB to ARM.
-      if (is_thumb)
-        *(u16 *)(loc + 2) = 0xd000 | (J1 << 13) | (1 << 12) | (J2 << 11) | imm11;
-      else
-        *(u16 *)(loc + 2) = 0xc000 | (J1 << 13) | (J2 << 11) | (imm10L << 1);
       continue;
-    }
     case R_ARM_BASE_PREL:
       *(u32 *)loc = GOT + A - P;
       continue;
