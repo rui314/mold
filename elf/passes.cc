@@ -76,6 +76,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.versym = push(new VersymSection<E>);
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
+
+  if constexpr (E::e_machine == EM_ARM)
+    ctx.thumb_to_arm = push(new ThumbToArmSection);
 }
 
 template <typename E>
@@ -345,9 +348,9 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   obj->features = -1;
   obj->priority = 1;
 
-  auto add = [&](std::string_view name) {
+  auto add = [&](std::string_view name, u8 st_type = STT_NOTYPE) {
     ElfSym<E> esym = {};
-    esym.st_type = STT_NOTYPE;
+    esym.st_type = st_type;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = STV_HIDDEN;
@@ -390,6 +393,11 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
 
   if (E::e_machine == EM_RISCV && !ctx.arg.shared)
     ctx.__global_pointer = add("__global_pointer$");
+
+  if constexpr (E::e_machine == EM_ARM) {
+    ctx.__exidx_start = add("__exidx_start");
+    ctx.__exidx_end = add("__exidx_end");
+  }
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (!is_c_identifier(chunk->name))
@@ -891,6 +899,10 @@ void scan_rels(Context<E> &ctx) {
       }
     }
 
+    if constexpr (E::e_machine == EM_ARM)
+      if (sym->flags & NEEDS_THUMB_TO_ARM_THUNK)
+        ctx.thumb_to_arm->add_symbol(ctx, sym);
+
     sym->flags = 0;
   }
 
@@ -1349,6 +1361,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
     if (Chunk<E> *chunk = find(".sdata"))
       ctx.__global_pointer->shndx = -chunk->shndx;
+  }
+
+  // ARM32's __exidx_{start,end}
+  if constexpr (E::e_machine == EM_ARM) {
+    if (Chunk<E> *chunk = find(".ARM.exidx")) {
+      start(ctx.__exidx_start, chunk);
+      stop(ctx.__exidx_end, chunk);
+    }
   }
 
   // __start_ and __stop_ symbols

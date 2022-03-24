@@ -67,6 +67,7 @@ static constexpr u32 SHT_GNU_VERDEF = 0x6ffffffd;
 static constexpr u32 SHT_GNU_VERNEED = 0x6ffffffe;
 static constexpr u32 SHT_GNU_VERSYM = 0x6fffffff;
 static constexpr u32 SHT_X86_64_UNWIND = 0x70000001;
+static constexpr u32 SHT_ARM_EXIDX = 0x70000001;
 static constexpr u32 SHT_ARM_ATTRIBUTES = 0x70000003;
 
 static constexpr u32 SHF_WRITE = 0x1;
@@ -123,6 +124,7 @@ static constexpr u32 PT_TLS = 7;
 static constexpr u32 PT_GNU_EH_FRAME = 0x6474e550;
 static constexpr u32 PT_GNU_STACK = 0x6474e551;
 static constexpr u32 PT_GNU_RELRO = 0x6474e552;
+static constexpr u32 PT_ARM_EXIDX = 0x70000001;
 
 static constexpr u32 PF_X = 1;
 static constexpr u32 PF_W = 2;
@@ -1375,7 +1377,7 @@ struct ARM32 {
   static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
-  static constexpr u32 pltgot_size = 8;
+  static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = true;
   static constexpr bool is_le = true;
 };

@@ -304,6 +304,16 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     }
   }
 
+  // Add PT_ARM_EDXIDX
+  if constexpr (E::e_machine == EM_ARM) {
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->shdr.sh_type == SHT_ARM_EXIDX) {
+        define(PT_ARM_EXIDX, PF_R, 4, chunk);
+        break;
+      }
+    }
+  }
+
   return vec;
 }
 
@@ -753,6 +763,11 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
   if (name.starts_with( ".rodata.str"))
     return ".rodata.str";
 
+  if (name.starts_with(".ARM.exidx"))
+    return ".ARM.exidx";
+  if (name.starts_with(".ARM.extab"))
+    return ".ARM.extab";
+
   static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
     ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
@@ -791,6 +806,7 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
   return name;
 }
 
+template <typename E>
 static u64 canonicalize_type(std::string_view name, u64 type) {
   if (type == SHT_PROGBITS) {
     if (name == ".init_array" || name.starts_with(".init_array."))
@@ -798,8 +814,8 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
     if (name == ".fini_array" || name.starts_with(".fini_array."))
       return SHT_FINI_ARRAY;
   }
-  if (type == SHT_X86_64_UNWIND)
-    return SHT_PROGBITS;
+  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
+      return SHT_PROGBITS;
   return type;
 }
 
@@ -808,8 +824,8 @@ OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
   name = get_output_name(ctx, name);
-  type = canonicalize_type(name, type);
-  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
+  type = canonicalize_type<E>(name, type);
+  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED & ~(u64)SHF_LINK_ORDER;
 
   // .init_array is usually writable. We don't want to create multiple
   // .init_array output sections, so make it always writable.
@@ -1033,7 +1049,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     i64 idx = sym->get_tlsgd_idx(ctx);
 
     if (ctx.arg.is_static) {
-      entries.push_back({idx, 0});
+      entries.push_back({idx, 1});
       entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.tls_begin});
     } else {
       entries.push_back({idx, 0, E::R_DTPMOD, sym});
@@ -1041,7 +1057,6 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  // NB: TLSDESC is not defined for the RISC-V psABI.
   if constexpr (E::e_machine != EM_RISCV)
     for (Symbol<E> *sym : tlsdesc_syms)
       entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
@@ -1066,9 +1081,11 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     // Otherwise, we know the offset at link-time, so fill the GOT entry.
     if constexpr (E::e_machine == EM_X86_64 || E::e_machine == EM_386) {
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
+    } else if constexpr (E::e_machine == EM_ARM) {
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 8});
     } else if constexpr (E::e_machine == EM_AARCH64) {
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 16});
-    } else if constexpr (E::e_machine == EM_RISCV || E::e_machine == EM_ARM) {
+    } else if constexpr (E::e_machine == EM_RISCV) {
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin});
     } else {
       unreachable();
@@ -2194,6 +2211,51 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       }
     }
   });
+}
+
+// ARM defines Thumb instructions to represent frequently-used
+// instructions in 16 bits instead of 32 bits. Processors supporting
+// Thumb supports the ARM and Thumb modes, and Thumb instructions can
+// be executed if and only if the processor is in the Thumb mode.  The
+// processor mode is switched by BX (branch and mode exchange) or BLX
+// (branch, link and mode exchange) instructions.
+//
+// If a function referenced by a Thumb B (branch) instruction is
+// resovled to a non-thumb function, we can't directly jump from the
+// thumb function to the ARM function. In order to support such
+// function calls, we insert a small piece of code to the resulting
+// executable which switches the processor mode from Thumb to ARM.
+// This section contains such code.
+void ThumbToArmSection::add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym) {
+  if (sym->extra.thumb_to_arm_thunk_idx == -1) {
+    sym->extra.thumb_to_arm_thunk_idx = symbols.size();
+    symbols.push_back(sym);
+  }
+}
+
+void ThumbToArmSection::update_shdr(Context<ARM32> &ctx) {
+  this->shdr.sh_size = symbols.size() * ENTRY_SIZE;
+}
+
+void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  i64 offset = 0;
+
+  static u16 insn[] = {
+    0x4778, // bx pc
+    0x46c0, // nop
+    0, 0,   // b <imm24>
+  };
+
+  static_assert(sizeof(insn) == ENTRY_SIZE);
+
+  for (Symbol<ARM32> *sym : symbols) {
+    memcpy(buf + offset, insn, sizeof(insn));
+
+    u32 val = sym->get_addr(ctx) - this->shdr.sh_addr - offset - 12;
+    *(u32 *)(buf + offset + 4) = 0xea00'0000 | (0x00ff'ffff & (val >> 2));
+    offset += sizeof(insn);
+  }
 }
 
 #define INSTANTIATE(E)                                                  \

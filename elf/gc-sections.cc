@@ -11,13 +11,17 @@ namespace mold::elf {
 
 template <typename E>
 static bool is_init_fini(const InputSection<E> &isec) {
-  return isec.shdr().sh_type == SHT_INIT_ARRAY ||
-         isec.shdr().sh_type == SHT_FINI_ARRAY ||
-         isec.shdr().sh_type == SHT_PREINIT_ARRAY ||
-         isec.name().starts_with(".ctors") ||
-         isec.name().starts_with(".dtors") ||
-         isec.name().starts_with(".init") ||
-         isec.name().starts_with(".fini");
+  u32 type = isec.shdr().sh_type;
+  std::string_view name = isec.name();
+
+  return type == SHT_INIT_ARRAY ||
+         type == SHT_FINI_ARRAY ||
+         type == SHT_PREINIT_ARRAY ||
+         (E::e_machine == EM_ARM && type == SHT_ARM_EXIDX) ||
+         name.starts_with(".ctors") ||
+         name.starts_with(".dtors") ||
+         name.starts_with(".init") ||
+         name.starts_with(".fini");
 }
 
 template <typename E>

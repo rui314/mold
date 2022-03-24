@@ -900,6 +900,24 @@ private:
   std::vector<i64> offsets;
 };
 
+class ThumbToArmSection : public Chunk<ARM32> {
+public:
+  ThumbToArmSection() {
+    this->name = ".thumb_to_arm";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 4;
+  }
+
+  void add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym);
+  void update_shdr(Context<ARM32> &ctx) override;
+  void copy_buf(Context<ARM32> &ctx) override;
+
+  std::vector<Symbol<ARM32> *> symbols;
+
+  static constexpr i64 ENTRY_SIZE = 8;
+};
+
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -1300,6 +1318,12 @@ template <typename E> void write_dependency_file(Context<E> &);
 // arch-arm64.cc
 //
 
+void sort_arm_exidx(Context<ARM32> &ctx);
+
+//
+// arch-arm64.cc
+//
+
 i64 create_range_extension_thunks(Context<ARM64> &ctx);
 void write_thunks(Context<ARM64> &ctx);
 
@@ -1609,6 +1633,7 @@ struct Context {
   std::unique_ptr<VerdefSection<E>> verdef;
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
+  std::unique_ptr<ThumbToArmSection> thumb_to_arm;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
@@ -1629,6 +1654,8 @@ struct Context {
   Symbol<E> *__bss_start = nullptr;
   Symbol<E> *__ehdr_start = nullptr;
   Symbol<E> *__executable_start = nullptr;
+  Symbol<E> *__exidx_end = nullptr;
+  Symbol<E> *__exidx_start = nullptr;
   Symbol<E> *__fini_array_end = nullptr;
   Symbol<E> *__fini_array_start = nullptr;
   Symbol<E> *__global_pointer = nullptr;
@@ -1665,18 +1692,24 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 //
 
 enum {
-  NEEDS_GOT      = 1 << 0,
-  NEEDS_PLT      = 1 << 1,
-  NEEDS_GOTTP    = 1 << 2,
-  NEEDS_TLSGD    = 1 << 3,
-  NEEDS_COPYREL  = 1 << 4,
-  NEEDS_TLSDESC  = 1 << 5,
-  NEEDS_THUNK    = 1 << 6,
+  NEEDS_GOT                = 1 << 0,
+  NEEDS_PLT                = 1 << 1,
+  NEEDS_GOTTP              = 1 << 2,
+  NEEDS_TLSGD              = 1 << 3,
+  NEEDS_COPYREL            = 1 << 4,
+  NEEDS_TLSDESC            = 1 << 5,
+  NEEDS_THUMB_TO_ARM_THUNK = 1 << 6,
+  NEEDS_RANGE_EXTN_THUNK   = 1 << 7,
 };
 
 // A struct to hold taret-dependent symbol members;
 template <typename E>
 struct SymbolExtras {};
+
+template <>
+struct SymbolExtras<ARM32> {
+  i32 thumb_to_arm_thunk_idx = -1;
+};
 
 template <>
 struct SymbolExtras<ARM64> {
@@ -1946,12 +1979,19 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     return (i64)(val << (63 - size)) >> (63 - size);
   };
 
+  auto read_mov_imm = [&]() -> i32 {
+    u32 imm12 = bits(*(u32 *)loc, 11, 0);
+    u32 imm4 = bits(*(u32 *)loc, 19, 16);
+    return sign_extend((imm4 << 12) | imm12, 15);
+  };
+
   auto read_thm_mov_imm = [&]() -> i32 {
     u32 imm4 = bits(*(u16 *)loc, 3, 0);
     u32 i = bit(*(u16 *)loc, 10);
     u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
     u32 imm8 = bits(*(u16 *)(loc + 2), 7, 0);
-    return (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
+    u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
+    return sign_extend(val, 15);
   };
 
   switch (rel.r_type) {
@@ -1959,8 +1999,20 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     return 0;
   case R_ARM_ABS32:
   case R_ARM_REL32:
+  case R_ARM_TARGET1:
+  case R_ARM_BASE_PREL:
+  case R_ARM_GOT_BREL:
+  case R_ARM_TLS_GD32:
+  case R_ARM_TLS_LDM32:
+  case R_ARM_TLS_LDO32:
+  case R_ARM_TLS_IE32:
+  case R_ARM_TLS_LE32:
+  case R_ARM_TLS_GOTDESC:
+  case R_ARM_TARGET2:
     return *(i32 *)loc;
-  case R_ARM_THM_CALL: {
+  case R_ARM_THM_CALL:
+  case R_ARM_THM_JUMP24:
+  case R_ARM_THM_TLS_CALL: {
     u32 S = bit(*(u16 *)loc, 10);
     u32 J1 = bit(*(u16 *)(loc + 2), 13);
     u32 J2 = bit(*(u16 *)(loc + 2), 11);
@@ -1971,19 +2023,22 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
     return sign_extend(val, 24);
   }
-  case R_ARM_BASE_PREL:
-  case R_ARM_GOT_BREL:
-    return *(i32 *)loc;
   case R_ARM_CALL:
   case R_ARM_JUMP24:
     return sign_extend(*(u32 *)loc & 0x00ff'ffff, 23) << 2;
+  case R_ARM_MOVW_PREL_NC:
+  case R_ARM_MOVT_PREL:
+    return read_mov_imm();
   case R_ARM_PREL31:
     return sign_extend(*(u32 *)loc, 30);
+  case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
     return read_thm_mov_imm();
+  case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_MOVT_ABS:
-    return read_thm_mov_imm() << 16;
+    return read_thm_mov_imm();
   }
+std::cerr << "rel=" << rel_to_string<ARM32>(rel.r_type) << "\n";
   unreachable();
 }
 

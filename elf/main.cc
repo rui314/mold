@@ -691,6 +691,9 @@ static int elf_main(int argc, char **argv) {
   if constexpr (E::e_machine == EM_AARCH64)
     write_thunks(ctx);
 
+  if constexpr (E::e_machine == EM_ARM)
+    sort_arm_exidx(ctx);
+
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
   ctx.reldyn->sort(ctx);
