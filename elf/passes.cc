@@ -1256,13 +1256,16 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   };
 
+  auto find = [&](std::string name) -> Chunk<E> * {
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (chunk->name == ".bss")
+        return chunk;
+    return nullptr;
+  };
+
   // __bss_start
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->is_output_section() && chunk->name == ".bss") {
-      start(ctx.__bss_start, chunk);
-      break;
-    }
-  }
+  if (Chunk<E> *chunk = find(".bss"))
+    start(ctx.__bss_start, chunk);
 
   // __ehdr_start and __executable_start
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -1344,12 +1347,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     ctx.__global_pointer->shndx = 1;
     ctx.__global_pointer->value = 0x800;
 
-    for (Chunk<E> *chunk : ctx.chunks) {
-      if (chunk->name == ".sdata") {
-        ctx.__global_pointer->shndx = -chunk->shndx;
-        break;
-      }
-    }
+    if (Chunk<E> *chunk = find(".sdata"))
+      ctx.__global_pointer->shndx = -chunk->shndx;
   }
 
   // __start_ and __stop_ symbols
