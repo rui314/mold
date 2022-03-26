@@ -1258,7 +1258,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   auto find = [&](std::string name) -> Chunk<E> * {
     for (Chunk<E> *chunk : ctx.chunks)
-      if (chunk->name == ".bss")
+      if (chunk->name == name)
         return chunk;
     return nullptr;
   };
