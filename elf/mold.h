@@ -440,6 +440,14 @@ private:
 };
 
 template <typename E>
+struct GotEntry {
+  i64 idx = 0;
+  u64 val = 0;
+  i64 r_type = 0;
+  Symbol<E> *sym = nullptr;
+};
+
+template <typename E>
 class GotSection : public Chunk<E> {
 public:
   GotSection() {
@@ -467,6 +475,9 @@ public:
 
   void construct_relr(Context<E> &ctx);
   std::vector<typename E::WordTy> relr;
+
+private:
+  std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
 };
 
 template <typename E>

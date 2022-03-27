@@ -993,23 +993,85 @@ u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
 template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (Symbol<E> *sym : got_syms)
-    if (sym->is_imported ||
-        sym->get_type() == STT_GNU_IFUNC ||
-        (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr))
+  for (GotEntry<E> &ent : get_entries(ctx))
+    if (ent.r_type &&
+        (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
       n++;
+  return n * sizeof(ElfRel<E>);
+}
 
-  n += tlsgd_syms.size() * 2;
-  n += tlsdesc_syms.size();
+// Fill .got and .rel.dyn.
+template <typename E>
+std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
+  std::vector<GotEntry<E>> entries;
 
-  for (Symbol<E> *sym : gottp_syms)
-    if (sym->is_imported || ctx.arg.shared)
-      n++;
+  for (Symbol<E> *sym : got_syms) {
+    i64 idx = sym->get_got_idx(ctx);
+
+    // If the symbol may not be defined within our output, let the
+    // dynamic linker to resolve it.
+    if (sym->is_imported) {
+      entries.push_back({idx, 0, E::R_GLOB_DAT, sym});
+      continue;
+    }
+
+    // IFUNC always needs to be fixed up by the dynamic linker.
+    if (sym->get_type() == STT_GNU_IFUNC) {
+      entries.push_back({idx, sym->get_addr(ctx, false), E::R_IRELATIVE});
+      continue;
+    }
+
+    // If we know the address at address at link-time, fill that GOT entry
+    // now. It may need a base relocation, though.
+    if (ctx.arg.pic && sym->is_relative())
+      entries.push_back({idx, sym->get_addr(ctx, false), E::R_RELATIVE});
+    else
+      entries.push_back({idx, sym->get_addr(ctx, false)});
+  }
+
+  for (Symbol<E> *sym : tlsgd_syms) {
+    i64 idx = sym->get_tlsgd_idx(ctx);
+    entries.push_back({idx, 0, E::R_DTPMOD, sym});
+    entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
+  }
+
+  // NB: TLSDESC is not defined for the RISC-V psABI.
+  if constexpr (E::e_machine != EM_RISCV)
+    for (Symbol<E> *sym : tlsdesc_syms)
+      entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
+
+  for (Symbol<E> *sym : gottp_syms) {
+    i64 idx = sym->get_gottp_idx(ctx);
+
+    // If we know nothing about the symbol, let the dynamic linker
+    // to fill the GOT entry.
+    if (sym->is_imported) {
+      entries.push_back({idx, 0, E::R_TPOFF, sym});
+      continue;
+    }
+
+    // If we know the offset within the current thread vector,
+    // let the dynamic linker to adjust it.
+    if (ctx.arg.shared) {
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
+      continue;
+    }
+
+    // Otherwise, we know the offset at link-time, so fill the GOT entry.
+    if constexpr (E::e_machine == EM_X86_64 || E::e_machine == EM_386) {
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
+    } else if constexpr (E::e_machine == EM_AARCH64) {
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 16});
+    } else if constexpr (E::e_machine == EM_RISCV || E::e_machine == EM_ARM) {
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin});
+    } else {
+      unreachable();
+    }
+  }
 
   if (tlsld_idx != -1)
-    n++;
-
-  return n * sizeof(ElfRel<E>);
+    entries.push_back({tlsld_idx, 0, E::R_DTPMOD});
+  return entries;
 }
 
 // Fill .got and .rel.dyn.
@@ -1022,87 +1084,24 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
-  for (Symbol<E> *sym : got_syms) {
-    u64 addr = sym->get_got_addr(ctx);
+  for (GotEntry<E> &ent : get_entries(ctx)) {
+    buf[ent.idx] = ent.val;
 
-    // If the symbol may not be defined within our output, let the
-    // dynamic linker to resolve it.
-    if (sym->is_imported) {
-      *rel++ = reloc<E>(addr, E::R_GLOB_DAT, sym->get_dynsym_idx(ctx));
-      continue;
-    }
-
-    // IFUNC always needs to be fixed up by the dynamic linker.
-    if (sym->get_type() == STT_GNU_IFUNC) {
-      u64 resolver_addr = sym->get_addr(ctx, false);
-      *rel++ = reloc<E>(addr, E::R_IRELATIVE, 0, resolver_addr);
-      buf[sym->get_got_idx(ctx)] = resolver_addr;
-      continue;
-    }
-
-    // If we know the address at address at link-time, fill that GOT entry
-    // now. It may need a base relocation, though.
-    buf[sym->get_got_idx(ctx)] = sym->get_addr(ctx);
-    if (ctx.arg.pic && sym->is_relative() && !ctx.arg.pack_dyn_relocs_relr)
-      *rel++ = reloc<E>(addr, E::R_RELATIVE, 0, (i64)sym->get_addr(ctx));
+    if (ent.r_type &&
+        (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
+      *rel++ = reloc<E>(this->shdr.sh_addr + ent.idx * E::word_size, ent.r_type,
+                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0, ent.val);
   }
-
-  for (Symbol<E> *sym : tlsgd_syms) {
-    u64 addr = sym->get_tlsgd_addr(ctx);
-    i32 dynsym_idx = sym->get_dynsym_idx(ctx);
-    *rel++ = reloc<E>(addr, E::R_DTPMOD, dynsym_idx);
-    *rel++ = reloc<E>(addr + E::word_size, E::R_DTPOFF, dynsym_idx);
-  }
-
-  if constexpr (E::e_machine != EM_RISCV) {
-    // TLSDESC is not defined for the RISC-V psABI.
-    for (Symbol<E> *sym : tlsdesc_syms)
-      *rel++ = reloc<E>(sym->get_tlsdesc_addr(ctx), E::R_TLSDESC,
-                        sym->get_dynsym_idx(ctx));
-  }
-
-  for (Symbol<E> *sym : gottp_syms) {
-    // If we know nothing about the symbol, let the dynamic linker
-    // to fill the GOT entry.
-    if (sym->is_imported) {
-      *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF,
-                        sym->get_dynsym_idx(ctx));
-      continue;
-    }
-
-    // If we know the offset within the current thread vector,
-    // let the dynamic linker to adjust it.
-    if (ctx.arg.shared) {
-      *rel++ = reloc<E>(sym->get_gottp_addr(ctx), E::R_TPOFF, 0,
-                        sym->get_addr(ctx) - ctx.tls_begin);
-      continue;
-    }
-
-    // Otherwise, we know the offset at link-time, so fill the GOT entry.
-    i64 idx = sym->get_gottp_idx(ctx);
-    if constexpr (E::e_machine == EM_X86_64 || E::e_machine == EM_386) {
-      buf[idx] = sym->get_addr(ctx) - ctx.tls_end;
-    } else if constexpr (E::e_machine == EM_AARCH64) {
-      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin + 16;
-    } else if constexpr (E::e_machine == EM_RISCV || E::e_machine == EM_ARM) {
-      buf[idx] = sym->get_addr(ctx) - ctx.tls_begin;
-    } else {
-      unreachable();
-    }
-  }
-
-  if (tlsld_idx != -1)
-    *rel++ = reloc<E>(get_tlsld_addr(ctx), E::R_DTPMOD, 0);
 }
 
 template <typename E>
 void GotSection<E>::construct_relr(Context<E> &ctx) {
-  std::vector<typename E::WordTy> pos;
+  assert(ctx.arg.pack_dyn_relocs_relr);
 
-  for (Symbol<E> *sym : got_syms)
-    if (!sym->is_imported && sym->get_type() != STT_GNU_IFUNC &&
-        ctx.arg.pic && sym->is_relative())
-      pos.push_back(sym->get_got_addr(ctx) - this->shdr.sh_addr);
+  std::vector<typename E::WordTy> pos;
+  for (GotEntry<E> &ent : get_entries(ctx))
+    if (ent.r_type == E::R_RELATIVE)
+      pos.push_back(ent.idx * E::word_size);
 
   relr = encode_relr(pos);
 }
