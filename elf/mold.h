@@ -287,7 +287,7 @@ public:
 
   // For RISC-V section resizing
   std::vector<i32> &get_r_deltas() const;
-  std::vector<Symbol<E> *> &get_sorted_symbols() const;
+  std::span<Symbol<E> *> get_sorted_symbols() const;
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
@@ -2022,7 +2022,7 @@ inline std::vector<i32> &InputSection<E>::get_r_deltas() const {
 }
 
 template <typename E>
-inline std::vector<Symbol<E> *> &InputSection<E>::get_sorted_symbols() const {
+inline std::span<Symbol<E> *> InputSection<E>::get_sorted_symbols() const {
   return file.sorted_symbols[shndx];
 }
 
