@@ -1031,8 +1031,14 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
   for (Symbol<E> *sym : tlsgd_syms) {
     i64 idx = sym->get_tlsgd_idx(ctx);
-    entries.push_back({idx, 0, E::R_DTPMOD, sym});
-    entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
+
+    if (ctx.arg.is_static) {
+      entries.push_back({idx, 0});
+      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.tls_begin});
+    } else {
+      entries.push_back({idx, 0, E::R_DTPMOD, sym});
+      entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
+    }
   }
 
   // NB: TLSDESC is not defined for the RISC-V psABI.

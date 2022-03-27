@@ -441,10 +441,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_AARCH64_TLSGD_ADR_PAGE21:
-      if (ctx.arg.is_static)
-        Error(ctx) << *this << ": TLSLD relocation cannot be used for a "
-                   << "statically-linked executable; recompile with "
-                   << "-mtls-dialect=desc";
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
