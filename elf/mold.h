@@ -1073,7 +1073,7 @@ private:
   uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
                       std::string_view name);
 
-  bool has_common_symbol;
+  bool has_common_symbol = false;
 
   std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;

@@ -589,7 +589,8 @@ static int elf_main(int argc, char **argv) {
   ctx.dynsym->finalize(ctx);
 
   // Fill .gnu.version_d section contents.
-  ctx.verdef->construct(ctx);
+  if (ctx.verdef)
+    ctx.verdef->construct(ctx);
 
   // Fill .gnu.version_r section contents.
   ctx.verneed->construct(ctx);
