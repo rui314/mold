@@ -21,22 +21,16 @@ int main() {
 }
 EOF
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc -static
 $t/exe
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc
 $t/exe
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -Wl,--gc-sections
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc -Wl,--gc-sections
 $t/exe
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static -Wl,--gc-sections
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -mcmodel=large
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static -mcmodel=large
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc -static -Wl,--gc-sections
 $t/exe
 
 echo OK

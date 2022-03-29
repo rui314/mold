@@ -10,6 +10,9 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+# -fPIC is incompatible with -mcmodel=large on some targets
+[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
+
 cat <<EOF > $t/a.cc
 int main() {
   try {
@@ -21,22 +24,10 @@ int main() {
 }
 EOF
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc -mcmodel=large
 $t/exe
 
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -Wl,--gc-sections
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static -Wl,--gc-sections
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -mcmodel=large
-$t/exe
-
-$CXX -B. -o $t/exe -fno-PIC $t/a.cc -static -mcmodel=large
+$CXX -B. -o $t/exe -fPIC -pie $t/a.cc -static -mcmodel=large
 $t/exe
 
 echo OK
