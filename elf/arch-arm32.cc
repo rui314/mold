@@ -474,7 +474,7 @@ void sort_arm_exidx(Context<ARM32> &ctx) {
   std::vector<Entry2> vec;
   vec.reserve(end - begin);
   for (Entry *it = begin; it < end; it++)
-    vec.emplace_back(it->addr, it->val, it - begin);
+    vec.push_back({it->addr, it->val, (u32)(it - begin)});
 
   // Sort the records
   tbb::parallel_sort(vec.begin(), vec.end(), [](const Entry2 &a, const Entry2 &b) {
