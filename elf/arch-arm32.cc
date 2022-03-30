@@ -19,8 +19,8 @@
 // byte boundaries.
 //
 // You can distinguish Thumb functions from ARM functions by looking
-// at the least significant bit (LSB) of its address. If LSB is 0,
-// it's ARM; otherwise, Thumb. LSB is not a part of its address.
+// at the least significant bit (LSB) of its "address". If LSB is 0,
+// it's ARM; otherwise, Thumb. LSB is not a part of its real address.
 // For example, if a symbol `foo` is of type STT_FUNC and has value
 // 0x2001, then `foo` is a function using Thumb instructions whose
 // address is 0x2000 (not 0x2001).
