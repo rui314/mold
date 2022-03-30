@@ -1,3 +1,30 @@
+// ARM32 is a bit special from the linker's viewpoint because ARM
+// processors support two different instruction encodings: Thumb and
+// ARM (in a narrower sense). Thumb instructions are either 16 bits or
+// 32 bits, while ARM instructions are all 32 bits. Feature-wise,
+// thumb is a subset of ARM, so not all ARM instructions are
+// representable in Thumb.
+//
+// ARM processors originally supported only ARM instructions. Thumb
+// instructions were later added to increase code density.
+//
+// ARM processors runs in either ARM mode or Thumb mode. The mode can
+// be switched using BX (branch and mode exchange)-family instructions.
+// We need to use such instructions to, for example, call a function
+// encoded in Thumb from a function encoded in ARM. Sometimes, the
+// linker even has to emit an interworking thunk code to switch from
+// Thumb to ARM.
+//
+// ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
+// byte boundaries.
+//
+// You can distinguish Thumb functions from ARM functions by looking
+// at the least significant bit (LSB) of its address. If LSB is 0,
+// it's ARM; otherwise, Thumb. LSB is not a part of its address.
+// For example, if a symbol `foo` is of type STT_FUNC and has value
+// 0x2001, then `foo` is a function using Thumb instructions whose
+// address is 0x2000 (not 0x2001).
+
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
@@ -106,6 +133,8 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+// ARM does not use .eh_frame for exception handling. Instead, it uses
+// .ARM.exidx and .ARM.extab. So this function is empty.
 template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
                                     u64 offset, u64 val) {}
