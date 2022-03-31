@@ -48,27 +48,24 @@ u64 get_entry_addr(Context<E> &ctx) {
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {
+  if constexpr (E::e_machine == EM_ARM)
+    return EF_ARM_EABI_VER5;
+
+  if constexpr (E::e_machine == EM_RISCV) {
+    std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
+    std::erase(objs, ctx.internal_obj);
+
+    if (objs.empty())
+      return 0;
+
+    u32 ret = objs[0]->get_ehdr().e_flags;
+    for (ObjectFile<RISCV64> *file : std::span(objs).subspan(1))
+      if (file->get_ehdr().e_flags & EF_RISCV_RVC)
+        ret |= EF_RISCV_RVC;
+    return ret;
+  }
+
   return 0;
-}
-
-template <>
-u64 get_eflags<ARM32>(Context<ARM32> &ctx) {
-  return EF_ARM_EABI_VER5;
-}
-
-template <>
-u64 get_eflags<RISCV64>(Context<RISCV64> &ctx) {
-  std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
-  std::erase(objs, ctx.internal_obj);
-
-  if (objs.empty())
-    return 0;
-
-  u32 ret = objs[0]->get_ehdr().e_flags;
-  for (ObjectFile<RISCV64> *file : std::span(objs).subspan(1))
-    if (file->get_ehdr().e_flags & EF_RISCV_RVC)
-      ret |= EF_RISCV_RVC;
-  return ret;
 }
 
 template <typename E>
