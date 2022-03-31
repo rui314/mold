@@ -1356,11 +1356,12 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // RISC-V's __global_pointer$
   if (E::e_machine == EM_RISCV && !ctx.arg.shared) {
-    ctx.__global_pointer->shndx = 1;
-    ctx.__global_pointer->value = 0x800;
-
     if (Chunk<E> *chunk = find(".sdata"))
       ctx.__global_pointer->shndx = -chunk->shndx;
+    else
+      ctx.__global_pointer->shndx = -1;
+
+    ctx.__global_pointer->value = 0x800;
   }
 
   // ARM32's __exidx_{start,end}
