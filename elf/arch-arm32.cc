@@ -447,6 +447,47 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
+// If a function referenced by a Thumb B (branch) instruction is
+// resovled to a non-thumb function, we can't directly jump from the
+// thumb function to the ARM function. We can't rewrite B with BX
+// because there's no such BX instruction that takes an immediate.
+// BX takes only a register.
+//
+// In order to support such branch, we insert a small piece of code to
+// the resulting executable which switches the processor mode from
+// Thumb to ARM. This section contains such code.
+void ThumbToArmSection::add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym) {
+  if (sym->extra.thumb_to_arm_thunk_idx == -1) {
+    sym->extra.thumb_to_arm_thunk_idx = symbols.size();
+    symbols.push_back(sym);
+  }
+}
+
+void ThumbToArmSection::update_shdr(Context<ARM32> &ctx) {
+  this->shdr.sh_size = symbols.size() * ENTRY_SIZE;
+}
+
+void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  i64 offset = 0;
+
+  static u16 insn[] = {
+    0x4778, // bx pc
+    0x46c0, // nop
+    0, 0,   // b <imm24>
+  };
+
+  static_assert(sizeof(insn) == ENTRY_SIZE);
+
+  for (Symbol<ARM32> *sym : symbols) {
+    memcpy(buf + offset, insn, sizeof(insn));
+
+    u32 val = sym->get_addr(ctx) - this->shdr.sh_addr - offset - 12;
+    *(u32 *)(buf + offset + 4) = 0xea00'0000 | (0x00ff'ffff & (val >> 2));
+    offset += sizeof(insn);
+  }
+}
+
 // ARM executables use an .ARM.exidx section to look up an exception
 // handling record for the current instruction pointer. The table needs
 // to be sorted by their addresses.

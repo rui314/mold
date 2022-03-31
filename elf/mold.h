@@ -900,24 +900,6 @@ private:
   std::vector<i64> offsets;
 };
 
-class ThumbToArmSection : public Chunk<ARM32> {
-public:
-  ThumbToArmSection() {
-    this->name = ".thumb_to_arm";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 4;
-  }
-
-  void add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym);
-  void update_shdr(Context<ARM32> &ctx) override;
-  void copy_buf(Context<ARM32> &ctx) override;
-
-  std::vector<Symbol<ARM32> *> symbols;
-
-  static constexpr i64 ENTRY_SIZE = 8;
-};
-
 bool is_c_identifier(std::string_view name);
 
 template <typename E>
@@ -1317,6 +1299,24 @@ template <typename E> void write_dependency_file(Context<E> &);
 //
 // arch-arm64.cc
 //
+
+class ThumbToArmSection : public Chunk<ARM32> {
+public:
+  ThumbToArmSection() {
+    this->name = ".thumb_to_arm";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 4;
+  }
+
+  void add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym);
+  void update_shdr(Context<ARM32> &ctx) override;
+  void copy_buf(Context<ARM32> &ctx) override;
+
+  std::vector<Symbol<ARM32> *> symbols;
+
+  static constexpr i64 ENTRY_SIZE = 8;
+};
 
 void sort_arm_exidx(Context<ARM32> &ctx);
 
