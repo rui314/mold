@@ -10,6 +10,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ "$(uname -m)" = riscv64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -x assembler -Wa,-L -
   .text
   .globl _start
