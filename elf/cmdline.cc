@@ -298,6 +298,16 @@ static i64 parse_number(Context<E> &ctx, std::string opt,
 }
 
 template <typename E>
+static u64 parse_unsigned_number(Context<E> &ctx, std::string opt,
+                        std::string_view value) {
+  size_t nread;
+  u64 ret = std::stoul(std::string(value), &nread, 0);
+  if (value.size() != nread)
+    Fatal(ctx) << "option -" << opt << ": not a number: " << value;
+  return ret;
+}
+
+template <typename E>
 static std::vector<u8> parse_hex_build_id(Context<E> &ctx,
                                           std::string_view arg) {
   assert(arg.starts_with("0x") || arg.starts_with("0X"));
@@ -766,7 +776,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "no-icf")) {
       ctx.arg.icf = false;
     } else if (read_arg(ctx, args, arg, "image-base")) {
-      ctx.arg.image_base = parse_number(ctx, "image-base", arg);
+      ctx.arg.image_base = parse_unsigned_number(ctx, "image-base", arg);
     } else if (read_flag(args, "print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
     } else if (read_flag(args, "no-print-icf-sections")) {
