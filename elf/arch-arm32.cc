@@ -85,17 +85,11 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   static const u32 plt0[] = {
-    // Regular PLT header
     0xe52de004, // 1: push {lr}
     0xe59fe004, // ldr     lr, [pc, #4]
     0xe08fe00e, // add     lr, pc, lr
     0xe5bef008, // ldr     pc, [lr, #8]!
     0x00000000, // .word   .got.plt - 1b - 16
-
-    // Trampoline code for TLSDESC
-    0xe08e0000, // add r0, lr, r0
-    0xe5901004, // ldr r1, [r0, #4]
-    0xe12fff11, // bx  r1
   };
 
   memcpy(buf, plt0, sizeof(plt0));
@@ -283,7 +277,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1)
-        *(u32 *)loc = S - ctx.tls_begin;
+        *(u32 *)loc = S - ctx.tls_begin + 8;
       else
         *(u32 *)loc = sym.get_tlsdesc_addr(ctx) + A - P - 6;
       continue;
@@ -292,8 +286,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // BL -> NOP
         *(u32 *)loc = 0x8000f3af;
       } else {
-        u64 addr = ctx.plt->shdr.sh_addr + 16; // +16 to skip the PLT header
-        write_thm_b_imm(loc, align_to(addr - P, 4));
+        u64 addr = ctx.tls_trampoline->shdr.sh_addr;
+        write_thm_b_imm(loc, align_to(addr - P - 4, 4));
         *(u16 *)(loc + 2) &= ~(1 << 12); // rewrite BL with BLX
       }
       continue;
@@ -494,6 +488,16 @@ void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
     *(u32 *)(buf + offset + 4) = 0xea00'0000 | (0x00ff'ffff & (val >> 2));
     offset += sizeof(insn);
   }
+}
+
+void TlsTrampolineSection::copy_buf(Context<ARM32> &ctx) {
+  // Trampoline code for TLSDESC
+  static u32 insn[] = {
+    0xe08e0000, // add r0, lr, r0
+    0xe5901004, // ldr r1, [r0, #4]
+    0xe12fff11, // bx  r1
+  };
+  memcpy(ctx.buf + this->shdr.sh_offset, insn, sizeof(insn));
 }
 
 // ARM executables use an .ARM.exidx section to look up an exception

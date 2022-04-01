@@ -77,8 +77,10 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
-  if constexpr (E::e_machine == EM_ARM)
+  if constexpr (E::e_machine == EM_ARM) {
     ctx.thumb_to_arm = push(new ThumbToArmSection);
+    ctx.tls_trampoline = push(new TlsTrampolineSection);
+  }
 }
 
 template <typename E>

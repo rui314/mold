@@ -1318,6 +1318,19 @@ public:
   static constexpr i64 ENTRY_SIZE = 8;
 };
 
+class TlsTrampolineSection : public Chunk<ARM32> {
+public:
+  TlsTrampolineSection() {
+    this->name = ".tls_trampoline";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = 12;
+  }
+
+  void copy_buf(Context<ARM32> &ctx) override;
+};
+
 void sort_arm_exidx(Context<ARM32> &ctx);
 
 //
@@ -1634,6 +1647,7 @@ struct Context {
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
   std::unique_ptr<ThumbToArmSection> thumb_to_arm;
+  std::unique_ptr<TlsTrampolineSection> tls_trampoline;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
