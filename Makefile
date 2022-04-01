@@ -1,6 +1,6 @@
 # If you want to enable ASAN, run `make` with the following options:
 #
-# make CXXFLAGS=-fsanitize=address LDFLAGS=-fsanitize=address USE_MIMALLOC=0
+# make CXXFLAGS='-fsanitize=address -g' LDFLAGS=-fsanitize=address USE_MIMALLOC=0
 
 VERSION = 1.1.1
 
