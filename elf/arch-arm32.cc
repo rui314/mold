@@ -458,18 +458,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // In order to support such branch, we insert a small piece of code to
 // the resulting executable which switches the processor mode from
 // Thumb to ARM. This section contains such code.
-void ThumbToArmSection::add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym) {
+void ThumbToArmSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (sym->extra.thumb_to_arm_thunk_idx == -1) {
     sym->extra.thumb_to_arm_thunk_idx = symbols.size();
     symbols.push_back(sym);
   }
 }
 
-void ThumbToArmSection::update_shdr(Context<ARM32> &ctx) {
+void ThumbToArmSection::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = symbols.size() * ENTRY_SIZE;
 }
 
-void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
+void ThumbToArmSection::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   i64 offset = 0;
 
@@ -481,7 +481,7 @@ void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
 
   static_assert(sizeof(insn) == ENTRY_SIZE);
 
-  for (Symbol<ARM32> *sym : symbols) {
+  for (Symbol<E> *sym : symbols) {
     memcpy(buf + offset, insn, sizeof(insn));
 
     u32 val = sym->get_addr(ctx) - this->shdr.sh_addr - offset - 12;
@@ -490,7 +490,7 @@ void ThumbToArmSection::copy_buf(Context<ARM32> &ctx) {
   }
 }
 
-void TlsTrampolineSection::copy_buf(Context<ARM32> &ctx) {
+void TlsTrampolineSection::copy_buf(Context<E> &ctx) {
   // Trampoline code for TLSDESC
   static u32 insn[] = {
     0xe08e0000, // add r0, lr, r0
@@ -509,7 +509,7 @@ void TlsTrampolineSection::copy_buf(Context<ARM32> &ctx) {
 // likely that it's due to some historical reason.
 //
 // This function sorts .ARM.exidx records.
-void sort_arm_exidx(Context<ARM32> &ctx) {
+void sort_arm_exidx(Context<E> &ctx) {
   Timer t(ctx, "sort_arm_exidx");
 
   auto find_exidx = [&]() -> OutputSection<E> * {
