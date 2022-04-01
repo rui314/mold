@@ -29,7 +29,7 @@ cat <<EOF | $CC -o $t/b.o -c -xc -
 void _start() {}
 EOF
 
-$CC -B. -o $t/exe2 $t/b.o -nostdlib -Wl,--image-base=0xffffffff80000000
+$CC -B. -no-pie -o $t/exe2 $t/b.o -nostdlib -Wl,--image-base=0xffffffff80000000
 readelf -W --sections $t/exe2 | grep -Eq '.interp\s+PROGBITS\s+ffffffff80000...\b'
 
 echo OK
