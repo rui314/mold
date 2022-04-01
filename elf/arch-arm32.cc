@@ -240,6 +240,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_MOVW_PREL_NC:
       write_mov_imm(loc, ((S + A) | T) - P);
       continue;
+    case R_ARM_MOVW_ABS_NC:
+      write_mov_imm(loc, (S + A) | T);
+      continue;
     case R_ARM_THM_MOVW_PREL_NC:
       write_thm_mov_imm(loc, ((S + A) | T) - P);
       continue;
@@ -256,6 +259,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_ARM_THM_MOVT_PREL:
       write_thm_mov_imm(loc, (S + A - P) >> 16);
+      continue;
+    case R_ARM_MOVT_ABS:
+      write_mov_imm(loc, (S + A) >> 16);
       continue;
     case R_ARM_THM_MOVT_ABS:
       write_thm_mov_imm(loc, (S + A) >> 16);
@@ -370,6 +376,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
+    case R_ARM_MOVT_ABS:
     case R_ARM_THM_MOVT_ABS:
     case R_ARM_TARGET1: {
       Action table[][4] = {
@@ -435,6 +442,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_ARM_MOVW_PREL_NC:
+    case R_ARM_MOVW_ABS_NC:
     case R_ARM_THM_MOVW_PREL_NC:
     case R_ARM_THM_MOVW_ABS_NC:
     case R_ARM_TLS_LDO32:

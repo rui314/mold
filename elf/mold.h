@@ -1979,21 +1979,6 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
     return (i64)(val << (63 - size)) >> (63 - size);
   };
 
-  auto read_mov_imm = [&]() -> i32 {
-    u32 imm12 = bits(*(u32 *)loc, 11, 0);
-    u32 imm4 = bits(*(u32 *)loc, 19, 16);
-    return sign_extend((imm4 << 12) | imm12, 15);
-  };
-
-  auto read_thm_mov_imm = [&]() -> i32 {
-    u32 imm4 = bits(*(u16 *)loc, 3, 0);
-    u32 i = bit(*(u16 *)loc, 10);
-    u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
-    u32 imm8 = bits(*(u16 *)(loc + 2), 7, 0);
-    u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
-    return sign_extend(val, 15);
-  };
-
   switch (rel.r_type) {
   case R_ARM_NONE:
     return 0;
@@ -2027,19 +2012,29 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
   case R_ARM_JUMP24:
     return sign_extend(*(u32 *)loc & 0x00ff'ffff, 23) << 2;
   case R_ARM_MOVW_PREL_NC:
+  case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
-    return read_mov_imm();
+  case R_ARM_MOVT_ABS: {
+    u32 imm12 = bits(*(u32 *)loc, 11, 0);
+    u32 imm4 = bits(*(u32 *)loc, 19, 16);
+    return sign_extend((imm4 << 12) | imm12, 15);
+  }
   case R_ARM_PREL31:
     return sign_extend(*(u32 *)loc, 30);
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
-    return read_thm_mov_imm();
   case R_ARM_THM_MOVT_PREL:
-  case R_ARM_THM_MOVT_ABS:
-    return read_thm_mov_imm();
+  case R_ARM_THM_MOVT_ABS: {
+    u32 imm4 = bits(*(u16 *)loc, 3, 0);
+    u32 i = bit(*(u16 *)loc, 10);
+    u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
+    u32 imm8 = bits(*(u16 *)(loc + 2), 7, 0);
+    u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
+    return sign_extend(val, 15);
   }
-std::cerr << "rel=" << rel_to_string<ARM32>(rel.r_type) << "\n";
-  unreachable();
+  default:
+    unreachable();
+  }
 }
 
 template <typename E>
