@@ -214,7 +214,6 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
     if (isec && isec->is_alive && isec->name() == ".eh_frame") {
       read_ehframe(ctx, *isec);
       isec->is_alive = false;
-      sections[i] = nullptr;
     }
   }
 }
