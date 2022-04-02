@@ -37,10 +37,9 @@ $QEMU $t/exe
 $CXX -B. -o $t/exe $t/a.o -static -Wl,--gc-sections
 $QEMU $t/exe
 
-$CXX -B. -o $t/exe $t/a.o -mcmodel=large -fno-PIC
-$QEMU $t/exe
-
-$CXX -B. -o $t/exe $t/a.o -static -mcmodel=large -fno-PIC
-$QEMU $t/exe
+if [ $MACHINE = x86_64 -o $MACHINE = aarch64 ]; then
+  $CXX -B. -o $t/exe $t/a.o -mcmodel=large -fno-PIC
+  $QEMU $t/exe
+fi
 
 echo OK

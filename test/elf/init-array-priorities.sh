@@ -14,6 +14,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $MACHINE = i386 ] && { echo skipped; exit; }
+
 # musl does not support GNU-style init/fini priorities
 echo 'int main() {}' | $CC -o $t/exe -xc -
 readelf --dynamic $t/exe | grep -q ld-musl && { echo skipped; exit; }
@@ -62,8 +64,7 @@ cat <<EOF | $CC -c -o $t/i.o -xc -
 int main() {}
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o \
-  $t/e.o $t/f.o $t/g.o $t/h.o $t/i.o
+$CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o $t/e.o $t/f.o $t/g.o $t/h.o $t/i.o
 $QEMU $t/exe | grep -q '21348756'
 
 echo OK
