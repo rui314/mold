@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -37,10 +41,10 @@ ar rcs $t/x/libfoo.a $t/a.o
 $CC -shared -o $t/y/libfoo.dylib $t/b.o
 
 clang -fuse-ld="$mold" -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo
-$t/exe | grep -q Hello
+$QEMU $t/exe | grep -q Hello
 
 clang -fuse-ld="$mold" -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo \
  -Wl,-search_paths_first
-$t/exe | grep -q Hello
+$QEMU $t/exe | grep -q Hello
 
 echo OK

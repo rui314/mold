@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -18,11 +22,11 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,max-page-size=65536
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 readelf -W --segments $t/exe | grep -q 'LOAD.*R   0x10000$'
 
 $CC -B. -o $t/exe $t/a.o -Wl,-zmax-page-size=$((1024*1024))
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 readelf -W --segments $t/exe | grep -q 'LOAD.*R   0x100000$'
 
 echo OK

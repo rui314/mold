@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -12,7 +16,7 @@ mkdir -p $t
 
 # musl does not support GNU-style init/fini priorities
 echo 'int main() {}' | $CC -o $t/exe -xc -
-ldd $t/exe | grep -q ld-musl && { echo skipped; exit; }
+readelf --dynamic $t/exe | grep -q ld-musl && { echo skipped; exit; }
 
 cat <<'EOF' | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
@@ -60,6 +64,6 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o \
   $t/e.o $t/f.o $t/g.o $t/h.o $t/i.o
-$t/exe | grep -q '21348756'
+$QEMU $t/exe | grep -q '21348756'
 
 echo OK

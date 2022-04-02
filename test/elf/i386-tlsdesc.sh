@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -13,7 +17,7 @@ mkdir -p $t
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 
-cat <<EOF | gcc -fPIC -mtls-dialect=gnu2 -c -o $t/a.o -xc - -m32
+cat <<EOF | $GCC -fPIC -mtls-dialect=gnu2 -c -o $t/a.o -xc - -m32
 extern _Thread_local int foo;
 
 int get_foo() {
@@ -36,17 +40,17 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -m32
-$t/exe | grep -q 42
+$QEMU $t/exe | grep -q 42
 
 $CC -B. -shared -o $t/c.so $t/a.o -m32
 $CC -B. -o $t/exe $t/b.o $t/c.so -m32
-$t/exe | grep -q 42
+$QEMU $t/exe | grep -q 42
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-no-relax -m32
-$t/exe | grep -q 42
+$QEMU $t/exe | grep -q 42
 
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,-no-relax -m32
 $CC -B. -o $t/exe $t/b.o $t/c.so -Wl,-no-relax -m32
-$t/exe | grep -q 42
+$QEMU $t/exe | grep -q 42
 
 echo OK

@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -13,7 +17,7 @@ mkdir -p $t
 # Skip if libc is musl because musl does not fully support GNU-style
 # symbol versioning.
 echo 'int main() {}' | $CC -o $t/exe -xc -
-ldd $t/exe | grep -q ld-musl && { echo OK; exit; }
+readelf --dynamic $t/exe | grep -q ld-musl && { echo OK; exit; }
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 int foo1() { return 1; }
@@ -46,6 +50,6 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/d.o $t/c.so
-$t/exe | grep -q '^1 2 3 3$'
+$QEMU $t/exe | grep -q '^1 2 3 3$'
 
 echo OK

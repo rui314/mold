@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +14,7 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
 cat <<EOF | $CC -fPIC -shared -o $t/a.so -x assembler -
 .globl ext1, ext2
@@ -31,7 +35,7 @@ EOF
 
 "$mold" --pie -o $t/exe $t/b.o $t/a.so
 
-objdump -d -j .plt.got $t/exe > $t/log
+$OBJDUMP -d -j .plt.got $t/exe > $t/log
 
 grep -Eq '1020:.*jmp.*# 2000 <ext2>' $t/log
 

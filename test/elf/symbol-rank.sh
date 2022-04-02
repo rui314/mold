@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -48,6 +52,6 @@ rm -f $t/x.a
 ar rcs $t/x.a $t/a.o $t/b.o $t/c.o
 
 $CC -B. -o $t/exe $t/d.o $t/x.a
-$t/exe | grep -q '^0 0 0 5$'
+$QEMU $t/exe | grep -q '^0 0 0 5$'
 
 echo OK

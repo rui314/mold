@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -58,6 +62,6 @@ int main() {
 EOF
 
 $CXX -B. -o $t/exe $t/c.o $t/d.o
-$t/exe | grep -q '^1 2 3$'
+$QEMU $t/exe | grep -q '^1 2 3$'
 
 echo OK

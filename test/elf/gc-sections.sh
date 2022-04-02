@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -42,7 +46,7 @@ grep -qv live_var1 $t/log.1
 grep -qv live_var2 $t/log.1
 grep -qv dead_var1 $t/log.1
 grep -qv dead_var2 $t/log.1
-$t/exe1 | grep -q '1 2'
+$QEMU $t/exe1 | grep -q '1 2'
 
 $CXX -B. -o $t/exe2 $t/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
 
@@ -55,6 +59,6 @@ grep -q  live_var1 $t/log.2
 grep -q  live_var2 $t/log.2
 grep -qv dead_var1 $t/log.2
 grep -qv dead_var2 $t/log.2
-$t/exe2 | grep -q '1 2'
+$QEMU $t/exe2 | grep -q '1 2'
 
 echo OK

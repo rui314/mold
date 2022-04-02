@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -46,6 +50,6 @@ char readwrite[100] = "abc";
 EOF
 
 $CC -B. $t/a.o $t/b.so -o $t/exe -no-pie
-$t/exe | grep -q '^sigsegv 0 1$'
+$QEMU $t/exe | grep -q '^sigsegv 0 1$'
 
 echo OK

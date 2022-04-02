@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,11 +14,13 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $CC = cc ] || { echo skipped; exit; }
+
 # ASAN doesn't work with LD_PRELOAD
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
-which gcc >& /dev/null || { echo skipped; exit 0; }
-which clang >& /dev/null || { echo skipped; exit 0; }
+which $GCC >& /dev/null || { echo skipped; exit; }
+which clang >& /dev/null || { echo skipped; exit; }
 
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>
@@ -25,7 +31,7 @@ int main() {
 }
 EOF
 
-gcc -fuse-ld=bfd -o $t/exe $t/a.o
+$GCC -fuse-ld=bfd -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
 ! grep -q mold $t/log || false
 
@@ -34,7 +40,7 @@ readelf -p .comment $t/exe > $t/log
 ! grep -q mold $t/log || false
 
 LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$mold \
-  gcc -o $t/exe $t/a.o -B/usr/bin
+  $GCC -o $t/exe $t/a.o -B/usr/bin
 readelf -p .comment $t/exe > $t/log
 grep -q mold $t/log
 

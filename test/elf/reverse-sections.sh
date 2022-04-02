@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -46,9 +50,9 @@ int main() { std::cout << "\n"; }
 EOF
 
 $CXX -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o
-$t/exe1 | grep -q 'foo1 foo2 foo3 foo4 foo5 foo6'
+$QEMU $t/exe1 | grep -q 'foo1 foo2 foo3 foo4 foo5 foo6'
 
 $CXX -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,--reverse-sections
-$t/exe2 | grep -q 'foo5 foo6 foo3 foo4 foo1 foo2'
+$QEMU $t/exe2 | grep -q 'foo5 foo6 foo3 foo4 foo1 foo2'
 
 echo OK

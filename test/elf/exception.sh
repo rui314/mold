@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -22,26 +26,26 @@ int main() {
 EOF
 
 $CXX -B. -o $t/exe $t/a.o -static
-$t/exe
+$QEMU $t/exe
 
 $CXX -B. -o $t/exe $t/a.o
-$t/exe
+$QEMU $t/exe
 
 $CXX -B. -o $t/exe $t/a.o -Wl,--gc-sections
-$t/exe
+$QEMU $t/exe
 
 $CXX -B. -o $t/exe $t/a.o -static -Wl,--gc-sections
-$t/exe
+$QEMU $t/exe
 
-if [ "$(uname -m)" = x86_64 ]; then
+if [ $MACHINE = x86_64 ]; then
   $CXX -B. -o $t/exe $t/a.o -mcmodel=large
   $t/exe
 
   $CXX -B. -o $t/exe $t/a.o -static -mcmodel=large
   $t/exe
-elif [ "$(uname -m)" = aarch64 ]; then
+elif [ $MACHINE = aarch64 ]; then
   # The -mcmodel=large option is incompatible with -fPIC on aarch64, see
-  # https://gcc.gnu.org/onlinedocs/gcc/AArch64-Options.html#index-mcmodel_003dlarge
+  # https://$GCC.gnu.org/onlinedocs/$GCC/AArch64-Options.html#index-mcmodel_003dlarge
   $CXX -B. -o $t/exe $t/a.o -mcmodel=large -fno-PIC
   $t/exe
 

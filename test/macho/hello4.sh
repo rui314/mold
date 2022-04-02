@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -21,7 +25,7 @@ int main() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o
-$t/exe 2> /dev/null | grep -q 'Hello world'
-$t/exe 2>&1 > /dev/null | grep -q 'Hello stderr'
+$QEMU $t/exe 2> /dev/null | grep -q 'Hello world'
+$QEMU $t/exe 2>&1 > /dev/null | grep -q 'Hello stderr'
 
 echo OK

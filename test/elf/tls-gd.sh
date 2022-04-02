@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,16 +14,16 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-if [ "$(uname -m)" = x86_64 ]; then
+if [ $MACHINE = x86_64 ]; then
   dialect=gnu
-elif [ "$(uname -m)" = aarch64 ]; then
+elif [ $MACHINE = aarch64 ]; then
   dialect=trad
 else
   echo skipped
   exit
 fi
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 static _Thread_local int x1 = 1;
@@ -37,14 +41,14 @@ int main() {
 }
 EOF
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/b.o -xc -
+cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -c -o $t/b.o -xc -
 _Thread_local int x3 = 3;
 static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
 
-cat <<EOF | gcc -mtls-dialect=$dialect -fPIC -c -o $t/c.o -xc -
+cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -c -o $t/c.o -xc -
 _Thread_local int x4 = 4;
 static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
@@ -54,12 +58,12 @@ $CC -B. -shared -o $t/d.so $t/b.o
 $CC -B. -shared -o $t/e.so $t/c.o -Wl,--no-relax
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -static
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 echo OK

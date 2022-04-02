@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -39,7 +43,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/c.o $t/b.so
-$t/exe
+$QEMU $t/exe
 
 readelf --dyn-syms $t/b.so > $t/log
 fgrep -q 'foo@@ver1' $t/log

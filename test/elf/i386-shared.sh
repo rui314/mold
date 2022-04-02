@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -40,14 +44,14 @@ EOF
 
 $CC -c -o $t/d.o $t/c.c -fno-PIC -m32
 $CC -B. -o $t/exe $t/d.o $t/b.so -m32 -no-pie
-$t/exe | grep -q '5 7 2'
+$QEMU $t/exe | grep -q '5 7 2'
 
 $CC -c -o $t/e.o $t/c.c -fPIE -m32
 $CC -B. -o $t/exe $t/e.o $t/b.so -m32 -pie
-$t/exe | grep -q '5 7 2'
+$QEMU $t/exe | grep -q '5 7 2'
 
 $CC -c -o $t/f.o $t/c.c -fPIC -m32
 $CC -B. -o $t/exe $t/f.o $t/b.so -m32 -pie
-$t/exe | grep -q '5 7 2'
+$QEMU $t/exe | grep -q '5 7 2'
 
 echo OK

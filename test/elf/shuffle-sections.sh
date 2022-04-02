@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -23,10 +27,10 @@ for i in `seq 1 1000`; do echo "void fn$i() {}"; done | \
   $CC -o $t/b.o -ffunction-sections -c -xc -
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
-$t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep -q 'Hello world'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-shuffle-sections
-$t/exe2 | grep -q 'Hello world'
+$QEMU $t/exe2 | grep -q 'Hello world'
 
 ! diff $t/exe1 $t/exe2 >& /dev/null || false
 

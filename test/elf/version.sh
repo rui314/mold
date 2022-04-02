@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -30,6 +34,6 @@ $CC -B. -Wl,--version -o $t/exe $t/a.o 2>&1 | grep -q mold
 ! [ -f $t/exe ] || false
 
 $CC -B. -Wl,-v -o $t/exe $t/a.o 2>&1 | grep -q mold
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 
 echo OK

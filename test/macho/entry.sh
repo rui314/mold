@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -20,7 +24,7 @@ int hello() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-e,_hello
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 
 ! clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-e,no_such_symbol 2> $t/log || false
 grep -q 'undefined entry point symbol: no_such_symbol' $t/log

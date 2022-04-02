@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -10,7 +14,7 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-[ "$(uname -m)" = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
 cat <<'EOF' | $CC -fPIC -c -o $t/a.o -x assembler -
 .data
@@ -52,9 +56,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$t/exe | grep -q '^42$'
+$QEMU $t/exe | grep -q '^42$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^42$'
+$QEMU $t/exe | grep -q '^42$'
 
 # GOT
 cat <<'EOF' > $t/d.s
@@ -69,9 +73,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 
 # Copyrel
 cat <<'EOF' > $t/d.s
@@ -86,9 +90,9 @@ EOF
 
 $CC -c -o $t/d.o $t/d.s
 $CC -B. -o $t/exe $t/c.so $t/d.o -no-pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 
 # Copyrel
 cat <<'EOF' > $t/d.s
@@ -107,9 +111,9 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^56$'
+$QEMU $t/exe | grep -q '^56$'
 
 # PLT
 cat <<'EOF' > $t/d.s
@@ -123,9 +127,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$t/exe | grep -q '^76$'
+$QEMU $t/exe | grep -q '^76$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^76$'
+$QEMU $t/exe | grep -q '^76$'
 
 # PLT
 cat <<'EOF' > $t/d.s
@@ -140,9 +144,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$t/exe | grep -q '^76$'
+$QEMU $t/exe | grep -q '^76$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$t/exe | grep -q '^76$'
+$QEMU $t/exe | grep -q '^76$'
 
 # SIZE32
 cat <<'EOF' > $t/d.s
@@ -162,7 +166,7 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s
-$t/exe | grep -q '^26$'
+$QEMU $t/exe | grep -q '^26$'
 
 # SIZE64
 cat <<'EOF' > $t/d.s
@@ -182,7 +186,7 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s
-$t/exe | grep -q '^61$'
+$QEMU $t/exe | grep -q '^61$'
 
 # GOTPCREL64
 cat <<'EOF' > $t/e.c
@@ -197,7 +201,7 @@ EOF
 
 $CC -c -o $t/e.o $t/e.c -mcmodel=large -fPIC
 $CC -B. -o $t/exe $t/c.so $t/e.o
-$t/exe | grep -q '^56000003$'
+$QEMU $t/exe | grep -q '^56000003$'
 
 # R_X86_64_32 against non-alloc section
 cat <<'EOF' > $t/f.s

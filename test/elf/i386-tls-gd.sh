@@ -3,6 +3,10 @@ export LC_ALL=C
 set -e
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
+GCC="${GCC:-gcc}"
+GXX="${GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
@@ -48,12 +52,12 @@ $CC -B. -shared -o $t/d.so $t/b.o -m32
 $CC -B. -shared -o $t/e.so $t/c.o -Wl,--no-relax -m32
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -m32
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax -m32
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -static -m32
-$t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 echo OK
