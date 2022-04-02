@@ -14,6 +14,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -fPIC -
 int main() {
   try {
@@ -25,22 +27,10 @@ int main() {
 }
 EOF
 
-$CXX -B. -o $t/exe $t/a.o -static
+$CXX -B. -o $t/exe $t/a.o -mcmodel=large
 $QEMU $t/exe
 
-$CXX -B. -o $t/exe $t/a.o
-$QEMU $t/exe
-
-$CXX -B. -o $t/exe $t/a.o -Wl,--gc-sections
-$QEMU $t/exe
-
-$CXX -B. -o $t/exe $t/a.o -static -Wl,--gc-sections
-$QEMU $t/exe
-
-$CXX -B. -o $t/exe $t/a.o -mcmodel=large -fno-PIC
-$QEMU $t/exe
-
-$CXX -B. -o $t/exe $t/a.o -static -mcmodel=large -fno-PIC
+$CXX -B. -o $t/exe $t/a.o -static -mcmodel=large
 $QEMU $t/exe
 
 echo OK
