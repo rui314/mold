@@ -223,6 +223,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(u32 *)loc = (*(u32 *)loc & 0xff00'0000) | ((val >> 2) & 0x00ff'ffff);
       continue;
     }
+    case R_ARM_THM_JUMP11: {
+      assert(T);
+      u32 val = (S + A - P) >> 1;
+      *(u16 *)loc = (*(u16 *)loc & 0xf800) | (val & 0x07ff);
+      continue;
+    }
     case R_ARM_THM_JUMP24:
       if (T) {
         write_thm_b_imm(loc, S + A - P);
@@ -439,6 +445,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!ctx.relax_tlsdesc || sym.is_imported)
         sym.flags |= NEEDS_TLSDESC;
       break;
+    case R_ARM_THM_JUMP11:
     case R_ARM_MOVW_PREL_NC:
     case R_ARM_MOVW_ABS_NC:
     case R_ARM_THM_MOVW_PREL_NC:

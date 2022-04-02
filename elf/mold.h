@@ -2010,6 +2010,8 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET2:
     return *(i32 *)loc;
+  case R_ARM_THM_JUMP11:
+    return sign_extend(*(u16 *)loc, 10) << 1;
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
