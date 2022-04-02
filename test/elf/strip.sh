@@ -34,6 +34,9 @@ readelf --symbols $t/exe > $t/log
 ! fgrep -q _start $t/log || false
 ! fgrep -q foo $t/log || false
 ! fgrep -q bar $t/log || false
-! fgrep -q .L.baz $t/log || false
+
+if [ $MACHINE '!=' riscv64 ]; then
+  ! fgrep -q .L.baz $t/log || false
+fi
 
 echo OK
