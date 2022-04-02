@@ -27,7 +27,10 @@ readelf --symbols $t/exe > $t/log
 fgrep -q _start $t/log
 fgrep -q foo $t/log
 fgrep -q bar $t/log
-fgrep -q .L.baz $t/log
+
+if [ $MACHINE '!=' riscv64 ]; then
+  fgrep -q .L.baz $t/log
+fi
 
 "$mold" -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log

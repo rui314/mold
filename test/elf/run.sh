@@ -14,7 +14,7 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-[ $CC = cc ] || { echo skipped; exit; }
+[ "$CC" = cc ] || { echo skipped; exit; }
 
 # ASAN doesn't work with LD_PRELOAD
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }

@@ -14,6 +14,9 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98667
+[ $MACHINE = i386 ] && { echo skipped; exit; }
+
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -
 int one() { return 1; }
 

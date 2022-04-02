@@ -14,6 +14,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null \
   || { echo skipped; exit; }
 
