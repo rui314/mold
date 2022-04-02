@@ -199,6 +199,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_BASE_PREL:
       *(u32 *)loc = GOT + A - P;
       continue;
+    case R_ARM_GOT_PREL:
+      *(u32 *)loc = G + A - P;
+      continue;
     case R_ARM_GOT_BREL:
       *(u32 *)loc = G + A;
       continue;
@@ -395,6 +398,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       dispatch(ctx, table, i, rel, sym);
       break;
     }
+    case R_ARM_GOT_PREL:
     case R_ARM_GOT_BREL:
     case R_ARM_TARGET2:
       sym.flags |= NEEDS_GOT;
