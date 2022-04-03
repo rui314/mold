@@ -306,6 +306,7 @@ public:
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
+  bool killed_by_icf = false;
 
   u8 p2align = 0;
 
@@ -2225,6 +2226,9 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
 
   if (InputSection<E> *isec = get_input_section()) {
     if (!isec->is_alive) {
+      if (isec->killed_by_icf)
+        return isec->extra().leader->get_addr() + value;
+
       if (isec->name() == ".eh_frame") {
         // .eh_frame contents are parsed and reconstructed by the linker,
         // so pointing to a specific location in a source .eh_frame
