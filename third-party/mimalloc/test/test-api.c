@@ -23,7 +23,6 @@ we therefore test the API over various inputs. Please add more tests :-)
 [1] https://github.com/daanx/mimalloc-bench
 */
 
-#include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -35,34 +34,9 @@ we therefore test the API over various inputs. Please add more tests :-)
 
 #include "mimalloc.h"
 // #include "mimalloc-internal.h"
+#include "mimalloc-types.h" // for MI_DEBUG
 
-// ---------------------------------------------------------------------------
-// Test macros: CHECK(name,predicate) and CHECK_BODY(name,body)
-// ---------------------------------------------------------------------------
-static int ok = 0;
-static int failed = 0;
-
-#define CHECK_BODY(name,body) \
- do { \
-  fprintf(stderr,"test: %s...  ", name ); \
-  bool result = true;                                     \
-  do { body } while(false);                                \
-  if (!(result)) {                                        \
-    failed++; \
-    fprintf(stderr,                                       \
-            "\n  FAILED: %s:%d:\n  %s\n",                 \
-            __FILE__,                                     \
-            __LINE__,                                     \
-            #body);                                       \
-    /* exit(1); */ \
-  } \
-  else { \
-    ok++;                               \
-    fprintf(stderr,"ok.\n");                    \
-  }                                             \
- } while (false)
-
-#define CHECK(name,expr)      CHECK_BODY(name,{ result = (expr); })
+#include "testhelper.h"
 
 // ---------------------------------------------------------------------------
 // Test functions
@@ -97,6 +71,10 @@ int main(void) {
   });
   CHECK_BODY("calloc0",{
     result = (mi_usable_size(mi_calloc(0,1000)) <= 16);
+  });
+  CHECK_BODY("malloc-large",{   // see PR #544.
+    void* p = mi_malloc(67108872);
+    mi_free(p);
   });
 
   // ---------------------------------------------------
@@ -158,6 +136,28 @@ int main(void) {
   CHECK_BODY("malloc-aligned5", {
     void* p = mi_malloc_aligned(4097,4096); size_t usable = mi_usable_size(p); result = usable >= 4097 && usable < 10000; mi_free(p);
   });
+  CHECK_BODY("malloc-aligned6", {
+    bool ok = true;
+    for (size_t align = 1; align <= MI_ALIGNMENT_MAX && ok; align *= 2) {
+      void* ps[8];
+      for (int i = 0; i < 8 && ok; i++) {
+        ps[i] = mi_malloc_aligned(align*13 /*size*/, align);
+        if (ps[i] == NULL || (uintptr_t)(ps[i]) % align != 0) {
+          ok = false;
+        }
+      }
+      for (int i = 0; i < 8 && ok; i++) {
+        mi_free(ps[i]);
+      }
+    }
+    result = ok;
+  });
+  CHECK_BODY("malloc-aligned7", {
+    void* p = mi_malloc_aligned(1024,MI_ALIGNMENT_MAX); mi_free(p);
+    });
+  CHECK_BODY("malloc-aligned8", {
+    void* p = mi_malloc_aligned(1024,2*MI_ALIGNMENT_MAX); mi_free(p);
+  });
   CHECK_BODY("malloc-aligned-at1", {
     void* p = mi_malloc_aligned_at(48,32,0); result = (p != NULL && ((uintptr_t)(p) + 0) % 32 == 0); mi_free(p);
   });
@@ -172,8 +172,8 @@ int main(void) {
       ok = (p != NULL && (uintptr_t)(p) % 16 == 0); mi_free(p);
     }
     result = ok;
-    });
-
+  });
+  
   // ---------------------------------------------------
   // Heaps
   // ---------------------------------------------------
@@ -197,10 +197,7 @@ int main(void) {
   // ---------------------------------------------------
   // Done
   // ---------------------------------------------------[]
-  fprintf(stderr,"\n\n---------------------------------------------\n"
-                 "succeeded: %i\n"
-                 "failed   : %i\n\n", ok, failed);
-  return failed;
+  return print_test_summary();
 }
 
 // ---------------------------------------------------

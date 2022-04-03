@@ -12,8 +12,8 @@ is a general purpose allocator with excellent [performance](#performance) charac
 Initially developed by Daan Leijen for the run-time systems of the
 [Koka](https://koka-lang.github.io) and [Lean](https://github.com/leanprover/lean) languages.
 
-Latest release tag: `v2.0.3` (beta, 2021-11-14).  
-Latest stable  tag: `v1.7.3` (2021-11-14).
+Latest release tag: `v2.0.5` (alpha, 2022-02-14).  
+Latest stable  tag: `v1.7.5` (2022-02-14).
 
 mimalloc is a drop-in replacement for `malloc` and can be used in other programs
 without code changes, for example, on dynamically linked ELF-based systems (Linux, BSD, etc.) you can use it as:
@@ -77,6 +77,12 @@ Note: the `v2.x` beta has a new algorithm for managing internal mimalloc pages t
   and fragmentation compared to mimalloc `v1.x` (especially for large workloads). Should otherwise have similar performance
   (see [below](#performance)); please report if you observe any significant performance regression.
 
+* 2022-02-14, `v1.7.5`, `v2.0.5` (alpha): fix malloc override on
+  Windows 11, fix compilation with musl, potentially reduced
+  committed memory, add `bin/minject` for Windows, 
+  improved wasm support, faster aligned allocation,
+  various small fixes.
+
 * 2021-11-14, `v1.7.3`, `v2.0.3` (beta): improved WASM support, improved macOS support and performance (including
   M1), improved performance for v2 for large objects, Python integration improvements, more standard
   installation directories, various small fixes.
@@ -91,34 +97,7 @@ Note: the `v2.x` beta has a new algorithm for managing internal mimalloc pages t
 * 2021-01-31, `v1.7.0`: stable release 1.7: support explicit user provided memory regions, more precise statistics,
   improve macOS overriding, initial support for Apple M1, improved DragonFly support, faster memcpy on Windows, various small fixes.
 
-### Older Releases
-
-* 2020-09-24, `v1.6.7`: stable release 1.6: using standard C atomics, passing tsan testing, improved
-  handling of failing to commit on Windows, add [`mi_process_info`](https://github.com/microsoft/mimalloc/blob/master/include/mimalloc.h#L156) api call.
-* 2020-08-06, `v1.6.4`: stable release 1.6: improved error recovery in low-memory situations,
-  support for IllumOS and Haiku, NUMA support for Vista/XP, improved NUMA detection for AMD Ryzen, ubsan support.
-* 2020-05-05, `v1.6.3`: stable release 1.6: improved behavior in out-of-memory situations, improved malloc zones on macOS,
-  build PIC static libraries by default, add option to abort on out-of-memory, line buffered statistics.
-* 2020-04-20, `v1.6.2`: stable release 1.6: fix compilation on Android, MingW, Raspberry, and Conda,
-  stability fix for Windows 7, fix multiple mimalloc instances in one executable, fix `strnlen` overload,
-  fix aligned debug padding.
-* 2020-02-17, `v1.6.1`: stable release 1.6: minor updates (build with clang-cl, fix alignment issue for small objects).
-* 2020-02-09, `v1.6.0`: stable release 1.6: fixed potential memory leak, improved overriding
-  and thread local support on FreeBSD, NetBSD, DragonFly, and macOSX. New byte-precise
-  heap block overflow detection in debug mode (besides the double-free detection and free-list
-  corruption detection). Add `nodiscard` attribute to most allocation functions.
-  Enable `MIMALLOC_PAGE_RESET` by default. New reclamation strategy for abandoned heap pages
-  for better memory footprint.
-* 2020-02-09, `v1.5.0`: stable release 1.5: improved free performance, small bug fixes.
-* 2020-01-22, `v1.4.0`: stable release 1.4: improved performance for delayed OS page reset,
-more eager concurrent free, addition of STL allocator, fixed potential memory leak.
-* 2020-01-15, `v1.3.0`: stable release 1.3: bug fixes, improved randomness and [stronger
-free list encoding](https://github.com/microsoft/mimalloc/blob/783e3377f79ee82af43a0793910a9f2d01ac7863/include/mimalloc-internal.h#L396) in secure mode.
-* 2019-12-22, `v1.2.2`: stable release 1.2: minor updates.
-* 2019-11-22, `v1.2.0`: stable release 1.2: bug fixes, improved secure mode (free list corruption checks, double free mitigation). Improved dynamic overriding on Windows.
-* 2019-10-07, `v1.1.0`: stable release 1.1.
-* 2019-09-01, `v1.0.8`: pre-release 8: more robust windows dynamic overriding, initial huge page support.
-* 2019-08-10, `v1.0.6`: pre-release 6: various performance improvements.
+* [Older release notes](#older-release-notes)
 
 Special thanks to:
 
@@ -130,7 +109,9 @@ Special thanks to:
   at large scale services, leading to many improvements in the mimalloc algorithms for large workloads.
 * Jason Gibson (@jasongibson) for exhaustive testing on large scale workloads and server environments, and finding complex bugs 
   in (early versions of) `mimalloc`.
-* Manuel Pöter (@mpoeter) and Sam Gross (@colesbury) for finding an ABA concurrency issue in abandoned segment reclamation.
+* Manuel Pöter (@mpoeter) and Sam Gross(@colesbury) for finding an ABA concurrency issue in abandoned segment reclamation. Sam also created the [no GIL](https://github.com/colesbury/nogil) Python fork which 
+  uses mimalloc internally.
+
 
 [genMC]: https://plv.mpi-sws.org/genmc/
 
@@ -138,9 +119,12 @@ Special thanks to:
 
 mimalloc is used in various large scale low-latency services and programs, for example:
 
-<a href="https://www.bing.com"><img align="left"  height="50" src="https://upload.wikimedia.org/wikipedia/commons/e/e9/Bing_logo.svg"></a>
-<a href="https://azure.microsoft.com/"><img align="left" height="50" src="https://upload.wikimedia.org/wikipedia/commons/a/a8/Microsoft_Azure_Logo.svg"></a>
-<a href="https://deathstrandingpc.505games.com"><img height="100" src="doc/ds-logo.jpg" style="border-radius=1ex;vertical-align:center"></a>
+<a href="https://www.bing.com"><img height="50" align="left" src="https://upload.wikimedia.org/wikipedia/commons/e/e9/Bing_logo.svg"></a>
+<a href="https://azure.microsoft.com/"><img height="50" align="left" src="https://upload.wikimedia.org/wikipedia/commons/a/a8/Microsoft_Azure_Logo.svg"></a>
+<a href="https://deathstrandingpc.505games.com"><img height="100" src="doc/ds-logo.png"></a>
+<a href="https://docs.unrealengine.com/4.26/en-US/WhatsNew/Builds/ReleaseNotes/4_25/"><img height="100" src="doc/unreal-logo.svg"></a>
+<a href="https://cab.spbu.ru/software/spades/"><img height="100" src="doc/spades-logo.png"></a>
+
 
 # Building
 
@@ -647,6 +631,7 @@ see the differences in the _larsonN_, _mstressN_, and _xmalloc-testN_ benchmarks
 
 -->
 
+
 # References
 
 - \[1] Emery D. Berger, Kathryn S. McKinley, Robert D. Blumofe, and Paul R. Wilson.
@@ -684,7 +669,6 @@ see the differences in the _larsonN_, _mstressN_, and _xmalloc-testN_ benchmarks
   In Proceedings of the 2019 ACM SIGPLAN International Symposium on Memory Management, 122–135. ACM. 2019.
 -->
 
-
 # Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
@@ -694,3 +678,34 @@ the rights to use your contribution. For details, visit https://cla.microsoft.co
 When you submit a pull request, a CLA-bot will automatically determine whether you need to provide
 a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the instructions
 provided by the bot. You will only need to do this once across all repos using our CLA.
+
+
+# Older Release Notes
+
+* 2020-09-24, `v1.6.7`: stable release 1.6: using standard C atomics, passing tsan testing, improved
+  handling of failing to commit on Windows, add [`mi_process_info`](https://github.com/microsoft/mimalloc/blob/master/include/mimalloc.h#L156) api call.
+* 2020-08-06, `v1.6.4`: stable release 1.6: improved error recovery in low-memory situations,
+  support for IllumOS and Haiku, NUMA support for Vista/XP, improved NUMA detection for AMD Ryzen, ubsan support.
+* 2020-05-05, `v1.6.3`: stable release 1.6: improved behavior in out-of-memory situations, improved malloc zones on macOS,
+  build PIC static libraries by default, add option to abort on out-of-memory, line buffered statistics.
+* 2020-04-20, `v1.6.2`: stable release 1.6: fix compilation on Android, MingW, Raspberry, and Conda,
+  stability fix for Windows 7, fix multiple mimalloc instances in one executable, fix `strnlen` overload,
+  fix aligned debug padding.
+* 2020-02-17, `v1.6.1`: stable release 1.6: minor updates (build with clang-cl, fix alignment issue for small objects).
+* 2020-02-09, `v1.6.0`: stable release 1.6: fixed potential memory leak, improved overriding
+  and thread local support on FreeBSD, NetBSD, DragonFly, and macOSX. New byte-precise
+  heap block overflow detection in debug mode (besides the double-free detection and free-list
+  corruption detection). Add `nodiscard` attribute to most allocation functions.
+  Enable `MIMALLOC_PAGE_RESET` by default. New reclamation strategy for abandoned heap pages
+  for better memory footprint.
+* 2020-02-09, `v1.5.0`: stable release 1.5: improved free performance, small bug fixes.
+* 2020-01-22, `v1.4.0`: stable release 1.4: improved performance for delayed OS page reset,
+more eager concurrent free, addition of STL allocator, fixed potential memory leak.
+* 2020-01-15, `v1.3.0`: stable release 1.3: bug fixes, improved randomness and [stronger
+free list encoding](https://github.com/microsoft/mimalloc/blob/783e3377f79ee82af43a0793910a9f2d01ac7863/include/mimalloc-internal.h#L396) in secure mode.
+* 2019-12-22, `v1.2.2`: stable release 1.2: minor updates.
+* 2019-11-22, `v1.2.0`: stable release 1.2: bug fixes, improved secure mode (free list corruption checks, double free mitigation). Improved dynamic overriding on Windows.
+* 2019-10-07, `v1.1.0`: stable release 1.1.
+* 2019-09-01, `v1.0.8`: pre-release 8: more robust windows dynamic overriding, initial huge page support.
+* 2019-08-10, `v1.0.6`: pre-release 6: various performance improvements.
+

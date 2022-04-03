@@ -8,6 +8,7 @@ var group__options =
       [ "mi_option_eager_region_commit", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884ca32ce97ece29f69e82579679cf8a307ad", null ],
       [ "mi_option_large_os_pages", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884ca4192d491200d0055df0554d4cf65054e", null ],
       [ "mi_option_reserve_huge_os_pages", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884caca7ed041be3b0b9d0b82432c7bf41af2", null ],
+      [ "mi_option_reserve_huge_os_pages_at", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884caa13e7926d4339d2aa6fbf61d4473fd5c", null ],
       [ "mi_option_segment_cache", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884ca2ecbe7ef32f5c84de3739aa4f0b805a1", null ],
       [ "mi_option_page_reset", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884cada854dd272c66342f18a93ee254a2968", null ],
       [ "mi_option_segment_reset", "group__options.html#ggafebf7ed116adb38ae5218bc3ce06884cafb121d30d87591850d5410ccc3a95c6d", null ],

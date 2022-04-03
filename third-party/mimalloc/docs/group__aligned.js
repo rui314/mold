@@ -1,5 +1,6 @@
 var group__aligned =
 [
+    [ "MI_ALIGNMENT_MAX", "group__aligned.html#ga83c03016066b438f51a8095e9140be06", null ],
     [ "mi_calloc_aligned", "group__aligned.html#ga53dddb4724042a90315b94bc268fb4c9", null ],
     [ "mi_calloc_aligned_at", "group__aligned.html#ga08647c4593f3b2eef24a919a73eba3a3", null ],
     [ "mi_malloc_aligned", "group__aligned.html#ga68930196751fa2cca9e1fd0d71bade56", null ],

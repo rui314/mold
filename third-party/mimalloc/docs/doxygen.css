@@ -1,4 +1,4 @@
-/* The standard CSS for doxygen 1.8.15 */
+/* The standard CSS for doxygen 1.9.1 */
 
 body, table, div, p, dl {
 	font: 400 14px/22px Roboto,sans-serif;
@@ -53,15 +53,22 @@ dt {
 	font-weight: bold;
 }
 
-div.multicol {
+ul.multicol {
 	-moz-column-gap: 1em;
 	-webkit-column-gap: 1em;
+	column-gap: 1em;
 	-moz-column-count: 3;
 	-webkit-column-count: 3;
+	column-count: 3;
 }
 
 p.startli, p.startdd {
 	margin-top: 2px;
+}
+
+th p.starttd, th p.intertd, th p.endtd {
+        font-size: 100%;
+        font-weight: 700;
 }
 
 p.starttd {
@@ -96,29 +103,95 @@ caption {
 }
 
 span.legend {
-        font-size: 70%;
-        text-align: center;
-}
-
-h3.version {
-        font-size: 90%;
-        text-align: center;
-}
-
-div.qindex, div.navtab{
-	background-color: #D6D9D9;
-	border: 1px solid #636C6D;
+	font-size: 70%;
 	text-align: center;
 }
 
-div.qindex, div.navpath {
-	width: 100%;
-	line-height: 140%;
+h3.version {
+	font-size: 90%;
+	text-align: center;
 }
 
 div.navtab {
-	margin-right: 15px;
+	border-right: 1px solid #636C6D;
+	padding-right: 15px;
+	text-align: right;
+	line-height: 110%;
 }
+
+div.navtab table {
+	border-spacing: 0;
+}
+
+td.navtab {
+	padding-right: 6px;
+	padding-left: 6px;
+}
+td.navtabHL {
+	background-image: url('tab_a.png');
+	background-repeat:repeat-x;
+	padding-right: 6px;
+	padding-left: 6px;
+}
+
+td.navtabHL a, td.navtabHL a:visited {
+	color: #fff;
+	text-shadow: 0px 1px 1px rgba(0, 0, 0, 1.0);
+}
+
+a.navtab {
+	font-weight: bold;
+}
+
+div.qindex{
+	text-align: center;
+	width: 100%;
+	line-height: 140%;
+	font-size: 130%;
+	color: #A0A0A0;
+}
+
+dt.alphachar{
+	font-size: 180%;
+	font-weight: bold;
+}
+
+.alphachar a{
+	color: black;
+}
+
+.alphachar a:hover, .alphachar a:visited{
+	text-decoration: none;
+}
+
+.classindex dl {
+	padding: 25px;
+	column-count:1
+}
+
+.classindex dd {
+	display:inline-block;
+	margin-left: 50px;
+	width: 90%;
+	line-height: 1.15em;
+}
+
+.classindex dl.odd {
+	background-color: #F0F1F1;
+}
+
+@media(min-width: 1120px) {
+	.classindex dl {
+		column-count:2
+	}
+}
+
+@media(min-width: 1320px) {
+	.classindex dl {
+		column-count:3
+	}
+}
+
 
 /* @group Link Styling */
 
@@ -134,17 +207,6 @@ a {
 
 a:hover {
 	text-decoration: underline;
-}
-
-a.qindex {
-	font-weight: bold;
-}
-
-a.qindexHL {
-	font-weight: bold;
-	background-color: #5B6364;
-	color: #FFFFFF;
-	border: 1px double #464C4D;
 }
 
 .contents a.qindexHL:visited {
@@ -533,7 +595,7 @@ table.memberdecls {
         white-space: nowrap;
 }
 
-.memItemRight {
+.memItemRight, .memTemplItemRight {
 	width: 100%;
 }
 
@@ -701,7 +763,7 @@ dl.reflist dd {
         padding-left: 0px;
 }       
 
-.params .paramname, .retval .paramname, .tparams .paramname {
+.params .paramname, .retval .paramname, .tparams .paramname, .exception .paramname {
         font-weight: bold;
         vertical-align: top;
 }
@@ -1351,10 +1413,12 @@ dl.citelist dt {
         font-weight:bold;
         margin-right:10px;
         padding:5px;
+        text-align:right;
+        width:52px;
 }
 
 dl.citelist dd {
-        margin:2px 0;
+        margin:2px 0 2px 72px;
         padding:5px 0;
 }
 
@@ -1415,6 +1479,12 @@ div.toc li.level3 {
 
 div.toc li.level4 {
         margin-left: 45px;
+}
+
+span.emoji {
+        /* font family used at the site: https://unicode.org/emoji/charts/full-emoji-list.html
+         * font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", Times, Symbola, Aegyptus, Code2000, Code2001, Code2002, Musica, serif, LastResort;
+         */
 }
 
 .PageDocRTL-title div.toc li.level1 {
@@ -1653,47 +1723,6 @@ tr.heading h2 {
 }
 
 /* @group Markdown */
-
-/*
-table.markdownTable {
-	border-collapse:collapse;
-        margin-top: 4px;
-        margin-bottom: 4px;
-}
-
-table.markdownTable td, table.markdownTable th {
-	border: 1px solid #060606;
-	padding: 3px 7px 2px;
-}
-
-table.markdownTableHead tr {
-}
-
-table.markdownTableBodyLeft td, table.markdownTable th {
-	border: 1px solid #060606;
-	padding: 3px 7px 2px;
-}
-
-th.markdownTableHeadLeft th.markdownTableHeadRight th.markdownTableHeadCenter th.markdownTableHeadNone {
-	background-color: #0B0C0C;
-	color: #FFFFFF;
-	font-size: 110%;
-	padding-bottom: 4px;
-	padding-top: 5px;
-}
-
-th.markdownTableHeadLeft {
-	text-align: left
-}
-
-th.markdownTableHeadRight {
-	text-align: right
-}
-
-th.markdownTableHeadCenter {
-	text-align: center
-}
-*/
 
 table.markdownTable {
 	border-collapse:collapse;

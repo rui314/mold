@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['aligned_20allocation',['Aligned Allocation',['../group__aligned.html',1,'']]]
+  ['aligned_20allocation_1',['Aligned Allocation',['../group__aligned.html',1,'']]]
 ];

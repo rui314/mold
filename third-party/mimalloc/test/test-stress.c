@@ -189,11 +189,13 @@ static void test_stress(void) {
         free_items(p);
       }
     }
+    #ifndef NDEBUG
     //mi_collect(false);
-    //mi_debug_show_arenas();    
-#if !defined(NDEBUG) || defined(MI_TSAN)
+    //mi_debug_show_arenas();
+    #endif    
+    #if !defined(NDEBUG) || defined(MI_TSAN)
     if ((n + 1) % 10 == 0) { printf("- iterations left: %3d\n", ITER - (n + 1)); }
-#endif
+    #endif
   }
 }
 

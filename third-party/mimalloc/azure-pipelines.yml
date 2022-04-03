@@ -43,7 +43,7 @@ jobs:
       solution: $(BuildType)/libmimalloc.sln
       configuration: '$(MSBuildConfiguration)'
       msbuildArguments: -m
-  - script: ctest --verbose --timeout 120
+  - script: ctest --verbose --timeout 120 -C $(MSBuildConfiguration)
     workingDirectory: $(BuildType)
     displayName: CTest
   #- script: $(BuildType)\$(BuildType)\mimalloc-test-stress
@@ -115,7 +115,7 @@ jobs:
   displayName: macOS
   pool:
     vmImage:
-     macOS-10.14
+      macOS-latest
   strategy:
     matrix:
       Debug:

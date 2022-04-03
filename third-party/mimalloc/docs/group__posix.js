@@ -11,6 +11,7 @@ var group__posix =
     [ "mi_memalign", "group__posix.html#gaab7fa71ea93b96873f5d9883db57d40e", null ],
     [ "mi_posix_memalign", "group__posix.html#gacff84f226ba9feb2031b8992e5579447", null ],
     [ "mi_pvalloc", "group__posix.html#gaeb325c39b887d3b90d85d1eb1712fb1e", null ],
+    [ "mi_reallocarr", "group__posix.html#ga7e1934d60a3e697950eeb48e042bfad5", null ],
     [ "mi_reallocarray", "group__posix.html#ga48fad8648a2f1dab9c87ea9448a52088", null ],
     [ "mi_valloc", "group__posix.html#ga73baaf5951f5165ba0763d0c06b6a93b", null ]
 ];

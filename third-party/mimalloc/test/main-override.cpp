@@ -50,7 +50,7 @@ int main() {
    tsan_numa_test();
    strdup_test();
 
-  //test_mt_shutdown();
+  test_mt_shutdown();
   //fail_aslr();
   bench_alloc_large();
   mi_stats_print(NULL);
@@ -76,7 +76,7 @@ public:
 static void various_tests() {
   atexit(free_p);
   void* p1 = malloc(78);
-  void* p2 = mi_malloc_aligned(16, 24);
+  void* p2 = mi_malloc_aligned(24, 16);
   free(p1);
   p1 = malloc(8);
   char* s = mi_strdup("hello\n");

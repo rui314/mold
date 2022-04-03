@@ -1,5 +1,6 @@
 set(mi_version_major 2)
 set(mi_version_minor 0)
+set(mi_version_patch 5)
 set(mi_version ${mi_version_major}.${mi_version_minor})
 
 set(PACKAGE_VERSION ${mi_version})

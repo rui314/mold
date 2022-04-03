@@ -9,3 +9,4 @@
 *.patch binary
 *.dll binary
 *.lib binary
+*.exe binary
