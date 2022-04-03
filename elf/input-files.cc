@@ -49,6 +49,7 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 template <typename E>
 void InputFile<E>::clear_symbols() {
   for (Symbol<E> *sym : get_global_syms()) {
+    std::scoped_lock lock(sym->mu);
     if (sym->file == this) {
       sym->file = nullptr;
       sym->shndx = 0;
@@ -1008,6 +1009,8 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *this->symbols[i];
+    std::scoped_lock lock(sym.mu);
+
     if (sym.file != this) {
       if (ctx.arg.warn_common)
         Warn(ctx) << *this << ": multiple common symbols: " << sym;

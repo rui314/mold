@@ -1128,11 +1128,13 @@ void compute_import_export(Context<E> &ctx) {
         continue;
 
       if (sym->file != file && sym->file->is_dso) {
+        std::scoped_lock lock(sym->mu);
         sym->is_imported = true;
         continue;
       }
 
       if (sym->file == file) {
+        std::scoped_lock lock(sym->mu);
         sym->is_exported = true;
 
         if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
