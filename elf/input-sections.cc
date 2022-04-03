@@ -131,12 +131,10 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
   bool is_writable = (shdr().sh_flags & SHF_WRITE);
 
   auto error = [&] {
-    if (sym.is_absolute())
-      Error(ctx) << *this << ": " << rel << " relocation against symbol `"
-                 << sym << "' can not be used; recompile with -fno-PIC";
-    else
-      Error(ctx) << *this << ": " << rel << " relocation against symbol `"
-                 << sym << "' can not be used; recompile with -fPIC";
+    std::string msg = sym.is_absolute() ? "-fno-PIC" : "-fPIC";
+    Error(ctx) << *this << ": " << rel << " relocation at offset 0x"
+               << std::hex << rel.r_offset << " against symbol `"
+               << sym << "' can not be used; recompile with " << msg;
   };
 
   auto warn_textrel = [&] {
