@@ -754,6 +754,11 @@ static u64 get_rank(const Symbol<E> &sym) {
   return get_rank(sym.file, sym.esym(), !sym.file->is_alive);
 }
 
+// Symbol's visibility is set to the most restrictive one. For example,
+// if one input file has a defined symbol `foo` with the default
+// visibility and the other input file has an undefined symbol `foo`
+// with the hidden visibility, the resulting symbol is a hidden defined
+// symbol.
 template <typename E>
 void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
                                      u8 visibility) {
@@ -995,6 +1000,24 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
+// Common symbols are used by C's tantative definitions. Tentative
+// definition is an obscure C feature which allows users to omit `extern`
+// from global variable declarations in a header file. For example, if you
+// have a tentative definition `int foo;` in a header which is included
+// into multiple translation units, `foo` will be included into multiple
+// object files, but it won't cause the duplicate symbol error. Instead,
+// the linker will merge them into a single instance of `foo`.
+//
+// If a header file contains a tentative definition `int foo;` and one of
+// a C file contains a definition with initial value such as `int foo = 5;`,
+// then the "real" definition wins. The symbol for the tentative definition
+// will be resolved to the real definition. If there is no "real"
+// definition, the tentative definition gets the default initial value 0.
+//
+// Tentative definitions are represented as "common symbols" in an object
+// file. In this function, we allocate spaces in .bss for remaining common
+// symbols that were not resolved to usual defined symbols in previous
+// passes.
 template <typename E>
 void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
   if (!has_common_symbol)
