@@ -634,7 +634,7 @@ void sort_init_fini(Context<E> &ctx) {
   Timer t(ctx, "sort_init_fini");
 
   auto get_priority = [](InputSection<E> *isec) {
-    static std::regex re(R"(_array\.(\d+)$)", std::regex_constants::optimize);
+    static std::regex re(R"(\.(\d+)$)", std::regex_constants::optimize);
     std::string name = isec->name().begin();
     std::smatch m;
     if (std::regex_search(name, m, re))
@@ -645,6 +645,43 @@ void sort_init_fini(Context<E> &ctx) {
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     if (osec->name == ".init_array" || osec->name == ".fini_array") {
       if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
+        std::reverse(osec->members.begin(), osec->members.end());
+
+      sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
+        return get_priority(a) < get_priority(b);
+      });
+    }
+  }
+}
+
+template <typename E>
+void sort_ctor_dtor(Context<E> &ctx) {
+  Timer t(ctx, "sort_ctor_dtor");
+
+  auto get_priority = [](InputSection<E> *isec) {
+    auto opts = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+    static std::regex re1(R"((?:clang_rt\.)?crtbegin)", opts);
+    static std::regex re2(R"((?:clang_rt\.)?crtend)", opts);
+    static std::regex re3(R"(\.(\d+)$)", opts);
+
+    // crtbegin.o and crtend.o contain marker symbols such as
+    // __CTOR_LIST__ or __DTOR_LIST__. So they have to be at the
+    // beginning or end of the section.
+    std::smatch m;
+    if (std::regex_search(isec->file.filename, m, re1))
+      return -2;
+    if (std::regex_search(isec->file.filename, m, re2))
+      return 65536;
+
+    std::string name(isec->name());
+    if (std::regex_search(name, m, re3))
+      return std::stoi(m[1]);
+    return -1;
+  };
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    if (osec->name == ".ctors" || osec->name == ".dtors") {
+      if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
         std::reverse(osec->members.begin(), osec->members.end());
 
       sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
@@ -686,7 +723,8 @@ void shuffle_sections(Context<E> &ctx) {
 
   auto is_eligible = [](OutputSection<E> &osec) {
     return osec.name != ".init" && osec.name != ".fini" &&
-           osec.name != ".init_array" && osec.name != ".fini_array";
+           osec.name != ".init_array" && osec.name != ".fini_array" &&
+           osec.name != ".ctors" && osec.name != ".dtors";
   };
 
   switch (ctx.arg.shuffle_sections) {
@@ -1485,6 +1523,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void write_repro_file(Context<E> &);                         \
   template void check_duplicate_symbols(Context<E> &);                  \
   template void sort_init_fini(Context<E> &);                           \
+  template void sort_ctor_dtor(Context<E> &);                           \
   template void shuffle_sections(Context<E> &);                         \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
   template void compute_section_sizes(Context<E> &);                    \

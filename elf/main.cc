@@ -549,6 +549,10 @@ static int elf_main(int argc, char **argv) {
   // a special rule. Sort them.
   sort_init_fini(ctx);
 
+  // Likewise, .ctors and .dtors have to be sorted. They are rare
+  // because they are superceded by .init_array/.fini_array, though.
+  sort_ctor_dtor(ctx);
+
   // Handle --shuffle-sections
   if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_NONE)
     shuffle_sections(ctx);

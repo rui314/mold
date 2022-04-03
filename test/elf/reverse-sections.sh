@@ -14,8 +14,6 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-[ $MACHINE = i386 ] && { echo skipped; exit; }
-
 cat <<EOF | $CC -o $t/a.o -c -xc++ -
 #include <iostream>
 static struct Foo1 {
