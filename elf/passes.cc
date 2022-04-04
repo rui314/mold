@@ -1391,7 +1391,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx._DYNAMIC, ctx.dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
-  start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
+  if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
+    start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
+  else
+    start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);

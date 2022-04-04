@@ -489,6 +489,7 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = E::word_size;
+    this->shdr.sh_size = E::word_size * 3;
   }
 
   void copy_buf(Context<E> &ctx) override;
