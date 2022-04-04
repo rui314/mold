@@ -411,22 +411,22 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
 // Returns a PLT header size and a PLT entry size.
 template <typename E>
 static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
-  switch (E::e_machine) {
-  case EM_X86_64:
+  if constexpr (std::is_same_v<E, X86_64>) {
     if (ctx.arg.z_now)
       return {0, 8};
     if (ctx.arg.z_ibtplt)
       return {32, 16};
     return {16, 16};
-  case EM_386:
-    return {16, 16};
-  case EM_AARCH64:
-    return {32, 16};
-  case EM_ARM:
-    return {20, 16};
-  case EM_RISCV:
-    return {32, 16};
   }
+
+  if constexpr (std::is_same_v<E, I386>)
+    return {16, 16};
+  if constexpr (std::is_same_v<E, ARM64>)
+    return {32, 16};
+  if constexpr (std::is_same_v<E, ARM32>)
+    return {20, 16};
+  if constexpr (std::is_same_v<E, RISCV64>)
+    return {32, 16};
   unreachable();
 }
 
@@ -444,7 +444,7 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
-  if (E::e_machine == EM_RISCV)
+  if constexpr (std::is_same_v<E, RISCV64>)
     ctx.arg.discard_locals = true;
 
   while (!args.empty()) {

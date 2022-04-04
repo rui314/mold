@@ -77,7 +77,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
-  if constexpr (E::e_machine == EM_ARM) {
+  if constexpr (std::is_same_v<E, ARM32>) {
     ctx.thumb_to_arm = push(new ThumbToArmSection);
     ctx.tls_trampoline = push(new TlsTrampolineSection);
   }
@@ -393,10 +393,11 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
 
-  if (E::e_machine == EM_RISCV && !ctx.arg.shared)
-    ctx.__global_pointer = add("__global_pointer$");
+  if constexpr (std::is_same_v<E, RISCV64>)
+    if (!ctx.arg.shared)
+      ctx.__global_pointer = add("__global_pointer$");
 
-  if constexpr (E::e_machine == EM_ARM) {
+  if constexpr (std::is_same_v<E, ARM32>) {
     ctx.__exidx_start = add("__exidx_start");
     ctx.__exidx_end = add("__exidx_end");
   }
@@ -939,7 +940,7 @@ void scan_rels(Context<E> &ctx) {
       }
     }
 
-    if constexpr (E::e_machine == EM_ARM)
+    if constexpr (std::is_same_v<E, ARM32>)
       if (sym->flags & NEEDS_THUMB_TO_ARM_THUNK)
         ctx.thumb_to_arm->add_symbol(ctx, sym);
 
@@ -1400,17 +1401,18 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // RISC-V's __global_pointer$
-  if (E::e_machine == EM_RISCV && !ctx.arg.shared) {
-    if (Chunk<E> *chunk = find(".sdata"))
-      ctx.__global_pointer->shndx = -chunk->shndx;
-    else
-      ctx.__global_pointer->shndx = -1;
-
-    ctx.__global_pointer->value = 0x800;
+  if constexpr (std::is_same_v<E, RISCV64>) {
+    if (!ctx.arg.shared) {
+      if (Chunk<E> *chunk = find(".sdata"))
+        ctx.__global_pointer->shndx = -chunk->shndx;
+      else
+        ctx.__global_pointer->shndx = -1;
+      ctx.__global_pointer->value = 0x800;
+    }
   }
 
   // ARM32's __exidx_{start,end}
-  if constexpr (E::e_machine == EM_ARM) {
+  if constexpr (std::is_same_v<E, ARM32>) {
     if (Chunk<E> *chunk = find(".ARM.exidx")) {
       start(ctx.__exidx_start, chunk);
       stop(ctx.__exidx_end, chunk);

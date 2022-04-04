@@ -424,7 +424,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 // We expect them to be sorted, so sort them if necessary.
 template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
-  if (E::e_machine != EM_RISCV)
+  if (!std::is_same_v<E, RISCV64>)
     return;
 
   auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {

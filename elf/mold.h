@@ -23,6 +23,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
+#include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>

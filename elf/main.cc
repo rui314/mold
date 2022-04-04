@@ -342,7 +342,7 @@ static void show_stats(Context<E> &ctx) {
   static Counter num_objs("num_objs", ctx.objs.size());
   static Counter num_dsos("num_dsos", ctx.dsos.size());
 
-  if constexpr (E::e_machine == EM_AARCH64) {
+  if constexpr (std::is_same_v<E, ARM64>) {
     static Counter num_thunks("num_thunks");
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
@@ -637,14 +637,14 @@ static int elf_main(int argc, char **argv) {
   // On ARM64, we may need to create so-called "range extension thunks"
   // to extend branch instructions reach, as they can jump only to
   // ±128 MiB.
-  if constexpr (E::e_machine == EM_AARCH64)
+  if constexpr (std::is_same_v<E, ARM64>)
     filesize = create_range_extension_thunks(ctx);
 
   // On RISC-V, branches are encode using multiple instructions so
   // that they can jump to anywhere in ±2 GiB by default. They may
   // be replaced with shorter instruction sequences if destinations
   // are close enough. Do this optimization.
-  if constexpr (E::e_machine == EM_RISCV)
+  if constexpr (std::is_same_v<E, RISCV64>)
     filesize = riscv_resize_sections(ctx);
 
   // Fix linker-synthesized symbol addresses.
@@ -692,10 +692,10 @@ static int elf_main(int argc, char **argv) {
     ctx.checkpoint();
   }
 
-  if constexpr (E::e_machine == EM_AARCH64)
+  if constexpr (std::is_same_v<E, ARM64>)
     write_thunks(ctx);
 
-  if constexpr (E::e_machine == EM_ARM)
+  if constexpr (std::is_same_v<E, ARM32>)
     sort_arm_exidx(ctx);
 
   // Dynamic linker works better with sorted .rela.dyn section,

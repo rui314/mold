@@ -17,7 +17,7 @@ static bool is_init_fini(const InputSection<E> &isec) {
   return type == SHT_INIT_ARRAY ||
          type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY ||
-         (E::e_machine == EM_ARM && type == SHT_ARM_EXIDX) ||
+         (std::is_same_v<E, ARM32> && type == SHT_ARM_EXIDX) ||
          name.starts_with(".ctors") ||
          name.starts_with(".dtors") ||
          name.starts_with(".init") ||

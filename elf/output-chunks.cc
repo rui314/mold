@@ -48,10 +48,10 @@ u64 get_entry_addr(Context<E> &ctx) {
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {
-  if constexpr (E::e_machine == EM_ARM)
+  if constexpr (std::is_same_v<E, ARM32>)
     return EF_ARM_EABI_VER5;
 
-  if constexpr (E::e_machine == EM_RISCV) {
+  if constexpr (std::is_same_v<E, RISCV64>) {
     std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
     std::erase(objs, ctx.internal_obj);
 
@@ -302,7 +302,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Add PT_ARM_EDXIDX
-  if constexpr (E::e_machine == EM_ARM) {
+  if constexpr (std::is_same_v<E, ARM32>) {
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->shdr.sh_type == SHT_ARM_EXIDX) {
         define(PT_ARM_EXIDX, PF_R, 4, chunk);
@@ -356,7 +356,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
-  if constexpr (E::e_machine == EM_386 || E::e_machine == EM_ARM)
+  if constexpr (std::is_same_v<E, I386> || std::is_same_v<E, ARM32>)
     return {(u32)offset, type, sym};
   else
     return {offset, type, sym, addend};
@@ -812,8 +812,11 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
     if (name == ".fini_array" || name.starts_with(".fini_array."))
       return SHT_FINI_ARRAY;
   }
-  if (E::e_machine == EM_X86_64 && type == SHT_X86_64_UNWIND)
+
+  if constexpr (std::is_same_v<E, X86_64>)
+    if (type == SHT_X86_64_UNWIND)
       return SHT_PROGBITS;
+
   return type;
 }
 
@@ -983,7 +986,6 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(E::e_machine != EM_RISCV);
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size * 2;
   tlsdesc_syms.push_back(sym);
@@ -1055,7 +1057,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  if constexpr (E::e_machine != EM_RISCV)
+  if constexpr (!std::is_same_v<E, RISCV64>)
     for (Symbol<E> *sym : tlsdesc_syms)
       entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
 
@@ -1077,17 +1079,16 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
 
     // Otherwise, we know the offset at link-time, so fill the GOT entry.
-    if constexpr (E::e_machine == EM_X86_64 || E::e_machine == EM_386) {
+    if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
-    } else if constexpr (E::e_machine == EM_ARM) {
+    else if constexpr (std::is_same_v<E, ARM32>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 8});
-    } else if constexpr (E::e_machine == EM_AARCH64) {
+    else if constexpr (std::is_same_v<E, ARM64>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 16});
-    } else if constexpr (E::e_machine == EM_RISCV) {
+    else if constexpr (std::is_same_v<E, RISCV64>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin});
-    } else {
+    else
       unreachable();
-    }
   }
 
   if (tlsld_idx != -1)
@@ -1138,17 +1139,17 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   auto get_plt_resolver_addr = [&](Symbol<E> &sym) -> u64 {
-    if constexpr (E::e_machine == EM_AARCH64 || E::e_machine == EM_ARM ||
-                  E::e_machine == EM_RISCV)
+    if constexpr (std::is_same_v<E, ARM64> || std::is_same_v<E, ARM32> ||
+                  std::is_same_v<E, RISCV64>)
       return ctx.plt->shdr.sh_addr;
 
-    if constexpr (E::e_machine == EM_X86_64) {
+    if constexpr (std::is_same_v<E, X86_64>) {
       if (ctx.arg.z_ibtplt)
         return ctx.plt->shdr.sh_addr;
       return sym.get_plt_addr(ctx) + 6;
     }
 
-    if constexpr (E::e_machine == EM_386)
+    if constexpr (std::is_same_v<E, I386>)
       return sym.get_plt_addr(ctx) + 6;
     unreachable();
   };
