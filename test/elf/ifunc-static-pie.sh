@@ -14,15 +14,11 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-# IFUNC is not supported on RISC-V yet
+# We need to implement R_386_GOT32X relaxation to support PIE on i386
+[ $MACHINE = i386 ] && { echo skipped; exit; }
+
+# RISCV64 does not support IFUNC yet
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
-
-# Skip if libc is musl because musl does not support GNU FUNC
-echo 'int main() {}' | $CC -o $t/exe -xc -
-readelf --dynamic $t/exe | grep -q ld-musl && { echo OK; exit; }
-
-# -static-pie works only with a newer version of glibc
-ldd --version 2>&1 | grep -Pq 'Copyright \(C\) 202[2-9]' || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
@@ -43,7 +39,11 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -static-pie
-$QEMU $t/exe | grep -q 'Hello world'
+# Skip if the system does not support -static-pie
+$CC -o $t/exe1 $t/a.o -static-pie >& /dev/null || { echo skipped; exit; }
+$QEMU $t/exe1 >& /dev/null || { echo skipped; exit; }
+
+$CC -B. -o $t/exe2 $t/a.o -static-pie
+$QEMU $t/exe2 | grep -q 'Hello world'
 
 echo OK
