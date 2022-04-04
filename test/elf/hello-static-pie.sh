@@ -17,6 +17,8 @@ mkdir -p $t
 # We need to implement R_386_GOT32X relaxation to support PIE on i386
 [ $MACHINE = i386 ] && { echo skipped; exit; }
 
+[ $MACHINE = aarch64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIE
 #include <stdio.h>
 int main() {

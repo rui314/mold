@@ -20,6 +20,8 @@ mkdir -p $t
 # RISCV64 does not support IFUNC yet
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
+[ $MACHINE = aarch64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
 
