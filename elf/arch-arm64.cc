@@ -181,12 +181,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_ADD_ABS_LO12_NC:
       *(u32 *)loc |= bits(S + A, 11, 0) << 10;
       continue;
+    case R_AARCH64_MOVW_UABS_G0:
     case R_AARCH64_MOVW_UABS_G0_NC:
       *(u32 *)loc |= bits(S + A, 15, 0) << 5;
       continue;
+    case R_AARCH64_MOVW_UABS_G1:
     case R_AARCH64_MOVW_UABS_G1_NC:
       *(u32 *)loc |= bits(S + A, 31, 16) << 5;
       continue;
+    case R_AARCH64_MOVW_UABS_G2:
     case R_AARCH64_MOVW_UABS_G2_NC:
       *(u32 *)loc |= bits(S + A, 47, 32) << 5;
       continue;
@@ -279,6 +282,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(u32 *)loc |= bits(val, 23, 12) << 10;
       continue;
     }
+    case R_AARCH64_TLSLE_ADD_TPREL_LO12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(u32 *)loc |= bits(S + A - ctx.tls_begin + 16, 11, 0) << 10;
       continue;
@@ -459,14 +463,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_LDST64_ABS_LO12_NC:
     case R_AARCH64_LDST128_ABS_LO12_NC:
     case R_AARCH64_LDST8_ABS_LO12_NC:
+    case R_AARCH64_MOVW_UABS_G0:
     case R_AARCH64_MOVW_UABS_G0_NC:
+    case R_AARCH64_MOVW_UABS_G1:
     case R_AARCH64_MOVW_UABS_G1_NC:
+    case R_AARCH64_MOVW_UABS_G2:
     case R_AARCH64_MOVW_UABS_G2_NC:
     case R_AARCH64_MOVW_UABS_G3:
     case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+    case R_AARCH64_TLSLE_ADD_TPREL_LO12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
     case R_AARCH64_TLSGD_ADD_LO12_NC:
     case R_AARCH64_TLSDESC_CALL:
