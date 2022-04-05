@@ -1309,10 +1309,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     } else if (sym.file->is_dso || sym.esym().is_undef()) {
       esym.st_shndx = SHN_UNDEF;
       esym.st_size = 0;
-      if (sym.has_plt(ctx) && !ctx.arg.pic && sym.is_imported) {
-        // Emit an address for a canonical PLT
-        esym.st_value = sym.get_plt_addr(ctx);
-      }
+      esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
     } else {
       InputSection<E> *isec = sym.get_input_section();
       if (!isec) {

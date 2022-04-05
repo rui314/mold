@@ -389,7 +389,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         // Absolute  Local    Imported data  Imported code
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       PLT    },     // PDE
+        {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
       };
       dispatch(ctx, table, i, rel, sym);
       break;

@@ -886,20 +886,19 @@ void scan_rels(Context<E> &ctx) {
       ctx.got->add_got_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_PLT) {
-      bool is_canonical = (!ctx.arg.pic && sym->is_imported);
-
-      // If a symbol needs a canonical PLT, it is considered both
-      // imported and exported.
-      if (is_canonical)
+      if (sym->is_canonical) {
+        // A canonical PLT needs to be visible from DSOs.
         sym->is_exported = true;
 
-      if ((sym->flags & NEEDS_GOT) && !is_canonical) {
-        ctx.pltgot->add_symbol(ctx, sym);
-      } else{
-        // If we need to create a canonical PLT, we can't use .plt.got
-        // because otherwise .plt.got and .got would refer each other,
-        // resulting in an infinite loop at runtime.
+        // We can't use .plt.got for a canonical PLT because otherwise
+        // .plt.got and .got would refer each other, resulting in an
+        // infinite loop at runtime.
         ctx.plt->add_symbol(ctx, sym);
+      } else {
+        if (sym->flags & NEEDS_GOT)
+          ctx.pltgot->add_symbol(ctx, sym);
+        else
+          ctx.plt->add_symbol(ctx, sym);
       }
     }
 

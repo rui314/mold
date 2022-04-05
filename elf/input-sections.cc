@@ -168,6 +168,12 @@ void InputSection<E>::dispatch(Context<E> &ctx, Action table[3][4], i64 i,
   case PLT:
     sym.flags |= NEEDS_PLT;
     return;
+  case CPLT: {
+    std::scoped_lock lock(sym.mu);
+    sym.flags |= NEEDS_PLT;
+    sym.is_canonical = true;
+    return;
+  }
   case DYNREL:
     if (!is_writable) {
       if (ctx.arg.z_text) {

@@ -312,7 +312,7 @@ public:
   u8 p2align = 0;
 
 private:
-  typedef enum : u8 { NONE, ERROR, COPYREL, PLT, DYNREL, BASEREL } Action;
+  typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
 
   void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
                 const ElfRel<E> &rel, Symbol<E> &sym);
@@ -1820,6 +1820,7 @@ public:
   u8 wrap : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 copyrel_readonly : 1 = false;
+  u8 is_canonical : 1 = false;
 
   // If a symbol can be interposed at runtime, `is_imported` is true.
   // If a symbol is a dynamic symbol and can be used by other ELF
