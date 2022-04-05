@@ -341,6 +341,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_ARM_ABS32:
       *(u32 *)loc = S + A;
       break;
+    case R_ARM_TLS_LDO32:
+      *(u32 *)loc = S + A - ctx.tls_begin;
+      break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
