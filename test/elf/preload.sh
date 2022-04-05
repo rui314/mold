@@ -23,9 +23,9 @@ EOF
 
 rm -f $t/exe
 
-$CC -B. -o $t/exe $t/a.o -Wl,-preload
+$CC -B. -o $t/exe $t/a.o -Wl,-preload 2> /dev/null
 ! test -e $t/exe || false
-$CC -B. -o $t/exe $t/a.o
+$CC -B. -o $t/exe $t/a.o 2> /dev/null
 $QEMU $t/exe | grep -q 'Hello world'
 
 echo OK

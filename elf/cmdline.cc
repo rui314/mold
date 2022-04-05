@@ -913,6 +913,8 @@ void parse_nonpositional_args(Context<E> &ctx,
                read_arg(ctx, args, arg, "F")) {
       ctx.arg.filter.push_back(arg);
     } else if (read_flag(args, "preload")) {
+      Warn(ctx) << "--preload is deprecated and will be removed in a"
+                << " future version";
       ctx.arg.preload = true;
     } else if (read_flag(args, "no-preload")) {
       ctx.arg.preload = false;
