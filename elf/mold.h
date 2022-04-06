@@ -1489,6 +1489,7 @@ struct Context {
     bool is_static = false;
     bool lto_pass2 = false;
     bool noinhibit_exec = false;
+    bool oformat_binary = false;
     bool omagic = false;
     bool pack_dyn_relocs_relr = false;
     bool perf = false;

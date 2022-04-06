@@ -676,6 +676,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.is_static = true;
     } else if (read_flag(args, "no-omagic")) {
       ctx.arg.omagic = false;
+    } else if (read_arg(ctx, args, arg, "oformat")) {
+      if (arg != "binary")
+        Fatal(ctx) << "-oformat: " << arg << " is not supported";
+      ctx.arg.oformat_binary = true;
     } else if (read_arg(ctx, args, arg, "retain-symbols-file")) {
       read_retain_symbols_file(ctx, arg);
     } else if (read_arg(ctx, args, arg, "section-start")) {

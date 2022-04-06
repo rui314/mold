@@ -37,9 +37,12 @@ void create_synthetic_sections(Context<E> &ctx) {
     return std::unique_ptr<T>(x);
   };
 
-  ctx.ehdr = push(new OutputEhdr<E>);
-  ctx.phdr = push(new OutputPhdr<E>);
-  ctx.shdr = push(new OutputShdr<E>);
+  if (!ctx.arg.oformat_binary) {
+    ctx.ehdr = push(new OutputEhdr<E>);
+    ctx.phdr = push(new OutputPhdr<E>);
+    ctx.shdr = push(new OutputShdr<E>);
+  }
+
   ctx.got = push(new GotSection<E>);
   ctx.gotplt = push(new GotPltSection<E>);
   ctx.reldyn = push(new RelDynSection<E>);
@@ -1346,6 +1349,9 @@ i64 set_osec_offsets(Context<E> &ctx) {
 
     // Assigning new offsets may change the contents and the length
     // of the program header, so repeat it until converge.
+    if (!ctx.phdr)
+      return fileoff;
+
     i64 sz = ctx.phdr->shdr.sh_size;
     ctx.phdr->update_shdr(ctx);
     if (sz == ctx.phdr->shdr.sh_size)
@@ -1388,14 +1394,15 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx.__bss_start, chunk);
 
   // __ehdr_start and __executable_start
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->shndx == 1) {
-      ctx.__ehdr_start->shndx = -1;
-      ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
-
-      ctx.__executable_start->shndx = -1;
-      ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
-      break;
+  if (ctx.ehdr) {
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->shndx == 1) {
+        ctx.__ehdr_start->shndx = -1;
+        ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
+        ctx.__executable_start->shndx = -1;
+        ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
+        break;
+      }
     }
   }
 
@@ -1546,8 +1553,12 @@ i64 compress_debug_sections(Context<E> &ctx) {
   });
 
   ctx.shstrtab->update_shdr(ctx);
-  ctx.ehdr->update_shdr(ctx);
-  ctx.shdr->update_shdr(ctx);
+
+  if (ctx.ehdr)
+    ctx.ehdr->update_shdr(ctx);
+  if (ctx.shdr)
+    ctx.shdr->update_shdr(ctx);
+
   return set_osec_offsets(ctx);
 }
 
