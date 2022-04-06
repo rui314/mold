@@ -1172,8 +1172,16 @@ void clear_padding(Context<E> &ctx) {
 //   program header
 //   .interp
 //   alloc note
-//   alloc readonly data
+//   .hash
+//   .gnu.hash
+//   .dynsym
+//   .dynstr
+//   .gnu.version
+//   .gnu.version_r
+//   .rela.dyn
+//   .rela.plt
 //   alloc readonly code
+//   alloc readonly data
 //   alloc writable tdata
 //   alloc writable tbss
 //   alloc writable RELRO data
@@ -1183,7 +1191,18 @@ void clear_padding(Context<E> &ctx) {
 //   nonalloc
 //   section header
 //
-// .note sections are sorted by their alignments.
+// The reason to place .interp and other sections at the beginning of
+// a file is because they are needed by the loader. Especially on a
+// hard drive with spinnning disks, it is important to read these
+// sections in a single seek.
+//
+// .note sections are also placed at the beginning so that they are
+// included in a core crash dump even if it's truncated by ulimit.  In
+// particular, if .note.gnu.build-id is in a truncated core file, you
+// can at least identify which executable has crashed.
+//
+// Other file layouts are possible, but this layout is chosen to keep
+// the number of segments as few as possible.
 template <typename E>
 i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
@@ -1195,8 +1214,27 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
     return 1;
   if (chunk == ctx.interp.get())
     return 2;
+
   if (type == SHT_NOTE && (flags & SHF_ALLOC))
     return (1 << 10) + chunk->shdr.sh_addralign;
+
+  if (chunk == ctx.hash.get())
+    return (1 << 11) + 0;
+  if (chunk == ctx.gnu_hash.get())
+    return (1 << 11) + 1;
+  if (chunk == ctx.dynsym.get())
+    return (1 << 11) + 2;
+  if (chunk == ctx.dynstr.get())
+    return (1 << 11) + 3;
+  if (chunk == ctx.versym.get())
+    return (1 << 11) + 4;
+  if (chunk == ctx.verneed.get())
+    return (1 << 11) + 5;
+  if (chunk == ctx.reldyn.get())
+    return (1 << 11) + 6;
+  if (chunk == ctx.relplt.get())
+    return (1 << 11) + 7;
+
   if (chunk == ctx.shdr.get())
     return 1 << 30;
   if (!(flags & SHF_ALLOC))
@@ -1208,7 +1246,7 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   bool relro = is_relro(ctx, chunk);
   bool is_bss = (type == SHT_NOBITS);
 
-  return (1 << 20) | (writable << 19) | (exec << 18) | (!tls << 17) |
+  return (1 << 20) | (writable << 19) | (!exec << 18) | (!tls << 17) |
          (!relro << 16) | (is_bss << 15);
 }
 
