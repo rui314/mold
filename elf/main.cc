@@ -466,10 +466,6 @@ static int elf_main(int argc, char **argv) {
   // Apply -exclude-libs
   apply_exclude_libs(ctx);
 
-  // Create instances of linker-synthesized sections such as
-  // .got or .plt.
-  create_synthetic_sections(ctx);
-
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_symbols(ctx);
@@ -502,6 +498,10 @@ static int elf_main(int argc, char **argv) {
 
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);
+
+  // Create instances of linker-synthesized sections such as
+  // .got or .plt.
+  create_synthetic_sections(ctx);
 
   // Bin input sections into output sections.
   bin_sections(ctx);
@@ -574,8 +574,10 @@ static int elf_main(int argc, char **argv) {
     ctx.dynstr->add_string(str);
   for (std::string_view str : ctx.arg.filter)
     ctx.dynstr->add_string(str);
-  ctx.dynstr->add_string(ctx.arg.rpaths);
-  ctx.dynstr->add_string(ctx.arg.soname);
+  if (!ctx.arg.rpaths.empty())
+    ctx.dynstr->add_string(ctx.arg.rpaths);
+  if (!ctx.arg.soname.empty())
+    ctx.dynstr->add_string(ctx.arg.soname);
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.

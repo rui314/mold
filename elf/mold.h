@@ -607,9 +607,9 @@ public:
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_size = 1;
   }
 
+  void keep() { this->shdr.sh_size = 1; }
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
   void copy_buf(Context<E> &ctx) override;
@@ -660,12 +660,13 @@ public:
     this->shdr.sh_addralign = E::word_size;
   }
 
+  void keep() { this->symbols.resize(1); }
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void finalize(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol<E> *> symbols{1};
+  std::vector<Symbol<E> *> symbols;
 };
 
 template <typename E>

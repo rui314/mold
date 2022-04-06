@@ -72,7 +72,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   if (!ctx.arg.version_definitions.empty())
     ctx.verdef = push(new VerdefSection<E>);
 
-  ctx.dynamic = push(new DynamicSection<E>);
+  if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie)
+    ctx.dynamic = push(new DynamicSection<E>);
+
   ctx.versym = push(new VersymSection<E>);
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
@@ -80,6 +82,13 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, ARM32>) {
     ctx.thumb_to_arm = push(new ThumbToArmSection);
     ctx.tls_trampoline = push(new TlsTrampolineSection);
+  }
+
+  // If .dynamic exists, .dynsym and .dynstr must exist as well
+  // since .dynamic refers them.
+  if (ctx.dynamic) {
+    ctx.dynstr->keep();
+    ctx.dynsym->keep();
   }
 }
 

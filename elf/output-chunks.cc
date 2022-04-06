@@ -270,7 +270,7 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Add PT_DYNAMIC
-  if (ctx.dynamic->shdr.sh_size)
+  if (ctx.dynamic && ctx.dynamic->shdr.sh_size)
     define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic);
 
   // Add PT_GNU_EH_FRAME
@@ -480,6 +480,9 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 DynstrSection<E>::add_string(std::string_view str) {
+  if (this->shdr.sh_size == 0)
+    this->shdr.sh_size = 1;
+
   if (str.empty())
     return 0;
 
@@ -1205,6 +1208,9 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  if (symbols.empty())
+    symbols.resize(1);
+
   if (sym->get_dynsym_idx(ctx) != -1)
     return;
   sym->set_dynsym_idx(ctx, -2);
