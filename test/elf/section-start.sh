@@ -23,11 +23,11 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -no-pie -Wl,-section-start=.text=0x606000
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 readelf -W --sections $t/exe | grep -q '\.text .*00606000'
 
 $CC -B. -o $t/exe $t/a.o -no-pie -Wl,-Ttext=804000
-$t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep -q 'Hello world'
 readelf -W --sections $t/exe | grep -q '\.text .*00804000'
 
 echo OK
