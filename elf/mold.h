@@ -1820,7 +1820,6 @@ public:
   u8 wrap : 1 = false;
   u8 has_copyrel : 1 = false;
   u8 copyrel_readonly : 1 = false;
-  u8 is_canonical : 1 = false;
 
   // If a symbol can be interposed at runtime, `is_imported` is true.
   // If a symbol is a dynamic symbol and can be used by other ELF
@@ -1845,6 +1844,54 @@ public:
   // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
+
+  // `is_canonical` is true if this symbol represents a "canonical" PLT.
+  // Here is the explanation as to what is the canonical PLT is.
+  //
+  // In C/C++, the process-wide function pointer equality is guaratneed.
+  // That is, if you take an address of a function `foo`, it's always
+  // evaluated to the same address wherever you do that.
+  //
+  // For the sake of explanation, assume that `libx.so` exports a
+  // function symbol `foo`, and there's a program that uses `libx.so`.
+  // Both `libx.so` and the main executable take the address of `foo`,
+  // which must be evaluated to the same address because of the above
+  // guarantee.
+  //
+  // If the main executable is position-independent code (PIC), `foo` is
+  // evaluated to the beginning of the function code, as you would have
+  // expected. The address of `foo` is stored to GOTs, and the machine
+  // code that takes the address of `foo` reads the GOT entries at
+  // runtime.
+  //
+  // However, if it's not PIC, the main executable's code was compiled
+  // to not use GOT (note that shared objects are always PIC, only
+  // executables can be non-PIC). It instead assumes that `foo` (and any
+  // other global variables/functions) has an address that is fixed at
+  // link-time. This assumption is correct if `foo` is in the same
+  // position-dependent executable, but it's not if `foo` is imported
+  // from some other DSO at runtime.
+  //
+  // In this case, we use the address of the `foo`'s PLT entry in the
+  // main executable (whose address is fixed at link-time) as its
+  // address. In order to guarantee pointer equality, we also need to
+  // fill foo's GOT entries in DSOs with the addres of the foo's PLT
+  // entry instead of `foo`'s real address. We can do that by setting a
+  // symbol value to `foo`'s dynamic symbol. If a symbol value is set,
+  // the dynamic loader initialize `foo`'s GOT entries with that value
+  // instead of the symbol's real address.
+  //
+  // We call such PLT entry in the main executable as "canonical".
+  // If `foo` has a canonical PLT, its address is evaluated to its
+  // canonical PLT's address. Otherwise, it's evaluated to `foo`'s
+  // address.
+  //
+  // Only non-PIC main executables may have canonical PLTs. PIC
+  // executables and shared objects never have a canonical PLT.
+  //
+  // This bit manages if we need to make this symbol's PLT canonical.
+  // This bit is meaningful only when the symbol has a PLT entry.
+  u8 is_canonical : 1 = false;
 
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
