@@ -1228,9 +1228,7 @@ static bool is_tbss(Chunk<E> *chunk) {
 
 // Assign virtual addresses and file offsets to output sections.
 template <typename E>
-i64 set_osec_offsets(Context<E> &ctx) {
-  Timer t(ctx, "set_osec_offsets");
-
+i64 do_set_osec_offsets(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
   // Assign virtual addresses
@@ -1238,6 +1236,10 @@ i64 set_osec_offsets(Context<E> &ctx) {
   for (i64 i = 0; i < chunks.size(); i++) {
     if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
       continue;
+
+    if (auto it = ctx.arg.section_start.find(chunks[i]->name);
+        it != ctx.arg.section_start.end())
+      addr = it->second;
 
     if (i > 0 && separate_page(ctx, chunks[i - 1], chunks[i]))
       addr = align_to(addr, ctx.page_size);
@@ -1285,6 +1287,23 @@ i64 set_osec_offsets(Context<E> &ctx) {
     }
   }
   return fileoff;
+}
+
+// Assign virtual addresses and file offsets to output sections.
+template <typename E>
+i64 set_osec_offsets(Context<E> &ctx) {
+  Timer t(ctx, "set_osec_offsets");
+
+  for (;;) {
+    i64 fileoff = do_set_osec_offsets(ctx);
+
+    // Assigning new offsets may change the contents and the length
+    // of the program header, so repeat it until converge.
+    i64 sz = ctx.phdr->shdr.sh_size;
+    ctx.phdr->update_shdr(ctx);
+    if (sz == ctx.phdr->shdr.sh_size)
+      return fileoff;
+  }
 }
 
 template <typename E>

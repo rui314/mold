@@ -279,12 +279,11 @@ bool read_z_arg(Context<E> &ctx, std::span<std::string_view> &args,
 
 template <typename E>
 static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
-  if (!value.starts_with("0x") && !value.starts_with("0X"))
-    Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
-  value = value.substr(2);
+  if (value.starts_with("0x") || value.starts_with("0X"))
+    value = value.substr(2);
   if (value.find_first_not_of("0123456789abcdefABCDEF") != value.npos)
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
-  return std::stol(std::string(value), nullptr, 16);
+  return std::stoul(std::string(value), nullptr, 16);
 }
 
 template <typename E>
@@ -679,6 +678,18 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.omagic = false;
     } else if (read_arg(ctx, args, arg, "retain-symbols-file")) {
       read_retain_symbols_file(ctx, arg);
+    } else if (read_arg(ctx, args, arg, "section-start")) {
+      size_t pos = arg.find('=');
+      if (pos == arg.npos || pos == arg.size() - 1)
+        Fatal(ctx) << "-section-start: syntax error: " << arg;
+      ctx.arg.section_start[arg.substr(0, pos)] =
+        parse_hex(ctx, "section-start", arg.substr(pos + 1));
+    } else if (read_arg(ctx, args, arg, "Tbss")) {
+      ctx.arg.section_start[".bss"] = parse_hex(ctx, "Tbss", arg);
+    } else if (read_arg(ctx, args, arg, "Tdata")) {
+      ctx.arg.section_start[".data"] = parse_hex(ctx, "Tdata", arg);
+    } else if (read_arg(ctx, args, arg, "Ttext")) {
+      ctx.arg.section_start[".text"] = parse_hex(ctx, "Ttext", arg);
     } else if (read_flag(args, "repro")) {
       ctx.arg.repro = true;
     } else if (read_z_flag(args, "now")) {

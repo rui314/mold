@@ -247,7 +247,9 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
       if (!is_bss(first))
         while (i < end && !is_bss(chunks[i]) &&
-               to_phdr_flags(ctx, chunks[i]) == flags)
+               to_phdr_flags(ctx, chunks[i]) == flags &&
+               chunks[i]->shdr.sh_addr - first->shdr.sh_addr ==
+               chunks[i]->shdr.sh_offset - first->shdr.sh_offset)
           append(chunks[i++]);
 
       while (i < end && is_bss(chunks[i]) &&
