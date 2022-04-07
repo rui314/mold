@@ -1287,6 +1287,7 @@ struct X86_64 {
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
+  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<X86_64> : public Elf64Sym {};
@@ -1318,6 +1319,7 @@ struct I386 {
   static constexpr u32 pltgot_size = 8;
   static constexpr bool is_rel = true;
   static constexpr bool is_le = true;
+  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<I386> : public Elf32Sym {};
@@ -1349,6 +1351,7 @@ struct ARM64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
+  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<ARM64> : public Elf64Sym {};
@@ -1380,6 +1383,7 @@ struct ARM32 {
   static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = true;
   static constexpr bool is_le = true;
+  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<ARM32> : public Elf32Sym {};
@@ -1410,6 +1414,7 @@ struct RISCV64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr bool is_rel = false;
   static constexpr bool is_le = true;
+  static constexpr bool supports_tlsdesc = false;
 };
 
 template <> struct ElfSym<RISCV64> : public Elf64Sym {};

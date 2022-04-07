@@ -992,6 +992,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(E::supports_tlsdesc);
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size * 2;
   tlsdesc_syms.push_back(sym);
@@ -1063,7 +1064,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  if constexpr (!std::is_same_v<E, RISCV64>)
+  if constexpr (E::supports_tlsdesc)
     for (Symbol<E> *sym : tlsdesc_syms)
       entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
 

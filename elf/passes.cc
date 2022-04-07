@@ -405,6 +405,9 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
 
+  if constexpr (E::supports_tlsdesc)
+    ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
+
   if constexpr (std::is_same_v<E, RISCV64>)
     if (!ctx.arg.shared)
       ctx.__global_pointer = add("__global_pointer$");
@@ -1468,6 +1471,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
   else
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
+
+  // _TLS_MODULE_BASE_
+  if constexpr (E::supports_tlsdesc)
+    ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
