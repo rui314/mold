@@ -17,6 +17,8 @@
 #include <tbb/parallel_for_each.h>
 #include <zlib.h>
 
+#define CHECK(fn) do { int r = (fn); assert(r == Z_OK); } while (0)
+
 namespace mold {
 
 static constexpr i64 SHARD_SIZE = 1024 * 1024;
@@ -41,8 +43,8 @@ static std::vector<u8> do_compress(std::string_view input) {
   strm.zalloc = Z_NULL;
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
-  int r = deflateInit2(&strm, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
-  assert(r == Z_OK);
+
+  CHECK(deflateInit2(&strm, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY));
 
   // Set an input buffer
   strm.avail_in = input.size();
@@ -55,10 +57,9 @@ static std::vector<u8> do_compress(std::string_view input) {
   strm.avail_out = buf.size();
   strm.next_out = buf.data();
 
-  r = deflate(&strm, Z_SYNC_FLUSH);
-  assert(r == Z_OK);
-  assert(strm.avail_out > 0);
+  CHECK(deflate(&strm, Z_SYNC_FLUSH));
 
+  assert(strm.avail_out > 0);
   buf.resize(buf.size() - strm.avail_out);
   deflateEnd(&strm);
   return buf;
