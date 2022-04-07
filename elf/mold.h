@@ -1820,33 +1820,31 @@ public:
   std::atomic_uint8_t visibility = STV_DEFAULT;
 
   u8 is_weak : 1 = false;
-  u8 write_to_symtab : 1 = false;
-  u8 traced : 1 = false;
-  u8 wrap : 1 = false;
-  u8 has_copyrel : 1 = false;
-  u8 copyrel_readonly : 1 = false;
+  u8 write_to_symtab : 1 = false; // for --strip-all and the like
+  u8 traced : 1 = false;          // for --trace-symbol
+  u8 wrap : 1 = false;            // for --wrap
 
-  // If a symbol can be interposed at runtime, `is_imported` is true.
-  // If a symbol is a dynamic symbol and can be used by other ELF
-  // module at runtime, `is_exported` is true.
+  // If a symbol can be resolved to a symbol in a different ELF file at
+  // runtime, `is_imported` is true. If a symbol is a dynamic symbol and
+  // can be used by other ELF file at runtime, `is_exported` is true.
   //
-  // Note that both can be true at the same time. Such symbol
-  // represents a function or data exported from this ELF module
-  // which can be interposed by other definition at runtime.
-  // That is the usual exported symbols when creating a DSO.
-  // In other words, a dynamic symbol is exported by a DSO and
-  // imported by itself.
+  // Note that both can be true at the same time. Such symbol represents
+  // a function or data exported from this ELF file which can be
+  // imported by other definition at runtime. That is actually a usual
+  // exported symbol when creating a DSO. In other words, a dynamic
+  // symbol exported by a DSO is usually imported by itself.
   //
   // If is_imported is true and is_exported is false, it is a dynamic
-  // symbol imported from other DSO.
+  // symbol just imported from other DSO.
   //
   // If is_imported is false and is_exported is true, there are two
   // possible cases. If we are creating an executable, we know that
-  // exported symbols cannot be interposed by any DSO (because the
-  // dynamic loader searches a dynamic symbol from an executable
-  // before examining any DSOs), so any exported symbol is export-only.
-  // If we are creating a DSO, export-only symbols represent a
-  // protected symbol (i.e. a symbol whose visibility is STV_PROTECTED).
+  // exported symbols cannot be intercepted by any DSO (because the
+  // dynamic loader searches a dynamic symbol from an executable before
+  // examining any DSOs), so any exported symbol is export-only in an
+  // executable. If we are creating a DSO, export-only symbols
+  // represent a protected symbol (i.e. a symbol whose visibility is
+  // STV_PROTECTED).
   u8 is_imported : 1 = false;
   u8 is_exported : 1 = false;
 
@@ -1897,6 +1895,38 @@ public:
   // This bit manages if we need to make this symbol's PLT canonical.
   // This bit is meaningful only when the symbol has a PLT entry.
   u8 is_canonical : 1 = false;
+
+  // If an input object file is not compiled with -fPIC (or with
+  // -fno-PIC), the file not position independent. That means the
+  // machine code included in the object file does not use GOT to access
+  // global variables. Instead, it assumes that addresses of global
+  // variables are known at link-time.
+  //
+  // Let's say `libx.so` exports a global variable `foo`, and a main
+  // executable uses the variable. If the executable is not compiled
+  // with -fPIC, we can't simply apply a relocation that refers `foo`
+  // because `foo`'s address is not known at link-time.
+  //
+  // In this case, we could print out the "recompile with -fPIC" error
+  // message, but there's a way to workaround.
+  //
+  // The loader supports a feature so-called "copy relocations".
+  // A copy relocation instructs the loader to copy data from a DSO to a
+  // specified location in the main executable. By using this feature,
+  // you can make `foo`'s data to a BSS region at runtime. With that,
+  // you can apply relocations agianst `foo` as if `foo` existed in the
+  // main executable's BSS area, whose address is known at link-time.
+  //
+  // Copy relocations are used only by position-dependent executables.
+  // Position-independent executables and DSOs don't need them because
+  // they use GOT to access global variables.
+  //
+  // `has_copyrel` is true if we need to emit a copy relocation for this
+  // symbol. If the original symbol in a DSO is in a read-only memory
+  // region, `copyrel_readonly` is set to true so that the copied data
+  // will become read-only at run-time.
+  u8 has_copyrel : 1 = false;
+  u8 copyrel_readonly : 1 = false;
 
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
