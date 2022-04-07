@@ -1479,6 +1479,7 @@ struct Context {
     bool discard_locals = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
+    bool enable_new_dtags = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
     bool fork = true;

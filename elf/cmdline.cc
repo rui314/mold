@@ -660,6 +660,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       warn_shared_textrel = true;
     } else if (read_flag(args, "warn-textrel")) {
       ctx.arg.warn_textrel = true;
+    } else if (read_flag(args, "enable-new-dtags")) {
+      ctx.arg.enable_new_dtags = true;
+    } else if (read_flag(args, "disable-new-dtags")) {
+      ctx.arg.enable_new_dtags = false;
     } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_GABI;

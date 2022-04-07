@@ -594,7 +594,8 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_NEEDED, ctx.dynstr->find_string(file->soname));
 
   if (!ctx.arg.rpaths.empty())
-    define(DT_RUNPATH, ctx.dynstr->find_string(ctx.arg.rpaths));
+    define(ctx.arg.enable_new_dtags ? DT_RUNPATH : DT_RPATH,
+           ctx.dynstr->find_string(ctx.arg.rpaths));
 
   if (!ctx.arg.soname.empty())
     define(DT_SONAME, ctx.dynstr->find_string(ctx.arg.soname));
