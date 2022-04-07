@@ -439,7 +439,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Action table[][4] = {
         // Absolute  Local    Imported data  Imported code
         {  ERROR,    NONE,    ERROR,         ERROR },      // DSO
-        {  ERROR,    NONE,    COPYREL,       CPLT  },      // PIE
+        {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
       };
       dispatch(ctx, table, i, rel, sym);
