@@ -205,6 +205,28 @@ static u32 relax_gottpoff(u8 *loc) {
   return 0;
 }
 
+static u32 relax_gotpc32_tlsdesc(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488d05: return 0x48c7c0; // lea 0(%rip), %rax -> mov $0, %rax
+  case 0x488d0d: return 0x48c7c1; // lea 0(%rip), %rcx -> mov $0, %rcx
+  case 0x488d15: return 0x48c7c2; // lea 0(%rip), %rdx -> mov $0, %rdx
+  case 0x488d1d: return 0x48c7c3; // lea 0(%rip), %rbx -> mov $0, %rbx
+  case 0x488d25: return 0x48c7c4; // lea 0(%rip), %rsp -> mov $0, %rsp
+  case 0x488d2d: return 0x48c7c5; // lea 0(%rip), %rbp -> mov $0, %rbp
+  case 0x488d35: return 0x48c7c6; // lea 0(%rip), %rsi -> mov $0, %rsi
+  case 0x488d3d: return 0x48c7c7; // lea 0(%rip), %rdi -> mov $0, %rdi
+  case 0x4c8d05: return 0x49c7c0; // lea 0(%rip), %r8  -> mov $0, %r8
+  case 0x4c8d0d: return 0x49c7c1; // lea 0(%rip), %r9  -> mov $0, %r9
+  case 0x4c8d15: return 0x49c7c2; // lea 0(%rip), %r10 -> mov $0, %r10
+  case 0x4c8d1d: return 0x49c7c3; // lea 0(%rip), %r11 -> mov $0, %r11
+  case 0x4c8d25: return 0x49c7c4; // lea 0(%rip), %r12 -> mov $0, %r12
+  case 0x4c8d2d: return 0x49c7c5; // lea 0(%rip), %r13 -> mov $0, %r13
+  case 0x4c8d35: return 0x49c7c6; // lea 0(%rip), %r14 -> mov $0, %r14
+  case 0x4c8d3d: return 0x49c7c7; // lea 0(%rip), %r15 -> mov $0, %r15
+  }
+  return 0;
+}
+
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
@@ -475,10 +497,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_X86_64_GOTPC32_TLSDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
-        static const u8 insn[] = {
-          0x48, 0xc7, 0xc0, 0, 0, 0, 0, // mov $0, %rax
-        };
-        memcpy(loc - 3, insn, sizeof(insn));
+        u32 insn = relax_gotpc32_tlsdesc(loc - 3);
+        loc[-3] = insn >> 16;
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
         write32s(S + A - ctx.tls_end + 4);
       } else {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
@@ -772,7 +794,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_GOTPC32_TLSDESC: {
-      if (memcmp(loc - 3, "\x48\x8d\x05", 3))
+      if (relax_gotpc32_tlsdesc(loc - 3) == 0)
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
 
