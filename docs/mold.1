@@ -412,6 +412,18 @@ and
 Write map file to
 .Ar file .
 .Pp
+.It Fl -Tbss Ns = Ns Ar address
+Alias for
+.Fl -section-start=.bss Ns = Ns Ar address .
+.Pp
+.It Fl -Tdata Ns = Ns Ar address
+Alias for
+.Fl -section-start=.data Ns = Ns Ar address .
+.Pp
+.It Fl -Ttext Ns = Ns Ar address
+Alias for
+.Fl -section-start=.text Ns = Ns Ar address .
+.Pp
 .It Fl -allow-multiple-definition
 Normally, the linker reports an error if there are more than one \
 definition of a symbol.
@@ -525,6 +537,19 @@ need them.
 always creates RELA-type relocation sections even if the native \
 ELF format is REL-type so that it is easy to read addends.
 .Pp
+.It Fl -enable-new-dtags
+.It Fl -disable-new-dtags
+By default,
+.Nm
+emits DT_RUNPATH for
+.Fl -rpath .
+If you pass
+.Fl -disable-new-dtags,
+mold emits DT_RPATH for
+.Fl -rpath
+instead.
+.Pp
+.Pp
 .It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
 Mark all symbols in the given
 .Ar libraries
@@ -568,6 +593,9 @@ at load-time.
 .It Fl -no-undefined
 Report undefined symbols (even with
 .Fl -shared ) .
+.Pp
+.It Fl  -noinhibit-exec
+Create an output file even if errors occur.
 .Pp
 .It Fl -pack-dyn-relocs Ns = Ns Op Sy none | relr
 If
@@ -689,6 +717,15 @@ with
 .Nm
 as
 .Pa /usr/bin/ld .
+.Pp
+.It Fl -section-start Ns = Ns Ar section Ns = Ns Ar address
+Set
+.Ar address
+to
+.Ar section .
+.Ar address
+is a hexadecimal number that may start with an optional
+.Sq 0x .
 .Pp
 .It Fl -shared , -Bshareable
 Create a share library.
@@ -1009,9 +1046,7 @@ Mark object to interpose all DSOs but executable.
 .It Fl -allow-shlib-undefined
 .It Fl -color-diagnostics
 .It Fl -dc
-.It Fl -disable-new-dtags
 .It Fl -dp
-.It Fl -enable-new-dtags
 .It Fl -end-group
 .It Fl -fatal-warnings
 .It Fl -gdb-index

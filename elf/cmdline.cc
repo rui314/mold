@@ -49,6 +49,9 @@ Options:
   --Bsymbolic-functions       Bind global functions locally
   --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
   --Map FILE                  Write map file to a given file
+  --Tbss=ADDR                 Set address to .bss
+  --Tdata                     Set address to .data
+  --Ttext                     Set address to .text
   --allow-multiple-definition Allow multiple definitions
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
@@ -66,7 +69,8 @@ Options:
   --defsym=SYMBOL=VALUE       Define a symbol alias
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
-  --disable-new-dtags         Ignored
+  --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
+    --disable-new-dtags       Emit DT_RPATH for --rpath
   --dp                        Ignored
   --dynamic-list              Read a list of dynamic symbols
   --eh-frame-hdr              Create .eh_frame_hdr section
@@ -89,6 +93,7 @@ Options:
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
+  --oformat=binary            Omit ELF, section and program headers
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
   --perf                      Print performance statistics
@@ -113,6 +118,7 @@ Options:
   --rpath DIR                 Add DIR to runtime search path
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
+  --section-start=SECTION=ADDR Set address to section
   --shared, --Bshareable      Create a share library
   --shuffle-sections[=SEED]   Randomize the output by shuffling input sections
   --sort-common               Ignored
