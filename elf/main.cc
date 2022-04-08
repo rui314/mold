@@ -662,16 +662,6 @@ static int elf_main(int argc, char **argv) {
 
   // At this point, file layout is fixed.
 
-  // Some types of TLS relocations are defined relative to the beginning
-  // or the end of the TLS segment address. Find these addresses now.
-  for (ElfPhdr<E> phdr : create_phdr(ctx)) {
-    if (phdr.p_type == PT_TLS) {
-      ctx.tls_begin = phdr.p_vaddr;
-      ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-      break;
-    }
-  }
-
   t_before_copy.stop();
 
   // Create an output file

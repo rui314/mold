@@ -1473,8 +1473,20 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
   // _TLS_MODULE_BASE_
-  if constexpr (E::supports_tlsdesc)
-    ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
+  if constexpr (E::supports_tlsdesc) {
+    u64 addr;
+    if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>) {
+      if (ctx.arg.relax && !ctx.arg.shared)
+        addr = ctx.tls_end;
+      else
+        addr = ctx.tls_begin;
+    } else {
+      addr = ctx.tls_begin;
+    }
+
+    ctx._TLS_MODULE_BASE_->shndx = -1;
+    ctx._TLS_MODULE_BASE_->value = addr;
+  }
 
   // __GNU_EH_FRAME_HDR
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);

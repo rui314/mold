@@ -268,6 +268,12 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     i++;
     while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       append(ctx.chunks[i++]);
+
+    // Some types of TLS relocations are defined relative to the TLS
+    // segment, so save its addresses for easy access.
+    ElfPhdr<E> &phdr = vec.back();
+    ctx.tls_begin = phdr.p_vaddr;
+    ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
   }
 
   // Add PT_DYNAMIC
@@ -1067,7 +1073,8 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
   if constexpr (E::supports_tlsdesc)
     for (Symbol<E> *sym : tlsdesc_syms)
-      entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
+      entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC,
+                         sym == ctx._TLS_MODULE_BASE_ ? nullptr : sym});
 
   for (Symbol<E> *sym : gottp_syms) {
     i64 idx = sym->get_gottp_idx(ctx);
