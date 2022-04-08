@@ -23,20 +23,21 @@ RUN apt-get update && \
   bash -c "$(wget -O- https://apt.llvm.org/llvm.sh)" && \
   apt-get install -y --no-install-recommends clang-14 && \
   apt clean && \
-  rm -rf /var/lib/apt/lists/*
+  rm -rf /var/lib/apt/lists/* && \
+  cd / && \
+  wget -O- https://www.openssl.org/source/openssl-3.0.2.tar.gz | tar xzf - && \
+  mv openssl-3.0.2 openssl && \
+  cd openssl && \
+  ./Configure --prefix=/openssl && \
+  make -j$(nproc)
 EOF
 
 docker run -it --rm -v "$(pwd):/mold:Z" -u "$(id -u):$(id -g)" \
   mold-build-ubuntu18 \
-  bash -c "cd /tmp &&
-wget -O- https://www.openssl.org/source/openssl-3.0.1.tar.gz | tar xzf - &&
-cd openssl-3.0.1 &&
-./Configure &&
-make -j$(nproc) &&
-cp -r /mold /tmp/mold &&
+  bash -c "cp -r /mold /tmp/mold &&
 cd /tmp/mold &&
 make clean &&
-make -j$(nproc) CXX=clang++-14 CXXFLAGS='-I/tmp/openssl-3.0.1/include -O2' LDFLAGS='-static-libstdc++ /tmp/openssl-3.0.1/libcrypto.a' NEEDS_LIBCRYPTO=0 &&
+make -j$(nproc) CXX=clang++-14 CXXFLAGS='-I/openssl/include -O2' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 &&
 make install PREFIX=/ DESTDIR=$dest &&
 ln -sfr $dest/bin/mold $dest/libexec/mold/ld &&
 tar czf /mold/$dest.tar.gz $dest &&
