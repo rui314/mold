@@ -1474,6 +1474,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // _TLS_MODULE_BASE_
   if constexpr (E::supports_tlsdesc) {
+    // _TLS_MODULE_BASE_ is used for Local Dynamic model for TLSDESC.
+    // I believe GCC and Clang don't create a reference to it, but Intel
+    // compiler seems to be using this symbol.
+    //
+    // The symbol is usually resolved to the beginning of the TLS section.
+    // But if DTPOFF is relaxed, it must point the end of the TLS section
+    // so that a GOTPC_TLSDESC's relaxed value is consistent with a
+    // DTPOFF's relaxed value.
     u64 addr;
     if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>) {
       if (ctx.arg.relax && !ctx.arg.shared)
