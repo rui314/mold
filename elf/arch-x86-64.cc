@@ -608,13 +608,22 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       write32s(S + A);
       break;
     case R_X86_64_64:
-      *(u64 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym))
+        *(u64 *)loc = *val;
+      else
+        *(u64 *)loc = S + A;
       break;
     case R_X86_64_DTPOFF32:
-      write32s(S + A - ctx.tls_begin);
+      if (std::optional<u64> val = get_tombstone(sym))
+        *(u32 *)loc = *val;
+      else
+        write32s(S + A - ctx.tls_begin);
       break;
     case R_X86_64_DTPOFF64:
-      *(u64 *)loc = S + A - ctx.tls_begin;
+      if (std::optional<u64> val = get_tombstone(sym))
+        *(u64 *)loc = *val;
+      else
+        *(u64 *)loc = S + A - ctx.tls_begin;
       break;
     case R_X86_64_SIZE32:
       write32(sym.esym().st_size + A);

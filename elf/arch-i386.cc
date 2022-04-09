@@ -384,7 +384,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       write16(S + A);
       continue;
     case R_386_32:
-      *(u32 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym))
+        *(u32 *)loc = *val;
+      else
+        *(u32 *)loc = S + A;
       continue;
     case R_386_PC8:
       write8s(S + A);
@@ -402,7 +405,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(u32 *)loc = S + A - GOT;
       continue;
     case R_386_TLS_LDO_32:
-      *(u32 *)loc = S + A - ctx.tls_begin;
+      if (std::optional<u64> val = get_tombstone(sym))
+        *(u32 *)loc = *val;
+      else
+        *(u32 *)loc = S + A - ctx.tls_begin;
       continue;
     case R_386_SIZE32:
       *(u32 *)loc = sym.esym().st_size + A;

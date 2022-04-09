@@ -322,6 +322,7 @@ private:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
+  std::optional<u64> get_tombstone(Symbol<E> &sym);
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 };
 
@@ -2202,6 +2203,40 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
     Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
   i64 idx = it - 1 - offsets.begin();
   return {m->fragments[idx], offset - offsets[idx]};
+}
+
+// Input object files may contain duplicate code for inline functions
+// and such. Linkers de-duplicate them at link-time. However, linkers
+// generaly don't remove debug info for de-duplicated functions because
+// doing that requires parsing the entire debug section.
+//
+// Instead, linkers write "tombstone" values to dead debug info records
+// instead of bogus values so that debuggers can skip them.
+//
+// This function returns a tombstone value for the symbol if the symbol
+// refers a dead debug info section.
+template <typename E>
+inline std::optional<u64> InputSection<E>::get_tombstone(Symbol<E> &sym) {
+  InputSection<E> *isec = sym.get_input_section();
+
+  // Setting a tombstone is a special feature for a dead debug section.
+  if (!isec || isec->is_alive)
+    return {};
+
+  std::string_view s = name();
+  if (!s.starts_with(".debug"))
+    return {};
+
+  // If the section was dead due to ICF, we don't want to emit debug
+  // info for that section but want to set real values to .debug_line so
+  // that users can set a breakpoint inside a merged section.
+  if (isec->killed_by_icf && s == ".debug_line")
+    return {};
+
+  // 0 is an invalid value in most debug info sections, so we use it
+  // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
+  // the terminator marker, so we use 1 if that's the case.
+  return (s == ".debug_loc" || s == ".debug_ranges") ? 1 : 0;
 }
 
 template <typename E>
