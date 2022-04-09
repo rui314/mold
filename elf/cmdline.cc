@@ -1033,10 +1033,8 @@ void parse_nonpositional_args(Context<E> &ctx,
   for (std::string &path : ctx.arg.library_paths)
     path = path_clean(path);
 
-  if (ctx.arg.shared) {
+  if (ctx.arg.shared)
     ctx.arg.pic = true;
-    ctx.arg.dynamic_linker = "";
-  }
 
   if (ctx.arg.pic)
     ctx.arg.image_base = 0;
