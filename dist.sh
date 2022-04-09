@@ -9,15 +9,16 @@
 
 set -e
 
-ver=$(grep '^VERSION =' $(dirname $0)/Makefile | sed 's/.* = //')
-dest=mold-$ver-$(uname -m)-linux
+version=$(grep '^VERSION =' $(dirname $0)/Makefile | sed 's/.* = //')
+arch=$(uname -m)
+dest=mold-$version-$arch-linux
 
-if [ "$(uname -m)" = x86_64 ]; then
+if [ $arch = x86_64 ]; then
   image=rui314/mold-builder:v1-x86_64
-elif [ "$(uname -m)" = aarch64 -o "$(uname -m)" = arm64 ]; then
+elif [ $arch = aarch64 -o $arch = arm64 ]; then
   image=rui314/mold-builder:v1-aarch64
 else
-  echo "Error: no docker image for $(uname -m)"
+  echo "Error: no docker image for $arch"
   exit 1
 fi
 
