@@ -611,8 +611,10 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
     path = ctx.arg.chroot + "/" + path_clean(path);
 
   i64 fd = ::open(path.c_str(), O_RDONLY);
-  if (fd == -1)
+  if (fd == -1) {
+    delete mf;
     return nullptr;
+  }
 
   ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
 
