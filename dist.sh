@@ -22,19 +22,13 @@ else
   exit 1
 fi
 
-if [ "$(uname)" = Darwin ]; then
-  nproc=$(sysctl -n hw.ncpu)
-else
-  nproc=$(nproc)
-fi
-
 docker images -q $image 2> /dev/null || docker pull $image
 
 docker run -it --rm -v "$(pwd):/mold:Z" -u "$(id -u):$(id -g)" $image \
   bash -c "cp -r /mold /tmp/mold &&
 cd /tmp/mold &&
 make clean &&
-make -j$nproc CXX=clang++-14 CXXFLAGS='-I/openssl/include -O2 $CXXFLAGS' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 LTO=${LTO:-0} &&
+make -j\$(nproc) CXX=clang++-14 CXXFLAGS='-I/openssl/include -O2 $CXXFLAGS' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 LTO=${LTO:-0} &&
 make install PREFIX=/ DESTDIR=$dest &&
 ln -sfr $dest/bin/mold $dest/libexec/mold/ld &&
 tar czf /mold/$dest.tar.gz $dest &&
