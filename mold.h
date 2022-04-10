@@ -604,24 +604,21 @@ public:
 
 template <typename C>
 MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
-  MappedFile *mf = new MappedFile;
-  mf->name = path;
-
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
   i64 fd = ::open(path.c_str(), O_RDONLY);
-  if (fd == -1) {
-    delete mf;
+  if (fd == -1)
     return nullptr;
-  }
-
-  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
 
   struct stat st;
   if (fstat(fd, &st) == -1)
     Fatal(ctx) << path << ": fstat failed: " << errno_string();
 
+  MappedFile *mf = new MappedFile;
+  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+
+  mf->name = path;
   mf->size = st.st_size;
 
 #ifdef __APPLE__
