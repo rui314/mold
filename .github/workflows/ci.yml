@@ -9,12 +9,15 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
+    - uses: rui314/setup-mold@v1
+      with:
+        make-default: false
     - name: apt-get
       run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install git build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump pkg-config
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make CC=clang CXX=clang++ -j$(nproc)
+      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make CC=clang CXX=clang++ LDFLAGS=-fuse-ld=mold -j$(nproc)
     - name: make test
       run: make -j$(nproc) test
   build-gcc:
