@@ -170,6 +170,14 @@ replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
 
 </details>
 
+<details><summary>GitHub Action</summary>
+If you want to use mold in your GitHub-hosted CI to speed up continuous
+build, you can use <a href=https://github.com/rui314/setup-mold>setup-mold</a>
+GitHub Action. GitHub runs a CI on a two-core machine, but mold is
+still significantly faster than the default GNU linker there
+especially when a program being linked is large.
+</details>
+
 <details><summary>Verify that you are using mold</summary>
 
 mold leaves its identification string in `.comment` section in an output
