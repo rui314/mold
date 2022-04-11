@@ -867,6 +867,67 @@ public:
   u32 features = 0;
 };
 
+struct GdbIndexName {
+  std::string_view name;
+  u32 hash = 0;
+  u32 offset = 0;
+  u32 attr = 0;
+  u32 entry_idx = 0;
+};
+
+template <typename E>
+class GdbIndexSection : public Chunk<E> {
+public:
+  GdbIndexSection() {
+    this->name = ".gdb_index";
+    this->shdr.sh_type = SHT_PROGBITS;
+  }
+
+  void construct(Context<E> &ctx);
+  void copy_buf(Context<E> &ctx) override;
+  void write_address_areas(Context<E> &ctx);
+
+private:
+  struct SectionHeader {
+    u32 version = 7;
+    u32 cu_list_offset = 0;
+    u32 cu_types_offset = 0;
+    u32 areas_offset = 0;
+    u32 symtab_offset = 0;
+    u32 const_pool_offset = 0;
+  };
+
+  struct MapEntry {
+    MapEntry(u32 hash) : hash(hash) {}
+
+    MapEntry(const MapEntry &other) {
+      hash = other.hash;
+      name_offset = other.name_offset;
+      attr_offset = other.attr_offset;
+      num_attrs = other.num_attrs.load();
+    }
+
+    u32 hash = 0;
+    u32 name_offset = 0;
+    u32 attr_offset = 0;
+    std::atomic_uint32_t num_attrs = 0;
+  };
+
+  SectionHeader header;
+  i64 num_symtab_entries = 0;
+  i64 attrs_size = 0;
+
+  std::vector<std::string_view>
+  read_compunits(Context<E> &ctx, ObjectFile<E> &file);
+
+  std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
+
+  std::vector<u64> read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
+                                      i64 offset);
+
+  ConcurrentMap<MapEntry> map;
+};
+
 template <typename E>
 class GabiCompressedSection : public Chunk<E> {
 public:
@@ -1058,6 +1119,18 @@ public:
   std::vector<std::vector<i32>> r_deltas;
   std::vector<std::vector<ElfRel<E>>> sorted_rels;
   std::vector<std::vector<Symbol<E> *>> sorted_symbols;
+
+  // For .gdb_index
+  InputSection<E> *debug_info = nullptr;
+  InputSection<E> *debug_abbrev = nullptr;
+  InputSection<E> *debug_ranges = nullptr;
+  InputSection<E> *debug_pubnames = nullptr;
+  InputSection<E> *debug_pubtypes = nullptr;
+  std::vector<std::string_view> compunits;
+  i64 num_areas = 0;
+  i64 area_offset = 0;
+  i64 compunits_idx = 0;
+  std::vector<GdbIndexName> pubnames;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
@@ -1485,6 +1558,7 @@ struct Context {
     bool fatal_warnings = false;
     bool fork = true;
     bool gc_sections = false;
+    bool gdb_index = false;
     bool hash_style_gnu = false;
     bool hash_style_sysv = true;
     bool icf = false;
@@ -1655,6 +1729,7 @@ struct Context {
   std::unique_ptr<VerdefSection<E>> verdef;
   std::unique_ptr<BuildIdSection<E>> buildid;
   std::unique_ptr<NotePropertySection<E>> note_property;
+  std::unique_ptr<GdbIndexSection<E>> gdb_index;
   std::unique_ptr<ThumbToArmSection> thumb_to_arm;
   std::unique_ptr<TlsTrampolineSection> tls_trampoline;
 

@@ -84,7 +84,7 @@ Options:
     --no-fork
   --gc-sections               Remove unreferenced sections
     --no-gc-sections
-  --gdb-index                 Ignored
+  --gdb-index                 Create .gdb_index for faster gdb startup
   --hash-style [sysv,gnu,both]
                               Set hash style
   --icf=[all,none]            Fold identical code
@@ -626,6 +626,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.relax = true;
     } else if (read_flag(args, "no-relax")) {
       ctx.arg.relax = false;
+    } else if (read_flag(args, "gdb-index")) {
+      ctx.arg.gdb_index = true;
+    } else if (read_flag(args, "no-gdb-index")) {
+      ctx.arg.gdb_index = false;
     } else if (read_flag(args, "r") || read_flag(args, "relocatable")) {
       ctx.arg.relocatable = true;
     } else if (read_flag(args, "perf")) {
@@ -950,7 +954,6 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (read_flag(args, "O2")) {
     } else if (read_flag(args, "verbose")) {
     } else if (read_flag(args, "color-diagnostics")) {
-    } else if (read_flag(args, "gdb-index")) {
     } else if (read_flag(args, "eh-frame-hdr")) {
     } else if (read_flag(args, "start-group")) {
     } else if (read_flag(args, "end-group")) {

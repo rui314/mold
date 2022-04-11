@@ -351,7 +351,7 @@ public:
   }
 
   bool has_key(i64 idx) {
-    return keys[idx];
+    return keys[idx].load(std::memory_order_relaxed);
   }
 
   static constexpr i64 MIN_NBUCKETS = 2048;

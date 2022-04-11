@@ -1050,6 +1050,38 @@ static constexpr u32 DW_EH_PE_datarel = 0x30;
 static constexpr u32 DW_EH_PE_funcrel = 0x40;
 static constexpr u32 DW_EH_PE_aligned = 0x50;
 
+static constexpr u32 DW_AT_low_pc = 0x11;
+static constexpr u32 DW_AT_high_pc = 0x12;
+static constexpr u32 DW_AT_producer = 0x25;
+static constexpr u32 DW_AT_ranges = 0x55;
+
+static constexpr u32 DW_TAG_compile_unit = 0x11;
+
+static constexpr u32 DW_FORM_addr = 0x01;
+static constexpr u32 DW_FORM_block2 = 0x03;
+static constexpr u32 DW_FORM_block4 = 0x04;
+static constexpr u32 DW_FORM_data2 = 0x05;
+static constexpr u32 DW_FORM_data4 = 0x06;
+static constexpr u32 DW_FORM_data8 = 0x07;
+static constexpr u32 DW_FORM_string = 0x08;
+static constexpr u32 DW_FORM_block = 0x09;
+static constexpr u32 DW_FORM_block1 = 0x0a;
+static constexpr u32 DW_FORM_data1 = 0x0b;
+static constexpr u32 DW_FORM_flag = 0x0c;
+static constexpr u32 DW_FORM_sdata = 0x0d;
+static constexpr u32 DW_FORM_strp = 0x0e;
+static constexpr u32 DW_FORM_udata = 0x0f;
+static constexpr u32 DW_FORM_ref_addr = 0x10;
+static constexpr u32 DW_FORM_ref1 = 0x11;
+static constexpr u32 DW_FORM_ref2 = 0x12;
+static constexpr u32 DW_FORM_ref4 = 0x13;
+static constexpr u32 DW_FORM_ref8 = 0x14;
+static constexpr u32 DW_FORM_ref_udata = 0x15;
+static constexpr u32 DW_FORM_indirect = 0x16;
+static constexpr u32 DW_FORM_sec_offset = 0x17;
+static constexpr u32 DW_FORM_exprloc = 0x18;
+static constexpr u32 DW_FORM_flag_present = 0x19;
+
 struct Elf64Sym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }

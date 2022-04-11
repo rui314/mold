@@ -610,6 +610,10 @@ static int elf_main(int argc, char **argv) {
   // Here, we construct output .eh_frame contents.
   ctx.eh_frame->construct(ctx);
 
+  // Handle --gdb-index.
+  if (ctx.arg.gdb_index)
+    ctx.gdb_index->construct(ctx);
+
   // If --emit-relocs is given, we'll copy relocation sections from input
   // files to an output file.
   if (ctx.arg.emit_relocs)
@@ -689,6 +693,12 @@ static int elf_main(int argc, char **argv) {
 
   if constexpr (std::is_same_v<E, ARM32>)
     sort_arm_exidx(ctx);
+
+  // Some part of .gdb_index couldn't be computed until other debug
+  // sections are complete. We have complete debug sections now, so
+  // write the rest of .gdb_index.
+  if (ctx.gdb_index)
+    ctx.gdb_index->write_address_areas(ctx);
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.

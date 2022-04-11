@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../sha.h"
 
+#include <cctype>
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
@@ -9,6 +10,7 @@
 
 namespace mold::elf {
 
+// The hash function for .hash.
 static u32 elf_hash(std::string_view name) {
   u32 h = 0;
   for (u8 c : name) {
@@ -21,10 +23,22 @@ static u32 elf_hash(std::string_view name) {
   return h;
 }
 
+// The hash function for .gnu.hash.
 static u32 djb_hash(std::string_view name) {
   u32 h = 5381;
   for (u8 c : name)
     h = (h << 5) + h + c;
+  return h;
+}
+
+// The hash function for .gdb_index.
+static u32 gdb_hash(std::string_view name) {
+  u32 h = 0;
+  for (u8 c : name) {
+    if ('A' <= c && c <= 'Z')
+      c = 'a' + c - 'A';
+    h = h * 67 + c - 113;
+  }
   return h;
 }
 
@@ -2094,6 +2108,502 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   buf[6] = features;                       // Feature flags
 }
 
+// .gdb_index section is an optional section to speed up GNU debugger.
+// It contains two maps: 1) a map from function/variable/type names to
+// compunits, and 2) a map from function address ranges to compunits.
+// gdb uses these maps to quickly find a compunit given a name or an
+// instruction pointer.
+//
+// .gdb_index is not mandatory. All the information in .gdb_index is
+// also in other debug info sections. You can actually create an
+// executable without .gdb_index and later add that using
+// `gdb-add-index` post-processing tool that comes with gdb.
+//
+// (Terminology: a compilation unit, which often abbreviated as compunit
+// or cu, is a unit of debug info. An input .debug_info section usually
+// contains one compunit, and thus an output .debug_info contains as
+// many compunits as the number of input files.)
+//
+// The mapping from names to compunits is 1:n while the mapping from
+// address ranges to compunits is 1:1. That is, two object files may
+// define the same type name (with the same definition), while there
+// should be no two functions that overlap with each other in memory.
+//
+// .gdb_index contains an on-disk hash table for names, so gdb can
+// lookup names without loading all strings into memory and construct an
+// in-memory hash table.
+//
+// Names are in .debug_gnu_pubnames and .debug_gnu_pubtypes input
+// sections. These sections are created if `-ggnu-pubnames` is given.
+// Besides names, these sections contains attributes for each name so
+// that gdb can distinguish type names from function names, for example.
+//
+// Function address ranges are in .debug_info and .debug_ranges
+// sections. If an object file is compiled without -ffunction-sections,
+// there's only one .text section in that object file, and in that case
+// its address range is directly stored to .debug_info. If an object
+// file is compiled with -ffunction-sections, it contains multiple .text
+// sections, and address ranges for them are stored to .debug_ranges.
+//
+// .debug_info section contains DWARF debug info. Although we don't need
+// to parse the whole .debug_info section to read address ranges, we
+// have to do a little bit. DWARF is complicated and often handled using
+// a library such as libdwarf. But we don't use any library because we
+// didn't want to add an extra run-time dependency just for --gdb-index.
+//
+// This page explains the format of .gdb_index:
+// https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
+template <typename E>
+void GdbIndexSection<E>::construct(Context<E> &ctx) {
+  Timer t(ctx, "GdbIndexSection::construct");
+
+  // Read debug sections
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file->debug_info == nullptr)
+      return;
+
+    // Read compilation units from .debug_info.
+    file->compunits = read_compunits(ctx, *file);
+
+    // Initialize `num_areas`. Each CU contains zero or one address area.
+    file->num_areas = file->compunits.size();
+
+    // Optionally, a CU can refer an address area list in .debug_ranges.
+    // .debug_ranges contains a vector of [begin, end) address pairs.
+    // The last entry must be a null terminator, so we do -1.
+    if (file->debug_ranges)
+      file->num_areas += file->debug_ranges->sh_size / E::word_size / 2 - 1;
+  });
+
+  // Initialize `area_offset` and `compunits_idx`.
+  for (i64 i = 0; i < ctx.objs.size() - 1; i++) {
+    ctx.objs[i + 1]->area_offset =
+      ctx.objs[i]->area_offset + ctx.objs[i]->num_areas * 20;
+    ctx.objs[i + 1]->compunits_idx =
+      ctx.objs[i]->compunits_idx + ctx.objs[i]->compunits.size();
+  }
+
+  // Read .debug_gnu_pubnames and .debug_gnu_pubtypes.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->pubnames = read_pubnames(ctx, *file);
+  });
+
+  // Estimate the unique number of pubnames.
+  HyperLogLog estimator;
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    HyperLogLog e;
+    for (GdbIndexName &name : file->pubnames)
+      e.insert(name.hash);
+    estimator.merge(e);
+  });
+
+  // Uniquify pubnames by inserting all name strings into a concurrent
+  // hashmap.
+  map.resize(estimator.get_cardinality() * 2);
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (GdbIndexName &name : file->pubnames) {
+      MapEntry *ent = map.insert(name.name, name.hash, {name.hash}).first;
+      ent->num_attrs++;
+      name.entry_idx = ent - map.values;
+    }
+  });
+
+  // Assign in-shard output offsets to names and attrs.
+  std::vector<u32> attr_sizes(map.NUM_SHARDS);
+  std::vector<u32> name_sizes(map.NUM_SHARDS);
+  const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
+  std::atomic_uint32_t num_names = 0;
+
+  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
+    i64 attr_offset = 0;
+    i64 name_offset = 0;
+    i64 count = 0;
+
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
+      if (map.keys[j]) {
+        map.values[j].name_offset = name_offset;
+        map.values[j].attr_offset = attr_offset;
+        attr_offset += (map.values[j].num_attrs + 1) * 4;
+        name_offset += map.key_sizes[j] + 1;
+        count++;
+      }
+    }
+
+    attr_sizes[i] = attr_offset;
+    name_sizes[i] = name_offset;
+    num_names += count;
+  });
+
+  // Fix name and attr offsets so that they are relative to
+  // `const_pool_offset`.
+  std::vector<u32> attr_offsets(map.NUM_SHARDS + 1);
+  for (i64 i = 0; i < map.NUM_SHARDS; i++)
+    attr_offsets[i + 1] = attr_offsets[i] + attr_sizes[i];
+  attrs_size = attr_offsets.back();
+
+  std::vector<u32> name_offsets(map.NUM_SHARDS + 1);
+  name_offsets[0] = attrs_size;
+  for (i64 i = 0; i < map.NUM_SHARDS; i++)
+    name_offsets[i + 1] = name_offsets[i] + name_sizes[i];
+
+  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
+      if (map.keys[j]) {
+        map.values[j].attr_offset += attr_offsets[i];
+        map.values[j].name_offset += name_offsets[i];
+      }
+    }
+  });
+
+  // .gdb_index contains an on-disk hash table for pubnames and
+  // pubtypes. We aim 75% utilization. As per the format specification,
+  // It must be a power of two.
+  num_symtab_entries = std::max<i64>(next_power_of_two(num_names * 4 / 3), 16);
+
+  // Now that we can compute the size of this section.
+  ObjectFile<E> &last = *ctx.objs.back();
+  i64 compunits_size = (last.compunits_idx + last.compunits.size()) * 16;
+  i64 areas_size = last.area_offset + last.num_areas * 20;
+  i64 offset = sizeof(header);
+
+  header.cu_list_offset = offset;
+  offset += compunits_size;
+
+  header.cu_types_offset = offset;
+  header.areas_offset = offset;
+  offset += areas_size;
+
+  header.symtab_offset = offset;
+  offset += num_symtab_entries * 8;
+
+  header.const_pool_offset = offset;
+  offset += name_offsets.back();
+
+  this->shdr.sh_size = offset;
+}
+
+template <typename E>
+void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  // Write section header.
+  memcpy(buf, &header, sizeof(header));
+  buf += sizeof(header);
+
+  // Write compilation unit list.
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->debug_info) {
+      u64 offset = file->debug_info->offset;
+      for (std::string_view cu : file->compunits) {
+        *(u64 *)buf = offset;
+        *(u64 *)(buf + 8) = cu.size();
+        buf += 16;
+        offset += cu.size();
+      }
+    }
+  }
+
+  // Skip address areas. It'll be filled by write_address_areas.
+  buf += header.symtab_offset - header.areas_offset;
+
+  // Write symbol table.
+  memset(buf, 0, num_symtab_entries * 8);
+
+  assert(std::popcount<u64>(num_symtab_entries) == 1);
+  u32 mask = num_symtab_entries - 1;
+
+  for (i64 i = 0; i < map.nbuckets; i++) {
+    if (map.has_key(i)) {
+      u32 hash = map.values[i].hash;
+      u32 step = ((hash * 17) & mask) | 1;
+      u32 j = hash & mask;
+
+      while (*(u32 *)(buf + j * 8))
+        j = (j + step) & mask;
+
+      *(u32 *)(buf + j * 8) = map.values[i].name_offset;
+      *(u32 *)(buf + j * 8 + 4) = map.values[i].attr_offset;
+    }
+  }
+
+  buf += num_symtab_entries * 8;
+
+  // Write CU vector
+  memset(buf, 0, attrs_size);
+  std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (GdbIndexName &name : file->pubnames) {
+      MapEntry &ent = map.values[name.entry_idx];
+      u32 idx = ent.attr_offset / 4;
+      attrs[idx + ++attrs[idx]] = name.attr;
+    }
+  });
+
+  // Write pubnames and pubtypes.
+  tbb::parallel_for((i64)0, (i64)map.nbuckets, [&](i64 i) {
+    if (map.has_key(i)) {
+      std::string_view name{map.keys[i], map.key_sizes[i]};
+      write_string(buf + map.values[i].name_offset, name);
+    }
+  });
+}
+
+template <typename E>
+void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
+  Timer t(ctx, "GdbIndexSection::write_address_areas");
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+
+  struct __attribute__((packed)) Entry {
+    u64 start;
+    u64 end;
+    u32 attr;
+  };
+
+  // Read .debug_info and .debug_ranges to copy address ranges
+  // to .gdb_index.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (!file->debug_info)
+      return;
+
+    Entry *begin = (Entry *)(base + header.areas_offset + file->area_offset);
+    Entry *e = begin;
+    u64 offset = file->debug_info->offset;
+
+    for (i64 i = 0; i < file->compunits.size(); i++) {
+      std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
+
+      for (i64 j = 0; j < addrs.size(); j += 2) {
+        // Skip an address area for a dead function
+        if (addrs[j] == 1 && addrs[j + 1] == 1)
+          continue;
+
+        e->start = addrs[j];
+        e->end = addrs[j + 1];
+        e->attr = file->compunits_idx + i;
+        e++;
+      }
+      offset += file->compunits[i].size();
+    }
+
+    // Fill trailing null entries with dummy values because gdb
+    // crashes if there are entries with address 0.
+    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].start;
+    for (; e < begin + file->num_areas; e++)
+      e->start = e->end = filler;
+  });
+}
+
+// Returns the list of compilation units in .gdb_index. A .gdb_index
+// usually contains only one compilatation unit unless the object was
+// built by `ld -r`.
+template <typename E>
+std::vector<std::string_view>
+GdbIndexSection<E>::read_compunits(Context<E> &ctx, ObjectFile<E> &file) {
+  std::string_view data = file.debug_info->contents;
+  std::vector<std::string_view> vec;
+
+  while (!data.empty()) {
+    if (data.size() < 4)
+      Fatal(ctx) << *file.debug_info << ": corrupted .debug_info";
+    i64 len = *(u32 *)data.data() + 4;
+    vec.push_back(data.substr(0, len));
+    data = data.substr(len);
+  }
+  return vec;
+}
+
+// Parses .debug_gnu_pubnames and .debug_gnu_pubtypes. These sections
+// start with a 14 bytes header followed by (4-byte offset, 1-byte type,
+// null-terminated string) tuples.
+//
+// The 4-byte offset is an offset into .debug_info that contains details
+// about the name. The 1-byte type is a type of the corresponding name
+// (e.g. function, variable or datatype). The string is a name of a
+// function, a variable or a type.
+template <typename E>
+std::vector<GdbIndexName>
+GdbIndexSection<E>::read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
+  std::vector<GdbIndexName> vec;
+
+  auto get_cu_idx = [&](InputSection<E> &isec, i64 offset) {
+    i64 off = 0;
+    for (i64 i = 0; i < file.compunits.size(); i++) {
+      if (offset == off)
+        return file.compunits_idx + i;
+      off += file.compunits[i].size();
+    }
+    Fatal(ctx) << isec << ": corrupted debug_info_offset";
+  };
+
+  auto read = [&](InputSection<E> &isec) {
+    std::string_view contents = isec.contents;
+
+    while (!contents.empty()) {
+      if (contents.size() < 14)
+        Fatal(ctx) << isec << ": corrupted header";
+
+      u32 len = *(u32 *)contents.data() + 4;
+      u32 debug_info_offset = *(u32 *)(contents.data() + 6);
+      u32 cu_idx = get_cu_idx(isec, debug_info_offset);
+
+      std::string_view data = contents.substr(14, len - 14);
+      contents = contents.substr(len);
+
+      while (!data.empty()) {
+        u32 offset = *(u32 *)data.data();
+        data = data.substr(4);
+        if (offset == 0)
+          break;
+
+        u8 type = data[0];
+        data = data.substr(1);
+
+        std::string_view name = data.data();
+        data = data.substr(name.size() + 1);
+
+        vec.push_back({name, gdb_hash(name), offset + debug_info_offset,
+                       (type << 24) | cu_idx});
+      }
+    }
+  };
+
+  if (file.debug_pubnames)
+    read(*file.debug_pubnames);
+  if (file.debug_pubtypes)
+    read(*file.debug_pubtypes);
+  return vec;
+}
+
+// Returns a list of address ranges explained by a compunit at the
+// `offset` in an output .debug_info section.
+//
+// .debug_info contains DWARF debug info records, so this function
+// parses DWARF. If a designated compunit contains multiple ranges, the
+// ranges are read from .debug_ranges. Otherwise, a range is read
+// directly from .debug_info.
+template <typename E>
+std::vector<u64>
+GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
+                                       i64 offset) {
+  OutputSection<E> *debug_info = nullptr;
+  OutputSection<E> *debug_abbrev = nullptr;
+  OutputSection<E> *debug_ranges = nullptr;
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    if (osec->name == ".debug_info")
+      debug_info = osec.get();
+    if (osec->name == ".debug_abbrev")
+      debug_abbrev = osec.get();
+    if (osec->name == ".debug_ranges")
+      debug_ranges = osec.get();
+  }
+
+  assert(debug_info);
+  assert(debug_abbrev);
+
+  // Read .debug_abbrev to learn the format of .debug_info.
+  u8 *cu = (u8 *)(ctx.buf + debug_info->shdr.sh_offset + offset);
+  u32 abbrev_offset = *(u32 *)(cu + 6);
+  cu += 11;
+  read_uleb(cu); // skip abbrev code
+
+  u8 *abbrev = (u8 *)(ctx.buf + debug_abbrev->shdr.sh_offset + abbrev_offset);
+  read_uleb(abbrev); // skip abbrev code
+  u64 abbrev_tag = read_uleb(abbrev);
+
+  if (abbrev_tag != DW_TAG_compile_unit)
+    Error(ctx) << file << ": --gdb-index: .debug_abbrev does not contain"
+               << " DW_TAG_compile_unit";
+
+  abbrev++; // skip has_children byte
+
+  std::optional<u64> low_pc;
+
+  for (;;) {
+    u64 name = read_uleb(abbrev);
+    u64 form = read_uleb(abbrev);
+    if (name == 0 && form == 0)
+      break;
+
+    auto read_value = [&]() -> u64 {
+      switch (form) {
+      case DW_FORM_flag_present:
+        return 0;
+      case DW_FORM_data1:
+      case DW_FORM_flag:
+        return *cu++;
+      case DW_FORM_data2: {
+        u64 val = *(u16 *)cu;
+        cu += 2;
+        return val;
+      }
+      case DW_FORM_data4:
+      case DW_FORM_strp:
+      case DW_FORM_sec_offset: {
+        u64 val = *(u32 *)cu;
+        cu += 4;
+        return val;
+      }
+      case DW_FORM_data8: {
+        u64 val = *(u64 *)cu;
+        cu += 8;
+        return val;
+      }
+      case DW_FORM_addr: {
+        u64 val = *(typename E::WordTy *)cu;
+        cu += E::word_size;
+        return val;
+      }
+      case DW_FORM_string: {
+        while (*cu)
+          cu++;
+        cu++;
+        return 0;
+      }
+      default:
+        Error(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
+                   << std::hex << form;
+        return 0;
+      }
+    };
+
+    switch (name) {
+    case DW_AT_low_pc:
+      *low_pc = read_value();
+      break;
+    case DW_AT_high_pc:
+      if (low_pc)
+        Error(ctx) << file << ": --gdb-index: missing DW_AT_low_pc";
+
+      if (form == DW_FORM_addr)
+        return {*low_pc, read_value()};
+      return {*low_pc, *low_pc + read_value()};
+    case DW_AT_ranges: {
+      if (!debug_ranges)
+        Fatal(ctx) << file << ": --gdb-index: .missing debug_ranges";
+
+      u64 offset = read_value();
+      typename E::WordTy *range =
+        (typename E::WordTy *)(ctx.buf + debug_ranges->shdr.sh_offset + offset);
+
+      std::vector<u64> vec;
+      for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
+        vec.push_back(range[i]);
+        vec.push_back(range[i + 1]);
+      }
+      return vec;
+    }
+    default:
+      read_value();
+      break;
+    }
+  }
+
+  return {};
+}
+
 template <typename E>
 GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
                                                 Chunk<E> &chunk) {
@@ -2256,6 +2766,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class VerdefSection<E>;                                      \
   template class BuildIdSection<E>;                                     \
   template class NotePropertySection<E>;                                \
+  template class GdbIndexSection<E>;                                    \
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
   template class RelocSection<E>;                                       \

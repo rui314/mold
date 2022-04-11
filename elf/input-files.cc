@@ -184,6 +184,31 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
+      // Save debug sections for --gdb-index.
+      if (ctx.arg.gdb_index) {
+        InputSection<E> *isec = this->sections[i].get();
+
+        if (name == ".debug_info")
+          debug_info = isec;
+        if (name == ".debug_abbrev")
+          debug_abbrev = isec;
+        if (name == ".debug_ranges")
+          debug_ranges = isec;
+
+        // If --gdb-index is given, contents of .debug_gnu_pubnames and
+        // .debug_gnu_pubtypes are copied to .gdb_index, so keeping them
+        // in an output file is just a waste of space.
+        if (name == ".debug_gnu_pubnames") {
+          debug_pubnames = isec;
+          isec->is_alive = false;
+        }
+
+        if (name == ".debug_gnu_pubtypes") {
+          debug_pubtypes = isec;
+          isec->is_alive = false;
+        }
+      }
+
       static Counter counter("regular_sections");
       counter++;
       break;
