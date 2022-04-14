@@ -161,7 +161,21 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       break;
     default: {
       std::string_view name = this->shstrtab.data() + shdr.sh_name;
-      if (name == ".note.GNU-stack" || name.starts_with(".gnu.warning."))
+
+      // .note.GNU-stack section controls executable-ness of the stack
+      // area in GNU linkers. We ignore that section because silently
+      // making the stack area executable is too dangerous. Tell our
+      // users about the difference if that matters.
+      if (name == ".note.GNU-stack") {
+        if (shdr.sh_flags & SHF_EXECINSTR)
+          Warn(ctx) << *this << ": this file may cause a segmentation"
+            " fault because it requires an executable stack. See"
+            " https://github.com/rui314/mold/tree/main/docs/execstack.md"
+            " for more info.";
+        continue;
+      }
+
+      if (name.starts_with(".gnu.warning."))
         continue;
 
       if (name == ".note.gnu.property") {
@@ -178,6 +192,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (name == ".gnu.linkonce.d.DW.ref.__gxx_personality_v0")
         continue;
 
+      // Ignore debug sections if --strip-all or --strip-debug is given.
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))
         continue;
