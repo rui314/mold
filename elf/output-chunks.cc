@@ -166,7 +166,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
 }
 
 template <typename E>
-bool separate_page(Context<E> &ctx, Chunk<E> *x, Chunk<E> *y) {
+static bool separate_page(Context<E> &ctx, Chunk<E> *x, Chunk<E> *y) {
   if (ctx.arg.z_relro && is_relro(ctx, x) != is_relro(ctx, y))
     return true;
 
@@ -182,7 +182,7 @@ bool separate_page(Context<E> &ctx, Chunk<E> *x, Chunk<E> *y) {
 }
 
 template <typename E>
-std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
+static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
   auto define = [&](u64 type, u64 flags, i64 min_align, auto &chunk) {
@@ -221,6 +221,10 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     ElfShdr<E> &shdr = chunk->shdr;
     return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
   };
+
+  // Clear previous results so that this function is idempotent.
+  for (Chunk<E> *chunk : ctx.chunks)
+    chunk->extra_addralign = 1;
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
@@ -262,14 +266,14 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
       if (!is_bss(first))
         while (i < end && !is_bss(chunks[i]) &&
-               to_phdr_flags(ctx, chunks[i]) == flags &&
-               chunks[i]->shdr.sh_addr - first->shdr.sh_addr ==
-               chunks[i]->shdr.sh_offset - first->shdr.sh_offset)
+               to_phdr_flags(ctx, chunks[i]) == flags)
           append(chunks[i++]);
 
       while (i < end && is_bss(chunks[i]) &&
              to_phdr_flags(ctx, chunks[i]) == flags)
         append(chunks[i++]);
+
+      first->extra_addralign = vec.back().p_align;
     }
   }
 
@@ -312,15 +316,17 @@ std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
         continue;
 
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i]);
+      ctx.chunks[i]->extra_addralign = ctx.page_size;
+
       i++;
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
 
-      // RELRO works on page granularity, so align it up to the next
-      // page boundary.
-      assert(i == ctx.chunks.size() ||
-             ctx.chunks[i]->shdr.sh_addr % ctx.page_size == 0);
+      // RELRO works on page granularity, so align both ends to
+      // the page size.
       vec.back().p_memsz = align_to(vec.back().p_memsz, ctx.page_size);
+      if (i < ctx.chunks.size())
+        ctx.chunks[i]->extra_addralign = ctx.page_size;
     }
   }
 
@@ -2771,9 +2777,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class GnuCompressedSection<E>;                               \
   template class RelocSection<E>;                                       \
   template i64 BuildId::size(Context<E> &) const;                       \
-  template bool is_relro(Context<E> &, Chunk<E> *);                     \
-  template bool separate_page(Context<E> &, Chunk<E> *, Chunk<E> *);    \
-  template std::vector<ElfPhdr<E>> create_phdr(Context<E> &)
+  template bool is_relro(Context<E> &, Chunk<E> *);
 
 INSTANTIATE(X86_64);
 INSTANTIATE(I386);

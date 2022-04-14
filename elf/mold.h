@@ -336,9 +336,6 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym);
 template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
-template <typename E>
-bool separate_page(Context<E> &ctx, Chunk<E> *a, Chunk<E> *b);
-
 // Chunk represents a contiguous region in an output file.
 template <typename E>
 class Chunk {
@@ -353,8 +350,9 @@ public:
   virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
-  i64 shndx = 0;
   ElfShdr<E> shdr = {};
+  i64 shndx = 0;
+  i64 extra_addralign = 1;
 
 protected:
   Chunk() { shdr.sh_addralign = 1; }
@@ -967,9 +965,6 @@ private:
 };
 
 bool is_c_identifier(std::string_view name);
-
-template <typename E>
-std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx);
 
 //
 // input-files.cc

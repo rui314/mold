@@ -1267,15 +1267,6 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
          (!relro << 16) | (is_bss << 15);
 }
 
-// Returns the smallest number n such that
-// val <= n and n % align == skew % align.
-inline u64 align_with_skew(u64 val, u64 align, u64 skew) {
-  skew = skew % align;
-  u64 n = align_to(val + align - skew, align) - align + skew;
-  assert(val <= n && n < val + align && n % align == skew % align);
-  return n;
-}
-
 template <typename E>
 static bool is_tbss(Chunk<E> *chunk) {
   return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
@@ -1285,6 +1276,10 @@ static bool is_tbss(Chunk<E> *chunk) {
 template <typename E>
 i64 do_set_osec_offsets(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
+
+  auto alignment = [](Chunk<E> *chunk) {
+    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
+  };
 
   // Assign virtual addresses
   u64 addr = ctx.arg.image_base;
@@ -1296,15 +1291,12 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
         it != ctx.arg.section_start.end())
       addr = it->second;
 
-    if (i > 0 && separate_page(ctx, chunks[i - 1], chunks[i]))
-      addr = align_to(addr, ctx.page_size);
-
     if (is_tbss(chunks[i])) {
       chunks[i]->shdr.sh_addr = addr;
       continue;
     }
 
-    addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+    addr = align_to(addr, alignment(chunks[i]));
     chunks[i]->shdr.sh_addr = addr;
     addr += chunks[i]->shdr.sh_size;
   }
@@ -1321,7 +1313,7 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
     if (is_tbss(chunks[i])) {
       u64 addr = chunks[i]->shdr.sh_addr;
       for (; i < chunks.size() && is_tbss(chunks[i]); i++) {
-        addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+        addr = align_to(addr, alignment(chunks[i]));
         chunks[i]->shdr.sh_addr = addr;
         addr += chunks[i]->shdr.sh_size;
       }
@@ -1330,16 +1322,42 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
     }
   }
 
-  // Assign file offsets
+  // Assign file offsets to memory-allocated sections.
   u64 fileoff = 0;
-  for (Chunk<E> *chunk : chunks) {
-    if (chunk->shdr.sh_type == SHT_NOBITS) {
-      chunk->shdr.sh_offset = fileoff;
-    } else {
-      fileoff = align_with_skew(fileoff, ctx.page_size, chunk->shdr.sh_addr);
-      chunk->shdr.sh_offset = fileoff;
-      fileoff += chunk->shdr.sh_size;
+  i64 i = 0;
+
+  while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
+    Chunk<E> &first = *chunks[i];
+    assert(first.shdr.sh_type != SHT_NOBITS);
+
+    fileoff = align_to(fileoff, alignment(&first));
+
+    u64 end = fileoff;
+    while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
+           chunks[i]->shdr.sh_type != SHT_NOBITS) {
+      // The addresses may not increase monotonically if a user uses
+      // --start-sections.
+      if (chunks[i]->shdr.sh_addr < first.shdr.sh_addr)
+        break;
+
+      chunks[i]->shdr.sh_offset =
+        fileoff + chunks[i]->shdr.sh_addr - first.shdr.sh_addr;
+      end = chunks[i]->shdr.sh_offset + chunks[i]->shdr.sh_size;
+      i++;
     }
+
+    fileoff = end;
+
+    while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
+           chunks[i]->shdr.sh_type == SHT_NOBITS)
+      i++;
+  }
+
+  // Assign file offsets to non-memory-allocated sections.
+  for (; i < chunks.size(); i++) {
+    fileoff = align_to(fileoff, chunks[i]->shdr.sh_addralign);
+    chunks[i]->shdr.sh_offset = fileoff;
+    fileoff += chunks[i]->shdr.sh_size;
   }
   return fileoff;
 }
