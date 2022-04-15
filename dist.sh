@@ -10,7 +10,11 @@
 set -e
 
 version=$(grep '^VERSION =' $(dirname $0)/Makefile | sed 's/.* = //')
+
+# Unlike Linux, macOS's uname returns arm64 for aarch64.
 arch=$(uname -m)
+[ $arch = arm64 ] && arch=aarch64
+
 dest=mold-$version-$arch-linux
 
 if [ $arch = x86_64 ]; then
