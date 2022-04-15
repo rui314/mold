@@ -219,6 +219,6 @@ uninstall:
 	rm -rf $D$(LIBDIR)/mold
 
 clean:
-	rm -rf *~ mold mold-wrapper.so out ld ld64.mold
+	rm -rf *~ mold mold-wrapper.so out ld ld64.mold mold-*-linux.tar.gz
 
 .PHONY: all test tests check clean test-x86-64 test-i386 test-arm64 test-arm32 test-riscv64 test-all
