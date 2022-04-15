@@ -14,6 +14,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+which dwarfdump >& /dev/null || { echo skipped; exit; }
+
 cat <<EOF | $CXX -c -o $t/a.o -g -xc++ -
 #include <iostream>
 struct Foo {
