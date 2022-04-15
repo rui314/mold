@@ -213,7 +213,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX)
+    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX ||
+        rel.r_type == R_RISCV_ALIGN)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -344,8 +345,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_SUB64:
       *(u64 *)loc -= S + A;
       break;
-    case R_RISCV_ALIGN:
-      break;
     case R_RISCV_RVC_BRANCH:
       write_cbtype((u16 *)loc, S + A - P);
       break;
@@ -354,8 +353,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_RVC_LUI:
       Error(ctx) << *this << ": unsupported relocation: " << rel;
-      break;
-    case R_RISCV_RELAX:
       break;
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
@@ -510,18 +507,12 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
     i64 delta = r_deltas[i + 1] - r_deltas[i];
     if (delta == 0)
       continue;
+    assert(delta < 0);
 
     const ElfRel<E> &r = rels[i];
     memcpy(buf, contents.data() + pos, r.r_offset - pos);
     buf += r.r_offset - pos;
-    pos = r.r_offset;
-
-    if (delta < 0) {
-      pos -= delta;
-    } else {
-      memset(buf, 0, delta);
-      buf += delta;
-    }
+    pos = r.r_offset - delta;
   }
 
   memcpy(buf, contents.data() + pos, contents.size() - pos);
@@ -672,46 +663,11 @@ static void initialize_storage(Context<E> &ctx) {
   });
 }
 
-// Interpret R_RISCV_ALIGN relocations and align them if necessary.
-// This function may enlarge input sections but never shrinks.
-static void align_contents(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<i32> r_deltas = isec.get_r_deltas();
-  std::span<Symbol<E> *> syms = isec.get_sorted_symbols();
-  i64 delta = 0;
-
-  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
-
-  for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &r = rels[i];
-    r_deltas[i] = delta;
-
-    if (r.r_type != R_RISCV_ALIGN)
-      continue;
-
-    i64 delta2 = align_to(r.r_offset, r.r_addend) - r.r_offset;
-    if (delta2 == 0)
-      continue;
-
-    while (!syms.empty() && syms[0]->value <= r.r_offset) {
-      syms[0]->value += delta;
-      syms = syms.subspan(1);
-    }
-
-    delta += delta2;
-  }
-
-  for (Symbol<E> *sym : syms)
-    sym->value += delta;
-  r_deltas[rels.size()] = delta;
-
-  isec.sh_size += delta;
-}
-
 // Returns the distance between a relocated place and a symbol.
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                             InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
-  // because `relax_call` may increase a distance between a branch
+  // because `relax_section` may increase a distance between a branch
   // instruction and an absolute symbol. Branching to an absolute
   // location is extremely rare in real code, though.
   if (sym.is_absolute())
@@ -729,7 +685,7 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 }
 
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
-static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
+static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<i32> r_deltas = isec.get_r_deltas();
   std::span<Symbol<E> *> syms = isec.get_sorted_symbols();
   i64 delta = 0;
@@ -743,21 +699,37 @@ static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
     r_deltas[i] += delta;
 
     switch (r.r_type) {
-    case R_RISCV_ALIGN:
-      delta2 = align_to(r.r_offset, r.r_addend) - r.r_offset;
-      break;
-    case R_RISCV_CALL:
-    case R_RISCV_CALL_PLT: {
-      if (i == rels.size() - 1 || rels[i + 1].r_type != R_RISCV_RELAX)
-        break;
+    case R_RISCV_ALIGN: {
+      // R_RISCV_ALIGN refers NOP instructions. We need to eliminate
+      // some or all of the instructions so that the instruction that
+      // immediately follows the NOPs is aligned to a specified
+      // alignment boundary.
+      u64 loc = isec.get_addr() + r.r_offset + delta;
 
-      // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
-      // with JAL, saving 4 bytes.
-      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-      i64 dist = compute_distance(ctx, sym, isec, r);
-      if (dist % 2 == 0 && -(1 << 20) <= dist && dist < (1 << 20))
-        delta2 = -4;
+      // The total bytes of NOPs is stored to r_addend, so the next
+      // instruction is r_addend away.
+      u64 next_loc = loc + r.r_addend;
+
+      u64 alignment = (std::popcount<u64>(r.r_addend) == 1)
+        ? r.r_addend : next_power_of_two(r.r_addend);
+
+      if (next_loc % alignment)
+        delta2 = align_to(loc, alignment) - next_loc;
+      break;
     }
+    case R_RISCV_CALL:
+    case R_RISCV_CALL_PLT:
+      if (ctx.arg.relax) {
+        if (i == rels.size() - 1 || rels[i + 1].r_type != R_RISCV_RELAX)
+          break;
+
+        // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
+        // with JAL, saving 4 bytes.
+        Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+        i64 dist = compute_distance(ctx, sym, isec, r);
+        if (dist % 2 == 0 && -(1 << 20) <= dist && dist < (1 << 20))
+          delta2 = -4;
+      }
     }
 
     if (delta2 == 0)
@@ -819,38 +791,19 @@ static void relax_call(Context<E> &ctx, InputSection<E> &isec) {
 // mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN relocation is a
 // directive to the linker to align the location referred to by the
 // relocation to a specified byte boundary. We at least have to
-// interpret them satisfy the constraints imposed by R_RISCV_ALIGN,
-// and that means we may change section sizes anyway.
+// interpret them satisfy the constraints imposed by R_RISCV_ALIGN
+// relocations.
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
-
   initialize_storage(ctx);
-
-  // First, interpret R_RISCV_ALIGN relocations. This may enlarge
-  // sections.
-  {
-    Timer t(ctx, "align_contents");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-        if (is_resizable(ctx, isec.get()))
-          align_contents(ctx, *isec);
-    });
-  }
-
-  // Re-compute section offset.
-  compute_section_sizes(ctx);
-  set_osec_offsets(ctx);
 
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.
-  {
-    Timer t(ctx, "relax_call");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-        if (is_resizable(ctx, isec.get()))
-          relax_call(ctx, *isec);
-    });
-  }
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(ctx, isec.get()))
+        relax_section(ctx, *isec);
+  });
 
   // Re-compute section offset again to finalize them.
   compute_section_sizes(ctx);
