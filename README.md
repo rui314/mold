@@ -213,7 +213,3 @@ cores most of the time. In this demo, the maximum parallelism is
 artificially capped to 16 so that the bars fit in the GIF.
 
 For details, please read [design notes](docs/design.md).
-
-# Logo
-
--![mold image](docs/mold.jpg)
