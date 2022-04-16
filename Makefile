@@ -209,7 +209,7 @@ install: all
 # move the entire directory to other place without breaking the reference.
 # GNU ln supports `--relative` to do that, but that's not supported by
 # non-GNU systems. So we use Python to compute a relative path.
-	ln -sf `python -c "import os.path; print(os.path.relpath('$(BINDIR)/mold', '$D$(LIBEXECDIR)/mold'))"` $D$(LIBEXECDIR)/mold/ld
+	ln -sf `python -c "import os.path; print(os.path.relpath('$(BINDIR)/mold', '$(LIBEXECDIR)/mold'))"` $D$(LIBEXECDIR)/mold/ld
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
