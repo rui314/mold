@@ -43,6 +43,7 @@ $QEMU $t/exe | grep -q 'Hello world'
 
 readelf -WS $t/exe | fgrep -q .gdb_index
 
+unset DEBUGINFOD_URLS
 gdb $t/exe -ex 'b main' -ex run -ex cont -ex quit >& /dev/null
 
 echo OK
