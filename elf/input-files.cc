@@ -524,16 +524,10 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
                                                sec.shdr().sh_flags);
   rec->p2align = sec.p2align;
 
-  std::string_view data = sec.contents;
-
   // If thes section contents are compressed, uncompress them.
-  if (sec.is_compressed()) {
-    u8 *buf = new u8[sec.sh_size];
-    sec.uncompress(ctx, buf);
-    data = {(char *)buf, sec.sh_size};
-    ctx.string_pool.emplace_back(buf);
-  }
+  sec.uncompress(ctx);
 
+  std::string_view data = sec.contents;
   const char *begin = data.data();
   u64 entsize = sec.shdr().sh_entsize;
   HyperLogLog estimator;

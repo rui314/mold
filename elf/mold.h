@@ -266,8 +266,8 @@ public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, std::string_view name,
                i64 shndx);
 
-  bool is_compressed();
-  void uncompress(Context<E> &ctx, u8 *buf);
+  void uncompress(Context<E> &ctx);
+  void uncompress_to(Context<E> &ctx, u8 *buf);
   void scan_relocations(Context<E> &ctx);
   void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
@@ -307,9 +307,11 @@ public:
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
-  bool killed_by_icf = false;
-
   u8 p2align = 0;
+
+  u8 compressed : 1 = false;
+  u8 uncompressed : 1 = false;
+  u8 killed_by_icf : 1 = false;
 
 private:
   typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
@@ -1141,10 +1143,6 @@ private:
   void override_symbol(Context<E> &ctx, Symbol<E> &sym,
                        const ElfSym<E> &esym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
-
-  std::pair<std::string_view, const ElfShdr<E> *>
-  uncompress_contents(Context<E> &ctx, const ElfShdr<E> &shdr,
-                      std::string_view name);
 
   bool has_common_symbol = false;
 

@@ -2407,6 +2407,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 template <typename E>
 std::vector<std::string_view>
 GdbIndexSection<E>::read_compunits(Context<E> &ctx, ObjectFile<E> &file) {
+  file.debug_info->uncompress(ctx);
   std::string_view data = file.debug_info->contents;
   std::vector<std::string_view> vec;
 
@@ -2444,6 +2445,7 @@ GdbIndexSection<E>::read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
   };
 
   auto read = [&](InputSection<E> &isec) {
+    isec.uncompress(ctx);
     std::string_view contents = isec.contents;
 
     while (!contents.empty()) {

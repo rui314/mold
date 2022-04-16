@@ -18,7 +18,7 @@ mkdir -p $t
 
 which gdb >& /dev/null || { echo skipped; exit; }
 
-cat <<EOF | $CC -o $t/a.o -c -xc -ggnu-pubnames -g - -ffunction-sections
+cat <<EOF > $t/a.c
 #include <stdio.h>
 
 void hello() {
@@ -30,7 +30,10 @@ void greet() {
 }
 EOF
 
-cat <<EOF | $CC -o $t/b.o -c -xc -ggnu-pubnames -g -
+$CC -o $t/b.o -c -ggnu-pubnames -g $t/a.c
+$CC -o $t/c.o -c -ggnu-pubnames -g $t/a.c -gz
+
+cat <<EOF | $CC -o $t/d.o -c -xc -ggnu-pubnames -g -
 void greet();
 
 int main() {
@@ -38,12 +41,14 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,--gdb-index
-$QEMU $t/exe | grep -q 'Hello world'
+$CC -B. -o $t/exe1 $t/b.o $t/d.o -Wl,--gdb-index
+$QEMU $t/exe1 | grep -q 'Hello world'
+readelf -WS $t/exe1 | fgrep -q .gdb_index
+DEBUGINFOD_URLS= gdb $t/exe1 -ex 'b main' -ex run -ex cont -ex quit >& /dev/null
 
-readelf -WS $t/exe | fgrep -q .gdb_index
-
-unset DEBUGINFOD_URLS
-gdb $t/exe -ex 'b main' -ex run -ex cont -ex quit >& /dev/null
+$CC -B. -o $t/exe2 $t/c.o $t/d.o -Wl,--gdb-index
+$QEMU $t/exe2 | grep -q 'Hello world'
+readelf -WS $t/exe2 | fgrep -q .gdb_index
+DEBUGINFOD_URLS= gdb $t/exe2 -ex 'b main' -ex run -ex cont -ex quit >& /dev/null
 
 echo OK
