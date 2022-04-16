@@ -187,7 +187,6 @@ test-riscv64: all
 	@echo riscv64
 	CC=riscv64-linux-gnu-gcc CXX=riscv64-linux-gnu-g++ GCC=riscv64-linux-gnu-gcc GXX=riscv64-linux-gnu-g++ OBJDUMP=riscv64-linux-gnu-objdump MACHINE=riscv64 QEMU='qemu-riscv64 -L /usr/riscv64-linux-gnu' $(MAKE) test
 
-
 test-all:
 	$(MAKE) test-x86-64
 	$(MAKE) test-i386
@@ -205,7 +204,12 @@ install: all
 	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
 
 	$(INSTALL) -d $D$(LIBEXECDIR)/mold
-	ln -sf $(BINDIR)/mold $D$(LIBEXECDIR)/mold/ld
+
+# We want to make a symblink with a relative path, so that users can
+# move the entire directory to other place without breaking the reference.
+# GNU ln supports `--relative` to do that, but that's not supported by
+# non-GNU systems. So we use Python to compute a relative path.
+	ln -sf `python -c "import os.path; print(os.path.relpath('$(BINDIR)/mold', '$D$(LIBEXECDIR)/mold'))"` $D$(LIBEXECDIR)/mold/ld
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
