@@ -2484,6 +2484,71 @@ GdbIndexSection<E>::read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
   return vec;
 }
 
+// Try to find a compilation unit from .debug_info and its
+// corresponding record from .debug_abbrev and returns them.
+template <typename E>
+std::pair<u8 *, u8 *>
+GdbIndexSection<E>::find_compunit(Context<E> &ctx, ObjectFile<E> &file,
+                                  i64 offset, OutputSection<E> *debug_info,
+                                  OutputSection<E> *debug_abbrev) {
+  // Read .debug_info to find the record at a given offset.
+  u8 *cu = (u8 *)(ctx.buf + debug_info->shdr.sh_offset + offset);
+  u32 dwarf_version = *(u16 *)(cu + 4);
+  u32 abbrev_offset;
+
+  switch (dwarf_version) {
+  case 4:
+    abbrev_offset = *(u32 *)(cu + 6);
+    cu += 11;
+    break;
+  case 5:
+    abbrev_offset = *(u32 *)(cu + 8);
+    cu += 12;
+    break;
+  default:
+    Fatal(ctx) << file << ": --gdb-index: unknown DWARF version "
+               << dwarf_version;
+  }
+
+  u32 abbrev_code = read_uleb(cu);
+
+  // Find a .debug_abbrev record corresponding to the .debug_info record.
+  // We assume the .debug_info record at a given offset is of
+  // DW_TAG_compile_unit which describes a compunit.
+  u8 *abbrev = (u8 *)(ctx.buf + debug_abbrev->shdr.sh_offset + abbrev_offset);
+
+  for (;;) {
+    u32 code = read_uleb(abbrev);
+    if (code == 0) {
+      Fatal(ctx) << file << ": --gdb-index: .debug_abbrev does not contain"
+                 << " a record for the first .debug_info record";
+      return {};
+    }
+
+    if (code == abbrev_code) {
+      // Found a record
+      u64 abbrev_tag = read_uleb(abbrev);
+      if (abbrev_tag != DW_TAG_compile_unit) {
+        Fatal(ctx) << file << ": --gdb-index: the first entry's tag is not "
+                   << " DW_TAG_compile_unit but 0x" << std::hex << abbrev_tag;
+        return {};
+      }
+      break;
+    }
+
+    // Skip an uninteresting record
+    for (;;) {
+      u64 name = read_uleb(abbrev);
+      u64 form = read_uleb(abbrev);
+      if (name == 0 && form == 0)
+        break;
+    }
+  }
+
+  abbrev++; // skip has_children byte
+  return {cu, abbrev};
+}
+
 // Returns a list of address ranges explained by a compunit at the
 // `offset` in an output .debug_info section.
 //
@@ -2511,21 +2576,10 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
   assert(debug_info);
   assert(debug_abbrev);
 
-  // Read .debug_abbrev to learn the format of .debug_info.
-  u8 *cu = (u8 *)(ctx.buf + debug_info->shdr.sh_offset + offset);
-  u32 abbrev_offset = *(u32 *)(cu + 6);
-  cu += 11;
-  read_uleb(cu); // skip abbrev code
-
-  u8 *abbrev = (u8 *)(ctx.buf + debug_abbrev->shdr.sh_offset + abbrev_offset);
-  read_uleb(abbrev); // skip abbrev code
-  u64 abbrev_tag = read_uleb(abbrev);
-
-  if (abbrev_tag != DW_TAG_compile_unit)
-    Error(ctx) << file << ": --gdb-index: .debug_abbrev does not contain"
-               << " DW_TAG_compile_unit";
-
-  abbrev++; // skip has_children byte
+  u8 *cu;
+  u8 *abbrev;
+  std::tie(cu, abbrev) =
+    find_compunit(ctx, file, offset, debug_info, debug_abbrev);
 
   std::optional<u64> low_pc;
 
@@ -2541,15 +2595,22 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
         return 0;
       case DW_FORM_data1:
       case DW_FORM_flag:
+      case DW_FORM_strx1:
+      case DW_FORM_addrx1:
         return *cu++;
-      case DW_FORM_data2: {
+      case DW_FORM_data2:
+      case DW_FORM_strx2:
+      case DW_FORM_addrx2: {
         u64 val = *(u16 *)cu;
         cu += 2;
         return val;
       }
       case DW_FORM_data4:
       case DW_FORM_strp:
-      case DW_FORM_sec_offset: {
+      case DW_FORM_sec_offset:
+      case DW_FORM_line_strp:
+      case DW_FORM_strx4:
+      case DW_FORM_addrx4: {
         u64 val = *(u32 *)cu;
         cu += 4;
         return val;
@@ -2564,6 +2625,9 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
         cu += E::word_size;
         return val;
       }
+      case DW_FORM_strx:
+      case DW_FORM_addrx:
+        return read_uleb(cu);
       case DW_FORM_string: {
         while (*cu)
           cu++;
@@ -2571,7 +2635,7 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
         return 0;
       }
       default:
-        Error(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
+        Fatal(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
                    << std::hex << form;
         return 0;
       }
@@ -2583,7 +2647,7 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
       break;
     case DW_AT_high_pc:
       if (low_pc)
-        Error(ctx) << file << ": --gdb-index: missing DW_AT_low_pc";
+        Fatal(ctx) << file << ": --gdb-index: missing DW_AT_low_pc";
 
       if (form == DW_FORM_addr)
         return {*low_pc, read_value()};

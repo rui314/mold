@@ -922,6 +922,10 @@ private:
 
   std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
 
+  std::pair<u8 *, u8 *> find_compunit(Context<E> &ctx, ObjectFile<E> &file,
+                                      i64 offset, OutputSection<E> *debug_info,
+                                      OutputSection<E> *debug_abbrev);
+
   std::vector<u64> read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
                                       i64 offset);
 

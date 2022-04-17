@@ -1081,6 +1081,25 @@ static constexpr u32 DW_FORM_indirect = 0x16;
 static constexpr u32 DW_FORM_sec_offset = 0x17;
 static constexpr u32 DW_FORM_exprloc = 0x18;
 static constexpr u32 DW_FORM_flag_present = 0x19;
+static constexpr u32 DW_FORM_strx = 0x1a;
+static constexpr u32 DW_FORM_addrx = 0x1b;
+static constexpr u32 DW_FORM_ref_sup4 = 0x1c;
+static constexpr u32 DW_FORM_strp_sup = 0x1d;
+static constexpr u32 DW_FORM_data16 = 0x1e;
+static constexpr u32 DW_FORM_line_strp = 0x1f;
+static constexpr u32 DW_FORM_ref_sig8 = 0x20;
+static constexpr u32 DW_FORM_implicit_const = 0x21;
+static constexpr u32 DW_FORM_loclistx = 0x22;
+static constexpr u32 DW_FORM_rnglistx = 0x23;
+static constexpr u32 DW_FORM_ref_sup8 = 0x24;
+static constexpr u32 DW_FORM_strx1 = 0x25;
+static constexpr u32 DW_FORM_strx2 = 0x26;
+static constexpr u32 DW_FORM_strx3 = 0x27;
+static constexpr u32 DW_FORM_strx4 = 0x28;
+static constexpr u32 DW_FORM_addrx1 = 0x29;
+static constexpr u32 DW_FORM_addrx2 = 0x2a;
+static constexpr u32 DW_FORM_addrx3 = 0x2b;
+static constexpr u32 DW_FORM_addrx4 = 0x2c;
 
 struct Elf64Sym {
   bool is_defined() const { return !is_undef(); }
