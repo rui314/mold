@@ -16,13 +16,17 @@ mkdir -p $t
 
 which dwarfdump >& /dev/null || { echo skipped; exit; }
 
-cat <<EOF | $CXX -c -o $t/a.o -g -gz=zlib -xc++ -
+# Clang may not support -gz=zlib-gnu
+echo 'int main() {}' | $CXX -o /dev/null -gz=zlib-gnu -xc++ ->& /dev/null ||
+  { echo skipped; exit; }
+
+cat <<EOF | $CXX -c -o $t/a.o -g -gz=zlib-gnu -xc++ -
 int main() {
   return 0;
 }
 EOF
 
-cat <<EOF | $CXX -c -o $t/b.o -g -gz=zlib -xc++ -
+cat <<EOF | $CXX -c -o $t/b.o -g -gz=zlib-gnu -xc++ -
 int foo() {
   return 0;
 }
