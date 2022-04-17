@@ -382,7 +382,7 @@ static int elf_main(int argc, char **argv) {
 
   // Redo if -m is not x86-64.
   if (ctx.arg.emulation != E::e_machine) {
-#if !defined(MOLD_DEBUG_X86_64_ONLY) && !defined(MOLD_DEBUG_ARM64_ONLY)
+#if !MOLD_DEBUG_X86_64_ONLY && !MOLD_DEBUG_ARM64_ONLY
     switch (ctx.arg.emulation) {
     case EM_386:
       return elf_main<I386>(argc, argv);
@@ -761,7 +761,7 @@ static int elf_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-#ifdef MOLD_DEBUG_ARM64_ONLY
+#if MOLD_DEBUG_ARM64_ONLY
   return elf_main<ARM64>(argc, argv);
 #else
   return elf_main<X86_64>(argc, argv);

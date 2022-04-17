@@ -35,13 +35,14 @@
 
 // MOLD_DEBUG_{X86_64,ARM64}_ONLY are macros to speed up builds.
 // This should be used only for debugging. When you use this flag,
-// you also need to pass -gc-sections to link mold.
-#if defined(MOLD_DEBUG_X86_64_ONLY)
+// you need to compile mold C++ files with `-ffunction-sections
+// -fdata-sections` and link them with -Wl,-gc-sections.
+#if MOLD_DEBUG_X86_64_ONLY
 # ifdef __OPTIMIZE__
 #  error "MOLD_DEBUG_X86_64_ONLY is for debugging only"
 # endif
 # define INSTANTIATE_ALL INSTANTIATE(X86_64)
-#elif defined(MOLD_DEBUG_ARM64_ONLY)
+#elif MOLD_DEBUG_ARM64_ONLY
 # ifdef __OPTIMIZE__
 #  error "MOLD_DEBUG_ARM64_ONLY is for debugging only"
 # endif
