@@ -713,6 +713,7 @@ static int elf_main(int argc, char **argv) {
   }
 
   t_copy.stop();
+  ctx.checkpoint();
 
   // Close the output file. This is the end of the linker's main job.
   ctx.output_file->close(ctx);
@@ -753,6 +754,7 @@ static int elf_main(int argc, char **argv) {
 
   for (std::function<void()> &fn : ctx.on_exit)
     fn();
+  ctx.checkpoint();
   return 0;
 }
 
