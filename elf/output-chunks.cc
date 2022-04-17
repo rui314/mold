@@ -2845,10 +2845,6 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template i64 BuildId::size(Context<E> &) const;                       \
   template bool is_relro(Context<E> &, Chunk<E> *);
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf

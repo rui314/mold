@@ -588,10 +588,6 @@ void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args) {
 #define INSTANTIATE(E)                                                  \
   template void combine_objects(Context<E> &, std::span<std::string_view>);
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf

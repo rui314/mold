@@ -201,10 +201,6 @@ void gc_sections(Context<E> &ctx) {
 #define INSTANTIATE(E)                                  \
   template void gc_sections(Context<E> &ctx);
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf

@@ -652,10 +652,6 @@ void lto_cleanup(Context<E> &ctx) {
   template std::vector<ObjectFile<E> *> do_lto(Context<E> &);           \
   template void lto_cleanup(Context<E> &)
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf

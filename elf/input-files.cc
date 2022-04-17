@@ -1454,10 +1454,6 @@ void SharedFile<E>::write_symtab(Context<E> &ctx) {
   template class SharedFile<E>;                                         \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf

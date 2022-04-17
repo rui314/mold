@@ -1105,10 +1105,6 @@ void parse_nonpositional_args(Context<E> &ctx,
   void parse_nonpositional_args(Context<E> &ctx,                        \
                                 std::vector<std::string_view> &remaining)
 
-INSTANTIATE(X86_64);
-INSTANTIATE(I386);
-INSTANTIATE(ARM64);
-INSTANTIATE(ARM32);
-INSTANTIATE(RISCV64);
+INSTANTIATE_ALL;
 
 } // namespace mold::elf
