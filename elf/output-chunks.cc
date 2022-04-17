@@ -2361,6 +2361,18 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   Timer t(ctx, "GdbIndexSection::write_address_areas");
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    if (osec->name == ".debug_info")
+      ctx.debug_info = osec.get();
+    if (osec->name == ".debug_abbrev")
+      ctx.debug_abbrev = osec.get();
+    if (osec->name == ".debug_ranges")
+      ctx.debug_ranges = osec.get();
+  }
+
+  assert(ctx.debug_info);
+  assert(ctx.debug_abbrev);
+
   struct __attribute__((packed)) Entry {
     u64 start;
     u64 end;
@@ -2489,10 +2501,9 @@ GdbIndexSection<E>::read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
 template <typename E>
 std::pair<u8 *, u8 *>
 GdbIndexSection<E>::find_compunit(Context<E> &ctx, ObjectFile<E> &file,
-                                  i64 offset, OutputSection<E> *debug_info,
-                                  OutputSection<E> *debug_abbrev) {
+                                  i64 offset) {
   // Read .debug_info to find the record at a given offset.
-  u8 *cu = (u8 *)(ctx.buf + debug_info->shdr.sh_offset + offset);
+  u8 *cu = (u8 *)(ctx.buf + ctx.debug_info->shdr.sh_offset + offset);
   u32 dwarf_version = *(u16 *)(cu + 4);
   u32 abbrev_offset;
 
@@ -2515,7 +2526,7 @@ GdbIndexSection<E>::find_compunit(Context<E> &ctx, ObjectFile<E> &file,
   // Find a .debug_abbrev record corresponding to the .debug_info record.
   // We assume the .debug_info record at a given offset is of
   // DW_TAG_compile_unit which describes a compunit.
-  u8 *abbrev = (u8 *)(ctx.buf + debug_abbrev->shdr.sh_offset + abbrev_offset);
+  u8 *abbrev = (u8 *)(ctx.buf + ctx.debug_abbrev->shdr.sh_offset + abbrev_offset);
 
   for (;;) {
     u32 code = read_uleb(abbrev);
@@ -2560,26 +2571,9 @@ template <typename E>
 std::vector<u64>
 GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
                                        i64 offset) {
-  OutputSection<E> *debug_info = nullptr;
-  OutputSection<E> *debug_abbrev = nullptr;
-  OutputSection<E> *debug_ranges = nullptr;
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".debug_info")
-      debug_info = osec.get();
-    if (osec->name == ".debug_abbrev")
-      debug_abbrev = osec.get();
-    if (osec->name == ".debug_ranges")
-      debug_ranges = osec.get();
-  }
-
-  assert(debug_info);
-  assert(debug_abbrev);
-
   u8 *cu;
   u8 *abbrev;
-  std::tie(cu, abbrev) =
-    find_compunit(ctx, file, offset, debug_info, debug_abbrev);
+  std::tie(cu, abbrev) = find_compunit(ctx, file, offset);
 
   std::optional<u64> low_pc;
 
@@ -2659,12 +2653,12 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
         return {*low_pc, read_value()};
       return {*low_pc, *low_pc + read_value()};
     case DW_AT_ranges: {
-      if (!debug_ranges)
+      if (!ctx.debug_ranges)
         Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
 
       u64 offset = read_value();
       typename E::WordTy *range =
-        (typename E::WordTy *)(ctx.buf + debug_ranges->shdr.sh_offset + offset);
+        (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
 
       std::vector<u64> vec;
       for (i64 i = 0; range[i] || range[i + 1]; i += 2) {

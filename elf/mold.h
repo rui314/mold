@@ -946,8 +946,7 @@ private:
   std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
 
   std::pair<u8 *, u8 *> find_compunit(Context<E> &ctx, ObjectFile<E> &file,
-                                      i64 offset, OutputSection<E> *debug_info,
-                                      OutputSection<E> *debug_abbrev);
+                                      i64 offset);
 
   std::vector<u64> read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
                                       i64 offset);
@@ -1752,6 +1751,11 @@ struct Context {
   std::unique_ptr<GdbIndexSection<E>> gdb_index;
   std::unique_ptr<ThumbToArmSection> thumb_to_arm;
   std::unique_ptr<TlsTrampolineSection> tls_trampoline;
+
+  // For --gdb-index
+  OutputSection<E> *debug_info = nullptr;
+  OutputSection<E> *debug_abbrev = nullptr;
+  OutputSection<E> *debug_ranges = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
