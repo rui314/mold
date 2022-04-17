@@ -14,6 +14,8 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $MACHINE = $(uname -m) ] || { echo skipped; exit; }
+
 which clang >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | clang -flto -c -o $t/a.o -xc -
