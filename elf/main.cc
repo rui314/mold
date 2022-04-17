@@ -581,6 +581,12 @@ static int elf_main(int argc, char **argv) {
   if (!ctx.arg.soname.empty())
     ctx.dynstr->add_string(ctx.arg.soname);
 
+  // Handle --print-dependencies
+  if (ctx.arg.print_dependencies == 1)
+    print_dependencies(ctx);
+  else if (ctx.arg.print_dependencies == 2)
+    print_dependencies_full(ctx);
+
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels(ctx);
@@ -723,12 +729,6 @@ static int elf_main(int argc, char **argv) {
   // Handle --dependency-file
   if (!ctx.arg.dependency_file.empty())
     write_dependency_file(ctx);
-
-  // Handle --print-dependencies
-  if (ctx.arg.print_dependencies == 1)
-    print_dependencies(ctx);
-  else if (ctx.arg.print_dependencies == 2)
-    print_dependencies_full(ctx);
 
   if (ctx.has_lto_object)
     lto_cleanup(ctx);
