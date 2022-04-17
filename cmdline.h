@@ -48,6 +48,7 @@ read_response_file(C &ctx, std::string_view path) {
   return vec;
 }
 
+// Replace "@path/to/some/text/file" with its file contents.
 template <typename C>
 std::vector<std::string_view> expand_response_files(C &ctx, char **argv) {
   std::vector<std::string_view> vec;
