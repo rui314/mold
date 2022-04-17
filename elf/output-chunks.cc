@@ -2660,7 +2660,7 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
       return {*low_pc, *low_pc + read_value()};
     case DW_AT_ranges: {
       if (!debug_ranges)
-        Fatal(ctx) << file << ": --gdb-index: .missing debug_ranges";
+        Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
 
       u64 offset = read_value();
       typename E::WordTy *range =
