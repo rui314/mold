@@ -2597,10 +2597,12 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
       case DW_FORM_flag:
       case DW_FORM_strx1:
       case DW_FORM_addrx1:
+      case DW_FORM_ref1:
         return *cu++;
       case DW_FORM_data2:
       case DW_FORM_strx2:
-      case DW_FORM_addrx2: {
+      case DW_FORM_addrx2:
+      case DW_FORM_ref2: {
         u64 val = *(u16 *)cu;
         cu += 2;
         return val;
@@ -2610,23 +2612,27 @@ GdbIndexSection<E>::read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
       case DW_FORM_sec_offset:
       case DW_FORM_line_strp:
       case DW_FORM_strx4:
-      case DW_FORM_addrx4: {
+      case DW_FORM_addrx4:
+      case DW_FORM_ref4: {
         u64 val = *(u32 *)cu;
         cu += 4;
         return val;
       }
-      case DW_FORM_data8: {
+      case DW_FORM_data8:
+      case DW_FORM_ref8: {
         u64 val = *(u64 *)cu;
         cu += 8;
         return val;
       }
-      case DW_FORM_addr: {
+      case DW_FORM_addr:
+      case DW_FORM_ref_addr: {
         u64 val = *(typename E::WordTy *)cu;
         cu += E::word_size;
         return val;
       }
       case DW_FORM_strx:
       case DW_FORM_addrx:
+      case DW_FORM_ref_udata:
         return read_uleb(cu);
       case DW_FORM_string: {
         while (*cu)
