@@ -13,7 +13,7 @@ jobs:
       with:
         make-default: false
     - name: apt-get
-      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install git build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libxxhash-dev libtbb-dev git bsdmainutils dwarfdump pkg-config
+      run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install git build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libtbb-dev git bsdmainutils dwarfdump pkg-config
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make
@@ -27,7 +27,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: apt-get
       run: |
-        dpkg --add-architecture i386 && apt-get update && apt-get install -y sudo libssl-dev zlib1g-dev libxxhash-dev cmake clang bsdmainutils dwarfdump qemu-user gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf
+        dpkg --add-architecture i386 && apt-get update && apt-get install -y sudo libssl-dev zlib1g-dev cmake clang bsdmainutils dwarfdump qemu-user gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
         ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
@@ -46,8 +46,6 @@ jobs:
     runs-on: macos-11
     steps:
     - uses: actions/checkout@v2
-    - name: brew
-      run: brew install xxhash
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make
