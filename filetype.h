@@ -41,7 +41,7 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
       continue;
 
     std::span<ElfSym<E>> elf_syms{(ElfSym<E> *)(data + sec.sh_offset),
-                                  sec.sh_size / sizeof(ElfSym<E>)};
+                                  (size_t)sec.sh_size / sizeof(ElfSym<E>)};
 
     auto skip = [](u8 type) {
       return type == STT_NOTYPE || type == STT_FILE || type == STT_SECTION;
