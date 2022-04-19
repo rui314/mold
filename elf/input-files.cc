@@ -207,8 +207,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           debug_info = isec;
         if (name == ".debug_abbrev")
           debug_abbrev = isec;
-        if (name == ".debug_ranges")
-          debug_ranges = isec;
 
         // If --gdb-index is given, contents of .debug_gnu_pubnames and
         // .debug_gnu_pubtypes are copied to .gdb_index, so keeping them

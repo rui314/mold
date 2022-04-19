@@ -2104,25 +2104,25 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 }
 
 // .gdb_index section is an optional section to speed up GNU debugger.
-// It contains two maps: 1) a map from function/variable/type names to
-// compunits, and 2) a map from function address ranges to compunits.
-// gdb uses these maps to quickly find a compunit given a name or an
-// instruction pointer.
-//
-// .gdb_index is not mandatory. All the information in .gdb_index is
-// also in other debug info sections. You can actually create an
-// executable without .gdb_index and later add that using
-// `gdb-add-index` post-processing tool that comes with gdb.
+// It contains a map from function/variable/type names to compunits,
+// gdb uses the map to quickly find a compunit for a given identifier.
+// The mapping from names to compunits is 1:n.
 //
 // (Terminology: a compilation unit, which often abbreviated as compunit
 // or cu, is a unit of debug info. An input .debug_info section usually
 // contains one compunit, and thus an output .debug_info contains as
 // many compunits as the number of input files.)
 //
-// The mapping from names to compunits is 1:n while the mapping from
-// address ranges to compunits is 1:1. That is, two object files may
-// define the same type name (with the same definition), while there
-// should be no two functions that overlap with each other in memory.
+// In general, .gdb_index also contains a map from function address
+// ranges to compunits, but our implementation doesn't create such map
+// for two reasons: 1) it looks like gdb is fine without it, and 2)
+// function addresses are buried in various debug info sections and we
+// didn't want to parse DWARF debug only to create that map.
+//
+// .gdb_index is not mandatory. All the information in .gdb_index is
+// also in other debug info sections. You can actually create an
+// executable without .gdb_index and later add that using
+// `gdb-add-index` post-processing tool that comes with gdb.
 //
 // .gdb_index contains an on-disk hash table for names, so gdb can
 // lookup names without loading all strings into memory and construct an
@@ -2133,47 +2133,20 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // Besides names, these sections contains attributes for each name so
 // that gdb can distinguish type names from function names, for example.
 //
-// Function address ranges are in .debug_info and .debug_ranges
-// sections. If an object file is compiled without -ffunction-sections,
-// there's only one .text section in that object file, and in that case
-// its address range is directly stored to .debug_info. If an object
-// file is compiled with -ffunction-sections, it contains multiple .text
-// sections, and address ranges for them are stored to .debug_ranges.
-//
-// .debug_info section contains DWARF debug info. Although we don't need
-// to parse the whole .debug_info section to read address ranges, we
-// have to do a little bit. DWARF is complicated and often handled using
-// a library such as libdwarf. But we don't use any library because we
-// didn't want to add an extra run-time dependency just for --gdb-index.
-//
 // This page explains the format of .gdb_index:
 // https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
 template <typename E>
 void GdbIndexSection<E>::construct(Context<E> &ctx) {
   Timer t(ctx, "GdbIndexSection::construct");
 
-  // Read debug sections
+  // Read compilation units from .debug_info.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->debug_info == nullptr)
-      return;
-
-    // Read compilation units from .debug_info.
-    file->compunits = read_compunits(ctx, *file);
-
-    // Initialize `num_areas`. Each CU contains zero or one address area.
-    file->num_areas = file->compunits.size();
-
-    // Optionally, a CU can refer an address area list in .debug_ranges.
-    // .debug_ranges contains a vector of [begin, end) address pairs.
-    // The last entry must be a null terminator, so we do -1.
-    if (file->debug_ranges)
-      file->num_areas += file->debug_ranges->sh_size / E::word_size / 2 - 1;
+    if (file->debug_info)
+      file->compunits = read_compunits(ctx, *file);
   });
 
-  // Initialize `area_offset` and `compunits_idx`.
+  // Initialize `compunits_idx`.
   for (i64 i = 0; i < ctx.objs.size() - 1; i++) {
-    ctx.objs[i + 1]->area_offset =
-      ctx.objs[i]->area_offset + ctx.objs[i]->num_areas * 20;
     ctx.objs[i + 1]->compunits_idx =
       ctx.objs[i]->compunits_idx + ctx.objs[i]->compunits.size();
   }
@@ -2259,7 +2232,6 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   // Now that we can compute the size of this section.
   ObjectFile<E> &last = *ctx.objs.back();
   i64 compunits_size = (last.compunits_idx + last.compunits.size()) * 16;
-  i64 areas_size = last.area_offset + last.num_areas * 20;
   i64 offset = sizeof(header);
 
   header.cu_list_offset = offset;
@@ -2267,8 +2239,6 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
   header.cu_types_offset = offset;
   header.areas_offset = offset;
-  offset += areas_size;
-
   header.symtab_offset = offset;
   offset += num_symtab_entries * 8;
 
@@ -2298,9 +2268,6 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
       }
     }
   }
-
-  // Skip address areas. It'll be filled by write_address_areas.
-  buf += header.symtab_offset - header.areas_offset;
 
   // Write symbol table.
   memset(buf, 0, num_symtab_entries * 8);
@@ -2342,63 +2309,6 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
       std::string_view name{map.keys[i], map.key_sizes[i]};
       write_string(buf + map.values[i].name_offset, name);
     }
-  });
-}
-
-template <typename E>
-void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
-  Timer t(ctx, "GdbIndexSection::write_address_areas");
-  u8 *base = ctx.buf + this->shdr.sh_offset;
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".debug_info")
-      ctx.debug_info = osec.get();
-    if (osec->name == ".debug_abbrev")
-      ctx.debug_abbrev = osec.get();
-    if (osec->name == ".debug_ranges")
-      ctx.debug_ranges = osec.get();
-  }
-
-  assert(ctx.debug_info);
-  assert(ctx.debug_abbrev);
-
-  struct __attribute__((packed)) Entry {
-    u64 start;
-    u64 end;
-    u32 attr;
-  };
-
-  // Read .debug_info and .debug_ranges to copy address ranges
-  // to .gdb_index.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->debug_info)
-      return;
-
-    Entry *begin = (Entry *)(base + header.areas_offset + file->area_offset);
-    Entry *e = begin;
-    u64 offset = file->debug_info->offset;
-
-    for (i64 i = 0; i < file->compunits.size(); i++) {
-      std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
-
-      for (i64 j = 0; j < addrs.size(); j += 2) {
-        // Skip an address area for a dead function
-        if (addrs[j] == 1 && addrs[j + 1] == 1)
-          continue;
-
-        e->start = addrs[j];
-        e->end = addrs[j + 1];
-        e->attr = file->compunits_idx + i;
-        e++;
-      }
-      offset += file->compunits[i].size();
-    }
-
-    // Fill trailing null entries with dummy values because gdb
-    // crashes if there are entries with address 0.
-    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].start;
-    for (; e < begin + file->num_areas; e++)
-      e->start = e->end = filler;
   });
 }
 
