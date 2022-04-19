@@ -940,17 +940,6 @@ private:
   i64 num_symtab_entries = 0;
   i64 attrs_size = 0;
 
-  std::vector<std::string_view>
-  read_compunits(Context<E> &ctx, ObjectFile<E> &file);
-
-  std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
-
-  std::pair<u8 *, u8 *> find_compunit(Context<E> &ctx, ObjectFile<E> &file,
-                                      i64 offset);
-
-  std::vector<u64> read_address_areas(Context<E> &ctx, ObjectFile<E> &file,
-                                      i64 offset);
-
   ConcurrentMap<MapEntry> map;
 };
 
@@ -993,6 +982,21 @@ private:
 };
 
 bool is_c_identifier(std::string_view name);
+
+//
+// dwarf.cc
+//
+
+template <typename E>
+std::vector<std::string_view>
+read_compunits(Context<E> &ctx, ObjectFile<E> &file);
+
+template <typename E>
+std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
+
+template <typename E>
+std::vector<u64>
+read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 
 //
 // input-files.cc
