@@ -18,6 +18,9 @@ mkdir -p $t
 
 which gdb >& /dev/null || { echo skipped; exit; }
 
+echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-5 -g - >& /dev/null ||
+  { echo skipped; exit; }
+
 cat <<EOF > $t/a.c
 #include <stdio.h>
 
@@ -30,10 +33,10 @@ void greet() {
 }
 EOF
 
-$CC -o $t/b.o -c -ggnu-pubnames -gdwarf-4 -g $t/a.c
-$CC -o $t/c.o -c -ggnu-pubnames -gdwarf-4 -g $t/a.c -gz
+$CC -o $t/b.o -c -ggnu-pubnames -gdwarf-5 -g $t/a.c
+$CC -o $t/c.o -c -ggnu-pubnames -gdwarf-5 -g $t/a.c -gz
 
-cat <<EOF | $CC -o $t/d.o -c -xc -ggnu-pubnames -g -
+cat <<EOF | $CC -o $t/d.o -c -xc -ggnu-pubnames -gdwarf-5 -g -
 void greet();
 
 int main() {
