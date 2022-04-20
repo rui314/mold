@@ -909,6 +909,7 @@ public:
 
   void construct(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
+  void write_address_areas(Context<E> &ctx);
 
 private:
   struct SectionHeader {
@@ -993,6 +994,10 @@ read_compunits(Context<E> &ctx, ObjectFile<E> &file);
 
 template <typename E>
 std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
+
+template <typename E>
+std::vector<u64>
+read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 
 //
 // input-files.cc
@@ -1147,9 +1152,12 @@ public:
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
   InputSection<E> *debug_abbrev = nullptr;
+  InputSection<E> *debug_ranges = nullptr;
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
   std::vector<std::string_view> compunits;
+  i64 num_areas = 0;
+  i64 area_offset = 0;
   i64 compunits_idx = 0;
   std::vector<GdbIndexName> pubnames;
 
@@ -1754,6 +1762,7 @@ struct Context {
   // For --gdb-index
   OutputSection<E> *debug_info = nullptr;
   OutputSection<E> *debug_abbrev = nullptr;
+  OutputSection<E> *debug_ranges = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
