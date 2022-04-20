@@ -904,6 +904,7 @@ public:
   GdbIndexSection() {
     this->name = ".gdb_index";
     this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_addralign = 4;
   }
 
   void construct(Context<E> &ctx);
