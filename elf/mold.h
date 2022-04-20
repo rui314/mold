@@ -996,6 +996,9 @@ template <typename E>
 std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
 
 template <typename E>
+i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file);
+
+template <typename E>
 std::vector<u64>
 read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 

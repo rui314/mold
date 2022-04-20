@@ -158,6 +158,94 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   return {cu, abbrev};
 }
 
+// Estimate the number of address ranges contained in a given file.
+// It may over-estimate but never under-estimate.
+template <typename E>
+i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
+  // Each CU contains zero or one address area.
+  i64 ret = file.compunits.size();
+
+  // Optionally, a CU can refer an address area list in .debug_ranges.
+  // .debug_ranges contains a vector of [begin, end) address pairs.
+  // The last entry must be a null terminator, so we do -1.
+  if (file.debug_ranges)
+    ret += file.debug_ranges->sh_size / E::word_size / 2 - 1;
+  return ret;
+}
+
+// .debug_info contains a variable-length fields. This class reads them.
+template <typename E>
+class DebugInfoReader {
+public:
+  DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu)
+    : ctx(ctx), file(file), cu(cu) {}
+  u64 read(u64 form);
+
+private:
+  Context<E> &ctx;
+  ObjectFile<E> &file;
+  u8 *cu;
+};
+
+template <typename E>
+u64 DebugInfoReader<E>::read(u64 form) {
+  switch (form) {
+  case DW_FORM_flag_present:
+    return 0;
+  case DW_FORM_data1:
+  case DW_FORM_flag:
+  case DW_FORM_strx1:
+  case DW_FORM_addrx1:
+  case DW_FORM_ref1:
+    return *cu++;
+  case DW_FORM_data2:
+  case DW_FORM_strx2:
+  case DW_FORM_addrx2:
+  case DW_FORM_ref2: {
+    u64 val = *(u16 *)cu;
+    cu += 2;
+    return val;
+  }
+  case DW_FORM_data4:
+  case DW_FORM_strp:
+  case DW_FORM_sec_offset:
+  case DW_FORM_line_strp:
+  case DW_FORM_strx4:
+  case DW_FORM_addrx4:
+  case DW_FORM_ref4: {
+    u64 val = *(u32 *)cu;
+    cu += 4;
+    return val;
+  }
+  case DW_FORM_data8:
+  case DW_FORM_ref8: {
+    u64 val = *(u64 *)cu;
+    cu += 8;
+    return val;
+  }
+  case DW_FORM_addr:
+  case DW_FORM_ref_addr: {
+    u64 val = *(typename E::WordTy *)cu;
+    cu += E::word_size;
+    return val;
+  }
+  case DW_FORM_strx:
+  case DW_FORM_addrx:
+  case DW_FORM_ref_udata:
+    return read_uleb(cu);
+  case DW_FORM_string: {
+    while (*cu)
+      cu++;
+    cu++;
+    return 0;
+  }
+  default:
+    Fatal(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
+               << std::hex << form;
+    return 0;
+  }
+}
+
 // Returns a list of address ranges explained by a compunit at the
 // `offset` in an output .debug_info section.
 //
@@ -172,6 +260,10 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u8 *abbrev;
   std::tie(cu, abbrev) = find_compunit(ctx, file, offset);
 
+  DebugInfoReader<E> reader{ctx, file, cu};
+
+  std::optional<u64> high_pc_abs;
+  std::optional<u64> high_pc_rel;
   std::optional<u64> low_pc;
 
   for (;;) {
@@ -180,80 +272,21 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     if (name == 0 && form == 0)
       break;
 
-    auto read_value = [&]() -> u64 {
-      switch (form) {
-      case DW_FORM_flag_present:
-        return 0;
-      case DW_FORM_data1:
-      case DW_FORM_flag:
-      case DW_FORM_strx1:
-      case DW_FORM_addrx1:
-      case DW_FORM_ref1:
-        return *cu++;
-      case DW_FORM_data2:
-      case DW_FORM_strx2:
-      case DW_FORM_addrx2:
-      case DW_FORM_ref2: {
-        u64 val = *(u16 *)cu;
-        cu += 2;
-        return val;
-      }
-      case DW_FORM_data4:
-      case DW_FORM_strp:
-      case DW_FORM_sec_offset:
-      case DW_FORM_line_strp:
-      case DW_FORM_strx4:
-      case DW_FORM_addrx4:
-      case DW_FORM_ref4: {
-        u64 val = *(u32 *)cu;
-        cu += 4;
-        return val;
-      }
-      case DW_FORM_data8:
-      case DW_FORM_ref8: {
-        u64 val = *(u64 *)cu;
-        cu += 8;
-        return val;
-      }
-      case DW_FORM_addr:
-      case DW_FORM_ref_addr: {
-        u64 val = *(typename E::WordTy *)cu;
-        cu += E::word_size;
-        return val;
-      }
-      case DW_FORM_strx:
-      case DW_FORM_addrx:
-      case DW_FORM_ref_udata:
-        return read_uleb(cu);
-      case DW_FORM_string: {
-        while (*cu)
-          cu++;
-        cu++;
-        return 0;
-      }
-      default:
-        Fatal(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
-                   << std::hex << form;
-        return 0;
-      }
-    };
-
     switch (name) {
     case DW_AT_low_pc:
-      *low_pc = read_value();
+      low_pc = reader.read(form);
       break;
     case DW_AT_high_pc:
-      if (low_pc)
-        Fatal(ctx) << file << ": --gdb-index: missing DW_AT_low_pc";
-
       if (form == DW_FORM_addr)
-        return {*low_pc, read_value()};
-      return {*low_pc, *low_pc + read_value()};
+        high_pc_abs = reader.read(form);
+      else
+        high_pc_rel = reader.read(form);
+      break;
     case DW_AT_ranges: {
       if (!ctx.debug_ranges)
         Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
 
-      u64 offset = read_value();
+      u64 offset = reader.read(form);
       typename E::WordTy *range =
         (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
 
@@ -265,10 +298,15 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       return vec;
     }
     default:
-      read_value();
+      reader.read(form);
       break;
     }
   }
+
+  if (low_pc && high_pc_abs)
+    return {*low_pc, *high_pc_abs};
+  if (low_pc && high_pc_rel)
+    return {*low_pc, *low_pc + *high_pc_rel};
 
   return {};
 }
@@ -278,6 +316,8 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   read_compunits(Context<E> &, ObjectFile<E> &);                        \
   template std::vector<GdbIndexName>                                    \
   read_pubnames(Context<E> &, ObjectFile<E> &);                         \
+  template i64                                                          \
+  estimate_address_areas(Context<E> &, ObjectFile<E> &);                \
   template std::vector<u64>                                             \
   read_address_areas(Context<E> &, ObjectFile<E> &, i64)
 

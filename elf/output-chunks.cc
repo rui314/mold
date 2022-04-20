@@ -2160,14 +2160,8 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
     // Read compilation units from .debug_info.
     file->compunits = read_compunits(ctx, *file);
 
-    // Initialize `num_areas`. Each CU contains zero or one address area.
-    file->num_areas = file->compunits.size();
-
-    // Optionally, a CU can refer an address area list in .debug_ranges.
-    // .debug_ranges contains a vector of [begin, end) address pairs.
-    // The last entry must be a null terminator, so we do -1.
-    if (file->debug_ranges)
-      file->num_areas += file->debug_ranges->sh_size / E::word_size / 2 - 1;
+    // Count the number of address areas contained in this file.
+    file->num_areas = estimate_address_areas(ctx, *file);
   });
 
   // Initialize `area_offset` and `compunits_idx`.
@@ -2195,10 +2189,15 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   // Uniquify pubnames by inserting all name strings into a concurrent
   // hashmap.
   map.resize(estimator.get_cardinality() * 2);
+  tbb::enumerable_thread_specific<i64> num_names;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (GdbIndexName &name : file->pubnames) {
-      MapEntry *ent = map.insert(name.name, name.hash, {name.hash}).first;
+      MapEntry *ent;
+      bool inserted;
+      std::tie(ent, inserted) = map.insert(name.name, name.hash, {name.hash});
+      if (inserted)
+        num_names.local()++;
       ent->num_attrs++;
       name.entry_idx = ent - map.values;
     }
@@ -2208,26 +2207,22 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   std::vector<u32> attr_sizes(map.NUM_SHARDS);
   std::vector<u32> name_sizes(map.NUM_SHARDS);
   const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
-  std::atomic_uint32_t num_names = 0;
 
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
     i64 attr_offset = 0;
     i64 name_offset = 0;
-    i64 count = 0;
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (map.keys[j]) {
         map.values[j].name_offset = name_offset;
         map.values[j].attr_offset = attr_offset;
-        attr_offset += (map.values[j].num_attrs + 1) * 4;
         name_offset += map.key_sizes[j] + 1;
-        count++;
+        attr_offset += (map.values[j].num_attrs + 1) * 4;
       }
     }
 
     attr_sizes[i] = attr_offset;
     name_sizes[i] = name_offset;
-    num_names += count;
   });
 
   // Fix name and attr offsets so that they are relative to
@@ -2254,7 +2249,8 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   // .gdb_index contains an on-disk hash table for pubnames and
   // pubtypes. We aim 75% utilization. As per the format specification,
   // It must be a power of two.
-  num_symtab_entries = std::max<i64>(next_power_of_two(num_names * 4 / 3), 16);
+  num_symtab_entries =
+    std::max<i64>(next_power_of_two(num_names.combine(std::plus()) * 4 / 3), 16);
 
   // Now that we can compute the size of this section.
   ObjectFile<E> &last = *ctx.objs.back();
