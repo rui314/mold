@@ -26,6 +26,8 @@ read_compunits(Context<E> &ctx, ObjectFile<E> &file) {
   while (!data.empty()) {
     if (data.size() < 4)
       Fatal(ctx) << *file.debug_info << ": corrupted .debug_info";
+    if (*(u32 *)data.data() == 0xffffffff)
+      Fatal(ctx) << *file.debug_info << ": --gdb-index: DWARF64 not supported";
     i64 len = *(u32 *)data.data() + 4;
     vec.push_back(data.substr(0, len));
     data = data.substr(len);
