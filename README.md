@@ -27,8 +27,8 @@ mold currently supports x86-64, i386, ARM32, ARM64 and 64-bit RISC-V.
 ## Why does the speed of linking matter?
 
 If you are using a compiled language such as C, C++ or Rust, a build
-consists of two phases. In the first phase, a compiler compiles a
-source file into an object file (`.o` files). In the second phase,
+consists of two phases. In the first phase, a compiler compiles
+source files into object files (`.o` files). In the second phase,
 a linker takes all object files to combine them into a single executable
 or a shared library file.
 
@@ -47,10 +47,8 @@ Binary packages for the following distros are currently available.
 
 mold is written in C++20, so if you build mold yourself, you need a
 recent version of a C++ compiler and a C++ standard library. GCC 10.2
-or Clang 12.0.0 as well as libstdc++ 10 or libc++ 7 are recommended.
-
-I'm using Ubuntu 20.04 as a development platform. In that environment,
-you can build mold by the following commands.
+or Clang 12.0.0 (or later) as well as libstdc++ 10 or libc++ 7 (or
+later) are recommended.
 
 ### Install dependencies
 
@@ -86,11 +84,10 @@ By default, `mold` is installed to `/usr/local/bin`.
 If you don't use a recent enough Linux distribution, or if for any reason
 `make` in the above commands doesn't work for you, you can use Docker to
 build it in a Docker environment. To do so, just run `./dist.sh` in this
-directory instead of running `make -j$(nproc)`. The shell script creates a
-Ubuntu 18.04 Docker image, installs necessary tools and libraries to it,
-builds mold and auxiliary files, and packs them into a single tar file
-`mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere
-and use `mold` executable in it.
+directory instead of running `make -j$(nproc)`. The shell script pulls a
+Docker image, builds mold and auxiliary files inside it, and packs
+them into a single tar file `mold-$version-$arch-linux.tar.gz`.
+You can extract the tar file anywhere and use `mold` executable in it.
 
 `make test` depends on a few more packages. To install, run the following commands:
 
@@ -123,7 +120,7 @@ following flags to use `mold` instead of `/usr/bin/ld`:
 
   If you have installed mold with `make install`, there should be a
   directory named `/usr/libexec/mold` (or `/usr/local/libexec/mold`,
-  depending on your $PREFIX), and `ld` command should be there. The
+  depending on your `$PREFIX`), and `ld` command should be there. The
   `ld` is actually a symlink to `mold`. So, all you need is to pass
   `-B/usr/libexec/mold` (or `-B/usr/local/libexec/mold`) to GCC.
 
