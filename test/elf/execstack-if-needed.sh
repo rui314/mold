@@ -14,17 +14,19 @@ mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -c -xc -o $t/a.o -
-int main() {}
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+
+cat <<EOF | $CC -c -xassembler -o $t/a.o -
+.globl main
+main:
+  ret
+.section .note.GNU-stack, "ax", @note
 EOF
 
-$CC -B. -o $t/exe $t/a.o -Wl,-z,execstack
+$CC -B. -o $t/exe $t/a.o >& /dev/null
+readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RW '
+
+$CC -B. -o $t/exe $t/a.o -Wl,-z,execstack-if-needed
 readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RWE '
-
-$CC -B. -o $t/exe $t/a.o -Wl,-z,execstack -Wl,-z,noexecstack
-readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RW '
-
-$CC -B. -o $t/exe $t/a.o
-readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RW '
 
 echo OK

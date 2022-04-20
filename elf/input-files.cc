@@ -167,11 +167,14 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       // making the stack area executable is too dangerous. Tell our
       // users about the difference if that matters.
       if (name == ".note.GNU-stack") {
-        if (shdr.sh_flags & SHF_EXECINSTR)
-          Warn(ctx) << *this << ": this file may cause a segmentation"
-            " fault because it requires an executable stack. See"
-            " https://github.com/rui314/mold/tree/main/docs/execstack.md"
-            " for more info.";
+        if (shdr.sh_flags & SHF_EXECINSTR) {
+          if (!ctx.arg.z_execstack && !ctx.arg.z_execstack_if_needed)
+            Warn(ctx) << *this << ": this file may cause a segmentation"
+              " fault because it requires an executable stack. See"
+              " https://github.com/rui314/mold/tree/main/docs/execstack.md"
+              " for more info.";
+          needs_executable_stack = true;
+        }
         continue;
       }
 

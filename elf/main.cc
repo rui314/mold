@@ -523,6 +523,12 @@ static int elf_main(int argc, char **argv) {
   if (ctx.arg.z_cet_report != CET_REPORT_NONE)
     check_cet_errors(ctx);
 
+  // Handle `-z execstack-if-needed`.
+  if (ctx.arg.z_execstack_if_needed)
+    for (ObjectFile<E> *file : ctx.objs)
+      if (file->needs_executable_stack)
+        ctx.arg.z_execstack = true;
+
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.

@@ -1127,6 +1127,7 @@ public:
   bool exclude_libs = false;
   u32 features = 0;
   bool is_lto_obj = false;
+  bool needs_executable_stack = false;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -1609,6 +1610,7 @@ struct Context {
     bool z_dlopen = true;
     bool z_dump = true;
     bool z_execstack = false;
+    bool z_execstack_if_needed = false;
     bool z_ibt = false;
     bool z_ibtplt = false;
     bool z_initfirst = false;

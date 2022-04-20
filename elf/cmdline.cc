@@ -153,6 +153,7 @@ Options:
   -z common-page-size=VALUE   Ignored
   -z execstack                Require executable stack
     -z noexecstack
+  -z execstack-if-needed      Make the stack area execuable if an input file explicitly requests it
   -z initfirst                Mark DSO to be initialized first at runtime
   -z interpose                Mark object to interpose all DSOs but executable
   -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
@@ -722,6 +723,8 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.z_cet_report = CET_REPORT_ERROR;
     } else if (read_z_flag(args, "execstack")) {
       ctx.arg.z_execstack = true;
+    } else if (read_z_flag(args, "execstack-if-needed")) {
+      ctx.arg.z_execstack_if_needed = true;
     } else if (read_z_arg(ctx, args, arg, "max-page-size")) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
       if (std::popcount<u64>(ctx.page_size) != 1)
