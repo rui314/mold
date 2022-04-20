@@ -184,7 +184,7 @@ mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
 
 ```shell
-readelf -p .comment <executable-file>
+$ readelf -p .comment <executable-file>
 
 String dump of section '.comment':
   [     0]  GCC: (Ubuntu 10.2.0-5ubuntu1~20.04) 10.2.0
