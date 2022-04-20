@@ -116,7 +116,19 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     break;
   case 5:
     abbrev_offset = *(u32 *)(cu + 8);
-    cu += 12;
+    switch (*(u8 *)(cu + 6)) {
+        case DW_UT_compile:
+        case DW_UT_partial:
+          cu += 12;
+          break;
+        case DW_UT_skeleton:
+        case DW_UT_split_compile:
+          cu += 20;
+          break;
+        default:
+          Fatal(ctx) << file << ": --gdb-index: unknown DW_UT_* value 0x"
+                     << std::hex << *(u8 *)(cu + 6);
+    }
     break;
   default:
     Fatal(ctx) << file << ": --gdb-index: unknown DWARF version "
@@ -141,9 +153,10 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     if (code == abbrev_code) {
       // Found a record
       u64 abbrev_tag = read_uleb(abbrev);
-      if (abbrev_tag != DW_TAG_compile_unit) {
+      if (abbrev_tag != DW_TAG_compile_unit && abbrev_tag != DW_TAG_skeleton_unit) {
         Fatal(ctx) << file << ": --gdb-index: the first entry's tag is not "
-                   << " DW_TAG_compile_unit but 0x" << std::hex << abbrev_tag;
+                   << " DW_TAG_compile_unit/DW_TAG_skeleton_unit but 0x"
+                   << std::hex << abbrev_tag;
         return {};
       }
       break;

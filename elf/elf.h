@@ -1056,6 +1056,12 @@ static constexpr u32 DW_AT_producer = 0x25;
 static constexpr u32 DW_AT_ranges = 0x55;
 
 static constexpr u32 DW_TAG_compile_unit = 0x11;
+static constexpr u32 DW_TAG_skeleton_unit = 0x4a;
+
+static constexpr u32 DW_UT_compile = 0x01;
+static constexpr u32 DW_UT_partial = 0x03;
+static constexpr u32 DW_UT_skeleton = 0x04;
+static constexpr u32 DW_UT_split_compile = 0x05;
 
 static constexpr u32 DW_FORM_addr = 0x01;
 static constexpr u32 DW_FORM_block2 = 0x03;
