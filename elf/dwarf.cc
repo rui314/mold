@@ -100,7 +100,7 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
 // Try to find a compilation unit from .debug_info and its
 // corresponding record from .debug_abbrev and returns them.
 template <typename E>
-static std::pair<u8 *, u8 *>
+static std::tuple<u8 *, u8 *, u32>
 find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Read .debug_info to find the record at a given offset.
   u8 *cu = (u8 *)(ctx.buf + ctx.debug_info->shdr.sh_offset + offset);
@@ -172,7 +172,7 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   }
 
   abbrev++; // skip has_children byte
-  return {cu, abbrev};
+  return {cu, abbrev, dwarf_version};
 }
 
 // Estimate the number of address ranges contained in a given file.
@@ -187,6 +187,13 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   // The last entry must be a null terminator, so we do -1.
   if (file.debug_ranges)
     ret += file.debug_ranges->sh_size / E::word_size / 2 - 1;
+  // Or also .debug_rnglists, which is more complicated, as it first contains
+  // a vector of offsets and then it contains a vector of differently-sized
+  // entries depending on the value of DW_RLE_* code. The smallest possible
+  // range entry is one byte for the code and two uleb values (each can be
+  // as small as one byte), so 3 bytes.
+  if (file.debug_rnglists)
+    ret += file.debug_rnglists->sh_size / 3;
   return ret;
 }
 
@@ -205,24 +212,26 @@ template <typename E>
 class DebugInfoReader {
 public:
   DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu,
-                  std::optional<u64> addr_base)
-    : ctx(ctx), file(file), cu(cu), addr_base(addr_base) {}
+                  std::optional<u64> addr_base, std::optional<u64> rnglists_base)
+    : ctx(ctx), file(file), cu(cu), addr_base(addr_base), rnglists_base(rnglists_base) {}
   u64 read(u64 form);
   void skip(u64 form);
-  void reset(u8 *cu, std::optional<u64> addr_base);
+  void reset(u8 *cu, std::optional<u64> addr_base, std::optional<u64> rnglists_base);
 
 private:
   Context<E> &ctx;
   ObjectFile<E> &file;
   u8 *cu;
   std::optional<u64> addr_base;
+  std::optional<u64> rnglists_base;
 };
 
 template <typename E>
-void DebugInfoReader<E>::reset(u8 *cu, std::optional<u64> addr_base)
+void DebugInfoReader<E>::reset(u8 *cu, std::optional<u64> addr_base, std::optional<u64> rnglists_base)
 {
   this->cu = cu;
   this->addr_base = addr_base;
+  this->rnglists_base = rnglists_base;
 }
 
 // Read value of the given DW_FORM_* form. We need this so far only
@@ -268,8 +277,14 @@ u64 DebugInfoReader<E>::read(u64 form) {
   }
   case DW_FORM_addrx:
     return read_addrx(ctx, file, read_uleb(cu), addr_base);
-  case DW_FORM_rnglistx:
-    return read_uleb(cu);
+  case DW_FORM_rnglistx: {
+    if (!rnglists_base)
+      Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
+    u64 index = read_uleb(cu);
+    u64 offset_to_offset = *rnglists_base + index * 4;
+    u64 val = *(u32 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset_to_offset);
+    return *rnglists_base + val;
+  }
   default:
     Fatal(ctx) << file << ": --gdb-index: unhandled debug info form: 0x"
                << std::hex << form;
@@ -333,28 +348,116 @@ void DebugInfoReader<E>::skip(u64 form) {
   }
 }
 
+// Read a range list from .debug_ranges starting at the given offset
+// (until an end of list entry).
+template <typename E>
+static std::vector<u64>
+read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset)
+{
+  if (!ctx.debug_ranges)
+    Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
+
+  typename E::WordTy *range =
+    (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
+
+  std::vector<u64> vec;
+  typename E::WordTy base = 0;
+  for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
+    if (range[i] == E::word_max) { // base address selection entry
+      base = range[i + 1];
+      continue;
+    }
+    if (range[i] == range[i + 1]) // empty
+      continue;
+    vec.push_back(range[i] + base);
+    vec.push_back(range[i + 1] + base);
+  }
+  return vec;
+}
+
+// Read a range list from .debug_rnglists starting at the given offset
+// (until an end of list entry).
+template <typename E>
+static std::vector<u64>
+read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset,
+                   std::optional<u64> addr_base)
+{
+  if (!ctx.debug_rnglists)
+    Fatal(ctx) << file << ": --gdb-index: missing debug_rnglists";
+
+  u8 *rnglist = (u8 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset);
+
+  std::vector<u64> vec;
+  typename E::WordTy base = 0;
+  for(;;) {
+    u64 val1 = 0;
+    u64 val2 = 0;
+    switch (*rnglist++) {
+    case DW_RLE_end_of_list:
+      return vec;
+    case DW_RLE_base_addressx:
+      base = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      continue;
+    case DW_RLE_startx_endx:
+      val1 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      val2 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      break;
+    case DW_RLE_startx_length:
+      val1 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      val2 = val1 + read_uleb(rnglist);
+      break;
+    case DW_RLE_offset_pair:
+      val1 = base + read_uleb(rnglist);
+      val2 = base + read_uleb(rnglist);
+      break;
+    case DW_RLE_base_address:
+      base = *(u32 *)rnglist;
+      rnglist += 4;
+      continue;
+    case DW_RLE_start_end:
+      val1 = *(u32 *)rnglist;
+      rnglist += 4;
+      val2 = *(u32 *)rnglist;
+      rnglist += 4;
+      break;
+    case DW_RLE_start_length:
+      val1 = *(u32 *)rnglist;
+      rnglist += 4;
+      val2 = read_uleb(rnglist);
+      break;
+    }
+    if (val1 == val2) // empty
+      continue;
+    vec.push_back(val1);
+    vec.push_back(val2);
+  }
+}
+
 // Returns a list of address ranges explained by a compunit at the
 // `offset` in an output .debug_info section.
 //
 // .debug_info contains DWARF debug info records, so this function
 // parses DWARF. If a designated compunit contains multiple ranges, the
-// ranges are read from .debug_ranges. Otherwise, a range is read
-// directly from .debug_info (or possibly from .debug_addr for DWARF5).
+// ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
+// Otherwise, a range is read directly from .debug_info (or possibly
+// from .debug_addr for DWARF5).
 template <typename E>
 std::vector<u64>
 read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u8 *cu;
   u8 *abbrev;
-  std::tie(cu, abbrev) = find_compunit(ctx, file, offset);
+  u32 dwarf_version;
+  std::tie(cu, abbrev, dwarf_version) = find_compunit(ctx, file, offset);
 
-  DebugInfoReader<E> reader{ctx, file, cu, {}};
+  DebugInfoReader<E> reader{ctx, file, cu, {}, {}};
 
   std::optional<u64> addr_base;
-  // At least Clang14 can emit DW_AT_addr_base only after previous
-  // entries already used any of the DW_FORM_addrx* forms, so
-  // DW_AT_addr_base needs to be read first.
+  std::optional<u64> rnglists_base;
+  // At least Clang14 can emit DW_AT_addr_base and DW_AT_rnglists_base only
+  // after previous entries already used any of the DW_FORM_addrx* forms
+  // or DW_FORM_rnglistx, so the *_base values need to be read first.
   u8 *saved_abbrev = abbrev;
-  while (!addr_base) {
+  while (!addr_base || !rnglists_base) {
     u64 name = read_uleb(abbrev);
     u64 form = read_uleb(abbrev);
     if (name == 0 && form == 0)
@@ -364,12 +467,15 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     case DW_AT_addr_base:
       addr_base = reader.read(form);
       break;
+    case DW_AT_rnglists_base:
+      rnglists_base = reader.read(form);
+      break;
     default:
       reader.skip(form);
       break;
     }
   }
-  reader.reset(cu, addr_base);
+  reader.reset(cu, addr_base, rnglists_base);
   abbrev = saved_abbrev;
 
   std::optional<u64> high_pc_abs;
@@ -407,26 +513,11 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       }
     break;
     case DW_AT_ranges: {
-      if (!ctx.debug_ranges)
-        Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
-
       u64 offset = reader.read(form);
-      typename E::WordTy *range =
-        (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
-
-      std::vector<u64> vec;
-      typename E::WordTy base = 0;
-      for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
-        if (range[i] == E::word_max) { // base address selection entry
-          base = range[i + 1];
-          continue;
-        }
-        if (range[i] == range[i + 1]) // empty
-          continue;
-        vec.push_back(range[i] + base);
-        vec.push_back(range[i + 1] + base);
-      }
-      return vec;
+      if(dwarf_version <= 4)
+        return read_debug_range(ctx, file, offset);
+      else
+        return read_rnglist_range(ctx, file, offset, addr_base);
     }
     default:
       reader.skip(form);

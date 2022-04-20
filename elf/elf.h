@@ -1055,6 +1055,7 @@ static constexpr u32 DW_AT_high_pc = 0x12;
 static constexpr u32 DW_AT_producer = 0x25;
 static constexpr u32 DW_AT_ranges = 0x55;
 static constexpr u32 DW_AT_addr_base = 0x73;
+static constexpr u32 DW_AT_rnglists_base = 0x74;
 
 static constexpr u32 DW_TAG_compile_unit = 0x11;
 static constexpr u32 DW_TAG_skeleton_unit = 0x4a;
@@ -1107,6 +1108,15 @@ static constexpr u32 DW_FORM_addrx1 = 0x29;
 static constexpr u32 DW_FORM_addrx2 = 0x2a;
 static constexpr u32 DW_FORM_addrx3 = 0x2b;
 static constexpr u32 DW_FORM_addrx4 = 0x2c;
+
+static constexpr u32 DW_RLE_end_of_list = 0x00;
+static constexpr u32 DW_RLE_base_addressx = 0x01;
+static constexpr u32 DW_RLE_startx_endx = 0x02;
+static constexpr u32 DW_RLE_startx_length = 0x03;
+static constexpr u32 DW_RLE_offset_pair = 0x04;
+static constexpr u32 DW_RLE_base_address = 0x05;
+static constexpr u32 DW_RLE_start_end = 0x06;
+static constexpr u32 DW_RLE_start_length = 0x07;
 
 struct Elf64Sym {
   bool is_defined() const { return !is_undef(); }
