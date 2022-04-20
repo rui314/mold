@@ -295,9 +295,16 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
         (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
 
       std::vector<u64> vec;
+      typename E::WordTy base = 0;
       for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
-        vec.push_back(range[i]);
-        vec.push_back(range[i + 1]);
+        if (range[i] == E::word_max) { // base address selection entry
+          base = range[i + 1];
+          continue;
+        }
+        if (range[i] == range[i + 1]) // empty
+          continue;
+        vec.push_back(range[i] + base);
+        vec.push_back(range[i + 1] + base);
       }
       return vec;
     }

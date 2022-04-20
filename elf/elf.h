@@ -1333,6 +1333,7 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 pltgot_size = 8;
@@ -1365,6 +1366,7 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr u32 word_size = 4;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 pltgot_size = 8;
@@ -1397,6 +1399,7 @@ struct ARM64 {
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 pltgot_size = 16;
@@ -1429,6 +1432,7 @@ struct ARM32 {
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
   static constexpr u32 word_size = 4;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 pltgot_size = 16;
@@ -1460,6 +1464,7 @@ struct RISCV64 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 pltgot_size = 16;
