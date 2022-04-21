@@ -1054,8 +1054,16 @@ static constexpr u32 DW_AT_low_pc = 0x11;
 static constexpr u32 DW_AT_high_pc = 0x12;
 static constexpr u32 DW_AT_producer = 0x25;
 static constexpr u32 DW_AT_ranges = 0x55;
+static constexpr u32 DW_AT_addr_base = 0x73;
+static constexpr u32 DW_AT_rnglists_base = 0x74;
 
 static constexpr u32 DW_TAG_compile_unit = 0x11;
+static constexpr u32 DW_TAG_skeleton_unit = 0x4a;
+
+static constexpr u32 DW_UT_compile = 0x01;
+static constexpr u32 DW_UT_partial = 0x03;
+static constexpr u32 DW_UT_skeleton = 0x04;
+static constexpr u32 DW_UT_split_compile = 0x05;
 
 static constexpr u32 DW_FORM_addr = 0x01;
 static constexpr u32 DW_FORM_block2 = 0x03;
@@ -1100,6 +1108,15 @@ static constexpr u32 DW_FORM_addrx1 = 0x29;
 static constexpr u32 DW_FORM_addrx2 = 0x2a;
 static constexpr u32 DW_FORM_addrx3 = 0x2b;
 static constexpr u32 DW_FORM_addrx4 = 0x2c;
+
+static constexpr u32 DW_RLE_end_of_list = 0x00;
+static constexpr u32 DW_RLE_base_addressx = 0x01;
+static constexpr u32 DW_RLE_startx_endx = 0x02;
+static constexpr u32 DW_RLE_startx_length = 0x03;
+static constexpr u32 DW_RLE_offset_pair = 0x04;
+static constexpr u32 DW_RLE_base_address = 0x05;
+static constexpr u32 DW_RLE_start_end = 0x06;
+static constexpr u32 DW_RLE_start_length = 0x07;
 
 struct Elf64Sym {
   bool is_defined() const { return !is_undef(); }
@@ -1333,6 +1350,7 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 pltgot_size = 8;
@@ -1365,6 +1383,7 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr u32 word_size = 4;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 pltgot_size = 8;
@@ -1397,6 +1416,7 @@ struct ARM64 {
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 pltgot_size = 16;
@@ -1429,6 +1449,7 @@ struct ARM32 {
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
   static constexpr u32 word_size = 4;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 pltgot_size = 16;
@@ -1460,6 +1481,7 @@ struct RISCV64 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
   static constexpr u32 word_size = 8;
+  static constexpr WordTy word_max = (WordTy)-1;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 pltgot_size = 16;

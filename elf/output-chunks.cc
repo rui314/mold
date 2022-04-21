@@ -820,6 +820,10 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
       return ".debug_str";
     if (name == ".zdebug_types")
       return ".debug_types";
+    if (name == ".zdebug_rnglists")
+      return ".debug_rnglists";
+    if (name == ".zdebug_addr")
+      return ".debug_addr";
     return save_string(ctx, "."s + std::string(name.substr(2)));
   }
 
@@ -2134,11 +2138,13 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // that gdb can distinguish type names from function names, for example.
 //
 // Function address ranges are in .debug_info and .debug_ranges
-// sections. If an object file is compiled without -ffunction-sections,
+// sections (also .debug_rnglists and .debug_addr for DWARF5).
+// If an object file is compiled without -ffunction-sections,
 // there's only one .text section in that object file, and in that case
-// its address range is directly stored to .debug_info. If an object
-// file is compiled with -ffunction-sections, it contains multiple .text
-// sections, and address ranges for them are stored to .debug_ranges.
+// its address range is directly stored to .debug_info (or possibly
+// indirectly to .debug_addr). If an object file is compiled with
+// -ffunction-sections, it contains multiple .text sections, and address
+// ranges for them are stored to .debug_ranges (or .debug_rnglists).
 //
 // .debug_info section contains DWARF debug info. Although we don't need
 // to parse the whole .debug_info section to read address ranges, we
@@ -2353,6 +2359,10 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
       ctx.debug_abbrev = osec.get();
     if (osec->name == ".debug_ranges")
       ctx.debug_ranges = osec.get();
+    if (osec->name == ".debug_addr")
+      ctx.debug_addr = osec.get();
+    if (osec->name == ".debug_rnglists")
+      ctx.debug_rnglists = osec.get();
   }
 
   assert(ctx.debug_info);
@@ -2364,8 +2374,8 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
     u32 attr;
   };
 
-  // Read .debug_info and .debug_ranges to copy address ranges
-  // to .gdb_index.
+  // Read .debug_info and .debug_ranges (and .debug_addr and .debug_rnglists)
+  // to copy address ranges to .gdb_index.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (!file->debug_info)
       return;
@@ -2382,6 +2392,8 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
         if (addrs[j] == 1 && addrs[j + 1] == 1)
           continue;
 
+        if (e >= begin + file->num_areas)
+          Fatal(ctx) << file << ": --gdb-index: address area overflow";
         e->start = addrs[j];
         e->end = addrs[j + 1];
         e->attr = file->compunits_idx + i;
@@ -2392,9 +2404,11 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
     // Fill trailing null entries with dummy values because gdb
     // crashes if there are entries with address 0.
-    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].start;
-    for (; e < begin + file->num_areas; e++)
+    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].end;
+    for (; e < begin + file->num_areas; e++) {
       e->start = e->end = filler;
+      e->attr = file->compunits_idx;
+    }
   });
 }
 
