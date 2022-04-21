@@ -432,7 +432,7 @@ std::string_view demangle(std::string_view name);
 
 class ZlibCompressor {
 public:
-  ZlibCompressor(std::string_view input);
+  ZlibCompressor(u8 *buf, i64 size);
   void write_to(u8 *buf);
   i64 size() const;
 

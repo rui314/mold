@@ -36,7 +36,7 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               std::string_view name, i64 shndx)
   : file(file), shndx(shndx) {
   if (shndx < file.elf_sections.size())
-    contents = {(char *)file.mf->data + shdr().sh_offset, shdr().sh_size};
+    contents = {(char *)file.mf->data + shdr().sh_offset, (size_t)shdr().sh_size};
 
   if (name.starts_with(".zdebug")) {
     sh_size = *(ubig64 *)&contents[4];

@@ -2411,7 +2411,7 @@ GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
 
-  contents.reset(new ZlibCompressor({(char *)buf.get(), chunk.shdr.sh_size}));
+  contents.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
@@ -2436,7 +2436,7 @@ GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
   chunk.write_to(ctx, buf.get());
 
-  contents.reset(new ZlibCompressor({(char *)buf.get(), chunk.shdr.sh_size}));
+  contents.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_size = HEADER_SIZE + contents->size();

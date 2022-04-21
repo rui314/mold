@@ -89,7 +89,8 @@ static std::vector<u8> do_compress(std::string_view input) {
   return buf;
 }
 
-ZlibCompressor::ZlibCompressor(std::string_view input) {
+ZlibCompressor::ZlibCompressor(u8 *buf, i64 size) {
+  std::string_view input{(char *)buf, (size_t)size};
   std::vector<std::string_view> inputs = split(input);
   std::vector<u64> adlers(inputs.size());
   shards.resize(inputs.size());
