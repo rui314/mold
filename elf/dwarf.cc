@@ -106,6 +106,8 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u32 abbrev_offset;
 
   switch (dwarf_version) {
+  case 2:
+  case 3:
   case 4:
     abbrev_offset = *(u32 *)(cu + 6);
     cu += 11;
