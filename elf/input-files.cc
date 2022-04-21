@@ -1060,9 +1060,13 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
   if (!has_common_symbol)
     return;
 
-  OutputSection<E> *osec =
+  OutputSection<E> *common =
     OutputSection<E>::get_instance(ctx, ".common", SHT_NOBITS,
                                    SHF_WRITE | SHF_ALLOC);
+
+  OutputSection<E> *tls_common =
+    OutputSection<E>::get_instance(ctx, ".tls_common", SHT_NOBITS,
+                                   SHF_WRITE | SHF_ALLOC | SHF_TLS);
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     if (!this->elf_syms[i].is_common())
@@ -1079,17 +1083,20 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
     elf_sections2.push_back({});
     ElfShdr<E> &shdr = elf_sections2.back();
-
     memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_flags = SHF_ALLOC;
+
+    bool is_tls = (sym.get_type() == STT_TLS);
+    shdr.sh_flags = is_tls ? (SHF_ALLOC | SHF_TLS) : SHF_ALLOC;
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_size = this->elf_syms[i].st_size;
     shdr.sh_addralign = this->elf_syms[i].st_value;
 
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
     std::unique_ptr<InputSection<E>> isec =
-      std::make_unique<InputSection<E>>(ctx, *this, ".common", idx);
-    isec->output_section = osec;
+      std::make_unique<InputSection<E>>(ctx, *this,
+                                        is_tls ? ".tls_common" : ".common",
+                                        idx);
+    isec->output_section = is_tls ? tls_common : common;
 
     sym.file = this;
     sym.shndx = idx;
