@@ -820,6 +820,8 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
       return ".debug_str";
     if (name == ".zdebug_types")
       return ".debug_types";
+    if (name == ".zdebug_addr")
+      return ".debug_addr";
     return save_string(ctx, "."s + std::string(name.substr(2)));
   }
 
@@ -2134,11 +2136,13 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // that gdb can distinguish type names from function names, for example.
 //
 // Function address ranges are in .debug_info and .debug_ranges
-// sections. If an object file is compiled without -ffunction-sections,
+// sections (also .debug_addr for DWARF5).
+// If an object file is compiled without -ffunction-sections,
 // there's only one .text section in that object file, and in that case
-// its address range is directly stored to .debug_info. If an object
-// file is compiled with -ffunction-sections, it contains multiple .text
-// sections, and address ranges for them are stored to .debug_ranges.
+// its address range is directly stored to .debug_info (or possibly
+// indirectly to .debug_addr). If an object file is compiled with
+// -ffunction-sections, it contains multiple .text sections, and address
+// ranges for them are stored to .debug_ranges.
 //
 // .debug_info section contains DWARF debug info. Although we don't need
 // to parse the whole .debug_info section to read address ranges, we
@@ -2353,6 +2357,8 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
       ctx.debug_abbrev = osec.get();
     if (osec->name == ".debug_ranges")
       ctx.debug_ranges = osec.get();
+    if (osec->name == ".debug_addr")
+      ctx.debug_addr = osec.get();
   }
 
   assert(ctx.debug_info);
@@ -2364,8 +2370,8 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
     u32 attr;
   };
 
-  // Read .debug_info and .debug_ranges to copy address ranges
-  // to .gdb_index.
+  // Read .debug_info and .debug_ranges (and .debug_addr)
+  // to copy address ranges to .gdb_index.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (!file->debug_info)
       return;

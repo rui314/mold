@@ -1054,6 +1054,7 @@ static constexpr u32 DW_AT_low_pc = 0x11;
 static constexpr u32 DW_AT_high_pc = 0x12;
 static constexpr u32 DW_AT_producer = 0x25;
 static constexpr u32 DW_AT_ranges = 0x55;
+static constexpr u32 DW_AT_addr_base = 0x73;
 
 static constexpr u32 DW_TAG_compile_unit = 0x11;
 static constexpr u32 DW_TAG_skeleton_unit = 0x4a;

@@ -190,20 +190,40 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   return ret;
 }
 
+template <typename E>
+static u64 read_addrx(Context<E> &ctx, ObjectFile<E> &file, u64 index,
+                      std::optional<u64> addr_base)
+{
+  if (!addr_base)
+    Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
+  u64 offset = *addr_base + index * E::word_size;
+  return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset + offset);
+}
+
 // .debug_info contains a variable-length fields. This class reads them.
 template <typename E>
 class DebugInfoReader {
 public:
-  DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu)
-    : ctx(ctx), file(file), cu(cu) {}
+  DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu,
+                  std::optional<u64> addr_base)
+    : ctx(ctx), file(file), cu(cu), addr_base(addr_base) {}
   u64 read(u64 form);
   void skip(u64 form);
+  void reset(u8 *cu, std::optional<u64> addr_base);
 
 private:
   Context<E> &ctx;
   ObjectFile<E> &file;
   u8 *cu;
+  std::optional<u64> addr_base;
 };
+
+template <typename E>
+void DebugInfoReader<E>::reset(u8 *cu, std::optional<u64> addr_base)
+{
+  this->cu = cu;
+  this->addr_base = addr_base;
+}
 
 // Read value of the given DW_FORM_* form. We need this so far only
 // for DW_AT_low_pc, DW_AT_high_pc and DW_AT_ranges, so only forms
@@ -212,17 +232,14 @@ template <typename E>
 u64 DebugInfoReader<E>::read(u64 form) {
   switch (form) {
   case DW_FORM_data1:
-  case DW_FORM_addrx1:
     return *cu++;
-  case DW_FORM_data2:
-  case DW_FORM_addrx2: {
+  case DW_FORM_data2: {
     u64 val = *(u16 *)cu;
     cu += 2;
     return val;
   }
   case DW_FORM_data4:
-  case DW_FORM_sec_offset:
-  case DW_FORM_addrx4: {
+  case DW_FORM_sec_offset: {
     u64 val = *(u32 *)cu;
     cu += 4;
     return val;
@@ -237,7 +254,20 @@ u64 DebugInfoReader<E>::read(u64 form) {
     cu += E::word_size;
     return val;
   }
+  case DW_FORM_addrx1:
+    return read_addrx(ctx, file, *cu++, addr_base);
+  case DW_FORM_addrx2: {
+    u64 val = *(u16 *)cu;
+    cu += 2;
+    return read_addrx(ctx, file, val, addr_base);
+  }
+  case DW_FORM_addrx4: {
+    u64 val = *(u32 *)cu;
+    cu += 4;
+    return read_addrx(ctx, file, val, addr_base);
+  }
   case DW_FORM_addrx:
+    return read_addrx(ctx, file, read_uleb(cu), addr_base);
   case DW_FORM_rnglistx:
     return read_uleb(cu);
   default:
@@ -309,7 +339,7 @@ void DebugInfoReader<E>::skip(u64 form) {
 // .debug_info contains DWARF debug info records, so this function
 // parses DWARF. If a designated compunit contains multiple ranges, the
 // ranges are read from .debug_ranges. Otherwise, a range is read
-// directly from .debug_info.
+// directly from .debug_info (or possibly from .debug_addr for DWARF5).
 template <typename E>
 std::vector<u64>
 read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
@@ -317,7 +347,30 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u8 *abbrev;
   std::tie(cu, abbrev) = find_compunit(ctx, file, offset);
 
-  DebugInfoReader<E> reader{ctx, file, cu};
+  DebugInfoReader<E> reader{ctx, file, cu, {}};
+
+  std::optional<u64> addr_base;
+  // At least Clang14 can emit DW_AT_addr_base only after previous
+  // entries already used any of the DW_FORM_addrx* forms, so
+  // DW_AT_addr_base needs to be read first.
+  u8 *saved_abbrev = abbrev;
+  while (!addr_base) {
+    u64 name = read_uleb(abbrev);
+    u64 form = read_uleb(abbrev);
+    if (name == 0 && form == 0)
+      break;
+
+    switch (name) {
+    case DW_AT_addr_base:
+      addr_base = reader.read(form);
+      break;
+    default:
+      reader.skip(form);
+      break;
+    }
+  }
+  reader.reset(cu, addr_base);
+  abbrev = saved_abbrev;
 
   std::optional<u64> high_pc_abs;
   std::optional<u64> high_pc_rel;
@@ -334,11 +387,25 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       low_pc = reader.read(form);
       break;
     case DW_AT_high_pc:
-      if (form == DW_FORM_addr)
+      switch (form) {
+      case DW_FORM_addr:
+      case DW_FORM_addrx:
+      case DW_FORM_addrx1:
+      case DW_FORM_addrx2:
+      case DW_FORM_addrx4:
         high_pc_abs = reader.read(form);
-      else
+        break;
+      case DW_FORM_data1:
+      case DW_FORM_data2:
+      case DW_FORM_data4:
+      case DW_FORM_data8:
         high_pc_rel = reader.read(form);
-      break;
+        break;
+      default:
+        Fatal(ctx) << file << ": --gdb-index: unhandled form for DW_AT_high_pc 0x"
+                   << std::hex << form;
+      }
+    break;
     case DW_AT_ranges: {
       if (!ctx.debug_ranges)
         Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";

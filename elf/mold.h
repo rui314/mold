@@ -1156,6 +1156,7 @@ public:
   InputSection<E> *debug_info = nullptr;
   InputSection<E> *debug_abbrev = nullptr;
   InputSection<E> *debug_ranges = nullptr;
+  InputSection<E> *debug_addr = nullptr;
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
   std::vector<std::string_view> compunits;
@@ -1766,6 +1767,7 @@ struct Context {
   OutputSection<E> *debug_info = nullptr;
   OutputSection<E> *debug_abbrev = nullptr;
   OutputSection<E> *debug_ranges = nullptr;
+  OutputSection<E> *debug_addr = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
