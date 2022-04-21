@@ -163,11 +163,15 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     }
 
     // Skip an uninteresting record
+    read_uleb(abbrev); // tag
+    abbrev++; // has_children byte
     for (;;) {
       u64 name = read_uleb(abbrev);
       u64 form = read_uleb(abbrev);
       if (name == 0 && form == 0)
         break;
+      if (form == DW_FORM_implicit_const)
+        read_uleb(abbrev);
     }
   }
 
