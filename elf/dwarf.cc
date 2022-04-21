@@ -197,6 +197,7 @@ public:
   DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu)
     : ctx(ctx), file(file), cu(cu) {}
   u64 read(u64 form);
+  void skip(u64 form);
 
 private:
   Context<E> &ctx;
@@ -204,62 +205,101 @@ private:
   u8 *cu;
 };
 
+// Read value of the given DW_FORM_* form. We need this so far only
+// for DW_AT_low_pc, DW_AT_high_pc and DW_AT_ranges, so only forms
+// needed by those need to be handled.
 template <typename E>
 u64 DebugInfoReader<E>::read(u64 form) {
   switch (form) {
-  case DW_FORM_flag_present:
+  case DW_FORM_data1:
+  case DW_FORM_addrx1:
+    return *cu++;
+  case DW_FORM_data2:
+  case DW_FORM_addrx2: {
+    u64 val = *(u16 *)cu;
+    cu += 2;
+    return val;
+  }
+  case DW_FORM_data4:
+  case DW_FORM_sec_offset:
+  case DW_FORM_addrx4: {
+    u64 val = *(u32 *)cu;
+    cu += 4;
+    return val;
+  }
+  case DW_FORM_data8: {
+    u64 val = *(u64 *)cu;
+    cu += 8;
+    return val;
+  }
+  case DW_FORM_addr: {
+    u64 val = *(typename E::WordTy *)cu;
+    cu += E::word_size;
+    return val;
+  }
+  case DW_FORM_addrx:
+  case DW_FORM_rnglistx:
+    return read_uleb(cu);
+  default:
+    Fatal(ctx) << file << ": --gdb-index: unhandled debug info form: 0x"
+               << std::hex << form;
     return 0;
+  }
+}
+
+// Skip over the given form, without caring what the value is, as for many
+// of them we do not need to know.
+template <typename E>
+void DebugInfoReader<E>::skip(u64 form) {
+  switch (form) {
+  case DW_FORM_flag_present:
+    return;
   case DW_FORM_data1:
   case DW_FORM_flag:
   case DW_FORM_strx1:
   case DW_FORM_addrx1:
   case DW_FORM_ref1:
-    return *cu++;
+    cu++;
+    return;
   case DW_FORM_data2:
   case DW_FORM_strx2:
   case DW_FORM_addrx2:
-  case DW_FORM_ref2: {
-    u64 val = *(u16 *)cu;
+  case DW_FORM_ref2:
     cu += 2;
-    return val;
-  }
+    return;
   case DW_FORM_data4:
   case DW_FORM_strp:
   case DW_FORM_sec_offset:
   case DW_FORM_line_strp:
   case DW_FORM_strx4:
   case DW_FORM_addrx4:
-  case DW_FORM_ref4: {
-    u64 val = *(u32 *)cu;
+  case DW_FORM_ref4:
     cu += 4;
-    return val;
-  }
+    return;
   case DW_FORM_data8:
-  case DW_FORM_ref8: {
-    u64 val = *(u64 *)cu;
+  case DW_FORM_ref8:
     cu += 8;
-    return val;
-  }
+    return;
   case DW_FORM_addr:
-  case DW_FORM_ref_addr: {
-    u64 val = *(typename E::WordTy *)cu;
+  case DW_FORM_ref_addr:
     cu += E::word_size;
-    return val;
-  }
+    return;
   case DW_FORM_strx:
   case DW_FORM_addrx:
   case DW_FORM_ref_udata:
-    return read_uleb(cu);
-  case DW_FORM_string: {
+  case DW_FORM_loclistx:
+  case DW_FORM_rnglistx:
+    read_uleb(cu);
+    return;
+  case DW_FORM_string:
     while (*cu)
       cu++;
     cu++;
-    return 0;
-  }
+    return;
   default:
     Fatal(ctx) << file << ": --gdb-index: unknown debug info form: 0x"
                << std::hex << form;
-    return 0;
+    return;
   }
 }
 
@@ -322,7 +362,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       return vec;
     }
     default:
-      reader.read(form);
+      reader.skip(form);
       break;
     }
   }
