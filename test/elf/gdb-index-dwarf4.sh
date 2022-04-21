@@ -18,7 +18,7 @@ mkdir -p $t
 
 which gdb >& /dev/null || { echo skipped; exit; }
 
-cat <<EOF | $CC -c -o $t/a.o -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
+cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
 #include <stdio.h>
 
 void trap() {}
@@ -36,7 +36,7 @@ EOF
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,--gdb-index
 readelf -WS $t/b.so | fgrep -q .gdb_index
 
-cat <<EOF | $CC -c -o $t/c.o -g -ggnu-pubnames -gdwarf-4 -xc - -gz
+cat <<EOF | $CC -c -o $t/c.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -gz
 void greet();
 
 int main() {
