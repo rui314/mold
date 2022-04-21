@@ -201,16 +201,6 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   return ret;
 }
 
-template <typename E>
-static u64 read_addrx(Context<E> &ctx, ObjectFile<E> &file, u64 index,
-                      std::optional<u64> addr_base) {
-  if (!addr_base)
-    Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
-
-  u64 offset = *addr_base + index * E::word_size;
-  return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset + offset);
-}
-
 // .debug_info contains a variable-length fields. This class reads them.
 template <typename E>
 class DebugInfoReader {
@@ -233,6 +223,13 @@ public:
 // needed by those need to be handled.
 template <typename E>
 u64 DebugInfoReader<E>::read(u64 form) {
+  auto read_addrx = [&](i64 idx) {
+    if (!addr_base)
+      Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
+    return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset +
+                                   *addr_base + idx * E::word_size);
+  };
+
   switch (form) {
   case DW_FORM_data1:
     return *cu++;
@@ -258,19 +255,19 @@ u64 DebugInfoReader<E>::read(u64 form) {
     return val;
   }
   case DW_FORM_addrx1:
-    return read_addrx(ctx, file, *cu++, addr_base);
+    return read_addrx(*cu++);
   case DW_FORM_addrx2: {
     u64 val = *(u16 *)cu;
     cu += 2;
-    return read_addrx(ctx, file, val, addr_base);
+    return read_addrx(val);
   }
   case DW_FORM_addrx4: {
     u64 val = *(u32 *)cu;
     cu += 4;
-    return read_addrx(ctx, file, val, addr_base);
+    return read_addrx(val);
   }
   case DW_FORM_addrx:
-    return read_addrx(ctx, file, read_uleb(cu), addr_base);
+    return read_addrx(read_uleb(cu));
   case DW_FORM_rnglistx: {
     if (!rnglists_base)
       Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
@@ -384,19 +381,26 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset,
   std::vector<u64> vec;
   u64 base = 0;
 
+  auto read_addrx = [&](i64 idx) {
+    if (!addr_base)
+      Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
+    return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset +
+                                   *addr_base + idx * E::word_size);
+  };
+
   for (;;) {
     switch (*rnglist++) {
     case DW_RLE_end_of_list:
       return vec;
     case DW_RLE_base_addressx:
-      base = read_addrx(ctx, file, read_uleb(rnglist), addr_base);
+      base = read_addrx(read_uleb(rnglist));
       continue;
     case DW_RLE_startx_endx:
-      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
-      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
+      vec.push_back(read_addrx(read_uleb(rnglist)));
+      vec.push_back(read_addrx(read_uleb(rnglist)));
       break;
     case DW_RLE_startx_length:
-      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
+      vec.push_back(read_addrx(read_uleb(rnglist)));
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     case DW_RLE_offset_pair:
