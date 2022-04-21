@@ -107,6 +107,7 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u32 dwarf_version = *(u16 *)(cu + 4);
   u32 abbrev_offset;
 
+  // Skip a header.
   switch (dwarf_version) {
   case 2:
   case 3:
@@ -114,24 +115,26 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     abbrev_offset = *(u32 *)(cu + 6);
     cu += 11;
     break;
-  case 5:
+  case 5: {
     abbrev_offset = *(u32 *)(cu + 8);
-    switch (*(u8 *)(cu + 6)) {
-        case DW_UT_compile:
-        case DW_UT_partial:
-          cu += 12;
-          break;
-        case DW_UT_skeleton:
-        case DW_UT_split_compile:
-          cu += 20;
-          break;
-        default:
-          Fatal(ctx) << file << ": --gdb-index: unknown DW_UT_* value 0x"
-                     << std::hex << *(u8 *)(cu + 6);
+
+    switch (u32 unit_type = *(u8 *)(cu + 6); unit_type) {
+    case DW_UT_compile:
+    case DW_UT_partial:
+      cu += 12;
+      break;
+    case DW_UT_skeleton:
+    case DW_UT_split_compile:
+      cu += 20;
+      break;
+    default:
+      Fatal(ctx) << file << ": --gdb-index: unknown DW_UT_* value: 0x"
+                 << std::hex << unit_type;
     }
     break;
+  }
   default:
-    Fatal(ctx) << file << ": --gdb-index: unknown DWARF version "
+    Fatal(ctx) << file << ": --gdb-index: unknown DWARF version: "
                << dwarf_version;
   }
 
@@ -144,21 +147,17 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
 
   for (;;) {
     u32 code = read_uleb(abbrev);
-    if (code == 0) {
+    if (code == 0)
       Fatal(ctx) << file << ": --gdb-index: .debug_abbrev does not contain"
                  << " a record for the first .debug_info record";
-      return {};
-    }
 
     if (code == abbrev_code) {
       // Found a record
       u64 abbrev_tag = read_uleb(abbrev);
-      if (abbrev_tag != DW_TAG_compile_unit && abbrev_tag != DW_TAG_skeleton_unit) {
+      if (abbrev_tag != DW_TAG_compile_unit && abbrev_tag != DW_TAG_skeleton_unit)
         Fatal(ctx) << file << ": --gdb-index: the first entry's tag is not "
                    << " DW_TAG_compile_unit/DW_TAG_skeleton_unit but 0x"
                    << std::hex << abbrev_tag;
-        return {};
-      }
       break;
     }
 
@@ -191,6 +190,7 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   // The last entry must be a null terminator, so we do -1.
   if (file.debug_ranges)
     ret += file.debug_ranges->sh_size / E::word_size / 2 - 1;
+
   // Or also .debug_rnglists, which is more complicated, as it first contains
   // a vector of offsets and then it contains a vector of differently-sized
   // entries depending on the value of DW_RLE_* code. The smallest possible
@@ -203,10 +203,10 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
 
 template <typename E>
 static u64 read_addrx(Context<E> &ctx, ObjectFile<E> &file, u64 index,
-                      std::optional<u64> addr_base)
-{
+                      std::optional<u64> addr_base) {
   if (!addr_base)
     Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
+
   u64 offset = *addr_base + index * E::word_size;
   return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset + offset);
 }
@@ -215,28 +215,18 @@ static u64 read_addrx(Context<E> &ctx, ObjectFile<E> &file, u64 index,
 template <typename E>
 class DebugInfoReader {
 public:
-  DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu,
-                  std::optional<u64> addr_base, std::optional<u64> rnglists_base)
-    : ctx(ctx), file(file), cu(cu), addr_base(addr_base), rnglists_base(rnglists_base) {}
+  DebugInfoReader(Context<E> &ctx, ObjectFile<E> &file, u8 *cu)
+    : ctx(ctx), file(file), cu(cu) {}
+
   u64 read(u64 form);
   void skip(u64 form);
-  void reset(u8 *cu, std::optional<u64> addr_base, std::optional<u64> rnglists_base);
 
-private:
   Context<E> &ctx;
   ObjectFile<E> &file;
   u8 *cu;
   std::optional<u64> addr_base;
   std::optional<u64> rnglists_base;
 };
-
-template <typename E>
-void DebugInfoReader<E>::reset(u8 *cu, std::optional<u64> addr_base, std::optional<u64> rnglists_base)
-{
-  this->cu = cu;
-  this->addr_base = addr_base;
-  this->rnglists_base = rnglists_base;
-}
 
 // Read value of the given DW_FORM_* form. We need this so far only
 // for DW_AT_low_pc, DW_AT_high_pc and DW_AT_ranges, so only forms
@@ -284,9 +274,11 @@ u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_rnglistx: {
     if (!rnglists_base)
       Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
+
     u64 index = read_uleb(cu);
     u64 offset_to_offset = *rnglists_base + index * 4;
-    u64 val = *(u32 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset_to_offset);
+    u64 val = *(u32 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset +
+                       offset_to_offset);
     return *rnglists_base + val;
   }
   default:
@@ -356,8 +348,7 @@ void DebugInfoReader<E>::skip(u64 form) {
 // (until an end of list entry).
 template <typename E>
 static std::vector<u64>
-read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset)
-{
+read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset) {
   if (!ctx.debug_ranges)
     Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
 
@@ -365,14 +356,14 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset)
     (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
 
   std::vector<u64> vec;
-  typename E::WordTy base = 0;
+  u64 base = 0;
+
   for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
-    if (range[i] == E::word_max) { // base address selection entry
+    if (range[i] == (typename E::WordTy)-1) { // base address selection entry
       base = range[i + 1];
       continue;
     }
-    if (range[i] == range[i + 1]) // empty
-      continue;
+
     vec.push_back(range[i] + base);
     vec.push_back(range[i + 1] + base);
   }
@@ -384,56 +375,50 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset)
 template <typename E>
 static std::vector<u64>
 read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset,
-                   std::optional<u64> addr_base)
-{
+                   std::optional<u64> addr_base) {
   if (!ctx.debug_rnglists)
     Fatal(ctx) << file << ": --gdb-index: missing debug_rnglists";
 
   u8 *rnglist = (u8 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset);
 
   std::vector<u64> vec;
-  typename E::WordTy base = 0;
-  for(;;) {
-    u64 val1 = 0;
-    u64 val2 = 0;
+  u64 base = 0;
+
+  for (;;) {
     switch (*rnglist++) {
     case DW_RLE_end_of_list:
       return vec;
     case DW_RLE_base_addressx:
-      base = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      base = read_addrx(ctx, file, read_uleb(rnglist), addr_base);
       continue;
     case DW_RLE_startx_endx:
-      val1 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
-      val2 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
+      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
+      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
       break;
     case DW_RLE_startx_length:
-      val1 = read_addrx( ctx, file, read_uleb(rnglist), addr_base);
-      val2 = val1 + read_uleb(rnglist);
+      vec.push_back(read_addrx(ctx, file, read_uleb(rnglist), addr_base));
+      vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     case DW_RLE_offset_pair:
-      val1 = base + read_uleb(rnglist);
-      val2 = base + read_uleb(rnglist);
+      vec.push_back(base + read_uleb(rnglist));
+      vec.push_back(base + read_uleb(rnglist));
       break;
     case DW_RLE_base_address:
       base = *(u32 *)rnglist;
       rnglist += 4;
       continue;
     case DW_RLE_start_end:
-      val1 = *(u32 *)rnglist;
+      vec.push_back(*(u32 *)rnglist);
       rnglist += 4;
-      val2 = *(u32 *)rnglist;
+      vec.push_back(*(u32 *)rnglist);
       rnglist += 4;
       break;
     case DW_RLE_start_length:
-      val1 = *(u32 *)rnglist;
+      vec.push_back(*(u32 *)rnglist);
       rnglist += 4;
-      val2 = read_uleb(rnglist);
+      vec.push_back(read_uleb(rnglist));
       break;
     }
-    if (val1 == val2) // empty
-      continue;
-    vec.push_back(val1);
-    vec.push_back(val2);
   }
 }
 
@@ -453,15 +438,13 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u32 dwarf_version;
   std::tie(cu, abbrev, dwarf_version) = find_compunit(ctx, file, offset);
 
-  DebugInfoReader<E> reader{ctx, file, cu, {}, {}};
+  DebugInfoReader<E> reader{ctx, file, cu};
 
-  std::optional<u64> addr_base;
-  std::optional<u64> rnglists_base;
   // At least Clang14 can emit DW_AT_addr_base and DW_AT_rnglists_base only
   // after previous entries already used any of the DW_FORM_addrx* forms
   // or DW_FORM_rnglistx, so the *_base values need to be read first.
   u8 *saved_abbrev = abbrev;
-  while (!addr_base || !rnglists_base) {
+  while (!reader.addr_base || !reader.rnglists_base) {
     u64 name = read_uleb(abbrev);
     u64 form = read_uleb(abbrev);
     if (name == 0 && form == 0)
@@ -469,17 +452,18 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
 
     switch (name) {
     case DW_AT_addr_base:
-      addr_base = reader.read(form);
+      reader.addr_base = reader.read(form);
       break;
     case DW_AT_rnglists_base:
-      rnglists_base = reader.read(form);
+      reader.rnglists_base = reader.read(form);
       break;
     default:
       reader.skip(form);
       break;
     }
   }
-  reader.reset(cu, addr_base, rnglists_base);
+
+  reader.cu = cu;
   abbrev = saved_abbrev;
 
   std::optional<u64> high_pc_abs;
@@ -515,13 +499,12 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
         Fatal(ctx) << file << ": --gdb-index: unhandled form for DW_AT_high_pc 0x"
                    << std::hex << form;
       }
-    break;
+      break;
     case DW_AT_ranges: {
       u64 offset = reader.read(form);
-      if(dwarf_version <= 4)
+      if (dwarf_version <= 4)
         return read_debug_range(ctx, file, offset);
-      else
-        return read_rnglist_range(ctx, file, offset, addr_base);
+      return read_rnglist_range(ctx, file, offset, reader.addr_base);
     }
     default:
       reader.skip(form);

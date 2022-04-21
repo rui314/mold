@@ -2388,12 +2388,11 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
       std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
 
       for (i64 j = 0; j < addrs.size(); j += 2) {
-        // Skip an address area for a dead function
-        if (addrs[j] == 1 && addrs[j + 1] == 1)
+        // Skip an empty range
+        if (addrs[j] == addrs[j + 1])
           continue;
 
-        if (e >= begin + file->num_areas)
-          Fatal(ctx) << file << ": --gdb-index: address area overflow";
+        assert(e < begin + file->num_areas);
         e->start = addrs[j];
         e->end = addrs[j + 1];
         e->attr = file->compunits_idx + i;
