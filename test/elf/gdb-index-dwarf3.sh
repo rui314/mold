@@ -49,7 +49,7 @@ readelf -WS $t/exe | fgrep -q .gdb_index
 
 $QEMU $t/exe | grep -q 'Hello world'
 
-DEBUGINFOD_URLS= gdb $t/exe -ex 'b main' -ex r -ex 'b trap' \
+DEBUGINFOD_URLS= gdb $t/exe -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
 grep -Pq 'hello \(\) at .*<stdin>:7' $t/log
