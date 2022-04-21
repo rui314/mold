@@ -372,35 +372,31 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset) {
 template <typename E>
 static std::vector<u64>
 read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset,
-                   std::optional<u64> addr_base) {
+                   u64 addr_base) {
   if (!ctx.debug_rnglists)
     Fatal(ctx) << file << ": --gdb-index: missing debug_rnglists";
 
   u8 *rnglist = (u8 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset);
 
+  typename E::WordTy *addrs =
+    (typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset + addr_base);
+
   std::vector<u64> vec;
   u64 base = 0;
-
-  auto read_addrx = [&](i64 idx) {
-    if (!addr_base)
-      Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
-    return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset +
-                                   *addr_base + idx * E::word_size);
-  };
 
   for (;;) {
     switch (*rnglist++) {
     case DW_RLE_end_of_list:
       return vec;
     case DW_RLE_base_addressx:
-      base = read_addrx(read_uleb(rnglist));
+      base = addrs[read_uleb(rnglist)];
       continue;
     case DW_RLE_startx_endx:
-      vec.push_back(read_addrx(read_uleb(rnglist)));
-      vec.push_back(read_addrx(read_uleb(rnglist)));
+      vec.push_back(addrs[read_uleb(rnglist)]);
+      vec.push_back(addrs[read_uleb(rnglist)]);
       break;
     case DW_RLE_startx_length:
-      vec.push_back(read_addrx(read_uleb(rnglist)));
+      vec.push_back(addrs[read_uleb(rnglist)]);
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     case DW_RLE_offset_pair:
@@ -508,7 +504,10 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       u64 offset = reader.read(form);
       if (dwarf_version <= 4)
         return read_debug_range(ctx, file, offset);
-      return read_rnglist_range(ctx, file, offset, reader.addr_base);
+
+      if (!reader.addr_base)
+        Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
+      return read_rnglist_range(ctx, file, offset, *reader.addr_base);
     }
     default:
       reader.skip(form);
