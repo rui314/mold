@@ -2113,15 +2113,15 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // gdb uses these maps to quickly find a compunit given a name or an
 // instruction pointer.
 //
-// .gdb_index is not mandatory. All the information in .gdb_index is
-// also in other debug info sections. You can actually create an
-// executable without .gdb_index and later add that using
-// `gdb-add-index` post-processing tool that comes with gdb.
-//
 // (Terminology: a compilation unit, which often abbreviated as compunit
 // or cu, is a unit of debug info. An input .debug_info section usually
 // contains one compunit, and thus an output .debug_info contains as
 // many compunits as the number of input files.)
+//
+// .gdb_index is not mandatory. All the information in .gdb_index is
+// also in other debug info sections. You can actually create an
+// executable without .gdb_index and later add it using `gdb-add-index`
+// post-processing tool that comes with gdb.
 //
 // The mapping from names to compunits is 1:n while the mapping from
 // address ranges to compunits is 1:1. That is, two object files may
@@ -2137,20 +2137,22 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // Besides names, these sections contains attributes for each name so
 // that gdb can distinguish type names from function names, for example.
 //
-// Function address ranges are in .debug_info and .debug_ranges
-// sections (also .debug_rnglists and .debug_addr for DWARF5).
-// If an object file is compiled without -ffunction-sections,
-// there's only one .text section in that object file, and in that case
-// its address range is directly stored to .debug_info (or possibly
-// indirectly to .debug_addr). If an object file is compiled with
-// -ffunction-sections, it contains multiple .text sections, and address
-// ranges for them are stored to .debug_ranges (or .debug_rnglists).
+// A compunit contains one or more function address ranges. If an
+// object file is compiled without -ffunction-sections, it contains
+// only one .text section and therefore contains a single address range.
+// Such range is typically stored directly to the compunit.
+//
+// If an object file is compiled with -fucntion-sections, it contains
+// more than one .text section, and it has as many address ranges as
+// the number of .text sections. Such discontiguous address ranges are
+// stored to .debug_ranges in DWARF 2/3/4/5 and
+// .debug_rnglists/.debug_addr in DWARF 5.
 //
 // .debug_info section contains DWARF debug info. Although we don't need
 // to parse the whole .debug_info section to read address ranges, we
 // have to do a little bit. DWARF is complicated and often handled using
 // a library such as libdwarf. But we don't use any library because we
-// didn't want to add an extra run-time dependency just for --gdb-index.
+// don't want to add an extra run-time dependency just for --gdb-index.
 //
 // This page explains the format of .gdb_index:
 // https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
@@ -2160,14 +2162,13 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
   // Read debug sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->debug_info == nullptr)
-      return;
+    if (file->debug_info) {
+      // Read compilation units from .debug_info.
+      file->compunits = read_compunits(ctx, *file);
 
-    // Read compilation units from .debug_info.
-    file->compunits = read_compunits(ctx, *file);
-
-    // Count the number of address areas contained in this file.
-    file->num_areas = estimate_address_areas(ctx, *file);
+      // Count the number of address areas contained in this file.
+      file->num_areas = estimate_address_areas(ctx, *file);
+    }
   });
 
   // Initialize `area_offset` and `compunits_idx`.
@@ -2304,7 +2305,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   // Skip address areas. It'll be filled by write_address_areas.
   buf += header.symtab_offset - header.areas_offset;
 
-  // Write symbol table.
+  // Write an on-disk hash table for names.
   memset(buf, 0, num_symtab_entries * 8);
 
   assert(std::popcount<u64>(num_symtab_entries) == 1);
@@ -2375,8 +2376,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
     u32 attr;
   };
 
-  // Read .debug_info and .debug_ranges (and .debug_addr and .debug_rnglists)
-  // to copy address ranges to .gdb_index.
+  // Read address ranges from debug sections and copy them to .gdb_index.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (!file->debug_info)
       return;
