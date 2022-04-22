@@ -18,14 +18,14 @@ mkdir -p $t
 
 which gdb >& /dev/null || { echo skipped; exit; }
 
-cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
-#include <stdio.h>
+echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-4 -g - >& /dev/null ||
+  { echo skipped; exit; }
 
-void trap() {}
+cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
+void hello2();
 
 static void hello() {
-  printf("Hello world\n");
-  trap();
+  hello2();
 }
 
 void greet() {
@@ -33,10 +33,21 @@ void greet() {
 }
 EOF
 
-$CC -B. -shared -o $t/b.so $t/a.o -Wl,--gdb-index
-readelf -WS $t/b.so | fgrep -q .gdb_index
+cat <<EOF | $CC -c -o $t/b.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
+#include <stdio.h>
 
-cat <<EOF | $CC -c -o $t/c.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -gz
+void trap() {}
+
+void hello2() {
+  printf("Hello world\n");
+  trap();
+}
+EOF
+
+$CC -B. -shared -o $t/c.so $t/a.o $t/b.o -Wl,--gdb-index
+readelf -WS $t/c.so 2> /dev/null | fgrep -q .gdb_index
+
+cat <<EOF | $CC -c -o $t/d.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -gz
 void greet();
 
 int main() {
@@ -44,16 +55,17 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/b.so $t/c.o -Wl,--gdb-index
-readelf -WS $t/exe | fgrep -q .gdb_index
+$CC -B. -o $t/exe $t/c.so $t/d.o -Wl,--gdb-index
+readelf -WS $t/exe 2> /dev/null | fgrep -q .gdb_index
 
 $QEMU $t/exe | grep -q 'Hello world'
 
 DEBUGINFOD_URLS= gdb $t/exe -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
-grep -Pq 'hello \(\) at .*<stdin>:7' $t/log
-grep -Pq 'greet \(\) at .*<stdin>:11' $t/log
+grep -Pq 'hello2 \(\) at .*<stdin>:7' $t/log
+grep -Pq 'hello \(\) at .*<stdin>:4' $t/log
+grep -Pq 'greet \(\) at .*<stdin>:8' $t/log
 grep -Pq 'main \(\) at .*<stdin>:4' $t/log
 
 echo OK
