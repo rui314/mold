@@ -171,13 +171,6 @@ inline u64 align_down(u64 val, u64 align) {
   return val & ~(align - 1);
 }
 
-inline u64 next_power_of_two(u64 val) {
-  assert(val >> 63 == 0);
-  if (val == 0 || val == 1)
-    return 1;
-  return (u64)1 << (64 - std::countl_zero(val - 1));
-}
-
 inline u64 bit(u64 val, i64 pos) {
   return (val >> pos) & 1;
 };
@@ -185,6 +178,18 @@ inline u64 bit(u64 val, i64 pos) {
 // Returns [hi:lo] bits of val.
 inline u64 bits(u64 val, u64 hi, u64 lo) {
   return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+}
+
+// Some C++ libraries haven't implemented std::has_single_bit yet.
+inline bool has_single_bit(u64 val) {
+  return std::popcount(val) == 1;
+}
+
+// Some C++ libraries haven't implemented std::bit_ceil yet.
+inline u64 bit_ceil(u64 val) {
+  if (has_single_bit(val))
+    return val;
+  return (u64)1 << (64 - std::countl_zero(val));
 }
 
 inline i64 sign_extend(u64 val, i64 size) {
@@ -318,7 +323,7 @@ public:
   void resize(i64 nbuckets) {
     this->~ConcurrentMap();
 
-    nbuckets = std::max<i64>(MIN_NBUCKETS, next_power_of_two(nbuckets));
+    nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
 
     this->nbuckets = nbuckets;
     keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(keys[0]));

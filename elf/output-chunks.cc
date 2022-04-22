@@ -1373,7 +1373,7 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
   if (num_exported) {
     // We allocate 12 bits for each symbol in the bloom filter.
     i64 num_bits = num_exported * 12;
-    num_bloom = next_power_of_two(num_bits / ELFCLASS_BITS);
+    num_bloom = bit_ceil(num_bits / ELFCLASS_BITS);
   }
 
   this->shdr.sh_size = HEADER_SIZE;               // Header
@@ -2209,7 +2209,7 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   // pubtypes. We aim 75% utilization. As per the format specification,
   // It must be a power of two.
   i64 num_symtab_entries =
-    std::max<i64>(next_power_of_two(num_names.combine(std::plus()) * 4 / 3), 16);
+    std::max<i64>(bit_ceil(num_names.combine(std::plus()) * 4 / 3), 16);
 
   // Now that we can compute the size of this section.
   ObjectFile<E> &last = *ctx.objs.back();

@@ -703,10 +703,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
       u64 next_loc = loc + r.r_addend;
-
-      u64 alignment = (std::popcount<u64>(r.r_addend) == 1)
-        ? (u64)r.r_addend : next_power_of_two(r.r_addend);
-
+      u64 alignment = bit_ceil(r.r_addend);
       if (next_loc % alignment)
         delta2 = align_to(loc, alignment) - next_loc;
       break;
