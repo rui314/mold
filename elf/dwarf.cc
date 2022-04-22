@@ -419,7 +419,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   }
 
   // Handle a contiguous address range.
-  if (low_pc.first) {
+  if (low_pc.first && high_pc.first) {
     u64 lo;
 
     switch (low_pc.first) {
