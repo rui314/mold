@@ -448,6 +448,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
+    case DW_FORM_udata:
       return {lo, lo + high_pc.second};
     default:
       Fatal(ctx) << file << ": --gdb-index: unhandled form for DW_AT_high_pc: 0x"
