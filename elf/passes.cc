@@ -128,8 +128,6 @@ static void mark_live_objects(Context<E> &ctx) {
 
 template <typename E>
 void do_resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "do_resolve_symbols");
-
   auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
     tbb::parallel_for_each(ctx.objs, fn);
     tbb::parallel_for_each(ctx.dsos, fn);
@@ -163,7 +161,7 @@ void do_resolve_symbols(Context<E> &ctx) {
 
 template <typename E>
 void resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "do_resolve_symbols");
+  Timer t(ctx, "resolve_symbols");
 
   std::vector<ObjectFile<E> *> objs = ctx.objs;
   std::vector<SharedFile<E> *> dsos = ctx.dsos;
