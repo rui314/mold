@@ -423,8 +423,8 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   //   file. This tends to optimize paging and caching when there are two
   //   references from the same page.
   //
-  // We place IFUNC relocations at the beginning of .rel.dyn because
-  // we set `__rel_iplt_start` to that address.
+  // We group IFUNC relocations at the end of .rel.dyn because we need to
+  // mark them with `__rel_iplt_start and `__rel_iplt_end`.
   tbb::parallel_sort(begin, end, [&](const ElfRel<E> &a, const ElfRel<E> &b) {
     return std::tuple(get_rank(a.r_type), a.r_sym, a.r_offset) <
            std::tuple(get_rank(b.r_type), b.r_sym, b.r_offset);
