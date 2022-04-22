@@ -39,9 +39,9 @@ void Chunk<E>::write_to(Context<E> &ctx, u8 *buf) {
 template <typename E>
 u64 get_entry_addr(Context<E> &ctx) {
   if (!ctx.arg.entry.empty())
-    if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry))
-      if (sym->file && !sym->file->is_dso)
-        return sym->get_addr(ctx);
+    if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry);
+        sym->file && !sym->file->is_dso)
+      return sym->get_addr(ctx);
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (osec->name == ".text")
@@ -2032,6 +2032,8 @@ static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
 
 template <typename E>
 void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
+  Timer t(ctx, "build_id");
+
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
     write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
@@ -2074,7 +2076,7 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   memset(buf, 0, this->shdr.sh_size);
 
   buf[0] = 4;                              // Name size
-  buf[1] = (E::word_size == 8) ? 16 : 12;   // Content size
+  buf[1] = (E::word_size == 8) ? 16 : 12;  // Content size
   buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
   memcpy(buf + 3, "GNU", 4);               // Name
   buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND; // Feature type

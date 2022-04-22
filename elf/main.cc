@@ -721,10 +721,8 @@ static int elf_main(int argc, char **argv) {
   // Zero-clear paddings between sections
   clear_padding(ctx);
 
-  if (ctx.buildid) {
-    Timer t(ctx, "build_id");
+  if (ctx.buildid)
     ctx.buildid->write_buildid(ctx);
-  }
 
   t_copy.stop();
   ctx.checkpoint();
