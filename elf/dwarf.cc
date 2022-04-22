@@ -268,6 +268,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   }
   case DW_FORM_strx:
   case DW_FORM_addrx:
+  case DW_FORM_udata:
   case DW_FORM_ref_udata:
   case DW_FORM_loclistx:
   case DW_FORM_rnglistx:
