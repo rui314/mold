@@ -192,17 +192,16 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   // Each CU contains zero or one address area.
   i64 ret = file.compunits.size();
 
-  // Optionally, a CU can refer an address area list in .debug_ranges.
+  // In DWARF 4, a CU can refer address ranges in .debug_ranges.
   // .debug_ranges contains a vector of [begin, end) address pairs.
   // The last entry must be a null terminator, so we do -1.
   if (file.debug_ranges)
     ret += file.debug_ranges->sh_size / E::word_size / 2 - 1;
 
-  // Or also .debug_rnglists, which is more complicated, as it first contains
-  // a vector of offsets and then it contains a vector of differently-sized
-  // entries depending on the value of DW_RLE_* code. The smallest possible
-  // range entry is one byte for the code and two uleb values (each can be
-  // as small as one byte), so 3 bytes.
+  // In DWARF 5, a CU can refer address ranges in .debug_rnglists, which
+  // contains variable-length entries. The smallest possible range entry
+  // is one byte for the code and two ULEB128 values (each can be as
+  // small as one byte), so 3 bytes.
   if (file.debug_rnglists)
     ret += file.debug_rnglists->sh_size / 3;
   return ret;
