@@ -2352,17 +2352,18 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   Timer t(ctx, "GdbIndexSection::write_address_areas");
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".debug_info")
-      ctx.debug_info = osec.get();
-    if (osec->name == ".debug_abbrev")
-      ctx.debug_abbrev = osec.get();
-    if (osec->name == ".debug_ranges")
-      ctx.debug_ranges = osec.get();
-    if (osec->name == ".debug_addr")
-      ctx.debug_addr = osec.get();
-    if (osec->name == ".debug_rnglists")
-      ctx.debug_rnglists = osec.get();
+  for (Chunk<E> *chunk : ctx.chunks) {
+    std::string_view name = chunk->name;
+    if (name == ".debug_info" || name == ".zdebug_info")
+      ctx.debug_info = chunk;
+    if (name == ".debug_abbrev" || name == ".zdebug_abbrev")
+      ctx.debug_abbrev = chunk;
+    if (name == ".debug_ranges" || name == ".zdebug_ranges")
+      ctx.debug_ranges = chunk;
+    if (name == ".debug_addr" || name == ".zdebug_addr")
+      ctx.debug_addr = chunk;
+    if (name == ".debug_rnglists" || name == ".zdebug_rnglists")
+      ctx.debug_rnglists = chunk;
   }
 
   assert(ctx.debug_info);
@@ -2417,27 +2418,31 @@ GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
 
-  std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
-  chunk.write_to(ctx, buf.get());
+  uncompressed.reset(new u8[chunk.shdr.sh_size]);
+  chunk.write_to(ctx, uncompressed.get());
 
   chdr.ch_type = ELFCOMPRESS_ZLIB;
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
 
-  contents.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
+  compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
-  this->shdr.sh_size = sizeof(chdr) + contents->size();
+  this->shdr.sh_size = sizeof(chdr) + compressed->size();
   this->shndx = chunk.shndx;
+
+  // We don't need to keep the original data unless --gdb-index is given.
+  if (!ctx.arg.gdb_index)
+    uncompressed.reset(nullptr);
 }
 
 template <typename E>
 void GabiCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, &chdr, sizeof(chdr));
-  contents->write_to(base + sizeof(chdr));
+  compressed->write_to(base + sizeof(chdr));
 }
 
 template <typename E>
@@ -2446,15 +2451,19 @@ GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
   assert(chunk.name.starts_with(".debug"));
   this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
 
-  std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
-  chunk.write_to(ctx, buf.get());
+  uncompressed.reset(new u8[chunk.shdr.sh_size]);
+  chunk.write_to(ctx, uncompressed.get());
 
-  contents.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
+  compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
 
   this->shdr = chunk.shdr;
-  this->shdr.sh_size = HEADER_SIZE + contents->size();
+  this->shdr.sh_size = HEADER_SIZE + compressed->size();
   this->shndx = chunk.shndx;
   this->original_size = chunk.shdr.sh_size;
+
+  // We don't need to keep the original data unless --gdb-index is given.
+  if (!ctx.arg.gdb_index)
+    uncompressed.reset(nullptr);
 }
 
 template <typename E>
@@ -2462,7 +2471,7 @@ void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, "ZLIB", 4);
   *(ubig64 *)(base + 4) = this->original_size;
-  contents->write_to(base + 12);
+  compressed->write_to(base + 12);
 }
 
 template <typename E>

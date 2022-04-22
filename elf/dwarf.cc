@@ -97,13 +97,20 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
   return vec;
 }
 
+template <typename E>
+static u8 *get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
+  if (u8 *buf = chunk->get_uncompressed_data())
+    return buf;
+  return ctx.buf + chunk->shdr.sh_offset;
+}
+
 // Try to find a compilation unit from .debug_info and its
 // corresponding record from .debug_abbrev and returns them.
 template <typename E>
 static std::tuple<u8 *, u8 *, u32>
 find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Read .debug_info to find the record at a given offset.
-  u8 *cu = (u8 *)(ctx.buf + ctx.debug_info->shdr.sh_offset + offset);
+  u8 *cu = get_buffer(ctx, ctx.debug_info) + offset;
   u32 dwarf_version = *(u16 *)(cu + 4);
   u32 abbrev_offset;
 
@@ -143,7 +150,7 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Find a .debug_abbrev record corresponding to the .debug_info record.
   // We assume the .debug_info record at a given offset is of
   // DW_TAG_compile_unit which describes a compunit.
-  u8 *abbrev = (u8 *)(ctx.buf + ctx.debug_abbrev->shdr.sh_offset + abbrev_offset);
+  u8 *abbrev = get_buffer(ctx, ctx.debug_abbrev) + abbrev_offset;
 
   for (;;) {
     u32 code = read_uleb(abbrev);
@@ -226,7 +233,7 @@ u64 DebugInfoReader<E>::read(u64 form) {
   auto read_addrx = [&](i64 idx) {
     if (!addr_base)
       Fatal(ctx) << file << ": --gdb-index: missing DW_AT_addr_base";
-    return *(typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset +
+    return *(typename E::WordTy *)(get_buffer(ctx, ctx.debug_addr) +
                                    *addr_base + idx * E::word_size);
   };
 
@@ -274,8 +281,7 @@ u64 DebugInfoReader<E>::read(u64 form) {
 
     u64 index = read_uleb(cu);
     u64 offset_to_offset = *rnglists_base + index * 4;
-    u64 val = *(u32 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset +
-                       offset_to_offset);
+    u64 val = *(u32 *)(get_buffer(ctx, ctx.debug_rnglists) + offset_to_offset);
     return *rnglists_base + val;
   }
   default:
@@ -350,7 +356,7 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset) {
     Fatal(ctx) << file << ": --gdb-index: missing debug_ranges";
 
   typename E::WordTy *range =
-    (typename E::WordTy *)(ctx.buf + ctx.debug_ranges->shdr.sh_offset + offset);
+    (typename E::WordTy *)(get_buffer(ctx, ctx.debug_ranges) + offset);
 
   std::vector<u64> vec;
   u64 base = 0;
@@ -376,10 +382,10 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u64 offset,
   if (!ctx.debug_rnglists)
     Fatal(ctx) << file << ": --gdb-index: missing debug_rnglists";
 
-  u8 *rnglist = (u8 *)(ctx.buf + ctx.debug_rnglists->shdr.sh_offset + offset);
+  u8 *rnglist = get_buffer(ctx, ctx.debug_rnglists) + offset;
 
   typename E::WordTy *addrs =
-    (typename E::WordTy *)(ctx.buf + ctx.debug_addr->shdr.sh_offset + addr_base);
+    (typename E::WordTy *)(get_buffer(ctx, ctx.debug_addr) + addr_base);
 
   std::vector<u64> vec;
   u64 base = 0;

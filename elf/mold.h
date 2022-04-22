@@ -374,6 +374,9 @@ public:
   virtual void write_to(Context<E> &ctx, u8 *buf);
   virtual void update_shdr(Context<E> &ctx) {}
 
+  // For --gdb-index
+  virtual u8 *get_uncompressed_data() { return nullptr; }
+
   std::string_view name;
   ElfShdr<E> shdr = {};
   i64 shndx = 0;
@@ -949,10 +952,12 @@ class GabiCompressedSection : public Chunk<E> {
 public:
   GabiCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
+  u8 *get_uncompressed_data() override { return uncompressed.get(); }
 
 private:
   ElfChdr<E> chdr = {};
-  std::unique_ptr<ZlibCompressor> contents;
+  std::unique_ptr<ZlibCompressor> compressed;
+  std::unique_ptr<u8[]> uncompressed;
 };
 
 template <typename E>
@@ -960,11 +965,13 @@ class GnuCompressedSection : public Chunk<E> {
 public:
   GnuCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
+  u8 *get_uncompressed_data() override { return uncompressed.get(); }
 
 private:
   static constexpr i64 HEADER_SIZE = 12;
   i64 original_size = 0;
-  std::unique_ptr<ZlibCompressor> contents;
+  std::unique_ptr<ZlibCompressor> compressed;
+  std::unique_ptr<u8[]> uncompressed;
 };
 
 template <typename E>
@@ -1765,11 +1772,11 @@ struct Context {
   std::unique_ptr<TlsTrampolineSection> tls_trampoline;
 
   // For --gdb-index
-  OutputSection<E> *debug_info = nullptr;
-  OutputSection<E> *debug_abbrev = nullptr;
-  OutputSection<E> *debug_ranges = nullptr;
-  OutputSection<E> *debug_addr = nullptr;
-  OutputSection<E> *debug_rnglists = nullptr;
+  Chunk<E> *debug_info = nullptr;
+  Chunk<E> *debug_abbrev = nullptr;
+  Chunk<E> *debug_ranges = nullptr;
+  Chunk<E> *debug_addr = nullptr;
+  Chunk<E> *debug_rnglists = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
