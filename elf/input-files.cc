@@ -133,6 +133,11 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       const ElfSym<E> &sym = this->elf_syms[shdr.sh_info];
       std::string_view signature = symbol_strtab.data() + sym.st_name;
 
+      // Ignore a broken comdat group GCC emits for .debug_macros.
+      // https://github.com/rui314/mold/issues/438
+      if (signature.starts_with("wm4."))
+        continue;
+
       // Get comdat group members.
       std::span<u32> entries = this->template get_data<u32>(ctx, shdr);
 
