@@ -368,10 +368,15 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
 
   DebugInfoReader<E> reader{ctx, file, cu};
 
-  std::pair<u64, u64> low_pc;
-  std::pair<u64, u64> high_pc;
-  std::optional<u64> ranges;
-  u64 rnglists_base = 0;
+  struct Record {
+    u64 form = 0;
+    u64 value = 0;
+  };
+
+  Record low_pc;
+  Record high_pc;
+  Record ranges;
+  std::optional<u64> rnglists_base;
   typename E::WordTy *addrx = nullptr;
 
   // Read all interesting debug records.
@@ -397,61 +402,68 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       addrx = (typename E::WordTy *)(get_buffer(ctx, ctx.debug_addr) + val);
       break;
     case DW_AT_ranges:
-      ranges = val;
+      ranges = {form, val};
       break;
     }
   }
 
   // Handle non-contiguous address ranges.
-  if (ranges) {
+  if (ranges.form) {
     if (dwarf_version <= 4) {
       typename E::WordTy *range_begin =
-        (typename E::WordTy *)(get_buffer(ctx, ctx.debug_ranges) + *ranges);
+        (typename E::WordTy *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
       return read_debug_range(ctx, file, range_begin);
     }
 
     assert(dwarf_version == 5);
 
-    u8 *buf = get_buffer(ctx, ctx.debug_rnglists) + rnglists_base;
-    u64 offset = *(u32 *)(buf + *ranges * 4);
-    return read_rnglist_range(ctx, file, buf + offset, addrx);
+    u8 *buf = get_buffer(ctx, ctx.debug_rnglists);
+    if (ranges.form == DW_FORM_sec_offset)
+      return read_rnglist_range(ctx, file, buf + ranges.value, addrx);
+
+    if (!rnglists_base)
+      Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
+
+    u8 *base = buf + *rnglists_base;
+    return read_rnglist_range(ctx, file, base + *(u32 *)base, addrx);
   }
 
   // Handle a contiguous address range.
-  if (low_pc.first && high_pc.first) {
+  if (low_pc.form && high_pc.form) {
     u64 lo;
 
-    switch (low_pc.first) {
+    switch (low_pc.form) {
     case DW_FORM_addr:
-      lo = low_pc.second;
+      lo = low_pc.value;
       break;
     case DW_FORM_addrx:
     case DW_FORM_addrx1:
     case DW_FORM_addrx2:
     case DW_FORM_addrx4:
-      lo = addrx[low_pc.second];
+      lo = addrx[low_pc.value];
       break;
     default:
       Fatal(ctx) << file << ": --gdb-index: unhandled form for DW_AT_low_pc: 0x"
-                 << std::hex << high_pc.first;
+                 << std::hex << high_pc.form;
     }
 
-    switch (high_pc.first) {
+    switch (high_pc.form) {
     case DW_FORM_addr:
-      return {lo, high_pc.second};
+      return {lo, high_pc.value};
     case DW_FORM_addrx:
     case DW_FORM_addrx1:
     case DW_FORM_addrx2:
     case DW_FORM_addrx4:
-      return {lo, addrx[high_pc.second]};
+      return {lo, addrx[high_pc.value]};
+    case DW_FORM_udata:
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
-      return {lo, lo + high_pc.second};
+      return {lo, lo + high_pc.value};
     default:
       Fatal(ctx) << file << ": --gdb-index: unhandled form for DW_AT_high_pc: 0x"
-                 << std::hex << high_pc.first;
+                 << std::hex << high_pc.form;
     }
   }
 
