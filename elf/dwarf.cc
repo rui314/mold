@@ -208,7 +208,7 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   return ret;
 }
 
-// .debug_info contains a variable-length fields. This class reads them.
+// .debug_info contains variable-length fields. This class reads them.
 template <typename E>
 class DebugInfoReader {
 public:
@@ -225,7 +225,7 @@ public:
 // Read value of the given DW_FORM_* form. If a value is not scalar,
 // returns a dummy value 0.
 template <typename E>
-u64 DebugInfoReader<E>::read(u64 form) {
+inline u64 DebugInfoReader<E>::read(u64 form) {
   switch (form) {
   case DW_FORM_flag_present:
     return 0;
