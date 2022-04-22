@@ -1786,8 +1786,8 @@ struct Context {
   RStrtabSection<E> *r_strtab = nullptr;
   RSymtabSection<E> *r_symtab = nullptr;
 
-  u64 tls_begin = -1;
-  u64 tls_end = -1;
+  u64 tls_begin = 0;
+  u64 tls_end = 0;
   bool relax_tlsdesc = false;
 
   // Linker-synthesized symbols
