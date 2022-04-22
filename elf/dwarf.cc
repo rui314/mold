@@ -274,9 +274,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_rnglistx:
     return read_uleb(cu);
   case DW_FORM_string:
-    while (*cu)
-      cu++;
-    cu++;
+    cu += strlen((char *)cu) + 1;
     return 0;
   default:
     Fatal(ctx) << file << ": --gdb-index: unhandled debug info form: 0x"
@@ -320,7 +318,7 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
       return vec;
     case DW_RLE_base_addressx:
       base = addrx[read_uleb(rnglist)];
-      continue;
+      break;
     case DW_RLE_startx_endx:
       vec.push_back(addrx[read_uleb(rnglist)]);
       vec.push_back(addrx[read_uleb(rnglist)]);
@@ -336,7 +334,7 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
     case DW_RLE_base_address:
       base = *(u32 *)rnglist;
       rnglist += 4;
-      continue;
+      break;
     case DW_RLE_start_end:
       vec.push_back(*(u32 *)rnglist);
       rnglist += 4;
