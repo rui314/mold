@@ -2145,9 +2145,6 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
       // Count the number of address areas contained in this file.
       file->num_areas = estimate_address_areas(ctx, *file);
-
-      // Read .debug_gnu_pubnames and .debug_gnu_pubtypes.
-      file->gdb_names = read_pubnames(ctx, *file);
     }
   });
 
@@ -2158,6 +2155,11 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
     ctx.objs[i + 1]->compunits_idx =
       ctx.objs[i]->compunits_idx + ctx.objs[i]->compunits.size();
   }
+
+  // Read .debug_gnu_pubnames and .debug_gnu_pubtypes.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->gdb_names = read_pubnames(ctx, *file);
+  });
 
   // Estimate the unique number of pubnames.
   HyperLogLog estimator;
