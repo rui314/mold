@@ -2369,6 +2369,9 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
         // Skip an empty range
         if (addrs[j] == addrs[j + 1])
           continue;
+        // Gdb crashes if there are entries with address 0.
+        if (addrs[j] == 0)
+          continue;
 
         assert(e < begin + file->num_areas);
         e->start = addrs[j];
@@ -2381,7 +2384,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
     // Fill trailing null entries with dummy values because gdb
     // crashes if there are entries with address 0.
-    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].end;
+    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].start;
     for (; e < begin + file->num_areas; e++) {
       e->start = e->end = filler;
       e->attr = file->compunits_idx;
