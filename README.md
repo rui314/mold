@@ -52,18 +52,9 @@ later) are recommended.
 
 ### Install dependencies
 
-#### Ubuntu 20.04 and later / Debian 11 and later
-
-```shell
-sudo apt-get update
-sudo apt-get install -y build-essential git clang cmake libstdc++-10-dev libssl-dev libxxhash-dev zlib1g-dev pkg-config
-```
-
-#### Fedora 34 and later
-
-```shell
-sudo dnf install -y git clang cmake openssl-devel xxhash-devel zlib-devel libstdc++-devel
-```
+To install build dependencies, run `./install-build-deps.sh` in this
+directory. It recognizes your Linux distribution and tries to install
+necessary packages. You may want to run it as root.
 
 ### Compile mold
 
