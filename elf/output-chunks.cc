@@ -2191,15 +2191,14 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   });
 
   // Assign offsets for names and attributes within each file.
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    ObjectFile<E> &file = *ctx.objs[i];
-    for (GdbIndexName &name : file.gdb_names) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (GdbIndexName &name : file->gdb_names) {
       MapEntry &ent = map.values[name.entry_idx];
-      if (ent.owner == &file) {
-        ent.attr_offset = file.attrs_size;
-        file.attrs_size += (ent.num_attrs + 1) * 4;
-        ent.name_offset = file.names_size;
-        file.names_size += name.name.size() + 1;
+      if (ent.owner == file) {
+        ent.attr_offset = file->attrs_size;
+        file->attrs_size += (ent.num_attrs + 1) * 4;
+        ent.name_offset = file->names_size;
+        file->names_size += name.name.size() + 1;
       }
     }
   });
@@ -2209,8 +2208,8 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
     ctx.objs[i + 1]->attrs_offset =
       ctx.objs[i]->attrs_offset + ctx.objs[i]->attrs_size;
 
-  attrs_size = ctx.objs.back()->attrs_offset + ctx.objs.back()->attrs_size;
-  ctx.objs[0]->names_offset = attrs_size;
+  ctx.objs[0]->names_offset =
+    ctx.objs.back()->attrs_offset + ctx.objs.back()->attrs_size;
 
   for (i64 i = 0; i < ctx.objs.size() - 1; i++)
     ctx.objs[i + 1]->names_offset =
@@ -2219,7 +2218,7 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   // .gdb_index contains an on-disk hash table for pubnames and
   // pubtypes. We aim 75% utilization. As per the format specification,
   // It must be a power of two.
-  num_symtab_entries =
+  i64 num_symtab_entries =
     std::max<i64>(next_power_of_two(num_names.combine(std::plus()) * 4 / 3), 16);
 
   // Now that we can compute the size of this section.
@@ -2269,10 +2268,11 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   buf += header.symtab_offset - header.areas_offset;
 
   // Write an on-disk hash table for names.
-  memset(buf, 0, num_symtab_entries * 8);
+  u32 symtab_size = header.const_pool_offset - header.symtab_offset;
+  memset(buf, 0, symtab_size);
 
-  assert(std::popcount<u64>(num_symtab_entries) == 1);
-  u32 mask = num_symtab_entries - 1;
+  assert(std::popcount(symtab_size / 8) == 1);
+  u32 mask = symtab_size / 8 - 1;
 
   for (i64 i = 0; i < map.nbuckets; i++) {
     if (map.has_key(i)) {
@@ -2289,10 +2289,10 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     }
   }
 
-  buf += num_symtab_entries * 8;
+  buf += symtab_size;
 
   // Write CU vector
-  memset(buf, 0, attrs_size);
+  memset(buf, 0, ctx.objs[0]->names_offset);
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;

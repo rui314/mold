@@ -940,8 +940,6 @@ private:
 
   SectionHeader header;
   ConcurrentMap<MapEntry> map;
-  i64 num_symtab_entries = 0;
-  i64 attrs_size = 0;
 };
 
 template <typename E>
