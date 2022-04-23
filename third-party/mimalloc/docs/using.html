@@ -105,7 +105,7 @@ $(document).ready(function(){initNavTree('using.html',''); initResizable(); });
 </div><!-- fragment --><p> to link with the shared (dynamic) library, or: </p><div class="fragment"><div class="line">target_link_libraries(myapp PUBLIC mimalloc-<span class="keyword">static</span>)</div>
 </div><!-- fragment --><p> to link with the static library. See <code>test\CMakeLists.txt</code> for an example.</p>
 <h3>C++</h3>
-<p>For best performance in C++ programs, it is also recommended to override the global <code>new</code> and <code>delete</code> operators. For convience, mimalloc provides <a href="https://github.com/microsoft/mimalloc/blob/master/include/mimalloc-new-delete.h"><code>mimalloc-new-delete.h</code></a> which does this for you &ndash; just include it in a single(!) source file in your project.</p>
+<p>For best performance in C++ programs, it is also recommended to override the global <code>new</code> and <code>delete</code> operators. For convience, mimalloc provides <a href="https://github.com/microsoft/mimalloc/blob/master/include/mimalloc-new-delete.h"><code>mimalloc-new-delete.h</code></a> which does this for you &ndash; just include it in a single(!) source file in your project without linking to the mimalloc's library.</p>
 <p>In C++, mimalloc also provides the <code><a class="el" href="group__cpp.html#structmi__stl__allocator" title="std::allocator implementation for mimalloc for use in STL containers.">mi_stl_allocator</a></code> struct which implements the <code>std::allocator</code> interface. For example: </p><div class="fragment"><div class="line">std::vector&lt;some_struct, mi_stl_allocator&lt;some_struct&gt;&gt; vec;</div>
 <div class="line">vec.push_back(some_struct());</div>
 </div><!-- fragment --><h3>Statistics</h3>

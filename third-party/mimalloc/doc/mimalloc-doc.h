@@ -56,7 +56,7 @@ Notable aspects of the design include:
 - __first-class heaps__: efficiently create and use multiple heaps to allocate across different regions.
   A heap can be destroyed at once instead of deallocating each object separately.
 - __bounded__: it does not suffer from _blowup_ \[1\], has bounded worst-case allocation
-  times (_wcat_), bounded space overhead (~0.2% meta-data, with at most 12.5% waste in allocation sizes),
+  times (_wcat_), bounded space overhead (~0.2% meta-data, with low internal fragmentation),
   and has no internal points of contention using only atomic operations.
 - __fast__: In our benchmarks (see [below](#performance)),
   _mimalloc_ outperforms all other leading allocators (_jemalloc_, _tcmalloc_, _Hoard_, etc),

@@ -18,6 +18,7 @@ static void test_process_info(void);
 static void test_reserved(void);
 static void negative_stat(void);
 static void alloc_huge(void);
+static void test_heap_walk(void);
 
 int main() {
   mi_version();
@@ -31,7 +32,8 @@ int main() {
   // invalid_free();
   // test_reserved();
   // negative_stat();
-  alloc_huge();
+  // alloc_huge();
+  test_heap_walk();
   
   void* p1 = malloc(78);
   void* p2 = malloc(24);
@@ -51,8 +53,10 @@ int main() {
   //free(p1);
   //p2 = malloc(32);
   //mi_free(p2);
-  mi_collect(true);
-  mi_stats_print(NULL);
+  
+  //mi_collect(true);
+  //mi_stats_print(NULL);
+  
   // test_process_info();
   return 0;
 }
@@ -189,6 +193,24 @@ static void alloc_huge(void) {
   mi_free(p);
 }
 
+static bool test_visit(const mi_heap_t* heap, const mi_heap_area_t* area, void* block, size_t block_size, void* arg) {
+  if (block == NULL) {
+    printf("visiting an area with blocks of size %zu (including padding)\n", area->full_block_size);
+  }
+  else {
+    printf("  block of size %zu (allocated size is %zu)\n", block_size, mi_usable_size(block));
+  }
+  return true;
+}
+
+static void test_heap_walk(void) {
+  mi_heap_t* heap = mi_heap_new();
+  //mi_heap_malloc(heap, 2097152);
+  mi_heap_malloc(heap, 2067152);
+  mi_heap_malloc(heap, 2097160);
+  mi_heap_malloc(heap, 24576);
+  mi_heap_visit_blocks(heap, true, &test_visit, NULL);
+}
 
 // ----------------------------
 // bin size experiments

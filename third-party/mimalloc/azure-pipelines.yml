@@ -18,7 +18,7 @@ jobs:
   displayName: Windows
   pool:
     vmImage:
-      windows-2019
+      windows-2022
   strategy:
     matrix:
       Debug:

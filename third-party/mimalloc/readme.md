@@ -12,8 +12,8 @@ is a general purpose allocator with excellent [performance](#performance) charac
 Initially developed by Daan Leijen for the run-time systems of the
 [Koka](https://koka-lang.github.io) and [Lean](https://github.com/leanprover/lean) languages.
 
-Latest release tag: `v2.0.5` (alpha, 2022-02-14).  
-Latest stable  tag: `v1.7.5` (2022-02-14).
+Latest release tag: `v2.0.6` (2022-04-14).  
+Latest stable  tag: `v1.7.6` (2022-02-14).
 
 mimalloc is a drop-in replacement for `malloc` and can be used in other programs
 without code changes, for example, on dynamically linked ELF-based systems (Linux, BSD, etc.) you can use it as:
@@ -52,7 +52,7 @@ It also has an easy way to override the default allocator in [Windows](#override
 - __first-class heaps__: efficiently create and use multiple heaps to allocate across different regions.
   A heap can be destroyed at once instead of deallocating each object separately.  
 - __bounded__: it does not suffer from _blowup_ \[1\], has bounded worst-case allocation
-  times (_wcat_), bounded space overhead (~0.2% meta-data, with at most 12.5% waste in allocation sizes),
+  times (_wcat_), bounded space overhead (~0.2% meta-data, with low internal fragmentation),
   and has no internal points of contention using only atomic operations.
 - __fast__: In our benchmarks (see [below](#performance)),
   _mimalloc_ outperforms other leading allocators (_jemalloc_, _tcmalloc_, _Hoard_, etc),
@@ -67,15 +67,20 @@ Enjoy!
 
 ### Branches
 
-* `master`: latest stable release.
-* `dev`: development branch for mimalloc v1.
-* `dev-slice`: development branch for mimalloc v2 with a new algorithm for managing internal mimalloc pages.
+* `master`: latest stable release (based on `dev-slice`).
+* `dev`: development branch for mimalloc v1. Use this branch for submitting PR's.
+* `dev-slice`: development branch for mimalloc v2. This branch is downstream of `dev`.
 
 ### Releases
 
-Note: the `v2.x` beta has a new algorithm for managing internal mimalloc pages that tends to use reduce memory usage
+Note: the `v2.x` version has a new algorithm for managing internal mimalloc pages that tends to use reduce memory usage
   and fragmentation compared to mimalloc `v1.x` (especially for large workloads). Should otherwise have similar performance
   (see [below](#performance)); please report if you observe any significant performance regression.
+
+* 2022-04-14, `v1.7.6`, `v2.0.6`: fix fallback path for aligned OS allocation on Windows, improve Windows aligned allocation
+  even when compiling with older SDK's, fix dynamic overriding on macOS Monterey, fix MSVC C++ dynamic overriding, fix
+  warnings under Clang 14, improve performance if many OS threads are created and destroyed, fix statistics for large object
+  allocations, using MIMALLOC_VERBOSE=1 has no maximum on the number of error messages, various small fixes.
 
 * 2022-02-14, `v1.7.5`, `v2.0.5` (alpha): fix malloc override on
   Windows 11, fix compilation with musl, potentially reduced
@@ -301,7 +306,7 @@ or via environment variables:
 
 Use caution when using `fork` in combination with either large or huge OS pages: on a fork, the OS uses copy-on-write
 for all pages in the original process including the huge OS pages. When any memory is now written in that area, the
-OS will copy the entire 1GiB huge page (or 2MiB large page) which can cause the memory usage to grow in big increments.
+OS will copy the entire 1GiB huge page (or 2MiB large page) which can cause the memory usage to grow in large increments.
 
 [linux-huge]: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/5/html/tuning_and_optimizing_red_hat_enterprise_linux_for_oracle_9i_and_10g_databases/sect-oracle_9i_and_10g_tuning_guide-large_memory_optimization_big_pages_and_huge_pages-configuring_huge_pages_in_red_hat_enterprise_linux_4_or_5
 [windows-huge]: https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/enable-the-lock-pages-in-memory-option-windows?view=sql-server-2017
