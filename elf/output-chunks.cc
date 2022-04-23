@@ -2158,14 +2158,14 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
   // Read .debug_gnu_pubnames and .debug_gnu_pubtypes.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->pubnames = read_pubnames(ctx, *file);
+    file->gdb_names = read_pubnames(ctx, *file);
   });
 
   // Estimate the unique number of pubnames.
   HyperLogLog estimator;
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     HyperLogLog e;
-    for (GdbIndexName &name : file->pubnames)
+    for (GdbIndexName &name : file->gdb_names)
       e.insert(name.hash);
     estimator.merge(e);
   });
@@ -2176,59 +2176,47 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   tbb::enumerable_thread_specific<i64> num_names;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (GdbIndexName &name : file->pubnames) {
+    for (GdbIndexName &name : file->gdb_names) {
       MapEntry *ent;
       bool inserted;
-      std::tie(ent, inserted) = map.insert(name.name, name.hash, {name.hash});
+      std::tie(ent, inserted) = map.insert(name.name, name.hash, {file, name.hash});
       if (inserted)
         num_names.local()++;
+
+      ObjectFile<E> *old_val = ent->owner;
+      while (file->priority < old_val->priority &&
+             !ent->owner.compare_exchange_weak(old_val, file));
+
       ent->num_attrs++;
       name.entry_idx = ent - map.values;
     }
   });
 
-  // Assign in-shard output offsets to names and attrs.
-  std::vector<u32> attr_sizes(map.NUM_SHARDS);
-  std::vector<u32> name_sizes(map.NUM_SHARDS);
-  const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
-
-  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    i64 attr_offset = 0;
-    i64 name_offset = 0;
-
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (map.keys[j]) {
-        map.values[j].name_offset = name_offset;
-        map.values[j].attr_offset = attr_offset;
-        name_offset += map.key_sizes[j] + 1;
-        attr_offset += (map.values[j].num_attrs + 1) * 4;
-      }
-    }
-
-    attr_sizes[i] = attr_offset;
-    name_sizes[i] = name_offset;
-  });
-
-  // Fix name and attr offsets so that they are relative to
-  // `const_pool_offset`.
-  std::vector<u32> attr_offsets(map.NUM_SHARDS + 1);
-  for (i64 i = 0; i < map.NUM_SHARDS; i++)
-    attr_offsets[i + 1] = attr_offsets[i] + attr_sizes[i];
-  attrs_size = attr_offsets.back();
-
-  std::vector<u32> name_offsets(map.NUM_SHARDS + 1);
-  name_offsets[0] = attrs_size;
-  for (i64 i = 0; i < map.NUM_SHARDS; i++)
-    name_offsets[i + 1] = name_offsets[i] + name_sizes[i];
-
-  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (map.keys[j]) {
-        map.values[j].attr_offset += attr_offsets[i];
-        map.values[j].name_offset += name_offsets[i];
+  // Assign offsets for names and attributes within each file.
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
+    for (GdbIndexName &name : file.gdb_names) {
+      MapEntry &ent = map.values[name.entry_idx];
+      if (ent.owner == &file) {
+        ent.attr_offset = file.attrs_size;
+        file.attrs_size += (ent.num_attrs + 1) * 4;
+        ent.name_offset = file.names_size;
+        file.names_size += name.name.size() + 1;
       }
     }
   });
+
+  // Compute per-file name and attributes offsets.
+  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
+    ctx.objs[i + 1]->attrs_offset =
+      ctx.objs[i]->attrs_offset + ctx.objs[i]->attrs_size;
+
+  attrs_size = ctx.objs.back()->attrs_offset + ctx.objs.back()->attrs_size;
+  ctx.objs[0]->names_offset = attrs_size;
+
+  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
+    ctx.objs[i + 1]->names_offset =
+      ctx.objs[i]->names_offset + ctx.objs[i]->names_size;
 
   // .gdb_index contains an on-disk hash table for pubnames and
   // pubtypes. We aim 75% utilization. As per the format specification,
@@ -2253,7 +2241,7 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
   offset += num_symtab_entries * 8;
 
   header.const_pool_offset = offset;
-  offset += name_offsets.back();
+  offset += last.names_offset + last.names_size;
 
   this->shdr.sh_size = offset;
 }
@@ -2291,14 +2279,15 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 0; i < map.nbuckets; i++) {
     if (map.has_key(i)) {
       u32 hash = map.values[i].hash;
-      u32 step = ((hash * 17) & mask) | 1;
+      u32 step = (hash & mask) | 1;
       u32 j = hash & mask;
 
       while (*(u32 *)(buf + j * 8))
         j = (j + step) & mask;
 
-      *(u32 *)(buf + j * 8) = map.values[i].name_offset;
-      *(u32 *)(buf + j * 8 + 4) = map.values[i].attr_offset;
+      ObjectFile<E> &file = *map.values[i].owner;
+      *(u32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
+      *(u32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
     }
   }
 
@@ -2306,21 +2295,41 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
 
   // Write CU vector
   memset(buf, 0, attrs_size);
-  std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (GdbIndexName &name : file->pubnames) {
+    std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;
+
+    for (GdbIndexName &name : file->gdb_names) {
       MapEntry &ent = map.values[name.entry_idx];
-      u32 idx = ent.attr_offset / 4;
+      u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
       attrs[idx + ++attrs[idx]] = name.attr;
     }
   });
 
+  // Sort CU vector for build reproducibility
+  const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
+
+  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
+    u32 *attrs = (u32 *)buf;
+
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
+      if (map.has_key(j)) {
+        MapEntry &ent = map.values[j];
+        u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
+        u32 *start = attrs + idx + 1;
+        std::sort(start, start + attrs[idx]);
+      }
+    }
+  });
+
   // Write pubnames and pubtypes.
-  tbb::parallel_for((i64)0, (i64)map.nbuckets, [&](i64 i) {
-    if (map.has_key(i)) {
-      std::string_view name{map.keys[i], map.key_sizes[i]};
-      write_string(buf + map.values[i].name_offset, name);
+  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
+      if (map.has_key(j)) {
+        ObjectFile<E> &file = *map.values[j].owner;
+        std::string_view name{map.keys[j], map.key_sizes[j]};
+        write_string(buf + file.names_offset + map.values[j].name_offset, name);
+      }
     }
   });
 }
@@ -2369,6 +2378,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
         // Skip an empty range
         if (addrs[j] == addrs[j + 1])
           continue;
+
         // Gdb crashes if there are entries with address 0.
         if (addrs[j] == 0)
           continue;

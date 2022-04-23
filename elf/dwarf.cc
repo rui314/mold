@@ -84,8 +84,7 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
         std::string_view name = data.data();
         data = data.substr(name.size() + 1);
 
-        vec.push_back({name, gdb_hash(name), offset + debug_info_offset,
-                       (type << 24) | cu_idx});
+        vec.push_back({name, gdb_hash(name), (type << 24) | cu_idx});
       }
     }
   };

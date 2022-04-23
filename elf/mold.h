@@ -896,7 +896,6 @@ public:
 struct GdbIndexName {
   std::string_view name;
   u32 hash = 0;
-  u32 offset = 0;
   u32 attr = 0;
   u32 entry_idx = 0;
 };
@@ -925,26 +924,24 @@ private:
   };
 
   struct MapEntry {
-    MapEntry(u32 hash) : hash(hash) {}
+    MapEntry(ObjectFile<E> *owner, u32 hash) : owner(owner), hash(hash) {}
 
-    MapEntry(const MapEntry &other) {
-      hash = other.hash;
-      name_offset = other.name_offset;
-      attr_offset = other.attr_offset;
-      num_attrs = other.num_attrs.load();
-    }
+    MapEntry(const MapEntry &other)
+      : owner(other.owner.load()), num_attrs(other.num_attrs.load()),
+        hash(other.hash), name_offset(other.name_offset),
+        attr_offset(other.attr_offset) {}
 
-    u32 hash = 0;
-    u32 name_offset = 0;
-    u32 attr_offset = 0;
+    std::atomic<ObjectFile<E> *> owner;
     std::atomic_uint32_t num_attrs = 0;
+    u32 hash = 0;
+    u32 name_offset = -1;
+    u32 attr_offset = -1;
   };
 
   SectionHeader header;
+  ConcurrentMap<MapEntry> map;
   i64 num_symtab_entries = 0;
   i64 attrs_size = 0;
-
-  ConcurrentMap<MapEntry> map;
 };
 
 template <typename E>
@@ -1168,10 +1165,14 @@ public:
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
   std::vector<std::string_view> compunits;
+  std::vector<GdbIndexName> gdb_names;
+  i64 compunits_idx = 0;
+  i64 attrs_size = 0;
+  i64 attrs_offset = 0;
+  i64 names_size = 0;
+  i64 names_offset = 0;
   i64 num_areas = 0;
   i64 area_offset = 0;
-  i64 compunits_idx = 0;
-  std::vector<GdbIndexName> pubnames;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
