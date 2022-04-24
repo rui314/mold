@@ -33,9 +33,6 @@ EOF
   set +e
 fi
 
-# Build mold as a portable executable
-./dist.sh
-
 git_hash=$(./mold --version | perl -ne '/\((\w+)/; print $1;')
 
 # Build a given package in Docker
