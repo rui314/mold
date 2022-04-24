@@ -1091,6 +1091,8 @@ void parse_symbol_version(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->symbols.size() - file->first_global; i++) {
+      // Match VERSION part of symbol foo@VERSION with version definitions.
+      // The symbols' VERSION parts are in file->symvers.
       if (!file->symvers[i])
         continue;
 
@@ -1116,6 +1118,13 @@ void parse_symbol_version(Context<E> &ctx) {
       sym->ver_idx = it->second;
       if (!is_default)
         sym->ver_idx |= VERSYM_HIDDEN;
+
+      // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
+      // hides `foo` so that all references to `foo` are resolved to a
+      // versioned symbol.
+      Symbol<E> *sym2 = get_symbol(ctx, sym->name());
+      if (sym2->file == file && !file->symvers[sym2->sym_idx - file->first_global])
+        sym2->ver_idx = VER_NDX_LOCAL;
     }
   });
 }
