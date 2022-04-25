@@ -740,6 +740,8 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
   symtab_sec = this->find_section(SHT_SYMTAB);
 
   if (symtab_sec) {
+    // In ELF, all local symbols precede global symbols in the symbol table.
+    // sh_info has an index of the first global symbol.
     this->first_global = symtab_sec->sh_info;
     this->elf_syms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
     symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);

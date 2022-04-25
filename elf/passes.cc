@@ -1151,12 +1151,14 @@ void compute_import_export(Context<E> &ctx) {
           sym->ver_idx == VER_NDX_LOCAL)
         continue;
 
+      // If we are using a symbol in a DSO, we need to import it at runtime.
       if (sym->file != file && sym->file->is_dso) {
         std::scoped_lock lock(sym->mu);
         sym->is_imported = true;
         continue;
       }
 
+      // If we are creating a DSO, all global symbols are exported by default.
       if (sym->file == file) {
         std::scoped_lock lock(sym->mu);
         sym->is_exported = true;
