@@ -473,6 +473,20 @@ Set
 .Ar dir
 to root directory.
 .Pp
+.It Fl -color-diagnostics Ns = Ns Op Sy auto | always | never
+.It Fl -color-diagnostics
+.It Fl -no-color-diagnostics
+.Pp
+Show diagnostics messages in color using ANSI escape sequences.
+.Ar auto
+means that
+.Nm
+prints out messages in color only if the standard output is connected to a TTY. \
+Default is
+.Ar auto .
+.Pp
+.It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
+.Pp
 .It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zlib-gnu
 Compress DWARF debug info
 .Pf ( Sy .debug_*
@@ -555,6 +569,10 @@ Mark all symbols in the given
 .Ar libraries
 hidden.
 .Pp
+.It Fl -fatal-warnings
+.It Fl -no-fatal-warnings
+Treat warnings as errors.
+.Pp
 .It Fl -fini Ns = Ns Ar symbol
 Call
 .Ar symbol
@@ -573,6 +591,14 @@ hides that latency.
 .It Fl -gc-sections
 .It Fl -no-gc-sections
 Remove unreferenced sections.
+.Pp
+.It Fl -gdb-index
+Create a
+.Li .gdb_index
+section to speed up GNU debugger. To use this, you need to compile source files \
+with the
+.Fl -fgnu-pubnames
+compiler flag.
 .Pp
 .It Fl -hash-style Ns = Ns Op Sy sysv | gnu | both
 Set hash style.
@@ -1044,20 +1070,15 @@ Mark object to interpose all DSOs but executable.
 .It Fl EL
 .It Fl O Ns Ar number
 .It Fl -allow-shlib-undefined
-.It Fl -color-diagnostics
 .It Fl -dc
 .It Fl -dp
 .It Fl -end-group
-.It Fl -fatal-warnings
-.It Fl -gdb-index
 .It Fl -no-add-needed
 .It Fl -no-allow-shlib-undefined
 .It Fl -no-copy-dt-needed-entries
 .It Fl -no-fatal-warnings
 .It Fl -no-undefined-version
 .It Fl -nostdlib
-.It Fl -plugin
-.It Fl -plugin-opt
 .It Fl -rpath-link Ns = Ns Ar dir
 .It Fl -sort-common
 .It Fl -sort-section

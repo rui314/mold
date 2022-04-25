@@ -77,8 +77,8 @@ Options:
     --no-eh-frame-hdr
   --enable-new-dtags          Ignored
   --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
-  --fatal-warnings            Ignored
-    --no-fatal-warnings       Ignored
+  --fatal-warnings            Treat warnings as errors
+    --no-fatal-warnings       Do not treat warnings as errors (default)
   --fini SYMBOL               Call SYMBOL at unload-time
   --fork                      Spawn a child process (default)
     --no-fork
