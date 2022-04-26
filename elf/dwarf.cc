@@ -247,6 +247,13 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
     cu += 2;
     return val;
   }
+  case DW_FORM_strx3:
+  case DW_FORM_addrx3: {
+    u64 val = 0;
+    memcpy(&val, cu, 3); // This assumes little-endian.
+    cu += 3;
+    return val;
+  }
   case DW_FORM_data4:
   case DW_FORM_strp:
   case DW_FORM_sec_offset:
