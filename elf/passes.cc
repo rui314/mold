@@ -1121,10 +1121,13 @@ void parse_symbol_version(Context<E> &ctx) {
 
       // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
       // hides `foo` so that all references to `foo` are resolved to a
-      // versioned symbol.
+      // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
+      // defined, the default one takes precedence.
       Symbol<E> *sym2 = get_symbol(ctx, sym->name());
       if (sym2->file == file && !file->symvers[sym2->sym_idx - file->first_global])
-        sym2->ver_idx = VER_NDX_LOCAL;
+        if (sym2->ver_idx == ctx.default_version ||
+            (sym2->ver_idx & ~VERSYM_HIDDEN) == (sym->ver_idx & ~VERSYM_HIDDEN))
+          sym2->ver_idx = VER_NDX_LOCAL;
     }
   });
 }
