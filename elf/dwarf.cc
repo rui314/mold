@@ -330,18 +330,18 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
       vec.push_back(base + read_uleb(rnglist));
       break;
     case DW_RLE_base_address:
-      base = *(u32 *)rnglist;
-      rnglist += 4;
+      base = *(typename E::WordTy *)rnglist;
+      rnglist += E::word_size;
       break;
     case DW_RLE_start_end:
-      vec.push_back(*(u32 *)rnglist);
-      rnglist += 4;
-      vec.push_back(*(u32 *)rnglist);
-      rnglist += 4;
+      vec.push_back(*(typename E::WordTy *)rnglist);
+      rnglist += E::word_size;
+      vec.push_back(*(typename E::WordTy *)rnglist);
+      rnglist += E::word_size;
       break;
     case DW_RLE_start_length:
-      vec.push_back(*(u32 *)rnglist);
-      rnglist += 4;
+      vec.push_back(*(typename E::WordTy *)rnglist);
+      rnglist += E::word_size;
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     }
