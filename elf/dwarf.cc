@@ -119,10 +119,16 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   case 3:
   case 4:
     abbrev_offset = *(u32 *)(cu + 6);
+    if (u32 address_size = cu[10]; address_size != E::word_size)
+      Fatal(ctx) << file << ": --gdb-index: unsupported address size "
+                 << address_size;
     cu += 11;
     break;
   case 5: {
     abbrev_offset = *(u32 *)(cu + 8);
+    if (u32 address_size = cu[7]; address_size != E::word_size)
+      Fatal(ctx) << file << ": --gdb-index: unsupported address size "
+                 << address_size;
 
     switch (u32 unit_type = cu[6]; unit_type) {
     case DW_UT_compile:
