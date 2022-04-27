@@ -234,6 +234,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           debug_pubtypes = isec;
           isec->is_alive = false;
         }
+
+        if (name == ".debug_types")
+          has_debug_types = true;
       }
 
       static Counter counter("regular_sections");

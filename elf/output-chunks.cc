@@ -2131,6 +2131,12 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 // a library such as libdwarf. But we don't use any library because we
 // don't want to add an extra run-time dependency just for --gdb-index.
 //
+// .gdb_index may contain also a mapping to type units in .debug_types,
+// which is an like .debug_info but only for types, and it is optional.
+// It also exists only in DWARF 4, has been removed in DWARF 5 and neither
+// GCC nor Clang generate it by default (-fdebug-types-section is needed).
+// As such there is probably little need to support it.
+//
 // This page explains the format of .gdb_index:
 // https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
 template <typename E>
@@ -2145,6 +2151,10 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
       // Count the number of address areas contained in this file.
       file->num_areas = estimate_address_areas(ctx, *file);
+
+      if (file->has_debug_types) {
+        Fatal(ctx) << file << ": --gdb-index: .debug_types not supported";
+      }
     }
   });
 

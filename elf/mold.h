@@ -1162,6 +1162,7 @@ public:
   InputSection<E> *debug_rnglists = nullptr;
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
+  bool has_debug_types = false;
   std::vector<std::string_view> compunits;
   std::vector<GdbIndexName> gdb_names;
   i64 compunits_idx = 0;
