@@ -94,7 +94,7 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
   if (file.debug_pubtypes)
     read(*file.debug_pubtypes);
 
-  // Uniquify elements because some compilers emit one record for each
+  // Uniquify elements because GCC 11 seems to emit one record for each
   // comdat group which results in having a lot of duplicate records.
   std::sort(vec.begin(), vec.end(),
             [](const GdbIndexName &a, const GdbIndexName &b) {
