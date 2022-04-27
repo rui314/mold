@@ -93,6 +93,22 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
     read(*file.debug_pubnames);
   if (file.debug_pubtypes)
     read(*file.debug_pubtypes);
+
+  // Uniquify elements because some compilers emit one record for each
+  // comdat group which results in having a lot of duplicate records.
+  std::sort(vec.begin(), vec.end(),
+            [](const GdbIndexName &a, const GdbIndexName &b) {
+    return std::tuple{a.hash, a.attr, a.name} <
+           std::tuple{b.hash, b.attr, b.name};
+  });
+
+  auto last = std::unique(vec.begin(), vec.end(),
+                          [](const GdbIndexName &a, const GdbIndexName &b) {
+    return std::tuple{a.hash, a.attr, a.name} ==
+           std::tuple{b.hash, b.attr, b.name};
+  });
+
+  vec.erase(last, vec.end());
   return vec;
 }
 
