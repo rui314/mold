@@ -540,6 +540,12 @@ static int elf_main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
+  // Handle --print-dependencies
+  if (ctx.arg.print_dependencies == 1)
+    print_dependencies(ctx);
+  else if (ctx.arg.print_dependencies == 2)
+    print_dependencies_full(ctx);
+
   // Handle -repro
   if (ctx.arg.repro)
     write_repro_file(ctx);
@@ -586,12 +592,6 @@ static int elf_main(int argc, char **argv) {
     ctx.dynstr->add_string(ctx.arg.rpaths);
   if (!ctx.arg.soname.empty())
     ctx.dynstr->add_string(ctx.arg.soname);
-
-  // Handle --print-dependencies
-  if (ctx.arg.print_dependencies == 1)
-    print_dependencies(ctx);
-  else if (ctx.arg.print_dependencies == 2)
-    print_dependencies_full(ctx);
 
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
