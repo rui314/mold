@@ -1156,13 +1156,10 @@ public:
 
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
-  InputSection<E> *debug_abbrev = nullptr;
   InputSection<E> *debug_ranges = nullptr;
-  InputSection<E> *debug_addr = nullptr;
   InputSection<E> *debug_rnglists = nullptr;
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
-  bool has_debug_types = false;
   std::vector<std::string_view> compunits;
   std::vector<GdbIndexName> gdb_names;
   i64 compunits_idx = 0;

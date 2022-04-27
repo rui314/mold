@@ -213,12 +213,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
         if (name == ".debug_info")
           debug_info = isec;
-        if (name == ".debug_abbrev")
-          debug_abbrev = isec;
         if (name == ".debug_ranges")
           debug_ranges = isec;
-        if (name == ".debug_addr")
-          debug_addr = isec;
         if (name == ".debug_rnglists")
           debug_rnglists = isec;
 
@@ -235,8 +231,15 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           isec->is_alive = false;
         }
 
+        // .debug_types is similar to .debug_info but contains type info
+        // only. It exists only in DWARF 4, has been removed in DWARF 5 and
+        // neither GCC nor Clang generate it by default
+        // (-fdebug-types-section is needed). As such there is probably
+        // little need to support it.
         if (name == ".debug_types")
-          has_debug_types = true;
+          Fatal(ctx) << *this << ": mold's --gdb-index is not compatible"
+            " with .debug_types; to fix this error, remove"
+            " -fdebug-types-section and recompile";
       }
 
       static Counter counter("regular_sections");
