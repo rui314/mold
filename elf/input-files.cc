@@ -447,53 +447,27 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   // Initialize global symbols
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
-    if (esym.is_common())
-      has_common_symbol = true;
 
     // Get a symbol name
-    std::string_view name = symbol_strtab.data() + esym.st_name;
+    std::string_view key = symbol_strtab.data() + esym.st_name;
+    std::string_view name = key;
 
-    // Parse symbol version. There are two types of versioned symbols.
-    //
-    // 1. The default version is in the form of `foo@@version`, and
-    //    such symbol is used to resolve both `foo` and `foo@version`.
-    //
-    // 2. The non-default version is in the form of `foo@version`,
-    //    and such symbol is used to resolve only `foo@version`.
-    i64 pos = name.find('@');
+    // Parse symbol version after atsign
+    if (i64 pos = name.find('@'); pos != name.npos) {
+      std::string_view ver = name.substr(pos + 1);
+      name = name.substr(0, pos);
 
-    // Usual non-versioned symbol
-    if (pos == name.npos) {
-      this->symbols[i] = insert_symbol(ctx, esym, name, name);
-      continue;
+      if (!ver.empty() && ver != "@") {
+        if (ver.starts_with('@'))
+          key = name;
+        if (esym.is_defined())
+          symvers[i - this->first_global] = ver.data();
+      }
     }
 
-    std::string_view stem = name.substr(0, pos);
-    std::string_view verstr = name.substr(pos + 1);
-
-    // If version part is empty (i.e. `foo@` or `foo@@`), that
-    // version part is ignored for compatibility with GNU linkers.
-    if (verstr.empty() || verstr == "@") {
-      this->symbols[i] = insert_symbol(ctx, esym, stem, stem);
-      continue;
-    }
-
-    if (esym.is_defined())
-      symvers[i - this->first_global] = verstr.data();
-
-    // Default versioned symbol
-    if (verstr.starts_with('@')) {
-      std::string_view decorated =
-        save_string(ctx, std::string(stem) + std::string(verstr));
-      this->symbols[i] = insert_symbol(ctx, esym, decorated, stem);
-
-      typename decltype(ctx.symbol_map2)::accessor acc;
-      ctx.symbol_map2.insert(acc, {stem, this->symbols[i]});
-      continue;
-    }
-
-    // Non-default versioned symbol
-    this->symbols[i] = insert_symbol(ctx, esym, name, stem);
+    this->symbols[i] = insert_symbol(ctx, esym, key, name);
+    if (esym.is_common())
+      has_common_symbol = true;
   }
 }
 
@@ -513,7 +487,7 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   sorted_rels.resize(sections.size());
 
   for (i64 i = 1; i < sections.size(); i++) {
-    std::unique_ptr<InputSection<E>> &isec = sections[i];
+    std::unique_ptr<InputSection<E>> &isec = sections[i];;
     if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
       continue;
 
@@ -990,17 +964,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     if (sym.file &&
         (!sym.esym().is_undef() || sym.file->priority <= this->priority))
       continue;
-
-    // `foo` can be resolved to `foo@@symbol_version` (with two at-signs).
-    // So, check if such a versioned symbol exists.
-    if (typename decltype(ctx.symbol_map2)::accessor acc;
-        ctx.symbol_map2.find(acc, sym.name())) {
-      Symbol<E> *sym2 = acc->second;
-      if (sym2->file) {
-        this->symbols[i] = sym2;
-        continue;
-      }
-    }
 
     // If a symbol name is in the form of "foo@version", search for
     // symbol "foo" and check if the symbol has version "version".

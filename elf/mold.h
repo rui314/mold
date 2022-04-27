@@ -1698,7 +1698,6 @@ struct Context {
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
-  tbb::concurrent_hash_map<std::string_view, Symbol<E> *> symbol_map2;
   tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> output_chunks;
