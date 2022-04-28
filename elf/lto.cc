@@ -86,6 +86,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sstream>
+#include <tbb/parallel_for_each.h>
 #include <unistd.h>
 
 #if 0
@@ -614,9 +615,9 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   phase = 2;
 
   // Set `referenced_by_regular_obj` bit.
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_lto_obj)
-      continue;
+      return;
 
     for (i64 i = file->first_global; i < file->symbols.size(); i++) {
       ElfSym<E> &esym = file->elf_syms[i];
@@ -628,7 +629,7 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
         sym.referenced_by_regular_obj = true;
       }
     }
-  }
+  });
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";
