@@ -871,8 +871,6 @@ void parse_nonpositional_args(Context<E> &ctx,
       ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thinlto-prefix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-prefix-replace=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-single-module")) {
-      ctx.arg.plugin_opt.push_back("thinlto-single-module=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thinlto-cache-dir")) {
       ctx.arg.plugin_opt.push_back("cache-dir=" + std::string(arg));
     } else if (read_arg(ctx, args, arg, "thinlto-cache-policy")) {
