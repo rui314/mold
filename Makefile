@@ -2,7 +2,7 @@
 #
 # make CXXFLAGS='-fsanitize=address -g' LDFLAGS=-fsanitize=address USE_MIMALLOC=0
 
-VERSION = 1.2.0
+VERSION = 1.2.1
 
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
