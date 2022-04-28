@@ -1919,15 +1919,15 @@ public:
   u64 value = 0;
 
   const char *nameptr = nullptr;
-  u64 namelen : 20 = 0;
+  i32 namelen = 0;
 
   // Index into the symbol table of the owner file.
-  i64 sym_idx : 20 = -1;
+  i32 sym_idx = -1;
 
   // shndx > 0  : symbol is in file's shndx'th section
   // shndx == 0 : absolute symbol
   // shndx < 0  : symbol is in the -shndx'th output section
-  i64 shndx : 20 = 0;
+  i32 shndx = 0;
 
   i32 aux_idx = -1;
   u16 ver_idx = 0;
