@@ -39,7 +39,7 @@ most noticeable when you are in rapid debug-edit-rebuild cycles.
 
 ## Install
 
-Binary packages for the following distros are currently available.
+Binary packages for the following systems are currently available.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/mold.svg)](https://repology.org/project/mold/versions)
 
