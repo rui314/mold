@@ -622,8 +622,8 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
       ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
-      if (esym.is_undef() && sym.file && sym.file != file &&
-          !sym.file->is_dso && ((ObjectFile<E> *)sym.file)->is_lto_obj) {
+      if (sym.file && !sym.file->is_dso &&
+          ((ObjectFile<E> *)sym.file)->is_lto_obj) {
         std::scoped_lock lock(sym.mu);
         sym.referenced_by_regular_obj = true;
       }
