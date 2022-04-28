@@ -205,7 +205,7 @@ void resolve_symbols(Context<E> &ctx) {
 
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       file->clear_symbols();
-      file->is_alive = true;
+      file->is_alive = !file->is_needed;
     });
 
     do_resolve_symbols(ctx);
