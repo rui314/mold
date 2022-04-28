@@ -52,10 +52,8 @@ static bool is_ld(const char *path) {
 int execvpe(const char *file, char *const *argv, char *const *envp) {
   debug_print("execvpe %s\n", file);
 
-  if (!strcmp(file, "ld") || is_ld(file)) {
+  if (!strcmp(file, "ld") || is_ld(file))
     file = get_mold_path();
-    ((const char **)argv)[0] = file;
-  }
 
   for (int i = 0; envp[i]; i++)
     putenv(envp[i]);
@@ -66,12 +64,8 @@ int execvpe(const char *file, char *const *argv, char *const *envp) {
 
 int execve(const char *path, char *const *argv, char *const *envp) {
   debug_print("execve %s\n", path);
-
-  if (is_ld(path)) {
+  if (is_ld(path))
     path = get_mold_path();
-    ((const char **)argv)[0] = path;
-  }
-
   typeof(execve) *real = dlsym(RTLD_NEXT, "execve");
   return real(path, argv, envp);
 }
@@ -117,12 +111,8 @@ int posix_spawn(pid_t *pid, const char *path,
                 const posix_spawnattr_t *attrp,
                 char *const *argv, char *const *envp) {
   debug_print("posix_spawn %s\n", path);
-
-  if (is_ld(path)) {
+  if (is_ld(path))
     path = get_mold_path();
-    ((const char **)argv)[0] = path;
-  }
-
   typeof(posix_spawn) *real = dlsym(RTLD_NEXT, "posix_spawn");
   return real(pid, path, file_actions, attrp, argv, envp);
 }
