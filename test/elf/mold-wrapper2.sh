@@ -16,6 +16,8 @@ mkdir -p $t
 
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
+nm $mold | grep -q '__[at]san_init' && { echo skipped; exit; }
+
 rm -rf $t
 mkdir -p $t/bin $t/lib/mold
 cp "$mold" $t/bin

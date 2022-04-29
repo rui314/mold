@@ -18,6 +18,8 @@ mkdir -p $t
 
 ldd "$mold"-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
+nm $mold | grep -q '__[at]san_init' && { echo skipped; exit; }
+
 cat <<'EOF' > $t/a.sh
 #!/bin/bash
 echo "$0" "$@"
