@@ -38,14 +38,8 @@
 // you need to compile mold C++ files with `-ffunction-sections
 // -fdata-sections` and link them with -Wl,-gc-sections.
 #if MOLD_DEBUG_X86_64_ONLY
-# ifdef __OPTIMIZE__
-#  error "MOLD_DEBUG_X86_64_ONLY is for debugging only"
-# endif
 # define INSTANTIATE_ALL INSTANTIATE(X86_64)
 #elif MOLD_DEBUG_ARM64_ONLY
-# ifdef __OPTIMIZE__
-#  error "MOLD_DEBUG_ARM64_ONLY is for debugging only"
-# endif
 # define INSTANTIATE_ALL INSTANTIATE(ARM64)
 #else
 # define INSTANTIATE_ALL                       \
