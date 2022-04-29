@@ -11,6 +11,7 @@ jobs:
         flags:
         - 'LDFLAGS=-fuse-ld=mold'
         - 'CXXFLAGS="-fsanitize=address -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=address" USE_MIMALLOC=0'
+        - 'CXXFLAGS="-fsanitize=thread -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=thread" USE_MIMALLOC=0'
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
