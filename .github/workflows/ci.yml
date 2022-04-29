@@ -6,6 +6,11 @@ on:
     branches: [ main ]
 jobs:
   build-clang:
+    strategy:
+      matrix:
+        flags:
+        - 'LDFLAGS=-fuse-ld=mold'
+        - 'CXXFLAGS="-fsanitize=address -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=address" USE_MIMALLOC=0'
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
@@ -16,10 +21,9 @@ jobs:
       run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install git build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libtbb-dev git bsdmainutils dwarfdump pkg-config
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: make
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make CC=clang CXX=clang++ LDFLAGS=-fuse-ld=mold -j$(nproc)
     - name: make test
-      run: make -j$(nproc) test
+      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=clang CXX=clang++ ${{ matrix.flags }} test
+
   build-gcc:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
@@ -38,10 +42,9 @@ jobs:
         ln -sf /usr/bin/riscv64-linux-gnu-g++-10 /usr/bin/riscv64-linux-gnu-g++
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: make
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make CC=gcc CXX=g++ -j$(nproc)
-    - name: make test
-      run: make -j$(nproc) test-all
+    - name: make test-all
+      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=gcc CXX=g++
+
   build-macos:
     runs-on: macos-11
     steps:
