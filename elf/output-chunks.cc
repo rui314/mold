@@ -334,14 +334,13 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
 template <typename E>
 void OutputPhdr<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = create_phdr(ctx).size() * sizeof(ElfPhdr<E>);
+  phdrs = create_phdr(ctx);
+  this->shdr.sh_size = phdrs.size() * sizeof(ElfPhdr<E>);
 }
 
 template <typename E>
 void OutputPhdr<E>::copy_buf(Context<E> &ctx) {
-  std::vector<ElfPhdr<E>> vec = create_phdr(ctx);
-  assert(this->shdr.sh_size == vec.size() * sizeof(ElfPhdr<E>));
-  write_vector(ctx.buf + this->shdr.sh_offset, vec);
+  write_vector(ctx.buf + this->shdr.sh_offset, phdrs);
 }
 
 template <typename E>
