@@ -590,6 +590,12 @@ public:
       // because archive members may have the same name.
       return parent->name + ":" + std::to_string(get_offset());
     }
+
+    if (thin_parent) {
+      // If this is a thin archive member, the filename part is
+      // guaranteed to be unique.
+      return thin_parent->name + ":" + name;
+    }
     return name;
   }
 
@@ -599,6 +605,7 @@ public:
   i64 mtime = 0;
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
+  MappedFile *thin_parent = nullptr;
   int fd = -1;
 };
 

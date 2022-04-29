@@ -45,6 +45,7 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   file->priority = ctx.file_priority++;
+  file->archive_name = archive_name;
   file->is_in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   file->is_alive = !file->is_in_lib;
   ctx.has_lto_object = true;
