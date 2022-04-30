@@ -72,7 +72,7 @@ enum PluginOutputFileType {
 
 struct PluginInputFile {
   const char *name;
-  int fd;
+  int32_t fd;
   uint64_t offset;
   uint64_t filesize;
   void *handle;
@@ -80,7 +80,7 @@ struct PluginInputFile {
 
 struct PluginSection {
   const void *handle;
-  int shndx;
+  uint32_t shndx;
 };
 
 struct PluginSymbol {
@@ -89,10 +89,10 @@ struct PluginSymbol {
   char def;
   char symbol_type;
   char section_kind;
-  int visibility;
+  int32_t visibility;
   uint64_t size;
   char *comdat_key;
-  int resolution;
+  int32_t resolution;
 };
 
 enum PluginSymbolKind {
