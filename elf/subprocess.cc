@@ -60,10 +60,6 @@ std::function<void()> fork_child() {
   };
 }
 
-static std::string get_self_path() {
-  return std::filesystem::read_symlink("/proc/self/exe");
-}
-
 template <typename E>
 std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   // Look for mold-wrapper.so from the same directory as the executable is.
@@ -97,7 +93,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   // Get the mold-wrapper.so path
-  std::string self = get_self_path();
+  std::string self = std::filesystem::read_symlink("/proc/self/exe");
   std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
