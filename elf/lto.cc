@@ -81,6 +81,10 @@
 #include "mold.h"
 #include "../lto.h"
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <cstdarg>
 #include <cstring>
 #include <dlfcn.h>
@@ -594,7 +598,14 @@ static void restart_process(Context<E> &ctx) {
   args.push_back("--:lto-pass2");
   args.push_back(nullptr);
 
+#ifdef __APPLE__
+  uint32_t MAX_BUF_SIZE = 1024;
+  char path_buf[MAX_BUF_SIZE+1];
+  _NSGetExecutablePath(path_buf, &MAX_BUF_SIZE);
+  std::string self = std::string(path_buf);
+#else
   std::string self = std::filesystem::read_symlink("/proc/self/exe");
+#endif
 
   std::cout << std::flush;
   std::cerr << std::flush;

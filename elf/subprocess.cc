@@ -1,6 +1,10 @@
 #include "mold.h"
 #include "../sha.h"
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <filesystem>
 #include <signal.h>
 #include <sys/stat.h>
@@ -88,7 +92,14 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   // Get the mold-wrapper.so path
+#ifdef __APPLE__
+  uint32_t MAX_BUF_SIZE = 1024;
+  char path_buf[MAX_BUF_SIZE+1];
+  _NSGetExecutablePath(path_buf, &MAX_BUF_SIZE);
+  std::string self = std::string(path_buf);
+#else
   std::string self = std::filesystem::read_symlink("/proc/self/exe");
+#endif
   std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
