@@ -3,16 +3,11 @@
 
 #include <filesystem>
 #include <signal.h>
-#include <sys/select.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#define DAEMON_TIMEOUT 30
 
 namespace mold::elf {
 
@@ -61,7 +56,7 @@ std::function<void()> fork_child() {
 }
 
 template <typename E>
-std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
+static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   // Look for mold-wrapper.so from the same directory as the executable is.
   std::filesystem::path path = self.parent_path() / "mold-wrapper.so";
   std::error_code ec;
