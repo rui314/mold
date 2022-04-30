@@ -56,6 +56,7 @@
 #include "../sha.h"
 
 #include <array>
+#include <cstdio>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -73,6 +74,13 @@ template<> struct hash<Digest> {
     return *(int64_t *)&k[0];
   }
 };
+
+std::string to_string(Digest digest) {
+  char buf[HASH_SIZE * 2];
+  for (int i = 0; i < HASH_SIZE; i++)
+    sprintf(buf + i * 2, "%02x", digest[i]);
+  return {buf, sizeof(buf)};
+}
 }
 
 namespace mold::elf {
@@ -392,6 +400,7 @@ static void gather_edges(Context<E> &ctx,
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
       if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
         frag_idx++;
+      } else {
         ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag())
@@ -495,6 +504,8 @@ static void print_icf_sections(Context<E> &ctx) {
 template <typename E>
 void icf_sections(Context<E> &ctx) {
   Timer t(ctx, "icf");
+  if (ctx.objs.empty())
+    return;
 
   for (ObjectFile<E> *file : ctx.objs)
     file->extras.resize(file->sections.size());
