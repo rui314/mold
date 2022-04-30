@@ -12,6 +12,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#if defined(__HAIKU__)
+// for daemon function
+#include <bsd/stdlib.h>
+#endif
+
 #define DAEMON_TIMEOUT 30
 
 namespace mold::elf {

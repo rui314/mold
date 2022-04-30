@@ -49,7 +49,13 @@ MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
                  -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
-MOLD_LDFLAGS := -pthread -lz -lm -ldl
+MOLD_LDFLAGS := -lz
+
+ifeq ($(OS), Haiku)
+  MOLD_LDFLAGS += -lnetwork -lbsd
+else
+  MOLD_LDFLAGS += -lm -pthread -ldl
+endif
 
 GIT_HASH := $(shell [ -d .git ] && git rev-parse HEAD)
 ifneq ($(GIT_HASH),)
@@ -69,6 +75,11 @@ ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
 else ifeq ($(IS_ANDROID), 1)
   USE_MIMALLOC = 0
+endif
+
+ifeq ($(OS), Haiku)
+  # For non-posix things like daemon
+  MOLD_CXXFLAGS += -D_BSD_SOURCE
 endif
 
 ifeq ($(USE_MIMALLOC), 1)
