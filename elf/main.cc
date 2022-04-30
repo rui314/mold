@@ -623,12 +623,12 @@ static int elf_main(int argc, char **argv) {
     chunk->update_shdr(ctx);
 
   std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-    return !chunk->is_output_section() && chunk->shdr.sh_size == 0;
+    return chunk->kind() != OUTPUT_SECTION && chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
   for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
-    if (!ctx.chunks[i]->is_header())
+    if (ctx.chunks[i]->kind() != HEADER)
       ctx.chunks[i]->shndx = shndx++;
 
   // Some types of section header refer other section by index.

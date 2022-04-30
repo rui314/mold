@@ -355,15 +355,14 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym);
 template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
+typedef enum { HEADER, OUTPUT_SECTION, SYNTHETIC } ChunkKind;
+
 // Chunk represents a contiguous region in an output file.
 template <typename E>
 class Chunk {
 public:
   virtual ~Chunk() = default;
-
-  virtual bool is_header() const { return false; }
-  virtual bool is_output_section() const { return false; }
-
+  virtual ChunkKind kind() { return SYNTHETIC; }
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf);
   virtual void update_shdr(Context<E> &ctx) {}
@@ -390,7 +389,7 @@ public:
     this->shdr.sh_addralign = E::word_size;
   }
 
-  bool is_header() const override { return true; }
+  ChunkKind kind() override { return HEADER; }
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -402,7 +401,7 @@ public:
     this->shdr.sh_addralign = E::word_size;
   }
 
-  bool is_header() const override { return true; }
+  ChunkKind kind() override { return HEADER; }
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 };
@@ -416,7 +415,7 @@ public:
     this->shdr.sh_addralign = E::word_size;
   }
 
-  bool is_header() const override { return true; }
+  ChunkKind kind() override { return HEADER; }
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -444,7 +443,7 @@ public:
   static OutputSection *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
-  bool is_output_section() const override { return true; }
+  ChunkKind kind() override { return OUTPUT_SECTION; }
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 

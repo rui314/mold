@@ -1475,7 +1475,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // _end, _etext, _edata and the like
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->is_header())
+    if (chunk->kind() == HEADER)
       continue;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
