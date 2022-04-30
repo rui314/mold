@@ -89,7 +89,7 @@ template <typename E>
 u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
                                           const ElfShdr<E> &shdr) {
   std::string_view data = this->get_string(ctx, shdr);
-  u32 ret = 0;
+  pu32 ret = {};
 
   while (!data.empty()) {
     ElfNhdr &hdr = *(ElfNhdr *)data.data();
@@ -105,15 +105,15 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
       continue;
 
     while (!desc.empty()) {
-      u32 type = *(u32 *)desc.data();
-      u32 size = *(u32 *)(desc.data() + 4);
+      pu32 type = *(pu32 *)desc.data();
+      pu32 size = *(pu32 *)(desc.data() + 4);
       desc = desc.substr(8);
       if (type == GNU_PROPERTY_X86_FEATURE_1_AND)
-        ret |= *(u32 *)desc.data();
+        ret |= *(pu32 *)desc.data();
       desc = desc.substr(align_to(size, E::word_size));
     }
   }
-  return ret;
+  return (u32)ret;
 }
 
 template <typename E>
@@ -143,9 +143,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       if (entries.empty())
         Fatal(ctx) << *this << ": empty SHT_GROUP";
-      if (entries[0] == 0)
+      pu32 first_entry = *(pu32*)entries.data();
+      if (first_entry == 0)
         continue;
-      if (entries[0] != GRP_COMDAT)
+      if (first_entry != GRP_COMDAT)
         Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
       typename decltype(ctx.comdat_groups)::const_accessor acc;
@@ -317,13 +318,13 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 rel_idx = 0;
 
   for (std::string_view data = contents; !data.empty();) {
-    i64 size = *(u32 *)data.data();
+    i64 size = *(pu32 *)data.data();
     if (size == 0)
       break;
 
     i64 begin_offset = data.data() - contents.data();
     i64 end_offset = begin_offset + size + 4;
-    i64 id = *(u32 *)(data.data() + 4);
+    i64 id = *(pu32 *)(data.data() + 4);
     data = data.substr(size + 4);
 
     i64 rel_begin = rel_idx;
@@ -359,7 +360,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   };
 
   for (i64 i = fdes_begin; i < fdes.size(); i++) {
-    i64 cie_offset = *(i32 *)(contents.data() + fdes[i].input_offset + 4);
+    i64 cie_offset = *(pi32 *)(contents.data() + fdes[i].input_offset + 4);
     fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
   }
 
@@ -940,9 +941,11 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
       continue;
 
     std::span<u32> entries = pair.second;
-    for (u32 i : entries)
+    for (i64 j = 0; j < entries.size(); ++j) {
+      pu32 i = *(pu32*)((u32*)entries.data() + j);
       if (sections[i])
         sections[i]->kill();
+    }
   }
 }
 

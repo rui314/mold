@@ -104,7 +104,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
     *(u64 *)loc = val;
     return;
   case R_AARCH64_PREL32:
-    *(u32 *)loc = val - this->shdr.sh_addr - offset;
+    *(Packed<u32, 1> *)loc = val - this->shdr.sh_addr - offset;
     return;
   case R_AARCH64_PREL64:
     *(u64 *)loc = val - this->shdr.sh_addr - offset;
@@ -153,14 +153,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
       if (sym.is_absolute() || !ctx.arg.pic) {
-        *(u64 *)loc = S + A;
+        *(Packed<u64, 1> *)loc = S + A;
       } else if (sym.is_imported) {
         *dynrel++ = {P, R_AARCH64_ABS64, (u32)sym.get_dynsym_idx(ctx), A};
         *(u64 *)loc = A;
       } else {
         if (!is_relr_reloc(ctx, rel))
           *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
-        *(u64 *)loc = S + A;
+        *(Packed<u64, 1> *)loc = S + A;
       }
       continue;
     case R_AARCH64_LDST8_ABS_LO12_NC:
@@ -370,12 +370,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
       if (std::optional<u64> val = get_tombstone(sym))
-        *(u64 *)loc = *val;
+        *(Packed<u64, 1> *)loc = *val;
       else
-        *(u64 *)loc = S + A;
+        *(Packed<u64, 1> *)loc = S + A;
       continue;
     case R_AARCH64_ABS32:
-      *(u32 *)loc = S + A;
+      *(Packed<u32, 1> *)loc = S + A;
       continue;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
