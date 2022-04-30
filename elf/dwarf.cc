@@ -96,19 +96,18 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
 
   // Uniquify elements because GCC 11 seems to emit one record for each
   // comdat group which results in having a lot of duplicate records.
-  std::sort(vec.begin(), vec.end(),
-            [](const GdbIndexName &a, const GdbIndexName &b) {
+  auto less = [](const GdbIndexName &a, const GdbIndexName &b) {
     return std::tuple{a.hash, a.attr, a.name} <
            std::tuple{b.hash, b.attr, b.name};
-  });
+  };
 
-  auto last = std::unique(vec.begin(), vec.end(),
-                          [](const GdbIndexName &a, const GdbIndexName &b) {
+  auto equal = [](const GdbIndexName &a, const GdbIndexName &b) {
     return std::tuple{a.hash, a.attr, a.name} ==
            std::tuple{b.hash, b.attr, b.name};
-  });
+  };
 
-  vec.erase(last, vec.end());
+  std::sort(vec.begin(), vec.end(), less);
+  vec.erase(std::unique(vec.begin(), vec.end(), equal), vec.end());
   return vec;
 }
 

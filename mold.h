@@ -376,12 +376,6 @@ private:
 };
 
 //
-// threads.cc
-//
-
-void set_thread_count(i64 n);
-
-//
 // hyperloglog.cc
 //
 

@@ -493,7 +493,7 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   sorted_rels.resize(sections.size());
 
   for (i64 i = 1; i < sections.size(); i++) {
-    std::unique_ptr<InputSection<E>> &isec = sections[i];;
+    std::unique_ptr<InputSection<E>> &isec = sections[i];
     if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
       continue;
 
