@@ -1341,13 +1341,6 @@ void print_map(Context<E> &ctx);
 std::function<void()> fork_child();
 
 template <typename E>
-void try_resume_daemon(Context<E> &ctx);
-
-template <typename E>
-void daemonize(Context<E> &ctx, std::function<void()> *wait_for_client,
-               std::function<void()> *on_complete);
-
-template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 
@@ -1603,7 +1596,6 @@ struct Context {
     bool perf = false;
     bool pic = false;
     bool pie = false;
-    bool preload = false;
     bool print_gc_sections = false;
     bool print_icf_sections = false;
     bool print_map = false;

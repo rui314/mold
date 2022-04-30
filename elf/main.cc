@@ -374,6 +374,7 @@ static int elf_main(int argc, char **argv) {
 
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
+
   std::vector<std::string_view> file_args;
   parse_nonpositional_args(ctx, file_args);
 
@@ -400,26 +401,28 @@ static int elf_main(int argc, char **argv) {
 
   Timer t_all(ctx, "all");
 
-  if (ctx.arg.relocatable) {
-    combine_objects(ctx, file_args);
-    return 0;
-  }
-
-  if (!ctx.arg.preload)
-    try_resume_daemon(ctx);
-
-  i64 thread_count = ctx.arg.thread_count;
-  if (thread_count == 0)
-    thread_count = get_default_thread_count();
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               thread_count);
-
   install_signal_handler();
 
   if (!ctx.arg.directory.empty())
     if (chdir(ctx.arg.directory.c_str()) == -1)
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
                  << ": " << errno_string();
+
+  if (ctx.arg.relocatable) {
+    combine_objects(ctx, file_args);
+    return 0;
+  }
+
+  // Fork a subprocess unless --no-fork is given.
+  std::function<void()> on_complete;
+  if (ctx.arg.fork)
+    on_complete = fork_child();
+
+  i64 thread_count = ctx.arg.thread_count;
+  if (thread_count == 0)
+    thread_count = get_default_thread_count();
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               thread_count);
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
@@ -430,30 +433,11 @@ static int elf_main(int argc, char **argv) {
     for (std::string_view name : *ctx.arg.retain_symbols_file)
       get_symbol(ctx, name)->write_to_symtab = true;
 
-  // Preload input files
-  std::function<void()> on_complete;
-  std::function<void()> wait_for_client;
-
-  if (ctx.arg.preload)
-    daemonize(ctx, &wait_for_client, &on_complete);
-  else if (ctx.arg.fork)
-    on_complete = fork_child();
-
   for (std::string_view arg : ctx.arg.trace_symbol)
     get_symbol(ctx, arg)->traced = true;
 
   // Parse input files
   read_input_files(ctx, file_args);
-
-  if (ctx.arg.preload) {
-    wait_for_client();
-    if (!reload_input_files(ctx)) {
-      std::vector<char *> args(argv, argv + argc);
-      args.push_back((char *)"--no-preload");
-      args.push_back(nullptr);
-      return elf_main<E>(argc + 1, args.data());
-    }
-  }
 
   // Uniquify shared object files by soname
   {
