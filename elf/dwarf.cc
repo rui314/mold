@@ -26,9 +26,9 @@ read_compunits(Context<E> &ctx, ObjectFile<E> &file) {
   while (!data.empty()) {
     if (data.size() < 4)
       Fatal(ctx) << *file.debug_info << ": corrupted .debug_info";
-    if (*(u32 *)data.data() == 0xffffffff)
+    if (*(ul32 *)data.data() == 0xffffffff)
       Fatal(ctx) << *file.debug_info << ": --gdb-index: DWARF64 not supported";
-    i64 len = *(u32 *)data.data() + 4;
+    i64 len = *(ul32 *)data.data() + 4;
     vec.push_back(data.substr(0, len));
     data = data.substr(len);
   }
@@ -258,7 +258,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_strx2:
   case DW_FORM_addrx2:
   case DW_FORM_ref2: {
-    u64 val = *(u16 *)cu;
+    u64 val = *(ul16 *)cu;
     cu += 2;
     return val;
   }
@@ -450,7 +450,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
 
     u8 *base = buf + *rnglists_base;
-    return read_rnglist_range(ctx, file, base + *(u32 *)base, addrx);
+    return read_rnglist_range(ctx, file, base + *(ul32 *)base, addrx);
   }
 
   // Handle a contiguous address range.

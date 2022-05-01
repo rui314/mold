@@ -1270,64 +1270,64 @@ struct Elf64Rela {
 };
 
 struct Elf32Rela {
-  u32 r_offset;
-  u32 r_type : 8;
-  u32 r_sym : 24;
-  i32 r_addend;
+  ul32 r_offset;
+  u8 r_type;
+  ul24 r_sym;
+  il32 r_addend;
 };
 
 struct Elf64Dyn {
-  u64 d_tag;
-  u64 d_val;
+  ul64 d_tag;
+  ul64 d_val;
 };
 
 struct Elf32Dyn {
-  u32 d_tag;
-  u32 d_val;
+  ul32 d_tag;
+  ul32 d_val;
 };
 
 struct ElfVerneed {
-  u16 vn_version;
-  u16 vn_cnt;
-  u32 vn_file;
-  u32 vn_aux;
-  u32 vn_next;
+  ul16 vn_version;
+  ul16 vn_cnt;
+  ul32 vn_file;
+  ul32 vn_aux;
+  ul32 vn_next;
 };
 
 struct ElfVernaux {
-  u32 vna_hash;
-  u16 vna_flags;
-  u16 vna_other;
-  u32 vna_name;
-  u32 vna_next;
+  ul32 vna_hash;
+  ul16 vna_flags;
+  ul16 vna_other;
+  ul32 vna_name;
+  ul32 vna_next;
 };
 
 struct ElfVerdef {
-  u16 vd_version;
-  u16 vd_flags;
-  u16 vd_ndx;
-  u16 vd_cnt;
-  u32 vd_hash;
-  u32 vd_aux;
-  u32 vd_next;
+  ul16 vd_version;
+  ul16 vd_flags;
+  ul16 vd_ndx;
+  ul16 vd_cnt;
+  ul32 vd_hash;
+  ul32 vd_aux;
+  ul32 vd_next;
 };
 
 struct ElfVerdaux {
-  u32 vda_name;
-  u32 vda_next;
+  ul32 vda_name;
+  ul32 vda_next;
 };
 
 struct Elf64Chdr {
-  u32 ch_type;
-  u32 ch_reserved;
-  u64 ch_size;
-  u64 ch_addralign;
+  ul32 ch_type;
+  ul32 ch_reserved;
+  ul64 ch_size;
+  ul64 ch_addralign;
 };
 
 struct Elf32Chdr {
-  u32 ch_type;
-  u32 ch_size;
-  u32 ch_addralign;
+  ul32 ch_type;
+  ul32 ch_size;
+  ul32 ch_addralign;
 };
 
 struct ElfNhdr {

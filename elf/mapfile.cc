@@ -40,6 +40,9 @@ static Map<E> get_map(Context<E> &ctx) {
     }
   });
 
+  if (map.size() <= 1)
+    return map;
+
   tbb::parallel_for(map.range(), [](const typename Map<E>::range_type &range) {
     for (auto it = range.begin(); it != range.end(); it++) {
       std::vector<Symbol<E> *> &vec = it->second;

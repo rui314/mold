@@ -1217,6 +1217,8 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
+  if (symbols.empty())
+    return;
 
   // We need a stable sort for build reproducibility, but parallel_sort
   // isn't stable, so we use this struct to make it stable.
