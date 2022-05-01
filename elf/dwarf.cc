@@ -317,7 +317,7 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, typename E::WordTy *range
   u64 base = 0;
 
   for (i64 i = 0; range[i] || range[i + 1]; i += 2) {
-    if (range[i] == (typename E::WordTy)-1) {
+    if (range[i] + 1 == 0) {
       // base address selection entry
       base = range[i + 1];
     } else {
