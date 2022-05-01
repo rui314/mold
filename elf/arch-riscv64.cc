@@ -58,17 +58,17 @@ static u32 cjtype(u32 val) {
 
 static void write_itype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'11111'111'11111'1111111;
-  *(ul32 *)loc = (*(ul32 *) & mask) | itype(val);
+  *(ul32 *)loc = (*(ul32 *)loc & mask) | itype(val);
 }
 
 static void write_stype(u8 *loc, u32 val) {
   u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc = (*(ul32 *) & mask) | stype(val);
+  *(ul32 *)loc = (*(ul32 *)loc & mask) | stype(val);
 }
 
 static void write_btype(u8 *loc, u32 val) {
   u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc = (*(ul32 *) & mask) | btype(val);
+  *(ul32 *)loc = (*(ul32 *)loc & mask) | btype(val);
 }
 
 static void write_utype(u8 *loc, u32 val) {
@@ -78,17 +78,17 @@ static void write_utype(u8 *loc, u32 val) {
 
 static void write_jtype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'00000'000'11111'1111111;
-  *(ul32 *)loc = (*(ul16 *) & mask) | jtype(val);
+  *(ul32 *)loc = (*(ul32 *)loc & mask) | jtype(val);
 }
 
 static void write_cbtype(u8 *loc, u32 val) {
   u32 mask = 0b1110001110000011;
-  *(ul16 *)loc = (*(ul16 *) & mask) | cbtype(val);
+  *(ul16 *)loc = (*(ul16 *)loc & mask) | cbtype(val);
 }
 
 static void write_cjtype(u8 *loc, u32 val) {
   u32 mask = 0b1110000000000011;
-  *(ul16 *)loc = (*(ul16 *) & mask) | cjtype(val);
+  *(ul16 *)loc = (*(ul16 *)loc & mask) | cjtype(val);
 }
 
 static void write_plt_header(Context<E> &ctx) {
