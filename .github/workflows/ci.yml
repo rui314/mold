@@ -4,13 +4,15 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+env:
+  UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 jobs:
   build-clang:
     strategy:
       matrix:
         flags:
         - 'LDFLAGS=-fuse-ld=mold'
-        - 'CXXFLAGS="-fsanitize=address -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=address" USE_MIMALLOC=0'
+        - 'CXXFLAGS="-fsanitize=address -fsanitize=undefined -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=address -fsanitize=undefined" USE_MIMALLOC=0'
         - 'CXXFLAGS="-fsanitize=thread -g -Og" LDFLAGS="-fuse-ld=mold -fsanitize=thread" USE_MIMALLOC=0'
     runs-on: ubuntu-20.04
     steps:
