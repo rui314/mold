@@ -1,6 +1,6 @@
 // This file defines integral types for file input/output. You should
 // use these types instead of the plain integers (such as u32 or i32)
-// when reading from/writing to a mmap'ed file area.
+// when reading from/writing to an mmap'ed file area.
 //
 // Here is why you need these types. In C/C++, all data accesses must
 // be aligned. That is, if you read an N byte value from memory, the
@@ -10,12 +10,14 @@
 // undefined behavior.
 //
 // All data members of the ELF data structures are naturally aligned,
-// so it may not look like we don't need the integral types defined in
-// this file to access them. But there's a trap; if an object file is
-// in an archive file (a .a file), it is guaranteed to be aligned only
-// to a 2 bytes boundary. Therefore, any data members larger than 2
-// bytes may be unaligned in an mmap'ed memory, and thus you always
-// need to use the integral types in this file to access it.
+// so it may look like we don't need the integral types defined in
+// this file to access them. But there's a catch; if an object file is
+// in an archive file (a .a file), the beginning of the file is
+// guaranteed to be aligned only to a 2 bytes boundary, because ar
+// aligns each member only to a 2 byte boundary. Therefore, any data
+// members larger than 2 bytes may be unaligned in an mmap'ed memory,
+// and thus you always need to use the integral types in this file to
+// access it.
 
 #pragma once
 
