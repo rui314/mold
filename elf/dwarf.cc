@@ -65,15 +65,15 @@ std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file) {
       if (contents.size() < 14)
         Fatal(ctx) << isec << ": corrupted header";
 
-      u32 len = *(Packed<u32, 1> *)contents.data() + 4;
-      u32 debug_info_offset = *(Packed<u32, 1> *)(contents.data() + 6);
+      u32 len = *(ul32 *)contents.data() + 4;
+      u32 debug_info_offset = *(ul32 *)(contents.data() + 6);
       u32 cu_idx = get_cu_idx(isec, debug_info_offset);
 
       std::string_view data = contents.substr(14, len - 14);
       contents = contents.substr(len);
 
       while (!data.empty()) {
-        u32 offset = *(Packed<u32, 1> *)data.data();
+        u32 offset = *(ul32 *)data.data();
         data = data.substr(4);
         if (offset == 0)
           break;
@@ -125,7 +125,7 @@ static std::tuple<u8 *, u8 *, u32>
 find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Read .debug_info to find the record at a given offset.
   u8 *cu = get_buffer(ctx, ctx.debug_info) + offset;
-  u32 dwarf_version = *(Packed<u16, 1> *)(cu + 4);
+  u32 dwarf_version = *(ul16 *)(cu + 4);
   u32 abbrev_offset;
 
   // Skip a header.
@@ -133,14 +133,14 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   case 2:
   case 3:
   case 4:
-    abbrev_offset = *(Packed<u32, 1> *)(cu + 6);
+    abbrev_offset = *(ul32 *)(cu + 6);
     if (u32 address_size = cu[10]; address_size != E::word_size)
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
     cu += 11;
     break;
   case 5: {
-    abbrev_offset = *(Packed<u32, 1> *)(cu + 8);
+    abbrev_offset = *(ul32 *)(cu + 8);
     if (u32 address_size = cu[7]; address_size != E::word_size)
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
@@ -264,8 +264,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   }
   case DW_FORM_strx3:
   case DW_FORM_addrx3: {
-    u64 val = 0;
-    memcpy(&val, cu, 3); // This assumes little-endian.
+    u64 val = *(ul24 *)cu;
     cu += 3;
     return val;
   }
@@ -276,19 +275,19 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_strx4:
   case DW_FORM_addrx4:
   case DW_FORM_ref4: {
-    u64 val = *(Packed<u32, 1> *)cu;
+    u64 val = *(ul32 *)cu;
     cu += 4;
     return val;
   }
   case DW_FORM_data8:
   case DW_FORM_ref8: {
-    u64 val = *(Packed<u64, 1> *)cu;
+    u64 val = *(ul64 *)cu;
     cu += 8;
     return val;
   }
   case DW_FORM_addr:
   case DW_FORM_ref_addr: {
-    u64 val = *(Packed<typename E::WordTy, 1> *)cu;
+    u64 val = *(typename E::WordTy *)cu;
     cu += E::word_size;
     return val;
   }
@@ -313,7 +312,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
 // (until an end of list entry).
 template <typename E>
 static std::vector<u64>
-read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Packed<typename E::WordTy, 1> *range) {
+read_debug_range(Context<E> &ctx, ObjectFile<E> &file, typename E::WordTy *range) {
   std::vector<u64> vec;
   u64 base = 0;
 
@@ -368,7 +367,7 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
       rnglist += E::word_size;
       break;
     case DW_RLE_start_length:
-      vec.push_back(*(Packed<typename E::WordTy, 1> *)rnglist);
+      vec.push_back(*(typename E::WordTy *)rnglist);
       rnglist += E::word_size;
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
@@ -436,8 +435,8 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Handle non-contiguous address ranges.
   if (ranges.form) {
     if (dwarf_version <= 4) {
-       Packed<typename E::WordTy, 1> *range_begin =
-        (Packed<typename E::WordTy, 1> *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
+       typename E::WordTy *range_begin =
+        (typename E::WordTy *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
       return read_debug_range(ctx, file, range_begin);
     }
 

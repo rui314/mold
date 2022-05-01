@@ -42,7 +42,7 @@
 #elif MOLD_DEBUG_ARM64_ONLY
 # define INSTANTIATE_ALL INSTANTIATE(ARM64)
 #else
-# define INSTANTIATE_ALL                       \
+# define INSTANTIATE_ALL                        \
   INSTANTIATE(X86_64);                          \
   INSTANTIATE(I386);                            \
   INSTANTIATE(ARM64);                           \
@@ -171,7 +171,7 @@ struct CieRecord {
       rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
   i64 size() const {
-    return *(pu32 *)(contents.data() + input_offset) + 4;
+    return *(ul32 *)(contents.data() + input_offset) + 4;
   }
 
   std::string_view get_contents() const {
@@ -1129,7 +1129,7 @@ public:
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
   std::vector<SectionFragmentRef<E>> sym_fragments;
-  std::vector<std::pair<ComdatGroup *, std::span<u32>>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, std::span<ul32>>> comdat_groups;
   bool exclude_libs = false;
   u32 features = 0;
   bool is_lto_obj = false;
@@ -2074,7 +2074,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 
 template <typename E>
 inline i64 FdeRecord<E>::size(ObjectFile<E> &file) const {
-  return *(pu32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
+  return *(ul32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
 }
 
 template <typename E>
@@ -2149,7 +2149,7 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
     return *loc;
   case R_386_16:
   case R_386_PC16:
-    return *(u16 *)loc;
+    return *(ul16 *)loc;
   case R_386_32:
   case R_386_PC32:
   case R_386_GOT32:
@@ -2165,7 +2165,7 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
   case R_386_TLS_GOTDESC:
-    return *(Packed<u32, 1> *)loc;
+    return *(ul32 *)loc;
   }
   unreachable();
 }
@@ -2203,43 +2203,43 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
   case R_ARM_TLS_LE32:
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET2:
-    return *(i32 *)loc;
+    return *(il32 *)loc;
   case R_ARM_THM_JUMP11:
-    return sign_extend(*(u16 *)loc, 10) << 1;
+    return sign_extend(*(ul16 *)loc, 10) << 1;
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
-    u32 S = bit(*(u16 *)loc, 10);
-    u32 J1 = bit(*(u16 *)(loc + 2), 13);
-    u32 J2 = bit(*(u16 *)(loc + 2), 11);
+    u32 S = bit(*(ul16 *)loc, 10);
+    u32 J1 = bit(*(ul16 *)(loc + 2), 13);
+    u32 J2 = bit(*(ul16 *)(loc + 2), 11);
     u32 I1 = !(J1 ^ S);
     u32 I2 = !(J2 ^ S);
-    u32 imm10 = bits(*(u16 *)loc, 9, 0);
-    u32 imm11 = bits(*(u16 *)(loc + 2), 10, 0);
+    u32 imm10 = bits(*(ul16 *)loc, 9, 0);
+    u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
     u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
     return sign_extend(val, 24);
   }
   case R_ARM_CALL:
   case R_ARM_JUMP24:
-    return sign_extend(*(u32 *)loc & 0x00ff'ffff, 23) << 2;
+    return sign_extend(*(ul32 *)loc & 0x00ff'ffff, 23) << 2;
   case R_ARM_MOVW_PREL_NC:
   case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
   case R_ARM_MOVT_ABS: {
-    u32 imm12 = bits(*(u32 *)loc, 11, 0);
-    u32 imm4 = bits(*(u32 *)loc, 19, 16);
+    u32 imm12 = bits(*(ul32 *)loc, 11, 0);
+    u32 imm4 = bits(*(ul32 *)loc, 19, 16);
     return sign_extend((imm4 << 12) | imm12, 15);
   }
   case R_ARM_PREL31:
-    return sign_extend(*(u32 *)loc, 30);
+    return sign_extend(*(ul32 *)loc, 30);
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
   case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_MOVT_ABS: {
-    u32 imm4 = bits(*(u16 *)loc, 3, 0);
-    u32 i = bit(*(u16 *)loc, 10);
-    u32 imm3 = bits(*(u16 *)(loc + 2), 14, 12);
-    u32 imm8 = bits(*(u16 *)(loc + 2), 7, 0);
+    u32 imm4 = bits(*(ul16 *)loc, 3, 0);
+    u32 i = bit(*(ul16 *)loc, 10);
+    u32 imm3 = bits(*(ul16 *)(loc + 2), 14, 12);
+    u32 imm8 = bits(*(ul16 *)(loc + 2), 7, 0);
     u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
     return sign_extend(val, 15);
   }

@@ -56,43 +56,43 @@ static u32 cjtype(u32 val) {
          bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
-static void write_itype(u32 *loc, u32 val) {
+static void write_itype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'11111'111'11111'1111111;
-  *(pu32*)loc = (*loc & mask) | itype(val);
+  *(ul32 *)loc = (*(ul32 *) & mask) | itype(val);
 }
 
-static void write_stype(pu32 *loc, u32 val) {
+static void write_stype(u8 *loc, u32 val) {
   u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *loc = (*loc & mask) | stype(val);
+  *(ul32 *)loc = (*(ul32 *) & mask) | stype(val);
 }
 
-static void write_btype(pu32 *loc, u32 val) {
+static void write_btype(u8 *loc, u32 val) {
   u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *loc = (*loc & mask) | btype(val);
+  *(ul32 *)loc = (*(ul32 *) & mask) | btype(val);
 }
 
-static void write_utype(u32 *loc, u32 val) {
+static void write_utype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'00000'000'11111'1111111;
-  *(pu32*)loc = (*(pu32*)loc & mask) | utype(val);
+  *(ul32 *)loc = (*(ul32 *)loc & mask) | utype(val);
 }
 
-static void write_jtype(pu32 *loc, u32 val) {
+static void write_jtype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'00000'000'11111'1111111;
-  *loc = (*loc & mask) | jtype(val);
+  *(ul32 *)loc = (*(ul16 *) & mask) | jtype(val);
 }
 
-static void write_cbtype(u16 *loc, u32 val) {
+static void write_cbtype(u8 *loc, u32 val) {
   u32 mask = 0b1110001110000011;
-  *loc = (*loc & mask) | cbtype(val);
+  *(ul16 *)loc = (*(ul16 *) & mask) | cbtype(val);
 }
 
-static void write_cjtype(u16 *loc, u32 val) {
+static void write_cjtype(u8 *loc, u32 val) {
   u32 mask = 0b1110000000000011;
-  *loc = (*loc & mask) | cjtype(val);
+  *(ul16 *)loc = (*(ul16 *) & mask) | cjtype(val);
 }
 
 static void write_plt_header(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + ctx.plt->shdr.sh_offset);
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   static const u32 plt0[] = {
     0x00000397, // auipc  t2, %pcrel_hi(.got.plt)
@@ -110,13 +110,13 @@ static void write_plt_header(Context<E> &ctx) {
 
   memcpy(buf, plt0, sizeof(plt0));
   write_utype(buf, gotplt - plt);
-  write_itype(buf + 2, gotplt - plt);
-  write_itype(buf + 4, gotplt - plt);
+  write_itype(buf + 8, gotplt - plt);
+  write_itype(buf + 16, gotplt - plt);
 }
 
 static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
-  u32 *ent = (u32 *)(ctx.buf + ctx.plt->shdr.sh_offset + ctx.plt_hdr_size +
-                     sym.get_plt_idx(ctx) * ctx.plt_size);
+  u8 *ent = ctx.buf + ctx.plt->shdr.sh_offset + ctx.plt_hdr_size +
+            sym.get_plt_idx(ctx) * ctx.plt_size;
 
   static const u32 data[] = {
     0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
@@ -130,7 +130,7 @@ static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
 
   memcpy(ent, data, sizeof(data));
   write_utype(ent, gotplt - plt);
-  write_itype(ent + 1, gotplt - plt);
+  write_itype(ent + 4, gotplt - plt);
 }
 
 template <>
@@ -142,7 +142,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   static const u32 data[] = {
     0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
@@ -152,13 +152,13 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u32 *ent = buf + sym->get_pltgot_idx(ctx) * 4;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * 16;
     u64 got = sym->get_got_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
     memcpy(ent, data, sizeof(data));
     write_utype(ent, got - plt);
-    write_itype(ent + 1, got - plt);
+    write_itype(ent + 4, got - plt);
   }
 }
 
@@ -169,16 +169,16 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_RISCV_ADD32:
-    *(u32 *)loc += val;
+    *(ul32 *)loc += val;
     return;
   case R_RISCV_SUB8:
     *loc -= val;
     return;
   case R_RISCV_SUB16:
-    *(Packed<u16, 1> *)loc -= val;
+    *(ul16 *)loc -= val;
     return;
   case R_RISCV_SUB32:
-    *(u32 *)loc -= val;
+    *(ul32 *)loc -= val;
     return;
   case R_RISCV_SUB6:
     *loc = (*loc & 0b1100'0000) | ((*loc - val) & 0b0011'1111);
@@ -190,10 +190,10 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
     *loc = val;
     return;
   case R_RISCV_SET16:
-    *(Packed<u16, 1> *)loc = val;
+    *(ul16 *)loc = val;
     return;
   case R_RISCV_32_PCREL:
-    *(Packed<u32, 1> *)loc = val - this->shdr.sh_addr - offset;
+    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
     return;
   }
   Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
@@ -226,25 +226,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       frag_ref = &rel_fragments[frag_idx++];
 
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag_ref ? frag_ref->addend : rel.r_addend)
+#define A   (frag_ref ? (u64)frag_ref->addend : (u64)rel.r_addend)
 #define P   (output_section->shdr.sh_addr + offset + r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      *(u32 *)loc = S + A;
+      *(ul32 *)loc = S + A;
       break;
     case R_RISCV_64:
       if (sym.is_absolute() || !ctx.arg.pic) {
-        *(u64 *)loc = S + A;
+        *(ul64 *)loc = S + A;
       } else if (sym.is_imported) {
         *dynrel++ = {P, R_RISCV_64, (u32)sym.get_dynsym_idx(ctx), A};
-        *(u64 *)loc = A;
+        *(ul64 *)loc = A;
       } else {
         if (!is_relr_reloc(ctx, rel))
           *dynrel++ = {P, R_RISCV_RELATIVE, 0, (i64)(S + A)};
-        *(u64 *)loc = S + A;
+        *(ul64 *)loc = S + A;
       }
       break;
     case R_RISCV_TLS_DTPMOD32:
@@ -256,68 +256,68 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       Error(ctx) << *this << ": unsupported relocation: " << rel;
       break;
     case R_RISCV_BRANCH:
-      write_btype((pu32 *)loc, S + A - P);
+      write_btype(loc, S + A - P);
       break;
     case R_RISCV_JAL:
-      write_jtype((pu32 *)loc, S + A - P);
+      write_jtype(loc, S + A - P);
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       if (r_deltas[i + 1] - r_deltas[i] != 0) {
         // auipc + jalr -> jal
         assert(r_deltas[i + 1] - r_deltas[i] == -4);
-        u32 jalr = *(pu32 *)&contents[rels[i].r_offset + 4];
-        *(pu32 *)loc = (0b11111'000000 & jalr) | 0b101111;
-        write_jtype((pu32 *)loc, S + A - P);
+        u32 jalr = *(ul32 *)&contents[rels[i].r_offset + 4];
+        *(ul32 *)loc = (0b11111'000000 & jalr) | 0b101111;
+        write_jtype(loc, S + A - P);
       } else {
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
-        write_utype((u32 *)loc, val);
-        write_itype((u32 *)(loc + 4), val);
+        write_utype(loc, val);
+        write_itype(loc + 4, val);
       }
       break;
     }
     case R_RISCV_GOT_HI20:
-      *(pu32 *)loc = G + GOT + A - P;
+      *(ul32 *)loc = G + GOT + A - P;
       break;
     case R_RISCV_TLS_GOT_HI20:
-      *(pu32 *)loc = sym.get_gottp_addr(ctx) + A - P;
+      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
       break;
     case R_RISCV_TLS_GD_HI20:
-      *(u32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
+      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
       break;
     case R_RISCV_PCREL_HI20:
       if (sym.esym().is_undef_weak()) {
         // Calling an undefined weak symbol does not make sense.
         // We make such call into an infinite loop. This should
         // help debugging of a faulty program.
-        *(u32 *)loc = P;
+        *(ul32 *)loc = P;
       } else {
-        *(pu32 *)loc = S + A - P;
+        *(ul32 *)loc = S + A - P;
       }
       break;
     case R_RISCV_PCREL_LO12_I:
       assert(sym.get_input_section() == this);
       assert(sym.value < r_offset);
-      write_itype((u32 *)loc, *(pu32 *)(base + sym.value));
+      write_itype(loc, *(ul32 *)(base + sym.value));
       break;
     case R_RISCV_LO12_I:
     case R_RISCV_TPREL_LO12_I:
-      write_itype((u32 *)loc, S + A);
+      write_itype(loc, S + A);
       break;
     case R_RISCV_PCREL_LO12_S:
       assert(sym.get_input_section() == this);
       assert(sym.value < r_offset);
-      write_stype((pu32 *)loc, *(pu32 *)(base + sym.value));
+      write_stype(loc, *(ul32 *)(base + sym.value));
       break;
     case R_RISCV_LO12_S:
     case R_RISCV_TPREL_LO12_S:
-      write_stype((pu32 *)loc, S + A);
+      write_stype(loc, S + A);
       break;
     case R_RISCV_HI20:
-      write_utype((u32 *)loc, S + A);
+      write_utype(loc, S + A);
       break;
     case R_RISCV_TPREL_HI20:
-      write_utype((u32 *)loc, S + A - ctx.tls_begin);
+      write_utype(loc, S + A - ctx.tls_begin);
       break;
     case R_RISCV_TPREL_ADD:
       break;
@@ -325,31 +325,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       loc += S + A;
       break;
     case R_RISCV_ADD16:
-      *(u16 *)loc += S + A;
+      *(ul16 *)loc += S + A;
       break;
     case R_RISCV_ADD32:
-      *(Packed<u32, 1> *)loc += S + A;
+      *(ul32 *)loc += S + A;
       break;
     case R_RISCV_ADD64:
-      *(u64 *)loc += S + A;
+      *(ul64 *)loc += S + A;
       break;
     case R_RISCV_SUB8:
       loc -= S + A;
       break;
     case R_RISCV_SUB16:
-      *(u16 *)loc -= S + A;
+      *(ul16 *)loc -= S + A;
       break;
     case R_RISCV_SUB32:
-      *(Packed<u32, 1> *)loc -= S + A;
+      *(ul32 *)loc -= S + A;
       break;
     case R_RISCV_SUB64:
-      *(u64 *)loc -= S + A;
+      *(ul64 *)loc -= S + A;
       break;
     case R_RISCV_RVC_BRANCH:
-      write_cbtype((u16 *)loc, S + A - P);
+      write_cbtype(loc, S + A - P);
       break;
     case R_RISCV_RVC_JUMP:
-      write_cjtype((u16 *)loc, S + A - P);
+      write_cjtype(loc, S + A - P);
       break;
     case R_RISCV_RVC_LUI:
       Error(ctx) << *this << ": unsupported relocation: " << rel;
@@ -364,13 +364,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_RISCV_SET16:
-      *(u16 *)loc = S + A;
+      *(ul16 *)loc = S + A;
       break;
     case R_RISCV_SET32:
-      *(u32 *)loc = S + A;
+      *(ul32 *)loc = S + A;
       break;
     case R_RISCV_32_PCREL:
-      *(u32 *)loc = S + A - P;
+      *(ul32 *)loc = S + A - P;
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
@@ -393,9 +393,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_PCREL_HI20:
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20: {
-      u32 *loc = (u32 *)(base + rels[i].r_offset + r_deltas[i]);
-      u32 val = *(pu32 *)loc;
-      *(pu32 *)loc = *(pu32 *)&contents[rels[i].r_offset];
+      u8 *loc = base + rels[i].r_offset + r_deltas[i];
+      u32 val = *(ul32 *)loc;
+      *(ul32 *)loc = *(ul32 *)&contents[rels[i].r_offset];
       write_utype(loc, val);
     }
     }
@@ -424,41 +424,41 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? addend : rel.r_addend)
+#define A (frag ? (u64)addend : (u64)rel.r_addend)
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      *(Packed<u32, 1> *)loc = S + A;
+      *(ul32 *)loc = S + A;
       break;
     case R_RISCV_64:
       if (std::optional<u64> val = get_tombstone(sym))
-        *(Packed<u64, 1> *)loc = *val;
+        *(ul64 *)loc = *val;
       else
-        *(Packed<u64, 1> *)loc = S + A;
+        *(ul64 *)loc = S + A;
       break;
     case R_RISCV_ADD8:
       *loc += S + A;
       break;
     case R_RISCV_ADD16:
-      *(Packed<u16, 1> *)loc += S + A;
+      *(ul16 *)loc += S + A;
       break;
     case R_RISCV_ADD32:
-      *(u32 *)loc += S + A;
+      *(ul32 *)loc += S + A;
       break;
     case R_RISCV_ADD64:
-      *(Packed<u64, 1> *)loc += S + A;
+      *(ul64 *)loc += S + A;
       break;
     case R_RISCV_SUB8:
       *loc -= S + A;
       break;
     case R_RISCV_SUB16:
-      *(Packed<u16, 1> *)loc -= S + A;
+      *(ul16 *)loc -= S + A;
       break;
     case R_RISCV_SUB32:
-      *(u32 *)loc -= S + A;
+      *(ul32 *)loc -= S + A;
       break;
     case R_RISCV_SUB64:
-      *(Packed<u64, 1> *)loc -= S + A;
+      *(ul64 *)loc -= S + A;
       break;
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
@@ -470,10 +470,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_RISCV_SET16:
-      *(u16 *)loc = S + A;
+      *(ul16 *)loc = S + A;
       break;
     case R_RISCV_SET32:
-      *(u32 *)loc = S + A;
+      *(ul32 *)loc = S + A;
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
@@ -711,7 +711,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
       u64 next_loc = loc + r.r_addend;
 
       u64 alignment = (std::popcount<u64>(r.r_addend) == 1)
-        ? r.r_addend : next_power_of_two(r.r_addend);
+        ? (u64)r.r_addend : next_power_of_two(r.r_addend);
 
       if (next_loc % alignment)
         delta2 = align_to(loc, alignment) - next_loc;

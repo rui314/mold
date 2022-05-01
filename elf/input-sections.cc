@@ -39,7 +39,7 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
     contents = {(char *)file.mf->data + shdr().sh_offset, (size_t)shdr().sh_size};
 
   if (name.starts_with(".zdebug")) {
-    sh_size = *(ubig64 *)&contents[4];
+    sh_size = *(ub64 *)&contents[4];
     p2align = to_p2align(shdr().sh_addralign);
     compressed = true;
   } else if (shdr().sh_flags & SHF_COMPRESSED) {

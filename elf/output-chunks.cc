@@ -182,7 +182,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
     phdr.p_offset = chunk->shdr.sh_offset;
     phdr.p_filesz =
-      (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : chunk->shdr.sh_size;
+      (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : (u64)chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_paddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
@@ -878,7 +878,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     // Zero-clear trailing padding
     u64 this_end = isec.offset + isec.sh_size;
     u64 next_start = (i == members.size() - 1) ?
-      this->shdr.sh_size : members[i + 1]->offset;
+      (u64)this->shdr.sh_size : members[i + 1]->offset;
     memset(buf + this_end, 0, next_start - this_end);
   });
 }
@@ -1136,7 +1136,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the psABI. The second and the third slots are reserved by the psABI.
-  buf[0] = ctx.dynamic ? ctx.dynamic->shdr.sh_addr : 0;
+  buf[0] = ctx.dynamic ? (u64)ctx.dynamic->shdr.sh_addr : 0;
   buf[1] = 0;
   buf[2] = 0;
 
@@ -2459,7 +2459,7 @@ template <typename E>
 void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, "ZLIB", 4);
-  *(ubig64 *)(base + 4) = this->original_size;
+  *(ub64 *)(base + 4) = this->original_size;
   compressed->write_to(base + 12);
 }
 

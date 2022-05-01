@@ -1,6 +1,6 @@
 #pragma once
 
-#include "big-endian.h"
+#include "inttypes.h"
 
 #include <atomic>
 #include <bit>

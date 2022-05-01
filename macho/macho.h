@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../big-endian.h"
-#include "../packed.h"
+#include "../inttypes.h"
 
 #include <cassert>
 #include <cstdint>
@@ -19,9 +18,6 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
-
-using pi32 = Packed<i32, 1>;
-using pu32 = Packed<u32, 1>;
 
 static constexpr u32 FAT_MAGIC = 0xcafebabe;
 
@@ -334,16 +330,16 @@ static constexpr u32 X86_64_RELOC_SIGNED_4 = 8;
 static constexpr u32 X86_64_RELOC_TLV = 9;
 
 struct FatHeader {
-  ubig32 magic;
-  ubig32 nfat_arch;
+  ub32 magic;
+  ub32 nfat_arch;
 };
 
 struct FatArch {
-  ubig32 cputype;
-  ubig32 cpusubtype;
-  ubig32 offset;
-  ubig32 size;
-  ubig32 align;
+  ub32 cputype;
+  ub32 cpusubtype;
+  ub32 offset;
+  ub32 size;
+  ub32 align;
 };
 
 struct MachHeader {
@@ -358,8 +354,8 @@ struct MachHeader {
 };
 
 struct LoadCommand {
-  pu32 cmd;
-  pu32 cmdsize;
+  ul32 cmd;
+  ul32 cmdsize;
 };
 
 struct SegmentCommand {
@@ -639,39 +635,39 @@ static constexpr u32 CS_EXECSEG_MAIN_BINARY = 1;
 static constexpr u32 CS_HASHTYPE_SHA256 = 2;
 
 struct CodeSignatureHeader {
-  ubig32 magic;
-  ubig32 length;
-  ubig32 count;
+  ub32 magic;
+  ub32 length;
+  ub32 count;
 };
 
 struct CodeSignatureBlobIndex {
-  ubig32 type;
-  ubig32 offset;
+  ub32 type;
+  ub32 offset;
   u32 padding;
 };
 
 struct CodeSignatureDirectory {
-  ubig32 magic;
-  ubig32 length;
-  ubig32 version;
-  ubig32 flags;
-  ubig32 hash_offset;
-  ubig32 ident_offset;
-  ubig32 n_special_slots;
-  ubig32 n_code_slots;
-  ubig32 code_limit;
+  ub32 magic;
+  ub32 length;
+  ub32 version;
+  ub32 flags;
+  ub32 hash_offset;
+  ub32 ident_offset;
+  ub32 n_special_slots;
+  ub32 n_code_slots;
+  ub32 code_limit;
   u8 hash_size;
   u8 hash_type;
   u8 platform;
   u8 page_size;
-  ubig32 spare2;
-  ubig32 scatter_offset;
-  ubig32 team_offset;
-  ubig32 spare3;
-  ubig64 code_limit64;
-  ubig64 exec_seg_base;
-  ubig64 exec_seg_limit;
-  ubig64 exec_seg_flags;
+  ub32 spare2;
+  ub32 scatter_offset;
+  ub32 team_offset;
+  ub32 spare3;
+  ub64 code_limit64;
+  ub64 exec_seg_base;
+  ub64 exec_seg_limit;
+  ub64 exec_seg_flags;
 };
 
 struct ARM64 {

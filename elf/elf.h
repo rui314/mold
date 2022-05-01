@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../packed.h"
+#include "../inttypes.h"
+
 #include <cstdint>
 #include <ostream>
 #include <string>
@@ -16,14 +17,6 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
-
-using pu8 = u8;
-using pu16 = Packed<u16, 2>;
-using pu32 = Packed<u32, 2>;
-using pu64 = Packed<u64, 2>;
-using pi32 = Packed<i32, 2>;
-using pi64 = Packed<i64, 2>;
-using pu24 = Packed<u32, 1, 3>;
 
 struct X86_64;
 struct I386;
@@ -1142,13 +1135,13 @@ struct Elf64Sym {
     return st_shndx == SHN_UNDEF && st_bind == STB_WEAK;
   }
 
-  pu32 st_name;
-  pu8 st_type : 4;
-  pu8 st_bind : 4;
-  pu8 st_visibility : 2;
-  pu16 st_shndx;
-  pu64 st_value;
-  pu64 st_size;
+  ul32 st_name;
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  ul16 st_shndx;
+  ul64 st_value;
+  ul64 st_size;
 };
 
 struct Elf32Sym {
@@ -1166,118 +1159,114 @@ struct Elf32Sym {
     return st_shndx == SHN_UNDEF && st_bind == STB_WEAK;
   }
 
-  pu32 st_name;
-  pu32 st_value;
-  pu32 st_size;
-  pu8 st_type : 4;
-  pu8 st_bind : 4;
-  pu8 st_visibility : 2;
-  pu16 st_shndx;
+  ul32 st_name;
+  ul32 st_value;
+  ul32 st_size;
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  ul16 st_shndx;
 };
 
 struct Elf64Shdr {
-  pu32 sh_name;
-  pu32 sh_type;
-  pu64 sh_flags;
-  pu64 sh_addr;
-  pu64 sh_offset;
-  pu64 sh_size;
-  pu32 sh_link;
-  pu32 sh_info;
-  pu64 sh_addralign;
-  pu64 sh_entsize;
+  ul32 sh_name;
+  ul32 sh_type;
+  ul64 sh_flags;
+  ul64 sh_addr;
+  ul64 sh_offset;
+  ul64 sh_size;
+  ul32 sh_link;
+  ul32 sh_info;
+  ul64 sh_addralign;
+  ul64 sh_entsize;
 };
 
 struct Elf32Shdr {
-  pu32 sh_name;
-  pu32 sh_type;
-  pu32 sh_flags;
-  pu32 sh_addr;
-  pu32 sh_offset;
-  pu32 sh_size;
-  pu32 sh_link;
-  pu32 sh_info;
-  pu32 sh_addralign;
-  pu32 sh_entsize;
+  ul32 sh_name;
+  ul32 sh_type;
+  ul32 sh_flags;
+  ul32 sh_addr;
+  ul32 sh_offset;
+  ul32 sh_size;
+  ul32 sh_link;
+  ul32 sh_info;
+  ul32 sh_addralign;
+  ul32 sh_entsize;
 };
 
 struct Elf64Ehdr {
-  pu8 e_ident[16];
-  pu16 e_type;
-  pu16 e_machine;
-  pu32 e_version;
-  pu64 e_entry;
-  pu64 e_phoff;
-  pu64 e_shoff;
-  pu32 e_flags;
-  pu16 e_ehsize;
-  pu16 e_phentsize;
-  pu16 e_phnum;
-  pu16 e_shentsize;
-  pu16 e_shnum;
-  pu16 e_shstrndx;
+  u8 e_ident[16];
+  ul16 e_type;
+  ul16 e_machine;
+  ul32 e_version;
+  ul64 e_entry;
+  ul64 e_phoff;
+  ul64 e_shoff;
+  ul32 e_flags;
+  ul16 e_ehsize;
+  ul16 e_phentsize;
+  ul16 e_phnum;
+  ul16 e_shentsize;
+  ul16 e_shnum;
+  ul16 e_shstrndx;
 };
 
 struct Elf32Ehdr {
-  pu8 e_ident[16];
-  pu16 e_type;
-  pu16 e_machine;
-  pu32 e_version;
-  pu32 e_entry;
-  pu32 e_phoff;
-  pu32 e_shoff;
-  pu32 e_flags;
-  pu16 e_ehsize;
-  pu16 e_phentsize;
-  pu16 e_phnum;
-  pu16 e_shentsize;
-  pu16 e_shnum;
-  pu16 e_shstrndx;
+  u8 e_ident[16];
+  ul16 e_type;
+  ul16 e_machine;
+  ul32 e_version;
+  ul32 e_entry;
+  ul32 e_phoff;
+  ul32 e_shoff;
+  ul32 e_flags;
+  ul16 e_ehsize;
+  ul16 e_phentsize;
+  ul16 e_phnum;
+  ul16 e_shentsize;
+  ul16 e_shnum;
+  ul16 e_shstrndx;
 };
 
 struct Elf64Phdr {
-  pu32 p_type;
-  pu32 p_flags;
-  pu64 p_offset;
-  pu64 p_vaddr;
-  pu64 p_paddr;
-  pu64 p_filesz;
-  pu64 p_memsz;
-  pu64 p_align;
+  ul32 p_type;
+  ul32 p_flags;
+  ul64 p_offset;
+  ul64 p_vaddr;
+  ul64 p_paddr;
+  ul64 p_filesz;
+  ul64 p_memsz;
+  ul64 p_align;
 };
 
 struct Elf32Phdr {
-  pu32 p_type;
-  pu32 p_offset;
-  pu32 p_vaddr;
-  pu32 p_paddr;
-  pu32 p_filesz;
-  pu32 p_memsz;
-  pu32 p_flags;
-  pu32 p_align;
+  ul32 p_type;
+  ul32 p_offset;
+  ul32 p_vaddr;
+  ul32 p_paddr;
+  ul32 p_filesz;
+  ul32 p_memsz;
+  ul32 p_flags;
+  ul32 p_align;
 };
 
 struct Elf64Rel {
-  pu64 r_offset;
-  pu32 r_type;
-  pu32 r_sym;
+  ul64 r_offset;
+  ul32 r_type;
+  ul32 r_sym;
 };
 
 struct Elf32Rel {
-  Elf32Rel(u64 offset, u32 type, u32 sym) : r_offset(offset), r_type(type), r_sym(sym) {}
-
-  pu32 r_offset;
-  pu8 r_type;
-  pu24 r_sym;
+  ul32 r_offset;
+  u8 r_type;
+  ul24 r_sym;
 };
 
 struct Elf64Rela {
-  Elf64Rela(u64 offset, u32 type, u32 sym, i64 addend) : r_offset(offset), r_type(type), r_sym(sym), r_addend(addend) {}
-
-  pu64 r_offset;
-  pu32 r_type;
-  pu32 r_sym;
-  pi64 r_addend;
+  ul64 r_offset;
+  ul32 r_type;
+  ul32 r_sym;
+  il64 r_addend;
 };
 
 struct Elf32Rela {
@@ -1342,13 +1331,13 @@ struct Elf32Chdr {
 };
 
 struct ElfNhdr {
-  pu32 n_namesz;
-  pu32 n_descsz;
-  pu32 n_type;
+  ul32 n_namesz;
+  ul32 n_descsz;
+  ul32 n_type;
 };
 
 struct X86_64 {
-  using WordTy = u64;
+  using WordTy = ul64;
 
   static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -1374,14 +1363,12 @@ template <> struct ElfSym<X86_64> : public Elf64Sym {};
 template <> struct ElfShdr<X86_64> : public Elf64Shdr {};
 template <> struct ElfEhdr<X86_64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<X86_64> : public Elf64Phdr {};
-template <> struct ElfRel<X86_64> : public Elf64Rela {
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend) : Elf64Rela(offset, type, sym, addend) {}
-};
+template <> struct ElfRel<X86_64> : public Elf64Rela {};
 template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
-  using WordTy = u32;
+  using WordTy = ul32;
 
   static constexpr u32 R_NONE = R_386_NONE;
   static constexpr u32 R_COPY = R_386_COPY;
@@ -1407,14 +1394,12 @@ template <> struct ElfSym<I386> : public Elf32Sym {};
 template <> struct ElfShdr<I386> : public Elf32Shdr {};
 template <> struct ElfEhdr<I386> : public Elf32Ehdr {};
 template <> struct ElfPhdr<I386> : public Elf32Phdr {};
-template <> struct ElfRel<I386> : public Elf32Rel {
-  ElfRel(u64 offset, u32 type, u32 sym) : Elf32Rel(offset, type, sym) {}
-};
+template <> struct ElfRel<I386> : public Elf32Rel {};
 template <> struct ElfDyn<I386> : public Elf32Dyn {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
 
 struct ARM64 {
-  using WordTy = u64;
+  using WordTy = ul64;
 
   static constexpr u32 R_NONE = R_AARCH64_NONE;
   static constexpr u32 R_COPY = R_AARCH64_COPY;
@@ -1440,14 +1425,12 @@ template <> struct ElfSym<ARM64> : public Elf64Sym {};
 template <> struct ElfShdr<ARM64> : public Elf64Shdr {};
 template <> struct ElfEhdr<ARM64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<ARM64> : public Elf64Phdr {};
-template <> struct ElfRel<ARM64> : public Elf64Rela {
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend) : Elf64Rela(offset, type, sym, addend) {}
-};
+template <> struct ElfRel<ARM64> : public Elf64Rela {};
 template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
 template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
 
 struct ARM32 {
-  using WordTy = u32;
+  using WordTy = ul32;
 
   static constexpr u32 R_NONE = R_ARM_NONE;
   static constexpr u32 R_COPY = R_ARM_COPY;
@@ -1473,14 +1456,12 @@ template <> struct ElfSym<ARM32> : public Elf32Sym {};
 template <> struct ElfShdr<ARM32> : public Elf32Shdr {};
 template <> struct ElfEhdr<ARM32> : public Elf32Ehdr {};
 template <> struct ElfPhdr<ARM32> : public Elf32Phdr {};
-template <> struct ElfRel<ARM32> : public Elf32Rel {
-  ElfRel(u64 offset, u32 type, u32 sym) : Elf32Rel(offset, type, sym) {}
-};
+template <> struct ElfRel<ARM32> : public Elf32Rel {};
 template <> struct ElfDyn<ARM32> : public Elf32Dyn {};
 template <> struct ElfChdr<ARM32> : public Elf32Chdr {};
 
 struct RISCV64 {
-  using WordTy = u64;
+  using WordTy = ul64;
 
   static constexpr u32 R_NONE = R_RISCV_NONE;
   static constexpr u32 R_COPY = R_RISCV_COPY;
@@ -1505,9 +1486,7 @@ template <> struct ElfSym<RISCV64> : public Elf64Sym {};
 template <> struct ElfShdr<RISCV64> : public Elf64Shdr {};
 template <> struct ElfEhdr<RISCV64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<RISCV64> : public Elf64Phdr {};
-template <> struct ElfRel<RISCV64> : public Elf64Rela {
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend) : Elf64Rela(offset, type, sym, addend) {}
-};
+template <> struct ElfRel<RISCV64> : public Elf64Rela {};
 template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
 template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
 
