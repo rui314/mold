@@ -363,7 +363,8 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   obj->priority = 1;
 
   auto add = [&](std::string_view name, u8 st_type = STT_NOTYPE) {
-    ElfSym<E> esym = {};
+    ElfSym<E> esym;
+    memset(&esym, 0, sizeof(esym));
     esym.st_type = st_type;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
@@ -429,7 +430,8 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
 
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
-    ElfSym<E> esym = {};
+    ElfSym<E> esym;
+    memset(&esym, 0, sizeof(esym));
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
