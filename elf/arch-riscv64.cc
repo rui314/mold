@@ -431,10 +431,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A;
       break;
     case R_RISCV_64:
-      if (std::optional<u64> val = get_tombstone(sym))
-        *(ul64 *)loc = *val;
-      else
-        *(ul64 *)loc = S + A;
+      if (!frag) {
+        if (std::optional<u64> val = get_tombstone(sym)) {
+          *(ul64 *)loc = *val;
+          break;
+        }
+      }
+      *(ul64 *)loc = S + A;
       break;
     case R_RISCV_ADD8:
       *loc += S + A;

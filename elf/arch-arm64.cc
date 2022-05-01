@@ -369,10 +369,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
-      if (std::optional<u64> val = get_tombstone(sym))
-        *(ul64 *)loc = *val;
-      else
-        *(ul64 *)loc = S + A;
+      if (!frag) {
+        if (std::optional<u64> val = get_tombstone(sym)) {
+          *(ul64 *)loc = *val;
+          break;
+        }
+      }
+      *(ul64 *)loc = S + A;
       continue;
     case R_AARCH64_ABS32:
       *(ul32 *)loc = S + A;

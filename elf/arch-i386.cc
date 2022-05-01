@@ -384,10 +384,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       write16(S + A);
       continue;
     case R_386_32:
-      if (std::optional<u64> val = get_tombstone(sym))
-        *(ul32 *)loc = *val;
-      else
-        *(ul32 *)loc = S + A;
+      if (!frag) {
+        if (std::optional<u64> val = get_tombstone(sym)) {
+          *(ul32 *)loc = *val;
+          continue;
+        }
+      }
+      *(ul32 *)loc = S + A;
       continue;
     case R_386_PC8:
       write8s(S + A);

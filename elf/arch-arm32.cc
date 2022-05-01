@@ -339,10 +339,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
-      if (std::optional<u64> val = get_tombstone(sym))
-        *(ul32 *)loc = *val;
-      else
-        *(ul32 *)loc = S + A;
+      if (!frag) {
+        if (std::optional<u64> val = get_tombstone(sym)) {
+          *(ul32 *)loc = *val;
+          break;
+        }
+      }
+      *(ul32 *)loc = S + A;
       break;
     case R_ARM_TLS_LDO32:
       if (std::optional<u64> val = get_tombstone(sym))
