@@ -128,7 +128,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -162,57 +162,57 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *dynrel++ = {P, R_AARCH64_RELATIVE, 0, (i64)(S + A)};
         *(ul64 *)loc = S + A;
       }
-      continue;
+      break;
     case R_AARCH64_LDST8_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
-      continue;
+      break;
     case R_AARCH64_LDST16_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 1) << 10;
-      continue;
+      break;
     case R_AARCH64_LDST32_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 2) << 10;
-      continue;
+      break;
     case R_AARCH64_LDST64_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 3) << 10;
-      continue;
+      break;
     case R_AARCH64_LDST128_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 4) << 10;
-      continue;
+      break;
     case R_AARCH64_ADD_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
-      continue;
+      break;
     case R_AARCH64_MOVW_UABS_G0:
     case R_AARCH64_MOVW_UABS_G0_NC:
       *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
-      continue;
+      break;
     case R_AARCH64_MOVW_UABS_G1:
     case R_AARCH64_MOVW_UABS_G1_NC:
       *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
-      continue;
+      break;
     case R_AARCH64_MOVW_UABS_G2:
     case R_AARCH64_MOVW_UABS_G2_NC:
       *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
-      continue;
+      break;
     case R_AARCH64_MOVW_UABS_G3:
       *(ul32 *)loc |= bits(S + A, 63, 48) << 5;
-      continue;
+      break;
     case R_AARCH64_ADR_GOT_PAGE: {
       i64 val = page(G + GOT + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
-      continue;
+      break;
     }
     case R_AARCH64_ADR_PREL_PG_HI21: {
       i64 val = page(S + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
-      continue;
+      break;
     }
     case R_AARCH64_ADR_PREL_LO21: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 20), (i64)1 << 20);
       write_adr(loc, val);
-      continue;
+      break;
     }
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26: {
@@ -220,7 +220,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc |= 1;
-        continue;
+        break;
       }
 
       i64 lo = -(1 << 27);
@@ -234,67 +234,67 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       *(ul32 *)loc |= (val >> 2) & 0x3ffffff;
-      continue;
+      break;
     }
     case R_AARCH64_CONDBR19:
     case R_AARCH64_LD_PREL_LO19: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 20), (i64)1 << 20);
       *(ul32 *)loc |= bits(val, 20, 2) << 5;
-      continue;
+      break;
     }
     case R_AARCH64_PREL16: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 15), (i64)1 << 15);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_AARCH64_PREL32: {
       i64 val = S + A - P;
       overflow_check(val, -((i64)1 << 31), (i64)1 << 32);
       *(ul32 *)loc = val;
-      continue;
+      break;
     }
     case R_AARCH64_PREL64:
       *(ul64 *)loc = S + A - P;
-      continue;
+      break;
     case R_AARCH64_LD64_GOT_LO12_NC:
       *(ul32 *)loc |= bits(G + GOT + A, 11, 3) << 10;
-      continue;
+      break;
     case R_AARCH64_LD64_GOTPAGE_LO15: {
       i64 val = G + GOT + A - page(GOT);
       overflow_check(val, 0, 1 << 15);
       *(ul32 *)loc |= bits(val, 14, 3) << 10;
-      continue;
+      break;
     }
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21: {
       i64 val = page(sym.get_gottp_addr(ctx) + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
-      continue;
+      break;
     }
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
       *(ul32 *)loc |= bits(sym.get_gottp_addr(ctx) + A, 11, 3) << 10;
-      continue;
+      break;
     case R_AARCH64_TLSLE_ADD_TPREL_HI12: {
       i64 val = S + A - ctx.tls_begin + 16;
       overflow_check(val, 0, (i64)1 << 24);
       *(ul32 *)loc |= bits(val, 23, 12) << 10;
-      continue;
+      break;
     }
     case R_AARCH64_TLSLE_ADD_TPREL_LO12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(ul32 *)loc |= bits(S + A - ctx.tls_begin + 16, 11, 0) << 10;
-      continue;
+      break;
     case R_AARCH64_TLSGD_ADR_PAGE21: {
       i64 val = page(sym.get_tlsgd_addr(ctx) + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
       write_adr(loc, bits(val, 32, 12));
-      continue;
+      break;
     }
     case R_AARCH64_TLSGD_ADD_LO12_NC:
       *(ul32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
-      continue;
+      break;
     case R_AARCH64_TLSDESC_ADR_PAGE21: {
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // adrp x0, 0 -> movz x0, #tls_ofset_hi, lsl #16
@@ -306,7 +306,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
         write_adr(loc, bits(val, 32, 12));
       }
-      continue;
+      break;
     }
     case R_AARCH64_TLSDESC_LD64_LO12:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
@@ -316,7 +316,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
       }
-      continue;
+      break;
     case R_AARCH64_TLSDESC_ADD_LO12:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // add x0, x0, #0 -> nop
@@ -324,13 +324,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
       }
-      continue;
+      break;
     case R_AARCH64_TLSDESC_CALL:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // blr x2 -> nop
         *(ul32 *)loc = 0xd503201f;
       }
-      continue;
+      break;
     default:
       unreachable();
     }
@@ -350,14 +350,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     SectionFragment<E> *frag;
@@ -376,10 +376,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
         }
       }
       *(ul64 *)loc = S + A;
-      continue;
+      break;
     case R_AARCH64_ABS32:
       *(ul32 *)loc = S + A;
-      continue;
+      break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
@@ -402,13 +402,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_AARCH64_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     if (sym.get_type() == STT_GNU_IFUNC) {
@@ -582,18 +582,18 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       for (i64 i = 0; i < rels.size(); i++) {
         const ElfRel<E> &rel = rels[i];
         if (rel.r_type != R_AARCH64_CALL26 && rel.r_type != R_AARCH64_JUMP26)
-          continue;
+          break;
 
         Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
         // Skip if the destination is within reach.
         if (is_reachable(ctx, sym, *isec, rel))
-          continue;
+          break;
 
         // If the symbol is already in another thunk, reuse it.
         if (sym.extra.thunk_idx != -1) {
           range_extn[i] = {sym.extra.thunk_idx, sym.extra.thunk_sym_idx};
-          continue;
+          break;
         }
 
         // Otherwise, add the symbol to this thunk if it's not added already.
@@ -659,7 +659,7 @@ static void gc_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
     for (i64 i = 0; i < rels.size(); i++) {
       RangeExtensionRef &ref = range_extn[i];
       if (ref.thunk_idx == -1)
-        continue;
+        break;
 
       Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
       if (!is_reachable(ctx, sym, *isec, rels[i]))

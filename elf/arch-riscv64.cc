@@ -215,7 +215,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX ||
         rel.r_type == R_RISCV_ALIGN)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     i64 r_offset = rel.r_offset + r_deltas[i];
@@ -409,14 +409,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_RISCV_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     SectionFragment<E> *frag;
@@ -509,7 +509,7 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   for (i64 i = 0; i < rels.size(); i++) {
     i64 delta = r_deltas[i + 1] - r_deltas[i];
     if (delta == 0)
-      continue;
+      break;
     assert(delta < 0);
 
     const ElfRel<E> &r = rels[i];
@@ -532,13 +532,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_RISCV_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     if (sym.get_type() == STT_GNU_IFUNC) {
@@ -736,7 +736,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
     }
 
     if (delta2 == 0)
-      continue;
+      break;
 
     while (!syms.empty() && syms[0]->value <= r.r_offset) {
       syms[0]->value += delta;

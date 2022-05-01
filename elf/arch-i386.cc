@@ -121,7 +121,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -170,10 +170,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_386_8:
       write8(S + A);
-      continue;
+      break;
     case R_386_16:
       write16(S + A);
-      continue;
+      break;
     case R_386_32:
       if (sym.is_absolute() || !ctx.arg.pic) {
         write32(S + A);
@@ -185,13 +185,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *dynrel++ = {P, R_386_RELATIVE, 0};
         write32(S + A);
       }
-      continue;
+      break;
     case R_386_PC8:
       write8s(S + A);
-      continue;
+      break;
     case R_386_PC16:
       write16s(S + A);
-      continue;
+      break;
     case R_386_PC32:
       if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
         write32(S + A - P);
@@ -199,29 +199,29 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *dynrel++ = {P, R_386_32, (u32)sym.get_dynsym_idx(ctx)};
         write32(A);
       }
-      continue;
+      break;
     case R_386_PLT32:
       write32(S + A - P);
-      continue;
+      break;
     case R_386_GOT32:
     case R_386_GOT32X:
       write32(G + A);
-      continue;
+      break;
     case R_386_GOTOFF:
       write32(S + A - GOT);
-      continue;
+      break;
     case R_386_GOTPC:
       write32(GOT + A - P);
-      continue;
+      break;
     case R_386_TLS_GOTIE:
       write32(sym.get_gottp_addr(ctx) + A - GOT);
-      continue;
+      break;
     case R_386_TLS_LE:
       write32(S + A - ctx.tls_end);
-      continue;
+      break;
     case R_386_TLS_IE:
       write32(sym.get_gottp_addr(ctx) + A);
-      continue;
+      break;
     case R_386_TLS_GD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
@@ -252,7 +252,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32(sym.get_tlsgd_addr(ctx) + A - GOT);
       }
-      continue;
+      break;
     case R_386_TLS_LDM:
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
@@ -283,16 +283,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32(ctx.got->get_tlsld_addr(ctx) + A - GOT);
       }
-      continue;
+      break;
     case R_386_TLS_LDO_32:
       if (ctx.got->tlsld_idx == -1)
         write32(S + A - ctx.tls_end);
       else
         write32(S + A - ctx.tls_begin);
-      continue;
+      break;
     case R_386_SIZE32:
       write32(sym.esym().st_size + A);
-      continue;
+      break;
     case R_386_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         static const u8 insn[] = {
@@ -303,14 +303,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32(sym.get_tlsdesc_addr(ctx) + A - GOT);
       }
-      continue;
+      break;
     case R_386_TLS_DESC_CALL:
       if (ctx.arg.relax && !ctx.arg.shared) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
-      continue;
+      break;
     default:
       unreachable();
     }
@@ -330,14 +330,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     SectionFragment<E> *frag;
@@ -379,43 +379,43 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_386_8:
       write8(S + A);
-      continue;
+      break;
     case R_386_16:
       write16(S + A);
-      continue;
+      break;
     case R_386_32:
       if (!frag) {
         if (std::optional<u64> val = get_tombstone(sym)) {
           *(ul32 *)loc = *val;
-          continue;
+          break;
         }
       }
       *(ul32 *)loc = S + A;
-      continue;
+      break;
     case R_386_PC8:
       write8s(S + A);
-      continue;
+      break;
     case R_386_PC16:
       write16s(S + A);
-      continue;
+      break;
     case R_386_PC32:
       *(ul32 *)loc = S + A;
-      continue;
+      break;
     case R_386_GOTPC:
       *(ul32 *)loc = GOT + A;
-      continue;
+      break;
     case R_386_GOTOFF:
       *(ul32 *)loc = S + A - GOT;
-      continue;
+      break;
     case R_386_TLS_LDO_32:
       if (std::optional<u64> val = get_tombstone(sym))
         *(ul32 *)loc = *val;
       else
         *(ul32 *)loc = S + A - ctx.tls_begin;
-      continue;
+      break;
     case R_386_SIZE32:
       *(ul32 *)loc = sym.esym().st_size + A;
-      continue;
+      break;
     default:
       unreachable();
     }
@@ -437,13 +437,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_386_NONE)
-      continue;
+      break;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      continue;
+      break;
     }
 
     if (sym.get_type() == STT_GNU_IFUNC) {
