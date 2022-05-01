@@ -374,7 +374,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
   if constexpr (std::is_same_v<E, I386> || std::is_same_v<E, ARM32>)
-    return {(u32)offset, type, sym};
+    return {(u32)offset, (u8)type, sym};
   else
     return {offset, type, sym, addend};
 }
