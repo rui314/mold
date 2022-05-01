@@ -18,7 +18,7 @@ static void write_compact_plt(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(pu32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
 }
 
@@ -51,7 +51,7 @@ static void write_ibtplt(Context<E> &ctx) {
 
   memcpy(buf, plt0, sizeof(plt0));
   *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 4;
-  *(u32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 2;
+  *(pu32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 2;
 
   // Write PLT entries
   i64 relplt_idx = 0;
@@ -65,7 +65,7 @@ static void write_ibtplt(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 6) = relplt_idx++;
+    *(pu32 *)(ent + 6) = relplt_idx++;
     *(u32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 16;
   }
 }
@@ -82,7 +82,7 @@ static void write_plt(Context<E> &ctx) {
   };
 
   memcpy(buf, plt0, sizeof(plt0));
-  *(u32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 2;
+  *(pu32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 2;
   *(u32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4;
 
   // Write PLT entries
@@ -97,8 +97,8 @@ static void write_plt(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.plt->symbols) {
     u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
-    *(u32 *)(ent + 7) = relplt_idx++;
+    *(pu32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(Packed<u32, 1> *)(ent + 7) = relplt_idx++;
     *(u32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
   }
 }
@@ -125,7 +125,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * X86_64::pltgot_size;
     memcpy(ent, data, sizeof(data));
-    *(u32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(pu32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
 }
 
@@ -144,10 +144,10 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
     *(u64 *)loc = val;
     return;
   case R_X86_64_PC32:
-    *(u32 *)loc = val - this->shdr.sh_addr - offset;
+    *(Packed<u32, 1> *)loc = val - this->shdr.sh_addr - offset;
     return;
   case R_X86_64_PC64:
-    *(u64 *)loc = val - this->shdr.sh_addr - offset;
+    *(Packed<u64, 1> *)loc = val - this->shdr.sh_addr - offset;
     return;
   }
   unreachable();
@@ -271,26 +271,26 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto write16 = [&](u64 val) {
       overflow_check(val, 0, 1 << 16);
-      *(u16 *)loc = val;
+      *(Packed<u16, 1> *)loc = val;
     };
 
     auto write16s = [&](u64 val) {
       overflow_check(val, -(1 << 15), 1 << 15);
-      *(u16 *)loc = val;
+      *(Packed<u16, 1> *)loc = val;
     };
 
     auto write32 = [&](u64 val) {
       overflow_check(val, 0, (i64)1 << 32);
-      *(u32 *)loc = val;
+      *(Packed<u32, 1> *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
       overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
-      *(u32 *)loc = val;
+      *(Packed<u32, 1> *)loc = val;
     };
 
     auto write64 = [&](u64 val) {
-      *(u64 *)loc = val;
+      *(Packed<u64, 1> *)loc = val;
     };
 
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
@@ -404,7 +404,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
           };
           memcpy(loc - 4, insn, sizeof(insn));
-          *(u32 *)(loc + 8) = val;
+          *(Packed<u32, 1> *)(loc + 8) = val;
           break;
         }
         case R_X86_64_PLTOFF64: {
@@ -414,7 +414,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
-          *(u32 *)(loc + 9) = val;
+          *(Packed<u32, 1> *)(loc + 9) = val;
           break;
         }
         default:
@@ -583,7 +583,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     auto write32 = [&](u64 val) {
       overflow_check(val, 0, (i64)1 << 32);
-      *(u32 *)loc = val;
+      *(Packed<u32, 1> *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
@@ -609,9 +609,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       break;
     case R_X86_64_64:
       if (std::optional<u64> val = get_tombstone(sym))
-        *(u64 *)loc = *val;
+        *(Packed<u64, 1> *)loc = *val;
       else
-        *(u64 *)loc = S + A;
+        *(Packed<u64, 1> *)loc = S + A;
       break;
     case R_X86_64_DTPOFF32:
       if (std::optional<u64> val = get_tombstone(sym))

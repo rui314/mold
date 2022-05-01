@@ -171,7 +171,7 @@ struct CieRecord {
       rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
   i64 size() const {
-    return *(u32 *)(contents.data() + input_offset) + 4;
+    return *(pu32 *)(contents.data() + input_offset) + 4;
   }
 
   std::string_view get_contents() const {
@@ -2074,7 +2074,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 
 template <typename E>
 inline i64 FdeRecord<E>::size(ObjectFile<E> &file) const {
-  return *(u32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
+  return *(pu32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
 }
 
 template <typename E>
@@ -2165,7 +2165,7 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
   case R_386_TLS_GOTDESC:
-    return *(u32 *)loc;
+    return *(Packed<u32, 1> *)loc;
   }
   unreachable();
 }

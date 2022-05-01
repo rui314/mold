@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../big-endian.h"
+#include "../packed.h"
 
 #include <cassert>
 #include <cstdint>
@@ -18,6 +19,9 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+using pi32 = Packed<i32, 1>;
+using pu32 = Packed<u32, 1>;
 
 static constexpr u32 FAT_MAGIC = 0xcafebabe;
 
@@ -354,8 +358,8 @@ struct MachHeader {
 };
 
 struct LoadCommand {
-  u32 cmd;
-  u32 cmdsize;
+  pu32 cmd;
+  pu32 cmdsize;
 };
 
 struct SegmentCommand {
