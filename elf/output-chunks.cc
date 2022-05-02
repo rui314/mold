@@ -161,7 +161,7 @@ template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
-  auto define = [&](u64 type, u64 flags, i64 min_align, auto &chunk) {
+  auto define = [&](u64 type, u64 flags, i64 min_align, Chunk<E> *chunk) {
     vec.push_back({});
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_type = type;
@@ -204,11 +204,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
-    define(PT_PHDR, PF_R, E::word_size, ctx.phdr);
+    define(PT_PHDR, PF_R, E::word_size, ctx.phdr.get());
 
   // Create a PT_INTERP.
   if (ctx.interp)
-    define(PT_INTERP, PF_R, 1, ctx.interp);
+    define(PT_INTERP, PF_R, 1, ctx.interp.get());
 
   // Create a PT_NOTE for each group of SHF_NOTE sections with the same
   // alignment requirement.
@@ -272,11 +272,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_DYNAMIC
   if (ctx.dynamic && ctx.dynamic->shdr.sh_size)
-    define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic);
+    define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic.get());
 
   // Add PT_GNU_EH_FRAME
   if (ctx.eh_frame_hdr)
-    define(PT_GNU_EH_FRAME, PF_R, 1, ctx.eh_frame_hdr);
+    define(PT_GNU_EH_FRAME, PF_R, 1, ctx.eh_frame_hdr.get());
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
