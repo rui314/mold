@@ -178,6 +178,19 @@ inline u64 next_power_of_two(u64 val) {
   return (u64)1 << (64 - std::countl_zero(val - 1));
 }
 
+inline u64 bit(u64 val, i64 pos) {
+  return (val >> pos) & 1;
+};
+
+// Returns [hi:lo] bits of val.
+inline u64 bits(u64 val, u64 hi, u64 lo) {
+  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+}
+
+inline i64 sign_extend(u64 val, i64 size) {
+  return (i64)(val << (63 - size)) >> (63 - size);
+};
+
 template <typename T, typename Compare = std::less<T>>
 void update_minimum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   T old_val = atomic;

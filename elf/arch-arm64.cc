@@ -7,11 +7,6 @@ namespace mold::elf {
 
 using E = ARM64;
 
-// Returns [hi:lo] bits of val.
-static u64 bits(u64 val, u64 hi, u64 lo) {
-  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
-}
-
 static void write_adrp(u8 *buf, u64 val) {
   u32 hi = bits(val, 32, 14);
   u32 lo = bits(val, 13, 12);

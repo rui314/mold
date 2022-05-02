@@ -35,19 +35,6 @@ namespace mold::elf {
 
 using E = ARM32;
 
-static u32 bit(u32 val, i64 pos) {
-  return (val >> pos) & 1;
-}
-
-// Returns [hi:lo] bits of val.
-static u32 bits(u32 val, i64 hi, i64 lo) {
-  return (val >> lo) & ((1LL << (hi - lo + 1)) - 1);
-}
-
-static i32 sign_extend(u32 val, u32 size) {
-  return (i64)(val << (31 - size)) >> (31 - size);
-};
-
 static void write_mov_imm(u8 *loc, u32 val) {
   u32 imm12 = bits(val, 11, 0);
   u32 imm4 = bits(val, 15, 12);

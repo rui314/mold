@@ -2174,19 +2174,6 @@ template <>
 inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
   u8 *loc = (u8 *)contents.data() + rel.r_offset;
 
-  auto bit = [](u32 val, i64 pos) -> i32 {
-    return (val >> pos) & 1;
-  };
-
-  // Returns [hi:lo] bits of val.
-  auto bits = [](u64 val, i64 hi, i64 lo) -> i32 {
-    return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
-  };
-
-  auto sign_extend = [](u64 val, i64 size) -> i32 {
-    return (i64)(val << (63 - size)) >> (63 - size);
-  };
-
   switch (rel.r_type) {
   case R_ARM_NONE:
     return 0;

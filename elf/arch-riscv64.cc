@@ -7,15 +7,6 @@ namespace mold::elf {
 
 using E = RISCV64;
 
-static u32 bit(u32 val, i64 pos) {
-  return (val >> pos) & 1;
-}
-
-// Returns [hi:lo] bits of val.
-static u32 bits(u32 val, i64 hi, i64 lo) {
-  return (val >> lo) & ((1LL << (hi - lo + 1)) - 1);
-}
-
 static u32 itype(u32 val) {
   return val << 20;
 }
