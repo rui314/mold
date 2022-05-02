@@ -116,6 +116,9 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
+  if (ctx.arg.omagic)
+    return PF_R | PF_W | PF_X;
+
   i64 ret = PF_R;
   if (chunk->shdr.sh_flags & SHF_WRITE)
     ret |= PF_W;
