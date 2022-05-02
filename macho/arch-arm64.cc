@@ -227,13 +227,13 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     case ARM64_RELOC_BRANCH26:
       if (r.is_pcrel)
         val -= get_addr(ctx) + r.offset;
-      *(u32 *)(buf + r.offset) |= bits(val, 27, 2);
+      *(ul32 *)(buf + r.offset) |= bits(val, 27, 2);
       break;
     case ARM64_RELOC_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
       assert(r.is_pcrel);
-      *(u32 *)(buf + r.offset) |=
+      *(ul32 *)(buf + r.offset) |=
         encode_page(page(val) - page(get_addr(ctx) + r.offset));
       break;
     case ARM64_RELOC_PAGEOFF12:
@@ -242,11 +242,11 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
       if (r.is_pcrel)
         val -= get_addr(ctx) + r.offset;
 
-      u32 insn = *(u32 *)(buf + r.offset);
+      u32 insn = *(ul32 *)(buf + r.offset);
       i64 scale = 0;
       if ((insn & 0x3b000000) == 0x39000000)
         scale = insn >> 30;
-      *(u32 *)(buf + r.offset) |= bits(val, 11, scale) << 10;
+      *(ul32 *)(buf + r.offset) |= bits(val, 11, scale) << 10;
       break;
     }
     default:

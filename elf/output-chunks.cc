@@ -1403,10 +1403,10 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   std::span<Symbol<E> *> syms = get_exported_symbols(ctx);
   i64 exported_offset = ctx.dynsym->symbols.size() - syms.size();
 
-  *(u32 *)base = num_buckets;
-  *(u32 *)(base + 4) = exported_offset;
-  *(u32 *)(base + 8) = num_bloom;
-  *(u32 *)(base + 12) = BLOOM_SHIFT;
+  *(ul32 *)base = num_buckets;
+  *(ul32 *)(base + 4) = exported_offset;
+  *(ul32 *)(base + 8) = num_bloom;
+  *(ul32 *)(base + 12) = BLOOM_SHIFT;
 
   std::vector<u32> hashes(syms.size());
   for (i64 i = 0; i < syms.size(); i++)
@@ -1656,8 +1656,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   struct HdrEntry {
-    i32 init_addr;
-    i32 fde_addr;
+    il32 init_addr;
+    il32 fde_addr;
   };
 
   HdrEntry *eh_hdr_begin =
@@ -1693,7 +1693,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       memcpy(base + offset, contents.data(), contents.size());
 
       CieRecord<E> &cie = file->cies[fde.cie_idx];
-      *(u32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
+      *(ul32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
       bool is_first = true;
 
       for (ElfRel<E> &rel : fde.get_rels(*file)) {
@@ -1719,7 +1719,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   });
 
   // Write a terminator.
-  *(u32 *)(base + this->shdr.sh_size - 4) = 0;
+  *(ul32 *)(base + this->shdr.sh_size - 4) = 0;
 
   // Sort .eh_frame_hdr contents.
   tbb::parallel_sort(eh_hdr_begin, eh_hdr_begin + ctx.eh_frame_hdr->num_fdes,
@@ -1746,8 +1746,8 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   base[2] = DW_EH_PE_udata4;
   base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
 
-  *(u32 *)(base + 4) = ctx.eh_frame->shdr.sh_addr - this->shdr.sh_addr - 4;
-  *(u32 *)(base + 8) = num_fdes;
+  *(ul32 *)(base + 4) = ctx.eh_frame->shdr.sh_addr - this->shdr.sh_addr - 4;
+  *(ul32 *)(base + 8) = num_fdes;
 }
 
 template <typename E>
@@ -2259,8 +2259,8 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     if (file->debug_info) {
       u64 offset = file->debug_info->offset;
       for (std::string_view cu : file->compunits) {
-        *(u64 *)buf = offset;
-        *(u64 *)(buf + 8) = cu.size();
+        *(ul64 *)buf = offset;
+        *(ul64 *)(buf + 8) = cu.size();
         buf += 16;
         offset += cu.size();
       }
@@ -2283,12 +2283,12 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
       u32 step = (hash & mask) | 1;
       u32 j = hash & mask;
 
-      while (*(u32 *)(buf + j * 8))
+      while (*(ul32 *)(buf + j * 8))
         j = (j + step) & mask;
 
       ObjectFile<E> &file = *map.values[i].owner;
-      *(u32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
-      *(u32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
+      *(ul32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
+      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
     }
   }
 
@@ -2358,9 +2358,9 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   assert(ctx.debug_abbrev);
 
   struct __attribute__((packed)) Entry {
-    u64 start;
-    u64 end;
-    u32 attr;
+    ul64 start;
+    ul64 end;
+    ul32 attr;
   };
 
   // Read address ranges from debug sections and copy them to .gdb_index.
@@ -2395,9 +2395,15 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
     // Fill trailing null entries with dummy values because gdb
     // crashes if there are entries with address 0.
-    u64 filler = (e == begin) ? ctx.etext->get_addr(ctx) - 1 : e[-1].start;
+    u64 filler;
+    if (e == begin)
+      filler = ctx.etext->get_addr(ctx) - 1;
+    else
+      filler = e[-1].start;
+
     for (; e < begin + file->num_areas; e++) {
-      e->start = e->end = filler;
+      e->start = filler;
+      e->end = filler;
       e->attr = file->compunits_idx;
     }
   });

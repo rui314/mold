@@ -101,13 +101,13 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_AARCH64_ABS64:
-    *(u64 *)loc = val;
+    *(ul64 *)loc = val;
     return;
   case R_AARCH64_PREL32:
     *(ul32 *)loc = val - this->shdr.sh_addr - offset;
     return;
   case R_AARCH64_PREL64:
-    *(u64 *)loc = val - this->shdr.sh_addr - offset;
+    *(ul64 *)loc = val - this->shdr.sh_addr - offset;
     return;
   }
   Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;

@@ -213,7 +213,7 @@ void Subsection<X86_64>::apply_reloc(Context<X86_64> &ctx, u8 *buf) {
     if (r.p2size == 2)
       *(ul32 *)(buf + r.offset) = val;
     else if (r.p2size == 3)
-      *(u64 *)(buf + r.offset) = val;
+      *(ul64 *)(buf + r.offset) = val;
     else
       unreachable();
   }
