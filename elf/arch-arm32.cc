@@ -546,8 +546,8 @@ void sort_arm_exidx(Context<E> &ctx) {
   // CANTUNWIND is value 1. The most significant is set in (2) but not
   // in (3). So they can be distinguished just by looking at a value.
   struct Entry {
-    u32 addr;
-    u32 val;
+    ul32 addr;
+    ul32 val;
   };
 
   if (osec->shdr.sh_size % sizeof(Entry))
