@@ -147,7 +147,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_ARM_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -175,10 +175,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *dynrel++ = {P, R_ARM_RELATIVE, 0};
         *(ul32 *)loc = S + A;
       }
-      break;
+      continue;
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
-      break;
+      continue;
     case R_ARM_THM_CALL:
       // THM_CALL relocation refers either BL or BLX instruction.
       // They are different in only one bit. We need to use BL if
@@ -195,19 +195,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_thm_b_imm(loc, align_to(S + A - P, 4));
         *(ul16 *)(loc + 2) &= ~(1 << 12); // rewrite with BLX
       }
-      break;
+      continue;
     case R_ARM_BASE_PREL:
       *(ul32 *)loc = GOT + A - P;
-      break;
+      continue;
     case R_ARM_GOT_PREL:
       *(ul32 *)loc = G + A - P;
-      break;
+      continue;
     case R_ARM_GOT_BREL:
       *(ul32 *)loc = G + A;
-      break;
+      continue;
     case R_ARM_TARGET2:
       *(ul32 *)loc = GOT + G + A - P;
-      break;
+      continue;
     case R_ARM_CALL:
     case R_ARM_JUMP24: {
       u32 val;
@@ -221,13 +221,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | ((val >> 2) & 0x00ff'ffff);
-      break;
+      continue;
     }
     case R_ARM_THM_JUMP11: {
       assert(T);
       u32 val = (S + A - P) >> 1;
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | (val & 0x07ff);
-      break;
+      continue;
     }
     case R_ARM_THM_JUMP24:
       if (T) {
@@ -239,57 +239,57 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           sym.extra.thumb_to_arm_thunk_idx * ThumbToArmSection::ENTRY_SIZE;
         write_thm_b_imm(loc, thunk_addr - P - 4);
       }
-      break;
+      continue;
     case R_ARM_MOVW_PREL_NC:
       write_mov_imm(loc, ((S + A) | T) - P);
-      break;
+      continue;
     case R_ARM_MOVW_ABS_NC:
       write_mov_imm(loc, (S + A) | T);
-      break;
+      continue;
     case R_ARM_THM_MOVW_PREL_NC:
       write_thm_mov_imm(loc, ((S + A) | T) - P);
-      break;
+      continue;
     case R_ARM_PREL31: {
       u32 val = S + A - P;
       *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
-      break;
+      continue;
     }
     case R_ARM_THM_MOVW_ABS_NC:
       write_thm_mov_imm(loc, (S + A) | T);
-      break;
+      continue;
     case R_ARM_MOVT_PREL:
       write_mov_imm(loc, (S + A - P) >> 16);
-      break;
+      continue;
     case R_ARM_THM_MOVT_PREL:
       write_thm_mov_imm(loc, (S + A - P) >> 16);
-      break;
+      continue;
     case R_ARM_MOVT_ABS:
       write_mov_imm(loc, (S + A) >> 16);
-      break;
+      continue;
     case R_ARM_THM_MOVT_ABS:
       write_thm_mov_imm(loc, (S + A) >> 16);
-      break;
+      continue;
     case R_ARM_TLS_GD32:
       *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
-      break;
+      continue;
     case R_ARM_TLS_LDM32:
       *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - P;
-      break;
+      continue;
     case R_ARM_TLS_LDO32:
       *(ul32 *)loc = S + A - ctx.tls_begin;
-      break;
+      continue;
     case R_ARM_TLS_IE32:
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
-      break;
+      continue;
     case R_ARM_TLS_LE32:
       *(ul32 *)loc = S + A - ctx.tls_begin + 8;
-      break;
+      continue;
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1)
         *(ul32 *)loc = S - ctx.tls_begin + 8;
       else
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - P - 6;
-      break;
+      continue;
     case R_ARM_THM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // BL -> NOP
@@ -299,7 +299,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_thm_b_imm(loc, align_to(addr - P - 4, 4));
         *(ul16 *)(loc + 2) &= ~(1 << 12); // rewrite BL with BLX
       }
-      break;
+      continue;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
@@ -320,14 +320,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_ARM_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      break;
+      continue;
     }
 
     SectionFragment<E> *frag;
@@ -375,13 +375,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_ARM_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      break;
+      continue;
     }
 
     if (sym.get_type() == STT_GNU_IFUNC) {

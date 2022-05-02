@@ -243,7 +243,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
@@ -302,16 +302,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_X86_64_8:
       write8(S + A);
-      break;
+      continue;
     case R_X86_64_16:
       write16(S + A);
-      break;
+      continue;
     case R_X86_64_32:
       write32(S + A);
-      break;
+      continue;
     case R_X86_64_32S:
       write32s(S + A);
-      break;
+      continue;
     case R_X86_64_64:
       if (sym.is_absolute() || !ctx.arg.pic) {
         write64(S + A);
@@ -323,16 +323,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *dynrel++ = {P, R_X86_64_RELATIVE, 0, (i64)(S + A)};
         write64(S + A);
       }
-      break;
+      continue;
     case R_X86_64_PC8:
       write8s(S + A - P);
-      break;
+      continue;
     case R_X86_64_PC16:
       write16s(S + A - P);
-      break;
+      continue;
     case R_X86_64_PC32:
       write32s(S + A - P);
-      break;
+      continue;
     case R_X86_64_PC64:
       if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
         write64(S + A - P);
@@ -340,34 +340,34 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *dynrel++ = {P, R_X86_64_64, (u32)sym.get_dynsym_idx(ctx), A};
         write64(A);
       }
-      break;
+      continue;
     case R_X86_64_PLT32:
       write32s(S + A - P);
-      break;
+      continue;
     case R_X86_64_PLTOFF64:
       write64(S + A - GOT);
       break;
     case R_X86_64_GOT32:
       write32s(G + A);
-      break;
+      continue;
     case R_X86_64_GOT64:
       write64(G + A);
-      break;
+      continue;
     case R_X86_64_GOTOFF64:
       write64(S + A - GOT);
-      break;
+      continue;
     case R_X86_64_GOTPC32:
       write32s(GOT + A - P);
-      break;
+      continue;
     case R_X86_64_GOTPC64:
       write64(GOT + A - P);
-      break;
+      continue;
     case R_X86_64_GOTPCREL:
       write32s(G + GOT + A - P);
-      break;
+      continue;
     case R_X86_64_GOTPCREL64:
       write64(G + GOT + A - P);
-      break;
+      continue;
     case R_X86_64_GOTPCRELX:
       if (sym.get_got_idx(ctx) == -1) {
         u32 insn = relax_gotpcrelx(loc - 2);
@@ -377,7 +377,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(G + GOT + A - P);
       }
-      break;
+      continue;
     case R_X86_64_REX_GOTPCRELX:
       if (sym.get_got_idx(ctx) == -1) {
         u32 insn = relax_rex_gotpcrelx(loc - 3);
@@ -388,7 +388,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(G + GOT + A - P);
       }
-      break;
+      continue;
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
@@ -425,7 +425,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_tlsgd_addr(ctx) + A - P);
       }
-      break;
+      continue;
     case R_X86_64_TLSLD:
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
@@ -465,25 +465,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       }
-      break;
+      continue;
     case R_X86_64_DTPOFF32:
       if (ctx.arg.relax && !ctx.arg.shared)
         write32s(S + A - ctx.tls_end);
       else
         write32s(S + A - ctx.tls_begin);
-      break;
+      continue;
     case R_X86_64_DTPOFF64:
       if (ctx.arg.relax && !ctx.arg.shared)
         write64(S + A - ctx.tls_end);
       else
         write64(S + A - ctx.tls_begin);
-      break;
+      continue;
     case R_X86_64_TPOFF32:
       write32s(S + A - ctx.tls_end);
-      break;
+      continue;
     case R_X86_64_TPOFF64:
       write64(S + A - ctx.tls_end);
-      break;
+      continue;
     case R_X86_64_GOTTPOFF:
       if (sym.get_gottp_idx(ctx) == -1) {
         u32 insn = relax_gottpoff(loc - 3);
@@ -494,7 +494,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       }
-      break;
+      continue;
     case R_X86_64_GOTPC32_TLSDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         u32 insn = relax_gotpc32_tlsdesc(loc - 3);
@@ -505,20 +505,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
-      break;
+      continue;
     case R_X86_64_SIZE32:
       write32(sym.esym().st_size + A);
-      break;
+      continue;
     case R_X86_64_SIZE64:
       write64(sym.esym().st_size + A);
-      break;
+      continue;
     case R_X86_64_TLSDESC_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
-      break;
+      continue;
     default:
       unreachable();
     }
@@ -550,14 +550,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      break;
+      continue;
     }
 
     SectionFragment<E> *frag;
@@ -661,14 +661,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_X86_64_NONE)
-      break;
+      continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       report_undef(ctx, file, sym);
-      break;
+      continue;
     }
 
     if (sym.get_type() == STT_GNU_IFUNC) {
