@@ -158,22 +158,6 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
 }
 
 template <typename E>
-static bool separate_page(Context<E> &ctx, Chunk<E> *x, Chunk<E> *y) {
-  if (ctx.arg.z_relro && is_relro(ctx, x) != is_relro(ctx, y))
-    return true;
-
-  switch (ctx.arg.z_separate_code) {
-  case SEPARATE_LOADABLE_SEGMENTS:
-    return to_phdr_flags(ctx, x) != to_phdr_flags(ctx, y);
-  case SEPARATE_CODE:
-    return (x->shdr.sh_flags & SHF_EXECINSTR) != (y->shdr.sh_flags & SHF_EXECINSTR);
-  case NOSEPARATE_CODE:
-    return false;
-  }
-  unreachable();
-}
-
-template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
