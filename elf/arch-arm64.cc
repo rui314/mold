@@ -7,15 +7,23 @@ namespace mold::elf {
 
 using E = ARM64;
 
-static void write_adr(u8 *buf, u64 val) {
-  u32 hi = (val & 0x1ffffc) << 3;
-  u32 lo = (val & 3) << 29;
-  *(ul32 *)buf = (*(ul32 *)buf & 0x9f00001f) | hi | lo;
-}
-
 // Returns [hi:lo] bits of val.
 static u64 bits(u64 val, u64 hi, u64 lo) {
   return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+}
+
+static void write_adrp(u8 *buf, u64 val) {
+  u32 hi = bits(val, 32, 14);
+  u32 lo = bits(val, 13, 12);
+  u32 op = *(ul32 *)buf & 0b1001'1111'0000'0000'0000'0000'0001'1111;
+  *(ul32 *)buf = (lo << 29) | (hi << 5) | op;
+}
+
+static void write_adr(u8 *buf, u64 val) {
+  u32 hi = bits(val, 20, 2);
+  u32 lo = bits(val, 1, 0);
+  u32 op = *(ul32 *)buf & 0b1001'1111'0000'0000'0000'0000'0001'1111;
+  *(ul32 *)buf = (lo << 29) | (hi << 5) | op;
 }
 
 static u64 page(u64 val) {
@@ -39,9 +47,9 @@ static void write_plt_header(Context<E> &ctx, u8 *buf) {
   u64 plt = ctx.plt->shdr.sh_addr;
 
   memcpy(buf, plt0, sizeof(plt0));
-  write_adr(buf + 4, bits(page(gotplt) - page(plt + 4), 32, 12));
+  write_adrp(buf + 4, page(gotplt) - page(plt + 4));
   *(ul32 *)(buf + 8) |= bits(gotplt, 11, 3) << 10;
-  *(ul32 *)(buf + 12) |= ((gotplt) & 0xfff) << 10;
+  *(ul32 *)(buf + 12) |= (gotplt & 0xfff) << 10;
 }
 
 static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
@@ -58,7 +66,7 @@ static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 plt = sym.get_plt_addr(ctx);
 
   memcpy(ent, data, sizeof(data));
-  write_adr(ent, bits(page(gotplt) - page(plt), 32, 12));
+  write_adrp(ent, page(gotplt) - page(plt));
   *(ul32 *)(ent + 4) |= bits(gotplt, 11, 3) << 10;
   *(ul32 *)(ent + 8) |= (gotplt & 0xfff) << 10;
 }
@@ -89,7 +97,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     u64 plt = sym->get_plt_addr(ctx);
 
     memcpy(ent, data, sizeof(data));
-    write_adr(ent, bits(page(got) - page(plt), 32, 12));
+    write_adrp(ent, page(got) - page(plt));
     *(ul32 *)(ent + 4) |= bits(got, 11, 3) << 10;
   }
 }
@@ -199,13 +207,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_ADR_GOT_PAGE: {
       i64 val = page(G + GOT + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
-      write_adr(loc, bits(val, 32, 12));
+      write_adrp(loc, val);
       continue;
     }
     case R_AARCH64_ADR_PREL_PG_HI21: {
       i64 val = page(S + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
-      write_adr(loc, bits(val, 32, 12));
+      write_adrp(loc, val);
       continue;
     }
     case R_AARCH64_ADR_PREL_LO21: {
@@ -270,7 +278,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21: {
       i64 val = page(sym.get_gottp_addr(ctx) + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
-      write_adr(loc, bits(val, 32, 12));
+      write_adrp(loc, val);
       continue;
     }
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
@@ -289,7 +297,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSGD_ADR_PAGE21: {
       i64 val = page(sym.get_tlsgd_addr(ctx) + A) - page(P);
       overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
-      write_adr(loc, bits(val, 32, 12));
+      write_adrp(loc, val);
       continue;
     }
     case R_AARCH64_TLSGD_ADD_LO12_NC:
@@ -304,7 +312,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         overflow_check(val, -((i64)1 << 32), (i64)1 << 32);
-        write_adr(loc, bits(val, 32, 12));
+        write_adrp(loc, val);
       }
       continue;
     }
@@ -781,7 +789,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
     u8 *loc = buf + i * ENTRY_SIZE;
     memcpy(loc , data, sizeof(data));
-    write_adr(loc, bits(page(S) - page(P), 32, 12));
+    write_adrp(loc, page(S) - page(P));
     *(ul32 *)(loc + 4) |= bits(S, 11, 0) << 10;
   }
 }
