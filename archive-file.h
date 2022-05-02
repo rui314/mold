@@ -1,3 +1,28 @@
+// This file contains functions to read an archive file (.a file).
+// An archive file is just a bundle of object files. It's similar to
+// tar or zip, but the contents are not compressed.
+//
+// An archive file is either "regular" or "thin". A regular archive
+// contains object files directly, while a thin archive contains only
+// pathnames. In the latter case, actual file contents have to be read
+// from given pathnames. A regular archive is sometimes called "fat"
+// archive as opposed to "thin".
+//
+// If an archive file is given to the linker, the linker pulls out
+// object files that are needed to resolve undefined symbols. So,
+// bunding object files as an archive and giving that archive to the
+// linker has a different meaning than directly giving the same set of
+// object files to the linker. The former links only needed object
+// files, while the latter links all the given object files.
+//
+// Therefore, if you link libc.a for example, not all the libc
+// functions are linked to your binary. Instead, only object files
+// that provides functions and variables used in your program get
+// linked. To make this efficient, static library functions are
+// usually separated to each object file in an archive file. You can
+// see the contents of libc.a by runnning `ar t
+// /usr/lib/x86_64-linux-gnu/libc.a`.
+
 #pragma once
 
 #include "mold.h"
