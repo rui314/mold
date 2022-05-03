@@ -2,6 +2,7 @@
 #include "../sha.h"
 
 #include <cctype>
+#include <random>
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
@@ -1999,23 +2000,18 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
 
 template <typename E>
 static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
-  std::vector<u8> buf(16);
-
-  FILE *fp = fopen("/dev/urandom", "r");
-  if (!fp)
-    Fatal(ctx) << "cannot open /dev/urandom: " << errno_string();
-  if (fread(buf.data(), buf.size(), 1, fp) != 1)
-    Fatal(ctx) << "fread on /dev/urandom: short read";
-  fclose(fp);
+  std::random_device rand;
+  u32 buf[4] = { rand(), rand(), rand(), rand() };
+  std::vector<u8> bytes{(u8 *)buf, (u8 *)buf + 16};
 
   // Indicate that this is UUIDv4.
-  buf[6] &= 0b00001111;
-  buf[6] |= 0b01000000;
+  bytes[6] &= 0b00001111;
+  bytes[6] |= 0b01000000;
 
   // Indicates that this is an RFC4122 variant.
-  buf[8] &= 0b00111111;
-  buf[8] |= 0b10000000;
-  return buf;
+  bytes[8] &= 0b00111111;
+  bytes[8] |= 0b10000000;
+  return bytes;
 }
 
 template <typename E>

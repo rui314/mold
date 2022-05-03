@@ -753,7 +753,7 @@ void shuffle_sections(Context<E> &ctx) {
     if (ctx.arg.shuffle_sections_seed)
       seed = *ctx.arg.shuffle_sections_seed;
     else
-      seed = std::random_device()();
+      seed = ((u64)std::random_device()() << 32) | std::random_device()();
 
     tbb::parallel_for_each(ctx.output_sections,
                            [&](std::unique_ptr<OutputSection<E>> &osec) {
