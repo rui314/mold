@@ -1349,8 +1349,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 //
 
 template <typename E>
-void
-parse_nonpositional_args(Context<E> &ctx, std::vector<std::string> &remaining);
+std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 //
 // passes.cc

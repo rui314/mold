@@ -374,9 +374,7 @@ static int elf_main(int argc, char **argv) {
 
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
-
-  std::vector<std::string> file_args;
-  parse_nonpositional_args(ctx, file_args);
+  std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   // If no -m option is given, deduce it from input files.
   if (ctx.arg.emulation == -1)

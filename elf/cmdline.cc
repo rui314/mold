@@ -346,10 +346,11 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void parse_nonpositional_args(Context<E> &ctx,
-                              std::vector<std::string> &remaining) {
+std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
+
+  std::vector<std::string> remaining;
   std::string_view arg;
 
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
@@ -1054,12 +1055,11 @@ void parse_nonpositional_args(Context<E> &ctx,
 
   if (version_shown && remaining.empty())
     exit(0);
+  return remaining;
 }
 
 #define INSTANTIATE(E)                                                  \
-  template                                                              \
-  void parse_nonpositional_args(Context<E> &ctx,                        \
-                                std::vector<std::string> &remaining)
+  template std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 INSTANTIATE_ALL;
 
