@@ -184,10 +184,10 @@ void GzipCompressor::write_to(u8 *buf) {
 
   // Write a trailer
   u8 *end = buf + size();
-  end[-10] = 0x3; // two-byte zlib stream terminator
+  end[-10] = 3; // two-byte zlib stream terminator
   end[-9] = 0;
-  *(u32 *)(end - 8) = checksum;
-  *(u32 *)(end - 4) = uncompressed_size;
+  *(ul32 *)(end - 8) = checksum;
+  *(ul32 *)(end - 4) = uncompressed_size;
 }
 
 } // namespace mold

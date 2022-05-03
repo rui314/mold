@@ -73,7 +73,7 @@ FileType get_file_type(MappedFile<C> *mf) {
     return FileType::EMPTY;
 
   if (data.starts_with("\177ELF")) {
-    switch (*(u16 *)(data.data() + 16)) {
+    switch (*(ul16 *)(data.data() + 16)) {
     case 1: {
       // ET_REL
       elf::Elf32Ehdr &ehdr = *(elf::Elf32Ehdr *)data.data();
@@ -95,7 +95,7 @@ FileType get_file_type(MappedFile<C> *mf) {
   }
 
   if (data.starts_with("\xcf\xfa\xed\xfe")) {
-    switch (*(u32 *)(data.data() + 12)) {
+    switch (*(ul32 *)(data.data() + 12)) {
     case 1: // MH_OBJECT
       return FileType::MACH_OBJ;
     case 6: // MH_DYLIB
