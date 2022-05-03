@@ -179,6 +179,10 @@ mold: supported targets: elf32-i386 elf64-x86-64 elf64-littleaarch64
 mold: supported emulations: elf_i386 elf_x86_64 aarch64linux aarch64elf)";
 
 static std::vector<std::string> add_dashes(std::string name) {
+  // Single-letter option
+  if (name.size() == 1)
+    return {"-" + name};
+
   // Multi-letter linker options can be preceded by either a single
   // dash or double dashes except ones starting with "o", which must
   // be preceded by double dashes. For example, "-omagic" is
@@ -192,23 +196,6 @@ static std::vector<std::string> add_dashes(std::string name) {
 template <typename E>
 bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
               std::string_view &arg, std::string name) {
-  if (name.size() == 1) {
-    if (args[0] == "-" + name) {
-      if (args.size() == 1)
-        Fatal(ctx) << "option -" << name << ": argument missing";
-      arg = args[1];
-      args = args.subspan(2);
-      return true;
-    }
-
-    if (args[0].starts_with("-" + name)) {
-      arg = args[0].substr(name.size() + 1);
-      args = args.subspan(1);
-      return true;
-    }
-    return false;
-  }
-
   for (std::string opt : add_dashes(name)) {
     if (args[0] == opt) {
       if (args.size() == 1)
@@ -218,8 +205,9 @@ bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
       return true;
     }
 
-    if (args[0].starts_with(opt + "=")) {
-      arg = args[0].substr(opt.size() + 1);
+    std::string prefix = (name.size() == 1) ? opt : opt + "=";
+    if (args[0].starts_with(prefix)) {
+      arg = args[0].substr(prefix.size());
       args = args.subspan(1);
       return true;
     }

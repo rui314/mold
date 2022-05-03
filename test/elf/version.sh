@@ -36,4 +36,7 @@ $CC -B. -Wl,--version -o $t/exe $t/a.o 2>&1 | grep -q mold
 $CC -B. -Wl,-v -o $t/exe $t/a.o 2>&1 | grep -q mold
 $QEMU $t/exe | grep -q 'Hello world'
 
+! $mold --v >& $t/log
+grep -q 'unknown command line option:' $t/log
+
 echo OK
