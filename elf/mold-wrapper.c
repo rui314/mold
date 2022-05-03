@@ -1,5 +1,6 @@
 #define _GNU_SOURCE 1
 
+#include <alloca.h>
 #include <dlfcn.h>
 #include <spawn.h>
 #include <stdarg.h>
@@ -85,7 +86,7 @@ int execve(const char *path, char *const *argv, char *const *envp) {
 int execl(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = calloc(sizeof(char *), count_args(&ap) + 1);
+  char **argv = alloca((count_args(&ap) + 1) * sizeof(char *));
   ((const char **)argv)[0] = arg0;
   copy_args(&ap, argv);
   va_end(ap);
@@ -95,7 +96,7 @@ int execl(const char *path, const char *arg0, ...) {
 int execlp(const char *file, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = calloc(sizeof(char *), count_args(&ap) + 1);
+  char **argv = alloca((count_args(&ap) + 1) * sizeof(char *));
   ((const char **)argv)[0] = arg0;
   copy_args(&ap, argv);
   va_end(ap);
@@ -105,7 +106,7 @@ int execlp(const char *file, const char *arg0, ...) {
 int execle(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = calloc(sizeof(char *), count_args(&ap) + 1);
+  char **argv = alloca((count_args(&ap) + 1) * sizeof(char *));
   ((const char **)argv)[0] = arg0;
   copy_args(&ap, argv);
   char **env = va_arg(ap, char **);
