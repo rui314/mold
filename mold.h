@@ -159,27 +159,6 @@ private:
 // Utility functions
 //
 
-inline u64 align_to(u64 val, u64 align) {
-  if (align == 0)
-    return val;
-  assert(std::popcount(align) == 1);
-  return (val + align - 1) & ~(align - 1);
-}
-
-inline u64 align_down(u64 val, u64 align) {
-  assert(std::popcount(align) == 1);
-  return val & ~(align - 1);
-}
-
-inline u64 bit(u64 val, i64 pos) {
-  return (val >> pos) & 1;
-};
-
-// Returns [hi:lo] bits of val.
-inline u64 bits(u64 val, u64 hi, u64 lo) {
-  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
-}
-
 // Some C++ libraries haven't implemented std::has_single_bit yet.
 inline bool has_single_bit(u64 val) {
   return std::popcount(val) == 1;
@@ -190,6 +169,27 @@ inline u64 bit_ceil(u64 val) {
   if (has_single_bit(val))
     return val;
   return (u64)1 << (64 - std::countl_zero(val));
+}
+
+inline u64 align_to(u64 val, u64 align) {
+  if (align == 0)
+    return val;
+  assert(has_single_bit(align));
+  return (val + align - 1) & ~(align - 1);
+}
+
+inline u64 align_down(u64 val, u64 align) {
+  assert(has_single_bit(align));
+  return val & ~(align - 1);
+}
+
+inline u64 bit(u64 val, i64 pos) {
+  return (val >> pos) & 1;
+};
+
+// Returns [hi:lo] bits of val.
+inline u64 bits(u64 val, u64 hi, u64 lo) {
+  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
 }
 
 inline i64 sign_extend(u64 val, i64 size) {
@@ -335,7 +335,7 @@ public:
     if (!keys)
       return {nullptr, false};
 
-    assert(std::popcount<u64>(nbuckets) == 1);
+    assert(has_single_bit(nbuckets));
     i64 idx = hash & (nbuckets - 1);
     i64 retry = 0;
 

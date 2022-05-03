@@ -2254,7 +2254,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   u32 symtab_size = header.const_pool_offset - header.symtab_offset;
   memset(buf, 0, symtab_size);
 
-  assert(std::popcount(symtab_size / 8) == 1);
+  assert(has_single_bit(symtab_size / 8));
   u32 mask = symtab_size / 8 - 1;
 
   for (i64 i = 0; i < map.nbuckets; i++) {
