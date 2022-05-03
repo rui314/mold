@@ -139,7 +139,7 @@ static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
 template <typename E>
 static i64
-deduce_machine_type(Context<E> &ctx, std::span<std::string_view> args) {
+deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
   for (std::string_view arg : args)
     if (!arg.starts_with('-'))
       if (auto *mf = MappedFile<Context<E>>::open(ctx, std::string(arg)))
@@ -185,51 +185,51 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
 }
 
 template <typename E>
-static void read_input_files(Context<E> &ctx, std::span<std::string_view> args) {
+static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   Timer t(ctx, "read_input_files");
 
   std::vector<std::tuple<bool, bool, bool, bool>> state;
   ctx.is_static = ctx.arg.is_static;
 
   while (!args.empty()) {
-    std::string_view arg;
+    const std::string &arg = args[0];
+    args = args.subspan(1);
 
-    if (read_flag(args, "as-needed")) {
+    if (arg == "--as-needed") {
       ctx.as_needed = true;
-    } else if (read_flag(args, "no-as-needed")) {
+    } else if (arg == "--no-as-needed") {
       ctx.as_needed = false;
-    } else if (read_flag(args, "whole-archive")) {
+    } else if (arg == "--whole-archive") {
       ctx.whole_archive = true;
-    } else if (read_flag(args, "no-whole-archive")) {
+    } else if (arg == "--no-whole-archive") {
       ctx.whole_archive = false;
-    } else if (read_flag(args, "Bstatic")) {
+    } else if (arg == "--Bstatic") {
       ctx.is_static = true;
-    } else if (read_flag(args, "Bdynamic")) {
+    } else if (arg == "--Bdynamic") {
       ctx.is_static = false;
-    } else if (read_flag(args, "start-lib")) {
+    } else if (arg == "--start-lib") {
       ctx.in_lib = true;
-    } else if (read_flag(args, "end-lib")) {
+    } else if (arg == "--end-lib") {
       ctx.in_lib = false;
-    } else if (read_arg(ctx, args, arg, "version-script")) {
-      parse_version_script(ctx, std::string(arg));
-    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
-      parse_dynamic_list(ctx, std::string(arg));
-    } else if (read_flag(args, "push-state")) {
+    } else if (arg.starts_with("--version-script=")) {
+      parse_version_script(ctx, arg.substr(strlen("--version-script=")));
+    } else if (arg.starts_with("--dynamic-list=")) {
+      parse_dynamic_list(ctx, arg.substr(strlen("--dynamic-list=")));
+    } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
                        ctx.in_lib});
-    } else if (read_flag(args, "pop-state")) {
+    } else if (arg == "--pop-state") {
       if (state.empty())
         Fatal(ctx) << "no state pushed before popping";
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static, ctx.in_lib) =
         state.back();
       state.pop_back();
-    } else if (read_arg(ctx, args, arg, "l")) {
-      MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg));
+    } else if (arg.starts_with("-l")) {
+      MappedFile<Context<E>> *mf = find_library(ctx, arg.substr(2));
       mf->given_fullpath = false;
       read_file(ctx, mf);
     } else {
-      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, std::string(args[0])));
-      args = args.subspan(1);
+      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, std::string(arg)));
     }
   }
 
@@ -375,7 +375,7 @@ static int elf_main(int argc, char **argv) {
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
 
-  std::vector<std::string_view> file_args;
+  std::vector<std::string> file_args;
   parse_nonpositional_args(ctx, file_args);
 
   // If no -m option is given, deduce it from input files.

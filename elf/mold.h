@@ -1325,7 +1325,7 @@ void icf_sections(Context<E> &ctx);
 //
 
 template <typename E>
-void combine_objects(Context<E> &ctx, std::span<std::string_view> file_args);
+void combine_objects(Context<E> &ctx, std::span<std::string> file_args);
 
 //
 // mapfile.cc
@@ -1348,16 +1348,9 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 // commandline.cc
 //
 
-bool read_flag(std::span<std::string_view> &args, std::string name);
-
 template <typename E>
-bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
-              std::string_view &arg,
-              std::string name);
-
-template <typename E>
-void parse_nonpositional_args(Context<E> &ctx,
-                              std::vector<std::string_view> &remaining);
+void
+parse_nonpositional_args(Context<E> &ctx, std::vector<std::string> &remaining);
 
 //
 // passes.cc
@@ -1643,7 +1636,7 @@ struct Context {
     std::string entry = "_start";
     std::string fini = "_fini";
     std::string init = "_init";
-    std::string output;
+    std::string output = "a.out";
     std::string plugin;
     std::string rpaths;
     std::string soname;

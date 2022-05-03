@@ -194,83 +194,6 @@ static std::vector<std::string> add_dashes(std::string name) {
 }
 
 template <typename E>
-bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,
-              std::string_view &arg, std::string name) {
-  for (std::string opt : add_dashes(name)) {
-    if (args[0] == opt) {
-      if (args.size() == 1)
-        Fatal(ctx) << "option -" << name << ": argument missing";
-      arg = args[1];
-      args = args.subspan(2);
-      return true;
-    }
-
-    std::string prefix = (name.size() == 1) ? opt : opt + "=";
-    if (args[0].starts_with(prefix)) {
-      arg = args[0].substr(prefix.size());
-      args = args.subspan(1);
-      return true;
-    }
-  }
-  return false;
-}
-
-template <typename E>
-bool read_eq(Context<E> &ctx, std::span<std::string_view> &args,
-             std::string_view &arg, std::string name) {
-  for (std::string opt : add_dashes(name)) {
-    if (args[0].starts_with(opt + "=")) {
-      arg = args[0].substr(opt.size() + 1);
-      args = args.subspan(1);
-      return true;
-    }
-  }
-  return false;
-}
-
-bool read_flag(std::span<std::string_view> &args, std::string name) {
-  for (std::string opt : add_dashes(name)) {
-    if (args[0] == opt) {
-      args = args.subspan(1);
-      return true;
-    }
-  }
-  return false;
-}
-
-static bool read_z_flag(std::span<std::string_view> &args, std::string name) {
-  if (args.size() >= 2 && args[0] == "-z" && args[1] == name) {
-    args = args.subspan(2);
-    return true;
-  }
-
-  if (!args.empty() && args[0] == "-z" + name) {
-    args = args.subspan(1);
-    return true;
-  }
-
-  return false;
-}
-
-template <typename E>
-bool read_z_arg(Context<E> &ctx, std::span<std::string_view> &args,
-                std::string_view &arg, std::string name) {
-  if (args.size() >= 2 && args[0] == "-z" && args[1].starts_with(name + "=")) {
-    arg = args[1].substr(name.size() + 1);
-    args = args.subspan(2);
-    return true;
-  }
-
-  if (!args.empty() && args[0].starts_with("-z" + name + "=")) {
-    arg = args[0].substr(name.size() + 3);
-    args = args.subspan(1);
-    return true;
-  }
-
-  return false;
-}
-
-template <typename E>
 static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
   if (value.starts_with("0x") || value.starts_with("0X"))
     value = value.substr(2);
@@ -424,9 +347,10 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
 
 template <typename E>
 void parse_nonpositional_args(Context<E> &ctx,
-                              std::vector<std::string_view> &remaining) {
+                              std::vector<std::string> &remaining) {
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
+  std::string_view arg;
 
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
   ctx.page_size = E::page_size;
@@ -439,33 +363,99 @@ void parse_nonpositional_args(Context<E> &ctx,
   if constexpr (std::is_same_v<E, RISCV64>)
     ctx.arg.discard_locals = true;
 
-  while (!args.empty()) {
-    std::string_view arg;
+  auto read_arg = [&](std::string name) {
+    for (std::string opt : add_dashes(name)) {
+      if (args[0] == opt) {
+        if (args.size() == 1)
+          Fatal(ctx) << "option -" << name << ": argument missing";
+        arg = args[1];
+        args = args.subspan(2);
+        return true;
+      }
 
-    if (read_flag(args, "help")) {
+      std::string prefix = (name.size() == 1) ? opt : opt + "=";
+      if (args[0].starts_with(prefix)) {
+        arg = args[0].substr(prefix.size());
+        args = args.subspan(1);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto read_eq = [&](std::string name) {
+    for (std::string opt : add_dashes(name)) {
+      if (args[0].starts_with(opt + "=")) {
+        arg = args[0].substr(opt.size() + 1);
+        args = args.subspan(1);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto read_flag = [&](std::string name) {
+    for (std::string opt : add_dashes(name)) {
+      if (args[0] == opt) {
+        args = args.subspan(1);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto read_z_flag = [&](std::string name) {
+    if (args.size() >= 2 && args[0] == "-z" && args[1] == name) {
+      args = args.subspan(2);
+      return true;
+    }
+
+    if (!args.empty() && args[0] == "-z" + name) {
+      args = args.subspan(1);
+      return true;
+    }
+    return false;
+  };
+
+  auto read_z_arg = [&](std::string name) {
+    if (args.size() >= 2 && args[0] == "-z" && args[1].starts_with(name + "=")) {
+      arg = args[1].substr(name.size() + 1);
+      args = args.subspan(2);
+      return true;
+    }
+
+    if (!args.empty() && args[0].starts_with("-z" + name + "=")) {
+      arg = args[0].substr(name.size() + 3);
+      args = args.subspan(1);
+      return true;
+    }
+    return false;
+  };
+
+  while (!args.empty()) {
+    if (read_flag("help")) {
       SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
                    << " [options] file...\n" << helpmsg;
       exit(0);
     }
 
-    if (read_arg(ctx, args, arg, "o") || read_arg(ctx, args, arg, "output")) {
+    if (read_arg("o") || read_arg("output")) {
       ctx.arg.output = arg;
-    } else if (read_arg(ctx, args, arg, "dynamic-linker") ||
-               read_arg(ctx, args, arg, "I")) {
+    } else if (read_arg("dynamic-linker") || read_arg("I")) {
       ctx.arg.dynamic_linker = arg;
-    } else if (read_flag(args, "no-dynamic-linker")) {
+    } else if (read_flag("no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
-    } else if (read_flag(args, "v")) {
+    } else if (read_flag("v")) {
       SyncOut(ctx) << mold_version;
       version_shown = true;
-    } else if (read_flag(args, "version")) {
+    } else if (read_flag("version")) {
       SyncOut(ctx) << mold_version;
       exit(0);
-    } else if (read_flag(args, "V")) {
+    } else if (read_flag("V")) {
       SyncOut(ctx) << mold_version
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386";
       version_shown = true;
-    } else if (read_arg(ctx, args, arg, "m")) {
+    } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
         ctx.arg.emulation = EM_X86_64;
       } else if (arg == "elf_i386") {
@@ -479,106 +469,102 @@ void parse_nonpositional_args(Context<E> &ctx,
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
-    } else if (read_flag(args, "end-lib")) {
-      remaining.push_back("-end-lib");
-    } else if (read_flag(args, "export-dynamic") || read_flag(args, "E")) {
+    } else if (read_flag("end-lib")) {
+      remaining.push_back("--end-lib");
+    } else if (read_flag("export-dynamic") || read_flag("E")) {
       ctx.arg.export_dynamic = true;
-    } else if (read_flag(args, "no-export-dynamic")) {
+    } else if (read_flag("no-export-dynamic")) {
       ctx.arg.export_dynamic = false;
-    } else if (read_flag(args, "Bsymbolic")) {
+    } else if (read_flag("Bsymbolic")) {
       ctx.arg.Bsymbolic = true;
-    } else if (read_flag(args, "Bsymbolic-functions")) {
+    } else if (read_flag("Bsymbolic-functions")) {
       ctx.arg.Bsymbolic_functions = true;
-    } else if (read_flag(args, "Bno-symbolic")) {
+    } else if (read_flag("Bno-symbolic")) {
       ctx.arg.Bsymbolic = false;
       ctx.arg.Bsymbolic_functions = false;
-    } else if (read_arg(ctx, args, arg, "exclude-libs")) {
+    } else if (read_arg("exclude-libs")) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
-    } else if (read_flag(args, "q") || read_flag(args, "emit-relocs")) {
+    } else if (read_flag("q") || read_flag("emit-relocs")) {
       ctx.arg.emit_relocs = true;
-    } else if (read_arg(ctx, args, arg, "e") ||
-               read_arg(ctx, args, arg, "entry")) {
+    } else if (read_arg("e") || read_arg("entry")) {
       ctx.arg.entry = arg;
-    } else if (read_arg(ctx, args, arg, "Map")) {
+    } else if (read_arg("Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
-    } else if (read_flag(args, "print-dependencies")) {
+    } else if (read_flag("print-dependencies")) {
       ctx.arg.print_dependencies = 1;
-    } else if (read_flag(args, "print-dependencies=full")) {
+    } else if (read_flag("print-dependencies=full")) {
       ctx.arg.print_dependencies = 2;
-    } else if (read_flag(args, "print-map") || read_flag(args, "M")) {
+    } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
-    } else if (read_flag(args, "Bstatic") || read_flag(args, "dn") || read_flag(args, "static")) {
+    } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
       ctx.arg.is_static = true;
-      remaining.push_back("-Bstatic");
-    } else if (read_flag(args, "Bdynamic") || read_flag(args, "dy")) {
+      remaining.push_back("--Bstatic");
+    } else if (read_flag("Bdynamic") || read_flag("dy")) {
       ctx.arg.is_static = false;
-      remaining.push_back("-Bdynamic");
-    } else if (read_flag(args, "shared") || read_flag(args, "Bshareable")) {
+      remaining.push_back("--Bdynamic");
+    } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
-    } else if (read_arg(ctx, args, arg, "spare-dynamic-tags")) {
+    } else if (read_arg("spare-dynamic-tags")) {
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
-    } else if (read_flag(args, "start-lib")) {
-      remaining.push_back("-start-lib");
-    } else if (read_arg(ctx, args, arg, "dependency-file")) {
+    } else if (read_flag("start-lib")) {
+      remaining.push_back("--start-lib");
+    } else if (read_arg("dependency-file")) {
       ctx.arg.dependency_file = arg;
-    } else if (read_arg(ctx, args, arg, "defsym")) {
+    } else if (read_arg("defsym")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
         Fatal(ctx) << "-defsym: syntax error: " << arg;
       ctx.arg.defsyms.emplace_back(get_symbol(ctx, arg.substr(0, pos)),
                                    parse_defsym_value(ctx, arg.substr(pos + 1)));
-    } else if (read_flag(args, ":lto-pass2")) {
+    } else if (read_flag(":lto-pass2")) {
       ctx.arg.lto_pass2 = true;
-    } else if (read_arg(ctx, args, arg, ":ignore-ir-file")) {
+    } else if (read_arg(":ignore-ir-file")) {
       ctx.arg.ignore_ir_file.insert(arg);
-    } else if (read_flag(args, "demangle")) {
+    } else if (read_flag("demangle")) {
       ctx.arg.demangle = true;
-    } else if (read_flag(args, "no-demangle")) {
+    } else if (read_flag("no-demangle")) {
       ctx.arg.demangle = false;
-    } else if (read_flag(args, "default-symver")) {
+    } else if (read_flag("default-symver")) {
       ctx.arg.default_symver = true;
-    } else if (read_flag(args, "noinhibit-exec")) {
+    } else if (read_flag("noinhibit-exec")) {
       ctx.arg.noinhibit_exec = true;
-    } else if (read_flag(args, "shuffle-sections")) {
+    } else if (read_flag("shuffle-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
-    } else if (read_eq(ctx, args, arg, "shuffle-sections")) {
+    } else if (read_eq("shuffle-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
       ctx.arg.shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
-    } else if (read_flag(args, "reverse-sections")) {
+    } else if (read_flag("reverse-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_REVERSE;
-    } else if (read_arg(ctx, args, arg, "y") ||
-               read_arg(ctx, args, arg, "trace-symbol")) {
+    } else if (read_arg("y") || read_arg("trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "filler")) {
+    } else if (read_arg("filler")) {
       ctx.arg.filler = parse_hex(ctx, "filler", arg);
-    } else if (read_arg(ctx, args, arg, "L") ||
-               read_arg(ctx, args, arg, "library-path")) {
+    } else if (read_arg("L") || read_arg("library-path")) {
       ctx.arg.library_paths.push_back(std::string(arg));
-    } else if (read_arg(ctx, args, arg, "sysroot")) {
+    } else if (read_arg("sysroot")) {
       ctx.arg.sysroot = arg;
-    } else if (read_arg(ctx, args, arg, "unique")) {
+    } else if (read_arg("unique")) {
       std::optional<GlobPattern> pat = GlobPattern::compile(arg);
       if (!pat)
         Fatal(ctx) << "-unique: invalid glob pattern: " << arg;
       ctx.arg.unique = std::move(*pat);
-    } else if (read_arg(ctx, args, arg, "unresolved-symbols")) {
+    } else if (read_arg("unresolved-symbols")) {
       if (arg == "report-all" || arg == "ignore-in-shared-libs")
         ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
       else if (arg == "ignore-all" || arg == "ignore-in-object-files")
         ctx.arg.unresolved_symbols = UNRESOLVED_IGNORE;
       else
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
-    } else if (read_arg(ctx, args, arg, "u") ||
-               read_arg(ctx, args, arg, "undefined")) {
+    } else if (read_arg("u") || read_arg("undefined")) {
       ctx.arg.undefined.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "require-defined")) {
+    } else if (read_arg("require-defined")) {
       ctx.arg.require_defined.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "init")) {
+    } else if (read_arg("init")) {
       ctx.arg.init = arg;
-    } else if (read_arg(ctx, args, arg, "fini")) {
+    } else if (read_arg("fini")) {
       ctx.arg.fini = arg;
-    } else if (read_arg(ctx, args, arg, "hash-style")) {
+    } else if (read_arg("hash-style")) {
       if (arg == "sysv") {
         ctx.arg.hash_style_sysv = true;
         ctx.arg.hash_style_gnu = false;
@@ -591,47 +577,45 @@ void parse_nonpositional_args(Context<E> &ctx,
       } else {
         Fatal(ctx) << "invalid --hash-style argument: " << arg;
       }
-    } else if (read_arg(ctx, args, arg, "soname") ||
-               read_arg(ctx, args, arg, "h")) {
+    } else if (read_arg("soname") ||
+               read_arg("h")) {
       ctx.arg.soname = arg;
-    } else if (read_flag(args, "allow-multiple-definition")) {
+    } else if (read_flag("allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;
-    } else if (read_flag(args, "trace")) {
+    } else if (read_flag("trace")) {
       ctx.arg.trace = true;
-    } else if (read_flag(args, "eh-frame-hdr")) {
+    } else if (read_flag("eh-frame-hdr")) {
       ctx.arg.eh_frame_hdr = true;
-    } else if (read_flag(args, "no-eh-frame-hdr")) {
+    } else if (read_flag("no-eh-frame-hdr")) {
       ctx.arg.eh_frame_hdr = false;
-    } else if (read_flag(args, "pie") || read_flag(args, "pic-executable")) {
+    } else if (read_flag("pie") || read_flag("pic-executable")) {
       ctx.arg.pic = true;
       ctx.arg.pie = true;
-    } else if (read_flag(args, "no-pie") ||
-               read_flag(args, "no-pic-executable")) {
+    } else if (read_flag("no-pie") || read_flag("no-pic-executable")) {
       ctx.arg.pic = false;
       ctx.arg.pie = false;
-    } else if (read_flag(args, "relax")) {
+    } else if (read_flag("relax")) {
       ctx.arg.relax = true;
-    } else if (read_flag(args, "no-relax")) {
+    } else if (read_flag("no-relax")) {
       ctx.arg.relax = false;
-    } else if (read_flag(args, "gdb-index")) {
+    } else if (read_flag("gdb-index")) {
       ctx.arg.gdb_index = true;
-    } else if (read_flag(args, "no-gdb-index")) {
+    } else if (read_flag("no-gdb-index")) {
       ctx.arg.gdb_index = false;
-    } else if (read_flag(args, "r") || read_flag(args, "relocatable")) {
+    } else if (read_flag("r") || read_flag("relocatable")) {
       ctx.arg.relocatable = true;
-    } else if (read_flag(args, "perf")) {
+    } else if (read_flag("perf")) {
       ctx.arg.perf = true;
-    } else if (read_flag(args, "pack-dyn-relocs=relr")) {
+    } else if (read_flag("pack-dyn-relocs=relr")) {
       ctx.arg.pack_dyn_relocs_relr = true;
-    } else if (read_flag(args, "pack-dyn-relocs=none")) {
+    } else if (read_flag("pack-dyn-relocs=none")) {
       ctx.arg.pack_dyn_relocs_relr = false;
-    } else if (read_flag(args, "stats")) {
+    } else if (read_flag("stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
-    } else if (read_arg(ctx, args, arg, "C") ||
-               read_arg(ctx, args, arg, "directory")) {
+    } else if (read_arg("C") || read_arg("directory")) {
       ctx.arg.directory = arg;
-    } else if (read_arg(ctx, args, arg, "chroot")) {
+    } else if (read_arg("chroot")) {
       ctx.arg.chroot = arg;
     } else if (args[0] == "-color-diagnostics=auto" ||
                args[0] == "--color-diagnostics=auto") {
@@ -645,23 +629,23 @@ void parse_nonpositional_args(Context<E> &ctx,
                args[0] == "--color-diagnostics=never") {
       ctx.arg.color_diagnostics = false;
       args = args.subspan(1);
-    } else if (read_flag(args, "color-diagnostics")) {
+    } else if (read_flag("color-diagnostics")) {
       ctx.arg.color_diagnostics = true;
-    } else if (read_flag(args, "warn-common")) {
+    } else if (read_flag("warn-common")) {
       ctx.arg.warn_common = true;
-    } else if (read_flag(args, "no-warn-common")) {
+    } else if (read_flag("no-warn-common")) {
       ctx.arg.warn_common = false;
-    } else if (read_flag(args, "warn-once")) {
+    } else if (read_flag("warn-once")) {
       ctx.arg.warn_once = true;
-    } else if (read_flag(args, "warn-shared-textrel")) {
+    } else if (read_flag("warn-shared-textrel")) {
       warn_shared_textrel = true;
-    } else if (read_flag(args, "warn-textrel")) {
+    } else if (read_flag("warn-textrel")) {
       ctx.arg.warn_textrel = true;
-    } else if (read_flag(args, "enable-new-dtags")) {
+    } else if (read_flag("enable-new-dtags")) {
       ctx.arg.enable_new_dtags = true;
-    } else if (read_flag(args, "disable-new-dtags")) {
+    } else if (read_flag("disable-new-dtags")) {
       ctx.arg.enable_new_dtags = false;
-    } else if (read_arg(ctx, args, arg, "compress-debug-sections")) {
+    } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_GABI;
       else if (arg == "zlib-gnu")
@@ -670,170 +654,170 @@ void parse_nonpositional_args(Context<E> &ctx,
         ctx.arg.compress_debug_sections = COMPRESS_NONE;
       else
         Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
-    } else if (read_arg(ctx, args, arg, "wrap")) {
+    } else if (read_arg("wrap")) {
       ctx.arg.wrap.insert(arg);
-    } else if (read_flag(args, "omagic") || read_flag(args, "N")) {
+    } else if (read_flag("omagic") || read_flag("N")) {
       ctx.arg.omagic = true;
       ctx.arg.is_static = true;
-    } else if (read_flag(args, "no-omagic")) {
+    } else if (read_flag("no-omagic")) {
       ctx.arg.omagic = false;
-    } else if (read_arg(ctx, args, arg, "oformat")) {
+    } else if (read_arg("oformat")) {
       if (arg != "binary")
         Fatal(ctx) << "-oformat: " << arg << " is not supported";
       ctx.arg.oformat_binary = true;
-    } else if (read_arg(ctx, args, arg, "retain-symbols-file")) {
+    } else if (read_arg("retain-symbols-file")) {
       read_retain_symbols_file(ctx, arg);
-    } else if (read_arg(ctx, args, arg, "section-start")) {
+    } else if (read_arg("section-start")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
         Fatal(ctx) << "-section-start: syntax error: " << arg;
       ctx.arg.section_start[arg.substr(0, pos)] =
         parse_hex(ctx, "section-start", arg.substr(pos + 1));
-    } else if (read_arg(ctx, args, arg, "Tbss")) {
+    } else if (read_arg("Tbss")) {
       ctx.arg.section_start[".bss"] = parse_hex(ctx, "Tbss", arg);
-    } else if (read_arg(ctx, args, arg, "Tdata")) {
+    } else if (read_arg("Tdata")) {
       ctx.arg.section_start[".data"] = parse_hex(ctx, "Tdata", arg);
-    } else if (read_arg(ctx, args, arg, "Ttext")) {
+    } else if (read_arg("Ttext")) {
       ctx.arg.section_start[".text"] = parse_hex(ctx, "Ttext", arg);
-    } else if (read_flag(args, "repro")) {
+    } else if (read_flag("repro")) {
       ctx.arg.repro = true;
-    } else if (read_z_flag(args, "now")) {
+    } else if (read_z_flag("now")) {
       ctx.arg.z_now = true;
-    } else if (read_z_flag(args, "lazy")) {
+    } else if (read_z_flag("lazy")) {
       ctx.arg.z_now = false;
-    } else if (read_z_flag(args, "cet-report=none")) {
+    } else if (read_z_flag("cet-report=none")) {
       ctx.arg.z_cet_report = CET_REPORT_NONE;
-    } else if (read_z_flag(args, "cet-report=warning")) {
+    } else if (read_z_flag("cet-report=warning")) {
       ctx.arg.z_cet_report = CET_REPORT_WARNING;
-    } else if (read_z_flag(args, "cet-report=error")) {
+    } else if (read_z_flag("cet-report=error")) {
       ctx.arg.z_cet_report = CET_REPORT_ERROR;
-    } else if (read_z_flag(args, "execstack")) {
+    } else if (read_z_flag("execstack")) {
       ctx.arg.z_execstack = true;
-    } else if (read_z_flag(args, "execstack-if-needed")) {
+    } else if (read_z_flag("execstack-if-needed")) {
       ctx.arg.z_execstack_if_needed = true;
-    } else if (read_z_arg(ctx, args, arg, "max-page-size")) {
+    } else if (read_z_arg("max-page-size")) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
       if (!has_single_bit(ctx.page_size))
         Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
-    } else if (read_z_flag(args, "noexecstack")) {
+    } else if (read_z_flag("noexecstack")) {
       ctx.arg.z_execstack = false;
-    } else if (read_z_flag(args, "relro")) {
+    } else if (read_z_flag("relro")) {
       ctx.arg.z_relro = true;
-    } else if (read_z_flag(args, "norelro")) {
+    } else if (read_z_flag("norelro")) {
       ctx.arg.z_relro = false;
-    } else if (read_z_flag(args, "defs")) {
+    } else if (read_z_flag("defs")) {
       ctx.arg.z_defs = true;
-    } else if (read_z_flag(args, "nodefs")) {
+    } else if (read_z_flag("nodefs")) {
       ctx.arg.z_defs = false;
-    } else if (read_z_flag(args, "nodlopen")) {
+    } else if (read_z_flag("nodlopen")) {
       ctx.arg.z_dlopen = false;
-    } else if (read_z_flag(args, "nodelete")) {
+    } else if (read_z_flag("nodelete")) {
       ctx.arg.z_delete = false;
-    } else if (read_z_flag(args, "nocopyreloc")) {
+    } else if (read_z_flag("nocopyreloc")) {
       ctx.arg.z_copyreloc = false;
-    } else if (read_z_flag(args, "nodump")) {
+    } else if (read_z_flag("nodump")) {
       ctx.arg.z_dump = false;
-    } else if (read_z_flag(args, "initfirst")) {
+    } else if (read_z_flag("initfirst")) {
       ctx.arg.z_initfirst = true;
-    } else if (read_z_flag(args, "interpose")) {
+    } else if (read_z_flag("interpose")) {
       ctx.arg.z_interpose = true;
-    } else if (read_z_flag(args, "ibt")) {
+    } else if (read_z_flag("ibt")) {
       ctx.arg.z_ibt = true;
       ctx.arg.z_ibtplt = true;
-    } else if (read_z_flag(args, "ibtplt")) {
+    } else if (read_z_flag("ibtplt")) {
       ctx.arg.z_ibtplt = true;
-    } else if (read_z_flag(args, "muldefs")) {
+    } else if (read_z_flag("muldefs")) {
       ctx.arg.allow_multiple_definition = true;
-    } else if (read_z_flag(args, "keep-text-section-prefix")) {
+    } else if (read_z_flag("keep-text-section-prefix")) {
       ctx.arg.z_keep_text_section_prefix = true;
-    } else if (read_z_flag(args, "nokeep-text-section-prefix")) {
+    } else if (read_z_flag("nokeep-text-section-prefix")) {
       ctx.arg.z_keep_text_section_prefix = false;
-    } else if (read_z_flag(args, "shstk")) {
+    } else if (read_z_flag("shstk")) {
       ctx.arg.z_shstk = true;
-    } else if (read_z_flag(args, "text")) {
+    } else if (read_z_flag("text")) {
       ctx.arg.z_text = true;
-    } else if (read_z_flag(args, "notext") || read_z_flag(args, "textoff")) {
+    } else if (read_z_flag("notext") || read_z_flag("textoff")) {
       ctx.arg.z_text = false;
-    } else if (read_z_flag(args, "origin")) {
+    } else if (read_z_flag("origin")) {
       ctx.arg.z_origin = true;
-    } else if (read_z_flag(args, "nodefaultlib")) {
+    } else if (read_z_flag("nodefaultlib")) {
       ctx.arg.z_nodefaultlib = true;
-    } else if (read_z_flag(args, "separate-loadable-segments")) {
+    } else if (read_z_flag("separate-loadable-segments")) {
       ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
-    } else if (read_z_flag(args, "separate-code")) {
+    } else if (read_z_flag("separate-code")) {
       ctx.arg.z_separate_code = SEPARATE_CODE;
-    } else if (read_z_flag(args, "noseparate-code")) {
+    } else if (read_z_flag("noseparate-code")) {
       ctx.arg.z_separate_code = NOSEPARATE_CODE;
-    } else if (read_flag(args, "no-undefined")) {
+    } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
-    } else if (read_flag(args, "fatal-warnings")) {
+    } else if (read_flag("fatal-warnings")) {
       ctx.arg.fatal_warnings = true;
-    } else if (read_flag(args, "no-fatal-warnings")) {
+    } else if (read_flag("no-fatal-warnings")) {
       ctx.arg.fatal_warnings = false;
-    } else if (read_flag(args, "fork")) {
+    } else if (read_flag("fork")) {
       ctx.arg.fork = true;
-    } else if (read_flag(args, "no-fork")) {
+    } else if (read_flag("no-fork")) {
       ctx.arg.fork = false;
-    } else if (read_flag(args, "gc-sections")) {
+    } else if (read_flag("gc-sections")) {
       ctx.arg.gc_sections = true;
-    } else if (read_flag(args, "no-gc-sections")) {
+    } else if (read_flag("no-gc-sections")) {
       ctx.arg.gc_sections = false;
-    } else if (read_flag(args, "print-gc-sections")) {
+    } else if (read_flag("print-gc-sections")) {
       ctx.arg.print_gc_sections = true;
-    } else if (read_flag(args, "no-print-gc-sections")) {
+    } else if (read_flag("no-print-gc-sections")) {
       ctx.arg.print_gc_sections = false;
-    } else if (read_arg(ctx, args, arg, "icf")) {
+    } else if (read_arg("icf")) {
       if (arg == "all")
         ctx.arg.icf = true;
       else if (arg == "none")
         ctx.arg.icf = false;
       else
         Fatal(ctx) << "unknown --icf argument: " << arg;
-    } else if (read_flag(args, "no-icf")) {
+    } else if (read_flag("no-icf")) {
       ctx.arg.icf = false;
-    } else if (read_arg(ctx, args, arg, "image-base")) {
+    } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
-    } else if (read_flag(args, "print-icf-sections")) {
+    } else if (read_flag("print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
-    } else if (read_flag(args, "no-print-icf-sections")) {
+    } else if (read_flag("no-print-icf-sections")) {
       ctx.arg.print_icf_sections = false;
-    } else if (read_flag(args, "quick-exit")) {
+    } else if (read_flag("quick-exit")) {
       ctx.arg.quick_exit = true;
-    } else if (read_flag(args, "no-quick-exit")) {
+    } else if (read_flag("no-quick-exit")) {
       ctx.arg.quick_exit = false;
-    } else if (read_arg(ctx, args, arg, "plugin")) {
+    } else if (read_arg("plugin")) {
       ctx.arg.plugin = arg;
-    } else if (read_arg(ctx, args, arg, "plugin-opt")) {
+    } else if (read_arg("plugin-opt")) {
       ctx.arg.plugin_opt.push_back(std::string(arg));
-    } else if (read_flag(args, "lto-cs-profile-generate")) {
+    } else if (read_flag("lto-cs-profile-generate")) {
       ctx.arg.plugin_opt.push_back("cs-profile-generate");
-    } else if (read_arg(ctx, args, arg, "lto-cs-profile-file")) {
+    } else if (read_arg("lto-cs-profile-file")) {
       ctx.arg.plugin_opt.push_back("cs-profile-path=" + std::string(arg));
-    } else if (read_flag(args, "lto-debug-pass-manager")) {
+    } else if (read_flag("lto-debug-pass-manager")) {
       ctx.arg.plugin_opt.push_back("debug-pass-manager");
-    } else if (read_flag(args, "disable-verify")) {
+    } else if (read_flag("disable-verify")) {
       ctx.arg.plugin_opt.push_back("disable-verify");
-    } else if (read_flag(args, "lto-emit-asm")) {
+    } else if (read_flag("lto-emit-asm")) {
       ctx.arg.plugin_opt.push_back("emit-asm");
-    } else if (read_arg(ctx, args, arg, "thinlto-jobs")) {
+    } else if (read_arg("thinlto-jobs")) {
       ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
-    } else if (read_flag(args, "no-legacy-pass-manager")) {
+    } else if (read_flag("no-legacy-pass-manager")) {
       ctx.arg.plugin_opt.push_back("legacy-pass-manager");
-    } else if (read_arg(ctx, args, arg, "lto-partitions")) {
+    } else if (read_arg("lto-partitions")) {
       ctx.arg.plugin_opt.push_back("lto-partitions=" + std::string(arg));
-    } else if (read_flag(args, "no-lto-legacy-pass-manager")) {
+    } else if (read_flag("no-lto-legacy-pass-manager")) {
       ctx.arg.plugin_opt.push_back("new-pass-manager");
-    } else if (read_arg(ctx, args, arg, "lto-obj-path")) {
+    } else if (read_arg("lto-obj-path")) {
       ctx.arg.plugin_opt.push_back("obj-path=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "opt-remarks-filename")) {
+    } else if (read_arg("opt-remarks-filename")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-filename=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "opt-remarks-format")) {
+    } else if (read_arg("opt-remarks-format")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-format=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "opt-remarks-hotness-threshold")) {
+    } else if (read_arg("opt-remarks-hotness-threshold")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-hotness-threshold=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "opt-remarks-passes")) {
+    } else if (read_arg("opt-remarks-passes")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-passes=" + std::string(arg));
-    } else if (read_flag(args, "opt-remarks-with_hotness")) {
+    } else if (read_flag("opt-remarks-with_hotness")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-with-hotness");
     } else if (args[0].starts_with("-lto-O")) {
       ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(6)));
@@ -841,53 +825,53 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else if (args[0].starts_with("--lto-O")) {
       ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(7)));
       args = args.subspan(1);
-    } else if (read_arg(ctx, args, arg, "lto-pseudo-probe-for-profiling")) {
+    } else if (read_arg("lto-pseudo-probe-for-profiling")) {
       ctx.arg.plugin_opt.push_back("pseudo-probe-for-profiling=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "lto-sample-profile")) {
+    } else if (read_arg("lto-sample-profile")) {
       ctx.arg.plugin_opt.push_back("sample-profile=" + std::string(arg));
-    } else if (read_flag(args, "save-temps")) {
+    } else if (read_flag("save-temps")) {
       ctx.arg.plugin_opt.push_back("save-temps");
-    } else if (read_flag(args, "thinlto-emit-imports-files")) {
+    } else if (read_flag("thinlto-emit-imports-files")) {
       ctx.arg.plugin_opt.push_back("thinlto-emit-imports-files");
-    } else if (read_arg(ctx, args, arg, "thinlto-index-only")) {
+    } else if (read_arg("thinlto-index-only")) {
       ctx.arg.plugin_opt.push_back("thinlto-index-only=" + std::string(arg));
-    } else if (read_flag(args, "thinlto-index-only")) {
+    } else if (read_flag("thinlto-index-only")) {
       ctx.arg.plugin_opt.push_back("thinlto-index-only");
-    } else if (read_arg(ctx, args, arg, "thinlto-object-suffix-replace")) {
+    } else if (read_arg("thinlto-object-suffix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-prefix-replace")) {
+    } else if (read_arg("thinlto-prefix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-prefix-replace=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-cache-dir")) {
+    } else if (read_arg("thinlto-cache-dir")) {
       ctx.arg.plugin_opt.push_back("cache-dir=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-cache-policy")) {
+    } else if (read_arg("thinlto-cache-policy")) {
       ctx.arg.plugin_opt.push_back("cache-policy=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thinlto-jobs")) {
+    } else if (read_arg("thinlto-jobs")) {
       ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
-    } else if (read_arg(ctx, args, arg, "thread-count")) {
+    } else if (read_arg("thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
-    } else if (read_flag(args, "threads")) {
+    } else if (read_flag("threads")) {
       ctx.arg.thread_count = 0;
-    } else if (read_flag(args, "no-threads")) {
+    } else if (read_flag("no-threads")) {
       ctx.arg.thread_count = 1;
-    } else if (read_eq(ctx, args, arg, "threads")) {
+    } else if (read_eq("threads")) {
       ctx.arg.thread_count = parse_number(ctx, "threads", arg);
-    } else if (read_flag(args, "discard-all") || read_flag(args, "x")) {
+    } else if (read_flag("discard-all") || read_flag("x")) {
       ctx.arg.discard_all = true;
-    } else if (read_flag(args, "discard-locals") || read_flag(args, "X")) {
+    } else if (read_flag("discard-locals") || read_flag("X")) {
       ctx.arg.discard_locals = true;
-    } else if (read_flag(args, "strip-all") || read_flag(args, "s")) {
+    } else if (read_flag("strip-all") || read_flag("s")) {
       ctx.arg.strip_all = true;
-    } else if (read_flag(args, "strip-debug") || read_flag(args, "S")) {
+    } else if (read_flag("strip-debug") || read_flag("S")) {
       ctx.arg.strip_all = true;
-    } else if (read_flag(args, "warn-unresolved-symbols")) {
+    } else if (read_flag("warn-unresolved-symbols")) {
       ctx.arg.unresolved_symbols = UNRESOLVED_WARN;
-    } else if (read_flag(args, "error-unresolved-symbols")) {
+    } else if (read_flag("error-unresolved-symbols")) {
       ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
-    } else if (read_arg(ctx, args, arg, "rpath")) {
+    } else if (read_arg("rpath")) {
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;
-    } else if (read_arg(ctx, args, arg, "R")) {
+    } else if (read_arg("R")) {
       if (is_file(arg))
         Fatal(ctx) << "-R" << arg
                    << ": -R as an alias for --just-symbols is not supported";
@@ -895,10 +879,10 @@ void parse_nonpositional_args(Context<E> &ctx,
       if (!ctx.arg.rpaths.empty())
         ctx.arg.rpaths += ":";
       ctx.arg.rpaths += arg;
-    } else if (read_flag(args, "build-id")) {
+    } else if (read_flag("build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;
-    } else if (read_arg(ctx, args, arg, "build-id")) {
+    } else if (read_arg("build-id")) {
       if (arg == "none") {
         ctx.arg.build_id.kind = BuildId::NONE;
       } else if (arg == "uuid") {
@@ -918,84 +902,77 @@ void parse_nonpositional_args(Context<E> &ctx,
       } else {
         Fatal(ctx) << "invalid --build-id argument: " << arg;
       }
-    } else if (read_flag(args, "no-build-id")) {
+    } else if (read_flag("no-build-id")) {
       ctx.arg.build_id.kind = BuildId::NONE;
-    } else if (read_arg(ctx, args, arg, "format") ||
-               read_arg(ctx, args, arg, "b")) {
+    } else if (read_arg("format") || read_arg("b")) {
       if (arg == "binary")
         Fatal(ctx)
           << "mold does not suppor `-b binary`. If you want to convert a binary"
           << " file into an object file, use `objcopy -I binary -O default"
           << " <input-file> <output-file.o>` instead.";
       Fatal(ctx) << "unknown command line option: -b " << arg;
-    } else if (read_arg(ctx, args, arg, "auxiliary") ||
-               read_arg(ctx, args, arg, "f")) {
+    } else if (read_arg("auxiliary") || read_arg("f")) {
       ctx.arg.auxiliary.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "filter") ||
-               read_arg(ctx, args, arg, "F")) {
+    } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
-    } else if (read_flag(args, "apply-dynamic-relocs")) {
-    } else if (read_arg(ctx, args, arg, "O")) {
-    } else if (read_flag(args, "O0")) {
-    } else if (read_flag(args, "O1")) {
-    } else if (read_flag(args, "O2")) {
-    } else if (read_flag(args, "verbose")) {
-    } else if (read_flag(args, "color-diagnostics")) {
-    } else if (read_flag(args, "eh-frame-hdr")) {
-    } else if (read_flag(args, "start-group")) {
-    } else if (read_flag(args, "end-group")) {
-    } else if (read_flag(args, "(")) {
-    } else if (read_flag(args, ")")) {
-    } else if (read_flag(args, "fatal-warnings")) {
-    } else if (read_flag(args, "enable-new-dtags")) {
-    } else if (read_flag(args, "disable-new-dtags")) {
-    } else if (read_flag(args, "nostdlib")) {
-    } else if (read_flag(args, "allow-shlib-undefined")) {
-    } else if (read_flag(args, "no-allow-shlib-undefined")) {
-    } else if (read_flag(args, "no-add-needed")) {
-    } else if (read_flag(args, "no-call-graph-profile-sort")) {
-    } else if (read_flag(args, "no-copy-dt-needed-entries")) {
-    } else if (read_flag(args, "no-undefined-version")) {
-    } else if (read_arg(ctx, args, arg, "sort-section")) {
-    } else if (read_flag(args, "sort-common")) {
-    } else if (read_flag(args, "dc")) {
-    } else if (read_flag(args, "dp")) {
-    } else if (read_flag(args, "fix-cortex-a53-835769")) {
-    } else if (read_flag(args, "fix-cortex-a53-843419")) {
-    } else if (read_flag(args, "EL")) {
-    } else if (read_flag(args, "warn-once")) {
-    } else if (read_flag(args, "nodefaultlibs")) {
-    } else if (read_flag(args, "warn-constructors")) {
-    } else if (read_flag(args, "warn-execstack")) {
-    } else if (read_flag(args, "no-warn-execstack")) {
-    } else if (read_arg(ctx, args, arg, "rpath-link")) {
-    } else if (read_z_flag(args, "combreloc")) {
-    } else if (read_z_flag(args, "nocombreloc")) {
-    } else if (read_z_arg(ctx, args, arg, "common-page-size")) {
-    } else if (read_arg(ctx, args, arg, "version-script")) {
-      remaining.push_back("--version-script");
-      remaining.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "dynamic-list")) {
-      remaining.push_back("--dynamic-list");
-      remaining.push_back(arg);
-    } else if (read_flag(args, "as-needed")) {
-      remaining.push_back("-as-needed");
-    } else if (read_flag(args, "no-as-needed")) {
-      remaining.push_back("-no-as-needed");
-    } else if (read_flag(args, "whole-archive")) {
-      remaining.push_back("-whole-archive");
-    } else if (read_flag(args, "no-whole-archive")) {
-      remaining.push_back("-no-whole-archive");
-    } else if (read_arg(ctx, args, arg, "l")) {
-      remaining.push_back("-l");
-      remaining.push_back(arg);
-    } else if (read_arg(ctx, args, arg, "script") ||
-               read_arg(ctx, args, arg, "T")) {
-      remaining.push_back(arg);
-    } else if (read_flag(args, "push-state")) {
-      remaining.push_back("-push-state");
-    } else if (read_flag(args, "pop-state")) {
-      remaining.push_back("-pop-state");
+    } else if (read_flag("apply-dynamic-relocs")) {
+    } else if (read_arg("O")) {
+    } else if (read_flag("O0")) {
+    } else if (read_flag("O1")) {
+    } else if (read_flag("O2")) {
+    } else if (read_flag("verbose")) {
+    } else if (read_flag("color-diagnostics")) {
+    } else if (read_flag("eh-frame-hdr")) {
+    } else if (read_flag("start-group")) {
+    } else if (read_flag("end-group")) {
+    } else if (read_flag("(")) {
+    } else if (read_flag(")")) {
+    } else if (read_flag("fatal-warnings")) {
+    } else if (read_flag("enable-new-dtags")) {
+    } else if (read_flag("disable-new-dtags")) {
+    } else if (read_flag("nostdlib")) {
+    } else if (read_flag("allow-shlib-undefined")) {
+    } else if (read_flag("no-allow-shlib-undefined")) {
+    } else if (read_flag("no-add-needed")) {
+    } else if (read_flag("no-call-graph-profile-sort")) {
+    } else if (read_flag("no-copy-dt-needed-entries")) {
+    } else if (read_flag("no-undefined-version")) {
+    } else if (read_arg("sort-section")) {
+    } else if (read_flag("sort-common")) {
+    } else if (read_flag("dc")) {
+    } else if (read_flag("dp")) {
+    } else if (read_flag("fix-cortex-a53-835769")) {
+    } else if (read_flag("fix-cortex-a53-843419")) {
+    } else if (read_flag("EL")) {
+    } else if (read_flag("warn-once")) {
+    } else if (read_flag("nodefaultlibs")) {
+    } else if (read_flag("warn-constructors")) {
+    } else if (read_flag("warn-execstack")) {
+    } else if (read_flag("no-warn-execstack")) {
+    } else if (read_arg("rpath-link")) {
+    } else if (read_z_flag("combreloc")) {
+    } else if (read_z_flag("nocombreloc")) {
+    } else if (read_z_arg("common-page-size")) {
+    } else if (read_arg("version-script")) {
+      remaining.push_back("--version-script=" + std::string(arg));
+    } else if (read_arg("dynamic-list")) {
+      remaining.push_back("--dynamic-list=" + std::string(arg));
+    } else if (read_flag("as-needed")) {
+      remaining.push_back("--as-needed");
+    } else if (read_flag("no-as-needed")) {
+      remaining.push_back("--no-as-needed");
+    } else if (read_flag("whole-archive")) {
+      remaining.push_back("--whole-archive");
+    } else if (read_flag("no-whole-archive")) {
+      remaining.push_back("--no-whole-archive");
+    } else if (read_arg("l")) {
+      remaining.push_back("-l" + std::string(arg));
+    } else if (read_arg("script") || read_arg("T")) {
+      remaining.push_back(std::string(arg));
+    } else if (read_flag("push-state")) {
+      remaining.push_back("--push-state");
+    } else if (read_flag("pop-state")) {
+      remaining.push_back("--pop-state");
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
       Warn(ctx) << "unknown command line option: " << args[0];
       args = args.subspan(1);
@@ -1005,7 +982,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     } else {
       if (args[0][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[0];
-      remaining.push_back(args[0]);
+      remaining.push_back(std::string(args[0]));
       args = args.subspan(1);
     }
   }
@@ -1081,13 +1058,8 @@ void parse_nonpositional_args(Context<E> &ctx,
 
 #define INSTANTIATE(E)                                                  \
   template                                                              \
-  bool read_arg(Context<E> &ctx, std::span<std::string_view> &args,     \
-                std::string_view &arg,                                  \
-                std::string name);                                      \
-                                                                        \
-  template                                                              \
   void parse_nonpositional_args(Context<E> &ctx,                        \
-                                std::vector<std::string_view> &remaining)
+                                std::vector<std::string> &remaining)
 
 INSTANTIATE_ALL;
 
