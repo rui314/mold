@@ -20,8 +20,7 @@ std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
       // [a-czg-i]: a, b, c, z, g, h, or i
       // [^a-z]: Any character except lowercase letters
       vec.push_back({BRACKET});
-      std::vector<bool> &bitmap = vec.back().bitmap;
-      bitmap.resize(256);
+      std::bitset<256> &bitset = vec.back().bitset;
 
       bool negate = false;
       if (!pat.empty() && pat[0] == '^') {
@@ -60,9 +59,9 @@ std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
             return {};
 
           for (i64 i = start; i <= end; i++)
-            bitmap[i] = true;
+            bitset[i] = true;
         } else {
-          bitmap[(u8)pat[0]] = true;
+          bitset[(u8)pat[0]] = true;
           pat = pat.substr(1);
         }
       }
@@ -71,8 +70,7 @@ std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
         return {};
 
       if (negate)
-        for (i64 i = 0; i < 256; i++)
-          bitmap[i] = !bitmap[i];
+        bitset.flip();
       break;
     }
     case '?':
@@ -138,7 +136,7 @@ bool GlobPattern::do_match(std::string_view str, std::span<Element> elements) {
       str = str.substr(1);
       break;
     case BRACKET:
-      if (str.empty() || !e.bitmap[str[0]])
+      if (str.empty() || !e.bitset[str[0]])
         return false;
       str = str.substr(1);
       break;

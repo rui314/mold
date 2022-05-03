@@ -4,6 +4,7 @@
 #include "../mold.h"
 
 #include <atomic>
+#include <bitset>
 #include <cassert>
 #include <cstdint>
 #include <fstream>
@@ -1249,7 +1250,7 @@ class GlobPattern {
     Element(Kind k) : kind(k) {}
     Kind kind;
     std::string str;
-    std::vector<bool> bitmap;
+    std::bitset<256> bitset;
   };
 
 public:
