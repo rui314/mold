@@ -1062,9 +1062,6 @@ void parse_nonpositional_args(Context<E> &ctx,
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;
 
-  if (ctx.arg.output.empty())
-    ctx.arg.output = "a.out";
-
   if (ctx.arg.shared || ctx.arg.export_dynamic)
     ctx.default_version = VER_NDX_GLOBAL;
   else
