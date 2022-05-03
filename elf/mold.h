@@ -1479,8 +1479,7 @@ protected:
 //
 
 struct BuildId {
-  template <typename E>
-  i64 size(Context<E> &ctx) const;
+  i64 size() const;
 
   enum { NONE, HEX, HASH, UUID } kind = NONE;
   std::vector<u8> value;

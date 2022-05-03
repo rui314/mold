@@ -1935,8 +1935,7 @@ void VerdefSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-template <typename E>
-i64 BuildId::size(Context<E> &ctx) const {
+i64 BuildId::size() const {
   switch (kind) {
   case HEX:
     return value.size();
@@ -1951,7 +1950,7 @@ i64 BuildId::size(Context<E> &ctx) const {
 
 template <typename E>
 void BuildIdSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size(ctx);
+  this->shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size();
 }
 
 template <typename E>
@@ -1959,7 +1958,7 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
   u32 *base = (u32 *)(ctx.buf + this->shdr.sh_offset);
   memset(base, 0, this->shdr.sh_size);
   base[0] = 4;                          // Name size
-  base[1] = ctx.arg.build_id.size(ctx); // Hash size
+  base[1] = ctx.arg.build_id.size();    // Hash size
   base[2] = NT_GNU_BUILD_ID;            // Type
   memcpy(base + 3, "GNU", 4);           // Name string
 }
@@ -1986,11 +1985,11 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
       munmap(begin, sz);
   });
 
-  assert(ctx.arg.build_id.size(ctx) <= SHA256_SIZE);
+  assert(ctx.arg.build_id.size() <= SHA256_SIZE);
 
   u8 digest[SHA256_SIZE];
   SHA256(shards.data(), shards.size(), digest);
-  memcpy(buf + offset, digest, ctx.arg.build_id.size(ctx));
+  memcpy(buf + offset, digest, ctx.arg.build_id.size());
 
   if (ctx.output_file->is_mmapped) {
     munmap(buf, std::min(bufsize, shard_size));
@@ -1998,8 +1997,7 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   }
 }
 
-template <typename E>
-static std::vector<u8> get_uuid_v4(Context<E> &ctx) {
+static std::vector<u8> get_uuid_v4() {
   std::random_device rand;
   u32 buf[4] = { rand(), rand(), rand(), rand() };
   std::vector<u8> bytes{(u8 *)buf, (u8 *)buf + 16};
@@ -2031,8 +2029,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
     compute_sha256(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
   case BuildId::UUID:
-    write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
-                 get_uuid_v4(ctx));
+    write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE, get_uuid_v4());
     return;
   default:
     unreachable();
@@ -2566,7 +2563,6 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
   template class RelocSection<E>;                                       \
-  template i64 BuildId::size(Context<E> &) const;                       \
   template bool is_relro(Context<E> &, Chunk<E> *);
 
 INSTANTIATE_ALL;
