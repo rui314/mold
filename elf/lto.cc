@@ -305,6 +305,44 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
   return LDPS_OK;
 }
 
+// This function restarts mold itself with `--:lto-pass2` and
+// `--:ignore-ir-file` flags. We do this as a workaround for the old
+// linker plugins that do not support the get_symbols_v3 API.
+//
+// get_symbols_v1 and get_symbols_v2 don't provide a way to ignore an
+// object file we previously passed to the linker plugin. So we can't
+// "unload" object files in archives that we ended up not choosing to
+// include into the final output.
+//
+// As a workaround, we restart the linker with a list of object files
+// the linker has to ignore, so that it won't read the object files
+// from archives next time.
+//
+// This is an ugly hack and should be removed once GCC adopts the v3 API.
+template <typename E>
+static void restart_process(Context<E> &ctx) {
+  std::vector<const char *> args;
+
+  for (std::string_view arg : ctx.cmdline_args)
+    args.push_back(strdup(std::string(arg).c_str()));
+
+  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool)
+    if (file->is_lto_obj && !file->is_alive)
+      args.push_back(strdup(("--:ignore-ir-file=" +
+                             file->mf->get_identifier()).c_str()));
+
+  args.push_back("--:lto-pass2");
+  args.push_back(nullptr);
+
+  std::string self = std::filesystem::read_symlink("/proc/self/exe");
+
+  std::cout << std::flush;
+  std::cerr << std::flush;
+  execv(self.c_str(), (char * const *)args.data());
+  std::cerr << "execv failed: " << errno_string() << "\n";
+  _exit(1);
+}
+
 template <typename E>
 static PluginStatus
 get_symbols_v2(const void *handle, int nsyms, PluginSymbol *psyms) {
@@ -563,44 +601,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   obj->symvers.resize(esyms->size());
   plugin_symbols.clear();
   return obj;
-}
-
-// This function restarts mold itself with `--:lto-pass2` and
-// `--:ignore-ir-file` flags. We do this as a workaround for the old
-// linker plugins that do not support the get_symbols_v3 API.
-//
-// get_symbols_v1 and get_symbols_v2 don't provide a way to ignore an
-// object file we previously passed to the linker plugin. So we can't
-// "unload" object files in archives that we ended up not choosing to
-// include into the final output.
-//
-// As a workaround, we restart the linker with a list of object files
-// the linker has to ignore, so that it won't read the object files
-// from archives next time.
-//
-// This is an ugly hack and should be removed once GCC adopts the v3 API.
-template <typename E>
-static void restart_process(Context<E> &ctx) {
-  std::vector<const char *> args;
-
-  for (std::string_view arg : ctx.cmdline_args)
-    args.push_back(strdup(std::string(arg).c_str()));
-
-  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool)
-    if (file->is_lto_obj && !file->is_alive)
-      args.push_back(strdup(("--:ignore-ir-file=" +
-                             file->mf->get_identifier()).c_str()));
-
-  args.push_back("--:lto-pass2");
-  args.push_back(nullptr);
-
-  std::string self = std::filesystem::read_symlink("/proc/self/exe");
-
-  std::cout << std::flush;
-  std::cerr << std::flush;
-  execv(self.c_str(), (char * const *)args.data());
-  std::cerr << "execv failed: " << errno_string() << "\n";
-  _exit(1);
 }
 
 // Entry point
