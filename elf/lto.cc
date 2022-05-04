@@ -347,6 +347,13 @@ template <typename E>
 static PluginStatus
 get_symbols_v2(const void *handle, int nsyms, PluginSymbol *psyms) {
   LOG << "get_symbols_v2\n";
+
+  static std::once_flag flag;
+  std::call_once(flag, [&] {
+    if (!gctx<E>->arg.lto_pass2)
+      restart_process(*gctx<E>);
+  });
+
   return get_symbols<E>(handle, nsyms, psyms, true);
 }
 
@@ -523,13 +530,6 @@ static bool is_llvm(Context<E> &ctx) {
   return ctx.arg.plugin.ends_with("LLVMgold.so");
 }
 
-// Returns true if a given linker plugin supports the get_symbols_v3 API.
-// Currently, we simply assume that LLVM supports it and GCC does not.
-template <typename E>
-static bool suppots_v3_api(Context<E> &ctx) {
-  return is_llvm(ctx);
-}
-
 template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   LOG << "read_lto_object: " << mf->name << "\n";
@@ -607,9 +607,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 template <typename E>
 std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   Timer t(ctx, "do_lto");
-
-  if (!ctx.arg.lto_pass2 && !suppots_v3_api(ctx))
-    restart_process(ctx);
 
   assert(phase == 1);
   phase = 2;
