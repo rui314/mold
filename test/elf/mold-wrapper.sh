@@ -90,6 +90,9 @@ LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvpe | grep -q 'a.sh exe
 which /usr/bin/valgrind >& /dev/null
 if [ $? = 0 ]; then
   LD_PRELOAD=$mold-wrapper.so MOLD_PATH=$t/a.sh valgrind -q $t/exe execl | grep -q 'a.sh execl'
+else
+  echo skipped
+  exit
 fi
 
 echo OK
