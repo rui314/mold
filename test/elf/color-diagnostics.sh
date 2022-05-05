@@ -20,7 +20,7 @@ int main() { foo(); }
 EOF
 
 ! "$mold" -o $t/exe $t/a.o --color-diagnostics 2> $t/log
-grep -q $'\033' $t/log
+! grep -q $'\033' $t/log || false
 
 ! "$mold" -o $t/exe $t/a.o --color-diagnostics=always 2> $t/log
 grep -q $'\033' $t/log
