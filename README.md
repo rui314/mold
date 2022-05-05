@@ -201,3 +201,17 @@ cores most of the time. In this demo, the maximum parallelism is
 artificially capped to 16 so that the bars fit in the GIF.
 
 For details, please read [design notes](docs/design.md).
+
+## License
+
+mold is available under AGPL. Note that that does not mean that you
+have to license your program under AGPL if you use mold to link that
+program. An output of the mold linker is a derived work of the object
+files and libraries you pass to the linker but not a derived work of
+the mold linker itself.
+
+If you wish to not use an AGPL program in your organization for
+whatever reason, we also sell a commercial, non-AGPL license which
+comes with a technical support for the initial migration from other
+linkers to mold as well as a general technical support. Please
+[contact us](mailto:contact@bluewhale.systems) if you are interested.
