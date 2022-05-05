@@ -618,18 +618,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.directory = arg;
     } else if (read_arg("chroot")) {
       ctx.arg.chroot = arg;
-    } else if (args[0] == "-color-diagnostics=auto" ||
-               args[0] == "--color-diagnostics=auto") {
+    } else if (read_flag("color-diagnostics=auto")) {
       ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
-      args = args.subspan(1);
-    } else if (args[0] == "-color-diagnostics=always" ||
-               args[0] == "--color-diagnostics=always") {
+    } else if (read_flag("color-diagnostics=always")) {
       ctx.arg.color_diagnostics = true;
-      args = args.subspan(1);
-    } else if (args[0] == "-color-diagnostics=never" ||
-               args[0] == "--color-diagnostics=never") {
+    } else if (read_flag("color-diagnostics=never")) {
       ctx.arg.color_diagnostics = false;
-      args = args.subspan(1);
     } else if (read_flag("color-diagnostics")) {
       ctx.arg.color_diagnostics = true;
     } else if (read_flag("warn-common")) {
