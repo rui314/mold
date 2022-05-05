@@ -2337,7 +2337,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   assert(ctx.debug_info);
   assert(ctx.debug_abbrev);
 
-  struct __attribute__((packed)) Entry {
+  struct Entry {
     ul64 start;
     ul64 end;
     ul32 attr;
