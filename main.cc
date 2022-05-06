@@ -25,14 +25,22 @@ void cleanup() {
     unlink(socket_tmpfile);
 }
 
-static void signal_handler(int) {
+static void sigint_handler(int) {
+  cleanup();
+  _exit(1);
+}
+
+static void sigbus_handler(int) {
+  puts("mold: BUS error: This might have been caused as a result"
+       " of a disk full error. Check your filesystem usage.");
   cleanup();
   _exit(1);
 }
 
 void install_signal_handler() {
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
+  signal(SIGINT, sigint_handler);
+  signal(SIGTERM, sigint_handler);
+  signal(SIGBUS, sigbus_handler);
 }
 
 } // namespace mold
