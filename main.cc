@@ -30,6 +30,16 @@ static void sigint_handler(int) {
   _exit(1);
 }
 
+// mold mmap's an output file, and the mmap succeeds even if there's
+// no enough space left on the filesystem. The actual disk blocks are
+// not allocated on the mmap call but when the program writes to it
+// for the first time.
+//
+// If a disk becomes full as a result of a write to an mmap'ed memory
+// region, the failure of the write is reported as a SIGBUS. This
+// signal handler catches that signal and print out a user-friendly
+// error message. Without this, it is very hard to realize that the
+// disk might be full.
 static void sigbus_handler(int) {
   puts("mold: BUS error: This might have been caused as a result"
        " of a disk full error. Check your filesystem usage.");
