@@ -31,6 +31,7 @@
 #include <pthread.h>
 #include <cstring>
 #include <cstdlib>
+#include <time.h>
 #else
 #error Unsupported platform
 #endif
@@ -204,8 +205,20 @@ inline thread_monitor::handle_type thread_monitor::launch( void* (*thread_routin
     check(pthread_attr_init( &s ), "pthread_attr_init has failed");
     if( stack_size>0 )
         check(pthread_attr_setstacksize( &s, stack_size ), "pthread_attr_setstack_size has failed" );
+
     pthread_t handle;
-    check( pthread_create( &handle, &s, thread_routine, arg ), "pthread_create has failed" );
+    int error_code;
+    for (int tries = 1; tries <= 20; tries++) {
+      error_code = pthread_create(&handle, &s, thread_routine, arg);
+      if (error_code != EAGAIN)
+        break;
+
+      // Retry after tries * 1 millisecond.
+      struct timespec ts = {0, tries * 1000 * 1000};
+      nanosleep(&ts, NULL);
+    }
+    check(error_code, "pthread_create has failed");
+
     check( pthread_attr_destroy( &s ), "pthread_attr_destroy has failed" );
     return handle;
 }
