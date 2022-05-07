@@ -39,10 +39,11 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   static std::mutex mu;
   std::scoped_lock lock{mu};
 
-  if (output_buffer_start <= info->si_addr &&
+  if ((signo == SIGSEGV || signo == SIGBUS) &&
+      output_buffer_start <= info->si_addr &&
       info->si_addr < output_buffer_end) {
     const char msg[] = "mold: failed to write to an output file. Disk full?\n";
-    write(STDERR_FILENO, msg, sizeof(msg));
+    write(STDERR_FILENO, msg, sizeof(msg) - 1);
   }
 
   cleanup();
