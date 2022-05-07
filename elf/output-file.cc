@@ -57,6 +57,9 @@ public:
     if (this->buf == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
     ::close(fd);
+
+    mold::output_buffer_start = this->buf;
+    mold::output_buffer_end = this->buf + filesize;
   }
 
   void close(Context<E> &ctx) override {

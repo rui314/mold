@@ -50,6 +50,9 @@ inline char *output_tmpfile;
 inline char *socket_tmpfile;
 inline thread_local bool opt_demangle;
 
+inline u8 *output_buffer_start = nullptr;
+inline u8 *output_buffer_end = nullptr;
+
 extern const std::string mold_version;
 
 std::string_view errno_string();

@@ -25,11 +25,6 @@ void cleanup() {
     unlink(socket_tmpfile);
 }
 
-static void sigint_handler(int) {
-  cleanup();
-  _exit(1);
-}
-
 // mold mmap's an output file, and the mmap succeeds even if there's
 // no enough space left on the filesystem. The actual disk blocks are
 // not allocated on the mmap call but when the program writes to it
@@ -40,17 +35,29 @@ static void sigint_handler(int) {
 // signal handler catches that signal and print out a user-friendly
 // error message. Without this, it is very hard to realize that the
 // disk might be full.
-static void sigbus_handler(int) {
-  puts("mold: BUS error: This might have been caused as a result"
-       " of a disk full error. Check your filesystem usage.");
+static void sighandler(int signo, siginfo_t *info, void *ucontext) {
+  static std::mutex mu;
+  std::scoped_lock lock{mu};
+
+  if (output_buffer_start <= info->si_addr &&
+      info->si_addr < output_buffer_end) {
+    const char msg[] = "mold: failed to write to an output file. Disk full?\n";
+    write(STDERR_FILENO, msg, sizeof(msg));
+  }
+
   cleanup();
   _exit(1);
 }
 
 void install_signal_handler() {
-  signal(SIGINT, sigint_handler);
-  signal(SIGTERM, sigint_handler);
-  signal(SIGBUS, sigbus_handler);
+  struct sigaction action;
+  action.sa_sigaction = sighandler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_SIGINFO;
+
+  sigaction(SIGINT, &action, NULL);
+  sigaction(SIGTERM, &action, NULL);
+  sigaction(SIGBUS, &action, NULL);
 }
 
 } // namespace mold
