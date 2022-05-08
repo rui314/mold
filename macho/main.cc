@@ -369,8 +369,7 @@ static int do_main(int argc, char **argv) {
   for (i64 i = 0; i < argc; i++)
     ctx.cmdline_args.push_back(argv[i]);
 
-  std::vector<std::string> file_args;
-  parse_nonpositional_args(ctx, file_args);
+  std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   if (ctx.arg.arch != E::cputype) {
 #if !defined(MOLD_DEBUG_X86_64_ONLY) && !defined(MOLD_DEBUG_ARM64_ONLY)

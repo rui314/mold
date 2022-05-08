@@ -102,9 +102,9 @@ static bool is_directory(std::filesystem::path path) {
 }
 
 template <typename E>
-void parse_nonpositional_args(Context<E> &ctx,
-                              std::vector<std::string> &remaining) {
+std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string_view> &args = ctx.cmdline_args;
+  std::vector<std::string> remaining;
   i64 i = 1;
 
   std::vector<std::string> framework_paths;
@@ -169,7 +169,7 @@ void parse_nonpositional_args(Context<E> &ctx,
     }
 
     if (read_flag("-help") || read_flag("--help")) {
-      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[i]
+      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
                    << " [options] file...\n" << helpmsg;
       exit(0);
     }
@@ -311,10 +311,12 @@ void parse_nonpositional_args(Context<E> &ctx,
   } else {
     ctx.arg.pagezero_size = (ctx.output_type == MH_EXECUTE) ? 0x100000000 : 0;
   }
+
+  return remaining;
 }
 
 #define INSTANTIATE(E) \
-  template void parse_nonpositional_args(Context<E> &, std::vector<std::string> &)
+  template std::vector<std::string> parse_nonpositional_args(Context<E> &)
 
 INSTANTIATE_ALL;
 

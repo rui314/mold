@@ -11,6 +11,9 @@
 #include <unordered_map>
 #include <variant>
 
+#define XXH_INLINE_ALL 1
+#include <xxhash.h>
+
 #if MOLD_DEBUG_X86_64_ONLY
 # define INSTANTIATE_ALL INSTANTIATE(X86_64)
 #elif MOLD_DEBUG_ARM64_ONLY
@@ -32,6 +35,17 @@ template <typename E> class OutputSection;
 template <typename E> class Subsection;
 template <typename E> struct Context;
 template <typename E> struct Symbol;
+
+class HashCmp {
+public:
+  static size_t hash(const std::string_view &k) {
+    return XXH3_64bits(k.data(), k.size());
+  }
+
+  static bool equal(const std::string_view &k1, const std::string_view &k2) {
+    return k1 == k2;
+  }
+};
 
 //
 // object-file.cc
@@ -735,8 +749,7 @@ TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf);
 //
 
 template <typename E>
-void parse_nonpositional_args(Context<E> &ctx,
-                              std::vector<std::string> &remaining);
+std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 //
 // dead-strip.cc
@@ -812,7 +825,7 @@ struct Context {
 
   bool has_error = false;
 
-  tbb::concurrent_hash_map<std::string_view, Symbol<E>> symbol_map;
+  tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
 
   std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf;
@@ -821,6 +834,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<DylibFile<E>>> dylib_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
+  tbb::concurrent_vector<std::unique_ptr<TextDylib>> tapi_pool;
   std::vector<std::unique_ptr<OutputSection<E>>> osec_pool;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;

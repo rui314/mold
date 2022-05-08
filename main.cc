@@ -1,5 +1,4 @@
-#include "elf/mold.h"
-#include "macho/mold.h"
+#include "mold.h"
 
 #include <cstring>
 #include <signal.h>
@@ -17,6 +16,14 @@ const std::string mold_version =
 const std::string mold_version =
   "mold " MOLD_VERSION " (compatible with GNU ld)";
 #endif
+
+namespace elf {
+int main(int argc, char **argv);
+}
+
+namespace macho {
+int main(int argc, char **argv);
+}
 
 void cleanup() {
   if (output_tmpfile)

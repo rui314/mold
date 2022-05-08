@@ -83,9 +83,9 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 
 static i64 read_addend(u8 *buf, const MachRel &r) {
   if (r.p2size == 2)
-    return *(i32 *)(buf + r.offset);
+    return *(il32 *)(buf + r.offset);
   if (r.p2size == 3)
-    return *(i64 *)(buf + r.offset);
+    return *(il64 *)(buf + r.offset);
   unreachable();
 }
 

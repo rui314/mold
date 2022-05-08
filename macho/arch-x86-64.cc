@@ -73,7 +73,7 @@ static i64 read_addend(u8 *buf, const MachRel &r) {
   if (r.p2size == 2)
     return *(il32 *)(buf + r.offset) + get_reloc_addend(r.type);
   if (r.p2size == 3)
-    return *(i64 *)(buf + r.offset) + get_reloc_addend(r.type);
+    return *(il64 *)(buf + r.offset) + get_reloc_addend(r.type);
   unreachable();
 }
 
