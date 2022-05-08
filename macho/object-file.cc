@@ -616,7 +616,6 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   template class DylibFile<E>;                                          \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
 
-INSTANTIATE(ARM64);
-INSTANTIATE(X86_64);
+INSTANTIATE_ALL;
 
 } // namespace mold::macho

@@ -11,6 +11,16 @@
 #include <unordered_map>
 #include <variant>
 
+#if MOLD_DEBUG_X86_64_ONLY
+# define INSTANTIATE_ALL INSTANTIATE(X86_64)
+#elif MOLD_DEBUG_ARM64_ONLY
+# define INSTANTIATE_ALL INSTANTIATE(ARM64)
+#else
+# define INSTANTIATE_ALL                        \
+  INSTANTIATE(X86_64);                          \
+  INSTANTIATE(ARM64);
+#endif
+
 namespace mold::macho {
 
 static constexpr i64 COMMON_PAGE_SIZE = 0x4000;

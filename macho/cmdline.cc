@@ -316,7 +316,6 @@ void parse_nonpositional_args(Context<E> &ctx,
 #define INSTANTIATE(E) \
   template void parse_nonpositional_args(Context<E> &, std::vector<std::string> &)
 
-INSTANTIATE(ARM64);
-INSTANTIATE(X86_64);
+INSTANTIATE_ALL;
 
 } // namespace mold::macho

@@ -54,7 +54,6 @@ void InputSection<E>::parse_relocations(Context<E> &ctx) {
 #define INSTANTIATE(E)                          \
   template class InputSection<E>
 
-INSTANTIATE(ARM64);
-INSTANTIATE(X86_64);
+INSTANTIATE_ALL;
 
 } // namespace mold::macho
