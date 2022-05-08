@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
-    - uses: rui314/setup-mold@v1
+    - uses: rui314/setup-mold@staging
       with:
         make-default: false
     - name: apt-get
