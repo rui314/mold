@@ -218,9 +218,9 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
         val -= get_addr(ctx) + r.offset;
 
       if (r.p2size == 2)
-        *(i32 *)(buf + r.offset) = val;
+        *(il32 *)(buf + r.offset) = val;
       else if (r.p2size == 3)
-        *(i64 *)(buf + r.offset) = val;
+        *(il64 *)(buf + r.offset) = val;
       else
         unreachable();
       break;

@@ -343,14 +343,14 @@ struct FatArch {
 };
 
 struct MachHeader {
-  u32 magic;
-  u32 cputype;
-  u32 cpusubtype;
-  u32 filetype;
-  u32 ncmds;
-  u32 sizeofcmds;
-  u32 flags;
-  u32 reserved;
+  ul32 magic;
+  ul32 cputype;
+  ul32 cpusubtype;
+  ul32 filetype;
+  ul32 ncmds;
+  ul32 sizeofcmds;
+  ul32 flags;
+  ul32 reserved;
 };
 
 struct LoadCommand {
@@ -363,17 +363,17 @@ struct SegmentCommand {
     return {segname, strnlen(segname, sizeof(segname))};
   }
 
-  u32 cmd;
-  u32 cmdsize;
+  ul32 cmd;
+  ul32 cmdsize;
   char segname[16];
-  u64 vmaddr;
-  u64 vmsize;
-  u64 fileoff;
-  u64 filesize;
-  u32 maxprot;
-  u32 initprot;
-  u32 nsects;
-  u32 flags;
+  ul64 vmaddr;
+  ul64 vmsize;
+  ul64 fileoff;
+  ul64 filesize;
+  ul32 maxprot;
+  ul32 initprot;
+  ul32 nsects;
+  ul32 flags;
 };
 
 struct MachSection {
@@ -401,138 +401,138 @@ struct MachSection {
 
   char sectname[16];
   char segname[16];
-  u64 addr;
-  u64 size;
-  u32 offset;
-  u32 p2align;
-  u32 reloff;
-  u32 nreloc;
-  u32 type : 8;
-  u32 attr : 24;
-  u32 reserved1;
-  u32 reserved2;
-  u32 reserved3;
+  ul64 addr;
+  ul64 size;
+  ul32 offset;
+  ul32 p2align;
+  ul32 reloff;
+  ul32 nreloc;
+  u8 type;
+  ul24 attr;
+  ul32 reserved1;
+  ul32 reserved2;
+  ul32 reserved3;
 };
 
 struct DylibCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 nameoff;
-  u32 timestamp;
-  u32 current_version;
-  u32 compatibility_version;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 nameoff;
+  ul32 timestamp;
+  ul32 current_version;
+  ul32 compatibility_version;
 };
 
 struct DylinkerCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 nameoff;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 nameoff;
 };
 
 struct SymtabCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 symoff;
-  u32 nsyms;
-  u32 stroff;
-  u32 strsize;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 symoff;
+  ul32 nsyms;
+  ul32 stroff;
+  ul32 strsize;
 };
 
 struct DysymtabCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 ilocalsym;
-  u32 nlocalsym;
-  u32 iextdefsym;
-  u32 nextdefsym;
-  u32 iundefsym;
-  u32 nundefsym;
-  u32 tocoff;
-  u32 ntoc;
-  u32 modtaboff;
-  u32 nmodtab;
-  u32 extrefsymoff;
-  u32 nextrefsyms;
-  u32 indirectsymoff;
-  u32 nindirectsyms;
-  u32 extreloff;
-  u32 nextrel;
-  u32 locreloff;
-  u32 nlocrel;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 ilocalsym;
+  ul32 nlocalsym;
+  ul32 iextdefsym;
+  ul32 nextdefsym;
+  ul32 iundefsym;
+  ul32 nundefsym;
+  ul32 tocoff;
+  ul32 ntoc;
+  ul32 modtaboff;
+  ul32 nmodtab;
+  ul32 extrefsymoff;
+  ul32 nextrefsyms;
+  ul32 indirectsymoff;
+  ul32 nindirectsyms;
+  ul32 extreloff;
+  ul32 nextrel;
+  ul32 locreloff;
+  ul32 nlocrel;
 };
 
 struct VersionMinCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 version;
-  u32 sdk;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 version;
+  ul32 sdk;
 };
 
 struct DyldInfoCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 rebase_off;
-  u32 rebase_size;
-  u32 bind_off;
-  u32 bind_size;
-  u32 weak_bind_off;
-  u32 weak_bind_size;
-  u32 lazy_bind_off;
-  u32 lazy_bind_size;
-  u32 export_off;
-  u32 export_size;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 rebase_off;
+  ul32 rebase_size;
+  ul32 bind_off;
+  ul32 bind_size;
+  ul32 weak_bind_off;
+  ul32 weak_bind_size;
+  ul32 lazy_bind_off;
+  ul32 lazy_bind_size;
+  ul32 export_off;
+  ul32 export_size;
 };
 
 struct UUIDCommand {
-  u32 cmd;
-  u32 cmdsize;
+  ul32 cmd;
+  ul32 cmdsize;
   u8 uuid[16];
 };
 
 struct RpathCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 path_off;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 path_off;
 };
 
 struct LinkEditDataCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 dataoff;
-  u32 datasize;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 dataoff;
+  ul32 datasize;
 };
 
 struct BuildToolVersion {
-  u32 tool;
-  u32 version;
+  ul32 tool;
+  ul32 version;
 };
 
 struct BuildVersionCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u32 platform;
-  u32 minos;
-  u32 sdk;
-  u32 ntools;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 platform;
+  ul32 minos;
+  ul32 sdk;
+  ul32 ntools;
 };
 
 struct EntryPointCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u64 entryoff;
-  u64 stacksize;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul64 entryoff;
+  ul64 stacksize;
 };
 
 struct SourceVersionCommand {
-  u32 cmd;
-  u32 cmdsize;
-  u64 version;
+  ul32 cmd;
+  ul32 cmdsize;
+  ul64 version;
 };
 
 struct DataInCodeEntry {
-  u32 offset;
-  u16 length;
-  u16 kind;
+  ul32 offset;
+  ul16 length;
+  ul16 kind;
 };
 
 // This struct is named `n_list` on BSD and macOS.
@@ -545,31 +545,30 @@ struct MachSym {
     return type == N_UNDF && ext && value;
   }
 
-  u32 stroff;
+  ul32 stroff;
   u8 ext : 1;
   u8 type : 3;
   u8 pext : 1;
   u8 stub : 3;
   u8 sect;
   union {
-    u16 desc;
+    ul16 desc;
     struct {
-      u16 : 8;
-      u16 p2align : 4;
-      u16 : 4;
+      u8 padding;
+      u8 p2align : 4;
     };
   };
-  u64 value;
+  ul64 value;
 };
 
 // This struct is named `relocation_info` on BSD and macOS.
 struct MachRel {
-  u32 offset;
-  u32 idx : 24;
-  u32 is_pcrel : 1;
-  u32 p2size : 2;
-  u32 is_extern : 1;
-  u32 type : 4;
+  ul32 offset;
+  ul24 idx;
+  u8 is_pcrel : 1;
+  u8 p2size : 2;
+  u8 is_extern : 1;
+  u8 type : 4;
 };
 
 // __TEXT,__unwind_info section contents
@@ -580,47 +579,47 @@ static constexpr u32 UNWIND_SECOND_LEVEL_COMPRESSED = 3;
 static constexpr u32 UNWIND_PERSONALITY_MASK = 0x30000000;
 
 struct UnwindSectionHeader {
-  u32 version;
-  u32 encoding_offset;
-  u32 encoding_count;
-  u32 personality_offset;
-  u32 personality_count;
-  u32 page_offset;
-  u32 page_count;
+  ul32 version;
+  ul32 encoding_offset;
+  ul32 encoding_count;
+  ul32 personality_offset;
+  ul32 personality_count;
+  ul32 page_offset;
+  ul32 page_count;
 };
 
 struct UnwindFirstLevelPage {
-  u32 func_addr;
-  u32 page_offset;
-  u32 lsda_offset;
+  ul32 func_addr;
+  ul32 page_offset;
+  ul32 lsda_offset;
 };
 
 struct UnwindSecondLevelPage {
-  u32 kind;
-  u16 page_offset;
-  u16 page_count;
-  u16 encoding_offset;
-  u16 encoding_count;
+  ul32 kind;
+  ul16 page_offset;
+  ul16 page_count;
+  ul16 encoding_offset;
+  ul16 encoding_count;
 };
 
 struct UnwindLsdaEntry {
-  u32 func_addr;
-  u32 lsda_addr;
+  ul32 func_addr;
+  ul32 lsda_addr;
 };
 
 struct UnwindPageEntry {
-  u32 func_addr : 24;
-  u32 encoding : 8;
+  ul24 func_addr;
+  u8 encoding;
 };
 
 // __LD,__compact_unwind section contents
 
 struct CompactUnwindEntry {
-  u64 code_start;
-  u32 code_len;
-  u32 encoding;
-  u64 personality;
-  u64 lsda;
+  ul64 code_start;
+  ul32 code_len;
+  ul32 encoding;
+  ul64 personality;
+  ul64 lsda;
 };
 
 // __LINKEDIT,__code_signature
@@ -643,7 +642,7 @@ struct CodeSignatureHeader {
 struct CodeSignatureBlobIndex {
   ub32 type;
   ub32 offset;
-  u32 padding;
+  ul32 padding;
 };
 
 struct CodeSignatureDirectory {

@@ -45,8 +45,8 @@ static void print_bytes(u8 *buf, i64 size) {
 
 struct ExportEntry {
   std::string name;
-  u32 flags;
-  u64 addr;
+  ul32 flags;
+  ul64 addr;
 };
 
 static void read_trie(std::vector<ExportEntry> &vec, u8 *start, i64 offset = 0,

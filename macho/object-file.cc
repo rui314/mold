@@ -290,7 +290,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
         error();
 
-      i32 addr = *(i32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
+      i32 addr = *(il32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
       Subsection<E> *target = find_subsection(ctx, addr);
       if (!target)
         error();
