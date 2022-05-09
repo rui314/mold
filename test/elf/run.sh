@@ -18,9 +18,6 @@ mkdir -p $t
 # ASAN doesn't work with LD_PRELOAD
 ldd mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
 
-which $GCC >& /dev/null || { echo skipped; exit; }
-which clang >& /dev/null || { echo skipped; exit; }
-
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>
 
@@ -34,17 +31,8 @@ $GCC -fuse-ld=bfd -o $t/exe $t/a.o
 readelf -p .comment $t/exe > $t/log
 ! grep -q mold $t/log || false
 
-clang -fuse-ld=bfd -o $t/exe $t/a.o
-readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log || false
-
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
   $GCC -o $t/exe $t/a.o -B/usr/bin
-readelf -p .comment $t/exe > $t/log
-grep -q mold $t/log
-
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
-  clang -o $t/exe $t/a.o -fuse-ld=/usr/bin/ld
 readelf -p .comment $t/exe > $t/log
 grep -q mold $t/log
 
@@ -79,6 +67,6 @@ chmod 755 $t/sh
 ./mold -run $t/sh $t/foo.ld --version | grep -q mold && false
 
 ln -sf mold $t/mold
-PATH="$t:$PATH" mold -run $t/sh ld --version | grep -q mold
+PATH="$t:$PATH" ./mold -run $t/sh ld --version | grep -q mold
 
 echo OK
