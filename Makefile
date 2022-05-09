@@ -133,7 +133,7 @@ all: mold mold-wrapper.so
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
-	ln -sf mold ld64.mold
+	ln -sf mold ld64
 
 mold-wrapper.so: elf/mold-wrapper.c
 	$(CC) $(DEPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
@@ -224,6 +224,6 @@ uninstall:
 	rm -rf $D$(LIBDIR)/mold
 
 clean:
-	rm -rf *~ mold mold-wrapper.so out ld ld64.mold mold-*-linux.tar.gz
+	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
 .PHONY: all test tests check clean test-x86-64 test-i386 test-arm64 test-arm32 test-riscv64 test-all
