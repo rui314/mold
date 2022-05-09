@@ -10,6 +10,6 @@ test: $(TESTS)
 # command output. `tail -r` outputs an input from the last line to the
 # first.
 $(TESTS):
-	@./$@ 2>&1 | tail -r | tail -r
+	@set -o pipefail; ./$@ 2>&1 | tail -r | tail -r
 
 .PHONY: test $(TESTS)
