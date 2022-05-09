@@ -33,6 +33,7 @@ Options:
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
+  -force_load <FILE>          Include all objects from a given static archive
   -framework <NAME>,[,<SUFFIX>]
                               Search for a given framework
   -headerpad <SIZE>           Allocate the size of padding after load commands
@@ -228,6 +229,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
+      remaining.push_back(std::string(arg));
+    } else if (read_arg("-force_load")) {
+      remaining.push_back("-force_load");
       remaining.push_back(std::string(arg));
     } else if (read_arg("-framework")) {
       remaining.push_back("-framework");
