@@ -103,7 +103,7 @@ following flags to use `mold` instead of `/usr/bin/ld`:
 
 - Clang: pass `-fuse-ld=mold`
 
-- GCC 12.1.0 (upcoming version) or later: pass `-fuse-ld=mold`
+- GCC 12.1.0 or later: pass `-fuse-ld=mold`
 
 - GCC before 12.1.0: `-fuse-ld` does not accept `mold` as a valid
   argument, so you need to use `-B` option instead. `-B` is an option
