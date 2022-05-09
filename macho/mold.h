@@ -48,7 +48,7 @@ public:
 };
 
 //
-// object-file.cc
+// input-files.cc
 //
 
 template <typename E>
