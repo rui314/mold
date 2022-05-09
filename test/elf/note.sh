@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -39,7 +38,7 @@ _start:
 .quad 42
 EOF
 
-"$mold" -static -o $t/exe $t/a.o
+./mold -static -o $t/exe $t/a.o
 readelf -W --sections $t/exe > $t/log
 
 grep -Eq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log

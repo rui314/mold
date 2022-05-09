@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -21,7 +20,7 @@ void hello() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o $t/bundle $t/a.o -Wl,-bundle
+clang --ld-path=./ld64 -o $t/bundle $t/a.o -Wl,-bundle
 file $t/exe | grep -qi bundle
 
 echo OK

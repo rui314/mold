@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -25,10 +24,10 @@ cat <<EOF | $CC -fcf-protection=none -c -o $t/b.o -xc -
 void _start() {}
 EOF
 
-"$mold" -o $t/exe $t/a.o
+./mold -o $t/exe $t/a.o
 readelf -n $t/exe | grep -q 'x86 feature: IBT'
 
-"$mold" -o $t/exe $t/b.o
+./mold -o $t/exe $t/b.o
 ! readelf -n $t/exe | grep -q 'x86 feature: IBT' || false
 
 echo OK

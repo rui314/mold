@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -21,7 +20,7 @@ void hello() {
 }
 EOF
 
-clang -fuse-ld="$mold" -shared -o $t/b.dylib $t/a.o
+clang --ld-path=./ld64 -shared -o $t/b.dylib $t/a.o
 otool -l $t/b.dylib > $t/log
 ! grep -q 'segname: __PAGEZERO' $t/log || false
 

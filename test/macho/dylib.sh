@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -23,7 +22,7 @@ char *hello() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o $t/b.dylib -shared $t/a.o
+clang --ld-path=./ld64 -o $t/b.dylib -shared $t/a.o
 
 cat <<EOF | $CC -o $t/c.o -c -xc -
 #include <stdio.h>
@@ -36,7 +35,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o $t/exe $t/c.o $t/b.dylib
+clang --ld-path=./ld64 -o $t/exe $t/c.o $t/b.dylib
 $t/exe | grep -q 'Hello world'
 
 echo OK

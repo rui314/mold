@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -37,7 +36,7 @@ int main() {
 }
 EOF
 
-clang++ -fuse-ld="$mold" -o $t/exe $t/d.o $t/c.a
+clang++ --ld-path=./ld64 -o $t/exe $t/d.o $t/c.a
 $t/exe | grep -q 'Hello world'
 
 otool -tv $t/exe | grep -q '^_hello:'

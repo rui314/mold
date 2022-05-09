@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -22,7 +21,7 @@ bar:
 .L.baz:
 EOF
 
-"$mold" -o $t/exe $t/a.o
+./mold -o $t/exe $t/a.o
 readelf --symbols $t/exe > $t/log
 fgrep -q _start $t/log
 fgrep -q foo $t/log
@@ -32,7 +31,7 @@ if [ $MACHINE '!=' riscv64 ]; then
   fgrep -q .L.baz $t/log
 fi
 
-"$mold" -o $t/exe $t/a.o -strip-all
+./mold -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log
 ! fgrep -q _start $t/log || false
 ! fgrep -q foo $t/log || false

@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -30,11 +29,11 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-F$t -Wl,-needed_framework,Foo \
+clang --ld-path=./ld64 -o $t/exe $t/a.o -Wl,-F$t -Wl,-needed_framework,Foo \
   -Wl,-dead_strip_dylibs
 otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' | fgrep -q Foo.framework/Foo
 
-clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-F$t -Wl,-framework,Foo \
+clang --ld-path=./ld64 -o $t/exe $t/a.o -Wl,-F$t -Wl,-framework,Foo \
   -Wl,-dead_strip_dylibs
 otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' >& $t/log
 ! fgrep -q Foo.framework/Foo $t/log || false

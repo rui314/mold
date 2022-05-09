@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -28,7 +27,7 @@ int main() {
 }
 EOF
 
-clang -fuse-ld="$mold" -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
+clang --ld-path=./ld64 -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
 
 grep -Eq '^\[  0\] .*/a.o$' $t/map
 grep -Eq '^\[  1\] .*/b.o$' $t/map

@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -37,7 +36,7 @@ int main() {
 EOF
 
 ar crs $t/e.a $t/a.o $t/b.o $t/c.o
-"$mold" -r -o $t/f.o $t/d.o $t/e.a
+./mold -r -o $t/f.o $t/d.o $t/e.a
 
 readelf --symbols $t/f.o > $t/log
 grep -q 'foo$' $t/log

@@ -10,16 +10,15 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
-"$mold" -v | grep -q 'mold .*compatible with GNU ld'
-"$mold" --version | grep -q 'mold .*compatible with GNU ld'
+./mold -v | grep -q 'mold .*compatible with GNU ld'
+./mold --version | grep -q 'mold .*compatible with GNU ld'
 
-"$mold" -V | grep -q 'mold .*compatible with GNU ld'
-"$mold" -V | grep -q elf_x86_64
-"$mold" -V | grep -q elf_i386
+./mold -V | grep -q 'mold .*compatible with GNU ld'
+./mold -V | grep -q elf_x86_64
+./mold -V | grep -q elf_i386
 
 cat <<EOF | $CC -c -xc -o $t/a.o -
 #include <stdio.h>
@@ -36,7 +35,7 @@ $CC -B. -Wl,--version -o $t/exe $t/a.o 2>&1 | grep -q mold
 $CC -B. -Wl,-v -o $t/exe $t/a.o 2>&1 | grep -q mold
 $QEMU $t/exe | grep -q 'Hello world'
 
-! $mold --v >& $t/log
+! ./mold --v >& $t/log
 grep -q 'unknown command line option:' $t/log
 
 echo OK

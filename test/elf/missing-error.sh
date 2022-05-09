@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -22,7 +21,7 @@ int main() {
 }
 EOF
 
-! "$mold" -o $t/exe $t/a.o 2> $t/log || false
+! ./mold -o $t/exe $t/a.o 2> $t/log || false
 grep -q 'undefined symbol: .*\.o: foo' $t/log
 
 echo OK

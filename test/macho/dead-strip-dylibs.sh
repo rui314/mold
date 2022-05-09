@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -25,10 +24,10 @@ cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
 EOF
 
-clang -fuse-ld="$mold" -o $t/exe $t/a.o -L$t -Wl,-lfoo
+clang --ld-path=./ld64 -o $t/exe $t/a.o -L$t -Wl,-lfoo
 otool -l $t/exe | grep -A3 LOAD_DY | grep -q libfoo.dylib
 
-clang -fuse-ld="$mold" -o $t/exe $t/a.o -L$t -Wl,-lfoo -Wl,-dead_strip_dylibs
+clang --ld-path=./ld64 -o $t/exe $t/a.o -L$t -Wl,-lfoo -Wl,-dead_strip_dylibs
 otool -l $t/exe | grep -A3 LOAD_DY > $t/log
 ! grep -q libfoo.dylib $t/log || false
 

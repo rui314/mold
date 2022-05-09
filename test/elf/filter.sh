@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -21,7 +20,7 @@ _start:
   nop
 EOF
 
-"$mold" -o $t/b.so $t/a.o --filter foo -F bar -shared
+./mold -o $t/b.so $t/a.o --filter foo -F bar -shared
 
 readelf --dynamic $t/b.so > $t/log
 fgrep -q 'Filter library: [foo]' $t/log

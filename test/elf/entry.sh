@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -24,15 +23,15 @@ bar:
   .quad 0
 EOF
 
-"$mold" -e foo -static -o $t/exe $t/a.o
+./mold -e foo -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 
-"$mold" -e bar -static -o $t/exe $t/a.o
+./mold -e bar -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201008" $t/log
 
-"$mold" -static -o $t/exe $t/a.o
+./mold -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 

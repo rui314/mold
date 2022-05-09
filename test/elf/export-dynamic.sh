@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -29,7 +28,7 @@ _start:
 EOF
 
 $CC -shared -fPIC -o $t/b.so -xc /dev/null
-"$mold" -o $t/exe $t/a.o $t/b.so --export-dynamic
+./mold -o $t/exe $t/a.o $t/b.so --export-dynamic
 
 readelf --dyn-syms $t/exe > $t/log
 grep -Pq 'NOTYPE  GLOBAL DEFAULT    \d+ bar' $t/log

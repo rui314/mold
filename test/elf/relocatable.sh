@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/mold"
 t=out/test/elf/$testname
 mkdir -p $t
 
@@ -43,7 +42,7 @@ int b() {
 }
 EOF
 
-"$mold" --relocatable -o $t/c.o $t/a.o $t/b.o
+./mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 [ -f $t/c.o ]
 ! [ -x t/c.o ] || false

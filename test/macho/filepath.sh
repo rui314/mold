@@ -10,7 +10,6 @@ MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 cd "$(dirname "$0")"/../..
-mold="$(pwd)/ld64.mold"
 t=out/test/macho/$testname
 mkdir -p $t
 
@@ -29,7 +28,7 @@ $t/a.o
 $t/b.o
 EOF
 
-clang -fuse-ld="$mold" -o $t/exe -Wl,-filelist,$t/filelist
+clang --ld-path=./ld64 -o $t/exe -Wl,-filelist,$t/filelist
 $t/exe | grep -q 'Hello world'
 
 echo OK
