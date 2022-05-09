@@ -326,28 +326,32 @@ read_filelist(Context<E> &ctx, std::string arg) {
 template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   while (!args.empty()) {
-    if (args[0].starts_with("-filelist")) {
-      for (std::string &path : read_filelist(ctx, args[1])) {
+    const std::string &arg = args[0];
+    args = args.subspan(1);
+
+    if (arg == "-all_load") {
+      ctx.all_load = true;
+    } else if (arg == "-noall_load") {
+      ctx.all_load = false;
+    } else if (arg == "-filelist") {
+      for (std::string &path : read_filelist(ctx, args[0])) {
         MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
         if (!mf)
-          Fatal(ctx) << "-filepath " << args[1] << ": cannot open file: " << path;
+          Fatal(ctx) << "-filepath " << args[0] << ": cannot open file: " << path;
         read_file(ctx, mf);
       }
-      args = args.subspan(2);
-    } else if (args[0] == "-framework" || args[0] == "-needed_framework") {
-      bool needed = (args[0] == "-needed_framework");
-      read_file(ctx, find_framework(ctx, args[1]), needed);
-      args = args.subspan(2);
-    } else if (args[0] == "-l" || args[0] == "-needed-l") {
-      MappedFile<Context<E>> *mf = find_library(ctx, args[1]);
-      if (!mf)
-        Fatal(ctx) << "library not found: -l" << args[1];
-      bool needed = (args[0] == "-needed-l");
-      read_file(ctx, mf, needed);
-      args = args.subspan(2);
-    } else {
-      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, args[0]));
       args = args.subspan(1);
+    } else if (arg == "-framework" || arg == "-needed_framework") {
+      read_file(ctx, find_framework(ctx, args[0]), arg == "-needed_framework");
+      args = args.subspan(1);
+    } else if (arg == "-l" || arg == "-needed-l") {
+      MappedFile<Context<E>> *mf = find_library(ctx, args[0]);
+      if (!mf)
+        Fatal(ctx) << "library not found: -l" << args[0];
+      read_file(ctx, mf, arg == "-needed-l");
+      args = args.subspan(1);
+    } else {
+      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, arg));
     }
   }
 

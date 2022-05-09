@@ -795,7 +795,7 @@ struct Context {
     bool ObjC = false;
     bool adhoc_codesign = true;
     bool color_diagnostics = false;
-    bool dead_strip = true;
+    bool dead_strip = false;
     bool dead_strip_dylibs = false;
     bool deduplicate = true;
     bool demangle = false;
@@ -822,6 +822,7 @@ struct Context {
 
   std::vector<std::string_view> cmdline_args;
   u32 output_type = MH_EXECUTE;
+  bool all_load = false;
 
   bool has_error = false;
 

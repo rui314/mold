@@ -21,6 +21,8 @@ Options:
                               an Objective-C class or category
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
+  -all_load                   Include all objects from static archives
+    -noall_load
   -arch <ARCH_NAME>           Specify target architecture
   -bundle                     Produce a mach-o bundle
   -dead_strip                 Remove unreachable functions and data
@@ -186,6 +188,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.adhoc_codesign = true;
     } else if (read_flag("-no_adhoc_codesign")) {
       ctx.arg.adhoc_codesign = false;
+    } else if (read_flag("-all_load")) {
+      remaining.push_back("-all_load");
+    } else if (read_flag("-noall_load")) {
+      remaining.push_back("-noall_load");
     } else if (read_arg("-arch")) {
       if (arg == "x86_64")
         ctx.arg.arch = CPU_TYPE_X86_64;
@@ -197,6 +203,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.output_type = MH_BUNDLE;
     } else if (read_flag("-color-diagnostics") ||
                read_flag("--color-diagnostics")) {
+      ctx.arg.color_diagnostics = true;
     } else if (read_flag("-dead_strip")) {
       ctx.arg.dead_strip = true;
     } else if (read_flag("-dead_strip_dylibs")) {

@@ -20,7 +20,7 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
   ObjectFile<E> *obj = new ObjectFile<E>;
   obj->mf = mf;
   obj->archive_name = archive_name;
-  obj->is_alive = archive_name.empty();
+  obj->is_alive = archive_name.empty() || ctx.all_load;
   ctx.obj_pool.emplace_back(obj);
   return obj;
 };
