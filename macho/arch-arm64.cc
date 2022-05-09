@@ -2,11 +2,6 @@
 
 namespace mold::macho {
 
-// Returns [hi:lo] bits of val.
-static u64 bits(u64 val, u64 hi, u64 lo) {
-  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
-}
-
 static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
