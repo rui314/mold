@@ -12,7 +12,7 @@ static u64 encode_page(u64 val) {
 
 template <>
 void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
+  ul32 *buf = (ul32 *)(ctx.buf + this->hdr.offset);
 
   for (i64 i = 0; i < syms.size(); i++) {
     static const u32 insn[] = {
@@ -35,8 +35,8 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 
 template <>
 void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
-  u32 *start = (u32 *)(ctx.buf + this->hdr.offset);
-  u32 *buf = start;
+  ul32 *start = (ul32 *)(ctx.buf + this->hdr.offset);
+  ul32 *buf = start;
 
   static const u32 insn0[] = {
     0x90000011, // adrp x17, $__dyld_private@PAGE
