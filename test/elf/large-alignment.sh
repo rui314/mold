@@ -33,13 +33,18 @@ void world() {
 int main() {
   hello();
   world();
-  printf(" %lu %lu\n",
-         (unsigned long)((uintptr_t)hello % 32768),
-         (unsigned long)((uintptr_t)world % 32768));
+
+  // Linux kernel may ignore a riduculously large alignment requirement,
+  // but we still want to verify that an executable with a large
+  // alignment requirement can still run.
+  //
+  // printf(" %lu %lu\n",
+  //       (unsigned long)((uintptr_t)hello % 32768),
+  //       (unsigned long)((uintptr_t)world % 32768));
 }
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-$QEMU $t/exe | grep -q 'Hello world 0 0'
+$QEMU $t/exe | grep -q 'Hello world'
 
 echo OK
