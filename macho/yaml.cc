@@ -1,3 +1,18 @@
+// On macOS, a .tbd file can be used instead of a .dylib to link
+// against a dynamic library. A .tbd file is a text file in the YAML
+// format, so the linker has to be able to parse a YAML file. This
+// file implements a YAML parser.
+//
+// We implemented a YAML parser ourselves instead of using an external
+// library. We didn't want to add an dependency to an external library
+// just to read .tdb files.
+//
+// YAML as a format is very complicated. For example, the official
+// YAML specification allows embedding a JSON string into YAML; so it
+// is strictly larger than JSON. It has surprisingly many features
+// that most users are not aware of. Fortunately, we have to support
+// only a small portion of the spec to read a .tbd file.
+
 #include "mold.h"
 
 #include <optional>

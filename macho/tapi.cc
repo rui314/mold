@@ -1,3 +1,14 @@
+// On macOS, you can pass a test file describing a dylib instead of an
+// actual dylib file to link against a dynamic library. Such text file
+// should be in the YAML format and contains dylib's exported symbols
+// as well as the file's various attributes. The extension of the text
+// file is `.tbd`.
+//
+// .tbd files allows users to link against a library without
+// distributing the binary of the library file itself.
+//
+// This file contains functions to parse the .tbd file.
+
 #include "mold.h"
 
 #include <optional>
