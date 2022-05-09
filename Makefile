@@ -75,7 +75,7 @@ endif
 ifeq ($(USE_MIMALLOC), 1)
   ifdef SYSTEM_MIMALLOC
     MOLD_CXXFLAGS += -DUSE_SYSTEM_MIMALLOC
-    MOLD_LDFLAGS += -lmimalloc
+    MOLD_LDFLAGS += -Wl,-whole-archive -l:libmimalloc.a -Wl,-no-whole-archive
   else
     MIMALLOC_LIB = out/mimalloc/libmimalloc.a
     MOLD_CXXFLAGS += -Ithird-party/mimalloc/include
