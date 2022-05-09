@@ -21,6 +21,6 @@ int main() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o
-$QEMU $t/exe
+$t/exe
 
 echo OK

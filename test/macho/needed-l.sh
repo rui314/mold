@@ -26,7 +26,7 @@ int main() {}
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o -L$t -Wl,-needed-lfoo
-$QEMU $t/exe
+$t/exe
 
 otool -l $t/exe | grep -A3 LOAD_DY | grep -q libfoo.dylib
 

@@ -37,6 +37,6 @@ int main() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe | grep -q '^0 5 0$'
+$t/exe | grep -q '^0 5 0$'
 
 echo OK

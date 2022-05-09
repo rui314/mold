@@ -25,7 +25,7 @@ int main() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o
-$QEMU $t/exe 2> /dev/null | grep -q 'Hello world'
-$QEMU $t/exe 2>&1 > /dev/null | grep -q 'Hello stderr'
+$t/exe 2> /dev/null | grep -q 'Hello world'
+$t/exe 2>&1 > /dev/null | grep -q 'Hello stderr'
 
 echo OK

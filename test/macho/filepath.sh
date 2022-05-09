@@ -30,6 +30,6 @@ $t/b.o
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe -Wl,-filelist,$t/filelist
-$QEMU $t/exe | grep -q 'Hello world'
+$t/exe | grep -q 'Hello world'
 
 echo OK

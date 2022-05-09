@@ -38,7 +38,7 @@ int main() {
 EOF
 
 clang++ -fuse-ld="$mold" -o $t/exe $t/d.o $t/c.a
-$QEMU $t/exe | grep -q 'Hello world'
+$t/exe | grep -q 'Hello world'
 
 otool -tv $t/exe | grep -q '^_hello:'
 ! otool -tv $t/exe | grep -q '^_foo:' || false

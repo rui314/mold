@@ -32,6 +32,6 @@ int main() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^0 0$'
+$t/exe | grep -q '^0 0$'
 
 echo OK

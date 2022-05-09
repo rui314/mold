@@ -41,10 +41,10 @@ ar rcs $t/x/libfoo.a $t/a.o
 $CC -shared -o $t/y/libfoo.dylib $t/b.o
 
 clang -fuse-ld="$mold" -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo
-$QEMU $t/exe | grep -q Hello
+$t/exe | grep -q Hello
 
 clang -fuse-ld="$mold" -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo \
  -Wl,-search_paths_first
-$QEMU $t/exe | grep -q Hello
+$t/exe | grep -q Hello
 
 echo OK

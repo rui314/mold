@@ -24,7 +24,7 @@ int hello() {
 EOF
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-e,_hello
-$QEMU $t/exe | grep -q 'Hello world'
+$t/exe | grep -q 'Hello world'
 
 ! clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-e,no_such_symbol 2> $t/log || false
 grep -q 'undefined entry point symbol: no_such_symbol' $t/log

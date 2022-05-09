@@ -29,7 +29,7 @@ otool -l $t/exe | grep -A5 'segname __PAGEZERO' | \
   grep -q 'vmsize 0x0000000100000000'
 
 clang -fuse-ld="$mold" -o $t/exe $t/a.o -Wl,-pagezero_size,0x10000
-$QEMU $t/exe | grep -q 'Hello world'
+$t/exe | grep -q 'Hello world'
 
 otool -l $t/exe | grep -A5 'segname __PAGEZERO' | \
   grep -q 'vmsize 0x0000000000010000'

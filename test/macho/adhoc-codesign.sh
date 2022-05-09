@@ -22,6 +22,6 @@ int main() {
 }
 EOF
 
-$QEMU $t/exe | fgrep -q 'Hello world'
+$t/exe | fgrep -q 'Hello world'
 
 echo OK
