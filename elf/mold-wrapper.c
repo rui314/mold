@@ -32,9 +32,9 @@ static void debug_print(char *fmt, ...) {
   va_end(ap);
 }
 
-static int count_args(va_list ap) {
+static int count_args(va_list *ap) {
   va_list aq;
-  va_copy(aq, ap);
+  va_copy(aq, *ap);
 
   int i = 0;
   while (va_arg(aq, char *))
@@ -43,10 +43,10 @@ static int count_args(va_list ap) {
   return i;
 }
 
-static void copy_args(char **argv, const char *arg0, va_list ap) {
+static void copy_args(char **argv, const char *arg0, va_list *ap) {
   int i = 1;
   char *arg;
-  while ((arg = va_arg(ap, char *)))
+  while ((arg = va_arg(*ap, char *)))
     argv[i++] = arg;
 
   ((const char **)argv)[0] = arg0;
@@ -86,8 +86,8 @@ int execve(const char *path, char *const *argv, char *const *envp) {
 int execl(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = alloca((count_args(ap) + 2) * sizeof(char *));
-  copy_args(argv, arg0, ap);
+  char **argv = alloca((count_args(&ap) + 2) * sizeof(char *));
+  copy_args(argv, arg0, &ap);
   va_end(ap);
   return execve(path, argv, environ);
 }
@@ -95,8 +95,8 @@ int execl(const char *path, const char *arg0, ...) {
 int execlp(const char *file, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = alloca((count_args(ap) + 2) * sizeof(char *));
-  copy_args(argv, arg0, ap);
+  char **argv = alloca((count_args(&ap) + 2) * sizeof(char *));
+  copy_args(argv, arg0, &ap);
   va_end(ap);
   return execvpe(file, argv, environ);
 }
@@ -104,8 +104,8 @@ int execlp(const char *file, const char *arg0, ...) {
 int execle(const char *path, const char *arg0, ...) {
   va_list ap;
   va_start(ap, arg0);
-  char **argv = alloca((count_args(ap) + 2) * sizeof(char *));
-  copy_args(argv, arg0, ap);
+  char **argv = alloca((count_args(&ap) + 2) * sizeof(char *));
+  copy_args(argv, arg0, &ap);
   char **env = va_arg(ap, char **);
   va_end(ap);
   return execve(path, argv, env);
