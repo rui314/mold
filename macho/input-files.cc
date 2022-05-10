@@ -28,7 +28,7 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
 template <typename E>
 void ObjectFile<E>::parse(Context<E> &ctx) {
   parse_sections(ctx);
-  parse_symtab(ctx);
+  parse_symbols(ctx);
   split_subsections(ctx);
   parse_data_in_code(ctx);
 
@@ -72,7 +72,7 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::parse_symtab(Context<E> &ctx) {
+void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
   SymtabCommand *cmd = (SymtabCommand *)find_load_command(ctx, LC_SYMTAB);
   if (!cmd)
     return;
@@ -128,7 +128,6 @@ struct SplitRegion {
 
 template <typename E>
 struct SplitInfo {
-  SplitInfo(InputSection<E> *isec) : isec(isec) {}
   InputSection<E> *isec;
   std::vector<SplitRegion> regions;
 };
@@ -140,6 +139,7 @@ static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
   for (std::unique_ptr<InputSection<E>> &isec : file.sections)
     vec.push_back({isec.get()});
 
+  // Find all symbols whose type is N_SECT.
   for (i64 i = 0; i < file.mach_syms.size(); i++) {
     MachSym &msym = file.mach_syms[i];
     if (msym.type == N_SECT && file.sections[msym.sect - 1]) {
@@ -157,6 +157,7 @@ static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
     return a.isec->hdr.addr < b.isec->hdr.addr;
   });
 
+  // Fix regions so that they cover the entire section without overlapping.
   for (SplitInfo<E> &info : vec) {
     std::vector<SplitRegion> &r = info.regions;
 
@@ -232,7 +233,7 @@ void ObjectFile<E>::parse_data_in_code(Context<E> &ctx) {
   if (auto *cmd = (LinkEditDataCommand *)find_load_command(ctx, LC_DATA_IN_CODE)) {
     data_in_code_entries = {
       (DataInCodeEntry *)(this->mf->data + cmd->dataoff),
-      cmd->datasize / sizeof(DataInCodeEntry)
+      cmd->datasize / sizeof(DataInCodeEntry),
     };
   }
 }
@@ -600,6 +601,9 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
     if (!sym->file || this->priority < sym->file->priority) {
       sym->file = this;
       sym->is_extern = true;
+      sym->subsec = nullptr;
+      sym->value = 0;
+      sym->is_common = false;
     }
   }
 }

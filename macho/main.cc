@@ -66,19 +66,14 @@ static bool compare_segments(const std::unique_ptr<OutputSegment<E>> &a,
       return 1;
     if (name == "__DATA")
       return 2;
-    return INT_MAX;
+    if (name == "__LINKEDIT")
+      return 4;
+    return 3;
   };
 
-  std::string_view na = a->cmd.get_segname();
-  std::string_view nb = b->cmd.get_segname();
-  i64 ra = get_rank(na);
-  i64 rb = get_rank(nb);
-  if (ra != INT_MAX || rb != INT_MAX)
-    return ra < rb;
-
-  if (na == "__LINKEDIT" || nb == "__LINKEDIT")
-    return na != "__LINKEDIT";
-  return na < nb;
+  std::string_view x = a->cmd.get_segname();
+  std::string_view y = b->cmd.get_segname();
+  return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
 }
 
 template <typename E>

@@ -123,7 +123,7 @@ public:
 
 private:
   void parse_sections(Context<E> &ctx);
-  void parse_symtab(Context<E> &ctx);
+  void parse_symbols(Context<E> &ctx);
   void split_subsections(Context<E> &ctx);
   void parse_data_in_code(Context<E> &ctx);
   LoadCommand *find_load_command(Context<E> &ctx, u32 type);

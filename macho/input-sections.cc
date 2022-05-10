@@ -14,8 +14,6 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
 
 template <typename E>
 void InputSection<E>::parse_relocations(Context<E> &ctx) {
-  rels.reserve(hdr.nreloc);
-
   // Parse mach-o relocations to fill `rels` vector
   rels = read_relocations(ctx, file, hdr);
 
@@ -24,18 +22,15 @@ void InputSection<E>::parse_relocations(Context<E> &ctx) {
     return a.offset < b.offset;
   });
 
-  // Find subsections for this section
-  auto begin = std::lower_bound(
-      file.subsections.begin(), file.subsections.end(), hdr.addr,
-      [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
+  // Find subsections this relocation section refers to
+  auto cmp = [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
     return subsec->input_addr < addr;
-  });
+  };
 
-  auto end = std::lower_bound(
-      begin, file.subsections.end(), hdr.addr + hdr.size,
-      [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
-    return subsec->input_addr < addr;
-  });
+  auto begin = std::lower_bound(file.subsections.begin(),
+                                file.subsections.end(), hdr.addr, cmp);
+  auto end = std::lower_bound(begin, file.subsections.end(),
+                              hdr.addr + hdr.size, cmp);
 
   // Assign each subsection a group of relocations
   i64 i = 0;

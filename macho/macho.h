@@ -642,7 +642,7 @@ struct CodeSignatureHeader {
 struct CodeSignatureBlobIndex {
   ub32 type;
   ub32 offset;
-  ul32 padding;
+  ub32 padding;
 };
 
 struct CodeSignatureDirectory {

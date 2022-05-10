@@ -128,6 +128,7 @@ std::vector<Relocation<ARM64>>
 read_relocations(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
                  const MachSection &hdr) {
   std::vector<Relocation<ARM64>> vec;
+  vec.reserve(hdr.nreloc);
 
   MachRel *rels = (MachRel *)(file.mf->data + hdr.reloff);
   for (i64 i = 0; i < hdr.nreloc; i++)
