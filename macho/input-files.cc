@@ -596,10 +596,11 @@ template <typename E>
 void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : this->syms) {
     std::scoped_lock lock(sym->mu);
-    if (sym->file && sym->file->priority < this->priority)
-      continue;
-    sym->file = this;
-    sym->is_extern = true;
+
+    if (!sym->file || this->priority < sym->file->priority) {
+      sym->file = this;
+      sym->is_extern = true;
+    }
   }
 }
 
