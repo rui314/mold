@@ -99,7 +99,6 @@ void ObjectFile<E>::parse_symtab(Context<E> &ctx) {
       sym.file = this;
       sym.subsec = nullptr;
       sym.is_extern = false;
-      sym.is_lazy = false;
       sym.is_common = false;
 
       switch (msym.type) {

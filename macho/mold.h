@@ -251,7 +251,6 @@ struct Symbol {
   std::atomic_uint8_t flags = 0;
 
   u8 is_extern : 1 = false;
-  u8 is_lazy : 1 = false;
   u8 is_common : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
