@@ -82,6 +82,7 @@ void create_synthetic_sections(Context<E> &ctx) {
 
   ctx.versym = push(new VersymSection<E>);
   ctx.verneed = push(new VerneedSection<E>);
+  ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
   if constexpr (std::is_same_v<E, ARM32>) {

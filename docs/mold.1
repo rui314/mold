@@ -646,6 +646,14 @@ to run executables or shared libraries linked with
 .Fl -pack-dyn-relocs=relr ,
 and only ChromeOS, Android and Fuchsia support it as of now in 2022.
 .Pp
+.It -package-metadata Ns = Ns string
+Embed
+.Ar string
+to a .note.package section. This option in intended to be used by a \
+package management command such as
+.Cm rpm
+to embed metadata regarding a package to each executable file.
+.Pp
 .It Fl -perf
 Print performance statistics.
 .Pp

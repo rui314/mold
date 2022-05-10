@@ -2026,6 +2026,26 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
 }
 
 template <typename E>
+void NotePackageSection<E>::update_shdr(Context<E> &ctx) {
+  if (!ctx.arg.package_metadata.empty()) {
+    // +17 is for the header and the NUL terminator
+    this->shdr.sh_size = align_to(ctx.arg.package_metadata.size() + 17, 4);
+  }
+}
+
+template <typename E>
+void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
+  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, this->shdr.sh_size);
+
+  buf[0] = 4;                                      // Name size
+  buf[1] = this->shdr.sh_size - 16;                // Content size
+  buf[2] = NT_FDO_PACKAGING_METADATA;              // Type
+  memcpy(buf + 3, "FDO", 4);                       // Name
+  write_string(buf + 4, ctx.arg.package_metadata); // Content
+}
+
+template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   features = -1;
   for (ObjectFile<E> *file : ctx.objs)
@@ -2557,6 +2577,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class VerneedSection<E>;                                     \
   template class VerdefSection<E>;                                      \
   template class BuildIdSection<E>;                                     \
+  template class NotePackageSection<E>;                                 \
   template class NotePropertySection<E>;                                \
   template class GdbIndexSection<E>;                                    \
   template class GabiCompressedSection<E>;                              \
