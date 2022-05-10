@@ -86,14 +86,36 @@ void ObjectFile<E>::parse_symtab(Context<E> &ctx) {
       nlocal++;
   local_syms.reserve(nlocal);
 
-  for (MachSym &msym : mach_syms) {
+  for (i64 i = 0; i < mach_syms.size(); i++) {
+    MachSym &msym = mach_syms[i];
     std::string_view name = (char *)(this->mf->data + cmd->stroff + msym.stroff);
 
     if (msym.ext) {
       this->syms.push_back(get_symbol(ctx, name));
     } else {
       local_syms.emplace_back(name);
-      this->syms.push_back(&local_syms.back());
+      Symbol<E> &sym = local_syms.back();
+
+      sym.file = this;
+      sym.subsec = nullptr;
+      sym.is_extern = false;
+      sym.is_lazy = false;
+      sym.is_common = false;
+
+      switch (msym.type) {
+      case N_UNDF:
+        Fatal(ctx) << sym << ": local undef symbol?";
+      case N_ABS:
+        sym.value = msym.value;
+        break;
+      case N_SECT:
+        // `value` and `subsec` will be filled by split_subsections
+        break;
+      default:
+        Fatal(ctx) << sym << ": unknown symbol type: " << (u64)msym.type;
+      }
+
+      this->syms.push_back(&sym);
     }
   }
 }
@@ -174,6 +196,7 @@ template <typename E>
 void ObjectFile<E>::split_subsections(Context<E> &ctx) {
   sym_to_subsec.resize(mach_syms.size());
 
+  // Split a section into subsections.
   for (SplitInfo<E> &info : split(ctx, *this)) {
     InputSection<E> &isec = *info.isec;
 
@@ -194,18 +217,25 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
     }
   }
 
-  for (i64 i = 0; i < mach_syms.size(); i++)
-    if (!mach_syms[i].ext)
-      override_symbol(ctx, i);
+  // Fix local symbols `subsec` members.
+  for (i64 i = 0; i < mach_syms.size(); i++) {
+    MachSym &msym = mach_syms[i];
+    if (!msym.ext && msym.type == N_SECT) {
+      Symbol<E> &sym = *this->syms[i];
+      sym.subsec = subsections[sym_to_subsec[i]].get();
+      sym.value = msym.value - sym.subsec->input_addr;
+    }
+  }
 }
 
 template <typename E>
 void ObjectFile<E>::parse_data_in_code(Context<E> &ctx) {
-  if (auto *cmd = (LinkEditDataCommand *)find_load_command(ctx, LC_DATA_IN_CODE))
+  if (auto *cmd = (LinkEditDataCommand *)find_load_command(ctx, LC_DATA_IN_CODE)) {
     data_in_code_entries = {
       (DataInCodeEntry *)(this->mf->data + cmd->dataoff),
       cmd->datasize / sizeof(DataInCodeEntry)
     };
+  }
 }
 
 template <typename E>
@@ -329,73 +359,35 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
 // Symbols with higher priorities overwrites symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
-//  1. Strong defined symbol
-//  2. Weak defined symbol
-//  3. Strong defined symbol in a DSO
-//  4. Weak defined symbol in a DSO
-//  5. Strong or weak defined symbol in an archive
-//  6. Common symbol
-//  7. Unclaimed (nonexistent) symbol
+//  1. Defined symbol
+//  2. Defined symbol in a DSO/archive
+//  3. Common symbol
+//  4. Common symbol in an archive
+//  5. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 template <typename E>
-static u64 get_rank(InputFile<E> *file, MachSym &msym, bool is_lazy) {
-  if (msym.is_common())
-    return (6 << 24) + file->priority;
-  if (is_lazy)
-    return (5 << 24) + file->priority;
-  if (file->is_dylib())
+static u64 get_rank(InputFile<E> *file, bool is_common, bool is_lazy) {
+  if (is_common) {
+    if (is_lazy)
+      return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
+  }
+
+  if (file->is_dylib || is_lazy)
+    return (2 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
 
 template <typename E>
 static u64 get_rank(Symbol<E> &sym) {
-  InputFile<E> *file = sym.file;
-  if (!file)
-    return 7 << 24;
-  if (sym.is_common)
-    return (6 << 24) + file->priority;
-  if (!file->archive_name.empty())
-    return (5 << 24) + file->priority;
-  if (file->is_dylib())
-    return (3 << 24) + file->priority;
-  return (1 << 24) + file->priority;
+  if (!sym.file)
+    return 5 << 24;
+  return get_rank(sym.file, sym.is_common, !sym.file->is_alive);
 }
 
 template <typename E>
-void ObjectFile<E>::override_symbol(Context<E> &ctx, i64 idx) {
-  Symbol<E> &sym = *this->syms[idx];
-  MachSym &msym = mach_syms[idx];
-
-  sym.file = this;
-  sym.is_extern = msym.ext;
-  sym.is_lazy = false;
-
-  switch (msym.type) {
-  case N_UNDF:
-    assert(msym.is_common());
-    sym.subsec = nullptr;
-    sym.value = msym.value;
-    sym.is_common = true;
-    break;
-  case N_ABS:
-    sym.subsec = nullptr;
-    sym.value = msym.value;
-    sym.is_common = false;
-    break;
-  case N_SECT:
-    sym.subsec = subsections[sym_to_subsec[idx]].get();
-    sym.value = msym.value - sym.subsec->input_addr;
-    sym.is_common = false;
-    break;
-  default:
-    Fatal(ctx) << sym << ": unknown symbol type: " << (u64)msym.type;
-  }
-}
-
-template <typename E>
-void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
+void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->syms.size(); i++) {
     MachSym &msym = mach_syms[i];
     if (!msym.ext || msym.is_undef())
@@ -403,28 +395,31 @@ void ObjectFile<E>::resolve_regular_symbols(Context<E> &ctx) {
 
     Symbol<E> &sym = *this->syms[i];
     std::scoped_lock lock(sym.mu);
-    if (get_rank(this, msym, false) < get_rank(sym))
-      override_symbol(ctx, i);
-  }
-}
 
-template <typename E>
-void ObjectFile<E>::resolve_lazy_symbols(Context<E> &ctx) {
-  for (i64 i = 0; i < this->syms.size(); i++) {
-    MachSym &msym = mach_syms[i];
-    if (!msym.ext || msym.is_undef() || msym.is_common())
-      continue;
-
-    Symbol<E> &sym = *this->syms[i];
-    std::scoped_lock lock(sym.mu);
-
-    if (get_rank(this, msym, true) < get_rank(sym)) {
+    if (get_rank(this, msym.is_common(), false) < get_rank(sym)) {
       sym.file = this;
-      sym.subsec = nullptr;
-      sym.value = 0;
-      sym.is_extern = false;
-      sym.is_lazy = true;
-      sym.is_common = false;
+      sym.is_extern = msym.ext;
+
+      switch (msym.type) {
+      case N_UNDF:
+        assert(msym.is_common());
+        sym.subsec = nullptr;
+        sym.value = msym.value;
+        sym.is_common = true;
+        break;
+      case N_ABS:
+        sym.subsec = nullptr;
+        sym.value = msym.value;
+        sym.is_common = false;
+        break;
+      case N_SECT:
+        sym.subsec = subsections[sym_to_subsec[i]].get();
+        sym.value = msym.value - sym.subsec->input_addr;
+        sym.is_common = false;
+        break;
+      default:
+        Fatal(ctx) << sym << ": unknown symbol type: " << (u64)msym.type;
+      }
     }
   }
 }
@@ -444,8 +439,9 @@ bool ObjectFile<E>::is_objc_object(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<ObjectFile<E> *> ObjectFile<E>::mark_live_objects(Context<E> &ctx) {
-  std::vector<ObjectFile<E> *> vec;
+void
+ObjectFile<E>::mark_live_objects(Context<E> &ctx,
+                                 std::function<void(ObjectFile<E> *)> feeder) {
   assert(this->is_alive);
 
   for (i64 i = 0; i < this->syms.size(); i++) {
@@ -455,17 +451,14 @@ std::vector<ObjectFile<E> *> ObjectFile<E>::mark_live_objects(Context<E> &ctx) {
 
     Symbol<E> &sym = *this->syms[i];
     std::scoped_lock lock(sym.mu);
-
-    if (msym.is_undef()) {
-      if (sym.file && !sym.file->is_alive.exchange(true))
-        vec.push_back((ObjectFile<E> *)sym.file);
+    if (!sym.file)
       continue;
-    }
 
-    if (get_rank(this, msym, false) < get_rank(sym))
-      override_symbol(ctx, i);
+    bool keep = msym.is_undef() || (msym.is_common() && !sym.is_common);
+    if (keep && !sym.file->is_alive.exchange(true))
+      if (!sym.file->is_dylib)
+        feeder((ObjectFile<E> *)sym.file);
   }
-  return vec;
 }
 
 template <typename E>

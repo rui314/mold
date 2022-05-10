@@ -398,6 +398,7 @@ static int do_main(int argc, char **argv) {
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
     ctx.dylibs[i]->dylib_idx = i + 1;
 
+  // Parse input files
   for (ObjectFile<E> *file : ctx.objs)
     file->parse(ctx);
   for (DylibFile<E> *dylib : ctx.dylibs)
@@ -408,21 +409,25 @@ static int do_main(int argc, char **argv) {
       if (!file->archive_name.empty() && file->is_objc_object(ctx))
         file->is_alive = true;
 
-  for (ObjectFile<E> *file : ctx.objs) {
-    if (file->is_alive)
-      file->resolve_regular_symbols(ctx);
-    else
-      file->resolve_lazy_symbols(ctx);
-  }
+  // Resolve symbols
+  for (ObjectFile<E> *file : ctx.objs)
+    file->resolve_symbols(ctx);
+  for (DylibFile<E> *dylib : ctx.dylibs)
+    dylib->resolve_symbols(ctx);
 
   std::vector<ObjectFile<E> *> live_objs;
   for (ObjectFile<E> *file : ctx.objs)
     if (file->is_alive)
       live_objs.push_back(file);
 
-  for (i64 i = 0; i < live_objs.size(); i++)
-    append(live_objs, live_objs[i]->mark_live_objects(ctx));
+  for (i64 i = 0; i < live_objs.size(); i++) {
+    live_objs[i]->mark_live_objects(ctx, [&](ObjectFile<E> *file) {
+      live_objs.push_back(file);
+    });
+  }
 
+  for (ObjectFile<E> *file : ctx.objs)
+    file->resolve_symbols(ctx);
   for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
 

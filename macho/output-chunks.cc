@@ -563,12 +563,12 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
             ctx.data_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.got.syms)
-    if (!sym->file->is_dylib())
+    if (!sym->file->is_dylib)
       enc.add(ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.thread_ptrs.syms)
-    if (!sym->file->is_dylib())
+    if (!sym->file->is_dylib)
       enc.add(ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
@@ -637,13 +637,13 @@ void OutputBindSection<E>::compute_size(Context<E> &ctx) {
   BindEncoder enc;
 
   for (Symbol<E> *sym : ctx.got.syms)
-    if (sym->file->is_dylib())
+    if (sym->file->is_dylib)
       enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
               ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.thread_ptrs.syms)
-    if (sym->file->is_dylib())
+    if (sym->file->is_dylib)
       enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
               ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
@@ -894,15 +894,15 @@ void OutputSymtabSection<E>::copy_buf(Context<E> &ctx) {
     Symbol<E> &sym = *ent.sym;
 
     msym.stroff = ent.stroff;
-    msym.type = (sym.file->is_dylib() ? N_UNDF : N_SECT);
+    msym.type = (sym.file->is_dylib ? N_UNDF : N_SECT);
     msym.ext = sym.is_extern;
 
-    if (!sym.file->is_dylib())
+    if (!sym.file->is_dylib)
       msym.value = sym.get_addr(ctx);
     if (sym.subsec)
       msym.sect = sym.subsec->isec.osec.sect_idx;
 
-    if (sym.file->is_dylib())
+    if (sym.file->is_dylib)
       msym.desc = ((DylibFile<E> *)sym.file)->dylib_idx << 8;
     else if (sym.referenced_dynamically)
       msym.desc = REFERENCED_DYNAMICALLY;
@@ -1240,7 +1240,7 @@ template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
   for (i64 i = 0; i < syms.size(); i++)
-    if (!syms[i]->file->is_dylib())
+    if (!syms[i]->file->is_dylib)
       buf[i] = syms[i]->get_addr(ctx);
 }
 
@@ -1265,7 +1265,7 @@ template <typename E>
 void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
   for (i64 i = 0; i < syms.size(); i++)
-    if (!syms[i]->file->is_dylib())
+    if (!syms[i]->file->is_dylib)
       buf[i] = syms[i]->get_addr(ctx);
 }
 

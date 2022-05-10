@@ -87,9 +87,8 @@ public:
   std::vector<Symbol<E> *> syms;
   i64 priority = 0;
   std::atomic_bool is_alive = false;
+  bool is_dylib = false;
   std::string archive_name;
-
-  virtual bool is_dylib() const = 0;
 
 protected:
   InputFile() = default;
@@ -102,14 +101,13 @@ public:
 
   static ObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                             std::string archive_name);
-  bool is_dylib() const override { return false; }
   void parse(Context<E> &ctx);
   Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
-  void resolve_regular_symbols(Context<E> &ctx);
-  void resolve_lazy_symbols(Context<E> &ctx);
+  void resolve_symbols(Context<E> &ctx);
   bool is_objc_object(Context<E> &ctx);
-  std::vector<ObjectFile *> mark_live_objects(Context<E> &ctx);
+  void mark_live_objects(Context<E> &ctx,
+                         std::function<void(ObjectFile<E> *)> feeder);
   void convert_common_symbols(Context<E> &ctx);
   void check_duplicate_symbols(Context<E> &ctx);
 
@@ -130,7 +128,6 @@ private:
   void parse_data_in_code(Context<E> &ctx);
   LoadCommand *find_load_command(Context<E> &ctx, u32 type);
   i64 find_subsection_idx(Context<E> &ctx, u32 addr);
-  void override_symbol(Context<E> &ctx, i64 symidx);
   InputSection<E> *get_common_sec(Context<E> &ctx);
 
   MachSection *unwind_sec = nullptr;
@@ -142,6 +139,7 @@ template <typename E>
 class DylibFile : public InputFile<E> {
 public:
   static DylibFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
+
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx);
 
@@ -149,14 +147,13 @@ public:
   i64 dylib_idx = 0;
   std::atomic_bool is_needed = false;
 
-  bool is_dylib() const override { return true; }
-
 private:
   void parse_dylib(Context<E> &ctx);
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
                  const std::string &prefix = "");
 
   DylibFile() {
+    this->is_dylib = true;
     this->is_alive = true;
   }
 };
