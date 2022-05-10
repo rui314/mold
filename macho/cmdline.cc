@@ -15,10 +15,11 @@ static const char helpmsg[] = R"(
 Options:
   -F<PATH>                    Add DIR to framework search path
   -L<PATH>                    Add DIR to library search path
-  -Z                          Do not search the standard directories when
-                              searching for libraries and frameworks
   -ObjC                       Load all static archive members that implement
                               an Objective-C class or category
+  -U <SYMBOL>                 Allow a symbol to be undefined
+  -Z                          Do not search the standard directories when
+                              searching for libraries and frameworks
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
   -all_load                   Include all objects from static archives
@@ -185,6 +186,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       nostdlib = true;
     } else if (read_flag("-ObjC")) {
       ctx.arg.ObjC = true;
+    } else if (read_arg("-U")) {
+      ctx.arg.U.push_back(std::string(arg));
     } else if (read_flag("-adhoc_codesign")) {
       ctx.arg.adhoc_codesign = true;
     } else if (read_flag("-no_adhoc_codesign")) {

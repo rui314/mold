@@ -131,6 +131,36 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
 }
 
 template <typename E>
+static void claim_unresolved_symbols(Context<E> &ctx) {
+  for (std::string_view name : ctx.arg.U)
+    if (Symbol<E> *sym = get_symbol(ctx, name); !sym->file)
+      sym->is_imported = true;
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (i64 i = 0; i < file->mach_syms.size(); i++) {
+      MachSym &msym = file->mach_syms[i];
+      if (!msym.ext || !msym.is_undef())
+        continue;
+
+      Symbol<E> &sym = *file->syms[i];
+      std::scoped_lock lock(sym.mu);
+
+      if (sym.is_imported) {
+        if (!sym.file ||
+            (!sym.file->is_dylib && file->priority < sym.file->priority)) {
+          sym.file = file;
+          sym.is_extern = true;
+          sym.is_imported = true;
+          sym.subsec = nullptr;
+          sym.value = 0;
+          sym.is_common = false;
+        }
+      }
+    }
+  }
+}
+
+template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
@@ -446,6 +476,8 @@ static int do_main(int argc, char **argv) {
 
   for (ObjectFile<E> *file : ctx.objs)
     file->convert_common_symbols(ctx);
+
+  claim_unresolved_symbols(ctx);
 
   if (ctx.arg.dead_strip)
     dead_strip(ctx);

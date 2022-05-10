@@ -282,6 +282,11 @@ static constexpr u32 REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY = 5;
 
 static constexpr u32 REFERENCED_DYNAMICALLY = 0x0010;
 
+static constexpr u32 SELF_LIBRARY_ORDINAL = 0x0;
+static constexpr u32 MAX_LIBRARY_ORDINAL = 0xfd;
+static constexpr u32 DYNAMIC_LOOKUP_ORDINAL = 0xfe;
+static constexpr u32 EXECUTABLE_ORDINAL = 0xff;
+
 static constexpr u32 N_NO_DEAD_STRIP = 0x0020;
 static constexpr u32 N_DESC_DISCARDED = 0x0020;
 static constexpr u32 N_WEAK_REF = 0x0040;

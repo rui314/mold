@@ -399,6 +399,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     if (get_rank(this, msym.is_common(), false) < get_rank(sym)) {
       sym.file = this;
       sym.is_extern = msym.ext;
+      sym.is_imported = false;
 
       switch (msym.type) {
       case N_UNDF:
@@ -477,6 +478,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
       subsections.emplace_back(subsec);
 
+      sym.is_imported = false;
       sym.subsec = subsec;
       sym.value = 0;
       sym.is_common = false;
@@ -601,6 +603,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
     if (!sym->file || this->priority < sym->file->priority) {
       sym->file = this;
       sym->is_extern = true;
+      sym->is_imported = true;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;

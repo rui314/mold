@@ -252,6 +252,7 @@ struct Symbol {
 
   u8 is_extern : 1 = false;
   u8 is_common : 1 = false;
+  u8 is_imported : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
   inline u64 get_addr(Context<E> &ctx) const;
@@ -810,6 +811,7 @@ struct Context {
     std::string entry = "_main";
     std::string map;
     std::string output = "a.out";
+    std::vector<std::string> U;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> rpath;
