@@ -15,6 +15,8 @@ mkdir -p $t
 
 [ "$CC" = cc ] || { echo skipped; exit; }
 
+[ $MACHINE = riscv64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -flto -xc -
 #include <stdio.h>
 void hello() {
