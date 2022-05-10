@@ -117,20 +117,17 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
     "__code_signature",
   };
 
-  auto get_rank = [](const Chunk<E> *chunk) -> i64 {
-    std::string_view name = chunk->hdr.get_sectname();
+  auto get_rank = [](std::string_view name) {
     i64 i = 0;
     for (; i < sizeof(rank) / sizeof(rank[0]); i++)
       if (name == rank[i])
         return i;
-    return INT_MAX;
+    return i;
   };
 
-  i64 ra = get_rank(a);
-  i64 rb = get_rank(b);
-  if (ra == INT_MAX && rb == INT_MAX)
-    return a->hdr.get_sectname() < b->hdr.get_sectname();
-  return ra < rb;
+  std::string_view x = a->hdr.get_sectname();
+  std::string_view y = b->hdr.get_sectname();
+  return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
 }
 
 template <typename E>
@@ -140,7 +137,7 @@ static void create_synthetic_chunks(Context<E> &ctx) {
       subsec->isec.osec.add_subsec(subsec.get());
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk != ctx.data && chunk->is_regular &&
+    if (chunk != ctx.data && chunk->is_output_section &&
         ((OutputSection<E> *)chunk)->members.empty())
       continue;
 

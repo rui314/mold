@@ -297,7 +297,7 @@ public:
   MachSection hdr = {};
   u32 sect_idx = 0;
   bool is_hidden = false;
-  bool is_regular = false;
+  bool is_output_section = false;
 };
 
 template <typename E>
@@ -325,7 +325,7 @@ public:
   OutputSection(Context<E> &ctx, std::string_view segname,
                 std::string_view sectname)
     : Chunk<E>(ctx, segname, sectname) {
-    this->is_regular = true;
+    this->is_output_section = true;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -357,9 +357,9 @@ private:
 };
 
 template <typename E>
-class OutputRebaseSection : public Chunk<E> {
+class RebaseSection : public Chunk<E> {
 public:
-  OutputRebaseSection(Context<E> &ctx)
+  RebaseSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__rebase") {
     this->is_hidden = true;
   }
@@ -388,9 +388,9 @@ private:
 };
 
 template <typename E>
-class OutputBindSection : public Chunk<E> {
+class BindSection : public Chunk<E> {
 public:
-  OutputBindSection(Context<E> &ctx)
+  BindSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__binding") {
     this->is_hidden = true;
   }
@@ -402,9 +402,9 @@ public:
 };
 
 template <typename E>
-class OutputLazyBindSection : public Chunk<E> {
+class LazyBindSection : public Chunk<E> {
 public:
-  OutputLazyBindSection(Context<E> &ctx)
+  LazyBindSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__lazy_binding") {
     this->is_hidden = true;
     this->hdr.p2align = std::countr_zero(8U);
@@ -453,9 +453,9 @@ private:
 };
 
 template <typename E>
-class OutputExportSection : public Chunk<E> {
+class ExportSection : public Chunk<E> {
 public:
-  OutputExportSection(Context<E> &ctx)
+  ExportSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__export") {
     this->is_hidden = true;
   }
@@ -468,9 +468,9 @@ private:
 };
 
 template <typename E>
-class OutputFunctionStartsSection : public Chunk<E> {
+class FunctionStartsSection : public Chunk<E> {
 public:
-  OutputFunctionStartsSection(Context<E> &ctx)
+  FunctionStartsSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__func_starts") {
     this->is_hidden = true;
   }
@@ -482,9 +482,9 @@ public:
 };
 
 template <typename E>
-class OutputSymtabSection : public Chunk<E> {
+class SymtabSection : public Chunk<E> {
 public:
-  OutputSymtabSection(Context<E> &ctx)
+  SymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__symbol_table") {
     this->is_hidden = true;
     this->hdr.p2align = std::countr_zero(8U);
@@ -504,9 +504,9 @@ public:
 };
 
 template <typename E>
-class OutputStrtabSection : public Chunk<E> {
+class StrtabSection : public Chunk<E> {
 public:
-  OutputStrtabSection(Context<E> &ctx)
+  StrtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
     this->hdr.p2align = std::countr_zero(8U);
@@ -520,9 +520,9 @@ public:
 };
 
 template <typename E>
-class OutputIndirectSymtabSection : public Chunk<E> {
+class IndirectSymtabSection : public Chunk<E> {
 public:
-  OutputIndirectSymtabSection(Context<E> &ctx)
+  IndirectSymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__ind_sym_tab") {
     this->is_hidden = true;
   }
@@ -856,14 +856,14 @@ struct Context {
   DataInCodeSection<E> data_in_code{*this};
   ThreadPtrsSection<E> thread_ptrs{*this};
 
-  OutputRebaseSection<E> rebase{*this};
-  OutputBindSection<E> bind{*this};
-  OutputLazyBindSection<E> lazy_bind{*this};
-  OutputExportSection<E> export_{*this};
-  OutputFunctionStartsSection<E> function_starts{*this};
-  OutputSymtabSection<E> symtab{*this};
-  OutputIndirectSymtabSection<E> indir_symtab{*this};
-  OutputStrtabSection<E> strtab{*this};
+  RebaseSection<E> rebase{*this};
+  BindSection<E> bind{*this};
+  LazyBindSection<E> lazy_bind{*this};
+  ExportSection<E> export_{*this};
+  FunctionStartsSection<E> function_starts{*this};
+  SymtabSection<E> symtab{*this};
+  IndirectSymtabSection<E> indir_symtab{*this};
+  StrtabSection<E> strtab{*this};
 
   OutputSection<E> *text = nullptr;
   OutputSection<E> *data = nullptr;

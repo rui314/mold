@@ -81,7 +81,7 @@ static std::vector<u8> create_dysymtab_cmd(Context<E> &ctx) {
 
   cmd.indirectsymoff = ctx.indir_symtab.hdr.offset;
   cmd.nindirectsyms =
-    ctx.indir_symtab.hdr.size / OutputIndirectSymtabSection<E>::ENTRY_SIZE;
+    ctx.indir_symtab.hdr.size / IndirectSymtabSection<E>::ENTRY_SIZE;
   return buf;
 }
 
@@ -227,7 +227,7 @@ static std::vector<u8> create_code_signature_cmd(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::pair<i64, std::vector<u8>> create_load_commands(Context<E> &ctx) {
+static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
   std::vector<std::vector<u8>> vec;
 
   if (ctx.arg.pagezero_size)
@@ -294,15 +294,13 @@ static std::pair<i64, std::vector<u8>> create_load_commands(Context<E> &ctx) {
 
   if (ctx.arg.adhoc_codesign)
     vec.push_back(create_code_signature_cmd(ctx));
-
-  return {vec.size(), flatten(vec)};
+   return vec;
 }
 
 template <typename E>
 void OutputMachHeader<E>::compute_size(Context<E> &ctx) {
-  std::vector<u8> cmds;
-  std::tie(std::ignore, cmds) = create_load_commands(ctx);
-  this->hdr.size = sizeof(MachHeader) + cmds.size() + ctx.arg.headerpad;
+  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
+  this->hdr.size = sizeof(MachHeader) + flatten(cmds).size() + ctx.arg.headerpad;
 }
 
 template <typename E>
@@ -318,17 +316,15 @@ template <typename E>
 void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
 
-  i64 ncmds;
-  std::vector<u8> cmds;
-  std::tie(ncmds, cmds) = create_load_commands(ctx);
+  std::vector<std::vector<u8>> cmds = create_load_commands(ctx);
 
   MachHeader &mhdr = *(MachHeader *)buf;
   mhdr.magic = 0xfeedfacf;
   mhdr.cputype = E::cputype;
   mhdr.cpusubtype = E::cpusubtype;
   mhdr.filetype = ctx.output_type;
-  mhdr.ncmds = ncmds;
-  mhdr.sizeofcmds = cmds.size();
+  mhdr.ncmds = cmds.size();
+  mhdr.sizeofcmds = flatten(cmds).size();
   mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 
   if (has_tlv(ctx))
@@ -337,7 +333,7 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   if (ctx.output_type == MH_DYLIB)
     mhdr.flags |= MH_NO_REEXPORTED_DYLIBS;
 
-  write_vector(buf + sizeof(mhdr), cmds);
+  write_vector(buf + sizeof(mhdr), flatten(cmds));
 }
 
 template <typename E>
@@ -349,7 +345,7 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
   auto find = [&]() -> OutputSection<E> * {
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->hdr.match(segname, sectname)) {
-        if (!chunk->is_regular)
+        if (!chunk->is_output_section)
           Fatal(ctx) << ": reserved name is used: " << segname << "," << sectname;
         return (OutputSection<E> *)chunk;
       }
@@ -554,7 +550,7 @@ void RebaseEncoder::finish() {
 }
 
 template <typename E>
-void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
+void RebaseSection<E>::compute_size(Context<E> &ctx) {
   RebaseEncoder enc;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
@@ -574,7 +570,7 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
-      if (chunk->is_regular)
+      if (chunk->is_output_section)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
             if (!rel.is_pcrel && rel.type == E::abs_rel)
@@ -587,7 +583,7 @@ void OutputRebaseSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputRebaseSection<E>::copy_buf(Context<E> &ctx) {
+void RebaseSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
@@ -633,7 +629,7 @@ void BindEncoder::finish() {
 }
 
 template <typename E>
-void OutputBindSection<E>::compute_size(Context<E> &ctx) {
+void BindSection<E>::compute_size(Context<E> &ctx) {
   BindEncoder enc;
 
   for (Symbol<E> *sym : ctx.got.syms)
@@ -655,12 +651,12 @@ void OutputBindSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputBindSection<E>::copy_buf(Context<E> &ctx) {
+void BindSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
 template <typename E>
-void OutputLazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
+void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
   auto emit = [&](u8 byte) {
     contents.push_back(byte);
   };
@@ -691,7 +687,7 @@ void OutputLazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
 }
 
 template <typename E>
-void OutputLazyBindSection<E>::compute_size(Context<E> &ctx) {
+void LazyBindSection<E>::compute_size(Context<E> &ctx) {
   ctx.stubs.bind_offsets.clear();
 
   for (Symbol<E> *sym : ctx.stubs.syms) {
@@ -703,7 +699,7 @@ void OutputLazyBindSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputLazyBindSection<E>::copy_buf(Context<E> &ctx) {
+void LazyBindSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
@@ -812,7 +808,7 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
 }
 
 template <typename E>
-void OutputExportSection<E>::compute_size(Context<E> &ctx) {
+void ExportSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
       if (sym && sym->is_extern && sym->file == file)
@@ -822,12 +818,12 @@ void OutputExportSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputExportSection<E>::copy_buf(Context<E> &ctx) {
+void ExportSection<E>::copy_buf(Context<E> &ctx) {
   enc.write_trie(ctx.buf + this->hdr.offset);
 }
 
 template <typename E>
-void OutputFunctionStartsSection<E>::compute_size(Context<E> &ctx) {
+void FunctionStartsSection<E>::compute_size(Context<E> &ctx) {
   std::vector<u64> addrs;
 
   for (ObjectFile<E> *file : ctx.objs)
@@ -853,12 +849,12 @@ void OutputFunctionStartsSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputFunctionStartsSection<E>::copy_buf(Context<E> &ctx) {
+void FunctionStartsSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
 template <typename E>
-void OutputSymtabSection<E>::compute_size(Context<E> &ctx) {
+void SymtabSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
       if (sym && sym->file == file)
@@ -885,7 +881,7 @@ void OutputSymtabSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputSymtabSection<E>::copy_buf(Context<E> &ctx) {
+void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + this->hdr.offset);
   memset(buf, 0, this->hdr.size);
 
@@ -917,7 +913,7 @@ void OutputSymtabSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-i64 OutputStrtabSection<E>::add_string(std::string_view str) {
+i64 StrtabSection<E>::add_string(std::string_view str) {
   i64 off = contents.size();
   contents += str;
   contents += '\0';
@@ -925,17 +921,17 @@ i64 OutputStrtabSection<E>::add_string(std::string_view str) {
 }
 
 template <typename E>
-void OutputStrtabSection<E>::compute_size(Context<E> &ctx) {
+void StrtabSection<E>::compute_size(Context<E> &ctx) {
   this->hdr.size = align_to(contents.size(), 1 << this->hdr.p2align);
 }
 
 template <typename E>
-void OutputStrtabSection<E>::copy_buf(Context<E> &ctx) {
+void StrtabSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(ctx.buf + this->hdr.offset, &contents[0], contents.size());
 }
 
 template <typename E>
-void OutputIndirectSymtabSection<E>::compute_size(Context<E> &ctx) {
+void IndirectSymtabSection<E>::compute_size(Context<E> &ctx) {
   ctx.stubs.hdr.reserved1 = 0;
   ctx.got.hdr.reserved1 = stubs.size();
   ctx.lazy_symbol_ptr.hdr.reserved1 = stubs.size() + gots.size();
@@ -945,7 +941,7 @@ void OutputIndirectSymtabSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputIndirectSymtabSection<E>::copy_buf(Context<E> &ctx) {
+void IndirectSymtabSection<E>::copy_buf(Context<E> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
 
   for (Entry &ent : stubs)
@@ -1208,7 +1204,7 @@ static std::vector<u8> construct_unwind_info(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
-      if (chunk->is_regular)
+      if (chunk->is_output_section)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (UnwindRecord<E> &rec : subsec->get_unwind_records())
             if (!ctx.arg.dead_strip || rec.is_alive)
@@ -1274,14 +1270,14 @@ void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
   template class OutputSegment<E>;                      \
   template class OutputMachHeader<E>;                   \
   template class OutputSection<E>;                      \
-  template class OutputRebaseSection<E>;                \
-  template class OutputBindSection<E>;                  \
-  template class OutputLazyBindSection<E>;              \
-  template class OutputExportSection<E>;                \
-  template class OutputFunctionStartsSection<E>;        \
-  template class OutputSymtabSection<E>;                \
-  template class OutputStrtabSection<E>;                \
-  template class OutputIndirectSymtabSection<E>;        \
+  template class RebaseSection<E>;                      \
+  template class BindSection<E>;                        \
+  template class LazyBindSection<E>;                    \
+  template class ExportSection<E>;                      \
+  template class FunctionStartsSection<E>;              \
+  template class SymtabSection<E>;                      \
+  template class StrtabSection<E>;                      \
+  template class IndirectSymtabSection<E>;              \
   template class CodeSignatureSection<E>;               \
   template class DataInCodeSection<E>;                  \
   template class StubsSection<E>;                       \
