@@ -236,14 +236,14 @@ inline void sort(T &vec, U less) {
   std::stable_sort(vec.begin(), vec.end(), less);
 }
 
-inline i64 write_string(u8 *buf, std::string_view str) {
+inline i64 write_string(void *buf, std::string_view str) {
   memcpy(buf, str.data(), str.size());
-  buf[str.size()] = '\0';
+  *((u8 *)buf + str.size()) = '\0';
   return str.size() + 1;
 }
 
 template <typename T>
-inline i64 write_vector(u8 *buf, const std::vector<T> &vec) {
+inline i64 write_vector(void *buf, const std::vector<T> &vec) {
   i64 sz = vec.size() * sizeof(T);
   memcpy(buf, vec.data(), sz);
   return sz;
