@@ -41,7 +41,7 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
   count++;
 
   if (ctx.arg.ignore_ir_file.count(mf->get_identifier()))
-    return new ObjectFile<E>;
+    return nullptr;
 
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   file->priority = ctx.file_priority++;
@@ -91,7 +91,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
         break;
       case FileType::GCC_LTO_OBJ:
       case FileType::LLVM_BITCODE:
-        ctx.objs.push_back(new_lto_obj(ctx, child, mf->name));
+        if (ObjectFile<E> *file = new_lto_obj(ctx, child, mf->name))
+          ctx.objs.push_back(file);
         break;
       default:
         break;
@@ -104,7 +105,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     return;
   case FileType::GCC_LTO_OBJ:
   case FileType::LLVM_BITCODE:
-    ctx.objs.push_back(new_lto_obj(ctx, mf, ""));
+    if (ObjectFile<E> *file = new_lto_obj(ctx, mf, ""))
+      ctx.objs.push_back(file);
     return;
   default:
     Fatal(ctx) << mf->name << ": unknown file type: " << type;
