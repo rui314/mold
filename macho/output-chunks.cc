@@ -1091,11 +1091,8 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
              personalities.size() * 4 +
              sizeof(UnwindFirstLevelPage) * (pages.size() + 1) +
              sizeof(UnwindSecondLevelPage) * pages.size() +
-             (sizeof(UnwindPageEntry) + 4) * records.size();
-
-  for (UnwindRecord<E> &rec : records)
-    if (rec.lsda)
-      size += sizeof(UnwindLsdaEntry);
+             (sizeof(UnwindPageEntry) + 4) * records.size() +
+             sizeof(UnwindLsdaEntry) * num_lsda;
 
   // Allocate an output buffer.
   std::vector<u8> buf(size);
