@@ -66,7 +66,7 @@ template <typename E>
 struct UnwindRecord {
   UnwindRecord(u32 len, u32 enc) : code_len(len), encoding(enc) {}
 
-  inline u64 get_func_raddr(Context<E> &ctx) const;
+  u64 get_func_raddr() const { return subsec->raddr + offset; }
 
   Subsection<E> *subsec = nullptr;
   u32 offset = 0;
@@ -610,7 +610,7 @@ private:
   u32 encode_personality(Context<E> &ctx, Symbol<E> *sym);
 
   std::vector<std::span<UnwindRecord<E>>>
-  split_records(Context<E> &ctx, std::span<UnwindRecord<E>>);
+  split_records(std::span<UnwindRecord<E>> records);
 
   std::vector<Symbol<E> *> personalities;
 };
@@ -932,11 +932,6 @@ Chunk<E>::Chunk(Context<E> &ctx, std::string_view segname,
   ctx.chunks.push_back(this);
   hdr.set_segname(segname);
   hdr.set_sectname(sectname);
-}
-
-template <typename E>
-u64 UnwindRecord<E>::get_func_raddr(Context<E> &ctx) const {
-  return subsec->raddr + offset;
 }
 
 } // namespace mold::macho

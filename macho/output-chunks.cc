@@ -294,7 +294,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
 
   if (ctx.arg.adhoc_codesign)
     vec.push_back(create_code_signature_cmd(ctx));
-   return vec;
+  return vec;
 }
 
 template <typename E>
@@ -1084,11 +1084,21 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
       num_lsda++;
   }
 
-  std::vector<std::span<UnwindRecord<E>>> pages = split_records(ctx, records);
+  std::vector<std::span<UnwindRecord<E>>> pages = split_records(records);
 
-  // Allocate a buffer that is more than large enough to hold the
-  // entire section.
-  std::vector<u8> buf(4096 * 1024);
+  // Compute the size of the buffer.
+  i64 size = sizeof(UnwindSectionHeader) +
+             personalities.size() * 4 +
+             sizeof(UnwindFirstLevelPage) * (pages.size() + 1) +
+             sizeof(UnwindSecondLevelPage) * pages.size() +
+             (sizeof(UnwindPageEntry) + 4) * records.size();
+
+  for (UnwindRecord<E> &rec : records)
+    if (rec.lsda)
+      size += sizeof(UnwindLsdaEntry);
+
+  // Allocate an output buffer.
+  std::vector<u8> buf(size);
 
   // Write the section header.
   UnwindSectionHeader &uhdr = *(UnwindSectionHeader *)buf.data();
@@ -1113,13 +1123,13 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
   UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
 
   for (std::span<UnwindRecord<E>> span : pages) {
-    page1->func_addr = span[0].get_func_raddr(ctx);
+    page1->func_addr = span[0].get_func_raddr();
     page1->page_offset = (u8 *)page2 - buf.data();
     page1->lsda_offset = (u8 *)lsda - buf.data();
 
     for (UnwindRecord<E> &rec : span) {
       if (rec.lsda) {
-        lsda->func_addr = rec.get_func_raddr(ctx);
+        lsda->func_addr = rec.get_func_raddr();
         lsda->lsda_addr = rec.lsda->raddr + rec.lsda_offset;
         lsda++;
       }
@@ -1135,7 +1145,7 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 
     UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     for (UnwindRecord<E> &rec : span) {
-      entry->func_addr = rec.get_func_raddr(ctx) - page1->func_addr;
+      entry->func_addr = rec.get_func_raddr() - page1->func_addr;
       entry->encoding = map[rec.encoding];
       entry++;
     }
@@ -1179,24 +1189,23 @@ u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 std::vector<std::span<UnwindRecord<E>>>
-UnwindEncoder<E>::split_records(Context<E> &ctx,
-                                std::span<UnwindRecord<E>> records) {
+UnwindEncoder<E>::split_records(std::span<UnwindRecord<E>> records) {
   constexpr i64 max_group_size = 4096;
 
-  sort(records, [&](const UnwindRecord<E> &a, const UnwindRecord<E> &b) {
-    return a.get_func_raddr(ctx) < b.get_func_raddr(ctx);
+  sort(records, [](const UnwindRecord<E> &a, const UnwindRecord<E> &b) {
+    return a.get_func_raddr() < b.get_func_raddr();
   });
 
   std::vector<std::span<UnwindRecord<E>>> vec;
 
-  for (i64 i = 0; i < records.size();) {
-    i64 j = 1;
-    u64 end_addr = records[i].get_func_raddr(ctx) + (1 << 24);
-    while (j < max_group_size && i + j < records.size() &&
-           records[i + j].get_func_raddr(ctx) < end_addr)
-      j++;
-    vec.push_back(records.subspan(i, j));
-    i += j;
+  while (!records.empty()) {
+    u64 end_addr = records[0].get_func_raddr() + (1 << 24);
+    i64 i = 1;
+    while (i < records.size() && i < max_group_size &&
+           records[i].get_func_raddr() < end_addr)
+      i++;
+    vec.push_back(records.subspan(0, i));
+    records = records.subspan(i);
   }
   return vec;
 }
