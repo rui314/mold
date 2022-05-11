@@ -1,8 +1,3 @@
-# If you want to enable ASAN and UBSan, run `make` with the following options:
-#
-# make CXXFLAGS="-fsanitize=address -fsanitize=undefined -g" \
-#      LDFLAGS="-fsanitize=address -fsanitize=undefined" USE_MIMALLOC=0
-
 VERSION = 1.2.1
 
 PREFIX = /usr/local
@@ -219,7 +214,13 @@ uninstall:
 	rm -f $D$(MANDIR)/man1/mold.1
 	rm -rf $D$(LIBDIR)/mold
 
+test-asan test-ubsan:
+	$(MAKE) USE_MIMALLOC=0 CXXFLAGS='-fsanitize=address -fsanitize=undefined -O0 -g' LDFLAGS='-fsanitize=address -fsanitize=undefined' test
+
+test-tsan:
+	$(MAKE) USE_MIMALLOC=0 CXXFLAGS='-fsanitize=thread -O0 -g' LDFLAGS=-fsanitize=thread test
+
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
-.PHONY: all test tests check clean test-x86-64 test-i386 test-arm64 test-arm32 test-riscv64 test-all
+.PHONY: all test tests check clean test-x86-64 test-i386 test-arm64 test-arm32 test-riscv64 test-all test-asan test-ubsan test-tsan

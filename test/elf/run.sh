@@ -16,7 +16,7 @@ mkdir -p $t
 [ "$CC" = cc ] || { echo skipped; exit; }
 
 # ASAN doesn't work with LD_PRELOAD
-ldd mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
+nm mold-wrapper.so | grep -Pq '__[at]san_init' && { echo skipped; exit; }
 
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>
