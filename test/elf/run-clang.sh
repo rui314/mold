@@ -1,10 +1,10 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${CC:-cc}"
-CXX="${CXX:-c++}"
-GCC="${GCC:-gcc}"
-GXX="${GXX:-g++}"
+CC="${TEST_CC:-cc}"
+CXX="${TEST_CXX:-c++}"
+GCC="${TEST_GCC:-gcc}"
+GXX="${TEST_GXX:-g++}"
 OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
@@ -16,7 +16,7 @@ mkdir -p $t
 [ "$CC" = cc ] || { echo skipped; exit; }
 
 # ASAN doesn't work with LD_PRELOAD
-ldd mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
+nm mold-wrapper.so | grep -Pq '__[at]san_init' && { echo skipped; exit; }
 
 which clang >& /dev/null || { echo skipped; exit; }
 
