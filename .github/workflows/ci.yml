@@ -19,8 +19,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: rui314/setup-mold@staging
-      with:
-        make-default: false
     - name: apt-get
       run: sudo apt-get update && sudo apt-get install git build-essential libstdc++-10-dev cmake clang libssl-dev zlib1g-dev libtbb-dev git bsdmainutils dwarfdump
     - name: ccache

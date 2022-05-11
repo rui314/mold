@@ -27,10 +27,6 @@ int main() {
 }
 EOF
 
-$GCC -fuse-ld=bfd -o $t/exe $t/a.o
-readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log || false
-
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
   $GCC -o $t/exe $t/a.o -B/usr/bin
 readelf -p .comment $t/exe > $t/log

@@ -29,10 +29,6 @@ int main() {
 }
 EOF
 
-clang -fuse-ld=bfd -o $t/exe $t/a.o
-readelf -p .comment $t/exe > $t/log
-! grep -q mold $t/log || false
-
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
   clang -o $t/exe $t/a.o -fuse-ld=/usr/bin/ld
 readelf -p .comment $t/exe > $t/log
