@@ -531,7 +531,7 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     read_uleb(buf); // size
     read_uleb(buf); // flags
     read_uleb(buf); // addr
-    this->syms.push_back(get_symbol(ctx, prefix));
+    this->syms.push_back(get_symbol(ctx, save_string(ctx, prefix)));
   } else {
     buf++;
   }
