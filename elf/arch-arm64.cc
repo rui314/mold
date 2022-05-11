@@ -789,16 +789,4 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-void write_thunks(Context<E> &ctx) {
-  Timer t(ctx, "write_thunks");
-
-  tbb::parallel_for_each(ctx.output_sections,
-                         [&](std::unique_ptr<OutputSection<E>> &osec) {
-    tbb::parallel_for_each(osec->thunks,
-                           [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
-      thunk->copy_buf(ctx);
-    });
-  });
-}
-
 } // namespace mold::elf

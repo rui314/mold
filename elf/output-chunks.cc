@@ -869,6 +869,13 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       (u64)this->shdr.sh_size : members[i + 1]->offset;
     memset(buf + this_end, 0, next_start - this_end);
   });
+
+  if constexpr (std::is_same_v<E, ARM64>) {
+    tbb::parallel_for_each(thunks,
+                           [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
+      thunk->copy_buf(ctx);
+    });
+  }
 }
 
 // .relr.dyn contains base relocations encoded in a space-efficient form.

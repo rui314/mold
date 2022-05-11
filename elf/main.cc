@@ -687,9 +687,6 @@ static int elf_main(int argc, char **argv) {
     ctx.checkpoint();
   }
 
-  if constexpr (std::is_same_v<E, ARM64>)
-    write_thunks(ctx);
-
   if constexpr (std::is_same_v<E, ARM32>)
     sort_arm_exidx(ctx);
 
