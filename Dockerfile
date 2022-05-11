@@ -9,7 +9,7 @@ RUN apt-get update && \
   apt-get install -y --no-install-recommends software-properties-common && \
   add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
   apt-get install -y --no-install-recommends build-essential git \
-    wget pkg-config cmake libstdc++-11-dev zlib1g-dev gpg gpg-agent && \
+    wget cmake libstdc++-11-dev zlib1g-dev gpg gpg-agent && \
   bash -c "$(wget -O- https://apt.llvm.org/llvm.sh)" && \
   apt-get install -y --no-install-recommends clang-14 && \
   apt clean && \

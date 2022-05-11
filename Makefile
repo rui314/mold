@@ -23,9 +23,6 @@ ifeq ($(origin CXX), default)
   CXX = c++
 endif
 
-# Allow overriding pkg-config binary
-PKG_CONFIG = pkg-config
-
 # If you want to keep symbols in the installed binary, run make with
 # `STRIP=true` to run /bin/true instead of the strip command.
 STRIP = strip
@@ -104,8 +101,7 @@ ifneq ($(OS), Darwin)
 endif
 
 ifeq ($(NEEDS_LIBCRYPTO), 1)
-  MOLD_CXXFLAGS += $(shell $(PKG_CONFIG) --cflags-only-I openssl)
-  MOLD_LDFLAGS += $(shell $(PKG_CONFIG) --libs-only-L openssl) -lcrypto
+  MOLD_LDFLAGS += -lcrypto
 endif
 
 # '-latomic' flag is needed building on riscv64 system
