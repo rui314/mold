@@ -41,6 +41,7 @@ Options:
   -headerpad_max_install_names
                               Allocate MAXPATHLEN byte padding after load commands
   -help                       Report usage information
+  -hidden-l<LIB>
   -install_name <NAME>
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
@@ -257,6 +258,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-macos_version_min")) {
       ctx.arg.platform = PLATFORM_MACOS;
       ctx.arg.platform_min_version = parse_version(ctx, arg);
+    } else if (read_joined("-hidden-l")) {
+      remaining.push_back("-hidden-l");
+      remaining.push_back(std::string(arg));
     } else if (read_arg("-install_name")) {
       ctx.arg.install_name = arg;
     } else if (read_joined("-l")) {

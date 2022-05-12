@@ -21,6 +21,7 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
   obj->mf = mf;
   obj->archive_name = archive_name;
   obj->is_alive = archive_name.empty() || ctx.all_load;
+  obj->is_hidden = ctx.hidden_l;
   ctx.obj_pool.emplace_back(obj);
   return obj;
 };
@@ -398,7 +399,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, msym.is_common(), false) < get_rank(sym)) {
       sym.file = this;
-      sym.is_extern = msym.ext;
+      sym.is_extern = (msym.ext && !this->is_hidden);
       sym.is_imported = false;
 
       switch (msym.type) {

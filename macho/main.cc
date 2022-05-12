@@ -358,6 +358,13 @@ read_filelist(Context<E> &ctx, std::string arg) {
 
 template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
+  auto must_find_library = [&](std::string arg) {
+    MappedFile<Context<E>> *mf = find_library(ctx, arg);
+    if (!mf)
+      Fatal(ctx) << "library not found: -l" << arg;
+    return mf;
+  };
+
   while (!args.empty()) {
     const std::string &arg = args[0];
     args = args.subspan(1);
@@ -383,11 +390,17 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "-framework" || arg == "-needed_framework") {
       read_file(ctx, find_framework(ctx, args[0]), arg == "-needed_framework");
       args = args.subspan(1);
-    } else if (arg == "-l" || arg == "-needed-l") {
-      MappedFile<Context<E>> *mf = find_library(ctx, args[0]);
-      if (!mf)
-        Fatal(ctx) << "library not found: -l" << args[0];
-      read_file(ctx, mf, arg == "-needed-l");
+    } else if (arg == "-l") {
+      read_file(ctx, must_find_library(args[0]), false);
+      args = args.subspan(1);
+    } else if (arg == "-needed-l") {
+      read_file(ctx, must_find_library(args[0]), true);
+      args = args.subspan(1);
+    } else if (arg == "-hidden-l") {
+      bool orig = ctx.hidden_l;
+      ctx.hidden_l = true;
+      read_file(ctx, must_find_library(args[0]), arg == "-needed-l");
+      ctx.hidden_l = orig;
       args = args.subspan(1);
     } else {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, arg));

@@ -88,6 +88,7 @@ public:
   i64 priority = 0;
   std::atomic_bool is_alive = false;
   bool is_dylib = false;
+  bool is_hidden = false;
   std::string archive_name;
 
 protected:
@@ -824,6 +825,7 @@ struct Context {
   std::vector<std::string_view> cmdline_args;
   u32 output_type = MH_EXECUTE;
   bool all_load = false;
+  bool hidden_l = false;
 
   bool has_error = false;
 
