@@ -116,7 +116,7 @@ A static file is created by `ar`, whose command line arguments are
 similar to `tar`. A static library contains the symbol table which
 offers a quick way to look up an object file for a defined symbol,
 but mold does not use the static library's symbol table. mold
-doesdn't need a symbol table to exist in an archive, and if exists,
+doesn't need a symbol table to exist in an archive, and if exists,
 mold just ignores it.
 
 See also: DSO (dynamic library)
