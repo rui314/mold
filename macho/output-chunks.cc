@@ -144,7 +144,8 @@ static std::vector<u8> create_main_cmd(Context<E> &ctx) {
 
   cmd.cmd = LC_MAIN;
   cmd.cmdsize = buf.size();
-  cmd.entryoff = get_symbol(ctx, ctx.arg.entry)->get_addr(ctx) - ctx.arg.pagezero_size;
+  cmd.entryoff = get_symbol(ctx, ctx.arg.entry)->get_addr(ctx) -
+                 ctx.arg.pagezero_size;
   return buf;
 }
 
