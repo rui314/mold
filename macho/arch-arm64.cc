@@ -95,7 +95,7 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
     addend = read_addend((u8 *)file.mf->data + hdr.offset, rels[idx]);
     break;
   case ARM64_RELOC_ADDEND:
-    addend = rels[idx++].offset;
+    addend = rels[idx++].idx;
     break;
   }
 
@@ -236,14 +236,17 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     case ARM64_RELOC_PAGEOFF12:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12: {
-      if (r.is_pcrel)
-        val -= get_addr(ctx) + r.offset;
+      assert(!r.is_pcrel);
+      ul32 *loc = (ul32 *)(buf + r.offset);
 
-      u32 insn = *(ul32 *)(buf + r.offset);
       i64 scale = 0;
-      if ((insn & 0x3b000000) == 0x39000000)
-        scale = insn >> 30;
-      *(ul32 *)(buf + r.offset) |= bits(val, 11, scale) << 10;
+      if ((*loc & 0x3b000000) == 0x39000000) {
+        scale = bits(*loc, 31, 30);
+        if (scale == 0 && (*loc & 0x04800000) == 0x04800000)
+          scale = 4;
+      }
+
+      *loc |= bits(val, 11, scale) << 10;
       break;
     }
     default:
