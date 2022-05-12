@@ -123,6 +123,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     std::string_view arg;
     std::string_view arg2;
     std::string_view arg3;
+    u64 hex_arg;
 
     auto read_arg = [&](std::string name) {
       if (args[i] == name) {
@@ -165,6 +166,17 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         return true;
       }
       return false;
+    };
+
+    auto read_hex = [&](std::string name) {
+      if (!read_arg(name))
+        return false;
+
+      size_t pos;
+      hex_arg = std::stol(std::string(arg), &pos, 16);
+      if (pos != arg.size())
+        Fatal(ctx) << "malformed " << name << ": " << arg;
+      return true;
     };
 
     if (args[i].starts_with('@')) {
@@ -219,11 +231,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.demangle = true;
     } else if (read_flag("-dylib")) {
       ctx.output_type = MH_DYLIB;
-    } else if (read_arg("-headerpad")) {
-      size_t pos;
-      ctx.arg.headerpad = std::stol(std::string(arg), &pos, 16);
-      if (pos != arg.size())
-        Fatal(ctx) << "malformed -headerpad: " << arg;
+    } else if (read_hex("-headerpad")) {
+      ctx.arg.headerpad = hex_arg;
     } else if (read_flag("-headerpad_max_install_names")) {
       ctx.arg.headerpad = 1024;
     } else if (read_flag("-dynamic")) {
@@ -260,11 +269,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-no_deduplicate")) {
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
-    } else if (read_arg("-pagezero_size")) {
-      size_t pos;
-      pagezero_size = std::stol(std::string(arg), &pos, 16);
-      if (pos != arg.size())
-        Fatal(ctx) << "malformed -pagezero_size: " << arg;
+    } else if (read_hex("-pagezero_size")) {
+      pagezero_size = hex_arg;
     } else if (read_arg3("-platform_version")) {
       ctx.arg.platform = parse_platform(ctx, arg);
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
@@ -326,7 +332,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (pagezero_size.has_value()) {
     if (ctx.output_type != MH_EXECUTE)
-      Error(ctx) << "-pagezero_size option can only be used when"
+      Fatal(ctx) << "-pagezero_size option can only be used when"
                  << " linking a main executable";
     ctx.arg.pagezero_size = *pagezero_size;
   } else {
