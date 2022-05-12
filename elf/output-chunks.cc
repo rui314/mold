@@ -2341,9 +2341,6 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
       ctx.debug_rnglists = chunk;
   }
 
-  assert(ctx.debug_info);
-  assert(ctx.debug_abbrev);
-
   struct Entry {
     ul64 start;
     ul64 end;
@@ -2352,32 +2349,33 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
   // Read address ranges from debug sections and copy them to .gdb_index.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->debug_info)
-      return;
-
     Entry *begin = (Entry *)(base + header.areas_offset + file->area_offset);
     Entry *e = begin;
-    u64 offset = file->debug_info->offset;
 
-    for (i64 i = 0; i < file->compunits.size(); i++) {
-      std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
+    if (file->debug_info && ctx.debug_abbrev) {
 
-      for (i64 j = 0; j < addrs.size(); j += 2) {
-        // Skip an empty range
-        if (addrs[j] == addrs[j + 1])
-          continue;
+      u64 offset = file->debug_info->offset;
 
-        // Gdb crashes if there are entries with address 0.
-        if (addrs[j] == 0)
-          continue;
+      for (i64 i = 0; i < file->compunits.size(); i++) {
+        std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
 
-        assert(e < begin + file->num_areas);
-        e->start = addrs[j];
-        e->end = addrs[j + 1];
-        e->attr = file->compunits_idx + i;
-        e++;
+        for (i64 j = 0; j < addrs.size(); j += 2) {
+          // Skip an empty range
+          if (addrs[j] == addrs[j + 1])
+            continue;
+
+          // Gdb crashes if there are entries with address 0.
+          if (addrs[j] == 0)
+            continue;
+
+          assert(e < begin + file->num_areas);
+          e->start = addrs[j];
+          e->end = addrs[j + 1];
+          e->attr = file->compunits_idx + i;
+          e++;
+        }
+        offset += file->compunits[i].size();
       }
-      offset += file->compunits[i].size();
     }
 
     // Fill trailing null entries with dummy values because gdb
