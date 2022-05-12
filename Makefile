@@ -90,18 +90,17 @@ ifeq ($(OS), Linux)
   endif
 endif
 
-NEEDS_LIBCRYPTO = 0
-ifneq ($(OS), Darwin)
-  NEEDS_LIBCRYPTO = 1
+NEEDS_LIBCRYPTO = 1
+ifeq ($(OS), Darwin)
+  NEEDS_LIBCRYPTO = 0
 endif
 
 ifeq ($(NEEDS_LIBCRYPTO), 1)
   MOLD_LDFLAGS += -lcrypto
 endif
 
-# '-latomic' flag is needed building on riscv64 system
-# RV32 system doesn't tested yet
-# seems like '-atomic' would be better but not working.
+# '-latomic' flag is needed building on riscv64 system.
+# Seems like '-atomic' would be better but not working.
 ifeq ($(ARCH), riscv64)
   MOLD_LDFLAGS += -latomic
 endif
