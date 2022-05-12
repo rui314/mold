@@ -269,14 +269,25 @@ MappedFile<Context<E>> *find_framework(Context<E> &ctx, std::string name) {
 
 template <typename E>
 MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
-  for (std::string dir : ctx.arg.library_paths) {
-    for (std::string ext : {".tbd", ".dylib", ".a"}) {
-      std::string path = dir + "/lib" + name + ext;
-      if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
-        return mf;
+  auto search = [&](std::vector<std::string> extn) -> MappedFile<Context<E>> * {
+    for (std::string dir : ctx.arg.library_paths) {
+      for (std::string e : extn) {
+        std::string path = dir + "/lib" + name + e;
+        if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
+          return mf;
+      }
     }
-  }
-  return nullptr;
+    return nullptr;
+  };
+
+  // -search_paths_first
+  if (ctx.arg.search_paths_first)
+    return search({".tbd", ".dylib", ".a"});
+
+  // -search_dylibs_first
+  if (MappedFile<Context<E>> *mf = search({".tbd", ".dylib"}))
+    return mf;
+  return search({".a"});
 }
 
 template <typename E>

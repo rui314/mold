@@ -800,6 +800,7 @@ struct Context {
     bool dynamic = true;
     bool fatal_warnings = false;
     bool noinhibit_exec = false;
+    bool search_paths_first = true;
     bool trace = false;
     i64 arch = CPU_TYPE_ARM64;
     i64 headerpad = 256;

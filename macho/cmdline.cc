@@ -54,6 +54,8 @@ Options:
                               Set platform, platform version and SDK version
   -rpath <PATH>               Add PATH to the runpath search path list
   -syslibroot <DIR>           Prepend DIR to library search paths
+  -search_paths_first
+  -search_dylibs_first
   -t                          Print out each file the linker loads
   -v                          Report version information)";
 
@@ -265,11 +267,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
     } else if (read_arg("-rpath")) {
       ctx.arg.rpath.push_back(std::string(arg));
-    } else if (read_flag("-search_dylibs_first")) {
-      Fatal(ctx) << "-search_dylibs_first is not supported";
-    } else if (read_flag("-search_paths_first")) {
     } else if (read_arg("-syslibroot")) {
       ctx.arg.syslibroot.push_back(std::string(arg));
+    } else if (read_flag("-search_paths_first")) {
+      ctx.arg.search_paths_first = true;
+    } else if (read_flag("-search_dylibs_first")) {
+      ctx.arg.search_paths_first = false;
     } else if (read_flag("-t")) {
       ctx.arg.trace = true;
     } else if (read_flag("-v")) {
