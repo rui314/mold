@@ -169,44 +169,44 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     Relocation<ARM64> &r = rels[i];
+    u8 *loc = buf + r.offset;
+    u64 val = r.addend;
 
     if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }
 
-    u64 val = 0;
-
+    // Compute a relocated value.
     switch (r.type) {
     case ARM64_RELOC_UNSIGNED:
     case ARM64_RELOC_BRANCH26:
     case ARM64_RELOC_PAGE21:
     case ARM64_RELOC_PAGEOFF12:
-      val = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
+      val += r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
     case ARM64_RELOC_SUBTRACTOR: {
       Relocation<ARM64> s = rels[++i];
       assert(s.type == ARM64_RELOC_UNSIGNED);
       u64 val1 = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       u64 val2 = s.sym ? s.sym->get_addr(ctx) : s.subsec->get_addr(ctx);
-      val = val2 - val1;
+      val += val2 - val1;
       break;
     }
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
     case ARM64_RELOC_POINTER_TO_GOT:
-      val = r.sym->get_got_addr(ctx);
+      val += r.sym->get_got_addr(ctx);
       break;
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-      val = r.sym->get_tlv_addr(ctx);
+      val += r.sym->get_tlv_addr(ctx);
       break;
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)r.type;
     }
 
-    val += r.addend;
-
+    // Write a computed value to the output buffer.
     switch (r.type) {
     case ARM64_RELOC_UNSIGNED:
     case ARM64_RELOC_SUBTRACTOR:
@@ -215,38 +215,35 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
         val -= get_addr(ctx) + r.offset;
 
       if (r.p2size == 2)
-        *(il32 *)(buf + r.offset) = val;
+        *(ul32 *)loc = val;
       else if (r.p2size == 3)
-        *(il64 *)(buf + r.offset) = val;
+        *(ul64 *)loc = val;
       else
         unreachable();
       break;
     case ARM64_RELOC_BRANCH26:
       if (r.is_pcrel)
         val -= get_addr(ctx) + r.offset;
-      *(ul32 *)(buf + r.offset) |= bits(val, 27, 2);
+      *(ul32 *)loc |= bits(val, 27, 2);
       break;
     case ARM64_RELOC_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
       assert(r.is_pcrel);
-      *(ul32 *)(buf + r.offset) |=
-        encode_page(page(val) - page(get_addr(ctx) + r.offset));
+      *(ul32 *)loc |= encode_page(page(val) - page(get_addr(ctx) + r.offset));
       break;
     case ARM64_RELOC_PAGEOFF12:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12: {
       assert(!r.is_pcrel);
-      ul32 *loc = (ul32 *)(buf + r.offset);
-
+      u32 insn = *(ul32 *)loc;
       i64 scale = 0;
-      if ((*loc & 0x3b000000) == 0x39000000) {
-        scale = bits(*loc, 31, 30);
-        if (scale == 0 && (*loc & 0x04800000) == 0x04800000)
+      if ((insn & 0x3b000000) == 0x39000000) {
+        scale = bits(insn, 31, 30);
+        if (scale == 0 && (insn & 0x04800000) == 0x04800000)
           scale = 4;
       }
-
-      *loc |= bits(val, 11, scale) << 10;
+      *(ul32 *)loc |= bits(val, 11, scale) << 10;
       break;
     }
     default:
