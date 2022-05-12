@@ -55,6 +55,7 @@ Options:
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
   -rpath <PATH>               Add PATH to the runpath search path list
+  -stack_size <SIZE>
   -syslibroot <DIR>           Prepend DIR to library search paths
   -search_paths_first
   -search_dylibs_first
@@ -280,6 +281,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
     } else if (read_arg("-rpath")) {
       ctx.arg.rpath.push_back(std::string(arg));
+    } else if (read_hex("-stack_size")) {
+      ctx.arg.stack_size = hex_arg;
     } else if (read_arg("-syslibroot")) {
       ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-search_paths_first")) {
