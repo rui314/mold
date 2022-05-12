@@ -208,10 +208,14 @@ static std::vector<u8> create_id_dylib_cmd(Context<E> &ctx) {
   std::vector<u8> buf(sizeof(DylibCommand) + ctx.arg.output.size() + 1);
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
+  std::string_view name = ctx.arg.install_name;
+  if (name.empty())
+    name = ctx.arg.output;
+
   cmd.cmd = LC_ID_DYLIB;
   cmd.cmdsize = buf.size();
   cmd.nameoff = sizeof(cmd);
-  write_string(buf.data() + sizeof(cmd), ctx.arg.output);
+  write_string(buf.data() + sizeof(cmd), name);
   return buf;
 }
 

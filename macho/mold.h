@@ -810,6 +810,7 @@ struct Context {
     i64 platform_sdk_version = 0;
     std::string chroot;
     std::string entry = "_main";
+    std::string install_name;
     std::string map;
     std::string output = "a.out";
     std::vector<std::string> U;
