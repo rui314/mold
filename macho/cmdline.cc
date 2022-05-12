@@ -43,6 +43,7 @@ Options:
   -help                       Report usage information
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
+  -macos_version_min <VERSION>
   -map <FILE>                 Write map file to a given file
   -needed-l<LIB>              Search for a given library
   -needed-framework <NAME>[,<SUFFIX>]
@@ -242,6 +243,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back("-framework");
       remaining.push_back(std::string(arg));
     } else if (read_arg("-lto_library")) {
+    } else if (read_arg("-macos_version_min")) {
+      ctx.arg.platform = PLATFORM_MACOS;
+      ctx.arg.platform_min_version = parse_version(ctx, arg);
     } else if (read_joined("-l")) {
       remaining.push_back("-l");
       remaining.push_back(std::string(arg));
