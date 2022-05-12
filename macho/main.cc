@@ -304,8 +304,7 @@ strip_universal_header(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
-                      bool is_needed = false) {
+static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   if (get_file_type(mf) == FileType::MACH_UNIVERSAL)
     mf = strip_universal_header(ctx, mf);
 
@@ -313,8 +312,6 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
   case FileType::TAPI:
   case FileType::MACH_DYLIB:
     ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
-    if (is_needed || !ctx.arg.dead_strip_dylibs)
-      ctx.dylibs.back()->is_needed = true;
     break;
   case FileType::MACH_OBJ:
     ctx.objs.push_back(ObjectFile<E>::create(ctx, mf, ""));
@@ -387,20 +384,26 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, args[0]));
       ctx.all_load = orig;
       args = args.subspan(1);
-    } else if (arg == "-framework" || arg == "-needed_framework") {
-      read_file(ctx, find_framework(ctx, args[0]), arg == "-needed_framework");
+    } else if (arg == "-framework") {
+      read_file(ctx, find_framework(ctx, args[0]));
+      args = args.subspan(1);
+    } else if (arg == "-needed_framework") {
+      ctx.needed_l = true;
+      read_file(ctx, find_framework(ctx, args[0]));
+      ctx.needed_l = false;
       args = args.subspan(1);
     } else if (arg == "-l") {
-      read_file(ctx, must_find_library(args[0]), false);
+      read_file(ctx, must_find_library(args[0]));
       args = args.subspan(1);
     } else if (arg == "-needed-l") {
-      read_file(ctx, must_find_library(args[0]), true);
+      ctx.needed_l = true;
+      read_file(ctx, must_find_library(args[0]));
+      ctx.needed_l = false;
       args = args.subspan(1);
     } else if (arg == "-hidden-l") {
-      bool orig = ctx.hidden_l;
       ctx.hidden_l = true;
-      read_file(ctx, must_find_library(args[0]), arg == "-needed-l");
-      ctx.hidden_l = orig;
+      read_file(ctx, must_find_library(args[0]));
+      ctx.hidden_l = false;
       args = args.subspan(1);
     } else {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, arg));

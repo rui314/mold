@@ -519,6 +519,7 @@ template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>;
   dylib->mf = mf;
+  dylib->is_needed = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   ctx.dylib_pool.emplace_back(dylib);
   return dylib;
 };

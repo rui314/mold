@@ -825,6 +825,7 @@ struct Context {
   std::vector<std::string_view> cmdline_args;
   u32 output_type = MH_EXECUTE;
   bool all_load = false;
+  bool needed_l = false;
   bool hidden_l = false;
 
   bool has_error = false;
