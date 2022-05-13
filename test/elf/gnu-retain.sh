@@ -13,6 +13,9 @@ cd "$(dirname "$0")"/../..
 t=out/test/elf/$testname
 mkdir -p $t
 
+echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null ||
+  { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
 EOF
