@@ -33,11 +33,6 @@ static u32 djb_hash(std::string_view name) {
 }
 
 template <typename E>
-void Chunk<E>::write_to(Context<E> &ctx, u8 *buf) {
-  Fatal(ctx) << name << ": write_to is called on an invalid section";
-}
-
-template <typename E>
 u64 get_entry_addr(Context<E> &ctx) {
   if (!ctx.arg.entry.empty())
     if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry);
@@ -149,12 +144,11 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
 
   if (flags & SHF_WRITE)
-    if ((flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
-        type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-        chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
-        (ctx.arg.z_now && chunk == ctx.gotplt.get()) ||
-        chunk->name.ends_with(".rel.ro"))
-      return true;
+    return (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
+           type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
+           chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
+           (ctx.arg.z_now && chunk == ctx.gotplt.get()) ||
+           chunk->name.ends_with(".rel.ro");
   return false;
 }
 
