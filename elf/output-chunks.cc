@@ -2125,6 +2125,8 @@ template <typename E>
 void GdbIndexSection<E>::construct(Context<E> &ctx) {
   Timer t(ctx, "GdbIndexSection::construct");
 
+  std::atomic_bool has_debug_info = false;
+
   // Read debug sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->debug_info) {
@@ -2133,8 +2135,12 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
 
       // Count the number of address areas contained in this file.
       file->num_areas = estimate_address_areas(ctx, *file);
+      has_debug_info = true;
     }
   });
+
+  if (!has_debug_info)
+    return;
 
   // Initialize `area_offset` and `compunits_idx`.
   for (i64 i = 0; i < ctx.objs.size() - 1; i++) {
@@ -2325,6 +2331,10 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   Timer t(ctx, "GdbIndexSection::write_address_areas");
+
+  if (this->shdr.sh_size == 0)
+    return;
+
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -2341,6 +2351,9 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
       ctx.debug_rnglists = chunk;
   }
 
+  assert(ctx.debug_info);
+  assert(ctx.debug_abbrev);
+
   struct Entry {
     ul64 start;
     ul64 end;
@@ -2349,33 +2362,32 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
   // Read address ranges from debug sections and copy them to .gdb_index.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (!file->debug_info)
+      return;
+
     Entry *begin = (Entry *)(base + header.areas_offset + file->area_offset);
     Entry *e = begin;
+    u64 offset = file->debug_info->offset;
 
-    if (file->debug_info && ctx.debug_abbrev) {
+    for (i64 i = 0; i < file->compunits.size(); i++) {
+      std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
 
-      u64 offset = file->debug_info->offset;
+      for (i64 j = 0; j < addrs.size(); j += 2) {
+        // Skip an empty range
+        if (addrs[j] == addrs[j + 1])
+          continue;
 
-      for (i64 i = 0; i < file->compunits.size(); i++) {
-        std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
+        // Gdb crashes if there are entries with address 0.
+        if (addrs[j] == 0)
+          continue;
 
-        for (i64 j = 0; j < addrs.size(); j += 2) {
-          // Skip an empty range
-          if (addrs[j] == addrs[j + 1])
-            continue;
-
-          // Gdb crashes if there are entries with address 0.
-          if (addrs[j] == 0)
-            continue;
-
-          assert(e < begin + file->num_areas);
-          e->start = addrs[j];
-          e->end = addrs[j + 1];
-          e->attr = file->compunits_idx + i;
-          e++;
-        }
-        offset += file->compunits[i].size();
+        assert(e < begin + file->num_areas);
+        e->start = addrs[j];
+        e->end = addrs[j + 1];
+        e->attr = file->compunits_idx + i;
+        e++;
       }
+      offset += file->compunits[i].size();
     }
 
     // Fill trailing null entries with dummy values because gdb
