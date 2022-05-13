@@ -13,6 +13,9 @@ ubuntu22.04)
 fedora*)
   dnf install -y git gcc-g++ cmake openssl-devel zlib-devel
   ;;
+gentoo*)
+  emerge dev-vcs/git dev-util/cmake sys-libs/zlib
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID $VERSION_ID"
   exit 1
