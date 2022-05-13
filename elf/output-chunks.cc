@@ -751,28 +751,27 @@ static std::string_view get_output_name(Context<E> &ctx, std::string_view name) 
   if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
 
+  if (name.starts_with(".rodata.cst"))
+    return ".rodata.cst";
+  if (name.starts_with(".rodata.str"))
+    return ".rodata.str";
+  if (name.starts_with(".ARM.exidx"))
+    return ".ARM.exidx";
+  if (name.starts_with(".ARM.extab"))
+    return ".ARM.extab";
+
   if (ctx.arg.z_keep_text_section_prefix) {
-    static std::string_view text_prefixes[] = {
+    static std::string_view prefixes[] = {
       ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
       ".text.exit."
     };
 
-    for (std::string_view prefix : text_prefixes) {
+    for (std::string_view prefix : prefixes) {
       std::string_view stem = prefix.substr(0, prefix.size() - 1);
       if (name == stem || name.starts_with(prefix))
         return stem;
     }
   }
-
-  if (name.starts_with( ".rodata.cst"))
-    return ".rodata.cst";
-  if (name.starts_with( ".rodata.str"))
-    return ".rodata.str";
-
-  if (name.starts_with(".ARM.exidx"))
-    return ".ARM.exidx";
-  if (name.starts_with(".ARM.extab"))
-    return ".ARM.extab";
 
   static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
