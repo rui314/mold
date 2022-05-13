@@ -814,7 +814,8 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
   name = get_output_name(ctx, name);
   type = canonicalize_type<E>(name, type);
-  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED & ~(u64)SHF_LINK_ORDER;
+  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED & ~(u64)SHF_LINK_ORDER &
+          ~(u64)SHF_GNU_RETAIN;
 
   // .init_array is usually writable. We don't want to create multiple
   // .init_array output sections, so make it always writable.

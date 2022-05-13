@@ -102,11 +102,12 @@ collect_root_set(Context<E> &ctx) {
       // reduce the amount of non-memory-mapped segments, you should
       // use `strip` command, compile without debug info or use
       // -strip-all linker option.
-      if (!(isec->shdr().sh_flags & SHF_ALLOC))
+      u32 flags = isec->shdr().sh_flags;
+      if (!(flags & SHF_ALLOC))
         isec->extra().is_visited = true;
 
       if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
-          isec->shdr().sh_type == SHT_NOTE)
+          (flags & SHF_GNU_RETAIN) || isec->shdr().sh_type == SHT_NOTE)
         enqueue_section(isec.get());
     }
   });

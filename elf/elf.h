@@ -82,6 +82,7 @@ static constexpr u32 SHF_LINK_ORDER = 0x80;
 static constexpr u32 SHF_GROUP = 0x200;
 static constexpr u32 SHF_TLS = 0x400;
 static constexpr u32 SHF_COMPRESSED = 0x800;
+static constexpr u32 SHF_GNU_RETAIN = 0x200000;
 static constexpr u32 SHF_EXCLUDE = 0x80000000;
 
 static constexpr u32 GRP_COMDAT = 1;
