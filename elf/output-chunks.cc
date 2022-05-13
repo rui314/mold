@@ -116,10 +116,12 @@ static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
     return PF_R | PF_W | PF_X;
 
   i64 ret = PF_R;
-  if (chunk->shdr.sh_flags & SHF_WRITE)
+  bool write = (chunk->shdr.sh_flags & SHF_WRITE);
+  if (write)
     ret |= PF_W;
-  if ((chunk->shdr.sh_flags & SHF_EXECINSTR) ||
-      (ctx.arg.z_separate_code == NOSEPARATE_CODE))
+  if ((ctx.arg.z_separate_code == NOSEPARATE_CODE) ||
+      (!ctx.arg.rosegment && !write) ||
+      (chunk->shdr.sh_flags & SHF_EXECINSTR))
     ret |= PF_X;
   return ret;
 }

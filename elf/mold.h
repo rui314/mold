@@ -1593,6 +1593,7 @@ struct Context {
     bool relax = true;
     bool relocatable = false;
     bool repro = false;
+    bool rosegment = true;
     bool shared = false;
     bool stats = false;
     bool strip_all = false;

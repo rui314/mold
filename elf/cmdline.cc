@@ -113,6 +113,8 @@ Options:
   --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
   --reverse-sections          Reverses input sections in the output file
+  --rosegment                 Put read-only non-executable sections in their own segment (default)
+    --no-rosegment            Put read-only non-executable sections in an executable segment
   --rpath DIR                 Add DIR to runtime search path
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
@@ -537,6 +539,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
     } else if (read_flag("reverse-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_REVERSE;
+    } else if (read_flag("rosegment")) {
+      ctx.arg.rosegment = true;
+    } else if (read_flag("no-rosegment")) {
+      ctx.arg.rosegment = false;
     } else if (read_arg("y") || read_arg("trace-symbol")) {
       ctx.arg.trace_symbol.push_back(arg);
     } else if (read_arg("filler")) {
