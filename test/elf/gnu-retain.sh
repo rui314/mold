@@ -13,6 +13,8 @@ cd "$(dirname "$0")"/../..
 t=out/test/elf/$testname
 mkdir -p $t
 
+[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+
 echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null ||
   { echo skipped; exit; }
 
