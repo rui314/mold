@@ -158,32 +158,22 @@ endif
 	  echo 'Passed all tests'; \
 	fi
 
-test-x86-64: all
-	@echo x86_64
-	TEST_CC=x86_64-linux-gnu-gcc TEST_CXX=x86_64-linux-gnu-g++ TEST_GCC=x86_64-linux-gnu-gcc TEST_GXX=x86_64-linux-gnu-g++ OBJDUMP=x86_64-linux-gnu-objdump MACHINE=x86_64 QEMU='qemu-x86_64 -L /usr/x86_64-linux-gnu' $(MAKE) test
+test-arch:
+	TEST_CC=${TRIPLE}-gcc \
+	TEST_CXX=${TRIPLE}-g++ \
+	TEST_GCC=${TRIPLE}-gcc \
+	TEST_GXX=${TRIPLE}-g++ \
+	OBJDUMP=${TRIPLE}-objdump \
+	MACHINE=${MACHINE} \
+	QEMU="qemu-${MACHINE} -L /usr/${TRIPLE}" \
+	$(MAKE) test
 
-test-i386: all
-	@echo i386
-	TEST_CC=i686-linux-gnu-gcc TEST_CXX=i686-linux-gnu-g++ TEST_GCC=i686-linux-gnu-gcc TEST_GXX=i686-linux-gnu-g++ OBJDUMP=x86_64-linux-gnu-objdump MACHINE=i386 QEMU='qemu-i386 -L /usr/i686-linux-gnu' $(MAKE) test
-
-test-arm64: all
-	@echo arm64
-	TEST_CC=aarch64-linux-gnu-gcc TEST_CXX=aarch64-linux-gnu-g++ TEST_GCC=aarch64-linux-gnu-gcc TEST_GXX=aarch64-linux-gnu-g++ OBJDUMP=aarch64-linux-gnu-objdump MACHINE=aarch64 QEMU='qemu-aarch64 -L /usr/aarch64-linux-gnu' $(MAKE) test
-
-test-arm32: all
-	@echo arm
-	TEST_CC=arm-linux-gnueabihf-gcc TEST_CXX=arm-linux-gnueabihf-g++ TEST_GCC=arm-linux-gnueabihf-gcc TEST_GXX=arm-linux-gnueabihf-g++ OBJDUMP=arm-linux-gnueabihf-objdump MACHINE=arm QEMU='qemu-arm -L /usr/arm-linux-gnueabihf' $(MAKE) test
-
-test-riscv64: all
-	@echo riscv64
-	TEST_CC=riscv64-linux-gnu-gcc TEST_CXX=riscv64-linux-gnu-g++ TEST_GCC=riscv64-linux-gnu-gcc TEST_GXX=riscv64-linux-gnu-g++ OBJDUMP=riscv64-linux-gnu-objdump MACHINE=riscv64 QEMU='qemu-riscv64 -L /usr/riscv64-linux-gnu' $(MAKE) test
-
-test-all:
-	$(MAKE) test-x86-64
-	$(MAKE) test-i386
-	$(MAKE) test-arm64
-	$(MAKE) test-arm32
-	$(MAKE) test-riscv64
+test-all: all
+	$(MAKE) test-arch TRIPLE=x86_64-linux-gnu MACHINE=x86_64
+	$(MAKE) test-arch TRIPLE=i686-linux-gnu MACHINE=i386
+	$(MAKE) test-arch TRIPLE=aarch64-linux-gnu MACHINE=aarch64
+	$(MAKE) test-arch TRIPLE=arm-linux-gnueabihf MACHINE=arm
+	$(MAKE) test-arch TRIPLE=riscv64-linux-gnu MACHINE=riscv64
 
 install: all
 	$(INSTALL) -d $D$(BINDIR)
@@ -222,4 +212,4 @@ test-tsan:
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
-.PHONY: all test tests check clean test-x86-64 test-i386 test-arm64 test-arm32 test-riscv64 test-all test-asan test-ubsan test-tsan
+.PHONY: all test tests check clean test-arch test-all test-asan test-ubsan test-tsan
