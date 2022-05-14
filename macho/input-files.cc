@@ -300,9 +300,12 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
     };
 
+    if (r.is_pcrel || r.p2size != 3 || r.type)
+      error();
+
     switch (r.offset % sizeof(CompactUnwindEntry)) {
     case offsetof(CompactUnwindEntry, code_start): {
-      if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
+      if (r.is_extern)
         error();
 
       Subsection<E> *target = find_subsection(ctx, src[idx].code_start);
@@ -313,12 +316,12 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       break;
     }
     case offsetof(CompactUnwindEntry, personality):
-      if (r.is_pcrel || r.p2size != 3 || !r.is_extern || r.type)
+      if (!r.is_extern)
         error();
       dst.personality = this->syms[r.idx];
       break;
     case offsetof(CompactUnwindEntry, lsda): {
-      if (r.is_pcrel || r.p2size != 3 || r.is_extern || r.type)
+      if (r.is_extern)
         error();
 
       i32 addr = *(il32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
@@ -330,7 +333,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       break;
     }
     default:
-      Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+      error();
     }
   }
 
