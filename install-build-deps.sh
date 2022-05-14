@@ -7,11 +7,11 @@ source /etc/os-release
 
 case "$ID$VERSION_ID" in
 ubuntu20.04)
-  apt-get install -y build-essential git cmake libssl-dev zlib1g-dev git g++-10
+  apt install -y git cmake libssl-dev zlib1g-dev git gcc g++ g++-10
   apt-get install -y file bsdmainutils
   ;;
 ubuntu22.04)
-  apt-get install -y build-essential git cmake libssl-dev zlib1g-dev git g++
+  apt install -y git cmake libssl-dev zlib1g-dev git gcc g++
   apt-get install -y file bsdmainutils
   ;;
 fedora*)
@@ -19,7 +19,7 @@ fedora*)
   dnf install -y glibc-static file libstdc++-static diffutils
   ;;
 opensuse-leap*)
-  zypper install -y git make cmake zlib-devel libopenssl-devel gcc11-c++
+  zypper install -y git make cmake zlib-devel libopenssl-devel gcc-c++ gcc11-c++
   zypper install -y glibc-devel-static tar diffutils util-linux
   ;;
 opensuse-tumbleweed*)
