@@ -25,7 +25,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -shared -o $t/b.so -xc -
+cat <<EOF | $CC -shared -fPIC -o $t/b.so -xc -
 void expfn1();
 void expfn2() {}
 

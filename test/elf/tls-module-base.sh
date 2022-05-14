@@ -15,8 +15,9 @@ mkdir -p $t
 
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | $CC -o $t/a.o -c -xassembler -
+cat <<EOF | $CC -fPIC -o $t/a.o -c -xassembler -
 .globl get_foo
+.type get_foo, @function
 get_foo:
   lea _TLS_MODULE_BASE_@TLSDESC(%rip), %rax
   call *_TLS_MODULE_BASE_@TLSCALL(%rax)

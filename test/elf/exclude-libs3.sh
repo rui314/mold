@@ -13,7 +13,7 @@ cd "$(dirname "$0")"/../..
 t=out/test/elf/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -xc -c -o $t/a.o -
+cat <<EOF | $CC -fPIC -xc -c -o $t/a.o -
 void foo();
 void bar() { foo(); }
 EOF
@@ -21,7 +21,7 @@ EOF
 rm -f $t/b.a
 ar crs $t/b.a $t/a.o
 
-cat <<EOF | $CC -xc -c -o $t/c.o -
+cat <<EOF | $CC -fPIC -xc -c -o $t/c.o -
 void bar();
 void foo() { bar(); }
 EOF
