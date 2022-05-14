@@ -13,6 +13,12 @@ ubuntu22.04)
 fedora*)
   dnf install -y git gcc-g++ cmake openssl-devel zlib-devel
   ;;
+opensuse-leap*)
+  zypper install -y git make cmake zlib-devel libopenssl-devel gcc11-++c
+  ;;
+opensuse-tumbleweed*)
+  zypper install -y git make cmake zlib-devel libopenssl-devel gcc-c++
+  ;;
 gentoo*)
   emerge dev-vcs/git dev-util/cmake sys-libs/zlib
   ;;
