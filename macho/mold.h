@@ -315,6 +315,7 @@ public:
 
   void compute_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
+  void write_uuid(Context<E> &ctx);
 };
 
 template <typename E>
@@ -760,6 +761,8 @@ void dead_strip(Context<E> &ctx);
 // main.cc
 //
 
+enum UuidKind { UUID_NONE, UUID_HASH, UUID_RANDOM };
+
 template <typename E>
 struct Context {
   Context() {
@@ -790,6 +793,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    UuidKind uuid = UUID_HASH;
     bool ObjC = false;
     bool adhoc_codesign = true;
     bool color_diagnostics = false;
@@ -812,6 +816,7 @@ struct Context {
     i64 stack_size = 0;
     std::string chroot;
     std::string entry = "_main";
+    std::string final_output;
     std::string install_name;
     std::string map;
     std::string output = "a.out";
@@ -828,6 +833,7 @@ struct Context {
   bool needed_l = false;
   bool hidden_l = false;
 
+  u8 uuid[16] = {};
   bool has_error = false;
 
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;

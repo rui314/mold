@@ -2,7 +2,6 @@
 #include "../sha.h"
 
 #include <cctype>
-#include <random>
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
@@ -2000,21 +1999,6 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   }
 }
 
-static std::vector<u8> get_uuid_v4() {
-  std::random_device rand;
-  u32 buf[4] = { rand(), rand(), rand(), rand() };
-  std::vector<u8> bytes{(u8 *)buf, (u8 *)buf + 16};
-
-  // Indicate that this is UUIDv4.
-  bytes[6] &= 0b00001111;
-  bytes[6] |= 0b01000000;
-
-  // Indicates that this is an RFC4122 variant.
-  bytes[8] &= 0b00111111;
-  bytes[8] |= 0b10000000;
-  return bytes;
-}
-
 template <typename E>
 void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
   Timer t(ctx, "build_id");
@@ -2031,9 +2015,11 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
     // requested.
     compute_sha256(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
-  case BuildId::UUID:
-    write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE, get_uuid_v4());
+  case BuildId::UUID: {
+    std::array<u8, 16> uuid = get_uuid_v4();
+    memcpy(ctx.buf + this->shdr.sh_offset + HEADER_SIZE, uuid.data(), 16);
     return;
+  }
   default:
     unreachable();
   }

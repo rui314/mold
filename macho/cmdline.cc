@@ -34,6 +34,7 @@ Options:
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
+  -final_output <NAME>
   -force_load <FILE>          Include all objects from a given static archive
   -framework <NAME>,[,<SUFFIX>]
                               Search for a given framework
@@ -51,10 +52,12 @@ Options:
   -needed-framework <NAME>[,<SUFFIX>]
                               Search for a given framework
   -no_deduplicate             Ignored
+  -no_uuid                    Do not generate an LC_UUID load command
   -o <FILE>                   Set output filename
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
+  -random_uuid                Generate a random LC_UUID load command
   -rpath <PATH>               Add PATH to the runpath search path list
   -stack_size <SIZE>
   -syslibroot <DIR>           Prepend DIR to library search paths
@@ -248,6 +251,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
       remaining.push_back(std::string(arg));
+    } else if (read_arg("-final_output")) {
+      ctx.arg.final_output = arg;
     } else if (read_arg("-force_load")) {
       remaining.push_back("-force_load");
       remaining.push_back(std::string(arg));
@@ -275,6 +280,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back("-needed_framework");
       remaining.push_back(std::string(arg));
     } else if (read_flag("-no_deduplicate")) {
+    } else if (read_flag("-no_uuid")) {
+      ctx.arg.uuid = UUID_NONE;
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
     } else if (read_hex("-pagezero_size")) {
@@ -283,6 +290,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.platform = parse_platform(ctx, arg);
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
+    } else if (read_flag("-random_uuid")) {
+      ctx.arg.uuid = UUID_RANDOM;
     } else if (read_arg("-rpath")) {
       ctx.arg.rpath.push_back(std::string(arg));
     } else if (read_hex("-stack_size")) {
@@ -347,6 +356,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.arg.pagezero_size = *pagezero_size;
   } else {
     ctx.arg.pagezero_size = (ctx.output_type == MH_EXECUTE) ? 0x100000000 : 0;
+  }
+
+  if (ctx.arg.final_output == "") {
+    if (ctx.arg.install_name != "")
+      ctx.arg.final_output = ctx.arg.install_name;
+    else
+      ctx.arg.final_output = ctx.arg.output;
   }
 
   return remaining;

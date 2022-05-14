@@ -533,6 +533,9 @@ static int do_main(int argc, char **argv) {
   ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
+  if (ctx.arg.uuid != UUID_NONE)
+    ctx.mach_hdr.write_uuid(ctx);
+
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     seg->copy_buf(ctx);
   ctx.code_sig.write_signature(ctx);

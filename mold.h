@@ -2,6 +2,7 @@
 
 #include "inttypes.h"
 
+#include <array>
 #include <atomic>
 #include <bit>
 #include <cassert>
@@ -421,6 +422,12 @@ private:
 
   std::vector<std::atomic_uint8_t> buckets;
 };
+
+//
+// uuid.cc
+//
+
+std::array<u8, 16> get_uuid_v4();
 
 //
 // filepath.cc
