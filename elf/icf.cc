@@ -40,17 +40,29 @@
 // regular trees are equal. Given this formulation, we want to find as
 // many identical vertices as possible.
 //
-// Solving such problem is computationally intensive, but mold is quite fast.
-// For Chromium, mold's ICF finishes in less than 1 second with 20 threads.
-// This is contrary to lld and gold, which take about 5 and 50 seconds to
-// run ICF under the same condition, respectively.
+// Just like a lot of problems with graph, this problem doesn't have a
+// straightforward "optimal" solution, and we need to resort to heuristics.
 //
-// mold's ICF is faster because we are using a better algorithm.
-// It's actually me who developed and implemented the lld's ICF algorithm,
-// and I can say that mold's algorithm is better than that in all aspects.
-// It scales better for number of available cores, require less overall
-// computation, and has a smaller working set. So, it's better with a single
-// thread and even better with multiple threads.
+// mold approaches this problem by hashing program trees with increasing depth
+// on each iteration.
+// For example, when we start, we only hash individual functions with
+// their call into other functions omitted. From the second iteration, we
+// put the function they call into the hash by appending the hash of those
+// functions from the previous iteration. This means that the nth iteration
+// hashes call chain up to (n-1) levels deep.
+// We use a cryptographic hash function, so the unique number of hashes will
+// only monotonically increase as we take into account of deeper trees with
+// iterations (otherwise, that means we have found a hash collision). We stop
+// when the unique number of hashes stop increasing; this is based on the fact
+// that once we observe an iteration with the same amount of unique hashes as
+// the previous iteration, it will remain unchanged for further iterations.
+// This is provable, but here we omit the proof for brevity.
+//
+// When compared to other approaches, mold's approach has a relatively cheaper
+// cost per iteration, and as a bonus, is highly parallelizable.
+// For Chromium, mold's ICF finishes in less than 1 second with 20 threads,
+// whereas lld takes 5 seconds and gold takes 50 seconds under the same
+// conditions.
 
 #include "mold.h"
 #include "../sha.h"
@@ -183,6 +195,8 @@ struct LeafEq {
   }
 };
 
+// Early merge of leaf nodes, which can be processed without constructing the
+// entire graph. This reduces the vertex count and improves memory efficiency.
 template <typename E>
 static void merge_leaf_nodes(Context<E> &ctx) {
   Timer t(ctx, "merge_leaf_nodes");
@@ -355,6 +369,9 @@ compute_digests(Context<E> &ctx, std::span<InputSection<E> *> sections) {
   return digests;
 }
 
+// Build a graph, treating every function as a vertex and every function call
+// as an edge. See the description at the top for a more detailed formulation.
+// We use u32 indices here to improve cache locality.
 template <typename E>
 static void gather_edges(Context<E> &ctx,
                          std::span<InputSection<E> *> sections,
@@ -516,6 +533,11 @@ void icf_sections(Context<E> &ctx) {
   // Prepare for the propagation rounds.
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
+  // We allocate 3 arrays to store hashes for each vertex.
+  // Index 0 and 1 are used for tree hashes from the previous iteration and the current iteration.
+  // They switch roles every iteration --- see `slot` below.
+  // Index 2 stores the initial, single-vertex hash --- this is combined with hashes from the connected vertices to
+  // form the tree hash described above.
   std::vector<std::vector<Digest>> digests(3);
   digests[0] = compute_digests<E>(ctx, sections);
   digests[1].resize(digests[0].size());
@@ -532,6 +554,17 @@ void icf_sections(Context<E> &ctx) {
     Timer t(ctx, "propagate");
     tbb::affinity_partitioner ap;
 
+    // A cheap test that the graph hasn't converged yet.
+    // The loop after this one uses a strict condition, but it's expensive
+    // as it requires sorting the entire hash collection.
+    //
+    // For nodes that have a cycle in downstream (i.e. recursive
+    // functions and functions that calls recursive functions) will always
+    // change with the iterations. Nodes that doesn't (i.e. non-recursive
+    // functions) will stop changing as soon as the propagation depth reaches
+    // the call tree depth.
+    // Here, we test whether we have reached sufficient depth for the latter,
+    // which is a necessary (but not sufficient) condition for convergence.
     i64 num_changed = -1;
     for (;;) {
       i64 n = propagate<E>(digests, edges, edge_indices, slot, ap);
@@ -540,8 +573,12 @@ void icf_sections(Context<E> &ctx) {
       num_changed = n;
     }
 
+    // Run the pass until the unique number of hashes stop increasing, at which
+    // point we have achieved convergence (proof omitted for brevity).
     i64 num_classes = -1;
     for (;;) {
+      // count_num_classes requires sorting which is O(n log n), so do a little
+      // more work beforehand to amortize that log factor.
       for (i64 i = 0; i < 10; i++)
         propagate<E>(digests, edges, edge_indices, slot, ap);
 
