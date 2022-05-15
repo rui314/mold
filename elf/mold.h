@@ -1584,6 +1584,7 @@ struct Context {
     bool hash_style_sysv = true;
     bool icf = false;
     bool icf_all = false;
+    bool icf_allow_data = false;
     bool is_static = false;
     bool lto_pass2 = false;
     bool noinhibit_exec = false;

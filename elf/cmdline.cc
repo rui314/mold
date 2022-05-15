@@ -89,6 +89,8 @@ Options:
                               Set hash style
   --icf=[all,safe,none]       Fold identical code
     --no-icf
+  --ignore-data-address-equality
+                              Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
@@ -779,6 +781,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       }
     } else if (read_flag("no-icf")) {
       ctx.arg.icf = false;
+    } else if (read_flag("ignore-data-address-equality")) {
+      ctx.arg.icf_allow_data = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
     } else if (read_flag("print-icf-sections")) {
