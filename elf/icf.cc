@@ -118,7 +118,7 @@ static void uniquify_cies(Context<E> &ctx) {
 }
 
 template <typename E>
-static bool is_eligible(InputSection<E> &isec) {
+static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = isec.name();
 
@@ -132,9 +132,10 @@ static bool is_eligible(InputSection<E> &isec) {
   bool is_init = (shdr.sh_type == SHT_INIT_ARRAY || name == ".init");
   bool is_fini = (shdr.sh_type == SHT_FINI_ARRAY || name == ".fini");
   bool is_enumerable = is_c_identifier(name);
+  bool is_addr_taken = !ctx.arg.icf_all && isec.address_significant;
 
   return is_alloc && is_executable && is_readonly && !is_bss &&
-         !is_empty && !is_init && !is_fini && !is_enumerable;
+      !is_empty && !is_init && !is_fini && !is_enumerable && !is_addr_taken;
 }
 
 static Digest digest_final(SHA256_CTX &sha) {
@@ -213,7 +214,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
       if (!isec || !isec->is_alive)
         continue;
 
-      if (!is_eligible(*isec)) {
+      if (!is_eligible(ctx, *isec)) {
         non_eligible++;
         continue;
       }

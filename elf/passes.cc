@@ -1178,6 +1178,14 @@ void compute_import_export(Context<E> &ctx) {
 }
 
 template <typename E>
+void mark_addrsig(Context<E> &ctx) {
+  Timer t(ctx, "mark_addrsig");
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->fill_addrsig(ctx);
+  });
+}
+
+template <typename E>
 void clear_padding(Context<E> &ctx) {
   Timer t(ctx, "clear_padding");
 
@@ -1679,6 +1687,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void apply_version_script(Context<E> &);                     \
   template void parse_symbol_version(Context<E> &);                     \
   template void compute_import_export(Context<E> &);                    \
+  template void mark_addrsig(Context<E> &);                                   \
   template void clear_padding(Context<E> &);                            \
   template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
   template i64 set_osec_offsets(Context<E> &);                          \

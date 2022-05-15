@@ -280,6 +280,10 @@ inline u64 read_uleb(u8 *&buf) {
   return val;
 }
 
+inline u64 read_uleb(u8 const*&buf) {
+  return read_uleb(const_cast<u8 *&>(buf));
+}
+
 inline i64 uleb_size(u64 val) {
   i64 i = 0;
   do {

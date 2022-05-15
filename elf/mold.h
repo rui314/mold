@@ -327,6 +327,7 @@ public:
   std::atomic_bool is_alive = true;
   u8 p2align = 0;
 
+  u8 address_significant : 1 = false;
   u8 compressed : 1 = false;
   u8 uncompressed : 1 = false;
   u8 killed_by_icf : 1 = false;
@@ -1110,6 +1111,7 @@ public:
                          std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);
   void resolve_comdat_groups();
+  void fill_addrsig(Context<E> &ctx);
   void eliminate_duplicate_comdat_groups();
   void claim_unresolved_symbols(Context<E> &ctx);
   void scan_relocations(Context<E> &ctx);
@@ -1150,6 +1152,9 @@ public:
   std::vector<std::vector<i32>> r_deltas;
   std::vector<std::vector<ElfRel<E>>> sorted_rels;
   std::vector<std::vector<Symbol<E> *>> sorted_symbols;
+
+  // For ICF
+  InputSection<E> *llvm_addrsig = nullptr;
 
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
@@ -1385,6 +1390,7 @@ template <typename E> void create_reloc_sections(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
+template <typename E> void mark_addrsig(Context<E> &);
 template <typename E> void clear_padding(Context<E> &);
 template <typename E> i64 get_section_rank(Context<E> &, Chunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &);
@@ -1577,6 +1583,7 @@ struct Context {
     bool hash_style_gnu = false;
     bool hash_style_sysv = true;
     bool icf = false;
+    bool icf_all = false;
     bool is_static = false;
     bool lto_pass2 = false;
     bool noinhibit_exec = false;
