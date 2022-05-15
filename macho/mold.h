@@ -818,6 +818,7 @@ struct Context {
     std::string entry = "_main";
     std::string final_output;
     std::string install_name;
+    std::string lto_library;
     std::string map;
     std::string output = "a.out";
     std::vector<std::string> U;
