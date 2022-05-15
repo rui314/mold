@@ -79,7 +79,7 @@
 //     the compiler backend.
 
 #include "mold.h"
-#include "../lto.h"
+#include "lto.h"
 
 #include <cstdarg>
 #include <cstring>
