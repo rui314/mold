@@ -1513,6 +1513,7 @@ void SharedFile<E>::write_symtab(Context<E> &ctx) {
 }
 
 #define INSTANTIATE(E)                                                  \
+  template class InputFile<E>;                                          \
   template class ObjectFile<E>;                                         \
   template class SharedFile<E>;                                         \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)

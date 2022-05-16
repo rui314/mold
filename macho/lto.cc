@@ -11,12 +11,11 @@ static void do_load_plugin(Context<E> &ctx) {
   if (!handle)
     Fatal(ctx) << "could not open plugin file: " << dlerror();
 
-  LTOPlugin &lto = ctx.lto;
-  lto.dlopen_handle = handle;
+  ctx.lto.dlopen_handle = handle;
 
   // I don't want to use a macro, but I couldn't find an easy way to
   // write the same thing without a macro.
-#define DLSYM(x) lto.x = (decltype(lto.x))dlsym(handle, "lto_" #x)
+#define DLSYM(x) ctx.lto.x = (decltype(ctx.lto.x))dlsym(handle, "lto_" #x)
   DLSYM(get_version);
   DLSYM(get_error_message);
   DLSYM(module_is_object_file);
@@ -112,11 +111,10 @@ void do_lto(Context<E> &ctx) {
   u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
 
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->lto_module)
+    if (file->lto_module) {
+      file->clear_symbols();
       file->is_alive = false;
-    for (Symbol<E> *sym : file->syms)
-      if (sym->file == file)
-        sym->file = nullptr;
+    }
   }
 
   MappedFile<Context<E>> *mf = new MappedFile<Context<E>>;

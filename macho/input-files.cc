@@ -14,6 +14,21 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 }
 
 template <typename E>
+void InputFile<E>::clear_symbols() {
+  for (Symbol<E> *sym : syms) {
+    std::scoped_lock lock(sym->mu);
+    if (sym->file == this) {
+      sym->file = nullptr;
+      sym->is_extern = false;
+      sym->is_imported = false;
+      sym->subsec = nullptr;
+      sym->value = 0;
+      sym->is_common = false;
+    }
+  }
+}
+
+template <typename E>
 ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name) {
@@ -679,6 +694,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
 }
 
 #define INSTANTIATE(E)                                                  \
+  template class InputFile<E>;                                          \
   template class ObjectFile<E>;                                         \
   template class DylibFile<E>;                                          \
   template std::ostream &operator<<(std::ostream &, const InputFile<E> &)

@@ -83,6 +83,7 @@ template <typename E>
 class InputFile {
 public:
   virtual ~InputFile() = default;
+  void clear_symbols();
 
   MappedFile<Context<E>> *mf = nullptr;
   std::vector<Symbol<E> *> syms;
