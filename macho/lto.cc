@@ -75,6 +75,10 @@ void load_lto_plugin(Context<E> &ctx) {
 template <typename E>
 void do_lto(Context<E> &ctx) {
   LTOCodeGen *cg = ctx.lto.codegen_create();
+
+  for (const std::string &opt : ctx.arg.mllvm)
+    ctx.lto.codegen_debug_options(cg, opt.c_str());
+
   for (ObjectFile<E> *file : ctx.objs)
     if (file->lto_module)
       ctx.lto.codegen_add_module(cg, file->lto_module);
