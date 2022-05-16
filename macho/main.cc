@@ -314,6 +314,7 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
     break;
   case FileType::MACH_OBJ:
+  case FileType::LLVM_BITCODE:
     ctx.objs.push_back(ObjectFile<E>::create(ctx, mf, ""));
     break;
   case FileType::AR:
@@ -322,8 +323,8 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
         ctx.objs.push_back(ObjectFile<E>::create(ctx, child, mf->name));
     break;
   default:
+    Fatal(ctx) << mf->name << ": unknown file type";
     break;
-    // Fatal(ctx) << mf->name << ": unknown file type";
   }
 }
 
@@ -485,6 +486,8 @@ static int do_main(int argc, char **argv) {
     file->resolve_symbols(ctx);
   for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->resolve_symbols(ctx);
+
+  do_lto(ctx);
 
   if (ctx.output_type == MH_EXECUTE && !get_symbol(ctx, ctx.arg.entry)->file)
     Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;

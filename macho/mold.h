@@ -1,6 +1,7 @@
 #pragma once
 
 #include "macho.h"
+#include "lto.h"
 #include "../mold.h"
 
 #include <map>
@@ -121,6 +122,7 @@ public:
   std::vector<Symbol<E>> local_syms;
   std::vector<UnwindRecord<E>> unwind_records;
   std::span<DataInCodeEntry> data_in_code_entries;
+  LTOModule *lto_module = nullptr;
 
 private:
   void parse_sections(Context<E> &ctx);
@@ -130,10 +132,14 @@ private:
   LoadCommand *find_load_command(Context<E> &ctx, u32 type);
   i64 find_subsection_idx(Context<E> &ctx, u32 addr);
   InputSection<E> *get_common_sec(Context<E> &ctx);
+  void parse_lto_symbols(Context<E> &ctx);
 
   MachSection *unwind_sec = nullptr;
   std::unique_ptr<MachSection> common_hdr;
   InputSection<E> *common_sec = nullptr;
+
+  // For LTO
+  std::vector<MachSym> mach_syms2;
 };
 
 template <typename E>
@@ -758,6 +764,16 @@ template <typename E>
 void dead_strip(Context<E> &ctx);
 
 //
+// lto.cc
+//
+
+template <typename E>
+void load_lto_plugin(Context<E> &ctx);
+
+template <typename E>
+void do_lto(Context<E> &ctx);
+
+//
 // main.cc
 //
 
@@ -824,6 +840,7 @@ struct Context {
     std::vector<std::string> U;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
+    std::vector<std::string> mllvm;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
   } arg;
@@ -836,6 +853,9 @@ struct Context {
 
   u8 uuid[16] = {};
   bool has_error = false;
+
+  LTOPlugin lto;
+  std::once_flag lto_plugin_loaded;
 
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
 

@@ -260,6 +260,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back("-framework");
       remaining.push_back(std::string(arg));
     } else if (read_arg("-lto_library")) {
+      ctx.arg.lto_library = arg;
     } else if (read_arg("-macos_version_min")) {
       ctx.arg.platform = PLATFORM_MACOS;
       ctx.arg.platform_min_version = parse_version(ctx, arg);
@@ -273,6 +274,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back(std::string(arg));
     } else if (read_arg("-map")) {
       ctx.arg.map = arg;
+    } else if (read_arg("-mllvm")) {
+      ctx.arg.mllvm.push_back(std::string(arg));
     } else if (read_joined("-needed-l")) {
       remaining.push_back("-needed-l");
       remaining.push_back(std::string(arg));

@@ -28,6 +28,19 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
 template <typename E>
 void ObjectFile<E>::parse(Context<E> &ctx) {
+  if (get_file_type(this->mf) == FileType::LLVM_BITCODE) {
+    // Open an compiler IR file
+    load_lto_plugin(ctx);
+    this->lto_module =
+      ctx.lto.module_create_from_memory(this->mf->data, this->mf->size);
+    if (!this->lto_module)
+      Fatal(ctx) << *this << ": lto_module_create_from_memory failed";
+
+    // Read a symbol table
+    parse_lto_symbols(ctx);
+    return;
+  }
+
   parse_sections(ctx);
   parse_symbols(ctx);
   split_subsections(ctx);
@@ -516,6 +529,55 @@ InputSection<E> *ObjectFile<E>::get_common_sec(Context<E> &ctx) {
     sections.emplace_back(common_sec);
   }
   return common_sec;
+}
+
+template <typename E>
+void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
+  i64 nsyms = ctx.lto.module_get_num_symbols(this->lto_module);
+  this->syms.reserve(nsyms);
+  this->mach_syms2.reserve(nsyms);
+
+  for (i64 i = 0; i < nsyms; i++) {
+    std::string_view name = ctx.lto.module_get_symbol_name(this->lto_module, i);
+    this->syms.push_back(get_symbol(ctx, name));
+
+    u32 attr = ctx.lto.module_get_symbol_attribute(this->lto_module, i);
+
+    MachSym msym = {};
+    msym.p2align = (attr & LTO_SYMBOL_ALIGNMENT_MASK);
+
+    switch (attr & LTO_SYMBOL_DEFINITION_MASK) {
+    case LTO_SYMBOL_DEFINITION_REGULAR:
+    case LTO_SYMBOL_DEFINITION_TENTATIVE:
+    case LTO_SYMBOL_DEFINITION_WEAK:
+      msym.type = N_ABS;
+      break;
+    case LTO_SYMBOL_DEFINITION_UNDEFINED:
+    case LTO_SYMBOL_DEFINITION_WEAKUNDEF:
+      msym.type = N_UNDF;
+      break;
+    default:
+      unreachable();
+    }
+
+    switch (attr & LTO_SYMBOL_SCOPE_MASK) {
+    case 0:
+    case LTO_SYMBOL_SCOPE_INTERNAL:
+    case LTO_SYMBOL_SCOPE_HIDDEN:
+      break;
+    case LTO_SYMBOL_SCOPE_DEFAULT:
+    case LTO_SYMBOL_SCOPE_PROTECTED:
+    case LTO_SYMBOL_SCOPE_DEFAULT_CAN_BE_HIDDEN:
+      msym.ext = true;
+      break;
+    default:
+      unreachable();
+    }
+
+    mach_syms2.push_back(msym);
+  }
+
+  mach_syms = mach_syms2;
 }
 
 template <typename E>

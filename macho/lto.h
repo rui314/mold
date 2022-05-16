@@ -20,8 +20,8 @@ enum LTOSymbolAttributes {
   LTO_SYMBOL_SCOPE_MASK = 0x00003800,
   LTO_SYMBOL_SCOPE_INTERNAL = 0x00000800,
   LTO_SYMBOL_SCOPE_HIDDEN = 0x00001000,
-  LTO_SYMBOL_SCOPE_PROTECTED = 0x00002000,
   LTO_SYMBOL_SCOPE_DEFAULT = 0x00001800,
+  LTO_SYMBOL_SCOPE_PROTECTED = 0x00002000,
   LTO_SYMBOL_SCOPE_DEFAULT_CAN_BE_HIDDEN = 0x00002800,
   LTO_SYMBOL_COMDAT = 0x00004000,
   LTO_SYMBOL_ALIAS = 0x00008000,
@@ -51,13 +51,13 @@ struct LTOObjectBuffer {
   size_t size;
 };
 
-typedef void *LTOModule;
-typedef void *LTOCodeGen;
+using LTOModule = void;
+using LTOCodeGen = void;
 
 typedef void LTODiagnosticHandler(LTOCodegenDiagnosticSeverity severity,
                                   const char *diag, void *ctxt);
 
-struct Plugin {
+struct LTOPlugin {
   void *dlopen_handle = nullptr;
 
   const char (*get_version)();
@@ -76,99 +76,98 @@ struct Plugin {
   bool (*module_is_object_file_in_memory_for_target)(
       const void *mem, size_t length, const char *target_triple_prefix);
 
-  LTOModule (*module_create)(const char *path);
+  LTOModule *(*module_create)(const char *path);
 
-  LTOModule (*module_create_from_memory)(const void *mem, size_t length);
+  LTOModule *(*module_create_from_memory)(const void *mem, size_t length);
 
-  LTOModule (*module_create_from_memory_with_path)(const void *mem,
+  LTOModule *(*module_create_from_memory_with_path)(const void *mem,
                                                    size_t length,
                                                    const char *path);
 
-  LTOModule (*module_create_in_local_context)(const void *mem, size_t length,
+  LTOModule *(*module_create_in_local_context)(const void *mem, size_t length,
                                               const char *path);
 
-  LTOModule (*module_create_in_codegen_context)(const void *mem, size_t length,
+  LTOModule *(*module_create_in_codegen_context)(const void *mem, size_t length,
                                                 const char *path,
-                                                LTOCodeGen cg);
+                                                LTOCodeGen *cg);
 
-  LTOModule (*module_create_from_fd)(int fd, const char *path,
+  LTOModule *(*module_create_from_fd)(int fd, const char *path,
                                      size_t file_size);
 
-  LTOModule (*module_create_from_fd_at_offset)(int fd, const char *path,
+  LTOModule *(*module_create_from_fd_at_offset)(int fd, const char *path,
                                                size_t file_size,
                                                size_t map_size, off_t offset);
 
-  void (*module_dispose)(LTOModule mod);
+  void (*module_dispose)(LTOModule *mod);
 
-  const char *(*module_get_target_triple)(LTOModule mod);
+  const char *(*module_get_target_triple)(LTOModule *mod);
 
-  void (*module_set_target_triple)(LTOModule mod, const char *triple);
+  void (*module_set_target_triple)(LTOModule *mod, const char *triple);
 
-  unsigned (*module_get_num_symbols)(LTOModule mod);
+  unsigned (*module_get_num_symbols)(LTOModule *mod);
 
-  const char *(*module_get_symbol_name)(LTOModule mod, unsigned index);
+  const char *(*module_get_symbol_name)(LTOModule *mod, unsigned index);
 
-  LTOSymbolAttributes (*module_get_symbol_attribute)(LTOModule mod,
-                                                     unsigned index);
+  uint32_t (*module_get_symbol_attribute)(LTOModule *mod, unsigned index);
 
-  const char *(*module_get_linkeropts)(LTOModule mod);
+  const char *(*module_get_linkeropts)(LTOModule *mod);
 
-  bool (*module_get_macho_cputype)(LTOModule mod, unsigned *out_cputype,
+  bool (*module_get_macho_cputype)(LTOModule *mod, unsigned *out_cputype,
                                    unsigned *out_cpusubtype);
 
-  bool (*module_has_ctor_dtor)(LTOModule mod);
+  bool (*module_has_ctor_dtor)(LTOModule *mod);
 
-  void (*codegen_set_diagnostic_handler)(LTOCodeGen, LTODiagnosticHandler,
+  void (*codegen_set_diagnostic_handler)(LTOCodeGen *cg, LTODiagnosticHandler,
                                          void *);
 
-  LTOCodeGen (*codegen_create)();
+  LTOCodeGen *(*codegen_create)();
 
-  LTOCodeGen (*codegen_create_in_local_context)();
+  LTOCodeGen *(*codegen_create_in_local_context)();
 
-  void (*codegen_dispose)(LTOCodeGen cg);
+  void (*codegen_dispose)(LTOCodeGen *cg);
 
-  bool (*codegen_add_module)(LTOCodeGen cg, LTOModule mod);
+  bool (*codegen_add_module)(LTOCodeGen *cg, LTOModule *mod);
 
-  void (*codegen_set_module)(LTOCodeGen cg, LTOModule mod);
+  void (*codegen_set_module)(LTOCodeGen *cg, LTOModule *mod);
 
-  bool (*codegen_set_debug_model)(LTOCodeGen cg, LTODebugModel);
+  bool (*codegen_set_debug_model)(LTOCodeGen *cg, LTODebugModel);
 
-  bool (*codegen_set_pic_model)(LTOCodeGen cg, LTOCodegenModel);
+  bool (*codegen_set_pic_model)(LTOCodeGen *cg, LTOCodegenModel);
 
-  void (*codegen_set_cpu)(LTOCodeGen cg, const char *cpu);
+  void (*codegen_set_cpu)(LTOCodeGen *cg, const char *cpu);
 
-  void (*codegen_set_assembler_path)(LTOCodeGen cg, const char *path);
+  void (*codegen_set_assembler_path)(LTOCodeGen *cg, const char *path);
 
-  void (*codegen_set_assembler_args)(LTOCodeGen cg, const char **args,
+  void (*codegen_set_assembler_args)(LTOCodeGen *cg, const char **args,
                                      int nargs);
 
-  void (*codegen_add_must_preserve_symbol)(LTOCodeGen cg, const char *symbol);
+  void (*codegen_add_must_preserve_symbol)(LTOCodeGen *cg, const char *symbol);
 
-  bool (*codegen_write_merged_modules)(LTOCodeGen cg, const char *path);
+  bool (*codegen_write_merged_modules)(LTOCodeGen *cg, const char *path);
 
-  const void *(*codegen_compile)(LTOCodeGen cg, size_t *length);
+  const void *(*codegen_compile)(LTOCodeGen *cg, size_t *length);
 
-  bool (*codegen_compile_to_file)(LTOCodeGen cg, const char **name);
+  bool (*codegen_compile_to_file)(LTOCodeGen *cg, const char **name);
 
-  bool (*codegen_optimize)(LTOCodeGen cg);
+  bool (*codegen_optimize)(LTOCodeGen *cg);
 
-  const void *(*codegen_compile_optimized)(LTOCodeGen cg, size_t *length);
+  const void *(*codegen_compile_optimized)(LTOCodeGen *cg, size_t *length);
 
   unsigned (*api_version)();
 
   void (*set_debug_options)(const char *const *options, int number);
 
-  void (*codegen_debug_options)(LTOCodeGen cg, const char *);
+  void (*codegen_debug_options)(LTOCodeGen *cg, const char *);
 
-  void (*codegen_debug_options_array)(LTOCodeGen cg, const char *const *,
+  void (*codegen_debug_options_array)(LTOCodeGen *cg, const char *const *,
                                       int number);
 
   void (*initialize_disassembler)();
 
-  void (*codegen_set_should_internalize)(LTOCodeGen cg,
+  void (*codegen_set_should_internalize)(LTOCodeGen *cg,
                                          bool should_internalize);
 
-  void (*codegen_set_should_embed_uselists)(LTOCodeGen cg,
+  void (*codegen_set_should_embed_uselists)(LTOCodeGen *cg,
                                             bool should_embed_use_lists);
 };
 
