@@ -60,6 +60,7 @@ typedef void LTODiagnosticHandler(LTOCodegenDiagnosticSeverity severity,
 
 struct LTOPlugin {
   void *dlopen_handle = nullptr;
+  ~LTOPlugin();
 
   const char (*get_version)();
 

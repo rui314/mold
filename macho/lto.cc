@@ -6,6 +6,11 @@
 
 namespace mold::macho {
 
+LTOPlugin::~LTOPlugin() {
+  if (dlopen_handle)
+    dlclose(dlopen_handle);
+}
+
 template <typename E>
 static void do_load_plugin(Context<E> &ctx) {
   void *handle = dlopen(ctx.arg.lto_library.c_str(), RTLD_NOW | RTLD_GLOBAL);
