@@ -475,6 +475,10 @@ static int elf_main(int argc, char **argv) {
   // Set is_import and is_export bits for each symbol.
   compute_import_export(ctx);
 
+  // Read address-significant section information.
+  if (ctx.arg.icf && !ctx.arg.icf_all)
+    mark_addrsig(ctx);
+
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
     gc_sections(ctx);

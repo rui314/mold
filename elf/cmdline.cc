@@ -87,8 +87,10 @@ Options:
   --gdb-index                 Create .gdb_index for faster gdb startup
   --hash-style [sysv,gnu,both]
                               Set hash style
-  --icf=[all,none]            Fold identical code
+  --icf=[all,safe,none]       Fold identical code
     --no-icf
+  --ignore-data-address-equality
+                              Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOl at load-time
   --no-undefined              Report undefined symbols (even with --shared)
@@ -767,14 +769,20 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-print-gc-sections")) {
       ctx.arg.print_gc_sections = false;
     } else if (read_arg("icf")) {
-      if (arg == "all")
+      if (arg == "all") {
         ctx.arg.icf = true;
-      else if (arg == "none")
+        ctx.arg.icf_all = true;
+      } else if (arg == "safe") {
+        ctx.arg.icf = true;
+      } else if (arg == "none") {
         ctx.arg.icf = false;
-      else
+      } else {
         Fatal(ctx) << "unknown --icf argument: " << arg;
+      }
     } else if (read_flag("no-icf")) {
       ctx.arg.icf = false;
+    } else if (read_flag("ignore-data-address-equality")) {
+      ctx.arg.icf_allow_data = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
     } else if (read_flag("print-icf-sections")) {
