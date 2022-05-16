@@ -21,6 +21,41 @@ split_string(std::string_view str, char sep) {
 }
 
 template <typename E>
+static bool has_lto_obj(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->lto_module)
+      return true;
+  return false;
+}
+
+template <typename E>
+static void resolve_symbols(Context<E> &ctx) {
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dylibs);
+
+  for (InputFile<E> *file : files)
+    file->resolve_symbols(ctx);
+
+  std::vector<ObjectFile<E> *> live_objs;
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->is_alive)
+      live_objs.push_back(file);
+
+  for (i64 i = 0; i < live_objs.size(); i++) {
+    live_objs[i]->mark_live_objects(ctx, [&](ObjectFile<E> *file) {
+      live_objs.push_back(file);
+    });
+  }
+
+  for (InputFile<E> *file : files)
+    file->resolve_symbols(ctx);
+
+  if (has_lto_obj(ctx))
+    do_lto(ctx);
+}
+
+template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
   ctx.obj_pool.emplace_back(obj);
@@ -445,11 +480,10 @@ static int do_main(int argc, char **argv) {
 
   read_input_files(ctx, file_args);
 
-  i64 priority = 1;
   for (ObjectFile<E> *file : ctx.objs)
-    file->priority = priority++;
+    file->priority = ctx.file_priority++;
   for (DylibFile<E> *dylib : ctx.dylibs)
-    dylib->priority = priority++;
+    dylib->priority = ctx.file_priority++;
 
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
     ctx.dylibs[i]->dylib_idx = i + 1;
@@ -465,29 +499,7 @@ static int do_main(int argc, char **argv) {
       if (!file->archive_name.empty() && file->is_objc_object(ctx))
         file->is_alive = true;
 
-  // Resolve symbols
-  for (ObjectFile<E> *file : ctx.objs)
-    file->resolve_symbols(ctx);
-  for (DylibFile<E> *dylib : ctx.dylibs)
-    dylib->resolve_symbols(ctx);
-
-  std::vector<ObjectFile<E> *> live_objs;
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_alive)
-      live_objs.push_back(file);
-
-  for (i64 i = 0; i < live_objs.size(); i++) {
-    live_objs[i]->mark_live_objects(ctx, [&](ObjectFile<E> *file) {
-      live_objs.push_back(file);
-    });
-  }
-
-  for (ObjectFile<E> *file : ctx.objs)
-    file->resolve_symbols(ctx);
-  for (DylibFile<E> *dylib : ctx.dylibs)
-    dylib->resolve_symbols(ctx);
-
-  do_lto(ctx);
+  resolve_symbols(ctx);
 
   if (ctx.output_type == MH_EXECUTE && !get_symbol(ctx, ctx.arg.entry)->file)
     Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;

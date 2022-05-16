@@ -84,6 +84,7 @@ class InputFile {
 public:
   virtual ~InputFile() = default;
   void clear_symbols();
+  virtual void resolve_symbols(Context<E> &ctx) = 0;
 
   MappedFile<Context<E>> *mf = nullptr;
   std::vector<Symbol<E> *> syms;
@@ -107,7 +108,7 @@ public:
   void parse(Context<E> &ctx);
   Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
-  void resolve_symbols(Context<E> &ctx);
+  void resolve_symbols(Context<E> &ctx) override;
   bool is_objc_object(Context<E> &ctx);
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(ObjectFile<E> *)> feeder);
@@ -149,7 +150,7 @@ public:
   static DylibFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
   void parse(Context<E> &ctx);
-  void resolve_symbols(Context<E> &ctx);
+  void resolve_symbols(Context<E> &ctx) override;
 
   std::string_view install_name;
   i64 dylib_idx = 0;
@@ -848,6 +849,7 @@ struct Context {
 
   std::vector<std::string_view> cmdline_args;
   u32 output_type = MH_EXECUTE;
+  i64 file_priority = 10000;
   bool all_load = false;
   bool needed_l = false;
   bool hidden_l = false;

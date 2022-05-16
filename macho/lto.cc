@@ -1,6 +1,7 @@
 #include "lto.h"
 #include "mold.h"
 
+#include <algorithm>
 #include <dlfcn.h>
 
 namespace mold::macho {
@@ -72,18 +73,7 @@ void load_lto_plugin(Context<E> &ctx) {
 }
 
 template <typename E>
-static bool has_lto_obj(Context<E> &ctx) {
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->lto_module)
-      return true;
-  return false;
-}
-
-template <typename E>
 void do_lto(Context<E> &ctx) {
-  if (!has_lto_obj(ctx))
-    return;
-
   LTOCodeGen *cg = ctx.lto.codegen_create();
   for (ObjectFile<E> *file : ctx.objs)
     if (file->lto_module)
@@ -107,15 +97,15 @@ void do_lto(Context<E> &ctx) {
         if (sym->file == file && sym->is_extern)
           ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
 
-  size_t size;
-  u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
-
   for (ObjectFile<E> *file : ctx.objs) {
     if (file->lto_module) {
       file->clear_symbols();
       file->is_alive = false;
     }
   }
+
+  size_t size;
+  u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
 
   MappedFile<Context<E>> *mf = new MappedFile<Context<E>>;
   mf->name = "<LTO>";
@@ -125,8 +115,9 @@ void do_lto(Context<E> &ctx) {
 
   ObjectFile<E> *obj = ObjectFile<E>::create(ctx, mf, "");
   obj->parse(ctx);
-  obj->resolve_symbols(ctx);
   obj->is_alive = true;
+  obj->priority = 100; // regular file starts with priority 10,000
+  obj->resolve_symbols(ctx);
   ctx.objs.push_back(obj);
 }
 
