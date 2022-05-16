@@ -854,7 +854,7 @@ struct Context {
   u8 uuid[16] = {};
   bool has_error = false;
 
-  LTOPlugin lto;
+  LTOPlugin lto = {};
   std::once_flag lto_plugin_loaded;
 
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;

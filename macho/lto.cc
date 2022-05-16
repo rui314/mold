@@ -91,20 +91,22 @@ void do_lto(Context<E> &ctx) {
       ctx.lto.codegen_add_module(cg, file->lto_module);
 
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->lto_module)
-      continue;
-
-    for (i64 i = 0; i < file->mach_syms.size(); i++) {
-      MachSym &msym = file->mach_syms[i];
-      Symbol<E> &sym = *file->syms[i];
-
-      if (msym.is_undef() && !sym.file->is_dylib &&
-          ((ObjectFile<E> *)sym.file)->lto_module)
-        ctx.lto.codegen_add_must_preserve_symbol(cg, sym.name.data());
+    if (!file->lto_module) {
+      for (i64 i = 0; i < file->mach_syms.size(); i++) {
+        MachSym &msym = file->mach_syms[i];
+        Symbol<E> &sym = *file->syms[i];
+        if (msym.is_undef() && !sym.file->is_dylib &&
+            ((ObjectFile<E> *)sym.file)->lto_module)
+          ctx.lto.codegen_add_must_preserve_symbol(cg, sym.name.data());
+      }
     }
   }
 
-  ctx.lto.codegen_add_must_preserve_symbol(cg, "_main");
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->lto_module)
+      for (Symbol<E> *sym : file->syms)
+        if (sym->file == file && sym->is_extern)
+          ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
 
   size_t size;
   u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
