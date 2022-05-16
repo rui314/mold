@@ -57,6 +57,7 @@ jobs:
     runs-on: macos-11
     steps:
     - uses: actions/checkout@v2
+    - uses: rui314/setup-mold@staging
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
