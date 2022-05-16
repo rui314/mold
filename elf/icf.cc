@@ -123,7 +123,8 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   std::string_view name = isec.name();
 
   bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
-  bool type_allowed = ctx.arg.icf_allow_data || (shdr.sh_flags & SHF_EXECINSTR);
+  bool is_exec = (shdr.sh_flags & SHF_EXECINSTR) ||
+                 ctx.arg.ignore_data_address_equality;
   bool is_relro = (name == ".data.rel.ro" ||
                    name.starts_with(".data.rel.ro."));
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE) || is_relro;
@@ -134,8 +135,8 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   bool is_enumerable = is_c_identifier(name);
   bool is_addr_taken = !ctx.arg.icf_all && isec.address_significant;
 
-  return is_alloc && type_allowed && is_readonly && !is_bss &&
-      !is_empty && !is_init && !is_fini && !is_enumerable && !is_addr_taken;
+  return is_alloc && is_exec && is_readonly && !is_bss && !is_empty &&
+         !is_init && !is_fini && !is_enumerable && !is_addr_taken;
 }
 
 static Digest digest_final(SHA256_CTX &sha) {

@@ -782,7 +782,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-icf")) {
       ctx.arg.icf = false;
     } else if (read_flag("ignore-data-address-equality")) {
-      ctx.arg.icf_allow_data = true;
+      ctx.arg.ignore_data_address_equality = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
     } else if (read_flag("print-icf-sections")) {
