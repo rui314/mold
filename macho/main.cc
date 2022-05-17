@@ -543,6 +543,7 @@ static int do_main(int argc, char **argv) {
     std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
 
   export_symbols(ctx);
+
   i64 output_size = assign_offsets(ctx);
   fix_synthetic_symbol_values(ctx);
 

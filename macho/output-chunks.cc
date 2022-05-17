@@ -1098,6 +1098,18 @@ void StubsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
+class UnwindEncoder {
+public:
+  std::vector<u8> encode(Context<E> &ctx, std::span<UnwindRecord<E>> records);
+  u32 encode_personality(Context<E> &ctx, Symbol<E> *sym);
+
+  std::vector<std::span<UnwindRecord<E>>>
+  split_records(std::span<UnwindRecord<E>> records);
+
+  std::vector<Symbol<E> *> personalities;
+};
+
+template <typename E>
 std::vector<u8>
 UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
   i64 num_lsda = 0;
@@ -1316,7 +1328,6 @@ void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
   template class DataInCodeSection<E>;                  \
   template class StubsSection<E>;                       \
   template class StubHelperSection<E>;                  \
-  template class UnwindEncoder<E>;                      \
   template class UnwindInfoSection<E>;                  \
   template class GotSection<E>;                         \
   template class LazySymbolPtrSection<E>;               \

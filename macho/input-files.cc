@@ -24,6 +24,7 @@ void InputFile<E>::clear_symbols() {
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
+      sym->is_weak_def = false;
     }
   }
 }
@@ -129,6 +130,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
       sym.subsec = nullptr;
       sym.is_extern = false;
       sym.is_common = false;
+      sym.is_weak_def = false;
 
       switch (msym.type) {
       case N_UNDF:
@@ -391,22 +393,31 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
 // Symbols with higher priorities overwrites symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
-//  1. Defined symbol
-//  2. Defined symbol in a DSO/archive
-//  3. Common symbol
-//  4. Common symbol in an archive
-//  5. Unclaimed (nonexistent) symbol
+//  1. Strong defined symbol
+//  2. Weak defined symbol
+//  3. Strong defined symbol in a DSO/archive
+//  4. Weak Defined symbol in a DSO/archive
+//  5. Common symbol
+//  6. Common symbol in an archive
+//  7. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 template <typename E>
-static u64 get_rank(InputFile<E> *file, bool is_common, bool is_lazy) {
+static u64 get_rank(InputFile<E> *file, bool is_common, bool is_weak,
+                    bool is_lazy) {
   if (is_common) {
     if (is_lazy)
+      return (6 << 24) + file->priority;
+    return (5 << 24) + file->priority;
+  }
+
+  if (file->is_dylib || is_lazy) {
+    if (is_weak)
       return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
   }
 
-  if (file->is_dylib || is_lazy)
+  if (is_weak)
     return (2 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
@@ -414,8 +425,8 @@ static u64 get_rank(InputFile<E> *file, bool is_common, bool is_lazy) {
 template <typename E>
 static u64 get_rank(Symbol<E> &sym) {
   if (!sym.file)
-    return 5 << 24;
-  return get_rank(sym.file, sym.is_common, !sym.file->is_alive);
+    return 7 << 24;
+  return get_rank(sym.file, sym.is_common, sym.is_weak_def, !sym.file->is_alive);
 }
 
 template <typename E>
@@ -428,10 +439,12 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     Symbol<E> &sym = *this->syms[i];
     std::scoped_lock lock(sym.mu);
 
-    if (get_rank(this, msym.is_common(), false) < get_rank(sym)) {
+    if (get_rank(this, msym.is_common(), msym.desc & N_WEAK_DEF, false) <
+        get_rank(sym)) {
       sym.file = this;
       sym.is_extern = (msym.ext && !this->is_hidden);
       sym.is_imported = false;
+      sym.is_weak_def = (msym.desc & N_WEAK_DEF);
 
       switch (msym.type) {
       case N_UNDF:
@@ -514,6 +527,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       sym.subsec = subsec;
       sym.value = 0;
       sym.is_common = false;
+      sym.is_weak_def = false;
     }
   }
 }
@@ -523,7 +537,8 @@ void ObjectFile<E>::check_duplicate_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->syms.size(); i++) {
     Symbol<E> *sym = this->syms[i];
     MachSym &msym = mach_syms[i];
-    if (sym && !msym.is_undef() && !msym.is_common() && sym->file != this)
+    if (sym && sym->file && sym->file != this && !msym.is_undef() &&
+        !msym.is_common() && !(msym.desc & N_WEAK_DEF))
       Error(ctx) << "duplicate symbol: " << *this << ": " << *sym->file
                  << ": " << *sym;
   }
@@ -682,13 +697,14 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : this->syms) {
     std::scoped_lock lock(sym->mu);
 
-    if (!sym->file || this->priority < sym->file->priority) {
+    if (get_rank(this, false, false, false) < get_rank(*sym)) {
       sym->file = this;
       sym->is_extern = true;
       sym->is_imported = true;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
+      sym->is_weak_def = false;
     }
   }
 }

@@ -261,6 +261,7 @@ struct Symbol {
 
   u8 is_extern : 1 = false;
   u8 is_common : 1 = false;
+  u8 is_weak_def : 1 = false;
   u8 is_imported : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
@@ -609,20 +610,6 @@ public:
   }
 
   void copy_buf(Context<E> &ctx) override;
-};
-
-template <typename E>
-class UnwindEncoder {
-public:
-  std::vector<u8> encode(Context<E> &ctx, std::span<UnwindRecord<E>> records);
-
-private:
-  u32 encode_personality(Context<E> &ctx, Symbol<E> *sym);
-
-  std::vector<std::span<UnwindRecord<E>>>
-  split_records(std::span<UnwindRecord<E>> records);
-
-  std::vector<Symbol<E> *> personalities;
 };
 
 template <typename E>
