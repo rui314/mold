@@ -1,11 +1,12 @@
 #include "mold.h"
 
 #include <fcntl.h>
+#include <filesystem>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-namespace mold::elf {
+namespace mold {
 
 inline u32 get_umask() {
   u32 orig_umask = umask(0);
@@ -23,8 +24,10 @@ open_or_create_file(C &ctx, std::string path, i64 filesize, i64 perm) {
   if (fd == -1)
     Fatal(ctx) << "cannot open " << path2 <<  ": " << errno_string();
 
-  // Reuse an existing file if exists and writable.
-  if (rename(path.c_str(), path2) == 0) {
+  // Reuse an existing file if exists and writable because on Linux,
+  // writing to an existing file is much faster than creating a fresh
+  // file and writing to it.
+  if (ctx.overwrite_output_file && rename(path.c_str(), path2) == 0) {
     ::close(fd);
     fd = ::open(path2, O_RDWR | O_CREAT, perm);
     if (fd != -1 && !ftruncate(fd, filesize) && !fchmod(fd, perm & ~get_umask()))
@@ -44,11 +47,11 @@ open_or_create_file(C &ctx, std::string path, i64 filesize, i64 perm) {
   return {fd, path2};
 }
 
-template <typename E>
-class MemoryMappedOutputFile : public OutputFile<E> {
+template <typename C>
+class MemoryMappedOutputFile : public OutputFile<C> {
 public:
-  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<E>(path, filesize, true) {
+  MemoryMappedOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<C>(path, filesize, true) {
     i64 fd;
     std::tie(fd, output_tmpfile) = open_or_create_file(ctx, path, filesize, perm);
 
@@ -62,7 +65,7 @@ public:
     mold::output_buffer_end = this->buf + filesize;
   }
 
-  void close(Context<E> &ctx) override {
+  void close(C &ctx) override {
     Timer t(ctx, "close_file");
 
     if (!this->is_unmapped)
@@ -74,18 +77,18 @@ public:
   }
 };
 
-template <typename E>
-class MallocOutputFile : public OutputFile<E> {
+template <typename C>
+class MallocOutputFile : public OutputFile<C> {
 public:
-  MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<E>(path, filesize, false), perm(perm) {
+  MallocOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<C>(path, filesize, false), perm(perm) {
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << errno_string();
   }
 
-  void close(Context<E> &ctx) override {
+  void close(C &ctx) override {
     Timer t(ctx, "close_file");
 
     if (this->path == "-") {
@@ -107,9 +110,9 @@ private:
   i64 perm;
 };
 
-template <typename E>
-std::unique_ptr<OutputFile<E>>
-OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
+template <typename C>
+std::unique_ptr<OutputFile<C>>
+OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -124,20 +127,15 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, i64 perm) {
       is_special = true;
   }
 
-  std::unique_ptr<OutputFile<E>> file;
+  OutputFile<C> *file;
   if (is_special)
-    file = std::make_unique<MallocOutputFile<E>>(ctx, path, filesize, perm);
+    file = new MallocOutputFile<C>(ctx, path, filesize, perm);
   else
-    file = std::make_unique<MemoryMappedOutputFile<E>>(ctx, path, filesize, perm);
+    file = new MemoryMappedOutputFile<C>(ctx, path, filesize, perm);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
-  return file;
+  return std::unique_ptr<OutputFile<C>>(file);
 }
 
-#define INSTANTIATE(E)                          \
-  template class OutputFile<E>;
-
-INSTANTIATE_ALL;
-
-} // namespace mold::elf
+} // namespace mold

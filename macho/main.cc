@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../archive-file.h"
 #include "../cmdline.h"
+#include "../output-file.h"
 
 #include <cstdlib>
 #include <fcntl.h>
@@ -545,7 +546,8 @@ static int do_main(int argc, char **argv) {
   i64 output_size = assign_offsets(ctx);
   fix_synthetic_symbol_values(ctx);
 
-  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, output_size, 0777);
+  ctx.output_file =
+    OutputFile<Context<E>>::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
   if (ctx.arg.uuid != UUID_NONE)
