@@ -1060,6 +1060,19 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   // function needed for TLSDESC.
   ctx.relax_tlsdesc = ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared);
 
+  // By default, mold tries to ovewrite to an output file if exists
+  // because at least on Linux, writing to an existing file is much
+  // faster than creating a fresh file and writing to it.
+  //
+  // However, if an existing file is in use, writing to it will mess
+  // up processes that are executing that file. Linux prevents a write
+  // to a running executable file; it returns ETXTBSY on open(2).
+  // However, that mechanism doesn't protect .so files. Therefore, we
+  // want to disable this optimization if we are creating a shared
+  // object file.
+  if (ctx.arg.shared)
+    ctx.overwrite_output_file = false;
+
   if (version_shown && remaining.empty())
     exit(0);
   return remaining;
