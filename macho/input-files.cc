@@ -679,8 +679,30 @@ void DylibFile<E>::parse(Context<E> &ctx) {
   switch (get_file_type(this->mf)) {
   case FileType::TAPI: {
     TextDylib tbd = parse_tbd(ctx, this->mf);
+    auto add_symbol_with_prefix = [&](std::string_view prefix,
+                                      std::string_view sym_name) {
+      std::string symbol_name = std::string(prefix);
+      symbol_name.append(sym_name);
+      Symbol<E> *sym = get_symbol(ctx, save_string(ctx, symbol_name));
+      this->syms.push_back(sym);
+    };
+
     for (std::string_view sym : tbd.exports)
       this->syms.push_back(get_symbol(ctx, sym));
+    for (std::string_view weak_sym : tbd.weak_exports) {
+      Symbol<E> *sym = get_symbol(ctx, weak_sym);
+      sym->is_weak_def = true;
+      this->syms.push_back(sym);
+    }
+    for (std::string_view objc_class : tbd.objc_classes) {
+      add_symbol_with_prefix(OBJC2_CLASS_NAME_PREFIX, objc_class);
+      add_symbol_with_prefix(OBJC2_METACLASS_NAME_PREFIX, objc_class);
+    }
+    for (std::string_view eh_type : tbd.objc_eh_types)
+      add_symbol_with_prefix(OBJC2_EHTYPE_PREFIX, eh_type);
+    for (std::string_view ivar : tbd.objc_ivars)
+      add_symbol_with_prefix(OBJC2_IVAR_PREFIX, ivar);
+
     install_name = tbd.install_name;
     break;
   }
