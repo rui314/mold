@@ -61,10 +61,6 @@ static bool refers_live_subsection(Subsection<E> &subsec) {
 
 template <typename E>
 static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
-  for (ObjectFile<E> *file : ctx.objs)
-    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
-      subsec->is_alive = false;
-
   for (Subsection<E> *subsec : rootset)
     visit(ctx, *subsec);
 
