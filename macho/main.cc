@@ -88,6 +88,8 @@ static void create_internal_file(Context<E> &ctx) {
   default:
     unreachable();
   }
+
+  add("___dso_handle");
 }
 
 // Remove unreferenced subsections to eliminate code and data
@@ -297,6 +299,7 @@ static void fix_synthetic_symbol_values(Context<E> &ctx) {
   get_symbol(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
   get_symbol(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
   get_symbol(ctx, "__mh_bundle_header")->value = ctx.data->hdr.addr;
+  get_symbol(ctx, "___dso_handle")->value = ctx.data->hdr.addr;
 }
 
 template <typename E>
