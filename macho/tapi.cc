@@ -72,10 +72,23 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
 
   for (std::string_view key : {"exports", "reexports"})
     for (YamlNode &mem : get_vector(node, key))
-      if (contains(get_vector(mem, "targets"), arch))
+      if (contains(get_vector(mem, "targets"), arch)) {
         for (YamlNode &mem : get_vector(mem, "symbols"))
           if (auto *sym = std::get_if<std::string_view>(&mem.data))
             tbd.exports.push_back(*sym);
+        for (YamlNode &mem : get_vector(mem, "weak-symbols"))
+          if (auto *sym = std::get_if<std::string_view>(&mem.data))
+            tbd.weak_exports.push_back(*sym);
+        for (YamlNode &mem : get_vector(mem, "objc-classes"))
+          if (auto *clazz = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_classes.push_back(*clazz);
+        for (YamlNode &mem : get_vector(mem, "objc-eh-types"))
+          if (auto *eh_type = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_eh_types.push_back(*eh_type);
+        for (YamlNode &mem : get_vector(mem, "objc-ivars"))
+          if (auto *ivar = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_ivars.push_back(*ivar);
+      }
 
   return tbd;
 }
