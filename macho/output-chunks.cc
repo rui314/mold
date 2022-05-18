@@ -604,7 +604,8 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
 
   enc.finish();
   contents = std::move(enc.buf);
-  this->hdr.size = align_to(contents.size(), 8);
+  contents.resize(align_to(contents.size(), 8));
+  this->hdr.size = contents.size();
 }
 
 template <typename E>
