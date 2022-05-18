@@ -16,7 +16,7 @@ mkdir -p $t
 cat <<EOF | $CC -o $t/a.o -c -xc++ -
 #include <iostream>
 struct T {
-  T() { std::cout << "foo\n"; }
+  T() { std::cout << "foo "; }
 };
 T x;
 EOF
@@ -24,15 +24,19 @@ EOF
 cat <<EOF | $CC -o $t/b.o -c -xc++ -
 #include <iostream>
 struct T {
-  T() { std::cout << "foo\n"; }
+  T() { std::cout << "foo "; }
 };
 T y;
 EOF
 
 cat <<EOF | $CC -o $t/c.o -c -xc++ -
-int main() {}
+#include <iostream>
+int main() {
+  std::cout << "bar\n";
+}
 EOF
 
 clang++ --ld-path=./ld64 -o $t/exe $t/a.o $t/b.o $t/c.o
+$t/exe | grep -q '^foo foo bar$'
 
 echo OK
