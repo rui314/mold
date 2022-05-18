@@ -61,6 +61,10 @@ static bool refers_live_subsection(Subsection<E> &subsec) {
 
 template <typename E>
 static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
+  for (ObjectFile<E> *file : ctx.objs)
+    for (Subsection<E> *subsec : file->subsections)
+      subsec->is_alive = false;
+
   for (Subsection<E> *subsec : rootset)
     visit(ctx, *subsec);
 
@@ -68,7 +72,7 @@ static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
   do {
     repeat = false;
     for (ObjectFile<E> *file : ctx.objs) {
-      for (std::unique_ptr<Subsection<E>> &subsec : file->subsections) {
+      for (Subsection<E> *subsec : file->subsections) {
         if ((subsec->isec.hdr.attr & S_ATTR_LIVE_SUPPORT) &&
             !subsec->is_alive &&
             refers_live_subsection(*subsec)) {
@@ -88,8 +92,7 @@ static void sweep(Context<E> &ctx) {
         sym = nullptr;
 
   for (ObjectFile<E> *file : ctx.objs) {
-    std::erase_if(file->subsections,
-                  [](const std::unique_ptr<Subsection<E>> &subsec) {
+    std::erase_if(file->subsections, [](const Subsection<E> *subsec) {
       return !subsec->is_alive;
     });
   }

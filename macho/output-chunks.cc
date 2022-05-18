@@ -875,7 +875,7 @@ void FunctionStartsSection<E>::compute_size(Context<E> &ctx) {
 
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file && sym->subsec &&
+      if (sym && sym->file == file && sym->subsec && sym->subsec->is_alive &&
           &sym->subsec->isec.osec == ctx.text)
         addrs.push_back(sym->get_addr(ctx));
 
@@ -940,10 +940,10 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
     msym.ext = sym.is_extern;
 
-    if (!sym.is_imported)
+    if (!sym.is_imported && (!sym.subsec || sym.subsec->is_alive))
       msym.value = sym.get_addr(ctx);
 
-    if (sym.subsec)
+    if (sym.subsec && sym.subsec->is_alive)
       msym.sect = sym.subsec->isec.osec.sect_idx;
 
     if (sym.file->is_dylib)
@@ -1078,7 +1078,7 @@ void DataInCodeSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
     std::span<DataInCodeEntry> entries = file->data_in_code_entries;
 
-    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections) {
+    for (Subsection<E> *subsec : file->subsections) {
       if (entries.empty())
         break;
 

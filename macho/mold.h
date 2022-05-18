@@ -124,7 +124,7 @@ public:
   Relocation<E> read_reloc(Context<E> &ctx, const MachSection &hdr, MachRel r);
 
   std::vector<std::unique_ptr<InputSection<E>>> sections;
-  std::vector<std::unique_ptr<Subsection<E>>> subsections;
+  std::vector<Subsection<E> *> subsections;
   std::vector<Subsection<E> *> sym_to_subsec;
   std::span<MachSym> mach_syms;
   std::vector<Symbol<E>> local_syms;
@@ -145,6 +145,7 @@ private:
   MachSection *unwind_sec = nullptr;
   std::unique_ptr<MachSection> common_hdr;
   InputSection<E> *common_sec = nullptr;
+  std::vector<Subsection<E> *> subsec_pool;
 
   // For LTO
   std::vector<MachSym> mach_syms2;
@@ -229,7 +230,7 @@ public:
   u32 nunwind = 0;
   u32 raddr = -1;
   u16 p2align = 0;
-  std::atomic_bool is_alive = false;
+  std::atomic_bool is_alive = true;
 };
 
 template <typename E>
@@ -928,8 +929,10 @@ u64 Subsection<E>::get_addr(Context<E> &ctx) const {
 
 template <typename E>
 u64 Symbol<E>::get_addr(Context<E> &ctx) const {
-  if (subsec)
+  if (subsec) {
+    assert(subsec->is_alive);
     return subsec->get_addr(ctx) + value;
+  }
   if (stub_idx != -1)
     return ctx.stubs.hdr.addr + stub_idx * E::stub_size;
   return value;

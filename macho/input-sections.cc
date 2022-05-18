@@ -23,7 +23,7 @@ void InputSection<E>::parse_relocations(Context<E> &ctx) {
   });
 
   // Find subsections this relocation section refers to
-  auto cmp = [](std::unique_ptr<Subsection<E>> &subsec, u32 addr) {
+  auto cmp = [](Subsection<E> *subsec, u32 addr) {
     return subsec->input_addr < addr;
   };
 

@@ -245,11 +245,13 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
           .input_addr = (u32)(isec.hdr.addr + r.offset),
           .p2align = (u8)isec.hdr.p2align,
         };
-        subsections.emplace_back(subsec);
+
+        subsec_pool.emplace_back(subsec);
+        subsections.push_back(subsec);
       }
 
       if (r.symidx != -1)
-        sym_to_subsec[r.symidx] = subsections.back().get();
+        sym_to_subsec[r.symidx] = subsections.back();
     }
   }
 
@@ -297,9 +299,8 @@ LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
 
 template <typename E>
 i64 ObjectFile<E>::find_subsection_idx(Context<E> &ctx, u32 addr) {
-  auto it = std::upper_bound(
-      subsections.begin(), subsections.end(), addr,
-      [&](u32 addr, const std::unique_ptr<Subsection<E>> &subsec) {
+  auto it = std::upper_bound(subsections.begin(), subsections.end(), addr,
+                             [&](u32 addr, Subsection<E> *subsec) {
     return addr < subsec->input_addr;
   });
 
@@ -311,7 +312,7 @@ i64 ObjectFile<E>::find_subsection_idx(Context<E> &ctx, u32 addr) {
 template <typename E>
 Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
   i64 i = find_subsection_idx(ctx, addr);
-  return (i == -1) ? nullptr : subsections[i].get();
+  return (i == -1) ? nullptr : subsections[i];
 }
 
 template <typename E>

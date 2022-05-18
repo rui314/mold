@@ -92,6 +92,26 @@ static void create_internal_file(Context<E> &ctx) {
   add("___dso_handle");
 }
 
+// Remove unreferenced subsections to eliminate code and data
+// referenced by duplicated weakdef symbols.
+template <typename E>
+static void remove_unreferenced_subsections(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (i64 i = 0; i < file->mach_syms.size(); i++) {
+      MachSym &msym = file->mach_syms[i];
+      Symbol<E> &sym = *file->syms[i];
+      if (sym.file != file && (msym.type == N_SECT) && (msym.desc & N_WEAK_DEF))
+        file->sym_to_subsec[i]->is_alive = false;
+    }
+  }
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    std::erase_if(file->subsections, [](Subsection<E> *subsec) {
+      return !subsec->is_alive;
+    });
+  }
+}
+
 template <typename E>
 static bool compare_segments(const std::unique_ptr<OutputSegment<E>> &a,
                              const std::unique_ptr<OutputSegment<E>> &b) {
@@ -201,8 +221,8 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
 template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
-      subsec->isec.osec.add_subsec(subsec.get());
+    for (Subsection<E> *subsec : file->subsections)
+      subsec->isec.osec.add_subsec(subsec);
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk != ctx.data && chunk->is_output_section &&
@@ -223,7 +243,7 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 template <typename E>
 static void scan_unwind_info(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
+    for (Subsection<E> *subsec : file->subsections)
       for (UnwindRecord<E> &rec : subsec->get_unwind_records())
         if (rec.personality)
           rec.personality->flags |= NEEDS_GOT;
@@ -526,6 +546,7 @@ static int do_main(int argc, char **argv) {
         file->is_alive = true;
 
   resolve_symbols(ctx);
+  remove_unreferenced_subsections(ctx);
 
   if (ctx.output_type == MH_EXECUTE && !get_symbol(ctx, ctx.arg.entry)->file)
     Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;
@@ -560,7 +581,7 @@ static int do_main(int argc, char **argv) {
     ctx.segments[i]->seg_idx = (has_pagezero_seg ? i + 1 : i);
 
   for (ObjectFile<E> *file : ctx.objs)
-    for (std::unique_ptr<Subsection<E> > &subsec : file->subsections)
+    for (Subsection<E> *subsec : file->subsections)
       subsec->scan_relocations(ctx);
 
   scan_unwind_info(ctx);
