@@ -679,29 +679,29 @@ void DylibFile<E>::parse(Context<E> &ctx) {
   switch (get_file_type(this->mf)) {
   case FileType::TAPI: {
     TextDylib tbd = parse_tbd(ctx, this->mf);
-    auto add_symbol_with_prefix = [&](std::string_view prefix,
-                                      std::string_view sym_name) {
-      std::string symbol_name = std::string(prefix);
-      symbol_name.append(sym_name);
-      Symbol<E> *sym = get_symbol(ctx, save_string(ctx, symbol_name));
-      this->syms.push_back(sym);
+
+    for (std::string_view s : tbd.exports)
+      this->syms.push_back(get_symbol(ctx, s));
+
+    for (std::string_view s : tbd.weak_exports) {
+      this->syms.push_back(get_symbol(ctx, s));
+      this->syms.back()->is_weak_def = true;
+    }
+
+    auto add_symbol = [&](const std::string &name) {
+      this->syms.push_back(get_symbol(ctx, save_string(ctx, name)));
     };
 
-    for (std::string_view sym : tbd.exports)
-      this->syms.push_back(get_symbol(ctx, sym));
-    for (std::string_view weak_sym : tbd.weak_exports) {
-      Symbol<E> *sym = get_symbol(ctx, weak_sym);
-      sym->is_weak_def = true;
-      this->syms.push_back(sym);
+    for (std::string_view s : tbd.objc_classes) {
+      add_symbol("_OBJC_CLASS_$_" + std::string(s));
+      add_symbol("_OBJC_METACLASS_$_" + std::string(s));
     }
-    for (std::string_view objc_class : tbd.objc_classes) {
-      add_symbol_with_prefix(OBJC2_CLASS_NAME_PREFIX, objc_class);
-      add_symbol_with_prefix(OBJC2_METACLASS_NAME_PREFIX, objc_class);
-    }
-    for (std::string_view eh_type : tbd.objc_eh_types)
-      add_symbol_with_prefix(OBJC2_EHTYPE_PREFIX, eh_type);
-    for (std::string_view ivar : tbd.objc_ivars)
-      add_symbol_with_prefix(OBJC2_IVAR_PREFIX, ivar);
+
+    for (std::string_view s : tbd.objc_eh_types)
+      add_symbol("_OBJC_EHTYPE_$_" + std::string(s));
+
+    for (std::string_view s : tbd.objc_ivars)
+      add_symbol("_OBJC_IVAR_$_" + std::string(s));
 
     install_name = tbd.install_name;
     break;

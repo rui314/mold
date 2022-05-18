@@ -701,12 +701,6 @@ parse_yaml(std::string_view str);
 // tapi.cc
 //
 
-static const std::string_view OBJC2_CLASS_NAME_PREFIX = "_OBJC_CLASS_$_";
-static const std::string_view OBJC2_METACLASS_NAME_PREFIX =
-    "_OBJC_METACLASS_$_";
-static const std::string_view OBJC2_EHTYPE_PREFIX = "_OBJC_EHTYPE_$_";
-static const std::string_view OBJC2_IVAR_PREFIX = "_OBJC_IVAR_$_";
-
 struct TextDylib {
   std::string_view uuid;
   std::string_view install_name;
