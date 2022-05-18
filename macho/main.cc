@@ -90,6 +90,23 @@ static void create_internal_file(Context<E> &ctx) {
   }
 }
 
+// Remove unreferenced subsections to eliminate code and data
+// referenced by duplicated weakdef symbols.
+template <typename E>
+static void remove_unreferenced_subsections(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    for (Symbol<E> *sym : file->syms)
+      if (sym->file == file && sym->subsec)
+        sym->subsec->is_alive = true;
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    std::erase_if(file->subsections,
+                  [](const std::unique_ptr<Subsection<E>> &subsec) {
+      return !subsec->is_alive;
+    });
+  }
+}
+
 template <typename E>
 static bool compare_segments(const std::unique_ptr<OutputSegment<E>> &a,
                              const std::unique_ptr<OutputSegment<E>> &b) {
@@ -509,6 +526,8 @@ static int do_main(int argc, char **argv) {
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_alive; });
+
+  remove_unreferenced_subsections(ctx);
 
   if (ctx.arg.trace) {
     for (ObjectFile<E> *file : ctx.objs)
