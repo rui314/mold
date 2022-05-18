@@ -54,7 +54,7 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   buf[0] |= encode_page(page(dyld_private) - page(this->hdr.addr));
   buf[1] |= bits(dyld_private, 11, 0) << 10;
 
-  u64 stub_binder = get_symbol(ctx, "dyld_stub_binder")->get_addr(ctx);
+  u64 stub_binder = get_symbol(ctx, "dyld_stub_binder")->get_got_addr(ctx);
   buf[3] |= encode_page(page(stub_binder) - page(this->hdr.addr - 12));
   buf[4] |= bits(stub_binder, 11, 0) << 10;
 
@@ -151,7 +151,8 @@ void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
       break;
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-      sym->flags |= NEEDS_THREAD_PTR;
+      if (sym->is_imported)
+        sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
 

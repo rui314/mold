@@ -209,7 +209,8 @@ static std::vector<u8> create_data_in_code_cmd(Context<E> &ctx) {
 
 template <typename E>
 static std::vector<u8> create_id_dylib_cmd(Context<E> &ctx) {
-  std::vector<u8> buf(sizeof(DylibCommand) + ctx.arg.final_output.size() + 1);
+  std::vector<u8> buf(sizeof(DylibCommand) +
+                      align_to(ctx.arg.final_output.size() + 1, 8));
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
   cmd.cmd = LC_ID_DYLIB;
@@ -664,11 +665,12 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
               ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
-  for (Symbol<E> *sym : ctx.thread_ptrs.syms)
-    if (sym->is_imported)
-      enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
-              ctx.data_seg->seg_idx,
-              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
+  for (Symbol<E> *sym : ctx.thread_ptrs.syms) {
+    assert(sym->is_imported);
+    enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
+            ctx.data_seg->seg_idx,
+            sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
+  }
 
   enc.finish();
 
@@ -1307,9 +1309,7 @@ void ThreadPtrsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
-  for (i64 i = 0; i < syms.size(); i++)
-    if (!syms[i]->is_imported)
-      buf[i] = syms[i]->get_addr(ctx);
+  memset(buf, 0, this->hdr.size);
 }
 
 #define INSTANTIATE(E)                                  \

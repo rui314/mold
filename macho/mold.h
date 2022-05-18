@@ -913,8 +913,13 @@ u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
 
 template <typename E>
 u64 Symbol<E>::get_tlv_addr(Context<E> &ctx) const {
-  assert(tlv_idx != -1);
-  return ctx.thread_ptrs.hdr.addr + tlv_idx * E::word_size;
+  if (is_imported) {
+    assert(tlv_idx != -1);
+    return ctx.thread_ptrs.hdr.addr + tlv_idx * E::word_size;
+  }
+
+  assert(subsec);
+  return subsec->get_addr(ctx) + value;
 }
 
 template <typename E>

@@ -533,8 +533,9 @@ static int do_main(int argc, char **argv) {
   for (ObjectFile<E> *file : ctx.objs)
     file->check_duplicate_symbols(ctx);
 
+  bool has_pagezero_seg = ctx.arg.pagezero_size;
   for (i64 i = 0; i < ctx.segments.size(); i++)
-    ctx.segments[i]->seg_idx = i + 1;
+    ctx.segments[i]->seg_idx = (has_pagezero_seg ? i + 1 : i);
 
   for (ObjectFile<E> *file : ctx.objs)
     for (std::unique_ptr<Subsection<E> > &subsec : file->subsections)
