@@ -1253,8 +1253,7 @@ static std::vector<u8> construct_unwind_info(Context<E> &ctx) {
       if (chunk->is_output_section)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (UnwindRecord<E> &rec : subsec->get_unwind_records())
-            if (!ctx.arg.dead_strip || rec.is_alive)
-              records.push_back(rec);
+            records.push_back(rec);
 
   if (records.empty())
     return {};

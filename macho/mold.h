@@ -76,7 +76,6 @@ struct UnwindRecord {
   Symbol<E> *personality = nullptr;
   Subsection<E> *lsda = nullptr;
   u32 lsda_offset = 0;
-  bool is_alive = false;
 };
 
 template <typename E>

@@ -221,8 +221,8 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 template <typename E>
 static void scan_unwind_info(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    for (UnwindRecord<E> &rec : file->unwind_records)
-      if (!ctx.arg.dead_strip || rec.is_alive)
+    for (std::unique_ptr<Subsection<E>> &subsec : file->subsections)
+      for (UnwindRecord<E> &rec : subsec->get_unwind_records())
         if (rec.personality)
           rec.personality->flags |= NEEDS_GOT;
 }

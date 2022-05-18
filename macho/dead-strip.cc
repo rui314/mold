@@ -37,7 +37,6 @@ static void visit(Context<E> &ctx, Subsection<E> &subsec) {
   }
 
   for (UnwindRecord<E> &rec : subsec.get_unwind_records()) {
-    rec.is_alive = true;
     visit(ctx, *rec.subsec);
     if (rec.lsda)
       visit(ctx, *rec.lsda);
