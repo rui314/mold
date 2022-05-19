@@ -57,11 +57,18 @@ struct Relocation {
   u32 offset = 0;
   u8 type = -1;
   u8 p2size = 0;
-  bool is_pcrel = false;
+  u8 is_pcrel : 1 = false;
+  u8 needs_dynrel : 1 = false;
   i64 addend = 0;
   Symbol<E> *sym = nullptr;
   Subsection<E> *subsec = nullptr;
 };
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Relocation<E> &rel) {
+  out << rel_to_string<E>(rel.type);
+  return out;
+}
 
 template <typename E>
 struct UnwindRecord {
@@ -418,7 +425,7 @@ public:
   LazyBindSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__lazy_binding") {
     this->is_hidden = true;
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
   }
 
   void add(Context<E> &ctx, Symbol<E> &sym, i64 flags);
@@ -498,7 +505,7 @@ public:
   SymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__symbol_table") {
     this->is_hidden = true;
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -520,7 +527,7 @@ public:
   StrtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
   }
 
   i64 add_string(std::string_view str);
@@ -629,7 +636,7 @@ template <typename E>
 class GotSection : public Chunk<E> {
 public:
   GotSection(Context<E> &ctx) : Chunk<E>(ctx, "__DATA_CONST", "__got") {
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
     this->hdr.type = S_NON_LAZY_SYMBOL_POINTERS;
   }
 
@@ -644,7 +651,7 @@ class LazySymbolPtrSection : public Chunk<E> {
 public:
   LazySymbolPtrSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__DATA", "__la_symbol_ptr") {
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
     this->hdr.type = S_LAZY_SYMBOL_POINTERS;
   }
 
@@ -656,7 +663,7 @@ class ThreadPtrsSection : public Chunk<E> {
 public:
   ThreadPtrsSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__DATA", "__thread_ptrs") {
-    this->hdr.p2align = std::countr_zero(8U);
+    this->hdr.p2align = 3;
     this->hdr.type = S_THREAD_LOCAL_VARIABLE_POINTERS;
   }
 
@@ -823,6 +830,7 @@ struct Context {
 
   u8 uuid[16] = {};
   bool has_error = false;
+  u64 tls_begin = 0;
 
   LTOPlugin lto = {};
   std::once_flag lto_plugin_loaded;
@@ -913,13 +921,8 @@ u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
 
 template <typename E>
 u64 Symbol<E>::get_tlv_addr(Context<E> &ctx) const {
-  if (is_imported) {
-    assert(tlv_idx != -1);
-    return ctx.thread_ptrs.hdr.addr + tlv_idx * E::word_size;
-  }
-
-  assert(subsec);
-  return subsec->get_addr(ctx) + value;
+  assert(tlv_idx != -1);
+  return ctx.thread_ptrs.hdr.addr + tlv_idx * E::word_size;
 }
 
 template <typename E>

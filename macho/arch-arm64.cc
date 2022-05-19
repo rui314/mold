@@ -143,7 +143,20 @@ void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
     if (!sym)
       continue;
 
+    if (sym->is_imported && sym->file->is_dylib)
+      ((DylibFile<ARM64> *)sym->file)->is_needed = true;
+
     switch (r.type) {
+    case ARM64_RELOC_UNSIGNED:
+      if (sym->is_imported) {
+        if (r.p2size != 3) {
+          Error(ctx) << this->isec << ": " << r << " relocation at offset 0x"
+                     << std::hex << r.offset << " against symbol `"
+                     << *sym << "' can not be used";
+        }
+        r.needs_dynrel = true;
+      }
+      break;
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
     case ARM64_RELOC_POINTER_TO_GOT:
@@ -151,16 +164,12 @@ void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
       break;
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-      if (sym->is_imported)
-        sym->flags |= NEEDS_THREAD_PTR;
+      sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
 
-    if (sym->is_imported) {
+    if (sym->is_imported)
       sym->flags |= NEEDS_STUB;
-      if (sym->file->is_dylib)
-        ((DylibFile<ARM64> *)sym->file)->is_needed = true;
-    }
   }
 }
 
@@ -206,6 +215,11 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     default:
       Fatal(ctx) << isec << ": unknown reloc: " << (int)r.type;
     }
+
+    // An address of a thread-local variable is computed as an offset
+    // to the beginning of the first thread-local section.
+    if (isec.hdr.type == S_THREAD_LOCAL_VARIABLES)
+      val -= ctx.tls_begin;
 
     // Write a computed value to the output buffer.
     switch (r.type) {

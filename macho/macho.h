@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 namespace mold::macho {
@@ -18,6 +19,12 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+class ARM64;
+class X86_64;
+
+template <typename E>
+std::string rel_to_string(u8 r_type);
 
 static constexpr u32 FAT_MAGIC = 0xcafebabe;
 
@@ -323,6 +330,24 @@ static constexpr u32 ARM64_RELOC_TLVP_LOAD_PAGE21 = 8;
 static constexpr u32 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 = 9;
 static constexpr u32 ARM64_RELOC_ADDEND = 10;
 
+template <>
+inline std::string rel_to_string<ARM64>(u8 type) {
+  switch (type) {
+  case ARM64_RELOC_UNSIGNED: return "ARM64_RELOC_UNSIGNED";
+  case ARM64_RELOC_SUBTRACTOR: return "ARM64_RELOC_SUBTRACTOR";
+  case ARM64_RELOC_BRANCH26: return "ARM64_RELOC_BRANCH26";
+  case ARM64_RELOC_PAGE21: return "ARM64_RELOC_PAGE21";
+  case ARM64_RELOC_PAGEOFF12: return "ARM64_RELOC_PAGEOFF12";
+  case ARM64_RELOC_GOT_LOAD_PAGE21: return "ARM64_RELOC_GOT_LOAD_PAGE21";
+  case ARM64_RELOC_GOT_LOAD_PAGEOFF12: return "ARM64_RELOC_GOT_LOAD_PAGEOFF12";
+  case ARM64_RELOC_POINTER_TO_GOT: return "ARM64_RELOC_POINTER_TO_GOT";
+  case ARM64_RELOC_TLVP_LOAD_PAGE21: return "ARM64_RELOC_TLVP_LOAD_PAGE21";
+  case ARM64_RELOC_TLVP_LOAD_PAGEOFF12: return "ARM64_RELOC_TLVP_LOAD_PAGEOFF12";
+  case ARM64_RELOC_ADDEND: return "ARM64_RELOC_ADDEND";
+  }
+  return "unknown (" + std::to_string(type) + ")";
+}
+
 static constexpr u32 X86_64_RELOC_UNSIGNED = 0;
 static constexpr u32 X86_64_RELOC_SIGNED = 1;
 static constexpr u32 X86_64_RELOC_BRANCH = 2;
@@ -333,6 +358,23 @@ static constexpr u32 X86_64_RELOC_SIGNED_1 = 6;
 static constexpr u32 X86_64_RELOC_SIGNED_2 = 7;
 static constexpr u32 X86_64_RELOC_SIGNED_4 = 8;
 static constexpr u32 X86_64_RELOC_TLV = 9;
+
+template <>
+inline std::string rel_to_string<X86_64>(u8 type) {
+  switch (type) {
+  case X86_64_RELOC_UNSIGNED: return "X86_64_RELOC_UNSIGNED";
+  case X86_64_RELOC_SIGNED: return "X86_64_RELOC_SIGNED";
+  case X86_64_RELOC_BRANCH: return "X86_64_RELOC_BRANCH";
+  case X86_64_RELOC_GOT_LOAD: return "X86_64_RELOC_GOT_LOAD";
+  case X86_64_RELOC_GOT: return "X86_64_RELOC_GOT";
+  case X86_64_RELOC_SUBTRACTOR: return "X86_64_RELOC_SUBTRACTOR";
+  case X86_64_RELOC_SIGNED_1: return "X86_64_RELOC_SIGNED_1";
+  case X86_64_RELOC_SIGNED_2: return "X86_64_RELOC_SIGNED_2";
+  case X86_64_RELOC_SIGNED_4: return "X86_64_RELOC_SIGNED_4";
+  case X86_64_RELOC_TLV: return "X86_64_RELOC_TLV";
+  }
+  return "unknown (" + std::to_string(type) + ")";
+}
 
 struct FatHeader {
   ub32 magic;

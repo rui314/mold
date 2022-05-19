@@ -479,8 +479,11 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
 
   while (i < chunks.size() && chunks[i]->hdr.type != S_ZEROFILL) {
     Chunk<E> &sec = *chunks[i++];
-    fileoff = align_to(fileoff, 1 << sec.hdr.p2align);
-    vmaddr = align_to(vmaddr, 1 << sec.hdr.p2align);
+    i64 alignment =
+      (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
+
+    fileoff = align_to(fileoff, alignment);
+    vmaddr = align_to(vmaddr, alignment);
 
     sec.hdr.offset = fileoff;
     sec.hdr.addr = vmaddr;
@@ -493,7 +496,11 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
   while (i < chunks.size()) {
     Chunk<E> &sec = *chunks[i++];
     assert(sec.hdr.type == S_ZEROFILL);
-    vmaddr = align_to(vmaddr, 1 << sec.hdr.p2align);
+
+    i64 alignment =
+      (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
+
+    vmaddr = align_to(vmaddr, alignment);
     sec.hdr.addr = vmaddr;
     sec.compute_size(ctx);
     vmaddr += sec.hdr.size;
@@ -665,12 +672,21 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
               ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
-  for (Symbol<E> *sym : ctx.thread_ptrs.syms) {
-    assert(sym->is_imported);
-    enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
-            ctx.data_seg->seg_idx,
-            sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
-  }
+  for (Symbol<E> *sym : ctx.thread_ptrs.syms)
+    if (sym->is_imported)
+      enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
+              ctx.data_seg->seg_idx,
+              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
+
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+    for (Chunk<E> *chunk : seg->chunks)
+      if (chunk->is_output_section)
+        for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
+          for (Relocation<E> &r : subsec->get_rels())
+            if (r.needs_dynrel)
+              enc.add(((DylibFile<E> *)r.sym->file)->dylib_idx, r.sym->name, 0,
+                      seg->seg_idx,
+                      subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr);
 
   enc.finish();
 
@@ -1308,8 +1324,12 @@ void ThreadPtrsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
-  u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
+  ul64 *buf = (ul64 *)(ctx.buf + this->hdr.offset);
   memset(buf, 0, this->hdr.size);
+
+  for (i64 i = 0; i < syms.size(); i++)
+    if (Symbol<E> &sym = *syms[i]; !sym.is_imported)
+      buf[i] = sym.get_addr(ctx);
 }
 
 #define INSTANTIATE(E)                                  \

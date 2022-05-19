@@ -277,6 +277,19 @@ static i64 assign_offsets(Context<E> &ctx) {
   return fileoff;
 }
 
+// An address of a symbol of type S_THREAD_LOCAL_VARIABLES is computed
+// as a relative address to the beginning of the first thread-local
+// section. This function finds the beginnning address.
+template <typename E>
+static u64 get_tls_begin(Context<E> &ctx) {
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+    for (Chunk<E> *chunk : seg->chunks)
+      if (chunk->hdr.type == S_THREAD_LOCAL_REGULAR ||
+          chunk->hdr.type == S_THREAD_LOCAL_ZEROFILL)
+        return chunk->hdr.addr;
+  return 0;
+}
+
 template <typename E>
 static void fix_synthetic_symbol_values(Context<E> &ctx) {
   get_symbol(ctx, "__dyld_private")->value = ctx.data->hdr.addr;
@@ -549,6 +562,7 @@ static int do_main(int argc, char **argv) {
   export_symbols(ctx);
 
   i64 output_size = assign_offsets(ctx);
+  ctx.tls_begin = get_tls_begin(ctx);
   fix_synthetic_symbol_values(ctx);
 
   ctx.output_file =
