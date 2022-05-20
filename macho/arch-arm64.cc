@@ -76,14 +76,6 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   }
 }
 
-static i64 read_addend(u8 *buf, const MachRel &r) {
-  if (r.p2size == 2)
-    return *(il32 *)(buf + r.offset);
-  if (r.p2size == 3)
-    return *(il64 *)(buf + r.offset);
-  unreachable();
-}
-
 static Relocation<ARM64>
 read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
            const MachSection &hdr, MachRel *rels, i64 &idx) {
@@ -92,7 +84,16 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
   switch (rels[idx].type) {
   case ARM64_RELOC_UNSIGNED:
   case ARM64_RELOC_SUBTRACTOR:
-    addend = read_addend((u8 *)file.mf->data + hdr.offset, rels[idx]);
+    switch (MachRel &r = rels[idx]; r.p2size) {
+    case 2:
+      addend = *(il32 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+      break;
+    case 3:
+      addend = *(il64 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+      break;
+    default:
+      unreachable();
+    }
     break;
   case ARM64_RELOC_ADDEND:
     addend = rels[idx++].idx;
@@ -108,12 +109,7 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
     return rel;
   }
 
-  u32 addr;
-  if (r.is_pcrel)
-    addr = hdr.addr + r.offset + addend;
-  else
-    addr = addend;
-
+  u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
   Subsection<ARM64> *target = file.find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
