@@ -62,6 +62,3 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.logicalcpu) ${{ matrix.target }}
-    - uses: actions/upload-artifact@v3
-      with:
-        path: out/test/macho
