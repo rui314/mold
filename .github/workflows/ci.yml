@@ -25,6 +25,9 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=clang CXX=clang++ ${{ matrix.target }}
+    - uses: actions/upload-artifact@v3
+      with:
+        path: out/test/
 
   build-gcc:
     runs-on: ubuntu-20.04
@@ -46,6 +49,9 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: make test-all
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=gcc CXX=g++ test-all
+    - uses: actions/upload-artifact@v3
+      with:
+        path: out/test/
 
   build-macos:
     strategy:
@@ -62,3 +68,6 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.logicalcpu) ${{ matrix.target }}
+    - uses: actions/upload-artifact@v3
+      with:
+        path: out/test/
