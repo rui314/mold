@@ -81,6 +81,7 @@ template <typename E>
 void do_lto(Context<E> &ctx) {
   LTOCodeGen *cg = ctx.lto.codegen_create();
 
+  // Add bitcode files to CodeGen.
   for (const std::string &opt : ctx.arg.mllvm)
     ctx.lto.codegen_debug_options(cg, opt.c_str());
 
@@ -88,6 +89,9 @@ void do_lto(Context<E> &ctx) {
     if (file->lto_module)
       ctx.lto.codegen_add_module(cg, file->lto_module);
 
+  // Mark symbols that have to be preserved. All symbols that are not
+  // marked here may be internalized and deleted as an extenrally-
+  // visible symbol.
   for (ObjectFile<E> *file : ctx.objs) {
     if (!file->lto_module) {
       for (i64 i = 0; i < file->mach_syms.size(); i++) {
@@ -106,6 +110,11 @@ void do_lto(Context<E> &ctx) {
         if (sym->file == file && sym->is_extern)
           ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
 
+  // Run the compiler backend to do LTO.
+  size_t size;
+  u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
+
+  // Remove bitcode object files from ctx.objs.
   for (ObjectFile<E> *file : ctx.objs) {
     if (file->lto_module) {
       file->clear_symbols();
@@ -113,9 +122,7 @@ void do_lto(Context<E> &ctx) {
     }
   }
 
-  size_t size;
-  u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
-
+  // Add a result of LTO as a new object file.
   MappedFile<Context<E>> *mf = new MappedFile<Context<E>>;
   mf->name = "<LTO>";
   mf->data = data;
