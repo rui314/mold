@@ -580,6 +580,7 @@ void RebaseEncoder::flush() {
 void RebaseEncoder::finish() {
   flush();
   buf.push_back(REBASE_OPCODE_DONE);
+  buf.resize(align_to(buf.size(), 8));
 }
 
 template <typename E>
@@ -612,7 +613,6 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
 
   enc.finish();
   contents = std::move(enc.buf);
-  contents.resize(align_to(contents.size(), 8));
   this->hdr.size = contents.size();
 }
 
@@ -660,6 +660,7 @@ void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
 
 void BindEncoder::finish() {
   buf.push_back(BIND_OPCODE_DONE);
+  buf.resize(align_to(buf.size(), 8));
 }
 
 template <typename E>
@@ -689,9 +690,8 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
                       subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr);
 
   enc.finish();
-
-  contents = enc.buf;
-  this->hdr.size = align_to(contents.size(), 8);
+  contents = std::move(enc.buf);
+  this->hdr.size = contents.size();
 }
 
 template <typename E>
@@ -739,7 +739,8 @@ void LazyBindSection<E>::compute_size(Context<E> &ctx) {
     add(ctx, *sym, 0);
   }
 
-  this->hdr.size = align_to(contents.size(), 1 << this->hdr.p2align);
+  contents.resize(align_to(contents.size(), 1 << this->hdr.p2align));
+  this->hdr.size = contents.size();
 }
 
 template <typename E>
@@ -863,7 +864,9 @@ void ExportSection<E>::compute_size(Context<E> &ctx) {
 
 template <typename E>
 void ExportSection<E>::copy_buf(Context<E> &ctx) {
-  enc.write_trie(ctx.buf + this->hdr.offset);
+  u8 *buf = ctx.buf + this->hdr.offset;
+  memset(buf, 0, this->hdr.size);
+  enc.write_trie(buf);
 }
 
 template <typename E>
