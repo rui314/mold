@@ -92,23 +92,28 @@ void do_lto(Context<E> &ctx) {
   // Mark symbols that have to be preserved. All symbols that are not
   // marked here may be internalized and deleted as an extenrally-
   // visible symbol.
-  for (ObjectFile<E> *file : ctx.objs) {
-    if (!file->lto_module) {
-      for (i64 i = 0; i < file->mach_syms.size(); i++) {
-        MachSym &msym = file->mach_syms[i];
-        Symbol<E> &sym = *file->syms[i];
-        if (msym.is_undef() && !sym.file->is_dylib &&
-            ((ObjectFile<E> *)sym.file)->lto_module)
-          ctx.lto.codegen_add_must_preserve_symbol(cg, sym.name.data());
+  if (ctx.arg.dylib || ctx.arg.export_dynamic) {
+    for (ObjectFile<E> *file : ctx.objs) {
+      if (!file->lto_module) {
+        for (i64 i = 0; i < file->mach_syms.size(); i++) {
+          MachSym &msym = file->mach_syms[i];
+          Symbol<E> &sym = *file->syms[i];
+          if (msym.is_undef() && !sym.file->is_dylib &&
+              ((ObjectFile<E> *)sym.file)->lto_module)
+            ctx.lto.codegen_add_must_preserve_symbol(cg, sym.name.data());
+        }
       }
     }
+
+    for (ObjectFile<E> *file : ctx.objs)
+      if (file->lto_module)
+        for (Symbol<E> *sym : file->syms)
+          if (sym->file == file && sym->is_extern)
+            ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
   }
 
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->lto_module)
-      for (Symbol<E> *sym : file->syms)
-        if (sym->file == file && sym->is_extern)
-          ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
+  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry); sym->file)
+    ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
 
   // Run the compiler backend to do LTO.
   size_t size;

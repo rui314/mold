@@ -33,6 +33,7 @@ Options:
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
+  -export_dynamic             Preserves all global symbols in main executables during LTO
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
   -final_output <NAME>
   -force_load <FILE>          Include all objects from a given static archive
@@ -247,6 +248,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.entry = arg;
     } else if (read_flag("-execute")) {
       ctx.output_type = MH_EXECUTE;
+    } else if (read_flag("-export_dynamic")) {
+      ctx.arg.export_dynamic = true;
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");

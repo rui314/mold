@@ -794,6 +794,7 @@ struct Context {
     bool demangle = false;
     bool dylib = false;
     bool dynamic = true;
+    bool export_dynamic = false;
     bool fatal_warnings = false;
     bool noinhibit_exec = false;
     bool search_paths_first = true;
