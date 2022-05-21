@@ -60,10 +60,11 @@ Options:
                               Set platform, platform version and SDK version
   -random_uuid                Generate a random LC_UUID load command
   -rpath <PATH>               Add PATH to the runpath search path list
+  -search_dylibs_first
+  -search_paths_first
+  -sectcreate <SEGNAME> <SECTNAME> <FILE>
   -stack_size <SIZE>
   -syslibroot <DIR>           Prepend DIR to library search paths
-  -search_paths_first
-  -search_dylibs_first
   -t                          Print out each file the linker loads
   -v                          Report version information)";
 
@@ -300,14 +301,16 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.uuid = UUID_RANDOM;
     } else if (read_arg("-rpath")) {
       ctx.arg.rpath.push_back(std::string(arg));
-    } else if (read_hex("-stack_size")) {
-      ctx.arg.stack_size = hex_arg;
-    } else if (read_arg("-syslibroot")) {
-      ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-search_paths_first")) {
       ctx.arg.search_paths_first = true;
     } else if (read_flag("-search_dylibs_first")) {
       ctx.arg.search_paths_first = false;
+    } else if (read_arg3("-sectcreate")) {
+      ctx.arg.sectcreate.push_back({arg, arg2, arg3});
+    } else if (read_hex("-stack_size")) {
+      ctx.arg.stack_size = hex_arg;
+    } else if (read_arg("-syslibroot")) {
+      ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-t")) {
       ctx.arg.trace = true;
     } else if (read_flag("-v")) {

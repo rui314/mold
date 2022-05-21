@@ -673,6 +673,20 @@ public:
   std::vector<Symbol<E> *> syms;
 };
 
+template <typename E>
+class SectCreateSection : public Chunk<E> {
+public:
+  SectCreateSection(Context<E> &ctx, std::string_view seg, std::string_view sect,
+                    std::string_view contents)
+    : Chunk<E>(ctx, seg, sect), contents(contents) {
+    this->hdr.size = contents.size();
+  }
+
+  void copy_buf(Context<E> &ctx) override;
+
+  std::string_view contents;
+};
+
 //
 // mapfile.cc
 //
@@ -754,6 +768,12 @@ void do_lto(Context<E> &ctx);
 
 enum UuidKind { UUID_NONE, UUID_HASH, UUID_RANDOM };
 
+struct SectCreateOption {
+  std::string_view segname;
+  std::string_view sectname;
+  std::string_view filename;
+};
+
 template <typename E>
 struct Context {
   Context() {
@@ -820,6 +840,7 @@ struct Context {
     std::vector<std::string> mllvm;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
+    std::vector<SectCreateOption> sectcreate;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
@@ -846,7 +867,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<DylibFile<E>>> dylib_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
-  std::vector<std::unique_ptr<OutputSection<E>>> osec_pool;
+  std::vector<std::unique_ptr<Chunk<E>>> chunk_pool;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 

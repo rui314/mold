@@ -495,6 +495,15 @@ static int do_main(int argc, char **argv) {
     Fatal(ctx) << "unknown cputype: " << ctx.arg.arch;
   }
 
+  // Handle -sectcreate
+  for (SectCreateOption arg : ctx.arg.sectcreate) {
+    MappedFile<Context<E>> *mf =
+      MappedFile<Context<E>>::must_open(ctx, std::string(arg.filename));
+    SectCreateSection<E> *sec =
+      new SectCreateSection<E>(ctx, arg.segname, arg.sectname, mf->get_contents());
+    ctx.chunk_pool.emplace_back(sec);
+  }
+
   read_input_files(ctx, file_args);
 
   for (ObjectFile<E> *file : ctx.objs)

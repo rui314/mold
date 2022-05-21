@@ -390,7 +390,7 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
     return osec;
 
   OutputSection<E> *osec = new OutputSection<E>(ctx, segname, sectname);
-  ctx.osec_pool.emplace_back(osec);
+  ctx.chunk_pool.emplace_back(osec);
   return osec;
 }
 
@@ -1335,6 +1335,11 @@ void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
       buf[i] = sym.get_addr(ctx);
 }
 
+template <typename E>
+void SectCreateSection<E>::copy_buf(Context<E> &ctx) {
+  write_string(ctx.buf + this->hdr.offset, contents);
+}
+
 #define INSTANTIATE(E)                                  \
   template class OutputSegment<E>;                      \
   template class OutputMachHeader<E>;                   \
@@ -1354,7 +1359,8 @@ void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
   template class UnwindInfoSection<E>;                  \
   template class GotSection<E>;                         \
   template class LazySymbolPtrSection<E>;               \
-  template class ThreadPtrsSection<E>
+  template class ThreadPtrsSection<E>;                  \
+  template class SectCreateSection<E>
 
 INSTANTIATE_ALL;
 
