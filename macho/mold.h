@@ -811,7 +811,7 @@ struct Context {
     bool dead_strip = false;
     bool dead_strip_dylibs = false;
     bool deduplicate = true;
-    bool demangle = false;
+    bool demangle = true;
     bool dylib = false;
     bool dynamic = true;
     bool export_dynamic = false;
@@ -956,7 +956,10 @@ inline Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
 
 template <typename E>
 inline std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
-  out << sym.name;
+  if (opt_demangle && sym.name.starts_with("__Z"))
+    out << demangle(sym.name.substr(1));
+  else
+    out << sym.name;
   return out;
 }
 
