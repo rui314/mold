@@ -132,9 +132,6 @@ public:
   std::span<DataInCodeEntry> data_in_code_entries;
   LTOModule *lto_module = nullptr;
 
-  // For the internal object and LTO
-  std::vector<MachSym> mach_syms2;
-
 private:
   void parse_sections(Context<E> &ctx);
   void parse_symbols(Context<E> &ctx);
@@ -149,6 +146,9 @@ private:
   std::unique_ptr<MachSection> common_hdr;
   InputSection<E> *common_sec = nullptr;
   std::vector<Subsection<E> *> subsec_pool;
+
+  // For LTO
+  std::vector<MachSym> mach_syms2;
 };
 
 template <typename E>

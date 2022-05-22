@@ -59,17 +59,10 @@ static void resolve_symbols(Context<E> &ctx) {
 template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
-  obj->is_alive = true;
   ctx.obj_pool.emplace_back(obj);
   ctx.objs.push_back(obj);
 
   auto add = [&](std::string_view name) {
-    MachSym msym = {};
-    msym.type = N_ABS;
-    msym.ext = true;
-    obj->mach_syms2.push_back(msym);
-    obj->mach_syms = obj->mach_syms2;
-
     Symbol<E> *sym = get_symbol(ctx, name);
     sym->file = obj;
     obj->syms.push_back(sym);
@@ -77,7 +70,6 @@ static void create_internal_file(Context<E> &ctx) {
   };
 
   add("__dyld_private");
-  add("___dso_handle");
 
   switch (ctx.output_type) {
   case MH_EXECUTE: {
@@ -96,6 +88,8 @@ static void create_internal_file(Context<E> &ctx) {
   default:
     unreachable();
   }
+
+  add("___dso_handle");
 }
 
 // Remove unreferenced subsections to eliminate code and data
