@@ -249,7 +249,7 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
       }
 
       if (r.symidx != -1)
-        sym_to_subsec[r.symidx] = subsections.size() - 1;
+        sym_to_subsec[r.symidx] = subsections.back().get();
     }
   }
 
@@ -258,8 +258,15 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
     MachSym &msym = mach_syms[i];
     if (!msym.ext && msym.type == N_SECT) {
       Symbol<E> &sym = *this->syms[i];
-      sym.subsec = subsections[sym_to_subsec[i]].get();
-      sym.value = msym.value - sym.subsec->input_addr;
+
+      if (Subsection<E> *subsec = sym_to_subsec[i]) {
+        sym.subsec = subsec;
+        sym.value = msym.value - subsec->input_addr;
+      } else {
+        // Subsec is null if a symbol is in a __compact_unwind.
+        sym.subsec = nullptr;
+        sym.value = msym.value;
+      }
     }
   }
 }
@@ -464,7 +471,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
         sym.is_common = false;
         break;
       case N_SECT:
-        sym.subsec = subsections[sym_to_subsec[i]].get();
+        sym.subsec = sym_to_subsec[i];
         sym.value = msym.value - sym.subsec->input_addr;
         sym.is_common = false;
         break;

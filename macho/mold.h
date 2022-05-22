@@ -125,7 +125,7 @@ public:
 
   std::vector<std::unique_ptr<InputSection<E>>> sections;
   std::vector<std::unique_ptr<Subsection<E>>> subsections;
-  std::vector<u32> sym_to_subsec;
+  std::vector<Subsection<E> *> sym_to_subsec;
   std::span<MachSym> mach_syms;
   std::vector<Symbol<E>> local_syms;
   std::vector<UnwindRecord<E>> unwind_records;
