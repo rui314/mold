@@ -217,6 +217,13 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     if (isec.hdr.type == S_THREAD_LOCAL_VARIABLES)
       val -= ctx.tls_begin;
 
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << isec << ": relocation " << r << " against "
+                   << *r.sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
     // Write a computed value to the output buffer.
     switch (r.type) {
     case ARM64_RELOC_UNSIGNED:
@@ -235,6 +242,7 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
     case ARM64_RELOC_BRANCH26:
       if (r.is_pcrel)
         val -= get_addr(ctx) + r.offset;
+      overflow_check(val, -(1 << 27), 1 << 27);
       *(ul32 *)loc |= bits(val, 27, 2);
       break;
     case ARM64_RELOC_PAGE21:
