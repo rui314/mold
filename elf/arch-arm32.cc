@@ -72,11 +72,14 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   static const u32 plt0[] = {
-    0xe52de004, // 1: push {lr}
-    0xe59fe004, // ldr     lr, [pc, #4]
-    0xe08fe00e, // add     lr, pc, lr
-    0xe5bef008, // ldr     pc, [lr, #8]!
-    0x00000000, // .word   .got.plt - 1b - 16
+    0xe52de004, // push {lr}
+    0xe59fe004, // ldr lr, 2f
+    0xe08fe00e, // 1: add lr, pc, lr
+    0xe5bef008, // ldr pc, [lr, #8]!
+    0x00000000, // 2: .word &(.got.plt) - 1b - 8
+    0xe320f000, // nop
+    0xe320f000, // nop
+    0xe320f000, // nop
   };
 
   memcpy(buf, plt0, sizeof(plt0));

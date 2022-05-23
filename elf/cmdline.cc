@@ -343,7 +343,7 @@ static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, ARM64>)
     return {32, 16};
   if constexpr (std::is_same_v<E, ARM32>)
-    return {20, 16};
+    return {32, 16};
   if constexpr (std::is_same_v<E, RISCV64>)
     return {32, 16};
   unreachable();
