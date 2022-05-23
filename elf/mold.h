@@ -1145,7 +1145,8 @@ public:
   u64 fde_offset = 0;
   u64 fde_size = 0;
 
-  // For ARM64 range extension thunks
+  // For ARM64 range extension thunks.
+  // This is a parallel array for `get_rels()`.
   std::vector<std::vector<RangeExtensionRef>> range_extn;
 
   // For RISC-V section resizing
@@ -1417,7 +1418,7 @@ public:
 
   std::vector<Symbol<ARM32> *> symbols;
 
-  static constexpr i64 ENTRY_SIZE = 8;
+  static constexpr i64 ENTRY_SIZE = 12;
 };
 
 class TlsTrampolineSection : public Chunk<ARM32> {

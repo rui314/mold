@@ -76,7 +76,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0xe59fe004, // ldr lr, 2f
     0xe08fe00e, // 1: add lr, pc, lr
     0xe5bef008, // ldr pc, [lr, #8]!
-    0x00000000, // 2: .word &(.got.plt) - 1b - 8
+    0x00000000, // 2: .word .got.plt - 1b - 8
     0xe320f000, // nop
     0xe320f000, // nop
     0xe320f000, // nop
@@ -486,10 +486,11 @@ void ThumbToArmSection::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   i64 offset = 0;
 
-  static u16 insn[] = {
-    0x4778, // bx pc
-    0x46c0, // nop
-    0, 0,   // b <imm24>
+  static u8 insn[] = {
+    0x40, 0xf2, 0x00, 0x0c, // movw ip, $0
+    0xc0, 0xf2, 0x00, 0x0c, // movt ip, $0
+    0xfc, 0x44,             // add  ip, pc
+    0x60, 0x47,             // bx   ip
   };
 
   static_assert(sizeof(insn) == ENTRY_SIZE);
@@ -498,7 +499,8 @@ void ThumbToArmSection::copy_buf(Context<E> &ctx) {
     memcpy(buf + offset, insn, sizeof(insn));
 
     u32 val = sym->get_addr(ctx) - this->shdr.sh_addr - offset - 12;
-    *(ul32 *)(buf + offset + 4) = 0xea00'0000 | (0x00ff'ffff & (val >> 2));
+    write_thm_mov_imm(buf + offset, val);
+    write_thm_mov_imm(buf + offset + 4, val >> 16);
     offset += sizeof(insn);
   }
 }
