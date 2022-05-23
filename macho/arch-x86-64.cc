@@ -2,25 +2,27 @@
 
 namespace mold::macho {
 
+using E = X86_64;
+
 template <>
-void StubsSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+void StubsSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
 
   for (i64 i = 0; i < syms.size(); i++) {
     // `ff 25 xx xx xx xx` is a RIP-relative indirect jump instruction,
     // i.e., `jmp *IMM(%rip)`. It loads an address from la_symbol_ptr
     // and jump there.
-    static_assert(X86_64::stub_size == 6);
+    static_assert(E::stub_size == 6);
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(ul32 *)(buf + i * 6 + 2) =
-      ctx.lazy_symbol_ptr.hdr.addr + i * X86_64::word_size -
+      ctx.lazy_symbol_ptr.hdr.addr + i * E::word_size -
       (this->hdr.addr + i * 6 + 6);
   }
 }
 
 template <>
-void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
+void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   u8 *start = ctx.buf + this->hdr.offset;
   u8 *buf = start;
 
@@ -31,7 +33,7 @@ void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
     0x90,                         // nop
   };
 
-  static_assert(sizeof(insn0) == X86_64::stub_helper_hdr_size);
+  static_assert(sizeof(insn0) == E::stub_helper_hdr_size);
 
   memcpy(buf, insn0, sizeof(insn0));
   *(ul32 *)(buf + 3) =
@@ -47,7 +49,7 @@ void StubHelperSection<X86_64>::copy_buf(Context<X86_64> &ctx) {
       0xe9, 0, 0, 0, 0, // jmp $__stub_helper
     };
 
-    static_assert(sizeof(insn) == X86_64::stub_helper_size);
+    static_assert(sizeof(insn) == E::stub_helper_size);
 
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 1) = ctx.stubs.bind_offsets[i];
@@ -77,8 +79,8 @@ static i64 read_addend(u8 *buf, const MachRel &r) {
   unreachable();
 }
 
-static Relocation<X86_64>
-read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
+static Relocation<E>
+read_reloc(Context<E> &ctx, ObjectFile<E> &file,
            const MachSection &hdr, MachRel &r) {
   if (r.p2size != 2 && r.p2size != 3)
     Fatal(ctx) << file << ": invalid r.p2size: " << (u32)r.p2size;
@@ -92,7 +94,7 @@ read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
   }
 
   u8 *buf = (u8 *)file.mf->data + hdr.offset;
-  Relocation<X86_64> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
+  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
   i64 addend = read_addend(buf, r);
 
   if (r.is_extern) {
@@ -107,7 +109,7 @@ read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
   else
     addr = addend;
 
-  Subsection<X86_64> *target = file.find_subsection(ctx, addr);
+  Subsection<E> *target = file.find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
@@ -117,10 +119,10 @@ read_reloc(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
 }
 
 template <>
-std::vector<Relocation<X86_64>>
-read_relocations(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
+std::vector<Relocation<E>>
+read_relocations(Context<E> &ctx, ObjectFile<E> &file,
                  const MachSection &hdr) {
-  std::vector<Relocation<X86_64>> vec;
+  std::vector<Relocation<E>> vec;
   vec.reserve(hdr.nreloc);
 
   MachRel *rels = (MachRel *)(file.mf->data + hdr.reloff);
@@ -130,14 +132,14 @@ read_relocations(Context<X86_64> &ctx, ObjectFile<X86_64> &file,
 }
 
 template <>
-void Subsection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
-  for (Relocation<X86_64> &r : get_rels()) {
-    Symbol<X86_64> *sym = r.sym;
+void Subsection<E>::scan_relocations(Context<E> &ctx) {
+  for (Relocation<E> &r : get_rels()) {
+    Symbol<E> *sym = r.sym;
     if (!sym)
       continue;
 
     if (sym->is_imported && sym->file->is_dylib)
-      ((DylibFile<X86_64> *)sym->file)->is_needed = true;
+      ((DylibFile<E> *)sym->file)->is_needed = true;
 
     switch (r.type) {
     case X86_64_RELOC_UNSIGNED:
@@ -165,8 +167,8 @@ void Subsection<X86_64>::scan_relocations(Context<X86_64> &ctx) {
 }
 
 template <>
-void Subsection<X86_64>::apply_reloc(Context<X86_64> &ctx, u8 *buf) {
-  for (const Relocation<X86_64> &r : get_rels()) {
+void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
+  for (const Relocation<E> &r : get_rels()) {
     if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;

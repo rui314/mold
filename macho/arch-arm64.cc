@@ -2,6 +2,8 @@
 
 namespace mold::macho {
 
+using E = ARM64;
+
 static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
@@ -11,7 +13,7 @@ static u64 encode_page(u64 val) {
 }
 
 template <>
-void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+void StubsSection<E>::copy_buf(Context<E> &ctx) {
   ul32 *buf = (ul32 *)(ctx.buf + this->hdr.offset);
 
   for (i64 i = 0; i < syms.size(); i++) {
@@ -21,10 +23,10 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
       0xd61f0200, // br   x16
     };
 
-    static_assert(sizeof(insn) == ARM64::stub_size);
+    static_assert(sizeof(insn) == E::stub_size);
 
-    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + ARM64::word_size * i;
-    u64 this_addr = this->hdr.addr + ARM64::stub_size * i;
+    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + E::word_size * i;
+    u64 this_addr = this->hdr.addr + E::stub_size * i;
 
     memcpy(buf, insn, sizeof(insn));
     buf[0] |= encode_page(page(la_addr) - page(this_addr));
@@ -34,7 +36,7 @@ void StubsSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
 }
 
 template <>
-void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
+void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   ul32 *start = (ul32 *)(ctx.buf + this->hdr.offset);
   ul32 *buf = start;
 
@@ -47,7 +49,7 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
     0xd61f0200, // br   x16
   };
 
-  static_assert(sizeof(insn0) == ARM64::stub_helper_hdr_size);
+  static_assert(sizeof(insn0) == E::stub_helper_hdr_size);
   memcpy(buf, insn0, sizeof(insn0));
 
   u64 dyld_private = get_symbol(ctx, "__dyld_private")->get_addr(ctx);
@@ -67,7 +69,7 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
       0x00000000, // addr: .long <idx>
     };
 
-    static_assert(sizeof(insn) == ARM64::stub_helper_size);
+    static_assert(sizeof(insn) == E::stub_helper_size);
 
     memcpy(buf, insn, sizeof(insn));
     buf[1] |= bits((start - buf - 1) * 4, 27, 2);
@@ -76,8 +78,8 @@ void StubHelperSection<ARM64>::copy_buf(Context<ARM64> &ctx) {
   }
 }
 
-static Relocation<ARM64>
-read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
+static Relocation<E>
+read_reloc(Context<E> &ctx, ObjectFile<E> &file,
            const MachSection &hdr, MachRel *rels, i64 &idx) {
   i64 addend = 0;
 
@@ -101,7 +103,7 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
   }
 
   MachRel &r = rels[idx];
-  Relocation<ARM64> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
+  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
 
   if (r.is_extern) {
     rel.sym = file.syms[r.idx];
@@ -110,7 +112,7 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
   }
 
   u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
-  Subsection<ARM64> *target = file.find_subsection(ctx, addr);
+  Subsection<E> *target = file.find_subsection(ctx, addr);
   if (!target)
     Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
@@ -120,10 +122,10 @@ read_reloc(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
 }
 
 template <>
-std::vector<Relocation<ARM64>>
-read_relocations(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
+std::vector<Relocation<E>>
+read_relocations(Context<E> &ctx, ObjectFile<E> &file,
                  const MachSection &hdr) {
-  std::vector<Relocation<ARM64>> vec;
+  std::vector<Relocation<E>> vec;
   vec.reserve(hdr.nreloc);
 
   MachRel *rels = (MachRel *)(file.mf->data + hdr.reloff);
@@ -133,14 +135,14 @@ read_relocations(Context<ARM64> &ctx, ObjectFile<ARM64> &file,
 }
 
 template <>
-void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
-  for (Relocation<ARM64> &r : get_rels()) {
-    Symbol<ARM64> *sym = r.sym;
+void Subsection<E>::scan_relocations(Context<E> &ctx) {
+  for (Relocation<E> &r : get_rels()) {
+    Symbol<E> *sym = r.sym;
     if (!sym)
       continue;
 
     if (sym->is_imported && sym->file->is_dylib)
-      ((DylibFile<ARM64> *)sym->file)->is_needed = true;
+      ((DylibFile<E> *)sym->file)->is_needed = true;
 
     switch (r.type) {
     case ARM64_RELOC_UNSIGNED:
@@ -170,11 +172,11 @@ void Subsection<ARM64>::scan_relocations(Context<ARM64> &ctx) {
 }
 
 template <>
-void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
-  std::span<Relocation<ARM64>> rels = get_rels();
+void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
+  std::span<Relocation<E>> rels = get_rels();
 
   for (i64 i = 0; i < rels.size(); i++) {
-    Relocation<ARM64> &r = rels[i];
+    Relocation<E> &r = rels[i];
     u8 *loc = buf + r.offset;
     u64 val = r.addend;
 
@@ -192,7 +194,7 @@ void Subsection<ARM64>::apply_reloc(Context<ARM64> &ctx, u8 *buf) {
       val += r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
     case ARM64_RELOC_SUBTRACTOR: {
-      Relocation<ARM64> s = rels[++i];
+      Relocation<E> s = rels[++i];
       assert(s.type == ARM64_RELOC_UNSIGNED);
       u64 val1 = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       u64 val2 = s.sym ? s.sym->get_addr(ctx) : s.subsec->get_addr(ctx);

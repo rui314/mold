@@ -123,7 +123,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * X86_64::pltgot_size;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
     memcpy(ent, data, sizeof(data));
     *(ul32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
   }
