@@ -635,23 +635,18 @@ static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
   return isec && (isec->shdr().sh_flags & SHF_ALLOC);
 }
 
-// Initializes r_deltas and sorted_symbols.
-static void initialize_storage(Context<E> &ctx) {
+// Initializes sorted_symbols.
+static void sort_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(ctx, isec.get()))
-        isec->extra.r_deltas.resize(isec->get_rels(ctx).size() + 1);
-
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
         if (InputSection<E> *isec = sym->get_input_section())
           isec->extra.sorted_symbols.push_back(sym);
 
-    for (Symbol<E> *sym : file->symbols)
-      if (sym->file == file)
-        if (InputSection<E> *isec = sym->get_input_section())
-          sort(isec->extra.sorted_symbols,
-               [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec)
+        sort(isec->extra.sorted_symbols,
+             [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
   });
 }
 
@@ -682,6 +677,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
   i64 delta = 0;
 
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
+  isec.extra.r_deltas.resize(rels.size() + 1);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
@@ -783,7 +779,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
 // relocations.
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
-  initialize_storage(ctx);
+  sort_symbols(ctx);
 
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.

@@ -1428,7 +1428,7 @@ void sort_arm_exidx(Context<ARM32> &ctx);
 // arch-arm64.cc
 //
 
-i64 create_range_extension_thunks(Context<ARM64> &ctx);
+void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &osec);
 
 //
 // arch-riscv64.cc

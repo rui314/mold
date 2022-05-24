@@ -531,8 +531,16 @@ static constexpr i64 MAX_DISTANCE = 100 * 1024 * 1024;
 // We create a thunk for each 10 MiB input sections.
 static constexpr i64 GROUP_SIZE = 10 * 1024 * 1024;
 
-static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
+// ARM64's call/jump instructions take 27 bits displacement, so they
+// can refer only up to ±128 MiB. If a branch target is further than
+// that, we need to let it branch to a linker-synthesized code
+// sequence that construct a full 32 bit address in a register and
+// jump there. That linker-synthesized code is called "thunk".
+void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   std::span<InputSection<E> *> members = osec.members;
+  if (members.empty())
+    return;
+
   members[0]->offset = 0;
 
   // Initialize input sections with a dummy offset so that we can
@@ -650,22 +658,6 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     reset_thunk(*osec.thunks[a++]);
 
   osec.shdr.sh_size = offset;
-}
-
-// ARM64's call/jump instructions take 27 bits displacement, so they
-// can refer only up to ±128 MiB. If a branch target is further than
-// that, we need to let it branch to a linker-synthesized code
-// sequence that construct a full 32 bit address in a register and
-// jump there. That linker-synthesized code is called "thunk".
-i64 create_range_extension_thunks(Context<E> &ctx) {
-  Timer t(ctx, "create_range_extension_thunks");
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    if (!osec->members.empty() && (osec->shdr.sh_flags & SHF_EXECINSTR))
-      create_thunks(ctx, *osec);
-
-  // Recompute file layout.
-  return set_osec_offsets(ctx);
 }
 
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {

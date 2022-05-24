@@ -806,6 +806,11 @@ void compute_section_sizes(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.output_sections,
                          [&](std::unique_ptr<OutputSection<E>> &osec) {
+    // This pattern will be processed in the next loop.
+    if constexpr (std::is_same_v<E, ARM64>)
+      if (osec->shdr.sh_flags & SHF_EXECINSTR)
+        return;
+
     // Since one output section may contain millions of input sections,
     // we first split input sections into groups and assign offsets to
     // groups.
@@ -845,6 +850,16 @@ void compute_section_sizes(Context<E> &ctx) {
       }
     });
   });
+
+  // On ARM64, we may need to create so-called "range extension thunks" to
+  // extend branch instructions reach, as they can jump only to ±128 MiB.
+  // In this case, we compute the sizes of sections while inserting thunks.
+  // This pass cannot be parallelized (`create_range_extension_thunks` is
+  // parallelized internally, but the function itself is not thread-safe.
+  if constexpr (std::is_same_v<E, ARM64>)
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+      if (osec->shdr.sh_flags & SHF_EXECINSTR)
+        create_range_extension_thunks(ctx, *osec);
 }
 
 template <typename E>

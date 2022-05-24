@@ -644,12 +644,6 @@ static int elf_main(int argc, char **argv) {
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx);
 
-  // On ARM64, we may need to create so-called "range extension thunks"
-  // to extend branch instructions reach, as they can jump only to
-  // ±128 MiB.
-  if constexpr (std::is_same_v<E, ARM64>)
-    filesize = create_range_extension_thunks(ctx);
-
   // On RISC-V, branches are encode using multiple instructions so
   // that they can jump to anywhere in ±2 GiB by default. They may
   // be replaced with shorter instruction sequences if destinations
