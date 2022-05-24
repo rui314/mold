@@ -7,9 +7,9 @@ namespace mold::macho {
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
   if (file.archive_name.empty())
-    out << path_clean(file.mf->name);
+    out << path_clean(file.filename);
   else
-    out << path_clean(file.archive_name) << "(" << path_clean(file.mf->name) + ")";
+    out << path_clean(file.archive_name) << "(" << path_clean(file.filename) + ")";
   return out;
 }
 
@@ -33,8 +33,7 @@ template <typename E>
 ObjectFile<E> *
 ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                       std::string archive_name) {
-  ObjectFile<E> *obj = new ObjectFile<E>;
-  obj->mf = mf;
+  ObjectFile<E> *obj = new ObjectFile<E>(mf);
   obj->archive_name = archive_name;
   obj->is_alive = archive_name.empty() || ctx.all_load;
   obj->is_hidden = ctx.hidden_l;
@@ -625,8 +624,7 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
 
 template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  DylibFile<E> *dylib = new DylibFile<E>;
-  dylib->mf = mf;
+  DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_needed = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   ctx.dylib_pool.emplace_back(dylib);
   return dylib;

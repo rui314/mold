@@ -99,6 +99,7 @@ public:
   virtual void resolve_symbols(Context<E> &ctx) = 0;
 
   MappedFile<Context<E>> *mf = nullptr;
+  std::string_view filename;
   std::vector<Symbol<E> *> syms;
   i64 priority = 0;
   std::atomic_bool is_alive = false;
@@ -107,13 +108,15 @@ public:
   std::string archive_name;
 
 protected:
-  InputFile() = default;
+  InputFile(MappedFile<Context<E>> *mf) : mf(mf), filename(mf->name) {}
+  InputFile() : filename("<internal>") {}
 };
 
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
   ObjectFile() = default;
+  ObjectFile(MappedFile<Context<E>> *mf) : InputFile<E>(mf) {}
 
   static ObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                             std::string archive_name);
@@ -174,7 +177,7 @@ private:
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
                  const std::string &prefix = "");
 
-  DylibFile() {
+  DylibFile(MappedFile<Context<E>> *mf) : InputFile<E>(mf) {
     this->is_dylib = true;
     this->is_alive = true;
   }
