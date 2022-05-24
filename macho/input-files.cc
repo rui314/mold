@@ -521,7 +521,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
 template <typename E>
 void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
-  for (i64 i = 0; i < this->syms.size(); i++) {
+  for (i64 i = 0; i < this->mach_syms.size(); i++) {
     Symbol<E> &sym = *this->syms[i];
     MachSym &msym = mach_syms[i];
 
