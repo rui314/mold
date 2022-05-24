@@ -504,10 +504,17 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 
 static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
                          InputSection<E> &isec, const ElfRel<E> &rel) {
+  // We pessimistically assume that PLT entries are unreacahble.
+  if (sym.has_plt(ctx))
+    return false;
+
   // We create thunks with a pessimistic assumption that all
   // out-of-section relocations would be out-of-range.
   InputSection<E> *isec2 = sym.get_input_section();
   if (!isec2 || isec.output_section != isec2->output_section)
+    return false;
+
+  if (isec2->offset == -1)
     return false;
 
   // Compute a distance between the relocated place and the symbol
@@ -529,11 +536,11 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   std::span<InputSection<E> *> members = osec.members;
   members[0]->offset = 0;
 
-  // Initialize input sections with very large dummy offsets so that
-  // sections that have got real offsets are separated from the ones
-  // without in the virtual address space.
+  // Initialize input sections with a dummy offset so that we can
+  // distinguish sections that have got an address with the one who
+  // haven't.
   tbb::parallel_for((i64)1, (i64)members.size(), [&](i64 i) {
-    members[i]->offset = 1 << 31;
+    members[i]->offset = -1;
   });
 
   // We create thunks from the beginning of the section to the end.
