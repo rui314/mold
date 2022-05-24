@@ -504,11 +504,10 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 
 static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
                          InputSection<E> &isec, const ElfRel<E> &rel) {
-  // We always create a thunk for an absolute symbol conservatively
-  // because `shrink_sections` may increase a distance between a
-  // branch instruction and an absolute symbol. Branching to an
-  // absolute location is extremely rare in real code, though.
-  if (sym.is_absolute())
+  // We create thunks with a pessimistic assumption that all
+  // out-of-section relocations would be out-of-range.
+  InputSection<E> *isec2 = sym.get_input_section();
+  if (!isec2 || isec.output_section != isec2->output_section)
     return false;
 
   // Compute a distance between the relocated place and the symbol
@@ -658,21 +657,9 @@ i64 create_range_extension_thunks(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     file->range_extn.resize(file->sections.size());
 
-  // First, we create thunks with a pessimistic assumption that all
-  // out-of-section relocations would need thunks. To do so, we start
-  // with an initial layout in which output sections are separated far
-  // apart.
-  for (i64 i = 0; Chunk<E> *chunk : ctx.chunks)
-    if (chunk->shdr.sh_flags & SHF_ALLOC)
-      chunk->shdr.sh_addr = i++ << 31;
-
-  std::vector<OutputSection<E> *> sections;
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (!osec->members.empty() && (osec->shdr.sh_flags & SHF_EXECINSTR))
-      sections.push_back(osec.get());
-
-  for (OutputSection<E> *osec : sections)
-    create_thunks(ctx, *osec);
+      create_thunks(ctx, *osec);
 
   // Recompute file layout.
   return set_osec_offsets(ctx);
