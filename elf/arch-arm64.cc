@@ -628,7 +628,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     offset += thunk.size();
 
     // Sort symbols added to the thunk to make the output deterministic.
-    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) { return *a < *b; });
+    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) {
+      return std::tuple{a->file->priority, a->sym_idx} <
+             std::tuple{b->file->priority, b->sym_idx};
+    });
 
     // Assign offsets within the thunk to the symbols.
     for (i64 i = 0; Symbol<E> *sym : thunk.symbols) {

@@ -2349,14 +2349,6 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)].get();
 }
 
-// This operator defines a total order over symbols. This is used to
-// make the output deterministic.
-template <typename E>
-inline bool operator<(const Symbol<E> &a, const Symbol<E> &b) {
-  return std::tuple{a.file->priority, a.sym_idx} <
-         std::tuple{b.file->priority, b.sym_idx};
-}
-
 template <typename E>
 inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
   if (file && !file->is_dso) {
