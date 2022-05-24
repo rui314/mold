@@ -98,7 +98,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
@@ -119,8 +119,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
-  std::span<ElfRel<E>> rels = get_rels(ctx);
-  std::span<RangeExtensionRef> range_extn = get_range_extn();
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   i64 frag_idx = 0;
 
@@ -231,7 +230,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
 
       if (val < lo || hi <= val) {
-        RangeExtensionRef ref = range_extn[i];
+        RangeExtensionRef ref = extra.range_extn[i];
         val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
         assert(lo <= val && val < hi);
       }
@@ -348,7 +347,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
-  std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -399,7 +398,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
-  std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -584,8 +583,8 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
-      std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-      std::vector<RangeExtensionRef> &range_extn = isec->get_range_extn();
+      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
+      std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
       range_extn.resize(rels.size());
 
       for (i64 i = 0; i < rels.size(); i++) {
@@ -632,10 +631,10 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Scan relocations again to fix symbol offsets in the last thunk.
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
-      std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-      std::span<RangeExtensionRef> range_extn = isec->get_range_extn();
+      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
 
       for (i64 i = 0; i < rels.size(); i++) {
+        std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
         if (range_extn[i].thunk_idx == thunk.thunk_idx) {
           Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
           range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
@@ -660,9 +659,6 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 // jump there. That linker-synthesized code is called "thunk".
 i64 create_range_extension_thunks(Context<E> &ctx) {
   Timer t(ctx, "create_range_extension_thunks");
-
-  for (ObjectFile<E> *file : ctx.objs)
-    file->range_extn.resize(file->sections.size());
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (!osec->members.empty() && (osec->shdr.sh_flags & SHF_EXECINSTR))

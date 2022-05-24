@@ -167,7 +167,7 @@ inline u64 hash_string(std::string_view str) {
 template <typename E>
 struct CieRecord {
   CieRecord(Context<E> &ctx, ObjectFile<E> &file, InputSection<E> &isec,
-            u32 input_offset, std::span<ElfRel<E>> rels, u32 rel_idx)
+            u32 input_offset, std::span<const ElfRel<E>> rels, u32 rel_idx)
     : file(file), input_section(isec), input_offset(input_offset),
       rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
@@ -179,7 +179,7 @@ struct CieRecord {
     return contents.substr(input_offset, size());
   }
 
-  std::span<ElfRel<E>> get_rels() const {
+  std::span<const ElfRel<E>> get_rels() const {
     i64 end = rel_idx;
     while (end < rels.size() && rels[end].r_offset < input_offset + size())
       end++;
@@ -195,7 +195,7 @@ struct CieRecord {
   u32 rel_idx = -1;
   u32 icf_idx = -1;
   bool is_leader = false;
-  std::span<ElfRel<E>> rels;
+  std::span<const ElfRel<E>> rels;
   std::string_view contents;
 };
 
@@ -220,7 +220,7 @@ struct FdeRecord {
 
   i64 size(ObjectFile<E> &file) const;
   std::string_view get_contents(ObjectFile<E> &file) const;
-  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
+  std::span<const ElfRel<E>> get_rels(ObjectFile<E> &file) const;
 
   u32 input_offset = -1;
   u32 output_offset = -1;
@@ -256,23 +256,20 @@ struct RangeExtensionRef {
   i32 sym_idx = -1;
 };
 
+// A struct to hold taret-dependent input section members.
 template <typename E>
-struct InputSectionExtra {
-  InputSectionExtra() = default;
+struct InputSectionExtras {};
 
-  InputSectionExtra(const InputSectionExtra &other)
-    : is_visited(other.is_visited.load()), leader(other.leader),
-      icf_idx(other.icf_idx), icf_eligible(other.icf_eligible),
-      icf_leaf(other.icf_leaf) {}
+template <>
+struct InputSectionExtras<ARM64> {
+  std::vector<RangeExtensionRef> range_extn;
+};
 
-  // For garbage collection
-  std::atomic_bool is_visited = false;
-
-  // For ICF
-  InputSection<E> *leader = nullptr;
-  u32 icf_idx = -1;
-  bool icf_eligible = false;
-  bool icf_leaf = false;
+template <>
+struct InputSectionExtras<RISCV64> {
+  std::vector<i32> r_deltas;
+  std::vector<Symbol<RISCV64> *> sorted_symbols;
+  std::vector<ElfRel<RISCV64>> sorted_rels;
 };
 
 // InputSection represents a section in an input object file.
@@ -291,25 +288,19 @@ public:
   void kill();
 
   std::string_view name() const;
-  InputSectionExtra<E> &extra() const;
   i64 get_priority() const;
   u64 get_addr() const;
   i64 get_addend(const ElfRel<E> &rel) const;
   const ElfShdr<E> &shdr() const;
-  std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
+  std::span<const ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
-
-  // For ARM64 range extension thunks
-  std::vector<RangeExtensionRef> &get_range_extn() const;
-
-  // For RISC-V section resizing
-  std::vector<i32> &get_r_deltas() const;
-  std::vector<Symbol<E> *> &get_sorted_symbols() const;
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
 
   std::string_view contents;
+
+  [[no_unique_address]] InputSectionExtras<E> extra;
 
   std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   i32 fde_begin = -1;
@@ -329,6 +320,15 @@ public:
   u8 compressed : 1 = false;
   u8 uncompressed : 1 = false;
   u8 killed_by_icf : 1 = false;
+
+  // For garbage collection
+  std::atomic_bool is_visited = false;
+
+  // For ICF
+  InputSection<E> *leader = nullptr;
+  u32 icf_idx = -1;
+  bool icf_eligible = false;
+  bool icf_leaf = false;
 
 private:
   typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
@@ -763,7 +763,7 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void apply_reloc(Context<E> &ctx, ElfRel<E> &rel, u64 offset, u64 val);
+  void apply_reloc(Context<E> &ctx, const ElfRel<E> &rel, u64 offset, u64 val);
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -1122,7 +1122,6 @@ public:
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
-  std::vector<InputSectionExtra<E>> extras;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   bool is_in_lib = false;
   std::vector<ElfShdr<E>> elf_sections2;
@@ -1142,15 +1141,6 @@ public:
   u64 fde_idx = 0;
   u64 fde_offset = 0;
   u64 fde_size = 0;
-
-  // For ARM64 range extension thunks.
-  // This is a parallel array for `get_rels()`.
-  std::vector<std::vector<RangeExtensionRef>> range_extn;
-
-  // For RISC-V section resizing
-  std::vector<std::vector<i32>> r_deltas;
-  std::vector<std::vector<ElfRel<E>>> sorted_rels;
-  std::vector<std::vector<Symbol<E> *>> sorted_symbols;
 
   // For ICF
   InputSection<E> *llvm_addrsig = nullptr;
@@ -1808,7 +1798,7 @@ enum {
   NEEDS_RANGE_EXTN_THUNK   = 1 << 7,
 };
 
-// A struct to hold taret-dependent symbol members;
+// A struct to hold taret-dependent symbol members.
 template <typename E>
 struct SymbolExtras {};
 
@@ -2059,8 +2049,9 @@ inline std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
 }
 
 template <typename E>
-inline std::span<ElfRel<E>> FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
-  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
+inline std::span<const ElfRel<E>>
+FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
+  std::span<const ElfRel<E>> rels = file.cies[cie_idx].rels;
   i64 end = rel_idx;
   while (end < rels.size() && rels[end].r_offset < input_offset + size(file))
     end++;
@@ -2101,11 +2092,6 @@ inline std::string_view InputSection<E>::name() const {
 template <typename E>
 inline i64 InputSection<E>::get_priority() const {
   return ((i64)file.priority << 32) | shndx;
-}
-
-template <typename E>
-inline InputSectionExtra<E> &InputSection<E>::extra() const {
-  return file.extras[shndx];
 }
 
 template <typename E>
@@ -2219,11 +2205,12 @@ inline const ElfShdr<E> &InputSection<E>::shdr() const {
 }
 
 template <typename E>
-inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
+inline std::span<const ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
-  if (!file.sorted_rels.empty() && !file.sorted_rels[shndx].empty())
-    return file.sorted_rels[shndx];
+  if constexpr (std::is_same_v<E, RISCV64>)
+    if (!extra.sorted_rels.empty())
+      return extra.sorted_rels;
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
 }
 
@@ -2233,21 +2220,6 @@ inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
     return {};
   std::span<FdeRecord<E>> span(file.fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
-}
-
-template <typename E>
-inline std::vector<RangeExtensionRef> &InputSection<E>::get_range_extn() const {
-  return file.range_extn[shndx];
-}
-
-template <typename E>
-inline std::vector<i32> &InputSection<E>::get_r_deltas() const {
-  return file.r_deltas[shndx];
-}
-
-template <typename E>
-inline std::vector<Symbol<E> *> &InputSection<E>::get_sorted_symbols() const {
-  return file.sorted_symbols[shndx];
 }
 
 template <typename E>
@@ -2416,7 +2388,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
   if (InputSection<E> *isec = get_input_section()) {
     if (!isec->is_alive) {
       if (isec->killed_by_icf)
-        return isec->extra().leader->get_addr() + value;
+        return isec->leader->get_addr() + value;
 
       if (isec->name() == ".eh_frame") {
         // .eh_frame contents are parsed and reconstructed by the linker,

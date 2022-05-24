@@ -26,13 +26,13 @@ static bool is_init_fini(const InputSection<E> &isec) {
 
 template <typename E>
 static bool mark_section(InputSection<E> *isec) {
-  return isec && isec->is_alive && !isec->extra().is_visited.exchange(true);
+  return isec && isec->is_alive && !isec->is_visited.exchange(true);
 }
 
 template <typename E>
 static void visit(Context<E> &ctx, InputSection<E> *isec,
                   tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
-  assert(isec->extra().is_visited);
+  assert(isec->is_visited);
 
   // A relocation can refer either a section fragment (i.e. a piece of
   // string in a mergeable string section) or a symbol. Mark all
@@ -45,12 +45,12 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
   for (FdeRecord<E> &fde : isec->get_fdes())
-    for (ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
+    for (const ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
       if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
         if (mark_section(sym->get_input_section()))
           feeder.add(sym->get_input_section());
 
-  for (ElfRel<E> &rel : isec->get_rels(ctx)) {
+  for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
     // Symbol can refer either a section fragment or an input section.
@@ -104,7 +104,7 @@ collect_root_set(Context<E> &ctx) {
       // -strip-all linker option.
       u32 flags = isec->shdr().sh_flags;
       if (!(flags & SHF_ALLOC))
-        isec->extra().is_visited = true;
+        isec->is_visited = true;
 
       if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
           (flags & SHF_GNU_RETAIN) || isec->shdr().sh_type == SHT_NOTE)
@@ -133,7 +133,7 @@ collect_root_set(Context<E> &ctx) {
   // We just keep all CIEs and everything that are referenced by them.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (CieRecord<E> &cie : file->cies)
-      for (ElfRel<E> &rel : cie.get_rels())
+      for (const ElfRel<E> &rel : cie.get_rels())
         enqueue_symbol(file->symbols[rel.r_sym]);
   });
 
@@ -160,7 +160,7 @@ static void sweep(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive && !isec->extra().is_visited) {
+      if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)
           SyncOut(ctx) << "removing unused section " << *isec;
         isec->kill();
@@ -188,9 +188,6 @@ static void mark_nonalloc_fragments(Context<E> &ctx) {
 template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
-
-  for (ObjectFile<E> *file : ctx.objs)
-    file->extras.resize(file->sections.size());
 
   mark_nonalloc_fragments(ctx);
 

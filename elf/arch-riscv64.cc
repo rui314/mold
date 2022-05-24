@@ -154,7 +154,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
+void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
@@ -193,8 +193,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, ElfRel<E> &rel,
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
-  std::span<ElfRel<E>> rels = get_rels(ctx);
-  std::span<i32> r_deltas = get_r_deltas();
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   i64 frag_idx = 0;
 
@@ -209,7 +208,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    i64 r_offset = rel.r_offset + r_deltas[i];
+    i64 r_offset = rel.r_offset + extra.r_deltas[i];
     u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
@@ -254,9 +253,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      if (r_deltas[i + 1] - r_deltas[i] != 0) {
+      if (extra.r_deltas[i + 1] - extra.r_deltas[i] != 0) {
         // auipc + jalr -> jal
-        assert(r_deltas[i + 1] - r_deltas[i] == -4);
+        assert(extra.r_deltas[i + 1] - extra.r_deltas[i] == -4);
         u32 jalr = *(ul32 *)&contents[rels[i].r_offset + 4];
         *(ul32 *)loc = (0b11111'000000 & jalr) | 0b101111;
         write_jtype(loc, S + A - P);
@@ -384,7 +383,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_PCREL_HI20:
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20: {
-      u8 *loc = base + rels[i].r_offset + r_deltas[i];
+      u8 *loc = base + rels[i].r_offset + extra.r_deltas[i];
       u32 val = *(ul32 *)loc;
       *(ul32 *)loc = *(ul32 *)&contents[rels[i].r_offset];
       write_utype(loc, val);
@@ -395,7 +394,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
-  std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -493,12 +492,11 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
 
   // Memory-allocated sections may be relaxed, so copy each segment
   // individually.
-  std::span<ElfRel<E>> rels = get_rels(ctx);
-  std::span<i32> r_deltas = get_r_deltas();
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
   i64 pos = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
-    i64 delta = r_deltas[i + 1] - r_deltas[i];
+    i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
     if (delta == 0)
       continue;
     assert(delta < 0);
@@ -517,7 +515,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
-  std::span<ElfRel<E>> rels = get_rels(ctx);
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -640,20 +638,20 @@ static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
 // Initializes r_deltas and sorted_symbols.
 static void initialize_storage(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->r_deltas.resize(file->sections.size());
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(ctx, isec.get()))
-        isec->get_r_deltas().resize(isec->get_rels(ctx).size() + 1);
-
-    file->sorted_symbols.resize(file->sections.size());
+        isec->extra.r_deltas.resize(isec->get_rels(ctx).size() + 1);
 
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
         if (InputSection<E> *isec = sym->get_input_section())
-          file->sorted_symbols[isec->shndx].push_back(sym);
+          isec->extra.sorted_symbols.push_back(sym);
 
-    for (std::vector<Symbol<E> *> &vec : file->sorted_symbols)
-      sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
+    for (Symbol<E> *sym : file->symbols)
+      if (sym->file == file)
+        if (InputSection<E> *isec = sym->get_input_section())
+          sort(isec->extra.sorted_symbols,
+               [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
   });
 }
 
@@ -680,17 +678,16 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
 static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<i32> r_deltas = isec.get_r_deltas();
-  std::span<Symbol<E> *> syms = isec.get_sorted_symbols();
+  std::span<Symbol<E> *> syms = isec.extra.sorted_symbols;
   i64 delta = 0;
 
-  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     i64 delta2 = 0;
 
-    r_deltas[i] += delta;
+    isec.extra.r_deltas[i] += delta;
 
     switch (r.r_type) {
     case R_RISCV_ALIGN: {
@@ -736,7 +733,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
 
   for (Symbol<E> *sym : syms)
     sym->value += delta;
-  r_deltas[rels.size()] += delta;
+  isec.extra.r_deltas[rels.size()] += delta;
 
   isec.sh_size += delta;
 }

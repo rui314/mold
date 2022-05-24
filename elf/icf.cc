@@ -222,23 +222,23 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
       if (is_leaf(ctx, *isec)) {
         leaf++;
-        isec->extra().icf_leaf = true;
+        isec->icf_leaf = true;
         auto [it, inserted] = map.insert({isec.get(), isec.get()});
         if (!inserted && isec->get_priority() < it->second->get_priority())
           it->second = isec.get();
       } else {
         eligible++;
-        isec->extra().icf_eligible = true;
+        isec->icf_eligible = true;
       }
     }
   });
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
-      if (isec && isec->is_alive && isec->extra().icf_leaf) {
+      if (isec && isec->is_alive && isec->icf_leaf) {
         auto it = map.find(isec.get());
         assert(it != map.end());
-        isec->extra().leader = it->second;
+        isec->leader = it->second;
       }
     }
   });
@@ -269,10 +269,10 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash((u64)frag);
     } else if (!isec) {
       hash('3');
-    } else if (isec->extra().leader) {
+    } else if (isec->leader) {
       hash('4');
-      hash((u64)isec->extra().leader);
-    } else if (isec->extra().icf_eligible) {
+      hash((u64)isec->leader);
+    } else if (isec->icf_eligible) {
       hash('5');
     } else {
       hash('6');
@@ -295,7 +295,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
 
     hash(fde.get_rels(isec.file).size());
 
-    for (ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1)) {
+    for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1)) {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
@@ -306,7 +306,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   i64 frag_idx = 0;
 
   for (i64 i = 0; i < isec.get_rels(ctx).size(); i++) {
-    ElfRel<E> &rel = isec.get_rels(ctx)[i];
+    const ElfRel<E> &rel = isec.get_rels(ctx)[i];
     hash(rel.r_offset);
     hash(rel.r_type);
     hash(isec.get_addend(rel));
@@ -333,7 +333,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->extra().icf_eligible)
+      if (isec && isec->is_alive && isec->icf_eligible)
         num_sections[i]++;
   });
 
@@ -348,12 +348,12 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = section_indices[i];
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->extra().icf_eligible)
+      if (isec && isec->is_alive && isec->icf_eligible)
         sections[idx++] = isec.get();
   });
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    sections[i]->extra().icf_idx = i;
+    sections[i]->icf_idx = i;
   });
 
   return sections;
@@ -389,18 +389,18 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    assert(isec.extra().icf_eligible);
+    assert(isec.icf_eligible);
     i64 frag_idx = 0;
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
       if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
         frag_idx++;
       } else {
-        ElfRel<E> &rel = isec.get_rels(ctx)[j];
+        const ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag())
           if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->extra().icf_eligible)
+            if (isec->icf_eligible)
               num_edges[i]++;
       }
     }
@@ -420,12 +420,12 @@ static void gather_edges(Context<E> &ctx,
       if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
         frag_idx++;
       } else {
-        ElfRel<E> &rel = isec.get_rels(ctx)[j];
+        const ElfRel<E> &rel = isec.get_rels(ctx)[j];
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
         if (!sym.get_frag())
           if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->extra().icf_eligible)
-              edges[idx++] = isec->extra().icf_idx;
+            if (isec->icf_eligible)
+              edges[idx++] = isec->icf_idx;
       }
     }
   });
@@ -486,11 +486,11 @@ static void print_icf_sections(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive && isec->extra().leader) {
-        if (isec.get() == isec->extra().leader)
+      if (isec && isec->is_alive && isec->leader) {
+        if (isec.get() == isec->leader)
           leaders.push_back(isec.get());
         else
-          map.insert({isec->extra().leader, isec.get()});
+          map.insert({isec->leader, isec.get()});
       }
     }
   });
@@ -525,9 +525,6 @@ void icf_sections(Context<E> &ctx) {
   Timer t(ctx, "icf");
   if (ctx.objs.empty())
     return;
-
-  for (ObjectFile<E> *file : ctx.objs)
-    file->extras.resize(file->sections.size());
 
   uniquify_cies(ctx);
   merge_leaf_nodes(ctx);
@@ -608,7 +605,7 @@ void icf_sections(Context<E> &ctx) {
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       auto it = map->find(digest[i]);
       assert(it != map->end());
-      sections[i]->extra().leader = it->second;
+      sections[i]->leader = it->second;
     });
 
     // Since free'ing the map is slow, postpone it.
@@ -625,7 +622,7 @@ void icf_sections(Context<E> &ctx) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file == file) {
           InputSection<E> *isec = sym->get_input_section();
-          if (isec && isec->extra().leader && isec->extra().leader != isec) {
+          if (isec && isec->leader && isec->leader != isec) {
             isec->kill();
             isec->killed_by_icf = true;
           }

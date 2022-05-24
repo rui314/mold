@@ -10,8 +10,8 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
   if (get_contents() != other.get_contents())
     return false;
 
-  std::span<ElfRel<E>> x = get_rels();
-  std::span<ElfRel<E>> y = other.get_rels();
+  std::span<const ElfRel<E>> x = get_rels();
+  std::span<const ElfRel<E>> y = other.get_rels();
   if (x.size() != y.size())
     return false;
 

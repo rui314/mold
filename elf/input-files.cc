@@ -314,7 +314,7 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   i64 cies_begin = cies.size();
   i64 fdes_begin = fdes.size();
 
@@ -488,27 +488,24 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 // We expect them to be sorted, so sort them if necessary.
 template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
-  if (!std::is_same_v<E, RISCV64>)
-    return;
+  if constexpr (std::is_same_v<E, RISCV64>) {
+    auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+      return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
+             a.r_offset < b.r_offset;
+    };
 
-  auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
-    return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
-           a.r_offset < b.r_offset;
-  };
+    for (i64 i = 1; i < sections.size(); i++) {
+      std::unique_ptr<InputSection<E>> &isec = sections[i];
+      if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
+        continue;
 
-  sorted_rels.resize(sections.size());
+      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
+      if (std::is_sorted(rels.begin(), rels.end(), less))
+        continue;
 
-  for (i64 i = 1; i < sections.size(); i++) {
-    std::unique_ptr<InputSection<E>> &isec = sections[i];
-    if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
-      continue;
-
-    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-    if (std::is_sorted(rels.begin(), rels.end(), less))
-      continue;
-
-    sorted_rels[isec->shndx] = {rels.begin(), rels.end()};
-    sort(sorted_rels[isec->shndx], less);
+      isec->extra.sorted_rels = {rels.begin(), rels.end()};
+      sort(isec->extra.sorted_rels, less);
+    }
   }
 }
 
@@ -674,7 +671,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
       continue;
 
-    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
     if (rels.empty())
       continue;
 
@@ -1075,7 +1072,7 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
 
   // Scan relocations against exception frames
   for (CieRecord<E> &cie : cies) {
-    for (ElfRel<E> &rel : cie.get_rels()) {
+    for (const ElfRel<E> &rel : cie.get_rels()) {
       Symbol<E> &sym = *this->symbols[rel.r_sym];
 
       if (sym.is_imported) {

@@ -550,7 +550,7 @@ R"(# This is an output of the mold linker's --print-dependencies=full option.
 
       std::unordered_set<void *> visited;
 
-      for (ElfRel<E> &r : isec->get_rels(ctx)) {
+      for (const ElfRel<E> &r : isec->get_rels(ctx)) {
         if (r.r_type == E::R_NONE)
           continue;
 
