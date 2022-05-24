@@ -546,7 +546,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::check_duplicate_symbols(Context<E> &ctx) {
-  for (i64 i = 0; i < this->syms.size(); i++) {
+  for (i64 i = 0; i < this->mach_syms.size(); i++) {
     Symbol<E> *sym = this->syms[i];
     MachSym &msym = mach_syms[i];
     if (sym && sym->file && sym->file != this && !msym.is_undef() &&

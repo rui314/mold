@@ -60,6 +60,7 @@ template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
   obj->is_alive = true;
+  obj->mach_syms = obj->mach_syms2;
   ctx.obj_pool.emplace_back(obj);
   ctx.objs.push_back(obj);
 
