@@ -249,8 +249,6 @@ public:
   i64 offset = -1;
   std::mutex mu;
   std::vector<Symbol<ARM64> *> symbols;
-  std::vector<i32> symbol_map;
-  std::unique_ptr<std::atomic_bool[]> used;
 };
 
 struct RangeExtensionRef {
@@ -2320,7 +2318,7 @@ inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel
 
 inline u64
 RangeExtensionThunk<ARM64>::get_addr(i64 idx) const {
-  return output_section.shdr.sh_addr + offset + symbol_map[idx] * ENTRY_SIZE;
+  return output_section.shdr.sh_addr + offset + idx * ENTRY_SIZE;
 }
 
 template <typename E>

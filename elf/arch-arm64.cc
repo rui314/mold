@@ -647,79 +647,6 @@ static void create_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   osec.shdr.sh_size = offset;
 }
 
-static void gc_thunk_symbols(Context<E> &ctx, OutputSection<E> &osec) {
-  for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec.thunks) {
-    i64 sz = thunk->symbols.size();
-    thunk->symbol_map.resize(sz);
-    thunk->used.reset(new std::atomic_bool[sz]{});
-  }
-
-  // Mark referenced thunk symbols
-  tbb::parallel_for_each(osec.members, [&](InputSection<E> *isec) {
-    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-    std::span<RangeExtensionRef> range_extn = isec->get_range_extn();
-
-    for (i64 i = 0; i < rels.size(); i++) {
-      RangeExtensionRef &ref = range_extn[i];
-      if (ref.thunk_idx == -1)
-        continue;
-
-      Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
-      if (!is_reachable(ctx, sym, *isec, rels[i]))
-        osec.thunks[ref.thunk_idx]->used[ref.sym_idx] = true;
-    }
-  });
-
-  // Remove unreferenced thunk symbols
-  tbb::parallel_for_each(osec.thunks,
-                         [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
-    i64 i = 0;
-    for (i64 j = 0; j < thunk->symbols.size(); j++) {
-      if (thunk->used[j]) {
-        thunk->symbol_map[j] = i;
-        thunk->symbols[i] = thunk->symbols[j];
-        i++;
-      }
-    }
-    thunk->symbols.resize(i);
-  });
-}
-
-static void shrink_section(Context<E> &ctx, OutputSection<E> &osec) {
-  std::span<std::unique_ptr<RangeExtensionThunk<E>>> thunks = osec.thunks;
-  std::span<InputSection<E> *> members = osec.members;
-
-  i64 offset = 0;
-
-  auto add_thunk = [&] {
-    thunks[0]->offset = offset;
-    offset += thunks[0]->size();
-    thunks = thunks.subspan(1);
-  };
-
-  auto add_isec = [&] {
-    offset = align_to(offset, 1 << members[0]->p2align);
-    members[0]->offset = offset;
-    offset += members[0]->sh_size;
-    members = members.subspan(1);
-  };
-
-  while (!thunks.empty() && !members.empty()) {
-    if (thunks[0]->offset < members[0]->offset)
-      add_thunk();
-    else
-      add_isec();
-  }
-
-  while (!thunks.empty())
-    add_thunk();
-  while (!members.empty())
-    add_isec();
-
-  assert(offset <= osec.shdr.sh_size);
-  osec.shdr.sh_size = offset;
-}
-
 // ARM64's call/jump instructions take 27 bits displacement, so they
 // can refer only up to ±128 MiB. If a branch target is further than
 // that, we need to let it branch to a linker-synthesized code
@@ -748,22 +675,6 @@ i64 create_range_extension_thunks(Context<E> &ctx) {
     create_thunks(ctx, *osec);
 
   // Recompute file layout.
-  set_osec_offsets(ctx);
-
-  // Based on the current file layout, remove thunk symbols that turned
-  // out to be unnecessary.
-  tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
-    gc_thunk_symbols(ctx, *osec);
-  });
-
-  // Recompute output section sizes that contain thunks. New section
-  // sizes must be equal to or smaller than previous values, so all
-  // relocations that were previously reachable will still be reachable
-  // after this step.
-  for (OutputSection<E> *osec : sections)
-    shrink_section(ctx, *osec);
-
-  // Compute the final layout.
   return set_osec_offsets(ctx);
 }
 
