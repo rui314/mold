@@ -396,20 +396,28 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
 
 template <typename E>
 void OutputSection<E>::compute_size(Context<E> &ctx) {
-  u64 addr = this->hdr.addr;
+  if constexpr (std::is_same_v<E, ARM64>) {
+    if (this->hdr.attr & S_ATTR_SOME_INSTRUCTIONS ||
+        this->hdr.attr & S_ATTR_PURE_INSTRUCTIONS) {
+      create_range_extension_thunks(ctx, *this);
+      return;
+    }
+  }
+
+  u64 offset = 0;
 
   if (this == ctx.data) {
     // As a special case, we need a word-size padding at the beginning
     // of __data for dyld. It is located by __dyld_private symbol.
-    addr += 8;
+    offset += 8;
   }
 
   for (Subsection<E> *subsec : members) {
-    addr = align_to(addr, 1 << subsec->p2align);
-    subsec->raddr = addr - ctx.arg.pagezero_size;
-    addr += subsec->input_size;
+    offset = align_to(offset, 1 << subsec->p2align);
+    subsec->output_offset = offset;
+    offset += subsec->input_size;
   }
-  this->hdr.size = addr - this->hdr.addr;
+  this->hdr.size = offset;
 }
 
 template <typename E>
@@ -423,6 +431,10 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
     memcpy(loc, data.data(), data.size());
     subsec->apply_reloc(ctx, loc);
   }
+
+  if constexpr (std::is_same_v<E, ARM64>)
+    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks)
+      thunk->copy_buf(ctx);
 }
 
 template <typename E>
@@ -1126,7 +1138,7 @@ public:
   u32 encode_personality(Context<E> &ctx, Symbol<E> *sym);
 
   std::vector<std::span<UnwindRecord<E>>>
-  split_records(std::span<UnwindRecord<E>> records);
+  split_records(Context<E> &ctx, std::span<UnwindRecord<E>> records);
 
   std::vector<Symbol<E> *> personalities;
 };
@@ -1143,7 +1155,7 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
       num_lsda++;
   }
 
-  std::vector<std::span<UnwindRecord<E>>> pages = split_records(records);
+  std::vector<std::span<UnwindRecord<E>>> pages = split_records(ctx, records);
 
   // Compute the size of the buffer.
   i64 size = sizeof(UnwindSectionHeader) +
@@ -1179,14 +1191,14 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
   UnwindSecondLevelPage *page2 = (UnwindSecondLevelPage *)(lsda + num_lsda);
 
   for (std::span<UnwindRecord<E>> span : pages) {
-    page1->func_addr = span[0].get_func_raddr();
+    page1->func_addr = span[0].get_func_addr(ctx);
     page1->page_offset = (u8 *)page2 - buf.data();
     page1->lsda_offset = (u8 *)lsda - buf.data();
 
     for (UnwindRecord<E> &rec : span) {
       if (rec.lsda) {
-        lsda->func_addr = rec.get_func_raddr();
-        lsda->lsda_addr = rec.lsda->raddr + rec.lsda_offset;
+        lsda->func_addr = rec.get_func_addr(ctx);
+        lsda->lsda_addr = rec.lsda->get_addr(ctx) + rec.lsda_offset;
         lsda++;
       }
     }
@@ -1201,7 +1213,7 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 
     UnwindPageEntry *entry = (UnwindPageEntry *)(page2 + 1);
     for (UnwindRecord<E> &rec : span) {
-      entry->func_addr = rec.get_func_raddr() - page1->func_addr;
+      entry->func_addr = rec.get_func_addr(ctx) - page1->func_addr;
       entry->encoding = map[rec.encoding];
       entry++;
     }
@@ -1220,7 +1232,7 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 
   // Write a terminator
   UnwindRecord<E> &last = records[records.size() - 1];
-  page1->func_addr = last.subsec->raddr + last.subsec->input_size + 1;
+  page1->func_addr = last.subsec->get_addr(ctx) + last.subsec->input_size + 1;
   page1->page_offset = 0;
   page1->lsda_offset = (u8 *)lsda - buf.data();
 
@@ -1245,20 +1257,21 @@ u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 std::vector<std::span<UnwindRecord<E>>>
-UnwindEncoder<E>::split_records(std::span<UnwindRecord<E>> records) {
+UnwindEncoder<E>::split_records(Context<E> &ctx,
+                                std::span<UnwindRecord<E>> records) {
   constexpr i64 max_group_size = 4096;
 
-  sort(records, [](const UnwindRecord<E> &a, const UnwindRecord<E> &b) {
-    return a.get_func_raddr() < b.get_func_raddr();
+  sort(records, [&](const UnwindRecord<E> &a, const UnwindRecord<E> &b) {
+    return a.get_func_addr(ctx) < b.get_func_addr(ctx);
   });
 
   std::vector<std::span<UnwindRecord<E>>> vec;
 
   while (!records.empty()) {
-    u64 end_addr = records[0].get_func_raddr() + (1 << 24);
+    u64 end_addr = records[0].get_func_addr(ctx) + (1 << 24);
     i64 i = 1;
     while (i < records.size() && i < max_group_size &&
-           records[i].get_func_raddr() < end_addr)
+           records[i].get_func_addr(ctx) < end_addr)
       i++;
     vec.push_back(records.subspan(0, i));
     records = records.subspan(i);

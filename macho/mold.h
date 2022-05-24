@@ -62,6 +62,10 @@ struct Relocation {
   i64 addend = 0;
   Symbol<E> *sym = nullptr;
   Subsection<E> *subsec = nullptr;
+
+  // For range extension thunks
+  i32 thunk_idx = -1;
+  i32 thunk_sym_idx = -1;
 };
 
 template <typename E>
@@ -74,7 +78,9 @@ template <typename E>
 struct UnwindRecord {
   UnwindRecord(u32 len, u32 enc) : code_len(len), encoding(enc) {}
 
-  u64 get_func_raddr() const { return subsec->raddr + offset; }
+  u64 get_func_addr(Context<E> &ctx) const {
+    return subsec->get_addr(ctx) + offset;
+  }
 
   Subsection<E> *subsec = nullptr;
   u32 offset = 0;
@@ -224,11 +230,11 @@ public:
   u32 input_offset = 0;
   u32 input_size = 0;
   u32 input_addr = 0;
+  u32 output_offset = -1;
   u32 rel_offset = 0;
   u32 nrels = 0;
   u32 unwind_offset = 0;
   u32 nunwind = 0;
-  u32 raddr = -1;
   u16 p2align = 0;
   std::atomic_bool is_alive = true;
 };
@@ -242,9 +248,10 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr);
 //
 
 enum {
-  NEEDS_GOT        = 1 << 0,
-  NEEDS_STUB       = 1 << 1,
-  NEEDS_THREAD_PTR = 1 << 2,
+  NEEDS_GOT              = 1 << 0,
+  NEEDS_STUB             = 1 << 1,
+  NEEDS_THREAD_PTR       = 1 << 2,
+  NEEDS_RANGE_EXTN_THUNK = 1 << 3,
 };
 
 template <typename E>
@@ -272,6 +279,10 @@ struct Symbol {
   u8 is_imported : 1 = false;
   u8 referenced_dynamically : 1 = false;
 
+  // For range extension thunks
+  i32 thunk_idx = -1;
+  i32 thunk_sym_idx = -1;
+
   inline u64 get_addr(Context<E> &ctx) const;
   inline u64 get_got_addr(Context<E> &ctx) const;
   inline u64 get_tlv_addr(Context<E> &ctx) const;
@@ -279,6 +290,14 @@ struct Symbol {
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
+
+// This operator defines a total order over symbols. This is used to
+// make the output deterministic.
+template <typename E>
+inline bool operator<(const Symbol<E> &a, const Symbol<E> &b) {
+  return std::tuple{a.file->priority, a.value} <
+         std::tuple{b.file->priority, b.value};
+}
 
 //
 // output-chunks.cc
@@ -335,6 +354,28 @@ public:
 };
 
 template <typename E>
+class RangeExtensionThunk {};
+
+template <>
+class RangeExtensionThunk<ARM64> {
+public:
+  RangeExtensionThunk(OutputSection<ARM64> &osec)
+    : output_section(osec) {}
+
+  i64 size() const { return symbols.size() * ENTRY_SIZE; }
+  u64 get_addr(i64 idx) const;
+  void copy_buf(Context<ARM64> &ctx);
+
+  static constexpr i64 ENTRY_SIZE = 12;
+
+  OutputSection<ARM64> &output_section;
+  i32 thunk_idx = -1;
+  i64 offset = -1;
+  std::mutex mu;
+  std::vector<Symbol<ARM64> *> symbols;
+};
+
+template <typename E>
 class OutputSection : public Chunk<E> {
 public:
   static OutputSection<E> *
@@ -358,6 +399,7 @@ public:
   }
 
   std::vector<Subsection<E> *> members;
+  std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
 };
 
 class RebaseEncoder {
@@ -764,6 +806,12 @@ template <typename E>
 void do_lto(Context<E> &ctx);
 
 //
+// arch-arm64.cc
+//
+
+void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &osec);
+
+//
 // main.cc
 //
 
@@ -924,7 +972,7 @@ std::ostream &operator<<(std::ostream &out, const InputSection<E> &sec) {
 
 template <typename E>
 u64 Subsection<E>::get_addr(Context<E> &ctx) const {
-  return ctx.arg.pagezero_size + raddr;
+  return isec.osec.hdr.addr + output_offset;
 }
 
 template <typename E>
@@ -972,6 +1020,10 @@ Chunk<E>::Chunk(Context<E> &ctx, std::string_view segname,
   ctx.chunks.push_back(this);
   hdr.set_segname(segname);
   hdr.set_sectname(sectname);
+}
+
+inline u64 RangeExtensionThunk<ARM64>::get_addr(i64 idx) const {
+  return output_section.hdr.addr + offset + idx * ENTRY_SIZE;
 }
 
 } // namespace mold::macho

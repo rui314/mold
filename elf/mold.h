@@ -1388,7 +1388,7 @@ template <typename E> i64 compress_debug_sections(Context<E> &);
 template <typename E> void write_dependency_file(Context<E> &);
 
 //
-// arch-arm64.cc
+// arch-arm32.cc
 //
 
 class ThumbToArmSection : public Chunk<ARM32> {

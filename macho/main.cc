@@ -59,6 +59,7 @@ static void resolve_symbols(Context<E> &ctx) {
 template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
+  obj->is_alive = true;
   ctx.obj_pool.emplace_back(obj);
   ctx.objs.push_back(obj);
 
