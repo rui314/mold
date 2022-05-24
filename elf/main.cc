@@ -561,16 +561,6 @@ static int elf_main(int argc, char **argv) {
   if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_NONE)
     shuffle_sections(ctx);
 
-  // Compute sizes of output sections while assigning offsets
-  // within an output section to input sections.
-  compute_section_sizes(ctx);
-
-  // Sort sections by section attributes so that we'll have to
-  // create as few segments as possible.
-  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    return get_section_rank(ctx, a) < get_section_rank(ctx, b);
-  });
-
   // Copy string referred by .dynamic to .dynstr.
   for (SharedFile<E> *file : ctx.dsos)
     ctx.dynstr->add_string(file->soname);
@@ -586,6 +576,16 @@ static int elf_main(int argc, char **argv) {
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
   scan_rels(ctx);
+
+  // Compute sizes of output sections while assigning offsets
+  // within an output section to input sections.
+  compute_section_sizes(ctx);
+
+  // Sort sections by section attributes so that we'll have to
+  // create as few segments as possible.
+  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
+    return get_section_rank(ctx, a) < get_section_rank(ctx, b);
+  });
 
   // If --packed_dyn_relocs=relr was given, base relocations are stored
   // to a .relr.dyn section in a compressed form. Construct a compressed
