@@ -27,9 +27,14 @@ static void visit(Context<E> &ctx, Subsection<E> &subsec) {
   if (subsec.is_alive.exchange(true))
     return;
 
-  for (Relocation<E> &rel : subsec.get_rels())
-    if (rel.sym->subsec)
-      visit(ctx, *rel.sym->subsec);
+  for (Relocation<E> &rel : subsec.get_rels()) {
+    if (rel.sym) {
+      if (rel.sym->subsec)
+        visit(ctx, *rel.sym->subsec);
+    } else {
+      visit(ctx, *rel.subsec);
+    }
+  }
 
   for (UnwindRecord<E> &rec : subsec.get_unwind_records()) {
     visit(ctx, *rec.subsec);
@@ -42,9 +47,15 @@ static void visit(Context<E> &ctx, Subsection<E> &subsec) {
 
 template <typename E>
 static bool refers_live_subsection(Subsection<E> &subsec) {
-  for (Relocation<E> &rel : subsec.get_rels())
-    if (!rel.sym->subsec || rel.sym->subsec->is_alive)
-      return true;
+  for (Relocation<E> &rel : subsec.get_rels()) {
+    if (rel.sym) {
+      if (!rel.sym->subsec || rel.sym->subsec->is_alive)
+        return true;
+    } else {
+      if (rel.subsec->is_alive)
+        return true;
+    }
+  }
   return false;
 }
 

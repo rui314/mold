@@ -93,14 +93,29 @@ read_reloc(Context<E> &ctx, ObjectFile<E> &file,
       Fatal(ctx) << file << ": invalid non-PC-relative reloc: " << r.offset;
   }
 
-  return Relocation<E>{
-    .offset = r.offset,
-    .type = r.type,
-    .p2size = r.p2size,
-    .is_pcrel = r.is_pcrel,
-    .sym = file.syms[r.idx],
-    .addend = read_addend((u8 *)file.mf->data + hdr.offset, r),
-  };
+  u8 *buf = (u8 *)file.mf->data + hdr.offset;
+  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
+  i64 addend = read_addend(buf, r);
+
+  if (r.is_extern) {
+    rel.sym = file.syms[r.idx];
+    rel.addend = addend;
+    return rel;
+  }
+
+  u32 addr;
+  if (r.is_pcrel)
+    addr = hdr.addr + r.offset + 4 + addend;
+  else
+    addr = addend;
+
+  Subsection<E> *target = file.find_subsection(ctx, addr);
+  if (!target)
+    Fatal(ctx) << file << ": bad relocation: " << r.offset;
+
+  rel.subsec = target;
+  rel.addend = addr - target->input_addr;
+  return rel;
 }
 
 template <>
@@ -119,38 +134,42 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
 template <>
 void Subsection<E>::scan_relocations(Context<E> &ctx) {
   for (Relocation<E> &r : get_rels()) {
-    if (r.sym->is_imported && r.sym->file->is_dylib)
-      ((DylibFile<E> *)r.sym->file)->is_needed = true;
+    Symbol<E> *sym = r.sym;
+    if (!sym)
+      continue;
+
+    if (sym->is_imported && sym->file->is_dylib)
+      ((DylibFile<E> *)sym->file)->is_needed = true;
 
     switch (r.type) {
     case X86_64_RELOC_UNSIGNED:
-      if (r.sym->is_imported) {
+      if (sym->is_imported) {
         if (r.p2size != 3) {
           Error(ctx) << this->isec << ": " << r << " relocation at offset 0x"
                      << std::hex << r.offset << " against symbol `"
-                     << *r.sym << "' can not be used";
+                     << *sym << "' can not be used";
         }
         r.needs_dynrel = true;
       }
       break;
     case X86_64_RELOC_GOT:
     case X86_64_RELOC_GOT_LOAD:
-      r.sym->flags |= NEEDS_GOT;
+      sym->flags |= NEEDS_GOT;
       break;
     case X86_64_RELOC_TLV:
-      r.sym->flags |= NEEDS_THREAD_PTR;
+      sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
 
-    if (r.sym->is_imported)
-      r.sym->flags |= NEEDS_STUB;
+    if (sym->is_imported)
+      sym->flags |= NEEDS_STUB;
   }
 }
 
 template <>
 void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
   for (const Relocation<E> &r : get_rels()) {
-    if (!r.sym->file) {
+    if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }
@@ -164,7 +183,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case X86_64_RELOC_SIGNED_1:
     case X86_64_RELOC_SIGNED_2:
     case X86_64_RELOC_SIGNED_4:
-      val += r.sym->get_addr(ctx);
+      val += r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
     case X86_64_RELOC_GOT:
     case X86_64_RELOC_GOT_LOAD:

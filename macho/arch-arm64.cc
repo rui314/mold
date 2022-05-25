@@ -106,15 +106,22 @@ read_reloc(Context<E> &ctx, ObjectFile<E> &file,
   }
 
   MachRel &r = rels[idx];
+  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
 
-  return Relocation<E>{
-    .offset = r.offset,
-    .type = r.type,
-    .p2size = r.p2size,
-    .is_pcrel = r.is_pcrel,
-    .sym = file.syms[r.idx],
-    .addend = addend,
-  };
+  if (r.is_extern) {
+    rel.sym = file.syms[r.idx];
+    rel.addend = addend;
+    return rel;
+  }
+
+  u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
+  Subsection<E> *target = file.find_subsection(ctx, addr);
+  if (!target)
+    Fatal(ctx) << file << ": bad relocation: " << r.offset;
+
+  rel.subsec = target;
+  rel.addend = addr - target->input_addr;
+  return rel;
 }
 
 template <>
@@ -133,16 +140,20 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
 template <>
 void Subsection<E>::scan_relocations(Context<E> &ctx) {
   for (Relocation<E> &r : get_rels()) {
-    if (r.sym->is_imported && r.sym->file->is_dylib)
-      ((DylibFile<E> *)r.sym->file)->is_needed = true;
+    Symbol<E> *sym = r.sym;
+    if (!sym)
+      continue;
+
+    if (sym->is_imported && sym->file->is_dylib)
+      ((DylibFile<E> *)sym->file)->is_needed = true;
 
     switch (r.type) {
     case ARM64_RELOC_UNSIGNED:
-      if (r.sym->is_imported) {
+      if (sym->is_imported) {
         if (r.p2size != 3) {
           Error(ctx) << this->isec << ": " << r << " relocation at offset 0x"
                      << std::hex << r.offset << " against symbol `"
-                     << *r.sym << "' can not be used";
+                     << *sym << "' can not be used";
         }
         r.needs_dynrel = true;
       }
@@ -150,16 +161,16 @@ void Subsection<E>::scan_relocations(Context<E> &ctx) {
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
     case ARM64_RELOC_POINTER_TO_GOT:
-      r.sym->flags |= NEEDS_GOT;
+      sym->flags |= NEEDS_GOT;
       break;
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-      r.sym->flags |= NEEDS_THREAD_PTR;
+      sym->flags |= NEEDS_THREAD_PTR;
       break;
     }
 
-    if (r.sym->is_imported)
-      r.sym->flags |= NEEDS_STUB;
+    if (sym->is_imported)
+      sym->flags |= NEEDS_STUB;
   }
 }
 
@@ -172,7 +183,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     u8 *loc = buf + r.offset;
     i64 val = r.addend;
 
-    if (!r.sym->file) {
+    if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }
@@ -183,12 +194,14 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case ARM64_RELOC_BRANCH26:
     case ARM64_RELOC_PAGE21:
     case ARM64_RELOC_PAGEOFF12:
-      val += r.sym->get_addr(ctx);
+      val += r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
     case ARM64_RELOC_SUBTRACTOR: {
       Relocation<E> s = rels[++i];
       assert(s.type == ARM64_RELOC_UNSIGNED);
-      val += s.sym->get_addr(ctx) - r.sym->get_addr(ctx);
+      u64 val1 = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
+      u64 val2 = s.sym ? s.sym->get_addr(ctx) : s.subsec->get_addr(ctx);
+      val += val2 - val1;
       break;
     }
     case ARM64_RELOC_GOT_LOAD_PAGE21:
