@@ -283,6 +283,21 @@ void ObjectFile<E>::parse_data_in_code(Context<E> &ctx) {
 }
 
 template <typename E>
+std::vector<std::string> ObjectFile<E>::get_linker_options(Context<E> &ctx) {
+  auto *cmd = (LinkerOptionCommand *)find_load_command(ctx, LC_LINKER_OPTION);
+  if (!cmd)
+    return {};
+
+  char *buf = (char *)cmd + sizeof(*cmd);
+  std::vector<std::string> vec;
+  for (i64 i = 0; i < cmd->count; i++) {
+    vec.push_back(buf);
+    buf += vec.back().size() + 1;
+  }
+  return vec;
+}
+
+template <typename E>
 LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
   MachHeader &hdr = *(MachHeader *)this->mf->data;
   u8 *p = this->mf->data + sizeof(hdr);

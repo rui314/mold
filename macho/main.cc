@@ -485,6 +485,23 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
+  for (i64 i = 0; i < ctx.objs.size(); i++) {
+    ObjectFile<E> &file = *ctx.objs[i];
+    std::vector<std::string> opts = file.get_linker_options(ctx);
+
+    for (i64 j = 0; j < opts.size();) {
+      if (opts[j] == "-framework") {
+        read_file(ctx, find_framework(ctx, opts[j + 1]));
+        j += 2;
+      } else if (opts[j].starts_with("-l")) {
+        read_file(ctx, must_find_library(opts[j].substr(2)));
+        j++;
+      } else {
+        Fatal(ctx) << file << ": unknown LC_LINKER_OPTION command: " << opts[j];
+      }
+    }
+  }
+
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 }

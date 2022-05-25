@@ -122,6 +122,7 @@ public:
                             std::string archive_name);
   void parse(Context<E> &ctx);
   Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
+  std::vector<std::string> get_linker_options(Context<E> &ctx);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
   void resolve_symbols(Context<E> &ctx) override;
   bool is_objc_object(Context<E> &ctx);

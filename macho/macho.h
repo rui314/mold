@@ -582,6 +582,12 @@ struct DataInCodeEntry {
   ul16 kind;
 };
 
+struct LinkerOptionCommand {
+  ul32 cmd;
+  ul32 cmdsize;
+  ul32 count;
+};
+
 // This struct is named `n_list` on BSD and macOS.
 struct MachSym {
   bool is_undef() const {
