@@ -316,7 +316,6 @@ public:
   void set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr);
   void copy_buf(Context<E> &ctx);
 
-  std::string_view name;
   SegmentCommand cmd = {};
   i32 seg_idx = -1;
   std::vector<Chunk<E> *> chunks;
@@ -870,6 +869,8 @@ struct Context {
     bool export_dynamic = false;
     bool fatal_warnings = false;
     bool noinhibit_exec = false;
+    bool perf = false;
+    bool quick_exit = true;
     bool search_paths_first = true;
     bool trace = false;
     i64 arch = CPU_TYPE_ARM64;

@@ -31,6 +31,8 @@ static bool has_lto_obj(Context<E> &ctx) {
 
 template <typename E>
 static void resolve_symbols(Context<E> &ctx) {
+  Timer t(ctx, "resolve_symbols");
+
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
   append(files, ctx.dylibs);
@@ -98,6 +100,8 @@ static void create_internal_file(Context<E> &ctx) {
 // referenced by duplicated weakdef symbols.
 template <typename E>
 static void remove_unreferenced_subsections(Context<E> &ctx) {
+  Timer t(ctx, "remove_unreferenced_subsections");
+
   for (ObjectFile<E> *file : ctx.objs) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {
       MachSym &msym = file->mach_syms[i];
@@ -192,6 +196,8 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
 
 template <typename E>
 static void claim_unresolved_symbols(Context<E> &ctx) {
+  Timer t(ctx, "claim_unresolved_symbols");
+
   for (std::string_view name : ctx.arg.U)
     if (Symbol<E> *sym = get_symbol(ctx, name); !sym->file)
       sym->is_imported = true;
@@ -253,6 +259,8 @@ static void scan_unwind_info(Context<E> &ctx) {
 
 template <typename E>
 static void export_symbols(Context<E> &ctx) {
+  Timer t(ctx, "export_symbols");
+
   ctx.got.add(ctx, get_symbol(ctx, "dyld_stub_binder"));
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -282,6 +290,8 @@ static void export_symbols(Context<E> &ctx) {
 
 template <typename E>
 static i64 assign_offsets(Context<E> &ctx) {
+  Timer t(ctx, "assign_offsets");
+
   i64 sect_idx = 1;
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
@@ -430,6 +440,8 @@ read_filelist(Context<E> &ctx, std::string arg) {
 
 template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
+  Timer t(ctx, "read_input_files");
+
   auto must_find_library = [&](std::string arg) {
     MappedFile<Context<E>> *mf = find_library(ctx, arg);
     if (!mf)
@@ -534,6 +546,8 @@ static int do_main(int argc, char **argv) {
     Fatal(ctx) << "unknown cputype: " << ctx.arg.arch;
   }
 
+  Timer t(ctx, "all");
+
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
     MappedFile<Context<E>> *mf =
@@ -554,10 +568,13 @@ static int do_main(int argc, char **argv) {
     ctx.dylibs[i]->dylib_idx = i + 1;
 
   // Parse input files
-  for (ObjectFile<E> *file : ctx.objs)
-    file->parse(ctx);
-  for (DylibFile<E> *dylib : ctx.dylibs)
-    dylib->parse(ctx);
+  {
+    Timer t(ctx, "parse");
+    for (ObjectFile<E> *file : ctx.objs)
+      file->parse(ctx);
+    for (DylibFile<E> *dylib : ctx.dylibs)
+      dylib->parse(ctx);
+  }
 
   if (ctx.arg.ObjC)
     for (ObjectFile<E> *file : ctx.objs)
@@ -621,15 +638,32 @@ static int do_main(int argc, char **argv) {
   if (ctx.arg.uuid != UUID_NONE)
     ctx.mach_hdr.write_uuid(ctx);
 
-  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
-    seg->copy_buf(ctx);
+  {
+    Timer t(ctx, "copy_buf");
+    for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
+      Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
+      seg->copy_buf(ctx);
+    }
+  }
+
   ctx.code_sig.write_signature(ctx);
 
   ctx.output_file->close(ctx);
   ctx.checkpoint();
+  t.stop();
+
+  if (ctx.arg.perf)
+    print_timer_records(ctx.timer_records);
 
   if (!ctx.arg.map.empty())
     print_map(ctx);
+
+  if (ctx.arg.quick_exit) {
+    std::cout << std::flush;
+    std::cerr << std::flush;
+    _exit(0);
+  }
+
   return 0;
 }
 

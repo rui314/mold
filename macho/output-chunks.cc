@@ -345,6 +345,8 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void OutputMachHeader<E>::write_uuid(Context<E> &ctx) {
+  Timer t(ctx, "write_uuid");
+
   switch (ctx.arg.uuid) {
   case UUID_RANDOM:
     memcpy(ctx.uuid, get_uuid_v4().data(), 16);

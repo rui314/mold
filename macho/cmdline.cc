@@ -293,10 +293,16 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.output = arg;
     } else if (read_hex("-pagezero_size")) {
       pagezero_size = hex_arg;
+    } else if (read_flag("-perf")) {
+      ctx.arg.perf = true;
     } else if (read_arg3("-platform_version")) {
       ctx.arg.platform = parse_platform(ctx, arg);
       ctx.arg.platform_min_version = parse_version(ctx, arg2);
       ctx.arg.platform_sdk_version = parse_version(ctx, arg3);
+    } else if (read_flag("-quick_exit")) {
+      ctx.arg.quick_exit = true;
+    } else if (read_flag("-no_quick_exit")) {
+      ctx.arg.quick_exit = false;
     } else if (read_flag("-random_uuid")) {
       ctx.arg.uuid = UUID_RANDOM;
     } else if (read_arg("-rpath")) {
