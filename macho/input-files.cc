@@ -284,6 +284,9 @@ void ObjectFile<E>::parse_data_in_code(Context<E> &ctx) {
 
 template <typename E>
 std::vector<std::string> ObjectFile<E>::get_linker_options(Context<E> &ctx) {
+  if (get_file_type(this->mf) == FileType::LLVM_BITCODE)
+    return {};
+
   auto *cmd = (LinkerOptionCommand *)find_load_command(ctx, LC_LINKER_OPTION);
   if (!cmd)
     return {};
