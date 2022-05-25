@@ -61,7 +61,6 @@ struct Relocation {
   u8 needs_dynrel : 1 = false;
   i64 addend = 0;
   Symbol<E> *sym = nullptr;
-  Subsection<E> *subsec = nullptr;
 
   // For range extension thunks
   i32 thunk_idx = -1;
