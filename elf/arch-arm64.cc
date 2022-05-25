@@ -602,6 +602,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
         Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
 
+        // Skip if the symbol is undefined. apply_reloc() will report an error.
+        if (!sym.file)
+          continue;
+
         // Skip if the destination is within reach.
         if (is_reachable(ctx, sym, *isec, rel))
           continue;

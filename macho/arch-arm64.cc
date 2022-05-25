@@ -381,7 +381,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
       for (i64 i = 0; i < rels.size(); i++) {
         Relocation<E> &r = rels[i];
-        if (r.type != ARM64_RELOC_BRANCH26)
+        if (!r.sym->file || r.type != ARM64_RELOC_BRANCH26)
           continue;
 
         // Skip if the destination is within reach.
