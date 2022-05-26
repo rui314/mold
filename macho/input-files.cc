@@ -168,18 +168,21 @@ struct SplitInfo {
 };
 
 template <typename E>
-static std::vector<SplitInfo<E>> split(Context<E> &ctx, ObjectFile<E> &file) {
-  std::vector<SplitInfo<E>> vec;
+static std::vector<SplitInfo<E>>
+split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
+  std::vector<SplitInfo<E>> vec(file.sections.size());
 
-  for (std::unique_ptr<InputSection<E>> &isec : file.sections)
-    vec.push_back({isec.get()});
+  for (i64 i = 0; i < file.sections.size(); i++)
+    if (InputSection<E> *isec = file.sections[i].get())
+      if (!isec->hdr.match("__TEXT", "__cstring"))
+        vec[i].isec = isec;
 
   // Find all symbols whose type is N_SECT.
   for (i64 i = 0; i < file.mach_syms.size(); i++) {
     MachSym &msym = file.mach_syms[i];
-    if (msym.type == N_SECT && file.sections[msym.sect - 1]) {
+    if (msym.type == N_SECT && vec[msym.sect - 1].isec) {
       SplitRegion r;
-      r.offset = msym.value - file.sections[msym.sect - 1]->hdr.addr;
+      r.offset = msym.value - vec[msym.sect - 1].isec->hdr.addr;
       r.symidx = i;
       r.is_alt_entry = (msym.desc & N_ALT_ENTRY);
       vec[msym.sect - 1].regions.push_back(r);
@@ -231,36 +234,69 @@ template <typename E>
 void ObjectFile<E>::split_subsections(Context<E> &ctx) {
   sym_to_subsec.resize(mach_syms.size());
 
-  // Split a section into subsections.
-  for (SplitInfo<E> &info : split(ctx, *this)) {
+  auto add = [&](InputSection<E> &isec, u32 offset, u32 size, u8 p2align) {
+    Subsection<E> *subsec = new Subsection<E>{
+      .isec = isec,
+      .input_offset = offset,
+      .input_size = size,
+      .input_addr = (u32)(isec.hdr.addr + offset),
+      .p2align = p2align,
+    };
+
+    subsec_pool.emplace_back(subsec);
+    subsections.push_back(subsec);
+  };
+
+  // Split regular sections into subsections.
+  for (SplitInfo<E> &info : split_regular_sections(ctx, *this)) {
     InputSection<E> &isec = *info.isec;
-
     for (SplitRegion &r : info.regions) {
-      if (!r.is_alt_entry) {
-        Subsection<E> *subsec = new Subsection<E>{
-          .isec = isec,
-          .input_offset = r.offset,
-          .input_size = r.size,
-          .input_addr = (u32)(isec.hdr.addr + r.offset),
-          .p2align = (u8)isec.hdr.p2align,
-        };
-
-        subsec_pool.emplace_back(subsec);
-        subsections.push_back(subsec);
-      }
-
+      if (!r.is_alt_entry)
+        add(isec, r.offset, r.size, isec.hdr.p2align);
       if (r.symidx != -1)
         sym_to_subsec[r.symidx] = subsections.back();
     }
   }
 
+  // Split __cstring section.
+  for (std::unique_ptr<InputSection<E>> &isec : sections) {
+    if (isec && isec->hdr.match("__TEXT", "__cstring")) {
+      std::string_view str = isec->contents;
+      size_t pos = 0;
+
+      while (pos < str.size()) {
+        size_t end = str.find('\0', pos);
+        if (end == str.npos)
+          Fatal(ctx) << *this << " corruupted __TEXT,__cstring";
+
+        end = str.find_first_not_of('\0', end);
+        if (end == str.npos)
+          end = str.size();
+
+        // A constant string in __cstring has no alignment info, so we
+        // need to infer it.
+        u8 p2align = std::min<u8>(isec->hdr.p2align, std::countr_zero(pos));
+        add(*isec, pos, end - pos, p2align);
+        pos = end;
+      }
+    }
+  }
+
+  sort(subsections, [](Subsection<E> *a, Subsection<E> *b) {
+    return a->input_addr < b->input_addr;
+  });
+
   // Fix local symbols `subsec` members.
   for (i64 i = 0; i < mach_syms.size(); i++) {
     MachSym &msym = mach_syms[i];
-    if (!msym.ext && msym.type == N_SECT) {
-      Symbol<E> &sym = *this->syms[i];
+    Symbol<E> &sym = *this->syms[i];
 
-      if (Subsection<E> *subsec = sym_to_subsec[i]) {
+    if (!msym.ext && msym.type == N_SECT) {
+      Subsection<E> *subsec = sym_to_subsec[i];
+      if (!subsec)
+        subsec = find_subsection(ctx, msym.value);
+
+      if (subsec) {
         sym.subsec = subsec;
         sym.value = msym.value - subsec->input_addr;
       } else {
