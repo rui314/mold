@@ -227,6 +227,66 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+static void merge_cstring_sections(Context<E> &ctx) {
+  Timer t(ctx, "merge_cstring_sections");
+
+  // Insert all strings into a hash table to merge them.
+  std::unordered_map<std::string_view, Subsection<E> *> map;
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (Subsection<E> *subsec : file->subsections) {
+      if (&subsec->isec.osec == ctx.cstring) {
+        std::string_view str = subsec->get_contents();
+        auto pair = map.insert({str, subsec});
+        if (pair.second) {
+          Subsection<E> *existing = pair.first->second;
+          if (existing->p2align < subsec->p2align)
+            pair.first->second = subsec;
+        }
+      }
+    }
+  }
+
+  // Replace subsections
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (Subsection<E> *subsec : file->subsections) {
+      if (&subsec->isec.osec == ctx.cstring) {
+        std::string_view str = subsec->get_contents();
+        auto it = map.find(str);
+        if (it->second != subsec) {
+          subsec->is_coalesced = true;
+          subsec->replacer = it->second;
+        }
+      }
+    }
+  }
+
+  for (ObjectFile<E> *file : ctx.objs)
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec)
+        for (Relocation<E> &r : isec->rels)
+          if (r.subsec && r.subsec->is_coalesced)
+            r.subsec = r.subsec->replacer;
+
+  auto replace = [&](InputFile<E> *file) {
+    for (Symbol<E> *sym : file->syms)
+      if (sym->subsec && sym->subsec->is_coalesced)
+        sym->subsec = sym->subsec->replacer;
+  };
+
+  for (InputFile<E> *file : ctx.objs)
+    replace(file);
+  for (InputFile<E> *file : ctx.dylibs)
+    replace(file);
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    std::erase_if(file->subsections, [](Subsection<E> *subsec) {
+      return subsec->is_coalesced;
+    });
+  }
+}
+
+template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
@@ -602,6 +662,8 @@ static int do_main(int argc, char **argv) {
     file->convert_common_symbols(ctx);
 
   claim_unresolved_symbols(ctx);
+
+  merge_cstring_sections(ctx);
 
   if (ctx.arg.dead_strip)
     dead_strip(ctx);

@@ -229,17 +229,25 @@ public:
   void scan_relocations(Context<E> &ctx);
   void apply_reloc(Context<E> &ctx, u8 *buf);
 
-  InputSection<E> &isec;
-  u32 input_offset = 0;
-  u32 input_size = 0;
-  u32 input_addr = 0;
-  u32 output_offset = -1;
-  u32 rel_offset = 0;
-  u32 nrels = 0;
-  u32 unwind_offset = 0;
-  u32 nunwind = 0;
-  u8 p2align = 0;
+  union {
+    struct {
+      InputSection<E> &isec;
+      u32 input_offset = 0;
+      u32 input_size = 0;
+      u32 input_addr = 0;
+      u32 output_offset = -1;
+      u32 rel_offset = 0;
+      u32 nrels = 0;
+      u32 unwind_offset = 0;
+      u32 nunwind = 0;
+      u8 p2align = 0;
+    };
+
+    Subsection<E> *replacer; // Used if is_coalesced is true
+  };
+
   std::atomic_bool is_alive = true;
+  bool is_coalesced = false;
 };
 
 template <typename E>
