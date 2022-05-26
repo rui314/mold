@@ -10,7 +10,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <tbb/parallel_for_each.h>
 
 namespace mold::macho {
 
@@ -152,7 +151,6 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
     // __TEXT
     "__mach_header",
     "__text",
-    "__StaticInit",
     "__stubs",
     "__stub_helper",
     "__gcc_except_tab",
@@ -290,8 +288,6 @@ static void merge_cstring_sections(Context<E> &ctx) {
 
 template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
-  Timer t(ctx, "create_synthetic_chunks");
-
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
       subsec->isec.osec.add_subsec(subsec);
@@ -314,8 +310,6 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 
 template <typename E>
 static void scan_unwind_info(Context<E> &ctx) {
-  Timer t(ctx, "scan_unwind_info");
-
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
       for (UnwindRecord<E> &rec : subsec->get_unwind_records())
@@ -460,27 +454,17 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   switch (get_file_type(mf)) {
   case FileType::TAPI:
-  case FileType::MACH_DYLIB:{
-    DylibFile<E> *file = DylibFile<E>::create(ctx, mf);
-    ctx.dylibs.push_back(file);
-    ctx.tg.run([file, &ctx] { file->parse(ctx); });
+  case FileType::MACH_DYLIB:
+    ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
     break;
-  }
   case FileType::MACH_OBJ:
-  case FileType::LLVM_BITCODE: {
-    ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, "");
-    ctx.objs.push_back(file);
-    ctx.tg.run([file, &ctx] { file->parse(ctx); });
+  case FileType::LLVM_BITCODE:
+    ctx.objs.push_back(ObjectFile<E>::create(ctx, mf, ""));
     break;
-  }
   case FileType::AR:
-    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf)) {
-      if (get_file_type(child) == FileType::MACH_OBJ) {
-        ObjectFile<E> *file = ObjectFile<E>::create(ctx, child, mf->name);
-        ctx.objs.push_back(file);
-        ctx.tg.run([file, &ctx] { file->parse(ctx); });
-      }
-    }
+    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
+      if (get_file_type(child) == FileType::MACH_OBJ)
+        ctx.objs.push_back(ObjectFile<E>::create(ctx, child, mf->name));
     break;
   default:
     Fatal(ctx) << mf->name << ": unknown file type";
@@ -591,8 +575,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
-
-  ctx.tg.wait();
 }
 
 template <typename E>
@@ -643,6 +625,15 @@ static int do_main(int argc, char **argv) {
 
   for (i64 i = 0; i < ctx.dylibs.size(); i++)
     ctx.dylibs[i]->dylib_idx = i + 1;
+
+  // Parse input files
+  {
+    Timer t(ctx, "parse");
+    for (ObjectFile<E> *file : ctx.objs)
+      file->parse(ctx);
+    for (DylibFile<E> *dylib : ctx.dylibs)
+      dylib->parse(ctx);
+  }
 
   if (ctx.arg.ObjC)
     for (ObjectFile<E> *file : ctx.objs)
@@ -710,11 +701,10 @@ static int do_main(int argc, char **argv) {
 
   {
     Timer t(ctx, "copy_buf");
-    tbb::parallel_for_each(ctx.segments,
-                           [&](std::unique_ptr<OutputSegment<E>> &seg) {
+    for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
       Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
       seg->copy_buf(ctx);
-    });
+    }
   }
 
   ctx.code_sig.write_signature(ctx);
