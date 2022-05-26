@@ -315,21 +315,15 @@ LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
 }
 
 template <typename E>
-i64 ObjectFile<E>::find_subsection_idx(Context<E> &ctx, u32 addr) {
+Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
   auto it = std::upper_bound(subsections.begin(), subsections.end(), addr,
                              [&](u32 addr, Subsection<E> *subsec) {
     return addr < subsec->input_addr;
   });
 
   if (it == subsections.begin())
-    return -1;
-  return it - subsections.begin() - 1;
-}
-
-template <typename E>
-Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
-  i64 i = find_subsection_idx(ctx, addr);
-  return (i == -1) ? nullptr : subsections[i];
+    return nullptr;
+  return *(it - 1);
 }
 
 template <typename E>

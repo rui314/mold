@@ -151,7 +151,6 @@ private:
   void split_subsections(Context<E> &ctx);
   void parse_data_in_code(Context<E> &ctx);
   LoadCommand *find_load_command(Context<E> &ctx, u32 type);
-  i64 find_subsection_idx(Context<E> &ctx, u32 addr);
   InputSection<E> *get_common_sec(Context<E> &ctx);
   void parse_lto_symbols(Context<E> &ctx);
 
@@ -239,7 +238,7 @@ public:
   u32 nrels = 0;
   u32 unwind_offset = 0;
   u32 nunwind = 0;
-  u16 p2align = 0;
+  u8 p2align = 0;
   std::atomic_bool is_alive = true;
 };
 
