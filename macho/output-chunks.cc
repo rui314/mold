@@ -1032,6 +1032,8 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
 
 template <typename E>
 void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
+  Timer t(ctx, "write_signature");
+
   u8 *buf = ctx.buf + this->hdr.offset;
   memset(buf, 0, this->hdr.size);
 

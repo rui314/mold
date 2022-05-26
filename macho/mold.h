@@ -9,6 +9,7 @@
 #include <span>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/task_group.h>
 #include <unordered_map>
 #include <variant>
 
@@ -904,6 +905,7 @@ struct Context {
   bool all_load = false;
   bool needed_l = false;
   bool hidden_l = false;
+  tbb::task_group tg;
 
   u8 uuid[16] = {};
   bool has_error = false;
