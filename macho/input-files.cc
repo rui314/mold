@@ -273,7 +273,7 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
         // need to infer it. We assume that the maximum alignment
         // requirement is 16, which should be enough for all machine
         // instructions.
-        u8 p2align = std::max(4, std::countr_zero(pos));
+        u8 p2align = std::min(4, std::countr_zero(pos));
         add(*isec, pos, pos2 - pos + 1, p2align);
         pos = str.find_first_not_of('\0', pos2);
       }
