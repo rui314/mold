@@ -644,8 +644,8 @@ static int do_main(int argc, char **argv) {
   resolve_symbols(ctx);
   remove_unreferenced_subsections(ctx);
 
-  if (ctx.output_type == MH_EXECUTE && !get_symbol(ctx, ctx.arg.entry)->file)
-    Error(ctx) << "undefined entry point symbol: " << ctx.arg.entry;
+  if (ctx.output_type == MH_EXECUTE && !ctx.arg.entry->file)
+    Error(ctx) << "undefined entry point symbol: " << *ctx.arg.entry;
 
   create_internal_file(ctx);
 

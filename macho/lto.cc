@@ -112,8 +112,8 @@ void do_lto(Context<E> &ctx) {
             ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
   }
 
-  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry); sym->file)
-    ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
+  if (ctx.arg.entry->file)
+    ctx.lto.codegen_add_must_preserve_symbol(cg, ctx.arg.entry->name.data());
 
   // Run the compiler backend to do LTO.
   size_t size;

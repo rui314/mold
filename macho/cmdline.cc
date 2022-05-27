@@ -246,7 +246,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-dynamic")) {
       ctx.arg.dynamic = true;
     } else if (read_arg("-e")) {
-      ctx.arg.entry = arg;
+      ctx.arg.entry = get_symbol(ctx, arg);
     } else if (read_flag("-execute")) {
       ctx.output_type = MH_EXECUTE;
     } else if (read_flag("-export_dynamic")) {
@@ -328,6 +328,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       i++;
     }
   }
+
+  if (!ctx.arg.entry)
+    ctx.arg.entry = get_symbol(ctx, "_main");
 
   auto add_search_path = [&](std::vector<std::string> &vec, std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {

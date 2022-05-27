@@ -842,6 +842,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    Symbol<E> *entry = nullptr;
     UuidKind uuid = UUID_HASH;
     bool ObjC = false;
     bool adhoc_codesign = true;
@@ -868,19 +869,18 @@ struct Context {
     i64 platform_sdk_version = 0;
     i64 stack_size = 0;
     std::string chroot;
-    std::string entry = "_main";
     std::string final_output;
     std::string install_name;
     std::string lto_library;
     std::string map;
     std::string output = "a.out";
+    std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> mllvm;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
-    std::vector<SectCreateOption> sectcreate;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
