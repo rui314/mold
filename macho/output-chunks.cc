@@ -4,6 +4,7 @@
 #include <shared_mutex>
 #include <sys/mman.h>
 #include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
 
 namespace mold::macho {
 
@@ -407,16 +408,19 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
   assert(this->hdr.type != S_ZEROFILL);
 
-  for (Subsection<E> *subsec : members) {
+  tbb::parallel_for_each(members, [&](Subsection<E> *subsec) {
     std::string_view data = subsec->get_contents();
     u8 *loc = buf + subsec->get_addr(ctx) - this->hdr.addr;
     memcpy(loc, data.data(), data.size());
     subsec->apply_reloc(ctx, loc);
-  }
+  });
 
-  if constexpr (std::is_same_v<E, ARM64>)
-    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks)
+  if constexpr (std::is_same_v<E, ARM64>) {
+    tbb::parallel_for_each(thunks,
+                           [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
       thunk->copy_buf(ctx);
+    });
+  }
 }
 
 template <typename E>
@@ -510,10 +514,6 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
 
 template <typename E>
 void OutputSegment<E>::copy_buf(Context<E> &ctx) {
-  // Fill text segment paddings with NOPs
-  if (cmd.get_segname() == "__TEXT")
-    memset(ctx.buf + cmd.fileoff, 0x90, cmd.filesize);
-
   for (Chunk<E> *sec : chunks)
     if (sec->hdr.type != S_ZEROFILL)
       sec->copy_buf(ctx);

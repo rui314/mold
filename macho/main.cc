@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/parallel_for_each.h>
 
 namespace mold::macho {
 
@@ -698,10 +699,11 @@ static int do_main(int argc, char **argv) {
 
   {
     Timer t(ctx, "copy_buf");
-    for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
+    tbb::parallel_for_each(ctx.segments,
+                           [&](std::unique_ptr<OutputSegment<E>> &seg) {
       Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
       seg->copy_buf(ctx);
-    }
+    });
   }
 
   ctx.code_sig.write_signature(ctx);
