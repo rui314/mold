@@ -24,11 +24,25 @@
 #include <unistd.h>
 #include <vector>
 
+#define XXH_INLINE_ALL 1
+#include <xxhash.h>
+
 #ifdef NDEBUG
 #  define unreachable() __builtin_unreachable()
 #else
 #  define unreachable() assert(0 && "unreachable")
 #endif
+
+class HashCmp {
+public:
+  static size_t hash(const std::string_view &k) {
+    return XXH3_64bits(k.data(), k.size());
+  }
+
+  static bool equal(const std::string_view &k1, const std::string_view &k2) {
+    return k1 == k2;
+  }
+};
 
 namespace mold {
 

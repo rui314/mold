@@ -12,9 +12,6 @@
 #include <unordered_map>
 #include <variant>
 
-#define XXH_INLINE_ALL 1
-#include <xxhash.h>
-
 #if MOLD_DEBUG_X86_64_ONLY
 # define INSTANTIATE_ALL INSTANTIATE(X86_64)
 #elif MOLD_DEBUG_ARM64_ONLY
@@ -36,17 +33,6 @@ template <typename E> class OutputSection;
 template <typename E> class Subsection;
 template <typename E> struct Context;
 template <typename E> struct Symbol;
-
-class HashCmp {
-public:
-  static size_t hash(const std::string_view &k) {
-    return XXH3_64bits(k.data(), k.size());
-  }
-
-  static bool equal(const std::string_view &k1, const std::string_view &k2) {
-    return k1 == k2;
-  }
-};
 
 //
 // input-files.cc

@@ -31,9 +31,6 @@
 #include <variant>
 #include <vector>
 
-#define XXH_INLINE_ALL 1
-#include <xxhash.h>
-
 // MOLD_DEBUG_{X86_64,ARM64}_ONLY are macros to speed up builds.
 // This should be used only for debugging. When you use this flag,
 // you need to compile mold C++ files with `-ffunction-sections
@@ -75,17 +72,6 @@ template <typename E> class RSymtabSection;
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
-
-class HashCmp {
-public:
-  static size_t hash(const std::string_view &k) {
-    return XXH3_64bits(k.data(), k.size());
-  }
-
-  static bool equal(const std::string_view &k1, const std::string_view &k2) {
-    return k1 == k2;
-  }
-};
 
 //
 // Mergeable section fragments
