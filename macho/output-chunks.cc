@@ -405,12 +405,11 @@ void OutputSection<E>::compute_size(Context<E> &ctx) {
 
 template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->hdr.offset;
   assert(this->hdr.type != S_ZEROFILL);
 
   tbb::parallel_for_each(members, [&](Subsection<E> *subsec) {
     std::string_view data = subsec->get_contents();
-    u8 *loc = buf + subsec->get_addr(ctx) - this->hdr.addr;
+    u8 *loc = ctx.buf + this->hdr.offset + subsec->output_offset;
     memcpy(loc, data.data(), data.size());
     subsec->apply_reloc(ctx, loc);
   });
@@ -514,6 +513,10 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
 
 template <typename E>
 void OutputSegment<E>::copy_buf(Context<E> &ctx) {
+  // Fill text segment paddings with NOPs
+  if (cmd.get_segname() == "__TEXT")
+    memset(ctx.buf + cmd.fileoff, 0x90, cmd.filesize);
+
   for (Chunk<E> *sec : chunks)
     if (sec->hdr.type != S_ZEROFILL)
       sec->copy_buf(ctx);
