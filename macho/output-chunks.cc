@@ -3,6 +3,7 @@
 
 #include <shared_mutex>
 #include <sys/mman.h>
+#include <tbb/parallel_for.h>
 
 namespace mold::macho {
 
@@ -1016,6 +1017,8 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
 // will reject it if a hash value does not match.
 template <typename E>
 void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
+  Timer t(ctx, "write_signature");
+
   u8 *buf = ctx.buf + this->hdr.offset;
   memset(buf, 0, this->hdr.size);
 
@@ -1068,8 +1071,9 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     SHA256(start, end - start, buf + i * SHA256_SIZE);
   };
 
-  for (i64 i = 0; i < num_blocks; i++)
+  tbb::parallel_for((i64)0, num_blocks, [&](i64 i) {
     compute_hash(i);
+  });
 
   // A LC_UUID load command may also contain a crypto hash of the
   // entire file. We compute its value as a tree hash.
@@ -1093,6 +1097,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
 
   // A hack borrowed from lld to workaround a macOS kernel issue
   // https://openradar.appspot.com/FB8914231.
+  Timer t2(ctx, "msync", &t);
   msync(ctx.buf, ctx.output_file->filesize, MS_INVALIDATE);
 }
 
