@@ -576,6 +576,27 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
+
+  for (ObjectFile<E> *file : ctx.objs)
+    file->priority = ctx.file_priority++;
+  for (DylibFile<E> *dylib : ctx.dylibs)
+    dylib->priority = ctx.file_priority++;
+
+  for (i64 i = 0; i < ctx.dylibs.size(); i++)
+    ctx.dylibs[i]->dylib_idx = i + 1;
+}
+
+template <typename E>
+static void parse_input_files(Context<E> &ctx) {
+  Timer t(ctx, "parse_input_files");
+
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dylibs);
+
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->parse(ctx);
+  });
 }
 
 template <typename E>
@@ -618,23 +639,7 @@ static int do_main(int argc, char **argv) {
   }
 
   read_input_files(ctx, file_args);
-
-  for (ObjectFile<E> *file : ctx.objs)
-    file->priority = ctx.file_priority++;
-  for (DylibFile<E> *dylib : ctx.dylibs)
-    dylib->priority = ctx.file_priority++;
-
-  for (i64 i = 0; i < ctx.dylibs.size(); i++)
-    ctx.dylibs[i]->dylib_idx = i + 1;
-
-  // Parse input files
-  {
-    Timer t(ctx, "parse");
-    for (ObjectFile<E> *file : ctx.objs)
-      file->parse(ctx);
-    for (DylibFile<E> *dylib : ctx.dylibs)
-      dylib->parse(ctx);
-  }
+  parse_input_files(ctx);
 
   if (ctx.arg.ObjC)
     for (ObjectFile<E> *file : ctx.objs)

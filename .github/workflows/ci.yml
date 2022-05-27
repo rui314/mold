@@ -53,7 +53,6 @@ jobs:
         target:
         - test
         - test-asan
-        - test-tsan
     runs-on: macos-11
     steps:
     - uses: actions/checkout@v2
