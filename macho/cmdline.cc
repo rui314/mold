@@ -380,6 +380,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.final_output = ctx.arg.output;
   }
 
+  if (ctx.arg.uuid == UUID_RANDOM)
+    memcpy(ctx.uuid, get_uuid_v4().data(), 16);
+
   return remaining;
 }
 

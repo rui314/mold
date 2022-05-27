@@ -354,7 +354,6 @@ public:
 
   void compute_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-  void write_uuid(Context<E> &ctx);
 };
 
 template <typename E>

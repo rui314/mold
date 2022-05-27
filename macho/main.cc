@@ -696,9 +696,6 @@ static int do_main(int argc, char **argv) {
     OutputFile<Context<E>>::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
-  if (ctx.arg.uuid != UUID_NONE)
-    ctx.mach_hdr.write_uuid(ctx);
-
   {
     Timer t(ctx, "copy_buf");
     for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {

@@ -344,27 +344,6 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void OutputMachHeader<E>::write_uuid(Context<E> &ctx) {
-  Timer t(ctx, "write_uuid");
-
-  switch (ctx.arg.uuid) {
-  case UUID_RANDOM:
-    memcpy(ctx.uuid, get_uuid_v4().data(), 16);
-    break;
-  case UUID_HASH: {
-    u8 buf[SHA256_SIZE];
-    SHA256(ctx.buf, ctx.output_file->filesize, buf);
-    memcpy(ctx.uuid, buf, 16);
-    break;
-  }
-  default:
-    unreachable();
-  }
-
-  copy_buf(ctx);
-}
-
-template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
                                std::string_view sectname) {
@@ -1030,6 +1009,11 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
                    num_blocks * SHA256_SIZE;
 }
 
+// A __code_signature section is optional for x86 macOS but mandatory
+// for ARM macOS. The section contains a cryptographic hash for each 4
+// KiB block of an executable or a dylib file. The program loader
+// verifies the hash values on the initial execution of a binary and
+// will reject it if a hash value does not match.
 template <typename E>
 void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
@@ -1039,6 +1023,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   i64 filename_size = align_to(filename.size() + 1, 16);
   i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
 
+  // Fill code-sign header fields
   CodeSignatureHeader &sighdr = *(CodeSignatureHeader *)buf;
   buf += sizeof(sighdr);
 
@@ -1074,14 +1059,40 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   memcpy(buf, filename.data(), filename.size());
   buf += filename_size;
 
-  for (i64 i = 0; i < num_blocks; i++) {
+  // Compute a hash value for each 4 KiB block. The block size must be
+  // 4 KiB, as the macOS kernel supports only that block size for the
+  // ad-hoc code signatures.
+  auto compute_hash = [&](i64 i) {
     u8 *start = ctx.buf + i * BLOCK_SIZE;
     u8 *end = ctx.buf + std::min<i64>((i + 1) * BLOCK_SIZE, this->hdr.offset);
-    SHA256(start, end - start, buf);
-    buf += SHA256_SIZE;
+    SHA256(start, end - start, buf + i * SHA256_SIZE);
+  };
+
+  for (i64 i = 0; i < num_blocks; i++)
+    compute_hash(i);
+
+  // A LC_UUID load command may also contain a crypto hash of the
+  // entire file. We compute its value as a tree hash.
+  if (ctx.arg.uuid == UUID_HASH) {
+    u8 uuid[SHA256_SIZE];
+    SHA256(buf, num_blocks * SHA256_SIZE, uuid);
+
+    // Indicate that this is UUIDv4 as defined by RFC4122.
+    uuid[6] = (uuid[6] & 0b00001111) | 0b01010000;
+    uuid[8] = (uuid[8] & 0b00111111) | 0b10000000;
+
+    memcpy(ctx.uuid, uuid, 16);
+
+    // Rewrite the load commands to write the updated UUID and
+    // recompute code signatures for the updated blocks.
+    ctx.mach_hdr.copy_buf(ctx);
+
+    for (i64 i = 0; i * BLOCK_SIZE < this->hdr.offset; i++)
+      compute_hash(i);
   }
 
-  // A hack borrowed from lld.
+  // A hack borrowed from lld to workaround a macOS kernel issue
+  // https://openradar.appspot.com/FB8914231.
   msync(ctx.buf, ctx.output_file->filesize, MS_INVALIDATE);
 }
 
