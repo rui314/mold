@@ -359,13 +359,6 @@ static void show_stats(Context<E> &ctx) {
     sec->print_stats(ctx);
 }
 
-static i64 get_default_thread_count() {
-  // mold doesn't scale well above 32 threads.
-  int n = tbb::global_control::active_value(
-    tbb::global_control::max_allowed_parallelism);
-  return std::min(n, 32);
-}
-
 template <typename E>
 static int elf_main(int argc, char **argv) {
   Context<E> ctx;
@@ -419,11 +412,8 @@ static int elf_main(int argc, char **argv) {
   if (ctx.arg.fork)
     on_complete = fork_child();
 
-  i64 thread_count = ctx.arg.thread_count;
-  if (thread_count == 0)
-    thread_count = get_default_thread_count();
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               thread_count);
+                               ctx.arg.thread_count);
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)

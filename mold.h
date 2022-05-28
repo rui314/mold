@@ -73,6 +73,7 @@ extern const std::string mold_version;
 std::string_view errno_string();
 void cleanup();
 void install_signal_handler();
+i64 get_default_thread_count();
 
 //
 // Error output

@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
 
 namespace mold::macho {

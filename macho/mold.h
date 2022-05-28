@@ -870,6 +870,7 @@ struct Context {
     i64 platform_min_version = 0;
     i64 platform_sdk_version = 0;
     i64 stack_size = 0;
+    i64 thread_count = 0;
     std::string chroot;
     std::string final_output;
     std::string install_name;

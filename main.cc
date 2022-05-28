@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <signal.h>
+#include <tbb/global_control.h>
 
 #ifdef USE_SYSTEM_MIMALLOC
 #include <mimalloc-new-delete.h>
@@ -66,6 +67,13 @@ void install_signal_handler() {
   sigaction(SIGINT, &action, NULL);
   sigaction(SIGTERM, &action, NULL);
   sigaction(SIGBUS, &action, NULL);
+}
+
+i64 get_default_thread_count() {
+  // mold doesn't scale well above 32 threads.
+  int n = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  return std::min(n, 32);
 }
 
 } // namespace mold

@@ -66,6 +66,7 @@ Options:
   -stack_size <SIZE>
   -syslibroot <DIR>           Prepend DIR to library search paths
   -t                          Print out each file the linker loads
+  -thread_count <NUMBER>      Use given number of threads
   -v                          Report version information)";
 
 template <typename E>
@@ -319,6 +320,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-t")) {
       ctx.arg.trace = true;
+    } else if (read_arg("-thread_count")) {
+      ctx.arg.thread_count = std::stoi(std::string(arg));
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {
@@ -331,6 +334,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (!ctx.arg.entry)
     ctx.arg.entry = get_symbol(ctx, "_main");
+
+  if (ctx.arg.thread_count == 0)
+    ctx.arg.thread_count = get_default_thread_count();
 
   auto add_search_path = [&](std::vector<std::string> &vec, std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {

@@ -1033,6 +1033,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
+  if (ctx.arg.thread_count == 0)
+    ctx.arg.thread_count = get_default_thread_count();
+
   if (ctx.arg.image_base % ctx.page_size)
     Fatal(ctx) << "-image-base must be a multiple of -max-page-size";
 
