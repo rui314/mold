@@ -24,6 +24,15 @@ get_vector(YamlNode &node, std::string_view key) {
   return {};
 }
 
+static std::vector<std::string_view>
+get_string_vector(YamlNode &node, std::string_view key) {
+  std::vector<std::string_view> vec;
+  for (YamlNode &mem : get_vector(node, key))
+    if (auto val = std::get_if<std::string_view>(&mem.data))
+      vec.push_back(*val);
+  return vec;
+}
+
 static std::optional<std::string_view>
 get_string(YamlNode &node, std::string_view key) {
   if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
@@ -66,28 +75,16 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
 
   for (YamlNode &mem : get_vector(node, "reexported-libraries"))
     if (contains(get_vector(mem, "targets"), arch))
-      for (YamlNode &mem : get_vector(mem, "libraries"))
-        if (auto val = std::get_if<std::string_view>(&mem.data))
-          tbd.reexported_libs.push_back(*val);
+      append(tbd.reexported_libs, get_string_vector(mem, "libraries"));
 
   for (std::string_view key : {"exports", "reexports"}) {
     for (YamlNode &mem : get_vector(node, key)) {
       if (contains(get_vector(mem, "targets"), arch)) {
-        for (YamlNode &mem : get_vector(mem, "symbols"))
-          if (auto val = std::get_if<std::string_view>(&mem.data))
-            tbd.exports.push_back(*val);
-        for (YamlNode &mem : get_vector(mem, "weak-symbols"))
-          if (auto val = std::get_if<std::string_view>(&mem.data))
-            tbd.weak_exports.push_back(*val);
-        for (YamlNode &mem : get_vector(mem, "objc-classes"))
-          if (auto val = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_classes.push_back(*val);
-        for (YamlNode &mem : get_vector(mem, "objc-eh-types"))
-          if (auto val = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_eh_types.push_back(*val);
-        for (YamlNode &mem : get_vector(mem, "objc-ivars"))
-          if (auto val = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_ivars.push_back(*val);
+        append(tbd.exports, get_string_vector(mem, "symbols"));
+        append(tbd.weak_exports, get_string_vector(mem, "weak-symbols"));
+        append(tbd.objc_classes, get_string_vector(mem, "objc-classes"));
+        append(tbd.objc_eh_types, get_string_vector(mem, "objc-eh-types"));
+        append(tbd.objc_ivars, get_string_vector(mem, "objc-ivars"));
       }
     }
   }
