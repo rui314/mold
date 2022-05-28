@@ -38,22 +38,35 @@ static void resolve_symbols(Context<E> &ctx) {
   append(files, ctx.objs);
   append(files, ctx.dylibs);
 
-  for (InputFile<E> *file : files)
+  // Resolve symbols.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
     file->resolve_symbols(ctx);
+  });
 
+  // Find all reachable objects and eliminate unreferenced archive
+  // member objects.
   std::vector<ObjectFile<E> *> live_objs;
   for (ObjectFile<E> *file : ctx.objs)
     if (file->is_alive)
       live_objs.push_back(file);
 
-  for (i64 i = 0; i < live_objs.size(); i++) {
-    live_objs[i]->mark_live_objects(ctx, [&](ObjectFile<E> *file) {
-      live_objs.push_back(file);
-    });
-  }
+  tbb::parallel_for_each(live_objs, [&](ObjectFile<E> *file,
+                                        tbb::feeder<ObjectFile<E> *> &feeder) {
+    file->mark_live_objects(ctx, [&](ObjectFile<E> *obj) { feeder.add(obj); });
+  });
 
-  for (InputFile<E> *file : files)
-    file->resolve_symbols(ctx);
+  // Remove symbols of eliminated files.
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    if (!file->is_alive)
+      file->clear_symbols();
+  });
+
+  // Symbols of eliminated files may have overwritten symbols of live
+  // objects, so redo symbol resolution.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    if (file->is_alive)
+      file->resolve_symbols(ctx);
+  });
 
   if (has_lto_obj(ctx))
     do_lto(ctx);

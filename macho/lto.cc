@@ -86,7 +86,7 @@ void do_lto(Context<E> &ctx) {
     ctx.lto.codegen_debug_options(cg, opt.c_str());
 
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->lto_module)
+    if (file->is_alive && file->lto_module)
       ctx.lto.codegen_add_module(cg, file->lto_module);
 
   // Mark symbols that have to be preserved. All symbols that are not
@@ -94,7 +94,7 @@ void do_lto(Context<E> &ctx) {
   // visible symbol.
   if (ctx.arg.dylib || ctx.arg.export_dynamic) {
     for (ObjectFile<E> *file : ctx.objs) {
-      if (!file->lto_module) {
+      if (file->is_alive && !file->lto_module) {
         for (i64 i = 0; i < file->mach_syms.size(); i++) {
           MachSym &msym = file->mach_syms[i];
           Symbol<E> &sym = *file->syms[i];
@@ -106,7 +106,7 @@ void do_lto(Context<E> &ctx) {
     }
 
     for (ObjectFile<E> *file : ctx.objs)
-      if (file->lto_module)
+      if (file->is_alive && file->lto_module)
         for (Symbol<E> *sym : file->syms)
           if (sym->file == file && sym->is_extern)
             ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
@@ -121,7 +121,7 @@ void do_lto(Context<E> &ctx) {
 
   // Remove bitcode object files from ctx.objs.
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->lto_module) {
+    if (file->is_alive && file->lto_module) {
       file->clear_symbols();
       file->is_alive = false;
     }
