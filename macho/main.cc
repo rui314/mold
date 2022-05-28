@@ -103,20 +103,20 @@ template <typename E>
 static void remove_unreferenced_subsections(Context<E> &ctx) {
   Timer t(ctx, "remove_unreferenced_subsections");
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {
       MachSym &msym = file->mach_syms[i];
       Symbol<E> &sym = *file->syms[i];
       if (sym.file != file && (msym.type == N_SECT) && (msym.desc & N_WEAK_DEF))
         file->sym_to_subsec[i]->is_alive = false;
     }
-  }
+  });
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     std::erase_if(file->subsections, [](Subsection<E> *subsec) {
       return !subsec->is_alive;
     });
-  }
+  });
 }
 
 template <typename E>
