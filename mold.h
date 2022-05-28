@@ -300,12 +300,11 @@ inline u64 read_uleb(u8 const*&buf) {
 }
 
 inline i64 uleb_size(u64 val) {
-  i64 i = 0;
-  do {
-    i++;
-    val >>= 7;
-  } while (val);
-  return i;
+#pragma unroll
+  for (int i = 1; i < 9; i++)
+    if (val < ((u64)1 << (7 * i)))
+      return i;
+  return 9;
 }
 
 template <typename C>
