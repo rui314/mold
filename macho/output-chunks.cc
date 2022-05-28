@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 
 namespace mold::macho {
 
@@ -468,12 +469,16 @@ OutputSegment<E>::OutputSegment(std::string_view name) {
 
 template <typename E>
 void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
+  Timer t(ctx, std::string(cmd.get_segname()));
+
   cmd.fileoff = fileoff;
   cmd.vmaddr = vmaddr;
 
   i64 i = 0;
 
+  // Assign offsets to non-BSS sections
   while (i < chunks.size() && chunks[i]->hdr.type != S_ZEROFILL) {
+    Timer t(ctx, std::string(chunks[i]->hdr.get_sectname()));
     Chunk<E> &sec = *chunks[i++];
     i64 alignment =
       (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
@@ -489,7 +494,9 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
     vmaddr += sec.hdr.size;
   }
 
+  // Assign offsets to BSS sections
   while (i < chunks.size()) {
+    Timer t2(ctx, std::string(chunks[i]->hdr.get_sectname()), &t);
     Chunk<E> &sec = *chunks[i++];
     assert(sec.hdr.type == S_ZEROFILL);
 
@@ -749,7 +756,7 @@ void ExportEncoder::add(std::string_view name, u32 flags, u64 addr) {
 }
 
 i64 ExportEncoder::finish() {
-  sort(entries, [](const Entry &a, const Entry &b) {
+  tbb::parallel_sort(entries, [](const Entry &a, const Entry &b) {
     return a.name < b.name;
   });
 
@@ -770,11 +777,14 @@ i64 ExportEncoder::finish() {
 }
 
 i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
-  for (; len < entries[0].name.size(); len++)
-    for (Entry &ent : entries.subspan(1))
-      if (ent.name.size() == len || ent.name[len] != entries[0].name[len])
-        return len;
-  return len;
+  std::string_view x = entries[0].name;
+  std::string_view y = entries.back().name;
+
+  i64 i = 0;
+  i64 end = std::min(x.size(), y.size());
+  while (i < end && x[i] == y[i])
+    i++;
+  return i;
 }
 
 ExportEncoder::TrieNode
@@ -793,10 +803,11 @@ ExportEncoder::construct_trie(std::span<Entry> entries, i64 len) {
   }
 
   for (i64 i = 0; i < entries.size();) {
-    i64 j = i + 1;
-    u8 c = entries[i].name[new_len];
-    while (j < entries.size() && c == entries[j].name[new_len])
-      j++;
+    auto it = std::partition_point(entries.begin() + i + 1, entries.end(),
+                                   [&](const Entry &ent) {
+      return entries[i].name[new_len] == ent.name[new_len];
+    });
+    i64 j = it - entries.begin();
     node.children.push_back(construct_trie(entries.subspan(i, j - i), new_len));
     i = j;
   }
