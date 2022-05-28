@@ -35,8 +35,8 @@ get_string(YamlNode &node, std::string_view key) {
 
 static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
   for (const YamlNode &mem : vec)
-    if (const std::string_view *s = std::get_if<std::string_view>(&mem.data))
-      if (*s == key)
+    if (auto val = std::get_if<std::string_view>(&mem.data))
+      if (*val == key)
         return true;
   return false;
 }
@@ -50,8 +50,8 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
   for (YamlNode &mem : get_vector(node, "uuids"))
     if (auto target = get_string(mem, "target"))
       if (*target == arch)
-        if (auto value = get_string(mem, "value"))
-          tbd.uuid = *value;
+        if (auto val = get_string(mem, "value"))
+          tbd.uuid = *val;
 
   if (auto val = get_string(node, "install-name"))
     tbd.install_name = *val;
@@ -67,27 +67,27 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
   for (YamlNode &mem : get_vector(node, "reexported-libraries"))
     if (contains(get_vector(mem, "targets"), arch))
       for (YamlNode &mem : get_vector(mem, "libraries"))
-        if (auto *lib = std::get_if<std::string_view>(&mem.data))
-          tbd.reexported_libs.push_back(*lib);
+        if (auto val = std::get_if<std::string_view>(&mem.data))
+          tbd.reexported_libs.push_back(*val);
 
   for (std::string_view key : {"exports", "reexports"}) {
     for (YamlNode &mem : get_vector(node, key)) {
       if (contains(get_vector(mem, "targets"), arch)) {
         for (YamlNode &mem : get_vector(mem, "symbols"))
-          if (auto *sym = std::get_if<std::string_view>(&mem.data))
-            tbd.exports.push_back(*sym);
+          if (auto val = std::get_if<std::string_view>(&mem.data))
+            tbd.exports.push_back(*val);
         for (YamlNode &mem : get_vector(mem, "weak-symbols"))
-          if (auto *sym = std::get_if<std::string_view>(&mem.data))
-            tbd.weak_exports.push_back(*sym);
+          if (auto val = std::get_if<std::string_view>(&mem.data))
+            tbd.weak_exports.push_back(*val);
         for (YamlNode &mem : get_vector(mem, "objc-classes"))
-          if (auto *clazz = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_classes.push_back(*clazz);
+          if (auto val = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_classes.push_back(*val);
         for (YamlNode &mem : get_vector(mem, "objc-eh-types"))
-          if (auto *eh_type = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_eh_types.push_back(*eh_type);
+          if (auto val = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_eh_types.push_back(*val);
         for (YamlNode &mem : get_vector(mem, "objc-ivars"))
-          if (auto *ivar = std::get_if<std::string_view>(&mem.data))
-            tbd.objc_ivars.push_back(*ivar);
+          if (auto val = std::get_if<std::string_view>(&mem.data))
+            tbd.objc_ivars.push_back(*val);
       }
     }
   }
