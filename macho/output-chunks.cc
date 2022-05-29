@@ -517,17 +517,6 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
     cmd.filesize = align_to(fileoff - cmd.fileoff, COMMON_PAGE_SIZE);
 }
 
-template <typename E>
-void OutputSegment<E>::copy_buf(Context<E> &ctx) {
-  // Fill text segment paddings with NOPs
-  if (cmd.get_segname() == "__TEXT")
-    memset(ctx.buf + cmd.fileoff, 0x90, cmd.filesize);
-
-  for (Chunk<E> *sec : chunks)
-    if (sec->hdr.type != S_ZEROFILL)
-      sec->copy_buf(ctx);
-}
-
 RebaseEncoder::RebaseEncoder() {
   buf.push_back(REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER);
 }

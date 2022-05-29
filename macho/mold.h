@@ -303,7 +303,6 @@ public:
   get_instance(Context<E> &ctx, std::string_view name);
 
   void set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr);
-  void copy_buf(Context<E> &ctx);
 
   SegmentCommand cmd = {};
   i32 seg_idx = -1;

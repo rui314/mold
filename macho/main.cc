@@ -393,6 +393,27 @@ static void fix_synthetic_symbol_values(Context<E> &ctx) {
 }
 
 template <typename E>
+static void copy_sections_to_output_file(Context<E> &ctx) {
+  Timer t(ctx, "copy_sections_to_output_file");
+
+  tbb::parallel_for_each(ctx.segments,
+                         [&](std::unique_ptr<OutputSegment<E>> &seg) {
+    Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
+
+    // Fill text segment paddings with NOPs
+    if (seg->cmd.get_segname() == "__TEXT")
+      memset(ctx.buf + seg->cmd.fileoff, 0x90, seg->cmd.filesize);
+
+    tbb::parallel_for_each(seg->chunks, [&](Chunk<E> *sec) {
+      if (sec->hdr.type != S_ZEROFILL) {
+        Timer t3(ctx, std::string(sec->hdr.get_sectname()), &t2);
+        sec->copy_buf(ctx);
+      }
+    });
+  });
+}
+
+template <typename E>
 MappedFile<Context<E>> *find_framework(Context<E> &ctx, std::string name) {
   std::string suffix;
   std::tie(name, suffix) = split_string(name, ',');
@@ -703,14 +724,7 @@ static int do_main(int argc, char **argv) {
     OutputFile<Context<E>>::open(ctx, ctx.arg.output, output_size, 0777);
   ctx.buf = ctx.output_file->buf;
 
-  {
-    Timer t(ctx, "copy_buf");
-    tbb::parallel_for_each(ctx.segments,
-                           [&](std::unique_ptr<OutputSegment<E>> &seg) {
-      Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
-      seg->copy_buf(ctx);
-    });
-  }
+  copy_sections_to_output_file(ctx);
 
   ctx.code_sig.write_signature(ctx);
 
