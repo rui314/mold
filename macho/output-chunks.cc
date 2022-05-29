@@ -1009,7 +1009,7 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
   i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
   this->hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
                    sizeof(CodeSignatureDirectory) + filename_size +
-                   num_blocks * SHA1_SIZE;
+                   num_blocks * SHA256_SIZE;
 }
 
 // A __code_signature section is optional for x86 macOS but mandatory
@@ -1046,15 +1046,15 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   buf += sizeof(dir);
 
   dir.magic = CSMAGIC_CODEDIRECTORY;
-  dir.length = sizeof(dir) + filename_size + num_blocks * SHA1_SIZE;
+  dir.length = sizeof(dir) + filename_size + num_blocks * SHA256_SIZE;
   dir.version = CS_SUPPORTSEXECSEG;
   dir.flags = CS_ADHOC | CS_LINKER_SIGNED;
   dir.hash_offset = sizeof(dir) + filename_size;
   dir.ident_offset = sizeof(dir);
   dir.n_code_slots = num_blocks;
   dir.code_limit = this->hdr.offset;
-  dir.hash_size = SHA1_SIZE;
-  dir.hash_type = CS_HASHTYPE_SHA1;
+  dir.hash_size = SHA256_SIZE;
+  dir.hash_type = CS_HASHTYPE_SHA256;
   dir.page_size = std::countr_zero<u64>(BLOCK_SIZE);
   dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
   dir.exec_seg_limit = ctx.text_seg->cmd.filesize;
@@ -1070,7 +1070,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   auto compute_hash = [&](i64 i) {
     u8 *start = ctx.buf + i * BLOCK_SIZE;
     u8 *end = ctx.buf + std::min<i64>((i + 1) * BLOCK_SIZE, this->hdr.offset);
-    SHA1(start, end - start, buf + i * SHA1_SIZE);
+    SHA256(start, end - start, buf + i * SHA256_SIZE);
   };
 
   for (i64 i = 0; i < num_blocks; i += 1024) {
@@ -1087,13 +1087,14 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   // A LC_UUID load command may also contain a crypto hash of the
   // entire file. We compute its value as a tree hash.
   if (ctx.arg.uuid == UUID_HASH) {
-    u8 uuid[SHA1_SIZE];
-    SHA1(buf, num_blocks * SHA1_SIZE, uuid);
+    u8 uuid[SHA256_SIZE];
+    SHA256(buf, num_blocks * SHA256_SIZE, uuid);
 
     // Indicate that this is UUIDv4 as defined by RFC4122.
     uuid[6] = (uuid[6] & 0b00001111) | 0b01010000;
     uuid[8] = (uuid[8] & 0b00111111) | 0b10000000;
-    memcpy(ctx.uuid, uuid, sizeof(ctx.uuid));
+
+    memcpy(ctx.uuid, uuid, 16);
 
     // Rewrite the load commands to write the updated UUID and
     // recompute code signatures for the updated blocks.

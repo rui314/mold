@@ -684,7 +684,6 @@ static constexpr u32 CSSLOT_CODEDIRECTORY = 0;
 static constexpr u32 CS_ADHOC = 0x00000002;
 static constexpr u32 CS_LINKER_SIGNED = 0x00020000;
 static constexpr u32 CS_EXECSEG_MAIN_BINARY = 1;
-static constexpr u32 CS_HASHTYPE_SHA1 = 1;
 static constexpr u32 CS_HASHTYPE_SHA256 = 2;
 
 struct CodeSignatureHeader {
