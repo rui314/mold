@@ -490,11 +490,11 @@ private:
 
   struct TrieNode {
     std::string_view prefix;
-    bool is_leaf = false;
-    u32 flags = 0;
-    u64 addr = 0;
-    u32 offset = -1;
     std::vector<TrieNode> children;
+    u64 addr = 0;
+    u32 flags = 0;
+    u32 offset = -1;
+    bool is_leaf = false;
   };
 
   static i64 common_prefix_len(std::span<Entry> entries, i64 len);

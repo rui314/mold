@@ -792,20 +792,22 @@ i64 ExportEncoder::finish() {
     return a.name < b.name;
   });
 
+  // Construct a trie
   TrieNode trie = construct_trie(entries, 0);
-
   if (trie.prefix.empty())
     root = std::move(trie);
   else
     root.children.push_back(std::move(trie));
 
-  i64 size = set_offset(root, 0);
-  for (;;) {
-    i64 sz = set_offset(root, 0);
-    if (sz == size)
-      return sz;
-    size = sz;
-  }
+  // Set output offsets to trie nodes. Since a serialized trie node
+  // contains output offsets of other nodes in the variable-length
+  // ULEB format, it unfortunately needs more than one iteration.
+  // We need to repeat until the total size of the serialized trie
+  // converges to obtain the optimized output. However, in reality,
+  // repeating this step twice is enough. Size reduction on third and
+  // further iterations is negligible.
+  set_offset(root, 0);
+  return set_offset(root, 0);
 }
 
 i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
