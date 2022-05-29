@@ -486,7 +486,7 @@ void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
 
   // Assign offsets to non-BSS sections
   while (i < chunks.size() && chunks[i]->hdr.type != S_ZEROFILL) {
-    Timer t(ctx, std::string(chunks[i]->hdr.get_sectname()));
+    Timer t2(ctx, std::string(chunks[i]->hdr.get_sectname()), &t);
     Chunk<E> &sec = *chunks[i++];
     i64 alignment =
       (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
@@ -504,7 +504,6 @@ void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
 
   // Assign offsets to BSS sections
   while (i < chunks.size()) {
-    Timer t2(ctx, std::string(chunks[i]->hdr.get_sectname()), &t);
     Chunk<E> &sec = *chunks[i++];
     assert(sec.hdr.type == S_ZEROFILL);
 
