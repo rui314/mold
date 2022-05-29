@@ -1073,9 +1073,16 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     SHA256(start, end - start, buf + i * SHA256_SIZE);
   };
 
-  tbb::parallel_for((i64)0, num_blocks, [&](i64 i) {
-    compute_hash(i);
-  });
+  for (i64 i = 0; i < num_blocks; i += 1024) {
+    i64 j = std::min(num_blocks, i + 1024);
+    tbb::parallel_for(i, j, [&](i64 k) { compute_hash(k); });
+
+#if __APPLE__
+    // Calling msync() with MS_ASYNC speeds up the following msync()
+    // with MS_INVALIDATE.
+    msync(ctx.buf + i * BLOCK_SIZE, 1024 * BLOCK_SIZE, MS_ASYNC);
+#endif
+  }
 
   // A LC_UUID load command may also contain a crypto hash of the
   // entire file. We compute its value as a tree hash.
@@ -1097,10 +1104,19 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
       compute_hash(i);
   }
 
-  // A hack borrowed from lld to workaround a macOS kernel issue
-  // https://openradar.appspot.com/FB8914231.
+#if __APPLE__
+  // If an executable's pages have been created via an mmap(), the output
+  // file will fail for the code signature verification because the macOS
+  // kernel wrongly assume that the pages may be mutable after the code
+  // verification, though it is actually impossible after munmap().
+  //
+  // In order to workaround the issue, we call msync() to invalidate all
+  // mmapped pages.
+  //
+  // https://openradar.appspot.com/FB8914231
   Timer t2(ctx, "msync", &t);
   msync(ctx.buf, ctx.output_file->filesize, MS_INVALIDATE);
+#endif
 }
 
 template <typename E>
