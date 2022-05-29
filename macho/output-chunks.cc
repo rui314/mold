@@ -469,11 +469,19 @@ OutputSegment<E>::OutputSegment(std::string_view name) {
 
 template <typename E>
 void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
-  Timer t(ctx, std::string(cmd.get_segname()));
-
   cmd.fileoff = fileoff;
   cmd.vmaddr = vmaddr;
 
+  if (cmd.get_segname() == "__LINKEDIT")
+    set_offset_linkedit(ctx, fileoff, vmaddr);
+  else
+    set_offset_regular(ctx, fileoff, vmaddr);
+}
+
+template <typename E>
+void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
+                                          u64 vmaddr) {
+  Timer t(ctx, std::string(cmd.get_segname()));
   i64 i = 0;
 
   // Assign offsets to non-BSS sections
@@ -510,11 +518,46 @@ void OutputSegment<E>::set_offset(Context<E> &ctx, i64 fileoff, u64 vmaddr) {
   }
 
   cmd.vmsize = align_to(vmaddr - cmd.vmaddr, COMMON_PAGE_SIZE);
+  cmd.filesize = align_to(fileoff - cmd.fileoff, COMMON_PAGE_SIZE);
+}
 
-  if (this == ctx.segments.back().get())
-    cmd.filesize = fileoff - cmd.fileoff;
-  else
-    cmd.filesize = align_to(fileoff - cmd.fileoff, COMMON_PAGE_SIZE);
+template <typename E>
+void OutputSegment<E>::set_offset_linkedit(Context<E> &ctx, i64 fileoff,
+                                           u64 vmaddr) {
+  Timer t(ctx, "__LINKEDIT");
+
+  // Unlike regular segments, __LINKEDIT member sizes can be computed in
+  // parallel except __ind_sym_tab, __string_table and __code_signature
+  // sections.
+  auto skip = [&](Chunk<E> *c) {
+    return c == &ctx.indir_symtab || c == &ctx.strtab || c == &ctx.code_sig;
+  };
+
+  tbb::parallel_for_each(chunks, [&](Chunk<E> *chunk) {
+    if (!skip(chunk)) {
+      Timer t2(ctx, std::string(chunk->hdr.get_sectname()), &t);
+      chunk->compute_size(ctx);
+    }
+  });
+
+  for (Chunk<E> *chunk : chunks) {
+    fileoff = align_to(fileoff, 1 << chunk->hdr.p2align);
+    vmaddr = align_to(vmaddr, 1 << chunk->hdr.p2align);
+
+    chunk->hdr.offset = fileoff;
+    chunk->hdr.addr = vmaddr;
+
+    if (skip(chunk)) {
+      Timer t2(ctx, std::string(chunk->hdr.get_sectname()), &t);
+      chunk->compute_size(ctx);
+    }
+
+    fileoff += chunk->hdr.size;
+    vmaddr += chunk->hdr.size;
+  }
+
+  cmd.vmsize = align_to(vmaddr - cmd.vmaddr, COMMON_PAGE_SIZE);
+  cmd.filesize = fileoff - cmd.fileoff;
 }
 
 RebaseEncoder::RebaseEncoder() {
@@ -963,12 +1006,8 @@ i64 StrtabSection<E>::add_string(std::string_view str) {
   i64 off = contents.size();
   contents += str;
   contents += '\0';
-  return off;
-}
-
-template <typename E>
-void StrtabSection<E>::compute_size(Context<E> &ctx) {
   this->hdr.size = align_to(contents.size(), 1 << this->hdr.p2align);
+  return off;
 }
 
 template <typename E>
@@ -978,7 +1017,6 @@ void StrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void IndirectSymtabSection<E>::compute_size(Context<E> &ctx) {
-  ctx.stubs.hdr.reserved1 = 0;
   ctx.got.hdr.reserved1 = stubs.size();
   ctx.lazy_symbol_ptr.hdr.reserved1 = stubs.size() + gots.size();
 

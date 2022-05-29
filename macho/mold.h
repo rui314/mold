@@ -309,6 +309,9 @@ public:
   std::vector<Chunk<E> *> chunks;
 
 private:
+  void set_offset_regular(Context<E> &ctx, i64 fileoff, u64 vmaddr);
+  void set_offset_linkedit(Context<E> &ctx, i64 fileoff, u64 vmaddr);
+
   OutputSegment(std::string_view name);
 };
 
@@ -564,7 +567,6 @@ public:
   }
 
   i64 add_string(std::string_view str);
-  void compute_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   std::string contents{1, '\0'};
@@ -629,6 +631,7 @@ public:
     this->hdr.p2align = std::countr_zero(2U);
     this->hdr.type = S_SYMBOL_STUBS;
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+    this->hdr.reserved1 = 0;
     this->hdr.reserved2 = E::stub_size;
   }
 
