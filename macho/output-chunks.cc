@@ -1100,7 +1100,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     // recompute code signatures for the updated blocks.
     ctx.mach_hdr.copy_buf(ctx);
 
-    for (i64 i = 0; i * BLOCK_SIZE < this->hdr.offset; i++)
+    for (i64 i = 0; i * BLOCK_SIZE < ctx.mach_hdr.hdr.size; i++)
       compute_hash(i);
   }
 
