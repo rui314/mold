@@ -41,10 +41,7 @@ static void resolve_symbols(Context<E> &ctx) {
     tbb::parallel_for_each(ctx.dylibs, fn);
   };
 
-  for (InputFile<E> *file : ctx.objs)
-    file->resolve_symbols(ctx);
-  for (InputFile<E> *file : ctx.dylibs)
-    file->resolve_symbols(ctx);
+  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 
   std::vector<ObjectFile<E> *> live_objs;
   for (ObjectFile<E> *file : ctx.objs)
@@ -66,10 +63,7 @@ static void resolve_symbols(Context<E> &ctx) {
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dylibs, [](InputFile<E> *file) { return !file->is_alive; });
 
-  for (InputFile<E> *file : ctx.objs)
-    file->resolve_symbols(ctx);
-  for (InputFile<E> *file : ctx.dylibs)
-    file->resolve_symbols(ctx);
+  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 
   if (has_lto_obj(ctx))
     do_lto(ctx);
