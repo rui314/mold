@@ -264,12 +264,13 @@ static void merge_cstring_sections(Context<E> &ctx) {
     }
   }
 
-  for (ObjectFile<E> *file : ctx.objs)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec)
         for (Relocation<E> &r : isec->rels)
           if (r.subsec && r.subsec->is_coalesced)
             r.subsec = r.subsec->replacer;
+  });
 
   auto replace = [&](InputFile<E> *file) {
     for (Symbol<E> *sym : file->syms)
@@ -277,16 +278,14 @@ static void merge_cstring_sections(Context<E> &ctx) {
         sym->subsec = sym->subsec->replacer;
   };
 
-  for (InputFile<E> *file : ctx.objs)
-    replace(file);
-  for (InputFile<E> *file : ctx.dylibs)
-    replace(file);
+  tbb::parallel_for_each(ctx.objs, replace);
+  tbb::parallel_for_each(ctx.dylibs, replace);
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     std::erase_if(file->subsections, [](Subsection<E> *subsec) {
       return subsec->is_coalesced;
     });
-  }
+  });
 }
 
 template <typename E>
