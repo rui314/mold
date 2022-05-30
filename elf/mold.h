@@ -302,10 +302,10 @@ public:
   std::atomic_bool is_alive = true;
   u8 p2align = 0;
 
-  u8 address_significant : 1 = false;
-  u8 compressed : 1 = false;
-  u8 uncompressed : 1 = false;
-  u8 killed_by_icf : 1 = false;
+  bool address_significant : 1 = false;
+  bool compressed : 1 = false;
+  bool uncompressed : 1 = false;
+  bool killed_by_icf : 1 = false;
 
   // For garbage collection
   std::atomic_bool is_visited = false;
@@ -1894,10 +1894,10 @@ public:
   tbb::spin_mutex mu;
   std::atomic_uint8_t visibility = STV_DEFAULT;
 
-  u8 is_weak : 1 = false;
-  u8 write_to_symtab : 1 = false; // for --strip-all and the like
-  u8 traced : 1 = false;          // for --trace-symbol
-  u8 wrap : 1 = false;            // for --wrap
+  bool is_weak : 1 = false;
+  bool write_to_symtab : 1 = false; // for --strip-all and the like
+  bool traced : 1 = false;          // for --trace-symbol
+  bool wrap : 1 = false;            // for --wrap
 
   // If a symbol can be resolved to a symbol in a different ELF file at
   // runtime, `is_imported` is true. If a symbol is a dynamic symbol and
@@ -1920,8 +1920,8 @@ public:
   // executable. If we are creating a DSO, export-only symbols
   // represent a protected symbol (i.e. a symbol whose visibility is
   // STV_PROTECTED).
-  u8 is_imported : 1 = false;
-  u8 is_exported : 1 = false;
+  bool is_imported : 1 = false;
+  bool is_exported : 1 = false;
 
   // `is_canonical` is true if this symbol represents a "canonical" PLT.
   // Here is the explanation as to what is the canonical PLT is.
@@ -1969,7 +1969,7 @@ public:
   //
   // This bit manages if we need to make this symbol's PLT canonical.
   // This bit is meaningful only when the symbol has a PLT entry.
-  u8 is_canonical : 1 = false;
+  bool is_canonical : 1 = false;
 
   // If an input object file is not compiled with -fPIC (or with
   // -fno-PIC), the file not position independent. That means the
@@ -2000,12 +2000,12 @@ public:
   // symbol. If the original symbol in a DSO is in a read-only memory
   // region, `copyrel_readonly` is set to true so that the copied data
   // will become read-only at run-time.
-  u8 has_copyrel : 1 = false;
-  u8 copyrel_readonly : 1 = false;
+  bool has_copyrel : 1 = false;
+  bool copyrel_readonly : 1 = false;
 
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
-  u8 referenced_by_regular_obj : 1 = false;
+  bool referenced_by_regular_obj : 1 = false;
 
   // Target-dependent extra members.
   [[no_unique_address]] SymbolExtras<E> extra;

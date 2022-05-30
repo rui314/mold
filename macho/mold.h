@@ -43,8 +43,8 @@ struct Relocation {
   u32 offset = 0;
   u8 type = -1;
   u8 p2size = 0;
-  u8 is_pcrel : 1 = false;
-  u8 needs_dynrel : 1 = false;
+  bool is_pcrel : 1 = false;
+  bool needs_dynrel : 1 = false;
   i64 addend = 0;
   Symbol<E> *sym = nullptr;
   Subsection<E> *subsec = nullptr;
@@ -264,11 +264,11 @@ struct Symbol {
 
   std::atomic_uint8_t flags = 0;
 
-  u8 is_extern : 1 = false;
-  u8 is_common : 1 = false;
-  u8 is_weak_def : 1 = false;
-  u8 is_imported : 1 = false;
-  u8 referenced_dynamically : 1 = false;
+  bool is_extern : 1 = false;
+  bool is_common : 1 = false;
+  bool is_weak_def : 1 = false;
+  bool is_imported : 1 = false;
+  bool referenced_dynamically : 1 = false;
 
   // For range extension thunks
   i32 thunk_idx = -1;
