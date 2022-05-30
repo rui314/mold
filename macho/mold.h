@@ -158,7 +158,6 @@ public:
 
   std::string_view install_name;
   i64 dylib_idx = 0;
-  std::atomic_bool is_needed = false;
 
 private:
   void parse_dylib(Context<E> &ctx);
@@ -167,7 +166,6 @@ private:
 
   DylibFile(MappedFile<Context<E>> *mf) : InputFile<E>(mf) {
     this->is_dylib = true;
-    this->is_alive = true;
   }
 };
 

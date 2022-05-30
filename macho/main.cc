@@ -36,11 +36,14 @@ template <typename E>
 static void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
 
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dylibs);
+  auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
+    tbb::parallel_for_each(ctx.objs, fn);
+    tbb::parallel_for_each(ctx.dylibs, fn);
+  };
 
-  for (InputFile<E> *file : files)
+  for (InputFile<E> *file : ctx.objs)
+    file->resolve_symbols(ctx);
+  for (InputFile<E> *file : ctx.dylibs)
     file->resolve_symbols(ctx);
 
   std::vector<ObjectFile<E> *> live_objs;
@@ -54,7 +57,18 @@ static void resolve_symbols(Context<E> &ctx) {
     });
   }
 
-  for (InputFile<E> *file : files)
+  // Remove symbols of eliminated files.
+  for_each_file([&](InputFile<E> *file) {
+    if (!file->is_alive)
+      file->clear_symbols();
+  });
+
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dylibs, [](InputFile<E> *file) { return !file->is_alive; });
+
+  for (InputFile<E> *file : ctx.objs)
+    file->resolve_symbols(ctx);
+  for (InputFile<E> *file : ctx.dylibs)
     file->resolve_symbols(ctx);
 
   if (has_lto_obj(ctx))
@@ -689,9 +703,6 @@ static int do_main(int argc, char **argv) {
 
   create_internal_file(ctx);
 
-  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_alive; });
-
   if (ctx.arg.trace) {
     for (ObjectFile<E> *file : ctx.objs)
       SyncOut(ctx) << *file;
@@ -723,10 +734,6 @@ static int do_main(int argc, char **argv) {
       subsec->scan_relocations(ctx);
 
   scan_unwind_info(ctx);
-
-  if (ctx.arg.dead_strip_dylibs)
-    std::erase_if(ctx.dylibs, [](DylibFile<E> *file) { return !file->is_needed; });
-
   export_symbols(ctx);
 
   i64 output_size = assign_offsets(ctx);

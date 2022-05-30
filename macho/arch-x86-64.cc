@@ -139,7 +139,7 @@ void Subsection<E>::scan_relocations(Context<E> &ctx) {
       continue;
 
     if (sym->is_imported && sym->file->is_dylib)
-      ((DylibFile<E> *)sym->file)->is_needed = true;
+      ((DylibFile<E> *)sym->file)->is_alive = true;
 
     switch (r.type) {
     case X86_64_RELOC_UNSIGNED:

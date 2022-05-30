@@ -671,7 +671,7 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
 template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>(mf);
-  dylib->is_needed = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
+  dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   ctx.dylib_pool.emplace_back(dylib);
   return dylib;
 };
