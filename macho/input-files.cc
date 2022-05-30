@@ -21,10 +21,10 @@ void InputFile<E>::clear_symbols() {
       sym->file = nullptr;
       sym->is_extern = false;
       sym->is_imported = false;
+      sym->is_weak_def = false;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
-      sym->is_weak_def = false;
     }
   }
 }
@@ -461,15 +461,15 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
 //
 // Ties are broken by file priority.
 template <typename E>
-static u64 get_rank(InputFile<E> *file, bool is_common, bool is_weak,
-                    bool is_lazy) {
+static u64 get_rank(InputFile<E> *file, bool is_common, bool is_weak) {
   if (is_common) {
-    if (is_lazy)
+    assert(!file->is_dylib);
+    if (!file->is_alive)
       return (6 << 24) + file->priority;
     return (5 << 24) + file->priority;
   }
 
-  if (file->is_dylib || is_lazy) {
+  if (file->is_dylib || !file->is_alive) {
     if (is_weak)
       return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
@@ -484,7 +484,7 @@ template <typename E>
 static u64 get_rank(Symbol<E> &sym) {
   if (!sym.file)
     return 7 << 24;
-  return get_rank(sym.file, sym.is_common, sym.is_weak_def, !sym.file->is_alive);
+  return get_rank(sym.file, sym.is_common, sym.is_weak_def);
 }
 
 template <typename E>
@@ -496,13 +496,13 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     Symbol<E> &sym = *this->syms[i];
     std::scoped_lock lock(sym.mu);
+    bool is_weak_def = (msym.desc & N_WEAK_DEF);
 
-    if (get_rank(this, msym.is_common(), msym.desc & N_WEAK_DEF, false) <
-        get_rank(sym)) {
+    if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
       sym.file = this;
       sym.is_extern = (msym.ext && !this->is_hidden);
       sym.is_imported = false;
-      sym.is_weak_def = (msym.desc & N_WEAK_DEF);
+      sym.is_weak_def = is_weak_def;
 
       switch (msym.type) {
       case N_UNDF:
@@ -582,10 +582,10 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       subsections.emplace_back(subsec);
 
       sym.is_imported = false;
+      sym.is_weak_def = false;
       sym.subsec = subsec;
       sym.value = 0;
       sym.is_common = false;
-      sym.is_weak_def = false;
     }
   }
 }
@@ -740,10 +740,8 @@ void DylibFile<E>::parse(Context<E> &ctx) {
     for (std::string_view s : tbd.exports)
       this->syms.push_back(get_symbol(ctx, s));
 
-    for (std::string_view s : tbd.weak_exports) {
+    for (std::string_view s : tbd.weak_exports)
       this->syms.push_back(get_symbol(ctx, s));
-      this->syms.back()->is_weak_def = true;
-    }
 
     auto add_symbol = [&](const std::string &name) {
       this->syms.push_back(get_symbol(ctx, save_string(ctx, name)));
@@ -776,14 +774,14 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : this->syms) {
     std::scoped_lock lock(sym->mu);
 
-    if (get_rank(this, false, false, false) < get_rank(*sym)) {
+    if (get_rank(this, false, false) < get_rank(*sym)) {
       sym->file = this;
       sym->is_extern = true;
       sym->is_imported = true;
+      sym->is_weak_def = false;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
-      sym->is_weak_def = false;
     }
   }
 }
