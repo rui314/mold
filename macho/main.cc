@@ -2,6 +2,7 @@
 #include "../archive-file.h"
 #include "../cmdline.h"
 #include "../output-file.h"
+#include "../sha.h"
 
 #include <cstdlib>
 #include <fcntl.h>
@@ -414,6 +415,16 @@ static void copy_sections_to_output_file(Context<E> &ctx) {
 }
 
 template <typename E>
+static void compute_uuid(Context<E> &ctx) {
+  Timer t(ctx, "copy_sections_to_output_file");
+
+  u8 buf[SHA256_SIZE];
+  SHA256(ctx.buf, ctx.output_file->filesize, buf);
+  memcpy(ctx.uuid, buf, 16);
+  ctx.mach_hdr.copy_buf(ctx);
+}
+
+template <typename E>
 MappedFile<Context<E>> *find_framework(Context<E> &ctx, std::string name) {
   std::string suffix;
   std::tie(name, suffix) = split_string(name, ',');
@@ -731,6 +742,8 @@ static int do_main(int argc, char **argv) {
 
   if (ctx.code_sig)
     ctx.code_sig->write_signature(ctx);
+  else if (ctx.arg.uuid == UUID_HASH)
+    compute_uuid(ctx);
 
   ctx.output_file->close(ctx);
   ctx.checkpoint();
