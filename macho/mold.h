@@ -933,10 +933,8 @@ struct Context {
   UnwindInfoSection<E> unwind_info{*this};
   GotSection<E> got{*this};
   LazySymbolPtrSection<E> lazy_symbol_ptr{*this};
-  CodeSignatureSection<E> code_sig{*this};
   DataInCodeSection<E> data_in_code{*this};
   ThreadPtrsSection<E> thread_ptrs{*this};
-
   RebaseSection<E> rebase{*this};
   BindSection<E> bind{*this};
   LazyBindSection<E> lazy_bind{*this};
@@ -945,6 +943,8 @@ struct Context {
   SymtabSection<E> symtab{*this};
   IndirectSymtabSection<E> indir_symtab{*this};
   StrtabSection<E> strtab{*this};
+
+  std::unique_ptr<CodeSignatureSection<E>> code_sig;
 
   OutputSection<E> *text = nullptr;
   OutputSection<E> *data = nullptr;

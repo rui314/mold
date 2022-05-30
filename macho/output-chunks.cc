@@ -229,8 +229,8 @@ static std::vector<u8> create_code_signature_cmd(Context<E> &ctx) {
 
   cmd.cmd = LC_CODE_SIGNATURE;
   cmd.cmdsize = buf.size();
-  cmd.dataoff = ctx.code_sig.hdr.offset;
-  cmd.datasize = ctx.code_sig.hdr.size;
+  cmd.dataoff = ctx.code_sig->hdr.offset;
+  cmd.datasize = ctx.code_sig->hdr.size;
   return buf;
 }
 
@@ -301,7 +301,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
     unreachable();
   }
 
-  if (ctx.arg.adhoc_codesign)
+  if (ctx.code_sig)
     vec.push_back(create_code_signature_cmd(ctx));
   return vec;
 }
@@ -529,7 +529,7 @@ void OutputSegment<E>::set_offset_linkedit(Context<E> &ctx, i64 fileoff,
   // parallel except __ind_sym_tab, __string_table and __code_signature
   // sections.
   auto skip = [&](Chunk<E> *c) {
-    return c == &ctx.indir_symtab || c == &ctx.strtab || c == &ctx.code_sig;
+    return c == &ctx.indir_symtab || c == &ctx.strtab || c == ctx.code_sig.get();
   };
 
   tbb::parallel_for_each(chunks, [&](Chunk<E> *chunk) {

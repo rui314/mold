@@ -660,6 +660,9 @@ static int do_main(int argc, char **argv) {
     ctx.chunk_pool.emplace_back(sec);
   }
 
+  if (ctx.arg.adhoc_codesign)
+    ctx.code_sig.reset(new CodeSignatureSection<E>(ctx));
+
   read_input_files(ctx, file_args);
   parse_input_files(ctx);
 
@@ -726,7 +729,8 @@ static int do_main(int argc, char **argv) {
 
   copy_sections_to_output_file(ctx);
 
-  ctx.code_sig.write_signature(ctx);
+  if (ctx.code_sig)
+    ctx.code_sig->write_signature(ctx);
 
   ctx.output_file->close(ctx);
   ctx.checkpoint();
