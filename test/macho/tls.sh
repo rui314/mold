@@ -14,20 +14,23 @@ t=out/test/macho/$testname
 mkdir -p $t
 
 cat <<EOF | $CC -shared -o $t/a.dylib -xc -
-_Thread_local int a;
+_Thread_local int b;
+_Thread_local int c = 5;
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xc -
 #include <stdio.h>
 
-extern _Thread_local int a;
+int a = 3;
+extern _Thread_local int b;
+extern _Thread_local int c;
 
 int main() {
-  printf("%d\n", a);
+  printf("%d %d %d\n", a, b, c);
 }
 EOF
 
 clang --ld-path=./ld64 -o $t/exe $t/a.dylib $t/b.o
-$t/exe | grep -q '^0$'
+$t/exe | grep -q '^3 0 5$'
 
 echo OK

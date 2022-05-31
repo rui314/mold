@@ -484,15 +484,24 @@ void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
   Timer t(ctx, std::string(cmd.get_segname()));
   i64 i = 0;
 
+  auto is_bss = [](Chunk<E> &x) {
+    return x.hdr.type == S_ZEROFILL || x.hdr.type == S_THREAD_LOCAL_ZEROFILL;
+  };
+
+  auto get_alignment = [](Chunk<E> &chunk) {
+    if (chunk.hdr.type == S_THREAD_LOCAL_REGULAR ||
+        chunk.hdr.type == S_THREAD_LOCAL_ZEROFILL)
+      return 8;
+    return 1 << chunk.hdr.p2align;
+  };
+
   // Assign offsets to non-BSS sections
-  while (i < chunks.size() && chunks[i]->hdr.type != S_ZEROFILL) {
+  while (i < chunks.size() && !is_bss(*chunks[i])) {
     Timer t2(ctx, std::string(chunks[i]->hdr.get_sectname()), &t);
     Chunk<E> &sec = *chunks[i++];
-    i64 alignment =
-      (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
 
-    fileoff = align_to(fileoff, alignment);
-    vmaddr = align_to(vmaddr, alignment);
+    fileoff = align_to(fileoff, get_alignment(sec));
+    vmaddr = align_to(vmaddr, get_alignment(sec));
 
     sec.hdr.offset = fileoff;
     sec.hdr.addr = vmaddr;
@@ -505,12 +514,9 @@ void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
   // Assign offsets to BSS sections
   while (i < chunks.size()) {
     Chunk<E> &sec = *chunks[i++];
-    assert(sec.hdr.type == S_ZEROFILL);
+    assert(is_bss(sec));
 
-    i64 alignment =
-      (sec.hdr.type == S_THREAD_LOCAL_VARIABLES) ? 8 : (1 << sec.hdr.p2align);
-
-    vmaddr = align_to(vmaddr, alignment);
+    vmaddr = align_to(vmaddr, get_alignment(sec));
     sec.hdr.addr = vmaddr;
     sec.compute_size(ctx);
     vmaddr += sec.hdr.size;

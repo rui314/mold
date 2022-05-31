@@ -182,6 +182,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     Relocation<E> &r = rels[i];
     u8 *loc = buf + r.offset;
     i64 val = r.addend;
+    u64 pc = get_addr(ctx) + r.offset;
 
     if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
@@ -228,7 +229,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case ARM64_RELOC_SUBTRACTOR:
     case ARM64_RELOC_POINTER_TO_GOT:
       if (r.is_pcrel)
-        val -= get_addr(ctx) + r.offset;
+        val -= pc;
 
       if (r.p2size == 2)
         *(ul32 *)loc = val;
@@ -239,14 +240,13 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
       break;
     case ARM64_RELOC_BRANCH26: {
       assert(r.is_pcrel);
-      val = val - get_addr(ctx) - r.offset;
+      val -= pc;
 
       i64 lo = -(1 << 27);
       i64 hi = 1 << 27;
 
       if (val < lo || hi <= val) {
-        val = isec.osec.thunks[r.thunk_idx]->get_addr(r.thunk_sym_idx) -
-              get_addr(ctx) - r.offset;
+        val = isec.osec.thunks[r.thunk_idx]->get_addr(r.thunk_sym_idx) - pc;
         assert(lo <= val && val < hi);
       }
 
@@ -257,7 +257,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
       assert(r.is_pcrel);
-      *(ul32 *)loc |= encode_page(page(val) - page(get_addr(ctx) + r.offset));
+      *(ul32 *)loc |= encode_page(page(val) - page(pc));
       break;
     case ARM64_RELOC_PAGEOFF12:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:

@@ -155,8 +155,12 @@ template <typename E>
 static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
   assert(a->hdr.get_segname() == b->hdr.get_segname());
 
-  if ((a->hdr.type == S_ZEROFILL) != (b->hdr.type == S_ZEROFILL))
-    return a->hdr.type != S_ZEROFILL;
+  auto is_bss = [](const Chunk<E> *x) {
+    return x->hdr.type == S_ZEROFILL || x->hdr.type == S_THREAD_LOCAL_ZEROFILL;
+  };
+
+  if (is_bss(a) != is_bss(b))
+    return !is_bss(a);
 
   static const std::string_view rank[] = {
     // __TEXT
@@ -169,8 +173,11 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
     "__unwind_info",
     // __DATA_CONST
     "__got",
+    "__const",
     // __DATA
+    "__mod_init_func",
     "__la_symbol_ptr",
+    "__thread_ptrs",
     "__data",
     "__thread_ptr",
     "__thread_data",

@@ -21,14 +21,16 @@ cat <<EOF | $CC -o $t/a.o -c -xc -
 
 _Thread_local int a;
 static _Thread_local int b = 5;
+static _Thread_local int *c;
 
 int main() {
   b = 5;
-  printf("%d %d\n", a, b);
+  c = &b;
+  printf("%d %d %d\n", a, b, *c);
 }
 EOF
 
 clang --ld-path=./ld64 -o $t/exe $t/a.o
-$t/exe | grep -q '^0 5$'
+$t/exe | grep -q '^0 5 5$'
 
 echo OK
