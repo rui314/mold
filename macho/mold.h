@@ -9,6 +9,7 @@
 #include <span>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/task_group.h>
 #include <unordered_map>
 #include <variant>
 
@@ -486,7 +487,7 @@ private:
 
   struct TrieNode {
     std::string_view prefix;
-    std::vector<TrieNode> children;
+    std::vector<std::unique_ptr<TrieNode>> children;
     u64 addr = 0;
     u32 flags = 0;
     u32 offset = -1;
@@ -494,12 +495,16 @@ private:
   };
 
   static i64 common_prefix_len(std::span<Entry> entries, i64 len);
-  static TrieNode construct_trie(std::span<Entry> entries, i64 len);
+
+  void construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
+                      i64 grain_size, bool divide);
+
   static i64 set_offset(TrieNode &node, i64 offset);
   void write_trie(u8 *buf, TrieNode &node);
 
   TrieNode root;
   std::vector<Entry> entries;
+  tbb::task_group tg;
 };
 
 template <typename E>

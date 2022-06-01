@@ -811,11 +811,14 @@ i64 ExportEncoder::finish() {
   });
 
   // Construct a trie
-  TrieNode trie = construct_trie(entries, 0);
-  if (trie.prefix.empty())
-    root = std::move(trie);
+  TrieNode node;
+  construct_trie(node, entries, 0, entries.size() / 32, true);
+  tg.wait();
+
+  if (node.prefix.empty())
+    root = std::move(node);
   else
-    root.children.push_back(std::move(trie));
+    root.children.emplace_back(new TrieNode(std::move(node)));
 
   // Set output offsets to trie nodes. Since a serialized trie node
   // contains output offsets of other nodes in the variable-length
@@ -839,10 +842,9 @@ i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
   return i;
 }
 
-ExportEncoder::TrieNode
-ExportEncoder::construct_trie(std::span<Entry> entries, i64 len) {
-  TrieNode node;
-
+void
+ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
+                              i64 grain_size, bool divide) {
   i64 new_len = common_prefix_len(entries, len);
   if (new_len > len) {
     node.prefix = entries[0].name.substr(len, new_len - len);
@@ -860,10 +862,21 @@ ExportEncoder::construct_trie(std::span<Entry> entries, i64 len) {
       return entries[i].name[new_len] == ent.name[new_len];
     });
     i64 j = it - entries.begin();
-    node.children.push_back(construct_trie(entries.subspan(i, j - i), new_len));
+
+    TrieNode *child = new TrieNode;
+    std::span<Entry> subspan = entries.subspan(i, j - i);
+
+    if (divide && j - i < grain_size) {
+      tg.run([=] {
+        construct_trie(*child, subspan, new_len, grain_size, false);
+      });
+    } else {
+      construct_trie(*child, subspan, new_len, grain_size, divide);
+    }
+
+    node.children.emplace_back(child);
     i = j;
   }
-  return node;
 }
 
 i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
@@ -879,13 +892,13 @@ i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
 
   size++; // # of children
 
-  for (TrieNode &child : node.children) {
+  for (std::unique_ptr<TrieNode> &child : node.children) {
     // +1 for NUL byte
-    size += child.prefix.size() + 1 + uleb_size(child.offset);
+    size += child->prefix.size() + 1 + uleb_size(child->offset);
   }
 
-  for (TrieNode &child : node.children)
-    size += set_offset(child, offset + size);
+  for (std::unique_ptr<TrieNode> &child : node.children)
+    size += set_offset(*child, offset + size);
   return size;
 }
 
@@ -902,13 +915,13 @@ void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
 
   *buf++ = node.children.size();
 
-  for (TrieNode &child : node.children) {
-    buf += write_string(buf, child.prefix);
-    buf += write_uleb(buf, child.offset);
+  for (std::unique_ptr<TrieNode> &child : node.children) {
+    buf += write_string(buf, child->prefix);
+    buf += write_uleb(buf, child->offset);
   }
 
-  for (TrieNode &child : node.children)
-    write_trie(start, child);
+  for (std::unique_ptr<TrieNode> &child : node.children)
+    write_trie(start, *child);
 }
 
 template <typename E>
