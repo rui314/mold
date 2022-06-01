@@ -812,7 +812,8 @@ i64 ExportEncoder::finish() {
 
   // Construct a trie
   TrieNode node;
-  construct_trie(node, entries, 0, entries.size() / 32, true);
+  tbb::task_group tg;
+  construct_trie(node, entries, 0, &tg, entries.size() / 32, true);
   tg.wait();
 
   if (node.prefix.empty())
@@ -844,7 +845,7 @@ i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
 
 void
 ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
-                              i64 grain_size, bool divide) {
+                              tbb::task_group *tg, i64 grain_size, bool divide) {
   i64 new_len = common_prefix_len(entries, len);
   if (new_len > len) {
     node.prefix = entries[0].name.substr(len, new_len - len);
@@ -867,11 +868,11 @@ ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
     std::span<Entry> subspan = entries.subspan(i, j - i);
 
     if (divide && j - i < grain_size) {
-      tg.run([=] {
-        construct_trie(*child, subspan, new_len, grain_size, false);
+      tg->run([=] {
+        construct_trie(*child, subspan, new_len, tg, grain_size, false);
       });
     } else {
-      construct_trie(*child, subspan, new_len, grain_size, divide);
+      construct_trie(*child, subspan, new_len, tg, grain_size, divide);
     }
 
     node.children.emplace_back(child);

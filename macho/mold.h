@@ -497,14 +497,13 @@ private:
   static i64 common_prefix_len(std::span<Entry> entries, i64 len);
 
   void construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
-                      i64 grain_size, bool divide);
+                      tbb::task_group *tg, i64 grain_size, bool divide);
 
   static i64 set_offset(TrieNode &node, i64 offset);
   void write_trie(u8 *buf, TrieNode &node);
 
   TrieNode root;
   std::vector<Entry> entries;
-  tbb::task_group tg;
 };
 
 template <typename E>
