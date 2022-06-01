@@ -489,10 +489,14 @@ void OutputSegment<E>::set_offset_regular(Context<E> &ctx, i64 fileoff,
   };
 
   auto get_alignment = [](Chunk<E> &chunk) {
-    if (chunk.hdr.type == S_THREAD_LOCAL_REGULAR ||
-        chunk.hdr.type == S_THREAD_LOCAL_ZEROFILL)
-      return 8;
-    return 1 << chunk.hdr.p2align;
+    switch (chunk.hdr.type) {
+    case S_THREAD_LOCAL_REGULAR:
+    case S_THREAD_LOCAL_ZEROFILL:
+    case S_THREAD_LOCAL_VARIABLES:
+      return 16;
+    default:
+      return 1 << chunk.hdr.p2align;
+    }
   };
 
   // Assign offsets to non-BSS sections
@@ -642,12 +646,21 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
       enc.add(ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
+  auto refers_tls = [](Symbol<E> *sym) {
+    if (sym && sym->subsec) {
+      auto ty = sym->subsec->isec.osec.hdr.type;
+      return ty == S_THREAD_LOCAL_REGULAR || ty == S_THREAD_LOCAL_ZEROFILL ||
+             ty == S_THREAD_LOCAL_VARIABLES;
+    }
+    return false;
+  };
+
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
       if (chunk->is_output_section)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
-            if (!rel.is_pcrel && rel.type == E::abs_rel)
+            if (!rel.is_pcrel && rel.type == E::abs_rel && !refers_tls(rel.sym))
               enc.add(seg->seg_idx,
                       subsec->get_addr(ctx) + rel.offset - seg->cmd.vmaddr);
 
