@@ -31,7 +31,8 @@ void print_map(Context<E> &ctx) {
       out << "[" << std::setw(3) << i << "] " << file << "\n";
       for (Symbol<E> *sym : file.syms)
         if (sym && sym->file == &file)
-          syms.push_back({sym->get_addr(ctx), 0, (u32)i, sym->name});
+          if (!sym->subsec || sym->subsec->is_alive)
+            syms.push_back({sym->get_addr(ctx), 0, (u32)i, sym->name});
     }
   }
 
