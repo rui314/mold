@@ -488,8 +488,6 @@ public:
     bool is_leaf = false;
   };
 
-  static i64 common_prefix_len(std::span<Entry> entries, i64 len);
-
   void construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
                       tbb::task_group *tg, i64 grain_size, bool divide);
 

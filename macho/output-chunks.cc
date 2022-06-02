@@ -828,10 +828,7 @@ i64 ExportEncoder::finish() {
   return set_offset(root, 0);
 }
 
-i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
-  std::string_view x = entries[0].name;
-  std::string_view y = entries.back().name;
-
+static i64 common_prefix_len(std::string_view x, std::string_view y) {
   i64 i = 0;
   i64 end = std::min(x.size(), y.size());
   while (i < end && x[i] == y[i])
@@ -842,7 +839,8 @@ i64 ExportEncoder::common_prefix_len(std::span<Entry> entries, i64 len) {
 void
 ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
                               tbb::task_group *tg, i64 grain_size, bool divide) {
-  i64 new_len = common_prefix_len(entries, len);
+  i64 new_len = common_prefix_len(entries[0].name, entries.back().name);
+
   if (new_len > len) {
     node.prefix = entries[0].name.substr(len, new_len - len);
     if (entries[0].name.size() == new_len) {
