@@ -260,6 +260,9 @@ static void merge_cstring_sections(Context<E> &ctx) {
           Subsection<E> *existing = pair.first->second;
           if (existing->p2align < subsec->p2align)
             pair.first->second = subsec;
+
+          static Counter counter("num_merged_strings");
+          counter++;
         }
       }
     }
@@ -274,9 +277,6 @@ static void merge_cstring_sections(Context<E> &ctx) {
         if (it->second != subsec) {
           subsec->is_coalesced = true;
           subsec->replacer = it->second;
-
-          static Counter counter("num_merged_strings");
-          counter++;
         }
       }
     }
