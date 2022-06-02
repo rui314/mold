@@ -249,45 +249,34 @@ static void merge_cstring_sections(Context<E> &ctx) {
   Timer t(ctx, "merge_cstring_sections");
 
   // Insert all strings into a hash table to merge them.
-  std::unordered_map<std::string_view, Subsection<E> *> map;
+  tbb::concurrent_hash_map<std::string_view, Subsection<E> *, HashCmp> map;
 
   for (ObjectFile<E> *file : ctx.objs) {
-    for (Subsection<E> *subsec : file->subsections) {
-      if (&subsec->isec.osec == ctx.cstring) {
-        std::string_view str = subsec->get_contents();
-        auto pair = map.insert({str, subsec});
-        if (!pair.second) {
-          Subsection<E> *existing = pair.first->second;
-          if (existing->p2align < subsec->p2align)
-            pair.first->second = subsec;
+    tbb::parallel_for_each(file->subsections, [&](Subsection<E> *subsec) {
+      if (&subsec->isec.osec != ctx.cstring)
+        return;
 
-          static Counter counter("num_merged_strings");
-          counter++;
-        }
+      typename decltype(map)::accessor acc;
+
+      if (!map.insert(acc, {subsec->get_contents(), subsec})) {
+        Subsection<E> *existing = acc->second;
+        update_maximum(existing->p2align, subsec->p2align.load());
+        subsec->is_coalesced = true;
+        subsec->replacer = existing;
+
+        static Counter counter("num_merged_strings");
+        counter++;
       }
-    }
+    });
   }
 
-  // Replace subsections
-  for (ObjectFile<E> *file : ctx.objs) {
-    for (Subsection<E> *subsec : file->subsections) {
-      if (&subsec->isec.osec == ctx.cstring) {
-        std::string_view str = subsec->get_contents();
-        auto it = map.find(str);
-        if (it->second != subsec) {
-          subsec->is_coalesced = true;
-          subsec->replacer = it->second;
-        }
-      }
-    }
-  }
-
-  for (ObjectFile<E> *file : ctx.objs)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec)
         for (Relocation<E> &r : isec->rels)
           if (r.subsec && r.subsec->is_coalesced)
             r.subsec = r.subsec->replacer;
+  });
 
   auto replace = [&](InputFile<E> *file) {
     for (Symbol<E> *sym : file->syms)
@@ -295,16 +284,14 @@ static void merge_cstring_sections(Context<E> &ctx) {
         sym->subsec = sym->subsec->replacer;
   };
 
-  for (InputFile<E> *file : ctx.objs)
-    replace(file);
-  for (InputFile<E> *file : ctx.dylibs)
-    replace(file);
+  tbb::parallel_for_each(ctx.objs, replace);
+  tbb::parallel_for_each(ctx.dylibs, replace);
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     std::erase_if(file->subsections, [](Subsection<E> *subsec) {
       return subsec->is_coalesced;
     });
-  }
+  });
 }
 
 template <typename E>

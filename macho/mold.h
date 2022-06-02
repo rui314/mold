@@ -227,7 +227,7 @@ public:
   u32 nunwind = 0;
   Subsection<E> *replacer; // Used if is_coalesced is true
 
-  u8 p2align = 0;
+  std::atomic_uint8_t p2align = 0;
   std::atomic_bool is_alive = true;
   bool is_coalesced = false;
 };
