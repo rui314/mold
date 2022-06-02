@@ -801,10 +801,6 @@ void LazyBindSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
-void ExportEncoder::add(std::string_view name, u32 flags, u64 addr) {
-  entries.push_back({name, flags, addr});
-}
-
 i64 ExportEncoder::finish() {
   tbb::parallel_sort(entries, [](const Entry &a, const Entry &b) {
     return a.name < b.name;
@@ -930,7 +926,8 @@ void ExportSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
       if (sym && sym->is_extern && sym->file == file)
-        enc.add(sym->name, 0, sym->get_addr(ctx) - ctx.arg.pagezero_size);
+        enc.entries.push_back({sym->name, 0,
+                               sym->get_addr(ctx) - ctx.arg.pagezero_size});
 
   this->hdr.size = align_to(enc.finish(), 8);
 }
@@ -939,7 +936,7 @@ template <typename E>
 void ExportSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
   memset(buf, 0, this->hdr.size);
-  enc.write_trie(buf);
+  enc.write_trie(buf, enc.root);
 }
 
 template <typename E>

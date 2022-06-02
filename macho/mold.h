@@ -471,14 +471,8 @@ public:
 
 class ExportEncoder {
 public:
-  void add(std::string_view name, u32 flags, u64 addr);
   i64 finish();
 
-  void write_trie(u8 *buf) {
-    write_trie(buf, root);
-  }
-
-private:
   struct Entry {
     std::string_view name;
     u32 flags;
