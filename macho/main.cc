@@ -578,13 +578,9 @@ template <typename E>
 static void parse_input_files(Context<E> &ctx) {
   Timer t(ctx, "parse_input_files");
 
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dylibs);
-
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    file->parse(ctx);
-  });
+  auto parse = [&](InputFile<E> *file) { file->parse(ctx); };
+  tbb::parallel_for_each(ctx.objs, parse);
+  tbb::parallel_for_each(ctx.dylibs, parse);
 }
 
 template <typename E>
