@@ -1006,7 +1006,7 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
     msym.stroff = ent.stroff;
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
-    msym.ext = sym.is_extern;
+    msym.is_extern = sym.is_extern;
 
     if (!sym.is_imported && (!sym.subsec || sym.subsec->is_alive))
       msym.value = sym.get_addr(ctx);

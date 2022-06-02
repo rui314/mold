@@ -225,9 +225,9 @@ void dump_file(std::string path) {
         std::cout << " symbol:"
                   << "\n  name: " << (char *)(buf + cmd.stroff + syms[j].stroff)
                   << "\n  stub: " << (u32)syms[j].stub
-                  << "\n  pext: " << (u32)syms[j].pext
+                  << "\n  pext: " << (u32)syms[j].is_private_extern
                   << "\n  type: " << (u32)syms[j].type
-                  << "\n  ext: " << (u32)syms[j].ext
+                  << "\n  ext: " << (u32)syms[j].is_extern
                   << "\n  sect: 0x" << (u32)syms[j].sect
                   << "\n  desc: 0x" << (u32)syms[j].desc
                   << "\n  value: 0x" << syms[j].value

@@ -116,7 +116,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
 
   i64 nlocal = 0;
   for (MachSym &msym : mach_syms)
-    if (!msym.ext)
+    if (!msym.is_extern)
       nlocal++;
   local_syms.reserve(nlocal);
 
@@ -124,7 +124,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
     MachSym &msym = mach_syms[i];
     std::string_view name = (char *)(this->mf->data + cmd->stroff + msym.stroff);
 
-    if (msym.ext) {
+    if (msym.is_extern) {
       this->syms.push_back(get_symbol(ctx, name));
     } else {
       local_syms.emplace_back(name);
@@ -291,7 +291,7 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
     MachSym &msym = mach_syms[i];
     Symbol<E> &sym = *this->syms[i];
 
-    if (!msym.ext && msym.type == N_SECT) {
+    if (!msym.is_extern && msym.type == N_SECT) {
       Subsection<E> *subsec = sym_to_subsec[i];
       if (!subsec)
         subsec = find_subsection(ctx, msym.value);
@@ -493,7 +493,7 @@ template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->syms.size(); i++) {
     MachSym &msym = mach_syms[i];
-    if (!msym.ext || msym.is_undef())
+    if (!msym.is_extern || msym.is_undef())
       continue;
 
     Symbol<E> &sym = *this->syms[i];
@@ -502,7 +502,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
       sym.file = this;
-      sym.is_extern = (msym.ext && !this->is_hidden);
+      sym.is_extern = (msym.is_extern && !this->is_hidden);
       sym.is_imported = false;
       sym.is_weak_def = is_weak_def;
 
@@ -538,7 +538,7 @@ bool ObjectFile<E>::is_objc_object(Context<E> &ctx) {
       return true;
 
   for (i64 i = 0; i < this->syms.size(); i++)
-    if (!mach_syms[i].is_undef() && mach_syms[i].ext &&
+    if (!mach_syms[i].is_undef() && mach_syms[i].is_extern &&
         this->syms[i]->name.starts_with("_OBJC_CLASS_$_"))
       return true;
   return false;
@@ -552,7 +552,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
   for (i64 i = 0; i < this->syms.size(); i++) {
     MachSym &msym = mach_syms[i];
-    if (!msym.ext)
+    if (!msym.is_extern)
       continue;
 
     Symbol<E> &sym = *this->syms[i];
@@ -658,7 +658,7 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
     case LTO_SYMBOL_SCOPE_DEFAULT:
     case LTO_SYMBOL_SCOPE_PROTECTED:
     case LTO_SYMBOL_SCOPE_DEFAULT_CAN_BE_HIDDEN:
-      msym.ext = true;
+      msym.is_extern = true;
       break;
     default:
       unreachable();

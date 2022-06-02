@@ -223,7 +223,7 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {
       MachSym &msym = file->mach_syms[i];
-      if (!msym.ext || !msym.is_undef())
+      if (!msym.is_extern || !msym.is_undef())
         continue;
 
       Symbol<E> &sym = *file->syms[i];

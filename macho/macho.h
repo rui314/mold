@@ -595,13 +595,13 @@ struct MachSym {
   }
 
   bool is_common() const {
-    return type == N_UNDF && ext && value;
+    return type == N_UNDF && is_extern && value;
   }
 
   ul32 stroff;
-  u8 ext : 1;
+  u8 is_extern : 1;
   u8 type : 3;
-  u8 pext : 1;
+  u8 is_private_extern : 1;
   u8 stub : 3;
   u8 sect;
   union {
