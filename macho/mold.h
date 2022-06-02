@@ -863,6 +863,7 @@ struct Context {
     bool perf = false;
     bool quick_exit = true;
     bool search_paths_first = true;
+    bool stats = false;
     bool trace = false;
     i64 arch = CPU_TYPE_ARM64;
     i64 filler = 0;

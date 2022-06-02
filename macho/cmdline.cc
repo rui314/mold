@@ -64,6 +64,7 @@ Options:
   -search_paths_first
   -sectcreate <SEGNAME> <SECTNAME> <FILE>
   -stack_size <SIZE>
+  -stats                      Show statistics info
   -syslibroot <DIR>           Prepend DIR to library search paths
   -t                          Print out each file the linker loads
   -thread_count <NUMBER>      Use given number of threads
@@ -316,6 +317,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.sectcreate.push_back({arg, arg2, arg3});
     } else if (read_hex("-stack_size")) {
       ctx.arg.stack_size = hex_arg;
+    } else if (read_flag("-stats")) {
+      ctx.arg.stats = true;
+      Counter::enabled = true;
     } else if (read_arg("-syslibroot")) {
       ctx.arg.syslibroot.push_back(std::string(arg));
     } else if (read_flag("-t")) {

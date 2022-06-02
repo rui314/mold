@@ -256,7 +256,7 @@ static void merge_cstring_sections(Context<E> &ctx) {
       if (&subsec->isec.osec == ctx.cstring) {
         std::string_view str = subsec->get_contents();
         auto pair = map.insert({str, subsec});
-        if (pair.second) {
+        if (!pair.second) {
           Subsection<E> *existing = pair.first->second;
           if (existing->p2align < subsec->p2align)
             pair.first->second = subsec;
@@ -274,6 +274,9 @@ static void merge_cstring_sections(Context<E> &ctx) {
         if (it->second != subsec) {
           subsec->is_coalesced = true;
           subsec->replacer = it->second;
+
+          static Counter counter("num_merged_strings");
+          counter++;
         }
       }
     }
@@ -755,6 +758,9 @@ static int do_main(int argc, char **argv) {
 
   if (ctx.arg.perf)
     print_timer_records(ctx.timer_records);
+
+  if (ctx.arg.stats)
+    Counter::print();
 
   if (!ctx.arg.map.empty())
     print_map(ctx);
