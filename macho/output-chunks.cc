@@ -923,7 +923,7 @@ template <typename E>
 void ExportSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
-      if (sym && sym->is_extern && sym->file == file)
+      if (sym && sym->file == file & sym->scope == SCOPE_EXTERN)
         enc.entries.push_back({sym->name, 0,
                                sym->get_addr(ctx) - ctx.arg.pagezero_size});
 
@@ -1006,7 +1006,7 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
     msym.stroff = ent.stroff;
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
-    msym.is_extern = sym.is_extern;
+    msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
 
     if (!sym.is_imported && (!sym.subsec || sym.subsec->is_alive))
       msym.value = sym.get_addr(ctx);

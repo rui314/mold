@@ -247,6 +247,12 @@ enum {
   NEEDS_RANGE_EXTN_THUNK = 1 << 3,
 };
 
+enum {
+  SCOPE_LOCAL,
+  SCOPE_PRIVATE_EXTERN,
+  SCOPE_EXTERN,
+};
+
 template <typename E>
 struct Symbol {
   Symbol() = default;
@@ -266,7 +272,7 @@ struct Symbol {
 
   std::atomic_uint8_t flags = 0;
 
-  bool is_extern : 1 = false;
+  u8 scope : 2 = SCOPE_LOCAL;
   bool is_common : 1 = false;
   bool is_weak_def : 1 = false;
   bool is_imported : 1 = false;

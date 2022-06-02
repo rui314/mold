@@ -89,7 +89,7 @@ static void create_internal_file(Context<E> &ctx) {
   switch (ctx.output_type) {
   case MH_EXECUTE: {
     Symbol<E> *sym = add("__mh_execute_header");
-    sym->is_extern = true;
+    sym->scope = SCOPE_EXTERN;
     sym->referenced_dynamically = true;
     sym->value = ctx.arg.pagezero_size;
     break;
@@ -233,7 +233,7 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
         if (!sym.file ||
             (!sym.file->is_dylib && file->priority < sym.file->priority)) {
           sym.file = file;
-          sym.is_extern = true;
+          sym.scope = SCOPE_PRIVATE_EXTERN;
           sym.is_imported = true;
           sym.subsec = nullptr;
           sym.value = 0;

@@ -19,7 +19,7 @@ void InputFile<E>::clear_symbols() {
     std::scoped_lock lock(sym->mu);
     if (sym->file == this) {
       sym->file = nullptr;
-      sym->is_extern = false;
+      sym->scope = SCOPE_LOCAL;
       sym->is_imported = false;
       sym->is_weak_def = false;
       sym->subsec = nullptr;
@@ -132,7 +132,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
 
       sym.file = this;
       sym.subsec = nullptr;
-      sym.is_extern = false;
+      sym.scope = SCOPE_LOCAL;
       sym.is_common = false;
       sym.is_weak_def = false;
 
@@ -502,7 +502,8 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
       sym.file = this;
-      sym.is_extern = (msym.is_extern && !this->is_hidden);
+      sym.scope = (msym.is_extern && !msym.is_private_extern && !this->is_hidden)
+        ? SCOPE_EXTERN : SCOPE_PRIVATE_EXTERN;
       sym.is_imported = false;
       sym.is_weak_def = is_weak_def;
 
@@ -778,7 +779,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, false, false) < get_rank(*sym)) {
       sym->file = this;
-      sym->is_extern = true;
+      sym->scope = SCOPE_LOCAL;
       sym->is_imported = true;
       sym->is_weak_def = false;
       sym->subsec = nullptr;

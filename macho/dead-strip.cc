@@ -16,7 +16,7 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
   if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
     for (ObjectFile<E> *file : ctx.objs)
       for (Symbol<E> *sym : file->syms)
-        if (sym->file == file && sym->is_extern)
+        if (sym->file == file && sym->scope == SCOPE_EXTERN)
           mark(sym);
 
   return rootset;

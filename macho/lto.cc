@@ -109,7 +109,7 @@ void do_lto(Context<E> &ctx) {
     for (ObjectFile<E> *file : ctx.objs)
       if (file->lto_module)
         for (Symbol<E> *sym : file->syms)
-          if (sym->file == file && sym->is_extern)
+          if (sym->file == file && sym->scope != SCOPE_LOCAL)
             ctx.lto.codegen_add_must_preserve_symbol(cg, sym->name.data());
   }
 
