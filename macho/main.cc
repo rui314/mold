@@ -634,6 +634,24 @@ static void parse_input_files(Context<E> &ctx) {
 }
 
 template <typename E>
+static void print_stats(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs) {
+    static Counter subsections("num_subsections");
+    subsections += file->subsections.size();
+
+    static Counter syms("num_syms");
+    syms += file->syms.size();
+
+    static Counter rels("num_rels");
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec)
+        rels += isec->rels.size();
+  }
+
+  Counter::print();
+}
+
+template <typename E>
 static int do_main(int argc, char **argv) {
   Context<E> ctx;
 
@@ -747,7 +765,7 @@ static int do_main(int argc, char **argv) {
     print_timer_records(ctx.timer_records);
 
   if (ctx.arg.stats)
-    Counter::print();
+    print_stats(ctx);
 
   if (!ctx.arg.map.empty())
     print_map(ctx);
