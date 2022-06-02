@@ -44,7 +44,11 @@ MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
 
 MOLD_LDFLAGS := -pthread -lz -lm -ldl
 
-GIT_HASH := $(shell [ -d .git ] && git rev-parse HEAD)
+# Get a hash of the current git head. We don't want to use the git
+# command because the command prints out a warning if running under
+# sudo.
+GIT_HASH := $(shell [ -f .git/HEAD ] && if grep -q '^ref:' .git/HEAD; then cat .git/`sed 's/^ref: //' .git/HEAD`; else cat .git/HEAD; fi)
+
 ifneq ($(GIT_HASH),)
   MOLD_CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
 endif
