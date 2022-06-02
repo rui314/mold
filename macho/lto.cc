@@ -2,6 +2,7 @@
 #include "mold.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <dlfcn.h>
 
 namespace mold::macho {
@@ -118,6 +119,17 @@ void do_lto(Context<E> &ctx) {
   // Run the compiler backend to do LTO.
   size_t size;
   u8 *data = (u8 *)ctx.lto.codegen_compile(cg, &size);
+  if (!data)
+    Fatal(ctx) << "lto_codegen_compile failed: " << ctx.lto.get_error_message();
+
+  if (!ctx.arg.object_path_lto.empty()) {
+    FILE *out = fopen(ctx.arg.object_path_lto.c_str(), "w");
+    if (!out)
+      Fatal(ctx) << "-object_path_lto: cannot open " << ctx.arg.object_path_lto
+                 << ": " << errno_string();
+    fwrite(data, size, 1, out);
+    fclose(out);
+  }
 
   // Remove bitcode object files from ctx.objs.
   for (ObjectFile<E> *file : ctx.objs) {

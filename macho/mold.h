@@ -874,6 +874,7 @@ struct Context {
     std::string install_name;
     std::string lto_library;
     std::string map;
+    std::string object_path_lto;
     std::string output = "a.out";
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;

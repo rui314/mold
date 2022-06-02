@@ -55,6 +55,7 @@ Options:
   -no_deduplicate             Ignored
   -no_uuid                    Do not generate an LC_UUID load command
   -o <FILE>                   Set output filename
+  -object_path_lto <FILE>     Write a LTO temporary file to a given path
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
@@ -293,6 +294,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.uuid = UUID_NONE;
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
+    } else if (read_arg("-object_path_lto")) {
+      ctx.arg.object_path_lto = arg;
     } else if (read_hex("-pagezero_size")) {
       pagezero_size = hex_arg;
     } else if (read_flag("-perf")) {
