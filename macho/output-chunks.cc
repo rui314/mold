@@ -3,7 +3,6 @@
 
 #include <shared_mutex>
 #include <sys/mman.h>
-#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -962,47 +961,56 @@ void FunctionStartsSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void SymtabSection<E>::compute_size(Context<E> &ctx) {
-  tbb::enumerable_thread_specific<i64> nsyms;
-  tbb::enumerable_thread_specific<i64> strtab_size;
+  symtab_offsets.clear();
+  strtab_offsets.clear();
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->syms) {
-      if (sym && sym->file == file) {
-        nsyms.local()++;
-        strtab_size.local() += sym->name.size();
+  symtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
+  strtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
+    for (Symbol<E> *sym : file.syms) {
+      if (sym && sym->file == &file) {
+        symtab_offsets[i + 1]++;
+        strtab_offsets[i + 1] += sym->name.size() + 1;
       }
     }
   });
 
-  for (DylibFile<E> *file : ctx.dylibs) {
-    for (Symbol<E> *sym : file->syms) {
-      if (sym && sym->file == file &&
+  tbb::parallel_for((i64)0, (i64)ctx.dylibs.size(), [&](i64 i) {
+    DylibFile<E> &file = *ctx.dylibs[i];
+    for (Symbol<E> *sym : file.syms) {
+      if (sym && sym->file == &file &&
           (sym->stub_idx != -1 || sym->got_idx != -1)) {
-        nsyms.local()++;
-        strtab_size.local() += sym->name.size();
+        symtab_offsets[i + 1 + ctx.objs.size()]++;
+        strtab_offsets[i + 1 + ctx.objs.size()] += sym->name.size() + 1;
       }
     }
-  }
+  });
 
-  this->hdr.size = nsyms.combine(std::plus()) * sizeof(MachSym);
-  ctx.strtab.hdr.size = strtab_size.combine(std::plus());
+  for (i64 i = 1; i < symtab_offsets.size(); i++)
+    symtab_offsets[i] += symtab_offsets[i - 1];
+
+  strtab_offsets[0] = 1;
+  for (i64 i = 1; i < strtab_offsets.size(); i++)
+    strtab_offsets[i] += strtab_offsets[i - 1];
+
+  this->hdr.size = symtab_offsets.back() * sizeof(MachSym);
+  ctx.strtab.hdr.size = strtab_offsets.back();
 }
 
 template <typename E>
 void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + this->hdr.offset);
-  memset(buf, 0, this->hdr.size);
 
-  u8 *strtab_start = ctx.buf + ctx.strtab.hdr.offset;
-  u8 *strtab = strtab_start;
-  *strtab++ = '\0';
+  u8 *strtab = ctx.buf + ctx.strtab.hdr.offset;
+  strtab[0] = '\0';
 
-  auto write = [&](Symbol<E> &sym) {
-    MachSym &msym = *buf++;
+  auto write = [&](Symbol<E> &sym, i64 symoff, i64 stroff) {
+    MachSym &msym = buf[symoff];
 
-    msym.stroff = strtab - strtab_start;
-    write_string(strtab, sym.name);
-    strtab += sym.name.size() + 1;
+    msym.stroff = stroff;
+    write_string(strtab + stroff, sym.name);
 
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
     msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
@@ -1021,16 +1029,34 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       msym.desc = REFERENCED_DYNAMICALLY;
   };
 
-  for (ObjectFile<E> *file : ctx.objs)
-    for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file)
-        write(*sym);
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
+    i64 symoff = symtab_offsets[i];
+    i64 stroff = strtab_offsets[i];
 
-  for (DylibFile<E> *file : ctx.dylibs)
-    for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file &&
-          (sym->stub_idx != -1 || sym->got_idx != -1))
-        write(*sym);
+    for (Symbol<E> *sym : file.syms) {
+      if (sym && sym->file == &file) {
+        write(*sym, symoff, stroff);
+        symoff++;
+        stroff += sym->name.size() + 1;
+      }
+    }
+  });
+
+  tbb::parallel_for((i64)0, (i64)ctx.dylibs.size(), [&](i64 i) {
+    DylibFile<E> &file = *ctx.dylibs[i];
+    i64 symoff = symtab_offsets[i + ctx.objs.size()];
+    i64 stroff = strtab_offsets[i + ctx.objs.size()];
+
+    for (Symbol<E> *sym : file.syms) {
+      if (sym && sym->file == &file &&
+          (sym->stub_idx != -1 || sym->got_idx != -1)) {
+        write(*sym, symoff, stroff);
+        symoff++;
+        stroff += sym->name.size() + 1;
+      }
+    }
+  });
 }
 
 template <typename E>
