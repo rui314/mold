@@ -3,6 +3,7 @@
 
 #include <shared_mutex>
 #include <sys/mman.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -71,16 +72,12 @@ static std::vector<u8> create_dysymtab_cmd(Context<E> &ctx) {
   cmd.cmd = LC_DYSYMTAB;
   cmd.cmdsize = buf.size();
 
-  i64 locals = ctx.symtab.locals.size();
-  i64 globals = ctx.symtab.globals.size();
-  i64 undefs = ctx.symtab.undefs.size();
-
   cmd.ilocalsym = 0;
-  cmd.nlocalsym = locals;
-  cmd.iextdefsym = locals;
-  cmd.nextdefsym = globals;
-  cmd.iundefsym = locals + globals;
-  cmd.nundefsym = undefs;
+  cmd.nlocalsym = ctx.symtab.num_locals;
+  cmd.iextdefsym = ctx.symtab.num_locals;
+  cmd.nextdefsym = ctx.symtab.num_globals;
+  cmd.iundefsym = ctx.symtab.num_locals + ctx.symtab.num_globals;
+  cmd.nundefsym = ctx.symtab.num_undefs;
   return buf;
 }
 
@@ -965,24 +962,30 @@ void FunctionStartsSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void SymtabSection<E>::compute_size(Context<E> &ctx) {
-  for (ObjectFile<E> *file : ctx.objs)
-    for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file)
-        globals.push_back({sym, ctx.strtab.add_string(sym->name)});
+  tbb::enumerable_thread_specific<i64> nsyms;
+  tbb::enumerable_thread_specific<i64> strtab_size;
 
-  i64 idx = globals.size();
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->syms) {
+      if (sym && sym->file == file) {
+        nsyms.local()++;
+        strtab_size.local() += sym->name.size();
+      }
+    }
+  });
 
-  for (DylibFile<E> *dylib : ctx.dylibs) {
-    for (Symbol<E> *sym : dylib->syms) {
-      if (sym && sym->file == dylib &&
+  for (DylibFile<E> *file : ctx.dylibs) {
+    for (Symbol<E> *sym : file->syms) {
+      if (sym && sym->file == file &&
           (sym->stub_idx != -1 || sym->got_idx != -1)) {
-        undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
-        idx++;
+        nsyms.local()++;
+        strtab_size.local() += sym->name.size();
       }
     }
   }
 
-  this->hdr.size = idx * sizeof(MachSym);
+  this->hdr.size = nsyms.combine(std::plus()) * sizeof(MachSym);
+  ctx.strtab.hdr.size = strtab_size.combine(std::plus());
 }
 
 template <typename E>
@@ -990,11 +993,17 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   MachSym *buf = (MachSym *)(ctx.buf + this->hdr.offset);
   memset(buf, 0, this->hdr.size);
 
-  auto write = [&](Entry &ent) {
-    MachSym &msym = *buf++;
-    Symbol<E> &sym = *ent.sym;
+  u8 *strtab_start = ctx.buf + ctx.strtab.hdr.offset;
+  u8 *strtab = strtab_start;
+  *strtab++ = '\0';
 
-    msym.stroff = ent.stroff;
+  auto write = [&](Symbol<E> &sym) {
+    MachSym &msym = *buf++;
+
+    msym.stroff = strtab - strtab_start;
+    write_string(strtab, sym.name);
+    strtab += sym.name.size() + 1;
+
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
     msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
 
@@ -1012,26 +1021,16 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       msym.desc = REFERENCED_DYNAMICALLY;
   };
 
-  for (Entry &ent : locals)
-    write(ent);
-  for (Entry &ent : globals)
-    write(ent);
-  for (Entry &ent : undefs)
-    write(ent);
-}
+  for (ObjectFile<E> *file : ctx.objs)
+    for (Symbol<E> *sym : file->syms)
+      if (sym && sym->file == file)
+        write(*sym);
 
-template <typename E>
-i64 StrtabSection<E>::add_string(std::string_view str) {
-  i64 off = contents.size();
-  contents += str;
-  contents += '\0';
-  this->hdr.size = align_to(contents.size(), 1 << this->hdr.p2align);
-  return off;
-}
-
-template <typename E>
-void StrtabSection<E>::copy_buf(Context<E> &ctx) {
-  memcpy(ctx.buf + this->hdr.offset, &contents[0], contents.size());
+  for (DylibFile<E> *file : ctx.dylibs)
+    for (Symbol<E> *sym : file->syms)
+      if (sym && sym->file == file &&
+          (sym->stub_idx != -1 || sym->got_idx != -1))
+        write(*sym);
 }
 
 template <typename E>

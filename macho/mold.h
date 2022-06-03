@@ -548,14 +548,9 @@ public:
   void compute_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  struct Entry {
-    Symbol<E> *sym;
-    i64 stroff;
-  };
-
-  std::vector<Entry> locals;
-  std::vector<Entry> globals;
-  std::vector<Entry> undefs;
+  i64 num_locals = 0;
+  i64 num_globals = 0;
+  i64 num_undefs =0;
 };
 
 template <typename E>
@@ -565,12 +560,8 @@ public:
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
     this->hdr.p2align = 3;
+    this->hdr.size = 1;
   }
-
-  i64 add_string(std::string_view str);
-  void copy_buf(Context<E> &ctx) override;
-
-  std::string contents{1, '\0'};
 };
 
 template <typename E>
