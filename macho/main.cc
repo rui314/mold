@@ -130,6 +130,89 @@ static void remove_unreferenced_subsections(Context<E> &ctx) {
 }
 
 template <typename E>
+static bool compare_segments(const std::unique_ptr<OutputSegment<E>> &a,
+                             const std::unique_ptr<OutputSegment<E>> &b) {
+  // We want to sort output segments in the following order:
+  // __TEXT, __DATA_CONST, __DATA, <other segments>, __LINKEDIT
+  auto get_rank = [](std::string_view name) {
+    if (name == "__TEXT")
+      return 0;
+    if (name == "__DATA_CONST")
+      return 1;
+    if (name == "__DATA")
+      return 2;
+    if (name == "__LINKEDIT")
+      return 4;
+    return 3;
+  };
+
+  std::string_view x = a->cmd.get_segname();
+  std::string_view y = b->cmd.get_segname();
+  return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
+}
+
+template <typename E>
+static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
+  assert(a->hdr.get_segname() == b->hdr.get_segname());
+
+  auto is_bss = [](const Chunk<E> *x) {
+    return x->hdr.type == S_ZEROFILL || x->hdr.type == S_THREAD_LOCAL_ZEROFILL;
+  };
+
+  if (is_bss(a) != is_bss(b))
+    return !is_bss(a);
+
+  static const std::string_view rank[] = {
+    // __TEXT
+    "__mach_header",
+    "__text",
+    "__stubs",
+    "__stub_helper",
+    "__gcc_except_tab",
+    "__cstring",
+    "__unwind_info",
+    // __DATA_CONST
+    "__got",
+    "__const",
+    // __DATA
+    "__mod_init_func",
+    "__la_symbol_ptr",
+    "__thread_ptrs",
+    "__data",
+    "__thread_ptr",
+    "__thread_data",
+    "__thread_vars",
+    "__thread_bss",
+    "__common",
+    "__bss",
+    // __LINKEDIT
+    "__rebase",
+    "__binding",
+    "__weak_binding",
+    "__lazy_binding",
+    "__export",
+    "__func_starts",
+    "__data_in_code",
+    "__symbol_table",
+    "__ind_sym_tab",
+    "__string_table",
+    "__code_signature",
+  };
+
+  auto get_rank = [](std::string_view name) {
+    i64 i = 0;
+    for (; i < sizeof(rank) / sizeof(rank[0]); i++)
+      if (name == rank[i])
+        return i;
+    return i;
+  };
+
+  std::string_view x = a->hdr.get_sectname();
+  std::string_view y = b->hdr.get_sectname();
+  return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
+}
+
+template <typename E>
 static void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
@@ -213,12 +296,10 @@ static void merge_cstring_sections(Context<E> &ctx) {
 
 template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
-  // Add subsections to output sections.
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
       subsec->isec.osec.add_subsec(subsec);
 
-  // Add output sections to segments.
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk != ctx.data && chunk->is_output_section &&
         ((OutputSection<E> *)chunk)->members.empty())
@@ -229,72 +310,10 @@ static void create_synthetic_chunks(Context<E> &ctx) {
     seg->chunks.push_back(chunk);
   }
 
-  // Sort segments.
-  sort(ctx.segments, [](const std::unique_ptr<OutputSegment<E>> &a,
-                        const std::unique_ptr<OutputSegment<E>> &b) {
-    // We want to sort output segments in the following order:
-    // __TEXT, __DATA_CONST, __DATA, <other segments>, __LINKEDIT
-    auto get_rank = [](std::string_view name) {
-      if (name == "__TEXT")
-        return 0;
-      if (name == "__DATA_CONST")
-        return 1;
-      if (name == "__DATA")
-        return 2;
-      if (name == "__LINKEDIT")
-        return 4;
-      return 3;
-    };
+  sort(ctx.segments, compare_segments<E>);
 
-    std::string_view x = a->cmd.get_segname();
-    std::string_view y = b->cmd.get_segname();
-    return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
-  });
-
-  // Sort output sections.
-  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments) {
-    sort(seg->chunks, [&](const Chunk<E> *a, const Chunk<E> *b) {
-      assert(a->hdr.get_segname() == b->hdr.get_segname());
-
-      // __mach_header must be at the beginning of a file.
-      if (a == &ctx.mach_hdr || b == &ctx.mach_hdr)
-        return a == &ctx.mach_hdr;
-
-      // BSS should be at the end of a segment.
-      auto is_bss = [](const Chunk<E> *x) {
-        return x->hdr.type == S_ZEROFILL ||
-               x->hdr.type == S_THREAD_LOCAL_ZEROFILL;
-      };
-
-      if (is_bss(a) != is_bss(b))
-        return !is_bss(a);
-
-      // Place executable sections before non-executable sections
-      // so that executable sections are contiguous.
-      auto is_exec = [](const Chunk<E> *x) -> bool {
-        return x->hdr.attr & S_ATTR_SOME_INSTRUCTIONS;
-      };
-
-      if (is_exec(a) != is_exec(b))
-        return is_exec(a);
-
-      // We want to place __ind_sym_tab, __string_table and
-      // __code_signature at the end of a file. Ties are broken by
-      // section name for build reproducibility.
-      auto get_rank = [&](const Chunk<E> *x) {
-        if (x == &ctx.indir_symtab)
-          return 1;
-        if (x == &ctx.strtab)
-          return 2;
-        if (x == ctx.code_sig.get())
-          return 3;
-        return 0;
-      };
-
-      return std::tuple{get_rank(a), a->hdr.get_sectname()} <
-             std::tuple{get_rank(b), b->hdr.get_sectname()};
-    });
-  }
+  for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+    sort(seg->chunks, compare_chunks<E>);
 }
 
 template <typename E>
