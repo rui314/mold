@@ -491,6 +491,11 @@ static u64 get_rank(Symbol<E> &sym) {
 
 template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
+  auto is_private_extern = [&](MachSym &msym) {
+    return this->is_hidden || msym.is_private_extern ||
+           ((msym.desc & N_WEAK_REF) && (msym.desc & N_WEAK_DEF));
+  };
+
   for (i64 i = 0; i < this->syms.size(); i++) {
     MachSym &msym = mach_syms[i];
     if (!msym.is_extern || msym.is_undef())
@@ -502,8 +507,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
       sym.file = this;
-      sym.scope = (msym.is_extern && !msym.is_private_extern && !this->is_hidden)
-        ? SCOPE_EXTERN : SCOPE_PRIVATE_EXTERN;
+      sym.scope = is_private_extern(msym) ? SCOPE_PRIVATE_EXTERN : SCOPE_EXTERN;
       sym.is_imported = false;
       sym.is_weak_def = is_weak_def;
 

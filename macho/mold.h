@@ -248,9 +248,9 @@ enum {
 };
 
 enum {
-  SCOPE_LOCAL,
-  SCOPE_PRIVATE_EXTERN,
-  SCOPE_EXTERN,
+  SCOPE_LOCAL,          // input file scope
+  SCOPE_PRIVATE_EXTERN, // output file scope (non-exported symbol)
+  SCOPE_EXTERN,         // global scope (exported symbol)
 };
 
 template <typename E>
