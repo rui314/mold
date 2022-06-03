@@ -83,10 +83,25 @@ static void handle_exported_symbols_list(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.arg.exported_symbols_list,
                          [&](std::string_view name) {
-    get_symbol(ctx, name)->scope = SCOPE_EXTERN;
+    Symbol<E> *sym = get_symbol(ctx, name);
+    if (sym->scope == SCOPE_PRIVATE_EXTERN)
+      sym->scope = SCOPE_EXTERN;
   });
 }
 
+template <typename E>
+static void handle_unexported_symbols_list(Context<E> &ctx) {
+  Timer t(ctx, "handle_unexported_symbols_list");
+  if (ctx.arg.unexported_symbols_list.empty())
+    return;
+
+  tbb::parallel_for_each(ctx.arg.unexported_symbols_list,
+                         [&](std::string_view name) {
+    Symbol<E> *sym = get_symbol(ctx, name);
+    if (sym->scope == SCOPE_EXTERN)
+      sym->scope = SCOPE_PRIVATE_EXTERN;
+  });
+}
 template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
@@ -727,6 +742,9 @@ static int do_main(int argc, char **argv) {
 
   // Handle -exported_symbol and -exported_symbols_list
   handle_exported_symbols_list(ctx);
+
+  // Handle -unexported_symbol and -unexported_symbols_list
+  handle_unexported_symbols_list(ctx);
 
   create_internal_file(ctx);
 

@@ -34,6 +34,9 @@ Options:
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
   -export_dynamic             Preserves all global symbols in main executables during LTO
+  -exported_symbol <SYMBOL>   Export a given symbol
+  -exported_symbols_list <FILE>
+                              Read a list of exported symbols from a given file
   -filelist <FILE>[,<DIR>]    Specify the list of input file names
   -final_output <NAME>
   -force_load <FILE>          Include all objects from a given static archive
@@ -69,6 +72,9 @@ Options:
   -syslibroot <DIR>           Prepend DIR to library search paths
   -t                          Print out each file the linker loads
   -thread_count <NUMBER>      Use given number of threads
+  -uexported_symbol <SYMBOL>  Export all but a given symbol
+  -unexported_symbols_list <FILE>
+                              Read a list of unexported symbols from a given file
   -v                          Report version information)";
 
 template <typename E>
@@ -361,6 +367,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.trace = true;
     } else if (read_arg("-thread_count")) {
       ctx.arg.thread_count = std::stoi(std::string(arg));
+    } else if (read_arg("-unexported_symbol")) {
+      ctx.arg.unexported_symbols_list.push_back(std::string(arg));
+    } else if (read_arg("-unexported_symbols_list")) {
+      append(ctx.arg.unexported_symbols_list, read_lines(ctx, arg));
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else {

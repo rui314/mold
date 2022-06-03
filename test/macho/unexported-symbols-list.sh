@@ -1,0 +1,48 @@
+#!/bin/bash
+export LC_ALL=C
+set -e
+CC="${TEST_CC:-cc}"
+CXX="${TEST_CXX:-c++}"
+GCC="${TEST_GCC:-gcc}"
+GXX="${TEST_GXX:-g++}"
+OBJDUMP="${OBJDUMP:-objdump}"
+MACHINE="${MACHINE:-$(uname -m)}"
+testname=$(basename "$0" .sh)
+echo -n "Testing $testname ... "
+cd "$(dirname "$0")"/../..
+t=out/test/macho/$testname
+mkdir -p $t
+
+cat <<EOF | $CC -o $t/a.o -c -xc -
+void foo() {}
+__attribute__((visibility("hidden"))) void bar() {}
+void baz() {}
+EOF
+
+cat <<EOF > $t/list
+_foo
+EOF
+
+clang --ld-path=./ld64 -shared -o $t/c.dylib $t/a.o
+
+objdump --macho --exports-trie $t/c.dylib > $t/log1
+grep -q _foo $t/log1
+! grep -q _bar $t/log1 || false
+grep -q _baz $t/log1
+
+clang --ld-path=./ld64 -shared -o $t/d.dylib $t/a.o \
+  -Wl,-unexported_symbols_list,$t/list
+
+objdump --macho --exports-trie $t/d.dylib > $t/log2
+! grep -q _foo $t/log2 || false
+! grep -q _bar $t/log2 || false
+grep -q _baz $t/log2 || false
+
+clang --ld-path=./ld64 -shared -o $t/e.dylib $t/a.o -Wl,-unexported_symbol,_foo
+
+objdump --macho --exports-trie $t/e.dylib > $t/log3
+! grep -q _foo $t/log3 || false
+! grep -q _bar $t/log3 || false
+grep -q _baz $t/log3
+
+echo OK
