@@ -496,6 +496,15 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
            ((msym.desc & N_WEAK_REF) && (msym.desc & N_WEAK_DEF));
   };
 
+  auto merge_scope = [&](Symbol<E> &sym, MachSym &msym) {
+    // If at least one symbol defines it as an EXTERN symbol,
+    // the result is an EXTERN symbol instead of PRIVATE_EXTERN,
+    // so that the symbol is exported.
+    if (sym.scope == SCOPE_EXTERN)
+      return SCOPE_EXTERN;
+    return is_private_extern(msym) ? SCOPE_PRIVATE_EXTERN : SCOPE_EXTERN;
+  };
+
   for (i64 i = 0; i < this->syms.size(); i++) {
     MachSym &msym = mach_syms[i];
     if (!msym.is_extern || msym.is_undef())
@@ -505,9 +514,10 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     std::scoped_lock lock(sym.mu);
     bool is_weak_def = (msym.desc & N_WEAK_DEF);
 
+    sym.scope = merge_scope(sym, msym);
+
     if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
       sym.file = this;
-      sym.scope = is_private_extern(msym) ? SCOPE_PRIVATE_EXTERN : SCOPE_EXTERN;
       sym.is_imported = false;
       sym.is_weak_def = is_weak_def;
 
