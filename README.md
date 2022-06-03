@@ -80,14 +80,6 @@ Docker image, builds mold and auxiliary files inside it, and packs
 them into a single tar file `mold-$version-$arch-linux.tar.gz`.
 You can extract the tar file anywhere and use `mold` executable in it.
 
-`make test` depends on a few more packages. To install, run the following commands:
-
-```shell
-sudo dpkg --add-architecture i386
-sudo apt update
-sudo apt-get install bsdmainutils dwarfdump libc6-dev:i386 lib32gcc-10-dev libstdc++-10-dev-arm64-cross gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
-```
-
 ## How to use
 
 <details><summary>A classic way to use mold</summary>
@@ -158,12 +150,14 @@ replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
 
 </details>
 
-<details><summary>GitHub Action</summary>
-If you want to use mold in your GitHub-hosted CI to speed up continuous
-build, you can use <a href=https://github.com/rui314/setup-mold>setup-mold</a>
-GitHub Action. GitHub runs a CI on a two-core machine, but mold is
-still significantly faster than the default GNU linker there
-especially when a program being linked is large.
+<details><summary>GitHub Actions</summary>
+
+You can use our <a href=https://github.com/rui314/setup-mold>setup-mold</a>
+GitHub Action to speed up GitHub-hosted continuous build. GitHub Actions
+runs on a two-core machine, but mold is still significantly faster than
+the default GNU linker there especially when a program being linked is
+large.
+
 </details>
 
 <details><summary>Verify that you are using mold</summary>
