@@ -120,6 +120,34 @@ static bool is_directory(std::filesystem::path path) {
 }
 
 template <typename E>
+static std::vector<std::string>
+read_lines(Context<E> &ctx, std::string_view path) {
+  MappedFile<Context<E>> *mf =
+    MappedFile<Context<E>>::must_open(ctx, std::string(path));
+  std::string_view data((char *)mf->data, mf->size);
+
+  std::vector<std::string> vec;
+
+  while (!data.empty()) {
+    size_t pos = data.find('\n');
+    std::string_view line;
+
+    if (pos == data.npos) {
+      line = data;
+      data = "";
+    } else {
+      line = data.substr(0, pos);
+      data = data.substr(pos + 1);
+    }
+
+    line = string_trim(line);
+    if (!line.empty())
+      vec.push_back(std::string(line));
+  }
+  return vec;
+}
+
+template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string_view> &args = ctx.cmdline_args;
   std::vector<std::string> remaining;
@@ -254,6 +282,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.output_type = MH_EXECUTE;
     } else if (read_flag("-export_dynamic")) {
       ctx.arg.export_dynamic = true;
+    } else if (read_arg("-exported_symbol")) {
+      ctx.arg.exported_symbols_list.push_back(std::string(arg));
+    } else if (read_arg("-exported_symbols_list")) {
+      append(ctx.arg.exported_symbols_list, read_lines(ctx, arg));
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");

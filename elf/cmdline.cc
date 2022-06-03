@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "../cmdline.h"
 
 #include <sstream>
 #include <sys/stat.h>
@@ -268,18 +269,6 @@ split_by_comma_or_colon(std::string_view str) {
   return vec;
 }
 
-static std::string_view trim(std::string_view str) {
-  size_t pos = str.find_first_not_of(" \t");
-  if (pos == str.npos)
-    return "";
-  str = str.substr(pos);
-
-  pos = str.find_last_not_of(" \t");
-  if (pos == str.npos)
-    return str;
-  return str.substr(0, pos + 1);
-}
-
 template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
   MappedFile<Context<E>> *mf =
@@ -300,7 +289,7 @@ static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
       data = data.substr(pos + 1);
     }
 
-    name = trim(name);
+    name = string_trim(name);
     if (!name.empty())
       ctx.arg.retain_symbols_file->insert(name);
   }

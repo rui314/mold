@@ -70,6 +70,24 @@ static void resolve_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+static void handle_exported_symbols_list(Context<E> &ctx) {
+  Timer t(ctx, "handle_exported_symbols_list");
+  if (ctx.arg.exported_symbols_list.empty())
+    return;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->syms)
+      if (sym && sym->file == file)
+        sym->scope = SCOPE_PRIVATE_EXTERN;
+  });
+
+  tbb::parallel_for_each(ctx.arg.exported_symbols_list,
+                         [&](std::string_view name) {
+    get_symbol(ctx, name)->scope = SCOPE_EXTERN;
+  });
+}
+
+template <typename E>
 static void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
   obj->is_alive = true;
@@ -706,6 +724,9 @@ static int do_main(int argc, char **argv) {
 
   if (ctx.output_type == MH_EXECUTE && !ctx.arg.entry->file)
     Error(ctx) << "undefined entry point symbol: " << *ctx.arg.entry;
+
+  // Handle -exported_symbol and -exported_symbols_list
+  handle_exported_symbols_list(ctx);
 
   create_internal_file(ctx);
 

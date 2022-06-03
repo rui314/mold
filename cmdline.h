@@ -61,4 +61,16 @@ std::vector<std::string_view> expand_response_files(C &ctx, char **argv) {
   return vec;
 }
 
+static std::string_view string_trim(std::string_view str) {
+  size_t pos = str.find_first_not_of(" \t");
+  if (pos == str.npos)
+    return "";
+  str = str.substr(pos);
+
+  pos = str.find_last_not_of(" \t");
+  if (pos == str.npos)
+    return str;
+  return str.substr(0, pos + 1);
+}
+
 } // namespace mold

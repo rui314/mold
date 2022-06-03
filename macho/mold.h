@@ -856,6 +856,7 @@ struct Context {
     std::string output = "a.out";
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
+    std::vector<std::string> exported_symbols_list;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> mllvm;
