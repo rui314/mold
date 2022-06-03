@@ -574,28 +574,6 @@ public:
 };
 
 template <typename E>
-class IndirectSymtabSection : public Chunk<E> {
-public:
-  IndirectSymtabSection(Context<E> &ctx)
-    : Chunk<E>(ctx, "__LINKEDIT", "__ind_sym_tab") {
-    this->is_hidden = true;
-  }
-
-  static constexpr i64 ENTRY_SIZE = 4;
-
-  void compute_size(Context<E> &ctx) override;
-  void copy_buf(Context<E> &ctx) override;
-
-  struct Entry {
-    Symbol<E> *sym;
-    i64 symtab_idx;
-  };
-
-  std::vector<Entry> stubs;
-  std::vector<Entry> gots;
-};
-
-template <typename E>
 class CodeSignatureSection : public Chunk<E> {
 public:
   CodeSignatureSection(Context<E> &ctx)
@@ -944,7 +922,6 @@ struct Context {
   ExportSection<E> export_{*this};
   FunctionStartsSection<E> function_starts{*this};
   SymtabSection<E> symtab{*this};
-  IndirectSymtabSection<E> indir_symtab{*this};
   StrtabSection<E> strtab{*this};
 
   std::unique_ptr<CodeSignatureSection<E>> code_sig;

@@ -81,10 +81,6 @@ static std::vector<u8> create_dysymtab_cmd(Context<E> &ctx) {
   cmd.nextdefsym = globals;
   cmd.iundefsym = locals + globals;
   cmd.nundefsym = undefs;
-
-  cmd.indirectsymoff = ctx.indir_symtab.hdr.offset;
-  cmd.nindirectsyms =
-    ctx.indir_symtab.hdr.size / IndirectSymtabSection<E>::ENTRY_SIZE;
   return buf;
 }
 
@@ -536,10 +532,9 @@ void OutputSegment<E>::set_offset_linkedit(Context<E> &ctx, i64 fileoff,
   Timer t(ctx, "__LINKEDIT");
 
   // Unlike regular segments, __LINKEDIT member sizes can be computed in
-  // parallel except __ind_sym_tab, __string_table and __code_signature
-  // sections.
+  // parallel except __string_table and __code_signature sections.
   auto skip = [&](Chunk<E> *c) {
-    return c == &ctx.indir_symtab || c == &ctx.strtab || c == ctx.code_sig.get();
+    return c == &ctx.strtab || c == ctx.code_sig.get();
   };
 
   tbb::parallel_for_each(chunks, [&](Chunk<E> *chunk) {
@@ -982,11 +977,6 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
       if (sym && sym->file == dylib &&
           (sym->stub_idx != -1 || sym->got_idx != -1)) {
         undefs.push_back({sym, ctx.strtab.add_string(sym->name)});
-
-        if (sym->stub_idx != -1)
-          ctx.indir_symtab.stubs.push_back({sym, idx});
-        else
-          ctx.indir_symtab.gots.push_back({sym, idx});
         idx++;
       }
     }
@@ -1042,31 +1032,6 @@ i64 StrtabSection<E>::add_string(std::string_view str) {
 template <typename E>
 void StrtabSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(ctx.buf + this->hdr.offset, &contents[0], contents.size());
-}
-
-template <typename E>
-void IndirectSymtabSection<E>::compute_size(Context<E> &ctx) {
-  ctx.got.hdr.reserved1 = stubs.size();
-  ctx.lazy_symbol_ptr.hdr.reserved1 = stubs.size() + gots.size();
-
-  i64 nsyms = stubs.size() * 2 + gots.size();
-  this->hdr.size = nsyms * ENTRY_SIZE;
-}
-
-template <typename E>
-void IndirectSymtabSection<E>::copy_buf(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + this->hdr.offset);
-
-  for (Entry &ent : stubs)
-    buf[ent.sym->stub_idx] = ent.symtab_idx;
-  buf += stubs.size();
-
-  for (Entry &ent : gots)
-    buf[ent.sym->got_idx] = ent.symtab_idx;
-  buf += gots.size();
-
-  for (Entry &ent : stubs)
-    buf[ent.sym->stub_idx] = ent.symtab_idx;
 }
 
 template <typename E>
@@ -1467,7 +1432,6 @@ void SectCreateSection<E>::copy_buf(Context<E> &ctx) {
   template class FunctionStartsSection<E>;              \
   template class SymtabSection<E>;                      \
   template class StrtabSection<E>;                      \
-  template class IndirectSymtabSection<E>;              \
   template class CodeSignatureSection<E>;               \
   template class DataInCodeSection<E>;                  \
   template class StubsSection<E>;                       \
