@@ -930,15 +930,18 @@ void ExportSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void FunctionStartsSection<E>::compute_size(Context<E> &ctx) {
-  std::vector<u64> addrs;
+  std::vector<std::vector<u64>> vec(ctx.objs.size());
 
-  for (ObjectFile<E> *file : ctx.objs)
-    for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file && sym->subsec && sym->subsec->is_alive &&
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
+    for (Symbol<E> *sym : file.syms)
+      if (sym && sym->file == &file && sym->subsec && sym->subsec->is_alive &&
           &sym->subsec->isec.osec == ctx.text)
-        addrs.push_back(sym->get_addr(ctx));
+        vec[i].push_back(sym->get_addr(ctx));
+  });
 
-  std::sort(addrs.begin(), addrs.end());
+  std::vector<u64> addrs = flatten(vec);
+  tbb::parallel_sort(addrs.begin(), addrs.end());
 
   contents.resize(addrs.size() * 5);
 
