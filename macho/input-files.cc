@@ -146,7 +146,8 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
         // `value` and `subsec` will be filled by split_subsections
         break;
       default:
-        Fatal(ctx) << sym << ": unknown symbol type: " << (u64)msym.type;
+        Fatal(ctx) << *this << ": unknown symbol type for "
+                   << sym << ": " << (u64)msym.type;
       }
 
       this->syms.push_back(&sym);

@@ -242,7 +242,7 @@ static constexpr u32 DICE_KIND_JUMP_TABLE32 = 4;
 static constexpr u32 DICE_KIND_ABS_JUMP_TABLE32 = 5;
 
 static constexpr u32 N_UNDF = 0;
-static constexpr u32 N_ABS = 2;
+static constexpr u32 N_ABS = 1;
 static constexpr u32 N_INDR = 5;
 static constexpr u32 N_PBUD = 6;
 static constexpr u32 N_SECT = 7;
