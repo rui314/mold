@@ -75,7 +75,9 @@ Options:
   -uexported_symbol <SYMBOL>  Export all but a given symbol
   -unexported_symbols_list <FILE>
                               Read a list of unexported symbols from a given file
-  -v                          Report version information)";
+  -v                          Report version information
+  -weak-framework <NAME>[,<SUFFIX>]
+                              Search for a given framework)";
 
 template <typename E>
 static i64 parse_platform(Context<E> &ctx, std::string_view arg) {
@@ -327,7 +329,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-needed_framework")) {
       remaining.push_back("-needed_framework");
       remaining.push_back(std::string(arg));
-    } else if (read_flag("-no_deduplicate")) {
+ } else if (read_flag("-no_deduplicate")) {
     } else if (read_flag("-no_uuid")) {
       ctx.arg.uuid = UUID_NONE;
     } else if (read_arg("-o")) {
@@ -373,7 +375,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       append(ctx.arg.unexported_symbols_list, read_lines(ctx, arg));
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
-    } else {
+    } else if (read_arg("-weak_framework")) {
+      remaining.push_back("-weak_framework");
+      remaining.push_back(std::string(arg));
+     } else {
       if (args[i][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[i];
       remaining.push_back(std::string(args[i]));

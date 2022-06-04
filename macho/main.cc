@@ -603,7 +603,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, args[0]));
       ctx.all_load = orig;
       args = args.subspan(1);
-    } else if (arg == "-framework") {
+    } else if (arg == "-framework" || arg == "-weak_framework") {
       read_file(ctx, find_framework(ctx, args[0]));
       args = args.subspan(1);
     } else if (arg == "-needed_framework") {
