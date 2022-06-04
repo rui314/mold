@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
