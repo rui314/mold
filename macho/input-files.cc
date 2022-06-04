@@ -694,6 +694,18 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
   DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   ctx.dylib_pool.emplace_back(dylib);
+
+  switch (get_file_type(mf)) {
+  case FileType::TAPI:
+    dylib->parse_tapi(ctx);
+    break;
+  case FileType::MACH_DYLIB:
+    dylib->parse_dylib(ctx);
+    break;
+  default:
+    Fatal(ctx) << mf->name << ": is not a dylib";
+  }
+
   return dylib;
 };
 
@@ -719,6 +731,35 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     i64 off = read_uleb(buf);
     read_trie(ctx, start, off, prefix + suffix);
   }
+}
+
+template <typename E>
+void DylibFile<E>::parse_tapi(Context<E> &ctx) {
+  TextDylib tbd = parse_tbd(ctx, this->mf);
+
+  for (std::string_view s : tbd.exports)
+    this->syms.push_back(get_symbol(ctx, s));
+
+  for (std::string_view s : tbd.weak_exports)
+    this->syms.push_back(get_symbol(ctx, s));
+
+  auto add_symbol = [&](const std::string &name) {
+    this->syms.push_back(get_symbol(ctx, save_string(ctx, name)));
+  };
+
+  for (std::string_view s : tbd.objc_classes) {
+    add_symbol("_OBJC_CLASS_$_" + std::string(s));
+    add_symbol("_OBJC_METACLASS_$_" + std::string(s));
+  }
+
+  for (std::string_view s : tbd.objc_eh_types)
+    add_symbol("_OBJC_EHTYPE_$_" + std::string(s));
+
+  for (std::string_view s : tbd.objc_ivars)
+    add_symbol("_OBJC_IVAR_$_" + std::string(s));
+
+  install_name = tbd.install_name;
+  reexported_libs = tbd.reexported_libs;
 }
 
 template <typename E>
@@ -749,44 +790,6 @@ void DylibFile<E>::parse_dylib(Context<E> &ctx) {
     }
 
     p += lc.cmdsize;
-  }
-}
-
-template <typename E>
-void DylibFile<E>::parse(Context<E> &ctx) {
-  switch (get_file_type(this->mf)) {
-  case FileType::TAPI: {
-    TextDylib tbd = parse_tbd(ctx, this->mf);
-
-    for (std::string_view s : tbd.exports)
-      this->syms.push_back(get_symbol(ctx, s));
-
-    for (std::string_view s : tbd.weak_exports)
-      this->syms.push_back(get_symbol(ctx, s));
-
-    auto add_symbol = [&](const std::string &name) {
-      this->syms.push_back(get_symbol(ctx, save_string(ctx, name)));
-    };
-
-    for (std::string_view s : tbd.objc_classes) {
-      add_symbol("_OBJC_CLASS_$_" + std::string(s));
-      add_symbol("_OBJC_METACLASS_$_" + std::string(s));
-    }
-
-    for (std::string_view s : tbd.objc_eh_types)
-      add_symbol("_OBJC_EHTYPE_$_" + std::string(s));
-
-    for (std::string_view s : tbd.objc_ivars)
-      add_symbol("_OBJC_IVAR_$_" + std::string(s));
-
-    install_name = tbd.install_name;
-    break;
-  }
-  case FileType::MACH_DYLIB:
-    parse_dylib(ctx);
-    break;
-  default:
-    Fatal(ctx) << this->mf->name << ": is not a dylib";
   }
 }
 

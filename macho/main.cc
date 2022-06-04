@@ -11,9 +11,9 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/concurrent_vector.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
-#include <tbb/concurrent_vector.h>
 
 namespace mold::macho {
 
@@ -588,6 +588,14 @@ read_filelist(Context<E> &ctx, std::string arg) {
 }
 
 template <typename E>
+static bool has_dylib(Context<E> &ctx, std::string_view path) {
+  for (DylibFile<E> *file : ctx.dylibs)
+    if (file->install_name == path)
+      return true;
+  return false;
+}
+
+template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   Timer t(ctx, "read_input_files");
 
@@ -646,6 +654,8 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
+  // An object file can contain linker directives to load other object
+  // files or libraries, so process them if any.
   for (ObjectFile<E> *file : ctx.objs) {
     std::vector<std::string> opts = file->get_linker_options(ctx);
 
@@ -662,6 +672,41 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
+  // A dylib file can contain linker directives to load other dylibs,
+  // so process them if any.
+  auto read_exported_lib = [&](DylibFile<E> &file, const std::string &path) {
+    if (!path.starts_with('/'))
+      Fatal(ctx) << file << ": contains an invalid reexported path" << path;
+
+    for (const std::string &root : ctx.arg.syslibroot) {
+      if (path.ends_with(".tbd")) {
+        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+          return file;
+        continue;
+      }
+
+      if (path.ends_with(".dylib")) {
+        std::string stem(path.substr(0, path.size() - 6));
+        if (auto *file = MappedFile<Context<E>>::open(ctx, root + stem + ".tbd"))
+          return file;
+        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+          return file;
+        continue;
+      }
+
+      for (std::string extn : {".tbd", ".dylib"})
+        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path + extn))
+          return file;
+    }
+
+    Fatal(ctx) << file << ": cannot open reexported library " << path;
+  };
+
+  for (i64 i = 0, end = ctx.dylibs.size(); i < end; i++)
+    for (std::string_view path : ctx.dylibs[i]->reexported_libs)
+      if (!has_dylib(ctx, path))
+        read_file(ctx, read_exported_lib(*ctx.dylibs[i], std::string(path)));
+
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 
@@ -675,12 +720,12 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 }
 
 template <typename E>
-static void parse_input_files(Context<E> &ctx) {
-  Timer t(ctx, "parse_input_files");
+static void parse_object_files(Context<E> &ctx) {
+  Timer t(ctx, "parse_object_files");
 
-  auto parse = [&](InputFile<E> *file) { file->parse(ctx); };
-  tbb::parallel_for_each(ctx.objs, parse);
-  tbb::parallel_for_each(ctx.dylibs, parse);
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->parse(ctx);
+  });
 }
 
 template <typename E>
@@ -744,7 +789,7 @@ static int do_main(int argc, char **argv) {
     ctx.code_sig.reset(new CodeSignatureSection<E>(ctx));
 
   read_input_files(ctx, file_args);
-  parse_input_files(ctx);
+  parse_object_files(ctx);
 
   if (ctx.arg.ObjC)
     for (ObjectFile<E> *file : ctx.objs)

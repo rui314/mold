@@ -85,7 +85,6 @@ template <typename E>
 class InputFile {
 public:
   virtual ~InputFile() = default;
-  virtual void parse(Context<E> &ctx) = 0;
   virtual void resolve_symbols(Context<E> &ctx) = 0;
 
   void clear_symbols();
@@ -112,7 +111,7 @@ public:
 
   static ObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                             std::string archive_name);
-  void parse(Context<E> &ctx) override;
+  void parse(Context<E> &ctx);
   Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
   std::vector<std::string> get_linker_options(Context<E> &ctx);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
@@ -157,14 +156,15 @@ class DylibFile : public InputFile<E> {
 public:
   static DylibFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-  void parse(Context<E> &ctx) override;
+  void parse_tapi(Context<E> &ctx);
+  void parse_dylib(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
 
   std::string_view install_name;
   i64 dylib_idx = 0;
+  std::vector<std::string_view> reexported_libs;
 
 private:
-  void parse_dylib(Context<E> &ctx);
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
                  const std::string &prefix = "");
 
