@@ -708,14 +708,15 @@ void BindEncoder::finish() {
 }
 
 template <typename E>
+static u32 get_dylib_idx(InputFile<E> *file) {
+  if (file->is_dylib)
+    return ((DylibFile<E> *)file)->dylib_idx;
+  return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+}
+
+template <typename E>
 void BindSection<E>::compute_size(Context<E> &ctx) {
   BindEncoder enc;
-
-  auto get_dylib_idx = [](InputFile<E> *file) -> u32 {
-    if (file->is_dylib)
-      return ((DylibFile<E> *)file)->dylib_idx;
-    return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
-  };
 
   for (Symbol<E> *sym : ctx.got.syms)
     if (sym->is_imported)
@@ -752,12 +753,7 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
     contents.push_back(byte);
   };
 
-  i64 dylib_idx;
-  if (sym.file->is_dylib)
-    dylib_idx = ((DylibFile<E> *)sym.file)->dylib_idx;
-  else
-    dylib_idx = BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
-
+  i64 dylib_idx = get_dylib_idx(sym.file);
   if (dylib_idx < 16) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
