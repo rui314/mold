@@ -711,16 +711,20 @@ template <typename E>
 void BindSection<E>::compute_size(Context<E> &ctx) {
   BindEncoder enc;
 
+  auto get_dylib_idx = [](InputFile<E> *file) -> u32 {
+    if (file->is_dylib)
+      return ((DylibFile<E> *)file)->dylib_idx;
+    return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+  };
+
   for (Symbol<E> *sym : ctx.got.syms)
     if (sym->is_imported)
-      enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
-              ctx.data_const_seg->seg_idx,
+      enc.add(get_dylib_idx(sym->file), sym->name, 0, ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.thread_ptrs.syms)
     if (sym->is_imported)
-      enc.add(((DylibFile<E> *)sym->file)->dylib_idx, sym->name, 0,
-              ctx.data_seg->seg_idx,
+      enc.add(get_dylib_idx(sym->file), sym->name, 0, ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
@@ -729,8 +733,7 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &r : subsec->get_rels())
             if (r.needs_dynrel)
-              enc.add(((DylibFile<E> *)r.sym->file)->dylib_idx, r.sym->name, 0,
-                      seg->seg_idx,
+              enc.add(get_dylib_idx(r.sym->file), r.sym->name, 0, seg->seg_idx,
                       subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr);
 
   enc.finish();
@@ -749,7 +752,12 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
     contents.push_back(byte);
   };
 
-  i64 dylib_idx = ((DylibFile<E> *)sym.file)->dylib_idx;
+  i64 dylib_idx;
+  if (sym.file->is_dylib)
+    dylib_idx = ((DylibFile<E> *)sym.file)->dylib_idx;
+  else
+    dylib_idx = BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+
   if (dylib_idx < 16) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
