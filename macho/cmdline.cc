@@ -149,7 +149,7 @@ read_lines(Context<E> &ctx, std::string_view path) {
     }
 
     line = string_trim(line);
-    if (!line.empty())
+    if (!line.empty() && !line.starts_with('#'))
       vec.push_back(std::string(line));
   }
   return vec;
