@@ -100,17 +100,24 @@ static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
   for (TextDylib &tbd : tbds.subspan(1))
     map[tbd.install_name] = std::move(tbd);
 
-  std::vector<std::string_view> libs;
+  std::vector<std::string_view> external_libs;
 
-  for (std::string_view lib : main.reexported_libs) {
-    auto it = map.find(lib);
-    if (it != map.end())
-      append(main.exports, it->second.exports);
-    else
-      libs.push_back(lib);
-  }
+  std::function<void(std::span<std::string_view>)> handle_reexported_libs =
+    [&](std::span<std::string_view> libs) {
+    for (std::string_view lib : libs) {
+      auto it = map.find(lib);
+      if (it != map.end()) {
+        TextDylib &child = it->second;
+        append(main.exports, child.exports);
+        handle_reexported_libs(child.reexported_libs);
+      } else {
+        external_libs.push_back(lib);
+      }
+    }
+  };
 
-  main.reexported_libs = std::move(libs);
+  handle_reexported_libs(main.reexported_libs);
+  main.reexported_libs = std::move(external_libs);
   return main;
 }
 

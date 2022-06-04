@@ -708,7 +708,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     Fatal(ctx) << file << ": cannot open reexported library " << path;
   };
 
-  for (i64 i = 0, end = ctx.dylibs.size(); i < end; i++)
+  for (i64 i = 0; i < ctx.dylibs.size(); i++)
     for (std::string_view path : ctx.dylibs[i]->reexported_libs)
       if (!has_dylib(ctx, path))
         read_file(ctx, read_exported_lib(*ctx.dylibs[i], std::string(path)));
