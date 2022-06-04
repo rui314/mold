@@ -40,7 +40,7 @@ static void visit(Context<E> &ctx, Subsection<E> &subsec) {
     visit(ctx, *rec.subsec);
     if (rec.lsda)
       visit(ctx, *rec.lsda);
-    if (Symbol<E> *sym = rec.personality; sym && sym->subsec)
+    if (Symbol<E> *sym = rec.personality_sym; sym && sym->subsec)
       visit(ctx, *sym->subsec);
   }
 }

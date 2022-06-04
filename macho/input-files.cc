@@ -406,9 +406,12 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       break;
     }
     case offsetof(CompactUnwindEntry, personality):
-      if (!r.is_extern)
-        error();
-      dst.personality = this->syms[r.idx];
+      if (r.is_extern) {
+        dst.personality_sym = this->syms[r.idx];
+      } else {
+        i32 addr = *(il32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
+        dst.personality_subsec = find_subsection(ctx, addr);
+      }
       break;
     case offsetof(CompactUnwindEntry, lsda): {
       if (r.is_extern)
@@ -548,8 +551,9 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 template <typename E>
 bool ObjectFile<E>::is_objc_object(Context<E> &ctx) {
   for (std::unique_ptr<InputSection<E>> &isec : sections)
-    if (isec->hdr.match("__DATA", "__objc_catlist") ||
-        isec->hdr.match("__TEXT", "__swift"))
+    if (isec)
+      if (isec->hdr.match("__DATA", "__objc_catlist") ||
+          isec->hdr.match("__TEXT", "__swift"))
       return true;
 
   for (i64 i = 0; i < this->syms.size(); i++)

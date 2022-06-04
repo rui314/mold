@@ -69,12 +69,15 @@ struct UnwindRecord {
     return subsec->get_addr(ctx) + offset;
   }
 
+  std::optional<u64> get_personality_got_addr(Context<E> &ctx) const;
+
   Subsection<E> *subsec = nullptr;
+  Symbol<E> *personality_sym = nullptr;
+  Subsection<E> *personality_subsec = nullptr;
+  Subsection<E> *lsda = nullptr;
   u32 offset = 0;
   u32 code_len;
   u32 encoding;
-  Symbol<E> *personality = nullptr;
-  Subsection<E> *lsda = nullptr;
   u32 lsda_offset = 0;
 };
 
@@ -650,9 +653,12 @@ public:
   }
 
   void add(Context<E> &ctx, Symbol<E> *sym);
+  void add_subsec(Context<E> &ctx, Subsection<E> *subsec);
+  u64 get_subsec_addr(Context<E> &ctx, Subsection<E> *subsec);
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> syms;
+  std::vector<Subsection<E> *> subsections;
 };
 
 template <typename E>
@@ -934,6 +940,16 @@ int main(int argc, char **argv);
 //
 // Inline functions
 //
+
+template <typename E>
+std::optional<u64>
+UnwindRecord<E>::get_personality_got_addr(Context<E> &ctx) const {
+  if (personality_sym)
+    return personality_sym->get_got_addr(ctx);
+  if (personality_subsec)
+    return ctx.got.get_subsec_addr(ctx, personality_subsec);
+  return {};
+}
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputSection<E> &sec) {

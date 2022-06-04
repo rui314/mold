@@ -1231,12 +1231,12 @@ template <typename E>
 class UnwindEncoder {
 public:
   std::vector<u8> encode(Context<E> &ctx, std::span<UnwindRecord<E>> records);
-  u32 encode_personality(Context<E> &ctx, Symbol<E> *sym);
+  u32 encode_personality(Context<E> &ctx, u64 addr);
 
   std::vector<std::span<UnwindRecord<E>>>
   split_records(Context<E> &ctx, std::span<UnwindRecord<E>> records);
 
-  std::vector<Symbol<E> *> personalities;
+  std::vector<u64> personalities;
 };
 
 template <typename E>
@@ -1245,8 +1245,8 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
   i64 num_lsda = 0;
 
   for (UnwindRecord<E> &rec : records) {
-    if (rec.personality)
-      rec.encoding |= encode_personality(ctx, rec.personality);
+    if (std::optional<u64> addr = rec.get_personality_got_addr(ctx))
+      rec.encoding |= encode_personality(ctx, *addr);
     if (rec.lsda)
       num_lsda++;
   }
@@ -1276,10 +1276,8 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 
   // Write the personalities
   u32 *per = (u32 *)(buf.data() + sizeof(uhdr));
-  for (Symbol<E> *sym : personalities) {
-    assert(sym->got_idx != -1);
-    *per++ = sym->get_got_addr(ctx);
-  }
+  for (u64 addr : personalities)
+    *per++ = addr;
 
   // Write first level pages, LSDA and second level pages
   UnwindFirstLevelPage *page1 = (UnwindFirstLevelPage *)per;
@@ -1337,17 +1335,15 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 }
 
 template <typename E>
-u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, Symbol<E> *sym) {
-  assert(sym);
-
+u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, u64 addr) {
   for (i64 i = 0; i < personalities.size(); i++)
-    if (personalities[i] == sym)
+    if (personalities[i] == addr)
       return (i + 1) << std::countr_zero(UNWIND_PERSONALITY_MASK);
 
   if (personalities.size() == 3)
     Fatal(ctx) << ": too many personality functions";
 
-  personalities.push_back(sym);
+  personalities.push_back(addr);
   return personalities.size() << std::countr_zero(UNWIND_PERSONALITY_MASK);
 }
 
@@ -1406,15 +1402,33 @@ void GotSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   assert(sym->got_idx == -1);
   sym->got_idx = syms.size();
   syms.push_back(sym);
-  this->hdr.size = syms.size() * E::word_size;
+  this->hdr.size = (syms.size() + subsections.size()) * E::word_size;
+}
+
+template <typename E>
+void GotSection<E>::add_subsec(Context<E> &ctx, Subsection<E> *subsec) {
+  subsections.push_back(subsec);
+  this->hdr.size = (syms.size() + subsections.size()) * E::word_size;
+}
+
+template <typename E>
+u64 GotSection<E>::get_subsec_addr(Context<E> &ctx, Subsection<E> *subsec) {
+  for (i64 i = 0; i < subsections.size(); i++)
+    if (subsec == subsections[i])
+      return this->hdr.addr + (syms.size() + i) * E::word_size;
+  unreachable();
 }
 
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
   u64 *buf = (u64 *)(ctx.buf + this->hdr.offset);
+
   for (i64 i = 0; i < syms.size(); i++)
     if (!syms[i]->is_imported)
       buf[i] = syms[i]->get_addr(ctx);
+
+  for (i64 i = 0; i < subsections.size(); i++)
+    buf[i + syms.size()] = subsections[i]->get_addr(ctx);
 }
 
 template <typename E>
