@@ -255,10 +255,15 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
       sym->is_imported = true;
 
   // This is a workaround to link Chromium.
-  if (Symbol<E> *sym = get_symbol(ctx, "_OBJC_CLASS_$_NSThread"); !sym->file)
-    sym->is_imported = true;
-  if (Symbol<E> *sym = get_symbol(ctx, "_OBJC_CLASS_$_NSFont"); !sym->file)
-    sym->is_imported = true;
+  auto import = [&](std::string_view name) {
+    Symbol<E> *sym = get_symbol(ctx, name);
+    if (!sym->file)
+      sym->is_imported = true;
+  };
+
+  import("_OBJC_CLASS_$_NSThread");
+  import("_OBJC_CLASS_$_NSFont");
+  import("_OBJC_CLASS_$_NSFontDescriptor");
 
   for (ObjectFile<E> *file : ctx.objs) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {
