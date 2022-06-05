@@ -12,6 +12,7 @@
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 
 #if MOLD_DEBUG_X86_64_ONLY
@@ -872,6 +873,7 @@ struct Context {
   bool all_load = false;
   bool needed_l = false;
   bool hidden_l = false;
+  std::unordered_set<std::string_view> loaded_archives;
 
   u8 uuid[16] = {};
   bool has_error = false;
