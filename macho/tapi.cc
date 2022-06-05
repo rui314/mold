@@ -50,7 +50,9 @@ static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
   return false;
 }
 
-static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
+template <typename E>
+static std::optional<TextDylib>
+to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
   if (!contains(get_vector(node, "targets"), arch))
     return {};
 
@@ -77,14 +79,26 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
     if (contains(get_vector(mem, "targets"), arch))
       append(tbd.reexported_libs, get_string_vector(mem, "libraries"));
 
+  auto concat = [&](const std::string &x, std::string_view y) {
+    return save_string(ctx, x + std::string(y));
+  };
+
   for (std::string_view key : {"exports", "reexports"}) {
     for (YamlNode &mem : get_vector(node, key)) {
       if (contains(get_vector(mem, "targets"), arch)) {
         append(tbd.exports, get_string_vector(mem, "symbols"));
         append(tbd.weak_exports, get_string_vector(mem, "weak-symbols"));
-        append(tbd.objc_classes, get_string_vector(mem, "objc-classes"));
-        append(tbd.objc_eh_types, get_string_vector(mem, "objc-eh-types"));
-        append(tbd.objc_ivars, get_string_vector(mem, "objc-ivars"));
+
+        for (std::string_view s : get_string_vector(mem, "objc-classes")) {
+          tbd.exports.push_back(concat("_OBJC_CLASS_$_", s));
+          tbd.exports.push_back(concat("_OBJC_METACLASS_$_", s));
+        }
+
+        for (std::string_view s : get_string_vector(mem, "objc-eh-types"))
+          tbd.exports.push_back(concat("_OBJC_EHTYPE_$_", s));
+
+        for (std::string_view s : get_string_vector(mem, "objc-ivars"))
+          tbd.exports.push_back(concat("_OBJC_IVAR_$_", s));
       }
     }
   }
@@ -92,6 +106,12 @@ static std::optional<TextDylib> to_tbd(YamlNode &node, std::string_view arch) {
   return tbd;
 }
 
+// A single YAML file may contain multiple text dylibs. The first text
+// dylib is the main file followed by optional other text dylibs for
+// re-exported libraries.
+//
+// This fucntion squashes multiple text dylibs into a single text dylib
+// by copying symbols of re-exported text dylibs to the main text dylib.
 template <typename E>
 static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
   std::unordered_map<std::string_view, TextDylib> map;
@@ -110,10 +130,6 @@ static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
         TextDylib &child = it->second;
         append(main.exports, child.exports);
         append(main.weak_exports, child.weak_exports);
-        append(main.objc_classes, child.objc_classes);
-        append(main.objc_eh_types, child.objc_eh_types);
-        append(main.objc_ivars, child.objc_ivars);
-
         handle_reexported_libs(child.reexported_libs);
       } else {
         external_libs.push_back(lib);
@@ -144,7 +160,7 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
   std::vector<TextDylib> vec;
   for (YamlNode &node : nodes)
-    if (std::optional<TextDylib> dylib = to_tbd(node, arch))
+    if (std::optional<TextDylib> dylib = to_tbd(ctx, node, arch))
       vec.push_back(*dylib);
   return squash(ctx, vec);
 }

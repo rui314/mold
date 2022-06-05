@@ -746,9 +746,6 @@ struct TextDylib {
   std::vector<std::string_view> reexported_libs;
   std::vector<std::string_view> exports;
   std::vector<std::string_view> weak_exports;
-  std::vector<std::string_view> objc_classes;
-  std::vector<std::string_view> objc_eh_types;
-  std::vector<std::string_view> objc_ivars;
 };
 
 template <typename E>

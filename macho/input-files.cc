@@ -744,21 +744,6 @@ void DylibFile<E>::parse_tapi(Context<E> &ctx) {
   for (std::string_view s : tbd.weak_exports)
     this->syms.push_back(get_symbol(ctx, s));
 
-  auto add_symbol = [&](const std::string &name) {
-    this->syms.push_back(get_symbol(ctx, save_string(ctx, name)));
-  };
-
-  for (std::string_view s : tbd.objc_classes) {
-    add_symbol("_OBJC_CLASS_$_" + std::string(s));
-    add_symbol("_OBJC_METACLASS_$_" + std::string(s));
-  }
-
-  for (std::string_view s : tbd.objc_eh_types)
-    add_symbol("_OBJC_EHTYPE_$_" + std::string(s));
-
-  for (std::string_view s : tbd.objc_ivars)
-    add_symbol("_OBJC_IVAR_$_" + std::string(s));
-
   install_name = tbd.install_name;
   reexported_libs = tbd.reexported_libs;
 }
