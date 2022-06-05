@@ -343,7 +343,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-needed_framework")) {
       remaining.push_back("-needed_framework");
       remaining.push_back(std::string(arg));
- } else if (read_flag("-no_deduplicate")) {
+    } else if (read_flag("-no_deduplicate")) {
     } else if (read_flag("-no_uuid")) {
       ctx.arg.uuid = UUID_NONE;
     } else if (read_arg("-o")) {

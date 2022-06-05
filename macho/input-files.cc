@@ -433,7 +433,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
 
   for (i64 i = 0; i < num_entries; i++)
     if (!unwind_records[i].subsec)
-      Fatal(ctx) << ": __compact_unwind: missing relocation at " << i;
+      Fatal(ctx) << "__compact_unwind: missing relocation at " << i;
 
   // Sort unwind entries by offset
   sort(unwind_records, [](const UnwindRecord<E> &a, const UnwindRecord<E> &b) {

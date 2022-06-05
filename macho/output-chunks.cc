@@ -347,7 +347,7 @@ OutputSection<E>::get_instance(Context<E> &ctx, std::string_view segname,
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->hdr.match(segname, sectname)) {
         if (!chunk->is_output_section)
-          Fatal(ctx) << ": reserved name is used: " << segname << "," << sectname;
+          Fatal(ctx) << "reserved name is used: " << segname << "," << sectname;
         return (OutputSection<E> *)chunk;
       }
     }
@@ -1345,7 +1345,7 @@ u32 UnwindEncoder<E>::encode_personality(Context<E> &ctx, u64 addr) {
       return (i + 1) << std::countr_zero(UNWIND_PERSONALITY_MASK);
 
   if (personalities.size() == 3)
-    Fatal(ctx) << ": too many personality functions";
+    Fatal(ctx) << "too many personality functions";
 
   personalities.push_back(addr);
   return personalities.size() << std::countr_zero(UNWIND_PERSONALITY_MASK);
