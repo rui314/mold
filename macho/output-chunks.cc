@@ -158,7 +158,7 @@ create_load_dylib_cmd(Context<E> &ctx, std::string_view name) {
   cmd.cmdsize = buf.size();
   cmd.nameoff = sizeof(cmd);
   cmd.timestamp = 2;
-  cmd.current_version = 0x50c6405;
+  cmd.current_version = ctx.arg.current_version;
   cmd.compatibility_version = ctx.arg.compatibility_version;
   write_string(buf.data() + sizeof(cmd), name);
   return buf;

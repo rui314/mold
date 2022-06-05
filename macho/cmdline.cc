@@ -28,12 +28,15 @@ Options:
   -bundle                     Produce a mach-o bundle
   -compatibility_version <VERSION>
                               Specifies the compatibility version number of the library
+  -current_version <VERSION>  Specifies the current version number of the library.
   -dead_strip                 Remove unreachable functions and data
   -dead_strip_dylibs          Remove unreachable dylibs from dependencies
   -demangle                   Demangle C++ symbols in log messages (default)
   -dylib                      Produce a dynamic library
   -dylib_compatibility_version <VERSION>
                               Alias for -compatibility_version
+  -dylib_current_version <VERSION>
+                              Alias for -current_version
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
@@ -274,6 +277,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-compatibility_version") ||
                read_arg("-dylib_compatibility_version")) {
       ctx.arg.compatibility_version = parse_version(ctx, arg);
+    } else if (read_arg("-current_version") ||
+               read_arg("-dylib_current_version")) {
+      ctx.arg.current_version = parse_version(ctx, arg);
     } else if (read_flag("-color-diagnostics") ||
                read_flag("--color-diagnostics")) {
       ctx.arg.color_diagnostics = true;

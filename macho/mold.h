@@ -842,6 +842,7 @@ struct Context {
     bool trace = false;
     i64 arch = CPU_TYPE_ARM64;
     i64 compatibility_version = 0;
+    i64 current_version = 0;
     i64 filler = 0;
     i64 headerpad = 256;
     i64 pagezero_size = 0;
