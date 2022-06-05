@@ -109,6 +109,11 @@ static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
       if (it != map.end()) {
         TextDylib &child = it->second;
         append(main.exports, child.exports);
+        append(main.weak_exports, child.weak_exports);
+        append(main.objc_classes, child.objc_classes);
+        append(main.objc_eh_types, child.objc_eh_types);
+        append(main.objc_ivars, child.objc_ivars);
+
         handle_reexported_libs(child.reexported_libs);
       } else {
         external_libs.push_back(lib);
