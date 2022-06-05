@@ -58,22 +58,8 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
 
   TextDylib tbd;
 
-  for (YamlNode &mem : get_vector(node, "uuids"))
-    if (auto target = get_string(mem, "target"))
-      if (*target == arch)
-        if (auto val = get_string(mem, "value"))
-          tbd.uuid = *val;
-
   if (auto val = get_string(node, "install-name"))
     tbd.install_name = *val;
-
-  if (auto val = get_string(node, "current-version"))
-    tbd.current_version = *val;
-
-  for (YamlNode &mem : get_vector(node, "parent-umbrella"))
-    if (contains(get_vector(mem, "targets"), arch))
-      if (auto val = get_string(mem, "umbrella"))
-        tbd.parent_umbrella = *val;
 
   for (YamlNode &mem : get_vector(node, "reexported-libraries"))
     if (contains(get_vector(mem, "targets"), arch))
