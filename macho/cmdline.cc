@@ -305,9 +305,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-export_dynamic")) {
       ctx.arg.export_dynamic = true;
     } else if (read_arg("-exported_symbol")) {
-      ctx.arg.exported_symbols_list.push_back(std::string(arg));
+      if (!ctx.arg.exported_symbols_list.add(arg, 1))
+        Fatal(ctx) << "-exported_symbol: invalid glob pattern: " << arg;
     } else if (read_arg("-exported_symbols_list")) {
-      append(ctx.arg.exported_symbols_list, read_lines(ctx, arg));
+      for (std::string_view pat : read_lines(ctx, arg))
+        if (!ctx.arg.exported_symbols_list.add(pat, 1))
+          Fatal(ctx) << "-exported_symbols_list: " << arg
+                     << ": invalid glob pattern: " << pat;
     } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
@@ -385,9 +389,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-thread_count")) {
       ctx.arg.thread_count = std::stoi(std::string(arg));
     } else if (read_arg("-unexported_symbol")) {
-      ctx.arg.unexported_symbols_list.push_back(std::string(arg));
+      if (!ctx.arg.unexported_symbols_list.add(arg, 1))
+        Fatal(ctx) << "-unexported_symbol: invalid glob pattern: " << arg;
     } else if (read_arg("-unexported_symbols_list")) {
-      append(ctx.arg.unexported_symbols_list, read_lines(ctx, arg));
+      for (std::string_view pat : read_lines(ctx, arg))
+        if (!ctx.arg.unexported_symbols_list.add(pat, 1))
+          Fatal(ctx) << "-unexported_symbols_list: " << arg
+                     << ": invalid glob pattern: " << pat;
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
     } else if (read_arg("-weak_framework")) {
@@ -460,6 +468,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.uuid == UUID_RANDOM)
     memcpy(ctx.uuid, get_uuid_v4().data(), 16);
+
+  ctx.arg.exported_symbols_list.compile();
+  ctx.arg.unexported_symbols_list.compile();
 
   return remaining;
 }

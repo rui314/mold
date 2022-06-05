@@ -76,19 +76,12 @@ static void handle_exported_symbols_list(Context<E> &ctx) {
   if (ctx.arg.exported_symbols_list.empty())
     return;
 
-  MultiGlob matcher;
-  for (std::string_view pat : ctx.arg.exported_symbols_list)
-    if (!matcher.add(pat, 1))
-      Fatal(ctx) << "-exported_symbols_list: invalid glob pattern: " << pat;
-
-  matcher.compile();
-
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->syms)
       if (sym && sym->file == file)
         if (sym->scope == SCOPE_EXTERN || sym->scope == SCOPE_PRIVATE_EXTERN)
-          sym->scope =
-            matcher.find(sym->name) ? SCOPE_EXTERN : SCOPE_PRIVATE_EXTERN;
+          sym->scope = ctx.arg.exported_symbols_list.find(sym->name)
+            ? SCOPE_EXTERN : SCOPE_PRIVATE_EXTERN;
   });
 }
 
@@ -98,17 +91,11 @@ static void handle_unexported_symbols_list(Context<E> &ctx) {
   if (ctx.arg.unexported_symbols_list.empty())
     return;
 
-  MultiGlob matcher;
-  for (std::string_view pat : ctx.arg.unexported_symbols_list)
-    if (!matcher.add(pat, 1))
-      Fatal(ctx) << "-unexported_symbols_list: invalid glob pattern: " << pat;
-
-  matcher.compile();
-
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->syms)
       if (sym && sym->file == file)
-        if (sym->scope == SCOPE_EXTERN && matcher.find(sym->name))
+        if (sym->scope == SCOPE_EXTERN &&
+            ctx.arg.unexported_symbols_list.find(sym->name))
           sym->scope = SCOPE_PRIVATE_EXTERN;
   });
 }

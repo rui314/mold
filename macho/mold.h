@@ -821,6 +821,8 @@ struct Context {
 
   // Command-line arguments
   struct {
+    MultiGlob exported_symbols_list;
+    MultiGlob unexported_symbols_list;
     Symbol<E> *entry = nullptr;
     UuidKind uuid = UUID_HASH;
     bool ObjC = false;
@@ -860,13 +862,11 @@ struct Context {
     std::string output = "a.out";
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
-    std::vector<std::string> exported_symbols_list;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> mllvm;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
-    std::vector<std::string> unexported_symbols_list;
   } arg;
 
   std::vector<std::string_view> cmdline_args;
