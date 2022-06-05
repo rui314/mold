@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <bitset>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
@@ -463,6 +465,59 @@ private:
   static constexpr double ALPHA = 0.79402;
 
   std::vector<std::atomic_uint8_t> buckets;
+};
+
+//
+// glob.cc
+//
+
+class Glob {
+  typedef enum { STRING, STAR, QUESTION, BRACKET } Kind;
+
+  struct Element {
+    Element(Kind k) : kind(k) {}
+    Kind kind;
+    std::string str;
+    std::bitset<256> bitset;
+  };
+
+public:
+  static std::optional<Glob> compile(std::string_view pat);
+  bool match(std::string_view str);
+
+private:
+  Glob(std::vector<Element> &&vec) : elements(vec) {}
+  static bool do_match(std::string_view str, std::span<Element> elements);
+
+  std::vector<Element> elements;
+};
+
+//
+// multi-glob.cc
+//
+
+class MultiGlob {
+public:
+  bool add(std::string_view pat, u32 val);
+  void compile();
+  bool empty() const { return strings.empty(); }
+  std::optional<u32> find(std::string_view str);
+
+private:
+  struct TrieNode {
+    u32 value = -1;
+    TrieNode *suffix_link = nullptr;
+    std::unique_ptr<TrieNode> children[256];
+  };
+
+  void fix_suffix_links(TrieNode &node);
+  void fix_values();
+
+  std::vector<std::string> strings;
+  std::unique_ptr<TrieNode> root;
+  std::vector<std::pair<Glob, u32>> globs;
+  std::vector<u32> values;
+  bool compiled = false;
 };
 
 //

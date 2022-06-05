@@ -544,7 +544,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg("unique")) {
-      std::optional<GlobPattern> pat = GlobPattern::compile(arg);
+      std::optional<Glob> pat = Glob::compile(arg);
       if (!pat)
         Fatal(ctx) << "-unique: invalid glob pattern: " << arg;
       ctx.arg.unique = std::move(*pat);

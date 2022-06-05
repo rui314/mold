@@ -1,34 +1,34 @@
-// This file implements the Aho-Corasick algorithm to match version
-// script patterns to symbol strings as quickly as possible.
+// This file implements the Aho-Corasick algorithm to match multiple
+// glob patterns to symbol strings as quickly as possible.
 //
-// Here are some examples of version script patterns:
+// Here are some examples of glob patterns:
 //
 //    qt_private_api_tag*
 //    *16QAccessibleCache*
 //    *32QAbstractFileIconProviderPrivate*
 //    *17QPixmapIconEngine*
 //
-// The pattern is a glob pattern, so `*` is a wildcard that matches
-// any substring. We sometimes have hundreds of version script
-// patterns and have to match them against millions of symbol strings.
+// `*` is a wildcard that matches any substring. We sometimes have
+// hundreds of glob patterns and have to match them against millions
+// of symbol strings.
 //
 // Aho-Corasick cannot handle complex patterns such as `*foo*bar*`.
-// We handle such patterns with GlobPattern. GlobPattern is relatively
-// slow, but complex patterns are rare in practice, so it should be OK.
+// We handle such patterns with the Glob class. Glob is relatively
+// slow, but complex patterns are rare in practice, so it should be
+// OK.
 
 #include "mold.h"
 
 #include <queue>
 #include <regex>
 
-namespace mold::elf {
+namespace mold {
 
-std::optional<u16> VersionMatcher::find(std::string_view str) {
+std::optional<u32> MultiGlob::find(std::string_view str) {
+  assert(compiled);
   u32 idx = UINT32_MAX;
 
   if (root) {
-    std::call_once(once_flag, [&] { compile(); });
-
     // Match against simple glob patterns
     TrieNode *node = root.get();
 
@@ -53,13 +53,13 @@ std::optional<u16> VersionMatcher::find(std::string_view str) {
   }
 
   // Match against complex glob patterns
-  for (std::pair<GlobPattern, u32> &glob : globs)
+  for (std::pair<Glob, u32> &glob : globs)
     if (glob.first.match(str))
       idx = std::min(idx, glob.second);
 
   if (idx == UINT32_MAX)
     return {};
-  return versions[idx];
+  return values[idx];
 }
 
 static bool is_simple_pattern(std::string_view pat) {
@@ -82,17 +82,17 @@ static std::string handle_stars(std::string_view pat) {
   return "\0"s + str + "\0"s;
 }
 
-bool VersionMatcher::add(std::string_view pat, u16 ver) {
+bool MultiGlob::add(std::string_view pat, u32 val) {
   assert(!compiled);
   assert(!pat.empty());
 
   u32 idx = strings.size();
   strings.push_back(std::string(pat));
-  versions.push_back(ver);
+  values.push_back(val);
 
   // Complex glob pattern
   if (!is_simple_pattern(pat)) {
-    if (std::optional<GlobPattern> glob = GlobPattern::compile(pat)) {
+    if (std::optional<Glob> glob = Glob::compile(pat)) {
       globs.push_back({std::move(*glob), idx});
       return true;
     }
@@ -114,13 +114,17 @@ bool VersionMatcher::add(std::string_view pat, u16 ver) {
   return true;
 }
 
-void VersionMatcher::compile() {
-  fix_suffix_links(*root);
-  fix_values();
+void MultiGlob::compile() {
+  assert(!compiled);
   compiled = true;
+
+  if (root) {
+    fix_suffix_links(*root);
+    fix_values();
+  }
 }
 
-void VersionMatcher::fix_suffix_links(TrieNode &node) {
+void MultiGlob::fix_suffix_links(TrieNode &node) {
   for (i64 i = 0; i < 256; i++) {
     if (!node.children[i])
       continue;
@@ -146,7 +150,7 @@ void VersionMatcher::fix_suffix_links(TrieNode &node) {
   }
 }
 
-void VersionMatcher::fix_values() {
+void MultiGlob::fix_values() {
   std::queue<TrieNode *> queue;
   queue.push(root.get());
 
@@ -163,4 +167,4 @@ void VersionMatcher::fix_values() {
   } while (!queue.empty());
 }
 
-} // namespace mold::elf
+} // namespace mold

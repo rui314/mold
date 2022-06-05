@@ -1064,8 +1064,8 @@ void apply_version_script(Context<E> &ctx) {
   }
 
   // Otherwise, use glob pattern matchers.
-  VersionMatcher matcher;
-  VersionMatcher cpp_matcher;
+  MultiGlob matcher;
+  MultiGlob cpp_matcher;
 
   for (VersionPattern &v : ctx.version_patterns) {
     if (v.is_cpp) {
@@ -1076,6 +1076,9 @@ void apply_version_script(Context<E> &ctx) {
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     }
   }
+
+  matcher.compile();
+  cpp_matcher.compile();
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {

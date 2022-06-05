@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-namespace mold::elf {
+namespace mold {
 
-std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
+std::optional<Glob> Glob::compile(std::string_view pat) {
   std::vector<Element> vec;
 
   while (!pat.empty()) {
@@ -87,14 +87,14 @@ std::optional<GlobPattern> GlobPattern::compile(std::string_view pat) {
     }
   }
 
-  return {GlobPattern{std::move(vec)}};
+  return {Glob{std::move(vec)}};
 }
 
-bool GlobPattern::match(std::string_view str) {
+bool Glob::match(std::string_view str) {
   return do_match(str, elements);
 }
 
-bool GlobPattern::do_match(std::string_view str, std::span<Element> elements) {
+bool Glob::do_match(std::string_view str, std::span<Element> elements) {
   while (!elements.empty()) {
     Element &e = elements[0];
     elements = elements.subspan(1);
@@ -146,4 +146,4 @@ bool GlobPattern::do_match(std::string_view str, std::span<Element> elements) {
   return str.empty();
 }
 
-} // namespace mold::elf
+} // namespace mold

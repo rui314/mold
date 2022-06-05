@@ -1234,60 +1234,6 @@ template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 //
-// glob.cc
-//
-
-class GlobPattern {
-  typedef enum { STRING, STAR, QUESTION, BRACKET } Kind;
-
-  struct Element {
-    Element(Kind k) : kind(k) {}
-    Kind kind;
-    std::string str;
-    std::bitset<256> bitset;
-  };
-
-public:
-  static std::optional<GlobPattern> compile(std::string_view pat);
-  bool match(std::string_view str);
-
-private:
-  GlobPattern(std::vector<Element> &&vec) : elements(vec) {}
-  static bool do_match(std::string_view str, std::span<Element> elements);
-
-  std::vector<Element> elements;
-};
-
-//
-// version-matcher.cc
-//
-
-class VersionMatcher {
-public:
-  bool add(std::string_view pat, u16 ver);
-  bool empty() const { return !root && globs.empty(); }
-  std::optional<u16> find(std::string_view str);
-
-private:
-  struct TrieNode {
-    u32 value = -1;
-    TrieNode *suffix_link = nullptr;
-    std::unique_ptr<TrieNode> children[256];
-  };
-
-  void compile();
-  void fix_suffix_links(TrieNode &node);
-  void fix_values();
-
-  std::vector<std::string> strings;
-  std::unique_ptr<TrieNode> root;
-  std::vector<std::pair<GlobPattern, u32>> globs;
-  std::vector<u16> versions;
-  std::once_flag once_flag;
-  bool compiled = false;
-};
-
-//
 // lto.cc
 //
 
@@ -1598,7 +1544,7 @@ struct Context {
     i64 print_dependencies = 0;
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
-    std::optional<GlobPattern> unique;
+    std::optional<Glob> unique;
     std::optional<u64> shuffle_sections_seed;
     std::string Map;
     std::string chroot;
