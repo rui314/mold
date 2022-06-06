@@ -29,11 +29,24 @@ current-version: 0000
 compatibility-version: 150
 reexported-libraries:
   - targets:         [ x86_64-macos, arm64-macos ]
-    libraries:       [ ]
+    libraries:       [ '/usr/lib/libbar.dylib' ]
 exports:
   - targets:         [ x86_64-macos, arm64-macos ]
     symbols:         [ _foo ]
-    weak-symbols:    [ _bar ]
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+uuids:
+  - target:          x86_64-macos
+    value:           00000000-0000-0000-0000-000000000000
+  - target:          arm64-macos
+    value:           00000000-0000-0000-0000-000000000000
+install-name:    '/usr/lib/libbar.dylib'
+current-version: 0000
+compatibility-version: 150
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:         [ _bar ]
 ...
 EOF
 
@@ -48,7 +61,7 @@ int main() {
 }
 EOF
 
-clang --ld-path=./ld64 -o $t/exe $t/a.o -F$t/libs/ -Wl,-framework,SomeFramework
+clang --ld-path=./ld64 -o $t/exe $t/a.o -F$t/libs -Wl,-framework,SomeFramework
 
 otool -L $t/exe | grep -q '/usr/frameworks/SomeFramework.framework/SomeFramework'
 

@@ -100,7 +100,7 @@ template <typename E>
 static MappedFile<Context<E>> *
 find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
   if (!path.starts_with('/'))
-    Fatal(ctx) << parent << ": contains an invalid reexported path" << path;
+    Fatal(ctx) << parent << ": contains an invalid reexported path: " << path;
 
   for (const std::string &root : ctx.arg.syslibroot) {
     if (path.ends_with(".tbd")) {
