@@ -13,6 +13,7 @@
 
 #include <optional>
 #include <regex>
+#include <unordered_set>
 
 namespace mold::macho {
 
@@ -114,11 +115,11 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
   std::vector<std::string_view> syms;
   syms.reserve(tbd.exports.size());
 
+  std::unordered_set<std::string> hidden_syms;
+
   for (std::string_view s : tbd.exports) {
-    if (!s.starts_with("$ld$")) {
-      syms.push_back(s);
+    if (!s.starts_with("$ld$"))
       continue;
-    }
 
     std::string name{s};
     std::smatch m;
@@ -126,11 +127,11 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
 
     // $ld$previous$ symbol replaces the default install name with a
     // specified one if the platform OS version is in a specified range.
-    static std::regex re_previous(
+    static std::regex previous_re(
       R"(\$ld\$previous\$([^$]+)\$([\d.]*)\$(\d+)\$([\d.]+)\$([\d.]+)\$(.*)\$)",
       flags);
 
-    if (std::regex_match(name, m, re_previous)) {
+    if (std::regex_match(name, m, previous_re)) {
       std::string install_name = m[1];
       i64 platform = std::stoi(m[3]);
       i64 min_version = parse_version(m[4]);
@@ -155,14 +156,28 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
 
     // $ld$add$os_version$symbol adds a symbol if the given OS version
     // matches.
-    static std::regex re_add(R"(\$ld\$add\$os([\d.]+)\$(.+))", flags);
+    static std::regex add_re(R"(\$ld\$add\$os([\d.]+)\$(.+))", flags);
 
-    if (std::regex_match(name, m, re_add)) {
+    if (std::regex_match(name, m, add_re)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
         syms.push_back(save_string(ctx, m[2]));
       continue;
     }
+
+    // $ld$hide$os_version$symbol hides a symbol if the given OS version
+    // matches.
+    static std::regex hidden_re(R"(\$ld\$hide\$os([\d.]+)\$(.+))", flags);
+
+    if (std::regex_match(name, m, hidden_re)) {
+      if (ctx.arg.platform_min_version == parse_version(m[1]))
+        hidden_syms.insert(m[2]);
+      continue;
+    }
   }
+
+  for (std::string_view s : tbd.exports)
+    if (!s.starts_with("$ld$") && !hidden_syms.contains(std::string(s)))
+      syms.push_back(s);
 
   std::erase_if(syms, [](std::string_view s) { return s.starts_with("$ld$"); });
   tbd.exports = syms;
