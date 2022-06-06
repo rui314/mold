@@ -111,9 +111,14 @@ static i64 parse_version(const std::string &arg) {
 // We interpret such symbols in this function.
 template <typename E>
 static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
+  std::vector<std::string_view> syms;
+  syms.reserve(tbd.exports.size());
+
   for (std::string_view s : tbd.exports) {
-    if (!s.starts_with("$ld$"))
+    if (!s.starts_with("$ld$")) {
+      syms.push_back(s);
       continue;
+    }
 
     std::string name{s};
     std::smatch m;
@@ -154,14 +159,13 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
 
     if (std::regex_match(name, m, re_add)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
-        tbd.exports.push_back(save_string(ctx, m[2]));
+        syms.push_back(save_string(ctx, m[2]));
       continue;
     }
   }
 
-  std::erase_if(tbd.exports, [](std::string_view s) {
-    return s.starts_with("$ld$");
-  });
+  std::erase_if(syms, [](std::string_view s) { return s.starts_with("$ld$"); });
+  tbd.exports = syms;
 }
 
 template <typename E>
