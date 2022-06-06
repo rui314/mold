@@ -12,6 +12,7 @@
 #include "mold.h"
 
 #include <optional>
+#include <regex>
 
 namespace mold::macho {
 
@@ -90,6 +91,66 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
   }
 
   return tbd;
+}
+
+static i64 parse_version(const std::string &arg) {
+  static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
+                       std::regex_constants::ECMAScript);
+  std::smatch m;
+  bool ok = std::regex_match(arg, m, re);
+  assert(ok);
+
+  i64 major = (m[1].length() == 0) ? 0 : stoi(m[1]);
+  i64 minor = (m[2].length() == 0) ? 0 : stoi(m[2]);
+  i64 patch = (m[3].length() == 0) ? 0 : stoi(m[3]);
+  return (major << 16) | (minor << 8) | patch;
+}
+
+// Dylib can contain special symbols whose name starts with "$ld$".
+// Such symbols aren't actually symbols but linker directives.
+// We interpret such symbols in this function.
+template <typename E>
+static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
+  for (std::string_view s : tbd.exports) {
+    if (!s.starts_with("$ld$"))
+      continue;
+
+    std::string name{s};
+    std::smatch m;
+    auto flags = std::regex_constants::ECMAScript | std::regex_constants::optimize;
+
+    // $ld$previous$ symbol replaces the default install name with a
+    // specified one if the platform OS version is in a specified range.
+    static std::regex re_previous(
+      R"(\$ld\$previous\$([^$]+)\$([\d.]*)\$(\d+)\$([\d.]+)\$([\d.]+)\$(.*)\$)",
+      flags);
+
+    if (std::regex_match(name, m, re_previous)) {
+      std::string install_name = m[1];
+      i64 platform = std::stoi(m[3]);
+      i64 min_version = parse_version(m[4]);
+      i64 max_version = parse_version(m[5]);
+      std::string symbol_name = m[6];
+
+      if (!symbol_name.empty()) {
+        // ld64 source seems to have implemented a feature to give an
+        // alternative install name for a matching symbol, but it didn't
+        // work in practice (or I may be using the feature in a wrong way.)
+        // Ignore such symbol for now.
+        continue;
+      }
+
+      if (platform == ctx.arg.platform &&
+          min_version <= ctx.arg.platform_min_version &&
+          ctx.arg.platform_min_version < max_version) {
+        tbd.install_name = save_string(ctx, install_name);
+      }
+    }
+  }
+
+  std::erase_if(tbd.exports, [](std::string_view s) {
+    return s.starts_with("$ld$");
+  });
 }
 
 template <typename E>
@@ -185,6 +246,10 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
   for (YamlNode &node : nodes)
     if (std::optional<TextDylib> dylib = to_tbd(ctx, node, arch))
       vec.push_back(*dylib);
+
+  for (TextDylib &tbd : vec)
+    interpret_ld_symbols(ctx, tbd);
+
   return squash(ctx, vec, arch);
 }
 
