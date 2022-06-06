@@ -173,6 +173,17 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
         hidden_syms.insert(m[2]);
       continue;
     }
+
+    // $ld$install_name$os_version$name changes the install name to a
+    // given name.
+    static std::regex
+      install_name_re(R"(\$ld\$install_name\$os([\d.]+)\$(.+))", flags);
+
+    if (std::regex_match(name, m, install_name_re)) {
+      if (ctx.arg.platform_min_version == parse_version(m[1]))
+        tbd.install_name = save_string(ctx, m[2]);
+      continue;
+    }
   }
 
   for (std::string_view s : tbd.exports)
