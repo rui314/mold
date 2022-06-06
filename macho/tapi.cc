@@ -145,6 +145,17 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
           ctx.arg.platform_min_version < max_version) {
         tbd.install_name = save_string(ctx, install_name);
       }
+      continue;
+    }
+
+    // $ld$add$os_version$symbol adds a symbol if the given OS version
+    // matches.
+    static std::regex re_add(R"(\$ld\$add\$os([\d.]+)\$(.+))", flags);
+
+    if (std::regex_match(name, m, re_add)) {
+      if (ctx.arg.platform_min_version == parse_version(m[1]))
+        tbd.exports.push_back(save_string(ctx, m[2]));
+      continue;
     }
   }
 
