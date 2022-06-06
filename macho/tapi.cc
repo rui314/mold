@@ -92,6 +92,39 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
   return tbd;
 }
 
+template <typename E>
+static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
+                       std::string_view arch);
+
+template <typename E>
+static MappedFile<Context<E>> *
+find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
+  if (!path.starts_with('/'))
+    Fatal(ctx) << parent << ": contains an invalid reexported path" << path;
+
+  for (const std::string &root : ctx.arg.syslibroot) {
+    if (path.ends_with(".tbd")) {
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+        return file;
+      continue;
+    }
+
+    if (path.ends_with(".dylib")) {
+      std::string stem(path.substr(0, path.size() - 6));
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + stem + ".tbd"))
+        return file;
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+        return file;
+    }
+
+    for (std::string extn : {".tbd", ".dylib"})
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path + extn))
+        return file;
+  }
+
+  Fatal(ctx) << parent << ": cannot open reexported library " << path;
+}
+
 // A single YAML file may contain multiple text dylibs. The first text
 // dylib is the main file followed by optional other text dylibs for
 // re-exported libraries.
@@ -99,32 +132,36 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
 // This fucntion squashes multiple text dylibs into a single text dylib
 // by copying symbols of re-exported text dylibs to the main text dylib.
 template <typename E>
-static TextDylib squash(Context<E> &ctx, std::span<TextDylib> tbds) {
+static TextDylib
+squash(Context<E> &ctx, std::span<TextDylib> tbds, std::string_view arch) {
   std::unordered_map<std::string_view, TextDylib> map;
 
   TextDylib main = std::move(tbds[0]);
   for (TextDylib &tbd : tbds.subspan(1))
     map[tbd.install_name] = std::move(tbd);
 
-  std::vector<std::string_view> external_libs;
-
-  std::function<void(std::span<std::string_view>)> handle_reexported_libs =
-    [&](std::span<std::string_view> libs) {
-    for (std::string_view lib : libs) {
+  std::function<void(TextDylib &)> visit = [&](TextDylib &tbd) {
+    for (std::string_view lib : tbd.reexported_libs) {
       auto it = map.find(lib);
+
       if (it != map.end()) {
+        // The referenced reexported library is in the same .tbd file.
         TextDylib &child = it->second;
         append(main.exports, child.exports);
         append(main.weak_exports, child.weak_exports);
-        handle_reexported_libs(child.reexported_libs);
+        visit(child);
       } else {
-        external_libs.push_back(lib);
+        // The referenced reexported library is a separate file.
+        MappedFile<Context<E>> *mf =
+          find_external_lib(ctx, tbd.install_name, std::string(lib));
+        TextDylib child = parse(ctx, mf, arch);
+        append(main.exports, child.exports);
+        append(main.weak_exports, child.weak_exports);
       }
     }
   };
 
-  handle_reexported_libs(main.reexported_libs);
-  main.reexported_libs = std::move(external_libs);
+  visit(main);
   return main;
 }
 
@@ -148,7 +185,7 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
   for (YamlNode &node : nodes)
     if (std::optional<TextDylib> dylib = to_tbd(ctx, node, arch))
       vec.push_back(*dylib);
-  return squash(ctx, vec);
+  return squash(ctx, vec, arch);
 }
 
 template <>

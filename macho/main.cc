@@ -676,41 +676,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
-  // A dylib file can contain linker directives to load other dylibs,
-  // so process them if any.
-  auto read_exported_lib = [&](DylibFile<E> &file, const std::string &path) {
-    if (!path.starts_with('/'))
-      Fatal(ctx) << file << ": contains an invalid reexported path" << path;
-
-    for (const std::string &root : ctx.arg.syslibroot) {
-      if (path.ends_with(".tbd")) {
-        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
-          return file;
-        continue;
-      }
-
-      if (path.ends_with(".dylib")) {
-        std::string stem(path.substr(0, path.size() - 6));
-        if (auto *file = MappedFile<Context<E>>::open(ctx, root + stem + ".tbd"))
-          return file;
-        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
-          return file;
-        continue;
-      }
-
-      for (std::string extn : {".tbd", ".dylib"})
-        if (auto *file = MappedFile<Context<E>>::open(ctx, root + path + extn))
-          return file;
-    }
-
-    Fatal(ctx) << file << ": cannot open reexported library " << path;
-  };
-
-  for (i64 i = 0; i < ctx.dylibs.size(); i++)
-    for (std::string_view path : ctx.dylibs[i]->reexported_libs)
-      if (!has_dylib(ctx, path))
-        read_file(ctx, read_exported_lib(*ctx.dylibs[i], std::string(path)));
-
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 
