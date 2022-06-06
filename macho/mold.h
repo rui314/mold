@@ -98,6 +98,7 @@ public:
   std::atomic_bool is_alive = false;
   bool is_dylib = false;
   bool is_hidden = false;
+  bool is_weak = false;
   std::string archive_name;
 
 protected:
@@ -438,14 +439,14 @@ public:
 class BindEncoder {
 public:
   BindEncoder();
-  void add(i64 dylib_idx, std::string_view sym, i64 flags, i64 seg_idx,
-           i64 offset);
+
+  template <typename E> void add(Symbol<E> &sym, i64 seg_idx, i64 offset);
   void finish();
 
   std::vector<u8> buf;
 
 private:
-  std::string_view last_sym;
+  std::string_view last_name;
   i64 last_flags = -1;
   i64 last_dylib = -1;
   i64 last_seg = -1;
@@ -475,7 +476,7 @@ public:
     this->hdr.p2align = 3;
   }
 
-  void add(Context<E> &ctx, Symbol<E> &sym, i64 flags);
+  void add(Context<E> &ctx, Symbol<E> &sym);
 
   void compute_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
@@ -875,6 +876,7 @@ struct Context {
   bool all_load = false;
   bool needed_l = false;
   bool hidden_l = false;
+  bool weak_l = false;
   std::unordered_set<std::string_view> loaded_archives;
 
   u8 uuid[16] = {};

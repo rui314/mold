@@ -149,18 +149,18 @@ static std::vector<u8> create_main_cmd(Context<E> &ctx) {
 
 template <typename E>
 static std::vector<u8>
-create_load_dylib_cmd(Context<E> &ctx, std::string_view name) {
-  i64 size = sizeof(DylibCommand) + name.size() + 1; // +1 for NUL
+create_load_dylib_cmd(Context<E> &ctx, DylibFile<E> &dylib) {
+  i64 size = sizeof(DylibCommand) + dylib.install_name.size() + 1; // +1 for NUL
   std::vector<u8> buf(align_to(size, 8));
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
-  cmd.cmd = LC_LOAD_DYLIB;
+  cmd.cmd = (dylib.is_weak ? LC_LOAD_WEAK_DYLIB : LC_LOAD_DYLIB);
   cmd.cmdsize = buf.size();
   cmd.nameoff = sizeof(cmd);
   cmd.timestamp = 2;
   cmd.current_version = ctx.arg.current_version;
   cmd.compatibility_version = ctx.arg.compatibility_version;
-  write_string(buf.data() + sizeof(cmd), name);
+  write_string(buf.data() + sizeof(cmd), dylib.install_name);
   return buf;
 }
 
@@ -271,7 +271,7 @@ static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
   vec.push_back(create_function_starts_cmd(ctx));
 
   for (DylibFile<E> *dylib : ctx.dylibs)
-    vec.push_back(create_load_dylib_cmd(ctx, dylib->install_name));
+    vec.push_back(create_load_dylib_cmd(ctx, *dylib));
 
   for (std::string_view rpath : ctx.arg.rpath)
     vec.push_back(create_rpath_cmd(ctx, rpath));
@@ -669,8 +669,18 @@ BindEncoder::BindEncoder() {
   buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
 }
 
-void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
-                      i64 seg_idx, i64 offset) {
+template <typename E>
+static u32 get_dylib_idx(InputFile<E> *file) {
+  if (file->is_dylib)
+    return ((DylibFile<E> *)file)->dylib_idx;
+  return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+}
+
+template <typename E>
+void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
+  i64 dylib_idx = get_dylib_idx(sym.file);
+  i64 flags = (sym.file->is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
+
   if (last_dylib != dylib_idx) {
     if (dylib_idx < 16) {
       buf.push_back(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
@@ -680,10 +690,11 @@ void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
     }
   }
 
-  if (last_sym != sym || last_flags != flags) {
+  if (last_name != sym.name || last_flags != flags) {
     assert(flags < 16);
     buf.push_back(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-    buf.insert(buf.end(), (u8 *)sym.data(), (u8 *)(sym.data() + sym.size()));
+    buf.insert(buf.end(), (u8 *)sym.name.data(),
+               (u8 *)(sym.name.data() + sym.name.size()));
     buf.push_back('\0');
   }
 
@@ -696,7 +707,7 @@ void BindEncoder::add(i64 dylib_idx, std::string_view sym, i64 flags,
   buf.push_back(BIND_OPCODE_DO_BIND);
 
   last_dylib = dylib_idx;
-  last_sym = sym;
+  last_name = sym.name;
   last_flags = flags;
   last_seg = seg_idx;
   last_off = offset;
@@ -708,24 +719,17 @@ void BindEncoder::finish() {
 }
 
 template <typename E>
-static u32 get_dylib_idx(InputFile<E> *file) {
-  if (file->is_dylib)
-    return ((DylibFile<E> *)file)->dylib_idx;
-  return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
-}
-
-template <typename E>
 void BindSection<E>::compute_size(Context<E> &ctx) {
   BindEncoder enc;
 
   for (Symbol<E> *sym : ctx.got.syms)
     if (sym->is_imported)
-      enc.add(get_dylib_idx(sym->file), sym->name, 0, ctx.data_const_seg->seg_idx,
+      enc.add(*sym, ctx.data_const_seg->seg_idx,
               sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
 
   for (Symbol<E> *sym : ctx.thread_ptrs.syms)
     if (sym->is_imported)
-      enc.add(get_dylib_idx(sym->file), sym->name, 0, ctx.data_seg->seg_idx,
+      enc.add(*sym, ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
@@ -734,7 +738,7 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &r : subsec->get_rels())
             if (r.needs_dynrel)
-              enc.add(get_dylib_idx(r.sym->file), r.sym->name, 0, seg->seg_idx,
+              enc.add(*r.sym, seg->seg_idx,
                       subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr);
 
   enc.finish();
@@ -748,12 +752,13 @@ void BindSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
+void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym) {
   auto emit = [&](u8 byte) {
     contents.push_back(byte);
   };
 
   i64 dylib_idx = get_dylib_idx(sym.file);
+
   if (dylib_idx < 16) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
@@ -761,7 +766,9 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym, i64 flags) {
     encode_uleb(contents, dylib_idx);
   }
 
+  i64 flags = (sym.file->is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
   assert(flags < 16);
+
   emit(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
   contents.insert(contents.end(), (u8 *)sym.name.data(),
                   (u8 *)(sym.name.data() + sym.name.size()));
@@ -784,7 +791,7 @@ void LazyBindSection<E>::compute_size(Context<E> &ctx) {
 
   for (Symbol<E> *sym : ctx.stubs.syms) {
     ctx.stubs.bind_offsets.push_back(contents.size());
-    add(ctx, *sym, 0);
+    add(ctx, *sym);
   }
 
   contents.resize(align_to(contents.size(), 1 << this->hdr.p2align));

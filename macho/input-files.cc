@@ -694,6 +694,7 @@ template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
+  dylib->is_weak = ctx.weak_l;
   ctx.dylib_pool.emplace_back(dylib);
 
   switch (get_file_type(mf)) {
@@ -788,7 +789,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
       sym->file = this;
       sym->scope = SCOPE_LOCAL;
       sym->is_imported = true;
-      sym->is_weak_def = false;
+      sym->is_weak_def = this->is_weak;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;

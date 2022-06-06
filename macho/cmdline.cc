@@ -84,8 +84,9 @@ Options:
   -unexported_symbols_list <FILE>
                               Read a list of unexported symbols from a given file
   -v                          Report version information
-  -weak-framework <NAME>[,<SUFFIX>]
-                              Search for a given framework)";
+  -weak_framework <NAME>[,<SUFFIX>]
+                              Search for a given framework
+  -weak-l<LIB>                Search for a given library)";
 
 template <typename E>
 static i64 parse_platform(Context<E> &ctx, std::string_view arg) {
@@ -401,7 +402,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-weak_framework")) {
       remaining.push_back("-weak_framework");
       remaining.push_back(std::string(arg));
-     } else {
+    } else if (read_joined("-weak-l")) {
+      remaining.push_back("-weak-l");
+      remaining.push_back(std::string(arg));
+    } else {
       if (args[i][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[i];
       remaining.push_back(std::string(args[i]));

@@ -611,50 +611,64 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   };
 
   while (!args.empty()) {
+    const std::string &opt = args[0];
+    args = args.subspan(1);
+
+    if (!opt.starts_with('-')) {
+      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, opt));
+      continue;
+    }
+
+    if (opt == "-all_load") {
+      ctx.all_load = true;
+      continue;
+    }
+
+    if (opt == "-noall_load") {
+      ctx.all_load = false;
+      continue;
+    }
+
+    if (args.empty())
+      Fatal(ctx) << opt << ": missing argument";
+
     const std::string &arg = args[0];
     args = args.subspan(1);
 
-    if (arg == "-all_load") {
-      ctx.all_load = true;
-    } else if (arg == "-noall_load") {
-      ctx.all_load = false;
-    } else if (arg == "-filelist") {
-      for (std::string &path : read_filelist(ctx, args[0])) {
+    if (opt == "-filelist") {
+      for (std::string &path : read_filelist(ctx, arg)) {
         MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
         if (!mf)
-          Fatal(ctx) << "-filepath " << args[0] << ": cannot open file: " << path;
+          Fatal(ctx) << "-filepath " << arg << ": cannot open file: " << path;
         read_file(ctx, mf);
       }
-      args = args.subspan(1);
-    } else if (arg == "-force_load") {
+    } else if (opt == "-force_load") {
       bool orig = ctx.all_load;
       ctx.all_load = true;
-      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, args[0]));
-      ctx.all_load = orig;
-      args = args.subspan(1);
-    } else if (arg == "-framework" || arg == "-weak_framework") {
-      read_file(ctx, find_framework(ctx, args[0]));
-      args = args.subspan(1);
-    } else if (arg == "-needed_framework") {
-      ctx.needed_l = true;
-      read_file(ctx, find_framework(ctx, args[0]));
-      ctx.needed_l = false;
-      args = args.subspan(1);
-    } else if (arg == "-l") {
-      read_file(ctx, must_find_library(args[0]));
-      args = args.subspan(1);
-    } else if (arg == "-needed-l") {
-      ctx.needed_l = true;
-      read_file(ctx, must_find_library(args[0]));
-      ctx.needed_l = false;
-      args = args.subspan(1);
-    } else if (arg == "-hidden-l") {
-      ctx.hidden_l = true;
-      read_file(ctx, must_find_library(args[0]));
-      ctx.hidden_l = false;
-      args = args.subspan(1);
-    } else {
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, arg));
+      ctx.all_load = orig;
+    } else if (opt == "-framework" || opt == "-weak_framework") {
+      read_file(ctx, find_framework(ctx, arg));
+    } else if (opt == "-needed_framework") {
+      ctx.needed_l = true;
+      read_file(ctx, find_framework(ctx, arg));
+      ctx.needed_l = false;
+    } else if (opt == "-l") {
+      read_file(ctx, must_find_library(arg));
+    } else if (opt == "-needed-l") {
+      ctx.needed_l = true;
+      read_file(ctx, must_find_library(arg));
+      ctx.needed_l = false;
+    } else if (opt == "-hidden-l") {
+      ctx.hidden_l = true;
+      read_file(ctx, must_find_library(arg));
+      ctx.hidden_l = false;
+    } else if (opt == "-weak-l") {
+      ctx.weak_l = true;
+      read_file(ctx, must_find_library(arg));
+      ctx.weak_l = false;
+    } else {
+      unreachable();
     }
   }
 
