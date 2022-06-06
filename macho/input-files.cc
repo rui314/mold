@@ -1,6 +1,7 @@
 #include "mold.h"
-
 #include "../archive-file.h"
+
+#include <regex>
 
 namespace mold::macho {
 
@@ -690,6 +691,19 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
   mach_syms = mach_syms2;
 }
 
+static i64 parse_version(const std::string &arg) {
+  static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
+                       std::regex_constants::ECMAScript);
+  std::smatch m;
+  bool ok = std::regex_match(arg, m, re);
+  assert(ok);
+
+  i64 major = (m[1].length() == 0) ? 0 : stoi(m[1]);
+  i64 minor = (m[2].length() == 0) ? 0 : stoi(m[2]);
+  i64 patch = (m[3].length() == 0) ? 0 : stoi(m[3]);
+  return (major << 16) | (minor << 8) | patch;
+}
+
 template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>(mf);
@@ -707,6 +721,50 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
   default:
     Fatal(ctx) << mf->name << ": is not a dylib";
   }
+
+  // Dylib can contain special symbols whose name starts with "$ld$".
+  // Such symbols aren't actually symbols but linker directives.
+  // We interpret such symbols in this loop.
+  for (Symbol<E> *sym : dylib->syms) {
+    if (!sym->name.starts_with("$ld$"))
+      continue;
+
+    std::string name{sym->name};
+    std::smatch m;
+    auto flags = std::regex_constants::ECMAScript | std::regex_constants::optimize;
+
+    // $ld$previous$ symbol replaces the default install name with a
+    // specified one if the platform OS version is in a specified range.
+    static std::regex re_previous(
+      R"(\$ld\$previous\$([^$]+)\$([\d.]*)\$(\d+)\$([\d.]+)\$([\d.]+)\$(.*)\$)",
+      flags);
+
+    if (std::regex_match(name, m, re_previous)) {
+      std::string install_name = m[1];
+      i64 platform = std::stoi(m[3]);
+      i64 min_version = parse_version(m[4]);
+      i64 max_version = parse_version(m[5]);
+      std::string symbol_name = m[6];
+
+      if (!symbol_name.empty()) {
+        // ld64 source seems to have implemented a feature to give an
+        // alternative install name for a matching symbol, but it didn't
+        // work in practice (or I may be using the feature in a wrong way.)
+        // Ignore such symbol for now.
+        continue;
+      }
+
+      if (platform == ctx.arg.platform &&
+          min_version <= ctx.arg.platform_min_version &&
+          ctx.arg.platform_min_version < max_version) {
+        dylib->install_name = save_string(ctx, install_name);
+      }
+    }
+  }
+
+  std::erase_if(dylib->syms, [](Symbol<E> *sym) {
+    return sym->name.starts_with("$ld$");
+  });
 
   return dylib;
 };
