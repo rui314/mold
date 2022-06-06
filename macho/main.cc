@@ -647,29 +647,32 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       ctx.all_load = true;
       read_file(ctx, MappedFile<Context<E>>::must_open(ctx, arg));
       ctx.all_load = orig;
-    } else if (opt == "-framework" || opt == "-weak_framework") {
+    } else if (opt == "-framework") {
       read_file(ctx, find_framework(ctx, arg));
     } else if (opt == "-needed_framework") {
       ctx.needed_l = true;
       read_file(ctx, find_framework(ctx, arg));
-      ctx.needed_l = false;
+    } else if (opt == "-weak_framework") {
+      ctx.weak_l = true;
+      read_file(ctx, find_framework(ctx, arg));
     } else if (opt == "-l") {
       read_file(ctx, must_find_library(arg));
     } else if (opt == "-needed-l") {
       ctx.needed_l = true;
       read_file(ctx, must_find_library(arg));
-      ctx.needed_l = false;
     } else if (opt == "-hidden-l") {
       ctx.hidden_l = true;
       read_file(ctx, must_find_library(arg));
-      ctx.hidden_l = false;
     } else if (opt == "-weak-l") {
       ctx.weak_l = true;
       read_file(ctx, must_find_library(arg));
-      ctx.weak_l = false;
     } else {
       unreachable();
     }
+
+    ctx.needed_l = false;
+    ctx.hidden_l = false;
+    ctx.weak_l = false;
   }
 
   // An object file can contain linker directives to load other object
