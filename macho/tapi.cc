@@ -267,6 +267,11 @@ squash(Context<E> &ctx, std::span<TextDylib> tbds, std::string_view arch) {
   };
 
   visit(main);
+
+  sort(main.exports);
+  sort(main.weak_exports);
+  remove_duplicates(main.exports);
+  remove_duplicates(main.weak_exports);
   return main;
 }
 

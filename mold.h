@@ -254,6 +254,11 @@ inline void sort(T &vec, U less) {
   std::stable_sort(vec.begin(), vec.end(), less);
 }
 
+template <typename T>
+inline void remove_duplicates(std::vector<T> &vec) {
+  vec.erase(std::unique(vec.begin(), vec.end()), vec.end());
+}
+
 inline i64 write_string(void *buf, std::string_view str) {
   memcpy(buf, str.data(), str.size());
   *((u8 *)buf + str.size()) = '\0';
