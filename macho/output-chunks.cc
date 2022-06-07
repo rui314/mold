@@ -1405,7 +1405,9 @@ void UnwindInfoSection<E>::compute_size(Context<E> &ctx) {
 
 template <typename E>
 void UnwindInfoSection<E>::copy_buf(Context<E> &ctx) {
-  write_vector(ctx.buf + this->hdr.offset, construct_unwind_info(ctx));
+  std::vector<u8> vec = construct_unwind_info(ctx);
+  assert(this->hdr.size == vec.size());
+  write_vector(ctx.buf + this->hdr.offset, vec);
 }
 
 template <typename E>
