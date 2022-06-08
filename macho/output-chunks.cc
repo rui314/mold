@@ -1084,7 +1084,7 @@ void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
 }
 
 // A __code_signature section is optional for x86 macOS but mandatory
-// for ARM macOS. The section contains a cryptographic hash for each 4
+// for ARM macOS. The section contains a cryptographic hash for each 16
 // KiB block of an executable or a dylib file. The program loader
 // verifies the hash values on the initial execution of a binary and
 // will reject it if a hash value does not match.

@@ -585,7 +585,7 @@ public:
   void compute_size(Context<E> &ctx) override;
   void write_signature(Context<E> &ctx);
 
-  static constexpr i64 BLOCK_SIZE = 4096;
+  static constexpr i64 BLOCK_SIZE = 0x4000;
 };
 
 template <typename E>
