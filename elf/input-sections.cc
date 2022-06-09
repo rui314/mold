@@ -239,12 +239,33 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
   if (ctx.arg.warn_once && !ctx.warned.insert({(void *)&sym, 1}))
     return;
 
+  std::stringstream report;
+
+  // Find the source file which references the symbol. It should be listed
+  // in symtab as STT_FILE, the closest one before the undefined entry.
+  std::string source_name;
+  auto sym_pos = std::find(file.symbols.begin(), file.symbols.end(), &sym);
+  if (sym_pos != file.symbols.end()) {
+    while (sym_pos != file.symbols.begin()) {
+      --sym_pos;
+      Symbol<E> *tmp = *sym_pos;
+      if (tmp->file && tmp->get_type() == STT_FILE) {
+        source_name = tmp->name();
+        break;
+      }
+    }
+  }
+  if (!source_name.empty())
+    report << "undefined symbol: " << file << ":" << source_name << ": " << sym;
+  else
+    report << "undefined symbol: " << file << ": " << sym;
+
   switch (ctx.arg.unresolved_symbols) {
   case UNRESOLVED_ERROR:
-    Error(ctx) << "undefined symbol: " << file << ": " << sym;
+    Error(ctx) << report.str();
     break;
   case UNRESOLVED_WARN:
-    Warn(ctx) << "undefined symbol: " << file << ": " << sym;
+    Warn(ctx) << report.str();
     break;
   case UNRESOLVED_IGNORE:
     break;
