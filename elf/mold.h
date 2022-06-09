@@ -1066,6 +1066,10 @@ public:
 
   std::span<Symbol<E> *> get_global_syms();
 
+  std::string_view symbol_strtab_name( ul32 st_name ) const {
+    return symbol_strtab.data() + st_name;
+  }
+
   MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
@@ -1091,6 +1095,8 @@ public:
 
 protected:
   std::unique_ptr<Symbol<E>[]> local_syms;
+
+  std::string_view symbol_strtab;
 };
 
 // ObjectFile represents an input .o file.
@@ -1178,7 +1184,6 @@ private:
 
   bool has_common_symbol = false;
 
-  std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
   std::span<u32> symtab_shndx_sec;
 };
@@ -1213,7 +1218,6 @@ private:
   std::vector<std::string_view> read_verdef(Context<E> &ctx);
 
   std::vector<u16> versyms;
-  std::string_view symbol_strtab;
   const ElfShdr<E> *symtab_sec;
 };
 

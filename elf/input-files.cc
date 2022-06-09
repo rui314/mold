@@ -131,7 +131,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (shdr.sh_info >= this->elf_syms.size())
         Fatal(ctx) << *this << ": invalid symbol index";
       const ElfSym<E> &sym = this->elf_syms[shdr.sh_info];
-      std::string_view signature = symbol_strtab.data() + sym.st_name;
+      std::string_view signature = this->symbol_strtab_name(sym.st_name);
 
       // Ignore a broken comdat group GCC emits for .debug_macros.
       // https://github.com/rui314/mold/issues/438
@@ -432,7 +432,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     if (esym.is_common())
       Fatal(ctx) << *this << ": common local symbol?";
 
-    std::string_view name = symbol_strtab.data() + esym.st_name;
+    std::string_view name = this->symbol_strtab_name(esym.st_name);
     if (name.empty() && esym.st_type == STT_SECTION)
       if (InputSection<E> *sec = get_section(esym))
         name = sec->name();
@@ -461,7 +461,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     const ElfSym<E> &esym = this->elf_syms[i];
 
     // Get a symbol name
-    std::string_view key = symbol_strtab.data() + esym.st_name;
+    std::string_view key = this->symbol_strtab_name(esym.st_name);
     std::string_view name = key;
 
     // Parse symbol version after atsign
@@ -782,7 +782,7 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
     // sh_info has an index of the first global symbol.
     this->first_global = symtab_sec->sh_info;
     this->elf_syms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
-    symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
+    this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   }
 
   initialize_sections(ctx);
@@ -1005,7 +1005,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     // If a symbol name is in the form of "foo@version", search for
     // symbol "foo" and check if the symbol has version "version".
-    std::string_view key = symbol_strtab.data() + esym.st_name;
+    std::string_view key = this->symbol_strtab_name(esym.st_name);
     if (i64 pos = key.find('@'); pos != key.npos) {
       Symbol<E> *sym2 = get_symbol(ctx, key.substr(0, pos));
       if (sym2->file && sym2->file->is_dso &&
@@ -1313,7 +1313,7 @@ std::string SharedFile<E>::get_soname(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
-        return symbol_strtab.data() + dyn.d_val;
+        return this->symbol_strtab.data() + dyn.d_val;
 
   if (this->mf->given_fullpath)
     return this->filename;
@@ -1327,7 +1327,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   if (!symtab_sec)
     return;
 
-  symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
+  this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   soname = get_soname(ctx);
   version_strings = read_verdef(ctx);
 
@@ -1348,7 +1348,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     if (ver == VER_NDX_LOCAL)
       continue;
 
-    std::string_view name = symbol_strtab.data() + esyms[i].st_name;
+    std::string_view name = this->symbol_strtab_name(esyms[i].st_name);
     bool is_hidden = (!vers.empty() && (vers[i] & VERSYM_HIDDEN));
 
     this->elf_syms2.push_back(esyms[i]);
