@@ -995,7 +995,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     // imported symbol, it's handled as if no symbols were found.
     if (sym.file && sym.file->is_dso &&
         (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
-      report_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
+      add_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
       continue;
     }
 
@@ -1025,7 +1025,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     };
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      report_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
+      add_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
 
     // Convert remaining undefined symbols to dynamic symbols.
     if (ctx.arg.shared) {

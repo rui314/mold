@@ -332,8 +332,10 @@ private:
 };
 
 template <typename E>
-void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
-                  u32 shndx, const ElfRel<E> *rel);
+void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+               u32 shndx, const ElfRel<E> *rel);
+template <typename E>
+void report_undef(Context<E> &ctx);
 
 //
 // output-chunks.cc
@@ -1639,8 +1641,16 @@ struct Context {
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
-  // For --warn-once
-  tbb::concurrent_hash_map<void *, int> warned;
+  // Undefined symbols
+  struct Undefined
+  {
+    InputFile<E> &file;
+    Symbol<E> &sym;
+    u32 shndx; // -1 if invalid
+    const ElfRel<E>* rel;
+  };
+  tbb::concurrent_vector<Undefined> undefined;
+  std::atomic_bool undefined_done = false;
 
   // Output chunks
   std::unique_ptr<OutputEhdr<E>> ehdr;

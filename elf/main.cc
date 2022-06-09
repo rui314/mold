@@ -588,6 +588,9 @@ static int elf_main(int argc, char **argv) {
   // be added to .dynsym.
   ctx.dynsym->finalize(ctx);
 
+  // Print reports about undefined symbols, if needed.
+  report_undef(ctx);
+
   // Fill .gnu.version_d section contents.
   if (ctx.verdef)
     ctx.verdef->construct(ctx);
