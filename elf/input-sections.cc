@@ -235,7 +235,8 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
-void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
+void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+                  u32 shndx, const ElfRel<E> *rel) {
   if (ctx.arg.warn_once && !ctx.warned.insert({(void *)&sym, 1}))
     return;
 
@@ -255,10 +256,28 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
       }
     }
   }
+
+  // Find the function that references the symbol by trying to find the relocation offset
+  // inside the section in one of the function ranges given by symtab.
+  std::string function_name;
+  if (shndx != -1 && rel != nullptr) {
+    for (const ElfSym<E> & elfsym : file.elf_syms) {
+      if (elfsym.st_shndx == shndx && elfsym.st_type == STT_FUNC
+        && rel->r_offset >= elfsym.st_value && rel->r_offset < elfsym.st_value + elfsym.st_size) {
+        function_name = file.symbol_strtab_name(elfsym.st_name);
+        if (ctx.arg.demangle)
+          function_name = demangle(function_name);
+        break;
+      }
+    }
+  }
+
+  report << "undefined symbol: " << file;
   if (!source_name.empty())
-    report << "undefined symbol: " << file << ":" << source_name << ": " << sym;
-  else
-    report << "undefined symbol: " << file << ": " << sym;
+    report << ":" << source_name;
+  if (!function_name.empty())
+    report << ":function " << function_name;
+  report << ": " << sym;
 
   switch (ctx.arg.unresolved_symbols) {
   case UNRESOLVED_ERROR:
@@ -275,7 +294,7 @@ void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
 #define INSTANTIATE(E)                                                  \
   template struct CieRecord<E>;                                         \
   template class InputSection<E>;                                       \
-  template void report_undef(Context<E> &, InputFile<E> &, Symbol<E> &)
+  template void report_undef(Context<E> &, InputFile<E> &, Symbol<E> &, u32 shndx, const ElfRel<E>*)
 
 
 INSTANTIATE_ALL;

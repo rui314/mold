@@ -332,7 +332,8 @@ private:
 };
 
 template <typename E>
-void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym);
+void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+                  u32 shndx, const ElfRel<E> *rel);
 
 //
 // output-chunks.cc
