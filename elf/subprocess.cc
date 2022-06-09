@@ -82,6 +82,11 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
 template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
+#ifdef __APPLE__
+  // LD_PRELOAD is not supported on macOS
+  Fatal(ctx) << "mold -run is not supported on macOS";
+#endif
+
   std::string_view arg1 = argv[1];
   assert(arg1 == "-run" || arg1 == "--run");
   if (!argv[2])
