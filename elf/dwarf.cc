@@ -495,6 +495,23 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   return {};
 }
 
+template <typename E>
+void setup_context_debuginfo(Context<E> &ctx) {
+  for (Chunk<E> *chunk : ctx.chunks) {
+    std::string_view name = chunk->name;
+    if (name == ".debug_info" || name == ".zdebug_info")
+      ctx.debug_info = chunk;
+    if (name == ".debug_abbrev" || name == ".zdebug_abbrev")
+      ctx.debug_abbrev = chunk;
+    if (name == ".debug_ranges" || name == ".zdebug_ranges")
+      ctx.debug_ranges = chunk;
+    if (name == ".debug_addr" || name == ".zdebug_addr")
+      ctx.debug_addr = chunk;
+    if (name == ".debug_rnglists" || name == ".zdebug_rnglists")
+      ctx.debug_rnglists = chunk;
+  }
+}
+
 #define INSTANTIATE(E)                                                  \
   template std::vector<std::string_view>                                \
   read_compunits(Context<E> &, ObjectFile<E> &);                        \
@@ -503,7 +520,9 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   template i64                                                          \
   estimate_address_areas(Context<E> &, ObjectFile<E> &);                \
   template std::vector<u64>                                             \
-  read_address_areas(Context<E> &, ObjectFile<E> &, i64)
+  read_address_areas(Context<E> &, ObjectFile<E> &, i64);               \
+  template void                                                         \
+  setup_context_debuginfo(Context<E> &ctx)
 
 INSTANTIATE_ALL;
 

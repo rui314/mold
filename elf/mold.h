@@ -1742,6 +1742,9 @@ int main(int argc, char **argv);
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 
+template <typename E>
+void setup_context_debuginfo(Context<E> &ctx);
+
 //
 // Symbol
 //

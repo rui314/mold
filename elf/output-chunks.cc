@@ -2339,19 +2339,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
-  for (Chunk<E> *chunk : ctx.chunks) {
-    std::string_view name = chunk->name;
-    if (name == ".debug_info" || name == ".zdebug_info")
-      ctx.debug_info = chunk;
-    if (name == ".debug_abbrev" || name == ".zdebug_abbrev")
-      ctx.debug_abbrev = chunk;
-    if (name == ".debug_ranges" || name == ".zdebug_ranges")
-      ctx.debug_ranges = chunk;
-    if (name == ".debug_addr" || name == ".zdebug_addr")
-      ctx.debug_addr = chunk;
-    if (name == ".debug_rnglists" || name == ".zdebug_rnglists")
-      ctx.debug_rnglists = chunk;
-  }
+  setup_context_debuginfo(ctx);
 
   assert(ctx.debug_info);
   assert(ctx.debug_abbrev);
