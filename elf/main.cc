@@ -588,9 +588,6 @@ static int elf_main(int argc, char **argv) {
   // be added to .dynsym.
   ctx.dynsym->finalize(ctx);
 
-  // Print reports about undefined symbols, if needed.
-  report_undef(ctx);
-
   // Fill .gnu.version_d section contents.
   if (ctx.verdef)
     ctx.verdef->construct(ctx);
@@ -679,6 +676,11 @@ static int elf_main(int argc, char **argv) {
 
     ctx.checkpoint();
   }
+
+  // Print warnings about undefined symbols, if needed.
+  // This requires relocated debuginfo, so it's done only here.
+  // TODO move up
+  report_undef(ctx);
 
   if constexpr (std::is_same_v<E, ARM32>)
     sort_arm_exidx(ctx);

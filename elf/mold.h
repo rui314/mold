@@ -24,6 +24,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
+#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
@@ -329,7 +330,7 @@ private:
 
 template <typename E>
 void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
-               u32 shndx, const ElfRel<E> *rel);
+               InputSection<E> *section, typename E::WordTy r_offset);
 template <typename E>
 void report_undef(Context<E> &ctx);
 
@@ -999,6 +1000,10 @@ template <typename E>
 std::vector<u64>
 read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 
+template <typename E>
+std::tuple<std::string_view, std::string_view, int, int>
+find_source_location(Context<E> &ctx, ObjectFile<E> &file, u64 address);
+
 //
 // input-files.cc
 //
@@ -1642,8 +1647,8 @@ struct Context {
   {
     InputFile<E> &file;
     Symbol<E> &sym;
-    u32 shndx; // -1 if invalid
-    const ElfRel<E>* rel;
+    InputSection<E> *section;
+    typename E::WordTy r_offset;
   };
   tbb::concurrent_vector<Undefined> undefined;
   std::atomic_bool undefined_done = false;
@@ -1682,12 +1687,13 @@ struct Context {
   std::unique_ptr<ThumbToArmSection> thumb_to_arm;
   std::unique_ptr<TlsTrampolineSection> tls_trampoline;
 
-  // For --gdb-index
+  // For undefined symbol reports and for --gdb-index
   Chunk<E> *debug_info = nullptr;
   Chunk<E> *debug_abbrev = nullptr;
   Chunk<E> *debug_ranges = nullptr;
   Chunk<E> *debug_addr = nullptr;
   Chunk<E> *debug_rnglists = nullptr;
+  Chunk<E> *debug_line = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;

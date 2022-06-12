@@ -236,13 +236,15 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
 template <typename E>
 void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
-               u32 shndx, const ElfRel<E> *rel) {
+               InputSection<E> *section, typename E::WordTy r_offset) {
   assert(!ctx.undefined_done);
-  ctx.undefined.push_back({file, sym, shndx, rel});
+  ctx.undefined.push_back({file, sym, section, r_offset});
 }
 
 template <typename E>
 void report_undef(Context<E> &ctx) {
+  setup_context_debuginfo(ctx);
+
   // Report all undefined symbols, grouped by symbol.
   std::unordered_set<Symbol<E>*> handled;
   for (const typename Context<E>::Undefined &group : ctx.undefined) {
@@ -262,17 +264,36 @@ void report_undef(Context<E> &ctx) {
         continue;
 
       InputFile<E> &file = undef.file;
-      // Find the source file which references the symbol. It should be listed
-      // in symtab as STT_FILE, the closest one before the undefined entry.
-      std::string source_name;
-      auto sym_pos = std::find(file.symbols.begin(), file.symbols.end(), &undef.sym);
-      if (sym_pos != file.symbols.end()) {
-        while (sym_pos != file.symbols.begin()) {
-          --sym_pos;
-          Symbol<E> *tmp = *sym_pos;
-          if (tmp->file && tmp->get_type() == STT_FILE) {
-            source_name = tmp->name();
-            break;
+
+      // Find the source file which references the symbol. First try debuginfo,
+      // as that one provides also source location. Debuginfo needs to be relocated,
+      // so this uses the resulting debuginfo rather than debuginfo in the object file.
+      std::string_view source_name;
+      std::string_view directory;
+      i32 line = 0;
+      i32 column = 0;
+      bool line_valid = false;
+      ObjectFile<E> * object_file = dynamic_cast<ObjectFile<E> *>(&file);
+      if (object_file != nullptr && object_file->debug_info && undef.section != nullptr) {
+        if (object_file->compunits.empty())
+          object_file->compunits = read_compunits(ctx, *object_file);
+        std::tie(source_name, directory, line, column) = find_source_location(ctx,
+          *object_file, undef.r_offset + undef.section->get_addr());
+        line_valid = !source_name.empty();
+      }
+
+      if (source_name.empty()) {
+        // If using debuginfo fails, find the source file from symtab. It should be listed
+        // in symtab as STT_FILE, the closest one before the undefined entry.
+        auto sym_pos = std::find(file.symbols.begin(), file.symbols.end(), &undef.sym);
+        if (sym_pos != file.symbols.end()) {
+          while (sym_pos != file.symbols.begin()) {
+            --sym_pos;
+            Symbol<E> *tmp = *sym_pos;
+            if (tmp->file && tmp->get_type() == STT_FILE) {
+              source_name = tmp->name();
+              break;
+            }
           }
         }
       }
@@ -280,11 +301,10 @@ void report_undef(Context<E> &ctx) {
       // Find the function that references the symbol by trying to find the relocation offset
       // inside the section in one of the function ranges given by symtab.
       std::string function_name;
-      if (undef.shndx != -1 && undef.rel != nullptr) {
-        const ElfRel<E>& rel = *undef.rel;
+      if (undef.section != nullptr) {
         for (const ElfSym<E> & elfsym : file.elf_syms) {
-          if (elfsym.st_shndx == undef.shndx && elfsym.st_type == STT_FUNC
-            && rel.r_offset >= elfsym.st_value && rel.r_offset < elfsym.st_value + elfsym.st_size) {
+          if (elfsym.st_shndx == undef.section->shndx && elfsym.st_type == STT_FUNC
+            && undef.r_offset >= elfsym.st_value && undef.r_offset < elfsym.st_value + elfsym.st_size) {
             function_name = file.symbol_strtab_name(elfsym.st_name);
             if (ctx.arg.demangle)
               function_name = demangle(function_name);
@@ -293,9 +313,17 @@ void report_undef(Context<E> &ctx) {
         }
       }
 
-      if (!source_name.empty())
-        report << ">>> referenced by " << source_name << "\n";
-      else
+      if (!source_name.empty()) {
+        std::string location(source_name);
+        if (line != 0)
+          location += ":" + std::to_string(line);
+        if (column != 0)
+          location += ":" + std::to_string(column);
+        if (!directory.empty())
+          report << ">>> referenced by " << location << " (" << directory << "/" << location << ")\n";
+        else
+          report << ">>> referenced by " << location << "\n";
+      } else
         report << ">>> referenced by " << file << "\n";
       report << ">>>               " << file;
       if (!function_name.empty())
@@ -327,7 +355,8 @@ void report_undef(Context<E> &ctx) {
 #define INSTANTIATE(E)                                                  \
   template struct CieRecord<E>;                                         \
   template class InputSection<E>;                                       \
-  template void add_undef(Context<E> &, InputFile<E> &, Symbol<E> &, u32 shndx, const ElfRel<E>*); \
+  template void add_undef(Context<E> &, InputFile<E> &, Symbol<E> &,    \
+    InputSection<E> *section, typename E::WordTy r_offset);             \
   template void report_undef(Context<E> &)
 
 

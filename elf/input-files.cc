@@ -213,12 +213,14 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           llvm_addrsig = this->sections[i].get();
       }
 
+      // Save debug sections for undefined symbol reporting.
+      InputSection<E> *isec = this->sections[i].get();
+
+      if (name == ".debug_info")
+        debug_info = isec;
+
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {
-        InputSection<E> *isec = this->sections[i].get();
-
-        if (name == ".debug_info")
-          debug_info = isec;
         if (name == ".debug_ranges")
           debug_ranges = isec;
         if (name == ".debug_rnglists")
@@ -995,7 +997,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     // imported symbol, it's handled as if no symbols were found.
     if (sym.file && sym.file->is_dso &&
         (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
-      add_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
+      add_undef(ctx, *this, sym, (InputSection<E> *)nullptr, 0);
       continue;
     }
 
@@ -1025,7 +1027,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     };
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      add_undef(ctx, *this, sym, -1, static_cast<ElfRel<E>*>(nullptr));
+      add_undef(ctx, *this, sym, (InputSection<E> *)nullptr, 0);
 
     // Convert remaining undefined symbols to dynamic symbols.
     if (ctx.arg.shared) {
