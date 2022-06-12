@@ -1066,6 +1066,8 @@ public:
   std::span<Symbol<E> *> get_global_syms();
   std::string_view get_source_name() const;
 
+  void report_undef(Context<E> &ctx, const Symbol<E> &sym) const;
+
   MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
@@ -1197,6 +1199,7 @@ public:
 
   void compute_symtab(Context<E> &ctx);
   void write_symtab(Context<E> &ctx);
+  void report_undefs(Context<E> &ctx);
 
   bool is_needed = false;
   std::string soname;
@@ -1314,6 +1317,7 @@ template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
+template <typename E> void report_shlib_undefined(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
@@ -1543,6 +1547,7 @@ struct Context {
     i64 thread_count = 0;
     std::optional<Glob> unique;
     std::optional<u64> shuffle_sections_seed;
+    std::optional<bool> allow_shlib_undefined;
     std::string Map;
     std::string chroot;
     std::string dependency_file;

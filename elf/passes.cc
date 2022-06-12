@@ -864,6 +864,14 @@ void compute_section_sizes(Context<E> &ctx) {
 }
 
 template <typename E>
+void report_shlib_undefined(Context<E> &ctx) {
+  Timer t(ctx, "report_shlib_undefined");
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    file->report_undefs(ctx);
+  });
+}
+
+template <typename E>
 void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -1698,6 +1706,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void shuffle_sections(Context<E> &);                         \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
   template void compute_section_sizes(Context<E> &);                    \
+  template void report_shlib_undefined(Context<E> &);                   \
   template void claim_unresolved_symbols(Context<E> &);                 \
   template void scan_rels(Context<E> &);                                \
   template void create_reloc_sections(Context<E> &);                    \

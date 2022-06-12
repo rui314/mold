@@ -520,6 +520,9 @@ static int elf_main(int argc, char **argv) {
 
   // Beyond this point, no new symbols will be added to the result.
 
+  if (!*ctx.arg.allow_shlib_undefined)
+    report_shlib_undefined(ctx);
+
   // Handle --print-dependencies
   if (ctx.arg.print_dependencies == 1)
     print_dependencies(ctx);
