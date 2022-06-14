@@ -316,7 +316,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
-      add_undef(ctx, file, sym, shndx, &rel);
+      record_undef_error(ctx, rel);
       continue;
     }
 
@@ -370,7 +370,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (!sym.file) {
-      add_undef(ctx, file, sym, shndx, &rel);
+      record_undef_error(ctx, rel);
       continue;
     }
 

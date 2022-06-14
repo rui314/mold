@@ -589,7 +589,8 @@ static int elf_main(int argc, char **argv) {
   ctx.dynsym->finalize(ctx);
 
   // Print reports about undefined symbols, if needed.
-  report_undef(ctx);
+  if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
+    report_undef_errors(ctx);
 
   // Fill .gnu.version_d section contents.
   if (ctx.verdef)
@@ -677,7 +678,7 @@ static int elf_main(int argc, char **argv) {
       chunk->copy_buf(ctx);
     });
 
-    ctx.checkpoint();
+    report_undef_errors(ctx);
   }
 
   if constexpr (std::is_same_v<E, ARM32>)
