@@ -65,7 +65,7 @@ template <typename C> class OutputFile;
 
 inline char *output_tmpfile;
 inline char *socket_tmpfile;
-inline bool opt_demangle = true;
+inline thread_local bool opt_demangle;
 
 inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
@@ -85,6 +85,7 @@ template <typename C>
 class SyncOut {
 public:
   SyncOut(C &ctx, std::ostream &out = std::cout) : out(out) {
+    opt_demangle = ctx.arg.demangle;
   }
 
   ~SyncOut() {

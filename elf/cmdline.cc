@@ -518,10 +518,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ignore_ir_file.insert(arg);
     } else if (read_flag("demangle")) {
       ctx.arg.demangle = true;
-      opt_demangle = true;
     } else if (read_flag("no-demangle")) {
       ctx.arg.demangle = false;
-      opt_demangle = false;
     } else if (read_flag("default-symver")) {
       ctx.arg.default_symver = true;
     } else if (read_flag("noinhibit-exec")) {
