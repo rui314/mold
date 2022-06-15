@@ -31,7 +31,7 @@ grep -q 'undefined symbol:.* foo' $t/log
 
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,-z,defs \
   -Wl,--warn-unresolved-symbols 2> $t/log
-grep -q 'undefined symbol: .* foo$' $t/log
+grep -q 'undefined symbol:.* foo$' $t/log
 readelf --dyn-syms $t/c.so | grep -q ' foo$'
 
 echo OK

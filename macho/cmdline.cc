@@ -291,6 +291,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.dead_strip_dylibs = true;
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
+      opt_demangle = true;
     } else if (read_flag("-dylib")) {
       ctx.output_type = MH_DYLIB;
     } else if (read_hex("-headerpad")) {

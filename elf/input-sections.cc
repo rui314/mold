@@ -235,26 +235,100 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
-void report_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym) {
-  if (ctx.arg.warn_once && !ctx.warned.insert({(void *)&sym, 1}))
-    return;
+void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+               u32 shndx, const ElfRel<E> *rel) {
+  assert(!ctx.undefined_done);
+  ctx.undefined.push_back({file, sym, shndx, rel});
+}
 
-  switch (ctx.arg.unresolved_symbols) {
-  case UNRESOLVED_ERROR:
-    Error(ctx) << "undefined symbol: " << file << ": " << sym;
-    break;
-  case UNRESOLVED_WARN:
-    Warn(ctx) << "undefined symbol: " << file << ": " << sym;
-    break;
-  case UNRESOLVED_IGNORE:
-    break;
+template <typename E>
+void report_undef(Context<E> &ctx) {
+  // Report all undefined symbols, grouped by symbol.
+  std::unordered_set<Symbol<E>*> handled;
+  for (const typename Context<E>::Undefined &group : ctx.undefined) {
+    if (handled.contains(&group.sym))
+        continue;
+    handled.emplace(&group.sym);
+
+    std::stringstream report;
+    report << "undefined symbol: " << group.sym << "\n";
+
+    int count = 0;
+    constexpr int max_reported_count = 3;
+    for (const typename Context<E>::Undefined &undef : ctx.undefined) {
+      if (&undef.sym != &group.sym)
+        continue;
+      if (++count > max_reported_count)
+        continue;
+
+      InputFile<E> &file = undef.file;
+      // Find the source file which references the symbol. It should be listed
+      // in symtab as STT_FILE, the closest one before the undefined entry.
+      std::string source_name;
+      auto sym_pos = std::find(file.symbols.begin(), file.symbols.end(), &undef.sym);
+      if (sym_pos != file.symbols.end()) {
+        while (sym_pos != file.symbols.begin()) {
+          --sym_pos;
+          Symbol<E> *tmp = *sym_pos;
+          if (tmp->file && tmp->get_type() == STT_FILE) {
+            source_name = tmp->name();
+            break;
+          }
+        }
+      }
+
+      // Find the function that references the symbol by trying to find the relocation offset
+      // inside the section in one of the function ranges given by symtab.
+      std::string function_name;
+      if (undef.shndx != -1 && undef.rel != nullptr) {
+        const ElfRel<E>& rel = *undef.rel;
+        for (const ElfSym<E> & elfsym : file.elf_syms) {
+          if (elfsym.st_shndx == undef.shndx && elfsym.st_type == STT_FUNC
+            && rel.r_offset >= elfsym.st_value && rel.r_offset < elfsym.st_value + elfsym.st_size) {
+            function_name = file.symbol_strtab_name(elfsym.st_name);
+            if (ctx.arg.demangle)
+              function_name = demangle(function_name);
+            break;
+          }
+        }
+      }
+
+      if (!source_name.empty())
+        report << ">>> referenced by " << source_name << "\n";
+      else
+        report << ">>> referenced by " << file << "\n";
+      report << ">>>               " << file;
+      if (!function_name.empty())
+        report << ":(" << function_name << ")";
+      report << "\n";
+
+      if (ctx.arg.warn_once)
+        break;
+    }
+
+    if (count > max_reported_count)
+      report << ">>> referenced " << (count - max_reported_count) << " more times\n";
+
+    switch (ctx.arg.unresolved_symbols) {
+    case UNRESOLVED_ERROR:
+      Error(ctx) << report.str();
+      break;
+    case UNRESOLVED_WARN:
+      Warn(ctx) << report.str();
+      break;
+    case UNRESOLVED_IGNORE:
+      break;
+    }
   }
+
+  ctx.undefined_done = true;
 }
 
 #define INSTANTIATE(E)                                                  \
   template struct CieRecord<E>;                                         \
   template class InputSection<E>;                                       \
-  template void report_undef(Context<E> &, InputFile<E> &, Symbol<E> &)
+  template void add_undef(Context<E> &, InputFile<E> &, Symbol<E> &, u32 shndx, const ElfRel<E>*); \
+  template void report_undef(Context<E> &)
 
 
 INSTANTIATE_ALL;
