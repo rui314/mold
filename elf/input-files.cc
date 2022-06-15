@@ -68,7 +68,7 @@ template <typename E>
 std::string_view InputFile<E>::get_source_name() const {
   for (i64 i = 0; i < first_global; i++)
     if (Symbol<E> *sym = symbols[i]; sym->get_type() == STT_FILE)
-      return sym->name();
+      return sym->name() == "-" ? "" : sym->name();
   return "";
 }
 
@@ -995,7 +995,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
   auto report_undef = [&](Symbol<E> &sym) {
     std::stringstream ss;
-    if (std::string_view source = this->get_source_name(); source.empty())
+    if (std::string_view source = this->get_source_name(); !source.empty())
       ss << ">>> referenced by " << source << "\n";
     else
       ss << ">>> referenced by " << *this << "\n";
