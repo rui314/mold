@@ -1256,8 +1256,8 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
   i64 num_lsda = 0;
 
   for (UnwindRecord<E> &rec : records) {
-    if (std::optional<u64> addr = rec.get_personality_got_addr(ctx))
-      rec.encoding |= encode_personality(ctx, *addr);
+    if (rec.personality)
+      rec.encoding |= encode_personality(ctx, rec.personality->get_got_addr(ctx));
     if (rec.lsda)
       num_lsda++;
   }
@@ -1416,20 +1416,6 @@ void GotSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   sym->got_idx = syms.size();
   syms.push_back(sym);
   this->hdr.size = (syms.size() + subsections.size()) * E::word_size;
-}
-
-template <typename E>
-void GotSection<E>::add_subsec(Context<E> &ctx, Subsection<E> *subsec) {
-  subsections.push_back(subsec);
-  this->hdr.size = (syms.size() + subsections.size()) * E::word_size;
-}
-
-template <typename E>
-u64 GotSection<E>::get_subsec_addr(Context<E> &ctx, Subsection<E> *subsec) {
-  for (i64 i = 0; i < subsections.size(); i++)
-    if (subsec == subsections[i])
-      return this->hdr.addr + (syms.size() + i) * E::word_size;
-  unreachable();
 }
 
 template <typename E>

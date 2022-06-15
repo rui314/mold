@@ -401,6 +401,14 @@ Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
 }
 
 template <typename E>
+Symbol<E> *ObjectFile<E>::find_symbol(Context<E> &ctx, u32 addr) {
+  for (i64 i = 0; i < mach_syms.size(); i++)
+    if (MachSym &msym = mach_syms[i]; msym.is_extern && msym.value == addr)
+      return this->syms[i];
+  return nullptr;
+}
+
+template <typename E>
 void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
   if (hdr.size % sizeof(CompactUnwindEntry))
     Fatal(ctx) << *this << ": invalid __compact_unwind section size";
@@ -445,17 +453,20 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
     }
     case offsetof(CompactUnwindEntry, personality):
       if (r.is_extern) {
-        dst.personality_sym = this->syms[r.idx];
+        dst.personality = this->syms[r.idx];
       } else {
-        i32 addr = *(il32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
-        dst.personality_subsec = find_subsection(ctx, addr);
+        u32 addr = *(ul32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
+        dst.personality = find_symbol(ctx, addr);
+        if (!dst.personality)
+          Fatal(ctx) << *this << ": __compact_unwind: unsupported local "
+                     << "personality reference: " << i;
       }
       break;
     case offsetof(CompactUnwindEntry, lsda): {
       if (r.is_extern)
         error();
 
-      i32 addr = *(il32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
+      u32 addr = *(ul32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
       Subsection<E> *target = find_subsection(ctx, addr);
       if (!target)
         error();

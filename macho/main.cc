@@ -352,27 +352,12 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 
 template <typename E>
 static void scan_unwind_info(Context<E> &ctx) {
-  tbb::concurrent_vector<Subsection<E> *> vec;
-
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Subsection<E> *subsec : file->subsections) {
-      for (UnwindRecord<E> &rec : subsec->get_unwind_records()) {
-        if (rec.personality_sym)
-          rec.personality_sym->flags |= NEEDS_GOT;
-        else if (rec.personality_subsec)
-          vec.push_back(rec.personality_subsec);
-      }
-    }
+    for (Subsection<E> *subsec : file->subsections)
+      for (UnwindRecord<E> &rec : subsec->get_unwind_records())
+        if (rec.personality)
+          rec.personality->flags |= NEEDS_GOT;
   });
-
-  sort(vec, [&](Subsection<E> *x, Subsection<E> *y) {
-    return std::tuple{x->isec.file.priority, x->input_addr} <
-           std::tuple{y->isec.file.priority, y->input_addr};
-  });
-
-  auto end = std::unique(vec.begin(), vec.end());
-  for (auto it = vec.begin(); it != end; it++)
-    ctx.got.add_subsec(ctx, *it);
 }
 
 template <typename E>
