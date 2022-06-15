@@ -275,7 +275,7 @@ template <typename E>
 void report_undef_errors(Context<E> &ctx) {
   constexpr i64 max_errors = 3;
 
-  for (auto pair : ctx.undef_errors) {
+  for (auto &pair : ctx.undef_errors) {
     std::string_view sym_name = pair.first;
     std::span<std::string> errors = pair.second;
 
