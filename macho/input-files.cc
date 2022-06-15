@@ -57,8 +57,18 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 
   parse_sections(ctx);
   parse_symbols(ctx);
-  split_subsections(ctx);
-  parse_data_in_code(ctx);
+
+  MachHeader &mach_hdr = *(MachHeader *)this->mf->data;
+  if (mach_hdr.flags & MH_SUBSECTIONS_VIA_SYMBOLS)
+    split_subsections_via_symbols(ctx);
+  else
+    init_subsections(ctx);
+
+  sort(subsections, [](Subsection<E> *a, Subsection<E> *b) {
+    return a->input_addr < b->input_addr;
+  });
+
+  fix_subsec_members(ctx);
 
   for (std::unique_ptr<InputSection<E>> &isec : sections)
     if (isec)
@@ -231,7 +241,7 @@ split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
 }
 
 template <typename E>
-void ObjectFile<E>::split_subsections(Context<E> &ctx) {
+void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
   sym_to_subsec.resize(mach_syms.size());
 
   auto add = [&](InputSection<E> &isec, u32 offset, u32 size, u8 p2align) {
@@ -281,12 +291,40 @@ void ObjectFile<E>::split_subsections(Context<E> &ctx) {
       }
     }
   }
+}
 
-  sort(subsections, [](Subsection<E> *a, Subsection<E> *b) {
-    return a->input_addr < b->input_addr;
-  });
+template <typename E>
+void ObjectFile<E>::init_subsections(Context<E> &ctx) {
+  subsections.resize(sections.size());
 
-  // Fix local symbols `subsec` members.
+  for (i64 i = 0; i < sections.size(); i++) {
+    if (InputSection<E> *isec = sections[i].get()) {
+      Subsection<E> *subsec = new Subsection<E>{
+        .isec = *isec,
+        .input_offset = 0,
+        .input_size = (u32)isec->hdr.size,
+        .input_addr = (u32)isec->hdr.addr,
+        .p2align = (u8)isec->hdr.p2align,
+      };
+      subsec_pool.emplace_back(subsec);
+      subsections[i] = subsec;
+    }
+  }
+
+  sym_to_subsec.resize(mach_syms.size());
+
+  for (i64 i = 0; i < mach_syms.size(); i++) {
+    MachSym &msym = mach_syms[i];
+    if (msym.type == N_SECT)
+      sym_to_subsec[i] = subsections[msym.sect - 1];
+  }
+
+  std::erase(subsections, nullptr);
+}
+
+// Fix local symbols `subsec` members.
+template <typename E>
+void ObjectFile<E>::fix_subsec_members(Context<E> &ctx) {
   for (i64 i = 0; i < mach_syms.size(); i++) {
     MachSym &msym = mach_syms[i];
     Symbol<E> &sym = *this->syms[i];
