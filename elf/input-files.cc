@@ -68,7 +68,7 @@ template <typename E>
 std::string_view InputFile<E>::get_source_name() const {
   for (i64 i = 0; i < first_global; i++)
     if (Symbol<E> *sym = symbols[i]; sym->get_type() == STT_FILE)
-      return sym->name() == "-" ? "" : sym->name();
+      return sym->name();
   return "";
 }
 
