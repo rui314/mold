@@ -443,9 +443,11 @@ private:
             if( k&(k-2) ) // not the beginning of a segment
                 ++my_bucket;
             else my_bucket = my_map->get_bucket( k );
-            my_node = static_cast<node*>( my_bucket->node_list.load(std::memory_order_relaxed) );
-            if( map_base::is_valid(my_node) ) {
-                my_index = k; return;
+            node_base *n = my_bucket->node_list.load(std::memory_order_relaxed);
+            if( map_base::is_valid(n) ) {
+                my_node = static_cast<node*>(n);
+                my_index = k;
+                return;
             }
             ++k;
         }
