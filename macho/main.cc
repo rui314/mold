@@ -44,6 +44,13 @@ static void resolve_symbols(Context<E> &ctx) {
 
   for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 
+  for (std::string_view name : ctx.arg.u)
+    if (InputFile<E> *file = get_symbol(ctx, name)->file)
+      file->is_alive = true;
+
+  if (InputFile<E> *file = ctx.arg.entry->file)
+    file->is_alive = true;
+
   std::vector<ObjectFile<E> *> live_objs;
   for (ObjectFile<E> *file : ctx.objs)
     if (file->is_alive)

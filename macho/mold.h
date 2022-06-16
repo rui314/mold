@@ -866,6 +866,7 @@ struct Context {
     std::vector<std::string> mllvm;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
+    std::vector<std::string> u;
   } arg;
 
   std::vector<std::string_view> cmdline_args;

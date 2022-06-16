@@ -80,6 +80,7 @@ Options:
   -syslibroot <DIR>           Prepend DIR to library search paths
   -t                          Print out each file the linker loads
   -thread_count <NUMBER>      Use given number of threads
+  -u <SYMBOL>                 Force load a given symbol from archive if necessary
   -uexported_symbol <SYMBOL>  Export all but a given symbol
   -unexported_symbols_list <FILE>
                               Read a list of unexported symbols from a given file
@@ -389,6 +390,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.trace = true;
     } else if (read_arg("-thread_count")) {
       ctx.arg.thread_count = std::stoi(std::string(arg));
+    } else if (read_arg("-u")) {
+      ctx.arg.u.push_back(std::string(arg));
     } else if (read_arg("-unexported_symbol")) {
       if (!ctx.arg.unexported_symbols_list.add(arg, 1))
         Fatal(ctx) << "-unexported_symbol: invalid glob pattern: " << arg;
