@@ -14,7 +14,6 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
-#include <unistd.h>
 
 namespace mold::macho {
 
@@ -701,27 +700,6 @@ static void parse_object_files(Context<E> &ctx) {
   });
 }
 
-// macOS verifies a code signature for a newly created executable on
-// the first invocation of the file. The verification is very slow; it
-// takes about 3 seconds for a 500 MiB executable for example.
-//
-// To workaround the issue, we initiate the verification process
-// right now by mmap'ing a file in background. Once mmap succeeds, the
-// verification result will be cached so that subsequent invocations
-// will be faster.
-template <typename E>
-static void kickstart_code_verification(Context<E> &ctx) {
-#if __APPLE__
-  if (fork() == 0) {
-    int fd = open(ctx.arg.output.c_str(), O_RDONLY);
-    if (fd != -1)
-      mmap(NULL, ctx.output_file->filesize, PROT_READ | PROT_EXEC,
-           MAP_SHARED, fd, 0);
-    _exit(0);
-  }
-#endif
-}
-
 template <typename E>
 static void print_stats(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
@@ -855,9 +833,6 @@ static int do_main(int argc, char **argv) {
   ctx.output_file->close(ctx);
   ctx.checkpoint();
   t.stop();
-
-  if (ctx.code_sig)
-    kickstart_code_verification(ctx);
 
   if (ctx.arg.perf)
     print_timer_records(ctx.timer_records);
