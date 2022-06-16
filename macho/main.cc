@@ -793,13 +793,6 @@ template <typename E>
 static int do_main(int argc, char **argv) {
   Context<E> ctx;
 
-  if (argc > 1 && std::string_view(argv[1]) == "-dump") {
-    if (argc != 3)
-      Fatal(ctx) << "usage: ld64.mold -dump <executable-name>\n";
-    dump_file(argv[2]);
-    exit(0);
-  }
-
   for (i64 i = 0; i < argc; i++)
     ctx.cmdline_args.push_back(argv[i]);
 

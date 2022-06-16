@@ -715,12 +715,6 @@ template <typename E>
 void print_map(Context<E> &ctx);
 
 //
-// dumper.cc
-//
-
-void dump_file(std::string path);
-
-//
 // yaml.cc
 //
 
