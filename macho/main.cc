@@ -281,28 +281,79 @@ template <typename E>
 static void merge_cstring_sections(Context<E> &ctx) {
   Timer t(ctx, "merge_cstring_sections");
 
-  // Insert all strings into a hash table to merge them.
-  tbb::concurrent_hash_map<std::string_view, Subsection<E> *, HashCmp> map;
+  struct Entry {
+    Entry(Subsection<E> *subsec) : owner(subsec) {}
 
-  for (ObjectFile<E> *file : ctx.objs) {
-    tbb::parallel_for_each(file->subsections, [&](Subsection<E> *subsec) {
-      if (&subsec->isec.osec != ctx.cstring)
-        return;
+    Entry(const Entry &other) :
+      owner(other.owner.load()), p2align(other.p2align.load()) {}
 
-      typename decltype(map)::accessor acc;
+    std::atomic<Subsection<E> *> owner = nullptr;
+    std::atomic_uint8_t p2align = 0;
+  };
 
-      if (!map.insert(acc, {subsec->get_contents(), subsec})) {
-        Subsection<E> *existing = acc->second;
-        update_maximum(existing->p2align, subsec->p2align.load());
-        subsec->is_coalesced = true;
-        subsec->replacer = existing;
+  struct SubsecRef {
+    Subsection<E> &subsec;
+    u64 hash = 0;
+    Entry *ent = nullptr;
+  };
+
+  std::vector<std::vector<SubsecRef>> vec(ctx.objs.size());
+
+  // Estimate the number of unique strings.
+  HyperLogLog estimator;
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> *file = ctx.objs[i];
+    HyperLogLog e;
+
+    for (Subsection<E> *subsec : file->subsections) {
+      if (&subsec->isec.osec == ctx.cstring) {
+        std::string_view str = subsec->get_contents();
+        u64 h = hash_string(str);
+        vec[i].push_back({*subsec, h, nullptr});
+        estimator.insert(h);
+      }
+    }
+    estimator.merge(e);
+  });
+
+  // Create a hash map large enough to hold all strings.
+  ConcurrentMap<Entry> map(estimator.get_cardinality() * 3 / 2);
+
+  // Insert all strings into the hash table.
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> *file = ctx.objs[i];
+
+    for (i64 j = 0; j < vec[i].size(); j++) {
+      SubsecRef &ref = vec[i][j];
+      std::string_view s = ref.subsec.get_contents();
+      ref.ent = map.insert(s, ref.hash, {&ref.subsec}).first;
+
+      Subsection<E> *existing = ref.ent->owner;
+      while (existing->isec.file.priority < file->priority &&
+             !ref.ent->owner.compare_exchange_weak(existing, &ref.subsec));
+
+      update_maximum(ref.ent->p2align, ref.subsec.p2align.load());
+    }
+  });
+
+  // Decide who will become the owner for each subsection.
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> *file = ctx.objs[i];
+
+    for (i64 j = 0; j < vec[i].size(); j++) {
+      SubsecRef &ref = vec[i][j];
+      if (ref.ent->owner != &ref.subsec) {
+        ref.subsec.is_coalesced = true;
+        ref.subsec.replacer = ref.ent->owner;
 
         static Counter counter("num_merged_strings");
         counter++;
       }
-    });
-  }
+    }
+  });
 
+  // Merge strings
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec)

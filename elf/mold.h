@@ -115,10 +115,6 @@ struct SymbolAux {
   i32 dynsym_idx = -1;
 };
 
-inline u64 hash_string(std::string_view str) {
-  return XXH3_64bits(str.data(), str.size());
-}
-
 //
 // input-sections.cc
 //
