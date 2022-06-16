@@ -71,14 +71,12 @@ struct UnwindRecord {
     return subsec->get_addr(ctx) + offset;
   }
 
-  std::optional<u64> get_personality_got_addr(Context<E> &ctx) const;
-
   Subsection<E> *subsec = nullptr;
   Symbol<E> *personality = nullptr;
   Subsection<E> *lsda = nullptr;
   u32 offset = 0;
-  u32 code_len;
-  u32 encoding;
+  u32 code_len = 0;
+  u32 encoding = 0;
   u32 lsda_offset = 0;
 };
 
