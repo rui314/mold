@@ -95,8 +95,9 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
 }
 
 static i64 parse_version(const std::string &arg) {
-  static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
-                       std::regex_constants::ECMAScript);
+  auto flags = std::regex_constants::ECMAScript | std::regex_constants::optimize;
+  static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)", flags);
+
   std::smatch m;
   bool ok = std::regex_match(arg, m, re);
   assert(ok);
@@ -137,8 +138,8 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
     if (std::regex_match(s.begin(), s.end(), m, previous_re)) {
       std::string_view install_name = string_view(m[1]);
       i64 platform = std::stoi(m[3].str());
-      i64 min_version = parse_version(m[4].str());
-      i64 max_version = parse_version(m[5].str());
+      i64 min_version = parse_version(m[4]);
+      i64 max_version = parse_version(m[5]);
       std::string_view symbol_name = string_view(m[6]);
 
       if (!symbol_name.empty()) {
@@ -162,7 +163,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
     static std::regex add_re(R"(\$ld\$add\$os([\d.]+)\$(.+))", flags);
 
     if (std::regex_match(s.begin(), s.end(), m, add_re)) {
-      if (ctx.arg.platform_min_version == parse_version(m[1].str()))
+      if (ctx.arg.platform_min_version == parse_version(m[1]))
         syms.push_back(string_view(m[2]));
       continue;
     }
@@ -183,7 +184,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
       install_name_re(R"(\$ld\$install_name\$os([\d.]+)\$(.+))", flags);
 
     if (std::regex_match(s.begin(), s.end(), m, install_name_re)) {
-      if (ctx.arg.platform_min_version == parse_version(m[1].str()))
+      if (ctx.arg.platform_min_version == parse_version(m[1]))
         tbd.install_name = string_view(m[2]);
       continue;
     }
