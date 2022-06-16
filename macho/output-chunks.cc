@@ -832,8 +832,7 @@ i64 ExportEncoder::finish() {
 
 static i64 common_prefix_len(std::string_view x, std::string_view y) {
   i64 i = 0;
-  i64 end = std::min(x.size(), y.size());
-  while (i < end && x[i] == y[i])
+  while (i < x.size() && i < y.size() && x[i] == y[i])
     i++;
   return i;
 }
