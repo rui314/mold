@@ -648,7 +648,7 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
-      if (chunk->is_output_section)
+      if (chunk->is_output_section && !chunk->hdr.match("__TEXT", "__eh_frame"))
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
             if (!rel.is_pcrel && rel.type == E::abs_rel && !refers_tls(rel.sym))

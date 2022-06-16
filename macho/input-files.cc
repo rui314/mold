@@ -101,11 +101,6 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
         continue;
       }
 
-      // Ignore __eh_frame as its role is superceded by __compact_unwind.
-      // I'm not sure if this is the right thing to do, though.
-      if (msec.match("__TEXT", "__eh_frame"))
-        continue;
-
       if (msec.attr & S_ATTR_DEBUG)
         continue;
 
