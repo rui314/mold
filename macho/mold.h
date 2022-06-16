@@ -825,7 +825,7 @@ struct Context {
     Symbol<E> *entry = nullptr;
     UuidKind uuid = UUID_HASH;
     bool ObjC = false;
-    bool adhoc_codesign = true;
+    bool adhoc_codesign = std::is_same_v<E, ARM64>;
     bool color_diagnostics = false;
     bool dead_strip = false;
     bool dead_strip_dylibs = false;
