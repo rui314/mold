@@ -357,6 +357,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("-object_path_lto")) {
       ctx.arg.object_path_lto = arg;
     } else if (read_arg("-order_file")) {
+      ctx.arg.order_file = read_lines(ctx, arg);
     } else if (read_hex("-pagezero_size")) {
       pagezero_size = hex_arg;
     } else if (read_flag("-perf")) {

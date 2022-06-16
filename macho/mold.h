@@ -235,7 +235,8 @@ public:
 
   std::atomic_uint8_t p2align = 0;
   std::atomic_bool is_alive = true;
-  bool is_coalesced = false;
+  bool is_coalesced : 1 = false;
+  bool added_to_osec : 1 = false;
 };
 
 template <typename E>
@@ -401,6 +402,9 @@ public:
     this->hdr.p2align = std::max<u32>(this->hdr.p2align, subsec->p2align);
     this->hdr.attr |= subsec->isec.hdr.attr;
     this->hdr.type = subsec->isec.hdr.type;
+
+    assert(!subsec->added_to_osec);
+    subsec->added_to_osec = true;
   }
 
   std::vector<Subsection<E> *> members;
@@ -864,6 +868,7 @@ struct Context {
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> mllvm;
+    std::vector<std::string> order_file;
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
     std::vector<std::string> u;

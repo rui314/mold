@@ -387,10 +387,22 @@ static void merge_cstring_sections(Context<E> &ctx) {
 
 template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
+  Timer t(ctx, "create_synthetic_chunks");
+
+  // First, we add subsections specified by -order_file to output sections.
+  for (std::string_view name : ctx.arg.order_file)
+    if (Symbol<E> *sym = get_symbol(ctx, name); sym->file)
+      if (Subsection<E> *subsec = sym->subsec)
+        if (!subsec->added_to_osec)
+          subsec->isec.osec.add_subsec(subsec);
+
+  // Add remaining subsections to output sections.
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
-      subsec->isec.osec.add_subsec(subsec);
+      if (!subsec->added_to_osec)
+        subsec->isec.osec.add_subsec(subsec);
 
+  // Add output sections to segments.
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk != ctx.data && chunk->is_output_section &&
         ((OutputSection<E> *)chunk)->members.empty())
@@ -401,6 +413,7 @@ static void create_synthetic_chunks(Context<E> &ctx) {
     seg->chunks.push_back(chunk);
   }
 
+  // Sort segments and output sections.
   sort(ctx.segments, compare_segments<E>);
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
