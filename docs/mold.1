@@ -603,9 +603,56 @@ compiler flag.
 .It Fl -hash-style Ns = Ns Op Sy sysv | gnu | both
 Set hash style.
 .Pp
-.It Fl -icf Ns = Ns Sy all
+.It Fl -icf Ns = Ns Op Sy none | safe | all
 .It Fl -no-icf
-Fold identical code.
+It is not uncommon for a program to contain many identical functions that differ \
+only in name. For example, a C++ template
+.Sy std::vector
+is very likely to be instantiated to the identical code for
+.Sy std::vector<int>
+and
+.Sy std::vector<unsigned>
+because the container cares only about the size of the parameter type. \
+Identical Code Folding (ICF) is a size optimization to identify and merge \
+such identical functions.
+.Pp
+If
+.Fl -icf=all
+is given,
+.Nm
+tries to merge all identical functions. This reduces the size of the output \
+most, but it is not
+.Dq safe
+optimization. It is guaranteed in C and C++ that two pointeres pointing two \
+different functions will never be equal, but
+.Fl -icf=all
+breaks that assumption as two functions have the same address after merging. \
+So a care must be taken when you use that flag that your program does not \
+depend on the function pointer uniqueness.
+.Pp
+.Fl -icf=safe
+is a flag to merge functions only when it is safe to do so. That is, if a \
+program does not take an address of a function, it is safe to merge that \
+function with other function, as you cannot compare a function pointer \
+with something else without taking an address of a function.
+.FL -icf=safe
+needs to be used with a compiler that supports
+.Sy .llvm_addrsig
+section which contains the information as to what symbols are address-taken. \
+LLVM/Clang supports that section by default. Since GCC does not suppor it yet, \
+you cannot use
+.Fl -icf=safe
+with GCC (it doesn't do any harm but can't optimize at all.)
+.Pp
+.Fl -icf=none
+and
+.Fl -no-icf
+disables ICF.
+.Pp
+.It Fl -ignore-data-address-equality
+Make ICF to merge not only functions but also data. This option should be \
+used in combination with
+.Fl -icf=all .
 .Pp
 .It Fl -image-base Ns = Ns Ar addr
 Set the base address to
