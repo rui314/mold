@@ -31,4 +31,5 @@ make clean &&
 make -j\$(nproc) CXX=clang++-14 CXXFLAGS='-I/openssl/include -O2 $CXXFLAGS' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 LTO=${LTO:-0} &&
 make install PREFIX=/ DESTDIR=$dest &&
 tar czf /mold/$dest.tar.gz $dest &&
-cp mold /mold"
+cp mold /mold &&
+cp mold-wrapper.so /mold"
