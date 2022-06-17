@@ -276,9 +276,6 @@ public:
   const ElfShdr<E> &shdr() const;
   std::span<const ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
-  std::string_view get_func_name(Context<E> &ctx, i64 offset);
-
-  void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
@@ -331,7 +328,10 @@ private:
 };
 
 template <typename E>
-void report_undef_errors(Context<E> &ctx);
+void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+               u32 shndx, const ElfRel<E> *rel);
+template <typename E>
+void report_undef(Context<E> &ctx);
 
 //
 // output-chunks.cc
@@ -1064,7 +1064,10 @@ public:
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
   std::span<Symbol<E> *> get_global_syms();
-  std::string_view get_source_name() const;
+
+  std::string_view symbol_strtab_name( ul32 st_name ) const {
+    return symbol_strtab.data() + st_name;
+  }
 
   MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
@@ -1077,8 +1080,6 @@ public:
   u32 priority;
   std::atomic_bool is_alive = false;
   std::string_view shstrtab;
-  std::unique_ptr<Symbol<E>[]> local_syms;
-  std::string_view symbol_strtab;
 
   // To create an output .symtab
   u64 local_symtab_idx = 0;
@@ -1090,6 +1091,11 @@ public:
 
   // For --emit-relocs
   std::vector<i32> output_sym_indices;
+
+protected:
+  std::unique_ptr<Symbol<E>[]> local_syms;
+
+  std::string_view symbol_strtab;
 };
 
 // ObjectFile represents an input .o file.
@@ -1631,7 +1637,16 @@ struct Context {
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
-  tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
+  // Undefined symbols
+  struct Undefined
+  {
+    InputFile<E> &file;
+    Symbol<E> &sym;
+    u32 shndx; // -1 if invalid
+    const ElfRel<E>* rel;
+  };
+  tbb::concurrent_vector<Undefined> undefined;
+  std::atomic_bool undefined_done = false;
 
   // Output chunks
   std::unique_ptr<OutputEhdr<E>> ehdr;
