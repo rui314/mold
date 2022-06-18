@@ -259,8 +259,7 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
     if (Symbol<E> *sym = get_symbol(ctx, name); !sym->file)
       sym->is_imported = true;
 
-
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {
       MachSym &msym = file->mach_syms[i];
       if (!msym.is_extern || !msym.is_undef())
@@ -281,7 +280,7 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
         }
       }
     }
-  }
+  });
 }
 
 template <typename E>
