@@ -331,11 +331,14 @@ private:
 template <typename E>
 class Chunk {
 public:
-  inline Chunk(Context<E> &ctx, std::string_view segname,
-               std::string_view sectname);
+  Chunk(Context<E> &ctx, std::string_view segname, std::string_view sectname) {
+    ctx.chunks.push_back(this);
+    hdr.set_segname(segname);
+    hdr.set_sectname(sectname);
+  }
 
   virtual ~Chunk() = default;
-  virtual void compute_size(Context<E> &ctx) {};
+  virtual void compute_size(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
 
   MachSection hdr = {};
@@ -989,14 +992,6 @@ inline std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   else
     out << sym.name;
   return out;
-}
-
-template <typename E>
-Chunk<E>::Chunk(Context<E> &ctx, std::string_view segname,
-                std::string_view sectname) {
-  ctx.chunks.push_back(this);
-  hdr.set_segname(segname);
-  hdr.set_sectname(sectname);
 }
 
 inline u64 RangeExtensionThunk<ARM64>::get_addr(i64 idx) const {
