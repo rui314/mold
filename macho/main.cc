@@ -509,11 +509,6 @@ static void copy_sections_to_output_file(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.segments,
                          [&](std::unique_ptr<OutputSegment<E>> &seg) {
     Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
-
-    // Fill text segment paddings with NOPs
-    if (seg->cmd.get_segname() == "__TEXT")
-      memset(ctx.buf + seg->cmd.fileoff, 0x90, seg->cmd.filesize);
-
     tbb::parallel_for_each(seg->chunks, [&](Chunk<E> *sec) {
       if (sec->hdr.type != S_ZEROFILL) {
         Timer t3(ctx, std::string(sec->hdr.get_sectname()), &t2);
