@@ -1145,7 +1145,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
 
   for (i64 i = 0; i < num_blocks; i += 1024) {
     i64 j = std::min(num_blocks, i + 1024);
-    tbb::parallel_for(i, j, [&](i64 k) { compute_hash(k); });
+    tbb::parallel_for(i, j, compute_hash);
 
 #if __APPLE__
     // Calling msync() with MS_ASYNC speeds up the following msync()
