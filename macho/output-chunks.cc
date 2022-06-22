@@ -1158,7 +1158,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   // entire file. We compute its value as a tree hash.
   if (ctx.arg.uuid == UUID_HASH) {
     u8 uuid[SHA256_SIZE];
-    SHA256(buf, num_blocks * SHA256_SIZE, uuid);
+    SHA256(ctx.buf + this->hdr.offset, this->hdr.size, uuid);
 
     // Indicate that this is UUIDv4 as defined by RFC4122.
     uuid[6] = (uuid[6] & 0b00001111) | 0b01010000;
