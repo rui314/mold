@@ -811,6 +811,9 @@ static int do_main(int argc, char **argv) {
 
   Timer t(ctx, "all");
 
+  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
+                               ctx.arg.thread_count);
+
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
     MappedFile<Context<E>> *mf =
