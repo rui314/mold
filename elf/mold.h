@@ -1479,6 +1479,7 @@ struct Context {
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
+    bool allow_shlib_undefined;
     bool color_diagnostics = false;
     bool default_symver = false;
     bool demangle = true;
@@ -1547,7 +1548,6 @@ struct Context {
     i64 thread_count = 0;
     std::optional<Glob> unique;
     std::optional<u64> shuffle_sections_seed;
-    std::optional<bool> allow_shlib_undefined;
     std::string Map;
     std::string chroot;
     std::string dependency_file;

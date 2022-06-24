@@ -1538,15 +1538,10 @@ void SharedFile<E>::report_undefs(Context<E> &ctx) {
     return;
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
-    const ElfSym<E> &esym = this->elf_syms[i];
-    const Symbol<E> &sym = *this->symbols[i];
-    if (esym.is_undef_strong()) {
-      const Symbol<E> *ctx_sym = get_symbol(ctx, sym.name());
-      if (!ctx_sym || !ctx_sym->file || ctx_sym->esym().is_undef())
-        // we found an undef symbol in this dso, which isn't defined by any
-        // other object file
-        this->report_undef(ctx, sym);
-    }
+    ElfSym<E> &esym = this->elf_syms[i];
+    Symbol<E> &sym = *this->symbols[i];
+    if (esym.is_undef_strong() && !sym.file)
+      this->report_undef(ctx, sym);
   }
 }
 

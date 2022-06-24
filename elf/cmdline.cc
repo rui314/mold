@@ -354,6 +354,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
+  std::optional<bool> allow_shlib_undefined;
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -934,9 +935,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("disable-new-dtags")) {
     } else if (read_flag("nostdlib")) {
     } else if (read_flag("allow-shlib-undefined")) {
-      ctx.arg.allow_shlib_undefined = true;
+      allow_shlib_undefined = true;
     } else if (read_flag("no-allow-shlib-undefined")) {
-      ctx.arg.allow_shlib_undefined = false;
+      allow_shlib_undefined = false;
     } else if (read_flag("no-add-needed")) {
     } else if (read_flag("no-call-graph-profile-sort")) {
     } else if (read_flag("no-copy-dt-needed-entries")) {
@@ -1074,7 +1075,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.overwrite_output_file = false;
 
   // By default, this is set to true when building shared objects
-  if (!ctx.arg.allow_shlib_undefined)
+  if (allow_shlib_undefined.has_value())
+    ctx.arg.allow_shlib_undefined = *allow_shlib_undefined;
+  else
     ctx.arg.allow_shlib_undefined = ctx.arg.shared;
 
   if (version_shown && remaining.empty())
