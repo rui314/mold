@@ -997,7 +997,7 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     ObjectFile<E> &file = *ctx.objs[i];
     for (Symbol<E> *sym : file.syms) {
-      if (sym && sym->file == &file) {
+      if (sym && sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) {
         symtab_offsets[i + 1]++;
         strtab_offsets[i + 1] += sym->name.size() + 1;
         count(sym);
@@ -1054,13 +1054,17 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
     msym.type = (sym.is_imported ? N_UNDF : N_SECT);
 
-    if (sym.subsec && sym.subsec->is_alive)
+    if (sym.is_imported)
+      msym.sect = N_UNDF;
+    else if (sym.subsec)
       msym.sect = sym.subsec->isec.osec.sect_idx;
     else if (&sym == mh_execute_header)
       msym.sect = ctx.text->sect_idx;
     else if (&sym == dyld_private || &sym == mh_dylib_header ||
              &sym == mh_bundle_header || &sym == dso_handle)
       msym.sect = ctx.data->sect_idx;
+    else
+      msym.sect = N_ABS;
 
     if (sym.file->is_dylib)
       msym.desc = ((DylibFile<E> *)sym.file)->dylib_idx << 8;
@@ -1079,7 +1083,7 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     i64 stroff = strtab_offsets[i];
 
     for (Symbol<E> *sym : file.syms) {
-      if (sym && sym->file == &file) {
+      if (sym && sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) {
         write(*sym, symoff, stroff);
         symoff++;
         stroff += sym->name.size() + 1;
@@ -1103,16 +1107,16 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   });
 
   auto get_rank = [](const MachSym &msym) {
-    if (msym.is_extern)
+    if (msym.sect == N_UNDF)
       return 2;
-    if (msym.type == N_SECT)
+    if (msym.is_extern)
       return 1;
     return 0;
   };
 
   std::stable_sort(buf, buf + this->hdr.size / sizeof(MachSym),
        [&](const MachSym &a, const MachSym &b) {
-     return get_rank(a) < get_rank(b);
+     return std::tuple{get_rank(a), a.value} < std::tuple{get_rank(b), b.value};
   });
 }
 
@@ -1375,7 +1379,6 @@ UnwindEncoder<E>::encode(Context<E> &ctx, std::span<UnwindRecord<E>> records) {
 
     page1++;
     page2 = (UnwindSecondLevelPage *)(encoding + map.size());
-    break;
   }
 
   // Write a terminator
