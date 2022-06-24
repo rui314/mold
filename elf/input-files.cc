@@ -1534,8 +1534,8 @@ void SharedFile<E>::write_symtab(Context<E> &ctx) {
 
 template <typename E>
 void SharedFile<E>::report_undefs(Context<E> &ctx) {
-  if (!this->is_alive)
-    return;
+  assert(!ctx.arg.allow_shlib_undefined);
+  assert(this->is_alive);
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     ElfSym<E> &esym = this->elf_syms[i];
