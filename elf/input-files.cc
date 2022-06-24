@@ -63,6 +63,19 @@ void InputFile<E>::clear_symbols() {
   }
 }
 
+template <typename E>
+void InputFile<E>::report_undef(Context<E> &ctx, const Symbol<E> &sym) const {
+  std::stringstream ss;
+  if (std::string_view source = this->get_source_name(); !source.empty())
+    ss << ">>> referenced by " << source << "\n";
+  else
+    ss << ">>> referenced by " << *this << "\n";
+
+  typename decltype(ctx.undef_errors)::accessor acc;
+  ctx.undef_errors.insert(acc, {sym.name(), {}});
+  acc->second.push_back(ss.str());
+}
+
 // Find the source filename. It should be listed in symtab as STT_FILE.
 template <typename E>
 std::string_view InputFile<E>::get_source_name() const {
@@ -993,18 +1006,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
 
-  auto report_undef = [&](Symbol<E> &sym) {
-    std::stringstream ss;
-    if (std::string_view source = this->get_source_name(); !source.empty())
-      ss << ">>> referenced by " << source << "\n";
-    else
-      ss << ">>> referenced by " << *this << "\n";
-
-    typename decltype(ctx.undef_errors)::accessor acc;
-    ctx.undef_errors.insert(acc, {sym.name(), {}});
-    acc->second.push_back(ss.str());
-  };
-
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
@@ -1017,7 +1018,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     // imported symbol, it's handled as if no symbols were found.
     if (sym.file && sym.file->is_dso &&
         (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
-      report_undef(sym);
+      this->report_undef(ctx, sym);
       continue;
     }
 
@@ -1047,7 +1048,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     };
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      report_undef(sym);
+      this->report_undef(ctx, sym);
 
     // Convert remaining undefined symbols to dynamic symbols.
     if (ctx.arg.shared) {
@@ -1528,6 +1529,24 @@ void SharedFile<E>::write_symtab(Context<E> &ctx) {
 
     write_string(strtab, sym.name());
     strtab += sym.name().size() + 1;
+  }
+}
+
+template <typename E>
+void SharedFile<E>::report_undefs(Context<E> &ctx) {
+  if (!this->is_alive)
+    return;
+
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
+    const ElfSym<E> &esym = this->elf_syms[i];
+    const Symbol<E> &sym = *this->symbols[i];
+    if (esym.is_undef_strong()) {
+      const Symbol<E> *ctx_sym = get_symbol(ctx, sym.name());
+      if (!ctx_sym || !ctx_sym->file || ctx_sym->esym().is_undef())
+        // we found an undef symbol in this dso, which isn't defined by any
+        // other object file
+        this->report_undef(ctx, sym);
+    }
   }
 }
 
