@@ -3,6 +3,7 @@
 
 #include <shared_mutex>
 #include <sys/mman.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -980,12 +981,26 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
   symtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
   strtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
 
+  tbb::enumerable_thread_specific<i64> locals;
+  tbb::enumerable_thread_specific<i64> globals;
+  tbb::enumerable_thread_specific<i64> undefs;
+
+  auto count = [&](Symbol<E> *sym) {
+    if (sym->is_imported)
+      undefs.local() += 1;
+    else if (sym->scope == SCOPE_EXTERN)
+      globals.local() += 1;
+    else
+      locals.local() += 1;
+  };
+
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     ObjectFile<E> &file = *ctx.objs[i];
     for (Symbol<E> *sym : file.syms) {
       if (sym && sym->file == &file) {
         symtab_offsets[i + 1]++;
         strtab_offsets[i + 1] += sym->name.size() + 1;
+        count(sym);
       }
     }
   });
@@ -997,9 +1012,14 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
           (sym->stub_idx != -1 || sym->got_idx != -1)) {
         symtab_offsets[i + 1 + ctx.objs.size()]++;
         strtab_offsets[i + 1 + ctx.objs.size()] += sym->name.size() + 1;
+        count(sym);
       }
     }
   });
+
+  num_locals = locals.combine(std::plus());
+  num_globals = globals.combine(std::plus());
+  num_undefs = undefs.combine(std::plus());
 
   for (i64 i = 1; i < symtab_offsets.size(); i++)
     symtab_offsets[i] += symtab_offsets[i - 1];
@@ -1019,20 +1039,28 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   u8 *strtab = ctx.buf + ctx.strtab.hdr.offset;
   strtab[0] = '\0';
 
+  Symbol<E> *mh_execute_header = get_symbol(ctx, "__mh_execute_header");
+  Symbol<E> *dyld_private = get_symbol(ctx, "__dyld_private");
+  Symbol<E> *mh_dylib_header = get_symbol(ctx, "__mh_dylib_header");
+  Symbol<E> *mh_bundle_header = get_symbol(ctx, "__mh_bundle_header");
+  Symbol<E> *dso_handle = get_symbol(ctx, "___dso_handle");
+
   auto write = [&](Symbol<E> &sym, i64 symoff, i64 stroff) {
     MachSym &msym = buf[symoff];
 
     msym.stroff = stroff;
     write_string(strtab + stroff, sym.name);
 
-    msym.type = (sym.is_imported ? N_UNDF : N_SECT);
     msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
-
-    if (!sym.is_imported && (!sym.subsec || sym.subsec->is_alive))
-      msym.value = sym.get_addr(ctx);
+    msym.type = (sym.is_imported ? N_UNDF : N_SECT);
 
     if (sym.subsec && sym.subsec->is_alive)
       msym.sect = sym.subsec->isec.osec.sect_idx;
+    else if (&sym == mh_execute_header)
+      msym.sect = ctx.text->sect_idx;
+    else if (&sym == dyld_private || &sym == mh_dylib_header ||
+             &sym == mh_bundle_header || &sym == dso_handle)
+      msym.sect = ctx.data->sect_idx;
 
     if (sym.file->is_dylib)
       msym.desc = ((DylibFile<E> *)sym.file)->dylib_idx << 8;
@@ -1040,6 +1068,9 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       msym.desc = DYNAMIC_LOOKUP_ORDINAL << 8;
     else if (sym.referenced_dynamically)
       msym.desc = REFERENCED_DYNAMICALLY;
+
+    if (!sym.is_imported && (!sym.subsec || sym.subsec->is_alive))
+      msym.value = sym.get_addr(ctx);
   };
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
@@ -1069,6 +1100,19 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
         stroff += sym->name.size() + 1;
       }
     }
+  });
+
+  auto get_rank = [](const MachSym &msym) {
+    if (msym.is_extern)
+      return 2;
+    if (msym.type == N_SECT)
+      return 1;
+    return 0;
+  };
+
+  std::stable_sort(buf, buf + this->hdr.size / sizeof(MachSym),
+       [&](const MachSym &a, const MachSym &b) {
+     return get_rank(a) < get_rank(b);
   });
 }
 

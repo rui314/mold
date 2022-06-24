@@ -566,7 +566,7 @@ public:
 
   i64 num_locals = 0;
   i64 num_globals = 0;
-  i64 num_undefs =0;
+  i64 num_undefs = 0;
 };
 
 template <typename E>
