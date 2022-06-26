@@ -255,9 +255,13 @@ template <typename E>
 static void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
-  for (std::string_view name : ctx.arg.U)
-    if (Symbol<E> *sym = get_symbol(ctx, name); !sym->file)
+  for (std::string_view name : ctx.arg.U) {
+    Symbol<E> *sym = get_symbol(ctx, name);
+    if (!sym->file) {
       sym->is_imported = true;
+      sym->is_weak = true;
+    }
+  }
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (i64 i = 0; i < file->mach_syms.size(); i++) {

@@ -20,7 +20,7 @@ void InputFile<E>::clear_symbols() {
       sym->file = nullptr;
       sym->scope = SCOPE_LOCAL;
       sym->is_imported = false;
-      sym->is_weak_def = false;
+      sym->is_weak = false;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
@@ -138,7 +138,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
       sym.subsec = nullptr;
       sym.scope = SCOPE_LOCAL;
       sym.is_common = false;
-      sym.is_weak_def = false;
+      sym.is_weak = false;
 
       switch (msym.type) {
       case N_UNDF:
@@ -533,7 +533,7 @@ template <typename E>
 static u64 get_rank(Symbol<E> &sym) {
   if (!sym.file)
     return 7 << 24;
-  return get_rank(sym.file, sym.is_common, sym.is_weak_def);
+  return get_rank(sym.file, sym.is_common, sym.is_weak);
 }
 
 template <typename E>
@@ -559,14 +559,14 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
 
     Symbol<E> &sym = *this->syms[i];
     std::scoped_lock lock(sym.mu);
-    bool is_weak_def = (msym.desc & N_WEAK_DEF);
+    bool is_weak = (msym.desc & N_WEAK_DEF);
 
     sym.scope = merge_scope(sym, msym);
 
-    if (get_rank(this, msym.is_common(), is_weak_def) < get_rank(sym)) {
+    if (get_rank(this, msym.is_common(), is_weak) < get_rank(sym)) {
       sym.file = this;
       sym.is_imported = false;
-      sym.is_weak_def = is_weak_def;
+      sym.is_weak = is_weak;
 
       switch (msym.type) {
       case N_UNDF:
@@ -647,7 +647,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       subsections.emplace_back(subsec);
 
       sym.is_imported = false;
-      sym.is_weak_def = false;
+      sym.is_weak = false;
       sym.subsec = subsec;
       sym.value = 0;
       sym.is_common = false;
@@ -832,7 +832,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
       sym->file = this;
       sym->scope = SCOPE_LOCAL;
       sym->is_imported = true;
-      sym->is_weak_def = this->is_weak;
+      sym->is_weak = this->is_weak;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;

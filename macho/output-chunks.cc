@@ -680,7 +680,7 @@ static u32 get_dylib_idx(InputFile<E> *file) {
 template <typename E>
 void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
   i64 dylib_idx = get_dylib_idx(sym.file);
-  i64 flags = (sym.file->is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
+  i64 flags = (sym.is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
 
   if (last_dylib != dylib_idx) {
     if (dylib_idx < 16) {
@@ -767,7 +767,7 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym) {
     encode_uleb(contents, dylib_idx);
   }
 
-  i64 flags = (sym.file->is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
+  i64 flags = (sym.is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
   assert(flags < 16);
 
   emit(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);

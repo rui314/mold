@@ -281,7 +281,7 @@ struct Symbol {
 
   u8 scope : 2 = SCOPE_LOCAL;
   bool is_common : 1 = false;
-  bool is_weak_def : 1 = false;
+  bool is_weak : 1 = false;
   bool is_imported : 1 = false;
   bool referenced_dynamically : 1 = false;
 
