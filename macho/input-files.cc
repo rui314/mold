@@ -761,8 +761,10 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
 
   if (*buf) {
     read_uleb(buf); // size
-    read_uleb(buf); // flags
+    i64 flags = read_uleb(buf);
     read_uleb(buf); // addr
+
+    is_weak_symbol.push_back(flags == EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION);
     this->syms.push_back(get_symbol(ctx, save_string(ctx, prefix)));
   } else {
     buf++;
@@ -782,11 +784,15 @@ template <typename E>
 void DylibFile<E>::parse_tapi(Context<E> &ctx) {
   TextDylib tbd = parse_tbd(ctx, this->mf);
 
-  for (std::string_view s : tbd.exports)
+  for (std::string_view s : tbd.exports) {
     this->syms.push_back(get_symbol(ctx, s));
+    is_weak_symbol.push_back(false);
+  }
 
-  for (std::string_view s : tbd.weak_exports)
+  for (std::string_view s : tbd.weak_exports) {
     this->syms.push_back(get_symbol(ctx, s));
+    is_weak_symbol.push_back(true);
+  }
 
   install_name = tbd.install_name;
   reexported_libs = tbd.reexported_libs;
@@ -825,17 +831,18 @@ void DylibFile<E>::parse_dylib(Context<E> &ctx) {
 
 template <typename E>
 void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
-  for (Symbol<E> *sym : this->syms) {
-    std::scoped_lock lock(sym->mu);
+  for (i64 i = 0; i < this->syms.size(); i++) {
+    Symbol<E> &sym = *this->syms[i];
+    std::scoped_lock lock(sym.mu);
 
-    if (get_rank(this, false, false) < get_rank(*sym)) {
-      sym->file = this;
-      sym->scope = SCOPE_LOCAL;
-      sym->is_imported = true;
-      sym->is_weak = this->is_weak;
-      sym->subsec = nullptr;
-      sym->value = 0;
-      sym->is_common = false;
+    if (get_rank(this, false, false) < get_rank(sym)) {
+      sym.file = this;
+      sym.scope = SCOPE_LOCAL;
+      sym.is_imported = true;
+      sym.is_weak = (this->is_weak || is_weak_symbol[i]);
+      sym.subsec = nullptr;
+      sym.value = 0;
+      sym.is_common = false;
     }
   }
 }

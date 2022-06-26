@@ -174,6 +174,8 @@ private:
   DylibFile(MappedFile<Context<E>> *mf) : InputFile<E>(mf) {
     this->is_dylib = true;
   }
+
+  std::vector<bool> is_weak_symbol;
 };
 
 template <typename E>
