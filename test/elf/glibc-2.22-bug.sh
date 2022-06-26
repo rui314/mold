@@ -25,7 +25,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/b.so -shared $t/a.o
-readelf -W --sections $t/b.so | grep -P -A1 '\.rela?\.dyn' | \
-  grep -Pq '\.rela?\.plt'
+readelf -W --sections $t/b.so | grep -E -A1 '\.rela?\.dyn' | \
+  grep -Eq '\.rela?\.plt'
 
 echo OK

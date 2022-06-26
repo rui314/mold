@@ -53,8 +53,8 @@ $QEMU $t/exe | grep -q 'Hello world'
 DEBUGINFOD_URLS= gdb $t/exe -nx -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
-grep -Pq 'hello \(\) at .*<stdin>:7' $t/log
-grep -Pq 'greet \(\) at .*<stdin>:11' $t/log
-grep -Pq 'main \(\) at .*<stdin>:4' $t/log
+grep -q 'hello () at .*<stdin>:7' $t/log
+grep -q 'greet () at .*<stdin>:11' $t/log
+grep -q 'main () at .*<stdin>:4' $t/log
 
 echo OK
