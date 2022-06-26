@@ -16,7 +16,7 @@ mkdir -p $t
 [ "$CC" = cc ] || { echo skipped; exit; }
 
 # ASAN doesn't work with LD_PRELOAD
-nm mold-wrapper.so | grep -Pq '__[at]san_init' && { echo skipped; exit; }
+nm mold-wrapper.so | grep -q '__[at]san_init' && { echo skipped; exit; }
 
 which clang >& /dev/null || { echo skipped; exit; }
 

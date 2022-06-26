@@ -18,6 +18,6 @@ void _start() {}
 EOF
 
 ./mold -o $t/exe $t/a.o --oformat=binary -Ttext=0x4000 -Map=$t/map
-grep -Pq '^\s+0x4000\s+\d+\s+\d+\s+\.text$' $t/map
+grep -Eq '^\s+0x4000\s+[0-9]+\s+[0-9]+\s+\.text$' $t/map
 
 echo OK

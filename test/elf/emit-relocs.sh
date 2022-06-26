@@ -25,6 +25,6 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,-emit-relocs
 $QEMU $t/exe | grep -q 'Hello world'
 
-readelf -S $t/exe | grep -Pq 'rela?\.text'
+readelf -S $t/exe | grep -Eq 'rela?\.text'
 
 echo OK

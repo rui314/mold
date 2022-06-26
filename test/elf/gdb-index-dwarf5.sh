@@ -96,13 +96,13 @@ $QEMU $t/exe | grep -q 'Hello world'
 DEBUGINFOD_URLS= gdb $t/exe -nx -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
-grep -Pq 'fn8 \(\) at .*/d.c:6' $t/log
-grep -Pq 'fn7 \(\) at .*/d.c:10' $t/log
-grep -Pq 'fn6 \(\) at .*/c.c:4' $t/log
-grep -Pq 'fn5 \(\) at .*/c.c:8' $t/log
-grep -Pq 'fn4 \(\) at .*/b.c:4' $t/log
-grep -Pq 'fn3 \(\) at .*/b.c:8' $t/log
-grep -Pq 'fn2 \(\) at .*/a.c:4' $t/log
-grep -Pq 'fn1 \(\) at .*/a.c:8' $t/log
+grep -q 'fn8 () at .*/d.c:6' $t/log
+grep -q 'fn7 () at .*/d.c:10' $t/log
+grep -q 'fn6 () at .*/c.c:4' $t/log
+grep -q 'fn5 () at .*/c.c:8' $t/log
+grep -q 'fn4 () at .*/b.c:4' $t/log
+grep -q 'fn3 () at .*/b.c:8' $t/log
+grep -q 'fn2 () at .*/a.c:4' $t/log
+grep -q 'fn1 () at .*/a.c:8' $t/log
 
 echo OK
