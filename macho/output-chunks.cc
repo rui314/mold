@@ -671,7 +671,7 @@ BindEncoder::BindEncoder() {
 }
 
 template <typename E>
-static u32 get_dylib_idx(InputFile<E> *file) {
+static i32 get_dylib_idx(InputFile<E> *file) {
   if (file->is_dylib)
     return ((DylibFile<E> *)file)->dylib_idx;
   return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
@@ -683,7 +683,10 @@ void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
   i64 flags = (sym.is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
 
   if (last_dylib != dylib_idx) {
-    if (dylib_idx < 16) {
+    if (dylib_idx < 0) {
+      buf.push_back(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM |
+                    (dylib_idx & BIND_IMMEDIATE_MASK));
+    } else if (dylib_idx < 16) {
       buf.push_back(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
     } else {
       buf.push_back(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
@@ -760,7 +763,9 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym) {
 
   i64 dylib_idx = get_dylib_idx(sym.file);
 
-  if (dylib_idx < 16) {
+  if (dylib_idx < 0) {
+    emit(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (dylib_idx & BIND_IMMEDIATE_MASK));
+  } else if (dylib_idx < 16) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
