@@ -201,9 +201,9 @@ static constexpr u32 BIND_TYPE_TEXT_ABSOLUTE32 = 2;
 static constexpr u32 BIND_TYPE_TEXT_PCREL32 = 3;
 
 static constexpr u32 BIND_SPECIAL_DYLIB_SELF = 0;
-static constexpr u32 BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE = -1;
-static constexpr u32 BIND_SPECIAL_DYLIB_FLAT_LOOKUP = -2;
-static constexpr u32 BIND_SPECIAL_DYLIB_WEAK_LOOKUP = -3;
+static constexpr u32 BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE = 0xffff;
+static constexpr u32 BIND_SPECIAL_DYLIB_FLAT_LOOKUP = 0xfffe;
+static constexpr u32 BIND_SPECIAL_DYLIB_WEAK_LOOKUP = 0xfffd;
 
 static constexpr u32 BIND_SYMBOL_FLAGS_WEAK_IMPORT = 0x1;
 static constexpr u32 BIND_SYMBOL_FLAGS_NON_WEAK_DEFINITION = 0x8;
