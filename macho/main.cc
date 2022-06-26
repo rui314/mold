@@ -726,6 +726,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (opt == "-weak-l") {
       ctx.weak_l = true;
       read_file(ctx, must_find_library(arg));
+    } else if (opt == "-reexport-l") {
+      ctx.reexport_l = true;
+      read_file(ctx, must_find_library(arg));
     } else {
       unreachable();
     }
@@ -733,6 +736,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     ctx.needed_l = false;
     ctx.hidden_l = false;
     ctx.weak_l = false;
+    ctx.reexport_l = false;
   }
 
   // An object file can contain linker directives to load other object

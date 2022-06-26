@@ -738,6 +738,7 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
   DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   dylib->is_weak = ctx.weak_l;
+  dylib->is_reexported = ctx.reexport_l;
   ctx.dylib_pool.emplace_back(dylib);
 
   switch (get_file_type(mf)) {

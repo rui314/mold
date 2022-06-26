@@ -155,7 +155,13 @@ create_load_dylib_cmd(Context<E> &ctx, DylibFile<E> &dylib) {
   std::vector<u8> buf(align_to(size, 8));
   DylibCommand &cmd = *(DylibCommand *)buf.data();
 
-  cmd.cmd = (dylib.is_weak ? LC_LOAD_WEAK_DYLIB : LC_LOAD_DYLIB);
+  if (dylib.is_reexported)
+    cmd.cmd = LC_REEXPORT_DYLIB;
+  else if (dylib.is_weak)
+    cmd.cmd = LC_LOAD_WEAK_DYLIB;
+  else
+    cmd.cmd = LC_LOAD_DYLIB;
+
   cmd.cmdsize = buf.size();
   cmd.nameoff = sizeof(cmd);
   cmd.timestamp = 2;

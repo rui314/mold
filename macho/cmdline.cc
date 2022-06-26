@@ -71,6 +71,7 @@ Options:
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
   -random_uuid                Generate a random LC_UUID load command
+  -reexport-l<LIB>            Search for a given library
   -rpath <PATH>               Add PATH to the runpath search path list
   -search_dylibs_first
   -search_paths_first
@@ -372,6 +373,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.quick_exit = false;
     } else if (read_flag("-random_uuid")) {
       ctx.arg.uuid = UUID_RANDOM;
+    } else if (read_joined("-reexport-l")) {
+      remaining.push_back("-reexport-l");
+      remaining.push_back(std::string(arg));
     } else if (read_arg("-rpath")) {
       ctx.arg.rpath.push_back(std::string(arg));
     } else if (read_flag("-search_paths_first")) {

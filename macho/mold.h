@@ -166,6 +166,7 @@ public:
   std::string_view install_name;
   i64 dylib_idx = 0;
   std::vector<std::string_view> reexported_libs;
+  bool is_reexported = false;
 
 private:
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
@@ -883,6 +884,7 @@ struct Context {
   bool needed_l = false;
   bool hidden_l = false;
   bool weak_l = false;
+  bool reexport_l = false;
   std::unordered_set<std::string_view> loaded_archives;
 
   u8 uuid[16] = {};
