@@ -121,8 +121,8 @@ static std::vector<u8> create_build_version_cmd(Context<E> &ctx) {
   cmd.ntools = 1;
 
   BuildToolVersion &tool = *(BuildToolVersion *)(buf.data() + sizeof(cmd));
-  tool.tool = 3;
-  tool.version = 0x28a0900;
+  tool.tool = TOOL_MOLD;
+  tool.version = parse_version(ctx, MOLD_VERSION);
   return buf;
 }
 

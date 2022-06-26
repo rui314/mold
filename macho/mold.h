@@ -754,6 +754,9 @@ TextDylib parse_tbd(Context<E> &ctx, MappedFile<Context<E>> *mf);
 //
 
 template <typename E>
+i64 parse_version(Context<E> &ctx, std::string_view arg);
+
+template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 //

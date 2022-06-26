@@ -119,7 +119,7 @@ static i64 parse_platform(Context<E> &ctx, std::string_view arg) {
 }
 
 template <typename E>
-static i64 parse_version(Context<E> &ctx, std::string_view arg) {
+i64 parse_version(Context<E> &ctx, std::string_view arg) {
   static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
                        std::regex_constants::ECMAScript);
   std::cmatch m;
@@ -483,7 +483,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   return remaining;
 }
 
-#define INSTANTIATE(E) \
+#define INSTANTIATE(E)                                                  \
+  template i64 parse_version(Context<E> &, std::string_view);           \
   template std::vector<std::string> parse_nonpositional_args(Context<E> &)
 
 INSTANTIATE_ALL;

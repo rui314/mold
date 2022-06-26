@@ -317,6 +317,7 @@ static constexpr u32 PLATFORM_DRIVERKIT = 10;
 static constexpr u32 TOOL_CLANG = 1;
 static constexpr u32 TOOL_SWIFT = 2;
 static constexpr u32 TOOL_LD = 3;
+static constexpr u32 TOOL_MOLD = 0x6d6f6c64; // Hex in "mold"
 
 static constexpr u32 ARM64_RELOC_UNSIGNED = 0;
 static constexpr u32 ARM64_RELOC_SUBTRACTOR = 1;
