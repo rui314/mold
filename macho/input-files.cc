@@ -734,6 +734,35 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+static MappedFile<Context<E>> *
+find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
+  if (!path.starts_with('/'))
+    return nullptr;
+
+  for (const std::string &root : ctx.arg.syslibroot) {
+    if (path.ends_with(".tbd")) {
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+        return file;
+      continue;
+    }
+
+    if (path.ends_with(".dylib")) {
+      std::string stem(path.substr(0, path.size() - 6));
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + stem + ".tbd"))
+        return file;
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path))
+        return file;
+    }
+
+    for (std::string extn : {".tbd", ".dylib"})
+      if (auto *file = MappedFile<Context<E>>::open(ctx, root + path + extn))
+        return file;
+  }
+
+  return nullptr;
+}
+
+template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
@@ -752,6 +781,18 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
     Fatal(ctx) << mf->name << ": is not a dylib";
   }
 
+  for (std::string_view path : dylib->reexported_libs) {
+    MappedFile<Context<E>> *mf =
+      find_external_lib(ctx, dylib->install_name, std::string(path));
+    if (!mf)
+      Fatal(ctx) << dylib->install_name << ": cannot open reexported library "
+                 << path;
+
+    DylibFile<E> *child = DylibFile<E>::create(ctx, mf);
+    dylib->exports.merge(child->exports);
+    dylib->weak_exports.merge(child->weak_exports);
+  }
+
   for (std::string_view s : dylib->exports) {
     dylib->syms.push_back(get_symbol(ctx, s));
     dylib->is_weak_symbol.push_back(false);
@@ -765,7 +806,7 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
   }
 
   return dylib;
-};
+}
 
 template <typename E>
 void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
@@ -800,6 +841,7 @@ void DylibFile<E>::parse_tapi(Context<E> &ctx) {
   TextDylib tbd = parse_tbd(ctx, this->mf);
 
   install_name = tbd.install_name;
+  reexported_libs = std::move(tbd.reexported_libs);
   exports = std::move(tbd.exports);
   weak_exports = std::move(tbd.weak_exports);
 }
