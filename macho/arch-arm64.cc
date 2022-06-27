@@ -304,10 +304,9 @@ static bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
 
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
-  i64 S = sym.get_addr(ctx);
-  i64 A = rel.addend;
-  i64 P = subsec.get_addr(ctx) + rel.offset;
-  i64 val = S + A - P;
+  i64 addr = sym.get_addr(ctx);
+  i64 pc = subsec.get_addr(ctx) + rel.offset;
+  i64 val = addr + rel.addend - pc;
   return -(1 << 27) <= val && val < (1 << 27);
 }
 
@@ -454,13 +453,13 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(ENTRY_SIZE == sizeof(data));
 
   for (i64 i = 0; i < symbols.size(); i++) {
-    u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.hdr.addr + offset + i * ENTRY_SIZE;
+    u64 addr = symbols[i]->get_addr(ctx);
+    u64 pc = output_section.hdr.addr + offset + i * ENTRY_SIZE;
 
     u8 *loc = buf + i * ENTRY_SIZE;
     memcpy(loc , data, sizeof(data));
-    *(ul32 *)loc |= page_offset(S, P);
-    *(ul32 *)(loc + 4) |= bits(S, 11, 0) << 10;
+    *(ul32 *)loc |= page_offset(addr, pc);
+    *(ul32 *)(loc + 4) |= bits(addr, 11, 0) << 10;
   }
 }
 
