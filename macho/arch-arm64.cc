@@ -11,7 +11,8 @@ static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
 
-static u64 encode_page(u64 val) {
+static u64 page_offset(u64 hi, u64 lo) {
+  u64 val = page(hi) - page(lo);
   return (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
 }
 
@@ -32,7 +33,7 @@ void StubsSection<E>::copy_buf(Context<E> &ctx) {
     u64 this_addr = this->hdr.addr + E::stub_size * i;
 
     memcpy(buf, insn, sizeof(insn));
-    buf[0] |= encode_page(page(la_addr) - page(this_addr));
+    buf[0] |= page_offset(la_addr, this_addr);
     buf[1] |= bits(la_addr, 11, 3) << 10;
     buf += 3;
   }
@@ -56,11 +57,11 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(buf, insn0, sizeof(insn0));
 
   u64 dyld_private = get_symbol(ctx, "__dyld_private")->get_addr(ctx);
-  buf[0] |= encode_page(page(dyld_private) - page(this->hdr.addr));
+  buf[0] |= page_offset(dyld_private, this->hdr.addr);
   buf[1] |= bits(dyld_private, 11, 0) << 10;
 
   u64 stub_binder = get_symbol(ctx, "dyld_stub_binder")->get_got_addr(ctx);
-  buf[3] |= encode_page(page(stub_binder) - page(this->hdr.addr - 12));
+  buf[3] |= page_offset(stub_binder, this->hdr.addr - 12);
   buf[4] |= bits(stub_binder, 11, 0) << 10;
 
   buf += 6;
@@ -257,7 +258,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case ARM64_RELOC_GOT_LOAD_PAGE21:
     case ARM64_RELOC_TLVP_LOAD_PAGE21:
       assert(r.is_pcrel);
-      *(ul32 *)loc |= encode_page(page(val) - page(pc));
+      *(ul32 *)loc |= page_offset(val, pc);
       break;
     case ARM64_RELOC_PAGEOFF12:
     case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
@@ -458,7 +459,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
     u8 *loc = buf + i * ENTRY_SIZE;
     memcpy(loc , data, sizeof(data));
-    *(ul32 *)loc |= encode_page(page(S) - page(P));
+    *(ul32 *)loc |= page_offset(S, P);
     *(ul32 *)(loc + 4) |= bits(S, 11, 0) << 10;
   }
 }
