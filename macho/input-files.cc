@@ -737,7 +737,7 @@ template <typename E>
 static MappedFile<Context<E>> *
 find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
   if (!path.starts_with('/'))
-    return nullptr;
+    return MappedFile<Context<E>>::open(ctx, path);
 
   for (const std::string &root : ctx.arg.syslibroot) {
     if (path.ends_with(".tbd")) {
@@ -871,8 +871,12 @@ void DylibFile<E>::parse_dylib(Context<E> &ctx) {
       read_trie(ctx, this->mf->data + cmd.dataoff);
       break;
     }
+    case LC_REEXPORT_DYLIB: {
+      DylibCommand &cmd = *(DylibCommand *)p;
+      reexported_libs.push_back((char *)p + cmd.nameoff);
+      break;
     }
-
+    }
     p += lc.cmdsize;
   }
 }

@@ -13,7 +13,7 @@ cd "$(dirname "$0")"/../..
 t=out/test/macho/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -o $t/a.o -shared -xc -
+cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo() {}
 EOF
 
@@ -23,8 +23,20 @@ cat <<EOF | $CC -o $t/b.o -c -xc -
 void bar() {}
 EOF
 
-clang -shared -o $t/libbar.dylib $t/b.o -L$t -Wl,-reexport-lfoo
+clang --ld-path=./ld64 -shared -o $t/libbar.dylib $t/b.o -L$t -Wl,-reexport-lfoo
 
 objdump --macho --dylibs-used $t/libbar.dylib | grep -q 'libfoo.*reexport'
+
+cat <<EOF | $CC -o $t/c.o -c -xc -
+void foo();
+void bar();
+
+int main() {
+  foo();
+  bar();
+}
+EOF
+
+clang --ld-path=./ld64 -o $t/exe $t/c.o -L$t -lbar
 
 echo OK

@@ -321,6 +321,14 @@ static bool has_tlv(Context<E> &ctx) {
 }
 
 template <typename E>
+static bool has_reexported_lib(Context<E> &ctx) {
+  for (DylibFile<E> *file : ctx.dylibs)
+    if (file->is_reexported)
+      return true;
+  return false;
+}
+
+template <typename E>
 void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
 
@@ -338,7 +346,7 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   if (has_tlv(ctx))
     mhdr.flags |= MH_HAS_TLV_DESCRIPTORS;
 
-  if (ctx.output_type == MH_DYLIB)
+  if (ctx.output_type == MH_DYLIB && !has_reexported_lib(ctx))
     mhdr.flags |= MH_NO_REEXPORTED_DYLIBS;
 
   write_vector(buf + sizeof(mhdr), flatten(cmds));
