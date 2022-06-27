@@ -54,8 +54,6 @@ Options:
   --Tdata                     Set address to .data
   --Ttext                     Set address to .text
   --allow-multiple-definition Allow multiple definitions
-  --allow-shlib-undefined     Allow undefined symbols in shared libraries (default for --shared)
-    --no-allow-shlib-undefined
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
   --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
@@ -354,7 +352,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
-  std::optional<bool> allow_shlib_undefined;
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -935,9 +932,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("disable-new-dtags")) {
     } else if (read_flag("nostdlib")) {
     } else if (read_flag("allow-shlib-undefined")) {
-      allow_shlib_undefined = true;
     } else if (read_flag("no-allow-shlib-undefined")) {
-      allow_shlib_undefined = false;
     } else if (read_flag("no-add-needed")) {
     } else if (read_flag("no-call-graph-profile-sort")) {
     } else if (read_flag("no-copy-dt-needed-entries")) {
@@ -1073,12 +1068,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   // object file.
   if (ctx.arg.shared)
     ctx.overwrite_output_file = false;
-
-  // By default, this is set to true when building shared objects
-  if (allow_shlib_undefined.has_value())
-    ctx.arg.allow_shlib_undefined = *allow_shlib_undefined;
-  else
-    ctx.arg.allow_shlib_undefined = ctx.arg.shared;
 
   if (version_shown && remaining.empty())
     exit(0);
