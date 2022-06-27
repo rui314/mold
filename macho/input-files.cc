@@ -752,6 +752,18 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
     Fatal(ctx) << mf->name << ": is not a dylib";
   }
 
+  for (std::string_view s : dylib->exports) {
+    dylib->syms.push_back(get_symbol(ctx, s));
+    dylib->is_weak_symbol.push_back(false);
+  }
+
+  for (std::string_view s : dylib->weak_exports) {
+    if (!dylib->exports.contains(s)) {
+      dylib->syms.push_back(get_symbol(ctx, s));
+      dylib->is_weak_symbol.push_back(true);
+    }
+  }
+
   return dylib;
 };
 
@@ -765,8 +777,10 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     i64 flags = read_uleb(buf);
     read_uleb(buf); // addr
 
-    is_weak_symbol.push_back(flags == EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION);
-    this->syms.push_back(get_symbol(ctx, save_string(ctx, prefix)));
+    if (flags == EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION)
+      weak_exports.insert(save_string(ctx, prefix));
+    else
+      exports.insert(save_string(ctx, prefix));
   } else {
     buf++;
   }
@@ -785,17 +799,9 @@ template <typename E>
 void DylibFile<E>::parse_tapi(Context<E> &ctx) {
   TextDylib tbd = parse_tbd(ctx, this->mf);
 
-  for (std::string_view s : tbd.exports) {
-    this->syms.push_back(get_symbol(ctx, s));
-    is_weak_symbol.push_back(false);
-  }
-
-  for (std::string_view s : tbd.weak_exports) {
-    this->syms.push_back(get_symbol(ctx, s));
-    is_weak_symbol.push_back(true);
-  }
-
   install_name = tbd.install_name;
+  exports = std::move(tbd.exports);
+  weak_exports = std::move(tbd.weak_exports);
 }
 
 template <typename E>

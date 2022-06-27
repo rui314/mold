@@ -17,6 +17,11 @@
 
 namespace mold::macho {
 
+template <typename T, typename U>
+static void merge(std::set<T> &a, U &&b) {
+  a.insert(b.begin(), b.end());
+}
+
 static std::vector<YamlNode>
 get_vector(YamlNode &node, std::string_view key) {
   if (auto *map = std::get_if<std::map<std::string_view, YamlNode>>(&node.data))
@@ -74,19 +79,19 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
   for (std::string_view key : {"exports", "reexports"}) {
     for (YamlNode &mem : get_vector(node, key)) {
       if (contains(get_vector(mem, "targets"), arch)) {
-        append(tbd.exports, get_string_vector(mem, "symbols"));
-        append(tbd.weak_exports, get_string_vector(mem, "weak-symbols"));
+        merge(tbd.exports, get_string_vector(mem, "symbols"));
+        merge(tbd.weak_exports, get_string_vector(mem, "weak-symbols"));
 
         for (std::string_view s : get_string_vector(mem, "objc-classes")) {
-          tbd.exports.push_back(concat("_OBJC_CLASS_$_", s));
-          tbd.exports.push_back(concat("_OBJC_METACLASS_$_", s));
+          tbd.exports.insert(concat("_OBJC_CLASS_$_", s));
+          tbd.exports.insert(concat("_OBJC_METACLASS_$_", s));
         }
 
         for (std::string_view s : get_string_vector(mem, "objc-eh-types"))
-          tbd.exports.push_back(concat("_OBJC_EHTYPE_$_", s));
+          tbd.exports.insert(concat("_OBJC_EHTYPE_$_", s));
 
         for (std::string_view s : get_string_vector(mem, "objc-ivars"))
-          tbd.exports.push_back(concat("_OBJC_IVAR_$_", s));
+          tbd.exports.insert(concat("_OBJC_IVAR_$_", s));
       }
     }
   }
@@ -113,9 +118,7 @@ static i64 parse_version(const std::string &arg) {
 // We interpret such symbols in this function.
 template <typename E>
 static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
-  std::vector<std::string_view> syms;
-  syms.reserve(tbd.exports.size());
-
+  std::set<std::string_view> syms;
   std::unordered_set<std::string_view> hidden_syms;
 
   auto string_view = [](const std::csub_match &sub) {
@@ -164,7 +167,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
 
     if (std::regex_match(s.begin(), s.end(), m, add_re)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
-        syms.push_back(string_view(m[2]));
+        syms.insert(string_view(m[2]));
       continue;
     }
 
@@ -191,11 +194,10 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
   }
 
   for (std::string_view s : tbd.exports)
-    if (!s.starts_with("$ld$") && !hidden_syms.contains(std::string(s)))
-      syms.push_back(s);
+    if (!s.starts_with("$ld$") && !hidden_syms.contains(s))
+      syms.insert(s);
 
-  std::erase_if(syms, [](std::string_view s) { return s.starts_with("$ld$"); });
-  tbd.exports = syms;
+  tbd.exports = std::move(syms);
 }
 
 template <typename E>
@@ -253,26 +255,21 @@ squash(Context<E> &ctx, std::span<TextDylib> tbds, std::string_view arch) {
       if (it != map.end()) {
         // The referenced reexported library is in the same .tbd file.
         TextDylib &child = it->second;
-        append(main.exports, child.exports);
-        append(main.weak_exports, child.weak_exports);
+        merge(main.exports, child.exports);
+        merge(main.weak_exports, child.weak_exports);
         visit(child);
       } else {
         // The referenced reexported library is a separate file.
         MappedFile<Context<E>> *mf =
           find_external_lib(ctx, tbd.install_name, std::string(lib));
         TextDylib child = parse(ctx, mf, arch);
-        append(main.exports, child.exports);
-        append(main.weak_exports, child.weak_exports);
+        merge(main.exports, child.exports);
+        merge(main.weak_exports, child.weak_exports);
       }
     }
   };
 
   visit(main);
-
-  sort(main.exports);
-  sort(main.weak_exports);
-  remove_duplicates(main.exports);
-  remove_duplicates(main.weak_exports);
   return main;
 }
 

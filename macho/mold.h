@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/spin_mutex.h>
@@ -166,6 +167,10 @@ public:
   std::string_view install_name;
   i64 dylib_idx = 0;
   bool is_reexported = false;
+
+  std::vector<std::string_view> reexported_libs;
+  std::set<std::string_view> exports;
+  std::set<std::string_view> weak_exports;
 
 private:
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
@@ -744,8 +749,8 @@ parse_yaml(std::string_view str);
 struct TextDylib {
   std::string_view install_name;
   std::vector<std::string_view> reexported_libs;
-  std::vector<std::string_view> exports;
-  std::vector<std::string_view> weak_exports;
+  std::set<std::string_view> exports;
+  std::set<std::string_view> weak_exports;
 };
 
 template <typename E>
