@@ -796,7 +796,6 @@ void DylibFile<E>::parse_tapi(Context<E> &ctx) {
   }
 
   install_name = tbd.install_name;
-  reexported_libs = tbd.reexported_libs;
 }
 
 template <typename E>

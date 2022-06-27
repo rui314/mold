@@ -165,7 +165,6 @@ public:
 
   std::string_view install_name;
   i64 dylib_idx = 0;
-  std::vector<std::string_view> reexported_libs;
   bool is_reexported = false;
 
 private:
