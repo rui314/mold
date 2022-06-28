@@ -560,8 +560,20 @@ template <typename E>
 static void compute_uuid(Context<E> &ctx) {
   Timer t(ctx, "copy_sections_to_output_file");
 
+  // Compute a markle tree of height two.
+  i64 filesize = ctx.output_file->filesize;
+  i64 shard_size = 4096 * 1024;
+  i64 num_shards = align_to(filesize, shard_size) / shard_size;
+  std::vector<u8> shards(num_shards * SHA256_SIZE);
+
+  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
+    u8 *begin = ctx.buf + shard_size * i;
+    u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
+    SHA256(begin, end - begin, shards.data() + i * SHA256_SIZE);
+  });
+
   u8 buf[SHA256_SIZE];
-  SHA256(ctx.buf, ctx.output_file->filesize, buf);
+  SHA256(shards.data(), shards.size(), buf);
   memcpy(ctx.uuid, buf, 16);
   ctx.mach_hdr.copy_buf(ctx);
 }
