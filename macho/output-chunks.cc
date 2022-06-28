@@ -883,7 +883,7 @@ ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
     std::span<Entry> subspan = entries.subspan(i, j - i);
 
     if (divide && j - i < grain_size) {
-      tg->run([=] {
+      tg->run([=, this] {
         construct_trie(*child, subspan, new_len, tg, grain_size, false);
       });
     } else {
