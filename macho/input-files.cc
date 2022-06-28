@@ -861,6 +861,10 @@ void DylibFile<E>::parse_dylib(Context<E> &ctx) {
   MachHeader &hdr = *(MachHeader *)this->mf->data;
   u8 *p = this->mf->data + sizeof(hdr);
 
+  if (ctx.arg.application_extension && !(hdr.flags & MH_APP_EXTENSION_SAFE))
+    Warn(ctx) << "linking against a dylib which is not safe for use in "
+              << "application extensions: " << *this;
+
   for (i64 i = 0; i < hdr.ncmds; i++) {
     LoadCommand &lc = *(LoadCommand *)p;
 

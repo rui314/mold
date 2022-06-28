@@ -59,9 +59,15 @@ static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
 
 template <typename E>
 static std::optional<TextDylib>
-to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch) {
+to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch,
+       std::string_view filename) {
   if (!contains(get_vector(node, "targets"), arch))
     return {};
+
+  if (ctx.arg.application_extension &&
+      contains(get_vector(node, "flags"), "not_app_extension_safe"))
+    Warn(ctx) << "linking against a dylib which is not safe for use in "
+              << "application extensions: " << filename;
 
   TextDylib tbd;
 
@@ -258,7 +264,7 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
   std::vector<TextDylib> vec;
   for (YamlNode &node : nodes)
-    if (std::optional<TextDylib> dylib = to_tbd(ctx, node, arch))
+    if (std::optional<TextDylib> dylib = to_tbd(ctx, node, arch, mf->name))
       vec.push_back(*dylib);
 
   for (TextDylib &tbd : vec)

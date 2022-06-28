@@ -26,6 +26,8 @@ Options:
     -no_adhoc_codesign
   -all_load                   Include all objects from static archives
     -noall_load
+  -application_extension      Verify that all dylibs are extension-safe
+    -no_application_extension
   -arch <ARCH_NAME>           Specify target architecture
   -bundle                     Produce a mach-o bundle
   -compatibility_version <VERSION>
@@ -285,6 +287,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back("-all_load");
     } else if (read_flag("-noall_load")) {
       remaining.push_back("-noall_load");
+    } else if (read_flag("-application_extension")) {
+      ctx.arg.application_extension = true;
+    } else if (read_flag("-no_application_extension")) {
+      ctx.arg.application_extension = false;
     } else if (read_arg("-arch")) {
       if (arg == "x86_64")
         ctx.arg.arch = CPU_TYPE_X86_64;
