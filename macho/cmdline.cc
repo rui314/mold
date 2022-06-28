@@ -20,6 +20,8 @@ Options:
   -U <SYMBOL>                 Allow a symbol to be undefined
   -Z                          Do not search the standard directories when
                               searching for libraries and frameworks
+  -add_empty_section <SEGNAME> <SECTNAME>
+                              Add an empty section
   -adhoc_codesign             Add ad-hoc code signature to the output file
     -no_adhoc_codesign
   -all_load                   Include all objects from static archives
@@ -194,6 +196,18 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       return false;
     };
 
+    auto read_arg2 = [&](std::string name) {
+      if (args[i] == name) {
+        if (args.size() <= i + 2)
+          Fatal(ctx) << "option -" << name << ": argument missing";
+        arg = args[i + 1];
+        arg2 = args[i + 2];
+        i += 3;
+        return true;
+      }
+      return false;
+    };
+
     auto read_arg3 = [&](std::string name) {
       if (args[i] == name) {
         if (args.size() <= i + 3)
@@ -261,6 +275,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ObjC = true;
     } else if (read_arg("-U")) {
       ctx.arg.U.push_back(std::string(arg));
+    } else if (read_arg2("-add_empty_section")) {
+      ctx.arg.add_empty_section.push_back({arg, arg2});
     } else if (read_flag("-adhoc_codesign")) {
       ctx.arg.adhoc_codesign = true;
     } else if (read_flag("-no_adhoc_codesign")) {

@@ -392,7 +392,14 @@ template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   Timer t(ctx, "create_synthetic_chunks");
 
-  // First, we add subsections specified by -order_file to output sections.
+  // Handle -sectcreate
+  for (SectCreateOption arg : ctx.arg.sectcreate) {
+    MappedFile<Context<E>> *mf =
+      MappedFile<Context<E>>::must_open(ctx, std::string(arg.filename));
+    new SectCreateSection<E>(ctx, arg.segname, arg.sectname, mf->get_contents());
+  }
+
+  // We add subsections specified by -order_file to output sections.
   for (std::string_view name : ctx.arg.order_file)
     if (Symbol<E> *sym = get_symbol(ctx, name); sym->file)
       if (Subsection<E> *subsec = sym->subsec)
@@ -416,11 +423,29 @@ static void create_synthetic_chunks(Context<E> &ctx) {
     seg->chunks.push_back(chunk);
   }
 
+  // Handle -add_empty_section
+  for (AddEmptySectionOption &opt : ctx.arg.add_empty_section) {
+    if (!section_exists(ctx, opt.segname, opt.sectname)) {
+      OutputSegment<E> *seg = OutputSegment<E>::get_instance(ctx, opt.segname);
+      Chunk<E> *sec = new SectCreateSection<E>(ctx, opt.segname, opt.sectname, {});
+      seg->chunks.push_back(sec);
+    }
+  }
+
   // Sort segments and output sections.
   sort(ctx.segments, compare_segments<E>);
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     sort(seg->chunks, compare_chunks<E>);
+}
+
+template <typename E>
+static bool section_exists(Context<E> &ctx, std::string_view segname,
+                           std::string_view sectname) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->hdr.match(segname, sectname))
+      return true;
+  return false;
 }
 
 template <typename E>
@@ -821,15 +846,6 @@ static int do_main(int argc, char **argv) {
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
-
-  // Handle -sectcreate
-  for (SectCreateOption arg : ctx.arg.sectcreate) {
-    MappedFile<Context<E>> *mf =
-      MappedFile<Context<E>>::must_open(ctx, std::string(arg.filename));
-    SectCreateSection<E> *sec =
-      new SectCreateSection<E>(ctx, arg.segname, arg.sectname, mf->get_contents());
-    ctx.chunk_pool.emplace_back(sec);
-  }
 
   if (ctx.arg.adhoc_codesign)
     ctx.code_sig.reset(new CodeSignatureSection<E>(ctx));

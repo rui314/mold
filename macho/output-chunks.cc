@@ -1531,6 +1531,15 @@ void ThreadPtrsSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+SectCreateSection<E>::SectCreateSection(Context<E> &ctx, std::string_view seg,
+                                        std::string_view sect,
+                                        std::string_view contents)
+  : Chunk<E>(ctx, seg, sect), contents(contents) {
+  this->hdr.size = contents.size();
+  ctx.chunk_pool.emplace_back(this);
+}
+
+template <typename E>
 void SectCreateSection<E>::copy_buf(Context<E> &ctx) {
   write_string(ctx.buf + this->hdr.offset, contents);
 }

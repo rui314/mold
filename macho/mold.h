@@ -707,10 +707,7 @@ template <typename E>
 class SectCreateSection : public Chunk<E> {
 public:
   SectCreateSection(Context<E> &ctx, std::string_view seg, std::string_view sect,
-                    std::string_view contents)
-    : Chunk<E>(ctx, seg, sect), contents(contents) {
-    this->hdr.size = contents.size();
-  }
+                    std::string_view contents);
 
   void copy_buf(Context<E> &ctx) override;
 
@@ -795,6 +792,11 @@ void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &os
 
 enum UuidKind { UUID_NONE, UUID_HASH, UUID_RANDOM };
 
+struct AddEmptySectionOption {
+  std::string_view segname;
+  std::string_view sectname;
+};
+
 struct SectCreateOption {
   std::string_view segname;
   std::string_view sectname;
@@ -870,6 +872,7 @@ struct Context {
     std::string map;
     std::string object_path_lto;
     std::string output = "a.out";
+    std::vector<AddEmptySectionOption> add_empty_section;
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
     std::vector<std::string> framework_paths;
