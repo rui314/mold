@@ -389,6 +389,15 @@ static void merge_cstring_sections(Context<E> &ctx) {
 }
 
 template <typename E>
+static Chunk<E> *find_section(Context<E> &ctx, std::string_view segname,
+                              std::string_view sectname) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->hdr.match(segname, sectname))
+      return chunk;
+  return nullptr;
+}
+
+template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   Timer t(ctx, "create_synthetic_chunks");
 
@@ -425,7 +434,7 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 
   // Handle -add_empty_section
   for (AddEmptySectionOption &opt : ctx.arg.add_empty_section) {
-    if (!section_exists(ctx, opt.segname, opt.sectname)) {
+    if (!find_section(ctx, opt.segname, opt.sectname)) {
       OutputSegment<E> *seg = OutputSegment<E>::get_instance(ctx, opt.segname);
       Chunk<E> *sec = new SectCreateSection<E>(ctx, opt.segname, opt.sectname, {});
       seg->chunks.push_back(sec);
@@ -437,15 +446,6 @@ static void create_synthetic_chunks(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     sort(seg->chunks, compare_chunks<E>);
-}
-
-template <typename E>
-static bool section_exists(Context<E> &ctx, std::string_view segname,
-                           std::string_view sectname) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->hdr.match(segname, sectname))
-      return true;
-  return false;
 }
 
 template <typename E>
@@ -909,6 +909,10 @@ static int do_main(int argc, char **argv) {
 
   for (ObjectFile<E> *file : ctx.objs)
     file->check_duplicate_symbols(ctx);
+
+  for (SectAlignOption &opt : ctx.arg.sectalign)
+    if (Chunk<E> *chunk = find_section(ctx, opt.segname, opt.sectname))
+      chunk->hdr.p2align = opt.p2align;
 
   bool has_pagezero_seg = ctx.arg.pagezero_size;
   for (i64 i = 0; i < ctx.segments.size(); i++)

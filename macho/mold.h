@@ -797,6 +797,12 @@ struct AddEmptySectionOption {
   std::string_view sectname;
 };
 
+struct SectAlignOption {
+  std::string_view segname;
+  std::string_view sectname;
+  u8 p2align;
+};
+
 struct SectCreateOption {
   std::string_view segname;
   std::string_view sectname;
@@ -874,6 +880,7 @@ struct Context {
     std::string object_path_lto;
     std::string output = "a.out";
     std::vector<AddEmptySectionOption> add_empty_section;
+    std::vector<SectAlignOption> sectalign;
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
     std::vector<std::string> framework_paths;

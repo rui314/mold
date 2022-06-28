@@ -2,10 +2,10 @@
 #include "../cmdline.h"
 
 #include <optional>
+#include <regex>
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <regex>
 #include <unistd.h>
 #include <unordered_set>
 
@@ -37,6 +37,7 @@ Options:
   -dead_strip_dylibs          Remove unreachable dylibs from dependencies
   -debug_variant              Ignored
   -demangle                   Demangle C++ symbols in log messages (default)
+  -dependency_info <FILE>     Ignored
   -dylib                      Produce a dynamic library
   -dylib_compatibility_version <VERSION>
                               Alias for -compatibility_version
@@ -82,6 +83,8 @@ Options:
   -rpath <PATH>               Add PATH to the runpath search path list
   -search_dylibs_first
   -search_paths_first
+  -sectalign <SEGNAME> <SECTNAME> <VALUE>
+                              Set a section's alignment to a given value
   -sectcreate <SEGNAME> <SECTNAME> <FILE>
   -stack_size <SIZE>
   -stats                      Show statistics info
@@ -138,6 +141,20 @@ i64 parse_version(Context<E> &ctx, std::string_view arg) {
   i64 minor = (m[2].length() == 0) ? 0 : stoi(m[2]);
   i64 patch = (m[3].length() == 0) ? 0 : stoi(m[3]);
   return (major << 16) | (minor << 8) | patch;
+}
+
+template <typename E>
+i64 parse_hex(Context<E> &ctx, std::string_view arg) {
+  auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase;
+  static std::regex re(R"((?:0x)?[0-9a-f]+)", flags);
+
+  std::cmatch m;
+  if (!std::regex_match(arg.begin(), arg.end(), re))
+    Fatal(ctx) << "malformed hexadecimal number: " << arg;
+
+  if (arg.starts_with("0x") || arg.starts_with("0X"))
+    return std::stoll(std::string(arg.substr(2)), nullptr, 16);
+  return std::stoll(std::string(arg), nullptr, 16);
 }
 
 static bool is_directory(std::filesystem::path path) {
@@ -319,6 +336,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-debug_variant")) {
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
+    } else if (read_arg("-dependency_info")) {
     } else if (read_flag("-dylib")) {
       ctx.output_type = MH_DYLIB;
     } else if (read_hex("-headerpad")) {
@@ -409,6 +427,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.search_paths_first = true;
     } else if (read_flag("-search_dylibs_first")) {
       ctx.arg.search_paths_first = false;
+    } else if (read_arg3("-sectalign")) {
+      u64 val = parse_hex(ctx, arg3);
+      std::string key = std::string(arg) + "," + std::string(arg2);
+      if (!has_single_bit(val))
+        Fatal(ctx) << "-sectalign: invalid alignment value: " << arg3;
+      ctx.arg.sectalign.push_back({arg, arg2, (u8)std::countl_zero(val)});
     } else if (read_arg3("-sectcreate")) {
       ctx.arg.sectcreate.push_back({arg, arg2, arg3});
     } else if (read_hex("-stack_size")) {
