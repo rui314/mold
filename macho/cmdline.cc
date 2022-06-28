@@ -35,6 +35,7 @@ Options:
   -current_version <VERSION>  Specifies the current version number of the library.
   -dead_strip                 Remove unreachable functions and data
   -dead_strip_dylibs          Remove unreachable dylibs from dependencies
+  -debug_variant              Ignored
   -demangle                   Demangle C++ symbols in log messages (default)
   -dylib                      Produce a dynamic library
   -dylib_compatibility_version <VERSION>
@@ -315,6 +316,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.dead_strip = true;
     } else if (read_flag("-dead_strip_dylibs")) {
       ctx.arg.dead_strip_dylibs = true;
+    } else if (read_flag("-debug_variant")) {
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
     } else if (read_flag("-dylib")) {
