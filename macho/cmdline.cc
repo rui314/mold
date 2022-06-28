@@ -70,6 +70,7 @@ Options:
   -no_deduplicate             Ignored
   -no_uuid                    Do not generate an LC_UUID load command
   -o <FILE>                   Set output filename
+  -objc_abi_version <VERSION> Ignored
   -object_path_lto <FILE>     Write a LTO temporary file to a given path
   -order_file <FILE>          Ignored
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
@@ -378,6 +379,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.uuid = UUID_NONE;
     } else if (read_arg("-o")) {
       ctx.arg.output = arg;
+    } else if (read_arg("-objc_abi_version")) {
     } else if (read_arg("-object_path_lto")) {
       ctx.arg.object_path_lto = arg;
     } else if (read_arg("-order_file")) {
