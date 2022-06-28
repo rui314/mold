@@ -160,8 +160,7 @@ class DylibFile : public InputFile<E> {
 public:
   static DylibFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
-  void parse_tapi(Context<E> &ctx);
-  void parse_dylib(Context<E> &ctx);
+  void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
 
   std::string_view install_name;
@@ -173,12 +172,13 @@ public:
   std::set<std::string_view> weak_exports;
 
 private:
+  DylibFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
+
+  void parse_tapi(Context<E> &ctx);
+  void parse_dylib(Context<E> &ctx);
+
   void read_trie(Context<E> &ctx, u8 *start, i64 offset = 0,
                  const std::string &prefix = "");
-
-  DylibFile(MappedFile<Context<E>> *mf) : InputFile<E>(mf) {
-    this->is_dylib = true;
-  }
 
   std::vector<bool> is_weak_symbol;
 };

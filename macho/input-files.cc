@@ -734,6 +734,23 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+DylibFile<E>::DylibFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
+  : InputFile<E>(mf) {
+  this->is_dylib = true;
+  this->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
+  this->is_weak = ctx.weak_l;
+  this->is_reexported = ctx.reexport_l;
+  ctx.dylib_pool.emplace_back(this);
+}
+
+template <typename E>
+DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  DylibFile<E> *file = new DylibFile<E>(ctx, mf);
+  file->parse(ctx);
+  return file;
+}
+
+template <typename E>
 static MappedFile<Context<E>> *
 find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
   if (!path.starts_with('/'))
@@ -763,52 +780,42 @@ find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
 }
 
 template <typename E>
-DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  // Read a given file
-  DylibFile<E> *dylib = new DylibFile<E>(mf);
-  dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
-  dylib->is_weak = ctx.weak_l;
-  dylib->is_reexported = ctx.reexport_l;
-  ctx.dylib_pool.emplace_back(dylib);
-
-  switch (get_file_type(mf)) {
+void DylibFile<E>::parse(Context<E> &ctx) {
+  switch (get_file_type(this->mf)) {
   case FileType::TAPI:
-    dylib->parse_tapi(ctx);
+    parse_tapi(ctx);
     break;
   case FileType::MACH_DYLIB:
-    dylib->parse_dylib(ctx);
+    parse_dylib(ctx);
     break;
   default:
-    Fatal(ctx) << mf->name << ": is not a dylib";
+    Fatal(ctx) << *this << ": is not a dylib";
   }
 
   // Read reexported libraries if any
-  for (std::string_view path : dylib->reexported_libs) {
+  for (std::string_view path : reexported_libs) {
     MappedFile<Context<E>> *mf =
-      find_external_lib(ctx, dylib->install_name, std::string(path));
+      find_external_lib(ctx, install_name, std::string(path));
     if (!mf)
-      Fatal(ctx) << dylib->install_name << ": cannot open reexported library "
-                 << path;
+      Fatal(ctx) << install_name << ": cannot open reexported library " << path;
 
     DylibFile<E> *child = DylibFile<E>::create(ctx, mf);
-    dylib->exports.merge(child->exports);
-    dylib->weak_exports.merge(child->weak_exports);
+    exports.merge(child->exports);
+    weak_exports.merge(child->weak_exports);
   }
 
   // Initialize syms and is_weak_symbols vectors
-  for (std::string_view s : dylib->exports) {
-    dylib->syms.push_back(get_symbol(ctx, s));
-    dylib->is_weak_symbol.push_back(false);
+  for (std::string_view s : exports) {
+    this->syms.push_back(get_symbol(ctx, s));
+    is_weak_symbol.push_back(false);
   }
 
-  for (std::string_view s : dylib->weak_exports) {
-    if (!dylib->exports.contains(s)) {
-      dylib->syms.push_back(get_symbol(ctx, s));
-      dylib->is_weak_symbol.push_back(true);
+  for (std::string_view s : weak_exports) {
+    if (!exports.contains(s)) {
+      this->syms.push_back(get_symbol(ctx, s));
+      is_weak_symbol.push_back(true);
     }
   }
-
-  return dylib;
 }
 
 template <typename E>
