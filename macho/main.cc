@@ -539,9 +539,13 @@ static void copy_sections_to_output_file(Context<E> &ctx) {
                          [&](std::unique_ptr<OutputSegment<E>> &seg) {
     Timer t2(ctx, std::string(seg->cmd.get_segname()), &t);
 
-    // Fill text segment paddings with NOPs
-    if (seg->cmd.get_segname() == "__TEXT")
-      memset(ctx.buf + seg->cmd.fileoff, 0x90, seg->cmd.filesize);
+    // Fill text segment paddings with single-byte NOP instructions so
+    // that otool wouldn't out-of-sync when disassembling an output file.
+    // Do this only for x86-64 because ARM64 instructions are always 4
+    // bytes long.
+    if constexpr (std::is_same_v<E, X86_64>)
+      if (seg->cmd.get_segname() == "__TEXT")
+        memset(ctx.buf + seg->cmd.fileoff, 0x90, seg->cmd.filesize);
 
     tbb::parallel_for_each(seg->chunks, [&](Chunk<E> *sec) {
       if (sec->hdr.type != S_ZEROFILL) {
