@@ -41,6 +41,7 @@ Options:
                               Alias for -compatibility_version
   -dylib_current_version <VERSION>
                               Alias for -current_version
+  -dylib_install_name         Alias for -install_name
   -dynamic                    Link against dylibs (default)
   -e <SYMBOL>                 Specify the entry point of a main executable
   -execute                    Produce an executable (default)
@@ -357,7 +358,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_joined("-hidden-l")) {
       remaining.push_back("-hidden-l");
       remaining.push_back(std::string(arg));
-    } else if (read_arg("-install_name")) {
+    } else if (read_arg("-install_name") || read_arg("-dylib_install_name")) {
       ctx.arg.install_name = arg;
     } else if (read_joined("-l")) {
       remaining.push_back("-l");
