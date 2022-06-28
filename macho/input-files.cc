@@ -764,6 +764,7 @@ find_external_lib(Context<E> &ctx, std::string_view parent, std::string path) {
 
 template <typename E>
 DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  // Read a given file
   DylibFile<E> *dylib = new DylibFile<E>(mf);
   dylib->is_alive = (ctx.needed_l || !ctx.arg.dead_strip_dylibs);
   dylib->is_weak = ctx.weak_l;
@@ -781,6 +782,7 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
     Fatal(ctx) << mf->name << ": is not a dylib";
   }
 
+  // Read reexported libraries if any
   for (std::string_view path : dylib->reexported_libs) {
     MappedFile<Context<E>> *mf =
       find_external_lib(ctx, dylib->install_name, std::string(path));
@@ -793,6 +795,7 @@ DylibFile<E> *DylibFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) 
     dylib->weak_exports.merge(child->weak_exports);
   }
 
+  // Initialize syms and is_weak_symbols vectors
   for (std::string_view s : dylib->exports) {
     dylib->syms.push_back(get_symbol(ctx, s));
     dylib->is_weak_symbol.push_back(false);
