@@ -600,11 +600,19 @@ struct MachSym {
   }
 
   ul32 stroff;
-  u8 is_extern : 1;
-  u8 type : 3;
-  u8 is_private_extern : 1;
-  u8 stub : 3;
+
+  union {
+    u8 n_type;
+    struct {
+      u8 is_extern : 1;
+      u8 type : 3;
+      u8 is_private_extern : 1;
+      u8 stub : 3;
+    };
+  };
+
   u8 sect;
+
   union {
     ul16 desc;
     struct {
@@ -612,6 +620,7 @@ struct MachSym {
       u8 p2align : 4;
     };
   };
+
   ul64 value;
 };
 

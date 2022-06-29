@@ -883,6 +883,7 @@ struct Context {
     std::vector<SectAlignOption> sectalign;
     std::vector<SectCreateOption> sectcreate;
     std::vector<std::string> U;
+    std::vector<std::string> add_ast_path;
     std::vector<std::string> framework_paths;
     std::vector<std::string> library_paths;
     std::vector<std::string> mllvm;

@@ -1003,15 +1003,23 @@ void FunctionStartsSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void SymtabSection<E>::compute_size(Context<E> &ctx) {
   symtab_offsets.clear();
-  strtab_offsets.clear();
-
   symtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
+
+  strtab_offsets.clear();
   strtab_offsets.resize(ctx.objs.size() + ctx.dylibs.size() + 1);
+  strtab_offsets[0] = 1;
 
   tbb::enumerable_thread_specific<i64> locals;
   tbb::enumerable_thread_specific<i64> globals;
   tbb::enumerable_thread_specific<i64> undefs;
 
+  // Calculate the sizes for -add_ast_path symbols.
+  locals.local() += ctx.arg.add_ast_path.size();
+  symtab_offsets[0] += ctx.arg.add_ast_path.size();
+  for (std::string_view s : ctx.arg.add_ast_path)
+    strtab_offsets[0] += s.size() + 1;
+
+  // Calculate the sizes required for symbols in input files.
   auto count = [&](Symbol<E> *sym) {
     if (sym->is_imported)
       undefs.local() += 1;
@@ -1051,7 +1059,6 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
   for (i64 i = 1; i < symtab_offsets.size(); i++)
     symtab_offsets[i] += symtab_offsets[i - 1];
 
-  strtab_offsets[0] = 1;
   for (i64 i = 1; i < strtab_offsets.size(); i++)
     strtab_offsets[i] += strtab_offsets[i - 1];
 
@@ -1066,6 +1073,21 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   u8 *strtab = ctx.buf + ctx.strtab.hdr.offset;
   strtab[0] = '\0';
 
+  // Create symbols for -add_ast_path
+  {
+    i64 symoff = 0;
+    i64 stroff = 1;
+    for (std::string_view s : ctx.arg.add_ast_path) {
+      MachSym &msym = buf[symoff++];
+      msym.stroff = stroff;
+      msym.n_type = N_AST;
+
+      write_string(strtab + stroff, s);
+      stroff += s.size() + 1;
+    }
+  }
+
+  // Copy symbols from input files to an output file
   Symbol<E> *mh_execute_header = get_symbol(ctx, "__mh_execute_header");
   Symbol<E> *dyld_private = get_symbol(ctx, "__dyld_private");
   Symbol<E> *mh_dylib_header = get_symbol(ctx, "__mh_dylib_header");

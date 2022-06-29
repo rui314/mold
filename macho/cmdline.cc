@@ -20,6 +20,7 @@ Options:
   -U <SYMBOL>                 Allow a symbol to be undefined
   -Z                          Do not search the standard directories when
                               searching for libraries and frameworks
+  -add_ast_path <FILE>        Add a N_AST symbol with the given filename
   -add_empty_section <SEGNAME> <SECTNAME>
                               Add an empty section
   -adhoc_codesign             Add ad-hoc code signature to the output file
@@ -297,6 +298,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ObjC = true;
     } else if (read_arg("-U")) {
       ctx.arg.U.push_back(std::string(arg));
+    } else if (read_arg("-add_ast_path")) {
+      ctx.arg.add_ast_path.push_back(std::string(arg));
     } else if (read_arg2("-add_empty_section")) {
       ctx.arg.add_empty_section.push_back({arg, arg2});
     } else if (read_flag("-adhoc_codesign")) {
