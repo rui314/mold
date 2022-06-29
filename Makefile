@@ -103,9 +103,9 @@ ifeq ($(NEEDS_LIBCRYPTO), 1)
   MOLD_LDFLAGS += -lcrypto
 endif
 
-# '-latomic' flag is needed building on riscv64 system.
+# '-latomic' flag is needed building on armv6/riscv64 systems.
 # Seems like '-atomic' would be better but not working.
-ifeq ($(ARCH), riscv64)
+ifneq (,$(filter armv6% riscv64, $(ARCH)))
   MOLD_LDFLAGS += -latomic
 endif
 
