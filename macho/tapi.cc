@@ -57,11 +57,19 @@ static bool contains(const std::vector<YamlNode> &vec, std::string_view key) {
   return false;
 }
 
+static bool match_arch(const std::vector<YamlNode> &vec, std::string_view arch) {
+  for (const YamlNode &mem : vec)
+    if (auto val = std::get_if<std::string_view>(&mem.data))
+      if (*val == arch || val->starts_with(std::string(arch) + "-"))
+        return true;
+  return false;
+}
+
 template <typename E>
 static std::optional<TextDylib>
 to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch,
        std::string_view filename) {
-  if (!contains(get_vector(node, "targets"), arch))
+  if (!match_arch(get_vector(node, "targets"), arch))
     return {};
 
   if (ctx.arg.application_extension &&
@@ -75,7 +83,7 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch,
     tbd.install_name = *val;
 
   for (YamlNode &mem : get_vector(node, "reexported-libraries"))
-    if (contains(get_vector(mem, "targets"), arch))
+    if (match_arch(get_vector(mem, "targets"), arch))
       append(tbd.reexported_libs, get_string_vector(mem, "libraries"));
 
   auto concat = [&](const std::string &x, std::string_view y) {
@@ -84,7 +92,7 @@ to_tbd(Context<E> &ctx, YamlNode &node, std::string_view arch,
 
   for (std::string_view key : {"exports", "reexports"}) {
     for (YamlNode &mem : get_vector(node, key)) {
-      if (contains(get_vector(mem, "targets"), arch)) {
+      if (match_arch(get_vector(mem, "targets"), arch)) {
         merge(tbd.exports, get_string_vector(mem, "symbols"));
         merge(tbd.weak_exports, get_string_vector(mem, "weak-symbols"));
 
@@ -275,12 +283,12 @@ static TextDylib parse(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
 template <>
 TextDylib parse_tbd(Context<ARM64> &ctx, MappedFile<Context<ARM64>> *mf) {
-  return parse(ctx, mf, "arm64-macos");
+  return parse(ctx, mf, "arm64");
 }
 
 template <>
 TextDylib parse_tbd(Context<X86_64> &ctx, MappedFile<Context<X86_64>> *mf) {
-  return parse(ctx, mf, "x86_64-macos");
+  return parse(ctx, mf, "x86_64");
 }
 
 } // namespace mold::macho
