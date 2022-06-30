@@ -640,6 +640,12 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
+  if (ctx.__preinit_array_start->shndx < 0) {
+    define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
+    define(DT_PREINIT_ARRAYSZ,
+           ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
+  }
+
   if (ctx.__fini_array_start->shndx < 0) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,

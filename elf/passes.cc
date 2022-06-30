@@ -662,7 +662,8 @@ void sort_init_fini(Context<E> &ctx) {
   };
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".init_array" || osec->name == ".fini_array") {
+    if (osec->name == ".init_array" || osec->name == ".preinit_array" ||
+        osec->name == ".fini_array") {
       if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
         std::reverse(osec->members.begin(), osec->members.end());
 
@@ -742,8 +743,9 @@ void shuffle_sections(Context<E> &ctx) {
 
   auto is_eligible = [](OutputSection<E> &osec) {
     return osec.name != ".init" && osec.name != ".fini" &&
-           osec.name != ".init_array" && osec.name != ".fini_array" &&
-           osec.name != ".ctors" && osec.name != ".dtors";
+           osec.name != ".ctors" && osec.name != ".dtors" &&
+           osec.name != ".init_array" && osec.name != ".preinit_array" &&
+           osec.name != ".fini_array";
   };
 
   switch (ctx.arg.shuffle_sections) {
@@ -1494,6 +1496,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
       stop(ctx.__init_array_end, chunk);
+      break;
+    case SHT_PREINIT_ARRAY:
+      start(ctx.__preinit_array_start, chunk);
+      stop(ctx.__preinit_array_end, chunk);
       break;
     case SHT_FINI_ARRAY:
       start(ctx.__fini_array_start, chunk);
