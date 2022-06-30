@@ -109,16 +109,33 @@ static std::vector<PluginSymbol> plugin_symbols;
 static ClaimFileHandler *claim_file_hook;
 static AllSymbolsReadHandler *all_symbols_read_hook;
 static CleanupHandler *cleanup_hook;
+static bool is_gcc_linker_api_v1 = false;
 
 // Event handlers
 
-static PluginStatus message(int level, const char *fmt, ...) {
+template <typename E>
+static PluginStatus message(PluginLevel level, const char *fmt, ...) {
   LOG << "message\n";
+  Context<E> &ctx = *gctx<E>;
+
+  char buf[1000];
   va_list ap;
   va_start(ap, fmt);
-  fprintf(stderr, "mold: ");
-  vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\n");
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+
+  switch (level) {
+  case LDPL_INFO:
+    SyncOut(ctx) << buf;
+    break;
+  case LDPL_WARNING:
+    Warn(ctx) << buf;
+    break;
+  case LDPL_ERROR:
+  case LDPL_FATAL:
+    Fatal(ctx) << buf;
+  }
+
   return LDPS_OK;
 }
 
@@ -399,6 +416,27 @@ get_wrap_symbols(uint64_t *num_symbols, const char ***wrap_symbols) {
 }
 
 template <typename E>
+static PluginLinkerAPIVersion
+get_api_version(const char *plugin_identifier,
+                unsigned plugin_version,
+                int minimal_api_supported,
+                int maximal_api_supported,
+                const char **linker_identifier,
+                const char **linker_version) {
+  if (LAPI_V1 < minimal_api_supported)
+    Fatal(*gctx<E>) << "LTO plugin does not support V0 or V1 API";
+
+  *linker_identifier = "mold";
+  *linker_version = MOLD_VERSION;
+
+  if (LAPI_V1 <= maximal_api_supported) {
+    is_gcc_linker_api_v1 = true;
+    return LAPI_V1;
+  }
+  return LAPI_V0;
+}
+
+template <typename E>
 static void load_plugin(Context<E> &ctx) {
   assert(phase == 0);
   phase = 1;
@@ -418,7 +456,7 @@ static void load_plugin(Context<E> &ctx) {
   };
 
   std::vector<PluginTagValue> tv;
-  tv.emplace_back(LDPT_MESSAGE, message);
+  tv.emplace_back(LDPT_MESSAGE, message<E>);
 
   if (ctx.arg.shared)
     tv.emplace_back(LDPT_LINKER_OUTPUT, LDPO_DYN);
@@ -449,6 +487,7 @@ static void load_plugin(Context<E> &ctx) {
   tv.emplace_back(LDPT_GET_INPUT_SECTION_CONTENTS, get_input_section_contents);
   tv.emplace_back(LDPT_UPDATE_SECTION_ORDER, update_section_order);
   tv.emplace_back(LDPT_ALLOW_SECTION_ORDERING, allow_section_ordering);
+  tv.emplace_back(LDPT_ADD_SYMBOLS_V2, add_symbols);
   tv.emplace_back(LDPT_GET_SYMBOLS_V2, get_symbols_v2<E>);
   tv.emplace_back(LDPT_ALLOW_UNIQUE_SEGMENT_FOR_SECTIONS,
                   allow_unique_segment_for_sections);
@@ -458,9 +497,11 @@ static void load_plugin(Context<E> &ctx) {
   tv.emplace_back(LDPT_GET_INPUT_SECTION_SIZE, get_input_section_size);
   tv.emplace_back(LDPT_REGISTER_NEW_INPUT_HOOK, register_new_input_hook<E>);
   tv.emplace_back(LDPT_GET_WRAP_SYMBOLS, get_wrap_symbols);
+  tv.emplace_back(LDPT_GET_API_VERSION, get_api_version<E>);
   tv.emplace_back(LDPT_NULL, 0);
 
-  onload(tv.data());
+  PluginStatus status = onload(tv.data());
+  assert(status == LDPS_OK);
 }
 
 template <typename E>
@@ -524,15 +565,19 @@ static bool is_llvm(Context<E> &ctx) {
 }
 
 // Returns true if a given linker plugin supports the get_symbols_v3 API.
-// Currently, we simply assume that LLVM supports it and GCC does not.
+// Any version of LLVM and GCC 12 or newer support it.
 template <typename E>
 static bool suppots_v3_api(Context<E> &ctx) {
-  return is_llvm(ctx);
+  return is_gcc_linker_api_v1 || is_llvm(ctx);
 }
 
 template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  LOG << "read_lto_object: " << mf->name << "\n";
+  // V0 API's claim_file is not thread-safe.
+  static std::mutex mu;
+  std::unique_lock lock(mu, std::defer_lock);
+  if (!is_gcc_linker_api_v1)
+    lock.lock();
 
   if (ctx.arg.plugin.empty())
     Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file "

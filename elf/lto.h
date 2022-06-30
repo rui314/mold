@@ -44,6 +44,7 @@ enum PluginTag {
   LDPT_REGISTER_NEW_INPUT_HOOK,
   LDPT_GET_WRAP_SYMBOLS,
   LDPT_ADD_SYMBOLS_V2,
+  LDPT_GET_API_VERSION,
 };
 
 enum PluginApiVersion {
@@ -139,6 +140,11 @@ enum PluginLevel {
   LDPL_WARNING,
   LDPL_ERROR,
   LDPL_FATAL,
+};
+
+enum PluginLinkerAPIVersion {
+  LAPI_V0 = 0,
+  LAPI_V1,
 };
 
 typedef PluginStatus OnloadFn(PluginTagValue *tv);
