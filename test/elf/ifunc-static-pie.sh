@@ -13,6 +13,9 @@ cd "$(dirname "$0")"/../..
 t=out/test/elf/$testname
 mkdir -p $t
 
+# Skip if libc is musl because musl does not support GNU FUNC
+ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
+
 # We need to implement R_386_GOT32X relaxation to support PIE on i386
 [ $MACHINE = i386 ] && { echo skipped; exit; }
 [ $MACHINE = i686 ] && { echo skipped; exit; }
