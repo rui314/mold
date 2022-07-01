@@ -17,8 +17,7 @@ mkdir -p $t
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
 # Skip if libc is musl because musl does not support GNU FUNC
-echo 'int main() {}' | $CC -o $t/exe -xc -
-readelf --dynamic $t/exe | grep -q ld-musl && { echo OK; exit; }
+ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
 #include <stdio.h>

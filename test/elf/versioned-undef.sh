@@ -15,8 +15,7 @@ mkdir -p $t
 
 # Skip if libc is musl because musl does not fully support GNU-style
 # symbol versioning.
-echo 'int main() {}' | $CC -o $t/exe -xc -
-readelf --dynamic $t/exe | grep -q ld-musl && { echo OK; exit; }
+ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 int foo1() { return 1; }
