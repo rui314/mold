@@ -635,19 +635,14 @@ static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
   return isec && (isec->shdr().sh_flags & SHF_ALLOC);
 }
 
-// Initializes sorted_symbols.
-static void sort_symbols(Context<E> &ctx) {
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols)
-      if (sym->file == file)
-        if (InputSection<E> *isec = sym->get_input_section())
-          isec->extra.sorted_symbols.push_back(sym);
-
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (isec)
-        sort(isec->extra.sorted_symbols,
-             [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
-  });
+template <typename E>
+static std::vector<Symbol<E> *> get_sorted_symbols(InputSection<E> &isec) {
+  std::vector<Symbol<E> *> vec;
+  for (Symbol<E> *sym : isec.file.symbols)
+    if (sym->file == &isec.file && sym->get_input_section() == &isec)
+      vec.push_back(sym);
+  sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
+  return vec;
 }
 
 // Returns the distance between a relocated place and a symbol.
@@ -673,7 +668,8 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
 static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<Symbol<E> *> syms = isec.extra.sorted_symbols;
+  std::vector<Symbol<E> *> vec = get_sorted_symbols(isec);
+  std::span<Symbol<E> *> syms = vec;
   i64 delta = 0;
 
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
@@ -779,7 +775,6 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
 // relocations.
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
-  sort_symbols(ctx);
 
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.

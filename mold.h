@@ -763,7 +763,8 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
 #endif
 
   if (st.st_size > 0) {
-    mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE, fd, 0);
     if (mf->data == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
   }

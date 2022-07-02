@@ -149,7 +149,7 @@ struct SymbolAux {
 template <typename E>
 struct CieRecord {
   CieRecord(Context<E> &ctx, ObjectFile<E> &file, InputSection<E> &isec,
-            u32 input_offset, std::span<const ElfRel<E>> rels, u32 rel_idx)
+            u32 input_offset, std::span<ElfRel<E>> rels, u32 rel_idx)
     : file(file), input_section(isec), input_offset(input_offset),
       rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
@@ -161,7 +161,7 @@ struct CieRecord {
     return contents.substr(input_offset, size());
   }
 
-  std::span<const ElfRel<E>> get_rels() const {
+  std::span<ElfRel<E>> get_rels() const {
     i64 end = rel_idx;
     while (end < rels.size() && rels[end].r_offset < input_offset + size())
       end++;
@@ -177,7 +177,7 @@ struct CieRecord {
   u32 rel_idx = -1;
   u32 icf_idx = -1;
   bool is_leader = false;
-  std::span<const ElfRel<E>> rels;
+  std::span<ElfRel<E>> rels;
   std::string_view contents;
 };
 
@@ -202,7 +202,7 @@ struct FdeRecord {
 
   i64 size(ObjectFile<E> &file) const;
   std::string_view get_contents(ObjectFile<E> &file) const;
-  std::span<const ElfRel<E>> get_rels(ObjectFile<E> &file) const;
+  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
 
   u32 input_offset = -1;
   u32 output_offset = -1;
@@ -250,8 +250,6 @@ struct InputSectionExtras<ARM64> {
 template <>
 struct InputSectionExtras<RISCV64> {
   std::vector<i32> r_deltas;
-  std::vector<Symbol<RISCV64> *> sorted_symbols;
-  std::vector<ElfRel<RISCV64>> sorted_rels;
 };
 
 // InputSection represents a section in an input object file.
@@ -274,7 +272,7 @@ public:
   u64 get_addr() const;
   i64 get_addend(const ElfRel<E> &rel) const;
   const ElfShdr<E> &shdr() const;
-  std::span<const ElfRel<E>> get_rels(Context<E> &ctx) const;
+  std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset);
 
@@ -1993,9 +1991,9 @@ inline std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
 }
 
 template <typename E>
-inline std::span<const ElfRel<E>>
+inline std::span<ElfRel<E>>
 FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
-  std::span<const ElfRel<E>> rels = file.cies[cie_idx].rels;
+  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
   i64 end = rel_idx;
   while (end < rels.size() && rels[end].r_offset < input_offset + size(file))
     end++;
@@ -2149,12 +2147,9 @@ inline const ElfShdr<E> &InputSection<E>::shdr() const {
 }
 
 template <typename E>
-inline std::span<const ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
+inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
-  if constexpr (std::is_same_v<E, RISCV64>)
-    if (!extra.sorted_rels.empty())
-      return extra.sorted_rels;
   return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
 }
 
