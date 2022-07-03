@@ -944,7 +944,7 @@ template <typename E>
 void ExportSection<E>::compute_size(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     for (Symbol<E> *sym : file->syms)
-      if (sym && sym->file == file & sym->scope == SCOPE_EXTERN)
+      if (sym && sym->file == file && sym->scope == SCOPE_EXTERN)
         enc.entries.push_back({
             sym->name,
             sym->is_weak ? EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION : 0,

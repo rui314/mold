@@ -1,6 +1,5 @@
 #include "mold.h"
 #include "../archive-file.h"
-#include "../cmdline.h"
 #include "../output-file.h"
 #include "../sha.h"
 
@@ -349,8 +348,6 @@ static void merge_cstring_sections(Context<E> &ctx) {
 
   // Decide who will become the owner for each subsection.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    ObjectFile<E> *file = ctx.objs[i];
-
     for (i64 j = 0; j < vec[i].size(); j++) {
       SubsecRef &ref = vec[i][j];
       if (ref.ent->owner != &ref.subsec) {
