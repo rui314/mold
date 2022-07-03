@@ -542,8 +542,8 @@ protected:
     }
 
     segment_table_allocator_type my_segment_table_allocator;
-    std::atomic<segment_table_type> my_segment_table;
     atomic_segment my_embedded_table[pointers_per_embedded_table];
+    std::atomic<segment_table_type> my_segment_table;
     // Number of segments in first block
     std::atomic<size_type> my_first_block;
     // Number of elements in table
