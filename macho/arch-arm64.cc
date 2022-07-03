@@ -82,49 +82,6 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-static Relocation<E>
-read_reloc(Context<E> &ctx, ObjectFile<E> &file,
-           const MachSection &hdr, MachRel *rels, i64 &idx) {
-  i64 addend = 0;
-
-  switch (rels[idx].type) {
-  case ARM64_RELOC_UNSIGNED:
-  case ARM64_RELOC_SUBTRACTOR:
-    switch (MachRel &r = rels[idx]; r.p2size) {
-    case 2:
-      addend = *(il32 *)((u8 *)file.mf->data + hdr.offset + r.offset);
-      break;
-    case 3:
-      addend = *(il64 *)((u8 *)file.mf->data + hdr.offset + r.offset);
-      break;
-    default:
-      unreachable();
-    }
-    break;
-  case ARM64_RELOC_ADDEND:
-    addend = rels[idx++].idx;
-    break;
-  }
-
-  MachRel &r = rels[idx];
-  Relocation<E> rel{r.offset, (u8)r.type, (u8)r.p2size, (bool)r.is_pcrel};
-
-  if (r.is_extern) {
-    rel.sym = file.syms[r.idx];
-    rel.addend = addend;
-    return rel;
-  }
-
-  u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
-  Subsection<E> *target = file.find_subsection(ctx, addr);
-  if (!target)
-    Fatal(ctx) << file << ": bad relocation: " << r.offset;
-
-  rel.subsec = target;
-  rel.addend = addr - target->input_addr;
-  return rel;
-}
-
 template <>
 std::vector<Relocation<E>>
 read_relocations(Context<E> &ctx, ObjectFile<E> &file,
@@ -133,8 +90,56 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
   vec.reserve(hdr.nreloc);
 
   MachRel *rels = (MachRel *)(file.mf->data + hdr.reloff);
-  for (i64 i = 0; i < hdr.nreloc; i++)
-    vec.push_back(read_reloc(ctx, file, hdr, rels, i));
+
+  for (i64 i = 0; i < hdr.nreloc; i++) {
+    i64 addend = 0;
+
+    switch (rels[i].type) {
+    case ARM64_RELOC_UNSIGNED:
+    case ARM64_RELOC_SUBTRACTOR:
+      switch (MachRel &r = rels[i]; r.p2size) {
+      case 2:
+        addend = *(il32 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+        break;
+      case 3:
+        addend = *(il64 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+        break;
+      default:
+        unreachable();
+      }
+      break;
+    case ARM64_RELOC_ADDEND:
+      addend = rels[i++].idx;
+      break;
+    }
+
+    MachRel &r = rels[i];
+    vec.push_back({r.offset, (u8)r.type, (u8)r.p2size});
+
+    Relocation<E> &rel = vec.back();
+
+    if (rels[i].type == ARM64_RELOC_SUBTRACTOR ||
+        (i > 0 && rels[i - 1].type == ARM64_RELOC_SUBTRACTOR)) {
+      rel.is_pcrel = false;
+    } else {
+      rel.is_pcrel = r.is_pcrel;
+    }
+
+    if (r.is_extern) {
+      rel.sym = file.syms[r.idx];
+      rel.addend = addend;
+      continue;
+    }
+
+    u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
+    Subsection<E> *target = file.find_subsection(ctx, addr);
+    if (!target)
+      Fatal(ctx) << file << ": bad relocation: " << r.offset;
+
+    rel.subsec = target;
+    rel.addend = addr - target->input_addr;
+  }
+
   return vec;
 }
 
