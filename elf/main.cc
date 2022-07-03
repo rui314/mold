@@ -509,6 +509,9 @@ static int elf_main(int argc, char **argv) {
       if (file->needs_executable_stack)
         ctx.arg.z_execstack = true;
 
+  if (!ctx.arg.allow_shlib_undefined)
+    report_shlib_undefined(ctx);
+
   // If we are linking a .so file, remaining undefined symbols does
   // not cause a linker error. Instead, they are treated as if they
   // were imported symbols.

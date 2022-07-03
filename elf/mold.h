@@ -1064,6 +1064,8 @@ public:
   std::span<Symbol<E> *> get_global_syms();
   std::string_view get_source_name() const;
 
+  void report_undef(Context<E> &ctx, const Symbol<E> &sym) const;
+
   MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
@@ -1195,6 +1197,7 @@ public:
 
   void compute_symtab(Context<E> &ctx);
   void write_symtab(Context<E> &ctx);
+  void report_undefs(Context<E> &ctx);
 
   bool is_needed = false;
   std::string soname;
@@ -1312,6 +1315,7 @@ template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
+template <typename E> void report_shlib_undefined(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
@@ -1473,6 +1477,7 @@ struct Context {
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
+    bool allow_shlib_undefined;
     bool color_diagnostics = false;
     bool default_symver = false;
     bool demangle = true;
