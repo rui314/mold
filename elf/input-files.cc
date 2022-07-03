@@ -500,8 +500,7 @@ template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, RISCV64>) {
     auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
-      return a.r_type != E::R_NONE && b.r_type != E::R_NONE &&
-             a.r_offset < b.r_offset;
+      return a.r_offset < b.r_offset;
     };
 
     for (i64 i = 1; i < sections.size(); i++) {
