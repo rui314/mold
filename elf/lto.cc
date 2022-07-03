@@ -620,7 +620,6 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
       return;
 
     for (i64 i = file->first_global; i < file->symbols.size(); i++) {
-      ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
       if (sym.file && !sym.file->is_dso &&
