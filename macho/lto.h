@@ -62,9 +62,9 @@ struct LTOPlugin {
   void *dlopen_handle = nullptr;
   ~LTOPlugin();
 
-  const char (*get_version)();
+  char (*get_version)();
 
-  const char (*get_error_message)();
+  char (*get_error_message)();
 
   bool (*module_is_object_file)(const char *path);
 

@@ -20,8 +20,8 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-class ARM64;
-class X86_64;
+struct ARM64;
+struct X86_64;
 
 template <typename E>
 std::string rel_to_string(u8 r_type);
