@@ -508,7 +508,6 @@ private:
 class MultiGlob {
 public:
   bool add(std::string_view pat, u32 val);
-  void compile();
   bool empty() const { return strings.empty(); }
   std::optional<u32> find(std::string_view str);
 
@@ -519,6 +518,7 @@ private:
     std::unique_ptr<TrieNode> children[256];
   };
 
+  void compile();
   void fix_suffix_links(TrieNode &node);
   void fix_values();
 
@@ -526,7 +526,8 @@ private:
   std::unique_ptr<TrieNode> root;
   std::vector<std::pair<Glob, u32>> globs;
   std::vector<u32> values;
-  bool compiled = false;
+  std::once_flag once;
+  bool is_compiled = false;
 };
 
 //

@@ -1079,9 +1079,6 @@ void apply_version_script(Context<E> &ctx) {
     }
   }
 
-  matcher.compile();
-  cpp_matcher.compile();
-
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
       if (sym->file != file)

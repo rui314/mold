@@ -25,7 +25,7 @@
 namespace mold {
 
 std::optional<u32> MultiGlob::find(std::string_view str) {
-  assert(compiled);
+  std::call_once(once, [&] { compile(); });
   u32 idx = UINT32_MAX;
 
   if (root) {
@@ -83,7 +83,7 @@ static std::string handle_stars(std::string_view pat) {
 }
 
 bool MultiGlob::add(std::string_view pat, u32 val) {
-  assert(!compiled);
+  assert(!is_compiled);
   assert(!pat.empty());
 
   u32 idx = strings.size();
@@ -115,9 +115,7 @@ bool MultiGlob::add(std::string_view pat, u32 val) {
 }
 
 void MultiGlob::compile() {
-  assert(!compiled);
-  compiled = true;
-
+  is_compiled = true;
   if (root) {
     fix_suffix_links(*root);
     fix_values();

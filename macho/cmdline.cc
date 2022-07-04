@@ -535,9 +535,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.uuid == UUID_RANDOM)
     memcpy(ctx.uuid, get_uuid_v4().data(), 16);
 
-  ctx.arg.exported_symbols_list.compile();
-  ctx.arg.unexported_symbols_list.compile();
-
   return remaining;
 }
 
