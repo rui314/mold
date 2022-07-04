@@ -23,7 +23,7 @@ endif
 STRIP = strip
 
 SRCS = $(wildcard *.cc elf/*.cc macho/*.cc)
-OBJS = $(SRCS:%.cc=out/%.o)
+OBJS = $(SRCS:%.cc=out/%.o) out/rust-demangle.o
 
 OS := $(shell uname -s)
 ARCH := $(shell uname -m)
@@ -39,7 +39,7 @@ CFLAGS = -O2
 CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
-                 -fno-asynchronous-unwind-tables -Ithird-party/xxhash \
+                 -fno-asynchronous-unwind-tables -Ithird-party \
                  -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
 MOLD_LDFLAGS := -pthread -lz -lm -ldl
@@ -131,6 +131,9 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
 
 mold-wrapper.so: elf/mold-wrapper.c
 	$(CC) $(DEPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
+
+out/rust-demangle.o: third-party/rust-demangle/rust-demangle.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 out/%.o: %.cc out/elf/.keep out/macho/.keep
 	$(CXX) $(MOLD_CXXFLAGS) $(DEPFLAGS) $(CXXFLAGS) -c -o $@ $<
