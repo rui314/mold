@@ -1092,8 +1092,9 @@ void apply_version_script(Context<E> &ctx) {
       }
 
       if (!cpp_matcher.empty())
-        if (std::optional<u16> ver = cpp_matcher.find(demangle(name)))
-          sym->ver_idx = *ver;
+        if (std::optional<std::string_view> s = cpp_demangle(name))
+          if (std::optional<u16> ver = cpp_matcher.find(*s))
+            sym->ver_idx = *ver;
     }
   });
 }

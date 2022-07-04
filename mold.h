@@ -554,6 +554,7 @@ std::filesystem::path to_abs_path(std::filesystem::path path);
 //
 
 std::string_view demangle(std::string_view name);
+std::optional<std::string_view> cpp_demangle(std::string_view name);
 
 //
 // compress.cc
