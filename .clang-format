@@ -1,0 +1,4 @@
+# Attempt to mimic the Rust official style.
+BasedOnStyle: LLVM
+IndentWidth: 4
+AlignAfterOpenBracket: BlockIndent

@@ -1,0 +1,17 @@
+[package]
+name = "rust-demangle-c-test-harness"
+version = "0.0.0"
+license = "MIT OR Apache-2.0"
+edition = "2021"
+publish = false
+
+# Tests go into `tests/`, not in `src/`.
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+rustc-demangle = "0.1.21"
+
+[build-dependencies]
+cc = "1.0"
