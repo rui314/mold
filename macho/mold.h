@@ -873,6 +873,7 @@ struct Context {
     i64 stack_size = 0;
     i64 thread_count = 0;
     std::string chroot;
+    std::string dependency_info;
     std::string final_output;
     std::string install_name;
     std::string lto_library;
@@ -902,6 +903,7 @@ struct Context {
   bool weak_l = false;
   bool reexport_l = false;
   std::unordered_set<std::string_view> loaded_archives;
+  std::set<std::string> missing_files; // for -dependency_info
 
   u8 uuid[16] = {};
   bool has_error = false;

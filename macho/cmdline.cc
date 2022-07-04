@@ -340,6 +340,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-demangle")) {
       ctx.arg.demangle = true;
     } else if (read_arg("-dependency_info")) {
+      ctx.arg.dependency_info = arg;
     } else if (read_flag("-dylib")) {
       ctx.output_type = MH_DYLIB;
     } else if (read_hex("-headerpad")) {

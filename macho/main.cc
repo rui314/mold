@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <fcntl.h>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sys/mman.h>
@@ -604,6 +605,7 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
         std::string path = dir + "/lib" + name + e;
         if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path))
           return mf;
+        ctx.missing_files.insert(path);
       }
     }
     return nullptr;
@@ -817,6 +819,36 @@ static void parse_object_files(Context<E> &ctx) {
 }
 
 template <typename E>
+static void write_dependency_info(Context<E> &ctx) {
+  static constexpr u8 LINKER_VERSION = 0;
+  static constexpr u8 INPUT_FILE = 0x10;
+  static constexpr u8 NOT_FOUND_FILE = 0x11;
+  static constexpr u8 OUTPUT_FILE = 0x40;
+
+  std::ofstream out;
+  out.open(std::string(ctx.arg.dependency_info).c_str());
+  if (!out.is_open())
+    Fatal(ctx) << "cannot open " << ctx.arg.dependency_info
+               << ": " << errno_string();
+
+  out << LINKER_VERSION << mold_version << '\0';
+
+  std::set<std::string_view> input_files;
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool)
+    if (!mf->parent)
+      input_files.insert(mf->name);
+
+  for (std::string_view s : input_files)
+    out << INPUT_FILE << s << '\0';
+
+  for (std::string_view s : ctx.missing_files)
+    out << NOT_FOUND_FILE << s << '\0';
+
+  out << OUTPUT_FILE << ctx.arg.output << '\0';
+  out.close();
+}
+
+template <typename E>
 static void print_stats(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
     static Counter subsections("num_subsections");
@@ -938,6 +970,10 @@ static int do_main(int argc, char **argv) {
     compute_uuid(ctx);
 
   ctx.output_file->close(ctx);
+
+  if (!ctx.arg.dependency_info.empty())
+    write_dependency_info(ctx);
+
   ctx.checkpoint();
   t.stop();
 
