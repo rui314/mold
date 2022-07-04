@@ -132,6 +132,7 @@ void Subsection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (r.type) {
     case X86_64_RELOC_UNSIGNED:
+    case X86_64_RELOC_SUBTRACTOR:
       if (sym->is_imported) {
         if (r.p2size != 3) {
           Error(ctx) << this->isec << ": " << r << " relocation at offset 0x"
@@ -157,13 +158,16 @@ void Subsection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
-  for (const Relocation<E> &r : get_rels()) {
+  std::span<Relocation<E>> rels = get_rels();
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    Relocation<E> &r = rels[i];
+    u64 val = r.addend;
+
     if (r.sym && !r.sym->file) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }
-
-    u64 val = r.addend;
 
     switch (r.type) {
     case X86_64_RELOC_UNSIGNED:
@@ -174,6 +178,15 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     case X86_64_RELOC_SIGNED_4:
       val += r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
       break;
+    case X86_64_RELOC_SUBTRACTOR: {
+      Relocation<E> s = rels[++i];
+      assert(s.type == X86_64_RELOC_UNSIGNED);
+      assert(r.p2size == s.p2size);
+      u64 val1 = r.sym ? r.sym->get_addr(ctx) : r.subsec->get_addr(ctx);
+      u64 val2 = s.sym ? s.sym->get_addr(ctx) : s.subsec->get_addr(ctx);
+      val += val2 - val1;
+      break;
+    }
     case X86_64_RELOC_GOT:
     case X86_64_RELOC_GOT_LOAD:
       val += r.sym->get_got_addr(ctx);
