@@ -781,7 +781,8 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   // An object file can contain linker directives to load other object
   // files or libraries, so process them if any.
-  for (ObjectFile<E> *file : ctx.objs) {
+  for (i64 i = 0; i < ctx.objs.size(); i++) {
+    ObjectFile<E> *file = ctx.objs[i];
     std::vector<std::string> opts = file->get_linker_options(ctx);
 
     for (i64 j = 0; j < opts.size();) {
