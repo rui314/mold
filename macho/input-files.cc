@@ -430,12 +430,15 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
 
     switch (r.offset % sizeof(CompactUnwindEntry)) {
     case offsetof(CompactUnwindEntry, code_start): {
+      Subsection<E> *target;
       if (r.is_extern)
-        error();
+        target = sym_to_subsec[r.idx];
+      else
+        target = find_subsection(ctx, src[idx].code_start);
 
-      Subsection<E> *target = find_subsection(ctx, src[idx].code_start);
       if (!target)
         error();
+
       dst.subsec = target;
       dst.offset = src[idx].code_start - target->input_addr;
       break;
@@ -446,19 +449,24 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       } else {
         u32 addr = *(ul32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
         dst.personality = find_symbol(ctx, addr);
-        if (!dst.personality)
-          Fatal(ctx) << *this << ": __compact_unwind: unsupported local "
-                     << "personality reference: " << i;
       }
+
+      if (!dst.personality)
+        Fatal(ctx) << *this << ": __compact_unwind: unsupported "
+                   << "personality reference: " << i;
       break;
     case offsetof(CompactUnwindEntry, lsda): {
-      if (r.is_extern)
-        error();
-
       u32 addr = *(ul32 *)((u8 *)this->mf->data + hdr.offset + r.offset);
-      Subsection<E> *target = find_subsection(ctx, addr);
+
+      Subsection<E> *target;
+      if (r.is_extern)
+        target = sym_to_subsec[r.idx];
+      else
+        target = find_subsection(ctx, addr);
+
       if (!target)
         error();
+
       dst.lsda = target;
       dst.lsda_offset = addr - target->input_addr;
       break;
