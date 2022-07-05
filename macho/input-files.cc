@@ -139,21 +139,8 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
       sym.scope = SCOPE_LOCAL;
       sym.is_common = false;
       sym.is_weak = false;
-
-      switch (msym.type) {
-      case N_UNDF:
-        Fatal(ctx) << sym << ": local undef symbol?";
-      case N_ABS:
+      if (msym.type == N_ABS)
         sym.value = msym.value;
-        break;
-      case N_SECT:
-        // `value` and `subsec` will be filled by split_subsections
-        break;
-      default:
-        Fatal(ctx) << *this << ": unknown symbol type for "
-                   << sym << ": " << (u64)msym.type;
-      }
-
       this->syms.push_back(&sym);
     }
   }
