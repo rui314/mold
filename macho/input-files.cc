@@ -343,15 +343,22 @@ std::vector<std::string> ObjectFile<E>::get_linker_options(Context<E> &ctx) {
   if (get_file_type(this->mf) == FileType::LLVM_BITCODE)
     return {};
 
-  auto *cmd = (LinkerOptionCommand *)find_load_command(ctx, LC_LINKER_OPTION);
-  if (!cmd)
-    return {};
-
-  char *buf = (char *)cmd + sizeof(*cmd);
+  MachHeader &hdr = *(MachHeader *)this->mf->data;
+  u8 *p = this->mf->data + sizeof(hdr);
   std::vector<std::string> vec;
-  for (i64 i = 0; i < cmd->count; i++) {
-    vec.push_back(buf);
-    buf += vec.back().size() + 1;
+
+  for (i64 i = 0; i < hdr.ncmds; i++) {
+    LoadCommand &lc = *(LoadCommand *)p;
+    p += lc.cmdsize;
+
+    if (lc.cmd == LC_LINKER_OPTION) {
+      LinkerOptionCommand *cmd = (LinkerOptionCommand *)&lc;
+      char *buf = (char *)cmd + sizeof(*cmd);
+      for (i64 i = 0; i < cmd->count; i++) {
+        vec.push_back(buf);
+        buf += vec.back().size() + 1;
+      }
+    }
   }
   return vec;
 }
