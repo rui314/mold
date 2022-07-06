@@ -666,7 +666,8 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
       if (chunk->is_output_section && !chunk->hdr.match("__TEXT", "__eh_frame"))
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
-            if (!rel.is_pcrel && rel.type == E::abs_rel && !refers_tls(rel.sym))
+            if (!rel.is_pcrel && !rel.is_subtracted && rel.type == E::abs_rel &&
+                !refers_tls(rel.sym))
               enc.add(seg->seg_idx,
                       subsec->get_addr(ctx) + rel.offset - seg->cmd.vmaddr);
 

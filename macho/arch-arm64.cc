@@ -118,12 +118,11 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
 
     Relocation<E> &rel = vec.back();
 
-    if (rels[i].type == ARM64_RELOC_SUBTRACTOR ||
-        (i > 0 && rels[i - 1].type == ARM64_RELOC_SUBTRACTOR)) {
-      rel.is_pcrel = false;
-    } else {
+    if (i > 0 && rels[i - 1].type == ARM64_RELOC_SUBTRACTOR)
+      rel.is_subtracted = true;
+
+    if (!rel.is_subtracted && rels[i].type != ARM64_RELOC_SUBTRACTOR)
       rel.is_pcrel = r.is_pcrel;
-    }
 
     if (r.is_extern) {
       rel.sym = file.syms[r.idx];
