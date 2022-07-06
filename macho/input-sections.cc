@@ -3,11 +3,20 @@
 namespace mold::macho {
 
 template <typename E>
+OutputSection<E> &get_output_section(Context<E> &ctx, const MachSection &hdr) {
+  std::string_view seg = hdr.get_segname();
+  std::string_view sect = hdr.get_sectname();
+
+  if (seg == "__DATA" && sect == "__const")
+    seg = "__DATA_CONST";
+
+  return *OutputSection<E>::get_instance(ctx, seg, sect);
+}
+
+template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
                               const MachSection &hdr)
-  : file(file), hdr(hdr),
-    osec(*OutputSection<E>::get_instance(ctx, hdr.get_segname(),
-                                         hdr.get_sectname())) {
+  : file(file), hdr(hdr), osec(get_output_section(ctx, hdr)) {
   if (hdr.type != S_ZEROFILL)
     contents = file.mf->get_contents().substr(hdr.offset, hdr.size);
 }

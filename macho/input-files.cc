@@ -607,6 +607,7 @@ bool ObjectFile<E>::is_objc_object(Context<E> &ctx) {
     if (!mach_syms[i].is_undef() && mach_syms[i].is_extern &&
         this->syms[i]->name.starts_with("_OBJC_CLASS_$_"))
       return true;
+
   return false;
 }
 
