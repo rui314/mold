@@ -599,8 +599,9 @@ bool ObjectFile<E>::is_objc_object(Context<E> &ctx) {
   for (std::unique_ptr<InputSection<E>> &isec : sections)
     if (isec)
       if (isec->hdr.match("__DATA", "__objc_catlist") ||
-          isec->hdr.match("__TEXT", "__swift"))
-      return true;
+          (isec->hdr.get_segname() == "__TEXT" &&
+           isec->hdr.get_sectname().starts_with("__swift")))
+        return true;
 
   for (i64 i = 0; i < this->syms.size(); i++)
     if (!mach_syms[i].is_undef() && mach_syms[i].is_extern &&
