@@ -1198,10 +1198,14 @@ public:
   void compute_symtab(Context<E> &ctx);
   void write_symtab(Context<E> &ctx);
   void report_undefs(Context<E> &ctx);
+  void load_needed(Context<E> &ctx);
 
   bool is_needed = false;
   std::string soname;
+  std::vector<std::string> expanded_paths;
+  std::vector<std::string_view> runpath;
   std::vector<std::string_view> version_strings;
+  std::vector<SharedFile<E> *> needed;
   std::vector<ElfSym<E>> elf_syms2;
 
 private:
@@ -1600,6 +1604,8 @@ struct Context {
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
   FileCache<E, ObjectFile<E>> obj_cache;
   FileCache<E, SharedFile<E>> dso_cache;
+
+  tbb::concurrent_hash_map<std::string_view, SharedFile<E> *, HashCmp> needed_dso;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;

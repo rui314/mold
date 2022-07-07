@@ -42,6 +42,20 @@ echo $output | grep -Eq 'undefined symbol: fn2'
 
 $CC -B. -o $t/b $t/b.c -Wl,--allow-shlib-undefined $t/liba.so
 
+cat <<'EOF' | $CC -shared -fPIC -o $t/libfn2.so -xc -
+void fn2() {}
+EOF
+
+# DSO with an undefined symbol that is defined in one of its dependencies
+cat <<'EOF' | $CC -shared -Wl,-rpath,"\$ORIGIN/" -fPIC -o $t/libfn.so -L$(realpath $t) -Wl,--no-as-needed -lfn2 -xc -
+void fn2();
+void fn1() { fn2(); }
+void fn3() {}
+EOF
+
+# works because `fn2` is defined in `libfn2.so` which is NEEDED by `libfn.so`
+$CC -B. -o $t/b $t/b.c -L$(realpath $t) $t/libfn.so
+
 # DSO with an undefined symbol that is not referenced
 cat <<'EOF' | $CC -shared -fPIC -o $t/liba2.so -xc -
 void fn2();

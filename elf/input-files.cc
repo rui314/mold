@@ -1,6 +1,7 @@
 #include "mold.h"
 
 #include <cstring>
+#include <filesystem>
 #include <regex>
 #include <unistd.h>
 
@@ -1311,6 +1312,26 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 }
 
 template <typename E>
+MappedFile<Context<E>> *find_dynamic_library(Context<E> &ctx,
+                                             std::string lib,
+                                             const std::vector<std::string_view> &runpath) {
+  // `lib` here is something like `libfoo.so`
+  auto try_open = [&ctx](std::string_view dir, const std::string &lib) {
+    std::string path = std::string(dir) + "/" + lib;
+    return open_library(ctx, path);
+  };
+
+  for (std::string_view dir : runpath)
+    if (MappedFile<Context<E>> *mf = try_open(dir, lib))
+      return mf;
+
+  for (std::string_view dir : ctx.arg.library_paths)
+    if (MappedFile<Context<E>> *mf = try_open(dir, lib))
+      return mf;
+  return nullptr;
+}
+
+template <typename E>
 SharedFile<E> *
 SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   SharedFile<E> *obj = new SharedFile(ctx, mf);
@@ -1526,6 +1547,66 @@ void SharedFile<E>::write_symtab(Context<E> &ctx) {
   }
 }
 
+// try to expand $ORIGIN
+std::optional<std::string> expand_origin(std::string_view path, std::string origin) {
+  static std::string ORIGIN = "$ORIGIN";
+  if (size_t pos = path.find(ORIGIN); pos != path.npos) {
+    auto new_path = std::string(path);
+    new_path.replace(pos, ORIGIN.size(), origin);
+    return {new_path};
+  }
+  return {};
+}
+
+template <typename E>
+void SharedFile<E>::load_needed(Context<E> &ctx) {
+  using std::filesystem::path;
+
+  // prepare $ORIGIN
+  path file(this->filename);
+  file = std::filesystem::canonical(file);
+  std::string origin = file.parent_path().string();
+
+  auto try_expand = [&origin, this](std::string_view &path) {
+    if (std::optional<std::string> new_path = expand_origin(path, origin)) {
+      expanded_paths.push_back(*new_path);
+      path = std::string_view(expanded_paths.back());
+    }
+  };
+
+  if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC)) {
+    // first we want to find out the RUNPATH, so that we can look up our
+    // NEEDED libraries. We ignore RPATH since RUNPATH is preferred
+    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+      if (dyn.d_tag == DT_RUNPATH) {
+        std::string_view runpath = this->symbol_strtab.data() + dyn.d_val;
+        for (size_t pos = runpath.find(":"); pos != runpath.npos; pos = runpath.find(":")) {
+          std::string_view path = runpath.substr(0, pos);
+          try_expand(path);
+          this->runpath.push_back(path);
+          runpath = runpath.substr(pos + 1);
+        }
+        try_expand(runpath);
+        this->runpath.push_back(runpath);
+      }
+    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+      if (dyn.d_tag == DT_NEEDED) {
+        std::string_view dso_name = this->symbol_strtab.data() + dyn.d_val;
+        typename decltype(ctx.needed_dso)::const_accessor acc;
+        if (!ctx.needed_dso.find(acc, dso_name)) {
+          MappedFile<Context<E>> *lib = find_dynamic_library(ctx, std::string(dso_name), runpath);
+          if (!lib)
+            continue;
+          auto file = SharedFile<E>::create(ctx, lib);
+          file->parse(ctx);
+          ctx.needed_dso.insert(acc, {dso_name, file});
+          needed.push_back(file);
+        } else
+          needed.push_back(acc->second);
+      }
+  }
+}
+
 template <typename E>
 void SharedFile<E>::report_undefs(Context<E> &ctx) {
   assert(!ctx.arg.allow_shlib_undefined);
@@ -1534,8 +1615,24 @@ void SharedFile<E>::report_undefs(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
-    if (esym.is_undef_strong() && !sym.file)
-      this->report_undef(ctx, sym);
+    if (esym.is_undef_strong() && !sym.file) {
+      // try to find the symbol in the needed DSOs of this DSO
+      this->load_needed(ctx);
+      bool found_def = false;
+      for (i64 dso_index = 0; !found_def && dso_index < needed.size(); ++dso_index) {
+        SharedFile<E> *dso = needed[dso_index];
+        for (i64 j = dso->first_global; j < dso->elf_syms.size(); j++) {
+          ElfSym<E> &dso_esym = dso->elf_syms[j];
+          Symbol<E> &dso_sym = *dso->symbols[j];
+          if (dso_sym.name() == sym.name() && !dso_esym.is_undef_strong()) {
+            found_def = true;
+            break;
+          }
+        }
+      }
+      if (!found_def)
+        this->report_undef(ctx, sym);
+    }
   }
 }
 
