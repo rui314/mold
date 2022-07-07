@@ -243,6 +243,7 @@ public:
 
   std::atomic_uint8_t p2align = 0;
   std::atomic_bool is_alive = true;
+  bool is_cstring : 1 = false;
   bool is_coalesced : 1 = false;
   bool added_to_osec : 1 = false;
 };
@@ -821,11 +822,9 @@ struct Context {
     text = OutputSection<E>::get_instance(*this, "__TEXT", "__text");
     data = OutputSection<E>::get_instance(*this, "__DATA", "__data");
     bss = OutputSection<E>::get_instance(*this, "__DATA", "__bss");
-    cstring = OutputSection<E>::get_instance(*this, "__TEXT", "__cstring");
     common = OutputSection<E>::get_instance(*this, "__DATA", "__common");
 
     bss->hdr.type = S_ZEROFILL;
-    cstring->hdr.type = S_CSTRING_LITERALS;
     common->hdr.type = S_ZEROFILL;
   }
 
@@ -959,7 +958,6 @@ struct Context {
   OutputSection<E> *text = nullptr;
   OutputSection<E> *data = nullptr;
   OutputSection<E> *bss = nullptr;
-  OutputSection<E> *cstring = nullptr;
   OutputSection<E> *common = nullptr;
 };
 

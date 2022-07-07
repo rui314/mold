@@ -166,7 +166,7 @@ split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
 
   for (i64 i = 0; i < file.sections.size(); i++)
     if (InputSection<E> *isec = file.sections[i].get())
-      if (!isec->hdr.match("__TEXT", "__cstring"))
+      if (isec->hdr.type != S_CSTRING_LITERALS)
         vec[i].isec = isec;
 
   // Find all symbols whose type is N_SECT.
@@ -226,12 +226,14 @@ template <typename E>
 void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
   sym_to_subsec.resize(mach_syms.size());
 
-  auto add = [&](InputSection<E> &isec, u32 offset, u32 size, u8 p2align) {
+  auto add = [&](InputSection<E> &isec, u32 offset, u32 size, u8 p2align,
+                 bool is_cstring) {
     Subsection<E> *subsec = new Subsection<E>{
       .isec = isec,
       .input_offset = offset,
       .input_size = size,
       .input_addr = (u32)(isec.hdr.addr + offset),
+      .is_cstring = is_cstring,
       .p2align = p2align,
     };
 
@@ -244,7 +246,7 @@ void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
     InputSection<E> &isec = *info.isec;
     for (SplitRegion &r : info.regions) {
       if (!r.is_alt_entry)
-        add(isec, r.offset, r.size, isec.hdr.p2align);
+        add(isec, r.offset, r.size, isec.hdr.p2align, false);
       if (r.symidx != -1)
         sym_to_subsec[r.symidx] = subsections.back();
     }
@@ -252,14 +254,14 @@ void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
 
   // Split __cstring section.
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
-    if (isec && isec->hdr.match("__TEXT", "__cstring")) {
+    if (isec && isec->hdr.type == S_CSTRING_LITERALS) {
       std::string_view str = isec->contents;
       size_t pos = 0;
 
       while (pos < str.size()) {
         size_t end = str.find('\0', pos);
         if (end == str.npos)
-          Fatal(ctx) << *this << " corruupted __TEXT,__cstring";
+          Fatal(ctx) << *this << " corruupted cstring section: " << *isec;
 
         end = str.find_first_not_of('\0', end);
         if (end == str.npos)
@@ -268,7 +270,7 @@ void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
         // A constant string in __cstring has no alignment info, so we
         // need to infer it.
         u8 p2align = std::min<u8>(isec->hdr.p2align, std::countr_zero(pos));
-        add(*isec, pos, end - pos, p2align);
+        add(*isec, pos, end - pos, p2align, true);
         pos = end;
       }
     }
@@ -422,7 +424,8 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
     UnwindRecord<E> &dst = unwind_records[idx];
 
     auto error = [&] {
-      Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i;
+      Fatal(ctx) << *this << ": __compact_unwind: unsupported relocation: " << i
+                 << " " << *this->syms[r.idx];
     };
 
     if (r.is_pcrel || r.p2size != 3 || r.type)
