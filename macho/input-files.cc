@@ -233,8 +233,8 @@ void ObjectFile<E>::split_subsections_via_symbols(Context<E> &ctx) {
       .input_offset = offset,
       .input_size = size,
       .input_addr = (u32)(isec.hdr.addr + offset),
-      .is_cstring = is_cstring,
       .p2align = p2align,
+      .is_cstring = is_cstring,
     };
 
     subsec_pool.emplace_back(subsec);
