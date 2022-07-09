@@ -161,7 +161,7 @@ large.
 </details>
 
 <details><summary>Verify that you are using mold</summary>
-
+<h3>Linux</h3>
 mold leaves its identification string in `.comment` section in an output
 file. You can print it out to verify that you are actually using mold.
 
@@ -174,6 +174,33 @@ String dump of section '.comment':
 ```
 
 If `mold` is in `.comment`, the file is created by mold.
+
+<h3>MocOS</h3>
+mold leaves its identification in an output file as its build version information. You can print it out to verify that you are actually using mold.
+
+```shell
+$ vtool -show-build <executable-file>
+```
+
+The output of the file looks like this.
+```
+Load command 9
+      cmd LC_BUILD_VERSION
+  cmdsize 32
+ platform MACOS
+    minos 12.0
+      sdk 12.3
+   ntools 1
+     tool 1836018788
+  version 1.3.1
+```
+(1836018788 == 0x6D6F6C64 == "mold")
+
+If you use the standard ld, the tool and version look like this.
+```
+     tool LD
+  version 764.0
+```
 
 </details>
 
