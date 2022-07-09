@@ -13,6 +13,9 @@ cd "$(dirname "$0")"/../..
 t=out/test/elf/$testname
 mkdir -p $t
 
+echo 'int main() {}' | $CC -flto -o /dev/null -xc - >& /dev/null \
+  || { echo skipped; exit; }
+
 cat <<EOF | $CC -flto -c -fPIC -o $t/a.o -xc -
 void foo() {}
 EOF

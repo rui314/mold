@@ -15,6 +15,9 @@ mkdir -p $t
 
 [ "$CC" = cc ] || { echo skipped; exit; }
 
+echo 'int main() {}' | $CC -flto -o /dev/null -xc - >& /dev/null \
+  || { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -flto -xc -
 #include <stdio.h>
 void hello() {
