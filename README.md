@@ -175,7 +175,7 @@ String dump of section '.comment':
 
 If `mold` is in `.comment`, the file is created by mold.
 
-<h3>MacOS</h3>
+<h3>macOS</h3>
 mold leaves its identification in an output file as its build version information. You can print it out to verify that you are actually using mold.
 
 ```shell
