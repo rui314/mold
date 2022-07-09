@@ -289,9 +289,10 @@ struct Symbol {
   std::atomic_uint8_t flags = 0;
 
   u8 scope : 2 = SCOPE_LOCAL;
+  bool is_imported : 1 = false;
   bool is_common : 1 = false;
   bool is_weak : 1 = false;
-  bool is_imported : 1 = false;
+  bool no_dead_strip : 1 = false;
   bool referenced_dynamically : 1 = false;
 
   // For range extension thunks

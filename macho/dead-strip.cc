@@ -16,8 +16,14 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
   if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
     for (ObjectFile<E> *file : ctx.objs)
       for (Symbol<E> *sym : file->syms)
-        if (sym->file == file && sym->scope == SCOPE_EXTERN)
-          mark(sym);
+        if (sym->file == file)
+          if (sym->scope == SCOPE_EXTERN || sym->no_dead_strip)
+            mark(sym);
+
+  for (ObjectFile<E> *file : ctx.objs)
+    for (Subsection<E> *subsec : file->subsections)
+      if (subsec->isec.hdr.attr & S_ATTR_NO_DEAD_STRIP)
+        rootset.push_back(subsec);
 
   return rootset;
 }

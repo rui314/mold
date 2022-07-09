@@ -21,6 +21,7 @@ void InputFile<E>::clear_symbols() {
       sym->scope = SCOPE_LOCAL;
       sym->is_imported = false;
       sym->is_weak = false;
+      sym->no_dead_strip = false;
       sym->subsec = nullptr;
       sym->value = 0;
       sym->is_common = false;
@@ -572,6 +573,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.file = this;
       sym.is_imported = false;
       sym.is_weak = is_weak;
+      sym.no_dead_strip = (msym.desc & N_NO_DEAD_STRIP);
 
       switch (msym.type) {
       case N_UNDF:
@@ -662,6 +664,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
 
       sym.is_imported = false;
       sym.is_weak = false;
+      sym.no_dead_strip = (msym.desc & N_NO_DEAD_STRIP);
       sym.subsec = subsec;
       sym.value = 0;
       sym.is_common = false;
@@ -920,6 +923,7 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.scope = SCOPE_LOCAL;
       sym.is_imported = true;
       sym.is_weak = (this->is_weak || is_weak_symbol[i]);
+      sym.no_dead_strip = false;
       sym.subsec = nullptr;
       sym.value = 0;
       sym.is_common = false;
