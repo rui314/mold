@@ -39,7 +39,8 @@ grep -q mold $t/log
 ./mold -run /usr/bin/ld.gold --version | grep -q mold
 
 rm -f $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
-touch $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
+touch $t/ld $t/ld.lld $t/ld.gold
+echo "#!/bin/sh" >$t/foo.ld
 chmod 755 $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
 
 ./mold -run $t/ld --version | grep -q mold
