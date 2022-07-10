@@ -548,8 +548,8 @@ void sort_arm_exidx(Context<E> &ctx) {
   // 3. a 31-bit relative address which points to a larger record in
   //    the .ARM.extab section.
   //
-  // CANTUNWIND is value 1. The most significant is set in (2) but not
-  // in (3). So they can be distinguished just by looking at a value.
+  // CANTUNWIND is value 1. The most significant bit is set in (2) but
+  // not in (3). So we can distinguished them just by looking at a value.
   struct Entry {
     ul32 addr;
     ul32 val;
