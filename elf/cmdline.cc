@@ -317,28 +317,6 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
   return get_symbol(ctx, s);
 }
 
-// Returns a PLT header size and a PLT entry size.
-template <typename E>
-static std::pair<i64, i64> get_plt_size(Context<E> &ctx) {
-  if constexpr (std::is_same_v<E, X86_64>) {
-    if (ctx.arg.z_now)
-      return {0, 8};
-    if (ctx.arg.z_ibtplt)
-      return {32, 16};
-    return {16, 16};
-  }
-
-  if constexpr (std::is_same_v<E, I386>)
-    return {16, 16};
-  if constexpr (std::is_same_v<E, ARM64>)
-    return {32, 16};
-  if constexpr (std::is_same_v<E, ARM32>)
-    return {32, 16};
-  if constexpr (std::is_same_v<E, RISCV64>)
-    return {32, 16};
-  unreachable();
-}
-
 template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::span<std::string_view> args = ctx.cmdline_args;
@@ -717,9 +695,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_interpose = true;
     } else if (read_z_flag("ibt")) {
       ctx.arg.z_ibt = true;
-      ctx.arg.z_ibtplt = true;
     } else if (read_z_flag("ibtplt")) {
-      ctx.arg.z_ibtplt = true;
     } else if (read_z_flag("muldefs")) {
       ctx.arg.allow_multiple_definition = true;
     } else if (read_z_flag("keep-text-section-prefix")) {
@@ -1045,8 +1021,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.shared && warn_shared_textrel)
     ctx.arg.warn_textrel = true;
-
-  std::tie(ctx.plt_hdr_size, ctx.plt_size) = get_plt_size(ctx);
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 

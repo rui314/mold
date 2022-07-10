@@ -4,38 +4,22 @@ namespace mold::elf {
 
 using E = X86_64;
 
-// The compact PLT format is used when `-z now` is given. If the flag
-// is given, all PLT symbols are resolved eagerly on startup, so we
-// can omit code for lazy symbol resolution from PLT in that case.
-static void write_compact_plt(Context<E> &ctx) {
-  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
-
-  static const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-    0x66, 0x90,             // nop
-  };
-
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    u8 *ent = buf + sym->get_plt_idx(ctx) * ctx.plt_size;
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
-  }
-}
-
-// The IBTPLT is a security-enhanced version of the regular PLT.
-// It uses Indirect Branch Tracking (IBT) feature which is part of
-// Intel Control-Flow Enforcement (CET).
+// This is a security-enhanced version of the regular PLT. The PLT
+// header and each PLT entry starts with endbr64 for the Intel's
+// control-flow enforcement security mechanism.
 //
-// Note that our IBTPLT instruction sequence is different from the one
-// used in GNU ld. GNU's IBTPLT implementation uses two separate
-// sections (.plt and .plt.sec) in which one PLT entry takes 32 bytes
-// in total. Our PLT consists of just .plt and each entry is 16 bytes
-// long.
+// Note that our IBT-enabled PLT instruction sequence is different
+// from the one used in GNU ld. GNU's IBTPLT implementation uses two
+// separate sections (.plt and .plt.sec) in which one PLT entry takes
+// 32 bytes in total. Our IBTPLT consists of just .plt and each entry
+// is 16 bytes long.
 //
-// Our PLT entry clobbers r11, but that's fine because the resolver
-// function (_dl_runtime_resolve) does not preserve r11 anyway.
-static void write_ibtplt(Context<E> &ctx) {
-  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+// Our PLT entry clobbers %r11, but that's fine because the resolver
+// function (_dl_runtime_resolve) clobbers %r11 anyway.
+template <>
+void PltSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  memset(buf, 0xcc, this->shdr.sh_size);
 
   // Write PLT header
   static const u8 plt0[] = {
@@ -43,15 +27,11 @@ static void write_ibtplt(Context<E> &ctx) {
     0x41, 0x53,             // push %r11
     0xff, 0x35, 0, 0, 0, 0, // push GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
-    0x0f, 0x1f, 0x40, 0x00, // nop
-    0x0f, 0x1f, 0x40, 0x00, // nop
-    0x0f, 0x1f, 0x40, 0x00, // nop
-    0x66, 0x90,             // nop
   };
 
   memcpy(buf, plt0, sizeof(plt0));
-  *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 4;
-  *(ul32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 2;
+  *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 4;
+  *(ul32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 2;
 
   // Write PLT entries
   i64 relplt_idx = 0;
@@ -62,70 +42,28 @@ static void write_ibtplt(Context<E> &ctx) {
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
   };
 
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
+  for (Symbol<E> *sym : symbols) {
+    u8 *ent = buf + E::plt_hdr_size + sym->get_plt_idx(ctx) * E::plt_size;
     memcpy(ent, data, sizeof(data));
     *(ul32 *)(ent + 6) = relplt_idx++;
     *(ul32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 16;
   }
 }
 
-// The regular PLT.
-static void write_plt(Context<E> &ctx) {
-  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
-
-  // Write PLT header
-  static const u8 plt0[] = {
-    0xff, 0x35, 0, 0, 0, 0, // pushq GOTPLT+8(%rip)
-    0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
-    0x0f, 0x1f, 0x40, 0x00, // nop
-  };
-
-  memcpy(buf, plt0, sizeof(plt0));
-  *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 2;
-  *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4;
-
-  // Write PLT entries
-  i64 relplt_idx = 0;
-
-  static const u8 data[] = {
-    0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOTPLT
-    0x68, 0,    0, 0, 0,    // push  $index_in_relplt
-    0xe9, 0,    0, 0, 0,    // jmp   PLT[0]
-  };
-
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    u8 *ent = buf + ctx.plt_hdr_size + sym->get_plt_idx(ctx) * ctx.plt_size;
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 2) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 6;
-    *(ul32 *)(ent + 7) = relplt_idx++;
-    *(ul32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym->get_plt_addr(ctx) - 16;
-  }
-}
-
-template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  if (ctx.arg.z_now)
-    write_compact_plt(ctx);
-  else if (ctx.arg.z_ibtplt)
-    write_ibtplt(ctx);
-  else
-    write_plt(ctx);
-}
-
 template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
+  memset(buf, 0xcc, this->shdr.sh_size);
 
   static const u8 data[] = {
+    0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-    0x66, 0x90,             // nop
   };
 
   for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
     memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 2) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 6;
+    *(ul32 *)(ent + 6) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 10;
   }
 }
 

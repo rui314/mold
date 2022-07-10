@@ -106,8 +106,8 @@ static void write_plt_header(Context<E> &ctx) {
 }
 
 static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
-  u8 *ent = ctx.buf + ctx.plt->shdr.sh_offset + ctx.plt_hdr_size +
-            sym.get_plt_idx(ctx) * ctx.plt_size;
+  u8 *ent = ctx.buf + ctx.plt->shdr.sh_offset + E::plt_hdr_size +
+            sym.get_plt_idx(ctx) * E::plt_size;
 
   static const u32 data[] = {
     0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)

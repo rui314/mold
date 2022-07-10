@@ -36,6 +36,6 @@ EOF
 
 $OBJDUMP -d -j .plt.got $t/exe > $t/log
 
-grep -Eq '1020:.*jmp.* <ext2>' $t/log
+grep -Eq '1034:.*jmp.* <ext2>' $t/log
 
 echo OK

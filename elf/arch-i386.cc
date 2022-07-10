@@ -28,7 +28,7 @@ static void write_plt_header(Context<E> &ctx, u8 *buf) {
 
 static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym,
                             i64 idx) {
-  u8 *ent = buf + ctx.plt_hdr_size + sym.get_plt_idx(ctx) * ctx.plt_size;
+  u8 *ent = buf + E::plt_hdr_size + sym.get_plt_idx(ctx) * E::plt_size;
 
   if (ctx.arg.pic) {
     static const u8 data[] = {
