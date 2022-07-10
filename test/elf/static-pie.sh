@@ -14,8 +14,7 @@ t=out/test/elf/$testname
 mkdir -p $t
 
 # We need to implement R_386_GOT32X relaxation to support PIE on i386
-[ $MACHINE = i386 ] && { echo skipped; exit; }
-[ $MACHINE = i686 ] && { echo skipped; exit; }
+[ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
 
 [ $MACHINE = aarch64 ] && { echo skipped; exit; }
 
