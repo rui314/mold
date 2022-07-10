@@ -569,14 +569,14 @@ void sort_arm_exidx(Context<E> &ctx) {
   // beginning of the section. We then sort the records and then
   // translate them back to be relative to each record.
 
-  auto is_relative = [](Entry &ent) {
-    return ent.val != EXIDX_CANTUNWIND && !(ent.val & 0x8000'0000);
+  auto is_relative = [](u32 val) {
+    return val != EXIDX_CANTUNWIND && !(val & 0x8000'0000);
   };
 
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
     ent[i].addr = sign_extend(ent[i].addr, 30) - offset;
-    if (is_relative(ent[i]))
+    if (is_relative(ent[i].val))
       ent[i].val = 0x7fff'ffff & (sign_extend(ent[i].val, 30) - offset);
   });
 
@@ -588,7 +588,7 @@ void sort_arm_exidx(Context<E> &ctx) {
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
     ent[i].addr = 0x7fff'ffff & (ent[i].addr + offset);
-    if (is_relative(ent[i]))
+    if (is_relative(ent[i].val))
       ent[i].val = 0x7fff'ffff & (ent[i].val + offset);
   });
 }
