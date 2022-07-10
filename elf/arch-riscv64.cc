@@ -679,7 +679,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
     const ElfRel<E> &r = rels[i];
     i64 delta2 = 0;
 
-    isec.extra.r_deltas[i] += delta;
+    isec.extra.r_deltas[i] = delta;
 
     switch (r.r_type) {
     case R_RISCV_ALIGN: {
@@ -725,7 +725,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
 
   for (Symbol<E> *sym : syms)
     sym->value += delta;
-  isec.extra.r_deltas[rels.size()] += delta;
+  isec.extra.r_deltas[rels.size()] = delta;
 
   isec.sh_size += delta;
 }
