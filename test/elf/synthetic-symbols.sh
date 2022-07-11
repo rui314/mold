@@ -29,6 +29,7 @@ cat <<EOF | $CC -c -o $t/b.o -xc -
 
 extern char __ehdr_start[];
 extern char __executable_start[];
+extern char __dso_handle[];
 extern char _end[];
 extern char end[];
 extern char _etext[];
@@ -48,6 +49,7 @@ int main() {
 
   printf("__ehdr_start=%p\n", &__ehdr_start);
   printf("__executable_start=%p\n", &__executable_start);
+  printf("__dso_handle=%p\n", &__dso_handle);
   printf("%.*s\n", (int)(__stop_foo - __start_foo), __start_foo);
 }
 EOF
@@ -69,6 +71,7 @@ cat <<EOF | $CC -c -o $t/c.o -xc -
 
 char __ehdr_start[] = "foo";
 char __executable_start[] = "foo";
+char __dso_handle[] = "foo";
 char _end[] = "foo";
 char end[] = "foo";
 char _etext[] = "foo";
@@ -92,6 +95,7 @@ int main() {
 
   printf("__ehdr_start=%p\n", &__ehdr_start);
   printf("__executable_start=%p\n", &__executable_start);
+  printf("__dso_handle=%p\n", &__dso_handle);
   printf("%.*s\n", (int)(__stop_foo - __start_foo), __start_foo);
 }
 EOF
@@ -104,6 +108,7 @@ grep -q '^etext=foo$' $t/log
 grep -q '^edata=foo$' $t/log
 grep -q '^__ehdr_start=0x40000$' $t/log
 grep -q '^__executable_start=0x40000$' $t/log
+grep -q '^__dso_handle=0x40000$' $t/log
 grep -q '^section foo$' $t/log
 
 echo OK

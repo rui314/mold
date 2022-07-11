@@ -1687,6 +1687,7 @@ struct Context {
   Symbol<E> *_TLS_MODULE_BASE_ = nullptr;
   Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
   Symbol<E> *__bss_start = nullptr;
+  Symbol<E> *__dso_handle = nullptr;
   Symbol<E> *__ehdr_start = nullptr;
   Symbol<E> *__executable_start = nullptr;
   Symbol<E> *__exidx_end = nullptr;
