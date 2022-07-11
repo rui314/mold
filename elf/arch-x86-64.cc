@@ -34,8 +34,6 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   *(ul32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 2;
 
   // Write PLT entries
-  i64 relplt_idx = 0;
-
   static const u8 data[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
@@ -43,9 +41,10 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + E::plt_hdr_size + sym->get_plt_idx(ctx) * E::plt_size;
+    i64 idx = sym->get_plt_idx(ctx);
+    u8 *ent = buf + E::plt_hdr_size + idx * E::plt_size;
     memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 6) = relplt_idx++;
+    *(ul32 *)(ent + 6) = idx;
     *(ul32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 16;
   }
 }
