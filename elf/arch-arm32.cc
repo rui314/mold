@@ -136,7 +136,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_ARM_NONE)
+    if (rel.r_type == R_ARM_NONE || rel.r_type == R_ARM_V4BX)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -455,6 +455,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_TLS_LDO32:
     case R_ARM_TLS_LE32:
     case R_ARM_THM_TLS_CALL:
+    case R_ARM_V4BX:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
