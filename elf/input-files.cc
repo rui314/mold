@@ -1117,9 +1117,9 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
 // definition, the tentative definition gets the default initial value 0.
 //
 // Tentative definitions are represented as "common symbols" in an object
-// file. In this function, we allocate spaces in .bss for remaining common
-// symbols that were not resolved to usual defined symbols in previous
-// passes.
+// file. In this function, we allocate spaces in .common or .tls_common
+// for remaining common symbols that were not resolved to usual defined
+// symbols in previous passes.
 template <typename E>
 void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
   if (!has_common_symbol)
