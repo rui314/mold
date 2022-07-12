@@ -10,6 +10,9 @@ INSTALL = install
 INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA = $(INSTALL) -m 644
 
+OS := $(shell uname -s)
+ARCH := $(shell uname -m)
+
 ifeq ($(OS), Darwin)
   TESTS := $(wildcard test/macho/*.sh)
 else
@@ -30,9 +33,6 @@ STRIP = strip
 
 SRCS = $(wildcard *.cc elf/*.cc macho/*.cc)
 OBJS = $(SRCS:%.cc=out/%.o) out/rust-demangle.o
-
-OS := $(shell uname -s)
-ARCH := $(shell uname -m)
 
 IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
