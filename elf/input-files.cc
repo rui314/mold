@@ -751,31 +751,29 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::fill_addrsig(Context<E> &ctx) {
+  // Parse a .llvm_addrsig section.
   if (llvm_addrsig) {
-    const u8 *start = reinterpret_cast<const u8 *>(llvm_addrsig->contents.data());
-    const u8 *end = start + llvm_addrsig->contents.size();
-    const u8 *cur = start;
+    u8 *cur = (u8 *)llvm_addrsig->contents.data();
+    u8 *end = cur + llvm_addrsig->contents.size();
+
     while (cur != end) {
-      u64 symIndex = read_uleb(cur);
-      if (this->symbols[symIndex]->file != this) continue;
-      InputSection<E> *section = this->symbols[symIndex]->get_input_section();
-      if (section)
-        section->address_significant = true;
+      Symbol<E> &sym = *this->symbols[read_uleb(cur)];
+      if (sym.file == this)
+        if (InputSection<E> *isec = sym.get_input_section())
+          isec->address_significant = true;
     }
   }
 
-  for (Symbol<E> *sym : this->symbols) {
-    if (sym->file != this) continue;
-    InputSection<E> *section = sym->get_input_section();
-    if (
-        section &&
-            (!llvm_addrsig // We don't have address significance information and needs to be safe
-                || (sym->is_imported || sym->is_exported)) // The symbol might be referenced from the
-                                                           // outside in an address-significant manner
-        ) {
-      section->address_significant = true;
-    }
-  }
+  // We treat a symbol's address as significant if
+  //
+  // 1. we have no address significance information for the symbol, or
+  // 2. the symbol could be referenced from the outside in an address-
+  //    significant manner.
+  for (Symbol<E> *sym : this->symbols)
+    if (sym->file == this)
+      if (InputSection<E> *isec = sym->get_input_section())
+        if (!llvm_addrsig || sym->is_imported || sym->is_exported)
+          isec->address_significant = true;
 }
 
 template <typename E>
