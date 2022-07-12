@@ -974,7 +974,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     }
   }
 
-  // Remove redundant `/..` or `/.` from library paths.
+  // Clean library paths by removing redundant `/..` and `/.`
+  // so that they are easier to read in log messages.
   for (std::string &path : ctx.arg.library_paths)
     path = path_clean(path);
 
