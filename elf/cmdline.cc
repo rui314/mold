@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../cmdline.h"
 
+#include <regex>
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -201,11 +202,13 @@ static std::vector<std::string> add_dashes(std::string name) {
 
 template <typename E>
 static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
-  if (value.starts_with("0x") || value.starts_with("0X"))
-    value = value.substr(2);
-  if (value.find_first_not_of("0123456789abcdefABCDEF") != value.npos)
+  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re(R"((?:0x|0X)?([0-9a-fA-F]+))", flags);
+
+  std::cmatch m;
+  if (!std::regex_match(value.begin(), value.end(), m, re))
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
-  return std::stoul(std::string(value), nullptr, 16);
+  return std::stoul(m[1], nullptr, 16);
 }
 
 template <typename E>
@@ -227,13 +230,11 @@ static i64 parse_number(Context<E> &ctx, std::string opt,
 }
 
 template <typename E>
-static std::vector<u8> parse_hex_build_id(Context<E> &ctx,
-                                          std::string_view arg) {
-  assert(arg.starts_with("0x") || arg.starts_with("0X"));
+static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg) {
+  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re(R"(0[xX]([0-9a-fA-F][0-9a-fA-F])+)", flags);
 
-  if (arg.size() % 2)
-    Fatal(ctx) << "invalid build-id: " << arg;
-  if (arg.substr(2).find_first_not_of("0123456789abcdefABCDEF") != arg.npos)
+  if (!std::regex_match(arg.begin(), arg.end(), re))
     Fatal(ctx) << "invalid build-id: " << arg;
 
   arg = arg.substr(2);
@@ -247,9 +248,9 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx,
     return c - 'A' + 10;
   };
 
-  std::vector<u8> vec(arg.size() / 2);
-  for (i64 i = 0; i < vec.size(); i++)
-    vec[i] = (fn(arg[i * 2]) << 4) | fn(arg[i * 2 + 1]);
+  std::vector<u8> vec;
+  for (i64 i = 0; i < arg.size(); i += 2)
+    vec.push_back((fn(arg[i]) << 4) | fn(arg[i + 1]));
   return vec;
 }
 
