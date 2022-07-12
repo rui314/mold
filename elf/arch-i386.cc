@@ -4,6 +4,10 @@ namespace mold::elf {
 
 using E = I386;
 
+// Emitting position-independent code (PIC) for i386 is a bit tricky
+// because i386 doesn't support PC-relative memory access instructions.
+// By default, i386 executables are not PIC. If PIC, %ebx is used to
+// store the location of .got and access all data with offsets from .got.
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 plt0[] = {
