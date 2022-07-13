@@ -1240,7 +1240,7 @@ void ObjcImageInfoSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
-  std::string filename = filepath(ctx.arg.final_output).filename();
+  std::string filename = filepath(ctx.arg.final_output).filename().string();
   i64 filename_size = align_to(filename.size() + 1, 16);
   i64 num_blocks = align_to(this->hdr.offset, E::page_size) / E::page_size;
   this->hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
@@ -1260,7 +1260,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
   memset(buf, 0, this->hdr.size);
 
-  std::string filename = filepath(ctx.arg.final_output).filename();
+  std::string filename = filepath(ctx.arg.final_output).filename().string();
   i64 filename_size = align_to(filename.size() + 1, 16);
   i64 num_blocks = align_to(this->hdr.offset, E::page_size) / E::page_size;
 

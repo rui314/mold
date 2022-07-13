@@ -152,7 +152,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
       R"(\$ld\$previous\$([^$]+)\$([\d.]*)\$(\d+)\$([\d.]+)\$([\d.]+)\$(.*)\$)",
       flags);
 
-    if (std::regex_match(s.begin(), s.end(), m, previous_re)) {
+    if (std::regex_match(s.data(), s.data() + s.size(), m, previous_re)) {
       std::string_view install_name = string_view(m[1]);
       i64 platform = std::stoi(m[3].str());
       i64 min_version = parse_version(m[4]);
@@ -179,7 +179,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
     // matches.
     static std::regex add_re(R"(\$ld\$add\$os([\d.]+)\$(.+))", flags);
 
-    if (std::regex_match(s.begin(), s.end(), m, add_re)) {
+    if (std::regex_match(s.data(), s.data() + s.size(), m, add_re)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
         syms.insert(string_view(m[2]));
       continue;
@@ -189,7 +189,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
     // matches.
     static std::regex hidden_re(R"(\$ld\$hide\$os([\d.]+)\$(.+))", flags);
 
-    if (std::regex_match(s.begin(), s.end(), m, hidden_re)) {
+    if (std::regex_match(s.data(), s.data() + s.size(), m, hidden_re)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
         hidden_syms.insert(string_view(m[2]));
       continue;
@@ -200,7 +200,7 @@ static void interpret_ld_symbols(Context<E> &ctx, TextDylib &tbd) {
     static std::regex
       install_name_re(R"(\$ld\$install_name\$os([\d.]+)\$(.+))", flags);
 
-    if (std::regex_match(s.begin(), s.end(), m, install_name_re)) {
+    if (std::regex_match(s.data(), s.data() + s.size(), m, install_name_re)) {
       if (ctx.arg.platform_min_version == parse_version(m[1]))
         tbd.install_name = string_view(m[2]);
       continue;
