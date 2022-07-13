@@ -32,6 +32,9 @@ std::optional<std::string_view> cpp_demangle(std::string_view name) {
   static thread_local char *buf;
   static thread_local size_t buflen;
 
+  // TODO(cwasser): Actually demangle Symbols on Windows using e.g.
+  // `UnDecorateSymbolName` from Dbghelp, maybe even Itanium symbols?
+  #ifndef _WIN32
   if (name.starts_with("_Z")) {
     int status;
     char *p = abi::__cxa_demangle(std::string(name).c_str(), buf, &buflen, &status);
@@ -40,6 +43,8 @@ std::optional<std::string_view> cpp_demangle(std::string_view name) {
       return p;
     }
   }
+  #endif
+
   return {};
 }
 
