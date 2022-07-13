@@ -904,6 +904,7 @@ static std::vector<T> encode_relr(const std::vector<T> &pos) {
 
   for (i64 i = 0; i < pos.size();) {
     assert(i == 0 || pos[i - 1] <= pos[i]);
+    assert(pos[i] % sizeof(T) == 0);
 
     vec.push_back(pos[i]);
     u64 base = pos[i] + sizeof(T);
