@@ -1304,7 +1304,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   auto compute_hash = [&](i64 i) {
     u8 *start = ctx.buf + i * E::page_size;
     u8 *end = ctx.buf + std::min<i64>((i + 1) * E::page_size, this->hdr.offset);
-    SHA256(start, end - start, buf + i * SHA256_SIZE);
+    sha256_hash(start, end - start, buf + i * SHA256_SIZE);
   };
 
   for (i64 i = 0; i < num_blocks; i += 1024) {
@@ -1322,7 +1322,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   // entire file. We compute its value as a tree hash.
   if (ctx.arg.uuid == UUID_HASH) {
     u8 uuid[SHA256_SIZE];
-    SHA256(ctx.buf + this->hdr.offset, this->hdr.size, uuid);
+    sha256_hash(ctx.buf + this->hdr.offset, this->hdr.size, uuid);
 
     // Indicate that this is UUIDv4 as defined by RFC4122.
     uuid[6] = (uuid[6] & 0b00001111) | 0b01010000;
