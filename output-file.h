@@ -2,9 +2,12 @@
 
 #include <fcntl.h>
 #include <filesystem>
+
+#ifndef _WIN32
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#endif
 
 namespace mold {
 

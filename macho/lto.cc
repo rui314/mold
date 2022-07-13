@@ -3,7 +3,10 @@
 
 #include <algorithm>
 #include <cstdio>
+
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 namespace mold::macho {
 

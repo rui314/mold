@@ -2,11 +2,14 @@
 #include "../sha.h"
 
 #include <shared_mutex>
-#include <sys/mman.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 
 namespace mold::macho {
 

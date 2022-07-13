@@ -83,11 +83,14 @@
 
 #include <cstdarg>
 #include <cstring>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <sstream>
 #include <tbb/parallel_for_each.h>
+
+#ifndef _WIN32
+#include <dlfcn.h>
 #include <unistd.h>
+#endif
 
 #if 0
 # define LOG std::cerr

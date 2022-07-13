@@ -1,14 +1,17 @@
 #define _GNU_SOURCE 1
 
-#include <alloca.h>
-#include <dlfcn.h>
-#include <spawn.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef _WIN32
+#include <alloca.h>
+#include <dlfcn.h>
+#include <spawn.h>
 #include <unistd.h>
+#endif
 
 extern char **environ;
 

@@ -25,11 +25,14 @@
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
 #include <type_traits>
-#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
 #include <vector>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 // MOLD_DEBUG_{X86_64,ARM64}_ONLY are macros to speed up builds.
 // This should be used only for debugging. When you use this flag,

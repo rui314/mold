@@ -2,7 +2,10 @@
 
 #include <cstring>
 #include <regex>
+
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 namespace mold::elf {
 

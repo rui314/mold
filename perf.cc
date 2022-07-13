@@ -3,8 +3,11 @@
 #include <functional>
 #include <iomanip>
 #include <ios>
+
+#ifndef _WIN32
 #include <sys/resource.h>
 #include <sys/time.h>
+#endif
 
 namespace mold {
 

@@ -1,7 +1,10 @@
 #include "mold.h"
 
 #include <cstdlib>
+
+#ifndef _WIN32
 #include <cxxabi.h>
+#endif
 
 #include "third-party/rust-demangle/rust-demangle.h"
 

@@ -3,10 +3,13 @@
 
 #include <cctype>
 #include <shared_mutex>
-#include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 
 namespace mold::elf {
 

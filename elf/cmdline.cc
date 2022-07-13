@@ -5,8 +5,11 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <unordered_set>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace mold::elf {
 

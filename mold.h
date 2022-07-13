@@ -18,13 +18,17 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
-#include <unistd.h>
 #include <vector>
+
+#ifdef _WIN32
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
