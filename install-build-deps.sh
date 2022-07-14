@@ -29,6 +29,9 @@ opensuse-tumbleweed*)
 gentoo*)
   emerge dev-vcs/git dev-util/cmake sys-libs/zlib
   ;;
+arch*)
+ pacman -S base-devel zlib openssl cmake util-linux git
+ ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID $VERSION_ID"
   exit 1
