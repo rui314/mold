@@ -142,3 +142,29 @@ target_sources(mold PRIVATE
     macho/tapi.cc
     macho/yaml.cc
     third-party/rust-demangle/rust-demangle.c)
+
+if(NOT CMAKE_SKIP_INSTALL_RULES)
+    install(TARGETS mold)
+    install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
+    install(CODE "\
+        file(REAL_PATH \${CMAKE_INSTALL_PREFIX} INSTALL_PREFIX)
+        file(RELATIVE_PATH\
+            REL_SYMLINK\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/mold\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold)\n\
+        execute_process(\
+            COMMAND ${CMAKE_COMMAND} -E make_directory\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold)\n\
+        execute_process(\
+            COMMAND ${CMAKE_COMMAND} -E create_symlink\
+            \${REL_SYMLINK}\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)\n\
+        execute_process(\
+            COMMAND ${CMAKE_COMMAND} -E create_symlink\
+            mold\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld.mold)\n\
+        execute_process(\
+            COMMAND ${CMAKE_COMMAND} -E create_symlink\
+            mold\
+            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)")
+endif()
