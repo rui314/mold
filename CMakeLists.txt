@@ -143,6 +143,34 @@ target_sources(mold PRIVATE
     macho/yaml.cc
     third-party/rust-demangle/rust-demangle.c)
 
+include(CTest)
+
+if(BUILD_TESTING)
+    # Create the ld and ld64 symlinks required for testing
+    add_custom_command(
+        TARGET mold POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Creating ld symlink"
+        VERBATIM)
+    add_custom_command(
+        TARGET mold POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Creating ld64 symlink"
+        VERBATIM)
+    add_subdirectory(test)
+
+    include(ProcessorCount)
+    ProcessorCount(MOLD_NPROC)
+    add_custom_target(
+        check
+        COMMAND "${CMAKE_COMMAND}" --build "${mold_BINARY_DIR}" --config "\$<CONFIG>" -j "${MOLD_NPROC}"
+        COMMAND "${CMAKE_CTEST_COMMAND}" -C "\$<CONFIG>" -j "${MOLD_NPROC}"
+        VERBATIM
+        USES_TERMINAL)
+endif()
+
 if(NOT CMAKE_SKIP_INSTALL_RULES)
     install(TARGETS mold)
     install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
