@@ -6,12 +6,12 @@ source /etc/os-release
 # The second line installs extra packages for `make test`.
 
 case "$ID$VERSION_ID" in
-ubuntu20.04)
-  apt install -y git cmake libssl-dev zlib1g-dev gcc g++ g++-10
+ubuntu20.*)
+  apt-get install -y git cmake libssl-dev zlib1g-dev gcc g++ g++-10
   apt-get install -y file bsdmainutils
   ;;
-ubuntu22.04 | debian11)
-  apt install -y git cmake libssl-dev zlib1g-dev gcc g++
+ubuntu22.* | debian11)
+  apt-get install -y git cmake libssl-dev zlib1g-dev gcc g++
   apt-get install -y file bsdmainutils
   ;;
 fedora*)
@@ -30,8 +30,8 @@ gentoo*)
   emerge dev-vcs/git dev-util/cmake sys-libs/zlib
   ;;
 arch*)
- pacman -S base-devel zlib openssl cmake util-linux git
- ;;
+  pacman -S base-devel zlib openssl cmake util-linux git
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID $VERSION_ID"
   exit 1
