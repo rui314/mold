@@ -22,7 +22,10 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
 
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
-      if (subsec->isec.hdr.attr & S_ATTR_NO_DEAD_STRIP)
+      if (const MachSection &hdr = subsec->isec.hdr;
+          (hdr.attr & S_ATTR_NO_DEAD_STRIP) ||
+          hdr.type == S_MOD_INIT_FUNC_POINTERS ||
+          hdr.type == S_MOD_TERM_FUNC_POINTERS)
         rootset.push_back(subsec);
 
   return rootset;
