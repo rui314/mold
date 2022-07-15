@@ -884,9 +884,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("format") || read_arg("b")) {
       if (arg == "binary")
         Fatal(ctx)
-          << "mold does not suppor `-b binary`. If you want to convert a binary"
-          << " file into an object file, use `objcopy -I binary -O default"
-          << " <input-file> <output-file.o>` instead.";
+          << "mold does not support `-b binary`. If you want to convert a"
+          << " binary file into an object file, use `objcopy -I binary -O"
+          << " default <input-file> <output-file.o>` instead.";
       Fatal(ctx) << "unknown command line option: -b " << arg;
     } else if (read_arg("auxiliary") || read_arg("f")) {
       ctx.arg.auxiliary.push_back(arg);
