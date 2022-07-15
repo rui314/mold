@@ -929,6 +929,7 @@ struct Context {
 
   std::vector<ObjectFile<E> *> objs;
   std::vector<DylibFile<E> *> dylibs;
+  ObjectFile<E> *internal_obj = nullptr;
 
   OutputSegment<E> *text_seg = nullptr;
   OutputSegment<E> *data_const_seg = nullptr;

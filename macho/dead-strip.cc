@@ -17,7 +17,8 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
     for (ObjectFile<E> *file : ctx.objs)
       for (Symbol<E> *sym : file->syms)
         if (sym->file == file)
-          if (sym->scope == SCOPE_EXTERN || sym->no_dead_strip)
+          if (sym->scope == SCOPE_EXTERN || sym->no_dead_strip ||
+              sym->referenced_dynamically)
             mark(sym);
 
   for (ObjectFile<E> *file : ctx.objs)
@@ -28,6 +29,11 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
           hdr.type == S_MOD_TERM_FUNC_POINTERS)
         rootset.push_back(subsec);
 
+  for (std::string_view name : ctx.arg.u)
+    if (Symbol<E> *sym = get_symbol(ctx, name); sym->file)
+      mark(sym);
+
+  mark(get_symbol(ctx, "dyld_stub_binder"));
   return rootset;
 }
 
@@ -58,7 +64,7 @@ template <typename E>
 static bool refers_live_subsection(Subsection<E> &subsec) {
   for (Relocation<E> &rel : subsec.get_rels()) {
     if (rel.sym) {
-      if (!rel.sym->subsec || rel.sym->subsec->is_alive)
+      if (rel.sym->subsec && rel.sym->subsec->is_alive)
         return true;
     } else {
       if (rel.subsec->is_alive)
@@ -101,7 +107,7 @@ static void sweep(Context<E> &ctx) {
         sym = nullptr;
 
   for (ObjectFile<E> *file : ctx.objs) {
-    std::erase_if(file->subsections, [](const Subsection<E> *subsec) {
+    std::erase_if(file->subsections, [](Subsection<E> *subsec) {
       return !subsec->is_alive;
     });
   }

@@ -114,6 +114,7 @@ static void create_internal_file(Context<E> &ctx) {
   obj->mach_syms = obj->mach_syms2;
   ctx.obj_pool.emplace_back(obj);
   ctx.objs.push_back(obj);
+  ctx.internal_obj = obj;
 
   auto add = [&](std::string_view name) {
     Symbol<E> *sym = get_symbol(ctx, name);
@@ -143,6 +144,27 @@ static void create_internal_file(Context<E> &ctx) {
   }
 
   add("___dso_handle");
+
+  // Add start stop symbols.
+  std::set<std::string_view> start_stop_symbols;
+  std::mutex mu;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    std::set<std::string_view> set;
+    for (Symbol<E> *sym : file->syms)
+      if (!sym->file)
+        if (sym->name.starts_with("segment$start$") ||
+            sym->name.starts_with("segment$end$") ||
+            sym->name.starts_with("section$start$") ||
+            sym->name.starts_with("section$end$"))
+          set.insert(sym->name);
+
+    std::scoped_lock lock(mu);
+    start_stop_symbols.merge(set);
+  });
+
+  for (std::string_view name : start_stop_symbols)
+    add(name);
 }
 
 // Remove unreferenced subsections to eliminate code and data
@@ -531,6 +553,54 @@ static void fix_synthetic_symbol_values(Context<E> &ctx) {
   get_symbol(ctx, "__mh_dylib_header")->value = ctx.data->hdr.addr;
   get_symbol(ctx, "__mh_bundle_header")->value = ctx.data->hdr.addr;
   get_symbol(ctx, "___dso_handle")->value = ctx.data->hdr.addr;
+
+  auto find_segment = [&](std::string_view name) -> SegmentCommand * {
+    for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+      if (seg->cmd.get_segname() == name)
+        return &seg->cmd;
+    return nullptr;
+  };
+
+  auto find_section = [&](std::string_view name) -> MachSection * {
+    size_t pos = name.find('$');
+    if (pos == name.npos)
+      return nullptr;
+
+    std::string_view segname = name.substr(0, pos);
+    std::string_view sectname = name.substr(pos + 1);
+
+    for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
+      for (Chunk<E> *chunk : seg->chunks)
+        if (chunk->hdr.match(segname, sectname))
+          return &chunk->hdr;
+    return nullptr;
+  };
+
+  for (Symbol<E> *sym : ctx.internal_obj->syms) {
+    if (std::string_view s = "segment$start$"; sym->name.starts_with(s)) {
+      sym->value = ctx.text->hdr.addr;
+      if (SegmentCommand *cmd = find_segment(sym->name.substr(s.size())))
+        sym->value = cmd->vmaddr;
+    }
+
+    if (std::string_view s = "segment$end$"; sym->name.starts_with(s)) {
+      sym->value = ctx.text->hdr.addr;
+      if (SegmentCommand *cmd = find_segment(sym->name.substr(s.size())))
+        sym->value = cmd->vmaddr + cmd->vmsize;
+    }
+
+    if (std::string_view s = "section$start$"; sym->name.starts_with(s)) {
+      sym->value = ctx.text->hdr.addr;
+      if (MachSection *hdr = find_section(sym->name.substr(s.size())))
+        sym->value = hdr->addr;
+    }
+
+    if (std::string_view s = "section$end$"; sym->name.starts_with(s)) {
+      sym->value = ctx.text->hdr.addr;
+      if (MachSection *hdr = find_section(sym->name.substr(s.size())))
+        sym->value = hdr->addr + hdr->size;
+    }
+  }
 }
 
 template <typename E>
