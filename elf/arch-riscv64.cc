@@ -285,19 +285,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = S + A - P;
       }
       break;
-    case R_RISCV_PCREL_LO12_I:
-      assert(sym.get_input_section() == this);
-      assert(sym.value < r_offset);
-      write_itype(loc, *(ul32 *)(base + sym.value));
-      break;
     case R_RISCV_LO12_I:
     case R_RISCV_TPREL_LO12_I:
       write_itype(loc, S + A);
-      break;
-    case R_RISCV_PCREL_LO12_S:
-      assert(sym.get_input_section() == this);
-      assert(sym.value < r_offset);
-      write_stype(loc, *(ul32 *)(base + sym.value));
       break;
     case R_RISCV_LO12_S:
     case R_RISCV_TPREL_LO12_S:
@@ -362,6 +352,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_32_PCREL:
       *(ul32 *)loc = S + A - P;
       break;
+    case R_RISCV_PCREL_LO12_I:
+    case R_RISCV_PCREL_LO12_S:
+      // These relocations are handled in the next loop.
+      break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
@@ -373,10 +367,33 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #undef GOT
   }
 
-  // In the above loop, PC-relative HI20 relocations overwrote
-  // instructions with full 32-bit values to allow their corresponding
-  // PCREL_LO12 relocations to read their values. This loop restore
-  // the original instructions.
+  // Handle LO12 relocations. In the above loop, PC-relative HI20
+  // relocations overwrote instructions with full 32-bit values to allow
+  // their corresponding LO12 relocations to read their values.
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &r = rels[i];
+    if (r.r_type != R_RISCV_PCREL_LO12_I && r.r_type != R_RISCV_PCREL_LO12_S)
+      continue;
+
+    Symbol<E> &sym = *file.symbols[r.r_sym];
+    assert(sym.get_input_section() == this);
+
+    u8 *loc = base + r.r_offset + extra.r_deltas[i];
+    u32 val = *(ul32 *)(base + sym.value);
+
+    switch (r.r_type) {
+    case R_RISCV_PCREL_LO12_I:
+      write_itype(loc, val);
+      break;
+    case R_RISCV_PCREL_LO12_S:
+      write_stype(loc, val);
+      break;
+    default:
+      unreachable();
+    }
+  }
+
+  // Restore the original instructions HI20 relocations overwrote.
   for (i64 i = 0; i < rels.size(); i++) {
     switch (rels[i].r_type) {
     case R_RISCV_GOT_HI20:
