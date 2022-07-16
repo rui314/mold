@@ -445,7 +445,13 @@ static void load_plugin(Context<E> &ctx) {
   phase = 1;
   gctx<E> = &ctx;
 
-  void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_GLOBAL);
+  void *handle =
+      dlopen(ctx.arg.plugin.c_str()
+#ifndef _WIN32
+        , RTLD_NOW | RTLD_GLOBAL
+#endif
+      );
+
   if (!handle)
     Fatal(ctx) << "could not open plugin file: " << dlerror();
 

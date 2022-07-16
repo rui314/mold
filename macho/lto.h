@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <sys/types.h>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 namespace mold::macho {
 
 enum LTOSymbolAttributes {
@@ -59,7 +63,12 @@ typedef void LTODiagnosticHandler(LTOCodegenDiagnosticSeverity severity,
                                   const char *diag, void *ctxt);
 
 struct LTOPlugin {
-  void *dlopen_handle = nullptr;
+#ifdef _WIN32
+  HMODULE
+#else
+  void *
+#endif
+  dlopen_handle = nullptr;
   ~LTOPlugin();
 
   char (*get_version)();
