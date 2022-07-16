@@ -27,6 +27,7 @@ if ! docker image ls mold-gentoo | grep -q mold-gentoo; then
 FROM gentoo/stage3
 RUN emerge-webrsync
 RUN echo 'USE="X ssl elogind -systemd corefonts truetype jpeg jpeg2k tiff zstd static-libs binary"' >> /etc/portage/make.conf && \
+    echo 'ACCEPT_KEYWORDS="~amd64"' >> /etc/portage/make.conf && \
     echo 'ACCEPT_LICENSE="* -@EULA"' >> /etc/portage/make.conf && \
     echo 'FEATURES="\${FEATURE} noclean nostrip ccache -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf && \
     echo 'CCACHE_DIR="/ccache"' >> /etc/portage/make.conf
