@@ -24,6 +24,10 @@
 #include <cstdint>
 #include <cstring>
 
+#ifdef _WIN32
+#include <cstdlib>
+#endif
+
 #ifdef __BIG_ENDIAN__
 #error "mold does not support big-endian hosts"
 #endif
@@ -148,12 +152,25 @@ private:
   uint8_t val[sizeof(T)];
 
   static T bswap(T x) {
-    if constexpr (sizeof(T) == 2)
+    if constexpr (sizeof(T) == 2) {
+#ifdef _WIN32
+      return _byteswap_ushort(x);
+#else
       return __builtin_bswap16(x);
-    else if constexpr (sizeof(T) == 4)
+#endif
+    } else if constexpr (sizeof(T) == 4) {
+#ifdef _WIN32
+      return _byteswap_ulong(x);
+#else
       return __builtin_bswap32(x);
-    else
+#endif
+    } else {
+#ifdef _WIN32
+      return _byteswap_uint64(x);
+#else
       return __builtin_bswap64(x);
+#endif
+    }
   }
 };
 
