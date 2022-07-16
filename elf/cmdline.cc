@@ -332,7 +332,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string> remaining;
   std::string_view arg;
 
-  ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+  ctx.arg.color_diagnostics =
+#ifdef _WIN32
+      _isatty(
+          _fileno(stderr));
+#else
+      isatty(
+          STDERR_FILENO);
+#endif
   ctx.page_size = E::page_size;
 
   bool version_shown = false;
@@ -609,7 +616,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.chroot = arg;
     } else if (read_flag("color-diagnostics") ||
                read_flag("color-diagnostics=auto")) {
-      ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+      ctx.arg.color_diagnostics =
+#ifdef _WIN32
+          _isatty(
+              _fileno(stderr));
+#else
+          isatty(
+              STDERR_FILENO);
+#endif
     } else if (read_flag("color-diagnostics=always")) {
       ctx.arg.color_diagnostics = true;
     } else if (read_flag("color-diagnostics=never")) {
