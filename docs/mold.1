@@ -639,8 +639,8 @@ with something else without taking an address of a function.
 needs to be used with a compiler that supports
 .Sy .llvm_addrsig
 section which contains the information as to what symbols are address-taken. \
-LLVM/Clang supports that section by default. Since GCC does not suppor it yet, \
-you cannot use
+LLVM/Clang supports that section by default. Since GCC does not support it \
+yet, you cannot use
 .Fl -icf=safe
 with GCC (it doesn't do any harm but can't optimize at all.)
 .Pp
