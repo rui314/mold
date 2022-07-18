@@ -1314,20 +1314,41 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 template <typename E>
 MappedFile<Context<E>> *find_dynamic_library(Context<E> &ctx,
                                              std::string lib,
-                                             const std::vector<std::string_view> &runpath) {
+                                             const std::vector<std::string_view> &runpath,
+                                             bool runpath_first) {
   // `lib` here is something like `libfoo.so`
   auto try_open = [&ctx](std::string_view dir, const std::string &lib) {
     std::string path = std::string(dir) + "/" + lib;
     return open_library(ctx, path);
   };
 
-  for (std::string_view dir : runpath)
-    if (MappedFile<Context<E>> *mf = try_open(dir, lib))
-      return mf;
+  auto search_library_paths = [&ctx, &lib, &try_open]() {
+    MappedFile<Context<E>> *mf;
+    for (std::string_view dir : ctx.arg.library_paths)
+      if (mf = try_open(dir, lib))
+        return mf;
+    return mf;
+  };
 
-  for (std::string_view dir : ctx.arg.library_paths)
-    if (MappedFile<Context<E>> *mf = try_open(dir, lib))
+  auto search_runpath = [&ctx, &lib, &runpath, &try_open]() {
+    MappedFile<Context<E>> *mf;
+    for (std::string_view dir : runpath)
+      if (mf = try_open(dir, lib))
+        return mf;
+    return mf;
+  };
+
+  if (runpath_first) {
+    if (MappedFile<Context<E>> *mf = search_runpath())
       return mf;
+    else if (MappedFile<Context<E>> *mf = search_library_paths())
+      return mf;
+  } else {
+    if (MappedFile<Context<E>> *mf = search_library_paths())
+      return mf;
+    else if (MappedFile<Context<E>> *mf = search_runpath())
+      return mf;
+  }
   return nullptr;
 }
 
@@ -1567,40 +1588,59 @@ void SharedFile<E>::load_needed(Context<E> &ctx) {
   file = std::filesystem::canonical(file);
   std::string origin = file.parent_path().string();
 
-  auto try_expand = [&origin, this](std::string_view &path) {
+  auto try_expand = [&origin, this](std::string_view path) {
     if (std::optional<std::string> new_path = expand_origin(path, origin)) {
       expanded_paths.push_back(*new_path);
       path = std::string_view(expanded_paths.back());
     }
   };
 
+  auto save_runpath = [this, &try_expand](std::string_view runpath) {
+    for (size_t pos = runpath.find(":"); pos != runpath.npos; pos = runpath.find(":")) {
+      std::string_view path = runpath.substr(0, pos);
+      try_expand(path);
+      this->runpath.push_back(path);
+      runpath = runpath.substr(pos + 1);
+    }
+    try_expand(runpath);
+    this->runpath.push_back(runpath);
+  };
+
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC)) {
-    // first we want to find out the RUNPATH, so that we can look up our
-    // NEEDED libraries. We ignore RPATH since RUNPATH is preferred
-    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
-      if (dyn.d_tag == DT_RUNPATH) {
-        std::string_view runpath = this->symbol_strtab.data() + dyn.d_val;
-        for (size_t pos = runpath.find(":"); pos != runpath.npos; pos = runpath.find(":")) {
-          std::string_view path = runpath.substr(0, pos);
-          try_expand(path);
-          this->runpath.push_back(path);
-          runpath = runpath.substr(pos + 1);
-        }
-        try_expand(runpath);
-        this->runpath.push_back(runpath);
-      }
-    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+    // first we want to find out the RUNPATH/RPATH so that we can look up
+    // NEEDED entries later
+    std::optional<ElfDyn<E>> runpath_dyn;
+    std::optional<ElfDyn<E>> rpath_dyn;
+    for (const ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+      if (dyn.d_tag == DT_RUNPATH)
+        runpath_dyn = {dyn};
+      else if (dyn.d_tag == DT_RPATH)
+        rpath_dyn = {dyn};
+
+    // if RUNPATH is set, we won't look at RPATH
+    auto runpath_first = true;
+    if (runpath_dyn) {
+      save_runpath(this->symbol_strtab.data() + runpath_dyn->d_val);
+      runpath_first = false;
+    } else if (rpath_dyn)
+      save_runpath(this->symbol_strtab.data() + rpath_dyn->d_val);
+
+    for (const ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_NEEDED) {
         std::string_view dso_name = this->symbol_strtab.data() + dyn.d_val;
         typename decltype(ctx.needed_dso)::const_accessor acc;
         if (!ctx.needed_dso.find(acc, dso_name)) {
-          MappedFile<Context<E>> *lib = find_dynamic_library(ctx, std::string(dso_name), runpath);
-          if (!lib)
-            continue;
-          auto file = SharedFile<E>::create(ctx, lib);
-          file->parse(ctx);
-          ctx.needed_dso.insert(acc, {dso_name, file});
-          needed.push_back(file);
+          if (MappedFile<Context<E>> *lib =
+              find_dynamic_library(ctx,
+                                   std::string(dso_name),
+                                   runpath,
+                                   runpath_first))
+          {
+            auto file = SharedFile<E>::create(ctx, lib);
+            file->parse(ctx);
+            ctx.needed_dso.insert(acc, {dso_name, file});
+            needed.push_back(file);
+          }
         } else
           needed.push_back(acc->second);
       }
