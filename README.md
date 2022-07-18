@@ -18,7 +18,7 @@ on a simulated 8-core 16-threads machine.
 | Clang 13 (3.18 GiB)           | 64.12s   | 5.82s    | 2.90s
 | Firefox 89 libxul (1.64 GiB)  | 32.95s   | 6.80s    | 1.42s
 
-mold is so fast that it is only 2x _slower_ than `cp` on the same
+mold is so fast that it only takes twice as long to run as running `cp` takes on the same
 machine. Feel free to [file a bug](https://github.com/rui314/mold/issues)
 if you find mold is not faster than other linkers.
 
