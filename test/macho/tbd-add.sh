@@ -9,7 +9,7 @@ OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$testname
+t=out/test/macho/$MACHINE/$testname
 mkdir -p $t
 
 cat > $t/libfoo.tbd <<'EOF'
