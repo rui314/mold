@@ -657,7 +657,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       Subsection<E> *subsec = new Subsection<E>{
         .isec = *isec,
         .input_size = (u32)msym.value,
-        .p2align = (u8)msym.p2align,
+        .p2align = (u8)msym.common_p2align,
       };
 
       subsections.emplace_back(subsec);
@@ -712,9 +712,7 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
     this->syms.push_back(get_symbol(ctx, name));
 
     u32 attr = ctx.lto.module_get_symbol_attribute(this->lto_module, i);
-
     MachSym msym = {};
-    msym.p2align = (attr & LTO_SYMBOL_ALIGNMENT_MASK);
 
     switch (attr & LTO_SYMBOL_DEFINITION_MASK) {
     case LTO_SYMBOL_DEFINITION_REGULAR:

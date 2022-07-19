@@ -617,7 +617,7 @@ struct MachSym {
     ul16 desc;
     struct {
       u8 padding;
-      u8 p2align : 4;
+      u8 common_p2align : 4;
     };
   };
 
