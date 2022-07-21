@@ -156,6 +156,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
       sym.is_weak = false;
       if (msym.type == N_ABS)
         sym.value = msym.value;
+      sym.no_dead_strip = (msym.desc & N_NO_DEAD_STRIP);
       this->syms.push_back(&sym);
     }
   }
