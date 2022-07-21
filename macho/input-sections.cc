@@ -8,7 +8,6 @@ OutputSection<E> &get_output_section(Context<E> &ctx, const MachSection &hdr) {
     "__got", "__auth_got", "__auth_ptr", "__nl_symbol_ptr", "__const",
     "__cfstring", "__mod_init_func", "__mod_term_func", "__objc_classlist",
     "__objc_nlclslist", "__objc_catlist", "__objc_nlcatlist", "__objc_protolist",
-    "__objc_imageinfo",
   };
 
   std::string_view seg = hdr.get_segname();

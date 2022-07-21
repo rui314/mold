@@ -322,6 +322,9 @@ template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   Timer t(ctx, "create_synthetic_chunks");
 
+  // Create a __DATA,__objc_imageinfo section.
+  ctx.image_info = ObjcImageInfoSection<E>::create(ctx);
+
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
     MappedFile<Context<E>> *mf =

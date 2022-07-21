@@ -319,6 +319,13 @@ static constexpr u32 TOOL_SWIFT = 2;
 static constexpr u32 TOOL_LD = 3;
 static constexpr u32 TOOL_MOLD = 0x6d6f6c64; // Hex in "mold"
 
+static constexpr u32 OBJC_IMAGE_SUPPORTS_GC = 1 << 1;
+static constexpr u32 OBJC_IMAGE_REQUIRES_GC = 1 << 2;
+static constexpr u32 OBJC_IMAGE_OPTIMIZED_BY_DYLD = 1 << 3;
+static constexpr u32 OBJC_IMAGE_SUPPORTS_COMPACTION = 1 << 4;
+static constexpr u32 OBJC_IMAGE_IS_SIMULATED = 1 << 5;
+static constexpr u32 OBJC_IMAGE_HAS_CATEGORY_CLASS_PROPERTIES = 1 << 6;
+
 static constexpr u32 ARM64_RELOC_UNSIGNED = 0;
 static constexpr u32 ARM64_RELOC_SUBTRACTOR = 1;
 static constexpr u32 ARM64_RELOC_BRANCH26 = 2;
@@ -730,6 +737,14 @@ struct CodeSignatureDirectory {
   ub64 exec_seg_base;
   ub64 exec_seg_limit;
   ub64 exec_seg_flags;
+};
+
+// __DATA,__objc_imageinfo
+struct ObjcImageInfo {
+  ul32 version = 0;
+  u8 flags = 0;
+  u8 swift_version = 0;
+  ul16 swift_lang_version = 0;
 };
 
 struct ARM64 {

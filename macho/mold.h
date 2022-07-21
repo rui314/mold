@@ -134,6 +134,7 @@ public:
   std::vector<Symbol<E>> local_syms;
   std::vector<UnwindRecord<E>> unwind_records;
   std::span<DataInCodeEntry> data_in_code_entries;
+  ObjcImageInfo *objc_image_info = nullptr;
   LTOModule *lto_module = nullptr;
 
   // For the internal file and LTO object files
@@ -591,6 +592,24 @@ public:
 };
 
 template <typename E>
+class ObjcImageInfoSection : public Chunk<E> {
+public:
+  static std::unique_ptr<ObjcImageInfoSection> create(Context<E> &ctx);
+
+  ObjcImageInfoSection(Context<E> &ctx, ObjcImageInfo contents)
+    : Chunk<E>(ctx, "__DATA", "__objc_imageinfo"),
+      contents(contents) {
+    this->hdr.p2align = 2;
+    this->hdr.size = sizeof(contents);
+  }
+
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  ObjcImageInfo contents;
+};
+
+template <typename E>
 class CodeSignatureSection : public Chunk<E> {
 public:
   CodeSignatureSection(Context<E> &ctx)
@@ -955,6 +974,7 @@ struct Context {
   SymtabSection<E> symtab{*this};
   StrtabSection<E> strtab{*this};
 
+  std::unique_ptr<ObjcImageInfoSection<E>> image_info;
   std::unique_ptr<CodeSignatureSection<E>> code_sig;
 
   OutputSection<E> *text = nullptr;

@@ -102,6 +102,20 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
         continue;
       }
 
+      if (msec.match("__DATA", "__objc_imageinfo") ||
+          msec.match("__DATA_CONST", "__objc_imageinfo")) {
+        if (msec.size != sizeof(ObjcImageInfo))
+          Fatal(ctx) << *this << ": __objc_imageinfo: invalid size";
+
+        objc_image_info =
+          (ObjcImageInfo *)(this->mf->get_contents().data() + msec.offset);
+
+        if (objc_image_info->version != 0)
+          Fatal(ctx) << *this << ": __objc_imageinfo: unknown version: "
+                     << (u32)objc_image_info->version;
+        continue;
+      }
+
       if (msec.attr & S_ATTR_DEBUG)
         continue;
 
