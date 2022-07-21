@@ -173,7 +173,7 @@ split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
   // Find all symbols whose type is N_SECT.
   for (i64 i = 0; i < file.mach_syms.size(); i++) {
     MachSym &msym = file.mach_syms[i];
-    if (msym.type == N_SECT && vec[msym.sect - 1].isec) {
+    if (!msym.stab && msym.type == N_SECT && vec[msym.sect - 1].isec) {
       SplitRegion r;
       r.offset = msym.value - vec[msym.sect - 1].isec->hdr.addr;
       r.symidx = i;
@@ -188,6 +188,25 @@ split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
     return a.isec->hdr.addr < b.isec->hdr.addr;
   });
 
+  for (SplitInfo<E> &info : vec) {
+    sort(info.regions, [](const SplitRegion &a, const SplitRegion &b) {
+      return a.offset < b.offset;
+    });
+  }
+
+  // If two symbols point to the same location, we create only one
+  // subsection.
+  for (SplitInfo<E> &info : vec) {
+    i64 last = -1;
+    for (SplitRegion &r : info.regions) {
+      if (!r.is_alt_entry) {
+        if (r.offset == last)
+          r.is_alt_entry = true;
+        last = r.offset;
+      }
+    }
+  }
+
   // Fix regions so that they cover the entire section without overlapping.
   for (SplitInfo<E> &info : vec) {
     std::vector<SplitRegion> &r = info.regions;
@@ -196,10 +215,6 @@ split_regular_sections(Context<E> &ctx, ObjectFile<E> &file) {
       r.push_back({0, (u32)info.isec->hdr.size, (u32)-1, false});
       continue;
     }
-
-    sort(r, [](const SplitRegion &a, const SplitRegion &b) {
-      return a.offset < b.offset;
-    });
 
     if (r[0].offset > 0)
       r.insert(r.begin(), {0, r[0].offset, (u32)-1, false});
@@ -300,7 +315,7 @@ void ObjectFile<E>::init_subsections(Context<E> &ctx) {
 
   for (i64 i = 0; i < mach_syms.size(); i++) {
     MachSym &msym = mach_syms[i];
-    if (msym.type == N_SECT)
+    if (!msym.stab && msym.type == N_SECT)
       sym_to_subsec[i] = subsections[msym.sect - 1];
   }
 
@@ -314,7 +329,7 @@ void ObjectFile<E>::fix_subsec_members(Context<E> &ctx) {
     MachSym &msym = mach_syms[i];
     Symbol<E> &sym = *this->syms[i];
 
-    if (!msym.is_extern && msym.type == N_SECT) {
+    if (!msym.stab && !msym.is_extern && msym.type == N_SECT) {
       Subsection<E> *subsec = sym_to_subsec[i];
       if (!subsec)
         subsec = find_subsection(ctx, msym.value);

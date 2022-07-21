@@ -607,7 +607,7 @@ struct MachSym {
       u8 is_extern : 1;
       u8 type : 3;
       u8 is_private_extern : 1;
-      u8 stub : 3;
+      u8 stab : 3;
     };
   };
 
