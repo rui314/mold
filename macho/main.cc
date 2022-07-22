@@ -226,7 +226,6 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
     // __TEXT
     "__mach_header",
     "__text",
-    "__StaticInit",
     "__stubs",
     "__stub_helper",
     "__gcc_except_tab",

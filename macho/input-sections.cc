@@ -13,8 +13,11 @@ OutputSection<E> &get_output_section(Context<E> &ctx, const MachSection &hdr) {
   std::string_view seg = hdr.get_segname();
   std::string_view sect = hdr.get_sectname();
 
-  if (seg == "__DATA" && set.contains(sect))
+  if (seg == "__DATA" && set.contains(sect)) {
     seg = "__DATA_CONST";
+  } else if (seg == "__TEXT" && sect == "__StaticInit") {
+    sect = "__text";
+  }
 
   return *OutputSection<E>::get_instance(ctx, seg, sect);
 }
