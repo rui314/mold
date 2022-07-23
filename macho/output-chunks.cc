@@ -277,8 +277,9 @@ static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
   vec.push_back(create_source_version_cmd(ctx));
   vec.push_back(create_function_starts_cmd(ctx));
 
-  for (DylibFile<E> *dylib : ctx.dylibs)
-    vec.push_back(create_load_dylib_cmd(ctx, *dylib));
+  for (DylibFile<E> *file : ctx.dylibs)
+    if (file->dylib_idx != BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE)
+      vec.push_back(create_load_dylib_cmd(ctx, *file));
 
   for (std::string_view rpath : ctx.arg.rpath)
     vec.push_back(create_rpath_cmd(ctx, rpath));

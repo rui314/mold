@@ -833,6 +833,10 @@ void DylibFile<E>::parse(Context<E> &ctx) {
   case FileType::MACH_DYLIB:
     parse_dylib(ctx);
     break;
+  case FileType::MACH_EXE:
+    parse_dylib(ctx);
+    dylib_idx = BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE;
+    break;
   default:
     Fatal(ctx) << *this << ": is not a dylib";
   }

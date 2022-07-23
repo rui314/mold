@@ -31,6 +31,7 @@ Options:
     -no_application_extension
   -arch <ARCH_NAME>           Specify target architecture
   -bundle                     Produce a mach-o bundle
+  -bundle_loader <EXECUTABLE> Resolve undefined symbols using the given executable
   -compatibility_version <VERSION>
                               Specifies the compatibility version number of the library
   -current_version <VERSION>  Specifies the current version number of the library.
@@ -323,6 +324,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "unknown -arch: " << arg;
     } else if (read_flag("-bundle")) {
       ctx.output_type = MH_BUNDLE;
+    } else if (read_arg("-bundle_loader")) {
+      ctx.arg.bundle_loader = arg;
     } else if (read_arg("-compatibility_version") ||
                read_arg("-dylib_compatibility_version")) {
       ctx.arg.compatibility_version = parse_version(ctx, arg);
@@ -481,6 +484,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.thread_count == 0)
     ctx.arg.thread_count = get_default_thread_count();
+
+  if (!ctx.arg.bundle_loader.empty() && ctx.output_type != MH_BUNDLE)
+    Fatal(ctx) << "-bundle_loader cannot be specified without -bundle";
 
   auto add_search_path = [&](std::vector<std::string> &vec, std::string path) {
     if (!path.starts_with('/') || ctx.arg.syslibroot.empty()) {

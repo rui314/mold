@@ -891,6 +891,7 @@ struct Context {
     i64 platform_sdk_version = 0;
     i64 stack_size = 0;
     i64 thread_count = 0;
+    std::string bundle_loader;
     std::string chroot;
     std::string dependency_info;
     std::string final_output;

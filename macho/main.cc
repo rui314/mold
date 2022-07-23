@@ -718,6 +718,7 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   switch (get_file_type(mf)) {
   case FileType::TAPI:
   case FileType::MACH_DYLIB:
+  case FileType::MACH_EXE:
     ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
     break;
   case FileType::MACH_OBJ:
@@ -855,6 +856,10 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     ctx.reexport_l = false;
   }
 
+  // With -bundle_loader, we can import symbols from a main executable.
+  if (!ctx.arg.bundle_loader.empty())
+    read_file(ctx, MappedFile<Context<E>>::must_open(ctx, ctx.arg.bundle_loader));
+
   // An object file can contain linker directives to load other object
   // files or libraries, so process them if any.
   for (i64 i = 0; i < ctx.objs.size(); i++) {
@@ -882,8 +887,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   for (DylibFile<E> *dylib : ctx.dylibs)
     dylib->priority = ctx.file_priority++;
 
-  for (i64 i = 0; i < ctx.dylibs.size(); i++)
-    ctx.dylibs[i]->dylib_idx = i + 1;
+  for (i64 i = 1; DylibFile<E> *file : ctx.dylibs)
+    if (file->dylib_idx != BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE)
+      file->dylib_idx = i++;
 }
 
 template <typename E>
