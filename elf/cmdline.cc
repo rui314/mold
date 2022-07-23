@@ -74,7 +74,7 @@ Options:
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --dp                        Ignored
-  --dynamic-list              Read a list of dynamic symbols
+  --dynamic-list              Read a list of dynamic symbols (implies -Bsymbolic)
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
   --enable-new-dtags          Ignored
@@ -934,6 +934,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("version-script")) {
       remaining.push_back("--version-script=" + std::string(arg));
     } else if (read_arg("dynamic-list")) {
+      ctx.arg.Bsymbolic = true;
       remaining.push_back("--dynamic-list=" + std::string(arg));
     } else if (read_flag("as-needed")) {
       remaining.push_back("--as-needed");
