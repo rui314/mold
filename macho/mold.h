@@ -566,7 +566,7 @@ public:
   SymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__symbol_table") {
     this->is_hidden = true;
-    this->hdr.p2align = 3;
+    this->hdr.p2align = 2;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -586,7 +586,7 @@ public:
   StrtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
-    this->hdr.p2align = 3;
+    this->hdr.p2align = 0;
     this->hdr.size = 1;
   }
 };
@@ -615,7 +615,7 @@ public:
   CodeSignatureSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__code_signature") {
     this->is_hidden = true;
-    this->hdr.p2align = std::countr_zero(16U);
+    this->hdr.p2align = 3;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -630,7 +630,7 @@ public:
   DataInCodeSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__data_in_code") {
     this->is_hidden = true;
-    this->hdr.p2align = std::countr_zero(alignof(DataInCodeEntry));
+    this->hdr.p2align = 2;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -643,7 +643,7 @@ template <typename E>
 class StubsSection : public Chunk<E> {
 public:
   StubsSection(Context<E> &ctx) : Chunk<E>(ctx, "__TEXT", "__stubs") {
-    this->hdr.p2align = std::countr_zero(2U);
+    this->hdr.p2align = 4;
     this->hdr.type = S_SYMBOL_STUBS;
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
     this->hdr.reserved1 = 0;
@@ -662,7 +662,7 @@ class StubHelperSection : public Chunk<E> {
 public:
   StubHelperSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__TEXT", "__stub_helper") {
-    this->hdr.p2align = std::countr_zero(4U);
+    this->hdr.p2align = 4;
     this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
   }
 
@@ -674,7 +674,7 @@ class UnwindInfoSection : public Chunk<E> {
 public:
   UnwindInfoSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__TEXT", "__unwind_info") {
-    this->hdr.p2align = std::countr_zero(4U);
+    this->hdr.p2align = 2;
   }
 
   void compute_size(Context<E> &ctx) override;
