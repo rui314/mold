@@ -218,6 +218,10 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       parse_version_script(ctx, std::string(arg.substr(strlen("--version-script="))));
     } else if (arg.starts_with("--dynamic-list=")) {
       parse_dynamic_list(ctx, std::string(arg.substr(strlen("--dynamic-list="))));
+    } else if (arg.starts_with("--export-dynamic-symbol=")) {
+      parse_dynamic_glob(ctx, arg.substr(strlen("--export-dynamic-symbol=")), false);
+    } else if (arg.starts_with("--export-dynamic-symbol-list=")) {
+      parse_dynamic_list(ctx, std::string(arg.substr(strlen("--export-dynamic-symbol-list="))));
     } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
                        ctx.in_lib});

@@ -79,6 +79,9 @@ Options:
     --no-eh-frame-hdr
   --enable-new-dtags          Ignored
   --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
+  --export-dynamic-symbol     Put symbols matching glob in the dynamic symbol table
+  --export-dynamic-symbol-list
+                              Read a list of dynamic symbols
   --fatal-warnings            Treat warnings as errors
     --no-fatal-warnings       Do not treat warnings as errors (default)
   --fini SYMBOL               Call SYMBOL at unload-time
@@ -932,10 +935,20 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_arg("common-page-size")) {
     } else if (read_flag("no-keep-memory")) {
     } else if (read_arg("version-script")) {
+      // --version-script, --dynamic-list and --export-dynamic-symbol[-list] are treated as
+      // positional arguments even if they are actually not positional.
+      // This is because linker scripts (a positional argument) can also specify a version script,
+      // and it's better to consolidate parsing in read_input_files.
+      // In particular, version scripts can modify ctx.default_version which we initialize *after*
+      // parsing non-positional args, so the parsing cannot be done right here.
       remaining.push_back("--version-script=" + std::string(arg));
     } else if (read_arg("dynamic-list")) {
       ctx.arg.Bsymbolic = true;
       remaining.push_back("--dynamic-list=" + std::string(arg));
+    } else if (read_arg("export-dynamic-symbol")) {
+      remaining.push_back("--export-dynamic-symbol=" + std::string(arg));
+    } else if (read_arg("export-dynamic-symbol-list")) {
+      remaining.push_back("--export-dynamic-symbol-list=" + std::string(arg));
     } else if (read_flag("as-needed")) {
       remaining.push_back("--as-needed");
     } else if (read_flag("no-as-needed")) {

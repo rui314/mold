@@ -433,7 +433,9 @@ open_files(Context<E> &ctx, std::span<std::string> args) {
     }
 
     if (arg.starts_with("--version-script=") ||
-        arg.starts_with("--dynamic-list="))
+        arg.starts_with("--dynamic-list=") ||
+        arg.starts_with("--export-dynamic-symbol=") ||
+        arg.starts_with("--export-dynamic-symbol-list="))
       continue;
 
     MappedFile<Context<E>> *mf = nullptr;
