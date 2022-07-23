@@ -195,7 +195,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   ctx.is_static = ctx.arg.is_static;
 
   while (!args.empty()) {
-    const std::string &arg = args[0];
+    std::string_view arg = args[0];
     args = args.subspan(1);
 
     if (arg == "--as-needed") {
@@ -215,9 +215,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--end-lib") {
       ctx.in_lib = false;
     } else if (arg.starts_with("--version-script=")) {
-      parse_version_script(ctx, arg.substr(strlen("--version-script=")));
+      parse_version_script(ctx, std::string(arg.substr(strlen("--version-script="))));
     } else if (arg.starts_with("--dynamic-list=")) {
-      parse_dynamic_list(ctx, arg.substr(strlen("--dynamic-list=")));
+      parse_dynamic_list(ctx, std::string(arg.substr(strlen("--dynamic-list="))));
     } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
                        ctx.in_lib});
@@ -228,7 +228,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         state.back();
       state.pop_back();
     } else if (arg.starts_with("-l")) {
-      MappedFile<Context<E>> *mf = find_library(ctx, arg.substr(2));
+      MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg.substr(2)));
       mf->given_fullpath = false;
       read_file(ctx, mf);
     } else {
