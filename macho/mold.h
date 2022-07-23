@@ -566,7 +566,7 @@ public:
   SymtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__symbol_table") {
     this->is_hidden = true;
-    this->hdr.p2align = 2;
+    this->hdr.p2align = 3;
   }
 
   void compute_size(Context<E> &ctx) override;
@@ -586,7 +586,7 @@ public:
   StrtabSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__string_table") {
     this->is_hidden = true;
-    this->hdr.p2align = 0;
+    this->hdr.p2align = 3;
     this->hdr.size = 1;
   }
 };
@@ -630,7 +630,7 @@ public:
   DataInCodeSection(Context<E> &ctx)
     : Chunk<E>(ctx, "__LINKEDIT", "__data_in_code") {
     this->is_hidden = true;
-    this->hdr.p2align = 2;
+    this->hdr.p2align = 3;
   }
 
   void compute_size(Context<E> &ctx) override;
