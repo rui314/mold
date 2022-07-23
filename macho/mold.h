@@ -871,7 +871,6 @@ struct Context {
     bool dead_strip_dylibs = false;
     bool deduplicate = true;
     bool demangle = true;
-    bool dylib = false;
     bool dynamic = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;

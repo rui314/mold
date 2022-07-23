@@ -93,7 +93,7 @@ void do_lto(Context<E> &ctx) {
   // Mark symbols that have to be preserved. All symbols that are not
   // marked here may be internalized and deleted as an extenrally-
   // visible symbol.
-  if (ctx.arg.dylib || ctx.arg.export_dynamic) {
+  if (ctx.output_type == MH_DYLIB || ctx.arg.export_dynamic) {
     for (ObjectFile<E> *file : ctx.objs) {
       if (!file->lto_module) {
         for (i64 i = 0; i < file->mach_syms.size(); i++) {
