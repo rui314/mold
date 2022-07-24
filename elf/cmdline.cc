@@ -935,12 +935,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_arg("common-page-size")) {
     } else if (read_flag("no-keep-memory")) {
     } else if (read_arg("version-script")) {
-      // --version-script, --dynamic-list and --export-dynamic-symbol[-list] are treated as
-      // positional arguments even if they are actually not positional.
-      // This is because linker scripts (a positional argument) can also specify a version script,
-      // and it's better to consolidate parsing in read_input_files.
-      // In particular, version scripts can modify ctx.default_version which we initialize *after*
-      // parsing non-positional args, so the parsing cannot be done right here.
+      // --version-script, --dynamic-list and --export-dynamic-symbol[-list]
+      // are treated as positional arguments even if they are actually not
+      // positional. This is because linker scripts (a positional argument)
+      // can also specify a version script, and it's better to consolidate
+      // parsing in read_input_files. In particular, version scripts can
+      // modify ctx.default_version which we initialize *after* parsing
+      // non-positional args, so the parsing cannot be done right here.
       remaining.push_back("--version-script=" + std::string(arg));
     } else if (read_arg("dynamic-list")) {
       ctx.arg.Bsymbolic = true;
