@@ -877,10 +877,17 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     i64 flags = read_uleb(buf);
     read_uleb(buf); // addr
 
-    if (flags == EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION)
+    switch (flags & ~EXPORT_SYMBOL_FLAGS_KIND_MASK) {
+    case EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION:
       weak_exports.insert(save_string(ctx, prefix));
-    else
+      break;
+    case EXPORT_SYMBOL_FLAGS_REEXPORT:
+      read_uleb(buf); // skip a library ordinal
       exports.insert(save_string(ctx, prefix));
+      break;
+    default:
+      exports.insert(save_string(ctx, prefix));
+    }
   } else {
     buf++;
   }
