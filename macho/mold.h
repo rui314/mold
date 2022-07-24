@@ -922,7 +922,7 @@ struct Context {
   bool hidden_l = false;
   bool weak_l = false;
   bool reexport_l = false;
-  std::unordered_set<std::string_view> loaded_archives;
+  std::unordered_set<std::string_view> loaded_files;
   std::set<std::string> missing_files; // for -dependency_info
 
   u8 uuid[16] = {};

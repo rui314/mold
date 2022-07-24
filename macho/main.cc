@@ -719,14 +719,15 @@ static void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   case FileType::TAPI:
   case FileType::MACH_DYLIB:
   case FileType::MACH_EXE:
-    ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
+    if (ctx.loaded_files.insert(mf->name).second)
+      ctx.dylibs.push_back(DylibFile<E>::create(ctx, mf));
     break;
   case FileType::MACH_OBJ:
   case FileType::LLVM_BITCODE:
     ctx.objs.push_back(ObjectFile<E>::create(ctx, mf, ""));
     break;
   case FileType::AR:
-    if (!ctx.all_load && !ctx.loaded_archives.insert(mf->name).second) {
+    if (!ctx.all_load && !ctx.loaded_files.insert(mf->name).second) {
       // If the same .a file is specified more than once, ignore all
       // but the first one because they would be ignored anyway.
       break;
