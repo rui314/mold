@@ -1228,9 +1228,6 @@ void parse_version_script(Context<E> &ctx, std::string path);
 template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);
 
-template <typename E>
-void parse_dynamic_glob(Context<E> &ctx, std::string_view arg, bool is_cpp);
-
 //
 // lto.cc
 //

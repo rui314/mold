@@ -349,14 +349,6 @@ void parse_version_script(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-void parse_dynamic_glob(Context <E> &ctx, std::string_view arg, bool is_cpp) {
-  if (arg == "*")
-    ctx.default_version = VER_NDX_GLOBAL;
-  else
-    ctx.version_patterns.push_back({unquote(arg), VER_NDX_GLOBAL, is_cpp});
-}
-
-template <typename E>
 void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &tok,
                                 bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
@@ -378,7 +370,10 @@ void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &to
       continue;
     }
 
-    parse_dynamic_glob(ctx, tok[0], is_cpp);
+    if (tok[0] == "*")
+      ctx.default_version = VER_NDX_GLOBAL;
+    else
+      ctx.version_patterns.push_back({unquote(tok[0]), VER_NDX_GLOBAL, is_cpp});
 
     tok = skip(ctx, tok.subspan(1), ";");
   }
@@ -408,9 +403,7 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
   template                                                                      \
   void parse_version_script(Context<E> &ctx, std::string path);                 \
   template                                                                      \
-  void parse_dynamic_list(Context<E> &ctx, std::string path);                   \
-  template                                                                      \
-  void parse_dynamic_glob(Context <E> &ctx, std::string_view arg, bool is_cpp);
+  void parse_dynamic_list(Context<E> &ctx, std::string path);
 
 INSTANTIATE_ALL;
 
