@@ -95,7 +95,7 @@ Options:
   -t                          Print out each file the linker loads
   -thread_count <NUMBER>      Use given number of threads
   -u <SYMBOL>                 Force load a given symbol from archive if necessary
-  -uexported_symbol <SYMBOL>  Export all but a given symbol
+  -unexported_symbol <SYMBOL> Export all but a given symbol
   -unexported_symbols_list <FILE>
                               Read a list of unexported symbols from a given file
   -v                          Report version information
