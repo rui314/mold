@@ -82,9 +82,12 @@ template <typename E>
 static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
   Timer t(ctx, "mark");
 
-  for (ObjectFile<E> *file : ctx.objs)
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (Subsection<E> *subsec : file->subsections)
-      subsec->is_alive = false;
+      subsec->is_alive.store(false, std::memory_order_relaxed);
+  });
+
+  std::atomic_thread_fence(std::memory_order_seq_cst);
 
   for (Subsection<E> *subsec : rootset)
     visit(ctx, *subsec);
