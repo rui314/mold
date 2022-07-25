@@ -877,16 +877,28 @@ void DylibFile<E>::read_trie(Context<E> &ctx, u8 *start, i64 offset,
     i64 flags = read_uleb(buf);
     read_uleb(buf); // addr
 
-    switch (flags & ~EXPORT_SYMBOL_FLAGS_KIND_MASK) {
+    std::string_view name = save_string(ctx, prefix);
+    i64 kind = flags & EXPORT_SYMBOL_FLAGS_KIND_MASK;
+    i64 type = flags & ~EXPORT_SYMBOL_FLAGS_KIND_MASK;
+
+    if (kind != EXPORT_SYMBOL_FLAGS_KIND_REGULAR)
+      Fatal(ctx) << *this << ": " << name << ": unknown export symbol kind: 0x"
+                 << std::hex << kind;
+
+    switch (type) {
+    case 0:
+      exports.insert(name);
+      break;
     case EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION:
-      weak_exports.insert(save_string(ctx, prefix));
+      weak_exports.insert(name);
       break;
     case EXPORT_SYMBOL_FLAGS_REEXPORT:
       read_uleb(buf); // skip a library ordinal
-      exports.insert(save_string(ctx, prefix));
+      exports.insert(name);
       break;
     default:
-      exports.insert(save_string(ctx, prefix));
+      Fatal(ctx) << *this << ": " << name << ": unknown export symbol type: 0x"
+                 << std::hex << type;
     }
   } else {
     buf++;
