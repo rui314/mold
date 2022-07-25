@@ -948,11 +948,12 @@ void DylibFile<E>::parse_dylib(Context<E> &ctx) {
       read_trie(ctx, this->mf->data + cmd.dataoff);
       break;
     }
-    case LC_REEXPORT_DYLIB: {
-      DylibCommand &cmd = *(DylibCommand *)p;
-      reexported_libs.push_back((char *)p + cmd.nameoff);
+    case LC_REEXPORT_DYLIB:
+      if (!(hdr.flags & MH_NO_REEXPORTED_DYLIBS)) {
+        DylibCommand &cmd = *(DylibCommand *)p;
+        reexported_libs.push_back((char *)p + cmd.nameoff);
+      }
       break;
-    }
     }
     p += lc.cmdsize;
   }
