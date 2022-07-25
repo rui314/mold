@@ -50,6 +50,9 @@ private:
   std::vector<Token> tokens;
 };
 
+// A tokenizer for YAML. YAML represents blocks by indentation. This
+// tokenizer inserts INDENT and DEDENT special tokens before and after
+// each indented text block.
 std::optional<YamlError> YamlParser::tokenize() {
   std::vector<i64> indents = {0};
 
