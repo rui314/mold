@@ -1,9 +1,13 @@
 #include "mold.h"
 
+#include <tbb/parallel_for_each.h>
+
 namespace mold::macho {
 
 template <typename E>
 static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
+  Timer t(ctx, "collect_root_set");
+
   std::vector<Subsection<E> *> rootset;
 
   auto mark = [&](Symbol<E> *sym) {
@@ -76,6 +80,8 @@ static bool refers_live_subsection(Subsection<E> &subsec) {
 
 template <typename E>
 static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
+  Timer t(ctx, "mark");
+
   for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
       subsec->is_alive = false;
@@ -101,20 +107,25 @@ static void mark(Context<E> &ctx, const std::vector<Subsection<E> *> &rootset) {
 
 template <typename E>
 static void sweep(Context<E> &ctx) {
-  for (ObjectFile<E> *file : ctx.objs)
+  Timer t(ctx, "sweep");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *&sym : file->syms)
       if (sym->file == file && sym->subsec && !sym->subsec->is_alive)
         sym = nullptr;
+  });
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     std::erase_if(file->subsections, [](Subsection<E> *subsec) {
       return !subsec->is_alive;
     });
-  }
+  });
 }
 
 template <typename E>
 void dead_strip(Context<E> &ctx) {
+  Timer t(ctx, "dead_strip");
+
   std::vector<Subsection<E> *> rootset = collect_root_set(ctx);
   mark(ctx, rootset);
   sweep(ctx);
