@@ -350,6 +350,9 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   if (ctx.output_type == MH_DYLIB && !has_reexported_lib(ctx))
     mhdr.flags |= MH_NO_REEXPORTED_DYLIBS;
 
+  if (ctx.arg.mark_dead_strippable_dylib)
+    mhdr.flags |= MH_DEAD_STRIPPABLE_DYLIB;
+
   write_vector(buf + sizeof(mhdr), flatten(cmds));
 }
 

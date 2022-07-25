@@ -880,6 +880,7 @@ struct Context {
     bool search_paths_first = true;
     bool stats = false;
     bool trace = false;
+    bool mark_dead_strippable_dylib = false;
     i64 arch = CPU_TYPE_ARM64;
     i64 compatibility_version = 0;
     i64 current_version = 0;

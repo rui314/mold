@@ -68,6 +68,7 @@ Options:
   -lto_library <FILE>         Ignored
   -macos_version_min <VERSION>
   -map <FILE>                 Write map file to a given file
+  -mark_dead_strippable_dylib Mark the output as dead-strippable
   -needed-l<LIB>              Search for a given library
   -needed-framework <NAME>[,<SUFFIX>]
                               Search for a given framework
@@ -393,6 +394,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back(std::string(arg));
     } else if (read_arg("-map")) {
       ctx.arg.map = arg;
+    } else if (read_flag("-mark_dead_strippable_dylib")) {
+      ctx.arg.mark_dead_strippable_dylib = true;
     } else if (read_arg("-mllvm")) {
       ctx.arg.mllvm.push_back(std::string(arg));
     } else if (read_joined("-needed-l")) {
