@@ -467,4 +467,103 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+#define ASSERT_RANGE(val, start, size)                          \
+  assert((start) <= (val) && (val) < ((start) + (size)))
+
+// On ARM, we need two or more instructions to materialize an address
+// of an object in a register or jump to a function within PC ± 2GiB.
+// However, if an object or a function is close enough to PC, a single
+// instruction is sufficient to materialize its  address.
+//
+// This function replaces such redundant two or more instruction
+// sequence with a single instruction. We don't shrink a section, so
+// the total number of instructions won't change by this relaxation,
+// but replacing an instruction with a NOP generally increases
+// performance since CPU has a special logic to skip a NOP instead of
+// executing it.
+//
+// Locations of relaxable instructions are in the
+// LC_LINKER_OPTIMIZATION_HINT segment. That segment contains a
+// sequence of ULEB-encoded integers.
+void apply_linker_optimization_hints(Context<E> &ctx) {
+  Timer t(ctx, "apply_linker_optimization_hints");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    u8 *hints = file->get_linker_optimization_hints(ctx);
+    if (!hints)
+      return;
+
+    for (;;) {
+      i64 type = read_uleb(hints);
+      if (type == 0)
+        return;
+
+      i64 nargs = read_uleb(hints);
+
+      switch (type) {
+      case LOH_ARM64_ADRP_LDR_GOT_LDR: {
+        i64 addr1 = read_uleb(hints);
+        i64 addr2 = read_uleb(hints);
+        i64 addr3 = read_uleb(hints);
+
+        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        if (!subsec || !subsec->is_alive)
+          break;
+
+        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(addr3, subsec->input_addr, subsec->input_size);
+
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+
+        i64 offset1 = addr1 - subsec->input_addr;
+        i64 offset2 = addr2 - subsec->input_addr;
+        i64 offset3 = addr3 - subsec->input_addr;
+
+        ul32 *loc1 = (ul32 *)(loc + offset1);
+        ul32 *loc2 = (ul32 *)(loc + offset2);
+        ul32 *loc3 = (ul32 *)(loc + offset3);
+
+        // We expect the following instructions:
+        //
+        //   adrp reg1, _foo@GOTPAGE
+        //   ldr  reg2, [reg1, _foo@GOTPAGEOFF]
+        //   ldr  reg3, [reg2]
+        assert((*loc1 & 0x9f00'0000) == 0x9000'0000);
+        assert((*loc2 & 0xbfc0'0000) == 0xb940'0000);
+        assert((*loc3 & 0xbfc0'0000) == 0xb940'0000);
+
+        u64 got_addr = page(subsec->get_addr(ctx) + offset1) +
+                       (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
+                       (bits(*loc2, 21, 10) << 3);
+
+        ASSERT_RANGE(got_addr, ctx.got.hdr.addr, ctx.got.hdr.size);
+
+        u64 got_value = *(ul64 *)(ctx.buf + ctx.got.hdr.offset + got_addr -
+                                  ctx.got.hdr.addr);
+
+        if (got_value) {
+          i64 disp = got_value - subsec->get_addr(ctx) - offset2;
+          if (disp == sign_extend(disp, 20)) {
+            // If the GOT entry has already been filled, and its value is
+            // within the range of LDR, we can convert to
+            //
+            //  nop
+            //  nop
+            //  ldr reg3, _foo
+            *loc1 = 0xd503'201f;
+            *loc2 = 0xd503'201f;
+            *loc3 = 0x1800'0000 | (bits(disp, 20, 2) << 5) | (*loc2 & 0x0000'001f);
+            break;
+          }
+        }
+        break;
+      }
+      default:
+        for (i64 i = 0; i < nargs; i++)
+          read_uleb(hints);
+      }
+    }
+  });
+}
+
 } // namespace mold::macho

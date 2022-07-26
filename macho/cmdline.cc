@@ -63,6 +63,7 @@ Options:
                               Allocate MAXPATHLEN byte padding after load commands
   -help                       Report usage information
   -hidden-l<LIB>
+  -ignore_optimization_hints  Do not rewrite instructions as optimization
   -install_name <NAME>
   -l<LIB>                     Search for a given library
   -lto_library <FILE>         Ignored
@@ -387,6 +388,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_joined("-hidden-l")) {
       remaining.push_back("-hidden-l");
       remaining.push_back(std::string(arg));
+    } else if (read_flag("-ignore_optimization_hints")) {
+      ctx.arg.ignore_optimization_hints = true;
     } else if (read_arg("-install_name") || read_arg("-dylib_install_name")) {
       ctx.arg.install_name = arg;
     } else if (read_joined("-l")) {

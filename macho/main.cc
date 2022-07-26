@@ -1047,6 +1047,10 @@ static int do_main(int argc, char **argv) {
 
   copy_sections_to_output_file(ctx);
 
+  if constexpr (std::is_same_v<E, ARM64>)
+    if (!ctx.arg.ignore_optimization_hints)
+      apply_linker_optimization_hints(ctx);
+
   if (ctx.code_sig)
     ctx.code_sig->write_signature(ctx);
   else if (ctx.arg.uuid == UUID_HASH)

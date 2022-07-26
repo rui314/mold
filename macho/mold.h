@@ -124,6 +124,7 @@ public:
                          std::function<void(ObjectFile<E> *)> feeder);
   void convert_common_symbols(Context<E> &ctx);
   void check_duplicate_symbols(Context<E> &ctx);
+  u8 *get_linker_optimization_hints(Context<E> &ctx);
 
   Relocation<E> read_reloc(Context<E> &ctx, const MachSection &hdr, MachRel r);
 
@@ -807,6 +808,7 @@ void do_lto(Context<E> &ctx);
 //
 
 void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &osec);
+void apply_linker_optimization_hints(Context<ARM64> &ctx);
 
 //
 // main.cc
@@ -874,13 +876,14 @@ struct Context {
     bool dynamic = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
+    bool ignore_optimization_hints = false;
+    bool mark_dead_strippable_dylib = false;
     bool noinhibit_exec = false;
     bool perf = false;
     bool quick_exit = true;
     bool search_paths_first = true;
     bool stats = false;
     bool trace = false;
-    bool mark_dead_strippable_dylib = false;
     i64 arch = CPU_TYPE_ARM64;
     i64 compatibility_version = 0;
     i64 current_version = 0;

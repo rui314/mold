@@ -398,6 +398,9 @@ std::vector<std::string> ObjectFile<E>::get_linker_options(Context<E> &ctx) {
 
 template <typename E>
 LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
+  if (!this->mf)
+    return nullptr;
+
   MachHeader &hdr = *(MachHeader *)this->mf->data;
   u8 *p = this->mf->data + sizeof(hdr);
 
@@ -776,6 +779,16 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
   }
 
   mach_syms = mach_syms2;
+}
+
+template <typename E>
+u8 *ObjectFile<E>::get_linker_optimization_hints(Context<E> &ctx) {
+  LinkEditDataCommand *cmd =
+    (LinkEditDataCommand *)find_load_command(ctx, LC_LINKER_OPTIMIZATION_HINT);
+
+  if (cmd)
+    return this->mf->data + cmd->dataoff;
+  return nullptr;
 }
 
 template <typename E>

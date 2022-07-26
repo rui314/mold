@@ -326,6 +326,15 @@ static constexpr u32 OBJC_IMAGE_SUPPORTS_COMPACTION = 1 << 4;
 static constexpr u32 OBJC_IMAGE_IS_SIMULATED = 1 << 5;
 static constexpr u32 OBJC_IMAGE_HAS_CATEGORY_CLASS_PROPERTIES = 1 << 6;
 
+static constexpr u32 LOH_ARM64_ADRP_ADRP = 1;
+static constexpr u32 LOH_ARM64_ADRP_LDR = 2;
+static constexpr u32 LOH_ARM64_ADRP_ADD_LDR = 3;
+static constexpr u32 LOH_ARM64_ADRP_LDR_GOT_LDR = 4;
+static constexpr u32 LOH_ARM64_ADRP_ADD_STR = 5;
+static constexpr u32 LOH_ARM64_ADRP_LDR_GOT_STR = 6;
+static constexpr u32 LOH_ARM64_ADRP_ADD = 7;
+static constexpr u32 LOH_ARM64_ADRP_LDR_GOT = 8;
+
 static constexpr u32 ARM64_RELOC_UNSIGNED = 0;
 static constexpr u32 ARM64_RELOC_SUBTRACTOR = 1;
 static constexpr u32 ARM64_RELOC_BRANCH26 = 2;
