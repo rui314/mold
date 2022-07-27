@@ -485,6 +485,9 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 // Locations of relaxable instructions are in the
 // LC_LINKER_OPTIMIZATION_HINT segment. That segment contains a
 // sequence of ULEB-encoded integers.
+//
+// This pass is optional; an output file is correct without applying
+// optiomizations.
 void apply_linker_optimization_hints(Context<E> &ctx) {
   Timer t(ctx, "apply_linker_optimization_hints");
 
@@ -500,6 +503,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
       switch (type) {
       case LOH_ARM64_ADRP_LDR_GOT_LDR: {
+        assert(nargs == 3);
         i64 addr1 = read_uleb(hints);
         i64 addr2 = read_uleb(hints);
         i64 addr3 = read_uleb(hints);
@@ -559,6 +563,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         break;
       }
       case LOH_ARM64_ADRP_ADD: {
+        assert(nargs == 2);
         i64 addr1 = read_uleb(hints);
         i64 addr2 = read_uleb(hints);
 
