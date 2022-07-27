@@ -516,12 +516,11 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
         ASSERT_RANGE(addr3, subsec->input_addr, subsec->input_size);
 
-        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
-
         i64 offset1 = addr1 - subsec->input_addr;
         i64 offset2 = addr2 - subsec->input_addr;
         i64 offset3 = addr3 - subsec->input_addr;
 
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
         ul32 *loc1 = (ul32 *)(loc + offset1);
         ul32 *loc2 = (ul32 *)(loc + offset2);
         ul32 *loc3 = (ul32 *)(loc + offset3);
@@ -574,11 +573,10 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
         ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
 
-        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
-
         i64 offset1 = addr1 - subsec->input_addr;
         i64 offset2 = addr2 - subsec->input_addr;
 
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
         ul32 *loc1 = (ul32 *)(loc + offset1);
         ul32 *loc2 = (ul32 *)(loc + offset2);
 
@@ -592,17 +590,16 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         u64 addr = page(subsec->get_addr(ctx) + offset1) +
                    (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
-                   (bits(*loc2, 21, 10) << 3);
+                   bits(*loc2, 21, 10);
         i64 disp = addr - subsec->get_addr(ctx) - offset2;
 
-        if (disp == sign_extend(disp, 21)) {
-          break;
+        if (disp == sign_extend(disp, 20)) {
           // Rewrite it with
           //   nop
           //   adr reg2, _foo
           *loc1 = 0xd503'201f;
-          *loc2 = 0x1000'0000 | (bits(disp, 21, 2) << 5) |
-                  (bits(disp, 1, 0) << 29) | bits(*loc2, 4, 0);
+          *loc2 = 0x1000'0000 | (bits(disp, 1, 0) << 29) |
+                  (bits(disp, 20, 2) << 5) | bits(*loc2, 4, 0);
         }
         break;
       }
