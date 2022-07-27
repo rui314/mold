@@ -558,6 +558,49 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         }
         break;
       }
+      case LOH_ARM64_ADRP_ADD: {
+        i64 addr1 = read_uleb(hints);
+        i64 addr2 = read_uleb(hints);
+
+        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        if (!subsec || !subsec->is_alive)
+          break;
+
+        ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
+
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+
+        i64 offset1 = addr1 - subsec->input_addr;
+        i64 offset2 = addr2 - subsec->input_addr;
+
+        ul32 *loc1 = (ul32 *)(loc + offset1);
+        ul32 *loc2 = (ul32 *)(loc + offset2);
+
+        // We expect the following instructions:
+        //
+        //   adrp reg1, _foo@PAGE
+        //   add  reg2, reg1, _foo@PAGEOFF
+        if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
+            (*loc2 & 0xffc0'0000) != 0x9100'0000)
+          break;
+
+        u64 addr = page(subsec->get_addr(ctx) + offset1) +
+                   (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
+                   (bits(*loc2, 21, 10) << 3);
+        i64 disp = addr - subsec->get_addr(ctx) - offset2;
+
+        if (disp == sign_extend(disp, 21)) {
+          break;
+          // Rewrite it with
+          //   nop
+          //   adr reg2, _foo
+          *loc1 = 0xd503'201f;
+          *loc2 = 0x1000'0000 | (bits(disp, 21, 2) << 5) |
+                  (bits(disp, 1, 0) << 29) | (*loc2 & 0x0000'001f);
+        }
+        break;
+      }
       default:
         for (i64 i = 0; i < nargs; i++)
           read_uleb(hints);
