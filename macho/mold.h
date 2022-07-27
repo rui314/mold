@@ -124,7 +124,7 @@ public:
                          std::function<void(ObjectFile<E> *)> feeder);
   void convert_common_symbols(Context<E> &ctx);
   void check_duplicate_symbols(Context<E> &ctx);
-  u8 *get_linker_optimization_hints(Context<E> &ctx);
+  std::string_view get_linker_optimization_hints(Context<E> &ctx);
 
   Relocation<E> read_reloc(Context<E> &ctx, const MachSection &hdr, MachRel r);
 

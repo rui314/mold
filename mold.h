@@ -310,6 +310,14 @@ inline u64 read_uleb(u8 const*&buf) {
   return read_uleb(const_cast<u8 *&>(buf));
 }
 
+inline u64 read_uleb(std::string_view &str) {
+  u8 *start = (u8 *)&str[0];
+  u8 *ptr = start;
+  u64 val = read_uleb(ptr);
+  str = str.substr(ptr - start);
+  return val;
+}
+
 inline i64 uleb_size(u64 val) {
 #pragma GCC unroll 8
   for (int i = 1; i < 9; i++)

@@ -415,14 +415,11 @@ LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
 
 template <typename E>
 Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
-  auto it = std::upper_bound(subsections.begin(), subsections.end(), addr,
-                             [&](u32 addr, Subsection<E> *subsec) {
-    return addr < subsec->input_addr;
-  });
-
-  if (it == subsections.begin())
-    return nullptr;
-  return *(it - 1);
+  for (Subsection<E> *subsec : subsections)
+    if (subsec->input_addr <= addr &&
+        addr < subsec->input_addr + subsec->input_size)
+      return subsec;
+  return nullptr;
 }
 
 template <typename E>
@@ -782,13 +779,13 @@ void ObjectFile<E>::parse_lto_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-u8 *ObjectFile<E>::get_linker_optimization_hints(Context<E> &ctx) {
+std::string_view ObjectFile<E>::get_linker_optimization_hints(Context<E> &ctx) {
   LinkEditDataCommand *cmd =
     (LinkEditDataCommand *)find_load_command(ctx, LC_LINKER_OPTIMIZATION_HINT);
 
   if (cmd)
-    return this->mf->data + cmd->dataoff;
-  return nullptr;
+    return {(char *)this->mf->data + cmd->dataoff, cmd->datasize};
+  return {};
 }
 
 template <typename E>
