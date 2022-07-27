@@ -552,7 +552,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
             //  ldr reg3, _foo
             *loc1 = 0xd503'201f;
             *loc2 = 0xd503'201f;
-            *loc3 = 0x1800'0000 | (bits(disp, 20, 2) << 5) | (*loc3 & 0x0000'001f);
+            *loc3 = 0x1800'0000 | (bits(disp, 20, 2) << 5) | bits(*loc3, 4, 0);
             break;
           }
         }
@@ -597,7 +597,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
           //   adr reg2, _foo
           *loc1 = 0xd503'201f;
           *loc2 = 0x1000'0000 | (bits(disp, 21, 2) << 5) |
-                  (bits(disp, 1, 0) << 29) | (*loc2 & 0x0000'001f);
+                  (bits(disp, 1, 0) << 29) | bits(*loc2, 4, 0);
         }
         break;
       }
