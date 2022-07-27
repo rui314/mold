@@ -475,19 +475,18 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 // However, if an object or a function is close enough to PC, a single
 // instruction suffices.
 //
-// This function replaces such redundant two or more instruction
-// sequence with a shorter instruction sequence. We pad unused
-// instructions with NOP, so the total number of instructions won't
-// change by this relaxation, but replacing an instruction with a NOP
-// generally increases performance since the CPU has a special logic
-// to skip a NOP in an early stage of the pipeline.
+// This function replaces such redundant instruction sequences with
+// shorter instruction sequences. We pad holes with NOPs, so the total
+// number of instructions won't change by this relaxation, but replacing
+// instructions with NOPs generally makes program faster since the CPU
+// has a special logic to skip NOPs as quickly as possible.
 //
 // Locations of relaxable instructions are in the
 // LC_LINKER_OPTIMIZATION_HINT segment. That segment contains a
 // sequence of ULEB-encoded integers.
 //
-// This pass is optional; an output file is correct without applying
-// optiomizations.
+// This pass is optional; an output file works correctly without
+// applying these optimizations.
 void apply_linker_optimization_hints(Context<E> &ctx) {
   Timer t(ctx, "apply_linker_optimization_hints");
 
