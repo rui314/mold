@@ -526,12 +526,20 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         // We expect the following instructions:
         //
-        //   adrp reg1, _foo@GOTPAGE
-        //   ldr  reg2, [reg1, _foo@GOTPAGEOFF]
-        //   ldr  reg3, [reg2]
+        //   adrp Rx, _foo@GOTPAGE
+        //   ldr  Ry, [Rx, _foo@GOTPAGEOFF]
+        //   ldr  Rz/Wz, [Ry]
+        i64 size = 0;
+
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
-            (*loc2 & 0xbfc0'0000) != 0xb940'0000 ||
-            (*loc3 & 0xbfc0'0000) != 0xb940'0000)
+            (*loc2 & 0xbfc0'0000) != 0xb940'0000)
+          break;
+
+        if (u32 val = (*loc3 & 0xffc0'0000); val == 0xf940'0000)
+          size = 8;
+        else if (val == 0xb940'0000)
+          size = 4;
+        else
           break;
 
         u64 got_addr = page(subsec->get_addr(ctx) + offset1) +
@@ -551,10 +559,11 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
             //
             //  nop
             //  nop
-            //  ldr reg3, _foo
+            //  ldr Rz/Wz, _foo
             *loc1 = 0xd503'201f;
             *loc2 = 0xd503'201f;
-            *loc3 = 0x1800'0000 | (bits(disp, 20, 2) << 5) | bits(*loc3, 4, 0);
+            *loc3 = (size == 8 ? 0x5800'0000 : 0x1800'0000) |
+                    (bits(disp, 20, 2) << 5) | bits(*loc3, 4, 0);
             break;
           }
         }
