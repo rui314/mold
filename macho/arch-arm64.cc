@@ -537,9 +537,9 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         // We expect the following instructions for a GOT-indirect load:
         //
-        //   adrp X1, _foo@GOTPAGE
-        //   ldr  X2, [X1, _foo@GOTPAGEOFF]
-        //   ldr/ldrb/ldrsb/ldrsh/... X3/W3, [X2]
+        //   adrp Xa, _foo@GOTPAGE
+        //   ldr  Xb, [Xa, _foo@GOTPAGEOFF]
+        //   ldr/ldrb/ldrsb/ldrsh/... Xc/Wc, [Xb]
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
             (*loc2 & 0xffc0'0000) != 0xf940'0000)
           break;
@@ -562,7 +562,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
           if (disp == sign_extend(disp, 20) && insn) {
             *loc1 = 0xd503'201f;                     // nop
             *loc2 = 0xd503'201f;                     // nop
-            *loc3 = insn | (bits(disp, 20, 2) << 5); // ldr X3/W3, [_foo]
+            *loc3 = insn | (bits(disp, 20, 2) << 5); // ldr Xc/Wc, [_foo]
             break;
           }
         }
@@ -572,7 +572,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
             disp == sign_extend(disp, 20)) {
           u32 insn = 0x5800'0000 | bits(*loc2, 4, 0);
           *loc1 = 0xd503'201f;                     // nop
-          *loc2 = insn | (bits(disp, 20, 2) << 5); // ldr X2, _foo@GOT
+          *loc2 = insn | (bits(disp, 20, 2) << 5); // ldr Xb, _foo@GOT
         }
         break;
       }
@@ -597,8 +597,8 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         // We expect the following instructions:
         //
-        //   adrp X1, _foo@PAGE
-        //   add  X2, X1, _foo@PAGEOFF
+        //   adrp Xa, _foo@PAGE
+        //   add  Xb, Xa, _foo@PAGEOFF
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
             (*loc2 & 0xffc0'0000) != 0x9100'0000)
           break;
@@ -611,7 +611,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         if (disp == sign_extend(disp, 20)) {
           // Rewrite it with
           //   nop
-          //   adr X2, _foo
+          //   adr Xb, _foo
           *loc1 = 0xd503'201f;
           *loc2 = 0x1000'0000 | (bits(disp, 1, 0) << 29) |
                   (bits(disp, 20, 2) << 5) | bits(*loc2, 4, 0);
