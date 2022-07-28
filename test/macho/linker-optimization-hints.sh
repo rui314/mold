@@ -15,8 +15,10 @@ mkdir -p $t
 cat <<EOF | $CC -o $t/a.o -c -xc - -O2
 #include <stdio.h>
 
-int foo = -1;
-long bar = -1;
+char x1 = -1;
+short x2 = -1;
+int x3 = -1;
+long x4 = -1;
 
 void hello() {
   printf("Hello world ");
@@ -28,16 +30,18 @@ cat <<EOF | $CC -o $t/b.o -c -xc - -O2
 
 void hello();
 
-extern int foo;
-extern long bar;
+extern char x1;
+extern short x2;
+extern int x3;
+extern long x4;
 
 int main() {
   hello();
-  printf("%d %ld\n", foo, bar);
+  printf("%d %d %d %ld\n", x1, x2, x3, x4);
 }
 EOF
 
 clang --ld-path=./ld64 -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q 'Hello world -1 -1'
+$t/exe | grep -q 'Hello world -1 -1 -1 -1'
 
 echo OK

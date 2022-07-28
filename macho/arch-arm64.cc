@@ -470,6 +470,17 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 #define ASSERT_RANGE(val, start, size)                          \
   assert((start) <= (val) && (val) < ((start) + (size)))
 
+static u32 to_ldr_immediate(u32 insn) {
+  switch (insn & 0xffc0'0000) {
+  case 0xf940'0000:                        // ldr X1, [X0]
+    return 0x5800'0000 | bits(insn, 4, 0); // ldr X1, imm
+  case 0xb940'0000:                        // ldr W1, [X0]
+    return 0x1800'0000 | bits(insn, 4, 0); // ldr W1, imm
+  default:
+    return 0;
+  }
+}
+
 // On ARM, we generally need two or more instructions to materialize
 // an address of an object in a register or jump to a function.
 // However, if an object or a function is close enough to PC, a single
@@ -524,22 +535,13 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         ul32 *loc2 = (ul32 *)(loc + offset2);
         ul32 *loc3 = (ul32 *)(loc + offset3);
 
-        // We expect the following instructions:
+        // We expect the following instructions for a GOT-indirect load:
         //
-        //   adrp Rx, _foo@GOTPAGE
-        //   ldr  Ry, [Rx, _foo@GOTPAGEOFF]
-        //   ldr  Rz/Wz, [Ry]
-        i64 size = 0;
-
+        //   adrp X1, _foo@GOTPAGE
+        //   ldr  X2, [X1, _foo@GOTPAGEOFF]
+        //   ldr/ldrb/ldrsb/ldrsh/... X3/W3, [X2]
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
-            (*loc2 & 0xbfc0'0000) != 0xb940'0000)
-          break;
-
-        if (u32 val = (*loc3 & 0xffc0'0000); val == 0xf940'0000)
-          size = 8;
-        else if (val == 0xb940'0000)
-          size = 4;
-        else
+            (*loc2 & 0xffc0'0000) != 0xf940'0000)
           break;
 
         u64 got_addr = page(subsec->get_addr(ctx) + offset1) +
@@ -551,21 +553,26 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         u64 got_value = *(ul64 *)(ctx.buf + ctx.got.hdr.offset + got_addr -
                                   ctx.got.hdr.addr);
 
+        // If the GOT slot is already filled with a value and we can
+        // inline the value, do it.
         if (got_value) {
           i64 disp = got_value - subsec->get_addr(ctx) - offset3;
-          if (disp == sign_extend(disp, 20)) {
-            // If the GOT entry has already been filled, and its value is
-            // within the range of LDR, we can convert to
-            //
-            //  nop
-            //  nop
-            //  ldr Rz/Wz, _foo
-            *loc1 = 0xd503'201f;
-            *loc2 = 0xd503'201f;
-            *loc3 = (size == 8 ? 0x5800'0000 : 0x1800'0000) |
-                    (bits(disp, 20, 2) << 5) | bits(*loc3, 4, 0);
+          u32 insn = to_ldr_immediate(*loc3);
+
+          if (disp == sign_extend(disp, 20) && insn) {
+            *loc1 = 0xd503'201f;                     // nop
+            *loc2 = 0xd503'201f;                     // nop
+            *loc3 = insn | (bits(disp, 20, 2) << 5); // ldr X3/W3, [_foo]
             break;
           }
+        }
+
+        // If the GOT slot is close enough to PC, we can eliminate ADRP.
+        if (i64 disp = got_addr - subsec->get_addr(ctx) - offset2;
+            disp == sign_extend(disp, 20)) {
+          u32 insn = 0x5800'0000 | bits(*loc2, 4, 0);
+          *loc1 = 0xd503'201f;                     // nop
+          *loc2 = insn | (bits(disp, 20, 2) << 5); // ldr X2, _foo@GOT
         }
         break;
       }
@@ -590,8 +597,8 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         // We expect the following instructions:
         //
-        //   adrp reg1, _foo@PAGE
-        //   add  reg2, reg1, _foo@PAGEOFF
+        //   adrp X1, _foo@PAGE
+        //   add  X2, X1, _foo@PAGEOFF
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
             (*loc2 & 0xffc0'0000) != 0x9100'0000)
           break;
@@ -604,7 +611,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         if (disp == sign_extend(disp, 20)) {
           // Rewrite it with
           //   nop
-          //   adr reg2, _foo
+          //   adr X2, _foo
           *loc1 = 0xd503'201f;
           *loc2 = 0x1000'0000 | (bits(disp, 1, 0) << 29) |
                   (bits(disp, 20, 2) << 5) | bits(*loc2, 4, 0);
