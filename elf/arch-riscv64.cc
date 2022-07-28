@@ -183,6 +183,9 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_RISCV_SET16:
     *(ul16 *)loc = val;
     return;
+  case R_RISCV_SET32:
+    *(ul32 *)loc = val;
+    return;
   case R_RISCV_32_PCREL:
     *(ul32 *)loc = val - this->shdr.sh_addr - offset;
     return;
