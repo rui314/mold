@@ -17,6 +17,6 @@ int main() {}
 EOF
 
 clang --ld-path=./ld64 -o $t/exe $t/a.o
-otool -l $t/exe | grep -q 'tool 1836018788'
+otool -l $t/exe | grep -q 'tool 54321'
 
 echo OK
