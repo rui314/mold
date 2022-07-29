@@ -1239,15 +1239,15 @@ template <typename E>
 void CodeSignatureSection<E>::compute_size(Context<E> &ctx) {
   std::string filename = filepath(ctx.arg.final_output).filename();
   i64 filename_size = align_to(filename.size() + 1, 16);
-  i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
+  i64 num_blocks = align_to(this->hdr.offset, E::page_size) / E::page_size;
   this->hdr.size = sizeof(CodeSignatureHeader) + sizeof(CodeSignatureBlobIndex) +
                    sizeof(CodeSignatureDirectory) + filename_size +
                    num_blocks * SHA256_SIZE;
 }
 
 // A __code_signature section is optional for x86 macOS but mandatory
-// for ARM macOS. The section contains a cryptographic hash for each 4
-// KiB block of an executable or a dylib file. The program loader
+// for ARM macOS. The section contains a cryptographic hash for each
+// memory page of an executable or a dylib file. The program loader
 // verifies the hash values on the initial execution of a binary and
 // will reject it if a hash value does not match.
 template <typename E>
@@ -1259,7 +1259,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
 
   std::string filename = filepath(ctx.arg.final_output).filename();
   i64 filename_size = align_to(filename.size() + 1, 16);
-  i64 num_blocks = align_to(this->hdr.offset, BLOCK_SIZE) / BLOCK_SIZE;
+  i64 num_blocks = align_to(this->hdr.offset, E::page_size) / E::page_size;
 
   // Fill code-sign header fields
   CodeSignatureHeader &sighdr = *(CodeSignatureHeader *)buf;
@@ -1288,7 +1288,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   dir.code_limit = this->hdr.offset;
   dir.hash_size = SHA256_SIZE;
   dir.hash_type = CS_HASHTYPE_SHA256;
-  dir.page_size = std::countr_zero<u64>(BLOCK_SIZE);
+  dir.page_size = std::countr_zero(E::page_size);
   dir.exec_seg_base = ctx.text_seg->cmd.fileoff;
   dir.exec_seg_limit = ctx.text_seg->cmd.filesize;
   if (ctx.output_type == MH_EXECUTE)
@@ -1297,12 +1297,10 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
   memcpy(buf, filename.data(), filename.size());
   buf += filename_size;
 
-  // Compute a hash value for each 4 KiB block. The block size must be
-  // 4 KiB, as the macOS kernel supports only that block size for the
-  // ad-hoc code signatures.
+  // Compute a hash value for each block.
   auto compute_hash = [&](i64 i) {
-    u8 *start = ctx.buf + i * BLOCK_SIZE;
-    u8 *end = ctx.buf + std::min<i64>((i + 1) * BLOCK_SIZE, this->hdr.offset);
+    u8 *start = ctx.buf + i * E::page_size;
+    u8 *end = ctx.buf + std::min<i64>((i + 1) * E::page_size, this->hdr.offset);
     SHA256(start, end - start, buf + i * SHA256_SIZE);
   };
 
@@ -1313,7 +1311,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
 #if __APPLE__
     // Calling msync() with MS_ASYNC speeds up the following msync()
     // with MS_INVALIDATE.
-    msync(ctx.buf + i * BLOCK_SIZE, 1024 * BLOCK_SIZE, MS_ASYNC);
+    msync(ctx.buf + i * E::page_size, 1024 * E::page_size, MS_ASYNC);
 #endif
   }
 
@@ -1333,7 +1331,7 @@ void CodeSignatureSection<E>::write_signature(Context<E> &ctx) {
     // recompute code signatures for the updated blocks.
     ctx.mach_hdr.copy_buf(ctx);
 
-    for (i64 i = 0; i * BLOCK_SIZE < ctx.mach_hdr.hdr.size; i++)
+    for (i64 i = 0; i * E::page_size < ctx.mach_hdr.hdr.size; i++)
       compute_hash(i);
   }
 

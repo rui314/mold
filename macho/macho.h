@@ -759,6 +759,7 @@ struct ObjcImageInfo {
 struct ARM64 {
   static constexpr u32 cputype = CPU_TYPE_ARM64;
   static constexpr u32 cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+  static constexpr u32 page_size = 16384;
   static constexpr u32 abs_rel = ARM64_RELOC_UNSIGNED;
   static constexpr u32 word_size = 8;
   static constexpr u32 stub_size = 12;
@@ -769,6 +770,7 @@ struct ARM64 {
 struct X86_64 {
   static constexpr u32 cputype = CPU_TYPE_X86_64;
   static constexpr u32 cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+  static constexpr u32 page_size = 4096;
   static constexpr u32 abs_rel = X86_64_RELOC_UNSIGNED;
   static constexpr u32 word_size = 8;
   static constexpr u32 stub_size = 6;
