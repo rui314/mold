@@ -470,17 +470,6 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 #define ASSERT_RANGE(val, start, size)                          \
   assert((start) <= (val) && (val) < ((start) + (size)))
 
-static u32 to_ldr_immediate(u32 insn) {
-  switch (insn & 0xffc0'0000) {
-  case 0xf940'0000:                        // ldr X1, [X0]
-    return 0x5800'0000 | bits(insn, 4, 0); // ldr X1, imm
-  case 0xb940'0000:                        // ldr W1, [X0]
-    return 0x1800'0000 | bits(insn, 4, 0); // ldr W1, imm
-  default:
-    return 0;
-  }
-}
-
 // On ARM, we generally need two or more instructions to materialize
 // an address of an object in a register or jump to a function.
 // However, if an object or a function is close enough to PC, a single
@@ -556,14 +545,29 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         // If the GOT slot is already filled with a value and we can
         // inline the value, do it.
         if (got_value) {
-          i64 disp = got_value - subsec->get_addr(ctx) - offset3;
-          u32 insn = to_ldr_immediate(*loc3);
-
-          if (disp == sign_extend(disp, 20) && insn) {
-            *loc1 = 0xd503'201f;                     // nop
-            *loc2 = 0xd503'201f;                     // nop
-            *loc3 = insn | (bits(disp, 20, 2) << 5); // ldr Xc/Wc, [_foo]
+          switch (*loc3 & 0xffc0'0000) {
+          case 0xf940'0000: { // ldr Xc, [Xb, #imm]
+            u64 imm = bits(*loc3, 21, 10) * 8;
+            i64 disp = got_value + imm - subsec->get_addr(ctx) - offset3;
+            if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
+              *loc1 = 0xd503'201f;       // nop
+              *loc2 = 0xd503'201f;       // nop
+              *loc3 = 0x5800'0000 | (bits(disp, 20, 2) << 5) |
+                      bits(*loc3, 4, 0); // ldr Xc, [_foo + #imm]
+            }
             break;
+          }
+          case 0xb940'0000: { // ldr Wc, [Xb, #imm]
+            u64 imm = bits(*loc3, 21, 10) * 4;
+            i64 disp = got_value + imm - subsec->get_addr(ctx) - offset3;
+            if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
+              *loc1 = 0xd503'201f;       // nop
+              *loc2 = 0xd503'201f;       // nop
+              *loc3 = 0x1800'0000 | (bits(disp, 20, 2) << 5) |
+                      bits(*loc3, 4, 0); // ldr Wc, [_foo + #imm]
+            }
+            break;
+          }
           }
         }
 
@@ -608,7 +612,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
                    bits(*loc2, 21, 10);
         i64 disp = addr - subsec->get_addr(ctx) - offset2;
 
-        if (disp == sign_extend(disp, 20)) {
+        if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
           // Rewrite it with
           //   nop
           //   adr Xb, _foo
