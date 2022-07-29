@@ -876,6 +876,7 @@ struct Context {
     bool dynamic = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
+    bool function_starts = true;
     bool ignore_optimization_hints = false;
     bool mark_dead_strippable_dylib = false;
     bool noinhibit_exec = false;
@@ -974,10 +975,10 @@ struct Context {
   BindSection<E> bind{*this};
   LazyBindSection<E> lazy_bind{*this};
   ExportSection<E> export_{*this};
-  FunctionStartsSection<E> function_starts{*this};
   SymtabSection<E> symtab{*this};
   StrtabSection<E> strtab{*this};
 
+  std::unique_ptr<FunctionStartsSection<E>> function_starts;
   std::unique_ptr<ObjcImageInfoSection<E>> image_info;
   std::unique_ptr<CodeSignatureSection<E>> code_sig;
 

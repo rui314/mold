@@ -324,6 +324,10 @@ static void create_synthetic_chunks(Context<E> &ctx) {
   // Create a __DATA,__objc_imageinfo section.
   ctx.image_info = ObjcImageInfoSection<E>::create(ctx);
 
+  // Create a __LINKEDIT,__func_starts section.
+  if (ctx.arg.function_starts)
+    ctx.function_starts.reset(new FunctionStartsSection(ctx));
+
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
     MappedFile<Context<E>> *mf =

@@ -191,8 +191,8 @@ static std::vector<u8> create_function_starts_cmd(Context<E> &ctx) {
 
   cmd.cmd = LC_FUNCTION_STARTS;
   cmd.cmdsize = buf.size();
-  cmd.dataoff = ctx.function_starts.hdr.offset;
-  cmd.datasize = ctx.function_starts.hdr.size;
+  cmd.dataoff = ctx.function_starts->hdr.offset;
+  cmd.datasize = ctx.function_starts->hdr.size;
   return buf;
 }
 
@@ -275,7 +275,8 @@ static std::vector<std::vector<u8>> create_load_commands(Context<E> &ctx) {
     vec.push_back(create_uuid_cmd(ctx));
   vec.push_back(create_build_version_cmd(ctx));
   vec.push_back(create_source_version_cmd(ctx));
-  vec.push_back(create_function_starts_cmd(ctx));
+  if (ctx.arg.function_starts)
+    vec.push_back(create_function_starts_cmd(ctx));
 
   for (DylibFile<E> *file : ctx.dylibs)
     if (file->dylib_idx != BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE)
@@ -971,6 +972,9 @@ void ExportSection<E>::copy_buf(Context<E> &ctx) {
   enc.write_trie(buf, enc.root);
 }
 
+// LC_FUNCTION_STARTS contains function start addresses encoded in
+// ULEB128. I don't know what tools consume this table, but we create
+// it anyway by default for the sake of compatibility.
 template <typename E>
 void FunctionStartsSection<E>::compute_size(Context<E> &ctx) {
   std::vector<std::vector<u64>> vec(ctx.objs.size());
