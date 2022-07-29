@@ -876,7 +876,8 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         read_file(ctx, find_framework(ctx, opts[j + 1]));
         j += 2;
       } else if (opts[j].starts_with("-l")) {
-        read_file(ctx, must_find_library(opts[j].substr(2)));
+        if (MappedFile<Context<E>> *mf = find_library(ctx, opts[j].substr(2)))
+          read_file(ctx, mf);
         j++;
       } else {
         Fatal(ctx) << *file << ": unknown LC_LINKER_OPTION command: " << opts[j];
