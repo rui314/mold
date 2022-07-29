@@ -528,7 +528,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         //
         //   adrp Xa, _foo@GOTPAGE
         //   ldr  Xb, [Xa, _foo@GOTPAGEOFF]
-        //   ldr/ldrb/ldrsb/ldrsh/... Xc/Wc, [Xb]
+        //   ldr/ldrb/ldrsb/ldrsh/... Xc/Wc, [Xb, #imm]
         if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
             (*loc2 & 0xffc0'0000) != 0xf940'0000)
           break;
