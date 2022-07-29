@@ -317,7 +317,7 @@ static constexpr u32 PLATFORM_DRIVERKIT = 10;
 static constexpr u32 TOOL_CLANG = 1;
 static constexpr u32 TOOL_SWIFT = 2;
 static constexpr u32 TOOL_LD = 3;
-static constexpr u32 TOOL_MOLD = 0x6d6f6c64; // Hex in "mold"
+static constexpr u32 TOOL_MOLD = 54321; // Randomly chosen!
 
 static constexpr u32 OBJC_IMAGE_SUPPORTS_GC = 1 << 1;
 static constexpr u32 OBJC_IMAGE_REQUIRES_GC = 1 << 2;
