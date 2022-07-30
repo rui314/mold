@@ -1235,7 +1235,12 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
     if (sym.file == this && is_alive(sym) &&
         (!ctx.arg.retain_symbols_file || sym.write_to_symtab)) {
       this->strtab_size += sym.name().size() + 1;
-      this->num_global_symtab++;
+      // Global symbols can be demoted to local symbols based on visibility,
+      // version scripts etc.
+      if (sym.is_local())
+        this->num_local_symtab++;
+      else
+        this->num_global_symtab++;
       sym.write_to_symtab = true;
     }
   }
@@ -1244,47 +1249,35 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::write_symtab(Context<E> &ctx) {
   ElfSym<E> *symtab_base = (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset);
-  i64 symtab_idx;
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = this->strtab_offset;
 
-  auto write_sym = [&](Symbol<E> &sym) {
+  auto write_sym = [&](Symbol<E> &sym, i64 &symtab_idx) {
     ElfSym<E> &esym = symtab_base[symtab_idx++];
 
-    esym = sym.esym();
-    esym.st_name = strtab_off;
-
-    if (sym.get_type() == STT_TLS)
-      esym.st_value = sym.get_addr(ctx, false) - ctx.tls_begin;
-    else
-      esym.st_value = sym.get_addr(ctx, false);
-
-    if (InputSection<E> *isec = sym.get_input_section())
-      esym.st_shndx = isec->output_section->shndx;
-    else if (sym.shndx < 0)
-      esym.st_shndx = -sym.shndx;
-    else if (esym.is_undef())
-      esym.st_shndx = SHN_UNDEF;
-    else
-      esym.st_shndx = SHN_ABS;
+    get_output_esym(ctx, sym, strtab_off, esym);
 
     write_string(strtab_base + strtab_off, sym.name());
     strtab_off += sym.name().size() + 1;
   };
 
-  symtab_idx = this->local_symtab_idx;
+  i64 local_symtab_idx = this->local_symtab_idx;
+  i64 global_symtab_idx = this->global_symtab_idx;
   for (i64 i = 1; i < this->first_global; i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.write_to_symtab)
-      write_sym(sym);
+      write_sym(sym, local_symtab_idx);
   }
 
-  symtab_idx = this->global_symtab_idx;
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
-    if (sym.file == this && sym.write_to_symtab)
-      write_sym(sym);
+    if (sym.file == this && sym.write_to_symtab) {
+      if (sym.is_local())
+        write_sym(sym, local_symtab_idx);
+      else
+        write_sym(sym, global_symtab_idx);
+    }
   }
 }
 
