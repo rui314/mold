@@ -1247,7 +1247,7 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::write_symtab(Context<E> &ctx) {
+void ObjectFile<E>::export_to_symtab(Context<E> &ctx) {
   ElfSym<E> *symtab_base = (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset);
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
@@ -1493,7 +1493,7 @@ void SharedFile<E>::compute_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
-void SharedFile<E>::write_symtab(Context<E> &ctx) {
+void SharedFile<E>::export_to_symtab(Context<E> &ctx) {
   ElfSym<E> *symtab =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->global_symtab_idx;
 
