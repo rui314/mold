@@ -641,6 +641,10 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+template<typename E>
+void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
+                     ElfSym<E> &out_esym);
+
 template <typename E>
 class SymtabSection : public Chunk<E> {
 public:
