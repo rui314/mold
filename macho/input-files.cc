@@ -81,46 +81,38 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::parse_sections(Context<E> &ctx) {
-  MachHeader &hdr = *(MachHeader *)this->mf->data;
-  u8 *p = this->mf->data + sizeof(hdr);
+  SegmentCommand *cmd = (SegmentCommand *)find_load_command(ctx, LC_SEGMENT_64);
+  if (!cmd)
+    return;
 
-  // Read all but a symtab section
-  for (i64 i = 0; i < hdr.ncmds; i++) {
-    LoadCommand &lc = *(LoadCommand *)p;
-    p += lc.cmdsize;
-    if (lc.cmd != LC_SEGMENT_64)
+  MachSection *mach_sec = (MachSection *)((u8 *)cmd + sizeof(*cmd));
+
+  for (MachSection &msec : std::span(mach_sec, mach_sec + cmd->nsects)) {
+    sections.push_back(nullptr);
+
+    if (msec.match("__LD", "__compact_unwind")) {
+      unwind_sec = &msec;
+      continue;
+    }
+
+    if (msec.match("__DATA", "__objc_imageinfo") ||
+        msec.match("__DATA_CONST", "__objc_imageinfo")) {
+      if (msec.size != sizeof(ObjcImageInfo))
+        Fatal(ctx) << *this << ": __objc_imageinfo: invalid size";
+
+      objc_image_info =
+        (ObjcImageInfo *)(this->mf->get_contents().data() + msec.offset);
+
+      if (objc_image_info->version != 0)
+        Fatal(ctx) << *this << ": __objc_imageinfo: unknown version: "
+                   << (u32)objc_image_info->version;
+      continue;
+    }
+
+    if (msec.attr & S_ATTR_DEBUG)
       continue;
 
-    SegmentCommand &cmd = *(SegmentCommand *)&lc;
-    MachSection *mach_sec = (MachSection *)((u8 *)&lc + sizeof(cmd));
-
-    for (MachSection &msec : std::span(mach_sec, mach_sec + cmd.nsects)) {
-      sections.push_back(nullptr);
-
-      if (msec.match("__LD", "__compact_unwind")) {
-        unwind_sec = &msec;
-        continue;
-      }
-
-      if (msec.match("__DATA", "__objc_imageinfo") ||
-          msec.match("__DATA_CONST", "__objc_imageinfo")) {
-        if (msec.size != sizeof(ObjcImageInfo))
-          Fatal(ctx) << *this << ": __objc_imageinfo: invalid size";
-
-        objc_image_info =
-          (ObjcImageInfo *)(this->mf->get_contents().data() + msec.offset);
-
-        if (objc_image_info->version != 0)
-          Fatal(ctx) << *this << ": __objc_imageinfo: unknown version: "
-                     << (u32)objc_image_info->version;
-        continue;
-      }
-
-      if (msec.attr & S_ATTR_DEBUG)
-        continue;
-
-      sections.back().reset(new InputSection<E>(ctx, *this, msec));
-    }
+    sections.back().reset(new InputSection<E>(ctx, *this, msec));
   }
 }
 

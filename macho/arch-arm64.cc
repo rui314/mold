@@ -84,8 +84,7 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
 
 template <>
 std::vector<Relocation<E>>
-read_relocations(Context<E> &ctx, ObjectFile<E> &file,
-                 const MachSection &hdr) {
+read_relocations(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr) {
   std::vector<Relocation<E>> vec;
   vec.reserve(hdr.nreloc);
 
@@ -97,12 +96,12 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
     switch (rels[i].type) {
     case ARM64_RELOC_UNSIGNED:
     case ARM64_RELOC_SUBTRACTOR:
-      switch (MachRel &r = rels[i]; r.p2size) {
+      switch (rels[i].p2size) {
       case 2:
-        addend = *(il32 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+        addend = *(il32 *)((u8 *)file.mf->data + hdr.offset + rels[i].offset);
         break;
       case 3:
-        addend = *(il64 *)((u8 *)file.mf->data + hdr.offset + r.offset);
+        addend = *(il64 *)((u8 *)file.mf->data + hdr.offset + rels[i].offset);
         break;
       default:
         unreachable();
