@@ -162,13 +162,13 @@ static constexpr u32 S_THREAD_LOCAL_VARIABLE_POINTERS = 0x14;
 static constexpr u32 S_THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15;
 static constexpr u32 S_INIT_FUNC_OFFSETS = 0x16;
 
-static constexpr u32 S_ATTR_LOC_RELOC = 0x000001;
-static constexpr u32 S_ATTR_EXT_RELOC = 0x000002;
-static constexpr u32 S_ATTR_SOME_INSTRUCTIONS = 0x000004;
+static constexpr u32 S_ATTR_LOC_RELOC = 0x1;
+static constexpr u32 S_ATTR_EXT_RELOC = 0x2;
+static constexpr u32 S_ATTR_SOME_INSTRUCTIONS = 0x4;
 
-static constexpr u32 S_ATTR_DEBUG = 0x020000;
-static constexpr u32 S_ATTR_SELF_MODIFYING_CODE = 0x040000;
-static constexpr u32 S_ATTR_LIVE_SUPPORT = 0x080000;
+static constexpr u32 S_ATTR_DEBUG = 0x20000;
+static constexpr u32 S_ATTR_SELF_MODIFYING_CODE = 0x40000;
+static constexpr u32 S_ATTR_LIVE_SUPPORT = 0x80000;
 static constexpr u32 S_ATTR_NO_DEAD_STRIP = 0x100000;
 static constexpr u32 S_ATTR_STRIP_STATIC_SYMS = 0x200000;
 static constexpr u32 S_ATTR_NO_TOC = 0x400000;

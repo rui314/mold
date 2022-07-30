@@ -10,34 +10,39 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
 
   std::vector<Subsection<E> *> rootset;
 
-  auto mark = [&](Symbol<E> *sym) {
-    if (sym && sym->subsec)
+  auto add = [&](Symbol<E> *sym) {
+    if (sym->subsec)
       rootset.push_back(sym->subsec);
   };
 
-  mark(ctx.arg.entry);
+  auto keep = [&](Symbol<E> *sym) {
+    if (sym->no_dead_strip)
+      return true;
+    if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
+      if (sym->scope == SCOPE_EXTERN || sym->referenced_dynamically)
+        return true;
+    return false;
+  };
 
-  if (ctx.output_type == MH_DYLIB || ctx.output_type == MH_BUNDLE)
-    for (ObjectFile<E> *file : ctx.objs)
-      for (Symbol<E> *sym : file->syms)
-        if (sym->file == file)
-          if (sym->scope == SCOPE_EXTERN || sym->no_dead_strip ||
-              sym->referenced_dynamically)
-            mark(sym);
+  for (ObjectFile<E> *file : ctx.objs) {
+    for (Symbol<E> *sym : file->syms)
+      if (sym->file == file && keep(sym))
+        add(sym);
 
-  for (ObjectFile<E> *file : ctx.objs)
     for (Subsection<E> *subsec : file->subsections)
       if (const MachSection &hdr = subsec->isec.hdr;
           (hdr.attr & S_ATTR_NO_DEAD_STRIP) ||
           hdr.type == S_MOD_INIT_FUNC_POINTERS ||
           hdr.type == S_MOD_TERM_FUNC_POINTERS)
         rootset.push_back(subsec);
+  }
 
   for (std::string_view name : ctx.arg.u)
     if (Symbol<E> *sym = get_symbol(ctx, name); sym->file)
-      mark(sym);
+      add(sym);
 
-  mark(get_symbol(ctx, "dyld_stub_binder"));
+  add(ctx.arg.entry);
+  add(get_symbol(ctx, "dyld_stub_binder"));
   return rootset;
 }
 
