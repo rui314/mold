@@ -573,10 +573,10 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
 
         // If the GOT slot is close enough to PC, we can eliminate ADRP.
         if (i64 disp = got_addr - subsec->get_addr(ctx) - offset2;
-            disp == sign_extend(disp, 20)) {
-          u32 insn = 0x5800'0000 | bits(*loc2, 4, 0);
-          *loc1 = 0xd503'201f;                     // nop
-          *loc2 = insn | (bits(disp, 20, 2) << 5); // ldr Xb, _foo@GOT
+            disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
+          *loc1 = 0xd503'201f;       // nop
+          *loc2 = 0x5800'0000 | (bits(disp, 20, 2) << 5) |
+                  bits(*loc2, 4, 0); // ldr Xb, _foo@GOT
         }
         break;
       }
@@ -612,17 +612,15 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
                    bits(*loc2, 21, 10);
         i64 disp = addr - subsec->get_addr(ctx) - offset2;
 
-        if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
-          // Rewrite it with
-          //   nop
-          //   adr Xb, _foo
-          *loc1 = 0xd503'201f;
+        if (disp == sign_extend(disp, 20)) {
+          *loc1 = 0xd503'201f;                                  // nop
           *loc2 = 0x1000'0000 | (bits(disp, 1, 0) << 29) |
-                  (bits(disp, 20, 2) << 5) | bits(*loc2, 4, 0);
+                  (bits(disp, 20, 2) << 5) | bits(*loc2, 4, 0); // adr Xb, _foo
         }
         break;
       }
       default:
+        // Skip unsupported optimizations hints.
         for (i64 i = 0; i < nargs; i++)
           read_uleb(hints);
       }
