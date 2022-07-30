@@ -1241,13 +1241,9 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
     vec[i].idx = i;
   });
 
-  auto is_local = [](Symbol<E> *sym) {
-    return !sym->is_imported && !sym->is_exported;
-  };
-
   tbb::parallel_sort(vec.begin() + 1, vec.end(), [&](const T &a, const T &b) {
-    return std::tuple(!is_local(a.sym), (bool)a.sym->is_exported, a.hash, a.idx) <
-           std::tuple(!is_local(b.sym), (bool)b.sym->is_exported, b.hash, b.idx);
+    return std::tuple(!a.sym->is_local(), (bool)a.sym->is_exported, a.hash, a.idx) <
+           std::tuple(!b.sym->is_local(), (bool)b.sym->is_exported, b.hash, b.idx);
   });
 
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
@@ -1260,7 +1256,9 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
   auto first_global =
-    std::partition_point(symbols.begin() + 1, symbols.end(), is_local);
+    std::partition_point(symbols.begin() + 1, symbols.end(), [](Symbol<E> *sym) {
+      return sym->is_local();
+    });
   this->shdr.sh_info = first_global - symbols.begin();
 }
 

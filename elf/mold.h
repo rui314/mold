@@ -1797,6 +1797,7 @@ public:
 
   bool is_absolute() const;
   bool is_relative() const;
+  bool is_local() const;
 
   InputSection<E> *get_input_section() const;
   u32 get_type() const;
@@ -2507,6 +2508,11 @@ inline bool Symbol<E>::is_absolute() const {
 template <typename E>
 inline bool Symbol<E>::is_relative() const {
   return !is_absolute();
+}
+
+template<typename E>
+inline bool Symbol<E>::is_local() const {
+  return !is_imported && !is_exported;
 }
 
 template <typename E>
