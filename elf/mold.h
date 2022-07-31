@@ -641,6 +641,10 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+template<typename E>
+void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
+                     ElfSym<E> &out_esym);
+
 template <typename E>
 class SymtabSection : public Chunk<E> {
 public:
@@ -1112,7 +1116,7 @@ public:
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
   void compute_symtab(Context<E> &ctx);
-  void write_symtab(Context<E> &ctx);
+  void export_to_symtab(Context<E> &ctx);
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
@@ -1194,7 +1198,7 @@ public:
                          std::function<void(InputFile<E> *)> feeder) override;
 
   void compute_symtab(Context<E> &ctx);
-  void write_symtab(Context<E> &ctx);
+  void export_to_symtab(Context<E> &ctx);
 
   bool is_needed = false;
   std::string soname;
@@ -1801,6 +1805,7 @@ public:
 
   bool is_absolute() const;
   bool is_relative() const;
+  bool is_local() const;
 
   InputSection<E> *get_input_section() const;
   u32 get_type() const;
@@ -2511,6 +2516,11 @@ inline bool Symbol<E>::is_absolute() const {
 template <typename E>
 inline bool Symbol<E>::is_relative() const {
   return !is_absolute();
+}
+
+template<typename E>
+inline bool Symbol<E>::is_local() const {
+  return !is_imported && !is_exported;
 }
 
 template <typename E>
