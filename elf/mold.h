@@ -1730,12 +1730,16 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 enum {
   NEEDS_GOT                = 1 << 0,
   NEEDS_PLT                = 1 << 1,
-  NEEDS_GOTTP              = 1 << 2,
-  NEEDS_TLSGD              = 1 << 3,
-  NEEDS_COPYREL            = 1 << 4,
-  NEEDS_TLSDESC            = 1 << 5,
-  NEEDS_THUMB_TO_ARM_THUNK = 1 << 6,
-  NEEDS_RANGE_EXTN_THUNK   = 1 << 7,
+  NEEDS_CPLT               = 1 << 2,
+  NEEDS_GOTTP              = 1 << 3,
+  NEEDS_TLSGD              = 1 << 4,
+  NEEDS_COPYREL            = 1 << 5,
+  NEEDS_TLSDESC            = 1 << 6,
+  NEEDS_THUMB_TO_ARM_THUNK = 1 << 7,
+
+  // This is used only by ARM64. Since the flag is used in a different
+  // phase than the above flags, we can reuse the same value.
+  NEEDS_RANGE_EXTN_THUNK   = 1 << 0,
 };
 
 // A struct to hold taret-dependent symbol members.

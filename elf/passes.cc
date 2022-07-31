@@ -921,21 +921,21 @@ void scan_rels(Context<E> &ctx) {
     if (sym->flags & NEEDS_GOT)
       ctx.got->add_got_symbol(ctx, sym);
 
-    if (sym->flags & NEEDS_PLT) {
-      if (sym->is_canonical) {
-        // A canonical PLT needs to be visible from DSOs.
-        sym->is_exported = true;
+    if (sym->flags & NEEDS_CPLT) {
+      sym->is_canonical = true;
 
-        // We can't use .plt.got for a canonical PLT because otherwise
-        // .plt.got and .got would refer each other, resulting in an
-        // infinite loop at runtime.
+      // A canonical PLT needs to be visible from DSOs.
+      sym->is_exported = true;
+
+      // We can't use .plt.got for a canonical PLT because otherwise
+      // .plt.got and .got would refer each other, resulting in an
+      // infinite loop at runtime.
+      ctx.plt->add_symbol(ctx, sym);
+    } else if (sym->flags & NEEDS_PLT) {
+      if (sym->flags & NEEDS_GOT)
+        ctx.pltgot->add_symbol(ctx, sym);
+      else
         ctx.plt->add_symbol(ctx, sym);
-      } else {
-        if (sym->flags & NEEDS_GOT)
-          ctx.pltgot->add_symbol(ctx, sym);
-        else
-          ctx.plt->add_symbol(ctx, sym);
-      }
     }
 
     if (sym->flags & NEEDS_GOTTP)
