@@ -497,7 +497,7 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
   for (Symbol<E> *sym : thunk.symbols) {
     sym->extra.thunk_idx = -1;
     sym->extra.thunk_sym_idx = -1;
-    sym->flags &= (u8)~NEEDS_RANGE_EXTN_THUNK;
+    sym->flags = 0;
   }
 }
 
