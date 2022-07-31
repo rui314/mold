@@ -1425,31 +1425,6 @@ struct VersionPattern {
   bool is_cpp = false;
 };
 
-template <typename E, typename T>
-class FileCache {
-public:
-  void store(MappedFile<Context<E>> *mf, T *obj) {
-    Key k(mf->name, mf->size, mf->mtime);
-    cache[k].push_back(obj);
-  }
-
-  std::vector<T *> get(MappedFile<Context<E>> *mf) {
-    Key k(mf->name, mf->size, mf->mtime);
-    std::vector<T *> objs = cache[k];
-    cache[k].clear();
-    return objs;
-  }
-
-  T *get_one(MappedFile<Context<E>> *mf) {
-    std::vector<T *> objs = get(mf);
-    return objs.empty() ? nullptr : objs[0];
-  }
-
-private:
-  typedef std::tuple<std::string, i64, i64> Key;
-  std::map<Key, std::vector<T *>> cache;
-};
-
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1597,8 +1572,6 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
-  FileCache<E, ObjectFile<E>> obj_cache;
-  FileCache<E, SharedFile<E>> dso_cache;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;
