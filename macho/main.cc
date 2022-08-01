@@ -584,27 +584,32 @@ static void fix_synthetic_symbol_values(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : ctx.internal_obj->syms) {
-    if (std::string_view s = "segment$start$"; sym->name.starts_with(s)) {
+    std::string_view name = sym->name;
+
+    if (remove_prefix(name, "segment$start$")) {
       sym->value = ctx.text->hdr.addr;
-      if (SegmentCommand *cmd = find_segment(sym->name.substr(s.size())))
+      if (SegmentCommand *cmd = find_segment(name))
         sym->value = cmd->vmaddr;
+      continue;
     }
 
-    if (std::string_view s = "segment$end$"; sym->name.starts_with(s)) {
+    if (remove_prefix(name, "segment$end$")) {
       sym->value = ctx.text->hdr.addr;
-      if (SegmentCommand *cmd = find_segment(sym->name.substr(s.size())))
+      if (SegmentCommand *cmd = find_segment(name))
         sym->value = cmd->vmaddr + cmd->vmsize;
+      continue;
     }
 
-    if (std::string_view s = "section$start$"; sym->name.starts_with(s)) {
+    if (remove_prefix(name, "section$start$")) {
       sym->value = ctx.text->hdr.addr;
-      if (MachSection *hdr = find_section(sym->name.substr(s.size())))
+      if (MachSection *hdr = find_section(name))
         sym->value = hdr->addr;
+      continue;
     }
 
-    if (std::string_view s = "section$end$"; sym->name.starts_with(s)) {
+    if (remove_prefix(name, "section$end$")) {
       sym->value = ctx.text->hdr.addr;
-      if (MachSection *hdr = find_section(sym->name.substr(s.size())))
+      if (MachSection *hdr = find_section(name))
         sym->value = hdr->addr + hdr->size;
     }
   }
