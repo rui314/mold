@@ -1138,15 +1138,12 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[1] = 0;
   buf[2] = 0;
 
-  auto get_plt_resolver_addr = [&](Symbol<E> &sym) -> u64 {
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     if constexpr (std::is_same_v<E, I386>)
-      return sym.get_plt_addr(ctx) + 6;
+      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
     else
-      return ctx.plt->shdr.sh_addr;
-  };
-
-  for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[sym->get_gotplt_idx(ctx)] = get_plt_resolver_addr(*sym);
+      buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
+  }
 }
 
 template <typename E>
