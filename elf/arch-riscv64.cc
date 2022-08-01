@@ -571,17 +571,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       dispatch(ctx, table, i, rel, sym);
       break;
     }
-    case R_RISCV_TLS_DTPMOD32:
-    case R_RISCV_TLS_DTPMOD64:
-    case R_RISCV_TLS_DTPREL32:
-    case R_RISCV_TLS_DTPREL64:
-    case R_RISCV_TLS_TPREL32:
-    case R_RISCV_TLS_TPREL64:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
-      break;
-    case R_RISCV_BRANCH:
-    case R_RISCV_JAL:
-      break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
       if (sym.is_imported)
@@ -597,6 +586,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_TLS_GD_HI20:
       sym.flags |= NEEDS_TLSGD;
       break;
+    case R_RISCV_32_PCREL: {
+      Action table[][4] = {
+        // Absolute  Local  Imported data  Imported code
+        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
+      };
+      dispatch(ctx, table, i, rel, sym);
+      break;
+    }
+    case R_RISCV_BRANCH:
+    case R_RISCV_JAL:
     case R_RISCV_PCREL_HI20:
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S:
@@ -615,13 +616,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_SUB32:
     case R_RISCV_SUB64:
     case R_RISCV_ALIGN:
-      break;
     case R_RISCV_RVC_BRANCH:
     case R_RISCV_RVC_JUMP:
-      break;
-    case R_RISCV_RVC_LUI:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
-      break;
     case R_RISCV_RELAX:
     case R_RISCV_SUB6:
     case R_RISCV_SET6:
@@ -629,16 +625,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_SET16:
     case R_RISCV_SET32:
       break;
-    case R_RISCV_32_PCREL: {
-      Action table[][4] = {
-        // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
-      };
-      dispatch(ctx, table, i, rel, sym);
-      break;
-    }
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
