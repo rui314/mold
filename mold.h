@@ -335,6 +335,14 @@ std::string_view save_string(C &ctx, const std::string &str) {
   return {(char *)buf, str.size()};
 }
 
+inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
+  if (s.starts_with(prefix)) {
+    s = s.substr(prefix.size());
+    return true;
+  }
+  return false;
+}
+
 //
 // Concurrent Map
 //

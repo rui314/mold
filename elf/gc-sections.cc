@@ -89,15 +89,11 @@ collect_start_stop_sections(Context<E> &ctx,
   tbb::concurrent_set<std::string_view> set;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols) {
-      if (!sym->file) {
-        std::string_view s = sym->name();
-        if (s.starts_with("__start_"))
-          set.insert(s.substr(8));
-        else if (s.starts_with("__stop_"))
-          set.insert(s.substr(7));
-      }
-    }
+    for (Symbol<E> *sym : file->symbols)
+      if (!sym->file)
+        if (std::string_view s = sym->name();
+            remove_prefix(s, "__start_") || remove_prefix(s, "__stop_"))
+          set.insert(s);
   });
 
   if (set.empty())

@@ -198,14 +198,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     std::string_view arg = args[0];
     args = args.subspan(1);
 
-    auto starts_with = [&](std::string_view prefix) {
-      if (arg.starts_with(prefix)) {
-        arg = arg.substr(prefix.size());
-        return true;
-      }
-      return false;
-    };
-
     if (arg == "--as-needed") {
       ctx.as_needed = true;
     } else if (arg == "--no-as-needed") {
@@ -222,16 +214,16 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       ctx.in_lib = true;
     } else if (arg == "--end-lib") {
       ctx.in_lib = false;
-    } else if (starts_with("--version-script=")) {
+    } else if (remove_prefix(arg, "--version-script=")) {
       parse_version_script(ctx, std::string(arg));
-    } else if (starts_with("--dynamic-list=")) {
+    } else if (remove_prefix(arg, "--dynamic-list=")) {
       parse_dynamic_list(ctx, std::string(arg));
-    } else if (starts_with("--export-dynamic-symbol=")) {
+    } else if (remove_prefix(arg, "--export-dynamic-symbol=")) {
       if (arg == "*")
         ctx.default_version = VER_NDX_GLOBAL;
       else
         ctx.version_patterns.push_back({arg, VER_NDX_GLOBAL, false});
-    } else if (starts_with("--export-dynamic-symbol-list=")) {
+    } else if (remove_prefix(arg, "--export-dynamic-symbol-list=")) {
       parse_dynamic_list(ctx, std::string(arg));
     } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
@@ -242,7 +234,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static, ctx.in_lib) =
         state.back();
       state.pop_back();
-    } else if (starts_with("-l")) {
+    } else if (remove_prefix(arg, "-l")) {
       MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg));
       mf->given_fullpath = false;
       read_file(ctx, mf);
