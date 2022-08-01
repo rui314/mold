@@ -356,7 +356,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
-  if constexpr (std::is_same_v<E, I386> || std::is_same_v<E, ARM32>)
+  if constexpr (E::is_rel)
     return {(u32)offset, (u8)type, sym};
   else
     return {offset, type, sym, addend};
@@ -1077,17 +1077,18 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
       continue;
     }
 
-    // Otherwise, we know the offset at link-time, so fill the GOT entry.
+    // Otherwise, we know the offset from the thread pointer (TP) at
+    // link-time, so we can fill the GOT entry directly.
+    //
+    // On x86, TP (%gs for 32-bit, %fs for 64-bit) points to the end of
+    // all thread-local variables for a historical reason, so the offset
+    // we calculate here will be negative. On other architectures, TP
+    // points to an optional padding whose size is architecture-dependent
+    // followed by thread-local variables.
     if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
-    else if constexpr (std::is_same_v<E, ARM32>)
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 8});
-    else if constexpr (std::is_same_v<E, ARM64>)
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + 16});
-    else if constexpr (std::is_same_v<E, RISCV64>)
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin});
     else
-      unreachable();
+      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + E::tls_offset});
   }
 
   if (tlsld_idx != -1)

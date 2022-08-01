@@ -1428,6 +1428,7 @@ struct ARM64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
+  static constexpr u32 tls_offset = 16;
   static constexpr bool is_rel = false;
   static constexpr bool supports_tlsdesc = true;
 };
@@ -1461,6 +1462,7 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
+  static constexpr u32 tls_offset = 8;
   static constexpr bool is_rel = true;
   static constexpr bool supports_tlsdesc = true;
 };
@@ -1493,6 +1495,7 @@ struct RISCV64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
+  static constexpr u32 tls_offset = 0;
   static constexpr bool is_rel = false;
   static constexpr bool supports_tlsdesc = false;
 };
