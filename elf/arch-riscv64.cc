@@ -240,14 +240,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul64 *)loc = S + A;
       }
       break;
-    case R_RISCV_TLS_DTPMOD32:
-    case R_RISCV_TLS_DTPMOD64:
-    case R_RISCV_TLS_DTPREL32:
-    case R_RISCV_TLS_DTPREL64:
-    case R_RISCV_TLS_TPREL32:
-    case R_RISCV_TLS_TPREL64:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
-      break;
     case R_RISCV_BRANCH:
       write_btype(loc, S + A - P);
       break;
@@ -334,9 +326,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_RVC_JUMP:
       write_cjtype(loc, S + A - P);
       break;
-    case R_RISCV_RVC_LUI:
-      Error(ctx) << *this << ": unsupported relocation: " << rel;
-      break;
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
       break;
@@ -360,7 +349,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // These relocations are handled in the next loop.
       break;
     default:
-      Error(ctx) << *this << ": unknown relocation: " << rel;
+      unreachable();
     }
 
 #undef S
