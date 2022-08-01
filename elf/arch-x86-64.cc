@@ -493,7 +493,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
-      record_undef_error(ctx, rel);
+      add_undef(ctx, file, sym, this, rel.r_offset);
       continue;
     }
 
@@ -604,7 +604,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
-      record_undef_error(ctx, rel);
+      add_undef(ctx, file, sym, this, rel.r_offset);
       continue;
     }
 

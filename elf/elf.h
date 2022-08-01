@@ -1125,6 +1125,34 @@ static constexpr u32 DW_RLE_base_address = 0x05;
 static constexpr u32 DW_RLE_start_end = 0x06;
 static constexpr u32 DW_RLE_start_length = 0x07;
 
+static constexpr u8 DW_LNS_copy = 0x01;
+static constexpr u8 DW_LNS_advance_pc = 0x02;
+static constexpr u8 DW_LNS_advance_line = 0x03;
+static constexpr u8 DW_LNS_set_file = 0x04;
+static constexpr u8 DW_LNS_set_column = 0x05;
+static constexpr u8 DW_LNS_negate_stmt = 0x06;
+static constexpr u8 DW_LNS_set_basic_block = 0x07;
+static constexpr u8 DW_LNS_const_add_pc = 0x08;
+static constexpr u8 DW_LNS_fixed_advance_pc = 0x09;
+static constexpr u8 DW_LNS_set_prologue_end = 0x0a;
+static constexpr u8 DW_LNS_set_prologue_begin = 0x0b;
+static constexpr u8 DW_LNS_set_isa = 0x0c;
+
+static constexpr u8 DW_LNE_end_sequence = 0x01;
+static constexpr u8 DW_LNE_set_address = 0x02;
+static constexpr u8 DW_LNE_define_file = 0x03;
+static constexpr u8 DW_LNE_set_discriminator = 0x04;
+static constexpr u8 DW_LNE_lo_user = 0x80;
+static constexpr u8 DW_LNE_hi_user = 0xff;
+
+static constexpr u16 DW_LNCT_path = 0x01;
+static constexpr u16 DW_LNCT_directory = 0x02;
+static constexpr u16 DW_LNCT_timestamp = 0x03;
+static constexpr u16 DW_LNCT_size = 0x04;
+static constexpr u16 DW_LNCT_MD5 = 0x05;
+static constexpr u16 DW_LNCT_lo_user = 0x2000;
+static constexpr u16 DW_LNCT_hi_user = 0x3fff;
+
 struct Elf64Sym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }

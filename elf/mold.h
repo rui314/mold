@@ -24,6 +24,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
+#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
@@ -274,9 +275,6 @@ public:
   const ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
-  std::string_view get_func_name(Context<E> &ctx, i64 offset);
-
-  void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
@@ -329,7 +327,10 @@ private:
 };
 
 template <typename E>
-void report_undef_errors(Context<E> &ctx);
+void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+               InputSection<E> *section, typename E::WordTy r_offset);
+template <typename E>
+void report_undef(Context<E> &ctx);
 
 //
 // output-chunks.cc
@@ -1001,6 +1002,10 @@ template <typename E>
 std::vector<u64>
 read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 
+template <typename E>
+std::tuple<std::string_view, std::string_view, int, int>
+find_source_location(Context<E> &ctx, ObjectFile<E> &file, u64 address);
+
 //
 // input-files.cc
 //
@@ -1066,7 +1071,10 @@ public:
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
   std::span<Symbol<E> *> get_global_syms();
-  std::string_view get_source_name() const;
+
+  std::string_view symbol_strtab_name( ul32 st_name ) const {
+    return symbol_strtab.data() + st_name;
+  }
 
   MappedFile<Context<E>> *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
@@ -1079,8 +1087,6 @@ public:
   u32 priority;
   std::atomic_bool is_alive = false;
   std::string_view shstrtab;
-  std::unique_ptr<Symbol<E>[]> local_syms;
-  std::string_view symbol_strtab;
 
   // To create an output .symtab
   u64 local_symtab_idx = 0;
@@ -1092,6 +1098,11 @@ public:
 
   // For --emit-relocs
   std::vector<i32> output_sym_indices;
+
+protected:
+  std::unique_ptr<Symbol<E>[]> local_syms;
+
+  std::string_view symbol_strtab;
 };
 
 // ObjectFile represents an input .o file.
@@ -1603,7 +1614,16 @@ struct Context {
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
 
-  tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
+  // Undefined symbols
+  struct Undefined
+  {
+    InputFile<E> &file;
+    Symbol<E> &sym;
+    InputSection<E> *section;
+    typename E::WordTy r_offset;
+  };
+  tbb::concurrent_vector<Undefined> undefined;
+  std::atomic_bool undefined_done = false;
 
   // Output chunks
   std::unique_ptr<OutputEhdr<E>> ehdr;
@@ -1639,12 +1659,13 @@ struct Context {
   std::unique_ptr<ThumbToArmSection> thumb_to_arm;
   std::unique_ptr<TlsTrampolineSection> tls_trampoline;
 
-  // For --gdb-index
+  // For undefined symbol reports and for --gdb-index
   Chunk<E> *debug_info = nullptr;
   Chunk<E> *debug_abbrev = nullptr;
   Chunk<E> *debug_ranges = nullptr;
   Chunk<E> *debug_addr = nullptr;
   Chunk<E> *debug_rnglists = nullptr;
+  Chunk<E> *debug_line = nullptr;
 
   // For --relocatable
   std::vector<RChunk<E> *> r_chunks;
@@ -1699,6 +1720,9 @@ int main(int argc, char **argv);
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
+
+template <typename E>
+void setup_context_debuginfo(Context<E> &ctx);
 
 //
 // Symbol

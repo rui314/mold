@@ -495,6 +495,276 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   return {};
 }
 
+// Read the DWARFv2 file and directory info from .debug_line (i.e. from the include_directories
+// and file_names fields in the header).
+static
+std::pair<std::string_view, std::string_view>
+read_line_file_v2(const u8 *file_data, const u8 *end, u32 file) {
+  const u8 *data = file_data;
+  // First skip include_directories to read file and find out which directory is needed
+  // (include_directories ends with an empty item containing only null).
+  for (;;) {
+    if (*data++ == '\0')
+      break;
+    data = (u8 *)memchr(data, '\0', end - data);
+    if (data == nullptr || end - data < 2)
+      return {};
+    ++data;
+  }
+
+  // Skip file entries before the one we want.
+  for (int i = 1; i < file; ++i) {
+    data = (u8 *)memchr(data, '\0', end - data);
+    if (data == nullptr)
+      return {};
+    ++data;
+    read_uleb(data);
+    read_uleb(data);
+    read_uleb(data);
+    if (*data == '\0')
+      return {};
+  }
+
+  std::string_view name((const char*)data);
+  data += name.size() + 1;
+  u32 directory_index = read_uleb(data);
+  std::string_view directory;
+  if (directory_index > 0) {
+    data = file_data;
+    // Skip directory entries before the one we want.
+    for (int i = 1; i < directory_index; ++i) {
+      data = (u8 *)memchr(data, '\0', end - data);
+      if (data == nullptr)
+        return {};
+      ++data;
+      if (*data == '\0')
+        return {};
+    }
+    directory = std::string_view((const char*)data);
+  }
+  return {name, directory};
+}
+
+// Process .debug_line for the given compilation unit and find the source location
+// for the given address.
+// The .debug_line section is instructions for a state machine that builds a list
+// of addresses and their source information.
+template <typename E>
+static
+std::tuple<std::string_view, std::string_view, int, int>
+find_source_location_cu(Context<E> &ctx, ObjectFile<E> &object_file, i64 offset, u64 addr) {
+  const u8 *data = get_buffer(ctx, ctx.debug_line) + offset;
+
+  ul32 len = *(ul32 *)data;
+  if (len == 0xffffffff)
+    return {}; // DWARF64
+  data += 4;
+  const u8 *end = data + len;
+
+  u32 dwarf_version = *(ul16 *)data;
+  if (dwarf_version < 2 || dwarf_version > 5)
+    return {}; // unknown DWARF version
+  data += 2;
+
+  if (dwarf_version == 5) {
+    if (u32 address_size = *data; address_size != E::word_size)
+      return {}; // unsupported address size
+    data += 2;
+  }
+  u32 header_length = *(ul32 *)data;
+  if (header_length == 0xffffffff)
+    return {}; // DWARF64
+  data += 4;
+  const u8 *data_after_header = data + header_length;
+  u8 minimum_instruction_length = *data++;
+  u8 maximum_operations_per_instruction = 1;
+  if (dwarf_version >= 4)
+    maximum_operations_per_instruction = *data++;
+  ++data; // default_is_stmt
+  i8 line_base = *(i8 *)data++;
+  u8 line_range = *data++;
+  u8 opcode_base = *data++;
+  std::span<const u8> standard_opcode_lengths = std::span(data, opcode_base - 1);
+  data += opcode_base - 1;
+  const u8 *file_data = data;
+  data = data_after_header;
+
+  // This is a partially interpreter for the .debug_line instructions for the state
+  // machine (DWARF spec section 6.2). We only care about the address, file, line
+  // and column data (and additionally op_index, since that one is needed for address).
+  u64 address = 0;
+  u32 op_index = 0;
+  u32 file = 1;
+  u32 line = 1;
+  u32 column = 0;
+  u64 last_address;
+  u32 last_file;
+  u32 last_line;
+  u32 last_column;
+  bool last_valid = false;
+
+  auto advance = [&](i32 operation_advance) {
+    address += minimum_instruction_length * ((op_index + operation_advance)
+      / maximum_operations_per_instruction);
+    op_index = (op_index + operation_advance) % maximum_operations_per_instruction;
+  };
+  auto advance_opcode = [&](u8 opcode) {
+    i32 adjusted_opcode = opcode - (i16)opcode_base;
+    line += line_base + (adjusted_opcode % line_range);
+    i32 operation_advance = adjusted_opcode / line_range;
+    return advance(operation_advance);
+  };
+
+  while (data < end) {
+    bool check_address = false;
+    bool end_sequence = false;
+    u8 opcode = *data;
+    ++data;
+    if (opcode < opcode_base) {
+      // standard opcodes (including extended opcodes)
+      switch (opcode) {
+      case DW_LNS_copy:
+        check_address = true;
+        break;
+      case DW_LNS_advance_pc:
+        advance(read_uleb(data));
+        check_address = true;
+        break;
+      case DW_LNS_advance_line:
+        line += read_sleb(data);
+        break;
+      case DW_LNS_set_file:
+        file = read_uleb(data);
+        break;
+      case DW_LNS_set_column:
+        column = read_uleb(data);
+        break;
+      case DW_LNS_const_add_pc:
+        advance_opcode(255);
+        break;
+      case DW_LNS_fixed_advance_pc:
+        address += *(ul16*)data;
+        data += 2;
+        op_index = 0;
+        break;
+      case 0: {
+        // extended opcodes
+        u32 bytes = read_uleb(data);
+        u8 extended_opcode = *data;
+        ++data;
+        switch (extended_opcode) {
+          case DW_LNE_end_sequence:
+            check_address = true;
+            end_sequence = true;
+            break;
+          case DW_LNE_set_address:
+            address = *(typename E::WordTy *)data;
+            data += E::word_size;
+            op_index = 0;
+            break;
+          case DW_LNE_set_discriminator:
+            read_uleb(data);
+            break;
+          case DW_LNE_define_file:
+            return {}; // deprecated
+          default:
+            data += bytes;
+            break;
+        }
+        break;
+      }
+      default:
+        // All the unhandled standard opcodes, including unknown (vendor
+        // extensions), skip their arguments.
+        for (u8 i = 0; i < standard_opcode_lengths[opcode - 1]; ++i)
+            read_uleb(data);
+        break;
+      }
+    } else {
+      // special opcodes
+      advance_opcode(opcode);
+      check_address = true;
+    }
+
+    if (check_address) {
+      // Check since the last (valid) address until before the current one.
+      // If found, the last location is the location of the asked for address.
+      if (last_valid && addr >= last_address && addr < address) {
+        std::string_view filename;
+        std::string_view directory;
+        if (dwarf_version <= 4)
+          std::tie(filename, directory) = read_line_file_v2(file_data, data_after_header, file);
+        else
+          return {}; // TODO
+        if (filename.empty())
+          return {};
+        return {filename, directory, last_line, last_column};
+      }
+      last_address = address;
+      last_file = file;
+      last_line = line;
+      last_column = column;
+      last_valid = true;
+    }
+    if (end_sequence) {
+      address = 0;
+      op_index = 0;
+      file = 1;
+      line = 1;
+      column = 0;
+      end_sequence = false;
+    }
+  }
+
+  return {};
+}
+
+// Return filename, line and column as source location for the address
+// in the given object file, by finding it in .debug_line .
+//
+// It is necessary to find find the compilation unit for the given address,
+// and then process the relevant part of .debug_line for that unit.
+template <typename E>
+std::tuple<std::string_view, std::string_view, int, int>
+find_source_location(Context<E> &ctx, ObjectFile<E> &file, u64 address) {
+  if (!file.debug_info)
+    return {};
+
+  // Find the compilation unit that contains the given address.
+  u64 offset = file.debug_info->offset;
+
+  for (i64 i = 0; i < file.compunits.size(); i++) {
+    std::vector<u64> addrs = read_address_areas(ctx, file, offset);
+    for (i64 j = 0; j < addrs.size(); j += 2) {
+      if (address >= addrs[j] && address < addrs[j + 1]) {
+        return find_source_location_cu(ctx, file, offset, address);
+      }
+      offset += file.compunits[i].size();
+    }
+  }
+
+  return {};
+}
+
+template <typename E>
+void setup_context_debuginfo(Context<E> &ctx) {
+  for (Chunk<E> *chunk : ctx.chunks) {
+    std::string_view name = chunk->name;
+    if (name == ".debug_info" || name == ".zdebug_info")
+      ctx.debug_info = chunk;
+    if (name == ".debug_abbrev" || name == ".zdebug_abbrev")
+      ctx.debug_abbrev = chunk;
+    if (name == ".debug_ranges" || name == ".zdebug_ranges")
+      ctx.debug_ranges = chunk;
+    if (name == ".debug_addr" || name == ".zdebug_addr")
+      ctx.debug_addr = chunk;
+    if (name == ".debug_rnglists" || name == ".zdebug_rnglists")
+      ctx.debug_rnglists = chunk;
+    if (name == ".debug_line" || name == ".zdebug_line")
+      ctx.debug_line = chunk;
+  }
+}
+
 #define INSTANTIATE(E)                                                  \
   template std::vector<std::string_view>                                \
   read_compunits(Context<E> &, ObjectFile<E> &);                        \
@@ -503,7 +773,11 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   template i64                                                          \
   estimate_address_areas(Context<E> &, ObjectFile<E> &);                \
   template std::vector<u64>                                             \
-  read_address_areas(Context<E> &, ObjectFile<E> &, i64)
+  read_address_areas(Context<E> &, ObjectFile<E> &, i64);               \
+  template std::tuple<std::string_view, std::string_view, int, int>     \
+  find_source_location(Context<E> &ctx, ObjectFile<E> &file, u64 address); \
+  template void                                                         \
+  setup_context_debuginfo(Context<E> &ctx)
 
 INSTANTIATE_ALL;
 

@@ -326,6 +326,26 @@ inline i64 uleb_size(u64 val) {
   return 9;
 }
 
+inline i64 read_sleb(u8 *&buf) {
+  i64 val = 0;
+  u8 shift = 0;
+  u8 byte;
+  for(;;) {
+    byte = *buf++;
+    val |= (byte & 0x7f) << shift;
+    shift += 7;
+    if ((byte & 0x80) == 0) {
+      if (shift < 64 && (byte & 0x40) != 0)
+        return val | (i64(-1) << shift); // sign-extend
+      return val;
+    }
+  }
+}
+
+inline i64 read_sleb(u8 const*&buf) {
+  return read_sleb(const_cast<u8 *&>(buf));
+}
+
 template <typename C>
 std::string_view save_string(C &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];

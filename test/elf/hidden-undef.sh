@@ -23,5 +23,6 @@ EOF
 
 ! $CC -B. -o $t/exe $t/a.so $t/b.o >& $t/log
 grep -q 'undefined symbol: foo' $t/log
+grep -q '>>> .*b.o' $t/log
 
 echo OK

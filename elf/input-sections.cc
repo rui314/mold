@@ -231,76 +231,130 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     apply_reloc_nonalloc(ctx, buf);
 }
 
-// Get the name of a function containin a given offset.
 template <typename E>
-std::string_view InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) {
-  for (const ElfSym<E> &esym : file.elf_syms) {
-    if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
-        esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
-      std::string_view name = file.symbol_strtab.data() + esym.st_name;
-      if (ctx.arg.demangle)
-        return demangle(name);
-      return name;
+void add_undef(Context<E> &ctx, InputFile<E> &file, Symbol<E> &sym,
+               InputSection<E> *section, typename E::WordTy r_offset) {
+  assert(!ctx.undefined_done);
+  ctx.undefined.push_back({file, sym, section, r_offset});
+}
+
+template <typename E>
+void report_undef(Context<E> &ctx) {
+  setup_context_debuginfo(ctx);
+
+  // Report all undefined symbols, grouped by symbol.
+  std::unordered_set<Symbol<E>*> handled;
+  for (const typename Context<E>::Undefined &group : ctx.undefined) {
+    if (handled.contains(&group.sym))
+        continue;
+    handled.emplace(&group.sym);
+
+    std::stringstream report;
+    report << "undefined symbol: " << group.sym << "\n";
+
+    int count = 0;
+    constexpr int max_reported_count = 3;
+    for (const typename Context<E>::Undefined &undef : ctx.undefined) {
+      if (&undef.sym != &group.sym)
+        continue;
+      if (++count > max_reported_count)
+        continue;
+
+      InputFile<E> &file = undef.file;
+
+      // Find the source file which references the symbol. First try debuginfo,
+      // as that one provides also source location. Debuginfo needs to be relocated,
+      // so this uses the resulting debuginfo rather than debuginfo in the object file.
+      std::string_view source_name;
+      std::string_view directory;
+      i32 line = 0;
+      i32 column = 0;
+      bool line_valid = false;
+      ObjectFile<E> * object_file = dynamic_cast<ObjectFile<E> *>(&file);
+      if (object_file != nullptr && object_file->debug_info && undef.section != nullptr) {
+        if (object_file->compunits.empty())
+          object_file->compunits = read_compunits(ctx, *object_file);
+        std::tie(source_name, directory, line, column) = find_source_location(ctx,
+          *object_file, undef.r_offset + undef.section->get_addr());
+        line_valid = !source_name.empty();
+      }
+
+      if (source_name.empty()) {
+        // If using debuginfo fails, find the source file from symtab. It should be listed
+        // in symtab as STT_FILE, the closest one before the undefined entry.
+        auto sym_pos = std::find(file.symbols.begin(), file.symbols.end(), &undef.sym);
+        if (sym_pos != file.symbols.end()) {
+          while (sym_pos != file.symbols.begin()) {
+            --sym_pos;
+            Symbol<E> *tmp = *sym_pos;
+            if (tmp->file && tmp->get_type() == STT_FILE) {
+              source_name = tmp->name();
+              break;
+            }
+          }
+        }
+      }
+
+      // Find the function that references the symbol by trying to find the relocation offset
+      // inside the section in one of the function ranges given by symtab.
+      std::string function_name;
+      if (undef.section != nullptr) {
+        for (const ElfSym<E> & elfsym : file.elf_syms) {
+          if (elfsym.st_shndx == undef.section->shndx && elfsym.st_type == STT_FUNC
+            && undef.r_offset >= elfsym.st_value && undef.r_offset < elfsym.st_value + elfsym.st_size) {
+            function_name = file.symbol_strtab_name(elfsym.st_name);
+            if (ctx.arg.demangle)
+              function_name = demangle(function_name);
+            break;
+          }
+        }
+      }
+
+      if (!source_name.empty()) {
+        std::string location(source_name);
+        if (line != 0)
+          location += ":" + std::to_string(line);
+        if (column != 0)
+          location += ":" + std::to_string(column);
+        if (!directory.empty())
+          report << ">>> referenced by " << location << " (" << directory << "/" << location << ")\n";
+        else
+          report << ">>> referenced by " << location << "\n";
+      } else
+        report << ">>> referenced by " << file << "\n";
+      report << ">>>               " << file;
+      if (!function_name.empty())
+        report << ":(" << function_name << ")";
+      report << "\n";
+
+      if (ctx.arg.warn_once)
+        break;
+    }
+
+    if (count > max_reported_count)
+      report << ">>> referenced " << (count - max_reported_count) << " more times\n";
+
+    switch (ctx.arg.unresolved_symbols) {
+    case UNRESOLVED_ERROR:
+      Error(ctx) << report.str();
+      break;
+    case UNRESOLVED_WARN:
+      Warn(ctx) << report.str();
+      break;
+    case UNRESOLVED_IGNORE:
+      break;
     }
   }
-  return "";
-}
 
-// Record an undefined symbol error which will be displayed all at
-// once by report_undef_errors().
-template <typename E>
-void InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) {
-  std::stringstream ss;
-  if (std::string_view source = file.get_source_name(); !source.empty())
-    ss << ">>> referenced by " << source << "\n";
-  else
-    ss << ">>> referenced by " << *this << "\n";
-
-  ss << ">>>               " << file;
-  if (std::string_view func = get_func_name(ctx, rel.r_offset); !func.empty())
-    ss << ":(" << func << ")";
-
-  Symbol<E> &sym = *file.symbols[rel.r_sym];
-
-  typename decltype(ctx.undef_errors)::accessor acc;
-  ctx.undef_errors.insert(acc, {sym.name(), {}});
-  acc->second.push_back(ss.str());
-}
-
-// Report all undefined symbols, grouped by symbol.
-template <typename E>
-void report_undef_errors(Context<E> &ctx) {
-  constexpr i64 max_errors = 3;
-
-  for (auto &pair : ctx.undef_errors) {
-    std::string_view sym_name = pair.first;
-    std::span<std::string> errors = pair.second;
-
-    if (ctx.arg.demangle)
-      sym_name = demangle(sym_name);
-
-    std::stringstream ss;
-    ss << "undefined symbol: " << sym_name << "\n";
-
-    for (i64 i = 0; i < errors.size() && i < max_errors; i++)
-      ss << errors[i];
-
-    if (errors.size() > max_errors)
-      ss << ">>> referenced " << (errors.size() - max_errors) << " more times\n";
-
-    if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
-      Error(ctx) << ss.str();
-    else if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      Warn(ctx) << ss.str();
-  }
-
-  ctx.checkpoint();
+  ctx.undefined_done = true;
 }
 
 #define INSTANTIATE(E)                                                  \
   template struct CieRecord<E>;                                         \
   template class InputSection<E>;                                       \
-  template void report_undef_errors(Context<E> &)
+  template void add_undef(Context<E> &, InputFile<E> &, Symbol<E> &,    \
+    InputSection<E> *section, typename E::WordTy r_offset);             \
+  template void report_undef(Context<E> &)
 
 
 INSTANTIATE_ALL;
