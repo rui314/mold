@@ -5,8 +5,6 @@
 
 namespace mold::elf {
 
-using E = RISCV64;
-
 static u32 itype(u32 val) {
   return val << 20;
 }
@@ -82,6 +80,7 @@ static void write_cjtype(u8 *loc, u32 val) {
   *(ul16 *)loc = (*(ul16 *)loc & mask) | cjtype(val);
 }
 
+template <typename E>
 static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
@@ -105,6 +104,7 @@ static void write_plt_header(Context<E> &ctx) {
   write_itype(buf + 16, gotplt - plt);
 }
 
+template <typename E>
 static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
   u8 *ent = ctx.buf + ctx.plt->shdr.sh_offset + E::plt_hdr_size +
             sym.get_plt_idx(ctx) * E::plt_size;
@@ -124,14 +124,14 @@ static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
   write_itype(ent + 4, gotplt - plt);
 }
 
-template <>
+template <typename E>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   write_plt_header(ctx);
   for (Symbol<E> *sym : symbols)
     write_plt_entry(ctx, *sym);
 }
 
-template <>
+template <typename E>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
@@ -153,7 +153,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-template <>
+template <typename E>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -193,7 +193,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
 }
 
-template <>
+template <typename E>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -395,7 +395,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <>
+template <typename E>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -482,7 +482,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <>
+template <typename E>
 void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   // A non-alloc section isn't relaxed, so just copy it as one big chunk.
   if (!(shdr().sh_flags & SHF_ALLOC)) {
@@ -513,7 +513,7 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   memcpy(buf, contents.data() + pos, contents.size() - pos);
 }
 
-template <>
+template <typename E>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
@@ -620,6 +620,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
+template <typename E>
 static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
   return isec && (isec->shdr().sh_flags & SHF_ALLOC);
 }
@@ -635,6 +636,7 @@ static std::vector<Symbol<E> *> get_sorted_symbols(InputSection<E> &isec) {
 }
 
 // Returns the distance between a relocated place and a symbol.
+template <typename E>
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                             InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
@@ -656,6 +658,7 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 }
 
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
+template <typename E>
 static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
   std::vector<Symbol<E> *> vec = get_sorted_symbols(isec);
   std::span<Symbol<E> *> syms = vec;
@@ -762,6 +765,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
 // relocation to a specified byte boundary. We at least have to
 // interpret them satisfy the constraints imposed by R_RISCV_ALIGN
 // relocations.
+template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
 
@@ -777,5 +781,19 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   compute_section_sizes(ctx);
   return set_osec_offsets(ctx);
 }
+
+#define INSTANTIATE_RISCV(E)                                                 \
+  template void PltSection<E>::copy_buf(Context<E> &);                       \
+  template void PltGotSection<E>::copy_buf(Context<E> &);                    \
+  template void                                                              \
+  EhFrameSection<E>::apply_reloc(Context<E> &, const ElfRel<E> &, u64, u64); \
+  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
+  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
+  template void InputSection<E>::copy_contents_riscv(Context<E> &, u8 *);    \
+  template void InputSection<E>::scan_relocations(Context<E> &);             \
+  template i64 riscv_resize_sections(Context<E> &);
+
+INSTANTIATE_RISCV(RISCV64);
+INSTANTIATE_RISCV(RISCV32);
 
 } // namespace mold::elf

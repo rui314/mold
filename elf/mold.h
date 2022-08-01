@@ -45,7 +45,8 @@
   INSTANTIATE(I386);                            \
   INSTANTIATE(ARM64);                           \
   INSTANTIATE(ARM32);                           \
-  INSTANTIATE(RISCV64)
+  INSTANTIATE(RISCV64);                         \
+  INSTANTIATE(RISCV32)
 #endif
 
 namespace mold::elf {
@@ -249,6 +250,11 @@ struct InputSectionExtras<ARM64> {
 
 template <>
 struct InputSectionExtras<RISCV64> {
+  std::vector<i32> r_deltas;
+};
+
+template <>
+struct InputSectionExtras<RISCV32> {
   std::vector<i32> r_deltas;
 };
 
@@ -1224,7 +1230,7 @@ template <typename E>
 void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
-i64 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, std::string path);
@@ -1379,7 +1385,8 @@ void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &os
 // arch-riscv64.cc
 //
 
-i64 riscv_resize_sections(Context<RISCV64> &ctx);
+template <typename E>
+i64 riscv_resize_sections(Context<E> &ctx);
 
 //
 // main.cc
@@ -1512,7 +1519,7 @@ struct Context {
     bool z_relro = true;
     bool z_shstk = false;
     bool z_text = false;
-    i64 emulation = -1;
+    MachineType emulation = MachineType::NONE;
     i64 filler = -1;
     i64 print_dependencies = 0;
     i64 spare_dynamic_tags = 5;

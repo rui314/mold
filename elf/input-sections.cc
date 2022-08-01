@@ -216,7 +216,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     return;
 
   // Copy data
-  if constexpr (std::is_same_v<E, RISCV64>) {
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>) {
     copy_contents_riscv(ctx, buf);
   } else if (compressed) {
     uncompress_to(ctx, buf);

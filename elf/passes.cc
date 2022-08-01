@@ -411,7 +411,7 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   if constexpr (E::supports_tlsdesc)
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
 
-  if constexpr (std::is_same_v<E, RISCV64>)
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
     if (!ctx.arg.shared)
       ctx.__global_pointer = add("__global_pointer$");
 
@@ -1568,7 +1568,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // RISC-V's __global_pointer$
-  if constexpr (std::is_same_v<E, RISCV64>) {
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>) {
     if (!ctx.arg.shared) {
       if (Chunk<E> *chunk = find(".sdata"))
         ctx.__global_pointer->shndx = -chunk->shndx;

@@ -23,6 +23,7 @@ struct I386;
 struct ARM64;
 struct ARM32;
 struct RISCV64;
+struct RISCV32;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -31,6 +32,8 @@ template <typename E> struct ElfPhdr;
 template <typename E> struct ElfRel;
 template <typename E> struct ElfDyn;
 template <typename E> struct ElfChdr;
+
+enum class MachineType { NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32 };
 
 template <typename E>
 std::string rel_to_string(u32 r_type);
@@ -147,6 +150,7 @@ static constexpr u32 ELFCLASS64 = 2;
 
 static constexpr u32 EV_CURRENT = 1;
 
+static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_ARM = 40;
 static constexpr u32 EM_X86_64 = 62;
@@ -1040,6 +1044,11 @@ inline std::string rel_to_string<RISCV64>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+template <>
+inline std::string rel_to_string<RISCV32>(u32 r_type) {
+  return rel_to_string<RISCV64>(r_type);
+}
+
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
 static constexpr u32 DW_EH_PE_uleb128 = 0x01;
@@ -1343,6 +1352,7 @@ struct ElfNhdr {
 
 struct X86_64 {
   using WordTy = ul64;
+  static constexpr MachineType machine_type = MachineType::X86_64;
 
   static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -1389,6 +1399,7 @@ struct I386 {
   static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
+  static constexpr MachineType machine_type = MachineType::I386;
   static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
@@ -1422,6 +1433,7 @@ struct ARM64 {
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
+  static constexpr MachineType machine_type = MachineType::ARM64;
   static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
@@ -1456,6 +1468,7 @@ struct ARM32 {
   static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
+  static constexpr MachineType machine_type = MachineType::ARM32;
   static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
@@ -1489,6 +1502,7 @@ struct RISCV64 {
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
+  static constexpr MachineType machine_type = MachineType::RISCV64;
   static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -1507,5 +1521,39 @@ template <> struct ElfPhdr<RISCV64> : public Elf64Phdr {};
 template <> struct ElfRel<RISCV64> : public Elf64Rela {};
 template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
 template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
+
+struct RISCV32 {
+  using WordTy = ul32;
+
+  static constexpr u32 R_NONE = R_RISCV_NONE;
+  static constexpr u32 R_COPY = R_RISCV_COPY;
+  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
+  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_RISCV_32;
+  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
+
+  static constexpr MachineType machine_type = MachineType::RISCV32;
+  static constexpr u32 word_size = 4;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_RISCV;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+  static constexpr u32 tls_offset = 0;
+  static constexpr bool is_rel = false;
+  static constexpr bool supports_tlsdesc = false;
+};
+
+template <> struct ElfSym<RISCV32> : public Elf32Sym {};
+template <> struct ElfShdr<RISCV32> : public Elf32Shdr {};
+template <> struct ElfEhdr<RISCV32> : public Elf32Ehdr {};
+template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
+template <> struct ElfRel<RISCV32> : public Elf32Rela {};
+template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
+template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
 
 } // namespace mold::elf

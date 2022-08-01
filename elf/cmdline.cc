@@ -337,7 +337,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
-  if constexpr (std::is_same_v<E, RISCV64>)
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
     ctx.arg.discard_locals = true;
 
   auto read_arg = [&](std::string name) {
@@ -434,15 +434,17 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
-        ctx.arg.emulation = EM_X86_64;
+        ctx.arg.emulation = MachineType::X86_64;
       } else if (arg == "elf_i386") {
-        ctx.arg.emulation = EM_386;
+        ctx.arg.emulation = MachineType::I386;
       } else if (arg == "aarch64linux") {
-        ctx.arg.emulation = EM_AARCH64;
+        ctx.arg.emulation = MachineType::ARM64;
       } else if (arg == "armelf_linux_eabi") {
-        ctx.arg.emulation = EM_ARM;
+        ctx.arg.emulation = MachineType::ARM32;
       } else if (arg == "elf64lriscv") {
-        ctx.arg.emulation = EM_RISCV;
+        ctx.arg.emulation = MachineType::RISCV64;
+      } else if (arg == "elf32lriscv") {
+        ctx.arg.emulation = MachineType::RISCV32;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }

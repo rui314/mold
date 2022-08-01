@@ -17,11 +17,55 @@
 
 namespace mold::elf {
 
+// Read the beginning of a given file and returns its machine type
+// (e.g. EM_X86_64 or EM_386).
+template <typename E>
+static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  auto get_elf_type = [](u8 *buf) {
+    switch (ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)buf; ehdr.e_machine) {
+    case EM_386:
+      return MachineType::I386;
+    case EM_X86_64:
+      return MachineType::X86_64;
+    case EM_ARM:
+      return MachineType::ARM32;
+    case EM_AARCH64:
+      return MachineType::ARM64;
+    case EM_RISCV:
+      return (ehdr.e_ident[EI_CLASS] == ELFCLASS64)
+        ? MachineType::RISCV64 : MachineType::RISCV32;
+    default:
+      return MachineType::NONE;
+    }
+  };
+
+  switch (get_file_type(mf)) {
+  case FileType::ELF_OBJ:
+  case FileType::ELF_DSO:
+  case FileType::GCC_LTO_OBJ:
+    return get_elf_type(mf->data);
+  case FileType::AR:
+    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
+      if (get_file_type(child) == FileType::ELF_OBJ)
+        return get_elf_type(child->data);
+    return MachineType::NONE;
+  case FileType::THIN_AR:
+    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
+      if (get_file_type(child) == FileType::ELF_OBJ)
+        return get_elf_type(child->data);
+    return MachineType::NONE;
+  case FileType::TEXT:
+    return get_script_output_type(ctx, mf);
+  default:
+    return MachineType::NONE;
+  }
+}
+
 template <typename E>
 static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                       std::string archive_name) {
-  if (i64 type = ((ElfEhdr<E> *)mf->data)->e_machine; type != E::e_machine)
-    Fatal(ctx) << mf->name << ": incompatible file type: " << type;
+  if (get_machine_type(ctx, mf) != ctx.arg.emulation)
+    Fatal(ctx) << mf->name << ": incompatible file type";
 
   static Counter count("parsed_objs");
   count++;
@@ -58,8 +102,8 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
 template <typename E>
 static SharedFile<E> *
 new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  if (i64 type = ((ElfEhdr<E> *)mf->data)->e_machine; type != E::e_machine)
-    Fatal(ctx) << mf->name << ": incompatible file type: " << type;
+  if (get_machine_type(ctx, mf) != ctx.arg.emulation)
+    Fatal(ctx) << mf->name << ": incompatible file type";
 
   SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
   file->priority = ctx.file_priority++;
@@ -110,44 +154,18 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
       ctx.objs.push_back(file);
     return;
   default:
-    Fatal(ctx) << mf->name << ": unknown file type: " << type;
-  }
-}
-
-// Read the beginning of a given file and returns its machine type
-// (e.g. EM_X86_64 or EM_386). Return -1 if unknown.
-template <typename E>
-static i64 get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  switch (get_file_type(mf)) {
-  case FileType::ELF_OBJ:
-  case FileType::ELF_DSO:
-  case FileType::GCC_LTO_OBJ:
-    return ((ElfEhdr<E> *)mf->data)->e_machine;
-  case FileType::AR:
-    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::ELF_OBJ)
-        return ((ElfEhdr<E> *)child->data)->e_machine;
-    return -1;
-  case FileType::THIN_AR:
-    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::ELF_OBJ)
-        return ((ElfEhdr<E> *)child->data)->e_machine;
-    return -1;
-  case FileType::TEXT:
-    return get_script_output_type(ctx, mf);
-  default:
-    return -1;
+    Fatal(ctx) << mf->name << ": unknown file type";
   }
 }
 
 template <typename E>
-static i64
+static MachineType
 deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
   for (std::string_view arg : args)
     if (!arg.starts_with('-'))
       if (auto *mf = MappedFile<Context<E>>::open(ctx, std::string(arg)))
-        if (i64 type = get_machine_type(ctx, mf); type != -1)
-          return type;
+        if (MachineType ty = get_machine_type(ctx, mf); ty != MachineType::NONE)
+          return ty;
   Fatal(ctx) << "-m option is missing";
 }
 
@@ -157,10 +175,10 @@ MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
   if (!mf)
     return nullptr;
 
-  i64 type = get_machine_type(ctx, mf);
-  if (type == -1 || type == E::e_machine)
+  MachineType ty = get_machine_type(ctx, mf);
+  if (ty == MachineType::NONE || ty == E::machine_type)
     return mf;
-  Warn(ctx) << path << ": skipping incompatible file " << (int)type
+  Warn(ctx) << path << ": skipping incompatible file " << (int)ty
             << " " << (int)E::e_machine;
   return nullptr;
 }
@@ -380,24 +398,28 @@ static int elf_main(int argc, char **argv) {
   std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   // If no -m option is given, deduce it from input files.
-  if (ctx.arg.emulation == -1)
+  if (ctx.arg.emulation == MachineType::NONE)
     ctx.arg.emulation = deduce_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
-  if (ctx.arg.emulation != E::e_machine) {
+  if (ctx.arg.emulation != E::machine_type) {
 #if !MOLD_DEBUG_X86_64_ONLY && !MOLD_DEBUG_ARM64_ONLY
     switch (ctx.arg.emulation) {
-    case EM_386:
+    case MachineType::I386:
       return elf_main<I386>(argc, argv);
-    case EM_AARCH64:
+    case MachineType::ARM64:
       return elf_main<ARM64>(argc, argv);
-    case EM_ARM:
+    case MachineType::ARM32:
       return elf_main<ARM32>(argc, argv);
-    case EM_RISCV:
+    case MachineType::RISCV64:
       return elf_main<RISCV64>(argc, argv);
+    case MachineType::RISCV32:
+      return elf_main<RISCV32>(argc, argv);
+    default:
+      unreachable();
     }
 #endif
-    Fatal(ctx) << "unknown emulation: " << ctx.arg.emulation;
+    unreachable();
   }
 
   Timer t_all(ctx, "all");
@@ -649,7 +671,7 @@ static int elf_main(int argc, char **argv) {
   // that they can jump to anywhere in ±2 GiB by default. They may
   // be replaced with shorter instruction sequences if destinations
   // are close enough. Do this optimization.
-  if constexpr (std::is_same_v<E, RISCV64>)
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
     filesize = riscv_resize_sections(ctx);
 
   // Fix linker-synthesized symbol addresses.

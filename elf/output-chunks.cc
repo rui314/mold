@@ -49,15 +49,15 @@ u64 get_eflags(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, ARM32>)
     return EF_ARM_EABI_VER5;
 
-  if constexpr (std::is_same_v<E, RISCV64>) {
-    std::vector<ObjectFile<RISCV64> *> objs = ctx.objs;
+  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>) {
+    std::vector<ObjectFile<E> *> objs = ctx.objs;
     std::erase(objs, ctx.internal_obj);
 
     if (objs.empty())
       return 0;
 
     u32 ret = objs[0]->get_ehdr().e_flags;
-    for (ObjectFile<RISCV64> *file : std::span(objs).subspan(1))
+    for (ObjectFile<E> *file : std::span(objs).subspan(1))
       if (file->get_ehdr().e_flags & EF_RISCV_RVC)
         ret |= EF_RISCV_RVC;
     return ret;
@@ -358,6 +358,8 @@ template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
   if constexpr (E::is_rel)
     return {(u32)offset, (u8)type, sym};
+  else if constexpr (E::word_size == 4)
+    return {offset, (u8)type, sym, addend};
   else
     return {offset, type, sym, addend};
 }
