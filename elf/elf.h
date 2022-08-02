@@ -1352,7 +1352,6 @@ struct ElfNhdr {
 
 struct X86_64 {
   using WordTy = ul64;
-  static constexpr MachineType machine_type = MachineType::X86_64;
 
   static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -1366,6 +1365,7 @@ struct X86_64 {
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
+  static constexpr MachineType machine_type = MachineType::X86_64;
   static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
