@@ -57,8 +57,8 @@ u64 get_eflags(Context<E> &ctx) {
       return 0;
 
     u32 ret = objs[0]->get_ehdr().e_flags;
-    for (ObjectFile<E> *file : std::span(objs).subspan(1))
-      if (file->get_ehdr().e_flags & EF_RISCV_RVC)
+    for (i64 i = 1; i < objs.size(); i++)
+      if (objs[i]->get_ehdr().e_flags & EF_RISCV_RVC)
         ret |= EF_RISCV_RVC;
     return ret;
   }
