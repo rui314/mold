@@ -469,25 +469,9 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 #define ASSERT_RANGE(val, start, size)                          \
   assert((start) <= (val) && (val) < ((start) + (size)))
 
-static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
-                                   std::string_view &hints) {
-  i64 addr1 = read_uleb(hints);
-  i64 addr2 = read_uleb(hints);
-  i64 addr3 = read_uleb(hints);
-
-  Subsection<E> *subsec = file->find_subsection(ctx, addr1);
-  if (!subsec || !subsec->is_alive)
-    return;
-
-  ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
-  ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
-  ASSERT_RANGE(addr3, subsec->input_addr, subsec->input_size);
-
-  i64 offset1 = addr1 - subsec->input_addr;
-  i64 offset2 = addr2 - subsec->input_addr;
-  i64 offset3 = addr3 - subsec->input_addr;
-
-  u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+static void relax_adrp_ldr_got_ldr(Context<E> &ctx, Subsection<E> &subsec,
+                                   i64 offset1, i64 offset2, i64 offset3) {
+  u8 *loc = ctx.buf + subsec.isec.osec.hdr.offset + subsec.output_offset;
   ul32 *loc1 = (ul32 *)(loc + offset1);
   ul32 *loc2 = (ul32 *)(loc + offset2);
   ul32 *loc3 = (ul32 *)(loc + offset3);
@@ -501,9 +485,9 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
       (*loc2 & 0xffc0'0000) != 0xf940'0000)
     return;
 
-  u64 got_addr = page(subsec->get_addr(ctx) + offset1) +
-    (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
-    (bits(*loc2, 21, 10) << 3);
+  u64 got_addr = page(subsec.get_addr(ctx) + offset1) +
+                 (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
+                 (bits(*loc2, 21, 10) << 3);
 
   ASSERT_RANGE(got_addr, ctx.got.hdr.addr, ctx.got.hdr.size);
 
@@ -516,7 +500,7 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
     switch (*loc3 & 0xffc0'0000) {
     case 0xf940'0000: { // ldr Xc, [Xb, #imm]
       u64 imm = bits(*loc3, 21, 10) * 8;
-      i64 disp = got_value + imm - subsec->get_addr(ctx) - offset3;
+      i64 disp = got_value + imm - subsec.get_addr(ctx) - offset3;
       if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
         *loc1 = 0xd503'201f;       // nop
         *loc2 = 0xd503'201f;       // nop
@@ -527,7 +511,7 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
     }
     case 0xb940'0000: { // ldr Wc, [Xb, #imm]
       u64 imm = bits(*loc3, 21, 10) * 4;
-      i64 disp = got_value + imm - subsec->get_addr(ctx) - offset3;
+      i64 disp = got_value + imm - subsec.get_addr(ctx) - offset3;
       if (disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
         *loc1 = 0xd503'201f;       // nop
         *loc2 = 0xd503'201f;       // nop
@@ -540,7 +524,7 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
   }
 
   // If the GOT slot is close enough to PC, we can eliminate ADRP.
-  if (i64 disp = got_addr - subsec->get_addr(ctx) - offset2;
+  if (i64 disp = got_addr - subsec.get_addr(ctx) - offset2;
       disp == sign_extend(disp, 20) && (disp & 0b11) == 0) {
     *loc1 = 0xd503'201f;       // nop
     *loc2 = 0x5800'0000 | (bits(disp, 20, 2) << 5) |
@@ -548,22 +532,9 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx, ObjectFile<E> *file,
   }
 }
 
-static void relax_adrp_add(Context<E> &ctx, ObjectFile<E> *file,
-                           std::string_view &hints) {
-  i64 addr1 = read_uleb(hints);
-  i64 addr2 = read_uleb(hints);
-
-  Subsection<E> *subsec = file->find_subsection(ctx, addr1);
-  if (!subsec || !subsec->is_alive)
-    return;
-
-  ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
-  ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
-
-  i64 offset1 = addr1 - subsec->input_addr;
-  i64 offset2 = addr2 - subsec->input_addr;
-
-  u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+static void relax_adrp_add(Context<E> &ctx, Subsection<E> &subsec,
+                           i64 offset1, i64 offset2) {
+  u8 *loc = ctx.buf + subsec.isec.osec.hdr.offset + subsec.output_offset;
   ul32 *loc1 = (ul32 *)(loc + offset1);
   ul32 *loc2 = (ul32 *)(loc + offset2);
 
@@ -575,10 +546,10 @@ static void relax_adrp_add(Context<E> &ctx, ObjectFile<E> *file,
       (*loc2 & 0xffc0'0000) != 0x9100'0000)
     return;
 
-  u64 addr = page(subsec->get_addr(ctx) + offset1) +
-    (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
-    bits(*loc2, 21, 10);
-  i64 disp = addr - subsec->get_addr(ctx) - offset2;
+  u64 addr = page(subsec.get_addr(ctx) + offset1) +
+             (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12) +
+             bits(*loc2, 21, 10);
+  i64 disp = addr - subsec.get_addr(ctx) - offset2;
 
   if (disp == sign_extend(disp, 20)) {
     *loc1 = 0xd503'201f;                                  // nop
@@ -618,12 +589,45 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
       i64 nargs = read_uleb(hints);
 
       switch (type) {
-      case LOH_ARM64_ADRP_LDR_GOT_LDR:
-        relax_adrp_ldr_got_ldr(ctx, file, hints);
+      case LOH_ARM64_ADRP_LDR_GOT_LDR: {
+        assert(nargs == 3);
+        i64 addr1 = read_uleb(hints);
+        i64 addr2 = read_uleb(hints);
+        i64 addr3 = read_uleb(hints);
+
+        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        if (!subsec || !subsec->is_alive)
+          return;
+
+        ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(addr3, subsec->input_addr, subsec->input_size);
+
+        i64 offset1 = addr1 - subsec->input_addr;
+        i64 offset2 = addr2 - subsec->input_addr;
+        i64 offset3 = addr3 - subsec->input_addr;
+
+        relax_adrp_ldr_got_ldr(ctx, *subsec, offset1, offset2, offset3);
         break;
-      case LOH_ARM64_ADRP_ADD:
-        relax_adrp_add(ctx, file, hints);
+      }
+      case LOH_ARM64_ADRP_ADD: {
+        assert(nargs == 2);
+        i64 addr1 = read_uleb(hints);
+        i64 addr2 = read_uleb(hints);
+
+        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        if (!subsec || !subsec->is_alive)
+          return;
+
+        ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
+
+        i64 offset1 = addr1 - subsec->input_addr;
+        i64 offset2 = addr2 - subsec->input_addr;
+
+        relax_adrp_add(ctx, *subsec, offset1, offset2);
         break;
+      }
       default:
         // Skip unsupported optimizations hints.
         for (i64 i = 0; i < nargs; i++)
