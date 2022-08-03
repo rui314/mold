@@ -500,85 +500,68 @@ static bool relax_ldr(ul32 *loc, u64 loc_addr, u64 base_addr) {
   return false;
 }
 
-static u64 get_adrp_imm(ul32 *loc) {
-  return (bits(*loc1, 23, 5) << 14) + (bits(*loc1, 30, 29) << 12);
+static bool is_adrp(ul32 *loc) {
+  return (*loc & 0x9f00'0000) == 0x9000'0000;
 }
 
-static void relax_adrp_ldr_got_ldr(Context<E> &ctx, Subsection<E> &subsec,
-                                   i64 offset1, i64 offset2, i64 offset3) {
-  u8 *loc = ctx.buf + subsec.isec.osec.hdr.offset + subsec.output_offset;
-  ul32 *loc1 = (ul32 *)(loc + offset1);
-  ul32 *loc2 = (ul32 *)(loc + offset2);
-  ul32 *loc3 = (ul32 *)(loc + offset3);
+static u64 get_adrp_imm(ul32 *loc) {
+  return (bits(*loc, 23, 5) << 14) + (bits(*loc, 30, 29) << 12);
+}
 
+static void relax_adrp_ldr_got_ldr(Context<E> &ctx,
+                                   ul32 *loc1, ul32 *loc2, ul32 *loc3,
+                                   u64 addr1, u64 addr2, u64 addr3) {
   // We expect the following instructions for a GOT-indirect load:
   //
   //   adrp Xa, _foo@GOTPAGE
   //   ldr  Xb, [Xa, _foo@GOTPAGEOFF]
   //   ldr/ldrb/ldrsb/ldrsh/... Xc/Wc, [Xb, #imm]
-  if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
-      (*loc2 & 0xffc0'0000) != 0xf940'0000)
+  if (!is_adrp(loc1) || (*loc2 & 0xffc0'0000) != 0xf940'0000)
     return;
 
-  u64 got_page = page(subsec.get_addr(ctx) + offset1) + get_adrp_imm(loc1);
-  u64 got_offset = (bits(*loc2, 21, 10) << 3);
-  u64 got_addr = got_page + got_offset;
+  u64 got_page = page(addr1) + get_adrp_imm(loc1);
+  u64 pageoff = bits(*loc2, 21, 10) << 3;
 
-  ASSERT_RANGE(got_addr, ctx.got.hdr.addr, ctx.got.hdr.size);
+  ASSERT_RANGE(got_page + pageoff, ctx.got.hdr.addr, ctx.got.hdr.size);
 
-  u64 got_value = *(ul64 *)(ctx.buf + ctx.got.hdr.offset + got_addr -
+  u64 got_value = *(ul64 *)(ctx.buf + ctx.got.hdr.offset + got_page + pageoff -
                             ctx.got.hdr.addr);
 
   // If the GOT slot is already filled with a value and we can
   // inline the value, do it.
-  if (got_value && relax_ldr(loc3, subsec.get_addr(ctx) + offset3, got_value)) {
+  if (got_value && relax_ldr(loc3, addr3, got_value)) {
     *loc1 = 0xd503'201f; // nop
     *loc2 = 0xd503'201f; // nop
     return;
   }
 
   // If the GOT slot is close enough to PC, we can eliminate ADRP.
-  if (relax_ldr(loc2, subsec.get_addr(ctx) + offset2, got_page))
+  if (relax_ldr(loc2, addr2, got_page))
     *loc1 = 0xd503'201f; // nop
 }
 
-static void relax_adrp_ldr(Context<E> &ctx, Subsection<E> &subsec,
-                           i64 offset1, i64 offset2) {
-  u8 *loc = ctx.buf + subsec.isec.osec.hdr.offset + subsec.output_offset;
-  ul32 *loc1 = (ul32 *)(loc + offset1);
-  ul32 *loc2 = (ul32 *)(loc + offset2);
-
+static void relax_adrp_ldr(Context<E> &ctx, ul32 *loc1, ul32 *loc2,
+                           u64 addr1, u64 addr2) {
   //   adrp Xa, _foo@PAGE
   //   ldr  Xb/Wb, [Xa, _foo@PAGEOFF]
   // ->
   //   nop
   //   ldr  Xb/Wb, [_foo]
-  if ((*loc1 & 0x9f00'0000) != 0x9000'0000)
-    return;
-
-  u64 base_addr = page(subsec.get_addr(ctx) + offset1) + get_adrp_imm(loc1);
-  if (relax_ldr(loc2, subsec.get_addr(ctx) + offset2, base_addr))
+  if (is_adrp(loc1) && relax_ldr(loc2, addr2, page(addr1) + get_adrp_imm(loc1)))
     *loc1 = 0xd503'201f; // nop
 }
 
-static void relax_adrp_add(Context<E> &ctx, Subsection<E> &subsec,
-                           i64 offset1, i64 offset2) {
-  u8 *loc = ctx.buf + subsec.isec.osec.hdr.offset + subsec.output_offset;
-  ul32 *loc1 = (ul32 *)(loc + offset1);
-  ul32 *loc2 = (ul32 *)(loc + offset2);
-
+static void relax_adrp_add(Context<E> &ctx, ul32 *loc1, ul32 *loc2,
+                           u64 addr1, u64 addr2) {
   //   adrp Xa, _foo@PAGE
   //   add  Xb, Xa, _foo@PAGEOFF
   // ->
   //   nop
   //   adr  Xb, _foo
-  if ((*loc1 & 0x9f00'0000) != 0x9000'0000 ||
-      (*loc2 & 0xffc0'0000) != 0x9100'0000)
+  if (!is_adrp(loc1) || (*loc2 & 0xffc0'0000) != 0x9100'0000)
     return;
 
-  u64 addr = page(subsec.get_addr(ctx) + offset1) + get_adrp_imm(loc1) +
-             bits(*loc2, 21, 10);
-  i64 disp = addr - subsec.get_addr(ctx) - offset2;
+  i64 disp = page(addr1) + get_adrp_imm(loc1) + bits(*loc2, 21, 10) - addr2;
 
   if (disp == sign_extend(disp, 20)) {
     *loc1 = 0xd503'201f;                                  // nop
@@ -620,45 +603,61 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
       switch (type) {
       case LOH_ARM64_ADRP_LDR_GOT_LDR: {
         assert(nargs == 3);
-        i64 addr1 = read_uleb(hints);
-        i64 addr2 = read_uleb(hints);
-        i64 addr3 = read_uleb(hints);
+        i64 input_addr1 = read_uleb(hints);
+        i64 input_addr2 = read_uleb(hints);
+        i64 input_addr3 = read_uleb(hints);
 
-        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        Subsection<E> *subsec = file->find_subsection(ctx, input_addr1);
         if (!subsec || !subsec->is_alive)
           return;
 
-        ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
-        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
-        ASSERT_RANGE(addr3, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(input_addr1, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(input_addr2, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(input_addr3, subsec->input_addr, subsec->input_size);
 
-        i64 offset1 = addr1 - subsec->input_addr;
-        i64 offset2 = addr2 - subsec->input_addr;
-        i64 offset3 = addr3 - subsec->input_addr;
+        i64 offset1 = subsec->input_addr - input_addr1;
+        i64 offset2 = subsec->input_addr - input_addr2;
+        i64 offset3 = subsec->input_addr - input_addr3;
 
-        relax_adrp_ldr_got_ldr(ctx, *subsec, offset1, offset2, offset3);
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+        ul32 *loc1 = (ul32 *)(loc + offset1);
+        ul32 *loc2 = (ul32 *)(loc + offset2);
+        ul32 *loc3 = (ul32 *)(loc + offset3);
+
+        u64 addr1 = subsec->get_addr(ctx) + offset1;
+        u64 addr2 = subsec->get_addr(ctx) + offset2;
+        u64 addr3 = subsec->get_addr(ctx) + offset3;
+
+        relax_adrp_ldr_got_ldr(ctx, loc1, loc2, loc3, addr1, addr2, addr3);
         break;
       }
       case LOH_ARM64_ADRP_LDR:
       case LOH_ARM64_ADRP_ADD: {
         assert(nargs == 2);
-        i64 addr1 = read_uleb(hints);
-        i64 addr2 = read_uleb(hints);
+        i64 input_addr1 = read_uleb(hints);
+        i64 input_addr2 = read_uleb(hints);
 
-        Subsection<E> *subsec = file->find_subsection(ctx, addr1);
+        Subsection<E> *subsec = file->find_subsection(ctx, input_addr1);
         if (!subsec || !subsec->is_alive)
           return;
 
-        ASSERT_RANGE(addr1, subsec->input_addr, subsec->input_size);
-        ASSERT_RANGE(addr2, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(input_addr1, subsec->input_addr, subsec->input_size);
+        ASSERT_RANGE(input_addr2, subsec->input_addr, subsec->input_size);
 
-        i64 offset1 = addr1 - subsec->input_addr;
-        i64 offset2 = addr2 - subsec->input_addr;
+        i64 offset1 = subsec->input_addr - input_addr1;
+        i64 offset2 = subsec->input_addr - input_addr2;
+
+        u8 *loc = ctx.buf + subsec->isec.osec.hdr.offset + subsec->output_offset;
+        ul32 *loc1 = (ul32 *)(loc + offset1);
+        ul32 *loc2 = (ul32 *)(loc + offset2);
+
+        u64 addr1 = subsec->get_addr(ctx) + offset1;
+        u64 addr2 = subsec->get_addr(ctx) + offset2;
 
         if (type == LOH_ARM64_ADRP_LDR)
-          relax_adrp_ldr(ctx, *subsec, offset1, offset2);
+          relax_adrp_ldr(ctx, loc1, loc2, addr1, addr2);
         else
-          relax_adrp_add(ctx, *subsec, offset1, offset2);
+          relax_adrp_add(ctx, loc1, loc2, addr1, addr2);
         break;
       }
       default:
