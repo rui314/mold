@@ -430,7 +430,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       exit(0);
     } else if (read_flag("V")) {
       SyncOut(ctx) << mold_version
-                   << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386";
+                   << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
+                   << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
+                   << "   elf32lriscv";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
