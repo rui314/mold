@@ -391,7 +391,6 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   ctx._etext = add("_etext");
   ctx._edata = add("_edata");
   ctx.__executable_start = add("__executable_start");
-  ctx.__dso_handle = add("__dso_handle");
 
   ctx.__rel_iplt_start =
     add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
@@ -407,6 +406,8 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
     ctx.etext = add("etext");
   if (!get_symbol(ctx, "edata")->file)
     ctx.edata = add("edata");
+  if (!get_symbol(ctx, "__dso_handle")->file)
+    ctx.__dso_handle = add("__dso_handle");
 
   if constexpr (E::supports_tlsdesc)
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
@@ -1458,7 +1459,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   if (Chunk<E> *chunk = find(".bss"))
     start(ctx.__bss_start, chunk);
 
-  // __ehdr_start, __executable_start and __dso_handle
   if (ctx.ehdr) {
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->shndx == 1) {
@@ -1466,8 +1466,11 @@ void fix_synthetic_symbols(Context<E> &ctx) {
         ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
         ctx.__executable_start->shndx = -1;
         ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
-        ctx.__dso_handle->shndx = -1;
-        ctx.__dso_handle->value = ctx.ehdr->shdr.sh_addr;
+
+        if (ctx.__dso_handle) {
+          ctx.__dso_handle->shndx = -1;
+          ctx.__dso_handle->value = ctx.ehdr->shdr.sh_addr;
+        }
         break;
       }
     }
