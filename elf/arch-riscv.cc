@@ -84,7 +84,7 @@ template <typename E>
 static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
-  static const u32 plt0[] = {
+  static const u32 plt0_64[] = {
     0x00000397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c30333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -95,59 +95,79 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e0067, // jr     t3
   };
 
+  static const u32 plt0_32[] = {
+    0x00000397, // auipc  t2, %pcrel_hi(.got.plt)
+    0x41c30333, // sub    t1, t1, t3               # .plt entry + hdr + 12
+    0x0003ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
+    0xfd430313, // addi   t1, t1, -44              # .plt entry
+    0x00038293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
+    0x00135313, // srli   t1, t1, 1                # .plt entry offset
+    0x0082a283, // lw     t0, 8(t0)                # link map
+    0x000e0067, // jr     t3
+  };
+
+  if constexpr (E::word_size == 8)
+    memcpy(buf, plt0_64, sizeof(plt0_64));
+  else
+    memcpy(buf, plt0_32, sizeof(plt0_32));
+
   u64 gotplt = ctx.gotplt->shdr.sh_addr;
   u64 plt = ctx.plt->shdr.sh_addr;
 
-  memcpy(buf, plt0, sizeof(plt0));
   write_utype(buf, gotplt - plt);
   write_itype(buf + 8, gotplt - plt);
   write_itype(buf + 16, gotplt - plt);
 }
 
-template <typename E>
-static void write_plt_entry(Context<E> &ctx, Symbol<E> &sym) {
-  u8 *ent = ctx.buf + ctx.plt->shdr.sh_offset + E::plt_hdr_size +
-            sym.get_plt_idx(ctx) * E::plt_size;
+static constexpr u32 plt_entry_64[] = {
+  0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
+  0x000e3e03, // ld      t3, %pcrel_lo(1b)(t3)
+  0x000e0367, // jalr    t1, t3
+  0x00000013, // nop
+};
 
-  static const u32 data[] = {
-    0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
-    0x000e3e03, // ld      t3, %pcrel_lo(1b)(t3)
-    0x000e0367, // jalr    t1, t3
-    0x00000013, // nop
-  };
-
-  u64 gotplt = sym.get_gotplt_addr(ctx);
-  u64 plt = sym.get_plt_addr(ctx);
-
-  memcpy(ent, data, sizeof(data));
-  write_utype(ent, gotplt - plt);
-  write_itype(ent + 4, gotplt - plt);
-}
+static constexpr u32 plt_entry_32[] = {
+  0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
+  0x000e2e03, // lw      t3, %pcrel_lo(1b)(t3)
+  0x000e0367, // jalr    t1, t3
+  0x00000013, // nop
+};
 
 template <typename E>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+
   write_plt_header(ctx);
-  for (Symbol<E> *sym : symbols)
-    write_plt_entry(ctx, *sym);
+
+  for (Symbol<E> *sym : symbols) {
+    u8 *ent = buf + E::plt_hdr_size + sym->get_plt_idx(ctx) * E::plt_size;
+    u64 gotplt = sym->get_gotplt_addr(ctx);
+    u64 plt = sym->get_plt_addr(ctx);
+
+    if constexpr (E::word_size == 8)
+      memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
+    else
+      memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
+
+    write_utype(ent, gotplt - plt);
+    write_itype(ent + 4, gotplt - plt);
+  }
 }
 
 template <typename E>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  static const u32 data[] = {
-    0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
-    0x000e3e03, // ld      t3, %pcrel_lo(1b)(t3)
-    0x000e0367, // jalr    t1, t3
-    0x00000013, // nop
-  };
-
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * 16;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
     u64 got = sym->get_got_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
-    memcpy(ent, data, sizeof(data));
+    if constexpr (E::word_size == 8)
+      memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
+    else
+      memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
+
     write_utype(ent, got - plt);
     write_itype(ent + 4, got - plt);
   }
