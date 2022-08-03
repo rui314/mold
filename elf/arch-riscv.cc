@@ -226,8 +226,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX ||
-        rel.r_type == R_RISCV_ALIGN)
+    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -339,6 +338,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_SUB64:
       *(ul64 *)loc -= S + A;
+      break;
+    case R_RISCV_ALIGN:
+      // A R_RISCV_ALIGN is followed by nops. We sometimes have to not
+      // just remove nops but rewrite a nop with a c.nop. Here, we always
+      // rewrite all nops for the sake of simplicity.
+      if (i64 padding_size = align_to(P, bit_ceil(rel.r_addend)) - P) {
+        assert(padding_size % 2 == 0);
+        i64 i = 0;
+        for (; i <= padding_size - 4; i += 4)
+          *(ul32 *)(loc + i) = 0x00000013; // nop
+        if (i != padding_size)
+          *(ul16 *)(loc + i) = 0x0001;     // c.nop
+      }
       break;
     case R_RISCV_RVC_BRANCH:
       write_cbtype(loc, S + A - P);
@@ -705,6 +717,8 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
       // instruction is r_addend away.
       u64 next_loc = loc + r.r_addend;
       u64 alignment = bit_ceil(r.r_addend);
+      assert(alignment <= (1 << isec.p2align));
+
       if (next_loc % alignment)
         delta2 = align_to(loc, alignment) - next_loc;
       break;
