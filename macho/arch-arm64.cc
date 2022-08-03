@@ -540,6 +540,20 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx,
     *loc1 = 0xd503'201f; // nop
 }
 
+static void relax_adrp_adrp(Context<E> &ctx, ul32 *loc1, ul32 *loc2,
+                            u64 addr1, u64 addr2) {
+  //   adrp Xa, _foo@PAGE
+  //   adrp Xa, _bar@PAGE
+  // ->
+  //   ldr  Xa, _foo@PAGE
+  //   nop
+
+  if (is_adrp(loc1) && is_adrp(loc2) &&
+      page(addr1) + get_adrp_imm(loc1) == page(addr2) + get_adrp_imm(loc2) &&
+      bits(*loc1, 4, 0) == bits(*loc2, 4, 0))
+    *loc2 = 0xd503'201f; // nop
+}
+
 static void relax_adrp_ldr(Context<E> &ctx, ul32 *loc1, ul32 *loc2,
                            u64 addr1, u64 addr2) {
   //   adrp Xa, _foo@PAGE
@@ -631,6 +645,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         relax_adrp_ldr_got_ldr(ctx, loc1, loc2, loc3, addr1, addr2, addr3);
         break;
       }
+      case LOH_ARM64_ADRP_ADRP:
       case LOH_ARM64_ADRP_LDR:
       case LOH_ARM64_ADRP_ADD: {
         assert(nargs == 2);
@@ -654,10 +669,17 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         u64 addr1 = subsec->get_addr(ctx) + offset1;
         u64 addr2 = subsec->get_addr(ctx) + offset2;
 
-        if (type == LOH_ARM64_ADRP_LDR)
+        switch (type) {
+        case LOH_ARM64_ADRP_ADRP:
+          relax_adrp_adrp(ctx, loc1, loc2, addr1, addr2);
+          break;
+        case LOH_ARM64_ADRP_LDR:
           relax_adrp_ldr(ctx, loc1, loc2, addr1, addr2);
-        else
+          break;
+        case LOH_ARM64_ADRP_ADD:
           relax_adrp_add(ctx, loc1, loc2, addr1, addr2);
+          break;
+        }
         break;
       }
       default:
