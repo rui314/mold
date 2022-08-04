@@ -1217,6 +1217,10 @@ void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
     out_esym.st_shndx = SHN_UNDEF;
     out_esym.st_size = 0;
     out_esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
+  } else if (sym.shndx < 0) {
+    // Internal file
+    out_esym.st_shndx = -sym.shndx;
+    out_esym.st_value = sym.get_addr(ctx);
   } else {
     InputSection<E> *isec = sym.get_input_section();
     if (!isec) {
