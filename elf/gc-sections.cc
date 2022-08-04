@@ -4,7 +4,6 @@
 
 #include "mold.h"
 
-#include <tbb/concurrent_set.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
@@ -73,44 +72,9 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   }
 }
 
-// We synthesize `__start_foo` and `__stop_foo` symbols for section
-// `foo` if the section name is valid as a C identifier (i.e. it
-// doesn't start with a '.' and doesn't contain punctuations).
-//
-// Such references are implicit, so we need to handle them separately.
-// In this function, we scan all symbols and keep section `foo` if
-// there is `__start_foo` or `__stop_foo` symbol.
 template <typename E>
-void
-collect_start_stop_sections(Context<E> &ctx,
-                            tbb::concurrent_vector<InputSection<E> *> &rootset) {
-  Timer t(ctx, "collect_start_stop_sections");
-
-  tbb::concurrent_set<std::string_view> set;
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols)
-      if (!sym->file)
-        if (std::string_view s = sym->name();
-            remove_prefix(s, "__start_") || remove_prefix(s, "__stop_"))
-          set.insert(s);
-  });
-
-  if (set.empty())
-    return;
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (isec && isec->is_alive && is_c_identifier(isec->name()) &&
-          set.contains(isec->name()) && isec->is_visited.exchange(true))
-        rootset.push_back(isec.get());
-  });
-}
-
-template <typename E>
-static void
-collect_root_set(Context<E> &ctx,
-                 tbb::concurrent_vector<InputSection<E> *> &rootset) {
+static void collect_root_set(Context<E> &ctx,
+                             tbb::concurrent_vector<InputSection<E> *> &rootset) {
   Timer t(ctx, "collect_root_set");
 
   auto enqueue_section = [&](InputSection<E> *isec) {
@@ -141,8 +105,8 @@ collect_root_set(Context<E> &ctx,
       if (!(flags & SHF_ALLOC))
         isec->is_visited = true;
 
-      if (is_init_fini(*isec) || (flags & SHF_GNU_RETAIN) ||
-          isec->shdr().sh_type == SHT_NOTE)
+      if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
+          (flags & SHF_GNU_RETAIN) || isec->shdr().sh_type == SHT_NOTE)
         enqueue_section(isec.get());
     }
   });
@@ -225,7 +189,6 @@ void gc_sections(Context<E> &ctx) {
   mark_nonalloc_fragments(ctx);
 
   tbb::concurrent_vector<InputSection<E> *> rootset;
-  collect_start_stop_sections(ctx, rootset);
   collect_root_set(ctx, rootset);
   mark(ctx, rootset);
   sweep(ctx);
