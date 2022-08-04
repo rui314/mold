@@ -1093,10 +1093,12 @@ void apply_version_script(Context<E> &ctx) {
         continue;
       }
 
-      if (!cpp_matcher.empty())
+      if (!cpp_matcher.empty()) {
         if (std::optional<std::string_view> s = cpp_demangle(name))
-          if (std::optional<u16> ver = cpp_matcher.find(*s))
-            sym->ver_idx = *ver;
+          name = *s;
+        if (std::optional<u16> ver = cpp_matcher.find(name))
+          sym->ver_idx = *ver;
+      }
     }
   });
 }
