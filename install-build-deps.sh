@@ -7,27 +7,27 @@ source /etc/os-release
 
 case "$ID-$VERSION_ID" in
 ubuntu-20.*)
-  apt-get install -y git cmake libssl-dev zlib1g-dev gcc g++ g++-10
+  apt-get install -y cmake libssl-dev zlib1g-dev gcc g++ g++-10
   apt-get install -y file bsdmainutils
   ;;
 ubuntu-22.* | debian-11)
-  apt-get install -y git cmake libssl-dev zlib1g-dev gcc g++
+  apt-get install -y cmake libssl-dev zlib1g-dev gcc g++
   apt-get install -y file bsdmainutils
   ;;
 fedora-*)
-  dnf install -y git gcc-g++ cmake openssl-devel zlib-devel
+  dnf install -y gcc-g++ cmake openssl-devel zlib-devel
   dnf install -y glibc-static file libstdc++-static diffutils
   ;;
 opensuse-leap-*)
-  zypper install -y git make cmake zlib-devel libopenssl-devel gcc-c++ gcc11-c++
+  zypper install -y make cmake zlib-devel libopenssl-devel gcc-c++ gcc11-c++
   zypper install -y glibc-devel-static tar diffutils util-linux
   ;;
 opensuse-tumbleweed-*)
-  zypper install -y git make cmake zlib-devel libopenssl-devel gcc-c++
+  zypper install -y make cmake zlib-devel libopenssl-devel gcc-c++
   zypper install -y glibc-devel-static tar diffutils util-linux
   ;;
 gentoo-*)
-  emerge dev-vcs/git dev-util/cmake sys-libs/zlib
+  emerge dev-util/cmake sys-libs/zlib
   ;;
 arch-*)
   pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux git
