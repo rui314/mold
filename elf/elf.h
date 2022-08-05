@@ -971,8 +971,6 @@ static constexpr u32 R_RISCV_SUB8 = 37;
 static constexpr u32 R_RISCV_SUB16 = 38;
 static constexpr u32 R_RISCV_SUB32 = 39;
 static constexpr u32 R_RISCV_SUB64 = 40;
-static constexpr u32 R_RISCV_GNU_VTINHERIT = 41;
-static constexpr u32 R_RISCV_GNU_VTENTRY = 42;
 static constexpr u32 R_RISCV_ALIGN = 43;
 static constexpr u32 R_RISCV_RVC_BRANCH = 44;
 static constexpr u32 R_RISCV_RVC_JUMP = 45;
@@ -1026,8 +1024,6 @@ inline std::string rel_to_string<RISCV64>(u32 r_type) {
   case R_RISCV_SUB16: return "R_RISCV_SUB16";
   case R_RISCV_SUB32: return "R_RISCV_SUB32";
   case R_RISCV_SUB64: return "R_RISCV_SUB64";
-  case R_RISCV_GNU_VTINHERIT: return "R_RISCV_GNU_VTINHERIT";
-  case R_RISCV_GNU_VTENTRY: return "R_RISCV_GNU_VTENTRY";
   case R_RISCV_ALIGN: return "R_RISCV_ALIGN";
   case R_RISCV_RVC_BRANCH: return "R_RISCV_RVC_BRANCH";
   case R_RISCV_RVC_JUMP: return "R_RISCV_RVC_JUMP";
