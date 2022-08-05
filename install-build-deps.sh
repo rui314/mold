@@ -33,16 +33,16 @@ test_id_version() {
     pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux git
     ;;
   *)
+    echo "Error: don't know anything about build dependencies on $1 $2"
     return 1
     ;;
   esac
 }
 
 if ! test_id_version "$ID" "$VERSION_ID" ; then
-  echo "Error: don't know anything about build dependencies on $ID $VERSION_ID"
   echo "Testing related OS"
   if ! test_id_version "${ID_LIKE%% *}" "$VERSION_ID" ; then
-    echo "Error: don't know anything about build dependencies on ${ID_LIKE%% *} $VERSION_ID"
+    echo "Error: Failed to find matching dependencies for the system"
     exit 1
   fi
 fi
