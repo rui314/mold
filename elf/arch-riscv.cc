@@ -294,7 +294,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // Calling an undefined weak symbol does not make sense.
         // We make such call into an infinite loop. This should
         // help debugging of a faulty program.
-        *(ul32 *)loc = P;
+        *(ul32 *)loc = 0;
       } else {
         *(ul32 *)loc = S + A - P;
       }
