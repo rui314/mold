@@ -33,6 +33,6 @@ arch-*)
   pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux git
   ;;
 *)
-  echo "Error: don't know anything about build dependencies on $ID $VERSION_ID"
+  echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
 esac
