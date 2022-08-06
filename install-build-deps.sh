@@ -32,7 +32,7 @@ gentoo-*)
   emerge dev-util/cmake sys-libs/zlib
   ;;
 arch-*)
-  pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux git
+  pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux
   ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
