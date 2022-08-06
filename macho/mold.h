@@ -114,7 +114,7 @@ public:
   static ObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
                             std::string archive_name);
   void parse(Context<E> &ctx);
-  Subsection<E> *find_subsection(Context<E> &ctx, u32 addr);
+  Subsection<E> *find_subsection(Context<E> &ctx, u32 section_idx, u32 addr);
   Symbol<E> *find_symbol(Context<E> &ctx, u32 addr);
   std::vector<std::string> get_linker_options(Context<E> &ctx);
   void parse_compact_unwind(Context<E> &ctx, MachSection &hdr);
@@ -196,11 +196,13 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 template <typename E>
 class InputSection {
 public:
-  InputSection(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr);
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr,
+               u32 secidx);
   void parse_relocations(Context<E> &ctx);
 
   ObjectFile<E> &file;
   const MachSection &hdr;
+  u32 secidx = 0;
   OutputSection<E> &osec;
   std::string_view contents;
   std::vector<Symbol<E> *> syms;

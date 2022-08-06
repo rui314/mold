@@ -87,7 +87,8 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
 
   MachSection *mach_sec = (MachSection *)((u8 *)cmd + sizeof(*cmd));
 
-  for (MachSection &msec : std::span(mach_sec, mach_sec + cmd->nsects)) {
+  for (i64 i = 0; i < cmd->nsects; i++) {
+    MachSection &msec = mach_sec[i];
     sections.push_back(nullptr);
 
     if (msec.match("__LD", "__compact_unwind")) {
@@ -112,7 +113,7 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
     if (msec.attr & S_ATTR_DEBUG)
       continue;
 
-    sections.back().reset(new InputSection<E>(ctx, *this, msec));
+    sections.back().reset(new InputSection<E>(ctx, *this, msec, i));
   }
 }
 
@@ -339,7 +340,7 @@ void ObjectFile<E>::fix_subsec_members(Context<E> &ctx) {
     if (!msym.stab && !msym.is_extern && msym.type == N_SECT) {
       Subsection<E> *subsec = sym_to_subsec[i];
       if (!subsec)
-        subsec = find_subsection(ctx, msym.value);
+        subsec = find_subsection(ctx, msym.sect - 1, msym.value);
 
       if (subsec) {
         sym.subsec = subsec;
@@ -406,12 +407,13 @@ LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
 }
 
 template <typename E>
-Subsection<E> *ObjectFile<E>::find_subsection(Context<E> &ctx, u32 addr) {
+Subsection<E> *
+ObjectFile<E>::find_subsection(Context<E> &ctx, u32 secidx, u32 addr) {
+  Subsection<E> *ret = nullptr;
   for (Subsection<E> *subsec : subsections)
-    if (subsec->input_addr <= addr &&
-        addr < subsec->input_addr + subsec->input_size)
-      return subsec;
-  return nullptr;
+    if (subsec->isec.secidx == secidx && subsec->input_addr <= addr)
+      ret = subsec;
+  return ret;
 }
 
 template <typename E>
@@ -460,7 +462,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       if (r.is_extern)
         target = sym_to_subsec[r.idx];
       else
-        target = find_subsection(ctx, src[idx].code_start);
+        target = find_subsection(ctx, r.idx - 1, src[idx].code_start);
 
       if (!target)
         error();
@@ -488,7 +490,7 @@ void ObjectFile<E>::parse_compact_unwind(Context<E> &ctx, MachSection &hdr) {
       if (r.is_extern)
         target = sym_to_subsec[r.idx];
       else
-        target = find_subsection(ctx, addr);
+        target = find_subsection(ctx, r.idx - 1, addr);
 
       if (!target)
         error();
@@ -717,7 +719,7 @@ InputSection<E> *ObjectFile<E>::get_common_sec(Context<E> &ctx) {
     hdr->set_sectname("__common");
     hdr->type = S_ZEROFILL;
 
-    common_sec = new InputSection<E>(ctx, *this, *hdr);
+    common_sec = new InputSection<E>(ctx, *this, *hdr, sections.size());
     sections.emplace_back(common_sec);
   }
   return common_sec;

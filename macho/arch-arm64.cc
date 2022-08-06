@@ -130,7 +130,7 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr) {
     }
 
     u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend) : addend;
-    Subsection<E> *target = file.find_subsection(ctx, addr);
+    Subsection<E> *target = file.find_subsection(ctx, r.idx - 1, addr);
     if (!target)
       Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
@@ -584,6 +584,14 @@ static void relax_adrp_add(Context<E> &ctx, ul32 *loc1, ul32 *loc2,
   }
 }
 
+static Subsection<E> *find_subsection_by_addr(ObjectFile<E> *file, u32 addr) {
+  for (Subsection<E> *subsec : file->subsections)
+    if (subsec->input_addr <= addr &&
+        addr < subsec->input_addr + subsec->input_size)
+      return subsec;
+  return nullptr;
+}
+
 // On ARM, we generally need two or more instructions to materialize
 // an address of an object in a register or jump to a function.
 // However, if an object or a function is close enough to PC, a single
@@ -621,7 +629,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         i64 input_addr2 = read_uleb(hints);
         i64 input_addr3 = read_uleb(hints);
 
-        Subsection<E> *subsec = file->find_subsection(ctx, input_addr1);
+        Subsection<E> *subsec = find_subsection_by_addr(file, input_addr1);
         if (!subsec || !subsec->is_alive)
           return;
 
@@ -652,7 +660,7 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         i64 input_addr1 = read_uleb(hints);
         i64 input_addr2 = read_uleb(hints);
 
-        Subsection<E> *subsec = file->find_subsection(ctx, input_addr1);
+        Subsection<E> *subsec = find_subsection_by_addr(file, input_addr1);
         if (!subsec || !subsec->is_alive)
           return;
 

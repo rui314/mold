@@ -108,7 +108,7 @@ read_relocations(Context<E> &ctx, ObjectFile<E> &file,
     }
 
     u64 addr = r.is_pcrel ? (hdr.addr + r.offset + addend + 4) : addend;
-    Subsection<E> *target = file.find_subsection(ctx, addr);
+    Subsection<E> *target = file.find_subsection(ctx, r.idx - 1, addr);
     if (!target)
       Fatal(ctx) << file << ": bad relocation: " << r.offset;
 
