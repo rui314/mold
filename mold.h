@@ -27,7 +27,7 @@
 #include <vector>
 
 #define XXH_INLINE_ALL 1
-#include <xxhash/xxhash.h>
+#include <xxhash.h>
 
 #ifdef NDEBUG
 #  define unreachable() __builtin_unreachable()
