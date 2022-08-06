@@ -1,30 +1,46 @@
+# cmake is not officially supported yet. To build mold, please use `make`
+# unless you know what you are doing.
+
 cmake_minimum_required(VERSION 3.14)
 project(mold VERSION 1.3.0)
 
 include(CMakeDependentOption)
 
-# FIXME: this is for parity with the makefiles that install directly to <prefix>/lib
-# NOTE: defining this before including GNUInstallDirs makes its platform detection a noop
+# FIXME: this is for parity with the makefiles that install directly to
+# <prefix>/lib
+#
+# NOTE: defining this before including GNUInstallDirs makes its platform
+# detection a noop
 set(CMAKE_INSTALL_LIBDIR lib CACHE PATH "")
 include(GNUInstallDirs)
 
 # Mold build options
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
     "NOT APPLE;NOT ANDROID" OFF)
-cmake_dependent_option(MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" ON
+cmake_dependent_option(MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
     MOLD_USE_MIMALLOC OFF)
-option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" ON)
+option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
+
+add_executable(mold)
+target_compile_features(mold PRIVATE cxx_std_20)
+
+find_package(ZLIB REQUIRED)
+target_link_libraries(mold PRIVATE ZLIB::ZLIB ${CMAKE_DL_LIBS})
 
 # Setup mimalloc
 if(MOLD_USE_MIMALLOC)
     if(MOLD_USE_SYSTEM_MIMALLOC)
         find_package(mimalloc REQUIRED)
         target_compile_definitions(mimalloc INTERFACE USE_SYSTEM_MIMALLOC)
+        target_link_libraries(mold PRIVATE mimalloc)
     else()
         function(mold_add_mimalloc)
+            set(MI_BUILD_STATIC ON)
             option(MI_BUILD_TESTS "Build test executables" OFF)
             add_subdirectory(third-party/mimalloc EXCLUDE_FROM_ALL)
-            target_compile_definitions(mimalloc PRIVATE MI_USE_ENVIRON=0)
+            target_include_directories(mold SYSTEM PRIVATE third-party/mimalloc/include)
+            target_compile_definitions(mimalloc-static PRIVATE MI_USE_ENVIRON=0)
+            target_link_libraries(mold PRIVATE mimalloc-static)
         endfunction()
 
         mold_add_mimalloc()
@@ -34,13 +50,16 @@ endif()
 # Setup TBB
 if(MOLD_USE_SYSTEM_TBB)
     find_package(TBB REQUIRED)
+    target_link_libraries(mold PRIVATE TBB::tbb)
 else()
     function(mold_add_tbb)
         set(BUILD_SHARED_LIBS OFF)
         set(TBB_TEST OFF CACHE INTERNAL "")
         set(TBB_STRICT OFF CACHE INTERNAL "")
         add_subdirectory(third-party/tbb EXCLUDE_FROM_ALL)
+        target_include_directories(mold SYSTEM PRIVATE third-party/tbb/include)
         target_compile_definitions(tbb PRIVATE __TBB_DYNAMIC_LOAD_ENABLED=0)
+        target_link_libraries(mold PRIVATE TBB::tbb)
     endfunction()
 
     mold_add_tbb()
@@ -53,10 +72,6 @@ set_target_properties(mold-wrapper PROPERTIES PREFIX "")
 target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
 target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
 
-add_executable(mold)
-target_compile_features(mold PRIVATE cxx_std_20)
-target_include_directories(mold SYSTEM PRIVATE third-party)
-
 if(NOT MSVC)
     include(CheckLibraryExists)
     check_library_exists(m pow "" LIBM_FOUND)
@@ -64,13 +79,6 @@ if(NOT MSVC)
     if(LIBM_FOUND)
         target_link_libraries(mold PRIVATE m)
     endif()
-endif()
-
-find_package(ZLIB REQUIRED)
-target_link_libraries(mold PRIVATE ZLIB::ZLIB TBB::tbb ${CMAKE_DL_LIBS})
-
-if(MOLD_USE_MIMALLOC)
-    target_link_libraries(mold PRIVATE mimalloc)
 endif()
 
 if(NOT APPLE)
@@ -113,7 +121,7 @@ target_sources(mold PRIVATE
     elf/arch-arm32.cc
     elf/arch-arm64.cc
     elf/arch-i386.cc
-    elf/arch-riscv64.cc
+    elf/arch-riscv.cc
     elf/arch-x86-64.cc
     elf/cmdline.cc
     elf/dwarf.cc
