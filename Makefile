@@ -45,7 +45,8 @@ CFLAGS = -O2
 CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
-                 -fno-asynchronous-unwind-tables -Ithird-party \
+                 -fno-asynchronous-unwind-tables \
+                 -Ithird-party/rust-demangle -Ithird-party/xxhash \
                  -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
 MOLD_LDFLAGS := -pthread -lz -lm -ldl

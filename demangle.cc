@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 #include <cxxabi.h>
-#include <rust-demangle/rust-demangle.h>
+#include <rust-demangle.h>
 
 namespace mold {
 
