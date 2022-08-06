@@ -887,7 +887,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
     for (i64 j = 0; j < opts.size();) {
       if (opts[j] == "-framework") {
-        read_framework(opts[j + 1]);
+        if (frameworks.insert(opts[j + 1]).second)
+          if (MappedFile<Context<E>> *mf = find_framework(opts[j + 1]))
+            read_file(ctx, mf);
         j += 2;
       } else if (opts[j].starts_with("-l")) {
         std::string name = opts[j].substr(2);
