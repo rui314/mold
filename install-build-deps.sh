@@ -4,13 +4,15 @@ source /etc/os-release
 
 # The first line for each distro installs a build dependency.
 # The second line installs extra packages for `make test`.
+#
+# Feel free to send me a PR if you find a missing OS.
 
 case "$ID-$VERSION_ID" in
-ubuntu-20.*)
+ubuntu-20.* | pop-20.*)
   apt-get install -y cmake libssl-dev zlib1g-dev gcc g++ g++-10
   apt-get install -y file bsdmainutils
   ;;
-ubuntu-22.* | debian-11)
+ubuntu-22.* | pop-22.* | debian-11)
   apt-get install -y cmake libssl-dev zlib1g-dev gcc g++
   apt-get install -y file bsdmainutils
   ;;
