@@ -46,16 +46,14 @@ TimerRecord::TimerRecord(std::string name, TimerRecord *parent)
 }
 
 void TimerRecord::stop() {
-  if (stopped)
-    return;
-  stopped = true;
+  std::call_once(once, [&]() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
 
-  struct rusage usage;
-  getrusage(RUSAGE_SELF, &usage);
-
-  end = now_nsec();
-  user = to_nsec(usage.ru_utime) - user;
-  sys = to_nsec(usage.ru_stime) - sys;
+    end = now_nsec();
+    user = to_nsec(usage.ru_utime) - user;
+    sys = to_nsec(usage.ru_stime) - sys;
+  });
 }
 
 static void print_rec(TimerRecord &rec, i64 indent) {
