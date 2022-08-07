@@ -50,6 +50,23 @@ jobs:
     - name: make test-all
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=gcc CXX=g++ test-all
 
+  cmake:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: rui314/setup-mold@staging
+    - name: install-build-deps
+      run: sudo apt-get update && sudo ./install-build-deps.sh
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1
+    - name: cmake
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        make -j$(nproc)
+        ctest -j$(nproc)
+
   build-macos:
     strategy:
       matrix:
