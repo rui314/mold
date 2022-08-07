@@ -165,7 +165,12 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMENT "Creating ld64 symlink"
         VERBATIM)
-    add_subdirectory(test)
+
+    if(${APPLE})
+        add_subdirectory(test/macho)
+    elseif(${UNIX})
+        add_subdirectory(test/elf)
+    endif()
 
     include(ProcessorCount)
     ProcessorCount(MOLD_NPROC)
