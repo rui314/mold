@@ -250,10 +250,10 @@ set(MOLD_ELF_TESTS
     z-text
     z-unknown)
 
-function(mold_add_arch_test NAME DIR TRIPLE MACHINE)
+function(mold_add_arch_test NAME TRIPLE MACHINE)
     set(TEST_NAME "${NAME}_arch_${MACHINE}")
     add_test(NAME ${TEST_NAME}
-        COMMAND ${DIR}/${NAME}.sh
+        COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${NAME}.sh
         WORKING_DIRECTORY ${mold_BINARY_DIR})
 
     set(TEST_ENV
@@ -267,10 +267,10 @@ function(mold_add_arch_test NAME DIR TRIPLE MACHINE)
     set_tests_properties(${TEST_NAME} PROPERTIES ENVIRONMENT "${TEST_ENV}")
 endfunction()
 
-foreach(NAME IN LISTS MOLD_ELF_TESTS)
-    mold_add_arch_test(${NAME} ${CMAKE_CURRENT_LIST_DIR} x86_64-linux-gnu x86_64)
-    mold_add_arch_test(${NAME} ${CMAKE_CURRENT_LIST_DIR} i686-linux-gnu i386)
-    mold_add_arch_test(${NAME} ${CMAKE_CURRENT_LIST_DIR} aarch64-linux-gnu aarch64)
-    mold_add_arch_test(${NAME} ${CMAKE_CURRENT_LIST_DIR} arm-linux-gnueabihf arm)
-    mold_add_arch_test(${NAME} ${CMAKE_CURRENT_LIST_DIR} riscv64-linux-gnu riscv64)
+foreach(TEST IN LISTS MOLD_ELF_TESTS)
+    mold_add_arch_test(${TEST} x86_64-linux-gnu x86_64)
+    mold_add_arch_test(${TEST} i686-linux-gnu i386)
+    mold_add_arch_test(${TEST} aarch64-linux-gnu aarch64)
+    mold_add_arch_test(${TEST} arm-linux-gnueabihf arm)
+    mold_add_arch_test(${TEST} riscv64-linux-gnu riscv64)
 endforeach()

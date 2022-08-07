@@ -89,8 +89,8 @@ set(MOLD_MACHO_TESTS
     weak-undef
     Z)
 
-foreach(MOLD_MACHO_TEST IN LISTS MOLD_MACHO_TESTS)
-    add_test(NAME ${MOLD_MACHO_TEST}
-        COMMAND ${CMAKE_CURRENT_LIST_DIR}/${MOLD_MACHO_TEST}.sh
+foreach(TEST IN LISTS MOLD_MACHO_TESTS)
+    add_test(NAME ${TEST}
+        COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}.sh
         WORKING_DIRECTORY ${mold_BINARY_DIR})
 endforeach()
