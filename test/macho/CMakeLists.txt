@@ -1,4 +1,4 @@
-set(MOLD_ELF_TESTS
+set(MOLD_MACHO_TESTS
     add-ast-path
     add-empty-section
     adhoc-codesign
@@ -91,5 +91,6 @@ set(MOLD_ELF_TESTS
 
 foreach(MOLD_MACHO_TEST IN LISTS MOLD_MACHO_TESTS)
     add_test(NAME ${MOLD_MACHO_TEST}
-        COMMAND ${CMAKE_CURRENT_LIST_DIR}/${MOLD_MACHO_TEST}.sh)
+        COMMAND ${CMAKE_CURRENT_LIST_DIR}/${MOLD_MACHO_TEST}.sh
+        WORKING_DIRECTORY ${mold_BINARY_DIR})
 endforeach()
