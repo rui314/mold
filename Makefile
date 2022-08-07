@@ -85,6 +85,10 @@ ifeq ($(USE_MIMALLOC), 1)
   endif
 endif
 
+# Note: Do NOT specify `SYSTEM_TBB=1` unless your system-wide OneTBB
+# library is compiled with https://github.com/oneapi-src/oneTBB/pull/824.
+# mold with an unpatched OneTBB is unstable when doing LTO if the system
+# is under high load.
 ifdef SYSTEM_TBB
   MOLD_LDFLAGS += -ltbb
 else
