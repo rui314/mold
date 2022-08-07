@@ -251,8 +251,5 @@ set(MOLD_ELF_TESTS
     z-unknown)
 
 foreach(MOLD_ELF_TEST IN LISTS MOLD_ELF_TESTS)
-    add_test(NAME "${MOLD_ELF_TEST}_host"
-        COMMAND "${CMAKE_CURRENT_LIST_DIR}/${MOLD_ELF_TEST}.sh"
-        WORKING_DIRECTORY ${mold_BINARY_DIR})
     mold_add_arch_tests(${MOLD_ELF_TEST} ${CMAKE_CURRENT_LIST_DIR})
 endforeach()
