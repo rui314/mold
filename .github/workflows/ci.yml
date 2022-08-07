@@ -50,7 +50,7 @@ jobs:
     - name: make test-all
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=gcc CXX=g++ test-all
 
-  cmake:
+  build-gcc-cmake:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
     steps:
@@ -93,3 +93,17 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
       run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.logicalcpu) ${{ matrix.target }}
+
+  build-macos-cmake:
+    runs-on: macos-11
+    steps:
+    - uses: actions/checkout@v2
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1
+    - name: cmake
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.physicalcpu)
+        ctest -j$(sysctl -n hw.physicalcpu)
