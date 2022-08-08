@@ -168,14 +168,8 @@ if(BUILD_TESTING)
   add_custom_command(
     TARGET mold POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Creating ld symlink"
-    VERBATIM)
-  add_custom_command(
-    TARGET mold POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Creating ld64 symlink"
     VERBATIM)
 
   if(${APPLE})
