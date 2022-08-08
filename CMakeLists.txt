@@ -17,9 +17,11 @@ include(GNUInstallDirs)
 # Mold build options
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
   "NOT APPLE;NOT ANDROID" OFF)
-cmake_dependent_option(MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
+cmake_dependent_option(
+  MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
   MOLD_USE_MIMALLOC OFF)
 option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
+option(MOLD_USE_MOLD "Use mold to build mold" ON)
 
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
@@ -61,6 +63,16 @@ else()
   endfunction()
 
   mold_add_tbb()
+endif()
+
+if(MOLD_USE_MOLD)
+  set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -fuse-ld=mold")
+  check_cxx_source_compiles("int main() {}" CXX_SUPPORTS_FUSE_MOLD)
+  if (CXX_SUPPORTS_FUSE_MOLD)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=mold")
+  endif()
+  set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
 endif()
 
 add_library(mold-wrapper SHARED)
