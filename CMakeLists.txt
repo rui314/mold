@@ -177,15 +177,6 @@ if(BUILD_TESTING)
   elseif(${UNIX})
     add_subdirectory(test/elf)
   endif()
-
-  include(ProcessorCount)
-  ProcessorCount(MOLD_NPROC)
-  add_custom_target(
-    check
-    COMMAND "${CMAKE_COMMAND}" --build "${mold_BINARY_DIR}" --config "\$<CONFIG>" -j "${MOLD_NPROC}"
-    COMMAND "${CMAKE_CTEST_COMMAND}" -C "\$<CONFIG>" -j "${MOLD_NPROC}"
-    VERBATIM
-    USES_TERMINAL)
 endif()
 
 if(NOT CMAKE_SKIP_INSTALL_RULES)
