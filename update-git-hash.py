@@ -13,11 +13,11 @@ def get_git_hash(repo):
       if data.startswith('ref: '):
         branch = data[5:]
         with open(repo + '/.git/' + branch, 'r') as file:
-            return file.readline().strip()
+          return file.readline().strip()
       else:
-          return data
+        return data
   except FileNotFoundError:
-      return ""
+    return ""
 
 def read_prev_git_hash(path):
   try:
@@ -27,7 +27,7 @@ def read_prev_git_hash(path):
         return m.group(1)
       return ""
   except FileNotFoundError:
-      ""
+    return ""
 
 if len(sys.argv) != 3:
   print(f'Usage: {sys.argv[0]} <repository-dir> <output-file>',
