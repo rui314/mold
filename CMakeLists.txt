@@ -213,25 +213,15 @@ endif()
 if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(TARGETS mold)
   install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
-  install(CODE "\
-        file(REAL_PATH \${CMAKE_INSTALL_PREFIX} INSTALL_PREFIX)
-        file(RELATIVE_PATH\
-            REL_SYMLINK\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/mold)\n\
-        execute_process(\
-            COMMAND ${CMAKE_COMMAND} -E make_directory\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold)\n\
-        execute_process(\
-            COMMAND ${CMAKE_COMMAND} -E create_symlink\
-            \${REL_SYMLINK}\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)\n\
-        execute_process(\
-            COMMAND ${CMAKE_COMMAND} -E create_symlink\
-            mold\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld.mold)\n\
-        execute_process(\
-            COMMAND ${CMAKE_COMMAND} -E create_symlink\
-            mold\
-            \${INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)")
+  install(CODE "
+        file(RELATIVE_PATH RELPATH
+             /${CMAKE_INSTALL_LIBEXECDIR}/mold /${CMAKE_INSTALL_BINDIR}/mold)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink \${RELPATH}
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld.mold)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)")
 endif()
