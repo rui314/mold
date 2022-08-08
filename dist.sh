@@ -31,5 +31,4 @@ cmake -DCMAKE_CXX_COMPILER=clang++-15 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE
 cmake --build . -j\$(nproc)
 cmake --install . --prefix $dest --strip
 tar czf /mold/$dest.tar.gz $dest &&
-cp mold /mold &&
-cp mold-wrapper.so /mold"
+cp mold mold-wrapper.so /mold"
