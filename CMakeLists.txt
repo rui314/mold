@@ -14,13 +14,7 @@ include(CMakeDependentOption)
 set(CMAKE_INSTALL_LIBDIR lib CACHE PATH "")
 include(GNUInstallDirs)
 
-# Mold build options
-cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
-  "NOT APPLE;NOT ANDROID" OFF)
-cmake_dependent_option(
-  MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
-  MOLD_USE_MIMALLOC OFF)
-option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
+# Add -fuse-ld=mold if accepted by the compiler.
 option(MOLD_USE_MOLD "Use mold to build mold" ON)
 
 if(MOLD_USE_MOLD)
@@ -34,10 +28,30 @@ endif()
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 
+# Handle MOLD_USE_ASAN and MOLD_USE_TSAN
+option(MOLD_USE_ASAN "Build mold with AddressSanitizer" OFF)
+option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
+
+if (MOLD_USE_ASAN)
+  target_compile_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
+  target_link_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
+endif()
+
+if (MOLD_USE_TSAN)
+  target_compile_options(mold PRIVATE -fsanitize=thread)
+  target_link_options(mold PRIVATE -fsanitize=thread)
+endif()
+
 find_package(ZLIB REQUIRED)
 target_link_libraries(mold PRIVATE ZLIB::ZLIB ${CMAKE_DL_LIBS})
 
 # Setup mimalloc
+cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
+  "NOT APPLE;NOT ANDROID" OFF)
+cmake_dependent_option(
+  MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
+  MOLD_USE_MIMALLOC OFF)
+
 if(MOLD_USE_MIMALLOC)
   if(MOLD_USE_SYSTEM_MIMALLOC)
     find_package(mimalloc REQUIRED)
@@ -57,6 +71,8 @@ if(MOLD_USE_MIMALLOC)
 endif()
 
 # Setup TBB
+option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
+
 if(MOLD_USE_SYSTEM_TBB)
   find_package(TBB REQUIRED)
   target_link_libraries(mold PRIVATE TBB::tbb)
