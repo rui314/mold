@@ -50,7 +50,7 @@ endif()
 # Static link libstdc++ and libcrypto if MOLD_MOSTLY_STATIC=On
 option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
 if(MOLD_MOSTLY_STATIC)
-  add_link_options(-static-libstdc++)
+  target_link_options(mold PRIVATE -static-libstdc++)
   target_link_libraries(mold PRIVATE libcrypto.a)
 endif()
 
