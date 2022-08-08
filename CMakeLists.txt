@@ -16,11 +16,10 @@ include(GNUInstallDirs)
 
 # Add -fuse-ld=mold if accepted by the compiler.
 option(MOLD_USE_MOLD "Use mold to build mold" ON)
-
 if(MOLD_USE_MOLD)
   include(CheckLinkerFlag)
   check_linker_flag(CXX -fuse-ld=mold CXX_SUPPORTS_FUSE_MOLD)
-  if (CXX_SUPPORTS_FUSE_MOLD)
+  if(CXX_SUPPORTS_FUSE_MOLD)
     add_link_options(-fuse-ld=mold)
   endif()
 endif()
@@ -28,6 +27,12 @@ endif()
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
+
+# Build mold with -flto if MOLD_LTO=On
+option(MOLD_LTO "Build mold with link-time optimization enabled")
+if(MOLD_LTO)
+  set_property(TARGET mold PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
 
 # Handle MOLD_USE_ASAN and MOLD_USE_TSAN
 option(MOLD_USE_ASAN "Build mold with AddressSanitizer" OFF)
