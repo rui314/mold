@@ -47,6 +47,13 @@ if(MOLD_USE_TSAN)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
+# Static link libstdc++ and libcrypto if MOLD_MOSTLY_STATIC=On
+option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
+if(MOLD_MOSTLY_STATIC)
+  add_link_options(-static-libstdc++)
+  target_link_libraries(mold PRIVATE libcrypto.a)
+endif()
+
 # Setup zlib
 find_package(ZLIB QUIET)
 if(ZLIB_FOUND)
@@ -115,7 +122,7 @@ if(NOT MSVC)
   endif()
 endif()
 
-if(NOT APPLE)
+if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
 endif()

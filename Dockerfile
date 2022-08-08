@@ -20,4 +20,5 @@ RUN apt-get update && \
   cd openssl && \
   ./Configure --prefix=/usr/local && \
   make -j$(nproc) && \
-  make -j$(nproc) install
+  make -j$(nproc) install && \
+  wget -O- -q https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-linux-x86_64.tar.gz | tar -C /usr/local --strip-components=1 -xzf -
