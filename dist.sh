@@ -28,7 +28,7 @@ docker run -it --rm -v "$(pwd):/mold:Z" -u "$(id -u):$(id -g)" $image \
   bash -c "cp -r /mold /tmp/mold &&
 cd /tmp/mold &&
 make clean &&
-make -j\$(nproc) CXX=clang++-14 CXXFLAGS='-I/openssl/include -O2 $CXXFLAGS' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 LTO=${LTO:-0} &&
+make -j\$(nproc) CXX=clang++-15 CXXFLAGS='-O2 $CXXFLAGS' LDFLAGS='-static-libstdc++ /openssl/libcrypto.a' NEEDS_LIBCRYPTO=0 LTO=${LTO:-0} &&
 make install PREFIX=/ DESTDIR=$dest &&
 tar czf /mold/$dest.tar.gz $dest &&
 cp mold /mold &&
