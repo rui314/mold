@@ -27,23 +27,29 @@ endif()
 
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
+target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 
 # Handle MOLD_USE_ASAN and MOLD_USE_TSAN
 option(MOLD_USE_ASAN "Build mold with AddressSanitizer" OFF)
-option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
-
-if (MOLD_USE_ASAN)
+if(MOLD_USE_ASAN)
   target_compile_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
   target_link_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
 endif()
 
-if (MOLD_USE_TSAN)
+option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
+if(MOLD_USE_TSAN)
   target_compile_options(mold PRIVATE -fsanitize=thread)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
-find_package(ZLIB REQUIRED)
-target_link_libraries(mold PRIVATE ZLIB::ZLIB ${CMAKE_DL_LIBS})
+# Setup zlib
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+  target_link_libraries(mold PRIVATE ZLIB::ZLIB)
+else()
+  add_subdirectory(third-party/zlib EXCLUDE_FROM_ALL)
+  target_link_libraries(mold PRIVATE zlibstatic)
+endif()
 
 # Setup mimalloc
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
@@ -72,7 +78,6 @@ endif()
 
 # Setup TBB
 option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
-
 if(MOLD_USE_SYSTEM_TBB)
   find_package(TBB REQUIRED)
   target_link_libraries(mold PRIVATE TBB::tbb)
