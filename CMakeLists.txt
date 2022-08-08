@@ -1,7 +1,7 @@
 # cmake is not officially supported yet. To build mold, please use `make`
 # unless you know what you are doing.
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.18)
 project(mold VERSION 1.3.0)
 
 include(CMakeDependentOption)
@@ -22,6 +22,14 @@ cmake_dependent_option(
   MOLD_USE_MIMALLOC OFF)
 option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
 option(MOLD_USE_MOLD "Use mold to build mold" ON)
+
+if(MOLD_USE_MOLD)
+  include(CheckLinkerFlag)
+  check_linker_flag(CXX -fuse-ld=mold CXX_SUPPORTS_FUSE_MOLD)
+  if (CXX_SUPPORTS_FUSE_MOLD)
+    add_link_options(-fuse-ld=mold)
+  endif()
+endif()
 
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
@@ -63,16 +71,6 @@ else()
   endfunction()
 
   mold_add_tbb()
-endif()
-
-if(MOLD_USE_MOLD)
-  set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -fuse-ld=mold")
-  check_cxx_source_compiles("int main() {}" CXX_SUPPORTS_FUSE_MOLD)
-  if (CXX_SUPPORTS_FUSE_MOLD)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=mold")
-  endif()
-  set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
 endif()
 
 add_library(mold-wrapper SHARED)
