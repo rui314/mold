@@ -50,15 +50,6 @@ MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
 
 MOLD_LDFLAGS := -pthread -lz -lm -ldl
 
-# Get a hash of the current git head. We don't want to use the git
-# command because the command prints out a warning if running under
-# sudo.
-GIT_HASH := $(shell [ -f .git/HEAD ] && if grep -q '^ref:' .git/HEAD; then cat .git/`sed 's/^ref: //' .git/HEAD`; else cat .git/HEAD; fi)
-
-ifneq ($(GIT_HASH),)
-  MOLD_CXXFLAGS += -DGIT_HASH=\"$(GIT_HASH)\"
-endif
-
 LTO = 0
 ifeq ($(LTO), 1)
   CXXFLAGS += -flto -O3
@@ -134,8 +125,12 @@ all: mold mold-wrapper.so
 
 -include $(SRCS:%.cc=out/%.d)
 
-mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
-	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
+update-git-hash:
+	./update-git-hash.py . out/git-hash.cc
+	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o out/git-hash.o out/git-hash.cc
+
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) update-git-hash
+	$(CXX) $(OBJS) out/git-hash.o -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
 	ln -sf mold ld64
 
@@ -244,4 +239,4 @@ test-tsan:
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
-.PHONY: all test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)
+.PHONY: update-git-hash all test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)

@@ -10,20 +10,18 @@
 
 namespace mold {
 
-#ifdef GIT_HASH
-const std::string mold_version =
-  "mold " MOLD_VERSION " (" GIT_HASH "; compatible with GNU ld)";
-#else
-const std::string mold_version =
-  "mold " MOLD_VERSION " (compatible with GNU ld)";
-#endif
-
 namespace elf {
 int main(int argc, char **argv);
 }
 
 namespace macho {
 int main(int argc, char **argv);
+}
+
+static std::string get_mold_version() {
+  if (mold_git_hash.empty())
+    return "mold " MOLD_VERSION " (compatible with GNU ld)";
+  return "mold " MOLD_VERSION " (" + mold_git_hash + "; compatible with GNU ld)";
 }
 
 void cleanup() {
@@ -79,10 +77,10 @@ i64 get_default_thread_count() {
 } // namespace mold
 
 int main(int argc, char **argv) {
-  std::string cmd = mold::filepath(argv[0]).filename();
+  mold::mold_version = mold::get_mold_version();
 
+  std::string cmd = mold::filepath(argv[0]).filename();
   if (cmd == "ld64" || cmd == "ld64.mold")
     return mold::macho::main(argc, argv);
-
   return mold::elf::main(argc, argv);
 }

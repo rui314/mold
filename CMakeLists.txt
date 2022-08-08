@@ -2,7 +2,7 @@
 # unless you know what you are doing.
 
 cmake_minimum_required(VERSION 3.18)
-project(mold VERSION 1.3.0)
+project(mold VERSION 1.4.0)
 
 include(CMakeDependentOption)
 
@@ -135,17 +135,11 @@ endif()
 set_property(SOURCE main.cc elf/lto.cc macho/output-chunks.cc APPEND PROPERTY
   COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
 
-if(EXISTS .git/HEAD)
-  file(STRINGS .git/HEAD GIT_HASH)
-
-  if(GIT_HASH MATCHES "ref: ")
-    string(REPLACE "ref: " "" GIT_HASH "${GIT_HASH}")
-    file(STRINGS .git/${GIT_HASH} GIT_HASH)
-  endif()
-
-  set_property(SOURCE main.cc APPEND PROPERTY
-    COMPILE_DEFINITIONS "GIT_HASH=\"${GIT_HASH}\"")
-endif()
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc
+  COMMAND ${CMAKE_SOURCE_DIR}/update-git-hash.py ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc
+  DEPENDS ${CMAKE_SOURCE_DIR}/update-git-hash.py)
 
 target_sources(mold PRIVATE
   compress.cc
@@ -190,7 +184,8 @@ target_sources(mold PRIVATE
   macho/output-chunks.cc
   macho/tapi.cc
   macho/yaml.cc
-  third-party/rust-demangle/rust-demangle.c)
+  third-party/rust-demangle/rust-demangle.c
+  ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc)
 
 include(CTest)
 
