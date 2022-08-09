@@ -1559,6 +1559,7 @@ struct Context {
 
   std::vector<VersionPattern> version_patterns;
   u16 default_version = VER_NDX_GLOBAL;
+  bool version_specified = false;
   i64 page_size = -1;
 
   // Reader context

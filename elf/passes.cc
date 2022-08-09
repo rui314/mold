@@ -1161,18 +1161,23 @@ template <typename E>
 void compute_import_export(Context<E> &ctx) {
   Timer t(ctx, "compute_import_export");
 
-  // Export symbols referenced by DSOs.
+  // If we are creating an executable, we want to export symbols referenced
+  // by DSOs unless they are explicitly marked as local by a version script.
   if (!ctx.arg.shared) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
-          std::scoped_lock lock(sym->mu);
-          sym->is_exported = true;
+          if (sym->ver_idx != VER_NDX_LOCAL || !ctx.version_specified) {
+            std::scoped_lock lock(sym->mu);
+            sym->is_exported = true;
+          }
         }
       }
     });
   }
 
+  // Export symbols that are not hidden or marked as local.
+  // We also want to mark imported symbols as such.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
       if (!sym->file || sym->visibility == STV_HIDDEN ||
