@@ -27,6 +27,8 @@ endif()
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
+target_compile_options(mold PRIVATE -fno-exceptions -fno-unwind-tables
+  -fno-asynchronous-unwind-tables)
 
 # Build mold with -flto if MOLD_LTO=On
 option(MOLD_LTO "Build mold with link-time optimization enabled")
