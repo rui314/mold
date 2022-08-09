@@ -268,56 +268,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 }
 
 template <typename E>
-static i64 get_mtime(Context<E> &ctx, std::string path) {
-  struct stat st;
-  if (stat(path.c_str(), &st) < 0)
-    Fatal(ctx) << path << ": stat failed: " << errno_string();
-  return st.st_mtime;
-}
-
-template <typename E>
-static bool reload_input_files(Context<E> &ctx) {
-  Timer t(ctx, "reload_input_files");
-
-  std::vector<ObjectFile<E> *> objs;
-  std::vector<SharedFile<E> *> dsos;
-
-  // Reload updated .o files
-  for (ObjectFile<E> *file : ctx.objs) {
-    if (file->mf->parent) {
-      if (get_mtime(ctx, file->mf->parent->name) != file->mf->parent->mtime)
-        return false;
-      objs.push_back(file);
-      continue;
-    }
-
-    if (get_mtime(ctx, file->mf->name) == file->mf->mtime) {
-      objs.push_back(file);
-      continue;
-    }
-
-    MappedFile<Context<E>> *mf =
-      MappedFile<Context<E>>::must_open(ctx, file->mf->name);
-    objs.push_back(new_object_file(ctx, mf, file->mf->name));
-  }
-
-  // Reload updated .so files
-  for (SharedFile<E> *file : ctx.dsos) {
-    if (get_mtime(ctx, file->mf->name) == file->mf->mtime) {
-      dsos.push_back(file);
-    } else {
-      MappedFile<Context<E>> *mf =
-        MappedFile<Context<E>>::must_open(ctx, file->mf->name);
-      dsos.push_back(new_shared_file(ctx, mf));
-    }
-  }
-
-  ctx.objs = objs;
-  ctx.dsos = dsos;
-  return true;
-}
-
-template <typename E>
 static void show_stats(Context<E> &ctx) {
   for (ObjectFile<E> *obj : ctx.objs) {
     static Counter defined("defined_syms");
