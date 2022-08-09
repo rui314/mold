@@ -39,8 +39,8 @@ endif()
 # Handle MOLD_USE_ASAN and MOLD_USE_TSAN
 option(MOLD_USE_ASAN "Build mold with AddressSanitizer" OFF)
 if(MOLD_USE_ASAN)
-  target_compile_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
-  target_link_options(mold PRIVATE "-fsanitize=address -fsanitize=undefined")
+  target_compile_options(mold PRIVATE -fsanitize=address -fsanitize=undefined)
+  target_link_options(mold PRIVATE -fsanitize=address -fsanitize=undefined)
 endif()
 
 option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
