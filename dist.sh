@@ -27,7 +27,7 @@ docker images -q $image 2> /dev/null || docker pull $image
 docker run -it --rm -v "$(pwd):/mold:Z" -u "$(id -u):$(id -g)" $image \
   bash -c "mkdir /tmp/build &&
 cd /tmp/build &&
-cmake -DCMAKE_CXX_COMPILER=clang++-15 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
+cmake -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
 cmake --build . -j\$(nproc)
 cmake --install . --prefix $dest --strip
 tar czf /mold/$dest.tar.gz $dest &&

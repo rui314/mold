@@ -4,16 +4,13 @@
 # $ docker push rui314/mold-builder:v1-$(uname -m)
 
 FROM ubuntu:18.04
+ENV TZ=Europe/London
 RUN apt-get update && \
-  TZ=Europe/London apt-get install -y tzdata && \
   apt-get install -y --no-install-recommends software-properties-common && \
   add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
-  apt-get install -y --no-install-recommends build-essential git \
-    wget cmake libstdc++-11-dev zlib1g-dev gpg gpg-agent && \
-  bash -c "$(wget -O- https://apt.llvm.org/llvm.sh)" && \
-  apt-get install -y --no-install-recommends clang-15 && \
-  apt clean && \
-  rm -rf /var/lib/apt/lists/* && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends build-essential wget \
+    libstdc++-11-dev zlib1g-dev gcc-10 g++-10 python3 && \
   cd / && \
   wget -O- -q https://www.openssl.org/source/openssl-3.0.5.tar.gz | tar xzf - && \
   mv openssl-3.0.5 openssl && \
