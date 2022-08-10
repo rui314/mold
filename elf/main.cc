@@ -354,7 +354,7 @@ static int elf_main(int argc, char **argv) {
 
   // Redo if -m is not x86-64.
   if (ctx.arg.emulation != E::machine_type) {
-#if !MOLD_DEBUG_X86_64_ONLY && !MOLD_DEBUG_ARM64_ONLY
+#ifndef MOLD_DEBUG_X86_64_ONLY
     switch (ctx.arg.emulation) {
     case MachineType::I386:
       return elf_main<I386>(argc, argv);
@@ -721,11 +721,7 @@ static int elf_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-#if MOLD_DEBUG_ARM64_ONLY
-  return elf_main<ARM64>(argc, argv);
-#else
   return elf_main<X86_64>(argc, argv);
-#endif
 }
 
 #define INSTANTIATE(E)                                                  \

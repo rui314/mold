@@ -983,7 +983,7 @@ static int do_main(int argc, char **argv) {
   std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   if (ctx.arg.arch != E::cputype) {
-#if !defined(MOLD_DEBUG_X86_64_ONLY) && !defined(MOLD_DEBUG_ARM64_ONLY)
+#ifndef MOLD_DEBUG_X86_64_ONLY
     switch (ctx.arg.arch) {
     case CPU_TYPE_X86_64:
       return do_main<X86_64>(argc, argv);

@@ -37,8 +37,6 @@
 // -fdata-sections` and link them with -Wl,-gc-sections.
 #if MOLD_DEBUG_X86_64_ONLY
 # define INSTANTIATE_ALL INSTANTIATE(X86_64)
-#elif MOLD_DEBUG_ARM64_ONLY
-# define INSTANTIATE_ALL INSTANTIATE(ARM64)
 #else
 # define INSTANTIATE_ALL                        \
   INSTANTIATE(X86_64);                          \

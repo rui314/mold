@@ -108,21 +108,13 @@ else()
   mold_add_tbb()
 endif()
 
-# MOLD_X86_64_ONLY and MOLD_ARM64_ONLY are developer-only options.
-# You should not use it for creating an executable for production use.
+# MOLD_X86_64_ONLY is a developer-only option. You should not use it
+# for creating an executable for production use.
 option(MOLD_X86_64_ONLY "Developer-only option" OFF)
 if(MOLD_X86_64_ONLY)
   set(CMAKE_BUILD_TYPE "Debug")
   target_compile_options(mold PRIVATE -ffunction-sections -fdata-sections
     -DMOLD_DEBUG_X86_64_ONLY)
-  target_link_options(mold PRIVATE -Wl,--gc-sections)
-endif()
-
-option(MOLD_ARM64_ONLY "Developer-only option" OFF)
-if(MOLD_ARM64_ONLY)
-  set(CMAKE_BUILD_TYPE "Debug")
-  target_compile_options(mold PRIVATE -ffunction-sections -fdata-sections
-    -DMOLD_DEBUG_ARM64_ONLY)
   target_link_options(mold PRIVATE -Wl,--gc-sections)
 endif()
 
