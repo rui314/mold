@@ -32,7 +32,7 @@ endif
 STRIP = strip
 
 SRCS = $(wildcard *.cc elf/*.cc macho/*.cc)
-OBJS = $(SRCS:%.cc=out/%.o) out/rust-demangle.o
+OBJS = $(SRCS:%.cc=out/%.o) out/rust-demangle.o out/git-hash.o
 
 IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
@@ -125,12 +125,16 @@ all: mold mold-wrapper.so
 
 -include $(SRCS:%.cc=out/%.d)
 
-update-git-hash:
+out/git-hash.cc: FORCE
 	./update-git-hash.py . out/git-hash.cc
-	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o out/git-hash.o out/git-hash.cc
 
-mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) update-git-hash
-	$(CXX) $(OBJS) out/git-hash.o -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
+FORCE:
+
+out/git-hash.o: out/git-hash.cc
+	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
+	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
 	ln -sf mold ld64
 
@@ -239,4 +243,4 @@ test-tsan:
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
-.PHONY: update-git-hash all test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)
+.PHONY: all test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)
