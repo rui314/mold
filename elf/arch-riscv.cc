@@ -716,7 +716,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
       u64 next_loc = loc + r.r_addend;
-      u64 alignment = bit_ceil(r.r_addend);
+      u64 alignment = bit_ceil(r.r_addend + 1);
       assert(alignment <= (1 << isec.p2align));
 
       if (next_loc % alignment)
