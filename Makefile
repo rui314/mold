@@ -225,6 +225,7 @@ install: all
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
+	ln -sf mold.1 $D$(MANDIR)/man1/ld.mold.1
 
 	ln -sf mold $D$(BINDIR)/ld.mold
 	ln -sf mold $D$(BINDIR)/ld64.mold
