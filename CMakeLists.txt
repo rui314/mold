@@ -24,8 +24,12 @@ endif()
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
-target_compile_options(mold PRIVATE -fno-exceptions -fno-unwind-tables
-  -fno-asynchronous-unwind-tables)
+if(NOT MSVC)
+    target_compile_options(mold PRIVATE
+        -fno-exceptions
+        -fno-unwind-tables
+        -fno-asynchronous-unwind-tables)
+endif()
 
 # Build mold with -flto if MOLD_LTO=On
 option(MOLD_LTO "Build mold with link-time optimization enabled")
@@ -59,6 +63,7 @@ if(ZLIB_FOUND)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
 else()
   add_subdirectory(third-party/zlib EXCLUDE_FROM_ALL)
+  target_include_directories(zlibstatic INTERFACE third-party/zlib $<TARGET_PROPERTY:zlibstatic,BINARY_DIR>)
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
@@ -131,12 +136,13 @@ if(NOT MSVC)
   endif()
 endif()
 
-find_package(OpenSSL QUIET COMPONENTS Crypto)
-if(OpenSSL_FOUND AND (NOT APPLE AND NOT MOLD_MOSTLY_STATIC))
+if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC AND NOT WIN32)
+  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
-else()
-  target_compile_definitions(mold PRIVATE USE_VENDORERD_SHA256)
-  target_sources(mold PRIVATE third-party/sha256/sha256.cc)
+endif()
+
+if(WIN32)
+    target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES riscv64
@@ -147,11 +153,12 @@ endif()
 set_property(SOURCE main.cc elf/lto.cc macho/output-chunks.cc APPEND PROPERTY
   COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
 
+find_package(Python3 REQUIRED)
+
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc
-  COMMAND ${CMAKE_SOURCE_DIR}/update-git-hash.py ${CMAKE_SOURCE_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc
-  DEPENDS ${CMAKE_SOURCE_DIR}/update-git-hash.py)
+  OUTPUT git-hash.cc
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/update-git-hash.py ${CMAKE_SOURCE_DIR} git-hash.cc
+  DEPENDS update-git-hash.py)
 
 target_sources(mold PRIVATE
   compress.cc
@@ -197,7 +204,11 @@ target_sources(mold PRIVATE
   macho/tapi.cc
   macho/yaml.cc
   third-party/rust-demangle/rust-demangle.c
-  ${CMAKE_CURRENT_BINARY_DIR}/git-hash.cc)
+  git-hash.cc)
+
+if(MSVC)
+    target_compile_options(mold PRIVATE /bigobj)
+endif()
 
 include(CTest)
 
