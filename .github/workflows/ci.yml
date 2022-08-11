@@ -24,7 +24,9 @@ jobs:
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=clang CXX=clang++ ${{ matrix.target }}
+      run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+        make -j$(nproc) CC=clang CXX=clang++ ${{ matrix.target }}
 
   build-gcc:
     runs-on: ubuntu-20.04
@@ -48,7 +50,9 @@ jobs:
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make test-all
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc) CC=gcc CXX=g++ test-all
+      run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+        make -j$(nproc) CC=gcc CXX=g++ test-all
 
   build-gcc-cmake:
     runs-on: ubuntu-20.04
@@ -73,10 +77,11 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: cmake
       run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
         cmake ..
-        PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(nproc)
+        make -j$(nproc)
         ctest -j$(nproc)
 
   build-macos:
@@ -92,7 +97,9 @@ jobs:
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
-      run: PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.logicalcpu) ${{ matrix.target }}
+      run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+        make -j$(sysctl -n hw.logicalcpu) ${{ matrix.target }}
 
   build-macos-cmake:
     runs-on: macos-11
@@ -102,8 +109,9 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
     - name: cmake
       run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
         cmake ..
-        PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH" make -j$(sysctl -n hw.physicalcpu)
+        make -j$(sysctl -n hw.physicalcpu)
         ctest -j$(sysctl -n hw.physicalcpu)
