@@ -1,6 +1,3 @@
-# cmake is not officially supported yet. To build mold, please use `make`
-# unless you know what you are doing.
-
 cmake_minimum_required(VERSION 3.18)
 project(mold VERSION 1.4.0)
 
