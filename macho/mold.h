@@ -235,7 +235,7 @@ public:
   u32 input_offset = 0;
   u32 input_size = 0;
   u32 input_addr = 0;
-  u32 output_offset = -1;
+  u32 output_offset = (u32)-1;
   u32 rel_offset = 0;
   u32 nrels = 0;
   u32 unwind_offset = 0;

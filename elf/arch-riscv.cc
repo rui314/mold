@@ -251,11 +251,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_absolute() || !ctx.arg.pic) {
         *(ul64 *)loc = S + A;
       } else if (sym.is_imported) {
-        *dynrel++ = {P, R_RISCV_64, (u32)sym.get_dynsym_idx(ctx), A};
+        auto cast_offset = (decltype(ElfRel<E>::r_offset))P;
+        auto cast_addend = (decltype(ElfRel<E>::r_addend))A;
+        *dynrel++ = {cast_offset, R_RISCV_64, (u32)sym.get_dynsym_idx(ctx), cast_addend};
         *(ul64 *)loc = A;
       } else {
-        if (!is_relr_reloc(ctx, rel))
-          *dynrel++ = {P, R_RISCV_RELATIVE, 0, (i64)(S + A)};
+        if (!is_relr_reloc(ctx, rel)) {
+          auto cast_offset = (decltype(ElfRel<E>::r_offset))P;
+          auto cast_addend = (decltype(ElfRel<E>::r_addend))(S + A);
+          *dynrel++ = {cast_offset, R_RISCV_RELATIVE, 0, cast_addend};
+        }
         *(ul64 *)loc = S + A;
       }
       break;
