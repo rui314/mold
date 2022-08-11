@@ -1,3 +1,5 @@
+option(MOLD_ENABLE_QEMU_TESTS "Enable tests for other targets" OFF)
+
 set(MOLD_ELF_TESTS
   absolute-symbols
   allow-multiple-definition
@@ -274,9 +276,11 @@ foreach(TEST IN LISTS MOLD_ELF_TESTS)
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}.sh
     WORKING_DIRECTORY ${mold_BINARY_DIR})
 
-  mold_add_arch_test(${TEST} x86_64-linux-gnu x86_64)
-  mold_add_arch_test(${TEST} i686-linux-gnu i386)
-  mold_add_arch_test(${TEST} aarch64-linux-gnu aarch64)
-  mold_add_arch_test(${TEST} arm-linux-gnueabihf arm)
-  mold_add_arch_test(${TEST} riscv64-linux-gnu riscv64)
+  if(MOLD_ENABLE_QEMU_TESTS)
+    mold_add_arch_test(${TEST} x86_64-linux-gnu x86_64)
+    mold_add_arch_test(${TEST} i686-linux-gnu i386)
+    mold_add_arch_test(${TEST} aarch64-linux-gnu aarch64)
+    mold_add_arch_test(${TEST} arm-linux-gnueabihf arm)
+    mold_add_arch_test(${TEST} riscv64-linux-gnu riscv64)
+  endif()
 endforeach()
