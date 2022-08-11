@@ -8,7 +8,7 @@ env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
   MOLD_SUPPRESS_MACHO_WARNING: 1
 jobs:
-  build-clang:
+  build-clang-make:
     strategy:
       matrix:
         target:
@@ -28,7 +28,31 @@ jobs:
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         make -j$(nproc) CC=clang CXX=clang++ ${{ matrix.target }}
 
-  build-gcc:
+  build-clang-cmake:
+    strategy:
+      matrix:
+        target:
+        - ''
+        - '-DMOLD_USE_ASAN=On'
+        - '-DMOLD_USE_TSAN=On'
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: rui314/setup-mold@staging
+    - name: install-build-deps
+      run: sudo apt-get update && sudo ./install-build-deps.sh
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1
+    - name: build and test
+      run: |
+        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+        mkdir build
+        cd build
+        cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ${{ matrix.target }} ..
+        cmake --build . -j$(nproc)
+        ctest . -j$(nproc)
+
+  build-gcc-make:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
     steps:
@@ -75,16 +99,16 @@ jobs:
         ln -sf /usr/bin/riscv64-linux-gnu-g++-10 /usr/bin/riscv64-linux-gnu-g++
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: cmake
+    - name: build and test
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake ..
-        make -j$(nproc)
-        ctest -j$(nproc)
+        cmake -DMOLD_ENABLE_QEMU_TESTS=On ..
+        cmake --build . -j$(nproc)
+        ctest . -j$(nproc)
 
-  build-macos:
+  build-macos-make:
     strategy:
       matrix:
         target:
@@ -103,15 +127,20 @@ jobs:
 
   build-macos-cmake:
     runs-on: macos-11
+    strategy:
+      matrix:
+        target:
+        - ''
+        - '-DMOLD_USE_ASAN=On'
     steps:
     - uses: actions/checkout@v2
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: cmake
+    - name: build and test
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake ..
-        make -j$(sysctl -n hw.physicalcpu)
-        ctest -j$(sysctl -n hw.physicalcpu)
+        cmake ${{ matrix.target }} ..
+        cmake --build . -j$(sysctl -n hw.physicalcpu)
+        ctest . -j$(sysctl -n hw.physicalcpu)
