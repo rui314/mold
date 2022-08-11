@@ -254,7 +254,7 @@ set(MOLD_ELF_TESTS
 
 function(mold_add_arch_test NAME TRIPLE MACHINE)
   if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${MACHINE})
-    set(TEST_NAME "${MACHINE}_${NAME}")
+    set(TEST_NAME "${MACHINE}-${NAME}")
     add_test(NAME ${TEST_NAME}
       COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${NAME}.sh
       WORKING_DIRECTORY ${mold_BINARY_DIR})
@@ -272,7 +272,7 @@ function(mold_add_arch_test NAME TRIPLE MACHINE)
 endfunction()
 
 foreach(TEST IN LISTS MOLD_ELF_TESTS)
-  add_test(NAME "${CMAKE_HOST_SYSTEM_PROCESSOR}_${TEST}"
+  add_test(NAME "${CMAKE_HOST_SYSTEM_PROCESSOR}-${TEST}"
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}.sh
     WORKING_DIRECTORY ${mold_BINARY_DIR})
 
