@@ -131,9 +131,12 @@ if(NOT MSVC)
   endif()
 endif()
 
-if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC)
-  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_package(OpenSSL QUIET COMPONENTS Crypto)
+if(OpenSSL_FOUND AND (NOT APPLE AND NOT MOLD_MOSTLY_STATIC))
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
+else()
+  target_compile_definitions(mold PRIVATE USE_VENDORERD_SHA256)
+  target_sources(mold PRIVATE third-party/sha256/sha256.cc)
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES riscv64
