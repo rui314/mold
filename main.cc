@@ -38,7 +38,7 @@ void cleanup() {
 //
 // If a disk becomes full as a result of a write to an mmap'ed memory
 // region, the failure of the write is reported as a SIGBUS. This
-// signal handler catches that signal and print out a user-friendly
+// signal handler catches that signal and prints out a user-friendly
 // error message. Without this, it is very hard to realize that the
 // disk might be full.
 static void sighandler(int signo, siginfo_t *info, void *ucontext) {
