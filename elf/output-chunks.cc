@@ -3,10 +3,13 @@
 
 #include <cctype>
 #include <shared_mutex>
-#include <sys/mman.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 
 namespace mold::elf {
 
@@ -359,7 +362,7 @@ static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
   if constexpr (E::is_rel)
     return {(u32)offset, (u8)type, sym};
   else if constexpr (E::word_size == 4)
-    return {offset, (u8)type, sym, addend};
+    return { (ul32)offset, (u8)type, sym, (il32)addend};
   else
     return {offset, type, sym, addend};
 }
@@ -1986,7 +1989,7 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
     u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
-    SHA256(begin, end - begin, shards.data() + i * SHA256_SIZE);
+    sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
 
     // We call munmap early for each chunk so that the last munmap
     // gets cheaper. We assume that the .note.build-id section is
@@ -1999,7 +2002,7 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   assert(ctx.arg.build_id.size() <= SHA256_SIZE);
 
   u8 digest[SHA256_SIZE];
-  SHA256(shards.data(), shards.size(), digest);
+  sha256_hash(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size());
 
   if (ctx.output_file->is_mmapped) {

@@ -3,8 +3,11 @@
 #include <functional>
 #include <iomanip>
 #include <ios>
+
+#ifndef _WIN32
 #include <sys/resource.h>
 #include <sys/time.h>
+#endif
 
 namespace mold {
 
@@ -23,23 +26,44 @@ void Counter::print() {
 }
 
 static i64 now_nsec() {
+#ifdef _WIN32
+  return (i64)std::chrono::steady_clock::now().time_since_epoch().count();
+#else
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
   return (i64)t.tv_sec * 1000000000 + t.tv_nsec;
+  #endif
 }
 
+#ifdef _WIN32
+static i64 to_nsec(FILETIME t) {
+  return ((u64)t.dwHighDateTime << 32 + (u64)t.dwLowDateTime) * 100;
+}
+#else
 static i64 to_nsec(struct timeval t) {
   return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
 }
+#endif
 
 TimerRecord::TimerRecord(std::string name, TimerRecord *parent)
   : name(name), parent(parent) {
+#ifdef _WIN32
+  FILETIME creation_time, exit_time, kernel_time, user_time;
+  GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time,
+                  &user_time);
+#else
   struct rusage usage;
   getrusage(RUSAGE_SELF, &usage);
+#endif
 
   start = now_nsec();
+#ifdef _WIN32
+  user = to_nsec(user_time);
+  sys = to_nsec(kernel_time);
+#else
   user = to_nsec(usage.ru_utime);
   sys = to_nsec(usage.ru_stime);
+#endif
 
   if (parent)
     parent->children.push_back(this);
@@ -50,12 +74,23 @@ void TimerRecord::stop() {
     return;
   stopped = true;
 
+#ifdef _WIN32
+  FILETIME creation_time, exit_time, kernel_time, user_time;
+  GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time,
+                  &user_time);
+#else
   struct rusage usage;
   getrusage(RUSAGE_SELF, &usage);
+#endif
 
   end = now_nsec();
+#ifdef _WIN32
+  user = to_nsec(user_time) - user;
+  sys = to_nsec(kernel_time) - sys;
+#else
   user = to_nsec(usage.ru_utime) - user;
   sys = to_nsec(usage.ru_stime) - sys;
+#endif
 }
 
 static void print_rec(TimerRecord &rec, i64 indent) {

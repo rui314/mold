@@ -8,13 +8,16 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#include <sys/time.h>
+#endif
 
 namespace mold::macho {
 

@@ -7,7 +7,7 @@ namespace mold {
 
 std::string get_realpath(std::string_view path) {
   std::error_code ec;
-  std::string ret = std::filesystem::canonical(path, ec);
+  std::string ret = std::filesystem::canonical(path, ec).string();
   return ec ? std::string(path) : ret;
 }
 
@@ -15,7 +15,7 @@ std::string get_realpath(std::string_view path) {
 // The transformation is done purely by lexical processing.
 // This function does not access file system.
 std::string path_clean(std::string_view path) {
-  return filepath(path).lexically_normal();
+  return filepath(path).lexically_normal().string();
 }
 
 std::filesystem::path to_abs_path(std::filesystem::path path) {

@@ -6,8 +6,11 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <unordered_set>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace mold::macho {
 
@@ -139,7 +142,7 @@ i64 parse_version(Context<E> &ctx, std::string_view arg) {
   static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)",
                        std::regex_constants::ECMAScript);
   std::cmatch m;
-  if (!std::regex_match(arg.begin(), arg.end(), m, re))
+  if (!std::regex_match(arg.data(), arg.data() + arg.size(), m, re))
     Fatal(ctx) << "malformed version number: " << arg;
 
   i64 major = (m[1].length() == 0) ? 0 : stoi(m[1]);

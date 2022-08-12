@@ -2,7 +2,10 @@
 
 #include <cstring>
 #include <regex>
+
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 namespace mold::elf {
 
@@ -1327,7 +1330,7 @@ std::string SharedFile<E>::get_soname(Context<E> &ctx) {
   if (this->mf->given_fullpath)
     return this->filename;
 
-  return filepath(this->filename).filename();
+  return filepath(this->filename).filename().string();
 }
 
 template <typename E>

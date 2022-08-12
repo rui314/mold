@@ -5,8 +5,11 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <unordered_set>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace mold::elf {
 
@@ -209,7 +212,7 @@ static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
   static std::regex re(R"((?:0x|0X)?([0-9a-fA-F]+))", flags);
 
   std::cmatch m;
-  if (!std::regex_match(value.begin(), value.end(), m, re))
+  if (!std::regex_match(value.data(), value.data() + value.size(), m, re))
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   return std::stoul(m[1], nullptr, 16);
 }
@@ -329,7 +332,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string> remaining;
   std::string_view arg;
 
-  ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+  ctx.arg.color_diagnostics =
+#ifdef _WIN32
+      _isatty(
+          _fileno(stderr));
+#else
+      isatty(
+          STDERR_FILENO);
+#endif
   ctx.page_size = E::page_size;
 
   bool version_shown = false;
@@ -606,7 +616,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.chroot = arg;
     } else if (read_flag("color-diagnostics") ||
                read_flag("color-diagnostics=auto")) {
-      ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
+      ctx.arg.color_diagnostics =
+#ifdef _WIN32
+          _isatty(
+              _fileno(stderr));
+#else
+          isatty(
+              STDERR_FILENO);
+#endif
     } else if (read_flag("color-diagnostics=always")) {
       ctx.arg.color_diagnostics = true;
     } else if (read_flag("color-diagnostics=never")) {

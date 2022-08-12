@@ -585,7 +585,7 @@ static std::string create_response_file(Context<E> &ctx) {
   std::string buf;
   std::stringstream out;
 
-  std::string cwd = std::filesystem::current_path();
+  std::string cwd = std::filesystem::current_path().string();
   out << "-C " << cwd.substr(1) << "\n";
 
   if (cwd != "/") {
@@ -619,7 +619,7 @@ void write_repro_file(Context<E> &ctx) {
   std::unordered_set<std::string> seen;
   for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
     if (!mf->parent) {
-      std::string path = to_abs_path(mf->name);
+      std::string path = to_abs_path(mf->name).string();
       if (seen.insert(path).second)
         tar->append(path, mf->get_contents());
     }
@@ -659,9 +659,9 @@ void sort_init_fini(Context<E> &ctx) {
 
   auto get_priority = [](InputSection<E> *isec) {
     static std::regex re(R"(\.(\d+)$)", std::regex_constants::optimize);
-    std::string name = isec->name().begin();
-    std::smatch m;
-    if (std::regex_search(name, m, re))
+    std::string_view name = isec->name();
+    std::cmatch m;
+    if (std::regex_search(name.data(), name.data() + name.size(), m, re))
       return std::stoi(m[1]);
     return 65536;
   };

@@ -18,13 +18,18 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
-#include <unistd.h>
 #include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
@@ -754,14 +759,23 @@ public:
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
   int fd = -1;
+#ifdef _WIN32
+  HANDLE file_mapping = INVALID_HANDLE_VALUE;
+#endif
 };
 
 template <typename C>
 MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
+  
+#ifdef _WIN32
+#define MOLD_OPEN ::_open
+#else
+#define MOLD_OPEN ::open
+#endif
 
-  i64 fd = ::open(path.c_str(), O_RDONLY);
+  i64 fd = MOLD_OPEN(path.c_str(), O_RDONLY);
   if (fd == -1)
     return nullptr;
 
@@ -774,18 +788,33 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
 
   mf->name = path;
   mf->size = st.st_size;
-
-#ifdef __APPLE__
-  mf->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+#ifdef _WIN32
+  mf->mtime = st.st_mtime;
+#elif defined(__APPLE__)
+  mf->mtime =
+      (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
 #else
   mf->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
 #endif
 
   if (st.st_size > 0) {
+#ifdef _WIN32
+    HANDLE file_mapping =
+        CreateFileMapping((HANDLE)_get_osfhandle(fd), nullptr, PAGE_READWRITE,
+                          0, st.st_size, nullptr);
+    if (!file_mapping)
+      Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
+    mf->file_mapping = file_mapping;
+    mf->data = (u8 *)MapViewOfFile(file_mapping, FILE_MAP_ALL_ACCESS, 0, 0,
+                                   st.st_size);
+    if (!mf->data)
+      Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
+#else
     mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE, fd, 0);
     if (mf->data == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
+#endif
   }
 
   close(fd);
@@ -814,8 +843,14 @@ MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
 
 template <typename C>
 MappedFile<C>::~MappedFile() {
-  if (size && !parent)
+  if (size && !parent) {
+#ifdef _WIN32
+    UnmapViewOfFile(data);
+    if (file_mapping != INVALID_HANDLE_VALUE) CloseHandle(file_mapping);
+#else
     munmap(data, size);
+#endif
+  }
 }
 
 } // namespace mold

@@ -27,7 +27,6 @@
 namespace mold::macho {
 
 static constexpr i64 COMMON_PAGE_SIZE = 0x4000;
-static constexpr i64 SHA256_SIZE = 32;
 
 template <typename E> class Chunk;
 template <typename E> class InputSection;
@@ -236,7 +235,7 @@ public:
   u32 input_offset = 0;
   u32 input_size = 0;
   u32 input_addr = 0;
-  u32 output_offset = -1;
+  u32 output_offset = (u32)-1;
   u32 rel_offset = 0;
   u32 nrels = 0;
   u32 unwind_offset = 0;

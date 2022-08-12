@@ -12,8 +12,11 @@
 #include <sys/types.h>
 #include <tbb/global_control.h>
 #include <tbb/parallel_for_each.h>
-#include <unistd.h>
 #include <unordered_set>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace mold::elf {
 
