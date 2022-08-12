@@ -32,39 +32,33 @@ static i64 now_nsec() {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
   return (i64)t.tv_sec * 1000000000 + t.tv_nsec;
-  #endif
+#endif
 }
 
+static std::pair<i64, i64> get_usage() {
 #ifdef _WIN32
-static i64 to_nsec(FILETIME t) {
-  return ((u64)t.dwHighDateTime << 32 + (u64)t.dwLowDateTime) * 100;
-}
+  auto to_nsec = [](FILETIME t) -> i64 {
+    return ((u64)t.dwHighDateTime << 32 + (u64)t.dwLowDateTime) * 100;
+  };
+
+  FILETIME creation, exit, kernel, user;
+  GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user);
+  return {to_nsec(user), to_nsec(kernel)};
 #else
-static i64 to_nsec(struct timeval t) {
-  return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
-}
+  auto to_nsec = [](struct timeval t) -> i64 {
+    return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
+  };
+
+  struct rusage ru;
+  getrusage(RUSAGE_SELF, &ru);
+  return {to_nsec(ru.ru_utime), to_nsec(ru.ru_stime)};
 #endif
+}
 
 TimerRecord::TimerRecord(std::string name, TimerRecord *parent)
   : name(name), parent(parent) {
-#ifdef _WIN32
-  FILETIME creation_time, exit_time, kernel_time, user_time;
-  GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time,
-                  &user_time);
-#else
-  struct rusage usage;
-  getrusage(RUSAGE_SELF, &usage);
-#endif
-
   start = now_nsec();
-#ifdef _WIN32
-  user = to_nsec(user_time);
-  sys = to_nsec(kernel_time);
-#else
-  user = to_nsec(usage.ru_utime);
-  sys = to_nsec(usage.ru_stime);
-#endif
-
+  std::tie(user, sys) = get_usage();
   if (parent)
     parent->children.push_back(this);
 }
@@ -74,23 +68,13 @@ void TimerRecord::stop() {
     return;
   stopped = true;
 
-#ifdef _WIN32
-  FILETIME creation_time, exit_time, kernel_time, user_time;
-  GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time,
-                  &user_time);
-#else
-  struct rusage usage;
-  getrusage(RUSAGE_SELF, &usage);
-#endif
+  i64 user2;
+  i64 sys2;
+  std::tie(user2, sys2) = get_usage();
 
   end = now_nsec();
-#ifdef _WIN32
-  user = to_nsec(user_time) - user;
-  sys = to_nsec(kernel_time) - sys;
-#else
-  user = to_nsec(usage.ru_utime) - user;
-  sys = to_nsec(usage.ru_stime) - sys;
-#endif
+  user = user2 - user;
+  sys = sys2 - sys;
 }
 
 static void print_rec(TimerRecord &rec, i64 indent) {
