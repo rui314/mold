@@ -29,7 +29,7 @@ inline void sha256_hash(u8 *in, size_t len, u8 *out) {
 class SHA256Hash {
 public:
   SHA256Hash() {
-    BCryptCreateHash(get_sha256_handle(), &handle, nullptr, 0, 0, 0);
+    BCryptCreateHash(get_sha256_handle(), &handle, nullptr, 0, nullptr, 0, 0);
   }
 
   void update(u8 *data, size_t len) {
