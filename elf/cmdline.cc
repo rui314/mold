@@ -324,6 +324,14 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
   return get_symbol(ctx, s);
 }
 
+static bool stderr_isatty() {
+#ifdef _WIN32
+  return _isatty(_fileno(stderr));
+#else
+  return isatty(STDERR_FILENO);
+#endif
+}
+
 template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::span<std::string_view> args = ctx.cmdline_args;
@@ -332,15 +340,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string> remaining;
   std::string_view arg;
 
-  ctx.arg.color_diagnostics =
-#ifdef _WIN32
-      _isatty(
-          _fileno(stderr));
-#else
-      isatty(
-          STDERR_FILENO);
-#endif
   ctx.page_size = E::page_size;
+  ctx.arg.color_diagnostics = stderr_isatty();
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
@@ -616,14 +617,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.chroot = arg;
     } else if (read_flag("color-diagnostics") ||
                read_flag("color-diagnostics=auto")) {
-      ctx.arg.color_diagnostics =
-#ifdef _WIN32
-          _isatty(
-              _fileno(stderr));
-#else
-          isatty(
-              STDERR_FILENO);
-#endif
+      ctx.arg.color_diagnostics = stderr_isatty();
     } else if (read_flag("color-diagnostics=always")) {
       ctx.arg.color_diagnostics = true;
     } else if (read_flag("color-diagnostics=never")) {
