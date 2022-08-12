@@ -13,11 +13,11 @@ namespace mold {
 
 std::string_view errno_string() {
   static thread_local char buf[200];
-  #ifdef _WIN32
+#ifdef _WIN32
   strerror_s(buf, errno);
-  #else
+#else
   strerror_r(errno, buf, sizeof(buf));
-  #endif
+#endif
   return buf;
 }
 

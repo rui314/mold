@@ -43,31 +43,19 @@ void cleanup() {
 // error message. Without this, it is very hard to realize that the
 // disk might be full.
 #ifdef _WIN32
+
 static LONG WINAPI vectored_handler(_EXCEPTION_POINTERS *exception_info) {
-#else
-static void sighandler(int signo, siginfo_t *info, void *ucontext) {
-#endif
   static std::mutex mu;
   std::scoped_lock lock{mu};
 
-#ifdef _WIN32
   PEXCEPTION_RECORD exception_record = exception_info->ExceptionRecord;
   ULONG_PTR *exception_information = exception_record->ExceptionInformation;
   if (exception_record->ExceptionCode == EXCEPTION_IN_PAGE_ERROR &&
       (ULONG_PTR)output_buffer_start <= exception_information[1] &&
       exception_information[1] < (ULONG_PTR)output_buffer_end) {
-#else
-  if ((signo == SIGSEGV || signo == SIGBUS) &&
-      output_buffer_start <= info->si_addr &&
-      info->si_addr < output_buffer_end) {
-#endif
 
     const char msg[] = "mold: failed to write to an output file. Disk full?\n";
-#ifdef _WIN32
     (void)!write(_fileno(stderr), msg, sizeof(msg) - 1);
-#else
-    (void)!write(STDERR_FILENO, msg, sizeof(msg) - 1);
-#endif
   }
 
   cleanup();
@@ -75,9 +63,27 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
 }
 
 void install_signal_handler() {
-#ifdef _WIN32
   AddVectoredExceptionHandler(0, vectored_handler);
+}
+
 #else
+
+static void sighandler(int signo, siginfo_t *info, void *ucontext) {
+  static std::mutex mu;
+  std::scoped_lock lock{mu};
+
+  if ((signo == SIGSEGV || signo == SIGBUS) &&
+      output_buffer_start <= info->si_addr &&
+      info->si_addr < output_buffer_end) {
+    const char msg[] = "mold: failed to write to an output file. Disk full?\n";
+    (void)!write(STDERR_FILENO, msg, sizeof(msg) - 1);
+  }
+
+  cleanup();
+  _exit(1);
+}
+
+void install_signal_handler() {
   struct sigaction action;
   action.sa_sigaction = sighandler;
   sigemptyset(&action.sa_mask);
@@ -86,9 +92,9 @@ void install_signal_handler() {
   sigaction(SIGINT, &action, NULL);
   sigaction(SIGTERM, &action, NULL);
   sigaction(SIGBUS, &action, NULL);
-#endif
 }
 
+#endif
 
 i64 get_default_thread_count() {
   // mold doesn't scale well above 32 threads.
