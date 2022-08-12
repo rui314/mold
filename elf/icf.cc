@@ -141,8 +141,7 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
 
 static Digest digest_final(SHA256Hash &sha) {
   u8 buf[SHA256_SIZE];
-  int res = sha.finish(buf);
-  assert(res == 1);
+  sha.finish(buf);
 
   Digest digest;
   memcpy(digest.data(), buf, HASH_SIZE);

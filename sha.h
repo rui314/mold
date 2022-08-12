@@ -1,84 +1,81 @@
+#pragma once
+
+#include <cstdint>
+
+typedef uint8_t u8;
 static constexpr int64_t SHA256_SIZE = 32;
 
-#if defined(USE_VENDORERD_SHA256)
-#  include "third-party/sha256/sha256.h"
-#elif defined(_WIN32)
+#ifdef _WIN32
+// On Windows, we use Microsoft CNG.
+
 #include <Windows.h>
 #include <bcrypt.h>
 #include <ntstatus.h>
 
-inline static std::once_flag sha256_alg_handle_flag;
-inline static BCRYPT_ALG_HANDLE sha256_alg_handle() {
-  static BCRYPT_ALG_HANDLE alg_handle;
-  std::call_once(
-      sha256_alg_handle_flag,
-      [](BCRYPT_ALG_HANDLE* alg_handle_ptr) {
-        BCryptOpenAlgorithmProvider(alg_handle_ptr, BCRYPT_SHA256_ALGORITHM,
-                                    nullptr, 0);
-      },
-      &alg_handle);
+inline static BCRYPT_ALG_HANDLE get_sha256_handle() {
+  static std::once_flag once;
+  static BCRYPT_ALG_HANDLE alg;
 
-  return alg_handle;
+  std::call_once(once, [&]() {
+    BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+  });
+  return alg;
 }
-#elif defined(__APPLE__)
+
+inline void sha256_hash(u8 *in, size_t len, u8 *out) {
+  BCryptHash(get_sha256_handle(), nullptr, 0, in, len, out, SHA256_SIZE);
+}
+
+class SHA256Hash {
+public:
+  SHA256Hash() {
+    BCryptCreateHash(get_sha256_handle(), &handle, nullptr, 0, 0, 0);
+  }
+
+  void update(u8 *data, size_t len) {
+    BCryptHashData(handle, data, len, 0);
+  }
+
+  void finish(u8 *out) {
+    BCryptFinishHash(handle, out, SHA256_SIZE, 0);
+  }
+
+private:
+  BCRYPT_HASH_HANDLE handle;
+};
+
+#else
+// On Unix, we use OpenSSL or the Apple's OpenSSL-compatible API.
+
+#ifdef __APPLE__
 #  define COMMON_DIGEST_FOR_OPENSSL
 #  include <CommonCrypto/CommonDigest.h>
 #  define SHA256(data, len, md) CC_SHA256(data, len, md)
 #else
-#define OPENSSL_SUPPRESS_DEPRECATED 1
-#include <openssl/sha.h>
+#  define OPENSSL_SUPPRESS_DEPRECATED 1
+#  include <openssl/sha.h>
 #endif
 
-inline void sha256_hash(unsigned char* input_begin, size_t input_size,
-                 unsigned char* output_begin) {
-#ifdef _WIN32
-  BCryptHash(sha256_alg_handle(), nullptr, 0, input_begin, input_size,
-             output_begin, SHA256_SIZE);
-#else
-  SHA256(input_begin, input_size, output_begin);
-#endif
+inline void sha256_hash(u8 *in, size_t len, u8 *out) {
+  SHA256(in, len, out);
 }
 
-struct SHA256Hash {
-#ifdef _WIN32
-  BCRYPT_HASH_HANDLE hash_handle;
-  DWORD hash_buffer_length, hash_object_length, data_length;
-  std::unique_ptr<BYTE[]> hash_buffer, hash_object;
-#else
-  SHA256_CTX ctx;
-#endif
-
+class SHA256Hash {
+public:
   SHA256Hash() {
-#ifdef _WIN32
-    auto alg_handle = sha256_alg_handle();
-    BCryptGetProperty(alg_handle, BCRYPT_OBJECT_LENGTH,
-                      (PUCHAR)&hash_object_length, sizeof(DWORD), &data_length,
-                      0);
-    hash_object = std::make_unique<BYTE[]>(hash_object_length);
-    BCryptGetProperty(alg_handle, BCRYPT_HASH_LENGTH,
-                      (PUCHAR)&hash_buffer_length, sizeof(DWORD), &data_length,
-                      0);
-    hash_buffer = std::make_unique<BYTE[]>(hash_buffer_length);
-    BCryptCreateHash(alg_handle, &hash_handle, hash_object.get(),
-                     hash_object_length, nullptr, 0, 0);
-#else
     SHA256_Init(&ctx);
-#endif
   }
 
-  void update(unsigned char* data, size_t size) {
-#ifdef _WIN32
-    BCryptHashData(sha256_alg_handle(), data, size, 0);
-#else
-    SHA256_Update(&ctx, data, size);
-#endif
+  void update(u8 *data, size_t len) {
+    SHA256_Update(&ctx, data, len);
   }
 
-  int finish(unsigned char* out) {
-#ifdef _WIN32
-    return BCryptFinishHash(sha256_alg_handle(), out, SHA256_SIZE, 0) == STATUS_SUCCESS;
-#else
-    return SHA256_Final(out, &ctx);
-#endif
+  void finish(u8 *out) {
+    SHA256_Final(out, &ctx);
   }
+
+private:
+  SHA256_CTX ctx;
 };
+
+#endif
