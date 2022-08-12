@@ -164,11 +164,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_absolute() || !ctx.arg.pic) {
         *(ul32 *)loc = S + A;
       } else if (sym.is_imported) {
-        *dynrel++ = ElfRel<E>{P, R_386_32, sym.get_dynsym_idx(ctx)};
+        *dynrel++ = ElfRel<E>(P, R_386_32, sym.get_dynsym_idx(ctx));
         *(ul32 *)loc = A;
       } else {
         if (!is_relr_reloc(ctx, rel))
-          *dynrel++ = ElfRel<E>{P, R_386_RELATIVE, 0};
+          *dynrel++ = ElfRel<E>(P, R_386_RELATIVE, 0);
         *(ul32 *)loc = S + A;
       }
       continue;
@@ -188,7 +188,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
         *(ul32 *)loc = S + A - P;
       } else {
-        *dynrel++ = ElfRel<E>{P, R_386_32, sym.get_dynsym_idx(ctx)};
+        *dynrel++ = ElfRel<E>(P, R_386_32, sym.get_dynsym_idx(ctx));
         *(ul32 *)loc = A;
       }
       continue;

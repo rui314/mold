@@ -358,23 +358,15 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 }
 
 template <typename E>
-static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
-  if constexpr (E::is_rel)
-    return ElfRel<E>{offset, type, sym};
-  else
-    return ElfRel<E>{offset, type, sym, addend};
-}
-
-template <typename E>
 void RelDynSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset +
                                  ctx.got->get_reldyn_size(ctx));
 
   for (Symbol<E> *sym : ctx.copyrel->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
+    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
 
   for (Symbol<E> *sym : ctx.copyrel_relro->symbols)
-    *rel++ = reloc<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx));
+    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
 }
 
 template <typename E>
@@ -1114,8 +1106,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
     if (ent.r_type &&
         (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
-      *rel++ = reloc<E>(this->shdr.sh_addr + ent.idx * E::word_size, ent.r_type,
-                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0, ent.val);
+      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * E::word_size, ent.r_type,
+                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0, ent.val);
   }
 }
 
@@ -1188,8 +1180,8 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
   i64 relplt_idx = 0;
   for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[relplt_idx++] = reloc<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
-                                 sym->get_dynsym_idx(ctx));
+    buf[relplt_idx++] = ElfRel<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
+                                  sym->get_dynsym_idx(ctx), 0);
 }
 
 template<typename E>
