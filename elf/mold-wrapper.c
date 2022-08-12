@@ -1,17 +1,14 @@
 #define _GNU_SOURCE 1
 
+#include <alloca.h>
+#include <dlfcn.h>
+#include <spawn.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifndef _WIN32
-#include <alloca.h>
-#include <dlfcn.h>
-#include <spawn.h>
 #include <unistd.h>
-#endif
 
 extern char **environ;
 
@@ -65,7 +62,6 @@ static bool is_ld(const char *path) {
          !strcmp(ptr, "ld.gold") || !strcmp(ptr, "ld.bfd");
 }
 
-#ifndef WIN32
 int execvpe(const char *file, char *const *argv, char *const *envp) {
   debug_print("execvpe %s\n", file);
 
@@ -133,4 +129,3 @@ int posix_spawn(pid_t *pid, const char *path,
   typeof(posix_spawn) *real = dlsym(RTLD_NEXT, "posix_spawn");
   return real(pid, path, file_actions, attrp, argv, envp);
 }
-#endif

@@ -120,12 +120,15 @@ if(MOLD_X86_64_ONLY)
   target_link_options(mold PRIVATE -Wl,--gc-sections)
 endif()
 
-add_library(mold-wrapper SHARED)
+if(UNIX)
+  add_library(mold-wrapper SHARED)
+  install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
 
-# Remove the default `lib` prefix
-set_target_properties(mold-wrapper PROPERTIES PREFIX "")
-target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
-target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
+  # Remove the default `lib` prefix
+  set_target_properties(mold-wrapper PROPERTIES PREFIX "")
+  target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
+  target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
+endif()
 
 if(NOT MSVC)
   include(CheckLibraryExists)
@@ -230,7 +233,6 @@ endif()
 
 if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(TARGETS mold)
-  install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
   install(CODE "
         file(RELATIVE_PATH RELPATH
              /${CMAKE_INSTALL_LIBEXECDIR}/mold /${CMAKE_INSTALL_BINDIR}/mold)
