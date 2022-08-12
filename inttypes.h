@@ -24,10 +24,6 @@
 #include <cstdint>
 #include <cstring>
 
-#ifdef _WIN32
-#include <cstdlib>
-#endif
-
 #ifdef __BIG_ENDIAN__
 #error "mold does not support big-endian hosts"
 #endif
@@ -153,23 +149,21 @@ private:
 
   static T bswap(T x) {
     if constexpr (sizeof(T) == 2) {
-#ifdef _WIN32
-      return _byteswap_ushort(x);
-#else
-      return __builtin_bswap16(x);
-#endif
+      return ((x & 0xff00) >> 8) | ((x & 0x00ff) << 8);
     } else if constexpr (sizeof(T) == 4) {
-#ifdef _WIN32
-      return _byteswap_ulong(x);
-#else
-      return __builtin_bswap32(x);
-#endif
+      return ((x & 0xff000000) >> 24) |
+             ((x & 0x00ff0000) >> 8)  |
+             ((x & 0x0000ff00) << 8)  |
+             ((x & 0x000000ff) << 24);
     } else {
-#ifdef _WIN32
-      return _byteswap_uint64(x);
-#else
-      return __builtin_bswap64(x);
-#endif
+      return ((x & 0xff000000'00000000) >> 56) |
+             ((x & 0x00ff0000'00000000) >> 40) |
+             ((x & 0x0000ff00'00000000) >> 24) |
+             ((x & 0x000000ff'00000000) >> 8)  |
+             ((x & 0x00000000'ff000000) << 8)  |
+             ((x & 0x00000000'00ff0000) << 24) |
+             ((x & 0x00000000'0000ff00) << 40) |
+             ((x & 0x00000000'000000ff) << 56);
     }
   }
 };
