@@ -360,11 +360,9 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 static ElfRel<E> reloc(u64 offset, u32 type, u32 sym, i64 addend = 0) {
   if constexpr (E::is_rel)
-    return {(u32)offset, (u8)type, sym};
-  else if constexpr (E::word_size == 4)
-    return { (ul32)offset, (u8)type, sym, (il32)addend};
+    return ElfRel<E>{offset, type, sym};
   else
-    return {offset, type, sym, addend};
+    return ElfRel<E>{offset, type, sym, addend};
 }
 
 template <typename E>
