@@ -1261,18 +1261,27 @@ struct Elf32Phdr {
 };
 
 struct Elf64Rel {
+  Elf64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+
   ul64 r_offset;
   ul32 r_type;
   ul32 r_sym;
 };
 
 struct Elf32Rel {
+  Elf32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+
   ul32 r_offset;
   u8 r_type;
   ul24 r_sym;
 };
 
 struct Elf64Rela {
+  Elf64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+
   ul64 r_offset;
   ul32 r_type;
   ul32 r_sym;
@@ -1280,6 +1289,9 @@ struct Elf64Rela {
 };
 
 struct Elf32Rela {
+  Elf32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+
   ul32 r_offset;
   u8 r_type;
   ul24 r_sym;
@@ -1376,7 +1388,7 @@ template <> struct ElfSym<X86_64> : public Elf64Sym {};
 template <> struct ElfShdr<X86_64> : public Elf64Shdr {};
 template <> struct ElfEhdr<X86_64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<X86_64> : public Elf64Phdr {};
-template <> struct ElfRel<X86_64> : public Elf64Rela {};
+template <> struct ElfRel<X86_64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
 template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
@@ -1410,7 +1422,7 @@ template <> struct ElfSym<I386> : public Elf32Sym {};
 template <> struct ElfShdr<I386> : public Elf32Shdr {};
 template <> struct ElfEhdr<I386> : public Elf32Ehdr {};
 template <> struct ElfPhdr<I386> : public Elf32Phdr {};
-template <> struct ElfRel<I386> : public Elf32Rel {};
+template <> struct ElfRel<I386> : public Elf32Rel { using Elf32Rel::Elf32Rel; };
 template <> struct ElfDyn<I386> : public Elf32Dyn {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
 
@@ -1445,7 +1457,7 @@ template <> struct ElfSym<ARM64> : public Elf64Sym {};
 template <> struct ElfShdr<ARM64> : public Elf64Shdr {};
 template <> struct ElfEhdr<ARM64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<ARM64> : public Elf64Phdr {};
-template <> struct ElfRel<ARM64> : public Elf64Rela {};
+template <> struct ElfRel<ARM64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
 template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
 template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
 
@@ -1480,7 +1492,7 @@ template <> struct ElfSym<ARM32> : public Elf32Sym {};
 template <> struct ElfShdr<ARM32> : public Elf32Shdr {};
 template <> struct ElfEhdr<ARM32> : public Elf32Ehdr {};
 template <> struct ElfPhdr<ARM32> : public Elf32Phdr {};
-template <> struct ElfRel<ARM32> : public Elf32Rel {};
+template <> struct ElfRel<ARM32> : public Elf32Rel { using Elf32Rel::Elf32Rel; };
 template <> struct ElfDyn<ARM32> : public Elf32Dyn {};
 template <> struct ElfChdr<ARM32> : public Elf32Chdr {};
 
@@ -1514,7 +1526,7 @@ template <> struct ElfSym<RISCV64> : public Elf64Sym {};
 template <> struct ElfShdr<RISCV64> : public Elf64Shdr {};
 template <> struct ElfEhdr<RISCV64> : public Elf64Ehdr {};
 template <> struct ElfPhdr<RISCV64> : public Elf64Phdr {};
-template <> struct ElfRel<RISCV64> : public Elf64Rela {};
+template <> struct ElfRel<RISCV64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
 template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
 template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
 
@@ -1548,7 +1560,7 @@ template <> struct ElfSym<RISCV32> : public Elf32Sym {};
 template <> struct ElfShdr<RISCV32> : public Elf32Shdr {};
 template <> struct ElfEhdr<RISCV32> : public Elf32Ehdr {};
 template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
-template <> struct ElfRel<RISCV32> : public Elf32Rela {};
+template <> struct ElfRel<RISCV32> : public Elf32Rela { using Elf32Rela::Elf32Rela; };
 template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
 template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
 
