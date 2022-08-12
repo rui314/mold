@@ -34,20 +34,6 @@
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
 
-#ifdef _WIN32
-static constexpr bool mold_on_win32 = true;
-static constexpr bool mold_on_macos = false;
-static constexpr bool mold_on_unix = false;
-#elif defined(__APPLE__)
-static constexpr bool mold_on_win32 = false;
-static constexpr bool mold_on_macos = true;
-static constexpr bool mold_on_unix = false;
-#else
-static constexpr bool mold_on_win32 = false;
-static constexpr bool mold_on_macos = false;
-static constexpr bool mold_on_unix = true;
-#endif
-
 #ifdef NDEBUG
 #  define unreachable() __builtin_unreachable()
 #else
@@ -785,10 +771,11 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
 
 
   i64 fd;
-  if constexpr (mold_on_win32)
+#ifdef _WIN32
     fd = ::_open(path.c_str(), O_RDONLY);
-  else
+#else
     fd = ::open(path.c_str(), O_RDONLY);
+#endif
 
   if (fd == -1)
     return nullptr;
@@ -803,31 +790,32 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   mf->name = path;
   mf->size = st.st_size;
 
-  if constexpr (mold_on_win32)
+#ifdef _WIN32
     mf->mtime = st.st_mtime;
-  else if constexpr (mold_on_macos)
+#elif defined(__APPLE__)
     mf->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
-  else
+#else
     mf->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+#endif
 
   if (st.st_size > 0) {
-    if constexpr (mold_on_win32) {
-      HANDLE handle = CreateFileMapping((HANDLE)_get_osfhandle(fd),
-                                        nullptr, PAGE_READWRITE, 0,
-                                        st.st_size, nullptr);
-      if (!handle)
-        Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
-      mf->file_handle = handle;
-      mf->data = (u8 *)MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, st.st_size);
-      if (!mf->data)
-        Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
-    } else {
-      mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
-                            MAP_PRIVATE, fd, 0);
-      if (mf->data == MAP_FAILED)
-        Fatal(ctx) << path << ": mmap failed: " << errno_string();
+#ifdef _WIN32
+    HANDLE handle = CreateFileMapping((HANDLE)_get_osfhandle(fd),
+                                      nullptr, PAGE_READWRITE, 0,
+                                      st.st_size, nullptr);
+    if (!handle)
+      Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
+    mf->file_handle = handle;
+    mf->data = (u8 *)MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, st.st_size);
+    if (!mf->data)
+      Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
+#else
+    mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE, fd, 0);
+    if (mf->data == MAP_FAILED)
+      Fatal(ctx) << path << ": mmap failed: " << errno_string();
+#endif
     }
-  }
 
   close(fd);
   return mf;
@@ -858,13 +846,13 @@ MappedFile<C>::~MappedFile() {
   if (size == 0 || parent)
     return;
 
-  if constexpr (mold_on_win32) {
-    UnmapViewOfFile(data);
-    if (file_handle != INVALID_HANDLE_VALUE)
-      CloseHandle(file_handle);
-  } else {
-    munmap(data, size);
-  }
+#ifdef _WIN32
+  UnmapViewOfFile(data);
+  if (file_handle != INVALID_HANDLE_VALUE)
+    CloseHandle(file_handle);
+#else
+  munmap(data, size);
+#endif
 }
 
 } // namespace mold
