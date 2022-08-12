@@ -120,7 +120,7 @@ if(MOLD_X86_64_ONLY)
   target_link_options(mold PRIVATE -Wl,--gc-sections)
 endif()
 
-if(UNIX)
+if(NOT WIN32)
   add_library(mold-wrapper SHARED)
   install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
 
@@ -128,6 +128,8 @@ if(UNIX)
   set_target_properties(mold-wrapper PROPERTIES PREFIX "")
   target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
   target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
+
+  target_sources(mold PRIVATE elf/subprocess.cc)
 endif()
 
 if(NOT MSVC)
@@ -193,7 +195,6 @@ target_sources(mold PRIVATE
   elf/output-chunks.cc
   elf/passes.cc
   elf/relocatable.cc
-  elf/subprocess.cc
   macho/arch-arm64.cc
   macho/arch-x86-64.cc
   macho/cmdline.cc

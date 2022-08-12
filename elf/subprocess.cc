@@ -1,16 +1,12 @@
 #include "mold.h"
-#include "../sha.h"
 
 #include <filesystem>
 #include <signal.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-
-#ifndef _WIN32
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
 
 namespace mold::elf {
 

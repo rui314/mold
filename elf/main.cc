@@ -343,9 +343,11 @@ static int elf_main(int argc, char **argv) {
   Context<E> ctx;
 
   // Process -run option first. process_run_subcommand() does not return.
+#ifndef _WIN32
   if (argc >= 2)
     if (argv[1] == "-run"sv || argv[1] == "--run"sv)
       process_run_subcommand(ctx, argc, argv);
+#endif
 
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
@@ -392,8 +394,11 @@ static int elf_main(int argc, char **argv) {
 
   // Fork a subprocess unless --no-fork is given.
   std::function<void()> on_complete;
+
+#ifndef _WIN32
   if (ctx.arg.fork)
     on_complete = fork_child();
+#endif
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
