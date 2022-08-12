@@ -34,6 +34,20 @@
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
 
+#ifdef _WIN32
+static constexpr bool mold_on_win32 = true;
+static constexpr bool mold_on_macos = false;
+static constexpr bool mold_on_unix = false;
+#elif defined(__APPLE__)
+static constexpr bool mold_on_win32 = false;
+static constexpr bool mold_on_macos = true;
+static constexpr bool mold_on_unix = false;
+#else
+static constexpr bool mold_on_win32 = false;
+static constexpr bool mold_on_macos = false;
+static constexpr bool mold_on_unix = true;
+#endif
+
 #ifdef NDEBUG
 #  define unreachable() __builtin_unreachable()
 #else
