@@ -1298,6 +1298,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 // passes.cc
 //
 
+template <typename E> void create_internal_file(Context<E> &);
 template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
@@ -1307,7 +1308,7 @@ template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void bin_sections(Context<E> &);
-template <typename E> ObjectFile<E> *create_internal_file(Context<E> &);
+template <typename E> void add_synthetic_symbols(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
@@ -1586,7 +1587,6 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
-  tbb::concurrent_vector<std::vector<ElfRel<E>>> rel_pool;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
@@ -1597,7 +1597,9 @@ struct Context {
   // Input files
   std::vector<ObjectFile<E> *> objs;
   std::vector<SharedFile<E> *> dsos;
+
   ObjectFile<E> *internal_obj = nullptr;
+  std::vector<ElfSym<E>> internal_esyms;
 
   // Output buffer
   std::unique_ptr<OutputFile<Context<E>>> output_file;
@@ -1783,7 +1785,7 @@ public:
   bool has_got(Context<E> &ctx) const;
 
   bool is_absolute() const;
-  bool is_relative() const;
+  bool is_relative() const { return !is_absolute(); }
   bool is_local() const;
 
   InputSection<E> *get_input_section() const;
@@ -2487,14 +2489,9 @@ inline bool Symbol<E>::has_got(Context<E> &ctx) const {
 
 template <typename E>
 inline bool Symbol<E>::is_absolute() const {
-  if (file->is_dso)
+  if (file && file->is_dso)
     return esym().is_abs();
   return !is_imported && !get_frag() && shndx == 0;
-}
-
-template <typename E>
-inline bool Symbol<E>::is_relative() const {
-  return !is_absolute();
 }
 
 template<typename E>

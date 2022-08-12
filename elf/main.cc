@@ -424,6 +424,9 @@ static int elf_main(int argc, char **argv) {
   // Apply -exclude-libs
   apply_exclude_libs(ctx);
 
+  // Create a dummy file containing linker-synthesized symbols.
+  create_internal_file(ctx);
+
   // Resolve symbols and fix the set of object files that are
   // included to the final output.
   resolve_symbols(ctx);
@@ -471,10 +474,8 @@ static int elf_main(int argc, char **argv) {
   // Get a list of output sections.
   append(ctx.chunks, collect_output_sections(ctx));
 
-  // Create a dummy file containing linker-synthesized symbols
-  // (e.g. `__bss_start`).
-  ctx.internal_obj = create_internal_file(ctx);
-  ctx.objs.push_back(ctx.internal_obj);
+  // Add synthetic symbols such as __ehdr_start or __end.
+  add_synthetic_symbols(ctx);
 
   // Beyond this point, no new files will be added to ctx.objs
   // or ctx.dsos.

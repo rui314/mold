@@ -31,6 +31,7 @@ set(MOLD_ELF_TESTS
   debug-macro-section
   default-symver
   defsym
+  defsym2
   demangle-rust
   demangle
   dependency-file

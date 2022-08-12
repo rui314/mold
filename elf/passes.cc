@@ -351,29 +351,55 @@ void bin_sections(Context<E> &ctx) {
 // Create a dummy object file containing linker-synthesized
 // symbols.
 template <typename E>
-ObjectFile<E> *create_internal_file(Context<E> &ctx) {
+void create_internal_file(Context<E> &ctx) {
   ObjectFile<E> *obj = new ObjectFile<E>;
   ctx.obj_pool.emplace_back(obj);
+  ctx.internal_obj = obj;
+  ctx.objs.push_back(obj);
 
   // Create linker-synthesized symbols.
-  auto *esyms = new std::vector<ElfSym<E>>(1);
+  ctx.internal_esyms.resize(1);
+
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
   obj->is_alive = true;
   obj->features = -1;
   obj->priority = 1;
 
-  auto add = [&](std::string_view name, u8 st_type = STT_NOTYPE) {
+  // Add symbols for --defsym.
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    obj->symbols.push_back(sym);
+
     ElfSym<E> esym;
     memset(&esym, 0, sizeof(esym));
-    esym.st_type = st_type;
+    esym.st_type = STT_NOTYPE;
+    esym.st_shndx = SHN_ABS;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = STV_DEFAULT;
+    ctx.internal_esyms.push_back(esym);
+  };
+
+  obj->elf_syms = ctx.internal_esyms;
+  obj->sym_fragments.resize(ctx.internal_esyms.size());
+  obj->symvers.resize(ctx.internal_esyms.size() - 1);
+}
+
+template <typename E>
+void add_synthetic_symbols(Context<E> &ctx) {
+  ObjectFile<E> &obj = *ctx.internal_obj;
+
+  auto add = [&](std::string_view name) {
+    ElfSym<E> esym;
+    memset(&esym, 0, sizeof(esym));
+    esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = STV_HIDDEN;
-    esyms->push_back(esym);
+    ctx.internal_esyms.push_back(esym);
 
     Symbol<E> *sym = get_symbol(ctx, name);
-    obj->symbols.push_back(sym);
+    obj.symbols.push_back(sym);
     return sym;
   };
 
@@ -422,53 +448,30 @@ ObjectFile<E> *create_internal_file(Context<E> &ctx) {
   }
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (!is_c_identifier(chunk->name))
-      continue;
-
-    add(save_string(ctx, "__start_" + std::string(chunk->name)));
-    add(save_string(ctx, "__stop_" + std::string(chunk->name)));
+    if (is_c_identifier(chunk->name)) {
+      add(save_string(ctx, "__start_" + std::string(chunk->name)));
+      add(save_string(ctx, "__stop_" + std::string(chunk->name)));
+    }
   }
 
-  i64 first_defsym = obj->symbols.size();
+  obj.elf_syms = ctx.internal_esyms;
+  obj.sym_fragments.resize(ctx.internal_esyms.size());
+  obj.symvers.resize(ctx.internal_esyms.size() - 1);
 
-  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
-    Symbol<E> *sym = ctx.arg.defsyms[i].first;
-    ElfSym<E> esym;
-    memset(&esym, 0, sizeof(esym));
-    esym.st_type = STT_NOTYPE;
-    esym.st_shndx = SHN_ABS;
-    esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = STV_DEFAULT;
-    esyms->push_back(esym);
-    obj->symbols.push_back(sym);
-  };
+  obj.resolve_symbols(ctx);
 
-  obj->elf_syms = *esyms;
-  obj->sym_fragments.resize(obj->elf_syms.size());
+  // Make all synthetic symbols relative ones.
+  for (Symbol<E> *sym : obj.symbols)
+    sym->shndx = -1; // dummy value to make it a relative symbol
 
-  i64 num_globals = obj->elf_syms.size() - obj->first_global;
-  obj->symvers.resize(num_globals);
-
-  obj->resolve_symbols(ctx);
-
-  for (i64 i = obj->first_global; i < first_defsym; i++)
-    obj->symbols[i]->shndx = -1; // dummy value to make it a relative symbol
-
+  // Make defsym symbols absolute if necessary.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
-
-    if (Symbol<E> **sym2 = std::get_if<Symbol<E> *>(&val))
-      if ((*sym2)->is_relative())
-        sym->shndx = -1; // dummy value to make it a relative symbol
+    if (std::holds_alternative<u64>(val) ||
+        std::get<Symbol<E> *>(val)->is_absolute())
+        sym->shndx = 0;
   }
-
-  ctx.on_exit.push_back([=] {
-    delete esyms;
-    delete obj->symbols[0];
-  });
-
-  return obj;
 }
 
 template <typename E>
@@ -1696,6 +1699,7 @@ void write_dependency_file(Context<E> &ctx) {
 }
 
 #define INSTANTIATE(E)                                                  \
+  template void create_internal_file(Context<E> &);                     \
   template void apply_exclude_libs(Context<E> &);                       \
   template void create_synthetic_sections(Context<E> &);                \
   template void resolve_symbols(Context<E> &);                          \
@@ -1704,7 +1708,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void convert_common_symbols(Context<E> &);                   \
   template void compute_merged_section_sizes(Context<E> &);             \
   template void bin_sections(Context<E> &);                             \
-  template ObjectFile<E> *create_internal_file(Context<E> &);           \
+  template void add_synthetic_symbols(Context<E> &);                    \
   template void check_cet_errors(Context<E> &);                         \
   template void print_dependencies(Context<E> &);                       \
   template void print_dependencies_full(Context<E> &);                  \
