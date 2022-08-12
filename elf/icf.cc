@@ -248,12 +248,12 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   SHA256Hash sha;
 
   auto hash = [&](auto val) {
-    sha.update((unsigned char *)&val, sizeof(val));
+    sha.update((u8 *)&val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
     hash(str.size());
-    sha.update((unsigned char *)str.data(), str.size());
+    sha.update((u8 *)str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol<E> &sym) {
