@@ -218,10 +218,6 @@ target_sources(mold PRIVATE
   third-party/rust-demangle/rust-demangle.c
   git-hash.cc)
 
-if(MSVC)
-    target_compile_options(mold PRIVATE /bigobj)
-endif()
-
 include(CTest)
 
 if(BUILD_TESTING)
