@@ -100,6 +100,21 @@
 
 namespace mold::elf {
 
+#ifdef _WIN32
+
+template <typename E>
+ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  Fatal(ctx) < "LTO is not supported on Windows";
+}
+
+template <typename E>
+std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {}
+
+template <typename E>
+void lto_cleanup(Context<E> &ctx) {}
+
+#else // #ifdef _WIN32
+
 // Global variables
 // We store LTO-related information to global variables,
 // as the LTO plugin is not thread-safe by design anyway.
@@ -445,12 +460,7 @@ static void load_plugin(Context<E> &ctx) {
   phase = 1;
   gctx<E> = &ctx;
 
-#ifdef _WIN32
-  void *handle = dlopen(ctx.arg.plugin.c_str());
-#else
   void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_GLOBAL);
-#endif
-
   if (!handle)
     Fatal(ctx) << "could not open plugin file: " << dlerror();
 
@@ -698,6 +708,8 @@ void lto_cleanup(Context<E> &ctx) {
   if (cleanup_hook)
     cleanup_hook();
 }
+
+#endif // #ifdef _WIN32
 
 #define INSTANTIATE(E)                                                  \
   template ObjectFile<E> *                                              \
