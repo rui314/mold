@@ -42,6 +42,7 @@ set(MOLD_MACHO_TESTS
   lc-linker-option
   lib1
   libunwind
+  linker-optimization-hints
   lto
   macos-version-min
   map
@@ -49,7 +50,9 @@ set(MOLD_MACHO_TESTS
   missing-error
   needed-framework
   needed-l
+  no-function-starts
   objc
+  objc-selector
   object-path-lto
   order-file
   pagezero-size2
@@ -65,6 +68,7 @@ set(MOLD_MACHO_TESTS
   search-paths-first
   sectcreate
   stack-size
+  start-stop-symbol
   subsections-via-symbols
   syslibroot
   tbd-add
