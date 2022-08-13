@@ -132,7 +132,7 @@ if(NOT WIN32)
   target_sources(mold PRIVATE elf/subprocess.cc)
 endif()
 
-if(NOT MSVC)
+if(NOT WIN32)
   include(CheckLibraryExists)
   check_library_exists(m pow "" LIBM_FOUND)
 
