@@ -11,7 +11,9 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {}
+std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
+  return {};
+}
 
 template <typename E>
 void lto_cleanup(Context<E> &ctx) {}
