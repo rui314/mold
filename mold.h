@@ -34,7 +34,9 @@
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
 
-#ifdef NDEBUG
+#ifdef _MSC_VER
+#  define unreachable() __assume(0)
+#elif defined(NDEBUG)
 #  define unreachable() __builtin_unreachable()
 #else
 #  define unreachable() assert(0 && "unreachable")
