@@ -98,7 +98,7 @@ struct LTOPlugin {
 
   LTOModule *(*module_create_from_fd_at_offset)(int fd, const char *path,
                                                size_t file_size,
-                                               size_t map_size, off_t offset);
+                                               size_t map_size, uint64_t offset);
 
   void (*module_dispose)(LTOModule *mod);
 

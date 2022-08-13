@@ -14,8 +14,11 @@
 #include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
-#ifndef _WIN32
-#include <unistd.h>
+#ifdef _WIN32
+# include <direct.h>
+# define _chdir chdir
+#else
+# include <unistd.h>
 #endif
 
 namespace mold::elf {
@@ -384,7 +387,7 @@ static int elf_main(int argc, char **argv) {
   install_signal_handler();
 
   if (!ctx.arg.directory.empty())
-    if (chdir(ctx.arg.directory.c_str()) == -1)
+    if (_chdir(ctx.arg.directory.c_str()) == -1)
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
                  << ": " << errno_string();
 

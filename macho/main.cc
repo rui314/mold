@@ -15,8 +15,8 @@
 #include <tbb/parallel_for_each.h>
 
 #ifndef _WIN32
-#include <sys/mman.h>
-#include <sys/time.h>
+# include <sys/mman.h>
+# include <sys/time.h>
 #endif
 
 namespace mold::macho {
@@ -656,11 +656,11 @@ static void compute_uuid(Context<E> &ctx) {
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = ctx.buf + shard_size * i;
     u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
-    SHA256(begin, end - begin, shards.data() + i * SHA256_SIZE);
+    sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
   });
 
   u8 buf[SHA256_SIZE];
-  SHA256(shards.data(), shards.size(), buf);
+  sha256_hash(shards.data(), shards.size(), buf);
   memcpy(ctx.uuid, buf, 16);
   ctx.mach_hdr.copy_buf(ctx);
 }
