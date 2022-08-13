@@ -153,5 +153,5 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake ..
+        cmake -T clangcl ..
         cmake --build . -j $Env:NUMBER_OF_PROCESSORS
