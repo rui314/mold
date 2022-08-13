@@ -155,7 +155,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES riscv64
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
-set_property(SOURCE main.cc elf/lto.cc macho/output-chunks.cc APPEND PROPERTY
+set_property(SOURCE main.cc elf/lto-unix.cc macho/output-chunks.cc APPEND PROPERTY
   COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
 
 find_package(Python3 REQUIRED)
@@ -164,6 +164,16 @@ add_custom_command(
   OUTPUT git-hash.cc
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/update-git-hash.py ${CMAKE_SOURCE_DIR} git-hash.cc
   DEPENDS update-git-hash.py)
+
+if(WIN32)
+  target_sources(mold PRIVATE
+    elf/lto-win32.cc
+    macho/lto-win32.cc)
+else()
+  target_sources(mold PRIVATE
+    elf/lto-unix.cc
+    macho/lto-unix.cc)
+endif()
 
 target_sources(mold PRIVATE
   compress.cc
@@ -189,7 +199,6 @@ target_sources(mold PRIVATE
   elf/input-files.cc
   elf/input-sections.cc
   elf/linker-script.cc
-  elf/lto.cc
   elf/main.cc
   elf/mapfile.cc
   elf/output-chunks.cc
@@ -201,7 +210,6 @@ target_sources(mold PRIVATE
   macho/dead-strip.cc
   macho/input-files.cc
   macho/input-sections.cc
-  macho/lto.cc
   macho/main.cc
   macho/mapfile.cc
   macho/output-chunks.cc

@@ -87,11 +87,6 @@
 #include <sstream>
 #include <tbb/parallel_for_each.h>
 
-#ifndef _WIN32
-#include <dlfcn.h>
-#include <unistd.h>
-#endif
-
 #if 0
 # define LOG std::cerr
 #else
@@ -99,21 +94,6 @@
 #endif
 
 namespace mold::elf {
-
-#ifdef _WIN32
-
-template <typename E>
-ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  Fatal(ctx) < "LTO is not supported on Windows";
-}
-
-template <typename E>
-std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {}
-
-template <typename E>
-void lto_cleanup(Context<E> &ctx) {}
-
-#else // #ifdef _WIN32
 
 // Global variables
 // We store LTO-related information to global variables,
@@ -708,8 +688,6 @@ void lto_cleanup(Context<E> &ctx) {
   if (cleanup_hook)
     cleanup_hook();
 }
-
-#endif // #ifdef _WIN32
 
 #define INSTANTIATE(E)                                                  \
   template ObjectFile<E> *                                              \

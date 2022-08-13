@@ -4,10 +4,6 @@
 #include <algorithm>
 #include <cstdio>
 
-#ifndef _WIN32
-#include <dlfcn.h>
-#endif
-
 namespace mold::macho {
 
 LTOPlugin::~LTOPlugin() {
@@ -25,11 +21,7 @@ static void do_load_plugin(Context<E> &ctx) {
 
   // I don't want to use a macro, but I couldn't find an easy way to
   // write the same thing without a macro.
-#ifdef _WIN32
-#define DLSYM(x) ctx.lto.x = (decltype(ctx.lto.x))GetProcAddress(handle, "lto_" #x)
-#else
 #define DLSYM(x) ctx.lto.x = (decltype(ctx.lto.x))dlsym(handle, "lto_" #x)
-#endif
   DLSYM(get_version);
   DLSYM(get_error_message);
   DLSYM(module_is_object_file);
