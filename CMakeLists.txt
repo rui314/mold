@@ -238,6 +238,8 @@ endif()
 
 if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(TARGETS mold)
+  install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
+  install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
   install(CODE "
         file(RELATIVE_PATH RELPATH
              /${CMAKE_INSTALL_LIBEXECDIR}/mold /${CMAKE_INSTALL_BINDIR}/mold)
@@ -248,5 +250,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
         execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
             \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld.mold)
         execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
-            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)")
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold.1
+            \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)")
 endif()

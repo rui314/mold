@@ -5,6 +5,7 @@ BINDIR = $(PREFIX)/bin
 LIBDIR = $(PREFIX)/lib
 LIBEXECDIR = $(PREFIX)/libexec
 MANDIR = $(PREFIX)/share/man
+DOCDIR = $(PREFIX)/share/doc
 
 INSTALL = install
 INSTALL_PROGRAM = $(INSTALL)
@@ -226,6 +227,9 @@ install: all
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
 	ln -sf mold.1 $D$(MANDIR)/man1/ld.mold.1
+
+	$(INSTALL) -d $D$(DOCDIR)/mold
+	$(INSTALL_DATA) LICENSE $D$(DOCDIR)/mold/
 
 	ln -sf mold $D$(BINDIR)/ld.mold
 	ln -sf mold $D$(BINDIR)/ld64.mold
