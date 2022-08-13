@@ -144,3 +144,14 @@ jobs:
         cmake ${{ matrix.target }} ..
         cmake --build . -j$(sysctl -n hw.physicalcpu)
         ctest . -j$(sysctl -n hw.physicalcpu)
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: build
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build . -j $Env:NUMBER_OF_PROCESSORS
