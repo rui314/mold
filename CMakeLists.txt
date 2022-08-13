@@ -222,12 +222,14 @@ include(CTest)
 
 if(BUILD_TESTING)
   # Create the ld and ld64 symlinks required for testing
-  add_custom_command(
-    TARGET mold POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
-    COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    VERBATIM)
+  if(NOT WIN32)
+    add_custom_command(
+      TARGET mold POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
+      COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      VERBATIM)
+  endif()
 
   if(${APPLE})
     add_subdirectory(test/macho)

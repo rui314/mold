@@ -1981,13 +1981,15 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
     u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
     sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
 
+#ifndef _WIN32
     // We call munmap early for each chunk so that the last munmap
     // gets cheaper. We assume that the .note.build-id section is
     // at the beginning of an output file. This is an ugly performance
     // hack, but we can save about 30 ms for a 2 GiB output.
     if (i > 0 && ctx.output_file->is_mmapped)
       munmap(begin, end - begin);
-  });
+#endif
+   });
 
   assert(ctx.arg.build_id.size() <= SHA256_SIZE);
 
@@ -1995,10 +1997,12 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   sha256_hash(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size());
 
+#ifndef _WIN32
   if (ctx.output_file->is_mmapped) {
     munmap(buf, std::min(filesize, shard_size));
     ctx.output_file->is_unmapped = true;
   }
+#endif
 }
 
 template <typename E>
