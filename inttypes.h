@@ -148,8 +148,11 @@ private:
   uint8_t val[sizeof(T)];
 
   static T bswap(T x) {
+    // Compiler is usually smart enough to compile the following code into
+    // a single bswap instruction. See https://godbolt.org/z/7nvaM7qab
     if constexpr (sizeof(T) == 2) {
-      return ((x & 0xff00) >> 8) | ((x & 0x00ff) << 8);
+      return ((x & 0xff00) >> 8) |
+             ((x & 0x00ff) << 8);
     } else if constexpr (sizeof(T) == 4) {
       return ((x & 0xff000000) >> 24) |
              ((x & 0x00ff0000) >> 8)  |
