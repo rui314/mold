@@ -711,7 +711,7 @@ to run executables or shared libraries linked with
 .Fl -pack-dyn-relocs=relr ,
 and only ChromeOS, Android and Fuchsia support it as of now in 2022.
 .Pp
-.It -package-metadata Ns = Ns string
+.It Fl -package-metadata Ns = Ns Ar string
 Embed
 .Ar string
 to a .note.package section. This option in intended to be used by a \
@@ -997,23 +997,7 @@ section to indicate that the output uses IBT-enabled PLT. This option implies
 .Fl z Cm ibtplt .
 .Pp
 .It Fl z Cm ibtplt
-Generate Intel Branch Tracking (IBT)-enabled PLT.
-.Pp
-IBT is part of Intel Control-flow Enforcement Technology (CET).
-IBT is a new x86 feature available since Tiger Lake which is released in 2020.
-If IBT is enabled, all indirect branch instructions have to branch to a \
-so-called "landing pad" instruction. Landing pad itself is a no-op, but \
-it works as a marker that branching to that instruction is expected.
-If there's no landing pad after branch, the CPU raises an exception.
-This mechanism makes ROP attacks difficult.
-.Pp
-Since PLT can be used as an indirect branch target, we need a different \
-instruction sequence for IBT-enabled PLT. If
-.Sy -z Cm ibtplt
-is specified,
-.Nm
-generates PLT entries that start with a landing pad. The size of IBT-enabled \
-PLT is 24 bytes as opposed to 16 bytes regular PLT.
+Generate Intel Branch Tracking (IBT)-enabled PLT which is the default on x86-64.
 .Pp
 .It Fl z Cm execstack
 .It Fl z Cm noexecstack
@@ -1047,15 +1031,13 @@ As a security mitigation,
 it is preferred to make such segments read-only during program execution.
 .Pp
 .Fl z Cm relro
-puts such sections into a special section called
+puts such sections into a special segment called
 .Dv relro .
 The dynamic linker make a relro segment read-only after it finishes its job.
 .Pp
 By default,
 .Nm
-generates a
-.Sy relro
-segment.
+generates a relro segment.
 .Fl z Cm norelro
 disables the feature.
 .Pp
