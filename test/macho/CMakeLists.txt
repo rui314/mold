@@ -1,4 +1,6 @@
 set(MOLD_MACHO_TESTS
+  U
+  Z
   add-ast-path
   add-empty-section
   adhoc-codesign
@@ -10,13 +12,13 @@ set(MOLD_MACHO_TESTS
   bss
   bundle
   comdat
-  common-alignment
   common
+  common-alignment
   cstring
   data-reloc
-  dead-strip-dylibs2
-  dead-strip-dylibs
   dead-strip
+  dead-strip-dylibs
+  dead-strip-dylibs2
   dependency-info
   dlinfo
   duplicate-error
@@ -25,17 +27,17 @@ set(MOLD_MACHO_TESTS
   exception
   export-dynamic
   exported-symbols-list
-  filepath2
   filepath
+  filepath2
   force-load
   framework
-  headerpad-max-install-names
   headerpad
+  headerpad-max-install-names
+  hello
   hello2
   hello3
   hello4
   hello5
-  hello
   hidden-l
   install-name
   lc-build-version
@@ -55,9 +57,9 @@ set(MOLD_MACHO_TESTS
   objc-selector
   object-path-lto
   order-file
+  pagezero-size
   pagezero-size2
   pagezero-size3
-  pagezero-size
   platform-version
   private-extern
   reexport-l
@@ -71,27 +73,26 @@ set(MOLD_MACHO_TESTS
   start-stop-symbol
   subsections-via-symbols
   syslibroot
+  tbd
   tbd-add
   tbd-hide
   tbd-install-name
   tbd-previous
   tbd-reexport
-  tbd
-  tls2
   tls
+  tls2
   undef
   unexported-symbols-list
   universal
   unkown-tbd-target
-  U
-  uuid2
   uuid
+  uuid2
+  weak-def
   weak-def-dylib
   weak-def-ref
-  weak-def
   weak-l
   weak-undef
-  Z)
+  )
 
 foreach(TEST IN LISTS MOLD_MACHO_TESTS)
   add_test(NAME ${TEST}

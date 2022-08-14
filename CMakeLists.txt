@@ -144,8 +144,8 @@ else()
   endif()
 
   target_sources(mold PRIVATE
-    elf/subprocess.cc
     elf/lto-unix.cc
+    elf/subprocess.cc
     macho/lto-unix.cc)
 endif()
 
@@ -173,15 +173,6 @@ add_custom_command(
 target_sources(mold PRIVATE
   compress.cc
   demangle.cc
-  filepath.cc
-  glob.cc
-  hyperloglog.cc
-  main.cc
-  multi-glob.cc
-  perf.cc
-  strerror.cc
-  tar.cc
-  uuid.cc
   elf/arch-arm32.cc
   elf/arch-arm64.cc
   elf/arch-i386.cc
@@ -199,6 +190,10 @@ target_sources(mold PRIVATE
   elf/output-chunks.cc
   elf/passes.cc
   elf/relocatable.cc
+  filepath.cc
+  git-hash.cc
+  glob.cc
+  hyperloglog.cc
   macho/arch-arm64.cc
   macho/arch-x86-64.cc
   macho/cmdline.cc
@@ -210,8 +205,14 @@ target_sources(mold PRIVATE
   macho/output-chunks.cc
   macho/tapi.cc
   macho/yaml.cc
+  main.cc
+  multi-glob.cc
+  perf.cc
+  strerror.cc
+  tar.cc
   third-party/rust-demangle/rust-demangle.c
-  git-hash.cc)
+  uuid.cc
+  )
 
 include(CTest)
 

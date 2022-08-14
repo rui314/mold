@@ -1,39 +1,37 @@
-option(MOLD_ENABLE_QEMU_TESTS "Enable tests for other targets" OFF)
-
 set(MOLD_ELF_TESTS
   absolute-symbols
   allow-multiple-definition
   ar-alignment
-  as-needed2
   as-needed
   as-needed-weak
+  as-needed2
   auxiliary
   basic
   bno-symbolic
-  bsymbolic-functions
   bsymbolic
+  bsymbolic-functions
   bug178
   build-id
   canonical-plt
   cmdline
   color-diagnostics
   comment
+  common
   common-archive
   common-ref
-  common
   compress-debug-sections
-  compressed-debug-info-gnu
   compressed-debug-info
+  compressed-debug-info-gnu
+  copyrel
   copyrel-protected
   copyrel-relro
-  copyrel
   dead-debug-sections
   debug-macro-section
   default-symver
   defsym
   defsym2
-  demangle-rust
   demangle
+  demangle-rust
   dependency-file
   disable-new-dtags
   discard
@@ -41,25 +39,25 @@ set(MOLD_ELF_TESTS
   dt-init
   dt-needed
   duplicate-error
+  dynamic
   dynamic-dt-debug
   dynamic-linker
-  dynamic-list3
-  dynamic-list2
   dynamic-list
-  dynamic
+  dynamic-list2
+  dynamic-list3
   emit-relocs
   empty-file
   empty-input
   empty-version
   emulation-deduction
   entry
-  exception-mcmodel-large
   exception
+  exception-mcmodel-large
+  exclude-libs
   exclude-libs2
   exclude-libs3
-  exclude-libs
-  execstack-if-needed
   execstack
+  execstack-if-needed
   export-dynamic
   export-from-exe
   fatal-warnings
@@ -88,28 +86,28 @@ set(MOLD_ELF_TESTS
   ifunc-dso
   ifunc-dynamic
   ifunc-export
-  ifunc-static-pie
   ifunc-static
+  ifunc-static-pie
   image-base
-  incompatible-libs2
   incompatible-libs
+  incompatible-libs2
   incompatible-obj
+  init
+  init-array
   init-array-priorities
   init-array-readonly
-  init-array
-  initfirst
   init-in-dso
-  init
+  initfirst
   interpose
   invalid-version-script
-  large-alignment-dso
   large-alignment
+  large-alignment-dso
+  link-order
+  linker-script
+  linker-script-defsym
   linker-script2
   linker-script3
   linker-script4
-  linker-script
-  linker-script-defsym
-  link-order
   lto-archive
   lto-dso
   lto-gcc
@@ -120,37 +118,37 @@ set(MOLD_ELF_TESTS
   mergeable-strings
   missing-but-ok
   missing-error
-  mold-wrapper2
   mold-wrapper
+  mold-wrapper2
+  no-quick-exit
   nocopyreloc
   noinhibit-exec
   non-canonical-plt
-  no-quick-exit
   nostdlib
-  note2
-  note-property
   note
+  note-property
+  note2
   now
   oformat-binary
   omagic
-  package-metadata
   pack-dyn-relocs-relr
+  package-metadata
   pie
+  plt
   plt-dso
   pltgot
-  plt
   preinit-array
   print-dependencies
-  protected-dynsym
   protected
+  protected-dynsym
   push-pop-state
   relax
-  relocatable-archive
-  relocatable
+  reloc
   reloc-overflow
   reloc-rodata
-  reloc
   reloc-zero
+  relocatable
+  relocatable-archive
   relro
   repro
   require-defined
@@ -160,14 +158,14 @@ set(MOLD_ELF_TESTS
   rodata-name
   rosegment
   rpath
-  run-clang
   run
+  run-clang
   section-alignment
   section-name
   section-start
   shared
-  shuffle-sections-seed
   shuffle-sections
+  shuffle-sections-seed
   soname
   start-lib
   start-stop-symbol
@@ -176,43 +174,44 @@ set(MOLD_ELF_TESTS
   stdout
   strip
   symbol-rank
+  symbol-version
   symbol-version2
   symbol-version3
-  symbol-version
+  symtab
   symtab-dso
   symtab-section-symbols
-  symtab
   synthetic-symbols
-  sysroot2
-  sysroot-linker-script
   sysroot
+  sysroot-linker-script
+  sysroot2
   thin-archive
   thread-count
   tls-common
-  tlsdesc-import
-  tlsdesc
-  tlsdesc-static
   tls-dso
-  tls-gd2
+  tls-gd
   tls-gd-mcmodel-large
   tls-gd-noplt
-  tls-gd
+  tls-gd2
   tls-ie
   tls-large-tbss
+  tls-ld
   tls-ld-mcmodel-large
   tls-ld-noplt
-  tls-ld
   tls-le
   tls-module-base
   tls-nopic
   tls-pic
+  tlsdesc
+  tlsdesc-import
+  tlsdesc-static
   trace
   trace-symbol
   undefined
   unique
   unresolved-symbols
   verbose
-  versioned-undef
+  version
+  version-script
   version-script10
   version-script11
   version-script12
@@ -229,8 +228,7 @@ set(MOLD_ELF_TESTS
   version-script7
   version-script8
   version-script9
-  version-script
-  version
+  versioned-undef
   visibility
   warn-common
   warn-execstack
@@ -245,8 +243,8 @@ set(MOLD_ELF_TESTS
   wrap
   z-cet-report
   z-defs
-  z-ibtplt
   z-ibt
+  z-ibtplt
   z-max-page-size
   z-nodefaultlib
   z-nodump
@@ -255,7 +253,10 @@ set(MOLD_ELF_TESTS
   z-separate-code
   z-shstk
   z-text
-  z-unknown)
+  z-unknown
+  )
+
+option(MOLD_ENABLE_QEMU_TESTS "Enable tests for other targets" OFF)
 
 function(mold_add_arch_test NAME TRIPLE MACHINE)
   if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${MACHINE})
