@@ -43,6 +43,7 @@ set(MOLD_ELF_TESTS
   duplicate-error
   dynamic-dt-debug
   dynamic-linker
+  dynamic-list3
   dynamic-list2
   dynamic-list
   dynamic
@@ -107,6 +108,7 @@ set(MOLD_ELF_TESTS
   linker-script3
   linker-script4
   linker-script
+  linker-script-defsym
   link-order
   lto-archive
   lto-dso
@@ -217,6 +219,8 @@ set(MOLD_ELF_TESTS
   version-script13
   version-script14
   version-script15
+  version-script16
+  version-script17
   version-script2
   version-script3
   version-script4
