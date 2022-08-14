@@ -4,7 +4,7 @@
 #include "lto.h"
 #include "../mold.h"
 
-#include <function>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
