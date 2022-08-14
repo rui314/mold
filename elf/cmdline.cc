@@ -7,8 +7,11 @@
 #include <sys/types.h>
 #include <unordered_set>
 
-#ifndef _WIN32
-#include <unistd.h>
+#ifdef _WIN32
+# define _isatty isatty
+# define STDERR_FILENO (_fileno(stderr))
+#else
+# include <unistd.h>
 #endif
 
 namespace mold::elf {
@@ -324,14 +327,6 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
   return get_symbol(ctx, s);
 }
 
-static bool stderr_isatty() {
-#ifdef _WIN32
-  return _isatty(_fileno(stderr));
-#else
-  return isatty(STDERR_FILENO);
-#endif
-}
-
 template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::span<std::string_view> args = ctx.cmdline_args;
@@ -341,7 +336,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::string_view arg;
 
   ctx.page_size = E::page_size;
-  ctx.arg.color_diagnostics = stderr_isatty();
+  ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
@@ -617,7 +612,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.chroot = arg;
     } else if (read_flag("color-diagnostics") ||
                read_flag("color-diagnostics=auto")) {
-      ctx.arg.color_diagnostics = stderr_isatty();
+      ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
     } else if (read_flag("color-diagnostics=always")) {
       ctx.arg.color_diagnostics = true;
     } else if (read_flag("color-diagnostics=never")) {
