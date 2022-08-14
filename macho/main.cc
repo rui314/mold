@@ -1109,15 +1109,6 @@ static int do_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  if (!getenv("MOLD_SUPPRESS_MACHO_WARNING")) {
-    std::cerr <<
-R"(********************************************************************************
-mold for macOS is pre-alpha. Do not use unless you know what you are doing.
-Do not report bugs because it's too early to manage missing features as bugs.
-********************************************************************************
-)";
-  }
-
 #ifdef MOLD_DEBUG_X86_64_ONLY
   return do_main<X86_64>(argc, argv);
 #else
