@@ -804,7 +804,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("opt-remarks-format")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-format=" + std::string(arg));
     } else if (read_arg("opt-remarks-hotness-threshold")) {
-      ctx.arg.plugin_opt.push_back("opt-remarks-hotness-threshold=" + std::string(arg));
+      ctx.arg.plugin_opt.push_back("opt-remarks-hotness-threshold=" +
+                                   std::string(arg));
     } else if (read_arg("opt-remarks-passes")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-passes=" + std::string(arg));
     } else if (read_flag("opt-remarks-with_hotness")) {
@@ -816,7 +817,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(7)));
       args = args.subspan(1);
     } else if (read_arg("lto-pseudo-probe-for-profiling")) {
-      ctx.arg.plugin_opt.push_back("pseudo-probe-for-profiling=" + std::string(arg));
+      ctx.arg.plugin_opt.push_back("pseudo-probe-for-profiling=" +
+                                   std::string(arg));
     } else if (read_arg("lto-sample-profile")) {
       ctx.arg.plugin_opt.push_back("sample-profile=" + std::string(arg));
     } else if (read_flag("save-temps")) {
@@ -828,7 +830,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("thinlto-index-only")) {
       ctx.arg.plugin_opt.push_back("thinlto-index-only");
     } else if (read_arg("thinlto-object-suffix-replace")) {
-      ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" + std::string(arg));
+      ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" +
+                                   std::string(arg));
     } else if (read_arg("thinlto-prefix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-prefix-replace=" + std::string(arg));
     } else if (read_arg("thinlto-cache-dir")) {
