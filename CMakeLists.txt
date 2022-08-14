@@ -63,7 +63,8 @@ if(ZLIB_FOUND)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
 else()
   add_subdirectory(third-party/zlib EXCLUDE_FROM_ALL)
-  target_include_directories(zlibstatic INTERFACE third-party/zlib $<TARGET_PROPERTY:zlibstatic,BINARY_DIR>)
+  target_include_directories(zlibstatic INTERFACE third-party/zlib
+    $<TARGET_PROPERTY:zlibstatic,BINARY_DIR>)
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
@@ -120,7 +121,13 @@ if(MOLD_X86_64_ONLY)
   target_link_options(mold PRIVATE -Wl,--gc-sections)
 endif()
 
-if(NOT WIN32)
+if(WIN32)
+  target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
+
+  target_sources(mold PRIVATE
+    elf/lto-win32.cc
+    macho/lto-win32.cc)
+else()
   add_library(mold-wrapper SHARED)
   install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
 
@@ -129,25 +136,21 @@ if(NOT WIN32)
   target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
   target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
 
-  target_sources(mold PRIVATE elf/subprocess.cc)
-endif()
-
-if(NOT WIN32)
   include(CheckLibraryExists)
   check_library_exists(m pow "" LIBM_FOUND)
-
   if(LIBM_FOUND)
     target_link_libraries(mold PRIVATE m)
   endif()
+
+  target_sources(mold PRIVATE
+    elf/subprocess.cc
+    elf/lto-unix.cc
+    macho/lto-unix.cc)
 endif()
 
 if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC AND NOT WIN32)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
-endif()
-
-if(WIN32)
-    target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES riscv64
@@ -162,18 +165,9 @@ find_package(Python3 REQUIRED)
 
 add_custom_command(
   OUTPUT git-hash.cc
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/update-git-hash.py ${CMAKE_SOURCE_DIR} git-hash.cc
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/update-git-hash.py
+    ${CMAKE_SOURCE_DIR} git-hash.cc
   DEPENDS update-git-hash.py)
-
-if(WIN32)
-  target_sources(mold PRIVATE
-    elf/lto-win32.cc
-    macho/lto-win32.cc)
-else()
-  target_sources(mold PRIVATE
-    elf/lto-unix.cc
-    macho/lto-unix.cc)
-endif()
 
 target_sources(mold PRIVATE
   compress.cc
