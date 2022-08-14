@@ -24,11 +24,12 @@ endif()
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
-if(NOT MSVC)
-    target_compile_options(mold PRIVATE
-        -fno-exceptions
-        -fno-unwind-tables
-        -fno-asynchronous-unwind-tables)
+
+if("${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STRLESS "MSVC")
+  target_compile_options(mold PRIVATE
+    -fno-exceptions
+    -fno-unwind-tables
+    -fno-asynchronous-unwind-tables)
 endif()
 
 # Build mold with -flto if MOLD_LTO=On
