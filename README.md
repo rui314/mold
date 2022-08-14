@@ -177,6 +177,15 @@ If `mold` is in `.comment`, the file is created by mold.
 
 </details>
 
+<details><summary>Online manual</summary>
+
+Since mold is a drop-in replacement, you should be able to use it
+without reading its manual. But just in case you need it, it's available
+online at <a href=https://rui314.github.io/mold.html>here</a>.
+You can also read the same manual by `man mold`.
+
+</details>
+
 ## Why is mold so fast?
 
 One reason is because it simply uses faster algorithms and efficient
