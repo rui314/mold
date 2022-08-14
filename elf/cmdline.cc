@@ -191,8 +191,8 @@ Options:
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64 elf64-littleaarch64
-mold: supported emulations: elf_i386 elf_x86_64 aarch64linux aarch64elf)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf64-littleriscv
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf64lriscv)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
