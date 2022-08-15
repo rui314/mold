@@ -508,9 +508,11 @@ static u64 get_adrp_imm(ul32 *loc) {
   return (bits(*loc, 23, 5) << 14) + (bits(*loc, 30, 29) << 12);
 }
 
+template <typename E>
 static void relax_adrp_ldr_got_ldr(Context<E> &ctx,
                                    ul32 *loc1, ul32 *loc2, ul32 *loc3,
-                                   u64 addr1, u64 addr2, u64 addr3) {
+                                   u64 addr1, u64 addr2, u64 addr3,
+                                   ObjectFile<E> *file) {
   // We expect the following instructions for a GOT-indirect load:
   //
   //   adrp Xa, _foo@GOTPAGE
@@ -521,6 +523,10 @@ static void relax_adrp_ldr_got_ldr(Context<E> &ctx,
 
   u64 got_page = page(addr1) + get_adrp_imm(loc1);
   u64 pageoff = bits(*loc2, 21, 10) << 3;
+
+  if (got_page + pageoff < ctx.got.hdr.addr ||
+      ctx.got.hdr.addr + ctx.got.hdr.size <= got_page + pageoff)
+    Fatal(ctx) << *file << ": LDR_GOT_LDR out of range";
 
   ASSERT_RANGE(got_page + pageoff, ctx.got.hdr.addr, ctx.got.hdr.size);
 
@@ -650,7 +656,8 @@ void apply_linker_optimization_hints(Context<E> &ctx) {
         u64 addr2 = subsec->get_addr(ctx) + offset2;
         u64 addr3 = subsec->get_addr(ctx) + offset3;
 
-        relax_adrp_ldr_got_ldr(ctx, loc1, loc2, loc3, addr1, addr2, addr3);
+        relax_adrp_ldr_got_ldr(ctx, loc1, loc2, loc3, addr1, addr2, addr3,
+                               file);
         break;
       }
       case LOH_ARM64_ADRP_ADRP:
