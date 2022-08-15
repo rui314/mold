@@ -1,5 +1,13 @@
 #pragma once
 
+#ifdef _WIN32
+// We are using crypto APIs that are available only on Windows 10
+// or later. 0x0A00 is a magic number inficating Windows 10.
+// Without this macro, some Windows system headers do not declare
+// newer Windows API functions.
+# define _WIN32_WINNT 0x0A00
+#endif
+
 #include "inttypes.h"
 
 #include <array>
