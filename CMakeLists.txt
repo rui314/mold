@@ -25,10 +25,6 @@ add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 
-if(WIN32)
-    target_compile_definitions(mold PRIVATE _WIN32_WINNT=0x0A00)
-endif()
-
 if("${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STRLESS "MSVC")
   target_compile_options(mold PRIVATE
     -fno-exceptions
