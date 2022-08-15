@@ -41,12 +41,16 @@ template <typename E>
 static void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
 
-  auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
-    tbb::parallel_for_each(ctx.objs, fn);
-    tbb::parallel_for_each(ctx.dylibs, fn);
-  };
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dylibs);
 
-  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
+
+  if (has_lto_obj(ctx))
+    do_lto(ctx);
 
   for (std::string_view name : ctx.arg.u)
     if (InputFile<E> *file = get_symbol(ctx, name)->file)
@@ -67,18 +71,13 @@ static void resolve_symbols(Context<E> &ctx) {
   }
 
   // Remove symbols of eliminated files.
-  for_each_file([&](InputFile<E> *file) {
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
     if (!file->is_alive)
       file->clear_symbols();
   });
 
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dylibs, [](InputFile<E> *file) { return !file->is_alive; });
-
-  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
-
-  if (has_lto_obj(ctx))
-    do_lto(ctx);
 }
 
 template <typename E>

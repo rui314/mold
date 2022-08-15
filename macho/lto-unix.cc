@@ -140,8 +140,6 @@ void do_lto(Context<E> &ctx) {
     }
   }
 
-  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-
   // Add a result of LTO as a new object file.
   MappedFile<Context<E>> *mf = new MappedFile<Context<E>>;
   mf->name = "<LTO>";

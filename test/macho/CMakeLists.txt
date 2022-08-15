@@ -46,6 +46,7 @@ set(MOLD_MACHO_TESTS
   libunwind
   linker-optimization-hints
   lto
+  lto-dead-strip-dylibs
   macos-version-min
   map
   merge-scope

@@ -657,17 +657,17 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
       continue;
 
     if (msym.is_undef() || (msym.is_common() && !sym.is_common))
-      if (InputFile<E> *file = sym.file;
-          !file->is_alive.exchange(true) && !file->is_dylib)
-        feeder((ObjectFile<E> *)file);
+      if (InputFile<E> *file = sym.file)
+        if (file->is_alive.exchange(true) && !file->is_dylib)
+          feeder((ObjectFile<E> *)file);
   }
 
   for (Subsection<E> *subsec : subsections)
     for (UnwindRecord<E> &rec : subsec->get_unwind_records())
       if (Symbol<E> *sym = rec.personality)
-        if (InputFile<E> *file = sym->file;
-            !file->is_alive.exchange(true) && !file->is_dylib)
-          feeder((ObjectFile<E> *)file);
+        if (InputFile<E> *file = sym->file)
+          if (!file->is_alive.exchange(true) && !file->is_dylib)
+            feeder((ObjectFile<E> *)file);
 }
 
 template <typename E>
