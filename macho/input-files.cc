@@ -658,7 +658,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
     if (msym.is_undef() || (msym.is_common() && !sym.is_common))
       if (InputFile<E> *file = sym.file)
-        if (file->is_alive.exchange(true) && !file->is_dylib)
+        if (!file->is_alive.exchange(true) && !file->is_dylib)
           feeder((ObjectFile<E> *)file);
   }
 
