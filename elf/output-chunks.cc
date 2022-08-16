@@ -1220,10 +1220,10 @@ void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
       out_esym.st_shndx = SHN_ABS;
       out_esym.st_value = sym.get_addr(ctx);
     } else if (sym.get_type() == STT_TLS) {
-      out_esym.st_shndx = isec->output_section->shndx;
+      out_esym.st_shndx = sym.get_st_shndx();
       out_esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     } else {
-      out_esym.st_shndx = isec->output_section->shndx;
+      out_esym.st_shndx = sym.get_st_shndx();
       out_esym.st_value = sym.get_addr(ctx, false);
       out_esym.st_visibility = sym.visibility;
     }
