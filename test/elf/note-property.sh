@@ -15,7 +15,7 @@ mkdir -p $t
 # Skip if target is not x86-64
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
-$CC -fcf-protection=branch /dev/null -o /dev/null -xc 2> /dev/null || \
+$CC -fcf-protection=branch -c /dev/null -o /dev/null -xc 2> /dev/null || \
   { echo skipped; exit; }
 
 cat <<EOF | $CC -fcf-protection=branch -c -o $t/a.o -xc -
