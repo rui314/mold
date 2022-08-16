@@ -1,8 +1,8 @@
 #pragma once
 
+#include "../mold.h"
 #include "macho.h"
 #include "lto.h"
-#include "../mold.h"
 
 #include <functional>
 #include <map>

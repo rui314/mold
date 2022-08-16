@@ -1,7 +1,7 @@
 #ifdef _WIN32
 
-#include "lto.h"
 #include "mold.h"
+#include "lto.h"
 
 namespace mold::macho {
 
