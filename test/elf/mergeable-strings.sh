@@ -33,11 +33,14 @@ main:
   .section .rodata.str1.1, "aMS", @progbits, 1
   .string "bar"
 .L.str:
+foo:
   .string "xyzHello"
   .string "foo world\n"
 EOF
 
 $CC -B. -static -o $t/exe $t/a.o
 $QEMU $t/exe | grep -q 'Hello world'
+
+readelf -sW $t/exe | grep -Eq '[0-9] foo$'
 
 echo OK
