@@ -134,14 +134,6 @@ if(WIN32)
     elf/lto-win32.cc
     macho/lto-win32.cc)
 else()
-  add_library(mold-wrapper SHARED)
-  install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
-
-  # Remove the default `lib` prefix
-  set_target_properties(mold-wrapper PROPERTIES PREFIX "")
-  target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
-  target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
-
   include(CheckLibraryExists)
   check_library_exists(m pow "" LIBM_FOUND)
   if(LIBM_FOUND)
@@ -152,6 +144,16 @@ else()
     elf/lto-unix.cc
     elf/subprocess.cc
     macho/lto-unix.cc)
+endif()
+
+if(NOT APPLE AND NOT WIN32)
+  add_library(mold-wrapper SHARED)
+  install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
+
+  # Remove the default `lib` prefix
+  set_target_properties(mold-wrapper PROPERTIES PREFIX "")
+  target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
+  target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
 endif()
 
 if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC AND NOT WIN32)

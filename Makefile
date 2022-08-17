@@ -213,8 +213,11 @@ install: all
 	$(STRIP) $D$(BINDIR)/mold
 
 	$(INSTALL) -d $D$(LIBDIR)/mold
+
+ifneq ($(OS), Darwin)
 	$(INSTALL_DATA) mold-wrapper.so $D$(LIBDIR)/mold
 	$(STRIP) $D$(LIBDIR)/mold/mold-wrapper.so
+endif
 
 	$(INSTALL) -d $D$(LIBEXECDIR)/mold
 
