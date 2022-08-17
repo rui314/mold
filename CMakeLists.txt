@@ -126,7 +126,7 @@ if(WIN32)
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR
       "Your compiler is not supported; install Clang from Visual Studio Installer and re-run cmake with '-T clangcl'")
-  endif()
+   endif()
 
   target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
 
