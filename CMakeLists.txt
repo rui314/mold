@@ -171,11 +171,14 @@ set_property(SOURCE main.cc elf/lto-unix.cc macho/output-chunks.cc APPEND PROPER
 
 find_package(Python3 REQUIRED)
 
-add_custom_command(
-  OUTPUT git-hash.cc
+add_custom_target(UpdateGitHash
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/update-git-hash.py
     ${CMAKE_SOURCE_DIR} git-hash.cc
-  DEPENDS update-git-hash.py)
+  DEPENDS update-git-hash.py
+  BYPRODUCTS git-hash.cc
+  VERBATIM)
+
+add_dependencies(mold UpdateGitHash)
 
 target_sources(mold PRIVATE
   compress.cc
