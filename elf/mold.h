@@ -1474,7 +1474,7 @@ struct Context {
     bool fork = true;
     bool gc_sections = false;
     bool gdb_index = false;
-    bool hash_style_gnu = false;
+    bool hash_style_gnu = true;
     bool hash_style_sysv = true;
     bool icf = false;
     bool icf_all = false;
