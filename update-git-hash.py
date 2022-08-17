@@ -42,8 +42,7 @@ prev = read_prev_git_hash(output_file)
 
 if (not os.path.exists(output_file)) or cur != prev:
   with open(output_file, 'w') as file:
-    file.write('''#include <string>
-namespace mold {
-std::string mold_git_hash = "''' + cur + '''";
-}
-''')
+    file.write("#include <string>\n"
+               "namespace mold {\n"
+               f"std::string mold_git_hash = \"{cur}\";\n"
+               "}\n")
