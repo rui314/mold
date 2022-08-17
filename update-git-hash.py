@@ -3,6 +3,7 @@
 # This script updates git-hash.cc so that the file contains the
 # current git hash.
 
+import os
 import re
 import sys
 
@@ -39,7 +40,7 @@ output_file = sys.argv[2]
 cur = get_git_hash(repo)
 prev = read_prev_git_hash(output_file)
 
-if prev == '' or cur != prev:
+if (not os.path.exists(output_file)) or cur != prev:
   with open(output_file, 'w') as file:
     file.write('''#include <string>
 namespace mold {
