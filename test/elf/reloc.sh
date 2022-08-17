@@ -37,7 +37,7 @@ int print64(long x) {
 }
 EOF
 
-$CC -shared -o $t/c.so $t/a.o $t/b.o
+$CC -shared -o $t/c.so $t/a.o $t/b.o -Wl,-z,noexecstack
 
 # Absolute symbol
 cat <<'EOF' > $t/d.s

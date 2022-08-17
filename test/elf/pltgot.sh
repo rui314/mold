@@ -14,7 +14,7 @@ mkdir -p $t
 
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | $CC -fPIC -shared -o $t/a.so -x assembler -
+cat <<EOF | $CC -fPIC -shared -Wl,-z,noexecstack -o $t/a.so -x assembler -
 .globl ext1, ext2
 ext1:
   nop
