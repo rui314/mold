@@ -2,6 +2,7 @@ set(MOLD_ELF_TESTS
   absolute-symbols
   allow-multiple-definition
   ar-alignment
+  arm32-thumb-interwork
   as-needed
   as-needed-weak
   as-needed2

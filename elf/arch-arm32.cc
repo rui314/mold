@@ -198,21 +198,32 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_TARGET2:
       *(ul32 *)loc = GOT + G + A - P;
       continue;
-    case R_ARM_CALL:
-    case R_ARM_JUMP24: {
-      u32 val;
+    case R_ARM_CALL: {
+      // Just like THM_CALL, ARM_CALL relocation refers either BL or
+      // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
+      bool is_bl = ((*(ul32 *)loc & 0xff00'0000) == 0xeb00'0000);
+      bool is_blx = ((*(ul32 *)loc & 0xfe00'0000) == 0xfa00'0000);
+      if (!is_bl && !is_blx)
+        Fatal(ctx) << *this << ": R_ARM_CALL refers neither BL nor BLX";
 
       if (sym.esym().is_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        val = 4;
+        *(ul32 *)loc = 0xeb00'0001;
+      } else if (T) {
+        u32 val = S + A - P;
+        *(ul32 *)loc = 0xfa00'0000 | (bit(val, 1) << 24) | bits(val, 25, 2);
       } else {
-        val = S + A - P;
+        *(ul32 *)loc = 0xeb00'0000 | bits(S + A - P, 25, 2);
       }
-
-      *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | ((val >> 2) & 0x00ff'ffff);
       continue;
     }
+    case R_ARM_JUMP24:
+      if (sym.esym().is_undef_weak())
+        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
+      else
+        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(S + A - P, 25, 2);
+      continue;
     case R_ARM_THM_JUMP11:
       assert(T);
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
