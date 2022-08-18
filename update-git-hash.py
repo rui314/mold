@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # This script updates git-hash.cc so that the file contains the
 # current git hash.
