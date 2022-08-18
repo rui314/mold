@@ -85,9 +85,4 @@ LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execv | grep -q 'a.sh 
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvp | grep -q 'a.sh execvp'
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvpe | grep -q 'a.sh execvpe bar'
 
-valgrind="$(which valgrind 2> /dev/null; true)"
-if [ -n "$valgrind" ]; then
-  LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh "$valgrind" -q $t/exe execl | grep -q 'a.sh execl'
-fi
-
 echo OK
