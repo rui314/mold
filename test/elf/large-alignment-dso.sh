@@ -13,7 +13,6 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 [ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
-[ $MACHINE = arm ] && { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections -fPIC
 #include <stdio.h>
