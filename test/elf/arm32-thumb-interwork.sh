@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = arm ] || { echo skipped; exit; }
+[[ $MACHINE == arm* ]] || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -mthumb
 #include <stdio.h>
