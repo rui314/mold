@@ -86,13 +86,6 @@ template<> struct hash<Digest> {
     return *(int64_t *)&k[0];
   }
 };
-
-std::string to_string(Digest digest) {
-  char buf[HASH_SIZE * 2];
-  for (int i = 0; i < HASH_SIZE; i++)
-    sprintf(buf + i * 2, "%02x", digest[i]);
-  return {buf, sizeof(buf)};
-}
 }
 
 namespace mold::elf {
