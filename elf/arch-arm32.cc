@@ -290,11 +290,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_THM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // BL -> NOP
-        *(ul32 *)loc = 0x8000f3af;
+        *(ul32 *)loc = 0x8000'f3af;
       } else {
         u64 addr = ctx.tls_trampoline->shdr.sh_addr;
         write_thm_b_imm(loc, align_to(addr - P - 4, 4));
-        *(ul16 *)(loc + 2) &= ~(1 << 12); // rewrite BL with BLX
+        *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       }
       continue;
     default:
