@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/macho/$MACHINE/$testname
 mkdir -p $t
 
-./ld64 -v | grep -q 'mold .*compatible with GNU ld'
+./ld64 -v | grep -q mold
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
@@ -22,10 +22,7 @@ int main() {
 }
 EOF
 
-clang --ld-path=./ld64 -Wl,-v -o $t/exe $t/a.o 2>&1 | grep -q mold
-$QEMU $t/exe | grep -q 'Hello world'
-
-! ./ld64 --v >& $t/log
-grep -q 'unknown command line option:' $t/log
+clang --ld-path=./ld64 -Wl,-v -o $t/exe $t/a.o | grep -q mold
+$t/exe | grep -q 'Hello world'
 
 echo OK

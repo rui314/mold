@@ -208,9 +208,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string> framework_paths;
   std::vector<std::string> library_paths;
   bool nostdlib = false;
-  std::optional<i64> pagezero_size;
-
   bool version_shown = false;
+  std::optional<i64> pagezero_size;
 
   while (i < args.size()) {
     std::string_view arg;
