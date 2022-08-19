@@ -13,7 +13,6 @@ t=out/test/macho/$MACHINE/$testname
 mkdir -p $t
 
 ./ld64 -v | grep -q 'mold .*compatible with GNU ld'
-./ld64 --version | grep -q 'mold .*compatible with GNU ld'
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
@@ -22,10 +21,6 @@ int main() {
   printf("Hello world\n");
 }
 EOF
-
-rm -f $t/exe
-clang --ld-path=./ld64 -Wl,--version -o $t/exe $t/a.o 2>&1 | grep -q mold
-! [ -f $t/exe ] || false
 
 clang --ld-path=./ld64 -Wl,-v -o $t/exe $t/a.o 2>&1 | grep -q mold
 $QEMU $t/exe | grep -q 'Hello world'

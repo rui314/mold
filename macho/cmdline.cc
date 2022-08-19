@@ -104,7 +104,7 @@ Options:
   -unexported_symbol <SYMBOL> Export all but a given symbol
   -unexported_symbols_list <FILE>
                               Read a list of unexported symbols from a given file
-  -v, --version               Report version information
+  -v                          Report version information
   -weak_framework <NAME>[,<SUFFIX>]
                               Search for a given framework
   -weak-l<LIB>                Search for a given library)";
@@ -483,9 +483,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
       version_shown = true;
-    } else if (read_flag("--version")) {
-      SyncOut(ctx) << mold_version;
-      exit(0);
     } else if (read_arg("-weak_framework")) {
       remaining.push_back("-weak_framework");
       remaining.push_back(std::string(arg));
