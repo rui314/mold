@@ -625,7 +625,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   if (!claimed)
     Fatal(ctx) << mf->name << ": not claimed by the LTO plugin;"
                << " please make sure you are using the same compiler of the"
-               << " same version for all object files"
+               << " same version for all object files";
 
   // It looks like GCC doesn't need fd after claim_file_hook() while
   // LLVM needs it and takes the ownership of fd. To prevent "too many
