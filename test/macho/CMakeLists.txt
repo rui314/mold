@@ -88,6 +88,7 @@ set(MOLD_MACHO_TESTS
   unkown-tbd-target
   uuid
   uuid2
+  version
   weak-def
   weak-def-dylib
   weak-def-ref
