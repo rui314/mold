@@ -210,6 +210,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   bool nostdlib = false;
   std::optional<i64> pagezero_size;
 
+  bool version_shown = false;
+
   while (i < args.size()) {
     std::string_view arg;
     std::string_view arg2;
@@ -480,6 +482,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                      << ": invalid glob pattern: " << pat;
     } else if (read_flag("-v")) {
       SyncOut(ctx) << mold_version;
+      version_shown = true;
     } else if (read_arg("-weak_framework")) {
       remaining.push_back("-weak_framework");
       remaining.push_back(std::string(arg));
@@ -557,6 +560,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.uuid == UUID_RANDOM)
     memcpy(ctx.uuid, get_uuid_v4().data(), 16);
 
+  if (version_shown && remaining.empty())
+    exit(0);
   return remaining;
 }
 
