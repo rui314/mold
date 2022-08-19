@@ -1,9 +1,9 @@
 # Contributing to mold
 
-Summary: When you send a patch, you must agree that the patch is
-released under the dual license of the GNU AGPLv3 and the MIT license.
-As an indication of agreement, please add a `Signed-off-by` line to
-your commit message using `git commit -s`.
+Summary: When you send a patch that is longer than 10 lines, you must
+agree that the patch is released under the dual license of the GNU
+AGPLv3 and the MIT license. As an indication of agreement, please add
+a `Signed-off-by` line to your commit message using `git commit -s`.
 
 Here is the long official version:
 
@@ -52,3 +52,7 @@ using your real name (sorry, no pseudonyms or anonymous contributions.)
 This will be done for you automatically if you use ``git commit -s``.
 Reverts should also include "Signed-off-by". ``git revert -s`` does that
 for you.
+
+We assume that any contribution that's 10 lines or less does not meet
+the threshold of originality and therefore copyright does not apply.
+You don't need to add a "Signed-off-by" line to such small commits.
