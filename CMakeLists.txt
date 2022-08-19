@@ -233,6 +233,7 @@ if(BUILD_TESTING)
       TARGET mold POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
       COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
+      BYPRODUCTS ld ld64
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       VERBATIM)
   endif()
