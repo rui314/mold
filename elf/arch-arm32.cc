@@ -583,9 +583,9 @@ void sort_arm_exidx(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
-    ent[i].addr = sign_extend(ent[i].addr, 30) - offset;
+    ent[i].addr = sign_extend(ent[i].addr, 30) + offset;
     if (is_relative(ent[i].val))
-      ent[i].val = 0x7fff'ffff & (sign_extend(ent[i].val, 30) - offset);
+      ent[i].val = 0x7fff'ffff & (sign_extend(ent[i].val, 30) + offset);
   });
 
   tbb::parallel_sort(ent, ent + num_entries, [](const Entry &a, const Entry &b) {
@@ -595,9 +595,9 @@ void sort_arm_exidx(Context<E> &ctx) {
   // Write back the sorted records while adjusting relative addresses
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
-    ent[i].addr = 0x7fff'ffff & (ent[i].addr + offset);
+    ent[i].addr = 0x7fff'ffff & (ent[i].addr - offset);
     if (is_relative(ent[i].val))
-      ent[i].val = 0x7fff'ffff & (ent[i].val + offset);
+      ent[i].val = 0x7fff'ffff & (ent[i].val - offset);
   });
 }
 
