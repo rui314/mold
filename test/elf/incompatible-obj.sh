@@ -25,6 +25,6 @@ cat <<EOF | $CC -c -o $t/b.o -m32 -xc -
 EOF
 
 ! $CC -B. -o /dev/null $t/a.o $t/b.o >& $t/log
-grep -q "$t/b.o: incompatible file" $t/log
+grep -q "$t/b.o: incompatible file type: x86_64 is expected but got i386" $t/log
 
 echo OK
