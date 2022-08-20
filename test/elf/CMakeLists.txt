@@ -1,18 +1,17 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests for other targets" OFF)
 
-file(GLOB MOLD_ELF_TESTS
+file(GLOB TESTS
   RELATIVE ${CMAKE_CURRENT_LIST_DIR}
   CONFIGURE_DEPENDS
   "*.sh")
 
-function(mold_add_arch_test NAME TRIPLE MACHINE)
+function(mold_add_arch_test TEST TRIPLE MACHINE)
   if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${MACHINE})
-    set(TEST_NAME "${MACHINE}-${NAME}")
-    add_test(NAME ${TEST_NAME}
-      COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${NAME}
+    add_test(NAME "${MACHINE}-${TEST}"
+      COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
       WORKING_DIRECTORY ${mold_BINARY_DIR})
 
-    set(TEST_ENV
+    set(ENV
       TEST_CC=${TRIPLE}-gcc
       TEST_CXX=${TRIPLE}-g++
       TEST_GCC=${TRIPLE}-gcc
@@ -20,11 +19,11 @@ function(mold_add_arch_test NAME TRIPLE MACHINE)
       OBJDUMP=${TRIPLE}-objdump
       MACHINE=${MACHINE}
       "QEMU=qemu-${MACHINE} -L /usr/${TRIPLE}")
-    set_tests_properties(${TEST_NAME} PROPERTIES ENVIRONMENT "${TEST_ENV}")
+    set_tests_properties("${MACHINE}-${TEST}" PROPERTIES ENVIRONMENT "${ENV}")
   endif()
 endfunction()
 
-foreach(TEST IN LISTS MOLD_ELF_TESTS)
+foreach(TEST IN LISTS TESTS)
   add_test(NAME "${CMAKE_HOST_SYSTEM_PROCESSOR}-${TEST}"
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
     WORKING_DIRECTORY ${mold_BINARY_DIR})
