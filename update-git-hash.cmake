@@ -21,8 +21,9 @@ std::string mold_git_hash = \"${HASH}\";
 
 if(EXISTS "${OUTPUT_FILE}")
   file(READ "${OUTPUT_FILE}" OLD_FILE)
-endif()
-
-if(NOT "${NEW_FILE}" STREQUAL "${OLD_FILE}")
+  if(NOT "${NEW_FILE}" STREQUAL "${OLD_FILE}")
+    file(WRITE "${OUTPUT_FILE}" "${NEW_FILE}")
+  endif()
+else()
   file(WRITE "${OUTPUT_FILE}" "${NEW_FILE}")
 endif()
