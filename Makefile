@@ -49,7 +49,11 @@ MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables \
                  -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
-MOLD_LDFLAGS := -pthread -lz -lm -ldl
+ifeq ($(OS), OpenBSD)
+  MOLD_LDFLAGS := -pthread -lz -lm
+else
+  MOLD_LDFLAGS := -pthread -lz -lm -ldl
+endif
 
 LTO = 0
 ifeq ($(LTO), 1)
