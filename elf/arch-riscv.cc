@@ -395,20 +395,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   // relocations overwrote instructions with full 32-bit values to allow
   // their corresponding LO12 relocations to read their values.
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &r = rels[i];
-    if (r.r_type != R_RISCV_PCREL_LO12_I && r.r_type != R_RISCV_PCREL_LO12_S)
-      continue;
+    switch (rels[i].r_type)
+    case R_RISCV_PCREL_LO12_I:
+    case R_RISCV_PCREL_LO12_S: {
+      Symbol<E> &sym = *file.symbols[rels[i].r_sym];
+      assert(sym.get_input_section() == this);
 
-    Symbol<E> &sym = *file.symbols[r.r_sym];
-    assert(sym.get_input_section() == this);
+      u8 *loc = base + rels[i].r_offset + extra.r_deltas[i];
+      u32 val = *(ul32 *)(base + sym.value);
 
-    u8 *loc = base + r.r_offset + extra.r_deltas[i];
-    u32 val = *(ul32 *)(base + sym.value);
-
-    if (r.r_type == R_RISCV_PCREL_LO12_I)
-      write_itype(loc, val);
-    else
-      write_stype(loc, val);
+      if (rels[i].r_type == R_RISCV_PCREL_LO12_I)
+        write_itype(loc, val);
+      else
+        write_stype(loc, val);
+    }
   }
 
   // Restore the original instructions HI20 relocations overwrote.
