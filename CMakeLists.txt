@@ -2,13 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 project(mold VERSION 1.4.1)
 
 include(CMakeDependentOption)
-
-# FIXME: this is for parity with the makefiles that install directly to
-# <prefix>/lib
-#
-# NOTE: defining this before including GNUInstallDirs makes its platform
-# detection a noop
-set(CMAKE_INSTALL_LIBDIR lib CACHE PATH "")
 include(GNUInstallDirs)
 
 # Add -fuse-ld=mold if accepted by the compiler.
