@@ -173,7 +173,7 @@ find_package(Python3 REQUIRED)
 
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
-    -DGIT_DIR=${CMAKE_SOURCE_DIR}
+    -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/git-hash.cc
     -P ${CMAKE_SOURCE_DIR}/update-git-hash.cmake
   DEPENDS update-git-hash.cmake

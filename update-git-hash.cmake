@@ -1,23 +1,21 @@
-function(get_git_hash DIR OUT_VAR)
-  if(EXISTS "${DIR}/.git/HEAD")
-    file(READ "${DIR}/.git/HEAD" HEAD)
-    string(STRIP "${HEAD}" HEAD)
+cmake_minimum_required(VERSION 3.9)
 
-    if(HEAD MATCHES "^ref: (.*)")
-      file(READ "${DIR}/.git/${CMAKE_MATCH_1}" HASH)
-      string(STRIP "${HASH}" HASH)
-      set(${OUT_VAR} ${HASH} PARENT_SCOPE)
-    else()
-      set(${OUT_VAR} ${HEAD} PARENT_SCOPE)
-    endif()
+# Get a git hash value. We do not want to use git command here
+# because we don't want to make git a build-time dependency.
+if(EXISTS "${SOURCE_DIR}/.git/HEAD")
+  file(READ "${SOURCE_DIR}/.git/HEAD" HASH)
+  string(STRIP "${HASH}" HASH)
+
+  if(HASH MATCHES "^ref: (.*)")
+    file(READ "${SOURCE_DIR}/.git/${CMAKE_MATCH_1}" HASH)
+    string(STRIP "${HASH}" HASH)
   endif()
-endfunction()
+endif()
 
-get_git_hash("${GIT_DIR}" NEW_HASH)
-
+# Create new file contents and update a given file if necessary.
 set(NEW_FILE "#include <string>
 namespace mold {
-std::string mold_git_hash = \"${NEW_HASH}\";
+std::string mold_git_hash = \"${HASH}\";
 }
 ")
 

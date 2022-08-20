@@ -131,7 +131,7 @@ all: mold mold-wrapper.so
 -include $(SRCS:%.cc=out/%.d)
 
 out/git-hash.cc: FORCE
-	cmake -DGIT_DIR=. -DOUTPUT_FILE=out/git-hash.cc -P update-git-hash.cmake
+	cmake -DSOURCE_DIR=. -DOUTPUT_FILE=out/git-hash.cc -P update-git-hash.cmake
 
 FORCE:
 
