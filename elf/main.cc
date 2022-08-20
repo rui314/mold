@@ -68,13 +68,21 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
 }
 
 template <typename E>
+static void
+check_file_compatibility(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  MachineType mt = get_machine_type(ctx, mf);
+  if (mt != ctx.arg.emulation)
+    Fatal(ctx) << mf->name << ": incompatible file type: "
+               << ctx.arg.emulation << " is expected but got " << mt;
+}
+
+template <typename E>
 static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
                                       std::string archive_name) {
-  if (get_machine_type(ctx, mf) != ctx.arg.emulation)
-    Fatal(ctx) << mf->name << ": incompatible file type";
-
   static Counter count("parsed_objs");
   count++;
+
+  check_file_compatibility(ctx, mf);
 
   bool in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, archive_name, in_lib);
@@ -108,8 +116,7 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
 template <typename E>
 static SharedFile<E> *
 new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  if (get_machine_type(ctx, mf) != ctx.arg.emulation)
-    Fatal(ctx) << mf->name << ": incompatible file type";
+  check_file_compatibility(ctx, mf);
 
   SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
   file->priority = ctx.file_priority++;
