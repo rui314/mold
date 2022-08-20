@@ -18,7 +18,7 @@ add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 
-if("${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STRLESS "MSVC")
+if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
   target_compile_options(mold PRIVATE
     -fno-exceptions
     -fno-unwind-tables
@@ -119,7 +119,7 @@ if(WIN32)
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR
       "Your compiler is not supported; install Clang from Visual Studio Installer and re-run cmake with '-T clangcl'")
-   endif()
+  endif()
 
   target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
 
@@ -149,20 +149,17 @@ if(NOT APPLE AND NOT WIN32)
   target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
 endif()
 
-if(NOT APPLE AND NOT MOLD_MOSTLY_STATIC AND NOT WIN32)
+if(NOT APPLE AND NOT WIN32 AND NOT MOLD_MOSTLY_STATIC)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES riscv64
-    OR CMAKE_SYSTEM_PROCESSOR MATCHES armv6)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv6)")
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
 set_property(SOURCE main.cc elf/lto-unix.cc macho/output-chunks.cc APPEND PROPERTY
   COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
-
-find_package(Python3 REQUIRED)
 
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
