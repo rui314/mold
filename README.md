@@ -129,15 +129,18 @@ Please make sure you have installed `clang`.
 If you want to use mold for all projects, put the above snippet to
 `~/.cargo/config.toml`.
 
-> If you are using macOS, you can modify `config.toml` in a similar
-> manner. Here is an example on `aarch64` with `mold` installed via
-> [Homebrew](https://brew.sh/).
->
-> ```toml
-> [target.aarch64-apple-darwin]
-> linker = "clang"
-> rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/bin/ld64.mold"]
-> ```
+If you are using macOS, you can modify `config.toml` in a similar manner.
+Here is an example with `mold` installed via [Homebrew](https://brew.sh).
+
+```toml
+[target.x86_64-apple-darwin]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-apple-darwin]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
 
 </details>
 
