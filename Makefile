@@ -224,12 +224,7 @@ ifneq ($(OS), Darwin)
 endif
 
 	$(INSTALL) -d $D$(LIBEXECDIR)/mold
-
-# We want to make a symblink with a relative path, so that users can
-# move the entire directory to other place without breaking the reference.
-# GNU ln supports `--relative` to do that, but that's not supported by
-# non-GNU systems. So we use Python to compute a relative path.
-	ln -sf `python3 -c "import os.path; print(os.path.relpath('$(BINDIR)/mold', '$(LIBEXECDIR)/mold'))"` $D$(LIBEXECDIR)/mold/ld
+	cmake -DSOURCE=$D$(BINDIR)/mold -DDEST=$D$(LIBEXECDIR)/ld -P create-symlink.cmake
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
