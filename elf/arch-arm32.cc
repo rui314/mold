@@ -392,6 +392,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       handle_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_ARM_THM_CALL:
+    case R_ARM_CALL:
+    case R_ARM_JUMP24:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
@@ -399,11 +401,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_GOT_BREL:
     case R_ARM_TARGET2:
       sym.flags |= NEEDS_GOT;
-      break;
-    case R_ARM_CALL:
-    case R_ARM_JUMP24:
-      if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
       break;
     case R_ARM_THM_JUMP24:
       if (sym.is_imported || sym.get_type() == STT_GNU_IFUNC)
