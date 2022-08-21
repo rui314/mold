@@ -118,8 +118,6 @@ template <typename E>
 static void
 dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
          Symbol<E> &sym, const ElfRel<E> &rel) {
-  bool is_writable = (isec.shdr().sh_flags & SHF_WRITE);
-
   auto get_output_type = [&] {
     if (ctx.arg.shared)
       return 0;
@@ -145,10 +143,17 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
                << sym << "' can not be used; recompile with " << msg;
   };
 
-  auto warn_textrel = [&] {
-    if (ctx.arg.warn_textrel)
+  auto check_textrel = [&] {
+    if (isec.shdr().sh_flags & SHF_WRITE)
+      return;
+
+    if (ctx.arg.z_text) {
+      error();
+    } else if (ctx.arg.warn_textrel) {
       Warn(ctx) << isec << ": relocation against symbol `" << sym
                 << "' in read-only section";
+    }
+    ctx.has_textrel = true;
   };
 
   switch (table[get_output_type()][get_sym_type()]) {
@@ -160,17 +165,11 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
   case COPYREL:
     if (!ctx.arg.z_copyreloc) {
       error();
-      return;
-    }
-
-    if (sym.esym().st_visibility == STV_PROTECTED) {
-      Error(ctx) << isec
-                 << ": cannot make copy relocation for protected symbol '"
+    } else if (sym.esym().st_visibility == STV_PROTECTED) {
+      Error(ctx) << isec << ": cannot make copy relocation for protected symbol '"
                  << sym << "', defined in " << *sym.file
                  << "; recompile with -fPIC";
-      return;
     }
-
     sym.flags |= NEEDS_COPYREL;
     return;
   case PLT:
@@ -180,28 +179,12 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
     sym.flags |= NEEDS_CPLT;
     return;
   case DYNREL:
-    if (!is_writable) {
-      if (ctx.arg.z_text) {
-        error();
-        return;
-      }
-      warn_textrel();
-      ctx.has_textrel = true;
-    }
-
     assert(sym.is_imported);
+    check_textrel();
     isec.file.num_dynrel++;
     return;
   case BASEREL:
-    if (!is_writable) {
-      if (ctx.arg.z_text) {
-        error();
-        return;
-      }
-      warn_textrel();
-      ctx.has_textrel = true;
-    }
-
+    check_textrel();
     if (!isec.is_relr_reloc(ctx, rel))
       isec.file.num_dynrel++;
     return;
