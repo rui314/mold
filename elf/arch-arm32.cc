@@ -190,13 +190,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = GOT + A - P;
       continue;
     case R_ARM_GOT_PREL:
-      *(ul32 *)loc = sym.get_got_addr(ctx) + A - P;
+    case R_ARM_TARGET2:
+      *(ul32 *)loc = GOT + G + A - P;
       continue;
     case R_ARM_GOT_BREL:
       *(ul32 *)loc = G + A;
-      continue;
-    case R_ARM_TARGET2:
-      *(ul32 *)loc = GOT + G + A - P;
       continue;
     case R_ARM_CALL: {
       // Just like THM_CALL, ARM_CALL relocation refers either BL or
@@ -400,9 +398,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       dispatch(ctx, table, i, rel, sym);
       break;
     }
-    case R_ARM_REL32:
-    case R_ARM_BASE_PREL:
-      break;
     case R_ARM_THM_CALL: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
@@ -454,6 +449,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!ctx.relax_tlsdesc || sym.is_imported)
         sym.flags |= NEEDS_TLSDESC;
       break;
+    case R_ARM_REL32:
+    case R_ARM_BASE_PREL:
     case R_ARM_THM_JUMP11:
     case R_ARM_MOVW_PREL_NC:
     case R_ARM_MOVW_ABS_NC:
