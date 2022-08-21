@@ -190,7 +190,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = GOT + A - P;
       continue;
     case R_ARM_GOT_PREL:
-      *(ul32 *)loc = G + A - P;
+      *(ul32 *)loc = sym.get_got_addr(ctx) + A - P;
       continue;
     case R_ARM_GOT_BREL:
       *(ul32 *)loc = G + A;
