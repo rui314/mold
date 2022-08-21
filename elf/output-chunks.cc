@@ -1185,49 +1185,49 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template<typename E>
-void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
-                     ElfSym<E> &out_esym) {
-  memset(&out_esym, 0, sizeof(out_esym));
-  out_esym.st_type = sym.esym().st_type;
-  out_esym.st_size = sym.esym().st_size;
+ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
+  ElfSym<E> esym;
+  memset(&esym, 0, sizeof(esym));
+
+  esym.st_type = sym.esym().st_type;
+  esym.st_size = sym.esym().st_size;
 
   if (sym.is_local())
-    out_esym.st_bind = STB_LOCAL;
+    esym.st_bind = STB_LOCAL;
   else if (sym.is_weak)
-    out_esym.st_bind = STB_WEAK;
+    esym.st_bind = STB_WEAK;
   else if (sym.file->is_dso)
-    out_esym.st_bind = STB_GLOBAL;
+    esym.st_bind = STB_GLOBAL;
   else
-    out_esym.st_bind = sym.esym().st_bind;
-
-  out_esym.st_name = strtab_offset;
+    esym.st_bind = sym.esym().st_bind;
 
   if (sym.has_copyrel) {
-    out_esym.st_shndx = sym.copyrel_readonly
-                    ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
-    out_esym.st_value = sym.get_addr(ctx);
+    esym.st_shndx =
+      sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
+    esym.st_value = sym.get_addr(ctx);
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
-    out_esym.st_shndx = SHN_UNDEF;
-    out_esym.st_size = 0;
-    out_esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
+    esym.st_shndx = SHN_UNDEF;
+    if (sym.is_canonical)
+      esym.st_value = sym.get_plt_addr(ctx);
   } else if (sym.shndx < 0) {
     // Internal file
-    out_esym.st_shndx = -sym.shndx;
-    out_esym.st_value = sym.get_addr(ctx);
+    esym.st_shndx = -sym.shndx;
+    esym.st_value = sym.get_addr(ctx);
   } else {
     InputSection<E> *isec = sym.get_input_section();
     if (!isec) {
-      out_esym.st_shndx = SHN_ABS;
-      out_esym.st_value = sym.get_addr(ctx);
+      esym.st_shndx = SHN_ABS;
+      esym.st_value = sym.get_addr(ctx);
     } else if (sym.get_type() == STT_TLS) {
-      out_esym.st_shndx = sym.get_st_shndx();
-      out_esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
+      esym.st_shndx = sym.get_st_shndx();
+      esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     } else {
-      out_esym.st_shndx = sym.get_st_shndx();
-      out_esym.st_value = sym.get_addr(ctx, false);
-      out_esym.st_visibility = sym.visibility;
+      esym.st_shndx = sym.get_st_shndx();
+      esym.st_value = sym.get_addr(ctx, false);
+      esym.st_visibility = sym.visibility;
     }
   }
+  return esym;
 }
 
 template <typename E>
@@ -1318,11 +1318,10 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     ElfSym<E> &esym =
       *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
 
-    get_output_esym(ctx, sym, name_offset, esym);
+    esym = to_output_esym(ctx, sym);
+    esym.st_name = name_offset;
     name_offset += sym.name().size() + 1;
-
-    if (esym.st_bind == STB_LOCAL)
-      assert(i < this->shdr.sh_info);
+    assert(esym.st_bind != STB_LOCAL || i < this->shdr.sh_info);
   }
 }
 
@@ -2589,7 +2588,8 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class GabiCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
   template class RelocSection<E>;                                       \
-  template bool is_relro(Context<E> &, Chunk<E> *);
+  template bool is_relro(Context<E> &, Chunk<E> *);                     \
+  template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
 
 INSTANTIATE_ALL;
 

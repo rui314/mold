@@ -1258,9 +1258,8 @@ void ObjectFile<E>::export_to_symtab(Context<E> &ctx) {
 
   auto write_sym = [&](Symbol<E> &sym, i64 &symtab_idx) {
     ElfSym<E> &esym = symtab_base[symtab_idx++];
-
-    get_output_esym(ctx, sym, strtab_off, esym);
-
+    esym = to_output_esym(ctx, sym);
+    esym.st_name = strtab_off;
     write_string(strtab_base + strtab_off, sym.name());
     strtab_off += sym.name().size() + 1;
   };

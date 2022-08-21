@@ -649,8 +649,7 @@ public:
 };
 
 template<typename E>
-void get_output_esym(Context<E> &ctx, const Symbol<E> &sym, i64 strtab_offset,
-                     ElfSym<E> &out_esym);
+ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym);
 
 template <typename E>
 class SymtabSection : public Chunk<E> {
