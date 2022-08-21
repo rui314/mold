@@ -986,8 +986,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Warn(ctx) << "unknown command line option: -z " << args[1];
       args = args.subspan(2);
     } else if (args[0] == "-dynamic") {
-      Fatal(ctx) << "unknown command line option: " << args[0]
-                 << "; -dynamic is a macOS linker's option. If you are trying"
+      Fatal(ctx) << "unknown command line option: -dynamic;"
+                 << " -dynamic is a macOS linker's option. If you are trying"
                  << " to build a binary for an Apple platform, you need to use"
                  << " ld64.mold instead of mold or ld.mold.";
     } else {
