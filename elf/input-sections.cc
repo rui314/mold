@@ -115,31 +115,28 @@ void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
 typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
 
 template <typename E>
-static i64 get_output_type(Context<E> &ctx) {
-  if (ctx.arg.shared)
-    return 0;
-  if (ctx.arg.pie)
-    return 1;
-  return 2;
-}
-
-template <typename E>
-static i64 get_sym_type(Symbol<E> &sym) {
-  if (sym.is_absolute())
-    return 0;
-  if (!sym.is_imported)
-    return 1;
-  if (sym.get_type() != STT_FUNC)
-    return 2;
-  return 3;
-}
-
-template <typename E>
 static void
 dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
          Symbol<E> &sym, const ElfRel<E> &rel) {
-  Action action = table[get_output_type(ctx)][get_sym_type(sym)];
   bool is_writable = (isec.shdr().sh_flags & SHF_WRITE);
+
+  auto get_output_type = [&] {
+    if (ctx.arg.shared)
+      return 0;
+    if (ctx.arg.pie)
+      return 1;
+    return 2;
+  };
+
+  auto get_sym_type = [&] {
+    if (sym.is_absolute())
+      return 0;
+    if (!sym.is_imported)
+      return 1;
+    if (sym.get_type() != STT_FUNC)
+      return 2;
+    return 3;
+  };
 
   auto error = [&] {
     std::string msg = sym.is_absolute() ? "-fno-PIC" : "-fPIC";
@@ -154,7 +151,7 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
                 << "' in read-only section";
   };
 
-  switch (action) {
+  switch (table[get_output_type()][get_sym_type()]) {
   case NONE:
     return;
   case ERROR:
