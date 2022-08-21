@@ -242,16 +242,17 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
   install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
   install(CODE "
+    set(DEST \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
     file(RELATIVE_PATH RELPATH
        /${CMAKE_INSTALL_LIBEXECDIR}/mold /${CMAKE_INSTALL_BINDIR}/mold)
     execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory
-      \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold)
+      \${DEST}/${CMAKE_INSTALL_LIBEXECDIR}/mold)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink \${RELPATH}
-      \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
+      \${DEST}/${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
-      \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld.mold)
+      \${DEST}/${CMAKE_INSTALL_BINDIR}/ld.mold)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold
-      \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/ld64.mold)
+      \${DEST}/${CMAKE_INSTALL_BINDIR}/ld64.mold)
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink mold.1
-      \${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)")
+      \${DEST}/${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)")
 endif()
