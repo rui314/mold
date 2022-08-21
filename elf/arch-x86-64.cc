@@ -659,7 +659,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
     case R_X86_64_PLT32:
     case R_X86_64_PLTOFF64:
-      handle_call_rel(ctx, sym, rel);
+      if (sym.is_imported)
+        sym.flags |= NEEDS_PLT;
       break;
     case R_X86_64_TLSGD: {
       if (i + 1 == rels.size())

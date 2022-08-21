@@ -454,7 +454,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT;
       break;
     case R_386_PLT32:
-      handle_call_rel(ctx, sym, rel);
+      if (sym.is_imported)
+        sym.flags |= NEEDS_PLT;
       break;
     case R_386_TLS_GOTIE:
     case R_386_TLS_LE:

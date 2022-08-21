@@ -392,7 +392,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       handle_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_ARM_THM_CALL:
-      handle_call_rel(ctx, sym, rel);
+      if (sym.is_imported)
+        sym.flags |= NEEDS_PLT;
       break;
     case R_ARM_GOT_PREL:
     case R_ARM_GOT_BREL:

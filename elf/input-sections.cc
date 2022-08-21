@@ -261,19 +261,6 @@ void InputSection<E>::handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
-void InputSection<E>::handle_call_rel(Context<E> &ctx, Symbol<E> &sym,
-                                      const ElfRel<E> &rel) {
-  // This is for CALL-type relocations (e.g. R_X86_64_PLT32).
-  constexpr Action table[][4] = {
-    // Absolute  Local    Imported data  Imported code
-    {  NONE,     NONE,    PLT,           PLT    },     // DSO
-    {  NONE,     NONE,    PLT,           PLT    },     // PIE
-    {  NONE,     NONE,    PLT,           PLT    },     // PDE
-  };
-  dispatch(ctx, table, *this, sym, rel);
-}
-
-template <typename E>
 void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
     return;
