@@ -323,8 +323,8 @@ public:
 private:
   typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
 
-  void dispatch(Context<E> &ctx, Action table[3][4], i64 i,
-                const ElfRel<E> &rel, Symbol<E> &sym);
+  void dispatch(Context<E> &ctx, Action table[3][4], const ElfRel<E> &rel,
+                Symbol<E> &sym);
   void copy_contents(Context<E> &ctx, u8 *buf);
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 

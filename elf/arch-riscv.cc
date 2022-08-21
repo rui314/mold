@@ -579,7 +579,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     ERROR,   ERROR,         ERROR },      // PIE
         {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_RISCV_64: {
@@ -589,7 +589,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_RISCV_CALL:
@@ -614,7 +614,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_RISCV_BRANCH:

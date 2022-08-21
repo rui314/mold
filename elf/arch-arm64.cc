@@ -426,7 +426,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_AARCH64_ADR_GOT_PAGE:
@@ -450,7 +450,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  ERROR,    NONE,    ERROR,         ERROR },      // PIE
         {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_AARCH64_TLSGD_ADR_PAGE21:

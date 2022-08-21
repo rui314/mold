@@ -395,7 +395,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
         {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_ARM_THM_CALL: {
@@ -405,7 +405,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  NONE,     NONE,  PLT,           PLT    },     // PIE
         {  NONE,     NONE,  PLT,           PLT    },     // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_ARM_GOT_PREL:
@@ -433,7 +433,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,    COPYREL,       PLT   },      // PDE
       };
-      dispatch(ctx, table, i, rel, sym);
+      dispatch(ctx, table, rel, sym);
       break;
     }
     case R_ARM_TLS_GD32:
