@@ -282,6 +282,7 @@ public:
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset);
+  bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 
   void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
 
@@ -321,10 +322,11 @@ public:
   bool icf_leaf = false;
 
 private:
-  typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
+  void handle_abs_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void handle_call_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
-  void dispatch(Context<E> &ctx, Action table[3][4], const ElfRel<E> &rel,
-                Symbol<E> &sym);
   void copy_contents(Context<E> &ctx, u8 *buf);
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 
@@ -332,7 +334,6 @@ private:
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
   std::optional<u64> get_tombstone(Symbol<E> &sym);
-  bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 };
 
 template <typename E>

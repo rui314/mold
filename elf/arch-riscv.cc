@@ -572,26 +572,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-    case R_RISCV_HI20: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  NONE,     ERROR,   ERROR,         ERROR },      // DSO
-        {  NONE,     ERROR,   ERROR,         ERROR },      // PIE
-        {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_RISCV_HI20:
+      handle_abs_rel(ctx, sym, rel);
       break;
-    }
-    case R_RISCV_64: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_RISCV_64:
+      handle_abs_dyn_rel(ctx, sym, rel);
       break;
-    }
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
       if (sym.is_imported)
@@ -607,16 +593,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_TLS_GD_HI20:
       sym.flags |= NEEDS_TLSGD;
       break;
-    case R_RISCV_32_PCREL: {
-      Action table[][4] = {
-        // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  ERROR,         PLT   },      // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_RISCV_32_PCREL:
+      handle_pcrel_rel(ctx, sym, rel);
       break;
-    }
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:
     case R_RISCV_PCREL_HI20:

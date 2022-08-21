@@ -419,16 +419,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     switch (rel.r_type) {
-    case R_AARCH64_ABS64: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_AARCH64_ABS64:
+      handle_abs_dyn_rel(ctx, sym, rel);
       break;
-    }
     case R_AARCH64_ADR_GOT_PAGE:
     case R_AARCH64_LD64_GOT_LO12_NC:
     case R_AARCH64_LD64_GOTPAGE_LO15:
@@ -443,16 +436,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
       sym.flags |= NEEDS_GOTTP;
       break;
-    case R_AARCH64_ADR_PREL_PG_HI21: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  ERROR,    NONE,    ERROR,         ERROR },      // DSO
-        {  ERROR,    NONE,    ERROR,         ERROR },      // PIE
-        {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_AARCH64_ADR_PREL_PG_HI21:
+      handle_pcrel_rel(ctx, sym, rel);
       break;
-    }
     case R_AARCH64_TLSGD_ADR_PAGE21:
       sym.flags |= NEEDS_TLSGD;
       break;

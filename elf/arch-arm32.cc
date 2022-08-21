@@ -388,26 +388,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_ABS32:
     case R_ARM_MOVT_ABS:
     case R_ARM_THM_MOVT_ABS:
-    case R_ARM_TARGET1: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
-        {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-        {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_ARM_TARGET1:
+      handle_abs_dyn_rel(ctx, sym, rel);
       break;
-    }
-    case R_ARM_THM_CALL: {
-      Action table[][4] = {
-        // Absolute  Local  Imported data  Imported code
-        {  NONE,     NONE,  PLT,           PLT    },     // DSO
-        {  NONE,     NONE,  PLT,           PLT    },     // PIE
-        {  NONE,     NONE,  PLT,           PLT    },     // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_ARM_THM_CALL:
+      handle_call_rel(ctx, sym, rel);
       break;
-    }
     case R_ARM_GOT_PREL:
     case R_ARM_GOT_BREL:
     case R_ARM_TARGET2:
@@ -426,16 +412,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ARM_MOVT_PREL:
     case R_ARM_THM_MOVT_PREL:
-    case R_ARM_PREL31: {
-      Action table[][4] = {
-        // Absolute  Local    Imported data  Imported code
-        {  ERROR,    NONE,    ERROR,         PLT   },      // DSO
-        {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,    COPYREL,       PLT   },      // PDE
-      };
-      dispatch(ctx, table, rel, sym);
+    case R_ARM_PREL31:
+      handle_pcrel_rel(ctx, sym, rel);
       break;
-    }
     case R_ARM_TLS_GD32:
       sym.flags |= NEEDS_TLSGD;
       break;
