@@ -379,10 +379,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
     }
 
-    if (sym.get_type() == STT_GNU_IFUNC) {
-      sym.flags |= NEEDS_GOT;
-      sym.flags |= NEEDS_PLT;
-    }
+    if (sym.get_type() == STT_GNU_IFUNC)
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
@@ -404,7 +402,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ARM_THM_JUMP24:
       if (sym.is_imported || sym.get_type() == STT_GNU_IFUNC)
-        sym.flags |= NEEDS_PLT | NEEDS_THUMB_TO_ARM_THUNK;
+        sym.flags |= (NEEDS_PLT | NEEDS_THUMB_TO_ARM_THUNK);
       else if (sym.esym().st_value % 2 == 0)
         sym.flags |= NEEDS_THUMB_TO_ARM_THUNK;
       break;

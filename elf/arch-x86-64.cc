@@ -608,10 +608,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
     }
 
-    if (sym.get_type() == STT_GNU_IFUNC) {
-      sym.flags |= NEEDS_GOT;
-      sym.flags |= NEEDS_PLT;
-    }
+    if (sym.get_type() == STT_GNU_IFUNC)
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_X86_64_8:
