@@ -13,17 +13,17 @@ if(EXISTS "${SOURCE_DIR}/.git/HEAD")
 endif()
 
 # Create new file contents and update a given file if necessary.
-set(NEW_FILE "#include <string>
+set(NEW_CONTENTS "#include <string>
 namespace mold {
 std::string mold_git_hash = \"${HASH}\";
 }
 ")
 
 if(EXISTS "${OUTPUT_FILE}")
-  file(READ "${OUTPUT_FILE}" OLD_FILE)
-  if(NOT "${NEW_FILE}" STREQUAL "${OLD_FILE}")
-    file(WRITE "${OUTPUT_FILE}" "${NEW_FILE}")
+  file(READ "${OUTPUT_FILE}" OLD_CONTENTS)
+  if(NOT "${NEW_CONTENTS}" STREQUAL "${OLD_CONTENTS}")
+    file(WRITE "${OUTPUT_FILE}" "${NEW_CONTENTS}")
   endif()
 else()
-  file(WRITE "${OUTPUT_FILE}" "${NEW_FILE}")
+  file(WRITE "${OUTPUT_FILE}" "${NEW_CONTENTS}")
 endif()
