@@ -1336,22 +1336,22 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
 
   // Assign virtual addresses
   u64 addr = ctx.arg.image_base;
-  for (i64 i = 0; i < chunks.size(); i++) {
-    if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
+  for (Chunk<E> *chunk : chunks) {
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       continue;
 
-    if (auto it = ctx.arg.section_start.find(chunks[i]->name);
+    if (auto it = ctx.arg.section_start.find(chunk->name);
         it != ctx.arg.section_start.end())
       addr = it->second;
 
-    if (is_tbss(chunks[i])) {
-      chunks[i]->shdr.sh_addr = addr;
+    if (is_tbss(chunk)) {
+      chunk->shdr.sh_addr = addr;
       continue;
     }
 
-    addr = align_to(addr, alignment(chunks[i]));
-    chunks[i]->shdr.sh_addr = addr;
-    addr += chunks[i]->shdr.sh_size;
+    addr = align_to(addr, alignment(chunk));
+    chunk->shdr.sh_addr = addr;
+    addr += chunk->shdr.sh_size;
   }
 
   // Fix tbss virtual addresses. tbss sections are laid out as if they
@@ -1385,23 +1385,19 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
 
     fileoff = align_to(fileoff, alignment(&first));
 
-    u64 end = fileoff;
-    while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
-           chunks[i]->shdr.sh_type != SHT_NOBITS) {
-      // The addresses may not increase monotonically if a user uses
-      // --start-sections.
-      if (chunks[i]->shdr.sh_addr < first.shdr.sh_addr)
-        break;
-
+    do {
       chunks[i]->shdr.sh_offset =
         fileoff + chunks[i]->shdr.sh_addr - first.shdr.sh_addr;
-      end = chunks[i]->shdr.sh_offset + chunks[i]->shdr.sh_size;
       i++;
-    }
+    } while (i < chunks.size() &&
+             (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
+             chunks[i]->shdr.sh_type != SHT_NOBITS &&
+             first.shdr.sh_addr <= chunks[i]->shdr.sh_addr);
 
-    fileoff = end;
+    fileoff = chunks[i - 1]->shdr.sh_offset + chunks[i - 1]->shdr.sh_size;
 
-    while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
+    while (i < chunks.size() &&
+           (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
            chunks[i]->shdr.sh_type == SHT_NOBITS)
       i++;
   }
