@@ -45,6 +45,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
     case MachineType::ARM32:   return "arm32";
     case MachineType::RISCV64: return "riscv64";
     case MachineType::RISCV32: return "riscv32";
+    default: __builtin_unreachable();
     }
   };
   out << to_string();
