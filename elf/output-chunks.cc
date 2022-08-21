@@ -1213,19 +1213,16 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     // Internal file
     esym.st_shndx = -sym.shndx;
     esym.st_value = sym.get_addr(ctx);
+  } else if (sym.shndx == 0) {
+    esym.st_shndx = SHN_ABS;
+    esym.st_value = sym.get_addr(ctx);
+  } else if (sym.get_type() == STT_TLS) {
+    esym.st_shndx = sym.get_st_shndx();
+    esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
   } else {
-    InputSection<E> *isec = sym.get_input_section();
-    if (!isec) {
-      esym.st_shndx = SHN_ABS;
-      esym.st_value = sym.get_addr(ctx);
-    } else if (sym.get_type() == STT_TLS) {
-      esym.st_shndx = sym.get_st_shndx();
-      esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
-    } else {
-      esym.st_shndx = sym.get_st_shndx();
-      esym.st_value = sym.get_addr(ctx, false);
-      esym.st_visibility = sym.visibility;
-    }
+    esym.st_shndx = sym.get_st_shndx();
+    esym.st_value = sym.get_addr(ctx, false);
+    esym.st_visibility = sym.visibility;
   }
   return esym;
 }
