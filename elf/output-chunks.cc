@@ -1190,7 +1190,6 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
   memset(&esym, 0, sizeof(esym));
 
   esym.st_type = sym.esym().st_type;
-  esym.st_size = sym.esym().st_size;
 
   if (sym.is_local())
     esym.st_bind = STB_LOCAL;
@@ -1205,24 +1204,29 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     esym.st_shndx =
       sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
     esym.st_value = sym.get_addr(ctx);
+    esym.st_size = sym.esym().st_size;
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
     esym.st_shndx = SHN_UNDEF;
-    if (sym.is_canonical)
-      esym.st_value = sym.get_plt_addr(ctx);
+    esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
+    esym.st_size = 0;
   } else if (sym.shndx < 0) {
     // Internal file
     esym.st_shndx = -sym.shndx;
     esym.st_value = sym.get_addr(ctx);
+    esym.st_size = sym.esym().st_size;
   } else if (sym.shndx == 0) {
     esym.st_shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
+    esym.st_size = sym.esym().st_size;
   } else if (sym.get_type() == STT_TLS) {
     esym.st_shndx = sym.get_st_shndx();
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
+    esym.st_size = sym.esym().st_size;
   } else {
+    esym.st_visibility = sym.visibility;
     esym.st_shndx = sym.get_st_shndx();
     esym.st_value = sym.get_addr(ctx, false);
-    esym.st_visibility = sym.visibility;
+    esym.st_size = sym.esym().st_size;
   }
   return esym;
 }
