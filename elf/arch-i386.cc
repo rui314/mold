@@ -458,22 +458,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_386_PC8:
-    case R_386_PC16: {
-      Action table[][4] = {
-        // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
-      };
-      dispatch(ctx, table, i, rel, sym);
-      break;
-    }
+    case R_386_PC16:
     case R_386_PC32: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  DYNREL,        DYNREL },     // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT    },     // PIE
-        {  NONE,     NONE,  COPYREL,       PLT    },     // PDE
+        {  ERROR,    NONE,  ERROR,         PLT   },      // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
       dispatch(ctx, table, i, rel, sym);
       break;

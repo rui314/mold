@@ -644,22 +644,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
     case R_X86_64_PC8:
     case R_X86_64_PC16:
-    case R_X86_64_PC32: {
-      Action table[][4] = {
-        // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
-        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
-      };
-      dispatch(ctx, table, i, rel, sym);
-      break;
-    }
+    case R_X86_64_PC32:
     case R_X86_64_PC64: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  DYNREL,        DYNREL },     // DSO
-        {  ERROR,    NONE,  COPYREL,       PLT    },     // PIE
-        {  NONE,     NONE,  COPYREL,       PLT    },     // PDE
+        {  ERROR,    NONE,  ERROR,         PLT   },      // DSO
+        {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
+        {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
       dispatch(ctx, table, i, rel, sym);
       break;

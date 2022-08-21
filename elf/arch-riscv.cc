@@ -610,7 +610,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_32_PCREL: {
       Action table[][4] = {
         // Absolute  Local  Imported data  Imported code
-        {  ERROR,    NONE,  ERROR,         ERROR },      // DSO
+        {  ERROR,    NONE,  ERROR,         PLT   },      // DSO
         {  ERROR,    NONE,  COPYREL,       PLT   },      // PIE
         {  NONE,     NONE,  COPYREL,       PLT   },      // PDE
       };
