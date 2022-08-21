@@ -2318,49 +2318,50 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
       : ctx.copyrel->shdr.sh_addr + value;
   }
 
-  if (allow_plt && has_plt(ctx))
-    if (is_imported || esym().st_type == STT_GNU_IFUNC)
-      return get_plt_addr(ctx);
-
-  if (InputSection<E> *isec = get_input_section()) {
-    if (!isec->is_alive) {
-      if (isec->killed_by_icf)
-        return isec->leader->get_addr() + value;
-
-      if (isec->name() == ".eh_frame") {
-        // .eh_frame contents are parsed and reconstructed by the linker,
-        // so pointing to a specific location in a source .eh_frame
-        // section doesn't make much sense. However, CRT files contain
-        // symbols pointing to the very beginning and ending of the section.
-        if (name() == "__EH_FRAME_BEGIN__" || name() == "__EH_FRAME_LIST__" ||
-            esym().st_type == STT_SECTION)
-          return ctx.eh_frame->shdr.sh_addr;
-
-        if (name() == "__FRAME_END__" || name() == "__EH_FRAME_LIST_END__")
-          return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
-
-        // ARM object files contain "$d" local symbol at the beginning
-        // of data sections. Their values are not significant for .eh_frame,
-        // so we just treat them as offset 0.
-        if (name() == "$d" || name().starts_with("$d."))
-          return ctx.eh_frame->shdr.sh_addr;
-
-        Fatal(ctx) << "symbol referring .eh_frame is not supported: "
-                   << *this << " " << *file;
-      }
-
-      // The control can reach here if there's a relocation that refers
-      // a local symbol belonging to a comdat group section. This is a
-      // violation of the spec, as all relocations should use only global
-      // symbols of comdat members. However, .eh_frame tends to have such
-      // relocations.
-      return 0;
-    }
-
-    return isec->get_addr() + value;
+  if (allow_plt && has_plt(ctx)) {
+    assert(is_imported || esym().st_type == STT_GNU_IFUNC);
+    return get_plt_addr(ctx);
   }
 
-  return value;
+  InputSection<E> *isec = get_input_section();
+  if (!isec)
+    return value; // absolute symbol
+
+  if (!isec->is_alive) {
+    if (isec->killed_by_icf)
+      return isec->leader->get_addr() + value;
+
+    if (isec->name() == ".eh_frame") {
+      // .eh_frame contents are parsed and reconstructed by the linker,
+      // so pointing to a specific location in a source .eh_frame
+      // section doesn't make much sense. However, CRT files contain
+      // symbols pointing to the very beginning and ending of the section.
+      if (name() == "__EH_FRAME_BEGIN__" || name() == "__EH_FRAME_LIST__" ||
+          esym().st_type == STT_SECTION)
+        return ctx.eh_frame->shdr.sh_addr;
+
+      if (name() == "__FRAME_END__" || name() == "__EH_FRAME_LIST_END__")
+        return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
+
+      // ARM object files contain "$d" local symbol at the beginning
+      // of data sections. Their values are not significant for .eh_frame,
+      // so we just treat them as offset 0.
+      if (name() == "$d" || name().starts_with("$d."))
+        return ctx.eh_frame->shdr.sh_addr;
+
+      Fatal(ctx) << "symbol referring .eh_frame is not supported: "
+                 << *this << " " << *file;
+    }
+
+    // The control can reach here if there's a relocation that refers
+    // a local symbol belonging to a comdat group section. This is a
+    // violation of the spec, as all relocations should use only global
+    // symbols of comdat members. However, .eh_frame tends to have such
+    // relocations.
+    return 0;
+  }
+
+  return isec->get_addr() + value;
 }
 
 template <typename E>
