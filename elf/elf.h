@@ -36,19 +36,15 @@ template <typename E> struct ElfChdr;
 enum class MachineType { NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
-  auto to_string = [&] {
-    switch (mt) {
-    case MachineType::NONE:    return "none";
-    case MachineType::X86_64:  return "x86_64";
-    case MachineType::I386:    return "i386";
-    case MachineType::ARM64:   return "arm64";
-    case MachineType::ARM32:   return "arm32";
-    case MachineType::RISCV64: return "riscv64";
-    case MachineType::RISCV32: return "riscv32";
-    default: __builtin_unreachable();
-    }
-  };
-  out << to_string();
+  switch (mt) {
+  case MachineType::NONE:    out << "none";    break;
+  case MachineType::X86_64:  out << "x86_64";  break;
+  case MachineType::I386:    out << "i386";    break;
+  case MachineType::ARM64:   out << "arm64";   break;
+  case MachineType::ARM32:   out << "arm32";   break;
+  case MachineType::RISCV64: out << "riscv64"; break;
+  case MachineType::RISCV32: out << "riscv32"; break;
+  }
   return out;
 }
 

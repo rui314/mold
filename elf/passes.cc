@@ -1550,7 +1550,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
   // _TLS_MODULE_BASE_
-  if constexpr (supports_tlsdesc<E>) {
+  if (ctx._TLS_MODULE_BASE_) {
     // _TLS_MODULE_BASE_ is used for Local Dynamic model for TLSDESC.
     // I believe GCC and Clang don't create a reference to it, but Intel
     // compiler seems to be using this symbol.
@@ -1574,18 +1574,16 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx.__GNU_EH_FRAME_HDR, ctx.eh_frame_hdr);
 
   // RISC-V's __global_pointer$
-  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>) {
-    if (!ctx.arg.shared) {
-      if (Chunk<E> *chunk = find(".sdata"))
-        ctx.__global_pointer->shndx = -chunk->shndx;
-      else
-        ctx.__global_pointer->shndx = -1;
-      ctx.__global_pointer->value = 0x800;
-    }
+  if (ctx.__global_pointer) {
+    if (Chunk<E> *chunk = find(".sdata"))
+      ctx.__global_pointer->shndx = -chunk->shndx;
+    else
+      ctx.__global_pointer->shndx = -1;
+    ctx.__global_pointer->value = 0x800;
   }
 
   // ARM32's __exidx_{start,end}
-  if constexpr (std::is_same_v<E, ARM32>) {
+  if (ctx.__exidx_start) {
     if (Chunk<E> *chunk = find(".ARM.exidx")) {
       start(ctx.__exidx_start, chunk);
       stop(ctx.__exidx_end, chunk);

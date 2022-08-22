@@ -1003,8 +1003,7 @@ template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (GotEntry<E> &ent : get_entries(ctx))
-    if (ent.r_type &&
-        (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
+    if (ent.is_rel(ctx))
       n++;
   return n * sizeof(ElfRel<E>);
 }
@@ -1102,10 +1101,11 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (GotEntry<E> &ent : get_entries(ctx)) {
     buf[ent.idx] = ent.val;
 
-    if (ent.r_type &&
-        (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
-      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>), ent.r_type,
-                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0, ent.val);
+    if (ent.is_rel(ctx))
+      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
+                         ent.r_type,
+                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                         ent.val);
   }
 }
 
@@ -1115,7 +1115,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 
   std::vector<Word<E>> pos;
   for (GotEntry<E> &ent : get_entries(ctx))
-    if (ent.r_type == E::R_RELATIVE)
+    if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
   relr = encode_relr(pos);
