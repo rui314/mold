@@ -244,9 +244,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel.r_type) {
-    case R_RISCV_32:
-      *(ul32 *)loc = S + A;
+    case R_RISCV_32: {
+      if constexpr (E::word_size == 8) {
+        *(ul32 *)loc = S + A;
+      } else {
+        if (sym.is_absolute() || !ctx.arg.pic) {
+          *(ul32 *)loc = S + A;
+        } else if (sym.is_imported) {
+          *dynrel++ = ElfRel<E>(P, R_RISCV_32, sym.get_dynsym_idx(ctx), A);
+          *(ul32 *)loc = A;
+        } else {
+          if (!is_relr_reloc(ctx, rel))
+            *dynrel++ = ElfRel<E>(P, R_RISCV_RELATIVE, 0, S + A);
+          *(ul32 *)loc = S + A;
+        }
+      }
       break;
+    }
     case R_RISCV_64:
       if (sym.is_absolute() || !ctx.arg.pic) {
         *(ul64 *)loc = S + A;
@@ -570,6 +584,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
+      if constexpr (E::word_size == 8)
+        handle_abs_rel(ctx, sym, rel);
+      else
+        handle_abs_dyn_rel(ctx, sym, rel);
+      break;
     case R_RISCV_HI20:
       handle_abs_rel(ctx, sym, rel);
       break;
