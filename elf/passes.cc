@@ -1561,10 +1561,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     // DTPOFF's relaxed value.
     u64 addr;
     if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>) {
-      if (ctx.arg.relax && !ctx.arg.shared)
-        addr = ctx.tls_end;
-      else
-        addr = ctx.tls_begin;
+      addr = (ctx.arg.relax && !ctx.arg.shared) ? ctx.tls_end : ctx.tls_begin;
     } else {
       addr = ctx.tls_begin;
     }
