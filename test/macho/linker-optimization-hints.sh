@@ -1,18 +1,12 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
-MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$MACHINE/$testname
+t=out/test/macho/$(uname -m)/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -o $t/a.o -c -xc - -O2
+cat <<EOF | cc -o $t/a.o -c -xc - -O2
 #include <stdio.h>
 
 char x1 = -1;
@@ -27,7 +21,7 @@ void hello() {
 }
 EOF
 
-cat <<EOF | $CC -o $t/b.o -c -xc - -O2
+cat <<EOF | cc -o $t/b.o -c -xc - -O2
 #include <stdio.h>
 
 void hello();
@@ -45,7 +39,7 @@ int main() {
 }
 EOF
 
-clang --ld-path=./ld64 -o $t/exe $t/a.o $t/b.o
+cc --ld-path=./ld64 -o $t/exe $t/a.o $t/b.o
 $t/exe | grep -q 'Hello world -1 -1 -1 -1 2 3'
 
 echo OK

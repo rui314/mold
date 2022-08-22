@@ -1,15 +1,9 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
-MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$MACHINE/$testname
+t=out/test/macho/$(uname -m)/$testname
 mkdir -p $t
 
 cat > $t/libfoo.tbd <<'EOF'
@@ -30,15 +24,15 @@ exports:
 ...
 EOF
 
-cat <<EOF | clang -o $t/a.o -c -xc -
+cat <<EOF | cc -o $t/a.o -c -xc -
 void foo();
 void bar() { foo(); }
 EOF
 
-! clang --ld-path=./ld64 -shared -o $t/b.dylib $t/libfoo.tbd $t/a.o \
+! cc --ld-path=./ld64 -shared -o $t/b.dylib $t/libfoo.tbd $t/a.o \
   -Wl,-platform_version,macos,9.0,9.0 >& /dev/null || false
 
-clang --ld-path=./ld64 -shared -o $t/b.dylib $t/libfoo.tbd $t/a.o \
+cc --ld-path=./ld64 -shared -o $t/b.dylib $t/libfoo.tbd $t/a.o \
   -Wl,-platform_version,macos,14.0,13.0 >& /dev/null
 
 echo OK

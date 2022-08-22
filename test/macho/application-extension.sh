@@ -1,15 +1,9 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
-MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$MACHINE/$testname
+t=out/test/macho/$(uname -m)/$testname
 mkdir -p $t
 
 cat <<'EOF' > $t/a.tbd
@@ -31,15 +25,15 @@ exports:
 ...
 EOF
 
-cat <<EOF | $CC -o $t/b.o -c -xc -
+cat <<EOF | cc -o $t/b.o -c -xc -
 int foo();
 int main() { foo(); }
 EOF
 
-clang -o $t/exe1 $t/b.o $t/a.tbd >& $t/log1
+cc -o $t/exe1 $t/b.o $t/a.tbd >& $t/log1
 ! grep -q 'application extension' $t/log1 || false
 
-clang -o $t/exe1 $t/b.o $t/a.tbd -Wl,-application_extension >& $t/log2
+cc -o $t/exe1 $t/b.o $t/a.tbd -Wl,-application_extension >& $t/log2
 grep -q 'application extension' $t/log2
 
 echo OK

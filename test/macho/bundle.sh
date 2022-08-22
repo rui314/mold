@@ -1,25 +1,19 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
-MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$MACHINE/$testname
+t=out/test/macho/$(uname -m)/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -o $t/a.o -c -xc -
+cat <<EOF | cc -o $t/a.o -c -xc -
 #include <stdio.h>
 void hello() {
   printf("Hello world\n");
 }
 EOF
 
-clang --ld-path=./ld64 -o $t/bundle $t/a.o -Wl,-bundle
+cc --ld-path=./ld64 -o $t/bundle $t/a.o -Wl,-bundle
 file $t/exe | grep -qi bundle
 
 echo OK

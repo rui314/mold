@@ -1,18 +1,12 @@
 #!/bin/bash
 export LC_ALL=C
 set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
-MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/macho/$MACHINE/$testname
+t=out/test/macho/$(uname -m)/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -o $t/a.o -c -xobjective-c -
+cat <<EOF | cc -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 int main() {
   NSProcessInfo *info = [NSProcessInfo processInfo];
@@ -20,7 +14,7 @@ int main() {
 }
 EOF
 
-clang --ld-path=./ld64 -o $t/exe $t/a.o -framework foundation -Wl,-ObjC
+cc --ld-path=./ld64 -o $t/exe $t/a.o -framework foundation -Wl,-ObjC
 $t/exe 2>&1 | fgrep -q 'processName: exe'
 
 echo OK
