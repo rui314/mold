@@ -1377,7 +1377,7 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
   if (num_exported) {
     // We allocate 12 bits for each symbol in the bloom filter.
     i64 num_bits = num_exported * 12;
-    num_bloom = bit_ceil(num_bits / ELFCLASS_BITS);
+    num_bloom = bit_ceil(num_bits / (sizeof(Word<E>) * 8));
   }
 
   this->shdr.sh_size = HEADER_SIZE;                  // Header
@@ -1406,9 +1406,10 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   // Write a bloom filter
   Word<E> *bloom = (Word<E> *)(base + HEADER_SIZE);
   for (i64 hash : hashes) {
-    i64 idx = (hash / ELFCLASS_BITS) % num_bloom;
-    bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
-    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % ELFCLASS_BITS);
+    constexpr i64 word_bits = sizeof(Word<E>) * 8;
+    i64 idx = (hash / word_bits) % num_bloom;
+    bloom[idx] |= (u64)1 << (hash % word_bits);
+    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % word_bits);
   }
 
   // Write hash bucket indices

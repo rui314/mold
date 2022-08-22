@@ -717,7 +717,6 @@ public:
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
   static constexpr i64 BLOOM_SHIFT = 26;
-  static constexpr i64 ELFCLASS_BITS = sizeof(Word<E>) * 8;
 
   u32 num_buckets = -1;
   u32 num_bloom = 1;
