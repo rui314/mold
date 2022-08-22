@@ -134,14 +134,14 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   case 3:
   case 4:
     abbrev_offset = *(ul32 *)(cu + 6);
-    if (u32 address_size = cu[10]; address_size != word_size<E>)
+    if (u32 address_size = cu[10]; address_size != sizeof(Word<E>))
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
     cu += 11;
     break;
   case 5: {
     abbrev_offset = *(ul32 *)(cu + 8);
-    if (u32 address_size = cu[7]; address_size != word_size<E>)
+    if (u32 address_size = cu[7]; address_size != sizeof(Word<E>))
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
 
@@ -216,7 +216,7 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   // .debug_ranges contains a vector of [begin, end) address pairs.
   // The last entry must be a null terminator, so we do -1.
   if (file.debug_ranges)
-    ret += file.debug_ranges->sh_size / word_size<E> / 2 - 1;
+    ret += file.debug_ranges->sh_size / sizeof(Word<E>) / 2 - 1;
 
   // In DWARF 5, a CU can refer address ranges in .debug_rnglists, which
   // contains variable-length entries. The smallest possible range entry
@@ -287,8 +287,8 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   }
   case DW_FORM_addr:
   case DW_FORM_ref_addr: {
-    u64 val = *(typename E::WordTy *)cu;
-    cu += word_size<E>;
+    u64 val = *(Word<E> *)cu;
+    cu += sizeof(Word<E>);
     return val;
   }
   case DW_FORM_strx:
@@ -312,7 +312,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
 // (until an end of list entry).
 template <typename E>
 static std::vector<u64>
-read_debug_range(Context<E> &ctx, ObjectFile<E> &file, typename E::WordTy *range) {
+read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Word<E> *range) {
   std::vector<u64> vec;
   u64 base = 0;
 
@@ -333,7 +333,7 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, typename E::WordTy *range
 template <typename E>
 static std::vector<u64>
 read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
-                   typename E::WordTy *addrx) {
+                   Word<E> *addrx) {
   std::vector<u64> vec;
   u64 base = 0;
 
@@ -357,18 +357,18 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
       vec.push_back(base + read_uleb(rnglist));
       break;
     case DW_RLE_base_address:
-      base = *(typename E::WordTy *)rnglist;
-      rnglist += word_size<E>;
+      base = *(Word<E> *)rnglist;
+      rnglist += sizeof(Word<E>);
       break;
     case DW_RLE_start_end:
-      vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += word_size<E>;
-      vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += word_size<E>;
+      vec.push_back(*(Word<E> *)rnglist);
+      rnglist += sizeof(Word<E>);
+      vec.push_back(*(Word<E> *)rnglist);
+      rnglist += sizeof(Word<E>);
       break;
     case DW_RLE_start_length:
-      vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += word_size<E>;
+      vec.push_back(*(Word<E> *)rnglist);
+      rnglist += sizeof(Word<E>);
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     }
@@ -402,7 +402,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   Record high_pc;
   Record ranges;
   std::optional<u64> rnglists_base;
-  typename E::WordTy *addrx = nullptr;
+  Word<E> *addrx = nullptr;
 
   // Read all interesting debug records.
   for (;;) {
@@ -424,7 +424,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
       rnglists_base = val;
       break;
     case DW_AT_addr_base:
-      addrx = (typename E::WordTy *)(get_buffer(ctx, ctx.debug_addr) + val);
+      addrx = (Word<E> *)(get_buffer(ctx, ctx.debug_addr) + val);
       break;
     case DW_AT_ranges:
       ranges = {form, val};
@@ -435,8 +435,8 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Handle non-contiguous address ranges.
   if (ranges.form) {
     if (dwarf_version <= 4) {
-       typename E::WordTy *range_begin =
-        (typename E::WordTy *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
+       Word<E> *range_begin =
+        (Word<E> *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
       return read_debug_range(ctx, file, range_begin);
     }
 

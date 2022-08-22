@@ -1376,16 +1376,16 @@ struct ElfNhdr {
 };
 
 template <typename E>
-inline constexpr size_t word_size = sizeof(typename E::WordTy);
-
-template <typename E>
 inline constexpr bool is_rela = requires { ElfRel<E>::r_addend; };
 
 template <typename E>
 inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
+template <typename E>
+using Word = typename E::Word;
+
 struct X86_64 {
-  using WordTy = ul64;
+  using Word = ul64;
 
   static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -1416,7 +1416,7 @@ template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
 template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 
 struct I386 {
-  using WordTy = ul32;
+  using Word = ul32;
 
   static constexpr u32 R_NONE = R_386_NONE;
   static constexpr u32 R_COPY = R_386_COPY;
@@ -1447,7 +1447,7 @@ template <> struct ElfDyn<I386> : public Elf32Dyn {};
 template <> struct ElfChdr<I386> : public Elf32Chdr {};
 
 struct ARM64 {
-  using WordTy = ul64;
+  using Word = ul64;
 
   static constexpr u32 R_NONE = R_AARCH64_NONE;
   static constexpr u32 R_COPY = R_AARCH64_COPY;
@@ -1479,7 +1479,7 @@ template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
 template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
 
 struct ARM32 {
-  using WordTy = ul32;
+  using Word = ul32;
 
   static constexpr u32 R_NONE = R_ARM_NONE;
   static constexpr u32 R_COPY = R_ARM_COPY;
@@ -1511,7 +1511,7 @@ template <> struct ElfDyn<ARM32> : public Elf32Dyn {};
 template <> struct ElfChdr<ARM32> : public Elf32Chdr {};
 
 struct RISCV64 {
-  using WordTy = ul64;
+  using Word = ul64;
 
   static constexpr u32 R_NONE = R_RISCV_NONE;
   static constexpr u32 R_COPY = R_RISCV_COPY;
@@ -1542,7 +1542,7 @@ template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
 template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
 
 struct RISCV32 {
-  using WordTy = ul32;
+  using Word = ul32;
 
   static constexpr u32 R_NONE = R_RISCV_NONE;
   static constexpr u32 R_COPY = R_RISCV_COPY;

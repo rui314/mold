@@ -376,7 +376,7 @@ public:
   OutputEhdr() {
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   ChunkKind kind() override { return HEADER; }
@@ -388,7 +388,7 @@ template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() {
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   ChunkKind kind() override { return HEADER; }
@@ -402,7 +402,7 @@ class OutputPhdr : public Chunk<E> {
 public:
   OutputPhdr() {
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   ChunkKind kind() override { return HEADER; }
@@ -441,7 +441,7 @@ public:
   u32 idx;
 
   void construct_relr(Context<E> &ctx);
-  std::vector<typename E::WordTy> relr;
+  std::vector<Word<E>> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
 
@@ -469,7 +469,7 @@ public:
     this->name = ".got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -489,7 +489,7 @@ public:
   u32 tlsld_idx = -1;
 
   void construct_relr(Context<E> &ctx);
-  std::vector<typename E::WordTy> relr;
+  std::vector<Word<E>> relr;
 
 private:
   std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
@@ -502,8 +502,8 @@ public:
     this->name = ".got.plt";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = word_size<E>;
-    this->shdr.sh_size = word_size<E> * 3;
+    this->shdr.sh_addralign = sizeof(Word<E>);
+    this->shdr.sh_size = sizeof(Word<E>) * 3;
   }
 
   void copy_buf(Context<E> &ctx) override;
@@ -549,7 +549,7 @@ public:
     this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -564,7 +564,7 @@ public:
     this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -581,8 +581,8 @@ public:
     this->name = ".relr.dyn";
     this->shdr.sh_type = SHT_RELR;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_entsize = word_size<E>;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_entsize = sizeof(Word<E>);
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -640,7 +640,7 @@ public:
     this->name = ".dynamic";
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
     this->shdr.sh_entsize = sizeof(ElfDyn<E>);
   }
 
@@ -658,7 +658,7 @@ public:
     this->name = ".symtab";
     this->shdr.sh_type = SHT_SYMTAB;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -673,7 +673,7 @@ public:
     this->shdr.sh_type = SHT_DYNSYM;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void keep() { this->symbols.resize(1); }
@@ -707,7 +707,7 @@ public:
     this->name = ".gnu.hash";
     this->shdr.sh_type = SHT_GNU_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   std::span<Symbol<E> *> get_exported_symbols(Context<E> &ctx);
@@ -717,7 +717,7 @@ public:
   static constexpr i64 LOAD_FACTOR = 8;
   static constexpr i64 HEADER_SIZE = 16;
   static constexpr i64 BLOOM_SHIFT = 26;
-  static constexpr i64 ELFCLASS_BITS = word_size<E> * 8;
+  static constexpr i64 ELFCLASS_BITS = sizeof(Word<E>) * 8;
 
   u32 num_buckets = -1;
   u32 num_bloom = 1;
@@ -752,7 +752,7 @@ public:
     this->name = ".eh_frame";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void construct(Context<E> &ctx);
@@ -821,7 +821,7 @@ public:
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void construct(Context<E> &ctx);
@@ -887,7 +887,7 @@ public:
     this->name = ".note.gnu.property";
     this->shdr.sh_type = SHT_NOTE;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = word_size<E>;
+    this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -981,7 +981,7 @@ public:
 
 private:
   using RelaTy =
-    typename std::conditional<word_size<E> == 4, Elf32Rela, Elf64Rela>::type;
+    typename std::conditional<sizeof(Word<E>) == 8, Elf64Rela, Elf32Rela>::type;
 
   OutputSection<E> &output_section;
   std::vector<i64> offsets;
@@ -2214,8 +2214,8 @@ template <typename E>
 inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
   return ctx.arg.pack_dyn_relocs_relr &&
          !(shdr().sh_flags & SHF_EXECINSTR) &&
-         (shdr().sh_addralign % word_size<E>) == 0 &&
-         (rel.r_offset % word_size<E>) == 0;
+         (shdr().sh_addralign % sizeof(Word<E>)) == 0 &&
+         (rel.r_offset % sizeof(Word<E>)) == 0;
 }
 
 inline u64
@@ -2366,31 +2366,31 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
 
 template <typename E>
 inline u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
-  return ctx.got->shdr.sh_addr + get_got_idx(ctx) * word_size<E>;
+  return ctx.got->shdr.sh_addr + get_got_idx(ctx) * sizeof(Word<E>);
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
   assert(get_gotplt_idx(ctx) != -1);
-  return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * word_size<E>;
+  return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * sizeof(Word<E>);
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_gottp_addr(Context<E> &ctx) const {
   assert(get_gottp_idx(ctx) != -1);
-  return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * word_size<E>;
+  return ctx.got->shdr.sh_addr + get_gottp_idx(ctx) * sizeof(Word<E>);
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_tlsgd_addr(Context<E> &ctx) const {
   assert(get_tlsgd_idx(ctx) != -1);
-  return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * word_size<E>;
+  return ctx.got->shdr.sh_addr + get_tlsgd_idx(ctx) * sizeof(Word<E>);
 }
 
 template <typename E>
 inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
   assert(get_tlsdesc_idx(ctx) != -1);
-  return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * word_size<E>;
+  return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * sizeof(Word<E>);
 }
 
 template <typename E>

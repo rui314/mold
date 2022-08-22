@@ -75,7 +75,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   memset(&hdr, 0, sizeof(hdr));
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
-  hdr.e_ident[EI_CLASS] = (word_size<E> == 8) ? ELFCLASS64 : ELFCLASS32;
+  hdr.e_ident[EI_CLASS] = (sizeof(Word<E>) == 8) ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
@@ -203,7 +203,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
-    define(PT_PHDR, PF_R, word_size<E>, ctx.phdr.get());
+    define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr.get());
 
   // Create a PT_INTERP.
   if (ctx.interp)
@@ -415,12 +415,12 @@ void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
   i64 n = ctx.got->relr.size();
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     n += osec->relr.size();
-  this->shdr.sh_size = n * word_size<E>;
+  this->shdr.sh_size = n * sizeof(Word<E>);
 }
 
 template <typename E>
 void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::WordTy *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+  Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   for (u64 val : ctx.got->relr)
     *buf++ = (val & 1) ? val : (ctx.got->shdr.sh_addr + val);
@@ -574,8 +574,8 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
-  std::vector<typename E::WordTy> vec;
+static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
+  std::vector<Word<E>> vec;
 
   auto define = [&](u64 tag, u64 val) {
     vec.push_back(tag);
@@ -731,13 +731,13 @@ void DynamicSection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.arg.is_static && !ctx.arg.pie)
     return;
 
-  this->shdr.sh_size = create_dynamic_section(ctx).size() * word_size<E>;
+  this->shdr.sh_size = create_dynamic_section(ctx).size() * sizeof(Word<E>);
   this->shdr.sh_link = ctx.dynstr->shndx;
 }
 
 template <typename E>
 void DynamicSection<E>::copy_buf(Context<E> &ctx) {
-  std::vector<typename E::WordTy> contents = create_dynamic_section(ctx);
+  std::vector<Word<E>> contents = create_dynamic_section(ctx);
   assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
@@ -926,7 +926,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
     return;
   if (!(this->shdr.sh_flags & SHF_ALLOC))
     return;
-  if (this->shdr.sh_addralign % word_size<E>)
+  if (this->shdr.sh_addralign % sizeof(Word<E>))
     return;
 
   // Skip it if it is a text section because .text doesn't usually
@@ -935,43 +935,43 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
     return;
 
   // Collect base relocations
-  std::vector<std::vector<typename E::WordTy>> shards(members.size());
+  std::vector<std::vector<Word<E>>> shards(members.size());
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     InputSection<E> &isec = *members[i];
-    if ((1 << isec.p2align) < word_size<E>)
+    if ((1 << isec.p2align) < sizeof(Word<E>))
       return;
 
     for (const ElfRel<E> &r : isec.get_rels(ctx))
-      if (r.r_type == E::R_ABS && (r.r_offset % word_size<E>) == 0)
+      if (r.r_type == E::R_ABS && (r.r_offset % sizeof(Word<E>)) == 0)
         if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
             !sym.is_absolute() && !sym.is_imported)
           shards[i].push_back(isec.offset + r.r_offset);
   });
 
   // Compress them
-  std::vector<typename E::WordTy> pos = flatten(shards);
+  std::vector<Word<E>> pos = flatten(shards);
   relr = encode_relr(pos);
 }
 
 template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_got_idx(ctx, this->shdr.sh_size / word_size<E>);
-  this->shdr.sh_size += word_size<E>;
+  sym->set_got_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  this->shdr.sh_size += sizeof(Word<E>);
   got_syms.push_back(sym);
 }
 
 template <typename E>
 void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_gottp_idx(ctx, this->shdr.sh_size / word_size<E>);
-  this->shdr.sh_size += word_size<E>;
+  sym->set_gottp_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  this->shdr.sh_size += sizeof(Word<E>);
   gottp_syms.push_back(sym);
 }
 
 template <typename E>
 void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_tlsgd_idx(ctx, this->shdr.sh_size / word_size<E>);
-  this->shdr.sh_size += word_size<E> * 2;
+  sym->set_tlsgd_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsgd_syms.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
 }
@@ -979,8 +979,8 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(supports_tlsdesc<E>);
-  sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / word_size<E>);
-  this->shdr.sh_size += word_size<E> * 2;
+  sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsdesc_syms.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
 }
@@ -989,14 +989,14 @@ template <typename E>
 void GotSection<E>::add_tlsld(Context<E> &ctx) {
   if (tlsld_idx != -1)
     return;
-  tlsld_idx = this->shdr.sh_size / word_size<E>;
-  this->shdr.sh_size += word_size<E> * 2;
+  tlsld_idx = this->shdr.sh_size / sizeof(Word<E>);
+  this->shdr.sh_size += sizeof(Word<E>) * 2;
 }
 
 template <typename E>
 u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
   assert(tlsld_idx != -1);
-  return this->shdr.sh_addr + tlsld_idx * word_size<E>;
+  return this->shdr.sh_addr + tlsld_idx * sizeof(Word<E>);
 }
 
 template <typename E>
@@ -1094,8 +1094,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
-  typename E::WordTy *buf =
-    (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+  Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   memset(buf, 0, this->shdr.sh_size);
 
@@ -1106,7 +1105,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
     if (ent.r_type &&
         (ent.r_type != E::R_RELATIVE || !ctx.arg.pack_dyn_relocs_relr))
-      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * word_size<E>, ent.r_type,
+      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>), ent.r_type,
                          ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0, ent.val);
   }
 }
@@ -1115,17 +1114,17 @@ template <typename E>
 void GotSection<E>::construct_relr(Context<E> &ctx) {
   assert(ctx.arg.pack_dyn_relocs_relr);
 
-  std::vector<typename E::WordTy> pos;
+  std::vector<Word<E>> pos;
   for (GotEntry<E> &ent : get_entries(ctx))
     if (ent.r_type == E::R_RELATIVE)
-      pos.push_back(ent.idx * word_size<E>);
+      pos.push_back(ent.idx * sizeof(Word<E>));
 
   relr = encode_relr(pos);
 }
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  auto *buf = (typename E::WordTy *)(ctx.buf + this->shdr.sh_offset);
+  Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the psABI. The second and the third slots are reserved by the psABI.
@@ -1152,8 +1151,8 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
 
-  sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / word_size<E>);
-  ctx.gotplt->shdr.sh_size += word_size<E>;
+  sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / sizeof(Word<E>));
+  ctx.gotplt->shdr.sh_size += sizeof(Word<E>);
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
 }
@@ -1381,10 +1380,10 @@ void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
     num_bloom = bit_ceil(num_bits / ELFCLASS_BITS);
   }
 
-  this->shdr.sh_size = HEADER_SIZE;               // Header
-  this->shdr.sh_size += num_bloom * word_size<E>; // Bloom filter
-  this->shdr.sh_size += num_buckets * 4;          // Hash buckets
-  this->shdr.sh_size += num_exported * 4;         // Hash values
+  this->shdr.sh_size = HEADER_SIZE;                  // Header
+  this->shdr.sh_size += num_bloom * sizeof(Word<E>); // Bloom filter
+  this->shdr.sh_size += num_buckets * 4;             // Hash buckets
+  this->shdr.sh_size += num_exported * 4;            // Hash values
 }
 
 template <typename E>
@@ -1405,7 +1404,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
     hashes[i] = djb_hash(syms[i]->name());
 
   // Write a bloom filter
-  typename E::WordTy *bloom = (typename E::WordTy *)(base + HEADER_SIZE);
+  Word<E> *bloom = (Word<E> *)(base + HEADER_SIZE);
   for (i64 hash : hashes) {
     i64 idx = (hash / ELFCLASS_BITS) % num_bloom;
     bloom[idx] |= (u64)1 << (hash % ELFCLASS_BITS);
@@ -2063,7 +2062,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
 
   if (features != 0 && features != -1)
-    this->shdr.sh_size = (word_size<E> == 8) ? 32 : 28;
+    this->shdr.sh_size = (sizeof(Word<E>) == 8) ? 32 : 28;
 }
 
 template <typename E>
@@ -2071,13 +2070,13 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  buf[0] = 4;                              // Name size
-  buf[1] = (word_size<E> == 8) ? 16 : 12;  // Content size
-  buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
-  memcpy(buf + 3, "GNU", 4);               // Name
-  buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND; // Feature type
-  buf[5] = 4;                              // Feature size
-  buf[6] = features;                       // Feature flags
+  buf[0] = 4;                                 // Name size
+  buf[1] = (sizeof(Word<E>) == 8) ? 16 : 12;  // Content size
+  buf[2] = NT_GNU_PROPERTY_TYPE_0;            // Type
+  memcpy(buf + 3, "GNU", 4);                  // Name
+  buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND;    // Feature type
+  buf[5] = 4;                                 // Feature size
+  buf[6] = features;                          // Feature flags
 }
 
 // .gdb_index section is an optional section to speed up GNU debugger.
@@ -2481,7 +2480,7 @@ RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
   : output_section(osec) {
   this->name = save_string(ctx, ".rela" + std::string(osec.name));
   this->shdr.sh_type = SHT_RELA;
-  this->shdr.sh_addralign = word_size<E>;
+  this->shdr.sh_addralign = sizeof(Word<E>);
   this->shdr.sh_entsize = sizeof(RelaTy);
 
   // Compute an offset for each input section

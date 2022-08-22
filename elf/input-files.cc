@@ -111,7 +111,7 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
     data = data.substr(align_to(hdr.n_namesz, 4));
 
     std::string_view desc = data.substr(0, hdr.n_descsz);
-    data = data.substr(align_to(hdr.n_descsz, word_size<E>));
+    data = data.substr(align_to(hdr.n_descsz, sizeof(Word<E>)));
 
     if (hdr.n_type != NT_GNU_PROPERTY_TYPE_0 || name != "GNU")
       continue;
@@ -122,7 +122,7 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
       desc = desc.substr(8);
       if (type == GNU_PROPERTY_X86_FEATURE_1_AND)
         ret |= *(ul32 *)desc.data();
-      desc = desc.substr(align_to(size, word_size<E>));
+      desc = desc.substr(align_to(size, sizeof(Word<E>)));
     }
   }
   return ret;
