@@ -106,7 +106,7 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e0067, // jr     t3
   };
 
-  if constexpr (E::word_size == 8)
+  if constexpr (word_size<E> == 8)
     memcpy(buf, plt0_64, sizeof(plt0_64));
   else
     memcpy(buf, plt0_32, sizeof(plt0_32));
@@ -144,7 +144,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     u64 gotplt = sym->get_gotplt_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
-    if constexpr (E::word_size == 8)
+    if constexpr (word_size<E> == 8)
       memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
     else
       memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
@@ -163,7 +163,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     u64 got = sym->get_got_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
-    if constexpr (E::word_size == 8)
+    if constexpr (word_size<E> == 8)
       memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
     else
       memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
@@ -245,7 +245,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_RISCV_32: {
-      if constexpr (E::word_size == 8) {
+      if constexpr (word_size<E> == 8) {
         *(ul32 *)loc = S + A;
       } else {
         if (sym.is_absolute() || !ctx.arg.pic) {
@@ -584,7 +584,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      if constexpr (E::word_size == 8)
+      if constexpr (word_size<E> == 8)
         handle_abs_rel(ctx, sym, rel);
       else
         handle_abs_dyn_rel(ctx, sym, rel);

@@ -134,14 +134,14 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   case 3:
   case 4:
     abbrev_offset = *(ul32 *)(cu + 6);
-    if (u32 address_size = cu[10]; address_size != E::word_size)
+    if (u32 address_size = cu[10]; address_size != word_size<E>)
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
     cu += 11;
     break;
   case 5: {
     abbrev_offset = *(ul32 *)(cu + 8);
-    if (u32 address_size = cu[7]; address_size != E::word_size)
+    if (u32 address_size = cu[7]; address_size != word_size<E>)
       Fatal(ctx) << file << ": --gdb-index: unsupported address size "
                  << address_size;
 
@@ -216,7 +216,7 @@ i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file) {
   // .debug_ranges contains a vector of [begin, end) address pairs.
   // The last entry must be a null terminator, so we do -1.
   if (file.debug_ranges)
-    ret += file.debug_ranges->sh_size / E::word_size / 2 - 1;
+    ret += file.debug_ranges->sh_size / word_size<E> / 2 - 1;
 
   // In DWARF 5, a CU can refer address ranges in .debug_rnglists, which
   // contains variable-length entries. The smallest possible range entry
@@ -288,7 +288,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_addr:
   case DW_FORM_ref_addr: {
     u64 val = *(typename E::WordTy *)cu;
-    cu += E::word_size;
+    cu += word_size<E>;
     return val;
   }
   case DW_FORM_strx:
@@ -358,17 +358,17 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
       break;
     case DW_RLE_base_address:
       base = *(typename E::WordTy *)rnglist;
-      rnglist += E::word_size;
+      rnglist += word_size<E>;
       break;
     case DW_RLE_start_end:
       vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += E::word_size;
+      rnglist += word_size<E>;
       vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += E::word_size;
+      rnglist += word_size<E>;
       break;
     case DW_RLE_start_length:
       vec.push_back(*(typename E::WordTy *)rnglist);
-      rnglist += E::word_size;
+      rnglist += word_size<E>;
       vec.push_back(vec.back() + read_uleb(rnglist));
       break;
     }

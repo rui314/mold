@@ -71,7 +71,7 @@ public:
     this->name = ".symtab";
     this->out_shdr.sh_type = SHT_SYMTAB;
     this->out_shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->out_shdr.sh_addralign = E::word_size;
+    this->out_shdr.sh_addralign = word_size<E>;
   }
 
   void add_local_symbol(Context<E> &ctx, RObjectFile<E> &file, i64 idx);
@@ -298,7 +298,7 @@ template <typename E>
 void ROutputEhdr<E>::write_to(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->out_shdr.sh_offset);
   memcpy(&hdr.e_ident, "\177ELF", 4);
-  hdr.e_ident[EI_CLASS] = (E::word_size == 8) ? ELFCLASS64 : ELFCLASS32;
+  hdr.e_ident[EI_CLASS] = (word_size<E> == 8) ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ET_REL;

@@ -1375,6 +1375,15 @@ struct ElfNhdr {
   ul32 n_type;
 };
 
+template <typename E>
+inline constexpr size_t word_size = sizeof(typename E::WordTy);
+
+template <typename E>
+inline constexpr bool is_rela = requires { ElfRel<E>::r_addend; };
+
+template <typename E>
+inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
+
 struct X86_64 {
   using WordTy = ul64;
 
@@ -1391,7 +1400,6 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr MachineType machine_type = MachineType::X86_64;
-  static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 32;
@@ -1423,7 +1431,6 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr MachineType machine_type = MachineType::I386;
-  static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
@@ -1455,7 +1462,6 @@ struct ARM64 {
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr MachineType machine_type = MachineType::ARM64;
-  static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
@@ -1488,7 +1494,6 @@ struct ARM32 {
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
   static constexpr MachineType machine_type = MachineType::ARM32;
-  static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 plt_hdr_size = 32;
@@ -1520,7 +1525,6 @@ struct RISCV64 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
   static constexpr MachineType machine_type = MachineType::RISCV64;
-  static constexpr u32 word_size = 8;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
@@ -1552,7 +1556,6 @@ struct RISCV32 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 
   static constexpr MachineType machine_type = MachineType::RISCV32;
-  static constexpr u32 word_size = 4;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
@@ -1568,11 +1571,5 @@ template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
 template <> struct ElfRel<RISCV32> : public Elf32Rela { using Elf32Rela::Elf32Rela; };
 template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
 template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
-
-template <typename E>
-inline constexpr bool is_rela = requires { ElfRel<E>::r_addend; };
-
-template <typename E>
-inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
 } // namespace mold::elf
